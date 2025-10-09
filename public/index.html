@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="boekenbaai-api-base" content="" />
+    <title>Boekenbaai – Leerlingenportaal</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600&family=Source+Sans+3:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body data-page="student">
+    <header class="hero hero--student">
+      <div class="hero__content">
+        <h1>Welkom bij Boekenbaai</h1>
+        <p>
+          Log in met je eigen account, scan de barcode van een boek en neem het veilig mee
+          naar huis.
+        </p>
+        <div class="hero__actions">
+          <a class="btn btn--ghost hero__link" href="/staff.html">Docenteninlog</a>
+        </div>
+      </div>
+      <div class="hero__illustration" aria-hidden="true">
+        <span class="bubble bubble--pink"></span>
+        <span class="bubble bubble--yellow"></span>
+        <span class="bubble bubble--blue"></span>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel panel--login" id="student-login-panel" aria-labelledby="student-login-title">
+        <div class="panel__header">
+          <h2 id="student-login-title">Log in en start met lezen</h2>
+          <p class="panel__subtitle">
+            Gebruik de persoonlijke inlog van school om boeken te lenen of terug te brengen.
+          </p>
+        </div>
+        <form id="student-login-form" class="login-form">
+          <div class="form-field">
+            <label for="student-login-username">Gebruikersnaam</label>
+            <input id="student-login-username" type="text" autocomplete="username" required />
+          </div>
+          <div class="form-field">
+            <label for="student-login-password">Wachtwoord</label>
+            <input id="student-login-password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit" class="btn">Inloggen</button>
+        </form>
+        <p id="student-login-message" class="hint" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="panel panel--student hidden" id="student-dashboard">
+        <div class="panel__header">
+          <h2>Mijn leesmoment</h2>
+          <p class="panel__subtitle">Scan de barcode om een boek te lenen of terug te brengen.</p>
+        </div>
+        <div class="student-dashboard__grid">
+          <aside class="student-dashboard__info">
+            <h3 id="student-name"></h3>
+            <p id="student-grade" class="muted"></p>
+            <h4>Mijn boeken</h4>
+            <p id="student-borrowed-empty" class="hint"></p>
+            <ul id="student-borrowed-list" class="borrowed-list"></ul>
+            <button type="button" class="btn btn--ghost" id="student-logout">Uitloggen</button>
+          </aside>
+          <div class="student-dashboard__scan">
+            <label for="barcode-input">Scan of typ de barcode:</label>
+            <input
+              id="barcode-input"
+              type="text"
+              inputmode="numeric"
+              placeholder="Scan hier…"
+              autocomplete="off"
+              disabled
+            />
+            <button id="lookup-button" class="btn" disabled>Zoek boek</button>
+            <div class="book-result" id="book-result" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="student-collection" aria-labelledby="collection-title">
+        <div class="panel__header">
+          <div>
+            <h2 id="collection-title">Ontdek onze boeken</h2>
+            <p class="panel__subtitle">
+              Filter op map of zoek naar jouw volgende leesavontuur.
+            </p>
+          </div>
+        </div>
+        <div class="filters">
+          <label class="filters__label" for="folder-filter">Filter op map:</label>
+          <select id="folder-filter">
+            <option value="">Alle mappen</option>
+          </select>
+          <label class="filters__label" for="search-input">Zoek:</label>
+          <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
+        </div>
+        <div class="summary" id="summary"></div>
+        <div class="book-grid" id="book-grid"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Gemaakt voor VSO Het Dok • Boekenbaai maakt lenen veilig en vrolijk.
+    </footer>
+
+    <template id="book-card-template">
+      <article class="book-card">
+        <header class="book-card__header">
+          <span class="book-card__folder"></span>
+          <span class="book-card__status"></span>
+        </header>
+        <h3 class="book-card__title"></h3>
+        <p class="book-card__author"></p>
+        <p class="book-card__description"></p>
+        <ul class="book-card__tags"></ul>
+      </article>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
