@@ -1,0 +1,172 @@
+{
+  "books": [
+    {
+      "id": "b1",
+      "title": "De brief voor de koning",
+      "author": "Tonke Dragt",
+      "barcode": "9789025869975",
+      "description": "Een klassieker uit de Nederlandse jeugdliteratuur over ridder Tiuri.",
+      "folderId": "f1",
+      "suitableForExamList": true,
+      "status": "available",
+      "borrowedBy": null,
+      "dueDate": null,
+      "tags": [
+        "avontuur",
+        "klassieker"
+      ],
+      "coverColor": "#90caf9"
+    },
+    {
+      "id": "b2",
+      "title": "Het Achterhuis",
+      "author": "Anne Frank",
+      "barcode": "9789026126770",
+      "description": "Het dagboek van Anne Frank, belangrijk voor de leeslijst.",
+      "folderId": "f1",
+      "suitableForExamList": true,
+      "status": "borrowed",
+      "borrowedBy": "s2",
+      "dueDate": null,
+      "tags": [
+        "geschiedenis",
+        "oorlog"
+      ],
+      "coverColor": "#ffe082"
+    },
+    {
+      "id": "b3",
+      "title": "Superjuffie",
+      "author": "Jan Jutte",
+      "barcode": "9789045118008",
+      "description": "Vrolijk avontuur voor jongere lezers.",
+      "folderId": "f2",
+      "suitableForExamList": false,
+      "status": "available",
+      "borrowedBy": null,
+      "dueDate": null,
+      "tags": [
+        "humor",
+        "dieren"
+      ],
+      "coverColor": "#a5d6a7"
+    }
+  ],
+  "students": [
+    {
+      "id": "s1",
+      "name": "Emma Janssen",
+      "grade": "5V",
+      "username": "emma.j",
+      "passwordHash": "6a81cfd4976bf6eb28790125c2eb96c484509ed20e3364810fa71e567b1e264b",
+      "borrowedBooks": [],
+      "classIds": [
+        "c2"
+      ]
+    },
+    {
+      "id": "s2",
+      "name": "Noah de Vries",
+      "grade": "4H",
+      "username": "noah.d",
+      "passwordHash": "fbe57396ba1006dbbe00556a1373170fb16cdc73b436f4b132875528ceeb482a",
+      "borrowedBooks": [
+        {
+          "bookId": "b2",
+          "borrowedAt": "2023-10-10T09:15:00.000Z"
+        }
+      ],
+      "classIds": [
+        "c1"
+      ]
+    },
+    {
+      "id": "s3",
+      "name": "Lina Bakker",
+      "grade": "3VMBO",
+      "username": "lina.b",
+      "passwordHash": "f78230e5e471cf6caf71d0cc8f9566e08611ecc180d963b0eb52ea3237b75f02",
+      "borrowedBooks": [],
+      "classIds": []
+    }
+  ],
+  "folders": [
+    {
+      "id": "f1",
+      "name": "Leeslijst toppers",
+      "description": "Boeken geschikt voor het eindexamen",
+      "color": "#f9c74f",
+      "examList": true
+    },
+    {
+      "id": "f2",
+      "name": "Lekker lezen",
+      "description": "Vrolijke boeken voor tussendoor",
+      "color": "#90be6d",
+      "examList": false
+    },
+    {
+      "id": "f3",
+      "name": "Docententips",
+      "description": "Aanbevolen door docenten",
+      "color": "#f8961e",
+      "examList": false
+    }
+  ],
+  "classes": [
+    {
+      "id": "c1",
+      "name": "4H Nederlands",
+      "teacherIds": [
+        "u-teacher-1"
+      ],
+      "studentIds": [
+        "s2"
+      ]
+    },
+    {
+      "id": "c2",
+      "name": "5V Literatuurclub",
+      "teacherIds": [
+        "u-teacher-1"
+      ],
+      "studentIds": [
+        "s1"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "u-admin",
+      "name": "Boekenbaai Beheer",
+      "username": "admin",
+      "passwordHash": "248492fae3bea4d587616021c3d873b1f758ced42136df9f9d9a8272d542a63f",
+      "role": "admin"
+    },
+    {
+      "id": "u-teacher-1",
+      "name": "Mevr. Van Dijk",
+      "username": "vandijk",
+      "passwordHash": "9ab72d9b9a1925fbe2a071405fb425f41d037b6b3c206cf0c6d01b4e0fbda505",
+      "role": "teacher"
+    }
+  ],
+  "history": [
+    {
+      "id": "h1",
+      "timestamp": "2023-10-10T09:15:00.000Z",
+      "type": "check_out",
+      "bookId": "b2",
+      "studentId": "s2",
+      "message": "Noah de Vries heeft Het Achterhuis geleend"
+    },
+    {
+      "id": "h2",
+      "timestamp": "2023-09-29T14:32:00.000Z",
+      "type": "check_in",
+      "bookId": "b1",
+      "studentId": "s1",
+      "message": "Emma Janssen heeft De brief voor de koning teruggebracht"
+    }
+  ]
+}
