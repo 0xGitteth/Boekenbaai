@@ -42,37 +42,6 @@ Boekenbaai is een vrolijke webapplicatie voor de schoolbibliotheek van VSO Het D
 
 De app is geoptimaliseerd voor gebruik met een standaard barcodescanner (die als toetsenbord werkt). Na het selecteren van een leerling kan direct een barcode worden gescand.
 
-## Werken in GitHub Codespaces
-
-Wil je de code rechtstreeks in een GitHub Codespace gebruiken (zoals in `https://glorious-capybara-5gvg5xxv6vx4h49vw.github.dev/`), volg dan deze stappen:
-
-1. **Repository openen op GitHub**  
-   Navigeer naar je fork of de originele repository op `github.com`. Klik op de groene **Code**-knop en kies **Codespaces** → **Create codespace on main**. Je kunt ook op het toetsenbord `.` indrukken of direct naar de gedeelde `github.dev`-URL gaan; accepteer dan de prompt om een Codespace te starten.
-
-2. **Afwachten tot de omgeving klaar is**  
-   GitHub maakt een virtuele ontwikkelomgeving aan waarin deze repository automatisch wordt gekloond. Dit kan enkele minuten duren bij de eerste start.
-
-3. **Dependencies installeren**  
-   Open de terminal onderin de Codespace en voer uit:
-
-   ```bash
-   npm install
-   ```
-
-4. **Server starten**  
-   Start daarna de applicatie met:
-
-   ```bash
-   npm start
-   ```
-
-   Codespaces vraagt om poort `3000` (of de gekozen poort) te publiceren. Klik op **Open in Browser** om de leerlingstartpagina te zien. Via het tabblad **Ports** kun je ook de URL kopiëren en delen met collega’s binnen hetzelfde netwerk.
-
-5. **Wijzigingen opslaan en pushen**  
-   Gebruik Git in de Codespace (links onderin of via de terminal) om eventuele aanpassingen te committen en terug naar GitHub te pushen. Alle bestanden staan automatisch in de workspace van je Codespace.
-
-Je kunt meerdere Codespaces aanmaken (bijvoorbeeld voor testen en productie). Sluit een Codespace via **Codespaces** → **Delete** als je hem niet meer nodig hebt; zo voorkom je dat hij rekenuren blijft verbruiken.
-
 ## Boekenbaai hosten via GitHub Pages
 
 GitHub Pages kan alleen statische bestanden tonen. De Node.js-server (`server.js`) moet daarom op een andere plek draaien (bijvoorbeeld op Render, Railway, een eigen VPS of tijdelijk op een computer op school). De GitHub Pages-site maakt vervolgens via HTTPS verbinding met die externe API.
