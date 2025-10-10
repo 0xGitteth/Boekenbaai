@@ -4,10 +4,14 @@
   "description": "Schoolbibliotheek-systeem voor VSO Het Dok",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "vite build"
   },
   "dependencies": {
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "vite": "^5.2.0"
   },
   "keywords": [
     "bibliotheek",
