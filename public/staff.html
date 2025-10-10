@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="boekenbaai-api-base" content="" />
+    <title>Boekenbaai – Docentenportaal</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600&family=Source+Sans+3:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body data-page="staff">
+    <header class="hero hero--staff">
+      <div class="hero__content">
+        <h1>Docentenportaal van Boekenbaai</h1>
+        <p>
+          Houd zicht op de collectie, beheer je klassen en voeg eenvoudig nieuwe boeken of
+          leerlingen toe.
+        </p>
+        <div class="hero__actions">
+          <a class="btn btn--ghost hero__link" href="/">Terug naar leerlingen</a>
+        </div>
+      </div>
+      <div class="hero__illustration" aria-hidden="true">
+        <span class="bubble bubble--pink"></span>
+        <span class="bubble bubble--yellow"></span>
+        <span class="bubble bubble--blue"></span>
+      </div>
+    </header>
+
+    <main>
+      <section class="panel panel--login" id="staff-login-panel" aria-labelledby="staff-login-title">
+        <div class="panel__header">
+          <h2 id="staff-login-title">Inloggen voor docenten en beheerders</h2>
+          <p class="panel__subtitle">
+            Meld je aan om het docentenoverzicht, de geschiedenis en de beheermogelijkheden te zien.
+          </p>
+        </div>
+        <form id="login-form" class="login-form">
+          <div class="form-field">
+            <label for="login-username">Gebruikersnaam</label>
+            <input id="login-username" type="text" autocomplete="username" required />
+          </div>
+          <div class="form-field">
+            <label for="login-password">Wachtwoord</label>
+            <input id="login-password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit" class="btn">Inloggen</button>
+        </form>
+        <p id="login-message" class="hint" role="status" aria-live="polite"></p>
+      </section>
+
+      <section
+        class="panel panel--staff hidden"
+        id="teacher-dashboard"
+        aria-labelledby="teacher-panel-title"
+        data-visible-for="teacher,admin"
+      >
+        <div class="panel__header panel__header--staff">
+          <div>
+            <h2 id="teacher-panel-title">Overzicht</h2>
+            <p class="panel__subtitle">
+              Bekijk de actuele collectie, filter op map en houd bij welke leerlingen lenen.
+            </p>
+          </div>
+          <div class="staff-meta" id="staff-meta">
+            <span id="staff-name" class="staff-meta__name"></span>
+            <span id="staff-role" class="staff-meta__role"></span>
+            <button id="logout-button" class="btn btn--ghost" type="button">Uitloggen</button>
+          </div>
+        </div>
+        <div class="teacher-layout">
+          <div class="teacher-layout__overview">
+            <div class="filters">
+              <label class="filters__label" for="folder-filter">Filter op map:</label>
+              <select id="folder-filter">
+                <option value="">Alle mappen</option>
+              </select>
+              <label class="filters__label" for="search-input">Zoek:</label>
+              <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
+            </div>
+            <div class="summary" id="summary"></div>
+            <div class="book-grid" id="book-grid"></div>
+          </div>
+          <div class="teacher-layout__classes">
+            <h3>Mijn klassen</h3>
+            <p class="hint">
+              Voeg leerlingen toe of verwijder ze om het overzicht van jouw lessen actueel te houden.
+            </p>
+            <form id="create-class-form" class="form-inline">
+              <label class="visually-hidden" for="new-class-name">Nieuwe klas</label>
+              <input
+                id="new-class-name"
+                type="text"
+                placeholder="Naam van nieuwe klas"
+                autocomplete="off"
+              />
+              <button type="submit" class="btn btn--secondary">Klas aanmaken</button>
+            </form>
+            <p id="class-message" class="hint" role="status" aria-live="polite"></p>
+            <div id="class-list" class="class-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="panel panel--staff hidden"
+        id="admin-dashboard"
+        aria-labelledby="admin-panel-title"
+        data-visible-for="admin"
+      >
+        <div class="panel__header">
+          <h2 id="admin-panel-title">Beheer</h2>
+          <p class="panel__subtitle">
+            Voeg nieuwe boeken toe aan de collectie en importeer leerlingaccounts via Excel.
+          </p>
+        </div>
+        <form id="admin-book-form" class="admin-form">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="admin-book-title">Titel</label>
+              <input id="admin-book-title" type="text" required />
+            </div>
+            <div class="form-field">
+              <label for="admin-book-author">Auteur</label>
+              <input id="admin-book-author" type="text" required />
+            </div>
+            <div class="form-field">
+              <label for="admin-book-barcode">Barcode</label>
+              <input id="admin-book-barcode" type="text" required autocomplete="off" />
+            </div>
+            <div class="form-field">
+              <label for="admin-folder-select">Map</label>
+              <select id="admin-folder-select">
+                <option value="">Geen map</option>
+              </select>
+            </div>
+            <div class="form-field form-field--checkbox">
+              <input id="admin-book-exam" type="checkbox" />
+              <label for="admin-book-exam">Geschikt voor de leeslijst</label>
+            </div>
+            <div class="form-field form-field--full">
+              <label for="admin-book-description">Korte beschrijving</label>
+              <textarea id="admin-book-description" rows="3"></textarea>
+            </div>
+          </div>
+          <button type="submit" class="btn">Boek opslaan</button>
+        </form>
+        <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
+
+        <section class="admin-import">
+          <h3>Leerlingaccounts importeren</h3>
+          <p class="hint">
+            Upload een Excelbestand (.xlsx) met kolommen voor naam, gebruikersnaam, wachtwoord en
+            optioneel klas. We maken automatisch accounts aan of werken bestaande bij.
+          </p>
+          <form id="student-import-form" class="admin-import__form">
+            <label for="student-import-file">Excelbestand kiezen</label>
+            <input id="student-import-file" type="file" accept=".xlsx,.xls" />
+            <button type="submit" class="btn btn--secondary">Importeren</button>
+          </form>
+          <p id="student-import-message" class="hint" role="status" aria-live="polite"></p>
+          <div id="student-import-results" class="import-results"></div>
+        </section>
+      </section>
+
+      <section
+        class="panel panel--staff hidden"
+        id="history-panel"
+        aria-labelledby="history-title"
+        data-visible-for="teacher,admin"
+      >
+        <div class="panel__header">
+          <h2 id="history-title">Laatste activiteit</h2>
+          <p class="panel__subtitle">Wie leende of bracht wat terug? Je ziet het hier.</p>
+        </div>
+        <ul class="history-list" id="history-list"></ul>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Gemaakt voor VSO Het Dok • Voor vragen over privacy of AVG, neem contact op met de beheerder.
+    </footer>
+
+    <template id="book-card-template">
+      <article class="book-card">
+        <header class="book-card__header">
+          <span class="book-card__folder"></span>
+          <span class="book-card__status"></span>
+        </header>
+        <h3 class="book-card__title"></h3>
+        <p class="book-card__author"></p>
+        <p class="book-card__description"></p>
+        <ul class="book-card__tags"></ul>
+      </article>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
