@@ -919,8 +919,8 @@ async function handleApi(req, res, requestUrl) {
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/students') {
-      if (!ensureRole(user, ['admin', 'teacher'])) {
-        return sendJson(res, 403, { message: 'Geen toestemming om leerlingen toe te voegen' });
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen leerlingaccounts aanmaken' });
       }
       const db = getDb();
       const body = await parseBody(req);
@@ -941,17 +941,6 @@ async function handleApi(req, res, requestUrl) {
       const validClassIds = requestedClassIds.filter((classId) =>
         db.classes.some((klass) => klass.id === classId)
       );
-      if (user.role === 'teacher') {
-        const teacherClassIds = db.classes
-          .filter((klass) => (klass.teacherIds || []).includes(user.id))
-          .map((klass) => klass.id);
-        const invalid = validClassIds.filter((classId) => !teacherClassIds.includes(classId));
-        if (invalid.length) {
-          return sendJson(res, 403, {
-            message: 'Je kunt alleen leerlingen aan je eigen klassen koppelen',
-          });
-        }
-      }
 
       const student = {
         id: crypto.randomUUID(),
@@ -985,24 +974,13 @@ async function handleApi(req, res, requestUrl) {
 
     const studentDeleteMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)$/);
     if (studentDeleteMatch && req.method === 'DELETE') {
-      if (!ensureRole(user, ['admin', 'teacher'])) {
-        return sendJson(res, 403, { message: 'Geen toestemming om leerlingen te verwijderen' });
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen leerlingaccounts verwijderen' });
       }
       const db = getDb();
       const student = findStudentById(db, studentDeleteMatch[1]);
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
-      }
-      if (user.role === 'teacher') {
-        const teacherClassIds = db.classes
-          .filter((klass) => (klass.teacherIds || []).includes(user.id))
-          .map((klass) => klass.id);
-        const hasSharedClass = (student.classIds || []).some((classId) => teacherClassIds.includes(classId));
-        if (!hasSharedClass && (student.classIds || []).length > 0) {
-          return sendJson(res, 403, {
-            message: 'Je kunt alleen leerlingen uit je eigen klassen verwijderen',
-          });
-        }
       }
       db.students = db.students.filter((entry) => entry.id !== student.id);
       for (const klass of db.classes) {
@@ -1325,10 +1303,15 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Je mag alleen je eigen klassen beheren' });
       }
       const body = await parseBody(req);
-      if (!body.studentId) {
-        return sendJson(res, 400, { message: 'Leerling-ID is verplicht' });
+      const studentId = typeof body.studentId === 'string' ? body.studentId.trim() : '';
+      const username = typeof body.username === 'string' ? body.username.trim() : '';
+      let student = null;
+      if (studentId) {
+        student = findStudentById(db, studentId);
       }
-      const student = findStudentById(db, body.studentId);
+      if (!student && username) {
+        student = findStudentByUsername(db, username);
+      }
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
@@ -1340,8 +1323,14 @@ async function handleApi(req, res, requestUrl) {
       if (!student.classIds.includes(klass.id)) {
         student.classIds.push(klass.id);
       }
+      appendHistory(db, {
+        type: 'class_student_added',
+        classId: klass.id,
+        studentId: student.id,
+        message: `${student.name} gekoppeld aan ${klass.name}`,
+      });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
     }
 
     const classStudentRemoveMatch = requestUrl.pathname.match(
@@ -1366,8 +1355,14 @@ async function handleApi(req, res, requestUrl) {
       }
       klass.studentIds = (klass.studentIds || []).filter((id) => id !== studentId);
       student.classIds = (student.classIds || []).filter((id) => id !== klass.id);
+      appendHistory(db, {
+        type: 'class_student_removed',
+        classId: klass.id,
+        studentId: student.id,
+        message: `${student.name} losgekoppeld van ${klass.name}`,
+      });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
     }
 
     return sendJson(res, 404, { message: 'Niet gevonden' });

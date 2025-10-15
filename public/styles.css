@@ -184,6 +184,10 @@ main {
   padding: 2rem clamp(1rem, 4vw, 4rem) 4rem;
   display: grid;
   gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
+  width: min(95vw, 1280px);
+  margin: 0 auto;
 }
 
 .hidden {
@@ -195,6 +199,7 @@ main {
   border-radius: var(--radius);
   padding: clamp(1.5rem, 2vw, 2.5rem);
   box-shadow: var(--panel-shadow, 0 15px 30px rgba(var(--brand-dark-rgb), 0.08));
+  width: 100%;
 }
 
 .panel--staff {
@@ -330,7 +335,7 @@ input[type='search'],
 input[type='password'],
 textarea {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 0.85rem;
   border-radius: 12px;
   border: 2px solid rgba(var(--brand-dark-rgb), 0.12);
   font-size: 1rem;
@@ -348,7 +353,14 @@ textarea:focus {
 
 textarea {
   resize: vertical;
-  min-height: 120px;
+  min-height: 72px;
+}
+
+select[multiple] {
+  min-height: 0;
+  max-height: 9.5rem;
+  overflow-y: auto;
+  padding-right: 0.6rem;
 }
 
 .visually-hidden {
@@ -370,6 +382,7 @@ textarea {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.75rem;
+  grid-column: 1 / -1;
 }
 
 .form-field--full {
@@ -436,14 +449,35 @@ textarea {
   box-shadow: 0 10px 18px rgba(247, 181, 0, 0.35);
 }
 
-.teacher-layout {
-  display: grid;
-  gap: 2rem;
+.btn--danger {
+  background: #e85d75;
+  color: #ffffff;
 }
 
-@media (min-width: 960px) {
+.btn--danger:not(:disabled):hover {
+  box-shadow: 0 10px 20px rgba(232, 93, 117, 0.35);
+}
+
+.teacher-layout {
+  display: grid;
+  gap: 1.75rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (min-width: 1080px) {
   .teacher-layout {
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 3fr 2fr;
+  }
+}
+
+.teacher-layout--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1080px) {
+  .teacher-layout--single {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -561,52 +595,195 @@ textarea {
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: center;
+  justify-content: flex-start;
 }
 
-.admin-book-list {
-  margin-top: 2rem;
+.form-grid--compact {
+  gap: 0.75rem;
+}
+
+.teacher-student-form {
   display: grid;
   gap: 1rem;
 }
 
-.admin-book-list__item {
-  background: #fff;
-  border-radius: 16px;
-  border: 1px solid rgba(var(--brand-dark-rgb), 0.14);
-  padding: 1rem 1.25rem;
+.teacher-student-form .btn {
+  justify-self: start;
+}
+
+.admin-dashboard {
+  display: grid;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.admin-detail {
   display: grid;
   gap: 0.75rem;
-  box-shadow: 0 10px 20px rgba(var(--brand-dark-rgb), 0.08);
 }
 
-.admin-book-list__header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem;
+.admin-detail__body {
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  border-radius: 14px;
+  padding: clamp(0.75rem, 1.4vw, 1.2rem);
+  background: rgba(255, 255, 255, 0.94);
+  min-height: 3.5rem;
+  display: grid;
+  gap: 0.85rem;
 }
 
-.admin-book-list__title {
-  font-weight: 700;
-}
-
-.admin-book-list__status {
-  font-weight: 600;
-  color: rgba(var(--brand-dark-rgb), 0.7);
-}
-
-.admin-book-list__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  font-size: 0.9rem;
+.admin-detail__body > p {
+  margin: 0;
   color: var(--muted);
 }
 
-.admin-book-list__actions {
+.admin-detail__body--empty {
+  border-style: dashed;
+  justify-content: center;
+  text-align: center;
+}
+
+.admin-class-details__summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  font-weight: 600;
+}
+
+.admin-class-details__students {
+  border-top: 1px solid rgba(var(--brand-dark-rgb), 0.1);
+  padding-top: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.admin-class-details__students ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-class-details__students li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-class-details__students li span {
+  font-size: 0.95rem;
+}
+
+.admin-class-details__students .btn {
+  margin-top: 0;
+}
+
+.admin-class-details__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.admin-class-details__form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-class-details__form .hint {
+  margin: 0;
+}
+
+.admin-class-details__add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-class-details__add select {
+  flex: 1 1 220px;
+}
+
+.admin-student-details__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.admin-student-details__section {
+  border-top: 1px solid rgba(var(--brand-dark-rgb), 0.1);
+  padding-top: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.admin-student-details__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-student-details__actions .btn {
+  margin-top: 0;
+}
+
+.admin-student-details__classes ul,
+.admin-student-details__loans ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-student-details__classes li,
+.admin-student-details__loans li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-student-details__classes .btn,
+.admin-student-details__loans .btn {
+  margin-top: 0;
+}
+
+.admin-card {
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 30px rgba(var(--brand-dark-rgb), 0.12);
+  padding: clamp(1rem, 1.6vw, 1.5rem);
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-card__intro {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-card h3 {
+  margin-top: 0;
+}
+
+.admin-card__section {
+  display: grid;
+  gap: 0.85rem;
+  padding: clamp(0.75rem, 1.5vw, 1.25rem);
+  border-radius: 14px;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.admin-card__section--import {
+  background: rgba(var(--accent-rgb), 0.06);
+  border-style: dashed;
 }
 
 .class-list--admin .class-card {
@@ -619,6 +796,14 @@ textarea {
   border-top: 1px solid rgba(var(--brand-dark-rgb), 0.14);
   display: grid;
   gap: 1rem;
+}
+
+.student-list--admin {
+  margin-top: 0.5rem;
+}
+
+.student-list--admin .student-list__item {
+  border-width: 1.5px;
 }
 
 .student-list {
@@ -658,14 +843,8 @@ textarea {
 .form-grid {
   display: grid;
   gap: 1rem;
-}
-
-.admin-import {
-  margin-top: 2.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid rgba(var(--brand-dark-rgb), 0.14);
-  display: grid;
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
 }
 
 .admin-import__form {
@@ -821,18 +1000,23 @@ textarea {
 }
 
 .summary {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
 .summary__item {
-  padding: 0.85rem 1.2rem;
+  padding: 1rem 1.2rem;
   border-radius: 14px;
   background: var(--accent-softer);
   border: 1px solid var(--accent-border);
   font-weight: 600;
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  text-align: center;
+  min-height: 90px;
 }
 
 .summary__item span {
@@ -856,6 +1040,24 @@ textarea {
   box-shadow: 0 10px 20px rgba(var(--brand-dark-rgb), 0.14);
   display: grid;
   gap: 0.75rem;
+}
+
+.book-card--selectable {
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.book-card--selectable:hover,
+.book-card--selectable:focus-visible {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 28px rgba(var(--brand-dark-rgb), 0.18);
+  border-color: rgba(var(--brand-dark-rgb), 0.24);
+  outline: none;
+}
+
+.book-card--selected {
+  border-color: var(--accent-border);
+  box-shadow: 0 20px 32px rgba(12, 109, 216, 0.2);
 }
 
 .book-card__header {
