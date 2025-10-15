@@ -563,8 +563,54 @@ textarea {
   align-items: center;
 }
 
+.form-grid--compact {
+  gap: 0.75rem;
+}
+
+.teacher-student-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.teacher-student-form .btn {
+  justify-self: start;
+}
+
+.admin-dashboard {
+  display: grid;
+  gap: 1.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.admin-card {
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 30px rgba(var(--brand-dark-rgb), 0.12);
+  padding: clamp(1.25rem, 1.8vw, 1.75rem);
+  display: grid;
+  gap: 1.25rem;
+}
+
+.admin-card h3 {
+  margin-top: 0;
+}
+
+.admin-card__section {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border-radius: 14px;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.admin-card__section--import {
+  background: rgba(var(--accent-rgb), 0.06);
+  border-style: dashed;
+}
+
 .admin-book-list {
-  margin-top: 2rem;
   display: grid;
   gap: 1rem;
 }
@@ -621,6 +667,14 @@ textarea {
   gap: 1rem;
 }
 
+.student-list--admin {
+  margin-top: 0.5rem;
+}
+
+.student-list--admin .student-list__item {
+  border-width: 1.5px;
+}
+
 .student-list {
   display: grid;
   gap: 0.75rem;
@@ -656,14 +710,6 @@ textarea {
 }
 
 .form-grid {
-  display: grid;
-  gap: 1rem;
-}
-
-.admin-import {
-  margin-top: 2.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid rgba(var(--brand-dark-rgb), 0.14);
   display: grid;
   gap: 1rem;
 }

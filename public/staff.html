@@ -86,56 +86,35 @@
             <div class="summary" id="summary"></div>
             <div class="book-grid" id="book-grid"></div>
           </div>
-          <div class="teacher-layout__classes">
+          <div class="teacher-layout__classes" data-role-only="teacher">
             <h3>Mijn klassen</h3>
             <p class="hint">
-              Voeg leerlingen toe of verwijder ze om het overzicht van jouw lessen actueel te houden.
+              Houd eenvoudig bij welke leerlingen aan jouw lessen gekoppeld zijn. Nieuwe klassen
+              worden door de beheerder aangemaakt.
             </p>
-            <form id="create-class-form" class="form-inline">
-              <label class="visually-hidden" for="new-class-name">Nieuwe klas</label>
-              <input
-                id="new-class-name"
-                type="text"
-                placeholder="Naam van nieuwe klas"
-                autocomplete="off"
-              />
-              <button type="submit" class="btn btn--secondary">Klas aanmaken</button>
-            </form>
             <p id="class-message" class="hint" role="status" aria-live="polite"></p>
             <div id="class-list" class="class-list"></div>
 
             <section class="teacher-students">
-              <h4>Leerlingen beheren</h4>
+              <h4>Leerlingen koppelen</h4>
               <p class="hint">
-                Voeg nieuwe leerlingen toe aan je klassen of verwijder accounts die niet meer nodig
-                zijn.
+                Gebruik een bestaande gebruikersnaam om een leerling aan jouw klas toe te voegen.
+                Accounts aanmaken of verwijderen gebeurt door de beheerder.
               </p>
-              <form id="teacher-student-form" class="admin-form admin-form--compact">
-                <div class="form-grid">
+              <form id="teacher-student-form" class="teacher-student-form">
+                <div class="form-grid form-grid--compact">
                   <div class="form-field">
-                    <label for="teacher-student-name">Naam</label>
-                    <input id="teacher-student-name" type="text" required />
-                  </div>
-                  <div class="form-field">
-                    <label for="teacher-student-username">Gebruikersnaam</label>
-                    <input id="teacher-student-username" type="text" required autocomplete="off" />
-                  </div>
-                  <div class="form-field">
-                    <label for="teacher-student-password">Tijdelijk wachtwoord</label>
-                    <input id="teacher-student-password" type="text" required autocomplete="off" />
-                  </div>
-                  <div class="form-field">
-                    <label for="teacher-student-grade">Klas/groep</label>
-                    <input id="teacher-student-grade" type="text" />
-                  </div>
-                  <div class="form-field form-field--full">
-                    <label for="teacher-student-class">Koppel aan klas</label>
-                    <select id="teacher-student-class">
-                      <option value="">Geen klas koppelen</option>
+                    <label for="teacher-student-class">Klas</label>
+                    <select id="teacher-student-class" required>
+                      <option value="">Kies een klas</option>
                     </select>
                   </div>
+                  <div class="form-field">
+                    <label for="teacher-student-username">Gebruikersnaam leerling</label>
+                    <input id="teacher-student-username" type="text" required autocomplete="off" />
+                  </div>
                 </div>
-                <button type="submit" class="btn btn--secondary">Leerling toevoegen</button>
+                <button type="submit" class="btn btn--secondary">Leerling koppelen</button>
               </form>
               <p id="teacher-student-message" class="hint" role="status" aria-live="polite"></p>
               <div id="teacher-student-list" class="student-list"></div>
@@ -156,88 +135,133 @@
             Voeg nieuwe boeken toe aan de collectie en importeer leerlingaccounts via Excel.
           </p>
         </div>
-        <form id="admin-book-form" class="admin-form" autocomplete="off">
-          <input id="admin-book-id" type="hidden" />
-          <div class="form-grid">
-            <div class="form-field">
-              <label for="admin-book-title">Titel</label>
-              <input id="admin-book-title" type="text" required />
-            </div>
-            <div class="form-field">
-              <label for="admin-book-author">Auteur</label>
-              <input id="admin-book-author" type="text" required />
-            </div>
-            <div class="form-field">
-              <label for="admin-book-barcode">Barcode</label>
-              <div class="form-field__group">
-                <input id="admin-book-barcode" type="text" required inputmode="numeric" />
-                <button id="admin-book-lookup" type="button" class="btn btn--ghost">
-                  Zoek boekinfo
-                </button>
+        <div class="admin-dashboard">
+          <section class="admin-card admin-card--books">
+            <h3>Boeken beheren</h3>
+            <p class="hint">
+              Voeg nieuwe titels toe, werk gegevens bij of verwijder boeken uit de collectie.
+            </p>
+            <form id="admin-book-form" class="admin-form" autocomplete="off">
+              <input id="admin-book-id" type="hidden" />
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="admin-book-title">Titel</label>
+                  <input id="admin-book-title" type="text" required />
+                </div>
+                <div class="form-field">
+                  <label for="admin-book-author">Auteur</label>
+                  <input id="admin-book-author" type="text" required />
+                </div>
+                <div class="form-field">
+                  <label for="admin-book-barcode">Barcode</label>
+                  <div class="form-field__group">
+                    <input id="admin-book-barcode" type="text" required inputmode="numeric" />
+                    <button id="admin-book-lookup" type="button" class="btn btn--ghost">
+                      Zoek boekinfo
+                    </button>
+                  </div>
+                  <p id="admin-book-lookup-message" class="hint" aria-live="polite"></p>
+                </div>
+                <div class="form-field">
+                  <label for="admin-folder-select">Map</label>
+                  <select id="admin-folder-select">
+                    <option value="">Geen map</option>
+                  </select>
+                </div>
+                <div class="form-field form-field--checkbox">
+                  <input id="admin-book-exam" type="checkbox" />
+                  <label for="admin-book-exam">Geschikt voor de leeslijst</label>
+                </div>
+                <div class="form-field form-field--full">
+                  <label for="admin-book-description">Korte beschrijving</label>
+                  <textarea id="admin-book-description" rows="3"></textarea>
+                </div>
               </div>
-              <p id="admin-book-lookup-message" class="hint" aria-live="polite"></p>
-            </div>
-            <div class="form-field">
-              <label for="admin-folder-select">Map</label>
-              <select id="admin-folder-select">
-                <option value="">Geen map</option>
-              </select>
-            </div>
-            <div class="form-field form-field--checkbox">
-              <input id="admin-book-exam" type="checkbox" />
-              <label for="admin-book-exam">Geschikt voor de leeslijst</label>
-            </div>
-            <div class="form-field form-field--full">
-              <label for="admin-book-description">Korte beschrijving</label>
-              <textarea id="admin-book-description" rows="3"></textarea>
-            </div>
-          </div>
-          <div class="admin-form__actions">
-            <button type="submit" class="btn" id="admin-book-submit">Boek opslaan</button>
-            <button type="button" class="btn btn--ghost hidden" id="admin-book-cancel">Annuleren</button>
-          </div>
-        </form>
-        <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
-
-        <div id="admin-book-list" class="admin-book-list"></div>
-
-        <section class="admin-classes">
-          <h3>Klassen beheren</h3>
-          <p class="hint">
-            Maak nieuwe klassen aan, koppel docenten en verwijder klassen die niet meer nodig zijn.
-          </p>
-          <form id="admin-class-form" class="admin-form admin-form--compact">
-            <div class="form-grid">
-              <div class="form-field">
-                <label for="admin-class-name">Naam van de klas</label>
-                <input id="admin-class-name" type="text" required />
+              <div class="admin-form__actions">
+                <button type="submit" class="btn" id="admin-book-submit">Boek opslaan</button>
+                <button type="button" class="btn btn--ghost hidden" id="admin-book-cancel">Annuleren</button>
               </div>
-              <div class="form-field form-field--full">
-                <label for="admin-class-teachers">Docenten</label>
-                <select id="admin-class-teachers" multiple></select>
-                <p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>
-              </div>
-            </div>
-            <button type="submit" class="btn">Klas opslaan</button>
-          </form>
-          <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
-          <div id="admin-class-list" class="class-list class-list--admin"></div>
-        </section>
+            </form>
+            <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
+            <div id="admin-book-list" class="admin-book-list"></div>
+          </section>
 
-        <section class="admin-import">
-          <h3>Leerlingaccounts importeren</h3>
-          <p class="hint">
-            Upload een Excelbestand (.xlsx) met kolommen voor naam, gebruikersnaam, wachtwoord en
-            optioneel klas. We maken automatisch accounts aan of werken bestaande bij.
-          </p>
-          <form id="student-import-form" class="admin-import__form">
-            <label for="student-import-file">Excelbestand kiezen</label>
-            <input id="student-import-file" type="file" accept=".xlsx,.xls" />
-            <button type="submit" class="btn btn--secondary">Importeren</button>
-          </form>
-          <p id="student-import-message" class="hint" role="status" aria-live="polite"></p>
-          <div id="student-import-results" class="import-results"></div>
-        </section>
+          <section class="admin-card admin-card--classes">
+            <div class="admin-card__section">
+              <h3>Klassen beheren</h3>
+              <p class="hint">
+                Maak nieuwe klassen aan, koppel docenten en houd de groepen overzichtelijk.
+              </p>
+              <form id="admin-class-form" class="admin-form admin-form--compact">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label for="admin-class-name">Naam van de klas</label>
+                    <input id="admin-class-name" type="text" required />
+                  </div>
+                  <div class="form-field form-field--full">
+                    <label for="admin-class-teachers">Docenten</label>
+                    <select id="admin-class-teachers" multiple></select>
+                    <p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>
+                  </div>
+                </div>
+                <button type="submit" class="btn">Klas opslaan</button>
+              </form>
+              <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
+              <div id="admin-class-list" class="class-list class-list--admin"></div>
+            </div>
+
+            <div class="admin-card__section">
+              <h3>Leerlingaccounts</h3>
+              <p class="hint">
+                Maak nieuwe leerlingaccounts aan of koppel bestaande accounts direct aan een klas.
+              </p>
+              <form id="admin-student-form" class="admin-form admin-form--compact">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label for="admin-student-name">Naam</label>
+                    <input id="admin-student-name" type="text" required />
+                  </div>
+                  <div class="form-field">
+                    <label for="admin-student-username">Gebruikersnaam</label>
+                    <input id="admin-student-username" type="text" required autocomplete="off" />
+                  </div>
+                  <div class="form-field">
+                    <label for="admin-student-password">Tijdelijk wachtwoord</label>
+                    <input id="admin-student-password" type="text" required autocomplete="off" />
+                  </div>
+                  <div class="form-field">
+                    <label for="admin-student-grade">Klas/groep</label>
+                    <input id="admin-student-grade" type="text" autocomplete="off" />
+                  </div>
+                  <div class="form-field form-field--full">
+                    <label for="admin-student-class">Koppel aan klas</label>
+                    <select id="admin-student-class">
+                      <option value="">Geen klas koppelen</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" class="btn btn--secondary">Account aanmaken</button>
+              </form>
+              <p id="admin-student-message" class="hint" role="status" aria-live="polite"></p>
+              <div id="admin-student-list" class="student-list student-list--admin"></div>
+            </div>
+
+            <div class="admin-card__section admin-card__section--import">
+              <h3>Leerlingaccounts importeren</h3>
+              <p class="hint">
+                Upload een Excelbestand (.xlsx) met kolommen voor naam, gebruikersnaam, wachtwoord en
+                optioneel klas. Accounts worden automatisch aangemaakt of bijgewerkt.
+              </p>
+              <form id="student-import-form" class="admin-import__form">
+                <label for="student-import-file">Excelbestand kiezen</label>
+                <input id="student-import-file" type="file" accept=".xlsx,.xls" />
+                <button type="submit" class="btn btn--secondary">Importeren</button>
+              </form>
+              <p id="student-import-message" class="hint" role="status" aria-live="polite"></p>
+              <div id="student-import-results" class="import-results"></div>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section

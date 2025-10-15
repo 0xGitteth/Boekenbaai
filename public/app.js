@@ -543,6 +543,7 @@ function initStaffPage() {
   const loginPassword = document.querySelector('#login-password');
   const loginMessage = document.querySelector('#login-message');
   const staffSections = document.querySelectorAll('[data-visible-for]');
+  const roleSpecificSections = document.querySelectorAll('[data-role-only]');
   const staffName = document.querySelector('#staff-name');
   const staffRole = document.querySelector('#staff-role');
   const logoutButton = document.querySelector('#logout-button');
@@ -554,8 +555,6 @@ function initStaffPage() {
   const historyList = document.querySelector('#history-list');
   const classList = document.querySelector('#class-list');
   const classMessage = document.querySelector('#class-message');
-  const createClassForm = document.querySelector('#create-class-form');
-  const newClassNameInput = document.querySelector('#new-class-name');
   const adminBookForm = document.querySelector('#admin-book-form');
   const adminBookIdInput = document.querySelector('#admin-book-id');
   const adminBookTitle = document.querySelector('#admin-book-title');
@@ -575,15 +574,20 @@ function initStaffPage() {
   const adminClassTeachersSelect = document.querySelector('#admin-class-teachers');
   const adminClassMessage = document.querySelector('#admin-class-message');
   const adminClassList = document.querySelector('#admin-class-list');
+  const adminStudentForm = document.querySelector('#admin-student-form');
+  const adminStudentNameInput = document.querySelector('#admin-student-name');
+  const adminStudentUsernameInput = document.querySelector('#admin-student-username');
+  const adminStudentPasswordInput = document.querySelector('#admin-student-password');
+  const adminStudentGradeInput = document.querySelector('#admin-student-grade');
+  const adminStudentClassSelect = document.querySelector('#admin-student-class');
+  const adminStudentMessage = document.querySelector('#admin-student-message');
+  const adminStudentList = document.querySelector('#admin-student-list');
   const studentImportForm = document.querySelector('#student-import-form');
   const studentImportFile = document.querySelector('#student-import-file');
   const studentImportMessage = document.querySelector('#student-import-message');
   const studentImportResults = document.querySelector('#student-import-results');
   const teacherStudentForm = document.querySelector('#teacher-student-form');
-  const teacherStudentNameInput = document.querySelector('#teacher-student-name');
   const teacherStudentUsernameInput = document.querySelector('#teacher-student-username');
-  const teacherStudentPasswordInput = document.querySelector('#teacher-student-password');
-  const teacherStudentGradeInput = document.querySelector('#teacher-student-grade');
   const teacherStudentClassSelect = document.querySelector('#teacher-student-class');
   const teacherStudentMessage = document.querySelector('#teacher-student-message');
   const teacherStudentList = document.querySelector('#teacher-student-list');
@@ -601,6 +605,14 @@ function initStaffPage() {
     loginPanel?.classList.toggle('hidden', loggedIn);
     staffSections.forEach((section) => {
       const roles = (section.dataset.visibleFor || '')
+        .split(',')
+        .map((role) => role.trim())
+        .filter(Boolean);
+      const show = loggedIn && roles.includes(authUser.role);
+      section.classList.toggle('hidden', !show);
+    });
+    roleSpecificSections.forEach((section) => {
+      const roles = (section.dataset.roleOnly || '')
         .split(',')
         .map((role) => role.trim())
         .filter(Boolean);
@@ -630,6 +642,12 @@ function initStaffPage() {
       adminClassMessage && (adminClassMessage.textContent = '');
       adminClassList && (adminClassList.innerHTML = '');
       adminClassTeachersSelect && (adminClassTeachersSelect.innerHTML = '');
+      adminStudentMessage && (adminStudentMessage.textContent = '');
+      adminStudentList && (adminStudentList.innerHTML = '');
+      if (adminStudentClassSelect) {
+        adminStudentClassSelect.innerHTML = '<option value="">Geen klas koppelen</option>';
+      }
+      adminStudentForm && adminStudentForm.reset();
       teacherStudentMessage && (teacherStudentMessage.textContent = '');
       teacherStudentList && (teacherStudentList.innerHTML = '');
       teacherStudentForm && teacherStudentForm.reset();
@@ -841,59 +859,178 @@ function initStaffPage() {
   }
 
   function renderTeacherStudentClassSelect() {
-    if (!teacherStudentClassSelect) return;
-    const availableClasses = authUser?.role === 'admin'
-      ? classes
-      : classes.filter((klass) => (klass.teacherIds || []).includes(authUser?.id));
-    teacherStudentClassSelect.innerHTML = '<option value="">Geen klas koppelen</option>';
-    for (const klass of availableClasses) {
-      const option = document.createElement('option');
-      option.value = klass.id;
-      option.textContent = klass.name;
-      teacherStudentClassSelect.append(option);
+    if (teacherStudentClassSelect) {
+      const teacherClasses = authUser?.role === 'admin'
+        ? classes
+        : classes.filter((klass) => (klass.teacherIds || []).includes(authUser?.id));
+      teacherStudentClassSelect.innerHTML = '<option value="">Kies een klas</option>';
+      for (const klass of teacherClasses) {
+        const option = document.createElement('option');
+        option.value = klass.id;
+        option.textContent = klass.name;
+        teacherStudentClassSelect.append(option);
+      }
+      teacherStudentClassSelect.disabled = teacherClasses.length === 0;
+    }
+    if (adminStudentClassSelect) {
+      const current = adminStudentClassSelect.value;
+      adminStudentClassSelect.innerHTML = '<option value="">Geen klas koppelen</option>';
+      for (const klass of classes) {
+        const option = document.createElement('option');
+        option.value = klass.id;
+        option.textContent = klass.name;
+        adminStudentClassSelect.append(option);
+      }
+      adminStudentClassSelect.value = current;
     }
   }
 
   function renderTeacherStudents() {
     if (!teacherStudentList) return;
     const allowed = authUser && (authUser.role === 'teacher' || authUser.role === 'admin');
+    teacherStudentList.innerHTML = '';
     if (!allowed) {
-      teacherStudentList.innerHTML = '';
       return;
     }
     const teacherClassIds = getTeacherClassIds();
-    const relevantStudents = authUser.role === 'admin'
-      ? students
-      : students.filter((student) => (student.classIds || []).some((id) => teacherClassIds.includes(id)));
-    teacherStudentList.innerHTML = '';
+    const relevantStudents = students.filter((student) =>
+      (student.classIds || []).some((id) => teacherClassIds.includes(id))
+    );
     if (!relevantStudents.length) {
-      teacherStudentList.innerHTML = '<p>Nog geen leerlingen gekoppeld aan jouw klassen.</p>';
+      teacherStudentList.innerHTML =
+        '<p>Nog geen leerlingen gekoppeld aan jouw klassen.</p>';
       return;
     }
     for (const student of relevantStudents) {
-      const studentClasses = (student.classIds || [])
-        .map((classId) => classes.find((klass) => klass.id === classId)?.name)
-        .filter(Boolean);
       const borrowed = student.borrowedBooks?.length || 0;
+      const studentClasses = (student.classIds || [])
+        .map((classId) => classes.find((klass) => klass.id === classId))
+        .filter(Boolean);
+      const sharedClassIds = (student.classIds || []).filter((classId) =>
+        teacherClassIds.includes(classId)
+      );
+
       const item = document.createElement('article');
       item.className = 'student-list__item';
-      item.innerHTML = `
-        <strong>${student.name}</strong>
-        <div class="student-list__meta">
-          <span>Gebruikersnaam: ${student.username}</span>
-          <span>Klas: ${student.grade || 'Onbekend'}</span>
-          <span>${borrowed} uitgeleende boek(en)</span>
-        </div>
-        <div class="student-list__meta">
-          <span>Gekoppeld aan: ${studentClasses.length ? studentClasses.join(', ') : 'geen klassen'}</span>
-        </div>
-        <div class="student-list__actions">
-          <button class="btn btn--ghost" type="button" data-remove-student-account data-student-id="${student.id}">
-            Account verwijderen
-          </button>
-        </div>
-      `;
+
+      const title = document.createElement('strong');
+      title.textContent = student.name;
+      item.append(title);
+
+      const metaLine = document.createElement('div');
+      metaLine.className = 'student-list__meta';
+      const usernameSpan = document.createElement('span');
+      usernameSpan.textContent = `Gebruikersnaam: ${student.username}`;
+      const gradeSpan = document.createElement('span');
+      gradeSpan.textContent = `Klas: ${student.grade || 'Onbekend'}`;
+      const borrowedSpan = document.createElement('span');
+      borrowedSpan.textContent = `${borrowed} uitgeleende boek(en)`;
+      metaLine.append(usernameSpan, gradeSpan, borrowedSpan);
+      item.append(metaLine);
+
+      const classesLine = document.createElement('div');
+      classesLine.className = 'student-list__meta';
+      const classesInfo = document.createElement('span');
+      classesInfo.textContent = studentClasses.length
+        ? `Gekoppeld aan: ${studentClasses.map((klass) => klass.name).join(', ')}`
+        : 'Nog niet gekoppeld aan een klas';
+      classesLine.append(classesInfo);
+      item.append(classesLine);
+
+      const actions = document.createElement('div');
+      actions.className = 'student-list__actions';
+      if (!sharedClassIds.length) {
+        const note = document.createElement('span');
+        note.className = 'hint';
+        note.textContent = 'Geen gedeelde klassen om te beheren.';
+        actions.append(note);
+      } else {
+        for (const classId of sharedClassIds) {
+          const klass = classes.find((entry) => entry.id === classId);
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'btn btn--ghost';
+          button.dataset.removeFromClass = 'true';
+          button.dataset.classId = classId;
+          button.dataset.studentId = student.id;
+          button.textContent = klass ? `Uit ${klass.name} verwijderen` : 'Verwijderen uit klas';
+          actions.append(button);
+        }
+      }
+      item.append(actions);
+
       teacherStudentList.append(item);
+    }
+  }
+
+  function renderAdminStudents() {
+    if (!adminStudentList) return;
+    if (!authUser || authUser.role !== 'admin') {
+      adminStudentList.innerHTML = '';
+      return;
+    }
+    adminStudentList.innerHTML = '';
+    if (!students.length) {
+      adminStudentList.innerHTML = '<p>Er zijn nog geen leerlingaccounts.</p>';
+      return;
+    }
+    for (const student of students) {
+      const borrowed = student.borrowedBooks?.length || 0;
+      const studentClasses = (student.classIds || [])
+        .map((classId) => classes.find((klass) => klass.id === classId))
+        .filter(Boolean);
+
+      const item = document.createElement('article');
+      item.className = 'student-list__item';
+
+      const title = document.createElement('strong');
+      title.textContent = student.name;
+      item.append(title);
+
+      const metaLine = document.createElement('div');
+      metaLine.className = 'student-list__meta';
+      const usernameSpan = document.createElement('span');
+      usernameSpan.textContent = `Gebruikersnaam: ${student.username}`;
+      const gradeSpan = document.createElement('span');
+      gradeSpan.textContent = `Klas: ${student.grade || 'Onbekend'}`;
+      const borrowedSpan = document.createElement('span');
+      borrowedSpan.textContent = `${borrowed} uitgeleende boek(en)`;
+      metaLine.append(usernameSpan, gradeSpan, borrowedSpan);
+      item.append(metaLine);
+
+      const classesLine = document.createElement('div');
+      classesLine.className = 'student-list__meta';
+      const classesInfo = document.createElement('span');
+      classesInfo.textContent = studentClasses.length
+        ? `Gekoppeld aan: ${studentClasses.map((klass) => klass.name).join(', ')}`
+        : 'Nog niet gekoppeld aan een klas';
+      classesLine.append(classesInfo);
+      item.append(classesLine);
+
+      const actions = document.createElement('div');
+      actions.className = 'student-list__actions';
+      if (studentClasses.length) {
+        for (const klass of studentClasses) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'btn btn--ghost';
+          button.dataset.removeFromClass = 'true';
+          button.dataset.classId = klass.id;
+          button.dataset.studentId = student.id;
+          button.textContent = `Uit ${klass.name} verwijderen`;
+          actions.append(button);
+        }
+      }
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'btn btn--ghost';
+      deleteButton.dataset.removeStudentAccount = 'true';
+      deleteButton.dataset.studentId = student.id;
+      deleteButton.textContent = 'Account verwijderen';
+      actions.append(deleteButton);
+      item.append(actions);
+
+      adminStudentList.append(item);
     }
   }
 
@@ -1029,6 +1166,7 @@ function initStaffPage() {
   async function loadStudents() {
     students = await fetchJson('/api/students');
     renderTeacherStudents();
+    renderAdminStudents();
   }
 
   function renderClasses() {
@@ -1080,43 +1218,45 @@ function initStaffPage() {
       }
       article.append(memberList);
 
-      const form = document.createElement('form');
-      form.className = 'class-card__form';
-      const availableStudents = students.filter(
-        (student) => !(klass.studentIds || []).includes(student.id)
-      );
-      const options = [
-        '<option value="">Kies een leerling…</option>',
-        ...availableStudents.map(
-          (student) =>
-            `<option value="${student.id}">${student.name} (${student.grade || 'leerling'})</option>`
-        ),
-      ].join('');
-      form.innerHTML = `
-        <label for="add-${klass.id}">Leerling toevoegen</label>
-        <select id="add-${klass.id}" required>${options}</select>
-        <button type="submit" class="btn btn--secondary">Toevoegen</button>
-      `;
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const select = form.querySelector('select');
-        if (!select?.value) return;
-        try {
-          await fetchJson(`/api/classes/${klass.id}/students`, {
-            method: 'POST',
-            body: { studentId: select.value },
-          });
-          if (classMessage) {
-            classMessage.textContent = 'Leerling gekoppeld aan de klas.';
+      if (authUser?.role === 'admin') {
+        const form = document.createElement('form');
+        form.className = 'class-card__form';
+        const availableStudents = students.filter(
+          (student) => !(klass.studentIds || []).includes(student.id)
+        );
+        const options = [
+          '<option value="">Kies een leerling…</option>',
+          ...availableStudents.map(
+            (student) =>
+              `<option value="${student.id}">${student.name} (${student.grade || 'leerling'})</option>`
+          ),
+        ].join('');
+        form.innerHTML = `
+          <label for="add-${klass.id}">Leerling toevoegen</label>
+          <select id="add-${klass.id}" required>${options}</select>
+          <button type="submit" class="btn btn--secondary">Toevoegen</button>
+        `;
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const select = form.querySelector('select');
+          if (!select?.value) return;
+          try {
+            await fetchJson(`/api/classes/${klass.id}/students`, {
+              method: 'POST',
+              body: { studentId: select.value },
+            });
+            if (classMessage) {
+              classMessage.textContent = 'Leerling gekoppeld aan de klas.';
+            }
+            await refreshStaffData();
+          } catch (error) {
+            if (classMessage) {
+              classMessage.textContent = error.message;
+            }
           }
-          await refreshStaffData();
-        } catch (error) {
-          if (classMessage) {
-            classMessage.textContent = error.message;
-          }
-        }
-      });
-      article.append(form);
+        });
+        article.append(form);
+      }
 
       classList.append(article);
     }
@@ -1128,6 +1268,7 @@ function initStaffPage() {
     renderTeacherStudentClassSelect();
     renderAdminClasses();
     renderTeacherStudents();
+    renderAdminStudents();
   }
 
   async function loadTeachers() {
@@ -1204,48 +1345,28 @@ function initStaffPage() {
     renderBooks();
   });
 
-  createClassForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (!authUser || authUser.role !== 'admin') {
-      if (classMessage) {
-        classMessage.textContent = 'Alleen beheerders kunnen klassen aanmaken.';
-      }
-      return;
-    }
-    const name = newClassNameInput.value.trim();
-    if (!name) {
-      if (classMessage) {
-        classMessage.textContent = 'Geef een naam op voor de klas.';
-      }
-      return;
-    }
-    try {
-      await fetchJson('/api/classes', {
-        method: 'POST',
-        body: { name },
-      });
-      newClassNameInput.value = '';
-      if (classMessage) {
-        classMessage.textContent = 'Nieuwe klas aangemaakt.';
-      }
-      await refreshStaffData();
-    } catch (error) {
-      if (classMessage) {
-        classMessage.textContent = error.message;
-      }
-    }
-  });
-
   classList?.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-remove-student]');
     if (!button) return;
     const classId = button.dataset.classId;
     const studentId = button.dataset.studentId;
     if (!classId || !studentId) return;
+    if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
+      if (classMessage) {
+        classMessage.textContent = 'Alleen medewerkers kunnen leerlingen beheren.';
+      }
+      return;
+    }
+    if (!window.confirm('Leerling uit deze klas verwijderen?')) {
+      return;
+    }
     try {
       await fetchJson(`/api/classes/${classId}/students/${studentId}`, { method: 'DELETE' });
       if (classMessage) {
-        classMessage.textContent = 'Leerling verwijderd uit de klas.';
+        const klass = classes.find((entry) => entry.id === classId);
+        classMessage.textContent = klass
+          ? `Leerling verwijderd uit ${klass.name}.`
+          : 'Leerling verwijderd uit de klas.';
       }
       await refreshStaffData();
     } catch (error) {
@@ -1409,38 +1530,38 @@ function initStaffPage() {
   teacherStudentForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
-      teacherStudentMessage.textContent = 'Alleen docenten of beheerders kunnen leerlingen toevoegen.';
+      teacherStudentMessage.textContent = 'Alleen docenten of beheerders kunnen leerlingen koppelen.';
       return;
     }
-    const name = teacherStudentNameInput.value.trim();
-    const username = teacherStudentUsernameInput.value.trim();
-    const password = teacherStudentPasswordInput.value.trim();
-    const grade = teacherStudentGradeInput.value.trim();
     const classId = teacherStudentClassSelect?.value || '';
-    if (!name || !username || !password) {
-      teacherStudentMessage.textContent = 'Naam, gebruikersnaam en wachtwoord zijn verplicht.';
+    const username = teacherStudentUsernameInput?.value?.trim() || '';
+    if (!classId) {
+      teacherStudentMessage.textContent = 'Kies eerst een klas.';
+      return;
+    }
+    if (!username) {
+      teacherStudentMessage.textContent = 'Vul een gebruikersnaam in.';
       return;
     }
     const teacherClassIds = getTeacherClassIds();
-    if (authUser.role === 'teacher' && classId && !teacherClassIds.includes(classId)) {
+    if (authUser.role === 'teacher' && !teacherClassIds.includes(classId)) {
       teacherStudentMessage.textContent = 'Je kunt alleen leerlingen aan je eigen klassen koppelen.';
       return;
     }
-    const payload = {
-      name,
-      username,
-      password,
-      grade,
-      classIds: classId ? [classId] : [],
-    };
     try {
-      const result = await fetchJson('/api/students', {
+      const result = await fetchJson(`/api/classes/${classId}/students`, {
         method: 'POST',
-        body: payload,
+        body: { username },
       });
-      teacherStudentForm.reset();
-      const tempPassword = result?.temporaryPassword || password;
-      teacherStudentMessage.textContent = `Leerling aangemaakt. Tijdelijk wachtwoord: ${tempPassword}.`;
+      if (teacherStudentUsernameInput) {
+        teacherStudentUsernameInput.value = '';
+        teacherStudentUsernameInput.focus();
+      }
+      const klass = classes.find((entry) => entry.id === classId);
+      const studentName = result?.student?.name || username;
+      teacherStudentMessage.textContent = klass
+        ? `${studentName} is gekoppeld aan ${klass.name}.`
+        : `${studentName} is gekoppeld.`;
       await refreshStaffData();
     } catch (error) {
       teacherStudentMessage.textContent = error.message;
@@ -1448,23 +1569,70 @@ function initStaffPage() {
   });
 
   teacherStudentList?.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-remove-student-account]');
+    const button = event.target.closest('[data-remove-from-class]');
     if (!button) return;
     if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
-      teacherStudentMessage.textContent = 'Alleen docenten of beheerders kunnen leerlingen verwijderen.';
+      teacherStudentMessage.textContent = 'Alleen docenten of beheerders kunnen leerlingen beheren.';
       return;
     }
+    const classId = button.dataset.classId;
     const studentId = button.dataset.studentId;
+    if (!classId || !studentId) return;
+    const klass = classes.find((entry) => entry.id === classId);
+    if (!window.confirm('Leerling uit deze klas verwijderen?')) {
+      return;
+    }
+    try {
+      await fetchJson(`/api/classes/${classId}/students/${studentId}`, { method: 'DELETE' });
+      teacherStudentMessage.textContent = klass
+        ? `Leerling verwijderd uit ${klass.name}.`
+        : 'Leerling verwijderd uit de klas.';
+      await refreshStaffData();
+    } catch (error) {
+      teacherStudentMessage.textContent = error.message;
+    }
+  });
+
+  adminStudentList?.addEventListener('click', async (event) => {
+    const removeFromClassButton = event.target.closest('[data-remove-from-class]');
+    if (removeFromClassButton) {
+      if (!authUser || authUser.role !== 'admin') {
+        adminStudentMessage.textContent = 'Alleen beheerders kunnen klas-koppelingen wijzigen.';
+        return;
+      }
+      const classId = removeFromClassButton.dataset.classId;
+      const studentId = removeFromClassButton.dataset.studentId;
+      if (!classId || !studentId) return;
+      const klass = classes.find((entry) => entry.id === classId);
+      try {
+        await fetchJson(`/api/classes/${classId}/students/${studentId}`, { method: 'DELETE' });
+        adminStudentMessage.textContent = klass
+          ? `Leerling verwijderd uit ${klass.name}.`
+          : 'Leerling verwijderd uit de klas.';
+        await refreshStaffData();
+      } catch (error) {
+        adminStudentMessage.textContent = error.message;
+      }
+      return;
+    }
+
+    const deleteButton = event.target.closest('[data-remove-student-account]');
+    if (!deleteButton) return;
+    if (!authUser || authUser.role !== 'admin') {
+      adminStudentMessage.textContent = 'Alleen beheerders kunnen leerlingaccounts verwijderen.';
+      return;
+    }
+    const studentId = deleteButton.dataset.studentId;
     if (!studentId) return;
     if (!window.confirm('Weet je zeker dat je dit leerlingaccount wilt verwijderen?')) {
       return;
     }
     try {
       await fetchJson(`/api/students/${studentId}`, { method: 'DELETE' });
-      teacherStudentMessage.textContent = 'Leerlingaccount verwijderd.';
+      adminStudentMessage.textContent = 'Leerlingaccount verwijderd.';
       await refreshStaffData();
     } catch (error) {
-      teacherStudentMessage.textContent = error.message;
+      adminStudentMessage.textContent = error.message;
     }
   });
 
@@ -1501,6 +1669,43 @@ function initStaffPage() {
       await refreshStaffData();
     } catch (error) {
       adminBookMessage.textContent = error.message;
+    }
+  });
+
+  adminStudentForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      adminStudentMessage.textContent = 'Alleen beheerders kunnen leerlingaccounts aanmaken.';
+      return;
+    }
+    const name = adminStudentNameInput?.value?.trim() || '';
+    const username = adminStudentUsernameInput?.value?.trim() || '';
+    const password = adminStudentPasswordInput?.value?.trim() || '';
+    const grade = adminStudentGradeInput?.value?.trim() || '';
+    const classId = adminStudentClassSelect?.value || '';
+    if (!name || !username || !password) {
+      adminStudentMessage.textContent = 'Naam, gebruikersnaam en wachtwoord zijn verplicht.';
+      return;
+    }
+    const payload = {
+      name,
+      username,
+      password,
+      grade,
+      classIds: classId ? [classId] : [],
+    };
+    try {
+      const result = await fetchJson('/api/students', {
+        method: 'POST',
+        body: payload,
+      });
+      adminStudentForm.reset();
+      adminStudentMessage.textContent = `Leerling aangemaakt. Tijdelijk wachtwoord: ${
+        result?.temporaryPassword || password
+      }.`;
+      await refreshStaffData();
+    } catch (error) {
+      adminStudentMessage.textContent = error.message;
     }
   });
 
