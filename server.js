@@ -1406,17 +1406,6 @@ server.listen(PORT, () => {
   console.log(`Boekenbaai server draait op http://localhost:${PORT}`);
 });
 
-server.on('error', (error) => {
-  if (error && error.code === 'EADDRINUSE') {
-    console.error(
-      `Kan niet starten: poort ${PORT} is al in gebruik. Controleer of er al een Boekenbaai-server draait.`
-    );
-    process.exit(1);
-  }
-  console.error('Onverwachte fout vanuit de HTTP-server:', error);
-  process.exit(1);
-});
-
 let shuttingDown = false;
 
 function gracefulShutdown(signal) {
