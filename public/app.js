@@ -543,6 +543,7 @@ function initStaffPage() {
   const loginPassword = document.querySelector('#login-password');
   const loginMessage = document.querySelector('#login-message');
   const staffSections = document.querySelectorAll('[data-visible-for]');
+  const roleSpecificSections = document.querySelectorAll('[data-role-only]');
   const staffName = document.querySelector('#staff-name');
   const staffRole = document.querySelector('#staff-role');
   const logoutButton = document.querySelector('#logout-button');
@@ -604,6 +605,14 @@ function initStaffPage() {
     loginPanel?.classList.toggle('hidden', loggedIn);
     staffSections.forEach((section) => {
       const roles = (section.dataset.visibleFor || '')
+        .split(',')
+        .map((role) => role.trim())
+        .filter(Boolean);
+      const show = loggedIn && roles.includes(authUser.role);
+      section.classList.toggle('hidden', !show);
+    });
+    roleSpecificSections.forEach((section) => {
+      const roles = (section.dataset.roleOnly || '')
         .split(',')
         .map((role) => role.trim())
         .filter(Boolean);
