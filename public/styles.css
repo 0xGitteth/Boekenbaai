@@ -522,9 +522,137 @@ textarea {
   align-self: start;
 }
 
+.class-card__form--admin select {
+  min-height: 160px;
+}
+
+.class-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .admin-form {
   display: grid;
   gap: 1.5rem;
+}
+
+.admin-form--compact {
+  gap: 1rem;
+}
+
+.form-field__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.form-field__group input {
+  flex: 1 1 220px;
+}
+
+.form-field__group .btn {
+  margin-top: 0;
+}
+
+.admin-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.admin-book-list {
+  margin-top: 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-book-list__item {
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.14);
+  padding: 1rem 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+  box-shadow: 0 10px 20px rgba(var(--brand-dark-rgb), 0.08);
+}
+
+.admin-book-list__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-book-list__title {
+  font-weight: 700;
+}
+
+.admin-book-list__status {
+  font-weight: 600;
+  color: rgba(var(--brand-dark-rgb), 0.7);
+}
+
+.admin-book-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.admin-book-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.class-list--admin .class-card {
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.14);
+}
+
+.teacher-students {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(var(--brand-dark-rgb), 0.14);
+  display: grid;
+  gap: 1rem;
+}
+
+.student-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.student-list__item {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.1);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  box-shadow: 0 6px 16px rgba(var(--brand-dark-rgb), 0.08);
+}
+
+.student-list__item strong {
+  font-size: 1.05rem;
+}
+
+.student-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.student-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .form-grid {

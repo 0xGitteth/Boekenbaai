@@ -34,6 +34,7 @@ const configuredStaticDir = process.env.BOEKENBAAI_STATIC_DIR
   : null;
 
 const PUBLIC_API_BASE = process.env.BOEKENBAAI_PUBLIC_API_BASE || '';
+const ISBN_API_BASE = process.env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api';
 
 const STATIC_DIR = (() => {
   const candidates = [configuredStaticDir, DIST_DIR, PUBLIC_DIR].filter(Boolean);
@@ -61,6 +62,7 @@ const EMPTY_DB = {
   folders: [],
   classes: [],
   users: [],
+  history: [],
 };
 
 function ensureParentDirectory(filePath) {
@@ -86,6 +88,7 @@ console.log(`Boekenbaai gebruikt data-bestand: ${DATA_PATH}`);
 console.log(`Boekenbaai serveert statische bestanden uit: ${STATIC_DIR}`);
 
 const sessions = new Map();
+const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
 
 function isOriginAllowed(origin, requestUrl) {
   if (!origin) return false;
@@ -132,6 +135,7 @@ function loadDb() {
   if (!Array.isArray(data.users)) data.users = [];
   if (!Array.isArray(data.classes)) data.classes = [];
   if (!Array.isArray(data.students)) data.students = [];
+  if (!Array.isArray(data.history)) data.history = [];
   data.students = data.students.map(ensureStudentShape);
   return data;
 }
@@ -227,6 +231,192 @@ function isUsernameTaken(db, username, { allowStudentId = null } = {}) {
     }
     return (student.username || '').toLowerCase() === normalized;
   });
+}
+
+function toArray(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function toStringList(value) {
+  return toArray(value)
+    .map((entry) => {
+      if (!entry) return null;
+      if (typeof entry === 'string') return entry;
+      if (typeof entry === 'object') {
+        return entry.name || entry.full_name || entry.label || entry.value || entry.text || null;
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function sanitizeIsbn(value) {
+  if (!value) return '';
+  return String(value).replace(/[^0-9X]/gi, '');
+}
+
+function parseIsbnBarcodeData(data, fallbackBarcode) {
+  if (!data || typeof data !== 'object') return null;
+  const title = data.title || data.book_title || data.item_name || data.name || '';
+  const authorStrings = toStringList(data.author || data.author_name || data.authors || data.contributors);
+  const author = typeof data.author === 'string'
+    ? data.author
+    : authorStrings[0] || '';
+  const description = typeof data.description === 'string'
+    ? data.description
+    : data.description?.value || data.synopsis || data.summary || '';
+  const publisher = toStringList(data.publisher || data.publisher_name || data.publishers).join(', ');
+  const publishedAt = data.publish_date || data.publication_date || '';
+  const language = toStringList(data.language || data.languages || data.language_name).join(', ');
+  if (!title && !author && !description && !publisher) {
+    return null;
+  }
+  return {
+    barcode: sanitizeIsbn(data.isbn || data.ean || fallbackBarcode),
+    title,
+    author,
+    authors: authorStrings,
+    description,
+    publisher,
+    publishedAt,
+    language,
+    source: 'isbnbarcode.org',
+    found: true,
+  };
+}
+
+function parseOpenLibraryData(data, fallbackBarcode) {
+  if (!data || typeof data !== 'object') return null;
+  const title = data.title || '';
+  const authorStrings = toStringList(data.authors);
+  if (!authorStrings.length && typeof data.by_statement === 'string') {
+    authorStrings.push(data.by_statement);
+  }
+  const author = authorStrings[0] || '';
+  const description = typeof data.description === 'string'
+    ? data.description
+    : data.description?.value || '';
+  const publisher = toStringList(data.publishers).join(', ');
+  const publishedAt = data.publish_date || '';
+  const language = toArray(data.languages)
+    .map((entry) => {
+      if (typeof entry === 'string') return entry;
+      if (entry && typeof entry === 'object' && typeof entry.key === 'string') {
+        return entry.key.split('/').pop();
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .join(', ');
+  if (!title && !author && !description && !publisher) {
+    return null;
+  }
+  return {
+    barcode: sanitizeIsbn((data.isbn_13 && data.isbn_13[0]) || (data.isbn_10 && data.isbn_10[0]) || fallbackBarcode),
+    title,
+    author,
+    authors: authorStrings,
+    description,
+    publisher,
+    publishedAt,
+    language,
+    source: 'openlibrary',
+    found: true,
+  };
+}
+
+async function lookupIsbnMetadata(isbn) {
+  const sanitized = sanitizeIsbn(isbn);
+  if (!sanitized) {
+    return {
+      barcode: '',
+      title: '',
+      author: '',
+      authors: [],
+      description: '',
+      publisher: '',
+      publishedAt: '',
+      language: '',
+      source: 'unknown',
+      found: false,
+    };
+  }
+  if (!globalFetch) {
+    return {
+      barcode: sanitized,
+      title: '',
+      author: '',
+      authors: [],
+      description: '',
+      publisher: '',
+      publishedAt: '',
+      language: '',
+      source: 'offline',
+      found: false,
+    };
+  }
+
+  const headers = {
+    Accept: 'application/json',
+    'User-Agent': 'Boekenbaai/1.0 (+https://boekenbaai.example)',
+  };
+
+  const sources = [
+    {
+      name: 'isbnbarcode.org',
+      url: `${ISBN_API_BASE.replace(/\/$/, '')}/${sanitized}`,
+      parser: (data) => parseIsbnBarcodeData(data, sanitized),
+    },
+    {
+      name: 'openlibrary',
+      url: `https://openlibrary.org/isbn/${sanitized}.json`,
+      parser: (data) => parseOpenLibraryData(data, sanitized),
+    },
+  ];
+
+  for (const source of sources) {
+    try {
+      const response = await globalFetch(source.url, { headers });
+      if (!response.ok) {
+        if (response.status === 404) {
+          continue;
+        }
+        continue;
+      }
+      const contentType = response.headers.get('content-type') || '';
+      let payload = null;
+      if (contentType.includes('application/json')) {
+        payload = await response.json();
+      } else {
+        const text = await response.text();
+        try {
+          payload = JSON.parse(text);
+        } catch (error) {
+          payload = null;
+        }
+      }
+      const metadata = source.parser(payload);
+      if (metadata) {
+        return metadata;
+      }
+    } catch (error) {
+      console.warn(`Kon geen gegevens ophalen via ${source.name}:`, error.message || error);
+    }
+  }
+
+  return {
+    barcode: sanitized,
+    title: '',
+    author: '',
+    authors: [],
+    description: '',
+    publisher: '',
+    publishedAt: '',
+    language: '',
+    source: 'none',
+    found: false,
+  };
 }
 
 function sendJson(res, statusCode, payload) {
@@ -555,6 +745,29 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, book);
     }
 
+    if (bookIdMatch && req.method === 'DELETE') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken verwijderen' });
+      }
+      const db = getDb();
+      const index = db.books.findIndex((entry) => entry.id === bookIdMatch[1]);
+      if (index === -1) {
+        return sendJson(res, 404, { message: 'Boek niet gevonden' });
+      }
+      const [removed] = db.books.splice(index, 1);
+      for (const student of db.students) {
+        if (!Array.isArray(student.borrowedBooks)) continue;
+        student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== removed.id);
+      }
+      appendHistory(db, {
+        type: 'book_deleted',
+        bookId: removed.id,
+        message: `${removed.title} is verwijderd uit de bibliotheek`,
+      });
+      saveDb(db);
+      return sendJson(res, 200, { message: 'Boek verwijderd' });
+    }
+
     const checkoutMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-out$/);
     if (checkoutMatch && req.method === 'POST') {
       if (!user) {
@@ -658,39 +871,106 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, book);
     }
 
+    const isbnLookupMatch = requestUrl.pathname.match(/^\/api\/isbn\/([\w-]+)$/i);
+    if (isbnLookupMatch && req.method === 'GET') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen boekinformatie opzoeken' });
+      }
+      const isbn = sanitizeIsbn(isbnLookupMatch[1]);
+      if (!isbn) {
+        return sendJson(res, 400, { message: 'Ongeldige barcode opgegeven' });
+      }
+      try {
+        const metadata = await lookupIsbnMetadata(isbn);
+        return sendJson(res, 200, metadata);
+      } catch (error) {
+        console.error('ISBN-lookup mislukt:', error);
+        return sendJson(res, 502, { message: 'Kon geen boekinformatie ophalen.' });
+      }
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/students') {
       if (!ensureRole(user, ['teacher', 'admin'])) {
         return sendJson(res, 403, { message: 'Alleen medewerkers kunnen leerlingen bekijken' });
       }
       const db = getDb();
-      const students = db.students.map((student) => sanitizeStudent(student, { includeUsername: true }));
+      let studentList = db.students;
+      if (user.role === 'teacher') {
+        const teacherClassIds = db.classes
+          .filter((klass) => (klass.teacherIds || []).includes(user.id))
+          .map((klass) => klass.id);
+        studentList = db.students.filter((student) =>
+          (student.classIds || []).some((classId) => teacherClassIds.includes(classId))
+        );
+      }
+      const students = studentList.map((student) => sanitizeStudent(student, { includeUsername: true }));
       return sendJson(res, 200, students);
     }
 
-    if (req.method === 'POST' && requestUrl.pathname === '/api/students') {
+    if (req.method === 'GET' && requestUrl.pathname === '/api/teachers') {
       if (!ensureRole(user, ['admin'])) {
-        return sendJson(res, 403, { message: 'Alleen beheerders kunnen leerlingen toevoegen' });
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen docenten bekijken' });
+      }
+      const db = getDb();
+      const teachers = db.users
+        .filter((account) => account.role === 'teacher')
+        .map((account) => ({ id: account.id, name: account.name, username: account.username }));
+      return sendJson(res, 200, teachers);
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/students') {
+      if (!ensureRole(user, ['admin', 'teacher'])) {
+        return sendJson(res, 403, { message: 'Geen toestemming om leerlingen toe te voegen' });
       }
       const db = getDb();
       const body = await parseBody(req);
-      if (!body.name || !body.username || !body.password) {
+      const name = (body.name || '').trim();
+      const username = (body.username || '').trim();
+      const password = body.password || '';
+      if (!name || !username || !password) {
         return sendJson(res, 400, {
           message: 'Naam, gebruikersnaam en wachtwoord zijn verplicht',
         });
       }
-      if (isUsernameTaken(db, body.username)) {
+      if (isUsernameTaken(db, username)) {
         return sendJson(res, 409, { message: 'Deze gebruikersnaam is al in gebruik' });
       }
+      const requestedClassIds = Array.isArray(body.classIds)
+        ? body.classIds.filter((value) => typeof value === 'string')
+        : [];
+      const validClassIds = requestedClassIds.filter((classId) =>
+        db.classes.some((klass) => klass.id === classId)
+      );
+      if (user.role === 'teacher') {
+        const teacherClassIds = db.classes
+          .filter((klass) => (klass.teacherIds || []).includes(user.id))
+          .map((klass) => klass.id);
+        const invalid = validClassIds.filter((classId) => !teacherClassIds.includes(classId));
+        if (invalid.length) {
+          return sendJson(res, 403, {
+            message: 'Je kunt alleen leerlingen aan je eigen klassen koppelen',
+          });
+        }
+      }
+
       const student = {
         id: crypto.randomUUID(),
-        name: body.name,
-        username: body.username.trim(),
-        passwordHash: hashPassword(body.password),
-        grade: body.grade || '',
+        name,
+        username,
+        passwordHash: hashPassword(password),
+        grade: (body.grade || '').trim(),
         borrowedBooks: [],
-        classIds: [],
+        classIds: validClassIds,
       };
       db.students.push(student);
+      for (const classId of validClassIds) {
+        const klass = db.classes.find((entry) => entry.id === classId);
+        if (!klass) continue;
+        klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
+        if (!klass.studentIds.includes(student.id)) {
+          klass.studentIds.push(student.id);
+        }
+      }
       appendHistory(db, {
         type: 'student_created',
         studentId: student.id,
@@ -699,8 +979,54 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       return sendJson(res, 201, {
         ...sanitizeStudent(student, { includeUsername: true }),
-        temporaryPassword: body.password,
+        temporaryPassword: password,
       });
+    }
+
+    const studentDeleteMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)$/);
+    if (studentDeleteMatch && req.method === 'DELETE') {
+      if (!ensureRole(user, ['admin', 'teacher'])) {
+        return sendJson(res, 403, { message: 'Geen toestemming om leerlingen te verwijderen' });
+      }
+      const db = getDb();
+      const student = findStudentById(db, studentDeleteMatch[1]);
+      if (!student) {
+        return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+      }
+      if (user.role === 'teacher') {
+        const teacherClassIds = db.classes
+          .filter((klass) => (klass.teacherIds || []).includes(user.id))
+          .map((klass) => klass.id);
+        const hasSharedClass = (student.classIds || []).some((classId) => teacherClassIds.includes(classId));
+        if (!hasSharedClass && (student.classIds || []).length > 0) {
+          return sendJson(res, 403, {
+            message: 'Je kunt alleen leerlingen uit je eigen klassen verwijderen',
+          });
+        }
+      }
+      db.students = db.students.filter((entry) => entry.id !== student.id);
+      for (const klass of db.classes) {
+        klass.studentIds = (klass.studentIds || []).filter((id) => id !== student.id);
+      }
+      for (const book of db.books) {
+        if (book.borrowedBy === student.id) {
+          book.borrowedBy = null;
+          book.status = 'available';
+          book.dueDate = null;
+        }
+      }
+      for (const [token, session] of sessions.entries()) {
+        if (session.type === 'student' && session.userId === student.id) {
+          sessions.delete(token);
+        }
+      }
+      appendHistory(db, {
+        type: 'student_deleted',
+        studentId: student.id,
+        message: `Leerlingaccount van ${student.name} is verwijderd`,
+      });
+      saveDb(db);
+      return sendJson(res, 200, { message: 'Leerlingaccount verwijderd' });
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/students/import') {
@@ -934,9 +1260,31 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, klass);
     }
 
+    if (classMatch && req.method === 'DELETE') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen klassen verwijderen' });
+      }
+      const db = getDb();
+      const index = db.classes.findIndex((cls) => cls.id === classMatch[1]);
+      if (index === -1) {
+        return sendJson(res, 404, { message: 'Klas niet gevonden' });
+      }
+      const [removedClass] = db.classes.splice(index, 1);
+      for (const student of db.students) {
+        student.classIds = (student.classIds || []).filter((id) => id !== removedClass.id);
+      }
+      appendHistory(db, {
+        type: 'class_deleted',
+        classId: removedClass.id,
+        message: `Klas ${removedClass.name} is verwijderd`,
+      });
+      saveDb(db);
+      return sendJson(res, 200, { message: 'Klas verwijderd' });
+    }
+
     if (req.method === 'POST' && requestUrl.pathname === '/api/classes') {
-      if (!ensureRole(user, ['teacher', 'admin'])) {
-        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen klassen toevoegen' });
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen klassen toevoegen' });
       }
       const db = getDb();
       const body = await parseBody(req);
@@ -950,10 +1298,15 @@ async function handleApi(req, res, requestUrl) {
       const klass = {
         id: crypto.randomUUID(),
         name: body.name.trim(),
-        teacherIds: user.role === 'admin' ? validTeacherIds : [user.id],
+        teacherIds: validTeacherIds,
         studentIds: [],
       };
       db.classes.push(klass);
+      appendHistory(db, {
+        type: 'class_created',
+        classId: klass.id,
+        message: `Nieuwe klas ${klass.name} aangemaakt`,
+      });
       saveDb(db);
       return sendJson(res, 201, klass);
     }
