@@ -137,12 +137,10 @@
         </div>
         <div class="admin-dashboard">
           <section class="admin-card admin-card--books">
-            <div class="admin-card__intro">
-              <h3>Boeken beheren</h3>
-              <p class="hint">
-                Klik op een boek in het overzicht hierboven om het te bewerken of vul onderstaande velden in om een nieuwe titel toe te voegen.
-              </p>
-            </div>
+            <h3>Boeken beheren</h3>
+            <p class="hint">
+              Voeg nieuwe titels toe, werk gegevens bij of verwijder boeken uit de collectie.
+            </p>
             <form id="admin-book-form" class="admin-form" autocomplete="off">
               <input id="admin-book-id" type="hidden" />
               <div class="form-grid">
@@ -176,16 +174,16 @@
                 </div>
                 <div class="form-field form-field--full">
                   <label for="admin-book-description">Korte beschrijving</label>
-                  <textarea id="admin-book-description" rows="2"></textarea>
+                  <textarea id="admin-book-description" rows="3"></textarea>
                 </div>
               </div>
               <div class="admin-form__actions">
                 <button type="submit" class="btn" id="admin-book-submit">Boek opslaan</button>
                 <button type="button" class="btn btn--ghost hidden" id="admin-book-cancel">Annuleren</button>
-                <button type="button" class="btn btn--danger hidden" id="admin-book-delete">Boek verwijderen</button>
               </div>
             </form>
             <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
+            <div id="admin-book-list" class="admin-book-list"></div>
           </section>
 
           <section class="admin-card admin-card--classes">
@@ -202,22 +200,14 @@
                   </div>
                   <div class="form-field form-field--full">
                     <label for="admin-class-teachers">Docenten</label>
-                    <select id="admin-class-teachers" multiple size="4"></select>
+                    <select id="admin-class-teachers" multiple></select>
                     <p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>
                   </div>
                 </div>
                 <button type="submit" class="btn">Klas opslaan</button>
               </form>
               <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
-              <div class="admin-detail">
-                <div class="form-field">
-                  <label for="admin-class-select">Bestaande klassen</label>
-                  <select id="admin-class-select">
-                    <option value="">Kies een klas om te beheren</option>
-                  </select>
-                </div>
-                <div id="admin-class-details" class="admin-detail__body"></div>
-              </div>
+              <div id="admin-class-list" class="class-list class-list--admin"></div>
             </div>
 
             <div class="admin-card__section">
@@ -253,15 +243,7 @@
                 <button type="submit" class="btn btn--secondary">Account aanmaken</button>
               </form>
               <p id="admin-student-message" class="hint" role="status" aria-live="polite"></p>
-              <div class="admin-detail">
-                <div class="form-field">
-                  <label for="admin-student-select">Bestaande leerlingen</label>
-                  <select id="admin-student-select">
-                    <option value="">Kies een leerling om te beheren</option>
-                  </select>
-                </div>
-                <div id="admin-student-details" class="admin-detail__body"></div>
-              </div>
+              <div id="admin-student-list" class="student-list student-list--admin"></div>
             </div>
 
             <div class="admin-card__section admin-card__section--import">
