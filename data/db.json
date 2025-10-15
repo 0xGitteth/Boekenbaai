@@ -25,8 +25,8 @@
       "description": "Het dagboek van Anne Frank, belangrijk voor de leeslijst.",
       "folderId": "f1",
       "suitableForExamList": true,
-      "status": "borrowed",
-      "borrowedBy": "s2",
+      "status": "available",
+      "borrowedBy": null,
       "dueDate": null,
       "tags": [
         "geschiedenis",
@@ -54,38 +54,11 @@
   ],
   "students": [
     {
-      "id": "s1",
-      "name": "Emma Janssen",
-      "grade": "5V",
-      "username": "emma.j",
-      "passwordHash": "6a81cfd4976bf6eb28790125c2eb96c484509ed20e3364810fa71e567b1e264b",
-      "borrowedBooks": [],
-      "classIds": [
-        "c2"
-      ]
-    },
-    {
-      "id": "s2",
-      "name": "Noah de Vries",
-      "grade": "4H",
-      "username": "noah.d",
-      "passwordHash": "fbe57396ba1006dbbe00556a1373170fb16cdc73b436f4b132875528ceeb482a",
-      "borrowedBooks": [
-        {
-          "bookId": "b2",
-          "borrowedAt": "2023-10-10T09:15:00.000Z"
-        }
-      ],
-      "classIds": [
-        "c1"
-      ]
-    },
-    {
-      "id": "s3",
-      "name": "Lina Bakker",
-      "grade": "3VMBO",
-      "username": "lina.b",
-      "passwordHash": "f78230e5e471cf6caf71d0cc8f9566e08611ecc180d963b0eb52ea3237b75f02",
+      "id": "s-demo",
+      "name": "Demo Leerling",
+      "grade": "",
+      "username": "Leerling",
+      "passwordHash": "1b4f0e9851971998e732078544c96b36c3d01cedf7caa332359d6f1d83567014",
       "borrowedBooks": [],
       "classIds": []
     }
@@ -115,24 +88,12 @@
   ],
   "classes": [
     {
-      "id": "c1",
-      "name": "4H Nederlands",
+      "id": "c-demo",
+      "name": "Voorbeeldklas",
       "teacherIds": [
-        "u-teacher-1"
+        "u-teacher-demo"
       ],
-      "studentIds": [
-        "s2"
-      ]
-    },
-    {
-      "id": "c2",
-      "name": "5V Literatuurclub",
-      "teacherIds": [
-        "u-teacher-1"
-      ],
-      "studentIds": [
-        "s1"
-      ]
+      "studentIds": []
     }
   ],
   "users": [
@@ -144,29 +105,12 @@
       "role": "admin"
     },
     {
-      "id": "u-teacher-1",
-      "name": "Mevr. Van Dijk",
-      "username": "vandijk",
-      "passwordHash": "9ab72d9b9a1925fbe2a071405fb425f41d037b6b3c206cf0c6d01b4e0fbda505",
+      "id": "u-teacher-demo",
+      "name": "Demo Docent",
+      "username": "Docent",
+      "passwordHash": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
       "role": "teacher"
     }
   ],
-  "history": [
-    {
-      "id": "h1",
-      "timestamp": "2023-10-10T09:15:00.000Z",
-      "type": "check_out",
-      "bookId": "b2",
-      "studentId": "s2",
-      "message": "Noah de Vries heeft Het Achterhuis geleend"
-    },
-    {
-      "id": "h2",
-      "timestamp": "2023-09-29T14:32:00.000Z",
-      "type": "check_in",
-      "bookId": "b1",
-      "studentId": "s1",
-      "message": "Emma Janssen heeft De brief voor de koning teruggebracht"
-    }
-  ]
+  "history": []
 }
