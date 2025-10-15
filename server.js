@@ -782,10 +782,11 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: 'Boek is al uitgeleend' });
       }
       let student = null;
+      let body = {};
       if (user.role === 'student') {
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
-        const body = await parseBody(req);
+        body = await parseBody(req);
         if (!body.studentId) {
           return sendJson(res, 400, { message: 'Selecteer eerst een leerling' });
         }
@@ -802,7 +803,9 @@ async function handleApi(req, res, requestUrl) {
 
       book.status = 'borrowed';
       book.borrowedBy = student.id;
-      book.dueDate = body.dueDate || null;
+      book.dueDate = typeof body.dueDate === 'string' && body.dueDate.trim()
+        ? body.dueDate
+        : null;
       student.borrowedBooks.push({ bookId: book.id, borrowedAt: new Date().toISOString() });
 
       appendHistory(db, {
