@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+.DS_Store
+.git
+.gitignore
+/dist
+
+# Sliplane builds the frontend inside the image, so ignore local build cache
+.vite

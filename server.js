@@ -22,10 +22,96 @@ function loadXlsx() {
 }
 
 const PORT = process.env.PORT || 3000;
-const DATA_PATH = path.join(__dirname, 'data', 'db.json');
+const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
+const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
+  ? path.resolve(__dirname, process.env.BOEKENBAAI_DATA_PATH)
+  : DEFAULT_DATA_PATH;
+const DIST_DIR = path.join(__dirname, 'dist');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
+const configuredStaticDir = process.env.BOEKENBAAI_STATIC_DIR
+  ? path.resolve(__dirname, process.env.BOEKENBAAI_STATIC_DIR)
+  : null;
+
+const PUBLIC_API_BASE = process.env.BOEKENBAAI_PUBLIC_API_BASE || '';
+
+const STATIC_DIR = (() => {
+  const candidates = [configuredStaticDir, DIST_DIR, PUBLIC_DIR].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      const stats = fs.statSync(candidate);
+      if (stats.isDirectory()) {
+        return candidate;
+      }
+    } catch (error) {
+      // Ignore missing directories, try the next candidate.
+    }
+  }
+  return PUBLIC_DIR;
+})();
+
+const allowedOrigins = (process.env.BOEKENBAAI_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const EMPTY_DB = {
+  books: [],
+  students: [],
+  folders: [],
+  classes: [],
+  users: [],
+};
+
+function ensureParentDirectory(filePath) {
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, { recursive: true });
+}
+
+function ensureDbFile() {
+  try {
+    fs.accessSync(DATA_PATH, fs.constants.F_OK);
+  } catch (error) {
+    ensureParentDirectory(DATA_PATH);
+    if (DATA_PATH !== DEFAULT_DATA_PATH && fs.existsSync(DEFAULT_DATA_PATH)) {
+      fs.copyFileSync(DEFAULT_DATA_PATH, DATA_PATH);
+    } else {
+      fs.writeFileSync(DATA_PATH, JSON.stringify(EMPTY_DB, null, 2));
+    }
+  }
+}
+
+ensureDbFile();
+console.log(`Boekenbaai gebruikt data-bestand: ${DATA_PATH}`);
+console.log(`Boekenbaai serveert statische bestanden uit: ${STATIC_DIR}`);
+
 const sessions = new Map();
+
+function isOriginAllowed(origin, requestUrl) {
+  if (!origin) return false;
+  if (allowedOrigins.includes('*')) {
+    return true;
+  }
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+  if (allowedOrigins.length === 0) {
+    const sameOrigin = `${requestUrl.protocol}//${requestUrl.host}`;
+    return origin === sameOrigin;
+  }
+  return false;
+}
+
+function applyCors(req, res, requestUrl) {
+  const origin = req.headers.origin;
+  if (!origin || !isOriginAllowed(origin, requestUrl)) {
+    return;
+  }
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+}
 
 function ensureStudentShape(student) {
   const safeStudent = { ...student };
@@ -144,12 +230,33 @@ function isUsernameTaken(db, username, { allowStudentId = null } = {}) {
 }
 
 function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  const headers = { 'Content-Type': 'application/json' };
+  const varyHeader = res.getHeader('Vary');
+  if (varyHeader) headers.Vary = varyHeader;
+  const allowOrigin = res.getHeader('Access-Control-Allow-Origin');
+  if (allowOrigin) headers['Access-Control-Allow-Origin'] = allowOrigin;
+  const allowHeaders = res.getHeader('Access-Control-Allow-Headers');
+  if (allowHeaders) headers['Access-Control-Allow-Headers'] = allowHeaders;
+  const allowMethods = res.getHeader('Access-Control-Allow-Methods');
+  if (allowMethods) headers['Access-Control-Allow-Methods'] = allowMethods;
+  res.writeHead(statusCode, headers);
   res.end(JSON.stringify(payload));
 }
 
 function sendText(res, statusCode, text, headers = {}) {
-  res.writeHead(statusCode, { 'Content-Type': 'text/plain; charset=utf-8', ...headers });
+  const varyHeader = res.getHeader('Vary');
+  const allowOrigin = res.getHeader('Access-Control-Allow-Origin');
+  const allowHeaders = res.getHeader('Access-Control-Allow-Headers');
+  const allowMethods = res.getHeader('Access-Control-Allow-Methods');
+  const finalHeaders = {
+    'Content-Type': 'text/plain; charset=utf-8',
+    ...headers,
+  };
+  if (varyHeader) finalHeaders.Vary = varyHeader;
+  if (allowOrigin) finalHeaders['Access-Control-Allow-Origin'] = allowOrigin;
+  if (allowHeaders) finalHeaders['Access-Control-Allow-Headers'] = allowHeaders;
+  if (allowMethods) finalHeaders['Access-Control-Allow-Methods'] = allowMethods;
+  res.writeHead(statusCode, finalHeaders);
   res.end(text);
 }
 
@@ -160,6 +267,7 @@ function serveFile(res, filePath) {
     '.css': 'text/css; charset=utf-8',
     '.js': 'application/javascript; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
+    '.map': 'application/json; charset=utf-8',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
@@ -171,6 +279,24 @@ function serveFile(res, filePath) {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       sendText(res, 404, 'Bestand niet gevonden');
+      return;
+    }
+    if (ext === '.html') {
+      let html = data.toString('utf-8');
+      if (PUBLIC_API_BASE) {
+        html = html.replace(
+          /(<meta\s+name="boekenbaai-api-base"\s+content=")([^"]*)("[^>]*>)/i,
+          `$1${PUBLIC_API_BASE}$3`
+        );
+        if (!html.includes('window.BOEKENBAAI_API_BASE')) {
+          const script = `    <script>window.BOEKENBAAI_API_BASE = ${JSON.stringify(
+            PUBLIC_API_BASE
+          )};</script>`;
+          html = html.replace(/<\/head>/i, `${script}\n  </head>`);
+        }
+      }
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(html);
       return;
     }
     res.writeHead(200, { 'Content-Type': contentType });
@@ -225,6 +351,22 @@ function findStudentById(db, id) {
 }
 
 async function handleApi(req, res, requestUrl) {
+  const originAllowed = isOriginAllowed(req.headers.origin, requestUrl);
+  if (req.method === 'OPTIONS') {
+    if (originAllowed) {
+      applyCors(req, res, requestUrl);
+      res.writeHead(204, { 'Content-Length': '0' });
+    } else {
+      res.writeHead(403, { 'Content-Length': '0' });
+    }
+    res.end();
+    return;
+  }
+
+  if (originAllowed) {
+    applyCors(req, res, requestUrl);
+  }
+
   try {
     let db;
     const getDb = () => {
@@ -890,14 +1032,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let filePath = path.join(PUBLIC_DIR, requestUrl.pathname);
+  let filePath = path.join(STATIC_DIR, requestUrl.pathname);
   filePath = path.normalize(filePath);
-  if (!filePath.startsWith(PUBLIC_DIR)) {
+  if (!filePath.startsWith(STATIC_DIR)) {
     sendText(res, 403, 'Toegang geweigerd');
     return;
   }
   if (requestUrl.pathname === '/' || requestUrl.pathname === '') {
-    filePath = path.join(PUBLIC_DIR, 'index.html');
+    filePath = path.join(STATIC_DIR, 'index.html');
   }
 
   fs.stat(filePath, (err, stats) => {
