@@ -95,7 +95,7 @@ function findFolder(folders, id) {
   return folders.find((folder) => folder.id === id) || null;
 }
 
-function createBookCard(template, book, folders) {
+function createBookCard(template, book, folders, options = {}) {
   if (!template) return null;
   const fragment = template.content.cloneNode(true);
   const card = fragment.querySelector('.book-card');
@@ -135,6 +135,32 @@ function createBookCard(template, book, folders) {
     const li = document.createElement('li');
     li.textContent = tag;
     tagsList.append(li);
+  }
+
+  if (options.selectable) {
+    card.classList.add('book-card--selectable');
+    card.dataset.bookId = book.id;
+    if (options.selected) {
+      card.classList.add('book-card--selected');
+    }
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-pressed', options.selected ? 'true' : 'false');
+    const handleSelect = (event) => {
+      if (typeof options.onSelect === 'function') {
+        options.onSelect(book, event);
+      }
+    };
+    card.addEventListener('click', (event) => {
+      event.preventDefault();
+      handleSelect(event);
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleSelect(event);
+      }
+    });
   }
 
   return card;
@@ -324,7 +350,6 @@ function initStudentPage() {
   async function loadBooks() {
     allBooks = await fetchJson('/api/books');
     renderBooks();
-    renderAdminBookList();
   }
 
   async function loadSummary() {
@@ -568,7 +593,7 @@ function initStaffPage() {
   const adminBookMessage = document.querySelector('#admin-book-message');
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
   const adminBookCancelButton = document.querySelector('#admin-book-cancel');
-  const adminBookList = document.querySelector('#admin-book-list');
+  const adminBookDeleteButton = document.querySelector('#admin-book-delete');
   const adminClassForm = document.querySelector('#admin-class-form');
   const adminClassNameInput = document.querySelector('#admin-class-name');
   const adminClassTeachersSelect = document.querySelector('#admin-class-teachers');
@@ -597,6 +622,9 @@ function initStaffPage() {
   let classes = [];
   let students = [];
   let teachers = [];
+  let selectedBookId = null;
+  let selectedAdminClassId = '';
+  let selectedAdminStudentId = '';
   let barcodeLookupTimer = null;
   const filters = { folder: '', query: '' };
 
@@ -633,8 +661,11 @@ function initStaffPage() {
       classList && (classList.innerHTML = '');
       adminBookMessage && (adminBookMessage.textContent = '');
       adminBookLookupMessage && (adminBookLookupMessage.textContent = '');
-      adminBookList && (adminBookList.innerHTML = '');
       adminBookCancelButton && adminBookCancelButton.classList.add('hidden');
+      if (adminBookDeleteButton) {
+        adminBookDeleteButton.classList.add('hidden');
+        adminBookDeleteButton.disabled = true;
+      }
       adminBookForm && adminBookForm.reset();
       adminBookIdInput && (adminBookIdInput.value = '');
       studentImportMessage && (studentImportMessage.textContent = '');
@@ -651,6 +682,15 @@ function initStaffPage() {
       teacherStudentMessage && (teacherStudentMessage.textContent = '');
       teacherStudentList && (teacherStudentList.innerHTML = '');
       teacherStudentForm && teacherStudentForm.reset();
+      selectedBookId = null;
+      selectedAdminClassId = '';
+      selectedAdminStudentId = '';
+      folders = [];
+      allBooks = [];
+      classes = [];
+      students = [];
+      teachers = [];
+      renderBooks();
     }
   }
 
@@ -664,11 +704,40 @@ function initStaffPage() {
       bookGrid.innerHTML = '<p>Geen boeken gevonden voor deze selectie.</p>';
       return;
     }
+    const isAdmin = authUser?.role === 'admin';
     for (const book of filtered) {
-      const card = createBookCard(bookCardTemplate, book, folders);
+      const card = createBookCard(bookCardTemplate, book, folders, {
+        selectable: Boolean(isAdmin),
+        selected: Boolean(isAdmin && selectedBookId === book.id),
+        onSelect: (selectedBook) => {
+          if (isAdmin) {
+            handleAdminBookSelection(selectedBook);
+          }
+        },
+      });
       if (card) {
         bookGrid.append(card);
       }
+    }
+  }
+
+  function handleAdminBookSelection(book, options = {}) {
+    if (!book || authUser?.role !== 'admin') return;
+    selectedBookId = book.id;
+    renderBooks();
+    populateAdminBookForm(book, { silent: true });
+    if (adminBookDeleteButton) {
+      adminBookDeleteButton.classList.remove('hidden');
+      adminBookDeleteButton.disabled = false;
+    }
+    if (adminBookMessage && !options.silent) {
+      adminBookMessage.textContent = 'Boek geladen voor bewerking.';
+    }
+    if (adminBookForm && options.scroll !== false) {
+      adminBookForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    if (adminBookTitle && options.focus !== false) {
+      adminBookTitle.focus();
     }
   }
 
@@ -684,12 +753,18 @@ function initStaffPage() {
     if (adminBookCancelButton) {
       adminBookCancelButton.classList.add('hidden');
     }
+    if (adminBookDeleteButton) {
+      adminBookDeleteButton.classList.add('hidden');
+      adminBookDeleteButton.disabled = true;
+    }
     if (adminBookLookupMessage) {
       adminBookLookupMessage.textContent = '';
     }
+    selectedBookId = null;
+    renderBooks();
   }
 
-  function populateAdminBookForm(book) {
+  function populateAdminBookForm(book, options = {}) {
     if (!adminBookForm || !book) return;
     if (adminBookIdInput) {
       adminBookIdInput.value = book.id || '';
@@ -718,8 +793,12 @@ function initStaffPage() {
     if (adminBookCancelButton) {
       adminBookCancelButton.classList.remove('hidden');
     }
-    if (adminBookMessage) {
-      adminBookMessage.textContent = '';
+    if (adminBookDeleteButton) {
+      adminBookDeleteButton.classList.remove('hidden');
+      adminBookDeleteButton.disabled = false;
+    }
+    if (adminBookMessage && !options.silent) {
+      adminBookMessage.textContent = 'Je bewerkt nu een bestaand boek.';
     }
   }
 
@@ -756,43 +835,6 @@ function initStaffPage() {
     }
   }
 
-  function renderAdminBookList() {
-    if (!adminBookList) return;
-    const isAdmin = authUser?.role === 'admin';
-    if (!isAdmin) {
-      adminBookList.innerHTML = '';
-      return;
-    }
-    adminBookList.innerHTML = '';
-    if (!allBooks.length) {
-      adminBookList.innerHTML = '<p>Er zijn nog geen boeken opgeslagen.</p>';
-      return;
-    }
-    for (const book of allBooks) {
-      const folder = findFolder(folders, book.folderId);
-      const item = document.createElement('article');
-      item.className = 'admin-book-list__item';
-      item.innerHTML = `
-        <div class="admin-book-list__header">
-          <span class="admin-book-list__title">${book.title}</span>
-          <span class="admin-book-list__status">${
-            book.status === 'borrowed' ? 'Uitgeleend' : 'Beschikbaar'
-          }</span>
-        </div>
-        <div class="admin-book-list__meta">
-          <span>Barcode: ${book.barcode}</span>
-          <span>Auteur: ${book.author}</span>
-          <span>Map: ${folder ? folder.name : 'Geen map'}</span>
-        </div>
-        <div class="admin-book-list__actions">
-          <button class="btn btn--ghost" type="button" data-edit-book data-book-id="${book.id}">Bewerken</button>
-          <button class="btn btn--ghost" type="button" data-delete-book data-book-id="${book.id}">Verwijderen</button>
-        </div>
-      `;
-      adminBookList.append(item);
-    }
-  }
-
   function getTeacherClassIds() {
     if (!authUser) return [];
     if (authUser.role === 'admin') {
@@ -810,52 +852,144 @@ function initStaffPage() {
       option.textContent = teacher.name;
       adminClassTeachersSelect.append(option);
     }
+    updateAdminClassDetails();
   }
 
   function renderAdminClasses() {
-    if (!adminClassList) return;
+    if (!adminClassSelect || !adminClassDetails) return;
     if (authUser?.role !== 'admin') {
-      adminClassList.innerHTML = '';
+      adminClassSelect.innerHTML = '<option value="">Kies een klas om te beheren</option>';
+      adminClassSelect.disabled = true;
+      adminClassDetails.innerHTML = '<p>Alleen beheerders kunnen klassen beheren.</p>';
+      adminClassDetails.classList.add('admin-detail__body--empty');
+      selectedAdminClassId = '';
       return;
     }
-    adminClassList.innerHTML = '';
+    const sortedClasses = [...classes].sort((a, b) =>
+      a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' })
+    );
+    adminClassSelect.innerHTML = '<option value="">Kies een klas om te beheren</option>';
+    for (const klass of sortedClasses) {
+      const option = document.createElement('option');
+      option.value = klass.id;
+      option.textContent = klass.name;
+      adminClassSelect.append(option);
+    }
+    adminClassSelect.disabled = !sortedClasses.length;
+    if (!sortedClasses.length) {
+      adminClassDetails.innerHTML = '<p>Nog geen klassen aangemaakt.</p>';
+      adminClassDetails.classList.add('admin-detail__body--empty');
+      selectedAdminClassId = '';
+      return;
+    }
+    if (!sortedClasses.some((klass) => klass.id === selectedAdminClassId)) {
+      selectedAdminClassId = '';
+    }
+    if (selectedAdminClassId) {
+      adminClassSelect.value = selectedAdminClassId;
+    } else {
+      adminClassSelect.value = '';
+    }
+    updateAdminClassDetails();
+  }
+
+  function updateAdminClassDetails() {
+    if (!adminClassDetails) return;
+    adminClassDetails.innerHTML = '';
+    adminClassDetails.classList.remove('admin-detail__body--empty');
+    if (authUser?.role !== 'admin') {
+      adminClassDetails.innerHTML = '<p>Alleen beheerders kunnen klassen beheren.</p>';
+      adminClassDetails.classList.add('admin-detail__body--empty');
+      return;
+    }
     if (!classes.length) {
-      adminClassList.innerHTML = '<p>Nog geen klassen aangemaakt.</p>';
+      adminClassDetails.innerHTML = '<p>Nog geen klassen aangemaakt.</p>';
+      adminClassDetails.classList.add('admin-detail__body--empty');
       return;
     }
-    for (const klass of classes) {
-      const article = document.createElement('article');
-      article.className = 'class-card';
-      const teacherNames = (klass.teacherIds || [])
-        .map((teacherId) => teachers.find((teacher) => teacher.id === teacherId)?.name)
-        .filter(Boolean)
-        .join(', ');
-      const options = teachers
-        .map((teacher) => {
-          const selected = (klass.teacherIds || []).includes(teacher.id) ? 'selected' : '';
-          return `<option value="${teacher.id}" ${selected}>${teacher.name}</option>`;
-        })
-        .join('');
-      article.innerHTML = `
-        <header class="class-card__header">
-          <h4>${klass.name}</h4>
-          <span>${klass.studentIds?.length || 0} leerlingen</span>
-        </header>
-        <div class="class-card__students">
-          <strong>Docenten</strong>
-          <span>${teacherNames || 'Nog geen docenten gekoppeld'}</span>
-        </div>
-        <form class="class-card__form class-card__form--admin" data-class-teacher-form data-class-id="${klass.id}">
-          <label for="admin-teachers-${klass.id}">Docenten koppelen</label>
-          <select id="admin-teachers-${klass.id}" multiple>${options}</select>
-          <div class="class-card__actions">
-            <button type="submit" class="btn btn--secondary">Opslaan</button>
-            <button type="button" class="btn btn--ghost" data-delete-class data-class-id="${klass.id}">Verwijderen</button>
-          </div>
-        </form>
-      `;
-      adminClassList.append(article);
+    if (!selectedAdminClassId) {
+      adminClassDetails.innerHTML = '<p>Kies een klas om details te bekijken.</p>';
+      adminClassDetails.classList.add('admin-detail__body--empty');
+      return;
     }
+    const klass = classes.find((entry) => entry.id === selectedAdminClassId);
+    if (!klass) {
+      adminClassDetails.innerHTML = '<p>Deze klas bestaat niet meer. Kies een andere klas.</p>';
+      adminClassDetails.classList.add('admin-detail__body--empty');
+      return;
+    }
+    const teacherNames = (klass.teacherIds || [])
+      .map((teacherId) => teachers.find((teacher) => teacher.id === teacherId)?.name)
+      .filter(Boolean);
+    const teacherSummary = teacherNames.length
+      ? `Docenten: ${teacherNames.join(', ')}`
+      : 'Nog geen docenten gekoppeld.';
+    let teacherOptions = teachers
+      .map((teacher) => {
+        const selected = (klass.teacherIds || []).includes(teacher.id) ? 'selected' : '';
+        return `<option value="${teacher.id}" ${selected}>${teacher.name}</option>`;
+      })
+      .join('');
+    if (!teachers.length) {
+      teacherOptions = '<option value="">Geen docenten beschikbaar</option>';
+    }
+    const teacherSelectDisabled = teachers.length ? '' : ' disabled';
+    const teacherHelp = teachers.length
+      ? '<p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>'
+      : '<p class="hint">Maak eerst docentaccounts aan om ze te kunnen koppelen.</p>';
+
+    const members = (klass.studentIds || [])
+      .map((studentId) => students.find((student) => student.id === studentId))
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' }));
+    const memberList = members.length
+      ? `<ul>${members
+          .map(
+            (member) =>
+              `<li><span>${member.name}${member.grade ? ` (${member.grade})` : ''}</span><button type="button" class="btn btn--ghost" data-remove-from-class="true" data-class-id="${klass.id}" data-student-id="${member.id}">Verwijderen</button></li>`
+          )
+          .join('')}</ul>`
+      : '<p class="hint">Nog geen leerlingen gekoppeld aan deze klas.</p>';
+
+    const availableStudents = students
+      .filter((student) => !(klass.studentIds || []).includes(student.id))
+      .sort((a, b) => a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' }));
+    const addSelectDisabled = availableStudents.length ? '' : ' disabled';
+    const addOptions = availableStudents.length
+      ? ['<option value="">Kies een leerling…</option>', ...availableStudents.map(
+          (student) => `<option value="${student.id}">${student.name}${student.grade ? ` (${student.grade})` : ''}</option>`
+        )].join('')
+      : '<option value="">Geen vrije leerlingen beschikbaar</option>';
+    const availableHint = availableStudents.length
+      ? ''
+      : '<p class="hint">Alle leerlingen zijn al gekoppeld aan deze klas.</p>';
+
+    adminClassDetails.innerHTML = `
+      <div class="admin-class-details__summary">
+        <strong>${klass.name}</strong>
+        <span>${klass.studentIds?.length || 0} leerlingen</span>
+      </div>
+      <p class="hint">${teacherSummary}</p>
+      <form class="admin-class-details__form" data-class-teacher-form data-class-id="${klass.id}">
+        <label for="admin-teachers-${klass.id}">Docenten koppelen</label>
+        <select id="admin-teachers-${klass.id}" multiple size="4"${teacherSelectDisabled}>${teacherOptions}</select>
+        ${teacherHelp}
+        <div class="admin-class-details__actions">
+          <button type="submit" class="btn btn--secondary"${teacherSelectDisabled}>Opslaan</button>
+          <button type="button" class="btn btn--ghost" data-delete-class data-class-id="${klass.id}">Klas verwijderen</button>
+        </div>
+      </form>
+      <div class="admin-class-details__students">
+        <h5>Leerlingen in deze klas</h5>
+        <form class="admin-class-details__add" data-add-student-to-class data-class-id="${klass.id}">
+          <label class="visually-hidden" for="admin-class-add-${klass.id}">Leerling toevoegen aan ${klass.name}</label>
+          <select id="admin-class-add-${klass.id}"${addSelectDisabled}>${addOptions}</select>
+          <button type="submit" class="btn btn--secondary"${addSelectDisabled}>Toevoegen</button>
+        </form>
+        ${availableHint}
+        ${memberList}
+      </div>
+    `;
   }
 
   function renderTeacherStudentClassSelect() {
@@ -1066,7 +1200,7 @@ function initStaffPage() {
     }
 
     if (existingBook) {
-      populateAdminBookForm(existingBook);
+      handleAdminBookSelection(existingBook, { silent: true });
       if (adminBookLookupMessage && !silent) {
         adminBookLookupMessage.textContent = 'Dit boek staat al in de bibliotheek. Gegevens zijn geladen.';
       }
@@ -1120,6 +1254,14 @@ function initStaffPage() {
   async function loadBooks() {
     allBooks = await fetchJson('/api/books');
     renderBooks();
+    if (selectedBookId) {
+      const selectedBook = allBooks.find((entry) => entry.id === selectedBookId);
+      if (selectedBook) {
+        populateAdminBookForm(selectedBook, { silent: true });
+      } else {
+        resetAdminBookForm();
+      }
+    }
   }
 
   async function loadSummary() {
@@ -1368,16 +1510,13 @@ function initStaffPage() {
           ? `Leerling verwijderd uit ${klass.name}.`
           : 'Leerling verwijderd uit de klas.';
       }
+      resetAdminBookForm();
       await refreshStaffData();
     } catch (error) {
-      if (classMessage) {
-        classMessage.textContent = error.message;
+      if (adminBookMessage) {
+        adminBookMessage.textContent = error.message;
       }
     }
-  });
-
-  adminBookCancelButton?.addEventListener('click', () => {
-    resetAdminBookForm();
   });
 
   adminBookLookupButton?.addEventListener('click', () => {
@@ -1414,45 +1553,6 @@ function initStaffPage() {
     }, 400);
   });
 
-  adminBookList?.addEventListener('click', (event) => {
-    const editButton = event.target.closest('[data-edit-book]');
-    const deleteButton = event.target.closest('[data-delete-book]');
-    if (editButton) {
-      const book = allBooks.find((entry) => entry.id === editButton.dataset.bookId);
-      if (book) {
-        populateAdminBookForm(book);
-        adminBookTitle?.focus();
-      }
-      return;
-    }
-    if (deleteButton) {
-      const bookId = deleteButton.dataset.bookId;
-      if (!bookId) return;
-      if (!authUser || authUser.role !== 'admin') {
-        if (adminBookMessage) {
-          adminBookMessage.textContent = 'Alleen beheerders kunnen boeken verwijderen.';
-        }
-        return;
-      }
-      if (!window.confirm('Weet je zeker dat je dit boek wilt verwijderen?')) {
-        return;
-      }
-      fetchJson(`/api/books/${bookId}`, { method: 'DELETE' })
-        .then(async () => {
-          if (adminBookMessage) {
-            adminBookMessage.textContent = 'Boek verwijderd uit de bibliotheek.';
-          }
-          resetAdminBookForm();
-          await refreshStaffData();
-        })
-        .catch((error) => {
-          if (adminBookMessage) {
-            adminBookMessage.textContent = error.message;
-          }
-        });
-    }
-  });
-
   adminClassForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!authUser || authUser.role !== 'admin') {
@@ -1480,50 +1580,115 @@ function initStaffPage() {
     }
   });
 
-  adminClassList?.addEventListener('submit', async (event) => {
-    const form = event.target.closest('[data-class-teacher-form]');
-    if (!form) return;
-    event.preventDefault();
+  adminClassSelect?.addEventListener('change', () => {
     if (!authUser || authUser.role !== 'admin') {
-      adminClassMessage.textContent = 'Alleen beheerders kunnen docenten koppelen.';
       return;
     }
-    const classId = form.dataset.classId;
-    const select = form.querySelector('select');
-    const teacherIds = Array.from(select?.selectedOptions || [])
-      .map((option) => option.value)
-      .filter(Boolean);
-    try {
-      await fetchJson(`/api/classes/${classId}`, {
-        method: 'PATCH',
-        body: { teacherIds },
-      });
-      adminClassMessage.textContent = 'Docenten bijgewerkt voor deze klas.';
-      await refreshStaffData();
-    } catch (error) {
-      adminClassMessage.textContent = error.message;
+    selectedAdminClassId = adminClassSelect.value || '';
+    updateAdminClassDetails();
+  });
+
+  adminClassDetails?.addEventListener('submit', async (event) => {
+    const teacherForm = event.target.closest('[data-class-teacher-form]');
+    if (teacherForm) {
+      event.preventDefault();
+      if (!authUser || authUser.role !== 'admin') {
+        adminClassMessage.textContent = 'Alleen beheerders kunnen docenten koppelen.';
+        return;
+      }
+      const classId = teacherForm.dataset.classId;
+      const select = teacherForm.querySelector('select');
+      const teacherIds = Array.from(select?.selectedOptions || [])
+        .map((option) => option.value)
+        .filter(Boolean);
+      try {
+        await fetchJson(`/api/classes/${classId}`, {
+          method: 'PATCH',
+          body: { teacherIds },
+        });
+        adminClassMessage.textContent = 'Docenten bijgewerkt voor deze klas.';
+        await refreshStaffData();
+      } catch (error) {
+        adminClassMessage.textContent = error.message;
+      }
+      return;
+    }
+
+    const addForm = event.target.closest('[data-add-student-to-class]');
+    if (addForm) {
+      event.preventDefault();
+      if (!authUser || authUser.role !== 'admin') {
+        adminClassMessage.textContent = 'Alleen beheerders kunnen leerlingen koppelen.';
+        return;
+      }
+      const classId = addForm.dataset.classId;
+      const select = addForm.querySelector('select');
+      const studentId = select?.value;
+      if (!classId || !studentId) {
+        adminClassMessage.textContent = 'Kies eerst een leerling.';
+        return;
+      }
+      const klass = classes.find((entry) => entry.id === classId);
+      try {
+        await fetchJson(`/api/classes/${classId}/students`, {
+          method: 'POST',
+          body: { studentId },
+        });
+        adminClassMessage.textContent = klass
+          ? `Leerling toegevoegd aan ${klass.name}.`
+          : 'Leerling gekoppeld aan de klas.';
+        await refreshStaffData();
+      } catch (error) {
+        adminClassMessage.textContent = error.message;
+      }
     }
   });
 
-  adminClassList?.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-delete-class]');
-    if (!button) return;
-    if (!authUser || authUser.role !== 'admin') {
-      adminClassMessage.textContent = 'Alleen beheerders kunnen klassen verwijderen.';
+  adminClassDetails?.addEventListener('click', async (event) => {
+    const deleteButton = event.target.closest('[data-delete-class]');
+    if (deleteButton) {
+      if (!authUser || authUser.role !== 'admin') {
+        adminClassMessage.textContent = 'Alleen beheerders kunnen klassen verwijderen.';
+        return;
+      }
+      const classId = deleteButton.dataset.classId;
+      if (!classId) return;
+      event.preventDefault();
+      if (!window.confirm('Weet je zeker dat je deze klas wilt verwijderen?')) {
+        return;
+      }
+      try {
+        await fetchJson(`/api/classes/${classId}`, { method: 'DELETE' });
+        adminClassMessage.textContent = 'Klas verwijderd.';
+        await refreshStaffData();
+      } catch (error) {
+        adminClassMessage.textContent = error.message;
+      }
       return;
     }
-    const classId = button.dataset.classId;
-    if (!classId) return;
-    event.preventDefault();
-    if (!window.confirm('Weet je zeker dat je deze klas wilt verwijderen?')) {
-      return;
-    }
-    try {
-      await fetchJson(`/api/classes/${classId}`, { method: 'DELETE' });
-      adminClassMessage.textContent = 'Klas verwijderd.';
-      await refreshStaffData();
-    } catch (error) {
-      adminClassMessage.textContent = error.message;
+
+    const removeStudentButton = event.target.closest('[data-remove-from-class]');
+    if (removeStudentButton) {
+      if (!authUser || authUser.role !== 'admin') {
+        adminClassMessage.textContent = 'Alleen beheerders kunnen leerlingen verwijderen.';
+        return;
+      }
+      const classId = removeStudentButton.dataset.classId;
+      const studentId = removeStudentButton.dataset.studentId;
+      if (!classId || !studentId) return;
+      const klass = classes.find((entry) => entry.id === classId);
+      if (!window.confirm('Leerling uit deze klas verwijderen?')) {
+        return;
+      }
+      try {
+        await fetchJson(`/api/classes/${classId}/students/${studentId}`, { method: 'DELETE' });
+        adminClassMessage.textContent = klass
+          ? `Leerling verwijderd uit ${klass.name}.`
+          : 'Leerling verwijderd uit de klas.';
+        await refreshStaffData();
+      } catch (error) {
+        adminClassMessage.textContent = error.message;
+      }
     }
   });
 
