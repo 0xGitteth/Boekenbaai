@@ -1405,3 +1405,24 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`Boekenbaai server draait op http://localhost:${PORT}`);
 });
+
+let shuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  console.log(`Ontvangen signaal ${signal}, server wordt afgesloten...`);
+  server.close(() => {
+    console.log('HTTP-server netjes afgesloten.');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.warn('Geforceerde afsluiting na timeout.');
+    process.exit(0);
+  }, 5000).unref();
+}
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
