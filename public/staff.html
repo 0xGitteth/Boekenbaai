@@ -103,6 +103,43 @@
             </form>
             <p id="class-message" class="hint" role="status" aria-live="polite"></p>
             <div id="class-list" class="class-list"></div>
+
+            <section class="teacher-students">
+              <h4>Leerlingen beheren</h4>
+              <p class="hint">
+                Voeg nieuwe leerlingen toe aan je klassen of verwijder accounts die niet meer nodig
+                zijn.
+              </p>
+              <form id="teacher-student-form" class="admin-form admin-form--compact">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label for="teacher-student-name">Naam</label>
+                    <input id="teacher-student-name" type="text" required />
+                  </div>
+                  <div class="form-field">
+                    <label for="teacher-student-username">Gebruikersnaam</label>
+                    <input id="teacher-student-username" type="text" required autocomplete="off" />
+                  </div>
+                  <div class="form-field">
+                    <label for="teacher-student-password">Tijdelijk wachtwoord</label>
+                    <input id="teacher-student-password" type="text" required autocomplete="off" />
+                  </div>
+                  <div class="form-field">
+                    <label for="teacher-student-grade">Klas/groep</label>
+                    <input id="teacher-student-grade" type="text" />
+                  </div>
+                  <div class="form-field form-field--full">
+                    <label for="teacher-student-class">Koppel aan klas</label>
+                    <select id="teacher-student-class">
+                      <option value="">Geen klas koppelen</option>
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" class="btn btn--secondary">Leerling toevoegen</button>
+              </form>
+              <p id="teacher-student-message" class="hint" role="status" aria-live="polite"></p>
+              <div id="teacher-student-list" class="student-list"></div>
+            </section>
           </div>
         </div>
       </section>
@@ -119,7 +156,8 @@
             Voeg nieuwe boeken toe aan de collectie en importeer leerlingaccounts via Excel.
           </p>
         </div>
-        <form id="admin-book-form" class="admin-form">
+        <form id="admin-book-form" class="admin-form" autocomplete="off">
+          <input id="admin-book-id" type="hidden" />
           <div class="form-grid">
             <div class="form-field">
               <label for="admin-book-title">Titel</label>
@@ -131,7 +169,13 @@
             </div>
             <div class="form-field">
               <label for="admin-book-barcode">Barcode</label>
-              <input id="admin-book-barcode" type="text" required autocomplete="off" />
+              <div class="form-field__group">
+                <input id="admin-book-barcode" type="text" required inputmode="numeric" />
+                <button id="admin-book-lookup" type="button" class="btn btn--ghost">
+                  Zoek boekinfo
+                </button>
+              </div>
+              <p id="admin-book-lookup-message" class="hint" aria-live="polite"></p>
             </div>
             <div class="form-field">
               <label for="admin-folder-select">Map</label>
@@ -148,9 +192,37 @@
               <textarea id="admin-book-description" rows="3"></textarea>
             </div>
           </div>
-          <button type="submit" class="btn">Boek opslaan</button>
+          <div class="admin-form__actions">
+            <button type="submit" class="btn" id="admin-book-submit">Boek opslaan</button>
+            <button type="button" class="btn btn--ghost hidden" id="admin-book-cancel">Annuleren</button>
+          </div>
         </form>
         <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
+
+        <div id="admin-book-list" class="admin-book-list"></div>
+
+        <section class="admin-classes">
+          <h3>Klassen beheren</h3>
+          <p class="hint">
+            Maak nieuwe klassen aan, koppel docenten en verwijder klassen die niet meer nodig zijn.
+          </p>
+          <form id="admin-class-form" class="admin-form admin-form--compact">
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="admin-class-name">Naam van de klas</label>
+                <input id="admin-class-name" type="text" required />
+              </div>
+              <div class="form-field form-field--full">
+                <label for="admin-class-teachers">Docenten</label>
+                <select id="admin-class-teachers" multiple></select>
+                <p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>
+              </div>
+            </div>
+            <button type="submit" class="btn">Klas opslaan</button>
+          </form>
+          <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
+          <div id="admin-class-list" class="class-list class-list--admin"></div>
+        </section>
 
         <section class="admin-import">
           <h3>Leerlingaccounts importeren</h3>
