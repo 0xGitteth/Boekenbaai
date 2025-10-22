@@ -187,67 +187,65 @@
           </section>
 
           <section class="admin-card admin-card--classes">
-            <div class="admin-card__section">
-              <h3>Klassen beheren</h3>
-              <p class="hint">
-                Maak nieuwe klassen aan, koppel docenten en houd de groepen overzichtelijk.
-              </p>
-              <form id="admin-class-form" class="admin-form admin-form--compact">
-                <div class="form-grid">
-                  <div class="form-field">
-                    <label for="admin-class-name">Naam van de klas</label>
-                    <input id="admin-class-name" type="text" required />
-                  </div>
-                  <div class="form-field form-field--full">
-                    <label for="admin-class-teachers">Docenten</label>
-                    <select id="admin-class-teachers" multiple></select>
-                    <p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>
-                  </div>
+            <h3>Klassen beheren</h3>
+            <p class="hint">
+              Maak nieuwe klassen aan, koppel docenten en houd de groepen overzichtelijk.
+            </p>
+            <form id="admin-class-form" class="admin-form admin-form--compact">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="admin-class-name">Naam van de klas</label>
+                  <input id="admin-class-name" type="text" required />
                 </div>
-                <button type="submit" class="btn">Klas opslaan</button>
-              </form>
-              <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
-              <div id="admin-class-list" class="class-list class-list--admin"></div>
-            </div>
+                <div class="form-field form-field--full">
+                  <label for="admin-class-teachers">Docenten</label>
+                  <select id="admin-class-teachers" multiple></select>
+                  <p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>
+                </div>
+              </div>
+              <button type="submit" class="btn">Klas opslaan</button>
+            </form>
+            <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
+            <div id="admin-class-list" class="class-list class-list--admin"></div>
+          </section>
 
-            <div class="admin-card__section">
-              <h3>Leerlingaccounts</h3>
-              <p class="hint">
-                Maak nieuwe leerlingaccounts aan of koppel bestaande accounts direct aan een klas.
-              </p>
-              <form id="admin-student-form" class="admin-form admin-form--compact">
-                <div class="form-grid">
-                  <div class="form-field">
-                    <label for="admin-student-name">Naam</label>
-                    <input id="admin-student-name" type="text" required />
-                  </div>
-                  <div class="form-field">
-                    <label for="admin-student-username">Gebruikersnaam</label>
-                    <input id="admin-student-username" type="text" required autocomplete="off" />
-                  </div>
-                  <div class="form-field">
-                    <label for="admin-student-password">Tijdelijk wachtwoord</label>
-                    <input id="admin-student-password" type="text" required autocomplete="off" />
-                  </div>
-                  <div class="form-field">
-                    <label for="admin-student-grade">Klas/groep</label>
-                    <input id="admin-student-grade" type="text" autocomplete="off" />
-                  </div>
-                  <div class="form-field form-field--full">
-                    <label for="admin-student-class">Koppel aan klas</label>
-                    <select id="admin-student-class">
-                      <option value="">Geen klas koppelen</option>
-                    </select>
-                  </div>
+          <section class="admin-card admin-card--students">
+            <h3>Leerlingaccounts beheren</h3>
+            <p class="hint">
+              Maak nieuwe leerlingaccounts aan of koppel bestaande accounts direct aan een klas.
+            </p>
+            <form id="admin-student-form" class="admin-form admin-form--compact">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="admin-student-name">Naam</label>
+                  <input id="admin-student-name" type="text" required />
                 </div>
-                <button type="submit" class="btn btn--secondary">Account aanmaken</button>
-              </form>
-              <p id="admin-student-message" class="hint" role="status" aria-live="polite"></p>
-              <div id="admin-student-list" class="student-list student-list--admin"></div>
-            </div>
+                <div class="form-field">
+                  <label for="admin-student-username">Gebruikersnaam</label>
+                  <input id="admin-student-username" type="text" required autocomplete="off" />
+                </div>
+                <div class="form-field">
+                  <label for="admin-student-password">Tijdelijk wachtwoord</label>
+                  <input id="admin-student-password" type="text" required autocomplete="off" />
+                </div>
+                <div class="form-field">
+                  <label for="admin-student-grade">Klas/groep</label>
+                  <input id="admin-student-grade" type="text" autocomplete="off" />
+                </div>
+                <div class="form-field form-field--full">
+                  <label for="admin-student-class">Koppel aan klas</label>
+                  <select id="admin-student-class">
+                    <option value="">Geen klas koppelen</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" class="btn btn--secondary">Account aanmaken</button>
+            </form>
+            <p id="admin-student-message" class="hint" role="status" aria-live="polite"></p>
+            <div id="admin-student-list" class="student-list student-list--admin"></div>
 
             <div class="admin-card__section admin-card__section--import">
-              <h3>Leerlingaccounts importeren</h3>
+              <h4>Leerlingaccounts importeren</h4>
               <p class="hint">
                 Upload een Excelbestand (.xlsx) met kolommen voor naam, gebruikersnaam, wachtwoord en
                 optioneel klas. Accounts worden automatisch aangemaakt of bijgewerkt.

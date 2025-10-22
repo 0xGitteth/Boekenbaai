@@ -183,7 +183,7 @@ body {
 main {
   padding: 2rem clamp(1rem, 4vw, 4rem) 4rem;
   display: grid;
-  gap: 2rem;
+  gap: clamp(1.5rem, 2vw, 2rem);
   grid-template-columns: minmax(0, 1fr);
   justify-items: stretch;
   width: min(95vw, 1280px);
@@ -616,14 +616,8 @@ select[multiple] {
 
 .admin-dashboard {
   display: grid;
-  gap: 2rem;
-}
-
-@media (min-width: 960px) {
-  .admin-dashboard {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
-  }
+  gap: clamp(1.5rem, 2vw, 2rem);
+  width: 100%;
 }
 
 .admin-card {
@@ -635,7 +629,8 @@ select[multiple] {
   gap: 1.75rem;
 }
 
-.admin-card h3 {
+.admin-card h3,
+.admin-card h4 {
   margin-top: 0;
 }
 
@@ -662,11 +657,6 @@ select[multiple] {
   justify-self: start;
 }
 
-.admin-dashboard {
-  display: grid;
-  gap: 1.25rem;
-  width: 100%;
-}
 
 .admin-detail {
   display: grid;
