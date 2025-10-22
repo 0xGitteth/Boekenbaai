@@ -469,6 +469,9 @@ select[multiple] {
   .teacher-layout {
     grid-template-columns: 3fr 2fr;
   }
+  .teacher-layout.teacher-layout--single {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .teacher-layout--single {
