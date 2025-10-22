@@ -580,6 +580,8 @@ function initStaffPage() {
   const historyList = document.querySelector('#history-list');
   const classList = document.querySelector('#class-list');
   const classMessage = document.querySelector('#class-message');
+  const teacherLayout = document.querySelector('.teacher-layout');
+  const teacherClassesPanel = document.querySelector('.teacher-layout__classes');
   const adminBookForm = document.querySelector('#admin-book-form');
   const adminBookIdInput = document.querySelector('#admin-book-id');
   const adminBookTitle = document.querySelector('#admin-book-title');
@@ -655,6 +657,10 @@ function initStaffPage() {
     }
     if (logoutButton) {
       logoutButton.disabled = !loggedIn;
+    }
+    if (teacherLayout && teacherClassesPanel) {
+      const classesHidden = teacherClassesPanel.classList.contains('hidden');
+      teacherLayout.classList.toggle('teacher-layout--single', classesHidden);
     }
     if (!loggedIn) {
       historyList && (historyList.innerHTML = '');
