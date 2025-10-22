@@ -253,7 +253,7 @@ body[data-page='staff'] .panel--login {
 }
 
 .panel__subtitle {
-  margin: 0.5rem 0 0;
+  margin: 0.25rem 0 1rem;
   color: var(--muted);
   max-width: 42rem;
 }
