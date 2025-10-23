@@ -1070,6 +1070,12 @@ select[multiple] {
   margin-bottom: 1.5rem;
 }
 
+@media (min-width: 900px) {
+  .summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .summary__item {
   padding: 1rem 1.2rem;
   border-radius: 14px;
