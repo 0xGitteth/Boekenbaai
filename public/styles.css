@@ -395,7 +395,7 @@ select[multiple] {
   align-items: center;
   display: flex;
   gap: 0.5rem;
-  margin-top: 0;
+  margin-top: 0.5rem;
   grid-column: 1 / -1;
 }
 
@@ -589,11 +589,11 @@ select[multiple] {
 
 .admin-form {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .admin-form--compact {
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .form-field__group {
@@ -637,6 +637,24 @@ select[multiple] {
   gap: 0.75rem;
   align-items: center;
   justify-content: flex-start;
+}
+
+.admin-form__actions .btn,
+#admin-class-form button.btn,
+#admin-student-form button.btn {
+  margin-top: 0.5rem;
+}
+
+#admin-class-form .form-grid {
+  gap: 1.25rem;
+}
+
+#admin-student-form .form-grid {
+  gap: 0.75rem;
+}
+
+#admin-student-class {
+  margin-top: 0.5rem;
 }
 
 .form-grid--compact {
