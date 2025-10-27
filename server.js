@@ -37,6 +37,14 @@ const PUBLIC_API_BASE = process.env.BOEKENBAAI_PUBLIC_API_BASE || '';
 const ISBN_API_BASE = process.env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api';
 const ENABLE_ISBNBARCODE_LOOKUP =
   String(process.env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
+const DEFAULT_ISBN_CACHE_TTL_MS = 5 * 60 * 1000;
+const ISBN_CACHE_TTL_MS = (() => {
+  const raw = Number(process.env.BOEKENBAAI_ISBN_CACHE_TTL_MS);
+  if (Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  return DEFAULT_ISBN_CACHE_TTL_MS;
+})();
 
 const STATIC_DIR = (() => {
   const candidates = [configuredStaticDir, DIST_DIR, PUBLIC_DIR].filter(Boolean);
@@ -90,6 +98,8 @@ console.log(`Boekenbaai gebruikt data-bestand: ${DATA_PATH}`);
 console.log(`Boekenbaai serveert statische bestanden uit: ${STATIC_DIR}`);
 
 const sessions = new Map();
+const isbnMetadataCache = new Map();
+const isbnLookupInflight = new Map();
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
 
 function isOriginAllowed(origin, requestUrl) {
@@ -330,98 +340,132 @@ function parseOpenLibraryData(data, fallbackBarcode) {
 
 async function lookupIsbnMetadata(isbn) {
   const sanitized = sanitizeIsbn(isbn);
-  if (!sanitized) {
-    return {
-      barcode: '',
-      title: '',
-      author: '',
-      authors: [],
-      description: '',
-      publisher: '',
-      publishedAt: '',
-      language: '',
-      source: 'unknown',
-      found: false,
-    };
+  const cacheKey = sanitized || `invalid:${String(isbn ?? '').trim()}`;
+  const now = Date.now();
+  const cached = isbnMetadataCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
   }
-  if (!globalFetch) {
-    return {
-      barcode: sanitized,
-      title: '',
-      author: '',
-      authors: [],
-      description: '',
-      publisher: '',
-      publishedAt: '',
-      language: '',
-      source: 'offline',
-      found: false,
-    };
+  if (cached) {
+    isbnMetadataCache.delete(cacheKey);
   }
 
-  const headers = {
-    Accept: 'application/json',
-    'User-Agent': 'Boekenbaai/1.0 (+https://boekenbaai.example)',
-  };
-
-  const sources = [
-    {
-      name: 'openlibrary',
-      url: `https://openlibrary.org/isbn/${sanitized}.json`,
-      parser: (data) => parseOpenLibraryData(data, sanitized),
-    },
-  ];
-
-  if (ENABLE_ISBNBARCODE_LOOKUP) {
-    sources.push({
-      name: 'isbnbarcode.org',
-      url: `${ISBN_API_BASE.replace(/\/$/, '')}/${sanitized}`,
-      parser: (data) => parseIsbnBarcodeData(data, sanitized),
-    });
+  const inflight = isbnLookupInflight.get(cacheKey);
+  if (inflight) {
+    return inflight;
   }
 
-  for (const source of sources) {
-    try {
-      const response = await globalFetch(source.url, { headers });
-      if (!response.ok) {
-        if (response.status === 404) {
-          continue;
-        }
-        continue;
+  const lookupPromise = (async () => {
+    let result;
+
+    if (!sanitized) {
+      result = {
+        barcode: '',
+        title: '',
+        author: '',
+        authors: [],
+        description: '',
+        publisher: '',
+        publishedAt: '',
+        language: '',
+        source: 'unknown',
+        found: false,
+      };
+    } else if (!globalFetch) {
+      result = {
+        barcode: sanitized,
+        title: '',
+        author: '',
+        authors: [],
+        description: '',
+        publisher: '',
+        publishedAt: '',
+        language: '',
+        source: 'offline',
+        found: false,
+      };
+    } else {
+      const headers = {
+        Accept: 'application/json',
+        'User-Agent': 'Boekenbaai/1.0 (+https://boekenbaai.example)',
+      };
+
+      const sources = [
+        {
+          name: 'openlibrary',
+          url: `https://openlibrary.org/isbn/${sanitized}.json`,
+          parser: (data) => parseOpenLibraryData(data, sanitized),
+        },
+      ];
+
+      if (ENABLE_ISBNBARCODE_LOOKUP) {
+        sources.push({
+          name: 'isbnbarcode.org',
+          url: `${ISBN_API_BASE.replace(/\/$/, '')}/${sanitized}`,
+          parser: (data) => parseIsbnBarcodeData(data, sanitized),
+        });
       }
-      const contentType = response.headers.get('content-type') || '';
-      let payload = null;
-      if (contentType.includes('application/json')) {
-        payload = await response.json();
-      } else {
-        const text = await response.text();
+
+      for (const source of sources) {
         try {
-          payload = JSON.parse(text);
+          const response = await globalFetch(source.url, { headers });
+          if (!response.ok) {
+            if (response.status === 404) {
+              continue;
+            }
+            continue;
+          }
+          const contentType = response.headers.get('content-type') || '';
+          let payload = null;
+          if (contentType.includes('application/json')) {
+            payload = await response.json();
+          } else {
+            const text = await response.text();
+            try {
+              payload = JSON.parse(text);
+            } catch (error) {
+              payload = null;
+            }
+          }
+          const metadata = source.parser(payload);
+          if (metadata) {
+            result = metadata;
+            break;
+          }
         } catch (error) {
-          payload = null;
+          console.warn(`Kon geen gegevens ophalen via ${source.name}:`, error.message || error);
         }
       }
-      const metadata = source.parser(payload);
-      if (metadata) {
-        return metadata;
-      }
-    } catch (error) {
-      console.warn(`Kon geen gegevens ophalen via ${source.name}:`, error.message || error);
-    }
-  }
 
-  return {
-    barcode: sanitized,
-    title: '',
-    author: '',
-    authors: [],
-    description: '',
-    publisher: '',
-    publishedAt: '',
-    language: '',
-    source: 'none',
-    found: false,
-  };
+      if (!result) {
+        result = {
+          barcode: sanitized,
+          title: '',
+          author: '',
+          authors: [],
+          description: '',
+          publisher: '',
+          publishedAt: '',
+          language: '',
+          source: 'none',
+          found: false,
+        };
+      }
+    }
+
+    isbnMetadataCache.set(cacheKey, {
+      value: result,
+      expiresAt: Date.now() + ISBN_CACHE_TTL_MS,
+    });
+    return result;
+  })();
+
+  isbnLookupInflight.set(cacheKey, lookupPromise);
+  try {
+    return await lookupPromise;
+  } finally {
+    isbnLookupInflight.delete(cacheKey);
+  }
 }
 
 function sendJson(res, statusCode, payload) {
