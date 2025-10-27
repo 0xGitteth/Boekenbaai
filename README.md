@@ -38,9 +38,12 @@ De server kiest automatisch de map `dist/` zodra je een build hebt gedraaid. Zon
 | `BOEKENBAAI_STATIC_DIR` | `/app/dist` | Overschrijft de map van waaruit statische assets worden geserveerd. Standaard gebruikt de server `dist/` (na build) en anders `public/`. |
 | `BOEKENBAAI_PUBLIC_API_BASE` | `https://boekenbaai.sliplane.app` | Hiermee wordt het API-adres in de HTML-injectie gezet. Handig wanneer de frontend elders draait, maar je toch naar de Sliplane-backend wilt verwijzen. |
 | `BOEKENBAAI_ALLOWED_ORIGINS` | `https://jouwnaam.github.io` | Komma-gescheiden lijst met origins die cross-origin API-verkeer mogen doen. Zet op `*` om alles toe te staan. |
+| `BOEKENBAAI_ENABLE_ISBNBARCODE` | `true` | Zet op `true` om naast Open Library ook de ISBNBarcode.org API te raadplegen voor boekmetadata. Standaard staat alleen Open Library aan. |
 | `DEPLOY_TARGET` | `gh-pages` | Gebruik deze tijdens het bouwen (`DEPLOY_TARGET=gh-pages npm run build`) om de Vite-base op `/Boekenbaai/` te zetten voor GitHub Pages. |
 
 > 💡 **Tip:** Laat Sliplane tijdens de buildfase `npm run build` uitvoeren en tijdens de runtime alleen `npm start`. Dankzij `BOEKENBAAI_DATA_PATH` kun je het databestand op een volume laten schrijven zodat inloggegevens en uitleengeschiedenis bewaard blijven.
+
+De server probeert boekinformatie standaard eerst op te halen bij Open Library. Wanneer `BOEKENBAAI_ENABLE_ISBNBARCODE=true` staat, wordt daarna als fallback een verzoek naar ISBNBarcode.org gedaan en blijft de bestaande barcode-parser actief.
 
 ## Fallback: hosten op GitHub Pages
 

@@ -35,6 +35,8 @@ const configuredStaticDir = process.env.BOEKENBAAI_STATIC_DIR
 
 const PUBLIC_API_BASE = process.env.BOEKENBAAI_PUBLIC_API_BASE || '';
 const ISBN_API_BASE = process.env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api';
+const ENABLE_ISBNBARCODE_LOOKUP =
+  String(process.env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
 
 const STATIC_DIR = (() => {
   const candidates = [configuredStaticDir, DIST_DIR, PUBLIC_DIR].filter(Boolean);
@@ -364,16 +366,19 @@ async function lookupIsbnMetadata(isbn) {
 
   const sources = [
     {
-      name: 'isbnbarcode.org',
-      url: `${ISBN_API_BASE.replace(/\/$/, '')}/${sanitized}`,
-      parser: (data) => parseIsbnBarcodeData(data, sanitized),
-    },
-    {
       name: 'openlibrary',
       url: `https://openlibrary.org/isbn/${sanitized}.json`,
       parser: (data) => parseOpenLibraryData(data, sanitized),
     },
   ];
+
+  if (ENABLE_ISBNBARCODE_LOOKUP) {
+    sources.push({
+      name: 'isbnbarcode.org',
+      url: `${ISBN_API_BASE.replace(/\/$/, '')}/${sanitized}`,
+      parser: (data) => parseIsbnBarcodeData(data, sanitized),
+    });
+  }
 
   for (const source of sources) {
     try {
