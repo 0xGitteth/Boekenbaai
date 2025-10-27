@@ -112,14 +112,19 @@
 
     <template id="book-card-template">
       <article class="book-card">
-        <header class="book-card__header">
-          <span class="book-card__folder"></span>
+        <div class="book-card__media">
+          <div class="book-card__cover-wrapper">
+            <img class="book-card__cover" alt="" hidden />
+            <div class="book-card__cover-fallback"></div>
+          </div>
+          <ul class="book-card__tags"></ul>
+        </div>
+        <div class="book-card__content">
           <span class="book-card__status"></span>
-        </header>
-        <h3 class="book-card__title"></h3>
-        <p class="book-card__author"></p>
-        <p class="book-card__description"></p>
-        <ul class="book-card__tags"></ul>
+          <h3 class="book-card__title"></h3>
+          <p class="book-card__author"></p>
+          <p class="book-card__description"></p>
+        </div>
       </article>
     </template>
 

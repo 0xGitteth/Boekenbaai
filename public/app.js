@@ -101,40 +101,74 @@ function createBookCard(template, book, folders, options = {}) {
   const card = fragment.querySelector('.book-card');
   if (!card) return null;
 
-  const folderBadge = fragment.querySelector('.book-card__folder');
+  const coverImage = fragment.querySelector('.book-card__cover');
+  const coverFallback = fragment.querySelector('.book-card__cover-fallback');
   const statusBadge = fragment.querySelector('.book-card__status');
   const title = fragment.querySelector('.book-card__title');
   const author = fragment.querySelector('.book-card__author');
   const description = fragment.querySelector('.book-card__description');
   const tagsList = fragment.querySelector('.book-card__tags');
 
-  const folder = findFolder(folders, book.folderId);
-  folderBadge.textContent = folder ? folder.name : 'Geen map';
-  const folderColor = folder?.color || '#cbd5f5';
-  folderBadge.style.background = `${folderColor}20`;
-  folderBadge.style.color = '#1b263b';
+  const coverColor = book.coverColor || '#dbe2f5';
+  card.style.setProperty('--book-cover-color', coverColor);
 
-  statusBadge.textContent = book.status === 'available' ? 'Beschikbaar' : 'Uitgeleend';
-  statusBadge.classList.add(
-    book.status === 'available' ? 'book-card__status--available' : 'book-card__status--borrowed'
-  );
+  const coverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
+  const hasCover = Boolean(coverUrl);
+
+  if (coverFallback) {
+    const fallbackInitial = (book.title || '').trim().charAt(0).toUpperCase();
+    coverFallback.textContent = fallbackInitial || '📚';
+    coverFallback.hidden = hasCover;
+    if (hasCover) {
+      coverFallback.removeAttribute('role');
+      coverFallback.removeAttribute('aria-label');
+    } else {
+      coverFallback.setAttribute('role', 'img');
+      coverFallback.setAttribute('aria-label', 'Geen omslag beschikbaar');
+    }
+  }
+
+  if (coverImage) {
+    if (hasCover) {
+      coverImage.src = coverUrl;
+      coverImage.alt = book.title ? `Omslag van ${book.title}` : 'Boekomslag';
+      coverImage.loading = 'lazy';
+      coverImage.decoding = 'async';
+      coverImage.hidden = false;
+      if (coverFallback) {
+        coverFallback.hidden = true;
+      }
+    } else {
+      coverImage.removeAttribute('src');
+      coverImage.alt = '';
+      coverImage.removeAttribute('loading');
+      coverImage.removeAttribute('decoding');
+      coverImage.hidden = true;
+      if (coverFallback) {
+        coverFallback.hidden = false;
+      }
+    }
+  }
+
+  if (statusBadge) {
+    statusBadge.textContent = book.status === 'available' ? 'Beschikbaar' : 'Uitgeleend';
+    statusBadge.classList.add(
+      book.status === 'available' ? 'book-card__status--available' : 'book-card__status--borrowed'
+    );
+  }
 
   title.textContent = book.title;
   author.textContent = book.author;
   description.textContent = book.description || 'Nog geen beschrijving beschikbaar.';
 
-  tagsList.innerHTML = '';
-  if (book.suitableForExamList) {
-    const badge = document.createElement('li');
-    badge.textContent = 'Leeslijst';
-    badge.style.background = 'rgba(231, 111, 81, 0.18)';
-    badge.style.color = '#a53a1d';
-    tagsList.append(badge);
-  }
-  for (const tag of book.tags || []) {
-    const li = document.createElement('li');
-    li.textContent = tag;
-    tagsList.append(li);
+  if (tagsList) {
+    tagsList.innerHTML = '';
+    for (const tag of book.tags || []) {
+      const li = document.createElement('li');
+      li.textContent = tag;
+      tagsList.append(li);
+    }
+    tagsList.classList.toggle('hidden', tagsList.childElementCount === 0);
   }
 
   if (options.selectable) {
