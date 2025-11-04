@@ -64,7 +64,7 @@
           <div>
             <h2 id="teacher-panel-title">Overzicht</h2>
             <p class="panel__subtitle">
-              Bekijk de actuele collectie, filter op map en houd bij welke leerlingen lenen.
+              Bekijk de actuele collectie, filter op thema en houd bij welke leerlingen lenen.
             </p>
           </div>
           <div class="staff-meta" id="staff-meta">
@@ -76,10 +76,15 @@
         <div class="teacher-layout">
           <div class="teacher-layout__overview">
             <div class="filters">
-              <label class="filters__label" for="folder-filter">Filter op map:</label>
-              <select id="folder-filter">
-                <option value="">Alle mappen</option>
-              </select>
+              <div class="filters__themes">
+                <span class="filters__label" id="theme-filter-label">Filter op thema:</span>
+                <div
+                  class="filters__pills"
+                  id="theme-filter-pills"
+                  role="group"
+                  aria-labelledby="theme-filter-label"
+                ></div>
+              </div>
               <label class="filters__label" for="search-input">Zoek:</label>
               <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
             </div>

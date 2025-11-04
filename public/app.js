@@ -96,16 +96,16 @@ function findFolder(folders, id) {
 }
 
 const THEME_COLOR_MAP = {
-  avontuur: '#0f7abf',
-  spanning: '#c4374d',
-  romantiek: '#c759a1',
-  fantasy: '#7056d0',
-  informatief: '#2a9d8f',
-  humor: '#f48c06',
-  geschiedenis: '#99582a',
-  wetenschap: '#2b7a0b',
-  sport: '#007f5f',
-  poëzie: '#6f2dbd',
+  avontuur: '#64b5f6',
+  spanning: '#ff9aa2',
+  romantiek: '#ffb3d9',
+  fantasy: '#cdb4ff',
+  informatief: '#8ddad5',
+  humor: '#ffe29a',
+  geschiedenis: '#f6b48f',
+  wetenschap: '#9fd4a5',
+  sport: '#9ad7d0',
+  poëzie: '#e0b0ff',
 };
 
 function normalizeThemeKey(theme) {
@@ -160,7 +160,7 @@ function hashThemeColor(theme) {
     hash |= 0;
   }
   const hue = Math.abs(hash) % 360;
-  return hslToHex(hue, 60, 48);
+  return hslToHex(hue, 55, 68);
 }
 
 function getThemeColor(theme) {
@@ -185,19 +185,155 @@ function hexToRgb(hex) {
   };
 }
 
-function getThemeTextColor(background) {
-  const { r, g, b } = hexToRgb(background);
-  const sr = r / 255;
-  const sg = g / 255;
-  const sb = b / 255;
-  const luminance = 0.2126 * sr + 0.7152 * sg + 0.0722 * sb;
-  return luminance > 0.56 ? '#101828' : '#ffffff';
+function rgbToHex(r, g, b) {
+  const components = [r, g, b].map((value) =>
+    Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')
+  );
+  return `#${components.join('')}`;
+}
+
+function mixHexColors(colorA, colorB, weight = 0.5) {
+  const ratio = Math.max(0, Math.min(1, weight));
+  const a = hexToRgb(colorA);
+  const b = hexToRgb(colorB);
+  const r = a.r * (1 - ratio) + b.r * ratio;
+  const g = a.g * (1 - ratio) + b.g * ratio;
+  const bl = a.b * (1 - ratio) + b.b * ratio;
+  return rgbToHex(r, g, bl);
+}
+
+function hexToRgba(hex, alpha = 1) {
+  const { r, g, b } = hexToRgb(hex);
+  const safeAlpha = Math.max(0, Math.min(1, alpha));
+  return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
 }
 
 function resolveThemeColors(theme) {
-  const background = getThemeColor(theme);
-  const text = getThemeTextColor(background);
-  return { background, text };
+  const base = getThemeColor(theme);
+  const background = mixHexColors(base, '#ffffff', 0.82);
+  const hoverBackground = mixHexColors(base, '#ffffff', 0.7);
+  const activeBackground = mixHexColors(base, '#ffffff', 0.6);
+  const border = mixHexColors(base, '#0b1f33', 0.12);
+  const activeBorder = mixHexColors(base, '#0b1f33', 0.1);
+  const ring = hexToRgba(base, 0.28);
+  const text = '#0b1f33';
+  return { background, hoverBackground, activeBackground, border, activeBorder, ring, text };
+}
+
+function collectUniqueThemes(books) {
+  const map = new Map();
+  for (const book of books || []) {
+    for (const tag of book?.tags || []) {
+      if (typeof tag !== 'string') continue;
+      const label = tag.trim();
+      if (!label) continue;
+      const key = normalizeThemeKey(label);
+      if (!key || map.has(key)) continue;
+      map.set(key, { key, label });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    a.label.localeCompare(b.label, 'nl', { sensitivity: 'base' })
+  );
+}
+
+function renderThemePills(container, config = {}) {
+  if (!container) return;
+  const {
+    themes = [],
+    selectedThemes = new Set(),
+    onlyExamList = false,
+    onToggleTheme,
+    onToggleExam,
+    onClear,
+  } = config;
+
+  const elements = [];
+
+  const examButton = document.createElement('button');
+  examButton.type = 'button';
+  examButton.className = 'filters__pill filters__pill--exam';
+  examButton.textContent = 'Leeslijst';
+  const examActive = Boolean(onlyExamList);
+  examButton.classList.toggle('filters__pill--active', examActive);
+  examButton.setAttribute('aria-pressed', examActive ? 'true' : 'false');
+  examButton.addEventListener('click', () => {
+    if (typeof onToggleExam === 'function') {
+      onToggleExam(!examActive);
+    }
+  });
+  elements.push(examButton);
+
+  const isThemeSelected = (key) => {
+    if (!key) return false;
+    if (selectedThemes instanceof Set) {
+      return selectedThemes.has(key);
+    }
+    return Array.isArray(selectedThemes) ? selectedThemes.includes(key) : false;
+  };
+
+  if (!themes.length) {
+    const placeholder = document.createElement('span');
+    placeholder.className = 'filters__pill-placeholder';
+    placeholder.textContent = 'Geen thema\'s beschikbaar';
+    elements.push(placeholder);
+  } else {
+    for (const entry of themes) {
+      const label = typeof entry === 'string' ? entry : entry.label;
+      const key = typeof entry === 'string' ? normalizeThemeKey(entry) : entry.key;
+      if (!key || !label) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'filters__pill';
+      button.textContent = label;
+      const {
+        background,
+        hoverBackground,
+        activeBackground,
+        border,
+        activeBorder,
+        ring,
+        text,
+      } = resolveThemeColors(label);
+      button.style.setProperty('--theme-pill-bg', background);
+      button.style.setProperty('--theme-pill-hover-bg', hoverBackground);
+      button.style.setProperty('--theme-pill-active-bg', activeBackground);
+      button.style.setProperty('--theme-pill-border', border);
+      button.style.setProperty('--theme-pill-active-border', activeBorder);
+      button.style.setProperty('--theme-pill-ring', ring);
+      button.style.setProperty('--theme-pill-text', text);
+      const isActive = isThemeSelected(key);
+      button.classList.toggle('filters__pill--active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      button.dataset.filterValue = key;
+      button.addEventListener('click', () => {
+        if (typeof onToggleTheme === 'function') {
+          onToggleTheme({ key, label, active: !isThemeSelected(key) });
+        }
+      });
+      elements.push(button);
+    }
+  }
+
+  const hasSelection = Boolean(
+    (selectedThemes instanceof Set && selectedThemes.size > 0) ||
+      (Array.isArray(selectedThemes) && selectedThemes.length > 0) ||
+      onlyExamList
+  );
+  if (hasSelection) {
+    const clearButton = document.createElement('button');
+    clearButton.type = 'button';
+    clearButton.className = 'filters__pill filters__pill--clear';
+    clearButton.textContent = 'Wis selectie';
+    clearButton.addEventListener('click', () => {
+      if (typeof onClear === 'function') {
+        onClear();
+      }
+    });
+    elements.push(clearButton);
+  }
+
+  container.replaceChildren(...elements);
 }
 
 function createBookCard(template, book, folders, options = {}) {
@@ -269,9 +405,10 @@ function createBookCard(template, book, folders, options = {}) {
       const li = document.createElement('li');
       li.className = 'book-card__tag';
       li.textContent = tag;
-      const { background, text } = resolveThemeColors(tag);
+      const { background, text, border } = resolveThemeColors(tag);
       li.style.setProperty('--theme-pill-bg', background);
       li.style.setProperty('--theme-pill-text', text);
+      li.style.setProperty('--theme-pill-border', border);
       tagsList.append(li);
     }
     tagsList.classList.toggle('hidden', tagsList.childElementCount === 0);
@@ -306,10 +443,22 @@ function createBookCard(template, book, folders, options = {}) {
   return card;
 }
 
-function filterBooks(allBooks, { folder, query }) {
+function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } = {}) {
   let list = Array.isArray(allBooks) ? [...allBooks] : [];
   if (folder) {
     list = list.filter((book) => book.folderId === folder);
+  }
+  if (onlyExamList) {
+    list = list.filter((book) => book.suitableForExamList);
+  }
+  const themes = selectedThemes ? Array.from(selectedThemes) : [];
+  const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
+  if (normalizedThemes.length) {
+    list = list.filter((book) => {
+      const tagKeys = (book.tags || []).map(normalizeThemeKey).filter(Boolean);
+      if (!tagKeys.length) return false;
+      return normalizedThemes.every((theme) => tagKeys.includes(theme));
+    });
   }
   if (query) {
     const term = query.toLowerCase();
@@ -368,11 +517,11 @@ function initStudentPage() {
   const borrowedList = document.querySelector('#student-borrowed-list');
   const borrowedEmpty = document.querySelector('#student-borrowed-empty');
   const logoutButton = document.querySelector('#student-logout');
-  const folderFilter = document.querySelector('#folder-filter');
   const searchInput = document.querySelector('#search-input');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
   const bookCardTemplate = document.querySelector('#book-card-template');
+  const themeFilterPills = document.querySelector('#theme-filter-pills');
   const barcodeInput = document.querySelector('#barcode-input');
   const lookupButton = document.querySelector('#lookup-button');
   const bookResult = document.querySelector('#book-result');
@@ -380,6 +529,9 @@ function initStudentPage() {
   let folders = [];
   let allBooks = [];
   let currentBook = null;
+  let availableThemes = [];
+  const selectedThemeKeys = new Set();
+  let onlyExamList = false;
 
   function renderBorrowedBooks() {
     if (!borrowedList || !borrowedEmpty) return;
@@ -455,8 +607,10 @@ function initStudentPage() {
   function renderBooks() {
     if (!bookGrid) return;
     const filters = {
-      folder: folderFilter?.value || '',
+      folder: '',
       query: searchInput?.value || '',
+      selectedThemes: selectedThemeKeys,
+      onlyExamList,
     };
     const filtered = filterBooks(allBooks, filters);
     bookGrid.innerHTML = '';
@@ -472,23 +626,53 @@ function initStudentPage() {
     }
   }
 
+  function renderThemeFilters() {
+    renderThemePills(themeFilterPills, {
+      themes: availableThemes,
+      selectedThemes: selectedThemeKeys,
+      onlyExamList,
+      onToggleTheme: ({ key, active }) => {
+        if (!key) return;
+        if (active) {
+          selectedThemeKeys.add(key);
+        } else {
+          selectedThemeKeys.delete(key);
+        }
+        renderThemeFilters();
+        renderBooks();
+      },
+      onToggleExam: (nextValue) => {
+        onlyExamList = Boolean(nextValue);
+        renderThemeFilters();
+        renderBooks();
+      },
+      onClear: () => {
+        selectedThemeKeys.clear();
+        onlyExamList = false;
+        renderThemeFilters();
+        renderBooks();
+      },
+    });
+  }
+
+  function updateAvailableThemes() {
+    availableThemes = collectUniqueThemes(allBooks);
+    const availableKeys = new Set(availableThemes.map((theme) => theme.key));
+    for (const key of Array.from(selectedThemeKeys)) {
+      if (!availableKeys.has(key)) {
+        selectedThemeKeys.delete(key);
+      }
+    }
+    renderThemeFilters();
+  }
+
   async function loadFolders() {
     folders = await fetchJson('/api/folders');
-    if (folderFilter) {
-      const current = folderFilter.value;
-      folderFilter.innerHTML = '<option value="">Alle mappen</option>';
-      for (const folder of folders) {
-        const option = document.createElement('option');
-        option.value = folder.id;
-        option.textContent = folder.name;
-        folderFilter.append(option);
-      }
-      folderFilter.value = current;
-    }
   }
 
   async function loadBooks() {
     allBooks = await fetchJson('/api/books');
+    updateAvailableThemes();
     renderBooks();
   }
 
@@ -687,9 +871,9 @@ function initStudentPage() {
     }
   });
 
-  folderFilter?.addEventListener('change', renderBooks);
   searchInput?.addEventListener('input', renderBooks);
 
+  renderThemeFilters();
   renderAuthState();
   Promise.all([loadFolders(), loadBooks(), loadSummary()]).catch(() => {});
   if (authToken) {
@@ -712,11 +896,11 @@ function initStaffPage() {
   const staffName = document.querySelector('#staff-name');
   const staffRole = document.querySelector('#staff-role');
   const logoutButton = document.querySelector('#logout-button');
-  const folderFilter = document.querySelector('#folder-filter');
   const searchInput = document.querySelector('#search-input');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
   const bookCardTemplate = document.querySelector('#book-card-template');
+  const themeFilterPills = document.querySelector('#theme-filter-pills');
   const historyList = document.querySelector('#history-list');
   const classList = document.querySelector('#class-list');
   const classMessage = document.querySelector('#class-message');
@@ -768,7 +952,10 @@ function initStaffPage() {
   let selectedAdminClassId = '';
   let selectedAdminStudentId = '';
   let barcodeLookupTimer = null;
-  const filters = { folder: '', query: '' };
+  const filters = { query: '' };
+  let availableThemes = [];
+  const selectedThemeKeys = new Set();
+  let onlyExamList = false;
 
   function renderStaffState() {
     const loggedIn = authUser && (authUser.role === 'teacher' || authUser.role === 'admin');
@@ -836,6 +1023,10 @@ function initStaffPage() {
       classes = [];
       students = [];
       teachers = [];
+      availableThemes = [];
+      selectedThemeKeys.clear();
+      onlyExamList = false;
+      renderThemeFilters();
       renderBooks();
     }
   }
@@ -844,7 +1035,12 @@ function initStaffPage() {
 
   function renderBooks() {
     if (!bookGrid) return;
-    const filtered = filterBooks(allBooks, filters);
+    const filtered = filterBooks(allBooks, {
+      folder: '',
+      query: filters.query,
+      selectedThemes: selectedThemeKeys,
+      onlyExamList,
+    });
     bookGrid.innerHTML = '';
     if (!filtered.length) {
       bookGrid.innerHTML = '<p>Geen boeken gevonden voor deze selectie.</p>';
@@ -865,6 +1061,46 @@ function initStaffPage() {
         bookGrid.append(card);
       }
     }
+  }
+
+  function renderThemeFilters() {
+    renderThemePills(themeFilterPills, {
+      themes: availableThemes,
+      selectedThemes: selectedThemeKeys,
+      onlyExamList,
+      onToggleTheme: ({ key, active }) => {
+        if (!key) return;
+        if (active) {
+          selectedThemeKeys.add(key);
+        } else {
+          selectedThemeKeys.delete(key);
+        }
+        renderThemeFilters();
+        renderBooks();
+      },
+      onToggleExam: (nextValue) => {
+        onlyExamList = Boolean(nextValue);
+        renderThemeFilters();
+        renderBooks();
+      },
+      onClear: () => {
+        selectedThemeKeys.clear();
+        onlyExamList = false;
+        renderThemeFilters();
+        renderBooks();
+      },
+    });
+  }
+
+  function updateAvailableThemes() {
+    availableThemes = collectUniqueThemes(allBooks);
+    const availableKeys = new Set(availableThemes.map((theme) => theme.key));
+    for (const key of Array.from(selectedThemeKeys)) {
+      if (!availableKeys.has(key)) {
+        selectedThemeKeys.delete(key);
+      }
+    }
+    renderThemeFilters();
   }
 
   function handleAdminBookSelection(book, options = {}) {
@@ -1373,17 +1609,6 @@ function initStaffPage() {
 
   async function loadFolders() {
     folders = await fetchJson('/api/folders');
-    if (folderFilter) {
-      const current = folderFilter.value;
-      folderFilter.innerHTML = '<option value="">Alle mappen</option>';
-      for (const folder of folders) {
-        const option = document.createElement('option');
-        option.value = folder.id;
-        option.textContent = folder.name;
-        folderFilter.append(option);
-      }
-      folderFilter.value = current;
-    }
     if (adminFolderSelect) {
       const current = adminFolderSelect.value;
       adminFolderSelect.innerHTML = '<option value="">Geen map</option>';
@@ -1399,6 +1624,7 @@ function initStaffPage() {
 
   async function loadBooks() {
     allBooks = await fetchJson('/api/books');
+    updateAvailableThemes();
     renderBooks();
     if (selectedBookId) {
       const selectedBook = allBooks.find((entry) => entry.id === selectedBookId);
@@ -1624,10 +1850,6 @@ function initStaffPage() {
     loginMessage.textContent = 'Je bent uitgelogd.';
   });
 
-  folderFilter?.addEventListener('change', () => {
-    filters.folder = folderFilter.value;
-    renderBooks();
-  });
   searchInput?.addEventListener('input', () => {
     filters.query = searchInput.value;
     renderBooks();
@@ -2073,6 +2295,7 @@ function initStaffPage() {
     }
   });
 
+  renderThemeFilters();
   renderStaffState();
   Promise.all([loadFolders(), loadBooks(), loadSummary()]).catch(() => {});
   if (authToken) {
