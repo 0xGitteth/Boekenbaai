@@ -89,15 +89,20 @@
           <div>
             <h2 id="collection-title">Ontdek onze boeken</h2>
             <p class="panel__subtitle">
-              Filter op map of zoek naar jouw volgende leesavontuur.
+              Filter op thema of zoek naar jouw volgende leesavontuur.
             </p>
           </div>
         </div>
         <div class="filters">
-          <label class="filters__label" for="folder-filter">Filter op map:</label>
-          <select id="folder-filter">
-            <option value="">Alle mappen</option>
-          </select>
+          <div class="filters__themes">
+            <span class="filters__label" id="theme-filter-label">Filter op thema:</span>
+            <div
+              class="filters__pills"
+              id="theme-filter-pills"
+              role="group"
+              aria-labelledby="theme-filter-label"
+            ></div>
+          </div>
           <label class="filters__label" for="search-input">Zoek:</label>
           <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
         </div>
