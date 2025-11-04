@@ -95,6 +95,111 @@ function findFolder(folders, id) {
   return folders.find((folder) => folder.id === id) || null;
 }
 
+const THEME_COLOR_MAP = {
+  avontuur: '#0f7abf',
+  spanning: '#c4374d',
+  romantiek: '#c759a1',
+  fantasy: '#7056d0',
+  informatief: '#2a9d8f',
+  humor: '#f48c06',
+  geschiedenis: '#99582a',
+  wetenschap: '#2b7a0b',
+  sport: '#007f5f',
+  poëzie: '#6f2dbd',
+};
+
+function normalizeThemeKey(theme) {
+  return typeof theme === 'string' ? theme.trim().toLowerCase() : '';
+}
+
+function hslToHex(h, s, l) {
+  const saturation = s / 100;
+  const lightness = l / 100;
+  const c = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = lightness - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h >= 0 && h < 60) {
+    r = c;
+    g = x;
+  } else if (h >= 60 && h < 120) {
+    r = x;
+    g = c;
+  } else if (h >= 120 && h < 180) {
+    g = c;
+    b = x;
+  } else if (h >= 180 && h < 240) {
+    g = x;
+    b = c;
+  } else if (h >= 240 && h < 300) {
+    r = x;
+    b = c;
+  } else {
+    r = c;
+    b = x;
+  }
+
+  const toHex = (value) => {
+    const hex = Math.round((value + m) * 255)
+      .toString(16)
+      .padStart(2, '0');
+    return hex;
+  };
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function hashThemeColor(theme) {
+  const value = normalizeThemeKey(theme) || 'thema';
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = value.charCodeAt(index) + ((hash << 5) - hash);
+    hash |= 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return hslToHex(hue, 60, 48);
+}
+
+function getThemeColor(theme) {
+  const key = normalizeThemeKey(theme);
+  if (key && THEME_COLOR_MAP[key]) {
+    return THEME_COLOR_MAP[key];
+  }
+  return hashThemeColor(key);
+}
+
+function hexToRgb(hex) {
+  const value = hex.replace('#', '');
+  const parsed = value.length === 3 ? value.replace(/(.)/g, '$1$1') : value;
+  const bigint = parseInt(parsed, 16);
+  if (Number.isNaN(bigint)) {
+    return { r: 0, g: 0, b: 0 };
+  }
+  return {
+    r: (bigint >> 16) & 255,
+    g: (bigint >> 8) & 255,
+    b: bigint & 255,
+  };
+}
+
+function getThemeTextColor(background) {
+  const { r, g, b } = hexToRgb(background);
+  const sr = r / 255;
+  const sg = g / 255;
+  const sb = b / 255;
+  const luminance = 0.2126 * sr + 0.7152 * sg + 0.0722 * sb;
+  return luminance > 0.56 ? '#101828' : '#ffffff';
+}
+
+function resolveThemeColors(theme) {
+  const background = getThemeColor(theme);
+  const text = getThemeTextColor(background);
+  return { background, text };
+}
+
 function createBookCard(template, book, folders, options = {}) {
   if (!template) return null;
   const fragment = template.content.cloneNode(true);
@@ -106,7 +211,6 @@ function createBookCard(template, book, folders, options = {}) {
   const statusBadge = fragment.querySelector('.book-card__status');
   const title = fragment.querySelector('.book-card__title');
   const author = fragment.querySelector('.book-card__author');
-  const description = fragment.querySelector('.book-card__description');
   const tagsList = fragment.querySelector('.book-card__tags');
 
   const coverColor = book.coverColor || '#dbe2f5';
@@ -159,13 +263,15 @@ function createBookCard(template, book, folders, options = {}) {
 
   title.textContent = book.title;
   author.textContent = book.author;
-  description.textContent = book.description || 'Nog geen beschrijving beschikbaar.';
-
   if (tagsList) {
     tagsList.innerHTML = '';
     for (const tag of book.tags || []) {
       const li = document.createElement('li');
+      li.className = 'book-card__tag';
       li.textContent = tag;
+      const { background, text } = resolveThemeColors(tag);
+      li.style.setProperty('--theme-pill-bg', background);
+      li.style.setProperty('--theme-pill-text', text);
       tagsList.append(li);
     }
     tagsList.classList.toggle('hidden', tagsList.childElementCount === 0);
