@@ -132,6 +132,71 @@
       </article>
     </template>
 
+
+    <section class="book-detail hidden" id="book-detail" aria-hidden="true">
+      <div class="book-detail__backdrop" data-book-detail-dismiss></div>
+      <div class="book-detail__dialog" role="dialog" aria-modal="true" aria-labelledby="book-detail-title">
+        <button type="button" class="book-detail__close" data-book-detail-close aria-label="Sluiten">
+          <span aria-hidden="true">&times;</span>
+        </button>
+        <div class="book-detail__loading" id="book-detail-loading" role="status" aria-live="polite">
+          Boekdetails laden…
+        </div>
+        <div class="book-detail__content" id="book-detail-content" hidden>
+          <div class="book-detail__header">
+            <div class="book-detail__media">
+              <img id="book-detail-cover" alt="" hidden />
+              <div id="book-detail-cover-fallback" class="book-detail__cover-fallback" aria-hidden="true">📚</div>
+            </div>
+            <div class="book-detail__summary">
+              <span class="book-detail__status" id="book-detail-status"></span>
+              <h3 id="book-detail-title"></h3>
+              <p id="book-detail-author" class="book-detail__author"></p>
+              <ul id="book-detail-tags" class="book-detail__tags"></ul>
+            </div>
+          </div>
+          <p id="book-detail-description" class="book-detail__description"></p>
+          <dl class="book-detail__meta">
+            <div class="book-detail__meta-item">
+              <dt>Uitgever</dt>
+              <dd id="book-detail-publisher">Onbekend</dd>
+            </div>
+            <div class="book-detail__meta-item">
+              <dt>Jaar</dt>
+              <dd id="book-detail-year">Onbekend</dd>
+            </div>
+            <div class="book-detail__meta-item">
+              <dt>Pagina's</dt>
+              <dd id="book-detail-pages">Onbekend</dd>
+            </div>
+            <div class="book-detail__meta-item">
+              <dt>Taal</dt>
+              <dd id="book-detail-language">Onbekend</dd>
+            </div>
+            <div class="book-detail__meta-item">
+              <dt>Map</dt>
+              <dd id="book-detail-folder">Geen map</dd>
+            </div>
+            <div class="book-detail__meta-item">
+              <dt>Barcode</dt>
+              <dd id="book-detail-barcode"></dd>
+            </div>
+            <div class="book-detail__meta-item" id="book-detail-due-item" hidden>
+              <dt>Verwacht terug</dt>
+              <dd id="book-detail-due"></dd>
+            </div>
+          </dl>
+        </div>
+        <div class="book-detail__footer">
+          <p class="book-detail__message hint" id="book-detail-message" aria-live="polite"></p>
+          <div class="book-detail__actions">
+            <button type="button" class="btn" data-book-detail-edit hidden>Boek bewerken</button>
+            <button type="button" class="btn btn--ghost" data-book-detail-close>Sluiten</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <script type="module" src="app.js"></script>
   </body>
 </html>
