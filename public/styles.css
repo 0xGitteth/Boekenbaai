@@ -485,7 +485,7 @@ select[multiple] {
 
 @media (min-width: 1080px) {
   .teacher-layout {
-    grid-template-columns: 3fr 2fr;
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 28vw, 360px);
   }
   .teacher-layout.teacher-layout--single {
     grid-template-columns: minmax(0, 1fr);
