@@ -91,41 +91,42 @@
             <div class="summary" id="summary"></div>
             <div class="book-grid" id="book-grid"></div>
           </div>
-          <div class="teacher-layout__classes" data-role-only="teacher">
-            <h3>Mijn klassen</h3>
-            <p class="hint">
-              Houd eenvoudig bij welke leerlingen aan jouw lessen gekoppeld zijn. Nieuwe klassen
-              worden door de beheerder aangemaakt.
-            </p>
-            <p id="class-message" class="hint" role="status" aria-live="polite"></p>
-            <div id="class-list" class="class-list"></div>
-
-            <section class="teacher-students">
-              <h4>Leerlingen koppelen</h4>
-              <p class="hint">
-                Gebruik een bestaande gebruikersnaam om een leerling aan jouw klas toe te voegen.
-                Accounts aanmaken of verwijderen gebeurt door de beheerder.
-              </p>
-              <form id="teacher-student-form" class="teacher-student-form">
-                <div class="form-grid form-grid--compact">
-                  <div class="form-field">
-                    <label for="teacher-student-class">Klas</label>
-                    <select id="teacher-student-class" required>
-                      <option value="">Kies een klas</option>
-                    </select>
-                  </div>
-                  <div class="form-field">
-                    <label for="teacher-student-username">Gebruikersnaam leerling</label>
-                    <input id="teacher-student-username" type="text" required autocomplete="off" />
-                  </div>
-                </div>
-                <button type="submit" class="btn btn--secondary">Leerling koppelen</button>
-              </form>
-              <p id="teacher-student-message" class="hint" role="status" aria-live="polite"></p>
-              <div id="teacher-student-list" class="student-list"></div>
-            </section>
-          </div>
         </div>
+
+        <section class="teacher-layout__classes teacher-actions" data-role-only="teacher">
+          <h3>Mijn klassen</h3>
+          <p class="hint">
+            Houd eenvoudig bij welke leerlingen aan jouw lessen gekoppeld zijn. Nieuwe klassen
+            worden door de beheerder aangemaakt.
+          </p>
+          <p id="class-message" class="hint" role="status" aria-live="polite"></p>
+          <div id="class-list" class="class-list"></div>
+
+          <section class="teacher-students">
+            <h4>Leerlingen koppelen</h4>
+            <p class="hint">
+              Gebruik een bestaande gebruikersnaam om een leerling aan jouw klas toe te voegen.
+              Accounts aanmaken of verwijderen gebeurt door de beheerder.
+            </p>
+            <form id="teacher-student-form" class="teacher-student-form">
+              <div class="form-grid form-grid--compact">
+                <div class="form-field">
+                  <label for="teacher-student-class">Klas</label>
+                  <select id="teacher-student-class" required>
+                    <option value="">Kies een klas</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="teacher-student-username">Gebruikersnaam leerling</label>
+                  <input id="teacher-student-username" type="text" required autocomplete="off" />
+                </div>
+              </div>
+              <button type="submit" class="btn btn--secondary">Leerling koppelen</button>
+            </form>
+            <p id="teacher-student-message" class="hint" role="status" aria-live="polite"></p>
+            <div id="teacher-student-list" class="student-list"></div>
+          </section>
+        </section>
       </section>
 
       <section
