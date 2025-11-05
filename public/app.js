@@ -241,8 +241,6 @@ const bookDetailState = {
   metaLanguage: null,
   metaFolder: null,
   metaBarcode: null,
-  metaDueItem: null,
-  metaDue: null,
   actions: null,
   editButton: null,
   closeButtons: [],
@@ -294,8 +292,6 @@ function ensureBookDetailElements() {
     bookDetailState.metaLanguage = bookDetailState.root.querySelector('#book-detail-language');
     bookDetailState.metaFolder = bookDetailState.root.querySelector('#book-detail-folder');
     bookDetailState.metaBarcode = bookDetailState.root.querySelector('#book-detail-barcode');
-    bookDetailState.metaDueItem = bookDetailState.root.querySelector('#book-detail-due-item');
-    bookDetailState.metaDue = bookDetailState.root.querySelector('#book-detail-due');
     bookDetailState.actions = bookDetailState.root.querySelector('.book-detail__actions');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
     bookDetailState.closeButtons = Array.from(
@@ -436,7 +432,10 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
     const statusValue = (book.status || 'available').toLowerCase();
     const statusText = statusValue === 'available' ? 'Beschikbaar' : 'Uitgeleend';
     state.status.textContent = statusText;
-    state.status.classList.toggle('book-detail__status--borrowed', statusValue !== 'available');
+    state.status.classList.remove('book-detail__status--available', 'book-detail__status--borrowed');
+    state.status.classList.add(
+      statusValue === 'available' ? 'book-detail__status--available' : 'book-detail__status--borrowed'
+    );
   }
   if (state.tags) {
     state.tags.innerHTML = '';
@@ -474,13 +473,6 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
   }
   if (state.metaBarcode) {
     state.metaBarcode.textContent = book.barcode || metadata?.barcode || '';
-  }
-  if (state.metaDueItem) {
-    const hasDue = book.status === 'borrowed' && book.dueDate;
-    state.metaDueItem.hidden = !hasDue;
-    if (state.metaDue) {
-      state.metaDue.textContent = hasDue ? formatDate(book.dueDate) : '';
-    }
   }
   if (state.message) {
     state.message.textContent = metadataMessage || '';
@@ -729,6 +721,7 @@ function createBookCard(template, book, folders, options = {}) {
   }
 
   if (statusBadge) {
+    statusBadge.classList.remove('book-card__status--available', 'book-card__status--borrowed');
     statusBadge.textContent = book.status === 'available' ? 'Beschikbaar' : 'Uitgeleend';
     statusBadge.classList.add(
       book.status === 'available' ? 'book-card__status--available' : 'book-card__status--borrowed'

@@ -320,13 +320,12 @@
               <div id="book-detail-cover-fallback" class="book-detail__cover-fallback" aria-hidden="true">📚</div>
             </div>
             <div class="book-detail__summary">
-              <span class="book-detail__status" id="book-detail-status"></span>
-              <h3 id="book-detail-title"></h3>
+              <h3 id="book-detail-title" class="book-detail__title"></h3>
               <p id="book-detail-author" class="book-detail__author"></p>
+              <p id="book-detail-description" class="book-detail__description"></p>
               <ul id="book-detail-tags" class="book-detail__tags"></ul>
             </div>
           </div>
-          <p id="book-detail-description" class="book-detail__description"></p>
           <dl class="book-detail__meta">
             <div class="book-detail__meta-item">
               <dt>Uitgever</dt>
@@ -352,9 +351,9 @@
               <dt>Barcode</dt>
               <dd id="book-detail-barcode"></dd>
             </div>
-            <div class="book-detail__meta-item" id="book-detail-due-item" hidden>
-              <dt>Verwacht terug</dt>
-              <dd id="book-detail-due"></dd>
+            <div class="book-detail__meta-item book-detail__meta-item--status">
+              <dt>Status</dt>
+              <dd><span class="book-detail__status" id="book-detail-status"></span></dd>
             </div>
           </dl>
         </div>
