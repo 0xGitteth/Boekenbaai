@@ -5,6 +5,7 @@ const apiBase = (
   ''
 ).trim();
 const pageType = document.body?.dataset.page || 'student';
+const bookCardTemplate = document.querySelector('#book-card-template');
 let authToken = localStorage.getItem('boekenbaai_token') || null;
 let authUser = null;
 let updateAuthUi = () => {};
@@ -856,7 +857,6 @@ function initStudentPage() {
   const searchInput = document.querySelector('#search-input');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
-  const bookCardTemplate = document.querySelector('#book-card-template');
   const themeFilterPills = document.querySelector('#theme-filter-pills');
   const barcodeInput = document.querySelector('#barcode-input');
   const lookupButton = document.querySelector('#lookup-button');
@@ -1236,7 +1236,6 @@ function initStaffPage() {
   const searchInput = document.querySelector('#search-input');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
-  const bookCardTemplate = document.querySelector('#book-card-template');
   const themeFilterPills = document.querySelector('#theme-filter-pills');
   const historyList = document.querySelector('#history-list');
   const classList = document.querySelector('#class-list');
