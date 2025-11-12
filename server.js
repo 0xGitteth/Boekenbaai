@@ -138,6 +138,7 @@ function ensureStudentShape(student) {
   }
   safeStudent.username = safeStudent.username || '';
   safeStudent.passwordHash = safeStudent.passwordHash || '';
+  safeStudent.mustChangePassword = Boolean(student.mustChangePassword);
   return safeStudent;
 }
 
@@ -154,14 +155,20 @@ function ensureClassShape(klass) {
 }
 
 function ensureTeacherShape(user) {
-  if (!user || user.role !== 'teacher') {
+  if (!user) {
     return user;
   }
-  const safeTeacher = { ...user };
-  safeTeacher.classIds = Array.isArray(safeTeacher.classIds)
-    ? Array.from(new Set(safeTeacher.classIds.filter((id) => typeof id === 'string')))
+  const safeUser = { ...user };
+  safeUser.username = typeof safeUser.username === 'string' ? safeUser.username : '';
+  safeUser.passwordHash = typeof safeUser.passwordHash === 'string' ? safeUser.passwordHash : '';
+  safeUser.mustChangePassword = Boolean(user.mustChangePassword);
+  if (safeUser.role !== 'teacher') {
+    return safeUser;
+  }
+  safeUser.classIds = Array.isArray(safeUser.classIds)
+    ? Array.from(new Set(safeUser.classIds.filter((id) => typeof id === 'string')))
     : [];
-  return safeTeacher;
+  return safeUser;
 }
 
 function normalizeClassKey(name) {
@@ -337,6 +344,7 @@ function sanitizeStudent(student, options = {}) {
     grade: student.grade || '',
     borrowedBooks: Array.isArray(student.borrowedBooks) ? student.borrowedBooks : [],
     classIds: Array.isArray(student.classIds) ? student.classIds : [],
+    mustChangePassword: Boolean(student.mustChangePassword),
   };
   if (options.includeUsername) {
     base.username = student.username || '';
@@ -755,7 +763,12 @@ async function handleApi(req, res, requestUrl) {
         sessions.set(token, { userId: staffAccount.id, type: 'staff', createdAt: Date.now() });
         return sendJson(res, 200, {
           token,
-          user: { id: staffAccount.id, name: staffAccount.name, role: staffAccount.role },
+          user: {
+            id: staffAccount.id,
+            name: staffAccount.name,
+            role: staffAccount.role,
+            mustChangePassword: Boolean(staffAccount.mustChangePassword),
+          },
         });
       }
 
@@ -770,6 +783,7 @@ async function handleApi(req, res, requestUrl) {
             name: studentAccount.name,
             role: 'student',
             grade: studentAccount.grade || '',
+            mustChangePassword: Boolean(studentAccount.mustChangePassword),
           },
         });
       }
@@ -783,6 +797,55 @@ async function handleApi(req, res, requestUrl) {
         sessions.delete(token);
       }
       return sendJson(res, 200, { message: 'Afgemeld' });
+    }
+
+    if (req.method === 'PATCH' && requestUrl.pathname === '/api/account/password') {
+      if (!user) {
+        return sendJson(res, 401, { message: 'Niet ingelogd' });
+      }
+      const body = await parseBody(req);
+      const currentPassword =
+        typeof body.currentPassword === 'string' ? body.currentPassword : String(body.currentPassword || '');
+      const newPassword =
+        typeof body.newPassword === 'string' ? body.newPassword : String(body.newPassword || '');
+      if (!currentPassword || !newPassword) {
+        return sendJson(res, 400, { message: 'Vul je huidige en nieuwe wachtwoord in.' });
+      }
+      if (newPassword.length < 6) {
+        return sendJson(res, 400, {
+          message: 'Kies een nieuw wachtwoord van minimaal 6 tekens.',
+        });
+      }
+
+      const db = getDb();
+      let account = null;
+      if (user.role === 'student') {
+        account = db.students.find((entry) => entry.id === user.id) || null;
+      } else if (user.role === 'teacher' || user.role === 'admin') {
+        account = db.users.find((entry) => entry.id === user.id) || null;
+      }
+      if (!account) {
+        return sendJson(res, 404, { message: 'Account niet gevonden' });
+      }
+
+      const currentHash = hashPassword(currentPassword);
+      if (account.passwordHash !== currentHash) {
+        return sendJson(res, 400, { message: 'Huidig wachtwoord klopt niet.' });
+      }
+
+      const newHash = hashPassword(newPassword);
+      if (newHash === account.passwordHash) {
+        return sendJson(res, 400, { message: 'Kies een ander nieuw wachtwoord.' });
+      }
+      account.passwordHash = newHash;
+      if (body.clearMustChange !== false) {
+        account.mustChangePassword = false;
+      }
+      saveDb(db);
+      return sendJson(res, 200, {
+        message: 'Wachtwoord gewijzigd',
+        mustChangePassword: Boolean(account.mustChangePassword),
+      });
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/me') {
@@ -800,9 +863,15 @@ async function handleApi(req, res, requestUrl) {
           borrowedBooks: student.borrowedBooks || [],
           classIds: student.classIds || [],
           username: student.username || '',
+          mustChangePassword: Boolean(student.mustChangePassword),
         });
       }
-      return sendJson(res, 200, { id: user.id, name: user.name, role: user.role });
+      return sendJson(res, 200, {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        mustChangePassword: Boolean(user.mustChangePassword),
+      });
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/status') {
@@ -1120,6 +1189,7 @@ async function handleApi(req, res, requestUrl) {
         name,
         username,
         passwordHash: hashPassword(password),
+        mustChangePassword: true,
         grade: (body.grade || '').trim(),
         borrowedBooks: [],
         classIds: validClassIds,
@@ -1288,6 +1358,7 @@ async function handleApi(req, res, requestUrl) {
           let passwordChanged = false;
           if (password) {
             existingStudent.passwordHash = hashPassword(password);
+            existingStudent.mustChangePassword = true;
             passwordChanged = true;
           }
 
@@ -1351,6 +1422,7 @@ async function handleApi(req, res, requestUrl) {
           name,
           username,
           passwordHash: hashPassword(password),
+          mustChangePassword: true,
           grade,
           borrowedBooks: [],
           classIds,
@@ -1499,6 +1571,7 @@ async function handleApi(req, res, requestUrl) {
           let passwordChanged = false;
           if (password) {
             existingTeacher.passwordHash = hashPassword(password);
+            existingTeacher.mustChangePassword = true;
             passwordChanged = true;
           }
           existingTeacher.name = name;
@@ -1548,6 +1621,7 @@ async function handleApi(req, res, requestUrl) {
           name,
           username,
           passwordHash: hashPassword(password),
+          mustChangePassword: true,
           classIds,
         };
         db.users.push(teacher);

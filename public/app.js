@@ -9,6 +9,7 @@ const bookCardTemplate = document.querySelector('#book-card-template');
 let authToken = localStorage.getItem('boekenbaai_token') || null;
 let authUser = null;
 let updateAuthUi = () => {};
+let passwordChangeController = null;
 
 function setAuth(token) {
   authToken = token;
@@ -20,6 +21,7 @@ function clearAuth({ silent = false } = {}) {
   authUser = null;
   localStorage.removeItem('boekenbaai_token');
   closeBookDetail();
+  passwordChangeController?.handleAuthChange(null);
   if (!silent) {
     updateAuthUi();
   }
@@ -82,7 +84,164 @@ async function reloadCurrentUser(expectedRoles) {
   }
   authUser = me;
   updateAuthUi();
+  passwordChangeController?.handleAuthChange(authUser);
   return me;
+}
+
+function initPasswordChangeDialog() {
+  const container = document.querySelector('#password-change-modal');
+  if (!container) {
+    return {
+      handleAuthChange() {},
+    };
+  }
+  const form = container.querySelector('#password-change-form');
+  const currentInput = container.querySelector('#password-change-current');
+  const newInput = container.querySelector('#password-change-new');
+  const confirmInput = container.querySelector('#password-change-confirm');
+  const messageEl = container.querySelector('#password-change-message');
+  const submitButton = container.querySelector('#password-change-submit');
+  const logoutButton = container.querySelector('#password-change-logout');
+  const descriptionEl = container.querySelector('#password-change-description');
+
+  let submitting = false;
+  let visibleForUserId = null;
+  let isVisible = false;
+
+  function setMessage(message) {
+    if (messageEl) {
+      messageEl.textContent = message || '';
+    }
+  }
+
+  function focusCurrent() {
+    if (currentInput) {
+      currentInput.focus();
+    }
+  }
+
+  function openForUser(user) {
+    if (!user) {
+      return;
+    }
+    const sameUser = visibleForUserId === user.id;
+    visibleForUserId = user.id;
+    if (!sameUser) {
+      form?.reset();
+      setMessage('');
+      submitting = false;
+      submitButton?.removeAttribute('disabled');
+    }
+    if (descriptionEl) {
+      const displayName = user.name ? ` ${user.name}` : '';
+      descriptionEl.textContent = `Hallo${displayName}, voor jouw veiligheid moet je nu een nieuw wachtwoord instellen voordat je verder gaat.`;
+    }
+    container.classList.remove('hidden');
+    container.setAttribute('aria-hidden', 'false');
+    isVisible = true;
+    if (!sameUser) {
+      setTimeout(focusCurrent, 50);
+    }
+  }
+
+  function closeDialog() {
+    if (!isVisible && !visibleForUserId) {
+      return;
+    }
+    container.classList.add('hidden');
+    container.setAttribute('aria-hidden', 'true');
+    isVisible = false;
+    visibleForUserId = null;
+    form?.reset();
+    setMessage('');
+    submitting = false;
+    submitButton?.removeAttribute('disabled');
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (submitting) {
+      return;
+    }
+    const currentPassword = currentInput?.value || '';
+    const newPassword = newInput?.value || '';
+    const confirmPassword = confirmInput?.value || '';
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setMessage('Vul alle velden in.');
+      if (!currentPassword) {
+        focusCurrent();
+      }
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage('De nieuwe wachtwoorden komen niet overeen.');
+      confirmInput?.focus();
+      return;
+    }
+    if (newPassword.length < 6) {
+      setMessage('Gebruik een nieuw wachtwoord van minimaal 6 tekens.');
+      newInput?.focus();
+      return;
+    }
+
+    submitting = true;
+    submitButton?.setAttribute('disabled', 'true');
+    setMessage('Wachtwoord wordt gewijzigd…');
+
+    try {
+      await fetchJson('/api/account/password', {
+        method: 'PATCH',
+        body: {
+          currentPassword,
+          newPassword,
+          clearMustChange: true,
+        },
+      });
+      setMessage('Wachtwoord gewijzigd.');
+      const expectedRoles =
+        authUser?.role === 'student'
+          ? ['student']
+          : authUser?.role === 'teacher' || authUser?.role === 'admin'
+          ? ['teacher', 'admin']
+          : null;
+      await reloadCurrentUser(expectedRoles || undefined);
+      if (!authUser?.mustChangePassword) {
+        closeDialog();
+      }
+    } catch (error) {
+      setMessage(error.message || 'Het wijzigen is mislukt.');
+    } finally {
+      if (isVisible) {
+        submitting = false;
+        submitButton?.removeAttribute('disabled');
+      }
+    }
+  }
+
+  form?.addEventListener('submit', handleSubmit);
+
+  logoutButton?.addEventListener('click', async () => {
+    if (submitting) {
+      return;
+    }
+    try {
+      await fetchJson('/api/logout', { method: 'POST' });
+    } catch (error) {
+      // negeer fout, sessie kan al verlopen zijn
+    }
+    clearAuth();
+    closeDialog();
+  });
+
+  return {
+    handleAuthChange(user) {
+      if (!user || !user.mustChangePassword) {
+        closeDialog();
+        return;
+      }
+      openForUser(user);
+    },
+  };
 }
 
 function formatDate(value) {
@@ -2732,6 +2891,8 @@ function initStaffPage() {
       });
   }
 }
+
+passwordChangeController = initPasswordChangeDialog();
 
 if (pageType === 'student') {
   initStudentPage();
