@@ -1172,6 +1172,37 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, teachers);
     }
 
+    const teacherResetMatch = requestUrl.pathname.match(/^\/api\/teachers\/([\w-]+)\/reset-password$/);
+    if (teacherResetMatch && req.method === 'POST') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen wachtwoorden resetten' });
+      }
+      const db = getDb();
+      const teacher = db.users.find((account) => account.id === teacherResetMatch[1]);
+      if (!teacher || teacher.role !== 'teacher') {
+        return sendJson(res, 404, { message: 'Docent niet gevonden' });
+      }
+      const temporaryPassword = generatePassword(10);
+      teacher.passwordHash = hashPassword(temporaryPassword);
+      teacher.mustChangePassword = true;
+      for (const [token, session] of sessions.entries()) {
+        if (session.type === 'staff' && session.userId === teacher.id) {
+          sessions.delete(token);
+        }
+      }
+      appendHistory(db, {
+        type: 'teacher_password_reset',
+        teacherId: teacher.id,
+        performedBy: user?.id || null,
+        message: `Wachtwoord opnieuw ingesteld voor docent ${teacher.name}`,
+      });
+      saveDb(db);
+      return sendJson(res, 200, {
+        teacher: { id: teacher.id, name: teacher.name, username: teacher.username },
+        temporaryPassword,
+      });
+    }
+
     if (req.method === 'POST' && requestUrl.pathname === '/api/students') {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen leerlingaccounts aanmaken' });
