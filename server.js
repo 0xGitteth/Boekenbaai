@@ -397,6 +397,22 @@ function sanitizeIsbn(value) {
   return String(value).replace(/[^0-9X]/gi, '');
 }
 
+function normalizeBarcode(value) {
+  if (value == null) {
+    return '';
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return '';
+  }
+  const hasTrailingX = /x$/i.test(trimmed);
+  const digitsOnly = trimmed.replace(/[^0-9]/g, '');
+  if (!digitsOnly && !hasTrailingX) {
+    return '';
+  }
+  return hasTrailingX ? `${digitsOnly}X` : digitsOnly;
+}
+
 function parseIsbnBarcodeData(data, fallbackBarcode) {
   if (!data || typeof data !== 'object') return null;
   const title = data.title || data.book_title || data.item_name || data.name || '';
@@ -711,7 +727,11 @@ function findBookById(db, id) {
 }
 
 function findBookByBarcode(db, barcode) {
-  return db.books.find((book) => book.barcode === barcode);
+  const normalized = normalizeBarcode(barcode);
+  if (!normalized) {
+    return null;
+  }
+  return db.books.find((book) => normalizeBarcode(book.barcode) === normalized) || null;
 }
 
 function findStudentById(db, id) {
@@ -938,14 +958,18 @@ async function handleApi(req, res, requestUrl) {
       if (!body.title || !body.author || !body.barcode) {
         return sendJson(res, 400, { message: 'Titel, auteur en barcode zijn verplicht' });
       }
-      if (findBookByBarcode(db, body.barcode)) {
+      const normalizedBarcode = normalizeBarcode(body.barcode);
+      if (!normalizedBarcode) {
+        return sendJson(res, 400, { message: 'Voer een geldige barcode in' });
+      }
+      if (findBookByBarcode(db, normalizedBarcode)) {
         return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
       }
       const book = {
         id: crypto.randomUUID(),
         title: body.title,
         author: body.author,
-        barcode: body.barcode,
+        barcode: normalizedBarcode,
         description: body.description || '',
         folderId: body.folderId || null,
         suitableForExamList: Boolean(body.suitableForExamList),
@@ -975,14 +999,25 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
       const body = await parseBody(req);
-      const newBarcode = body.barcode ?? book.barcode;
-      if (newBarcode !== book.barcode && findBookByBarcode(db, newBarcode)) {
+      const hasNewBarcode = Object.prototype.hasOwnProperty.call(body, 'barcode');
+      const normalizedNewBarcode = hasNewBarcode
+        ? normalizeBarcode(body.barcode)
+        : normalizeBarcode(book.barcode);
+      if (hasNewBarcode && !normalizedNewBarcode) {
+        return sendJson(res, 400, { message: 'Voer een geldige barcode in' });
+      }
+      const normalizedCurrentBarcode = normalizeBarcode(book.barcode);
+      if (
+        normalizedNewBarcode &&
+        normalizedNewBarcode !== normalizedCurrentBarcode &&
+        findBookByBarcode(db, normalizedNewBarcode)
+      ) {
         return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
       }
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
-        barcode: newBarcode,
+        barcode: normalizedNewBarcode || '',
         description: body.description ?? book.description,
         folderId: body.folderId ?? book.folderId,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
@@ -1120,7 +1155,11 @@ async function handleApi(req, res, requestUrl) {
     const barcodeMatch = requestUrl.pathname.match(/^\/api\/books\/barcode\/([\w-]+)$/);
     if (barcodeMatch && req.method === 'GET') {
       const db = getDb();
-      const book = findBookByBarcode(db, barcodeMatch[1]);
+      const normalizedBarcode = normalizeBarcode(barcodeMatch[1]);
+      if (!normalizedBarcode) {
+        return sendJson(res, 400, { message: 'Ongeldige barcode opgegeven' });
+      }
+      const book = findBookByBarcode(db, normalizedBarcode);
       if (!book) {
         return sendJson(res, 404, { message: 'Geen boek gevonden met deze barcode' });
       }
