@@ -929,7 +929,7 @@ function initStudentPage() {
       studentName.textContent = loggedIn ? authUser.name : '';
     }
     if (studentGrade) {
-      studentGrade.textContent = loggedIn && authUser.grade ? `Klas: ${authUser.grade}` : '';
+      studentGrade.textContent = loggedIn && authUser.grade ? `Klas ${authUser.grade}` : '';
     }
     enableScanArea();
     renderBorrowedBooks();

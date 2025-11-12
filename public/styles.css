@@ -289,6 +289,19 @@ body[data-page='staff'] .panel--login {
   border-radius: var(--radius);
 }
 
+.student-dashboard__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.student-dashboard__info h4,
+.student-dashboard__info > p,
+.student-dashboard__info .hint,
+.student-dashboard__identity p {
+  margin: 0;
+}
+
 .student-dashboard__info h3 {
   margin: 0;
   font-size: 1.5rem;
