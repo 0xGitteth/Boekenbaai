@@ -1273,6 +1273,10 @@ function initStaffPage() {
   const studentImportFile = document.querySelector('#student-import-file');
   const studentImportMessage = document.querySelector('#student-import-message');
   const studentImportResults = document.querySelector('#student-import-results');
+  const teacherImportForm = document.querySelector('#teacher-import-form');
+  const teacherImportFile = document.querySelector('#teacher-import-file');
+  const teacherImportMessage = document.querySelector('#teacher-import-message');
+  const teacherImportResults = document.querySelector('#teacher-import-results');
   const teacherStudentForm = document.querySelector('#teacher-student-form');
   const teacherStudentUsernameInput = document.querySelector('#teacher-student-username');
   const teacherStudentClassSelect = document.querySelector('#teacher-student-class');
@@ -1889,6 +1893,77 @@ function initStaffPage() {
       item.append(actions);
 
       adminStudentList.append(item);
+    }
+  }
+
+  function appendImportMeta(container, label, value) {
+    if (!container) return;
+    let resolved;
+    if (Array.isArray(value)) {
+      resolved = value
+        .map((entry) => (entry == null ? '' : String(entry)))
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .join(', ');
+    } else if (value == null) {
+      resolved = '';
+    } else {
+      resolved = String(value).trim();
+    }
+    if (!resolved) return;
+    const span = document.createElement('span');
+    span.textContent = `${label}: ${resolved}`;
+    container.append(span);
+  }
+
+  function renderImportResults(container, result) {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!result) return;
+
+    const accounts = Array.isArray(result.accounts) ? result.accounts : [];
+    const skipped = Array.isArray(result.skipped) ? result.skipped : [];
+
+    if (accounts.length) {
+      const list = document.createElement('ul');
+      list.className = 'import-results__list';
+      for (const account of accounts) {
+        const item = document.createElement('li');
+        const title = document.createElement('strong');
+        title.textContent = account.name || account.username || 'Onbekende gebruiker';
+        item.append(title);
+
+        if (account.status) {
+          const statusLabel = account.status === 'updated' ? 'Bijgewerkt account' : 'Nieuw account';
+          appendImportMeta(item, 'Status', statusLabel);
+        }
+        appendImportMeta(item, 'Gebruikersnaam', account.username);
+        appendImportMeta(item, 'Leerjaar/klas', account.grade);
+        appendImportMeta(item, 'Klassen', account.classes);
+        appendImportMeta(item, 'Docenten', account.teachers);
+        if (account.password) {
+          const passwordLabel = account.status === 'updated' ? 'Nieuw wachtwoord' : 'Tijdelijk wachtwoord';
+          appendImportMeta(item, passwordLabel, account.password);
+        }
+        list.append(item);
+      }
+      container.append(list);
+    }
+
+    if (skipped.length) {
+      const skippedTitle = document.createElement('h4');
+      skippedTitle.textContent = 'Overgeslagen regels';
+      const skippedList = document.createElement('ul');
+      skippedList.className = 'import-results__skipped';
+      for (const entry of skipped) {
+        const item = document.createElement('li');
+        const name = entry?.name || '(onbekend)';
+        const username = entry?.username || '(leeg)';
+        const reason = entry?.reason || 'Onbekende reden';
+        item.textContent = `${name} (${username}) – ${reason}`;
+        skippedList.append(item);
+      }
+      container.append(skippedTitle, skippedList);
     }
   }
 
@@ -2598,44 +2673,51 @@ function initStaffPage() {
       return;
     }
     try {
+      studentImportMessage.textContent = 'Bestand wordt verwerkt…';
       const base64 = await readFileAsBase64(file);
       const result = await fetchJson('/api/students/import', {
         method: 'POST',
         body: { file: base64 },
       });
       studentImportFile.value = '';
-      studentImportMessage.textContent = `Import gereed: ${result.created} toegevoegd, ${result.updated} bijgewerkt.`;
-      if (studentImportResults) {
-        studentImportResults.innerHTML = '';
-        if (result.accounts?.length) {
-          const list = document.createElement('ul');
-          list.className = 'import-results__list';
-          for (const account of result.accounts) {
-            const li = document.createElement('li');
-            li.innerHTML = `
-              <strong>${account.name}</strong> – ${account.username}
-              ${account.password ? `<span>Nieuw wachtwoord: ${account.password}</span>` : ''}
-            `;
-            list.append(li);
-          }
-          studentImportResults.append(list);
-        }
-        if (result.skipped?.length) {
-          const skippedList = document.createElement('ul');
-          skippedList.className = 'import-results__skipped';
-          for (const entry of result.skipped) {
-            const li = document.createElement('li');
-            li.textContent = `${entry.name} (${entry.username}) – ${entry.reason}`;
-            skippedList.append(li);
-          }
-          const skippedTitle = document.createElement('h4');
-          skippedTitle.textContent = 'Overgeslagen regels';
-          studentImportResults.append(skippedTitle, skippedList);
-        }
-      }
+      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+      studentImportMessage.textContent = `Import gereed: ${result.created} toegevoegd, ${result.updated} bijgewerkt${
+        skippedCount ? `, ${skippedCount} overgeslagen` : ''
+      }.`;
+      renderImportResults(studentImportResults, result);
       await refreshStaffData();
     } catch (error) {
       studentImportMessage.textContent = error.message;
+    }
+  });
+
+  teacherImportForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      teacherImportMessage.textContent = 'Alleen beheerders kunnen docenten importeren.';
+      return;
+    }
+    const file = teacherImportFile?.files?.[0];
+    if (!file) {
+      teacherImportMessage.textContent = 'Kies eerst een Excelbestand.';
+      return;
+    }
+    try {
+      teacherImportMessage.textContent = 'Bestand wordt verwerkt…';
+      const base64 = await readFileAsBase64(file);
+      const result = await fetchJson('/api/teachers/import', {
+        method: 'POST',
+        body: { file: base64 },
+      });
+      teacherImportFile.value = '';
+      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+      teacherImportMessage.textContent = `Import gereed: ${result.created} toegevoegd, ${result.updated} bijgewerkt${
+        skippedCount ? `, ${skippedCount} overgeslagen` : ''
+      }.`;
+      renderImportResults(teacherImportResults, result);
+      await refreshStaffData();
+    } catch (error) {
+      teacherImportMessage.textContent = error.message;
     }
   });
 
