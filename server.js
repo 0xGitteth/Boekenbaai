@@ -175,6 +175,37 @@ function normalizeClassKey(name) {
   return typeof name === 'string' ? name.trim().toLowerCase() : '';
 }
 
+function ensureBookShape(book) {
+  const source = typeof book === 'object' && book ? book : {};
+  const safeBook = { ...source };
+  safeBook.title = typeof source.title === 'string' ? source.title : '';
+  safeBook.author = typeof source.author === 'string' ? source.author : '';
+  safeBook.barcode = typeof source.barcode === 'string' ? source.barcode : '';
+  safeBook.description = typeof source.description === 'string' ? source.description : '';
+  if (typeof source.folderId === 'string' && source.folderId.trim()) {
+    safeBook.folderId = source.folderId;
+  } else {
+    safeBook.folderId = null;
+  }
+  safeBook.suitableForExamList = Boolean(source.suitableForExamList);
+  safeBook.status = typeof source.status === 'string' ? source.status : 'available';
+  safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
+  safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
+  safeBook.tags = parseMultiValueField(source.tags);
+  safeBook.coverColor = typeof source.coverColor === 'string' ? source.coverColor : '#f9f9f9';
+  return safeBook;
+}
+
+function ensureFolderShape(folder) {
+  const source = typeof folder === 'object' && folder ? folder : {};
+  const safeFolder = { ...source };
+  safeFolder.name = typeof source.name === 'string' ? source.name : '';
+  safeFolder.description = typeof source.description === 'string' ? source.description : '';
+  safeFolder.color = typeof source.color === 'string' ? source.color : '#9f86c0';
+  safeFolder.examList = Boolean(source.examList);
+  return safeFolder;
+}
+
 function findClassByName(db, name) {
   const key = normalizeClassKey(name);
   if (!key) return null;
@@ -270,12 +301,16 @@ function readWorkbookRows(XLSX, base64) {
 function loadDb() {
   const raw = fs.readFileSync(DATA_PATH, 'utf-8');
   const data = JSON.parse(raw);
+  if (!Array.isArray(data.books)) data.books = [];
   if (!Array.isArray(data.users)) data.users = [];
   if (!Array.isArray(data.classes)) data.classes = [];
   if (!Array.isArray(data.students)) data.students = [];
+  if (!Array.isArray(data.folders)) data.folders = [];
   if (!Array.isArray(data.history)) data.history = [];
+  data.books = data.books.map(ensureBookShape);
   data.students = data.students.map(ensureStudentShape);
   data.classes = data.classes.map(ensureClassShape);
+  data.folders = data.folders.map(ensureFolderShape);
   data.users = data.users.map(ensureTeacherShape);
   return data;
 }
