@@ -50,28 +50,20 @@ function resolveApiUrl(url) {
   return `${base}${path}`;
 }
 
-function appendElement(parent, tag, { className } = {}) {
-  if (!parent) return null;
-  const element = document.createElement(tag);
-  if (className) {
-    element.className = className;
+function normalizeBarcode(value) {
+  if (value == null) {
+    return '';
   }
-  parent.append(element);
-  return element;
-}
-
-function appendTextElement(parent, tag, text, options = {}) {
-  const element = appendElement(parent, tag, options);
-  if (element) {
-    element.textContent = text ?? '';
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return '';
   }
-  return element;
-}
-
-function replaceWithTextElement(parent, tag, text, options = {}) {
-  if (!parent) return null;
-  parent.replaceChildren();
-  return appendTextElement(parent, tag, text, options);
+  const hasTrailingX = /x$/i.test(trimmed);
+  const digitsOnly = trimmed.replace(/[^0-9]/g, '');
+  if (!digitsOnly && !hasTrailingX) {
+    return '';
+  }
+  return hasTrailingX ? `${digitsOnly}X` : digitsOnly;
 }
 
 async function fetchJson(url, options = {}) {
@@ -1527,6 +1519,15 @@ function initStaffPage() {
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
 
+  function updateAdminBookBarcode(value) {
+    if (!adminBookBarcode) return;
+    adminBookBarcode.value = value ? normalizeBarcode(value) : '';
+  }
+
+  adminBookBarcode?.addEventListener('blur', () => {
+    updateAdminBookBarcode(adminBookBarcode.value);
+  });
+
   function createResetNoticeController(element) {
     let timerId = null;
     function clearTimer() {
@@ -1780,9 +1781,7 @@ function initStaffPage() {
     if (adminBookAuthor) {
       adminBookAuthor.value = book.author || '';
     }
-    if (adminBookBarcode) {
-      adminBookBarcode.value = book.barcode || '';
-    }
+    updateAdminBookBarcode(book.barcode || '');
     if (adminBookDescription) {
       adminBookDescription.value = book.description || '';
     }
@@ -2484,18 +2483,20 @@ function initStaffPage() {
     if (adminBookLookupMessage && !silent) {
       adminBookLookupMessage.textContent = 'Zoeken naar boekinformatie…';
     }
-    let sanitized = trimmed;
-    const digitsOnly = trimmed.replace(/[^0-9X]/gi, '');
-    if (digitsOnly) {
-      sanitized = digitsOnly;
+    const sanitized = normalizeBarcode(trimmed);
+    if (!sanitized) {
+      if (adminBookLookupMessage && !silent) {
+        adminBookLookupMessage.textContent = 'Voer een geldige barcode in.';
+      }
+      return;
     }
-    if (adminBookBarcode && adminBookBarcode.value !== sanitized) {
-      adminBookBarcode.value = sanitized;
+    if (adminBookBarcode && normalizeBarcode(adminBookBarcode.value) !== sanitized) {
+      updateAdminBookBarcode(sanitized);
     }
 
     let existingBook = null;
     try {
-      existingBook = await fetchJson(`/api/books/barcode/${sanitized}`);
+      existingBook = await fetchJson(`/api/books/barcode/${encodeURIComponent(sanitized)}`);
     } catch (error) {
       if (!/geen boek gevonden/i.test(error.message || '')) {
         if (adminBookLookupMessage && !silent) {
@@ -2516,8 +2517,8 @@ function initStaffPage() {
     try {
       const metadata = await fetchJson(`/api/isbn/${sanitized}`);
       cacheIsbnMetadata(metadata);
-      if (metadata && metadata.barcode && adminBookBarcode) {
-        adminBookBarcode.value = metadata.barcode;
+      if (metadata && metadata.barcode) {
+        updateAdminBookBarcode(metadata.barcode);
       }
       applyBookMetadata(metadata);
       if (adminBookLookupMessage && !silent) {
@@ -3274,16 +3275,19 @@ function initStaffPage() {
       adminBookMessage.textContent = 'Alleen beheerders kunnen boeken toevoegen.';
       return;
     }
+    const normalizedBarcode = normalizeBarcode(adminBookBarcode?.value);
     const payload = {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
-      barcode: adminBookBarcode.value.trim(),
+      barcode: normalizedBarcode,
       folderId: adminFolderSelect.value || null,
       suitableForExamList: Boolean(adminBookExam.checked),
       description: adminBookDescription.value.trim(),
     };
+    updateAdminBookBarcode(payload.barcode);
     if (!payload.title || !payload.author || !payload.barcode) {
-      adminBookMessage.textContent = 'Titel, auteur en barcode zijn verplicht.';
+      adminBookMessage.textContent = 'Titel, auteur en een geldige barcode zijn verplicht.';
+      updateAdminBookBarcode(adminBookBarcode?.value);
       return;
     }
     try {
