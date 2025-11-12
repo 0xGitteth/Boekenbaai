@@ -722,12 +722,25 @@ body[data-page='staff'] .teacher-actions {
   box-shadow: 0 18px 30px rgba(var(--brand-dark-rgb), 0.12);
   padding: clamp(1.5rem, 2vw, 2.25rem);
   display: grid;
-  gap: 1.75rem;
+  gap: clamp(1rem, 2vw, 1.25rem);
 }
 
 .admin-card h3,
 .admin-card h4 {
+  margin: 0;
+}
+
+.admin-card > .hint {
   margin-top: 0;
+}
+
+.admin-card > .admin-form,
+.admin-card > .admin-card__section,
+.admin-card > .admin-book-list,
+.admin-card > .class-list,
+.admin-card > .student-list,
+.admin-card > .import-results {
+  margin-top: 0.5rem;
 }
 
 .admin-card__section {
@@ -892,13 +905,14 @@ body[data-page='staff'] .teacher-actions {
   margin-top: 0;
 }
 
+
 .admin-card {
   background: rgba(255, 255, 255, 0.98);
   border-radius: var(--radius);
   box-shadow: 0 18px 30px rgba(var(--brand-dark-rgb), 0.12);
   padding: clamp(1rem, 1.6vw, 1.5rem);
   display: grid;
-  gap: 1rem;
+  gap: clamp(1rem, 2vw, 1.25rem);
 }
 
 .admin-card__intro {
@@ -907,7 +921,7 @@ body[data-page='staff'] .teacher-actions {
 }
 
 .admin-card h3 {
-  margin-top: 0;
+  margin: 0;
 }
 
 .admin-card__section {
