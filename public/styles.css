@@ -555,6 +555,10 @@ body[data-page='staff'] .teacher-actions {
   font-weight: 600;
 }
 
+.class-card__header h4 {
+  margin: 0;
+}
+
 .class-card__header span {
   font-size: 0.85rem;
   color: var(--muted);
