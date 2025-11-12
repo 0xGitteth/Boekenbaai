@@ -1423,6 +1423,8 @@ function initStaffPage() {
   const adminClassTeachersSelect = document.querySelector('#admin-class-teachers');
   const adminClassMessage = document.querySelector('#admin-class-message');
   const adminClassList = document.querySelector('#admin-class-list');
+  const adminClassSelect = document.querySelector('#admin-class-select');
+  const adminClassDetails = document.querySelector('#admin-class-details');
   const adminStudentForm = document.querySelector('#admin-student-form');
   const adminStudentNameInput = document.querySelector('#admin-student-name');
   const adminStudentUsernameInput = document.querySelector('#admin-student-username');
@@ -1795,6 +1797,7 @@ function initStaffPage() {
     if (authUser?.role !== 'admin') {
       adminClassSelect.innerHTML = '<option value="">Kies een klas om te beheren</option>';
       adminClassSelect.disabled = true;
+      adminClassSelect.value = '';
       adminClassDetails.innerHTML = '<p>Alleen beheerders kunnen klassen beheren.</p>';
       adminClassDetails.classList.add('admin-detail__body--empty');
       selectedAdminClassId = '';
@@ -1812,6 +1815,7 @@ function initStaffPage() {
     }
     adminClassSelect.disabled = !sortedClasses.length;
     if (!sortedClasses.length) {
+      adminClassSelect.value = '';
       adminClassDetails.innerHTML = '<p>Nog geen klassen aangemaakt.</p>';
       adminClassDetails.classList.add('admin-detail__body--empty');
       selectedAdminClassId = '';
@@ -1830,6 +1834,9 @@ function initStaffPage() {
 
   function updateAdminClassDetails() {
     if (!adminClassDetails) return;
+    if (adminClassSelect) {
+      adminClassSelect.value = selectedAdminClassId || '';
+    }
     adminClassDetails.innerHTML = '';
     adminClassDetails.classList.remove('admin-detail__body--empty');
     if (authUser?.role !== 'admin') {
@@ -2629,107 +2636,123 @@ function initStaffPage() {
     }, 400);
   });
 
-  adminClassForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (!authUser || authUser.role !== 'admin') {
-      adminClassMessage.textContent = 'Alleen beheerders kunnen klassen beheren.';
-      return;
-    }
-    const name = adminClassNameInput.value.trim();
-    const teacherIds = Array.from(adminClassTeachersSelect?.selectedOptions || [])
-      .map((option) => option.value)
-      .filter(Boolean);
-    if (!name) {
-      adminClassMessage.textContent = 'Geef een naam op voor de klas.';
-      return;
-    }
-    try {
-      await fetchJson('/api/classes', {
-        method: 'POST',
-        body: { name, teacherIds },
-      });
-      adminClassForm.reset();
-      adminClassMessage.textContent = 'Klas opgeslagen.';
-      await refreshStaffData();
-    } catch (error) {
-      adminClassMessage.textContent = error.message;
-    }
-  });
-
-  adminClassSelect?.addEventListener('change', () => {
-    if (!authUser || authUser.role !== 'admin') {
-      return;
-    }
-    selectedAdminClassId = adminClassSelect.value || '';
-    updateAdminClassDetails();
-  });
-
-  adminClassDetails?.addEventListener('submit', async (event) => {
-    const teacherForm = event.target.closest('[data-class-teacher-form]');
-    if (teacherForm) {
+  if (adminClassForm) {
+    adminClassForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (!authUser || authUser.role !== 'admin') {
-        adminClassMessage.textContent = 'Alleen beheerders kunnen docenten koppelen.';
+        adminClassMessage.textContent = 'Alleen beheerders kunnen klassen beheren.';
         return;
       }
-      const classId = teacherForm.dataset.classId;
-      const select = teacherForm.querySelector('select');
-      const teacherIds = Array.from(select?.selectedOptions || [])
-        .map((option) => option.value)
-        .filter(Boolean);
+      const name = adminClassNameInput.value.trim();
+      const teacherSelect = adminClassTeachersSelect;
+      const teacherIds = teacherSelect
+        ? Array.from(teacherSelect.selectedOptions)
+            .map((option) => option.value)
+            .filter(Boolean)
+        : [];
+      if (!name) {
+        adminClassMessage.textContent = 'Geef een naam op voor de klas.';
+        return;
+      }
       try {
-        await fetchJson(`/api/classes/${classId}`, {
-          method: 'PATCH',
-          body: { teacherIds },
-        });
-        adminClassMessage.textContent = 'Docenten bijgewerkt voor deze klas.';
-        await refreshStaffData();
-      } catch (error) {
-        adminClassMessage.textContent = error.message;
-      }
-      return;
-    }
-
-    const addForm = event.target.closest('[data-add-student-to-class]');
-    if (addForm) {
-      event.preventDefault();
-      if (!authUser || authUser.role !== 'admin') {
-        adminClassMessage.textContent = 'Alleen beheerders kunnen leerlingen koppelen.';
-        return;
-      }
-      const classId = addForm.dataset.classId;
-      const select = addForm.querySelector('select');
-      const studentId = select?.value;
-      if (!classId || !studentId) {
-        adminClassMessage.textContent = 'Kies eerst een leerling.';
-        return;
-      }
-      const klass = classes.find((entry) => entry.id === classId);
-      try {
-        await fetchJson(`/api/classes/${classId}/students`, {
+        await fetchJson('/api/classes', {
           method: 'POST',
-          body: { studentId },
+          body: { name, teacherIds },
         });
-        adminClassMessage.textContent = klass
-          ? `Leerling toegevoegd aan ${klass.name}.`
-          : 'Leerling gekoppeld aan de klas.';
+        adminClassForm.reset();
+        adminClassMessage.textContent = 'Klas opgeslagen.';
         await refreshStaffData();
       } catch (error) {
         adminClassMessage.textContent = error.message;
       }
-    }
-  });
+    });
+  }
 
-  adminClassDetails?.addEventListener('click', async (event) => {
-    const deleteButton = event.target.closest('[data-delete-class]');
-    if (deleteButton) {
+  if (adminClassSelect) {
+    adminClassSelect.addEventListener('change', () => {
       if (!authUser || authUser.role !== 'admin') {
-        adminClassMessage.textContent = 'Alleen beheerders kunnen klassen verwijderen.';
         return;
       }
-      const classId = deleteButton.dataset.classId;
-      if (!classId) return;
-      event.preventDefault();
+      selectedAdminClassId = adminClassSelect.value || '';
+      updateAdminClassDetails();
+    });
+  }
+
+  if (adminClassDetails) {
+    adminClassDetails.addEventListener('submit', async (event) => {
+      const teacherForm = event.target.closest('[data-class-teacher-form]');
+      if (teacherForm) {
+        event.preventDefault();
+        if (!authUser || authUser.role !== 'admin') {
+          adminClassMessage.textContent = 'Alleen beheerders kunnen docenten koppelen.';
+          return;
+        }
+        const classId = teacherForm.dataset.classId;
+        const select = teacherForm.querySelector('select');
+        if (!select) {
+          adminClassMessage.textContent = 'Kon de docentselectie niet vinden.';
+          return;
+        }
+        const teacherIds = Array.from(select.selectedOptions)
+          .map((option) => option.value)
+          .filter(Boolean);
+        try {
+          await fetchJson(`/api/classes/${classId}`, {
+            method: 'PATCH',
+            body: { teacherIds },
+          });
+          adminClassMessage.textContent = 'Docenten bijgewerkt voor deze klas.';
+          await refreshStaffData();
+        } catch (error) {
+          adminClassMessage.textContent = error.message;
+        }
+        return;
+      }
+
+      const addForm = event.target.closest('[data-add-student-to-class]');
+      if (addForm) {
+        event.preventDefault();
+        if (!authUser || authUser.role !== 'admin') {
+          adminClassMessage.textContent = 'Alleen beheerders kunnen leerlingen koppelen.';
+          return;
+        }
+        const classId = addForm.dataset.classId;
+        const select = addForm.querySelector('select');
+        if (!select) {
+          adminClassMessage.textContent = 'Kon de leerlingselectie niet vinden.';
+          return;
+        }
+        const studentId = select.value;
+        if (!classId || !studentId) {
+          adminClassMessage.textContent = 'Kies eerst een leerling.';
+          return;
+        }
+        const klass = classes.find((entry) => entry.id === classId);
+        try {
+          await fetchJson(`/api/classes/${classId}/students`, {
+            method: 'POST',
+            body: { studentId },
+          });
+          adminClassMessage.textContent = klass
+            ? `Leerling toegevoegd aan ${klass.name}.`
+            : 'Leerling gekoppeld aan de klas.';
+          await refreshStaffData();
+        } catch (error) {
+          adminClassMessage.textContent = error.message;
+        }
+      }
+    });
+
+    adminClassDetails.addEventListener('click', async (event) => {
+      const deleteButton = event.target.closest('[data-delete-class]');
+      if (deleteButton) {
+        if (!authUser || authUser.role !== 'admin') {
+          adminClassMessage.textContent = 'Alleen beheerders kunnen klassen verwijderen.';
+          return;
+        }
+        const classId = deleteButton.dataset.classId;
+        if (!classId) return;
+        event.preventDefault();
       if (!window.confirm('Weet je zeker dat je deze klas wilt verwijderen?')) {
         return;
       }
@@ -2767,6 +2790,7 @@ function initStaffPage() {
       }
     }
   });
+  }
 
   teacherStudentForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
