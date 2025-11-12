@@ -141,6 +141,125 @@ function ensureStudentShape(student) {
   return safeStudent;
 }
 
+function ensureClassShape(klass) {
+  const safeClass = { ...klass };
+  safeClass.name = typeof safeClass.name === 'string' ? safeClass.name : '';
+  safeClass.teacherIds = Array.isArray(safeClass.teacherIds)
+    ? Array.from(new Set(safeClass.teacherIds.filter((id) => typeof id === 'string')))
+    : [];
+  safeClass.studentIds = Array.isArray(safeClass.studentIds)
+    ? Array.from(new Set(safeClass.studentIds.filter((id) => typeof id === 'string')))
+    : [];
+  return safeClass;
+}
+
+function ensureTeacherShape(user) {
+  if (!user || user.role !== 'teacher') {
+    return user;
+  }
+  const safeTeacher = { ...user };
+  safeTeacher.classIds = Array.isArray(safeTeacher.classIds)
+    ? Array.from(new Set(safeTeacher.classIds.filter((id) => typeof id === 'string')))
+    : [];
+  return safeTeacher;
+}
+
+function normalizeClassKey(name) {
+  return typeof name === 'string' ? name.trim().toLowerCase() : '';
+}
+
+function findClassByName(db, name) {
+  const key = normalizeClassKey(name);
+  if (!key) return null;
+  return db.classes.find((klass) => normalizeClassKey(klass.name) === key) || null;
+}
+
+function ensureClassRecord(db, name) {
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (!trimmed) {
+    return null;
+  }
+  let klass = findClassByName(db, trimmed);
+  if (!klass) {
+    klass = {
+      id: crypto.randomUUID(),
+      name: trimmed,
+      teacherIds: [],
+      studentIds: [],
+    };
+    db.classes.push(klass);
+  } else {
+    if (!Array.isArray(klass.teacherIds)) {
+      klass.teacherIds = [];
+    }
+    if (!Array.isArray(klass.studentIds)) {
+      klass.studentIds = [];
+    }
+  }
+  return klass;
+}
+
+function parseMultiValueField(value) {
+  if (!value && value !== 0) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry : String(entry ?? '')).trim())
+      .filter(Boolean);
+  }
+  return String(value)
+    .split(/[,;/\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function collectTeacherNames(db, classRecords) {
+  if (!Array.isArray(classRecords) || !classRecords.length) {
+    return [];
+  }
+  const names = new Set();
+  for (const klass of classRecords) {
+    const teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
+    for (const teacherId of teacherIds) {
+      const teacher = db.users.find((account) => account.id === teacherId);
+      if (teacher) {
+        names.add(teacher.name || teacher.username || 'Onbekende docent');
+      }
+    }
+  }
+  return Array.from(names);
+}
+
+function normalizeRowKeys(row) {
+  const normalized = {};
+  for (const [key, value] of Object.entries(row || {})) {
+    if (!key) continue;
+    normalized[key.toLowerCase().trim()] = value;
+  }
+  return normalized;
+}
+
+function readWorkbookRows(XLSX, base64) {
+  let workbook;
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    workbook = XLSX.read(buffer, { type: 'buffer' });
+  } catch (error) {
+    return { ok: false, error: 'Het Excelbestand kon niet gelezen worden' };
+  }
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    return { ok: false, error: 'Het bestand bevat geen werkblad' };
+  }
+  const sheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  if (!rows.length) {
+    return { ok: false, error: 'Het werkblad is leeg' };
+  }
+  return { ok: true, rows };
+}
+
 function loadDb() {
   const raw = fs.readFileSync(DATA_PATH, 'utf-8');
   const data = JSON.parse(raw);
@@ -149,6 +268,8 @@ function loadDb() {
   if (!Array.isArray(data.students)) data.students = [];
   if (!Array.isArray(data.history)) data.history = [];
   data.students = data.students.map(ensureStudentShape);
+  data.classes = data.classes.map(ensureClassShape);
+  data.users = data.users.map(ensureTeacherShape);
   return data;
 }
 
@@ -1076,21 +1197,9 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: 'Geen bestand ontvangen' });
       }
 
-      let workbook;
-      try {
-        const buffer = Buffer.from(body.file, 'base64');
-        workbook = XLSX.read(buffer, { type: 'buffer' });
-      } catch (error) {
-        return sendJson(res, 400, { message: 'Het Excelbestand kon niet gelezen worden' });
-      }
-      const firstSheetName = workbook.SheetNames[0];
-      if (!firstSheetName) {
-        return sendJson(res, 400, { message: 'Het bestand bevat geen werkblad' });
-      }
-      const sheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-      if (!rows.length) {
-        return sendJson(res, 400, { message: 'Het werkblad is leeg' });
+      const workbookResult = readWorkbookRows(XLSX, body.file);
+      if (!workbookResult.ok) {
+        return sendJson(res, 400, { message: workbookResult.error });
       }
 
       const createdAccounts = [];
@@ -1098,20 +1207,38 @@ async function handleApi(req, res, requestUrl) {
       const skipped = [];
       let changed = false;
 
-      for (const row of rows) {
-        const normalized = {};
-        for (const [key, value] of Object.entries(row)) {
-          if (!key) continue;
-          normalized[key.toLowerCase()] = value;
-        }
+      for (const row of workbookResult.rows) {
+        const normalized = normalizeRowKeys(row);
         const name = String(
-          normalized.naam || normalized.name || normalized.leerling || ''
+          normalized.naam || normalized.name || normalized.leerling || normalized.student || ''
         ).trim();
         const username = String(
           normalized.gebruikersnaam || normalized.username || ''
         ).trim();
         let password = String(normalized.wachtwoord || normalized.password || '').trim();
-        const grade = String(normalized.klas || normalized.klasnaam || normalized.leerjaar || '').trim();
+        const gradeSource = String(
+          normalized.leerjaar ||
+            normalized.grade ||
+            normalized.graad ||
+            normalized.year ||
+            normalized.niveau ||
+            normalized.opleiding ||
+            ''
+        ).trim();
+        const classNames = [
+          normalized.klassen,
+          normalized['klas(sen)'],
+          normalized.klas,
+          normalized.klasnaam,
+          normalized.groep,
+          normalized.groepen,
+          normalized.class,
+          normalized.classes,
+        ]
+          .flatMap(parseMultiValueField)
+          .map((value) => value.trim())
+          .filter(Boolean);
+        const uniqueClassNames = Array.from(new Set(classNames));
 
         if (!name || !username) {
           skipped.push({
@@ -1122,16 +1249,34 @@ async function handleApi(req, res, requestUrl) {
           continue;
         }
 
+        if (!uniqueClassNames.length) {
+          skipped.push({
+            name,
+            username,
+            reason: 'Geen klas opgegeven',
+          });
+          continue;
+        }
+
+        const classRecords = uniqueClassNames
+          .map((className) => ensureClassRecord(db, className))
+          .filter(Boolean);
+        const classIds = classRecords.map((klass) => klass.id);
+
+        let grade = gradeSource;
+        if (!grade && classRecords.length) {
+          grade = classRecords[0].name;
+        }
+
         const existingStudent = findStudentByUsername(db, username);
         if (existingStudent) {
           const originalName = existingStudent.name;
-          const originalGrade = existingStudent.grade;
+          const originalGrade = existingStudent.grade || '';
+          const originalClassIds = Array.isArray(existingStudent.classIds)
+            ? [...existingStudent.classIds]
+            : [];
           existingStudent.name = name;
-          let gradeChanged = false;
           if (grade) {
-            if (originalGrade !== grade) {
-              gradeChanged = true;
-            }
             existingStudent.grade = grade;
           }
           if (!Array.isArray(existingStudent.borrowedBooks)) {
@@ -1145,13 +1290,44 @@ async function handleApi(req, res, requestUrl) {
             existingStudent.passwordHash = hashPassword(password);
             passwordChanged = true;
           }
+
+          const newClassIdSet = new Set(classIds);
+          const removedClassIds = originalClassIds.filter((classId) => !newClassIdSet.has(classId));
+          const addedClassIds = classIds.filter((classId) => !originalClassIds.includes(classId));
+
+          existingStudent.classIds = classIds;
+
+          for (const classId of removedClassIds) {
+            const klass = db.classes.find((entry) => entry.id === classId);
+            if (klass) {
+              klass.studentIds = (klass.studentIds || []).filter((id) => id !== existingStudent.id);
+            }
+          }
+          for (const klass of classRecords) {
+            if (!klass.studentIds.includes(existingStudent.id)) {
+              klass.studentIds.push(existingStudent.id);
+            }
+          }
+
+          const teacherNames = collectTeacherNames(db, classRecords);
           updatedAccounts.push({
             id: existingStudent.id,
             name: existingStudent.name,
             username: existingStudent.username,
             password: passwordChanged ? password : null,
+            classes: classRecords.map((klass) => klass.name),
+            teachers: teacherNames,
+            grade: existingStudent.grade || '',
+            status: 'updated',
           });
-          if (passwordChanged || gradeChanged || originalName !== name) {
+
+          if (
+            passwordChanged ||
+            originalName !== existingStudent.name ||
+            originalGrade !== (existingStudent.grade || '') ||
+            removedClassIds.length ||
+            addedClassIds.length
+          ) {
             changed = true;
           }
           continue;
@@ -1177,14 +1353,24 @@ async function handleApi(req, res, requestUrl) {
           passwordHash: hashPassword(password),
           grade,
           borrowedBooks: [],
-          classIds: [],
+          classIds,
         };
         db.students.push(student);
+        for (const klass of classRecords) {
+          if (!klass.studentIds.includes(student.id)) {
+            klass.studentIds.push(student.id);
+          }
+        }
+        const teacherNames = collectTeacherNames(db, classRecords);
         createdAccounts.push({
           id: student.id,
           name: student.name,
           username: student.username,
           password,
+          classes: classRecords.map((klass) => klass.name),
+          teachers: teacherNames,
+          grade: student.grade || '',
+          status: 'created',
         });
         changed = true;
       }
@@ -1201,9 +1387,200 @@ async function handleApi(req, res, requestUrl) {
         created: createdAccounts.length,
         updated: updatedAccounts.length,
         skipped,
-        accounts: createdAccounts.concat(
-          updatedAccounts.filter((entry) => entry.password)
-        ),
+        accounts: createdAccounts.concat(updatedAccounts),
+      });
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/teachers/import') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
+      }
+      const XLSX = loadXlsx();
+      if (!XLSX) {
+        return sendJson(res, 503, {
+          message:
+            'Excel-import is momenteel niet beschikbaar omdat de "xlsx" module ontbreekt op de server',
+        });
+      }
+      const db = getDb();
+      const body = await parseBody(req);
+      if (!body.file) {
+        return sendJson(res, 400, { message: 'Geen bestand ontvangen' });
+      }
+
+      const workbookResult = readWorkbookRows(XLSX, body.file);
+      if (!workbookResult.ok) {
+        return sendJson(res, 400, { message: workbookResult.error });
+      }
+
+      const createdAccounts = [];
+      const updatedAccounts = [];
+      const skipped = [];
+      let changed = false;
+
+      for (const row of workbookResult.rows) {
+        const normalized = normalizeRowKeys(row);
+        const name = String(
+          normalized.naam || normalized.name || normalized.docent || normalized.teacher || ''
+        ).trim();
+        const username = String(
+          normalized.gebruikersnaam || normalized.username || ''
+        ).trim();
+        let password = String(normalized.wachtwoord || normalized.password || '').trim();
+        const classNames = [
+          normalized.klassen,
+          normalized['klas(sen)'],
+          normalized.klas,
+          normalized.klasnaam,
+          normalized.groep,
+          normalized.groepen,
+          normalized.class,
+          normalized.classes,
+        ]
+          .flatMap(parseMultiValueField)
+          .map((value) => value.trim())
+          .filter(Boolean);
+        const uniqueClassNames = Array.from(new Set(classNames));
+
+        if (!name || !username) {
+          skipped.push({
+            name: name || '(onbekend)',
+            username: username || '(leeg)',
+            reason: 'Ontbrekende naam of gebruikersnaam',
+          });
+          continue;
+        }
+
+        if (!uniqueClassNames.length) {
+          skipped.push({
+            name,
+            username,
+            reason: 'Geen klas opgegeven',
+          });
+          continue;
+        }
+
+        const classRecords = uniqueClassNames
+          .map((className) => ensureClassRecord(db, className))
+          .filter(Boolean);
+        const classIds = classRecords.map((klass) => klass.id);
+
+        const normalizedUsername = username.toLowerCase();
+        const existingTeacher = db.users.find(
+          (account) => (account.username || '').toLowerCase() === normalizedUsername
+        );
+        const usernameTakenByStudent = db.students.some(
+          (student) => (student.username || '').toLowerCase() === normalizedUsername
+        );
+
+        if (!existingTeacher && usernameTakenByStudent) {
+          skipped.push({
+            name,
+            username,
+            reason: 'Gebruikersnaam is al in gebruik door een leerling',
+          });
+          continue;
+        }
+
+        if (existingTeacher && existingTeacher.role !== 'teacher') {
+          skipped.push({
+            name,
+            username,
+            reason: 'Gebruikersnaam is al gekoppeld aan een medewerker',
+          });
+          continue;
+        }
+
+        if (existingTeacher) {
+          const originalName = existingTeacher.name;
+          const originalClassIds = Array.isArray(existingTeacher.classIds)
+            ? [...existingTeacher.classIds]
+            : [];
+          let passwordChanged = false;
+          if (password) {
+            existingTeacher.passwordHash = hashPassword(password);
+            passwordChanged = true;
+          }
+          existingTeacher.name = name;
+          existingTeacher.username = username;
+          existingTeacher.role = 'teacher';
+          existingTeacher.classIds = classIds;
+
+          const newClassIdSet = new Set(classIds);
+          const removedClassIds = originalClassIds.filter((classId) => !newClassIdSet.has(classId));
+          const addedClassIds = classIds.filter((classId) => !originalClassIds.includes(classId));
+
+          for (const classId of removedClassIds) {
+            const klass = db.classes.find((entry) => entry.id === classId);
+            if (klass) {
+              klass.teacherIds = (klass.teacherIds || []).filter((id) => id !== existingTeacher.id);
+            }
+          }
+
+          for (const klass of classRecords) {
+            if (!klass.teacherIds.includes(existingTeacher.id)) {
+              klass.teacherIds.push(existingTeacher.id);
+            }
+          }
+
+          updatedAccounts.push({
+            id: existingTeacher.id,
+            name: existingTeacher.name,
+            username: existingTeacher.username,
+            password: passwordChanged ? password : null,
+            classes: classRecords.map((klass) => klass.name),
+            status: 'updated',
+          });
+
+          if (passwordChanged || originalName !== existingTeacher.name || removedClassIds.length || addedClassIds.length) {
+            changed = true;
+          }
+          continue;
+        }
+
+        if (!password) {
+          password = generatePassword(10);
+        }
+
+        const teacher = {
+          id: crypto.randomUUID(),
+          role: 'teacher',
+          name,
+          username,
+          passwordHash: hashPassword(password),
+          classIds,
+        };
+        db.users.push(teacher);
+        for (const klass of classRecords) {
+          if (!klass.teacherIds.includes(teacher.id)) {
+            klass.teacherIds.push(teacher.id);
+          }
+        }
+
+        createdAccounts.push({
+          id: teacher.id,
+          name: teacher.name,
+          username: teacher.username,
+          password,
+          classes: classRecords.map((klass) => klass.name),
+          status: 'created',
+        });
+        changed = true;
+      }
+
+      if (changed) {
+        appendHistory(db, {
+          type: 'teachers_imported',
+          message: `${createdAccounts.length} docenten toegevoegd, ${updatedAccounts.length} bijgewerkt via Excel-import`,
+        });
+        saveDb(db);
+      }
+
+      return sendJson(res, 200, {
+        created: createdAccounts.length,
+        updated: updatedAccounts.length,
+        skipped,
+        accounts: createdAccounts.concat(updatedAccounts),
       });
     }
 
