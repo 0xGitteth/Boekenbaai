@@ -110,17 +110,77 @@
         </div>
         <div class="summary" id="summary"></div>
         <div class="book-grid" id="book-grid"></div>
-      </section>
-    </main>
+    </section>
+  </main>
 
-    <footer class="footer">
-      Gemaakt voor VSO Het Dok • Boekenbaai maakt lenen veilig en vrolijk.
-    </footer>
+  <footer class="footer">
+    Gemaakt voor VSO Het Dok • Boekenbaai maakt lenen veilig en vrolijk.
+  </footer>
 
-    <template id="book-card-template">
-      <article class="book-card">
-        <div class="book-card__media">
-          <div class="book-card__cover-wrapper">
+  <section
+    class="password-change-modal hidden"
+    id="password-change-modal"
+    aria-hidden="true"
+    aria-labelledby="password-change-title"
+  >
+    <div
+      class="password-change-modal__dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="password-change-title"
+    >
+      <h2 id="password-change-title">Stel een nieuw wachtwoord in</h2>
+      <p id="password-change-description" class="password-change__intro">
+        Voor jouw veiligheid moet je na de eerste aanmelding een eigen wachtwoord kiezen.
+      </p>
+      <form id="password-change-form" class="password-change__form">
+        <div class="form-field">
+          <label for="password-change-current">Huidige wachtwoord</label>
+          <input
+            id="password-change-current"
+            type="password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="password-change-new">Nieuw wachtwoord</label>
+          <input
+            id="password-change-new"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="password-change-confirm">Bevestig nieuw wachtwoord</label>
+          <input
+            id="password-change-confirm"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            required
+          />
+        </div>
+        <p
+          id="password-change-message"
+          class="hint password-change__message"
+          role="status"
+          aria-live="polite"
+        ></p>
+        <div class="password-change__actions">
+          <button type="submit" class="btn" id="password-change-submit">Wachtwoord opslaan</button>
+          <button type="button" class="btn btn--ghost" id="password-change-logout">Uitloggen</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <template id="book-card-template">
+    <article class="book-card">
+      <div class="book-card__media">
+        <div class="book-card__cover-wrapper">
             <img class="book-card__cover" alt="" hidden />
             <div class="book-card__cover-fallback"></div>
           </div>
