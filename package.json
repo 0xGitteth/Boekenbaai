@@ -8,8 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
-    "xlsx": "^0.18.5",
-    "bcrypt": "^5.1.0"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "vite": "^5.2.0"
