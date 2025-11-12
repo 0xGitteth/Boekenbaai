@@ -11,6 +11,103 @@ let authUser = null;
 let updateAuthUi = () => {};
 let passwordChangeController = null;
 
+function appendElement(parent, tag, options = {}) {
+  const element = document.createElement(tag);
+  if (options && typeof options === 'object') {
+    const {
+      className,
+      classList,
+      dataset,
+      aria,
+      text,
+      textContent,
+      html,
+      innerHTML,
+      attributes,
+      attrs,
+      style,
+      ...rest
+    } = options;
+
+    if (className) {
+      element.className = className;
+    }
+    if (Array.isArray(classList) && classList.length) {
+      element.classList.add(...classList.filter(Boolean));
+    }
+    if (dataset && typeof dataset === 'object') {
+      for (const [key, value] of Object.entries(dataset)) {
+        if (value != null) {
+          element.dataset[key] = value;
+        }
+      }
+    }
+    const ariaEntries =
+      aria && typeof aria === 'object' ? Object.entries(aria) : [];
+    for (const [key, value] of ariaEntries) {
+      if (value != null) {
+        element.setAttribute(`aria-${key}`, value);
+      }
+    }
+    const attrEntries =
+      attributes && typeof attributes === 'object'
+        ? Object.entries(attributes)
+        : attrs && typeof attrs === 'object'
+        ? Object.entries(attrs)
+        : [];
+    for (const [key, value] of attrEntries) {
+      if (value != null) {
+        element.setAttribute(key, value);
+      }
+    }
+    if (style && typeof style === 'object') {
+      Object.assign(element.style, style);
+    }
+    if (text != null) {
+      element.textContent = `${text}`;
+    } else if (textContent != null) {
+      element.textContent = `${textContent}`;
+    }
+    if (html != null) {
+      element.innerHTML = html;
+    } else if (innerHTML != null) {
+      element.innerHTML = innerHTML;
+    }
+    for (const [key, value] of Object.entries(rest)) {
+      if (value == null) {
+        continue;
+      }
+      if (key === 'class' || key === 'className') {
+        continue;
+      }
+      if (key in element) {
+        try {
+          element[key] = value;
+        } catch (error) {
+          element.setAttribute(key, value);
+        }
+      } else {
+        const attributeName = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+        element.setAttribute(attributeName, value);
+      }
+    }
+  }
+  parent?.append(element);
+  return element;
+}
+
+function appendTextElement(parent, tag, text, options = {}) {
+  return appendElement(parent, tag, { ...options, text });
+}
+
+function replaceWithTextElement(container, tag, text, options = {}) {
+  if (!container) {
+    return null;
+  }
+  container.innerHTML = '';
+  return appendTextElement(container, tag, text, options);
+}
+
 function setAuth(token) {
   authToken = token;
   localStorage.setItem('boekenbaai_token', token);
@@ -616,14 +713,13 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
   if (state.tags) {
     state.tags.innerHTML = '';
     for (const tag of book.tags || []) {
-      const li = document.createElement('li');
-      li.className = 'book-detail__tag';
-      li.textContent = tag;
+      const li = appendTextElement(state.tags, 'li', tag, {
+        className: 'book-detail__tag',
+      });
       const { background, text: textColor, border } = resolveThemeColors(tag);
       li.style.setProperty('--theme-pill-bg', background);
       li.style.setProperty('--theme-pill-text', textColor);
       li.style.setProperty('--theme-pill-border', border);
-      state.tags.append(li);
     }
   }
   const descriptionText = (book.description || '').trim() || (metadata?.description || '').trim();
@@ -754,12 +850,12 @@ function renderThemePills(container, config = {}) {
     onClear,
   } = config;
 
-  const elements = [];
+  const fragment = document.createDocumentFragment();
 
-  const examButton = document.createElement('button');
-  examButton.type = 'button';
-  examButton.className = 'filters__pill filters__pill--exam';
-  examButton.textContent = 'Leeslijst';
+  const examButton = appendTextElement(fragment, 'button', 'Leeslijst', {
+    className: 'filters__pill filters__pill--exam',
+    type: 'button',
+  });
   const examActive = Boolean(onlyExamList);
   examButton.classList.toggle('filters__pill--active', examActive);
   examButton.setAttribute('aria-pressed', examActive ? 'true' : 'false');
@@ -768,7 +864,6 @@ function renderThemePills(container, config = {}) {
       onToggleExam(!examActive);
     }
   });
-  elements.push(examButton);
 
   const isThemeSelected = (key) => {
     if (!key) return false;
@@ -779,19 +874,18 @@ function renderThemePills(container, config = {}) {
   };
 
   if (!themes.length) {
-    const placeholder = document.createElement('span');
-    placeholder.className = 'filters__pill-placeholder';
-    placeholder.textContent = 'Geen thema\'s beschikbaar';
-    elements.push(placeholder);
+    appendTextElement(fragment, 'span', "Geen thema's beschikbaar", {
+      className: 'filters__pill-placeholder',
+    });
   } else {
     for (const entry of themes) {
       const label = typeof entry === 'string' ? entry : entry.label;
       const key = typeof entry === 'string' ? normalizeThemeKey(entry) : entry.key;
       if (!key || !label) continue;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'filters__pill';
-      button.textContent = label;
+      const button = appendTextElement(fragment, 'button', label, {
+        className: 'filters__pill',
+        type: 'button',
+      });
       const {
         background,
         hoverBackground,
@@ -817,7 +911,6 @@ function renderThemePills(container, config = {}) {
           onToggleTheme({ key, label, active: !isThemeSelected(key) });
         }
       });
-      elements.push(button);
     }
   }
 
@@ -827,19 +920,19 @@ function renderThemePills(container, config = {}) {
       onlyExamList
   );
   if (hasSelection) {
-    const clearButton = document.createElement('button');
-    clearButton.type = 'button';
-    clearButton.className = 'filters__pill filters__pill--clear';
-    clearButton.textContent = 'Wis selectie';
+    const clearButton = appendTextElement(fragment, 'button', 'Wis selectie', {
+      className: 'filters__pill filters__pill--clear',
+      type: 'button',
+    });
     clearButton.addEventListener('click', () => {
       if (typeof onClear === 'function') {
         onClear();
       }
     });
-    elements.push(clearButton);
   }
 
-  container.replaceChildren(...elements);
+  container.innerHTML = '';
+  container.append(fragment);
 }
 
 function createBookCard(template, book, folders, options = {}) {
@@ -909,14 +1002,13 @@ function createBookCard(template, book, folders, options = {}) {
   if (tagsList) {
     tagsList.innerHTML = '';
     for (const tag of book.tags || []) {
-      const li = document.createElement('li');
-      li.className = 'book-card__tag';
-      li.textContent = tag;
+      const li = appendTextElement(tagsList, 'li', tag, {
+        className: 'book-card__tag',
+      });
       const { background, text, border } = resolveThemeColors(tag);
       li.style.setProperty('--theme-pill-bg', background);
       li.style.setProperty('--theme-pill-text', text);
       li.style.setProperty('--theme-pill-border', border);
-      tagsList.append(li);
     }
     tagsList.classList.toggle('hidden', tagsList.childElementCount === 0);
   }
@@ -1062,8 +1154,9 @@ function initStudentPage() {
     borrowedEmpty.classList.add('hidden');
     for (const item of borrowed) {
       const book = allBooks.find((entry) => entry.id === item.bookId);
-      const li = document.createElement('li');
-      li.className = 'borrowed-list__item';
+      const li = appendElement(borrowedList, 'li', {
+        className: 'borrowed-list__item',
+      });
       appendTextElement(li, 'strong', book ? book.title : 'Onbekend boek');
       if (book?.author) {
         li.append(' ');
@@ -1073,7 +1166,6 @@ function initStudentPage() {
         li.append(' ');
         appendTextElement(li, 'span', `Sinds ${formatDate(item.borrowedAt)}`);
       }
-      borrowedList.append(li);
     }
   }
 
@@ -1278,32 +1370,31 @@ function initStudentPage() {
       const examParagraph = appendElement(bookResult, 'p');
       appendTextElement(examParagraph, 'strong', '✔ Op de leeslijst');
     }
-    const actions = document.createElement('div');
-    actions.className = 'book-result__actions';
+    const actions = appendElement(bookResult, 'div', {
+      className: 'book-result__actions',
+    });
     if (currentBook.status === 'available' && loggedIn) {
-      const borrowBtn = document.createElement('button');
-      borrowBtn.type = 'button';
-      borrowBtn.className = 'btn';
-      borrowBtn.textContent = 'Ik leen dit boek';
+      const borrowBtn = appendTextElement(actions, 'button', 'Ik leen dit boek', {
+        className: 'btn',
+        type: 'button',
+      });
       borrowBtn.addEventListener('click', () => handleBorrow(currentBook));
-      actions.append(borrowBtn);
     }
     if (borrowedByStudent) {
-      const returnBtn = document.createElement('button');
-      returnBtn.type = 'button';
-      returnBtn.className = 'btn btn--secondary';
-      returnBtn.textContent = 'Ik breng het terug';
+      const returnBtn = appendTextElement(actions, 'button', 'Ik breng het terug', {
+        className: 'btn btn--secondary',
+        type: 'button',
+      });
       returnBtn.addEventListener('click', () => handleReturn(currentBook));
-      actions.append(returnBtn);
     }
     if (borrowedByOther) {
-      const info = document.createElement('p');
-      info.className = 'hint';
-      info.textContent =
-        'Het boek is nu uitgeleend. Vraag de mediatheek om hulp als je het nodig hebt.';
-      actions.append(info);
+      appendTextElement(
+        actions,
+        'p',
+        'Het boek is nu uitgeleend. Vraag de mediatheek om hulp als je het nodig hebt.',
+        { className: 'hint' }
+      );
     }
-    bookResult.append(actions);
   }
 
   async function handleBorrow(book) {
@@ -1316,12 +1407,13 @@ function initStudentPage() {
       currentBook = result.book;
       await refreshData();
       if (bookResult) {
-        const message = document.createElement('p');
-        message.className = 'book-result__status';
+        bookResult.innerHTML = '';
+        const message = appendElement(bookResult, 'p', {
+          className: 'book-result__status',
+        });
         message.append('Veel leesplezier met ');
         appendTextElement(message, 'strong', result.book.title);
         message.append('!');
-        bookResult.replaceChildren(message);
       }
     } catch (error) {
       if (bookResult) {
@@ -1342,12 +1434,13 @@ function initStudentPage() {
       currentBook = result.book;
       await refreshData();
       if (bookResult) {
-        const message = document.createElement('p');
-        message.className = 'book-result__status';
+        bookResult.innerHTML = '';
+        const message = appendElement(bookResult, 'p', {
+          className: 'book-result__status',
+        });
         message.append('Bedankt! ');
         appendTextElement(message, 'strong', result.book.title);
         message.append(' is weer beschikbaar.');
-        bookResult.replaceChildren(message);
       }
     } catch (error) {
       if (bookResult) {
@@ -1851,10 +1944,9 @@ function initStaffPage() {
     if (!adminClassTeachersSelect) return;
     adminClassTeachersSelect.innerHTML = '';
     for (const teacher of teachers) {
-      const option = document.createElement('option');
-      option.value = teacher.id;
-      option.textContent = teacher.name;
-      adminClassTeachersSelect.append(option);
+      appendTextElement(adminClassTeachersSelect, 'option', teacher.name, {
+        value: teacher.id,
+      });
     }
     updateAdminClassDetails();
   }
@@ -1883,10 +1975,7 @@ function initStaffPage() {
       placeholder.value = '';
     }
     for (const klass of sortedClasses) {
-      const option = document.createElement('option');
-      option.value = klass.id;
-      option.textContent = klass.name;
-      adminClassSelect.append(option);
+      appendTextElement(adminClassSelect, 'option', klass.name, { value: klass.id });
     }
     adminClassSelect.disabled = !sortedClasses.length;
     if (!sortedClasses.length) {
@@ -2144,10 +2233,9 @@ function initStaffPage() {
         placeholder.value = '';
       }
       for (const klass of teacherClasses) {
-        const option = document.createElement('option');
-        option.value = klass.id;
-        option.textContent = klass.name;
-        teacherStudentClassSelect.append(option);
+        appendTextElement(teacherStudentClassSelect, 'option', klass.name, {
+          value: klass.id,
+        });
       }
       teacherStudentClassSelect.disabled = teacherClasses.length === 0;
     }
@@ -2159,10 +2247,9 @@ function initStaffPage() {
         defaultOption.value = '';
       }
       for (const klass of classes) {
-        const option = document.createElement('option');
-        option.value = klass.id;
-        option.textContent = klass.name;
-        adminStudentClassSelect.append(option);
+        appendTextElement(adminStudentClassSelect, 'option', klass.name, {
+          value: klass.id,
+        });
       }
       adminStudentClassSelect.value = current;
     }
@@ -2196,64 +2283,66 @@ function initStaffPage() {
         teacherClassIds.includes(classId)
       );
 
-      const item = document.createElement('article');
-      item.className = 'student-list__item';
+      const item = appendElement(teacherStudentList, 'article', {
+        className: 'student-list__item',
+      });
+      if (!item) continue;
 
-      const title = document.createElement('strong');
-      title.textContent = student.name;
-      item.append(title);
+      appendTextElement(item, 'strong', student.name);
 
-      const metaLine = document.createElement('div');
-      metaLine.className = 'student-list__meta';
-      const usernameSpan = document.createElement('span');
-      usernameSpan.textContent = `Gebruikersnaam: ${student.username}`;
-      const gradeSpan = document.createElement('span');
-      gradeSpan.textContent = `Klas: ${student.grade || 'Onbekend'}`;
-      const borrowedSpan = document.createElement('span');
-      borrowedSpan.textContent = `${borrowed} uitgeleende boek(en)`;
-      metaLine.append(usernameSpan, gradeSpan, borrowedSpan);
-      item.append(metaLine);
+      const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
+      if (metaLine) {
+        appendTextElement(metaLine, 'span', `Gebruikersnaam: ${student.username}`);
+        appendTextElement(metaLine, 'span', `Klas: ${student.grade || 'Onbekend'}`);
+        appendTextElement(metaLine, 'span', `${borrowed} uitgeleende boek(en)`);
+      }
 
-      const classesLine = document.createElement('div');
-      classesLine.className = 'student-list__meta';
-      const classesInfo = document.createElement('span');
-      classesInfo.textContent = studentClasses.length
-        ? `Gekoppeld aan: ${studentClasses.map((klass) => klass.name).join(', ')}`
-        : 'Nog niet gekoppeld aan een klas';
-      classesLine.append(classesInfo);
-      item.append(classesLine);
+      const classesLine = appendElement(item, 'div', { className: 'student-list__meta' });
+      if (classesLine) {
+        appendTextElement(
+          classesLine,
+          'span',
+          studentClasses.length
+            ? `Gekoppeld aan: ${studentClasses.map((klass) => klass.name).join(', ')}`
+            : 'Nog niet gekoppeld aan een klas'
+        );
+      }
 
-      const actions = document.createElement('div');
-      actions.className = 'student-list__actions';
-      if (!sharedClassIds.length) {
-        const note = document.createElement('span');
-        note.className = 'hint';
-        note.textContent = 'Geen gedeelde klassen om te beheren.';
-        actions.append(note);
-      } else {
-        const resetButton = document.createElement('button');
-        resetButton.type = 'button';
-        resetButton.className = 'btn btn--ghost';
-        resetButton.dataset.resetPassword = 'true';
-        resetButton.dataset.studentId = student.id;
-        resetButton.dataset.studentName = student.name;
-        resetButton.textContent = 'Wachtwoord resetten';
-        actions.append(resetButton);
-        for (const classId of sharedClassIds) {
-          const klass = classes.find((entry) => entry.id === classId);
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'btn btn--ghost';
-          button.dataset.removeFromClass = 'true';
-          button.dataset.classId = classId;
-          button.dataset.studentId = student.id;
-          button.textContent = klass ? `Uit ${klass.name} verwijderen` : 'Verwijderen uit klas';
-          actions.append(button);
+      const actions = appendElement(item, 'div', { className: 'student-list__actions' });
+      if (actions) {
+        if (!sharedClassIds.length) {
+          appendTextElement(actions, 'span', 'Geen gedeelde klassen om te beheren.', {
+            className: 'hint',
+          });
+        } else {
+          appendTextElement(actions, 'button', 'Wachtwoord resetten', {
+            className: 'btn btn--ghost',
+            type: 'button',
+            dataset: {
+              resetPassword: 'true',
+              studentId: student.id,
+              studentName: student.name,
+            },
+          });
+          for (const classId of sharedClassIds) {
+            const klass = classes.find((entry) => entry.id === classId);
+            appendTextElement(
+              actions,
+              'button',
+              klass ? `Uit ${klass.name} verwijderen` : 'Verwijderen uit klas',
+              {
+                className: 'btn btn--ghost',
+                type: 'button',
+                dataset: {
+                  removeFromClass: 'true',
+                  classId,
+                  studentId: student.id,
+                },
+              }
+            );
+          }
         }
       }
-      item.append(actions);
-
-      teacherStudentList.append(item);
     }
   }
 
@@ -2282,40 +2371,43 @@ function initStaffPage() {
         .map((klass) => klass.name)
         .filter(Boolean);
 
-      const item = document.createElement('article');
-      item.className = 'student-list__item';
+      const item = appendElement(adminTeacherList, 'article', {
+        className: 'student-list__item',
+      });
+      if (!item) continue;
 
-      const title = document.createElement('strong');
-      title.textContent = teacher.name;
-      item.append(title);
+      appendTextElement(item, 'strong', teacher.name);
 
-      const metaLine = document.createElement('div');
-      metaLine.className = 'student-list__meta';
-      const usernameSpan = document.createElement('span');
-      usernameSpan.textContent = `Gebruikersnaam: ${teacher.username || 'Onbekend'}`;
-      metaLine.append(usernameSpan);
-      item.append(metaLine);
+      const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
+      if (metaLine) {
+        appendTextElement(
+          metaLine,
+          'span',
+          `Gebruikersnaam: ${teacher.username || 'Onbekend'}`
+        );
+      }
 
-      const classesLine = document.createElement('div');
-      classesLine.className = 'student-list__meta';
-      classesLine.textContent = teacherClasses.length
-        ? `Gekoppeld aan: ${teacherClasses.join(', ')}`
-        : 'Nog niet gekoppeld aan een klas';
-      item.append(classesLine);
+      appendTextElement(
+        item,
+        'div',
+        teacherClasses.length
+          ? `Gekoppeld aan: ${teacherClasses.join(', ')}`
+          : 'Nog niet gekoppeld aan een klas',
+        { className: 'student-list__meta' }
+      );
 
-      const actions = document.createElement('div');
-      actions.className = 'student-list__actions';
-      const resetButton = document.createElement('button');
-      resetButton.type = 'button';
-      resetButton.className = 'btn btn--ghost';
-      resetButton.dataset.resetTeacher = 'true';
-      resetButton.dataset.teacherId = teacher.id;
-      resetButton.dataset.teacherName = teacher.name;
-      resetButton.textContent = 'Wachtwoord resetten';
-      actions.append(resetButton);
-      item.append(actions);
-
-      adminTeacherList.append(item);
+      const actions = appendElement(item, 'div', { className: 'student-list__actions' });
+      if (actions) {
+        appendTextElement(actions, 'button', 'Wachtwoord resetten', {
+          className: 'btn btn--ghost',
+          type: 'button',
+          dataset: {
+            resetTeacher: 'true',
+            teacherId: teacher.id,
+            teacherName: teacher.name,
+          },
+        });
+      }
     }
   }
 
@@ -2340,65 +2432,64 @@ function initStaffPage() {
         .map((classId) => classes.find((klass) => klass.id === classId))
         .filter(Boolean);
 
-      const item = document.createElement('article');
-      item.className = 'student-list__item';
+      const item = appendElement(adminStudentList, 'article', {
+        className: 'student-list__item',
+      });
+      if (!item) continue;
 
-      const title = document.createElement('strong');
-      title.textContent = student.name;
-      item.append(title);
+      appendTextElement(item, 'strong', student.name);
 
-      const metaLine = document.createElement('div');
-      metaLine.className = 'student-list__meta';
-      const usernameSpan = document.createElement('span');
-      usernameSpan.textContent = `Gebruikersnaam: ${student.username}`;
-      const gradeSpan = document.createElement('span');
-      gradeSpan.textContent = `Klas: ${student.grade || 'Onbekend'}`;
-      const borrowedSpan = document.createElement('span');
-      borrowedSpan.textContent = `${borrowed} uitgeleende boek(en)`;
-      metaLine.append(usernameSpan, gradeSpan, borrowedSpan);
-      item.append(metaLine);
-
-      const classesLine = document.createElement('div');
-      classesLine.className = 'student-list__meta';
-      const classesInfo = document.createElement('span');
-      classesInfo.textContent = studentClasses.length
-        ? `Gekoppeld aan: ${studentClasses.map((klass) => klass.name).join(', ')}`
-        : 'Nog niet gekoppeld aan een klas';
-      classesLine.append(classesInfo);
-      item.append(classesLine);
-
-      const actions = document.createElement('div');
-      actions.className = 'student-list__actions';
-      const resetButton = document.createElement('button');
-      resetButton.type = 'button';
-      resetButton.className = 'btn btn--ghost';
-      resetButton.dataset.resetPassword = 'true';
-      resetButton.dataset.studentId = student.id;
-      resetButton.dataset.studentName = student.name;
-      resetButton.textContent = 'Wachtwoord resetten';
-      actions.append(resetButton);
-      if (studentClasses.length) {
-        for (const klass of studentClasses) {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'btn btn--ghost';
-          button.dataset.removeFromClass = 'true';
-          button.dataset.classId = klass.id;
-          button.dataset.studentId = student.id;
-          button.textContent = `Uit ${klass.name} verwijderen`;
-          actions.append(button);
-        }
+      const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
+      if (metaLine) {
+        appendTextElement(metaLine, 'span', `Gebruikersnaam: ${student.username}`);
+        appendTextElement(metaLine, 'span', `Klas: ${student.grade || 'Onbekend'}`);
+        appendTextElement(metaLine, 'span', `${borrowed} uitgeleende boek(en)`);
       }
-      const deleteButton = document.createElement('button');
-      deleteButton.type = 'button';
-      deleteButton.className = 'btn btn--ghost';
-      deleteButton.dataset.removeStudentAccount = 'true';
-      deleteButton.dataset.studentId = student.id;
-      deleteButton.textContent = 'Account verwijderen';
-      actions.append(deleteButton);
-      item.append(actions);
 
-      adminStudentList.append(item);
+      const classesLine = appendElement(item, 'div', { className: 'student-list__meta' });
+      if (classesLine) {
+        appendTextElement(
+          classesLine,
+          'span',
+          studentClasses.length
+            ? `Gekoppeld aan: ${studentClasses.map((klass) => klass.name).join(', ')}`
+            : 'Nog niet gekoppeld aan een klas'
+        );
+      }
+
+      const actions = appendElement(item, 'div', { className: 'student-list__actions' });
+      if (actions) {
+        appendTextElement(actions, 'button', 'Wachtwoord resetten', {
+          className: 'btn btn--ghost',
+          type: 'button',
+          dataset: {
+            resetPassword: 'true',
+            studentId: student.id,
+            studentName: student.name,
+          },
+        });
+        if (studentClasses.length) {
+          for (const klass of studentClasses) {
+            appendTextElement(actions, 'button', `Uit ${klass.name} verwijderen`, {
+              className: 'btn btn--ghost',
+              type: 'button',
+              dataset: {
+                removeFromClass: 'true',
+                classId: klass.id,
+                studentId: student.id,
+              },
+            });
+          }
+        }
+        appendTextElement(actions, 'button', 'Account verwijderen', {
+          className: 'btn btn--ghost',
+          type: 'button',
+          dataset: {
+            removeStudentAccount: 'true',
+            studentId: student.id,
+          },
+        });
+      }
     }
   }
 
@@ -2417,9 +2508,7 @@ function initStaffPage() {
       resolved = String(value).trim();
     }
     if (!resolved) return;
-    const span = document.createElement('span');
-    span.textContent = `${label}: ${resolved}`;
-    container.append(span);
+    appendTextElement(container, 'span', `${label}: ${resolved}`);
   }
 
   function renderImportResults(container, result) {
@@ -2431,13 +2520,12 @@ function initStaffPage() {
     const skipped = Array.isArray(result.skipped) ? result.skipped : [];
 
     if (accounts.length) {
-      const list = document.createElement('ul');
-      list.className = 'import-results__list';
+      const list = appendElement(container, 'ul', {
+        className: 'import-results__list',
+      });
       for (const account of accounts) {
-        const item = document.createElement('li');
-        const title = document.createElement('strong');
-        title.textContent = account.name || account.username || 'Onbekende gebruiker';
-        item.append(title);
+        const item = appendElement(list, 'li');
+        appendTextElement(item, 'strong', account.name || account.username || 'Onbekende gebruiker');
 
         if (account.status) {
           const statusLabel = account.status === 'updated' ? 'Bijgewerkt account' : 'Nieuw account';
@@ -2451,25 +2539,21 @@ function initStaffPage() {
           const passwordLabel = account.status === 'updated' ? 'Nieuw wachtwoord' : 'Tijdelijk wachtwoord';
           appendImportMeta(item, passwordLabel, account.password);
         }
-        list.append(item);
       }
-      container.append(list);
     }
 
     if (skipped.length) {
-      const skippedTitle = document.createElement('h4');
-      skippedTitle.textContent = 'Overgeslagen regels';
-      const skippedList = document.createElement('ul');
-      skippedList.className = 'import-results__skipped';
+      appendTextElement(container, 'h4', 'Overgeslagen regels');
+      const skippedList = appendElement(container, 'ul', {
+        className: 'import-results__skipped',
+      });
       for (const entry of skipped) {
-        const item = document.createElement('li');
+        const item = appendElement(skippedList, 'li');
         const name = entry?.name || '(onbekend)';
         const username = entry?.username || '(leeg)';
         const reason = entry?.reason || 'Onbekende reden';
         item.textContent = `${name} (${username}) – ${reason}`;
-        skippedList.append(item);
       }
-      container.append(skippedTitle, skippedList);
     }
   }
 
@@ -2544,10 +2628,9 @@ function initStaffPage() {
         defaultOption.value = '';
       }
       for (const folder of folders) {
-        const option = document.createElement('option');
-        option.value = folder.id;
-        option.textContent = folder.name;
-        adminFolderSelect.append(option);
+        appendTextElement(adminFolderSelect, 'option', folder.name, {
+          value: folder.id,
+        });
       }
       adminFolderSelect.value = current;
     }
