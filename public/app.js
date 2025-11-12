@@ -235,12 +235,20 @@ function initStudentPage() {
       const book = allBooks.find((entry) => entry.id === item.bookId);
       const li = document.createElement('li');
       li.className = 'borrowed-list__item';
-      const parts = [
-        `<strong>${book ? book.title : 'Onbekend boek'}</strong>`,
-        book ? `<span>${book.author}</span>` : '',
-        item.borrowedAt ? `<span>Sinds ${formatDate(item.borrowedAt)}</span>` : '',
-      ].filter(Boolean);
-      li.innerHTML = parts.join(' ');
+      // Bouw veilige DOM-structuur om XSS te voorkomen
+      const titleEl = document.createElement('strong');
+      titleEl.textContent = book ? book.title : 'Onbekend boek';
+      li.append(titleEl);
+      if (book && book.author) {
+        const authorEl = document.createElement('span');
+        authorEl.textContent = book.author;
+        li.append(authorEl);
+      }
+      if (item.borrowedAt) {
+        const dateEl = document.createElement('span');
+        dateEl.textContent = `Sinds ${formatDate(item.borrowedAt)}`;
+        li.append(dateEl);
+      }
       borrowedList.append(li);
     }
   }
@@ -339,7 +347,10 @@ function initStudentPage() {
     for (const item of items) {
       const div = document.createElement('div');
       div.className = 'summary__item';
-      div.innerHTML = `${item.value}<span>${item.label}</span>`;
+      div.append(document.createTextNode(String(item.value)));
+      const span = document.createElement('span');
+      span.textContent = item.label;
+      div.append(span);
       summary.append(div);
     }
   }
@@ -378,18 +389,33 @@ function initStudentPage() {
         ? 'Je hebt dit boek geleend'
         : 'Dit boek is momenteel uitgeleend';
     }
-    const examBadge = currentBook.suitableForExamList
-      ? '<p><strong>✔ Op de leeslijst</strong></p>'
-      : '';
-    bookResult.innerHTML = `
-      <h3>${currentBook.title}</h3>
-      <p>${currentBook.author}</p>
-      <p class="book-result__status">${statusText}</p>
-      <p>${currentBook.description || ''}</p>
-      <p><strong>Map:</strong> ${folder ? folder.name : 'Geen map'}</p>
-      <p><strong>Barcode:</strong> ${currentBook.barcode}</p>
-      ${examBadge}
-    `;
+    // Bouw veilige UI voor boekdetails zonder innerHTML om XSS te voorkomen
+    bookResult.innerHTML = '';
+    const titleEl = document.createElement('h3');
+    titleEl.textContent = currentBook.title;
+    const authorEl = document.createElement('p');
+    authorEl.textContent = currentBook.author || '';
+    const statusEl = document.createElement('p');
+    statusEl.className = 'book-result__status';
+    statusEl.textContent = statusText;
+    const descEl = document.createElement('p');
+    descEl.textContent = currentBook.description || '';
+    const folderEl = document.createElement('p');
+    const folderStrong = document.createElement('strong');
+    folderStrong.textContent = 'Map:';
+    folderEl.append(folderStrong, document.createTextNode(` ${folder ? folder.name : 'Geen map'}`));
+    const barcodeEl = document.createElement('p');
+    const barcodeStrong = document.createElement('strong');
+    barcodeStrong.textContent = 'Barcode:';
+    barcodeEl.append(barcodeStrong, document.createTextNode(` ${currentBook.barcode}`));
+    bookResult.append(titleEl, authorEl, statusEl, descEl, folderEl, barcodeEl);
+    if (currentBook.suitableForExamList) {
+      const examEl = document.createElement('p');
+      const examStrong = document.createElement('strong');
+      examStrong.textContent = '✔ Op de leeslijst';
+      examEl.append(examStrong);
+      bookResult.append(examEl);
+    }
     const actions = document.createElement('div');
     actions.className = 'book-result__actions';
     if (currentBook.status === 'available' && loggedIn) {
@@ -428,7 +454,14 @@ function initStudentPage() {
       currentBook = result.book;
       await refreshData();
       if (bookResult) {
-        bookResult.innerHTML = `<p class="book-result__status">Veel leesplezier met <strong>${result.book.title}</strong>!</p>`;
+        bookResult.innerHTML = '';
+        const p = document.createElement('p');
+        p.className = 'book-result__status';
+        p.append(document.createTextNode('Veel leesplezier met '));
+        const s = document.createElement('strong');
+        s.textContent = result.book.title;
+        p.append(s, document.createTextNode('!'));
+        bookResult.append(p);
       }
     } catch (error) {
       if (bookResult) {
@@ -447,7 +480,14 @@ function initStudentPage() {
       currentBook = result.book;
       await refreshData();
       if (bookResult) {
-        bookResult.innerHTML = `<p class="book-result__status">Bedankt! <strong>${result.book.title}</strong> is weer beschikbaar.</p>`;
+        bookResult.innerHTML = '';
+        const p = document.createElement('p');
+        p.className = 'book-result__status';
+        p.append(document.createTextNode('Bedankt! '));
+        const s = document.createElement('strong');
+        s.textContent = result.book.title;
+        p.append(s, document.createTextNode(' is weer beschikbaar.'));
+        bookResult.append(p);
       }
     } catch (error) {
       if (bookResult) {
@@ -665,7 +705,10 @@ function initStaffPage() {
     for (const item of items) {
       const div = document.createElement('div');
       div.className = 'summary__item';
-      div.innerHTML = `${item.value}<span>${item.label}</span>`;
+      div.append(document.createTextNode(String(item.value)));
+      const span = document.createElement('span');
+      span.textContent = item.label;
+      div.append(span);
       summary.append(div);
     }
   }
@@ -682,10 +725,12 @@ function initStaffPage() {
           dateStyle: 'short',
           timeStyle: 'short',
         });
-        li.innerHTML = `
-          <span class="history-item__time">${time}</span>
-          <span>${entry.message}</span>
-        `;
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'history-item__time';
+        timeSpan.textContent = time;
+        const msgSpan = document.createElement('span');
+        msgSpan.textContent = entry.message;
+        li.append(timeSpan, msgSpan);
         historyList.append(li);
       }
     } catch (error) {
@@ -710,10 +755,14 @@ function initStaffPage() {
       const article = document.createElement('article');
       article.className = 'class-card';
 
-      const header = document.createElement('header');
-      header.className = 'class-card__header';
-      header.innerHTML = `<h4>${klass.name}</h4><span>${klass.studentIds?.length || 0} leerlingen</span>`;
-      article.append(header);
+  const header = document.createElement('header');
+  header.className = 'class-card__header';
+  const h4 = document.createElement('h4');
+  h4.textContent = klass.name;
+  const countSpan = document.createElement('span');
+  countSpan.textContent = `${klass.studentIds?.length || 0} leerlingen`;
+  header.append(h4, countSpan);
+  article.append(header);
 
       const memberList = document.createElement('ul');
       memberList.className = 'class-card__students';
@@ -727,20 +776,25 @@ function initStaffPage() {
       } else {
         for (const member of members) {
           const li = document.createElement('li');
-          li.innerHTML = `
-            <div>
-              <strong>${member.name}</strong>
-              <span>${member.grade || 'klas onbekend'}</span>
-              ${member.borrowedBooks?.length ? `<span>${member.borrowedBooks.length} boek(en) mee</span>` : ''}
-            </div>
-            <button
-              class="btn btn--ghost"
-              data-remove-student
-              data-class-id="${klass.id}"
-              data-student-id="${member.id}"
-              type="button"
-            >Verwijderen</button>
-          `;
+          const inner = document.createElement('div');
+          const strong = document.createElement('strong');
+          strong.textContent = member.name;
+          const gradeSpan = document.createElement('span');
+          gradeSpan.textContent = member.grade || 'klas onbekend';
+          inner.append(strong, gradeSpan);
+          if (member.borrowedBooks?.length) {
+            const borrowedSpan = document.createElement('span');
+            borrowedSpan.textContent = `${member.borrowedBooks.length} boek(en) mee`;
+            inner.append(borrowedSpan);
+          }
+          const btn = document.createElement('button');
+          btn.className = 'btn btn--ghost';
+          btn.setAttribute('data-remove-student', '');
+          btn.dataset.classId = klass.id;
+          btn.dataset.studentId = member.id;
+          btn.type = 'button';
+          btn.textContent = 'Verwijderen';
+          li.append(inner, btn);
           memberList.append(li);
         }
       }
@@ -751,18 +805,27 @@ function initStaffPage() {
       const availableStudents = students.filter(
         (student) => !(klass.studentIds || []).includes(student.id)
       );
-      const options = [
-        '<option value="">Kies een leerling…</option>',
-        ...availableStudents.map(
-          (student) =>
-            `<option value="${student.id}">${student.name} (${student.grade || 'leerling'})</option>`
-        ),
-      ].join('');
-      form.innerHTML = `
-        <label for="add-${klass.id}">Leerling toevoegen</label>
-        <select id="add-${klass.id}" required>${options}</select>
-        <button type="submit" class="btn btn--secondary">Toevoegen</button>
-      `;
+      const label = document.createElement('label');
+      label.setAttribute('for', `add-${klass.id}`);
+      label.textContent = 'Leerling toevoegen';
+      const select = document.createElement('select');
+      select.id = `add-${klass.id}`;
+      select.required = true;
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = 'Kies een leerling…';
+      select.append(emptyOption);
+      for (const student of availableStudents) {
+        const opt = document.createElement('option');
+        opt.value = student.id;
+        opt.textContent = `${student.name} (${student.grade || 'leerling'})`;
+        select.append(opt);
+      }
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'submit';
+      submitBtn.className = 'btn btn--secondary';
+      submitBtn.textContent = 'Toevoegen';
+      form.append(label, select, submitBtn);
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const select = form.querySelector('select');
@@ -953,10 +1016,15 @@ function initStaffPage() {
           list.className = 'import-results__list';
           for (const account of result.accounts) {
             const li = document.createElement('li');
-            li.innerHTML = `
-              <strong>${account.name}</strong> – ${account.username}
-              ${account.password ? `<span>Nieuw wachtwoord: ${account.password}</span>` : ''}
-            `;
+            const strong = document.createElement('strong');
+            strong.textContent = account.name;
+            const dash = document.createTextNode(' – ' + account.username);
+            li.append(strong, dash);
+            if (account.password) {
+              const pwSpan = document.createElement('span');
+              pwSpan.textContent = `Nieuw wachtwoord: ${account.password}`;
+              li.append(pwSpan);
+            }
             list.append(li);
           }
           studentImportResults.append(list);
