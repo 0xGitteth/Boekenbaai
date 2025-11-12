@@ -1083,6 +1083,82 @@ function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } =
   return list;
 }
 
+function renderBookGrid({
+  grid,
+  books,
+  template,
+  folders,
+  filters,
+  cardOptions,
+  emptyMessage = 'Geen boeken gevonden voor deze selectie.',
+} = {}) {
+  if (!grid) return;
+  const filtered = filterBooks(books, filters);
+  grid.replaceChildren();
+  if (!filtered.length) {
+    replaceWithTextElement(grid, 'p', emptyMessage);
+    return;
+  }
+  for (const book of filtered) {
+    const options =
+      typeof cardOptions === 'function' ? cardOptions(book) : cardOptions;
+    const card = createBookCard(template, book, folders, options || {});
+    if (card) {
+      grid.append(card);
+    }
+  }
+}
+
+function createThemeFilterRenderer({
+  pillsContainer,
+  selectedThemeKeys,
+  getThemes,
+  getOnlyExamList,
+  setOnlyExamList,
+  onChange,
+} = {}) {
+  const notifyChange = () => {
+    if (typeof onChange === 'function') {
+      onChange();
+    }
+  };
+
+  const render = () => {
+    renderThemePills(pillsContainer, {
+      themes: typeof getThemes === 'function' ? getThemes() : [],
+      selectedThemes: selectedThemeKeys,
+      onlyExamList: typeof getOnlyExamList === 'function' ? getOnlyExamList() : false,
+      onToggleTheme: ({ key, active }) => {
+        if (!key) return;
+        if (active) {
+          selectedThemeKeys?.add(key);
+        } else {
+          selectedThemeKeys?.delete(key);
+        }
+        render();
+        notifyChange();
+      },
+      onToggleExam: (nextValue) => {
+        if (typeof setOnlyExamList === 'function') {
+          setOnlyExamList(Boolean(nextValue));
+        }
+        render();
+        notifyChange();
+      },
+      onClear: () => {
+        selectedThemeKeys?.clear();
+        if (typeof setOnlyExamList === 'function') {
+          setOnlyExamList(false);
+        }
+        render();
+        notifyChange();
+      },
+    });
+  };
+
+  return render;
+}
+
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1215,55 +1291,32 @@ function initStudentPage() {
   updateAuthUi = renderAuthState;
 
   function renderBooks() {
-    if (!bookGrid) return;
-    const filters = {
-      folder: '',
-      query: searchInput?.value || '',
-      selectedThemes: selectedThemeKeys,
-      onlyExamList,
-    };
-    const filtered = filterBooks(allBooks, filters);
-    bookGrid.replaceChildren();
-    if (!filtered.length) {
-      replaceWithTextElement(bookGrid, 'p', 'Geen boeken gevonden voor deze selectie.');
-      return;
-    }
-    for (const book of filtered) {
-      const card = createBookCard(bookCardTemplate, book, folders);
-      if (card) {
-        bookGrid.append(card);
-      }
-    }
-  }
-
-  function renderThemeFilters() {
-    renderThemePills(themeFilterPills, {
-      themes: availableThemes,
-      selectedThemes: selectedThemeKeys,
-      onlyExamList,
-      onToggleTheme: ({ key, active }) => {
-        if (!key) return;
-        if (active) {
-          selectedThemeKeys.add(key);
-        } else {
-          selectedThemeKeys.delete(key);
-        }
-        renderThemeFilters();
-        renderBooks();
-      },
-      onToggleExam: (nextValue) => {
-        onlyExamList = Boolean(nextValue);
-        renderThemeFilters();
-        renderBooks();
-      },
-      onClear: () => {
-        selectedThemeKeys.clear();
-        onlyExamList = false;
-        renderThemeFilters();
-        renderBooks();
+    renderBookGrid({
+      grid: bookGrid,
+      books: allBooks,
+      template: bookCardTemplate,
+      folders,
+      filters: {
+        folder: '',
+        query: searchInput?.value || '',
+        selectedThemes: selectedThemeKeys,
+        onlyExamList,
       },
     });
   }
+
+  const renderThemeFilters = createThemeFilterRenderer({
+    pillsContainer: themeFilterPills,
+    selectedThemeKeys,
+    getThemes: () => availableThemes,
+    getOnlyExamList: () => onlyExamList,
+    setOnlyExamList: (value) => {
+      onlyExamList = Boolean(value);
+    },
+    onChange: () => {
+      renderBooks();
+    },
+  });
 
   function updateAvailableThemes() {
     availableThemes = collectUniqueThemes(allBooks);
@@ -1745,63 +1798,44 @@ function initStaffPage() {
   updateAuthUi = renderStaffState;
 
   function renderBooks() {
-    if (!bookGrid) return;
-    const filtered = filterBooks(allBooks, {
-      folder: '',
-      query: filters.query,
-      selectedThemes: selectedThemeKeys,
-      onlyExamList,
-    });
-    bookGrid.replaceChildren();
-    if (!filtered.length) {
-      replaceWithTextElement(bookGrid, 'p', 'Geen boeken gevonden voor deze selectie.');
-      return;
-    }
-    const isAdmin = authUser?.role === 'admin';
-    for (const book of filtered) {
-      const card = createBookCard(bookCardTemplate, book, folders, {
-        selectable: Boolean(isAdmin),
-        selected: Boolean(isAdmin && selectedBookId === book.id),
-        onSelect: (selectedBook) => {
-          if (isAdmin) {
+    renderBookGrid({
+      grid: bookGrid,
+      books: allBooks,
+      template: bookCardTemplate,
+      folders,
+      filters: {
+        folder: '',
+        query: filters.query,
+        selectedThemes: selectedThemeKeys,
+        onlyExamList,
+      },
+      cardOptions: (book) => {
+        if (authUser?.role !== 'admin') {
+          return undefined;
+        }
+        return {
+          selectable: true,
+          selected: selectedBookId === book.id,
+          onSelect: (selectedBook) => {
             handleAdminBookSelection(selectedBook);
-          }
-        },
-      });
-      if (card) {
-        bookGrid.append(card);
-      }
-    }
+          },
+        };
+      },
+    });
   }
 
-  function renderThemeFilters() {
-    renderThemePills(themeFilterPills, {
-      themes: availableThemes,
-      selectedThemes: selectedThemeKeys,
-      onlyExamList,
-      onToggleTheme: ({ key, active }) => {
-        if (!key) return;
-        if (active) {
-          selectedThemeKeys.add(key);
-        } else {
-          selectedThemeKeys.delete(key);
-        }
-        renderThemeFilters();
-        renderBooks();
-      },
-      onToggleExam: (nextValue) => {
-        onlyExamList = Boolean(nextValue);
-        renderThemeFilters();
-        renderBooks();
-      },
-      onClear: () => {
-        selectedThemeKeys.clear();
-        onlyExamList = false;
-        renderThemeFilters();
-        renderBooks();
-      },
-    });
-  }
+  const renderThemeFilters = createThemeFilterRenderer({
+    pillsContainer: themeFilterPills,
+    selectedThemeKeys,
+    getThemes: () => availableThemes,
+    getOnlyExamList: () => onlyExamList,
+    setOnlyExamList: (value) => {
+      onlyExamList = Boolean(value);
+    },
+    onChange: () => {
+      renderBooks();
+    },
+  });
 
   function updateAvailableThemes() {
     availableThemes = collectUniqueThemes(allBooks);
