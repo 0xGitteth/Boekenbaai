@@ -718,6 +718,20 @@ function findStudentById(db, id) {
   return db.students.find((student) => student.id === id);
 }
 
+function getTeacherClassIds(db, teacherId) {
+  if (!teacherId) {
+    return [];
+  }
+  const ids = new Set();
+  for (const klass of db.classes) {
+    const teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
+    if (teacherIds.includes(teacherId)) {
+      ids.add(klass.id);
+    }
+  }
+  return Array.from(ids);
+}
+
 async function handleApi(req, res, requestUrl) {
   const originAllowed = isOriginAllowed(req.headers.origin, requestUrl);
   if (req.method === 'OPTIONS') {
@@ -1138,9 +1152,7 @@ async function handleApi(req, res, requestUrl) {
       const db = getDb();
       let studentList = db.students;
       if (user.role === 'teacher') {
-        const teacherClassIds = db.classes
-          .filter((klass) => (klass.teacherIds || []).includes(user.id))
-          .map((klass) => klass.id);
+        const teacherClassIds = getTeacherClassIds(db, user.id);
         studentList = db.students.filter((student) =>
           (student.classIds || []).some((classId) => teacherClassIds.includes(classId))
         );
@@ -1212,6 +1224,46 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 201, {
         ...sanitizeStudent(student, { includeUsername: true }),
         temporaryPassword: password,
+      });
+    }
+
+    const studentResetMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)\/reset-password$/);
+    if (studentResetMatch && req.method === 'POST') {
+      if (!ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen wachtwoorden resetten' });
+      }
+      const db = getDb();
+      const student = findStudentById(db, studentResetMatch[1]);
+      if (!student) {
+        return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+      }
+      if (user.role === 'teacher') {
+        const teacherClassIds = getTeacherClassIds(db, user.id);
+        const allowed = (student.classIds || []).some((classId) => teacherClassIds.includes(classId));
+        if (!allowed) {
+          return sendJson(res, 403, {
+            message: 'Je kunt alleen wachtwoorden resetten voor leerlingen uit jouw klassen',
+          });
+        }
+      }
+      const temporaryPassword = generatePassword(10);
+      student.passwordHash = hashPassword(temporaryPassword);
+      student.mustChangePassword = true;
+      for (const [token, session] of sessions.entries()) {
+        if (session.type === 'student' && session.userId === student.id) {
+          sessions.delete(token);
+        }
+      }
+      appendHistory(db, {
+        type: 'student_password_reset',
+        studentId: student.id,
+        performedBy: user?.id || null,
+        message: `Wachtwoord opnieuw ingesteld voor ${student.name}`,
+      });
+      saveDb(db);
+      return sendJson(res, 200, {
+        student: sanitizeStudent(student, { includeUsername: true }),
+        temporaryPassword,
       });
     }
 
