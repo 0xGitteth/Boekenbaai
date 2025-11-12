@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -281,11 +282,24 @@ function loadDb() {
 }
 
 function saveDb(db) {
-  fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
+  // Atomic write: write to temp file then rename to avoid partial writes.
+  const tmp = `${DATA_PATH}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+  fs.renameSync(tmp, DATA_PATH);
+}
+
+// Modern password handling: use bcrypt, but keep legacy sha256 support for migration.
+function legacyHash(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+function isBcryptHash(value) {
+  return typeof value === 'string' && value.startsWith('$2');
 }
 
 function hashPassword(password) {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  // Use bcrypt sync for simplicity; acceptable for small-scale deployment.
+  return bcrypt.hashSync(password, 10);
 }
 
 function getTokenFromHeader(req) {
@@ -295,11 +309,45 @@ function getTokenFromHeader(req) {
   return match ? match[1] : null;
 }
 
+// Simple rate limiter for login to mitigate brute-force attempts.
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_ATTEMPTS = 10;
+
+function recordLoginAttempt(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const entry = loginAttempts.get(ip) || { count: 0, firstAt: Date.now() };
+  const now = Date.now();
+  if (now - entry.firstAt > LOGIN_WINDOW_MS) {
+    entry.count = 0;
+    entry.firstAt = now;
+  }
+  entry.count += 1;
+  loginAttempts.set(ip, entry);
+  return entry;
+}
+
+function isLoginBlocked(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const entry = loginAttempts.get(ip);
+  if (!entry) return false;
+  const now = Date.now();
+  if (now - entry.firstAt > LOGIN_WINDOW_MS) {
+    loginAttempts.delete(ip);
+    return false;
+  }
+  return entry.count >= MAX_ATTEMPTS;
+}
+
 function getAuthenticatedUser(req, getDb) {
   const token = getTokenFromHeader(req);
   if (!token) return null;
   const session = sessions.get(token);
   if (!session) return null;
+  if (session.expiresAt && session.expiresAt < Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
   const db = getDb();
   if (session.type === 'staff') {
     const user = db.users.find((entry) => entry.id === session.userId);
@@ -694,7 +742,13 @@ function parseBody(req) {
     req.on('data', (chunk) => {
       body += chunk.toString();
       if (body.length > 1e6) {
-        req.connection.destroy();
+          // Gebruik socket.destroy() — `connection` is deprecated on newer Node-versies
+          // en socket is de aanbevolen manier om de verbinding te beëindigen.
+          if (req.socket && typeof req.socket.destroy === 'function') {
+            req.socket.destroy();
+          } else if (req.connection && typeof req.connection.destroy === 'function') {
+            req.connection.destroy();
+          }
         reject(new Error('Payload te groot'));
       }
     });
@@ -780,14 +834,17 @@ async function handleApi(req, res, requestUrl) {
     const user = getAuthenticatedUser(req, getDb);
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/login') {
+      if (isLoginBlocked(req)) {
+        return sendJson(res, 429, { message: 'Te veel inlogpogingen. Probeer later opnieuw.' });
+      }
       const body = await parseBody(req);
       if (!body.username || !body.password) {
+        recordLoginAttempt(req);
         return sendJson(res, 400, { message: 'Gebruikersnaam en wachtwoord zijn verplicht' });
       }
       const database = getDb();
       const username = body.username.trim();
       const normalized = username.toLowerCase();
-      const passwordHash = hashPassword(body.password);
 
       const staffAccount = database.users.find(
         (entry) => entry.username.toLowerCase() === normalized
@@ -822,6 +879,7 @@ async function handleApi(req, res, requestUrl) {
         });
       }
 
+      recordLoginAttempt(req);
       return sendJson(res, 401, { message: 'Onjuiste inloggegevens' });
     }
 
