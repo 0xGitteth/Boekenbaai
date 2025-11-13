@@ -4181,6 +4181,241 @@ function initStaffPage() {
     }
   });
 
+  function applyStudentDetailUpdate(result) {
+    if (!result?.student?.id) {
+      return;
+    }
+    const updatedStudent = result.student;
+    const index = students.findIndex((entry) => entry.id === updatedStudent.id);
+    if (index !== -1) {
+      students[index] = updatedStudent;
+    } else {
+      students.push(updatedStudent);
+    }
+    const added = Array.isArray(result?.classChanges?.added) ? result.classChanges.added : [];
+    const removed = Array.isArray(result?.classChanges?.removed) ? result.classChanges.removed : [];
+    if (added.length || removed.length) {
+      const addedSet = new Set(added);
+      const removedSet = new Set(removed);
+      for (const klass of classes) {
+        if (!Array.isArray(klass.studentIds)) {
+          klass.studentIds = [];
+        }
+        if (addedSet.has(klass.id) && !klass.studentIds.includes(updatedStudent.id)) {
+          klass.studentIds.push(updatedStudent.id);
+        }
+        if (removedSet.has(klass.id)) {
+          klass.studentIds = klass.studentIds.filter((id) => id !== updatedStudent.id);
+        }
+      }
+    }
+    selectedAdminStudentId = updatedStudent.id;
+    renderClasses();
+    renderAdminClasses();
+    renderTeacherStudentClassSelect();
+    renderAdminStudents();
+  }
+
+  adminStudentDetailPasswordForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Alleen beheerders kunnen tijdelijke wachtwoorden instellen.';
+      }
+      return;
+    }
+    const studentId = adminStudentDetailPasswordForm.dataset.studentId;
+    if (!studentId) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Selecteer eerst een leerling.';
+      }
+      return;
+    }
+    const temporaryPassword = adminStudentDetailPasswordInput?.value?.trim() || '';
+    if (!temporaryPassword) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Vul eerst een tijdelijk wachtwoord in.';
+      }
+      return;
+    }
+    adminResetNotice.hide();
+    const submitButton = adminStudentDetailPasswordForm.querySelector('button[type="submit"]');
+    submitButton && (submitButton.disabled = true);
+    try {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Tijdelijk wachtwoord wordt ingesteld…';
+      }
+      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
+        method: 'PATCH',
+        body: { temporaryPassword },
+      });
+      applyStudentDetailUpdate(result);
+      const displayName = result?.student?.name || adminStudentDetailName?.textContent || 'Leerling';
+      if (adminStudentDetailPasswordInput) {
+        adminStudentDetailPasswordInput.value = '';
+      }
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Tijdelijk wachtwoord ingesteld.';
+      }
+      adminResetNotice.show(`Tijdelijk wachtwoord voor ${displayName}: ${temporaryPassword}`);
+    } catch (error) {
+      adminResetNotice.hide();
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = error.message;
+      }
+    } finally {
+      submitButton && (submitButton.disabled = false);
+    }
+  });
+
+  adminStudentDetailPasswordGenerateButton?.addEventListener('click', async () => {
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Alleen beheerders kunnen tijdelijke wachtwoorden instellen.';
+      }
+      return;
+    }
+    const studentId = adminStudentDetailPasswordForm?.dataset.studentId;
+    if (!studentId) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Selecteer eerst een leerling.';
+      }
+      return;
+    }
+    adminResetNotice.hide();
+    const submitButton = adminStudentDetailPasswordForm?.querySelector('button[type="submit"]');
+    const generateButton = adminStudentDetailPasswordGenerateButton;
+    submitButton && (submitButton.disabled = true);
+    generateButton.disabled = true;
+    try {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Tijdelijk wachtwoord wordt aangemaakt…';
+      }
+      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
+        method: 'PATCH',
+        body: { generateTemporaryPassword: true },
+      });
+      applyStudentDetailUpdate(result);
+      const password = result?.temporaryPassword || '';
+      if (adminStudentDetailPasswordInput) {
+        adminStudentDetailPasswordInput.value = password;
+      }
+      const displayName = result?.student?.name || adminStudentDetailName?.textContent || 'Leerling';
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Tijdelijk wachtwoord ingesteld.';
+      }
+      if (password) {
+        adminResetNotice.show(`Tijdelijk wachtwoord voor ${displayName}: ${password}`);
+      }
+    } catch (error) {
+      adminResetNotice.hide();
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = error.message;
+      }
+    } finally {
+      generateButton.disabled = false;
+      submitButton && (submitButton.disabled = false);
+    }
+  });
+
+  adminStudentDetailClassForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Alleen beheerders kunnen klassen bijwerken.';
+      }
+      return;
+    }
+    const studentId = adminStudentDetailClassForm.dataset.studentId;
+    if (!studentId) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Selecteer eerst een leerling.';
+      }
+      return;
+    }
+    const classId = adminStudentDetailClassSelect?.value || '';
+    if (!classId) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Kies eerst een klas om toe te voegen.';
+      }
+      return;
+    }
+    const submitButton = adminStudentDetailClassForm.querySelector('button[type="submit"]');
+    submitButton && (submitButton.disabled = true);
+    if (adminStudentDetailClassSelect) {
+      adminStudentDetailClassSelect.disabled = true;
+    }
+    try {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Leerling wordt aan de klas toegevoegd…';
+      }
+      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
+        method: 'PATCH',
+        body: { addClassId: classId },
+      });
+      applyStudentDetailUpdate(result);
+      const klass = classes.find((entry) => entry.id === classId);
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = klass
+          ? `Leerling toegevoegd aan ${klass.name}.`
+          : 'Leerling toegevoegd aan de klas.';
+      }
+    } catch (error) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = error.message;
+      }
+    } finally {
+      submitButton && (submitButton.disabled = false);
+      if (adminStudentDetailClassSelect) {
+        adminStudentDetailClassSelect.disabled = false;
+      }
+    }
+  });
+
+  adminStudentDetailClasses?.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-remove-class-id]');
+    if (!button) {
+      return;
+    }
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Alleen beheerders kunnen klassen bijwerken.';
+      }
+      return;
+    }
+    const classId = button.dataset.removeClassId;
+    const studentId = button.dataset.studentId || adminStudentDetailClassForm?.dataset.studentId;
+    if (!classId || !studentId) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Selecteer eerst een leerling.';
+      }
+      return;
+    }
+    button.disabled = true;
+    try {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = 'Leerling wordt uit de klas verwijderd…';
+      }
+      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
+        method: 'PATCH',
+        body: { removeClassId: classId },
+      });
+      applyStudentDetailUpdate(result);
+      const klass = classes.find((entry) => entry.id === classId);
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = klass
+          ? `Leerling verwijderd uit ${klass.name}.`
+          : 'Leerling verwijderd uit de klas.';
+      }
+    } catch (error) {
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent = error.message;
+      }
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   adminBookIdInput?.addEventListener('input', updateAdminBookDeleteButtonVisibility);
 
   adminBookDeleteButton?.addEventListener('click', async () => {
