@@ -2001,6 +2001,143 @@ async function handleApi(req, res, requestUrl) {
       });
     }
 
+    const studentUpdateMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)$/);
+    if (studentUpdateMatch && req.method === 'PATCH') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen leerlingaccounts bijwerken' });
+      }
+      const db = getDb();
+      const student = findStudentById(db, studentUpdateMatch[1]);
+      if (!student) {
+        return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+      }
+      const body = await parseBody(req);
+      let temporaryPassword = null;
+      let passwordChanged = false;
+      let classesChanged = false;
+      const previousClassIds = Array.isArray(student.classIds) ? [...student.classIds] : [];
+      let nextClassIds = new Set(previousClassIds);
+
+      if (body && typeof body.generateTemporaryPassword === 'boolean' && body.generateTemporaryPassword) {
+        temporaryPassword = generatePassword(10);
+      } else if (typeof body?.temporaryPassword === 'string') {
+        const trimmed = body.temporaryPassword.trim();
+        if (!trimmed) {
+          return sendJson(res, 400, { message: 'Tijdelijk wachtwoord mag niet leeg zijn' });
+        }
+        temporaryPassword = trimmed;
+      }
+
+      if (Array.isArray(body?.classIds)) {
+        nextClassIds = new Set(
+          body.classIds
+            .map((value) => String(value || '').trim())
+            .filter((value) => value && db.classes.some((klass) => klass.id === value))
+        );
+      } else {
+        const addClassId = typeof body?.addClassId === 'string' ? body.addClassId : body?.addClassId?.id;
+        if (addClassId) {
+          const normalizedAdd = String(addClassId).trim();
+          if (normalizedAdd && db.classes.some((klass) => klass.id === normalizedAdd)) {
+            nextClassIds.add(normalizedAdd);
+          }
+        }
+        const removeClassId = typeof body?.removeClassId === 'string' ? body.removeClassId : body?.removeClassId?.id;
+        if (removeClassId) {
+          const normalizedRemove = String(removeClassId).trim();
+          if (normalizedRemove) {
+            nextClassIds.delete(normalizedRemove);
+          }
+        }
+      }
+
+      const validClassIds = Array.from(nextClassIds).filter((classId) =>
+        db.classes.some((klass) => klass.id === classId)
+      );
+      const uniqueClassIds = Array.from(new Set(validClassIds));
+      const addedClassIds = uniqueClassIds.filter((id) => !previousClassIds.includes(id));
+      const removedClassIds = previousClassIds.filter((id) => !uniqueClassIds.includes(id));
+
+      if (temporaryPassword) {
+        student.passwordHash = hashPassword(temporaryPassword);
+        student.mustChangePassword = true;
+        passwordChanged = true;
+        for (const [token, session] of sessions.entries()) {
+          if (session.type === 'student' && session.userId === student.id) {
+            sessions.delete(token);
+          }
+        }
+      }
+
+      if (addedClassIds.length || removedClassIds.length) {
+        student.classIds = uniqueClassIds;
+        for (const classId of removedClassIds) {
+          const klass = db.classes.find((entry) => entry.id === classId);
+          if (klass) {
+            klass.studentIds = (klass.studentIds || []).filter((id) => id !== student.id);
+          }
+        }
+        for (const classId of addedClassIds) {
+          const klass = db.classes.find((entry) => entry.id === classId);
+          if (klass) {
+            klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
+            if (!klass.studentIds.includes(student.id)) {
+              klass.studentIds.push(student.id);
+            }
+          }
+        }
+        classesChanged = true;
+      }
+
+      if (!passwordChanged && !classesChanged) {
+        return sendJson(res, 400, { message: 'Geen geldige wijzigingen opgegeven' });
+      }
+
+      if (passwordChanged) {
+        appendHistory(db, {
+          type: 'student_password_reset',
+          studentId: student.id,
+          performedBy: user?.id || null,
+          message: `Tijdelijk wachtwoord ingesteld voor ${student.name}`,
+        });
+      }
+
+      if (classesChanged) {
+        const addedNames = addedClassIds
+          .map((classId) => db.classes.find((klass) => klass.id === classId)?.name)
+          .filter(Boolean);
+        const removedNames = removedClassIds
+          .map((classId) => db.classes.find((klass) => klass.id === classId)?.name)
+          .filter(Boolean);
+        const classMessages = [];
+        if (addedNames.length) {
+          classMessages.push(`toegevoegd aan ${addedNames.join(', ')}`);
+        }
+        if (removedNames.length) {
+          classMessages.push(`verwijderd uit ${removedNames.join(', ')}`);
+        }
+        const messageSuffix = classMessages.length ? ` ${classMessages.join(' en ')}` : '';
+        appendHistory(db, {
+          type: 'student_class_updated',
+          studentId: student.id,
+          performedBy: user?.id || null,
+          message: `${student.name}${messageSuffix}`.trim(),
+        });
+      }
+
+      saveDb(db);
+      return sendJson(res, 200, {
+        student: sanitizeStudent(student, { includeUsername: true }),
+        ...(temporaryPassword ? { temporaryPassword } : {}),
+        classChanges: classesChanged
+          ? {
+              added: addedClassIds,
+              removed: removedClassIds,
+            }
+          : undefined,
+      });
+    }
+
     const studentDeleteMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)$/);
     if (studentDeleteMatch && req.method === 'DELETE') {
       if (!ensureRole(user, ['admin'])) {

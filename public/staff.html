@@ -239,23 +239,6 @@
               gevuld kunnen worden.
             </p>
             <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
-            <div class="admin-card__section admin-card__section--import">
-              <h4>Boeken importeren</h4>
-              <p class="hint">
-                Upload een Excelbestand (.xlsx) met kolommen voor <strong>titel</strong>,
-                <strong>auteur</strong> en <strong>barcode/ISBN</strong>. Voeg optioneel kolommen toe
-                voor <strong>uitgever</strong>, <strong>jaar</strong>, <strong>pagina’s</strong>,
-                <strong>taal</strong>, <strong>thema’s</strong> en een <strong>cover-URL</strong> zodat deze
-                velden direct gevuld worden. Thema’s splits je met komma’s of puntkomma’s.
-              </p>
-              <form id="book-import-form" class="admin-import__form">
-                <label for="book-import-file">Excelbestand kiezen</label>
-                <input id="book-import-file" type="file" accept=".xlsx,.xls" />
-                <button type="submit" class="btn btn--secondary">Importeren</button>
-              </form>
-              <p id="book-import-message" class="hint" role="status" aria-live="polite"></p>
-              <div id="book-import-results" class="import-results"></div>
-            </div>
             <div id="admin-book-list" class="admin-book-list"></div>
           </section>
 
@@ -382,11 +365,23 @@
           </section>
 
           <section class="admin-card admin-card--students">
-            <h3>Leerlingaccounts beheren</h3>
-            <p class="hint">
-              Maak nieuwe leerlingaccounts aan of koppel bestaande accounts direct aan een klas.
-            </p>
-            <form id="admin-student-form" class="admin-form admin-form--compact">
+            <div class="admin-card__intro">
+              <h3>Leerlingaccounts beheren</h3>
+              <p class="hint">
+                Maak nieuwe leerlingaccounts aan, zoek bestaande accounts en beheer tijdelijke
+                wachtwoorden of klasindelingen.
+              </p>
+            </div>
+            <div class="admin-student-controls">
+              <label class="visually-hidden" for="admin-student-search">Zoek leerling</label>
+              <input
+                id="admin-student-search"
+                type="search"
+                placeholder="Zoek op naam, gebruikersnaam of klas"
+                autocomplete="off"
+              />
+            </div>
+            <form id="admin-student-form" class="admin-form admin-form--compact" autocomplete="off">
               <div class="form-grid">
                 <div class="form-field">
                   <label for="admin-student-name">Naam</label>
@@ -400,12 +395,8 @@
                   <label for="admin-student-password">Tijdelijk wachtwoord</label>
                   <input id="admin-student-password" type="text" required autocomplete="off" />
                 </div>
-                <div class="form-field">
-                  <label for="admin-student-grade">Klas/groep</label>
-                  <input id="admin-student-grade" type="text" autocomplete="off" />
-                </div>
                 <div class="form-field form-field--full">
-                  <label for="admin-student-class">Koppel aan klas</label>
+                  <label for="admin-student-class">Koppel direct aan klas</label>
                   <select id="admin-student-class">
                     <option value="">Geen klas koppelen</option>
                   </select>
@@ -420,8 +411,121 @@
               role="status"
               aria-live="polite"
             ></div>
-            <div id="admin-student-list" class="student-list student-list--admin"></div>
+            <div class="admin-student-layout">
+              <div class="admin-student-list">
+                <div id="admin-student-list" class="student-list student-list--admin"></div>
+              </div>
+              <aside
+                id="admin-student-detail"
+                class="admin-student-detail"
+                aria-labelledby="admin-student-detail-name"
+              >
+                <div id="admin-student-detail-placeholder" class="admin-student-detail__placeholder">
+                  <p>Selecteer een leerling om details te bekijken.</p>
+                </div>
+                <div id="admin-student-detail-content" class="admin-student-detail__content hidden">
+                  <header class="admin-student-detail__header">
+                    <h4 id="admin-student-detail-name"></h4>
+                    <p class="admin-student-detail__username">
+                      Gebruikersnaam: <span id="admin-student-detail-username"></span>
+                    </p>
+                  </header>
+                  <div class="admin-student-details__meta">
+                    <span id="admin-student-detail-grade"></span>
+                    <span id="admin-student-detail-loans"></span>
+                  </div>
+                  <p
+                    id="admin-student-detail-message"
+                    class="hint"
+                    role="status"
+                    aria-live="polite"
+                  ></p>
+                  <section class="admin-student-details__section">
+                    <h5>Tijdelijk wachtwoord</h5>
+                    <form
+                      id="admin-student-detail-password-form"
+                      class="admin-student-details__actions"
+                    >
+                      <label class="visually-hidden" for="admin-student-detail-password"
+                        >Nieuw tijdelijk wachtwoord</label
+                      >
+                      <input
+                        id="admin-student-detail-password"
+                        type="text"
+                        placeholder="Bijv. Herfst2024"
+                        autocomplete="off"
+                        maxlength="64"
+                      />
+                      <button type="submit" class="btn">Opslaan</button>
+                      <button
+                        type="button"
+                        class="btn btn--ghost"
+                        id="admin-student-detail-password-generate"
+                      >
+                        Genereer automatisch
+                      </button>
+                    </form>
+                  </section>
+                  <section class="admin-student-details__section">
+                    <h5>Klassen</h5>
+                    <div id="admin-student-detail-classes" class="admin-student-details__classes"></div>
+                    <form
+                      id="admin-student-detail-class-form"
+                      class="admin-student-details__actions"
+                    >
+                      <label class="visually-hidden" for="admin-student-detail-class-select"
+                        >Koppel aan klas</label
+                      >
+                      <select id="admin-student-detail-class-select">
+                        <option value="">Kies een klas…</option>
+                      </select>
+                      <button type="submit" class="btn btn--secondary">Toevoegen</button>
+                    </form>
+                  </section>
+                  <section class="admin-student-details__section">
+                    <h5>Uitgeleende boeken</h5>
+                    <div
+                      id="admin-student-detail-loans-list"
+                      class="admin-student-details__loans"
+                    ></div>
+                  </section>
+                  <button
+                    id="admin-student-detail-remove"
+                    class="btn btn--danger"
+                    type="button"
+                  >
+                    Account verwijderen
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </section>
 
+          <section class="admin-card admin-card--imports">
+            <div class="admin-card__intro">
+              <h3>Importeren</h3>
+              <p class="hint">
+                Verwerk Excelbestanden voor grote wijzigingen in één keer. Alle accounts en boeken
+                worden automatisch bijgewerkt.
+              </p>
+            </div>
+            <div class="admin-card__section admin-card__section--import">
+              <h4>Boeken importeren</h4>
+              <p class="hint">
+                Upload een Excelbestand (.xlsx) met kolommen voor <strong>titel</strong>,
+                <strong>auteur</strong> en <strong>barcode/ISBN</strong>. Voeg optioneel kolommen toe
+                voor <strong>uitgever</strong>, <strong>jaar</strong>, <strong>pagina’s</strong>,
+                <strong>taal</strong>, <strong>thema’s</strong> en een <strong>cover-URL</strong> zodat deze
+                velden direct gevuld worden. Thema’s splits je met komma’s of puntkomma’s.
+              </p>
+              <form id="book-import-form" class="admin-import__form">
+                <label for="book-import-file">Excelbestand kiezen</label>
+                <input id="book-import-file" type="file" accept=".xlsx,.xls" />
+                <button type="submit" class="btn btn--secondary">Importeren</button>
+              </form>
+              <p id="book-import-message" class="hint" role="status" aria-live="polite"></p>
+              <div id="book-import-results" class="import-results"></div>
+            </div>
             <div class="admin-card__section admin-card__section--import">
               <h4>Leerlingaccounts importeren</h4>
               <p class="hint">
@@ -439,7 +543,6 @@
               <p id="student-import-message" class="hint" role="status" aria-live="polite"></p>
               <div id="student-import-results" class="import-results"></div>
             </div>
-
             <div class="admin-card__section admin-card__section--import">
               <h4>Docenten importeren</h4>
               <p class="hint">
