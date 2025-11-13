@@ -4216,6 +4216,13 @@ function initStaffPage() {
     renderAdminStudents();
   }
 
+  async function patchStudentDetail(studentId, payload) {
+    return fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
+      method: 'PATCH',
+      body: payload,
+    });
+  }
+
   adminStudentDetailPasswordForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!authUser || authUser.role !== 'admin') {
@@ -4240,15 +4247,14 @@ function initStaffPage() {
     }
     adminResetNotice.hide();
     const submitButton = adminStudentDetailPasswordForm.querySelector('button[type="submit"]');
-    submitButton && (submitButton.disabled = true);
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
     try {
       if (adminStudentDetailMessage) {
         adminStudentDetailMessage.textContent = 'Tijdelijk wachtwoord wordt ingesteld…';
       }
-      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
-        method: 'PATCH',
-        body: { temporaryPassword },
-      });
+      const result = await patchStudentDetail(studentId, { temporaryPassword });
       applyStudentDetailUpdate(result);
       const displayName = result?.student?.name || adminStudentDetailName?.textContent || 'Leerling';
       if (adminStudentDetailPasswordInput) {
@@ -4264,7 +4270,9 @@ function initStaffPage() {
         adminStudentDetailMessage.textContent = error.message;
       }
     } finally {
-      submitButton && (submitButton.disabled = false);
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
     }
   });
 
@@ -4285,16 +4293,15 @@ function initStaffPage() {
     adminResetNotice.hide();
     const submitButton = adminStudentDetailPasswordForm?.querySelector('button[type="submit"]');
     const generateButton = adminStudentDetailPasswordGenerateButton;
-    submitButton && (submitButton.disabled = true);
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
     generateButton.disabled = true;
     try {
       if (adminStudentDetailMessage) {
         adminStudentDetailMessage.textContent = 'Tijdelijk wachtwoord wordt aangemaakt…';
       }
-      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
-        method: 'PATCH',
-        body: { generateTemporaryPassword: true },
-      });
+      const result = await patchStudentDetail(studentId, { generateTemporaryPassword: true });
       applyStudentDetailUpdate(result);
       const password = result?.temporaryPassword || '';
       if (adminStudentDetailPasswordInput) {
@@ -4313,8 +4320,10 @@ function initStaffPage() {
         adminStudentDetailMessage.textContent = error.message;
       }
     } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
       generateButton.disabled = false;
-      submitButton && (submitButton.disabled = false);
     }
   });
 
@@ -4341,7 +4350,9 @@ function initStaffPage() {
       return;
     }
     const submitButton = adminStudentDetailClassForm.querySelector('button[type="submit"]');
-    submitButton && (submitButton.disabled = true);
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
     if (adminStudentDetailClassSelect) {
       adminStudentDetailClassSelect.disabled = true;
     }
@@ -4349,10 +4360,7 @@ function initStaffPage() {
       if (adminStudentDetailMessage) {
         adminStudentDetailMessage.textContent = 'Leerling wordt aan de klas toegevoegd…';
       }
-      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
-        method: 'PATCH',
-        body: { addClassId: classId },
-      });
+      const result = await patchStudentDetail(studentId, { addClassId: classId });
       applyStudentDetailUpdate(result);
       const klass = classes.find((entry) => entry.id === classId);
       if (adminStudentDetailMessage) {
@@ -4365,7 +4373,9 @@ function initStaffPage() {
         adminStudentDetailMessage.textContent = error.message;
       }
     } finally {
-      submitButton && (submitButton.disabled = false);
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
       if (adminStudentDetailClassSelect) {
         adminStudentDetailClassSelect.disabled = false;
       }
@@ -4396,10 +4406,7 @@ function initStaffPage() {
       if (adminStudentDetailMessage) {
         adminStudentDetailMessage.textContent = 'Leerling wordt uit de klas verwijderd…';
       }
-      const result = await fetchJson(`/api/students/${encodeURIComponent(studentId)}`, {
-        method: 'PATCH',
-        body: { removeClassId: classId },
-      });
+      const result = await patchStudentDetail(studentId, { removeClassId: classId });
       applyStudentDetailUpdate(result);
       const klass = classes.find((entry) => entry.id === classId);
       if (adminStudentDetailMessage) {
