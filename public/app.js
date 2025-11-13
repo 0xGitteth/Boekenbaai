@@ -893,28 +893,47 @@ async function openBookDetail(book) {
 
 function collectUniqueThemes(books) {
   const map = new Map();
-  for (const label of DEFAULT_THEMES) {
-    if (typeof label !== 'string') continue;
+
+  const registerTheme = (label, { increment = 0 } = {}) => {
+    if (typeof label !== 'string') return;
     const trimmed = label.trim();
-    if (!trimmed) continue;
+    if (!trimmed) return;
     const key = normalizeThemeKey(trimmed);
-    if (!key || map.has(key)) continue;
-    map.set(key, { key, label: trimmed });
+    if (!key) return;
+    const existing = map.get(key);
+    if (existing) {
+      existing.count += increment;
+      if (!existing.label && trimmed) {
+        existing.label = trimmed;
+      }
+      return;
+    }
+    map.set(key, {
+      key,
+      label: trimmed,
+      count: increment,
+    });
+  };
+
+  for (const label of DEFAULT_THEMES) {
+    registerTheme(label);
   }
+
   for (const book of books || []) {
     for (const tag of book?.tags || []) {
-      if (typeof tag !== 'string') continue;
-      const label = tag.trim();
-      if (!label) continue;
-      const key = normalizeThemeKey(label);
-      if (!key || map.has(key)) continue;
-      map.set(key, { key, label });
+      registerTheme(tag, { increment: 1 });
     }
   }
-  return Array.from(map.values()).sort((a, b) =>
-    a.label.localeCompare(b.label, 'nl', { sensitivity: 'base' })
-  );
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (b.count !== a.count) {
+      return b.count - a.count;
+    }
+    return a.label.localeCompare(b.label, 'nl', { sensitivity: 'base' });
+  });
 }
+
+const THEME_PILL_COLLAPSED_LIMIT = 5;
 
 function renderThemePills(container, config = {}) {
   if (!container) return;
@@ -922,9 +941,11 @@ function renderThemePills(container, config = {}) {
     themes = [],
     selectedThemes = new Set(),
     onlyExamList = false,
+    isExpanded = false,
     onToggleTheme,
     onToggleExam,
     onClear,
+    onToggleExpanded,
   } = config;
 
   const fragment = document.createDocumentFragment();
@@ -950,15 +971,30 @@ function renderThemePills(container, config = {}) {
     return Array.isArray(selectedThemes) ? selectedThemes.includes(key) : false;
   };
 
-  if (!themes.length) {
+  const normalizedThemes = [];
+  for (const entry of themes) {
+    const label = typeof entry === 'string' ? entry : entry?.label;
+    const key =
+      typeof entry === 'string'
+        ? normalizeThemeKey(entry)
+        : entry?.key || normalizeThemeKey(entry?.label);
+    if (!key || !label) continue;
+    normalizedThemes.push({ key, label });
+  }
+
+  const showAll = Boolean(isExpanded);
+  const canToggle = normalizedThemes.length > THEME_PILL_COLLAPSED_LIMIT;
+  const visibleThemes = showAll || !canToggle
+    ? normalizedThemes
+    : normalizedThemes.slice(0, THEME_PILL_COLLAPSED_LIMIT);
+
+  if (!visibleThemes.length) {
     appendTextElement(fragment, 'span', "Geen thema's beschikbaar", {
       className: 'filters__pill-placeholder',
     });
   } else {
-    for (const entry of themes) {
-      const label = typeof entry === 'string' ? entry : entry.label;
-      const key = typeof entry === 'string' ? normalizeThemeKey(entry) : entry.key;
-      if (!key || !label) continue;
+    for (const entry of visibleThemes) {
+      const { key, label } = entry;
       const button = appendTextElement(fragment, 'button', label, {
         className: 'filters__pill',
         type: 'button',
@@ -989,6 +1025,24 @@ function renderThemePills(container, config = {}) {
         }
       });
     }
+  }
+
+  if (canToggle) {
+    const toggleButton = appendTextElement(
+      fragment,
+      'button',
+      showAll ? 'Laat minder zien' : 'Laat meer zien',
+      {
+        className: 'filters__pill filters__pill--toggle',
+        type: 'button',
+      }
+    );
+    toggleButton.setAttribute('aria-expanded', showAll ? 'true' : 'false');
+    toggleButton.addEventListener('click', () => {
+      if (typeof onToggleExpanded === 'function') {
+        onToggleExpanded(!showAll);
+      }
+    });
   }
 
   const hasSelection = Boolean(
@@ -1251,11 +1305,32 @@ function createThemeFilterRenderer({
     }
   };
 
+  let isExpanded = false;
+
+  const setExpanded = (value) => {
+    const nextValue = Boolean(value);
+    if (nextValue === isExpanded) return;
+    isExpanded = nextValue;
+    render();
+  };
+
+  const ensureExpandedState = (themes) => {
+    if (!Array.isArray(themes)) {
+      return;
+    }
+    if (themes.length <= THEME_PILL_COLLAPSED_LIMIT && isExpanded) {
+      isExpanded = false;
+    }
+  };
+
   const render = () => {
+    const themes = typeof getThemes === 'function' ? getThemes() : [];
+    ensureExpandedState(themes);
     renderThemePills(pillsContainer, {
-      themes: typeof getThemes === 'function' ? getThemes() : [],
+      themes,
       selectedThemes: selectedThemeKeys,
       onlyExamList: typeof getOnlyExamList === 'function' ? getOnlyExamList() : false,
+      isExpanded,
       onToggleTheme: ({ key, active }) => {
         if (!key) return;
         if (active) {
@@ -1281,10 +1356,19 @@ function createThemeFilterRenderer({
         render();
         notifyChange();
       },
+      onToggleExpanded: (nextValue) => {
+        setExpanded(nextValue);
+      },
     });
   };
 
-  return render;
+  return {
+    render,
+    expand: () => setExpanded(true),
+    collapse: () => setExpanded(false),
+    toggle: () => setExpanded(!isExpanded),
+    isExpanded: () => isExpanded,
+  };
 }
 
 function readFileAsBase64(file) {
@@ -1441,7 +1525,7 @@ function initStudentPage() {
     });
   }
 
-  const renderThemeFilters = createThemeFilterRenderer({
+  const themeFilterRenderer = createThemeFilterRenderer({
     pillsContainer: themeFilterPills,
     selectedThemeKeys,
     getThemes: () => availableThemes,
@@ -1462,7 +1546,7 @@ function initStudentPage() {
         selectedThemeKeys.delete(key);
       }
     }
-    renderThemeFilters();
+    themeFilterRenderer.render();
     renderAdminThemeOptions();
   }
 
@@ -1712,7 +1796,7 @@ function initStudentPage() {
     renderBooks();
   });
 
-  renderThemeFilters();
+  themeFilterRenderer.render();
   renderAuthState();
   Promise.all([loadBooks(), loadSummary()]).catch(() => {});
   if (authToken) {
@@ -2055,7 +2139,7 @@ function initStaffPage() {
         baseLabel: 'Sorteer de boeken',
         gridId: 'book-grid',
       });
-      renderThemeFilters();
+      themeFilterRenderer.render();
       renderAdminThemeOptions({ preserveSelection: false });
       renderBooks();
       renderSelectedAdminStudent();
@@ -2093,7 +2177,7 @@ function initStaffPage() {
     });
   }
 
-  const renderThemeFilters = createThemeFilterRenderer({
+  const themeFilterRenderer = createThemeFilterRenderer({
     pillsContainer: themeFilterPills,
     selectedThemeKeys,
     getThemes: () => availableThemes,
@@ -2114,7 +2198,8 @@ function initStaffPage() {
         selectedThemeKeys.delete(key);
       }
     }
-    renderThemeFilters();
+    themeFilterRenderer.render();
+    renderAdminThemeOptions();
   }
 
   function handleAdminBookSelection(book, options = {}) {
@@ -4416,7 +4501,7 @@ function initStaffPage() {
     }
   });
 
-  renderThemeFilters();
+  themeFilterRenderer.render();
   renderAdminThemeOptions({ preserveSelection: false });
   renderStaffState();
   Promise.all([loadBooks(), loadSummary()]).catch(() => {});
