@@ -1449,7 +1449,6 @@ function initStudentPage() {
       }
     }
     renderThemeFilters();
-    renderAdminThemeOptions();
   }
 
   async function loadFolders() {
@@ -2054,6 +2053,7 @@ function initStaffPage() {
       }
     }
     renderThemeFilters();
+    renderAdminThemeOptions();
   }
 
   function handleAdminBookSelection(book, options = {}) {
