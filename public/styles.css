@@ -1498,6 +1498,16 @@ body[data-page='staff'] .class-card__student-actions .btn {
   --theme-pill-ring: rgba(var(--accent-rgb), 0.18);
 }
 
+.filters__pill--toggle {
+  --theme-pill-bg: #fff;
+  --theme-pill-hover-bg: #fff;
+  --theme-pill-active-bg: #fff;
+  --theme-pill-text: #000;
+  --theme-pill-border: #000;
+  --theme-pill-active-border: #000;
+  --theme-pill-ring: rgba(0, 0, 0, 0.35);
+}
+
 .filters__pill-placeholder {
   font-size: 0.85rem;
   color: var(--muted);
