@@ -255,23 +255,6 @@ function normalizeLanguageCode(value) {
   return token.length <= 3 ? token.toLowerCase() : token;
 }
 
-function parseBooleanFlag(value) {
-  if (value === undefined || value === null) {
-    return false;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (!normalized) {
-      return false;
-    }
-    return ['ja', 'yes', 'y', 'true', '1'].includes(normalized);
-  }
-  if (typeof value === 'number') {
-    return value > 0;
-  }
-  return Boolean(value);
-}
-
 function normalizeCoverUrl(value) {
   if (value === undefined || value === null) {
     return '';
