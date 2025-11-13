@@ -206,6 +206,33 @@ function ensureFolderShape(folder) {
   return safeFolder;
 }
 
+function getBorrowCountsMap(historyEntries) {
+  const counts = new Map();
+  const entries = Array.isArray(historyEntries) ? historyEntries : [];
+  for (const entry of entries) {
+    if (!entry || entry.type !== 'check_out') {
+      continue;
+    }
+    const rawId = entry.bookId;
+    const bookId = typeof rawId === 'string' ? rawId : rawId != null ? String(rawId) : '';
+    if (!bookId) {
+      continue;
+    }
+    const current = counts.get(bookId) || 0;
+    counts.set(bookId, current + 1);
+  }
+  return counts;
+}
+
+function withBorrowCount(book, borrowCounts) {
+  if (!book) {
+    return book;
+  }
+  const bookId = typeof book.id === 'string' ? book.id : book.id != null ? String(book.id) : '';
+  const borrowCount = bookId && borrowCounts instanceof Map ? borrowCounts.get(bookId) || 0 : 0;
+  return { ...book, borrowCount };
+}
+
 function findClassByName(db, name) {
   const key = normalizeClassKey(name);
   if (!key) return null;
@@ -954,7 +981,8 @@ async function handleApi(req, res, requestUrl) {
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
-      let books = db.books;
+      const borrowCounts = getBorrowCountsMap(db.history);
+      let books = db.books.map((book) => withBorrowCount(book, borrowCounts));
       const folder = requestUrl.searchParams.get('folder');
       const query = requestUrl.searchParams.get('query');
       if (folder) {
@@ -981,7 +1009,8 @@ async function handleApi(req, res, requestUrl) {
       if (!book) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
-      return sendJson(res, 200, book);
+      const borrowCounts = getBorrowCountsMap(db.history);
+      return sendJson(res, 200, withBorrowCount(book, borrowCounts));
     }
 
     if (requestUrl.pathname === '/api/books' && req.method === 'POST') {

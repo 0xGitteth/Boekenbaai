@@ -108,6 +108,22 @@ function replaceWithTextElement(container, tag, text, options = {}) {
   return appendTextElement(container, tag, text, options);
 }
 
+function updateSortControlAccessibility(select, sortValue, { baseLabel = 'Sorteer de boekenlijst', gridId } = {}) {
+  if (!select) return;
+  const descriptions = {
+    title: 'op titel van A tot Z',
+    author: 'op auteur van A tot Z',
+    popular: 'op populariteit (meest uitgeleend eerst)',
+  };
+  const suffix = descriptions[sortValue] || descriptions.title;
+  const label = `${baseLabel} ${suffix}`.trim();
+  select.setAttribute('aria-label', label);
+  select.setAttribute('title', label);
+  if (gridId) {
+    select.setAttribute('aria-controls', gridId);
+  }
+}
+
 function setAuth(token) {
   authToken = token;
   localStorage.setItem('boekenbaai_token', token);
@@ -1083,6 +1099,56 @@ function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } =
   return list;
 }
 
+function sortBooks(books, sortBy) {
+  if (!Array.isArray(books)) {
+    return [];
+  }
+  const sorted = [...books];
+  const locale = 'nl';
+  const compareOptions = { sensitivity: 'base', numeric: true };
+  const getTitle = (book) => (book?.title ? String(book.title) : '');
+  const getAuthor = (book) => (book?.author ? String(book.author) : '');
+  const normalizeCount = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : 0;
+  };
+
+  if (sortBy === 'author') {
+    sorted.sort((a, b) => {
+      const authorCompare = getAuthor(a).localeCompare(getAuthor(b), locale, compareOptions);
+      if (authorCompare !== 0) {
+        return authorCompare;
+      }
+      return getTitle(a).localeCompare(getTitle(b), locale, compareOptions);
+    });
+    return sorted;
+  }
+
+  if (sortBy === 'popular' || sortBy === 'popularity') {
+    sorted.sort((a, b) => {
+      const countDiff = normalizeCount(b?.borrowCount) - normalizeCount(a?.borrowCount);
+      if (countDiff !== 0) {
+        return countDiff;
+      }
+      const titleCompare = getTitle(a).localeCompare(getTitle(b), locale, compareOptions);
+      if (titleCompare !== 0) {
+        return titleCompare;
+      }
+      return getAuthor(a).localeCompare(getAuthor(b), locale, compareOptions);
+    });
+    return sorted;
+  }
+
+  sorted.sort((a, b) => {
+    const titleCompare = getTitle(a).localeCompare(getTitle(b), locale, compareOptions);
+    if (titleCompare !== 0) {
+      return titleCompare;
+    }
+    return getAuthor(a).localeCompare(getAuthor(b), locale, compareOptions);
+  });
+  return sorted;
+}
+
 function renderBookGrid({
   grid,
   books,
@@ -1094,12 +1160,13 @@ function renderBookGrid({
 } = {}) {
   if (!grid) return;
   const filtered = filterBooks(books, filters);
+  const sorted = sortBooks(filtered, filters?.sortBy);
   grid.replaceChildren();
-  if (!filtered.length) {
+  if (!sorted.length) {
     replaceWithTextElement(grid, 'p', emptyMessage);
     return;
   }
-  for (const book of filtered) {
+  for (const book of sorted) {
     const options =
       typeof cardOptions === 'function' ? cardOptions(book) : cardOptions;
     const card = createBookCard(template, book, folders, options || {});
@@ -1198,6 +1265,7 @@ function initStudentPage() {
   const borrowedEmpty = document.querySelector('#student-borrowed-empty');
   const logoutButton = document.querySelector('#student-logout');
   const searchInput = document.querySelector('#search-input');
+  const sortSelect = document.querySelector('#book-sort-select');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
   const themeFilterPills = document.querySelector('#theme-filter-pills');
@@ -1211,6 +1279,12 @@ function initStudentPage() {
   let availableThemes = [];
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
+  let sortBy = sortSelect?.value || 'title';
+
+  updateSortControlAccessibility(sortSelect, sortBy, {
+    baseLabel: 'Sorteer de boeken',
+    gridId: 'book-grid',
+  });
 
   function renderBorrowedBooks() {
     if (!borrowedList || !borrowedEmpty) return;
@@ -1301,6 +1375,7 @@ function initStudentPage() {
         query: searchInput?.value || '',
         selectedThemes: selectedThemeKeys,
         onlyExamList,
+        sortBy,
       },
     });
   }
@@ -1571,6 +1646,15 @@ function initStudentPage() {
 
   searchInput?.addEventListener('input', renderBooks);
 
+  sortSelect?.addEventListener('change', () => {
+    sortBy = sortSelect.value || 'title';
+    updateSortControlAccessibility(sortSelect, sortBy, {
+      baseLabel: 'Sorteer de boeken',
+      gridId: 'book-grid',
+    });
+    renderBooks();
+  });
+
   renderThemeFilters();
   renderAuthState();
   Promise.all([loadFolders(), loadBooks(), loadSummary()]).catch(() => {});
@@ -1595,6 +1679,7 @@ function initStaffPage() {
   const staffRole = document.querySelector('#staff-role');
   const logoutButton = document.querySelector('#logout-button');
   const searchInput = document.querySelector('#search-input');
+  const sortSelect = document.querySelector('#staff-book-sort-select');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
   const themeFilterPills = document.querySelector('#theme-filter-pills');
@@ -1659,10 +1744,15 @@ function initStaffPage() {
   let selectedAdminClassId = '';
   let selectedAdminStudentId = '';
   let barcodeLookupTimer = null;
-  const filters = { query: '' };
+  const filters = { query: '', sortBy: sortSelect?.value || 'title' };
   let availableThemes = [];
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
+
+  updateSortControlAccessibility(sortSelect, filters.sortBy, {
+    baseLabel: 'Sorteer de boeken',
+    gridId: 'book-grid',
+  });
 
   function updateAdminBookBarcode(value) {
     if (!adminBookBarcode) return;
@@ -1788,6 +1878,12 @@ function initStaffPage() {
       availableThemes = [];
       selectedThemeKeys.clear();
       onlyExamList = false;
+      filters.query = '';
+      filters.sortBy = sortSelect?.value || 'title';
+      updateSortControlAccessibility(sortSelect, filters.sortBy, {
+        baseLabel: 'Sorteer de boeken',
+        gridId: 'book-grid',
+      });
       renderThemeFilters();
       renderBooks();
     }
@@ -1806,6 +1902,7 @@ function initStaffPage() {
         query: filters.query,
         selectedThemes: selectedThemeKeys,
         onlyExamList,
+        sortBy: filters.sortBy,
       },
       cardOptions: (book) => {
         if (authUser?.role !== 'admin') {
@@ -2873,6 +2970,15 @@ function initStaffPage() {
 
   searchInput?.addEventListener('input', () => {
     filters.query = searchInput.value;
+    renderBooks();
+  });
+
+  sortSelect?.addEventListener('change', () => {
+    filters.sortBy = sortSelect.value || 'title';
+    updateSortControlAccessibility(sortSelect, filters.sortBy, {
+      baseLabel: 'Sorteer de boeken',
+      gridId: 'book-grid',
+    });
     renderBooks();
   });
 
