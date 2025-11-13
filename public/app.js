@@ -11,6 +11,44 @@ let authUser = null;
 let updateAuthUi = () => {};
 let passwordChangeController = null;
 
+function appendElement(parent, tag, options = {}) {
+  if (!parent || !tag) {
+    return null;
+  }
+  const element = document.createElement(tag);
+  for (const [key, value] of Object.entries(options || {})) {
+    if (value == null) {
+      continue;
+    }
+    if (key === 'dataset' && typeof value === 'object') {
+      Object.assign(element.dataset, value);
+    } else if (key in element) {
+      element[key] = value;
+    } else {
+      element.setAttribute(key, value);
+    }
+  }
+  parent.append(element);
+  return element;
+}
+
+function appendTextElement(parent, tag, text, options) {
+  const element = appendElement(parent, tag, options);
+  if (!element) {
+    return null;
+  }
+  element.textContent = text == null ? '' : String(text);
+  return element;
+}
+
+function replaceWithTextElement(parent, tag, text, options) {
+  if (!parent) {
+    return null;
+  }
+  parent.replaceChildren();
+  return appendTextElement(parent, tag, text, options);
+}
+
 function setAuth(token) {
   authToken = token;
   localStorage.setItem('boekenbaai_token', token);
