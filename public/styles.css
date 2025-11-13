@@ -1553,8 +1553,22 @@ body[data-page='staff'] .class-card__student-actions .btn {
 
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 240px));
   gap: 1.25rem;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .book-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 220px));
+  }
+}
+
+@media (max-width: 480px) {
+  .book-grid {
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
 }
 
 .book-card {
