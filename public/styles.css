@@ -786,12 +786,14 @@ body[data-page='staff'] .teacher-actions {
   margin-top: 0.35rem;
 }
 
-.admin-teacher-controls {
+.admin-teacher-controls,
+.admin-student-controls {
   display: flex;
   justify-content: flex-end;
 }
 
-.admin-teacher-controls input[type='search'] {
+.admin-teacher-controls input[type='search'],
+.admin-student-controls input[type='search'] {
   width: min(100%, 24rem);
   padding: 0.6rem 0.9rem;
   border-radius: 999px;
@@ -848,6 +850,63 @@ body[data-page='staff'] .teacher-actions {
 .admin-teacher-detail__username {
   margin: 0.25rem 0 0;
   color: var(--muted);
+}
+
+.admin-student-layout {
+  display: grid;
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.admin-student-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-student-detail {
+  display: grid;
+}
+
+.admin-student-detail__placeholder,
+.admin-student-detail__content {
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  border-radius: 14px;
+  padding: clamp(1rem, 1.8vw, 1.5rem);
+  background: rgba(255, 255, 255, 0.94);
+  min-height: 5rem;
+}
+
+.admin-student-detail__placeholder {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.admin-student-detail__content {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.admin-student-detail__content.hidden {
+  display: none;
+}
+
+.admin-student-detail__header h4 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.admin-student-detail__username {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+@media (min-width: 900px) {
+  .admin-student-layout {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    align-items: start;
+  }
 }
 
 .admin-teacher-detail__section {
@@ -924,6 +983,10 @@ body[data-page='staff'] .teacher-actions {
 .admin-card h3,
 .admin-card h4 {
   margin: 0;
+}
+
+.admin-card--students .admin-card__intro .hint {
+  margin-top: 0.35rem;
 }
 
 .admin-card > .hint {
