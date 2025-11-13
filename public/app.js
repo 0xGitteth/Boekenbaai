@@ -1648,7 +1648,6 @@ function initStaffPage() {
   const teacherStudentUsernameInput = document.querySelector('#teacher-student-username');
   const teacherStudentClassSelect = document.querySelector('#teacher-student-class');
   const teacherStudentMessage = document.querySelector('#teacher-student-message');
-  const teacherStudentList = document.querySelector('#teacher-student-list');
   const teacherStudentResetInfo = document.querySelector('#teacher-student-reset');
 
   let folders = [];
@@ -1777,7 +1776,6 @@ function initStaffPage() {
       }
       adminStudentForm && adminStudentForm.reset();
       teacherStudentMessage && (teacherStudentMessage.textContent = '');
-      teacherStudentList && (teacherStudentList.innerHTML = '');
       teacherStudentForm && teacherStudentForm.reset();
       selectedBookId = null;
       selectedAdminClassId = '';
@@ -2289,97 +2287,6 @@ function initStaffPage() {
     }
   }
 
-  function renderTeacherStudents() {
-    if (!teacherStudentList) return;
-    const allowed = authUser && (authUser.role === 'teacher' || authUser.role === 'admin');
-    teacherStudentList.replaceChildren();
-    if (!allowed) {
-      return;
-    }
-    const teacherClassIds = getTeacherClassIds();
-    const relevantStudents = students.filter((student) =>
-      (student.classIds || []).some((id) => teacherClassIds.includes(id))
-    );
-    if (!relevantStudents.length) {
-      replaceWithTextElement(
-        teacherStudentList,
-        'p',
-        'Nog geen leerlingen gekoppeld aan jouw klassen.'
-      );
-      return;
-    }
-    for (const student of relevantStudents) {
-      const borrowed = student.borrowedBooks?.length || 0;
-      const studentClasses = (student.classIds || [])
-        .map((classId) => classes.find((klass) => klass.id === classId))
-        .filter(Boolean);
-      const sharedClassIds = (student.classIds || []).filter((classId) =>
-        teacherClassIds.includes(classId)
-      );
-
-      const item = appendElement(teacherStudentList, 'article', {
-        className: 'student-list__item',
-      });
-      if (!item) continue;
-
-      appendTextElement(item, 'strong', student.name);
-
-      const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
-      if (metaLine) {
-        appendTextElement(metaLine, 'span', `Gebruikersnaam: ${student.username}`);
-        appendTextElement(metaLine, 'span', `Klas: ${student.grade || 'Onbekend'}`);
-        appendTextElement(metaLine, 'span', `${borrowed} uitgeleende boek(en)`);
-      }
-
-      const classesLine = appendElement(item, 'div', { className: 'student-list__meta' });
-      if (classesLine) {
-        appendTextElement(
-          classesLine,
-          'span',
-          studentClasses.length
-            ? `Gekoppeld aan: ${studentClasses.map((klass) => klass.name).join(', ')}`
-            : 'Nog niet gekoppeld aan een klas'
-        );
-      }
-
-      const actions = appendElement(item, 'div', { className: 'student-list__actions' });
-      if (actions) {
-        if (!sharedClassIds.length) {
-          appendTextElement(actions, 'span', 'Geen gedeelde klassen om te beheren.', {
-            className: 'hint',
-          });
-        } else {
-          appendTextElement(actions, 'button', 'Wachtwoord resetten', {
-            className: 'btn btn--ghost',
-            type: 'button',
-            dataset: {
-              resetPassword: 'true',
-              studentId: student.id,
-              studentName: student.name,
-            },
-          });
-          for (const classId of sharedClassIds) {
-            const klass = classes.find((entry) => entry.id === classId);
-            appendTextElement(
-              actions,
-              'button',
-              klass ? `Uit ${klass.name} verwijderen` : 'Verwijderen uit klas',
-              {
-                className: 'btn btn--ghost',
-                type: 'button',
-                dataset: {
-                  removeFromClass: 'true',
-                  classId,
-                  studentId: student.id,
-                },
-              }
-            );
-          }
-        }
-      }
-    }
-  }
-
   function renderAdminTeachers() {
     if (!adminTeacherList) return;
     if (!authUser || authUser.role !== 'admin') {
@@ -2726,7 +2633,6 @@ function initStaffPage() {
 
   async function loadStudents() {
     students = await fetchJson('/api/students');
-    renderTeacherStudents();
     renderAdminStudents();
   }
 
@@ -2743,6 +2649,7 @@ function initStaffPage() {
       );
       return;
     }
+    const manageableClassIds = new Set(getTeacherClassIds());
     for (const klass of classes) {
       const article = appendElement(classList, 'article', { className: 'class-card' });
       if (!article) continue;
@@ -2762,9 +2669,13 @@ function initStaffPage() {
           appendTextElement(memberList, 'li', 'Nog geen leerlingen gekoppeld.');
         } else {
           for (const member of members) {
-            const li = appendElement(memberList, 'li');
+            const li = appendElement(memberList, 'li', {
+              className: 'class-card__student',
+            });
             if (!li) continue;
-            const info = appendElement(li, 'div');
+            const info = appendElement(li, 'div', {
+              className: 'class-card__student-info',
+            });
             if (info) {
               appendTextElement(info, 'strong', member.name);
               info.append(' ');
@@ -2778,15 +2689,44 @@ function initStaffPage() {
                 );
               }
             }
-            const removeButton = appendElement(li, 'button', {
-              className: 'btn btn--ghost',
+            const actions = appendElement(li, 'div', {
+              className: 'class-card__student-actions',
             });
-            if (removeButton) {
-              removeButton.type = 'button';
-              removeButton.dataset.removeStudent = 'true';
-              removeButton.dataset.classId = klass.id;
-              removeButton.dataset.studentId = member.id;
-              removeButton.textContent = 'Verwijderen';
+            if (actions) {
+              const sharedClassIds = (member.classIds || []).filter((classId) =>
+                manageableClassIds.has(classId)
+              );
+              if (sharedClassIds.length) {
+                appendElement(actions, 'button', {
+                  className: 'btn btn--ghost btn--compact',
+                  type: 'button',
+                  textContent: 'Wachtwoord resetten',
+                  dataset: {
+                    resetPassword: 'true',
+                    studentId: member.id,
+                    studentName: member.name,
+                  },
+                });
+                for (const classId of sharedClassIds) {
+                  const className = classes.find((entry) => entry.id === classId)?.name;
+                  appendElement(actions, 'button', {
+                    className: 'btn btn--danger btn--compact',
+                    type: 'button',
+                    textContent: className
+                      ? `Uit ${className} verwijderen`
+                      : 'Uit klas verwijderen',
+                    dataset: {
+                      removeFromClass: 'true',
+                      classId,
+                      studentId: member.id,
+                    },
+                  });
+                }
+              } else {
+                appendTextElement(actions, 'span', 'Geen beheerrechten voor deze leerling.', {
+                  className: 'hint',
+                });
+              }
             }
           }
         }
@@ -2855,7 +2795,6 @@ function initStaffPage() {
     renderClasses();
     renderTeacherStudentClassSelect();
     renderAdminClasses();
-    renderTeacherStudents();
     renderAdminTeachers();
     renderAdminStudents();
   }
@@ -2938,24 +2877,61 @@ function initStaffPage() {
   });
 
   classList?.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-remove-student]');
-    if (!button) return;
-    const classId = button.dataset.classId;
-    const studentId = button.dataset.studentId;
-    if (!classId || !studentId) return;
+    const resetButton = event.target.closest('[data-reset-password]');
+    if (resetButton) {
+      if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
+        teacherStudentMessage.textContent = 'Alleen docenten of beheerders kunnen wachtwoorden resetten.';
+        return;
+      }
+      const studentId = resetButton.dataset.studentId;
+      if (!studentId) return;
+      if (!window.confirm('Nieuw tijdelijk wachtwoord aanmaken voor deze leerling?')) {
+        return;
+      }
+      teacherResetNotice.hide();
+      resetButton.disabled = true;
+      teacherStudentMessage.textContent = 'Tijdelijk wachtwoord wordt aangemaakt…';
+      try {
+        const result = await fetchJson(`/api/students/${studentId}/reset-password`, { method: 'POST' });
+        const studentName = result?.student?.name || resetButton.dataset.studentName || 'Leerling';
+        teacherStudentMessage.textContent = `${studentName} heeft een nieuw tijdelijk wachtwoord gekregen.`;
+        teacherResetNotice.show(`Tijdelijk wachtwoord: ${result.temporaryPassword}`);
+        if (result?.student) {
+          const index = students.findIndex((entry) => entry.id === result.student.id);
+          if (index !== -1) {
+            students[index] = result.student;
+          }
+        }
+      } catch (error) {
+        teacherStudentMessage.textContent = error.message;
+        teacherResetNotice.hide();
+      } finally {
+        resetButton.disabled = false;
+      }
+      return;
+    }
+
+    const removeButton = event.target.closest('[data-remove-from-class]');
+    if (!removeButton) {
+      return;
+    }
     if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
       if (classMessage) {
         classMessage.textContent = 'Alleen medewerkers kunnen leerlingen beheren.';
       }
       return;
     }
+    const classId = removeButton.dataset.classId;
+    const studentId = removeButton.dataset.studentId;
+    if (!classId || !studentId) return;
+    teacherResetNotice.hide();
     if (!window.confirm('Leerling uit deze klas verwijderen?')) {
       return;
     }
     try {
       await fetchJson(`/api/classes/${classId}/students/${studentId}`, { method: 'DELETE' });
+      const klass = classes.find((entry) => entry.id === classId);
       if (classMessage) {
-        const klass = classes.find((entry) => entry.id === classId);
         classMessage.textContent = klass
           ? `Leerling verwijderd uit ${klass.name}.`
           : 'Leerling verwijderd uit de klas.';
@@ -2963,8 +2939,8 @@ function initStaffPage() {
       resetAdminBookForm();
       await refreshStaffData();
     } catch (error) {
-      if (adminBookMessage) {
-        adminBookMessage.textContent = error.message;
+      if (classMessage) {
+        classMessage.textContent = error.message;
       }
     }
   });
@@ -3195,65 +3171,6 @@ function initStaffPage() {
       teacherStudentMessage.textContent = klass
         ? `${studentName} is gekoppeld aan ${klass.name}.`
         : `${studentName} is gekoppeld.`;
-      await refreshStaffData();
-    } catch (error) {
-      teacherStudentMessage.textContent = error.message;
-    }
-  });
-
-  teacherStudentList?.addEventListener('click', async (event) => {
-    const resetButton = event.target.closest('[data-reset-password]');
-    if (resetButton) {
-      if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
-        teacherStudentMessage.textContent = 'Alleen docenten of beheerders kunnen wachtwoorden resetten.';
-        return;
-      }
-      const studentId = resetButton.dataset.studentId;
-      if (!studentId) return;
-      if (!window.confirm('Nieuw tijdelijk wachtwoord aanmaken voor deze leerling?')) {
-        return;
-      }
-      teacherResetNotice.hide();
-      resetButton.disabled = true;
-      teacherStudentMessage.textContent = 'Tijdelijk wachtwoord wordt aangemaakt…';
-      try {
-        const result = await fetchJson(`/api/students/${studentId}/reset-password`, { method: 'POST' });
-        const studentName = result?.student?.name || resetButton.dataset.studentName || 'Leerling';
-        teacherStudentMessage.textContent = `${studentName} heeft een nieuw tijdelijk wachtwoord gekregen.`;
-        teacherResetNotice.show(`Tijdelijk wachtwoord: ${result.temporaryPassword}`);
-        if (result?.student) {
-          const index = students.findIndex((entry) => entry.id === result.student.id);
-          if (index !== -1) {
-            students[index] = result.student;
-          }
-        }
-      } catch (error) {
-        teacherStudentMessage.textContent = error.message;
-        teacherResetNotice.hide();
-      } finally {
-        resetButton.disabled = false;
-      }
-      return;
-    }
-    const button = event.target.closest('[data-remove-from-class]');
-    if (!button) return;
-    if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
-      teacherStudentMessage.textContent = 'Alleen docenten of beheerders kunnen leerlingen beheren.';
-      return;
-    }
-    const classId = button.dataset.classId;
-    const studentId = button.dataset.studentId;
-    if (!classId || !studentId) return;
-    const klass = classes.find((entry) => entry.id === classId);
-    teacherResetNotice.hide();
-    if (!window.confirm('Leerling uit deze klas verwijderen?')) {
-      return;
-    }
-    try {
-      await fetchJson(`/api/classes/${classId}/students/${studentId}`, { method: 'DELETE' });
-      teacherStudentMessage.textContent = klass
-        ? `Leerling verwijderd uit ${klass.name}.`
-        : 'Leerling verwijderd uit de klas.';
       await refreshStaffData();
     } catch (error) {
       teacherStudentMessage.textContent = error.message;

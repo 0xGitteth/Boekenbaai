@@ -583,6 +583,13 @@ body[data-page='staff'] .teacher-actions {
   border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
 }
 
+.class-card__student-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .class-card__students .btn {
   margin-top: 0;
   white-space: nowrap;
@@ -1101,6 +1108,15 @@ body[data-page='staff'] .teacher-actions {
   font-weight: 600;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn--compact {
+  padding: 0.45rem 0.95rem;
+}
+
+body[data-page='staff'] .class-card__student-actions .btn {
+  font-size: 0.85rem;
+  line-height: 1.2;
 }
 
 .btn:disabled {
