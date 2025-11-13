@@ -509,6 +509,17 @@ function sanitizeStudent(student, options = {}) {
   return base;
 }
 
+function sanitizeTeacher(teacher) {
+  if (!teacher) return null;
+  return {
+    id: teacher.id,
+    name: teacher.name,
+    username: teacher.username || '',
+    classIds: Array.isArray(teacher.classIds) ? teacher.classIds : [],
+    mustChangePassword: Boolean(teacher.mustChangePassword),
+  };
+}
+
 function findStudentByUsername(db, username) {
   const normalized = username.trim().toLowerCase();
   return db.students.find((entry) => (entry.username || '').toLowerCase() === normalized);
@@ -518,16 +529,29 @@ function generatePassword(length = 8) {
   return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
 }
 
-function isUsernameTaken(db, username, { allowStudentId = null } = {}) {
-  const normalized = username.trim().toLowerCase();
-  if (db.users.some((user) => user.username.toLowerCase() === normalized)) {
+function isUsernameTaken(db, username, { allowStudentId = null, allowUserId = null } = {}) {
+  const normalized = String(username || '').trim().toLowerCase();
+  if (
+    db.users.some((user) => {
+      if (!user || typeof user.username !== 'string') {
+        return false;
+      }
+      if (allowUserId && user.id === allowUserId) {
+        return false;
+      }
+      return user.username.toLowerCase() === normalized;
+    })
+  ) {
     return true;
   }
   return db.students.some((student) => {
+    if (!student || typeof student.username !== 'string') {
+      return false;
+    }
     if (allowStudentId && student.id === allowStudentId) {
       return false;
     }
-    return (student.username || '').toLowerCase() === normalized;
+    return student.username.toLowerCase() === normalized;
   });
 }
 
@@ -1654,8 +1678,201 @@ async function handleApi(req, res, requestUrl) {
       const db = getDb();
       const teachers = db.users
         .filter((account) => account.role === 'teacher')
-        .map((account) => ({ id: account.id, name: account.name, username: account.username }));
+        .map((account) => {
+          const ownClassIds = Array.isArray(account.classIds) ? account.classIds : [];
+          const relatedClassIds = getTeacherClassIds(db, account.id);
+          const classIds = Array.from(new Set([...ownClassIds, ...relatedClassIds]));
+          return sanitizeTeacher({ ...account, classIds });
+        });
       return sendJson(res, 200, teachers);
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/teachers') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen docenten toevoegen' });
+      }
+      const db = getDb();
+      const body = await parseBody(req);
+      const name = (body.name || '').trim();
+      const username = (body.username || '').trim();
+      let temporaryPassword = (body.password || body.temporaryPassword || '').trim();
+      if (!name || !username) {
+        return sendJson(res, 400, { message: 'Naam en gebruikersnaam zijn verplicht' });
+      }
+      if (isUsernameTaken(db, username)) {
+        return sendJson(res, 409, { message: 'Deze gebruikersnaam is al in gebruik' });
+      }
+      const requestedClassIds = Array.isArray(body.classIds) ? body.classIds : [];
+      const validClassIds = requestedClassIds
+        .map((classId) => String(classId || '').trim())
+        .filter((classId) => classId && db.classes.some((klass) => klass.id === classId));
+      if (!temporaryPassword) {
+        temporaryPassword = generatePassword(10);
+      }
+      const teacher = {
+        id: crypto.randomUUID(),
+        role: 'teacher',
+        name,
+        username,
+        passwordHash: hashPassword(temporaryPassword),
+        mustChangePassword: true,
+        classIds: Array.from(new Set(validClassIds)),
+      };
+      db.users.push(teacher);
+      for (const classId of teacher.classIds) {
+        const klass = db.classes.find((entry) => entry.id === classId);
+        if (!klass) continue;
+        klass.teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
+        if (!klass.teacherIds.includes(teacher.id)) {
+          klass.teacherIds.push(teacher.id);
+        }
+      }
+      appendHistory(db, {
+        type: 'teacher_created',
+        teacherId: teacher.id,
+        performedBy: user?.id || null,
+        message: `Nieuw docentaccount aangemaakt voor ${teacher.name}`,
+      });
+      saveDb(db);
+      return sendJson(res, 201, {
+        teacher: sanitizeTeacher(teacher),
+        temporaryPassword,
+      });
+    }
+
+    const teacherMatch = requestUrl.pathname.match(/^\/api\/teachers\/([\w-]+)$/);
+    if (teacherMatch && req.method === 'PATCH') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen docenten bijwerken' });
+      }
+      const db = getDb();
+      const teacher = db.users.find((account) => account.id === teacherMatch[1]);
+      if (!teacher || teacher.role !== 'teacher') {
+        return sendJson(res, 404, { message: 'Docent niet gevonden' });
+      }
+      const body = await parseBody(req);
+      let changed = false;
+      let passwordChanged = false;
+      let providedPassword = '';
+      if (typeof body.name === 'string') {
+        const trimmed = body.name.trim();
+        if (trimmed) {
+          teacher.name = trimmed;
+          changed = true;
+        }
+      }
+      if (typeof body.username === 'string') {
+        const trimmed = body.username.trim();
+        if (trimmed && trimmed !== teacher.username) {
+          if (isUsernameTaken(db, trimmed, { allowUserId: teacher.id })) {
+            return sendJson(res, 409, { message: 'Deze gebruikersnaam is al in gebruik' });
+          }
+          teacher.username = trimmed;
+          changed = true;
+        }
+      }
+      if (Array.isArray(body.classIds)) {
+        const requestedClassIds = body.classIds
+          .map((classId) => String(classId || '').trim())
+          .filter(Boolean);
+        const validClassIds = requestedClassIds.filter((classId) =>
+          db.classes.some((klass) => klass.id === classId)
+        );
+        const previousClassIds = Array.isArray(teacher.classIds)
+          ? [...teacher.classIds]
+          : getTeacherClassIds(db, teacher.id);
+        const newClassIds = Array.from(new Set(validClassIds));
+        const previousSet = new Set(previousClassIds);
+        const newSet = new Set(newClassIds);
+        const removedIds = previousClassIds.filter((id) => !newSet.has(id));
+        const addedIds = newClassIds.filter((id) => !previousSet.has(id));
+        if (removedIds.length || addedIds.length || previousClassIds.length !== newClassIds.length) {
+          changed = true;
+        }
+        teacher.classIds = newClassIds;
+        for (const classId of removedIds) {
+          const klass = db.classes.find((entry) => entry.id === classId);
+          if (!klass) continue;
+          klass.teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
+          klass.teacherIds = klass.teacherIds.filter((id) => id !== teacher.id);
+        }
+        for (const classId of newClassIds) {
+          const klass = db.classes.find((entry) => entry.id === classId);
+          if (!klass) continue;
+          klass.teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
+          if (!klass.teacherIds.includes(teacher.id)) {
+            klass.teacherIds.push(teacher.id);
+          }
+        }
+        if (removedIds.length || addedIds.length) {
+          appendHistory(db, {
+            type: 'teacher_classes_updated',
+            teacherId: teacher.id,
+            performedBy: user?.id || null,
+            message: `Klassen bijgewerkt voor docent ${teacher.name}`,
+          });
+        }
+      }
+      if (typeof body.temporaryPassword === 'string' && body.temporaryPassword.trim()) {
+        providedPassword = body.temporaryPassword.trim();
+        teacher.passwordHash = hashPassword(providedPassword);
+        teacher.mustChangePassword = true;
+        passwordChanged = true;
+        changed = true;
+        for (const [token, session] of sessions.entries()) {
+          if (session.type === 'staff' && session.userId === teacher.id) {
+            sessions.delete(token);
+          }
+        }
+        appendHistory(db, {
+          type: 'teacher_password_set',
+          teacherId: teacher.id,
+          performedBy: user?.id || null,
+          message: `Handmatig wachtwoord ingesteld voor docent ${teacher.name}`,
+        });
+      }
+      if (!changed) {
+        return sendJson(res, 200, { teacher: sanitizeTeacher(teacher) });
+      }
+      saveDb(db);
+      const response = { teacher: sanitizeTeacher(teacher) };
+      if (passwordChanged && providedPassword) {
+        response.temporaryPassword = providedPassword;
+      }
+      return sendJson(res, 200, response);
+    }
+
+    if (teacherMatch && req.method === 'DELETE') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen docenten verwijderen' });
+      }
+      const db = getDb();
+      const index = db.users.findIndex(
+        (account) => account.id === teacherMatch[1] && account.role === 'teacher'
+      );
+      if (index === -1) {
+        return sendJson(res, 404, { message: 'Docent niet gevonden' });
+      }
+      const [removedTeacher] = db.users.splice(index, 1);
+      for (const klass of db.classes) {
+        if (!Array.isArray(klass.teacherIds)) {
+          continue;
+        }
+        klass.teacherIds = klass.teacherIds.filter((id) => id !== removedTeacher.id);
+      }
+      for (const [token, session] of sessions.entries()) {
+        if (session.type === 'staff' && session.userId === removedTeacher.id) {
+          sessions.delete(token);
+        }
+      }
+      appendHistory(db, {
+        type: 'teacher_deleted',
+        teacherId: removedTeacher.id,
+        performedBy: user?.id || null,
+        message: `Docent ${removedTeacher.name} is verwijderd`,
+      });
+      saveDb(db);
+      return sendJson(res, 200, { teacher: sanitizeTeacher(removedTeacher) });
     }
 
     const teacherResetMatch = requestUrl.pathname.match(/^\/api\/teachers\/([\w-]+)\/reset-password$/);
@@ -2274,6 +2491,21 @@ async function handleApi(req, res, requestUrl) {
           db.users.some((account) => account.id === teacherId && account.role === 'teacher')
         );
         klass.teacherIds = valid;
+        for (const account of db.users) {
+          if (account.role !== 'teacher') {
+            continue;
+          }
+          account.classIds = Array.isArray(account.classIds)
+            ? account.classIds.filter((id) => db.classes.some((entry) => entry.id === id))
+            : [];
+          if (valid.includes(account.id)) {
+            if (!account.classIds.includes(klass.id)) {
+              account.classIds.push(klass.id);
+            }
+          } else {
+            account.classIds = account.classIds.filter((id) => id !== klass.id);
+          }
+        }
       }
       saveDb(db);
       return sendJson(res, 200, klass);
@@ -2291,6 +2523,14 @@ async function handleApi(req, res, requestUrl) {
       const [removedClass] = db.classes.splice(index, 1);
       for (const student of db.students) {
         student.classIds = (student.classIds || []).filter((id) => id !== removedClass.id);
+      }
+      for (const account of db.users) {
+        if (account.role !== 'teacher') {
+          continue;
+        }
+        account.classIds = Array.isArray(account.classIds)
+          ? account.classIds.filter((id) => id !== removedClass.id)
+          : [];
       }
       appendHistory(db, {
         type: 'class_deleted',
