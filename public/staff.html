@@ -194,6 +194,39 @@
                   <label for="admin-book-description">Korte beschrijving</label>
                   <textarea id="admin-book-description" rows="3"></textarea>
                 </div>
+                <div class="form-field">
+                  <label for="admin-book-publisher">Uitgever</label>
+                  <input id="admin-book-publisher" type="text" placeholder="Bijv. Querido" />
+                  <p class="hint">Wordt gebruikt wanneer er geen metadata gevonden wordt.</p>
+                </div>
+                <div class="form-field">
+                  <label for="admin-book-year">Jaar van uitgave</label>
+                  <input id="admin-book-year" type="number" inputmode="numeric" min="0" max="9999" />
+                  <p class="hint">Geef een jaartal op (bijv. 2003) voor het detailoverzicht.</p>
+                </div>
+                <div class="form-field">
+                  <label for="admin-book-pages">Aantal pagina’s</label>
+                  <input id="admin-book-pages" type="number" inputmode="numeric" min="1" step="1" />
+                  <p class="hint">Helpt leerlingen inschatten hoe dik het boek is.</p>
+                </div>
+                <div class="form-field">
+                  <label for="admin-book-language">Taalcode</label>
+                  <input id="admin-book-language" type="text" placeholder="Bijv. nl of en" maxlength="12" />
+                  <p class="hint">Gebruik een korte code (zoals nl, en of fr).</p>
+                </div>
+                <div class="form-field">
+                  <label for="admin-book-tags">Thema’s</label>
+                  <select id="admin-book-tags" multiple size="6"></select>
+                  <p class="hint">
+                    Houd Ctrl of Cmd ingedrukt om meerdere thema’s te selecteren. Thema’s komen
+                    overeen met de filters in het overzicht.
+                  </p>
+                </div>
+                <div class="form-field">
+                  <label for="admin-book-cover">Omslagafbeelding (URL)</label>
+                  <input id="admin-book-cover" type="url" placeholder="https://…" />
+                  <p class="hint">Handige fallback wanneer er geen ISBN-omslag beschikbaar is.</p>
+                </div>
               </div>
               <div class="admin-form__actions">
                 <button type="submit" class="btn" id="admin-book-submit">Boek opslaan</button>
@@ -201,6 +234,23 @@
               </div>
             </form>
             <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
+            <div class="admin-card__section admin-card__section--import">
+              <h4>Boeken importeren</h4>
+              <p class="hint">
+                Upload een Excelbestand (.xlsx) met kolommen voor <strong>titel</strong>,
+                <strong>auteur</strong> en <strong>barcode/ISBN</strong>. Voeg optioneel kolommen toe
+                voor <strong>uitgever</strong>, <strong>jaar</strong>, <strong>pagina’s</strong>,
+                <strong>taal</strong>, <strong>thema’s</strong> en een <strong>cover-URL</strong> zodat deze
+                velden direct gevuld worden. Thema’s splits je met komma’s of puntkomma’s.
+              </p>
+              <form id="book-import-form" class="admin-import__form">
+                <label for="book-import-file">Excelbestand kiezen</label>
+                <input id="book-import-file" type="file" accept=".xlsx,.xls" />
+                <button type="submit" class="btn btn--secondary">Importeren</button>
+              </form>
+              <p id="book-import-message" class="hint" role="status" aria-live="polite"></p>
+              <div id="book-import-results" class="import-results"></div>
+            </div>
             <div id="admin-book-list" class="admin-book-list"></div>
           </section>
 

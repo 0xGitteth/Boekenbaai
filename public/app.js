@@ -398,6 +398,24 @@ const THEME_COLOR_MAP = {
   poëzie: '#e0b0ff',
 };
 
+const DEFAULT_THEMES = [
+  'Avontuur',
+  'Spanning',
+  'Mysterie',
+  'Romantiek',
+  'Fantasy',
+  'Humor',
+  'Geschiedenis',
+  'Wetenschap',
+  'Sport',
+  'Poëzie',
+  'Familie',
+  'Vriendschap',
+  'Identiteit',
+  'Diversiteit',
+  'Maatschappij',
+];
+
 function normalizeThemeKey(theme) {
   return typeof theme === 'string' ? theme.trim().toLowerCase() : '';
 }
@@ -669,6 +687,41 @@ function resolvePageCount(metadata, book) {
   return null;
 }
 
+function extractMetadataCoverUrl(metadata) {
+  if (!metadata || typeof metadata !== 'object') {
+    return '';
+  }
+  const candidates = [];
+  if (typeof metadata.coverUrl === 'string') {
+    candidates.push(metadata.coverUrl);
+  }
+  if (typeof metadata.cover === 'string') {
+    candidates.push(metadata.cover);
+  }
+  if (metadata.cover && typeof metadata.cover === 'object') {
+    candidates.push(metadata.cover.large, metadata.cover.medium, metadata.cover.small, metadata.cover.url);
+  }
+  if (Array.isArray(metadata.covers)) {
+    for (const entry of metadata.covers) {
+      if (typeof entry === 'string') {
+        candidates.push(entry);
+      } else if (entry && typeof entry === 'object') {
+        candidates.push(entry.large, entry.medium, entry.small, entry.url);
+      }
+    }
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const trimmed = candidate.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return '';
+}
+
 async function resolveBookDetailFolderName(folderId) {
   if (!folderId) return '';
   if (bookDetailState.folderMap.has(folderId)) {
@@ -693,7 +746,9 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
   if (state.content) {
     state.content.hidden = false;
   }
-  const coverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
+  const manualCoverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
+  const metadataCoverUrl = extractMetadataCoverUrl(metadata);
+  const coverUrl = manualCoverUrl || metadataCoverUrl;
   const hasCover = Boolean(coverUrl);
   if (state.coverImage) {
     if (hasCover) {
@@ -743,18 +798,28 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
     state.description.textContent = descriptionText || 'Geen beschrijving beschikbaar.';
   }
   if (state.metaPublisher) {
-    state.metaPublisher.textContent = (metadata?.publisher || book.publisher || '').trim() || 'Onbekend';
+    const manualPublisher = (book.publisher || '').trim();
+    const metadataPublisher = (metadata?.publisher || '').trim();
+    state.metaPublisher.textContent = manualPublisher || metadataPublisher || 'Onbekend';
   }
   if (state.metaYear) {
-    const year = extractYear(metadata?.publishedAt || book.publishedAt || '');
-    state.metaYear.textContent = year || 'Onbekend';
+    const manualYear =
+      book.publishedYear != null && String(book.publishedYear).trim()
+        ? String(book.publishedYear)
+        : extractYear(book.publishedAt || '');
+    const metadataYear = extractYear(
+      metadata?.publishedYear || metadata?.publishedAt || metadata?.publishDate || metadata?.publish_date || ''
+    );
+    state.metaYear.textContent = manualYear || metadataYear || 'Onbekend';
   }
   if (state.metaPages) {
     const pages = resolvePageCount(metadata, book);
     state.metaPages.textContent = pages ? `${pages}` : 'Onbekend';
   }
   if (state.metaLanguage) {
-    state.metaLanguage.textContent = (metadata?.language || book.language || '').trim() || 'Onbekend';
+    const manualLanguage = (book.language || '').trim();
+    const metadataLanguage = (metadata?.language || '').trim();
+    state.metaLanguage.textContent = manualLanguage || metadataLanguage || 'Onbekend';
   }
   if (state.metaFolder) {
     state.metaFolder.textContent = folderName || 'Geen map';
@@ -840,6 +905,14 @@ async function openBookDetail(book) {
 
 function collectUniqueThemes(books) {
   const map = new Map();
+  for (const label of DEFAULT_THEMES) {
+    if (typeof label !== 'string') continue;
+    const trimmed = label.trim();
+    if (!trimmed) continue;
+    const key = normalizeThemeKey(trimmed);
+    if (!key || map.has(key)) continue;
+    map.set(key, { key, label: trimmed });
+  }
   for (const book of books || []) {
     for (const tag of book?.tags || []) {
       if (typeof tag !== 'string') continue;
@@ -1276,7 +1349,7 @@ function initStudentPage() {
   let folders = [];
   let allBooks = [];
   let currentBook = null;
-  let availableThemes = [];
+  let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
   let sortBy = sortSelect?.value || 'title';
@@ -1402,6 +1475,7 @@ function initStudentPage() {
       }
     }
     renderThemeFilters();
+    renderAdminThemeOptions();
   }
 
   async function loadFolders() {
@@ -1698,7 +1772,17 @@ function initStaffPage() {
   const adminFolderSelect = document.querySelector('#admin-folder-select');
   const adminBookExam = document.querySelector('#admin-book-exam');
   const adminBookDescription = document.querySelector('#admin-book-description');
+  const adminBookPublisher = document.querySelector('#admin-book-publisher');
+  const adminBookYear = document.querySelector('#admin-book-year');
+  const adminBookPages = document.querySelector('#admin-book-pages');
+  const adminBookLanguage = document.querySelector('#admin-book-language');
+  const adminBookTagsSelect = document.querySelector('#admin-book-tags');
+  const adminBookCover = document.querySelector('#admin-book-cover');
   const adminBookMessage = document.querySelector('#admin-book-message');
+  const bookImportForm = document.querySelector('#book-import-form');
+  const bookImportFile = document.querySelector('#book-import-file');
+  const bookImportMessage = document.querySelector('#book-import-message');
+  const bookImportResults = document.querySelector('#book-import-results');
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
   const adminBookCancelButton = document.querySelector('#admin-book-cancel');
   const adminBookDeleteButton = document.querySelector('#admin-book-delete');
@@ -1745,7 +1829,7 @@ function initStaffPage() {
   let selectedAdminStudentId = '';
   let barcodeLookupTimer = null;
   const filters = { query: '', sortBy: sortSelect?.value || 'title' };
-  let availableThemes = [];
+  let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
 
@@ -1762,6 +1846,64 @@ function initStaffPage() {
   adminBookBarcode?.addEventListener('blur', () => {
     updateAdminBookBarcode(adminBookBarcode.value);
   });
+
+  function getSelectedAdminThemes() {
+    if (!adminBookTagsSelect) return [];
+    return Array.from(adminBookTagsSelect.selectedOptions)
+      .map((option) => option.value)
+      .filter((value) => typeof value === 'string' && value.trim().length > 0);
+  }
+
+  function ensureAdminThemeOptions(labels = []) {
+    if (!adminBookTagsSelect) return;
+    const existingKeys = new Set(
+      Array.from(adminBookTagsSelect.options).map((option) => option.dataset.themeKey || normalizeThemeKey(option.value))
+    );
+    for (const label of labels) {
+      if (typeof label !== 'string') continue;
+      const trimmed = label.trim();
+      const key = normalizeThemeKey(trimmed);
+      if (!trimmed || existingKeys.has(key)) continue;
+      const option = document.createElement('option');
+      option.value = trimmed;
+      option.textContent = trimmed;
+      option.dataset.themeKey = key;
+      adminBookTagsSelect.append(option);
+      existingKeys.add(key);
+    }
+  }
+
+  function setSelectedAdminThemes(values = []) {
+    if (!adminBookTagsSelect) return;
+    const normalizedSelection = new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => (typeof value === 'string' ? normalizeThemeKey(value) : ''))
+        .filter(Boolean)
+    );
+    ensureAdminThemeOptions(values);
+    Array.from(adminBookTagsSelect.options).forEach((option) => {
+      const optionKey = option.dataset.themeKey || normalizeThemeKey(option.value);
+      option.selected = normalizedSelection.has(optionKey);
+    });
+  }
+
+  function renderAdminThemeOptions({ preserveSelection = true } = {}) {
+    if (!adminBookTagsSelect) return;
+    const previousSelection = preserveSelection ? getSelectedAdminThemes() : [];
+    adminBookTagsSelect.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+    for (const theme of availableThemes) {
+      const option = document.createElement('option');
+      option.value = theme.label;
+      option.textContent = theme.label;
+      option.dataset.themeKey = theme.key;
+      fragment.append(option);
+    }
+    adminBookTagsSelect.append(fragment);
+    if (previousSelection.length) {
+      setSelectedAdminThemes(previousSelection);
+    }
+  }
 
   function createResetNoticeController(element) {
     let timerId = null;
@@ -1885,6 +2027,7 @@ function initStaffPage() {
         gridId: 'book-grid',
       });
       renderThemeFilters();
+      renderAdminThemeOptions({ preserveSelection: false });
       renderBooks();
     }
   }
@@ -1988,6 +2131,22 @@ function initStaffPage() {
     if (adminBookLookupMessage) {
       adminBookLookupMessage.textContent = '';
     }
+    if (adminBookPublisher) {
+      adminBookPublisher.value = '';
+    }
+    if (adminBookYear) {
+      adminBookYear.value = '';
+    }
+    if (adminBookPages) {
+      adminBookPages.value = '';
+    }
+    if (adminBookLanguage) {
+      adminBookLanguage.value = '';
+    }
+    setSelectedAdminThemes([]);
+    if (adminBookCover) {
+      adminBookCover.value = '';
+    }
     selectedBookId = null;
     renderBooks();
   }
@@ -2006,6 +2165,32 @@ function initStaffPage() {
     updateAdminBookBarcode(book.barcode || '');
     if (adminBookDescription) {
       adminBookDescription.value = book.description || '';
+    }
+    if (adminBookPublisher) {
+      adminBookPublisher.value = book.publisher || '';
+    }
+    if (adminBookYear) {
+      const manualYear =
+        book.publishedYear != null && String(book.publishedYear).trim()
+          ? String(book.publishedYear)
+          : extractYear(book.publishedAt || '');
+      adminBookYear.value = manualYear || '';
+    }
+    if (adminBookPages) {
+      const pageCount =
+        book.pageCount != null && String(book.pageCount).trim()
+          ? String(book.pageCount)
+          : book.pages != null && String(book.pages).trim()
+          ? String(book.pages)
+          : '';
+      adminBookPages.value = pageCount;
+    }
+    if (adminBookLanguage) {
+      adminBookLanguage.value = book.language || '';
+    }
+    setSelectedAdminThemes(book.tags || []);
+    if (adminBookCover) {
+      adminBookCover.value = book.coverUrl || '';
     }
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
@@ -2058,6 +2243,76 @@ function initStaffPage() {
     })();
     if (description && adminBookDescription && !adminBookDescription.value) {
       adminBookDescription.value = description;
+    }
+    if (adminBookPublisher && !adminBookPublisher.value && metadata.publisher) {
+      adminBookPublisher.value = metadata.publisher;
+    }
+    if (adminBookYear && !adminBookYear.value) {
+      const metadataYear = extractYear(
+        metadata.publishedYear || metadata.publishedAt || metadata.publishDate || metadata.publish_date || ''
+      );
+      if (metadataYear) {
+        adminBookYear.value = metadataYear;
+      }
+    }
+    if (adminBookPages && !adminBookPages.value) {
+      const metadataPages = resolvePageCount(metadata, {});
+      if (metadataPages) {
+        adminBookPages.value = `${metadataPages}`;
+      }
+    }
+    if (adminBookLanguage && !adminBookLanguage.value && metadata.language) {
+      const languageCandidate = String(metadata.language)
+        .split(/[,;/\s]+/)
+        .map((entry) => entry.trim())
+        .find(Boolean);
+      if (languageCandidate) {
+        adminBookLanguage.value = languageCandidate.toLowerCase();
+      }
+    }
+    if (adminBookTagsSelect && adminBookTagsSelect.selectedOptions.length === 0) {
+      const metadataTags = [];
+      if (Array.isArray(metadata.subjects)) {
+        for (const subject of metadata.subjects) {
+          if (typeof subject === 'string' && subject.trim()) {
+            metadataTags.push(subject.trim());
+          }
+        }
+      }
+      if (Array.isArray(metadata.themes)) {
+        for (const theme of metadata.themes) {
+          if (typeof theme === 'string' && theme.trim()) {
+            metadataTags.push(theme.trim());
+          }
+        }
+      }
+      if (typeof metadata.subject === 'string' && metadata.subject.trim()) {
+        metadataTags.push(metadata.subject.trim());
+      }
+      if (metadataTags.length) {
+        const seen = new Set();
+        const displayTags = [];
+        for (const tag of metadataTags) {
+          const key = tag.toLowerCase();
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          displayTags.push(tag);
+          if (displayTags.length >= 8) {
+            break;
+          }
+        }
+        if (displayTags.length) {
+          setSelectedAdminThemes(displayTags);
+        }
+      }
+    }
+    if (adminBookCover && !adminBookCover.value) {
+      const metadataCoverUrl = extractMetadataCoverUrl(metadata);
+      if (metadataCoverUrl) {
+        adminBookCover.value = metadataCoverUrl;
+      }
     }
   }
 
@@ -2555,9 +2810,31 @@ function initStaffPage() {
     if (!result) return;
 
     const accounts = Array.isArray(result.accounts) ? result.accounts : [];
+    const books = Array.isArray(result.books) ? result.books : [];
     const skipped = Array.isArray(result.skipped) ? result.skipped : [];
 
-    if (accounts.length) {
+    if (books.length) {
+      const list = appendElement(container, 'ul', {
+        className: 'import-results__list',
+      });
+      for (const book of books) {
+        const item = appendElement(list, 'li');
+        appendTextElement(item, 'strong', book?.title || 'Onbekende titel');
+        if (book?.status) {
+          const statusLabel = book.status === 'updated' ? 'Bijgewerkt boek' : 'Nieuw boek';
+          appendImportMeta(item, 'Status', statusLabel);
+        }
+        appendImportMeta(item, 'Auteur', book?.author);
+        appendImportMeta(item, 'Barcode', book?.barcode);
+        appendImportMeta(item, 'Uitgever', book?.publisher);
+        appendImportMeta(item, 'Jaar', book?.publishedYear);
+        appendImportMeta(item, 'Pagina’s', book?.pageCount);
+        appendImportMeta(item, 'Taal', book?.language);
+        if (Array.isArray(book?.tags) && book.tags.length) {
+          appendImportMeta(item, 'Thema’s', book.tags);
+        }
+      }
+    } else if (accounts.length) {
       const list = appendElement(container, 'ul', {
         className: 'import-results__list',
       });
@@ -2587,10 +2864,19 @@ function initStaffPage() {
       });
       for (const entry of skipped) {
         const item = appendElement(skippedList, 'li');
-        const name = entry?.name || '(onbekend)';
-        const username = entry?.username || '(leeg)';
         const reason = entry?.reason || 'Onbekende reden';
-        item.textContent = `${name} (${username}) – ${reason}`;
+        const name = entry?.title || entry?.name || '';
+        const identifier =
+          entry?.barcode || entry?.isbn || entry?.username || entry?.author || '';
+        const labelParts = [];
+        if (name) {
+          labelParts.push(name);
+        }
+        if (identifier) {
+          labelParts.push(identifier);
+        }
+        const summary = labelParts.length ? labelParts.join(' – ') : '(onbekend)';
+        item.textContent = `${summary} – ${reason}`;
       }
     }
   }
@@ -3416,6 +3702,12 @@ function initStaffPage() {
       return;
     }
     const normalizedBarcode = normalizeBarcode(adminBookBarcode?.value);
+    const publisherValue = adminBookPublisher?.value?.trim() || '';
+    const publishedYearValue = adminBookYear?.value?.trim() || '';
+    const pageCountValue = adminBookPages?.value?.trim() || '';
+    const languageValue = adminBookLanguage?.value?.trim() || '';
+    const coverUrlValue = adminBookCover?.value?.trim() || '';
+    const tags = getSelectedAdminThemes();
     const payload = {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
@@ -3423,6 +3715,12 @@ function initStaffPage() {
       folderId: adminFolderSelect.value || null,
       suitableForExamList: Boolean(adminBookExam.checked),
       description: adminBookDescription.value.trim(),
+      publisher: publisherValue,
+      publishedYear: publishedYearValue || null,
+      pageCount: pageCountValue || null,
+      language: languageValue ? languageValue.toLowerCase() : '',
+      coverUrl: coverUrlValue,
+      tags,
     };
     updateAdminBookBarcode(payload.barcode);
     if (!payload.title || !payload.author || !payload.barcode) {
@@ -3445,6 +3743,48 @@ function initStaffPage() {
       await refreshStaffData();
     } catch (error) {
       adminBookMessage.textContent = error.message;
+    }
+  });
+
+  bookImportForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = 'Alleen beheerders kunnen boeken importeren.';
+      }
+      return;
+    }
+    const file = bookImportFile?.files?.[0];
+    if (!file) {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = 'Kies eerst een Excelbestand.';
+      }
+      return;
+    }
+    try {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = 'Bestand wordt verwerkt…';
+      }
+      const base64 = await readFileAsBase64(file);
+      const result = await fetchJson('/api/books/import', {
+        method: 'POST',
+        body: { file: base64 },
+      });
+      if (bookImportFile) {
+        bookImportFile.value = '';
+      }
+      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+      if (bookImportMessage) {
+        bookImportMessage.textContent = `Import gereed: ${result.created} toegevoegd, ${result.updated} bijgewerkt${
+          skippedCount ? `, ${skippedCount} overgeslagen` : ''
+        }.`;
+      }
+      renderImportResults(bookImportResults, result);
+      await refreshStaffData();
+    } catch (error) {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = error.message;
+      }
     }
   });
 
@@ -3550,6 +3890,7 @@ function initStaffPage() {
   });
 
   renderThemeFilters();
+  renderAdminThemeOptions({ preserveSelection: false });
   renderStaffState();
   Promise.all([loadFolders(), loadBooks(), loadSummary()]).catch(() => {});
   if (authToken) {
