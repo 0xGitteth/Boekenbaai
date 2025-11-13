@@ -669,6 +669,41 @@ function resolvePageCount(metadata, book) {
   return null;
 }
 
+function extractMetadataCoverUrl(metadata) {
+  if (!metadata || typeof metadata !== 'object') {
+    return '';
+  }
+  const candidates = [];
+  if (typeof metadata.coverUrl === 'string') {
+    candidates.push(metadata.coverUrl);
+  }
+  if (typeof metadata.cover === 'string') {
+    candidates.push(metadata.cover);
+  }
+  if (metadata.cover && typeof metadata.cover === 'object') {
+    candidates.push(metadata.cover.large, metadata.cover.medium, metadata.cover.small, metadata.cover.url);
+  }
+  if (Array.isArray(metadata.covers)) {
+    for (const entry of metadata.covers) {
+      if (typeof entry === 'string') {
+        candidates.push(entry);
+      } else if (entry && typeof entry === 'object') {
+        candidates.push(entry.large, entry.medium, entry.small, entry.url);
+      }
+    }
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const trimmed = candidate.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return '';
+}
+
 async function resolveBookDetailFolderName(folderId) {
   if (!folderId) return '';
   if (bookDetailState.folderMap.has(folderId)) {
@@ -693,7 +728,9 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
   if (state.content) {
     state.content.hidden = false;
   }
-  const coverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
+  const manualCoverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
+  const metadataCoverUrl = extractMetadataCoverUrl(metadata);
+  const coverUrl = manualCoverUrl || metadataCoverUrl;
   const hasCover = Boolean(coverUrl);
   if (state.coverImage) {
     if (hasCover) {
@@ -743,18 +780,28 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
     state.description.textContent = descriptionText || 'Geen beschrijving beschikbaar.';
   }
   if (state.metaPublisher) {
-    state.metaPublisher.textContent = (metadata?.publisher || book.publisher || '').trim() || 'Onbekend';
+    const manualPublisher = (book.publisher || '').trim();
+    const metadataPublisher = (metadata?.publisher || '').trim();
+    state.metaPublisher.textContent = manualPublisher || metadataPublisher || 'Onbekend';
   }
   if (state.metaYear) {
-    const year = extractYear(metadata?.publishedAt || book.publishedAt || '');
-    state.metaYear.textContent = year || 'Onbekend';
+    const manualYear =
+      book.publishedYear != null && String(book.publishedYear).trim()
+        ? String(book.publishedYear)
+        : extractYear(book.publishedAt || '');
+    const metadataYear = extractYear(
+      metadata?.publishedYear || metadata?.publishedAt || metadata?.publishDate || metadata?.publish_date || ''
+    );
+    state.metaYear.textContent = manualYear || metadataYear || 'Onbekend';
   }
   if (state.metaPages) {
     const pages = resolvePageCount(metadata, book);
     state.metaPages.textContent = pages ? `${pages}` : 'Onbekend';
   }
   if (state.metaLanguage) {
-    state.metaLanguage.textContent = (metadata?.language || book.language || '').trim() || 'Onbekend';
+    const manualLanguage = (book.language || '').trim();
+    const metadataLanguage = (metadata?.language || '').trim();
+    state.metaLanguage.textContent = manualLanguage || metadataLanguage || 'Onbekend';
   }
   if (state.metaFolder) {
     state.metaFolder.textContent = folderName || 'Geen map';
@@ -1402,6 +1449,7 @@ function initStudentPage() {
       }
     }
     renderThemeFilters();
+    renderAdminThemeOptions();
   }
 
   async function loadFolders() {
@@ -1698,6 +1746,12 @@ function initStaffPage() {
   const adminFolderSelect = document.querySelector('#admin-folder-select');
   const adminBookExam = document.querySelector('#admin-book-exam');
   const adminBookDescription = document.querySelector('#admin-book-description');
+  const adminBookPublisher = document.querySelector('#admin-book-publisher');
+  const adminBookYear = document.querySelector('#admin-book-year');
+  const adminBookPages = document.querySelector('#admin-book-pages');
+  const adminBookLanguage = document.querySelector('#admin-book-language');
+  const adminBookTagsSelect = document.querySelector('#admin-book-tags');
+  const adminBookCover = document.querySelector('#admin-book-cover');
   const adminBookMessage = document.querySelector('#admin-book-message');
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
   const adminBookCancelButton = document.querySelector('#admin-book-cancel');
@@ -1762,6 +1816,64 @@ function initStaffPage() {
   adminBookBarcode?.addEventListener('blur', () => {
     updateAdminBookBarcode(adminBookBarcode.value);
   });
+
+  function getSelectedAdminThemes() {
+    if (!adminBookTagsSelect) return [];
+    return Array.from(adminBookTagsSelect.selectedOptions)
+      .map((option) => option.value)
+      .filter((value) => typeof value === 'string' && value.trim().length > 0);
+  }
+
+  function ensureAdminThemeOptions(labels = []) {
+    if (!adminBookTagsSelect) return;
+    const existingKeys = new Set(
+      Array.from(adminBookTagsSelect.options).map((option) => option.dataset.themeKey || normalizeThemeKey(option.value))
+    );
+    for (const label of labels) {
+      if (typeof label !== 'string') continue;
+      const trimmed = label.trim();
+      const key = normalizeThemeKey(trimmed);
+      if (!trimmed || existingKeys.has(key)) continue;
+      const option = document.createElement('option');
+      option.value = trimmed;
+      option.textContent = trimmed;
+      option.dataset.themeKey = key;
+      adminBookTagsSelect.append(option);
+      existingKeys.add(key);
+    }
+  }
+
+  function setSelectedAdminThemes(values = []) {
+    if (!adminBookTagsSelect) return;
+    const normalizedSelection = new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => (typeof value === 'string' ? normalizeThemeKey(value) : ''))
+        .filter(Boolean)
+    );
+    ensureAdminThemeOptions(values);
+    Array.from(adminBookTagsSelect.options).forEach((option) => {
+      const optionKey = option.dataset.themeKey || normalizeThemeKey(option.value);
+      option.selected = normalizedSelection.has(optionKey);
+    });
+  }
+
+  function renderAdminThemeOptions({ preserveSelection = true } = {}) {
+    if (!adminBookTagsSelect) return;
+    const previousSelection = preserveSelection ? getSelectedAdminThemes() : [];
+    adminBookTagsSelect.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+    for (const theme of availableThemes) {
+      const option = document.createElement('option');
+      option.value = theme.label;
+      option.textContent = theme.label;
+      option.dataset.themeKey = theme.key;
+      fragment.append(option);
+    }
+    adminBookTagsSelect.append(fragment);
+    if (previousSelection.length) {
+      setSelectedAdminThemes(previousSelection);
+    }
+  }
 
   function createResetNoticeController(element) {
     let timerId = null;
@@ -1885,6 +1997,7 @@ function initStaffPage() {
         gridId: 'book-grid',
       });
       renderThemeFilters();
+      renderAdminThemeOptions({ preserveSelection: false });
       renderBooks();
     }
   }
@@ -1988,6 +2101,22 @@ function initStaffPage() {
     if (adminBookLookupMessage) {
       adminBookLookupMessage.textContent = '';
     }
+    if (adminBookPublisher) {
+      adminBookPublisher.value = '';
+    }
+    if (adminBookYear) {
+      adminBookYear.value = '';
+    }
+    if (adminBookPages) {
+      adminBookPages.value = '';
+    }
+    if (adminBookLanguage) {
+      adminBookLanguage.value = '';
+    }
+    setSelectedAdminThemes([]);
+    if (adminBookCover) {
+      adminBookCover.value = '';
+    }
     selectedBookId = null;
     renderBooks();
   }
@@ -2006,6 +2135,32 @@ function initStaffPage() {
     updateAdminBookBarcode(book.barcode || '');
     if (adminBookDescription) {
       adminBookDescription.value = book.description || '';
+    }
+    if (adminBookPublisher) {
+      adminBookPublisher.value = book.publisher || '';
+    }
+    if (adminBookYear) {
+      const manualYear =
+        book.publishedYear != null && String(book.publishedYear).trim()
+          ? String(book.publishedYear)
+          : extractYear(book.publishedAt || '');
+      adminBookYear.value = manualYear || '';
+    }
+    if (adminBookPages) {
+      const pageCount =
+        book.pageCount != null && String(book.pageCount).trim()
+          ? String(book.pageCount)
+          : book.pages != null && String(book.pages).trim()
+          ? String(book.pages)
+          : '';
+      adminBookPages.value = pageCount;
+    }
+    if (adminBookLanguage) {
+      adminBookLanguage.value = book.language || '';
+    }
+    setSelectedAdminThemes(book.tags || []);
+    if (adminBookCover) {
+      adminBookCover.value = book.coverUrl || '';
     }
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
@@ -2058,6 +2213,76 @@ function initStaffPage() {
     })();
     if (description && adminBookDescription && !adminBookDescription.value) {
       adminBookDescription.value = description;
+    }
+    if (adminBookPublisher && !adminBookPublisher.value && metadata.publisher) {
+      adminBookPublisher.value = metadata.publisher;
+    }
+    if (adminBookYear && !adminBookYear.value) {
+      const metadataYear = extractYear(
+        metadata.publishedYear || metadata.publishedAt || metadata.publishDate || metadata.publish_date || ''
+      );
+      if (metadataYear) {
+        adminBookYear.value = metadataYear;
+      }
+    }
+    if (adminBookPages && !adminBookPages.value) {
+      const metadataPages = resolvePageCount(metadata, {});
+      if (metadataPages) {
+        adminBookPages.value = `${metadataPages}`;
+      }
+    }
+    if (adminBookLanguage && !adminBookLanguage.value && metadata.language) {
+      const languageCandidate = String(metadata.language)
+        .split(/[,;/\s]+/)
+        .map((entry) => entry.trim())
+        .find(Boolean);
+      if (languageCandidate) {
+        adminBookLanguage.value = languageCandidate.toLowerCase();
+      }
+    }
+    if (adminBookTagsSelect && adminBookTagsSelect.selectedOptions.length === 0) {
+      const metadataTags = [];
+      if (Array.isArray(metadata.subjects)) {
+        for (const subject of metadata.subjects) {
+          if (typeof subject === 'string' && subject.trim()) {
+            metadataTags.push(subject.trim());
+          }
+        }
+      }
+      if (Array.isArray(metadata.themes)) {
+        for (const theme of metadata.themes) {
+          if (typeof theme === 'string' && theme.trim()) {
+            metadataTags.push(theme.trim());
+          }
+        }
+      }
+      if (typeof metadata.subject === 'string' && metadata.subject.trim()) {
+        metadataTags.push(metadata.subject.trim());
+      }
+      if (metadataTags.length) {
+        const seen = new Set();
+        const displayTags = [];
+        for (const tag of metadataTags) {
+          const key = tag.toLowerCase();
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          displayTags.push(tag);
+          if (displayTags.length >= 8) {
+            break;
+          }
+        }
+        if (displayTags.length) {
+          setSelectedAdminThemes(displayTags);
+        }
+      }
+    }
+    if (adminBookCover && !adminBookCover.value) {
+      const metadataCoverUrl = extractMetadataCoverUrl(metadata);
+      if (metadataCoverUrl) {
+        adminBookCover.value = metadataCoverUrl;
+      }
     }
   }
 
@@ -3416,6 +3641,12 @@ function initStaffPage() {
       return;
     }
     const normalizedBarcode = normalizeBarcode(adminBookBarcode?.value);
+    const publisherValue = adminBookPublisher?.value?.trim() || '';
+    const publishedYearValue = adminBookYear?.value?.trim() || '';
+    const pageCountValue = adminBookPages?.value?.trim() || '';
+    const languageValue = adminBookLanguage?.value?.trim() || '';
+    const coverUrlValue = adminBookCover?.value?.trim() || '';
+    const tags = getSelectedAdminThemes();
     const payload = {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
@@ -3423,6 +3654,12 @@ function initStaffPage() {
       folderId: adminFolderSelect.value || null,
       suitableForExamList: Boolean(adminBookExam.checked),
       description: adminBookDescription.value.trim(),
+      publisher: publisherValue,
+      publishedYear: publishedYearValue || null,
+      pageCount: pageCountValue || null,
+      language: languageValue ? languageValue.toLowerCase() : '',
+      coverUrl: coverUrlValue,
+      tags,
     };
     updateAdminBookBarcode(payload.barcode);
     if (!payload.title || !payload.author || !payload.barcode) {
@@ -3550,6 +3787,7 @@ function initStaffPage() {
   });
 
   renderThemeFilters();
+  renderAdminThemeOptions({ preserveSelection: false });
   renderStaffState();
   Promise.all([loadFolders(), loadBooks(), loadSummary()]).catch(() => {});
   if (authToken) {

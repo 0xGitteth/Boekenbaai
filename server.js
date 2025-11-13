@@ -175,6 +175,94 @@ function normalizeClassKey(name) {
   return typeof name === 'string' ? name.trim().toLowerCase() : '';
 }
 
+function normalizePublisher(value) {
+  if (value == null) {
+    return '';
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry ?? '').trim()))
+      .filter(Boolean)
+      .join(', ');
+  }
+  return String(value).trim();
+}
+
+function normalizePublishedYear(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const year = Math.trunc(value);
+    return year >= 0 ? year : null;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+  const match = text.match(/(\d{4})/);
+  if (!match) {
+    return null;
+  }
+  const year = Number.parseInt(match[1], 10);
+  return Number.isFinite(year) ? year : null;
+}
+
+function normalizePageCountValue(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 0 ? Math.round(value) : null;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+  const number = Number(text);
+  if (Number.isFinite(number) && number > 0) {
+    return Math.round(number);
+  }
+  const match = text.match(/\d+/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[0], 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeLanguageCode(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const normalized = normalizeLanguageCode(entry);
+      if (normalized) {
+        return normalized;
+      }
+    }
+    return '';
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return '';
+  }
+  const token = text.split(/[,;/\s]+/).find((part) => part.trim());
+  if (!token) {
+    return '';
+  }
+  return token.length <= 3 ? token.toLowerCase() : token;
+}
+
+function normalizeCoverUrl(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  const text = String(value).trim();
+  return text;
+}
+
 function ensureBookShape(book) {
   const source = typeof book === 'object' && book ? book : {};
   const safeBook = { ...source };
@@ -193,6 +281,13 @@ function ensureBookShape(book) {
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
   safeBook.tags = parseMultiValueField(source.tags);
   safeBook.coverColor = typeof source.coverColor === 'string' ? source.coverColor : '#f9f9f9';
+  safeBook.publisher = normalizePublisher(source.publisher);
+  safeBook.publishedYear = normalizePublishedYear(
+    source.publishedYear ?? source.year ?? source.publishedAt
+  );
+  safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
+  safeBook.language = normalizeLanguageCode(source.language);
+  safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
   return safeBook;
 }
 
@@ -1029,6 +1124,13 @@ async function handleApi(req, res, requestUrl) {
       if (findBookByBarcode(db, normalizedBarcode)) {
         return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
       }
+      const tags = parseMultiValueField(body.tags);
+      const publisher = normalizePublisher(body.publisher);
+      const publishedYear = normalizePublishedYear(body.publishedYear ?? body.year ?? body.publishedAt);
+      const pageCount = normalizePageCountValue(body.pageCount ?? body.pages);
+      const language = normalizeLanguageCode(body.language);
+      const coverUrl = normalizeCoverUrl(body.coverUrl);
+      const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
       const book = {
         id: crypto.randomUUID(),
         title: body.title,
@@ -1040,8 +1142,13 @@ async function handleApi(req, res, requestUrl) {
         status: 'available',
         borrowedBy: null,
         dueDate: null,
-        tags: body.tags || [],
-        coverColor: body.coverColor || '#f9f9f9',
+        tags,
+        coverColor,
+        publisher,
+        publishedYear,
+        pageCount,
+        language,
+        coverUrl,
       };
       db.books.push(book);
       appendHistory(db, {
@@ -1078,6 +1185,26 @@ async function handleApi(req, res, requestUrl) {
       ) {
         return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
       }
+      const hasPublisher = Object.prototype.hasOwnProperty.call(body, 'publisher');
+      const hasPublishedYear =
+        Object.prototype.hasOwnProperty.call(body, 'publishedYear') ||
+        Object.prototype.hasOwnProperty.call(body, 'year');
+      const hasPageCount =
+        Object.prototype.hasOwnProperty.call(body, 'pageCount') ||
+        Object.prototype.hasOwnProperty.call(body, 'pages');
+      const hasLanguage = Object.prototype.hasOwnProperty.call(body, 'language');
+      const hasCoverUrl = Object.prototype.hasOwnProperty.call(body, 'coverUrl');
+      const hasTags = Object.prototype.hasOwnProperty.call(body, 'tags');
+      const nextTags = hasTags ? parseMultiValueField(body.tags) : book.tags;
+      const nextPublisher = hasPublisher ? normalizePublisher(body.publisher) : book.publisher;
+      const nextPublishedYear = hasPublishedYear
+        ? normalizePublishedYear(body.publishedYear ?? body.year ?? body.publishedAt)
+        : book.publishedYear;
+      const nextPageCount = hasPageCount
+        ? normalizePageCountValue(body.pageCount ?? body.pages)
+        : book.pageCount;
+      const nextLanguage = hasLanguage ? normalizeLanguageCode(body.language) : book.language;
+      const nextCoverUrl = hasCoverUrl ? normalizeCoverUrl(body.coverUrl) : book.coverUrl;
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -1085,8 +1212,13 @@ async function handleApi(req, res, requestUrl) {
         description: body.description ?? book.description,
         folderId: body.folderId ?? book.folderId,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
-        tags: body.tags ?? book.tags,
+        tags: nextTags,
         coverColor: body.coverColor ?? book.coverColor,
+        publisher: nextPublisher,
+        publishedYear: nextPublishedYear,
+        pageCount: nextPageCount,
+        language: nextLanguage,
+        coverUrl: nextCoverUrl,
       });
       appendHistory(db, {
         type: 'book_updated',
