@@ -15,7 +15,12 @@
         "avontuur",
         "klassieker"
       ],
-      "coverColor": "#90caf9"
+      "coverColor": "#90caf9",
+      "publisher": "Querido",
+      "publishedYear": 1962,
+      "pageCount": 512,
+      "language": "nl",
+      "coverUrl": "https://covers.openlibrary.org/b/isbn/9789025869975-L.jpg"
     },
     {
       "id": "b2",
@@ -32,7 +37,12 @@
         "geschiedenis",
         "oorlog"
       ],
-      "coverColor": "#ffe082"
+      "coverColor": "#ffe082",
+      "publisher": "Contact",
+      "publishedYear": 1947,
+      "pageCount": 336,
+      "language": "nl",
+      "coverUrl": "https://covers.openlibrary.org/b/isbn/9789026126770-L.jpg"
     },
     {
       "id": "b3",
@@ -49,7 +59,12 @@
         "humor",
         "dieren"
       ],
-      "coverColor": "#a5d6a7"
+      "coverColor": "#a5d6a7",
+      "publisher": "Van Holkema & Warendorf",
+      "publishedYear": 2010,
+      "pageCount": 192,
+      "language": "nl",
+      "coverUrl": "https://covers.openlibrary.org/b/isbn/9789045118008-L.jpg"
     }
   ],
   "students": [
