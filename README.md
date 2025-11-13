@@ -46,6 +46,10 @@ De server kiest automatisch de map `dist/` zodra je een build hebt gedraaid. Zon
 
 De server probeert boekinformatie standaard eerst op te halen bij Open Library. Wanneer `BOEKENBAAI_ENABLE_ISBNBARCODE=true` staat, wordt daarna als fallback een verzoek naar ISBNBarcode.org gedaan en blijft de bestaande barcode-parser actief. De resultaten worden tijdelijk in een in-memory cache opgeslagen (standaard 5 minuten). Parallelle verzoeken naar dezelfde ISBN worden gecoördineerd zodat er maximaal één upstream-lookup tegelijk actief is. Omdat de cache alleen in het serverproces leeft, wordt deze gewist bij een herstart.
 
+### Sliplane vastloper oplossen
+
+Loopt een deploy vast op Sliplane? Maak dan een nieuwe commit (bijvoorbeeld met de boodschap _"Trigger redeploy"_) zodat er een frisse container wordt uitgerold. Controleer daarna in de Sliplane-logs of de stappen `npm install`, `npm run build` en `npm start` zonder fouten doorlopen. Wanneer de server blijft hangen, herstart je de Sliplane-service vanuit het dashboard of voer lokaal `npm run build && npm start` uit om eventuele buildfouten op te sporen.
+
 ## Fallback: hosten op GitHub Pages
 
 Wil je de statische site toch nog als back-up op GitHub Pages houden? Bouw dan met:
