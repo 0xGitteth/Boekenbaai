@@ -483,6 +483,19 @@ select[multiple] {
   box-shadow: 0 10px 18px rgba(247, 181, 0, 0.35);
 }
 
+.teacher-student-form .btn--secondary,
+.admin-card__section--import .btn--secondary,
+#admin-student-form .btn--secondary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.teacher-student-form .btn--secondary:not(:disabled):hover,
+.admin-card__section--import .btn--secondary:not(:disabled):hover,
+#admin-student-form .btn--secondary:not(:disabled):hover {
+  box-shadow: 0 10px 18px var(--accent-soft);
+}
+
 .btn--danger {
   background: #e85d75;
   color: #ffffff;
