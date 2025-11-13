@@ -1298,18 +1298,19 @@ body[data-page='staff'] .class-card__student-actions .btn {
   background: var(--accent-softer);
   border: 1px solid var(--accent-border);
   font-weight: 600;
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 0.35rem;
-  justify-items: center;
+  justify-content: center;
   text-align: center;
-  min-height: 90px;
 }
 
 .summary__item span {
-  display: block;
+  display: inline-flex;
   font-size: 0.85rem;
   color: var(--muted);
   font-weight: 500;
+  margin-left: 0;
 }
 
 .book-grid {
