@@ -6,7 +6,6 @@
       "author": "Tonke Dragt",
       "barcode": "9789025869975",
       "description": "Een klassieker uit de Nederlandse jeugdliteratuur over ridder Tiuri.",
-      "folderId": "f1",
       "suitableForExamList": true,
       "status": "available",
       "borrowedBy": null,
@@ -28,7 +27,6 @@
       "author": "Anne Frank",
       "barcode": "9789026126770",
       "description": "Het dagboek van Anne Frank, belangrijk voor de leeslijst.",
-      "folderId": "f1",
       "suitableForExamList": true,
       "status": "available",
       "borrowedBy": null,
@@ -50,7 +48,6 @@
       "author": "Jan Jutte",
       "barcode": "9789045118008",
       "description": "Vrolijk avontuur voor jongere lezers.",
-      "folderId": "f2",
       "suitableForExamList": false,
       "status": "available",
       "borrowedBy": null,
@@ -78,29 +75,7 @@
       "classIds": []
     }
   ],
-  "folders": [
-    {
-      "id": "f1",
-      "name": "Leeslijst toppers",
-      "description": "Boeken geschikt voor het eindexamen",
-      "color": "#f9c74f",
-      "examList": true
-    },
-    {
-      "id": "f2",
-      "name": "Lekker lezen",
-      "description": "Vrolijke boeken voor tussendoor",
-      "color": "#90be6d",
-      "examList": false
-    },
-    {
-      "id": "f3",
-      "name": "Docententips",
-      "description": "Aanbevolen door docenten",
-      "color": "#f8961e",
-      "examList": false
-    }
-  ],
+  "folders": [],
   "classes": [
     {
       "id": "c-demo",
