@@ -89,10 +89,10 @@
       <section class="panel" id="student-collection" aria-labelledby="collection-title">
         <div class="panel__header">
           <div>
-            <h2 id="collection-title">Ontdek onze boeken</h2>
-            <p class="panel__subtitle">
-              Filter op thema of zoek naar jouw volgende leesavontuur.
-            </p>
+          <h2 id="collection-title">Ontdek onze boeken</h2>
+          <p class="panel__subtitle">
+            Filter op thema, zoek of sorteer de collectie voor jouw volgende leesavontuur.
+          </p>
           </div>
         </div>
         <div class="filters">
@@ -107,6 +107,12 @@
           </div>
           <label class="filters__label" for="search-input">Zoek:</label>
           <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
+          <label class="filters__label" for="book-sort-select">Sorteer op:</label>
+          <select id="book-sort-select" aria-controls="book-grid">
+            <option value="title">Titel (A-Z)</option>
+            <option value="author">Auteur (A-Z)</option>
+            <option value="popular">Meest populair</option>
+          </select>
         </div>
         <div class="summary" id="summary"></div>
         <div class="book-grid" id="book-grid"></div>
