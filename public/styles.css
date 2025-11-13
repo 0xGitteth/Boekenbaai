@@ -1111,12 +1111,16 @@ body[data-page='staff'] .teacher-actions {
 }
 
 .btn--compact {
-  padding: 0.45rem 0.95rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
 }
 
 body[data-page='staff'] .class-card__student-actions .btn {
+  padding: 0.35rem 0.85rem;
   font-size: 0.85rem;
   line-height: 1.2;
+  margin-top: 0;
 }
 
 .btn:disabled {
