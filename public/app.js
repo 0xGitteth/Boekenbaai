@@ -560,14 +560,8 @@ const bookDetailState = {
   editBook: null,
 };
 
-function setBookDetailFolders(folders = []) {
+function setBookDetailFolders() {
   bookDetailState.folderMap.clear();
-  if (!Array.isArray(folders)) return;
-  for (const folder of folders) {
-    if (folder && folder.id) {
-      bookDetailState.folderMap.set(folder.id, folder.name || '');
-    }
-  }
 }
 
 function cacheIsbnMetadata(metadata) {
@@ -727,13 +721,7 @@ async function resolveBookDetailFolderName(folderId) {
   if (bookDetailState.folderMap.has(folderId)) {
     return bookDetailState.folderMap.get(folderId) || '';
   }
-  try {
-    const folders = await fetchJson('/api/folders');
-    setBookDetailFolders(folders);
-    return bookDetailState.folderMap.get(folderId) || '';
-  } catch (error) {
-    return '';
-  }
+  return '';
 }
 
 function populateBookDetail(book, metadata, { folderName = '', metadataMessage = '' } = {}) {
@@ -1478,11 +1466,6 @@ function initStudentPage() {
     renderAdminThemeOptions();
   }
 
-  async function loadFolders() {
-    folders = await fetchJson('/api/folders');
-    setBookDetailFolders(folders);
-  }
-
   async function loadBooks() {
     allBooks = await fetchJson('/api/books');
     updateAvailableThemes();
@@ -1655,7 +1638,7 @@ function initStudentPage() {
 
   async function refreshData() {
     if (!authUser || authUser.role !== 'student') return;
-    await Promise.all([loadFolders(), loadBooks(), loadSummary(), reloadCurrentUser(['student'])]);
+    await Promise.all([loadBooks(), loadSummary(), reloadCurrentUser(['student'])]);
     if (currentBook) {
       const updated = allBooks.find((book) => book.id === currentBook.id);
       currentBook = updated || null;
@@ -1731,7 +1714,7 @@ function initStudentPage() {
 
   renderThemeFilters();
   renderAuthState();
-  Promise.all([loadFolders(), loadBooks(), loadSummary()]).catch(() => {});
+  Promise.all([loadBooks(), loadSummary()]).catch(() => {});
   if (authToken) {
     reloadCurrentUser(['student'])
       .then(refreshData)
@@ -1769,7 +1752,6 @@ function initStaffPage() {
   const adminBookBarcode = document.querySelector('#admin-book-barcode');
   const adminBookLookupButton = document.querySelector('#admin-book-lookup');
   const adminBookLookupMessage = document.querySelector('#admin-book-lookup-message');
-  const adminFolderSelect = document.querySelector('#admin-folder-select');
   const adminBookExam = document.querySelector('#admin-book-exam');
   const adminBookDescription = document.querySelector('#admin-book-description');
   const adminBookPublisher = document.querySelector('#admin-book-publisher');
@@ -2194,9 +2176,6 @@ function initStaffPage() {
     }
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
-    }
-    if (adminFolderSelect) {
-      adminFolderSelect.value = book.folderId || '';
     }
     if (adminBookSubmitButton) {
       adminBookSubmitButton.textContent = 'Boek bijwerken';
@@ -2941,25 +2920,6 @@ function initStaffPage() {
     }
   }
 
-  async function loadFolders() {
-    folders = await fetchJson('/api/folders');
-    setBookDetailFolders(folders);
-    if (adminFolderSelect) {
-      const current = adminFolderSelect.value;
-      adminFolderSelect.replaceChildren();
-      const defaultOption = appendTextElement(adminFolderSelect, 'option', 'Geen map');
-      if (defaultOption) {
-        defaultOption.value = '';
-      }
-      for (const folder of folders) {
-        appendTextElement(adminFolderSelect, 'option', folder.name, {
-          value: folder.id,
-        });
-      }
-      adminFolderSelect.value = current;
-    }
-  }
-
   async function loadBooks() {
     allBooks = await fetchJson('/api/books');
     updateAvailableThemes();
@@ -3200,7 +3160,7 @@ function initStaffPage() {
   async function refreshStaffData() {
     const loggedIn = authUser && (authUser.role === 'teacher' || authUser.role === 'admin');
     if (!loggedIn) return;
-    await Promise.all([loadFolders(), loadBooks(), loadSummary()]);
+    await Promise.all([loadBooks(), loadSummary()]);
     await loadStudents();
     if (authUser.role === 'admin') {
       await loadTeachers();
@@ -3712,7 +3672,6 @@ function initStaffPage() {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
       barcode: normalizedBarcode,
-      folderId: adminFolderSelect.value || null,
       suitableForExamList: Boolean(adminBookExam.checked),
       description: adminBookDescription.value.trim(),
       publisher: publisherValue,
@@ -3892,7 +3851,7 @@ function initStaffPage() {
   renderThemeFilters();
   renderAdminThemeOptions({ preserveSelection: false });
   renderStaffState();
-  Promise.all([loadFolders(), loadBooks(), loadSummary()]).catch(() => {});
+  Promise.all([loadBooks(), loadSummary()]).catch(() => {});
   if (authToken) {
     reloadCurrentUser(['teacher', 'admin'])
       .then(refreshStaffData)

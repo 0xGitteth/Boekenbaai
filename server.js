@@ -1137,7 +1137,6 @@ async function handleApi(req, res, requestUrl) {
         author: body.author,
         barcode: normalizedBarcode,
         description: body.description || '',
-        folderId: body.folderId || null,
         suitableForExamList: Boolean(body.suitableForExamList),
         status: 'available',
         borrowedBy: null,
@@ -1210,7 +1209,6 @@ async function handleApi(req, res, requestUrl) {
         author: body.author ?? book.author,
         barcode: normalizedNewBarcode || '',
         description: body.description ?? book.description,
-        folderId: body.folderId ?? book.folderId,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
         tags: nextTags,
         coverColor: body.coverColor ?? book.coverColor,
@@ -2227,37 +2225,6 @@ async function handleApi(req, res, requestUrl) {
         skipped,
         accounts: createdAccounts.concat(updatedAccounts),
       });
-    }
-
-    if (req.method === 'GET' && requestUrl.pathname === '/api/folders') {
-      const db = getDb();
-      return sendJson(res, 200, db.folders);
-    }
-
-    if (req.method === 'POST' && requestUrl.pathname === '/api/folders') {
-      if (!ensureRole(user, ['admin'])) {
-        return sendJson(res, 403, { message: 'Alleen beheerders kunnen mappen toevoegen' });
-      }
-      const db = getDb();
-      const body = await parseBody(req);
-      if (!body.name) {
-        return sendJson(res, 400, { message: 'Naam is verplicht' });
-      }
-      const folder = {
-        id: crypto.randomUUID(),
-        name: body.name,
-        description: body.description || '',
-        color: body.color || '#9f86c0',
-        examList: Boolean(body.examList),
-      };
-      db.folders.push(folder);
-      appendHistory(db, {
-        type: 'folder_created',
-        folderId: folder.id,
-        message: `Nieuwe map ${folder.name} aangemaakt`,
-      });
-      saveDb(db);
-      return sendJson(res, 201, folder);
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/history') {
