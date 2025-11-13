@@ -260,18 +260,97 @@
           </section>
 
           <section class="admin-card admin-card--teachers">
-            <h3>Docenten beheren</h3>
-            <p class="hint">
-              Bekijk bestaande docentenaccounts en stel met één klik een tijdelijk wachtwoord in.
-            </p>
+            <div class="admin-card__intro">
+              <h3>Docenten beheren</h3>
+              <p class="hint">
+                Zoek bestaande docentenaccounts, wijs klassen toe en stel handmatig een tijdelijk
+                wachtwoord in.
+              </p>
+            </div>
+            <div class="admin-teacher-controls">
+              <label class="visually-hidden" for="admin-teacher-search">Zoek docent</label>
+              <input
+                id="admin-teacher-search"
+                type="search"
+                placeholder="Zoek op naam of gebruikersnaam"
+                autocomplete="off"
+              />
+            </div>
             <p id="admin-teacher-message" class="hint" role="status" aria-live="polite"></p>
-            <div
-              id="admin-teacher-reset"
-              class="student-reset hint hidden"
-              role="status"
-              aria-live="polite"
-            ></div>
-            <div id="admin-teacher-list" class="student-list student-list--admin"></div>
+            <div class="admin-teacher-layout">
+              <div class="admin-teacher-list">
+                <div id="admin-teacher-list" class="student-list student-list--admin"></div>
+              </div>
+              <aside
+                id="admin-teacher-detail"
+                class="admin-teacher-detail"
+                aria-labelledby="admin-teacher-detail-name"
+              >
+                <div id="admin-teacher-detail-placeholder" class="admin-teacher-detail__placeholder">
+                  <p>Selecteer een docent om details te bekijken.</p>
+                </div>
+                <div id="admin-teacher-detail-content" class="admin-teacher-detail__content hidden">
+                  <header class="admin-teacher-detail__header">
+                    <h4 id="admin-teacher-detail-name"></h4>
+                    <p class="admin-teacher-detail__username">
+                      Gebruikersnaam: <span id="admin-teacher-detail-username"></span>
+                    </p>
+                  </header>
+                  <p
+                    id="admin-teacher-detail-message"
+                    class="hint"
+                    role="status"
+                    aria-live="polite"
+                  ></p>
+                  <form
+                    id="admin-teacher-classes-form"
+                    class="admin-teacher-detail__section"
+                    data-teacher-form="classes"
+                  >
+                    <h5>Klassen koppelen</h5>
+                    <div id="admin-teacher-class-list" class="admin-teacher-class-list"></div>
+                    <button type="submit" class="btn btn--secondary">Wijzigingen opslaan</button>
+                  </form>
+                  <form
+                    id="admin-teacher-password-form"
+                    class="admin-teacher-detail__section"
+                    data-teacher-form="password"
+                  >
+                    <h5>Tijdelijk wachtwoord instellen</h5>
+                    <div class="admin-teacher-password">
+                      <label class="visually-hidden" for="admin-teacher-password"
+                        >Tijdelijk wachtwoord</label
+                      >
+                      <input
+                        id="admin-teacher-password"
+                        type="text"
+                        placeholder="Bijv. Herfst2024"
+                        autocomplete="off"
+                        maxlength="64"
+                      />
+                      <button type="submit" class="btn">Opslaan</button>
+                      <button type="button" class="btn btn--ghost" data-reset-teacher="true">
+                        Genereer automatisch
+                      </button>
+                    </div>
+                    <div
+                      id="admin-teacher-reset"
+                      class="student-reset hint hidden"
+                      role="status"
+                      aria-live="polite"
+                    ></div>
+                  </form>
+                  <button
+                    id="admin-teacher-delete"
+                    class="btn btn--danger admin-teacher-delete"
+                    type="button"
+                    data-delete-teacher="true"
+                  >
+                    Docent verwijderen
+                  </button>
+                </div>
+              </aside>
+            </div>
           </section>
 
           <section class="admin-card admin-card--classes">

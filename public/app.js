@@ -1771,6 +1771,18 @@ function initStaffPage() {
   const adminTeacherMessage = document.querySelector('#admin-teacher-message');
   const adminTeacherList = document.querySelector('#admin-teacher-list');
   const adminTeacherResetInfo = document.querySelector('#admin-teacher-reset');
+  const adminTeacherSearchInput = document.querySelector('#admin-teacher-search');
+  const adminTeacherDetail = document.querySelector('#admin-teacher-detail');
+  const adminTeacherDetailContent = document.querySelector('#admin-teacher-detail-content');
+  const adminTeacherDetailPlaceholder = document.querySelector('#admin-teacher-detail-placeholder');
+  const adminTeacherDetailName = document.querySelector('#admin-teacher-detail-name');
+  const adminTeacherDetailUsername = document.querySelector('#admin-teacher-detail-username');
+  const adminTeacherDetailMessage = document.querySelector('#admin-teacher-detail-message');
+  const adminTeacherClassesForm = document.querySelector('#admin-teacher-classes-form');
+  const adminTeacherClassList = document.querySelector('#admin-teacher-class-list');
+  const adminTeacherPasswordForm = document.querySelector('#admin-teacher-password-form');
+  const adminTeacherPasswordInput = document.querySelector('#admin-teacher-password');
+  const adminTeacherDeleteButton = document.querySelector('#admin-teacher-delete');
   const adminClassForm = document.querySelector('#admin-class-form');
   const adminClassNameInput = document.querySelector('#admin-class-name');
   const adminClassTeachersSelect = document.querySelector('#admin-class-teachers');
@@ -1809,6 +1821,7 @@ function initStaffPage() {
   let selectedBookId = null;
   let selectedAdminClassId = '';
   let selectedAdminStudentId = '';
+  let selectedAdminTeacherId = '';
   let barcodeLookupTimer = null;
   const filters = { query: '', sortBy: sortSelect?.value || 'title' };
   let availableThemes = collectUniqueThemes([]);
@@ -2623,31 +2636,76 @@ function initStaffPage() {
 
   function renderAdminTeachers() {
     if (!adminTeacherList) return;
-    if (!authUser || authUser.role !== 'admin') {
+    const isAdmin = authUser?.role === 'admin';
+    if (adminTeacherSearchInput) {
+      adminTeacherSearchInput.disabled = !isAdmin;
+      if (!isAdmin) {
+        adminTeacherSearchInput.value = '';
+      }
+    }
+    if (!isAdmin) {
       adminTeacherList.replaceChildren();
+      selectedAdminTeacherId = '';
+      renderAdminTeacherDetail();
       return;
     }
     adminTeacherMessage && (adminTeacherMessage.textContent = '');
+    const query = (adminTeacherSearchInput?.value || '').trim().toLowerCase();
     adminTeacherList.replaceChildren();
     if (!teachers.length) {
-      replaceWithTextElement(
-        adminTeacherList,
-        'p',
-        'Er zijn nog geen docentenaccounts.'
-      );
+      appendTextElement(adminTeacherList, 'p', 'Er zijn nog geen docentenaccounts.', {
+        className: 'hint',
+      });
+      selectedAdminTeacherId = '';
+      renderAdminTeacherDetail();
       return;
     }
     const sortedTeachers = [...teachers].sort((a, b) =>
       a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' })
     );
-    for (const teacher of sortedTeachers) {
+    const filteredTeachers = query
+      ? sortedTeachers.filter((teacher) => {
+          const haystack = `${teacher.name || ''} ${(teacher.username || '').toLowerCase()}`.toLowerCase();
+          return haystack.includes(query);
+        })
+      : sortedTeachers;
+    if (selectedAdminTeacherId) {
+      const exists = filteredTeachers.some((teacher) => teacher.id === selectedAdminTeacherId);
+      if (!exists) {
+        selectedAdminTeacherId = '';
+        adminTeacherResetNotice.hide();
+      }
+    }
+    if (!filteredTeachers.length) {
+      appendTextElement(adminTeacherList, 'p', 'Geen docenten gevonden voor deze zoekopdracht.', {
+        className: 'hint',
+      });
+      renderAdminTeacherDetail();
+      return;
+    }
+    for (const teacher of filteredTeachers) {
+      const selected = teacher.id === selectedAdminTeacherId;
       const teacherClasses = classes
         .filter((klass) => Array.isArray(klass.teacherIds) && klass.teacherIds.includes(teacher.id))
         .map((klass) => klass.name)
         .filter(Boolean);
-
       const item = appendElement(adminTeacherList, 'article', {
-        className: 'student-list__item',
+        className: [
+          'student-list__item',
+          'student-list__item--selectable',
+          selected ? 'student-list__item--active' : '',
+        ].join(' ').trim(),
+        dataset: {
+          selectTeacher: 'true',
+          teacherId: teacher.id,
+        },
+        attributes: {
+          role: 'button',
+          tabindex: '0',
+        },
+        aria: {
+          pressed: selected ? 'true' : 'false',
+        },
       });
       if (!item) continue;
 
@@ -2655,11 +2713,7 @@ function initStaffPage() {
 
       const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
       if (metaLine) {
-        appendTextElement(
-          metaLine,
-          'span',
-          `Gebruikersnaam: ${teacher.username || 'Onbekend'}`
-        );
+        appendTextElement(metaLine, 'span', `Gebruikersnaam: ${teacher.username || 'Onbekend'}`);
       }
 
       appendTextElement(
@@ -2670,18 +2724,123 @@ function initStaffPage() {
           : 'Nog niet gekoppeld aan een klas',
         { className: 'student-list__meta' }
       );
+    }
+    renderAdminTeacherDetail();
+  }
 
-      const actions = appendElement(item, 'div', { className: 'student-list__actions' });
-      if (actions) {
-        appendTextElement(actions, 'button', 'Wachtwoord resetten', {
-          className: 'btn btn--ghost',
-          type: 'button',
-          dataset: {
-            resetTeacher: 'true',
-            teacherId: teacher.id,
-            teacherName: teacher.name,
-          },
+  function renderAdminTeacherDetail() {
+    if (!adminTeacherDetailPlaceholder || !adminTeacherDetailContent) {
+      return;
+    }
+    const isAdmin = authUser?.role === 'admin';
+    if (!isAdmin) {
+      adminTeacherDetailPlaceholder.classList.remove('hidden');
+      adminTeacherDetailContent.classList.add('hidden');
+      adminTeacherDetailContent.dataset.teacherId = '';
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = '';
+        delete adminTeacherDetailMessage.dataset.teacherId;
+      }
+      if (adminTeacherPasswordInput) {
+        adminTeacherPasswordInput.value = '';
+      }
+      if (adminTeacherClassesForm) {
+        adminTeacherClassesForm.dataset.teacherId = '';
+      }
+      if (adminTeacherPasswordForm) {
+        adminTeacherPasswordForm.dataset.teacherId = '';
+      }
+      if (adminTeacherDeleteButton) {
+        adminTeacherDeleteButton.dataset.teacherId = '';
+        adminTeacherDeleteButton.disabled = true;
+      }
+      adminTeacherResetNotice.hide();
+      return;
+    }
+    const teacher = teachers.find((entry) => entry.id === selectedAdminTeacherId);
+    if (!teacher) {
+      adminTeacherDetailPlaceholder.classList.remove('hidden');
+      adminTeacherDetailContent.classList.add('hidden');
+      adminTeacherDetailContent.dataset.teacherId = '';
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = '';
+        delete adminTeacherDetailMessage.dataset.teacherId;
+      }
+      if (adminTeacherPasswordInput) {
+        adminTeacherPasswordInput.value = '';
+      }
+      if (adminTeacherClassesForm) {
+        adminTeacherClassesForm.dataset.teacherId = '';
+      }
+      if (adminTeacherPasswordForm) {
+        adminTeacherPasswordForm.dataset.teacherId = '';
+      }
+      if (adminTeacherDeleteButton) {
+        adminTeacherDeleteButton.dataset.teacherId = '';
+        adminTeacherDeleteButton.disabled = true;
+      }
+      adminTeacherResetNotice.hide();
+      return;
+    }
+    const previousTeacherId = adminTeacherDetailContent.dataset.teacherId || '';
+    adminTeacherDetailPlaceholder.classList.add('hidden');
+    adminTeacherDetailContent.classList.remove('hidden');
+    adminTeacherDetailContent.dataset.teacherId = teacher.id;
+    if (adminTeacherDetailName) {
+      adminTeacherDetailName.textContent = teacher.name || 'Docent';
+    }
+    if (adminTeacherDetailUsername) {
+      adminTeacherDetailUsername.textContent = teacher.username || 'Onbekend';
+    }
+    if (adminTeacherDetailMessage) {
+      if (adminTeacherDetailMessage.dataset.teacherId !== teacher.id) {
+        adminTeacherDetailMessage.textContent = '';
+      }
+      adminTeacherDetailMessage.dataset.teacherId = teacher.id;
+    }
+    if (adminTeacherPasswordInput && previousTeacherId !== teacher.id) {
+      adminTeacherPasswordInput.value = '';
+    }
+    if (adminTeacherClassesForm) {
+      adminTeacherClassesForm.dataset.teacherId = teacher.id;
+    }
+    if (adminTeacherPasswordForm) {
+      adminTeacherPasswordForm.dataset.teacherId = teacher.id;
+    }
+    if (adminTeacherDeleteButton) {
+      adminTeacherDeleteButton.dataset.teacherId = teacher.id;
+      adminTeacherDeleteButton.disabled = false;
+    }
+    if (adminTeacherClassList) {
+      adminTeacherClassList.replaceChildren();
+      const teacherClassIds = Array.isArray(teacher.classIds) ? teacher.classIds : [];
+      const sortedClasses = [...classes].sort((a, b) =>
+        a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' })
+      );
+      if (!sortedClasses.length) {
+        appendTextElement(adminTeacherClassList, 'p', 'Nog geen klassen aangemaakt.', {
+          className: 'hint',
         });
+      } else {
+        for (const klass of sortedClasses) {
+          const label = appendElement(adminTeacherClassList, 'label', {
+            className: 'admin-teacher-class-option',
+          });
+          if (!label) continue;
+          const checkbox = appendElement(label, 'input', {
+            attributes: { type: 'checkbox' },
+          });
+          if (checkbox) {
+            checkbox.type = 'checkbox';
+            checkbox.value = klass.id;
+            checkbox.checked = teacherClassIds.includes(klass.id);
+          }
+          appendTextElement(label, 'span', klass.name);
+        }
+      }
+      const submitButton = adminTeacherClassesForm?.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = !sortedClasses.length;
       }
     }
   }
@@ -3222,6 +3381,10 @@ function initStaffPage() {
     renderBooks();
   });
 
+  adminTeacherSearchInput?.addEventListener('input', () => {
+    renderAdminTeachers();
+  });
+
   sortSelect?.addEventListener('change', () => {
     filters.sortBy = sortSelect.value || 'title';
     updateSortControlAccessibility(sortSelect, filters.sortBy, {
@@ -3532,37 +3695,106 @@ function initStaffPage() {
     }
   });
 
-  adminTeacherList?.addEventListener('click', async (event) => {
-    const resetButton = event.target.closest('[data-reset-teacher]');
-    if (!resetButton) {
+  adminTeacherList?.addEventListener('click', (event) => {
+    const item = event.target.closest('[data-select-teacher]');
+    if (!item) {
       return;
     }
-    if (!authUser || authUser.role !== 'admin') {
-      adminTeacherMessage &&
-        (adminTeacherMessage.textContent = 'Alleen beheerders kunnen wachtwoorden van docenten resetten.');
+    const teacherId = item.dataset.teacherId;
+    if (!teacherId || selectedAdminTeacherId === teacherId) {
       return;
     }
-    const teacherId = resetButton.dataset.teacherId;
-    if (!teacherId) {
-      return;
-    }
-    if (!window.confirm('Nieuw tijdelijk wachtwoord voor deze docent aanmaken?')) {
-      return;
-    }
+    selectedAdminTeacherId = teacherId;
     adminTeacherResetNotice.hide();
-    resetButton.disabled = true;
-    if (adminTeacherMessage) {
-      adminTeacherMessage.textContent = 'Tijdelijk wachtwoord wordt aangemaakt…';
+    renderAdminTeachers();
+  });
+
+  adminTeacherList?.addEventListener('keydown', (event) => {
+    if (!['Enter', ' '].includes(event.key)) {
+      return;
+    }
+    const item = event.target.closest('[data-select-teacher]');
+    if (!item) {
+      return;
+    }
+    event.preventDefault();
+    const teacherId = item.dataset.teacherId;
+    if (!teacherId || selectedAdminTeacherId === teacherId) {
+      return;
+    }
+    selectedAdminTeacherId = teacherId;
+    adminTeacherResetNotice.hide();
+    renderAdminTeachers();
+  });
+
+  adminTeacherClassesForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Alleen beheerders kunnen klassen beheren.';
+      }
+      return;
+    }
+    const teacherId = adminTeacherClassesForm.dataset.teacherId;
+    if (!teacherId) {
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Selecteer eerst een docent.';
+      }
+      return;
+    }
+    const selected = Array.from(
+      adminTeacherClassList?.querySelectorAll('input[type="checkbox"]:checked') || []
+    ).map((input) => input.value);
+    try {
+      await fetchJson(`/api/teachers/${teacherId}`, {
+        method: 'PATCH',
+        body: { classIds: selected },
+      });
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Klassen bijgewerkt.';
+      }
+      await Promise.all([loadTeachers(), loadClasses()]);
+      selectedAdminTeacherId = teacherId;
+      renderAdminTeachers();
+    } catch (error) {
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = error.message;
+      }
+    }
+  });
+
+  adminTeacherPasswordForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Alleen beheerders kunnen wachtwoorden instellen.';
+      }
+      return;
+    }
+    const teacherId = adminTeacherPasswordForm.dataset.teacherId;
+    if (!teacherId) {
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Selecteer eerst een docent.';
+      }
+      return;
+    }
+    const temporaryPassword = adminTeacherPasswordInput?.value?.trim() || '';
+    if (!temporaryPassword) {
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Vul eerst een tijdelijk wachtwoord in.';
+      }
+      return;
     }
     try {
-      const result = await fetchJson(`/api/teachers/${teacherId}/reset-password`, { method: 'POST' });
-      const teacherName = result?.teacher?.name || resetButton.dataset.teacherName || 'Docent';
-      if (adminTeacherMessage) {
-        adminTeacherMessage.textContent = `${teacherName} heeft een nieuw tijdelijk wachtwoord gekregen.`;
+      const result = await fetchJson(`/api/teachers/${teacherId}`, {
+        method: 'PATCH',
+        body: { temporaryPassword },
+      });
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Tijdelijk wachtwoord ingesteld.';
       }
-      if (result?.temporaryPassword) {
-        adminTeacherResetNotice.show(`Tijdelijk wachtwoord: ${result.temporaryPassword}`);
-      }
+      adminTeacherPasswordInput.value = '';
+      adminTeacherResetNotice.show(`Tijdelijk wachtwoord: ${temporaryPassword}`);
       if (result?.teacher) {
         const index = teachers.findIndex((entry) => entry.id === result.teacher.id);
         if (index !== -1) {
@@ -3571,12 +3803,98 @@ function initStaffPage() {
         renderAdminTeachers();
       }
     } catch (error) {
-      if (adminTeacherMessage) {
-        adminTeacherMessage.textContent = error.message;
+      adminTeacherResetNotice.hide();
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = error.message;
+      }
+    }
+  });
+
+  adminTeacherDetail?.addEventListener('click', async (event) => {
+    const resetButton = event.target.closest('button[data-reset-teacher]');
+    if (resetButton) {
+      if (!authUser || authUser.role !== 'admin') {
+        if (adminTeacherDetailMessage) {
+          adminTeacherDetailMessage.textContent = 'Alleen beheerders kunnen wachtwoorden resetten.';
+        }
+        return;
+      }
+      const teacherId = adminTeacherPasswordForm?.dataset.teacherId;
+      if (!teacherId) {
+        if (adminTeacherDetailMessage) {
+          adminTeacherDetailMessage.textContent = 'Selecteer eerst een docent.';
+        }
+        return;
+      }
+      if (!window.confirm('Nieuw tijdelijk wachtwoord voor deze docent aanmaken?')) {
+        return;
       }
       adminTeacherResetNotice.hide();
-    } finally {
-      resetButton.disabled = false;
+      resetButton.disabled = true;
+      if (adminTeacherDetailMessage) {
+        adminTeacherDetailMessage.textContent = 'Tijdelijk wachtwoord wordt aangemaakt…';
+      }
+      try {
+        const result = await fetchJson(`/api/teachers/${teacherId}/reset-password`, { method: 'POST' });
+        const teacherName = result?.teacher?.name || adminTeacherDetailName?.textContent || 'Docent';
+        if (adminTeacherDetailMessage) {
+          adminTeacherDetailMessage.textContent = `${teacherName} heeft een nieuw tijdelijk wachtwoord gekregen.`;
+        }
+        if (result?.temporaryPassword) {
+          adminTeacherResetNotice.show(`Tijdelijk wachtwoord: ${result.temporaryPassword}`);
+        }
+        if (result?.teacher) {
+          const index = teachers.findIndex((entry) => entry.id === result.teacher.id);
+          if (index !== -1) {
+            teachers[index] = result.teacher;
+          }
+          renderAdminTeachers();
+        }
+      } catch (error) {
+        if (adminTeacherDetailMessage) {
+          adminTeacherDetailMessage.textContent = error.message;
+        }
+        adminTeacherResetNotice.hide();
+      } finally {
+        resetButton.disabled = false;
+      }
+      return;
+    }
+
+    const deleteButton = event.target.closest('button[data-delete-teacher]');
+    if (deleteButton) {
+      if (!authUser || authUser.role !== 'admin') {
+        if (adminTeacherDetailMessage) {
+          adminTeacherDetailMessage.textContent = 'Alleen beheerders kunnen docenten verwijderen.';
+        }
+        return;
+      }
+      const teacherId = deleteButton.dataset.teacherId;
+      if (!teacherId) {
+        if (adminTeacherDetailMessage) {
+          adminTeacherDetailMessage.textContent = 'Selecteer eerst een docent.';
+        }
+        return;
+      }
+      if (!window.confirm('Weet je zeker dat je deze docent wilt verwijderen?')) {
+        return;
+      }
+      deleteButton.disabled = true;
+      try {
+        await fetchJson(`/api/teachers/${teacherId}`, { method: 'DELETE' });
+        selectedAdminTeacherId = '';
+        if (adminTeacherMessage) {
+          adminTeacherMessage.textContent = 'Docent verwijderd.';
+        }
+        await Promise.all([loadTeachers(), loadClasses()]);
+        renderAdminTeachers();
+      } catch (error) {
+        if (adminTeacherDetailMessage) {
+          adminTeacherDetailMessage.textContent = error.message;
+        }
+      } finally {
+        deleteButton.disabled = false;
+      }
     }
   });
 

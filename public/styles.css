@@ -778,6 +778,149 @@ body[data-page='staff'] .teacher-actions {
   gap: clamp(1rem, 2vw, 1.25rem);
 }
 
+.admin-card--teachers {
+  gap: clamp(0.75rem, 1.5vw, 1.25rem);
+}
+
+.admin-card--teachers > .admin-card__intro .hint {
+  margin-top: 0.35rem;
+}
+
+.admin-teacher-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.admin-teacher-controls input[type='search'] {
+  width: min(100%, 24rem);
+  padding: 0.6rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.admin-teacher-layout {
+  display: grid;
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.admin-teacher-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-teacher-detail {
+  display: grid;
+}
+
+.admin-teacher-detail__placeholder,
+.admin-teacher-detail__content {
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  border-radius: 14px;
+  padding: clamp(1rem, 1.8vw, 1.5rem);
+  background: rgba(255, 255, 255, 0.94);
+  min-height: 5rem;
+}
+
+.admin-teacher-detail__placeholder {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.admin-teacher-detail__content {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.admin-teacher-detail__content.hidden {
+  display: none;
+}
+
+.admin-teacher-detail__header h4 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.admin-teacher-detail__username {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+.admin-teacher-detail__section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-teacher-detail__section h5 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.admin-teacher-class-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin-teacher-class-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.1);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.admin-teacher-class-option input {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.admin-teacher-password {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.admin-teacher-password input {
+  flex: 1 1 12rem;
+  min-width: 12rem;
+}
+
+.admin-teacher-delete {
+  justify-self: start;
+}
+
+.student-list__item--selectable {
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.student-list__item--selectable:hover,
+.student-list__item--selectable:focus {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  box-shadow: 0 10px 20px rgba(var(--accent-rgb), 0.18);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.student-list__item--active {
+  border-color: rgba(var(--accent-rgb), 0.8);
+  box-shadow: 0 14px 28px rgba(var(--accent-rgb), 0.25);
+}
+
+@media (min-width: 900px) {
+  .admin-teacher-layout {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    align-items: start;
+  }
+}
+
 .admin-card h3,
 .admin-card h4 {
   margin: 0;
