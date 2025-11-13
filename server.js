@@ -1229,6 +1229,259 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, book);
     }
 
+    if (req.method === 'POST' && requestUrl.pathname === '/api/books/import') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
+      }
+      const XLSX = loadXlsx();
+      if (!XLSX) {
+        return sendJson(res, 503, {
+          message: 'Excel-import is momenteel niet beschikbaar omdat de "xlsx" module ontbreekt op de server',
+        });
+      }
+      const body = await parseBody(req);
+      if (!body.file) {
+        return sendJson(res, 400, { message: 'Geen bestand ontvangen' });
+      }
+      const workbookResult = readWorkbookRows(XLSX, body.file);
+      if (!workbookResult.ok) {
+        return sendJson(res, 400, { message: workbookResult.error });
+      }
+      const db = getDb();
+      const createdBooks = [];
+      const updatedBooks = [];
+      const skipped = [];
+      let changed = false;
+
+      for (const row of workbookResult.rows) {
+        const normalized = normalizeRowKeys(row);
+        const title = String(normalized.titel || normalized.title || '').trim();
+        const author = String(normalized.auteur || normalized.author || '').trim();
+        const barcodeSource =
+          normalized.barcode ||
+          normalized['barcode / isbn'] ||
+          normalized.isbn ||
+          normalized['isbn13'] ||
+          normalized['isbn-13'] ||
+          normalized['isbn 13'] ||
+          normalized['isbn'] ||
+          normalized.ean ||
+          normalized['ean13'] ||
+          normalized['ean-13'] ||
+          normalized['streepjescode'] ||
+          normalized.code;
+        const barcode = normalizeBarcode(barcodeSource);
+        const missingFields = [];
+        if (!title) missingFields.push('titel');
+        if (!author) missingFields.push('auteur');
+        if (!barcode) missingFields.push('barcode/ISBN');
+        if (missingFields.length) {
+          skipped.push({
+            title: title || '(onbekend)',
+            author: author || '',
+            barcode: barcodeSource ? String(barcodeSource).trim() : '',
+            reason: `Ontbrekende ${missingFields.join(', ')}`,
+          });
+          continue;
+        }
+
+        const description = String(
+          normalized.beschrijving ||
+            normalized.description ||
+            normalized.samenvatting ||
+            normalized.summary ||
+            ''
+        ).trim();
+        const publisherSource =
+          normalized.uitgever ||
+          normalized.publisher ||
+          normalized['uitgeverij'] ||
+          normalized['publisher name'];
+        const publisher = normalizePublisher(publisherSource);
+        const publishedYearSource =
+          normalized.jaar ||
+          normalized['jaar van uitgave'] ||
+          normalized.publicatiejaar ||
+          normalized.publishedyear ||
+          normalized.year ||
+          normalized.jaaruitgave ||
+          normalized.published ||
+          normalized['publication year'];
+        const publishedYear = normalizePublishedYear(publishedYearSource);
+        const pageCountSource =
+          normalized.paginas ||
+          normalized['paginas'] ||
+          normalized['aantal paginas'] ||
+          normalized['aantal pagina\'s'] ||
+          normalized.pages ||
+          normalized.pagecount ||
+          normalized['page count'];
+        const pageCount = normalizePageCountValue(pageCountSource);
+        const languageSource =
+          normalized.taal ||
+          normalized.language ||
+          normalized.taalcode ||
+          normalized['language code'];
+        const language = normalizeLanguageCode(languageSource);
+        const coverUrlSource =
+          normalized.cover ||
+          normalized['cover url'] ||
+          normalized.coverurl ||
+          normalized.afbeelding ||
+          normalized.image ||
+          normalized['image url'] ||
+          normalized['afbeelding url'];
+        const coverUrl = normalizeCoverUrl(coverUrlSource);
+        const tagSources = [
+          normalized['thema\'s'],
+          normalized.themas,
+          normalized.thema,
+          normalized.tags,
+          normalized.trefwoorden,
+          normalized.keywords,
+          normalized.onderwerpen,
+          normalized['onderwerp(en)'],
+          normalized['thema s'],
+        ];
+        const tags = Array.from(
+          new Set(
+            tagSources
+              .flatMap(parseMultiValueField)
+              .map((value) =>
+                typeof value === 'string' ? value.trim() : String(value ?? '').trim()
+              )
+              .filter(Boolean)
+          )
+        );
+        const examValue =
+          normalized.leeslijst ||
+          normalized['op de leeslijst'] ||
+          normalized.examlist ||
+          normalized['exam list'];
+        const suitableForExamList = parseBooleanFlag(examValue);
+
+        const existingBook = findBookByBarcode(db, barcode);
+        if (existingBook) {
+          const updates = {};
+          if (title && title !== existingBook.title) {
+            updates.title = title;
+          }
+          if (author && author !== existingBook.author) {
+            updates.author = author;
+          }
+          if (description && description !== existingBook.description) {
+            updates.description = description;
+          }
+          if (publisherSource !== undefined && String(publisherSource).trim() && publisher !== existingBook.publisher) {
+            updates.publisher = publisher;
+          }
+          if (
+            publishedYearSource !== undefined &&
+            publishedYearSource !== '' &&
+            publishedYear !== null &&
+            publishedYear !== existingBook.publishedYear
+          ) {
+            updates.publishedYear = publishedYear;
+          }
+          if (
+            pageCountSource !== undefined &&
+            pageCountSource !== '' &&
+            pageCount !== null &&
+            pageCount !== existingBook.pageCount
+          ) {
+            updates.pageCount = pageCount;
+          }
+          if (languageSource !== undefined && String(languageSource).trim() && language && language !== existingBook.language) {
+            updates.language = language;
+          }
+          if (coverUrlSource !== undefined && String(coverUrlSource).trim() && coverUrl && coverUrl !== existingBook.coverUrl) {
+            updates.coverUrl = coverUrl;
+          }
+          if (tags.length) {
+            const currentTagKeys = new Set((existingBook.tags || []).map((tag) => tag.toLowerCase()));
+            const newTagKeys = new Set(tags.map((tag) => tag.toLowerCase()));
+            let tagsChanged = currentTagKeys.size !== newTagKeys.size;
+            if (!tagsChanged) {
+              for (const key of currentTagKeys) {
+                if (!newTagKeys.has(key)) {
+                  tagsChanged = true;
+                  break;
+                }
+              }
+            }
+            if (tagsChanged) {
+              updates.tags = tags;
+            }
+          }
+          if (examValue !== undefined && examValue !== '' && suitableForExamList !== existingBook.suitableForExamList) {
+            updates.suitableForExamList = suitableForExamList;
+          }
+          if (Object.keys(updates).length) {
+            Object.assign(existingBook, updates);
+            updatedBooks.push({
+              title: existingBook.title,
+              author: existingBook.author,
+              barcode: existingBook.barcode,
+              publisher: existingBook.publisher,
+              publishedYear: existingBook.publishedYear,
+              pageCount: existingBook.pageCount,
+              language: existingBook.language,
+              tags: existingBook.tags,
+              status: 'updated',
+            });
+            changed = true;
+          }
+          continue;
+        }
+
+        const book = ensureBookShape({
+          id: crypto.randomUUID(),
+          title,
+          author,
+          barcode,
+          description,
+          tags,
+          publisher,
+          publishedYear,
+          pageCount,
+          language,
+          coverUrl,
+          suitableForExamList,
+        });
+        book.status = 'available';
+        book.borrowedBy = null;
+        book.dueDate = null;
+        db.books.push(book);
+        createdBooks.push({
+          title: book.title,
+          author: book.author,
+          barcode: book.barcode,
+          publisher: book.publisher,
+          publishedYear: book.publishedYear,
+          pageCount: book.pageCount,
+          language: book.language,
+          tags: book.tags,
+          status: 'created',
+        });
+        changed = true;
+      }
+
+      if (changed) {
+        appendHistory(db, {
+          type: 'books_imported',
+          message: `${createdBooks.length} boeken toegevoegd, ${updatedBooks.length} bijgewerkt via Excel-import`,
+        });
+        saveDb(db);
+      }
+
+      return sendJson(res, 200, {
+        created: createdBooks.length,
+        updated: updatedBooks.length,
+        skipped,
+        books: createdBooks.concat(updatedBooks),
+      });
+    }
+
     if (bookIdMatch && req.method === 'DELETE') {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken verwijderen' });

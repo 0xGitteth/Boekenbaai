@@ -398,6 +398,24 @@ const THEME_COLOR_MAP = {
   poëzie: '#e0b0ff',
 };
 
+const DEFAULT_THEMES = [
+  'Avontuur',
+  'Spanning',
+  'Mysterie',
+  'Romantiek',
+  'Fantasy',
+  'Humor',
+  'Geschiedenis',
+  'Wetenschap',
+  'Sport',
+  'Poëzie',
+  'Familie',
+  'Vriendschap',
+  'Identiteit',
+  'Diversiteit',
+  'Maatschappij',
+];
+
 function normalizeThemeKey(theme) {
   return typeof theme === 'string' ? theme.trim().toLowerCase() : '';
 }
@@ -887,6 +905,14 @@ async function openBookDetail(book) {
 
 function collectUniqueThemes(books) {
   const map = new Map();
+  for (const label of DEFAULT_THEMES) {
+    if (typeof label !== 'string') continue;
+    const trimmed = label.trim();
+    if (!trimmed) continue;
+    const key = normalizeThemeKey(trimmed);
+    if (!key || map.has(key)) continue;
+    map.set(key, { key, label: trimmed });
+  }
   for (const book of books || []) {
     for (const tag of book?.tags || []) {
       if (typeof tag !== 'string') continue;
@@ -1323,7 +1349,7 @@ function initStudentPage() {
   let folders = [];
   let allBooks = [];
   let currentBook = null;
-  let availableThemes = [];
+  let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
   let sortBy = sortSelect?.value || 'title';
@@ -1753,6 +1779,10 @@ function initStaffPage() {
   const adminBookTagsSelect = document.querySelector('#admin-book-tags');
   const adminBookCover = document.querySelector('#admin-book-cover');
   const adminBookMessage = document.querySelector('#admin-book-message');
+  const bookImportForm = document.querySelector('#book-import-form');
+  const bookImportFile = document.querySelector('#book-import-file');
+  const bookImportMessage = document.querySelector('#book-import-message');
+  const bookImportResults = document.querySelector('#book-import-results');
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
   const adminBookCancelButton = document.querySelector('#admin-book-cancel');
   const adminBookDeleteButton = document.querySelector('#admin-book-delete');
@@ -1799,7 +1829,7 @@ function initStaffPage() {
   let selectedAdminStudentId = '';
   let barcodeLookupTimer = null;
   const filters = { query: '', sortBy: sortSelect?.value || 'title' };
-  let availableThemes = [];
+  let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
 
@@ -2780,9 +2810,31 @@ function initStaffPage() {
     if (!result) return;
 
     const accounts = Array.isArray(result.accounts) ? result.accounts : [];
+    const books = Array.isArray(result.books) ? result.books : [];
     const skipped = Array.isArray(result.skipped) ? result.skipped : [];
 
-    if (accounts.length) {
+    if (books.length) {
+      const list = appendElement(container, 'ul', {
+        className: 'import-results__list',
+      });
+      for (const book of books) {
+        const item = appendElement(list, 'li');
+        appendTextElement(item, 'strong', book?.title || 'Onbekende titel');
+        if (book?.status) {
+          const statusLabel = book.status === 'updated' ? 'Bijgewerkt boek' : 'Nieuw boek';
+          appendImportMeta(item, 'Status', statusLabel);
+        }
+        appendImportMeta(item, 'Auteur', book?.author);
+        appendImportMeta(item, 'Barcode', book?.barcode);
+        appendImportMeta(item, 'Uitgever', book?.publisher);
+        appendImportMeta(item, 'Jaar', book?.publishedYear);
+        appendImportMeta(item, 'Pagina’s', book?.pageCount);
+        appendImportMeta(item, 'Taal', book?.language);
+        if (Array.isArray(book?.tags) && book.tags.length) {
+          appendImportMeta(item, 'Thema’s', book.tags);
+        }
+      }
+    } else if (accounts.length) {
       const list = appendElement(container, 'ul', {
         className: 'import-results__list',
       });
@@ -2812,10 +2864,19 @@ function initStaffPage() {
       });
       for (const entry of skipped) {
         const item = appendElement(skippedList, 'li');
-        const name = entry?.name || '(onbekend)';
-        const username = entry?.username || '(leeg)';
         const reason = entry?.reason || 'Onbekende reden';
-        item.textContent = `${name} (${username}) – ${reason}`;
+        const name = entry?.title || entry?.name || '';
+        const identifier =
+          entry?.barcode || entry?.isbn || entry?.username || entry?.author || '';
+        const labelParts = [];
+        if (name) {
+          labelParts.push(name);
+        }
+        if (identifier) {
+          labelParts.push(identifier);
+        }
+        const summary = labelParts.length ? labelParts.join(' – ') : '(onbekend)';
+        item.textContent = `${summary} – ${reason}`;
       }
     }
   }
@@ -3682,6 +3743,48 @@ function initStaffPage() {
       await refreshStaffData();
     } catch (error) {
       adminBookMessage.textContent = error.message;
+    }
+  });
+
+  bookImportForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!authUser || authUser.role !== 'admin') {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = 'Alleen beheerders kunnen boeken importeren.';
+      }
+      return;
+    }
+    const file = bookImportFile?.files?.[0];
+    if (!file) {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = 'Kies eerst een Excelbestand.';
+      }
+      return;
+    }
+    try {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = 'Bestand wordt verwerkt…';
+      }
+      const base64 = await readFileAsBase64(file);
+      const result = await fetchJson('/api/books/import', {
+        method: 'POST',
+        body: { file: base64 },
+      });
+      if (bookImportFile) {
+        bookImportFile.value = '';
+      }
+      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+      if (bookImportMessage) {
+        bookImportMessage.textContent = `Import gereed: ${result.created} toegevoegd, ${result.updated} bijgewerkt${
+          skippedCount ? `, ${skippedCount} overgeslagen` : ''
+        }.`;
+      }
+      renderImportResults(bookImportResults, result);
+      await refreshStaffData();
+    } catch (error) {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = error.message;
+      }
     }
   });
 
