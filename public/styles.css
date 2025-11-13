@@ -1329,6 +1329,8 @@ body[data-page='staff'] .class-card__student-actions .btn {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
+  transition: transform 0.22s ease, box-shadow 0.22s ease,
+    border-color 0.22s ease;
 }
 
 @media (min-width: 640px) {
@@ -1405,13 +1407,22 @@ body[data-page='staff'] .class-card__student-actions .btn {
   min-height: 100%;
 }
 
+.book-card:hover,
+.book-card:focus-within {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(var(--brand-dark-rgb), 0.12);
+  border-color: rgba(var(--brand-dark-rgb), 0.12);
+}
+
 .book-card--selectable {
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .book-card--selectable:hover,
 .book-card--selectable:focus-visible {
+  transform: translateY(-2px);
   box-shadow: 0 6px 18px rgba(var(--brand-dark-rgb), 0.14);
   border-color: rgba(var(--brand-dark-rgb), 0.18);
   outline: none;
