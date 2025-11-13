@@ -453,12 +453,19 @@ select[multiple] {
   margin-top: 0;
 }
 
-.btn--ghost:hover {
-  box-shadow: none;
-  transform: none;
-  background: var(--accent-ghost-background);
-  border-color: var(--accent-ghost-border);
-  color: var(--accent-strong);
+.btn--ghost:not(:disabled):hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 10px 18px var(--accent-soft);
+}
+
+.btn--ghost:focus-visible {
+  outline: none;
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring), 0 10px 18px var(--accent-soft);
 }
 
 .btn--ghost:disabled {
