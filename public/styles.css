@@ -1595,15 +1595,28 @@ body[data-page='staff'] .class-card__student-actions .btn {
 }
 
 .book-grid {
+  --book-grid-column-min: 320px;
+  --book-grid-column-max: 360px;
+  --book-grid-gap: 1.5rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 240px));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(var(--book-grid-column-min), 1fr));
+  gap: var(--book-grid-gap);
   justify-content: center;
+  width: 100%;
+  max-width: calc(3 * var(--book-grid-column-max) + 2 * var(--book-grid-gap));
+  margin-inline: auto;
+}
+
+@media (max-width: 1024px) {
+  .book-grid {
+    max-width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .book-grid {
-    grid-template-columns: repeat(auto-fill, minmax(220px, 220px));
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   }
 }
 
