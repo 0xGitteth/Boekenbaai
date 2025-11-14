@@ -1565,13 +1565,29 @@ function initStudentPage() {
       }
     }
     themeFilterRenderer.render();
-    renderAdminThemeOptions();
+    if (typeof renderAdminThemeOptions === 'function') {
+      renderAdminThemeOptions();
+    }
   }
 
   async function loadBooks() {
-    allBooks = await fetchJson('/api/books');
-    updateAvailableThemes();
-    renderBooks();
+    try {
+      allBooks = await fetchJson('/api/books');
+      updateAvailableThemes();
+      renderBooks();
+    } catch (error) {
+      if (bookGrid) {
+        const message =
+          error && error.message
+            ? `Kan boeken niet laden: ${error.message}`
+            : 'Kan boeken niet laden: onbekende fout.';
+        replaceWithTextElement(bookGrid, 'p', message, {
+          className: 'book-grid__status',
+          role: 'status',
+        });
+      }
+      throw error;
+    }
   }
 
   async function loadSummary() {
@@ -1816,7 +1832,9 @@ function initStudentPage() {
 
   themeFilterRenderer.render();
   renderAuthState();
-  Promise.all([loadBooks(), loadSummary()]).catch(() => {});
+  Promise.all([loadBooks(), loadSummary()]).catch((error) => {
+    console.error('Initiale gegevens laden is mislukt.', error);
+  });
   if (authToken) {
     reloadCurrentUser(['student'])
       .then(refreshData)
@@ -3457,16 +3475,30 @@ function initStaffPage() {
   }
 
   async function loadBooks() {
-    allBooks = await fetchJson('/api/books');
-    updateAvailableThemes();
-    renderBooks();
-    if (selectedBookId) {
-      const selectedBook = allBooks.find((entry) => entry.id === selectedBookId);
-      if (selectedBook) {
-        populateAdminBookForm(selectedBook, { silent: true });
-      } else {
-        resetAdminBookForm();
+    try {
+      allBooks = await fetchJson('/api/books');
+      updateAvailableThemes();
+      renderBooks();
+      if (selectedBookId) {
+        const selectedBook = allBooks.find((entry) => entry.id === selectedBookId);
+        if (selectedBook) {
+          populateAdminBookForm(selectedBook, { silent: true });
+        } else {
+          resetAdminBookForm();
+        }
       }
+    } catch (error) {
+      if (bookGrid) {
+        const message =
+          error && error.message
+            ? `Kan boeken niet laden: ${error.message}`
+            : 'Kan boeken niet laden: onbekende fout.';
+        replaceWithTextElement(bookGrid, 'p', message, {
+          className: 'book-grid__status',
+          role: 'status',
+        });
+      }
+      throw error;
     }
   }
 
@@ -4655,7 +4687,9 @@ function initStaffPage() {
   themeFilterRenderer.render();
   renderAdminThemeOptions({ preserveSelection: false });
   renderStaffState();
-  Promise.all([loadBooks(), loadSummary()]).catch(() => {});
+  Promise.all([loadBooks(), loadSummary()]).catch((error) => {
+    console.error('Initiale gegevens laden is mislukt.', error);
+  });
   if (authToken) {
     reloadCurrentUser(['teacher', 'admin'])
       .then(refreshStaffData)
