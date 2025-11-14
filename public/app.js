@@ -3589,8 +3589,6 @@ function initStaffPage() {
             });
             if (info) {
               appendTextElement(info, 'strong', member.name);
-              info.append(' ');
-              appendTextElement(info, 'span', member.grade || 'klas onbekend');
               if (member.borrowedBooks?.length) {
                 info.append(' ');
                 appendTextElement(
