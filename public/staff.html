@@ -253,6 +253,9 @@
                 autocomplete="off"
               />
             </div>
+            <p id="admin-teacher-selection-hint" class="hint admin-teacher-selection-hint">
+              Selecteer een docent om details te bekijken.
+            </p>
             <p id="admin-teacher-message" class="hint" role="status" aria-live="polite"></p>
             <div class="admin-teacher-layout">
               <div class="admin-teacher-list">
@@ -263,8 +266,12 @@
                 class="admin-teacher-detail"
                 aria-labelledby="admin-teacher-detail-name"
               >
-                <div id="admin-teacher-detail-placeholder" class="admin-teacher-detail__placeholder">
-                  <p>Selecteer een docent om details te bekijken.</p>
+                <div
+                  id="admin-teacher-detail-placeholder"
+                  class="admin-teacher-detail__placeholder"
+                  aria-hidden="true"
+                >
+                  <p class="visually-hidden">Selecteer een docent om details te bekijken.</p>
                 </div>
                 <div id="admin-teacher-detail-content" class="admin-teacher-detail__content hidden">
                   <header class="admin-teacher-detail__header">
