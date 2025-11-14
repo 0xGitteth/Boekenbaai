@@ -824,6 +824,7 @@ body[data-page='staff'] .teacher-actions {
 
 .admin-student-controls {
   justify-content: flex-end;
+  margin-top: clamp(0.75rem, 2vw, 1.5rem);
 }
 
 .admin-teacher-controls input[type='search'],
