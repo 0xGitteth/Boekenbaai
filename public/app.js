@@ -1856,6 +1856,7 @@ function initStaffPage() {
   const adminTeacherList = document.querySelector('#admin-teacher-list');
   const adminTeacherResetInfo = document.querySelector('#admin-teacher-reset');
   const adminTeacherSearchInput = document.querySelector('#admin-teacher-search');
+  const adminTeacherSelectionHint = document.querySelector('#admin-teacher-selection-hint');
   const adminTeacherDetail = document.querySelector('#admin-teacher-detail');
   const adminTeacherDetailContent = document.querySelector('#admin-teacher-detail-content');
   const adminTeacherDetailPlaceholder = document.querySelector('#admin-teacher-detail-placeholder');
@@ -2759,25 +2760,34 @@ function initStaffPage() {
       return;
     }
     adminTeacherMessage && (adminTeacherMessage.textContent = '');
-    const query = (adminTeacherSearchInput?.value || '').trim().toLowerCase();
+    const rawQuery = adminTeacherSearchInput?.value || '';
+    const query = rawQuery.trim().toLowerCase();
     adminTeacherList.replaceChildren();
     if (!teachers.length) {
       appendTextElement(adminTeacherList, 'p', 'Er zijn nog geen docentenaccounts.', {
         className: 'hint',
       });
       selectedAdminTeacherId = '';
+      adminTeacherResetNotice.hide();
+      renderAdminTeacherDetail();
+      return;
+    }
+    if (!query) {
+      appendTextElement(adminTeacherList, 'p', 'Gebruik het zoekveld om een docent te vinden.', {
+        className: 'hint',
+      });
+      selectedAdminTeacherId = '';
+      adminTeacherResetNotice.hide();
       renderAdminTeacherDetail();
       return;
     }
     const sortedTeachers = [...teachers].sort((a, b) =>
       a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' })
     );
-    const filteredTeachers = query
-      ? sortedTeachers.filter((teacher) => {
-          const haystack = `${teacher.name || ''} ${(teacher.username || '').toLowerCase()}`.toLowerCase();
-          return haystack.includes(query);
-        })
-      : sortedTeachers;
+    const filteredTeachers = sortedTeachers.filter((teacher) => {
+      const haystack = `${teacher.name || ''} ${(teacher.username || '').toLowerCase()}`.toLowerCase();
+      return haystack.includes(query);
+    });
     if (selectedAdminTeacherId) {
       const exists = filteredTeachers.some((teacher) => teacher.id === selectedAdminTeacherId);
       if (!exists) {
@@ -2794,23 +2804,20 @@ function initStaffPage() {
     }
     for (const teacher of filteredTeachers) {
       const selected = teacher.id === selectedAdminTeacherId;
-      const teacherClasses = classes
-        .filter((klass) => Array.isArray(klass.teacherIds) && klass.teacherIds.includes(teacher.id))
-        .map((klass) => klass.name)
-        .filter(Boolean);
-      const item = appendElement(adminTeacherList, 'article', {
+      const item = appendElement(adminTeacherList, 'button', {
         className: [
           'student-list__item',
           'student-list__item--selectable',
           selected ? 'student-list__item--active' : '',
-        ].join(' ').trim(),
+        ]
+          .join(' ')
+          .trim(),
         dataset: {
           selectTeacher: 'true',
           teacherId: teacher.id,
         },
         attributes: {
-          role: 'button',
-          tabindex: '0',
+          type: 'button',
         },
         aria: {
           pressed: selected ? 'true' : 'false',
@@ -2818,21 +2825,7 @@ function initStaffPage() {
       });
       if (!item) continue;
 
-      appendTextElement(item, 'strong', teacher.name);
-
-      const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
-      if (metaLine) {
-        appendTextElement(metaLine, 'span', `Gebruikersnaam: ${teacher.username || 'Onbekend'}`);
-      }
-
-      appendTextElement(
-        item,
-        'div',
-        teacherClasses.length
-          ? `Gekoppeld aan: ${teacherClasses.join(', ')}`
-          : 'Nog niet gekoppeld aan een klas',
-        { className: 'student-list__meta' }
-      );
+      item.textContent = teacher.name || teacher.username || 'Naam onbekend';
     }
     renderAdminTeacherDetail();
   }
@@ -2842,6 +2835,9 @@ function initStaffPage() {
       return;
     }
     const isAdmin = authUser?.role === 'admin';
+    if (!isAdmin && adminTeacherSelectionHint) {
+      adminTeacherSelectionHint.classList.add('hidden');
+    }
     if (!isAdmin) {
       adminTeacherDetailPlaceholder.classList.remove('hidden');
       adminTeacherDetailContent.classList.add('hidden');
@@ -2868,6 +2864,9 @@ function initStaffPage() {
     }
     const teacher = teachers.find((entry) => entry.id === selectedAdminTeacherId);
     if (!teacher) {
+      if (adminTeacherSelectionHint) {
+        adminTeacherSelectionHint.classList.remove('hidden');
+      }
       adminTeacherDetailPlaceholder.classList.remove('hidden');
       adminTeacherDetailContent.classList.add('hidden');
       adminTeacherDetailContent.dataset.teacherId = '';
@@ -2890,6 +2889,9 @@ function initStaffPage() {
       }
       adminTeacherResetNotice.hide();
       return;
+    }
+    if (adminTeacherSelectionHint) {
+      adminTeacherSelectionHint.classList.add('hidden');
     }
     const previousTeacherId = adminTeacherDetailContent.dataset.teacherId || '';
     adminTeacherDetailPlaceholder.classList.add('hidden');

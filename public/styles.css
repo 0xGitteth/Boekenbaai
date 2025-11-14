@@ -795,6 +795,10 @@ body[data-page='staff'] .teacher-actions {
   justify-content: flex-start;
 }
 
+.admin-teacher-selection-hint {
+  margin-top: 0.75rem;
+}
+
 .admin-student-controls {
   justify-content: flex-end;
 }
@@ -1238,6 +1242,14 @@ body[data-page='staff'] .teacher-actions {
   flex-direction: column;
   gap: 0.35rem;
   box-shadow: 0 6px 16px rgba(var(--brand-dark-rgb), 0.08);
+}
+
+.student-list__item[type='button'],
+button.student-list__item {
+  cursor: pointer;
+  text-align: left;
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
 .student-list__item strong {
