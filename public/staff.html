@@ -244,6 +244,52 @@
                 wachtwoord in.
               </p>
             </div>
+            <section class="admin-teacher-add" aria-labelledby="admin-teacher-add-title">
+              <h4 id="admin-teacher-add-title">Docent toevoegen</h4>
+              <form id="admin-teacher-add-form" class="admin-teacher-add-form" autocomplete="off">
+                <div class="form-grid form-grid--compact">
+                  <div class="form-field">
+                    <label for="admin-teacher-add-name">Naam</label>
+                    <input id="admin-teacher-add-name" type="text" required autocomplete="off" />
+                  </div>
+                  <div class="form-field">
+                    <label for="admin-teacher-add-username">Gebruikersnaam</label>
+                    <input id="admin-teacher-add-username" type="text" required autocomplete="off" />
+                  </div>
+                </div>
+                <div class="form-grid form-grid--compact">
+                  <div class="form-field">
+                    <label for="admin-teacher-add-password">Tijdelijk wachtwoord (optioneel)</label>
+                    <div class="form-field__group">
+                      <input id="admin-teacher-add-password" type="text" autocomplete="off" />
+                      <button
+                        id="admin-teacher-add-password-generate"
+                        type="button"
+                        class="btn btn--ghost"
+                      >
+                        Genereer tijdelijk wachtwoord
+                      </button>
+                    </div>
+                    <p class="hint">Of vul handmatig een eigen tijdelijk wachtwoord in.</p>
+                  </div>
+                  <div class="form-field">
+                    <label for="admin-teacher-add-class">Klas koppelen (optioneel)</label>
+                    <select id="admin-teacher-add-class">
+                      <option value="">Geen klas koppelen</option>
+                    </select>
+                  </div>
+                </div>
+                <button id="admin-teacher-add-submit" type="submit" class="btn btn--secondary">
+                  Docent toevoegen
+                </button>
+              </form>
+              <p
+                id="admin-teacher-add-message"
+                class="hint"
+                role="status"
+                aria-live="polite"
+              ></p>
+            </section>
             <div class="admin-teacher-controls">
               <label class="visually-hidden" for="admin-teacher-search">Zoek docent</label>
               <input

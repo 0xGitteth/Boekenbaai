@@ -782,6 +782,29 @@ body[data-page='staff'] .teacher-actions {
   gap: clamp(0.75rem, 1.5vw, 1.25rem);
 }
 
+.admin-teacher-add {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-teacher-add h4 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.admin-teacher-add-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-teacher-add-form .form-grid {
+  gap: 0.75rem;
+}
+
+.admin-teacher-add-form .btn {
+  justify-self: start;
+}
+
 .admin-card--teachers > .admin-card__intro .hint {
   margin-top: 0.35rem;
 }

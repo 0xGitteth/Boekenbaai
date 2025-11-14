@@ -179,6 +179,24 @@ function normalizeBarcode(value) {
   return hasTrailingX ? `${digitsOnly}X` : digitsOnly;
 }
 
+function generateTemporaryPassword(length = 10) {
+  const targetLength = Number.isFinite(length) ? Math.max(4, Math.floor(length)) : 10;
+  const byteLength = Math.ceil(targetLength / 2);
+  let bytes = [];
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const array = new Uint8Array(byteLength);
+    crypto.getRandomValues(array);
+    bytes = Array.from(array);
+  } else {
+    bytes = Array.from({ length: byteLength }, () => Math.floor(Math.random() * 256));
+  }
+  let hex = bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  if (hex.length < targetLength) {
+    hex += Math.random().toString(16).slice(2);
+  }
+  return hex.slice(0, targetLength);
+}
+
 async function fetchJson(url, options = {}) {
   const config = { method: 'GET', ...options };
   config.headers = { Accept: 'application/json', ...(options.headers || {}) };
@@ -1857,6 +1875,16 @@ function initStaffPage() {
   const adminTeacherResetInfo = document.querySelector('#admin-teacher-reset');
   const adminTeacherSearchInput = document.querySelector('#admin-teacher-search');
   const adminTeacherSelectionHint = document.querySelector('#admin-teacher-selection-hint');
+  const adminTeacherAddForm = document.querySelector('#admin-teacher-add-form');
+  const adminTeacherAddName = document.querySelector('#admin-teacher-add-name');
+  const adminTeacherAddUsername = document.querySelector('#admin-teacher-add-username');
+  const adminTeacherAddPassword = document.querySelector('#admin-teacher-add-password');
+  const adminTeacherAddPasswordGenerateButton = document.querySelector(
+    '#admin-teacher-add-password-generate'
+  );
+  const adminTeacherAddClass = document.querySelector('#admin-teacher-add-class');
+  const adminTeacherAddSubmit = document.querySelector('#admin-teacher-add-submit');
+  const adminTeacherAddMessage = document.querySelector('#admin-teacher-add-message');
   const adminTeacherDetail = document.querySelector('#admin-teacher-detail');
   const adminTeacherDetailContent = document.querySelector('#admin-teacher-detail-content');
   const adminTeacherDetailPlaceholder = document.querySelector('#admin-teacher-detail-placeholder');
@@ -2438,6 +2466,45 @@ function initStaffPage() {
       });
     }
     updateAdminClassDetails();
+  }
+
+  function renderAdminTeacherAddOptions() {
+    if (!adminTeacherAddClass) return;
+    const isAdmin = authUser?.role === 'admin';
+    const previousValue = adminTeacherAddClass.value || '';
+    adminTeacherAddClass.replaceChildren();
+    const placeholder = appendTextElement(adminTeacherAddClass, 'option', 'Geen klas koppelen');
+    if (placeholder) {
+      placeholder.value = '';
+    }
+    if (isAdmin) {
+      const sortedClasses = [...classes].sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', 'nl', { sensitivity: 'base' })
+      );
+      for (const klass of sortedClasses) {
+        appendTextElement(adminTeacherAddClass, 'option', klass.name, {
+          value: klass.id,
+        });
+      }
+      adminTeacherAddClass.disabled = false;
+      if (previousValue) {
+        adminTeacherAddClass.value = previousValue;
+        if (adminTeacherAddClass.value !== previousValue) {
+          adminTeacherAddClass.value = '';
+        }
+      }
+    } else {
+      adminTeacherAddClass.disabled = true;
+    }
+    if (adminTeacherAddForm) {
+      const elements = adminTeacherAddForm.querySelectorAll('input, select, button');
+      elements.forEach((element) => {
+        element.disabled = !isAdmin;
+      });
+    }
+    if (!isAdmin && adminTeacherAddMessage) {
+      adminTeacherAddMessage.textContent = '';
+    }
   }
 
   function renderAdminClasses() {
@@ -3606,6 +3673,7 @@ function initStaffPage() {
     classes = await fetchJson('/api/classes');
     renderClasses();
     renderTeacherStudentClassSelect();
+    renderAdminTeacherAddOptions();
     renderAdminClasses();
     renderAdminTeachers();
     renderAdminStudents();
@@ -3699,6 +3767,87 @@ function initStaffPage() {
       gridId: 'book-grid',
     });
     renderBooks();
+  });
+
+  adminTeacherAddForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (adminTeacherAddMessage) {
+      adminTeacherAddMessage.textContent = '';
+    }
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminTeacherAddMessage) {
+        adminTeacherAddMessage.textContent = 'Alleen beheerders kunnen docenten toevoegen.';
+      }
+      return;
+    }
+    const name = adminTeacherAddName?.value?.trim() || '';
+    const username = adminTeacherAddUsername?.value?.trim() || '';
+    const temporaryPassword = adminTeacherAddPassword?.value?.trim() || '';
+    const classId = adminTeacherAddClass?.value?.trim() || '';
+    if (!name || !username) {
+      if (adminTeacherAddMessage) {
+        adminTeacherAddMessage.textContent = 'Vul naam en gebruikersnaam in.';
+      }
+      return;
+    }
+    if (adminTeacherAddSubmit) {
+      adminTeacherAddSubmit.disabled = true;
+    }
+    if (adminTeacherAddMessage) {
+      adminTeacherAddMessage.textContent = 'Docent wordt toegevoegd…';
+    }
+    try {
+      const body = { name, username };
+      if (temporaryPassword) {
+        body.temporaryPassword = temporaryPassword;
+      }
+      if (classId) {
+        body.classIds = [classId];
+      }
+      const result = await fetchJson('/api/teachers', {
+        method: 'POST',
+        body,
+      });
+      const teacherName = result?.teacher?.name || name;
+      const passwordToShow = result?.temporaryPassword || temporaryPassword;
+      if (adminTeacherAddMessage) {
+        adminTeacherAddMessage.textContent = passwordToShow
+          ? `${teacherName} is toegevoegd. Tijdelijk wachtwoord: ${passwordToShow}.`
+          : `${teacherName} is toegevoegd.`;
+      }
+      adminTeacherAddForm.reset();
+      renderAdminTeacherAddOptions();
+      adminTeacherAddName?.focus();
+      try {
+        await refreshStaffData();
+      } catch (refreshError) {
+        if (adminTeacherAddMessage) {
+          adminTeacherAddMessage.textContent = `${teacherName} is toegevoegd, maar verversen mislukt: ${refreshError.message}`;
+        }
+      }
+    } catch (error) {
+      if (adminTeacherAddMessage) {
+        adminTeacherAddMessage.textContent = error.message;
+      }
+    } finally {
+      if (adminTeacherAddSubmit) {
+        adminTeacherAddSubmit.disabled = false;
+      }
+    }
+  });
+
+  adminTeacherAddPasswordGenerateButton?.addEventListener('click', () => {
+    if (!adminTeacherAddPassword) {
+      return;
+    }
+    const password = generateTemporaryPassword(10);
+    adminTeacherAddPassword.value = password;
+    adminTeacherAddPassword.focus();
+    adminTeacherAddPassword.select();
+    if (adminTeacherAddMessage) {
+      adminTeacherAddMessage.textContent =
+        'Tijdelijk wachtwoord ingevuld. Verstuur het formulier om de docent toe te voegen.';
+    }
   });
 
   classList?.addEventListener('click', async (event) => {
