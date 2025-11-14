@@ -789,6 +789,13 @@ body[data-page='staff'] .teacher-actions {
 .admin-teacher-controls,
 .admin-student-controls {
   display: flex;
+}
+
+.admin-teacher-controls {
+  justify-content: flex-start;
+}
+
+.admin-student-controls {
   justify-content: flex-end;
 }
 
