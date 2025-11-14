@@ -482,7 +482,7 @@ select[multiple] {
 }
 
 .btn--secondary:hover {
-  box-shadow: 0 10px 18px rgba(247, 181, 0, 0.35);
+  box-shadow: 0 10px 18px var(--accent-soft);
 }
 
 .teacher-student-form .btn--secondary,
@@ -1429,7 +1429,7 @@ body[data-page='staff'] .class-card__student-actions .btn {
 }
 
 .btn--secondary:not(:disabled):hover {
-  box-shadow: 0 10px 18px rgba(247, 181, 0, 0.35);
+  box-shadow: 0 10px 18px var(--accent-soft);
 }
 
 .book-result {
