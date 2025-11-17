@@ -4269,19 +4269,9 @@ function initStaffPage() {
       }
     }
 
-    const lastReadDate =
-      stats?.lastBorrowedAt || stats?.lastReadAt || stats?.lastBorrowed || stats?.lastRead;
-    const lastReadSection = appendElement(container, 'div', { className: 'stats-modal__section' });
-    appendTextElement(lastReadSection, 'h4', 'Laatst gelezen');
-    appendTextElement(
-      lastReadSection,
-      'p',
-      lastReadDate ? formatDate(lastReadDate) : 'Nog geen leesactiviteiten geregistreerd.'
-    );
-
     const topGenres = Array.isArray(stats?.topGenres) ? stats.topGenres : [];
     const genreSection = appendElement(container, 'div', { className: 'stats-modal__section' });
-    appendTextElement(genreSection, 'h4', 'Topgenres');
+    appendTextElement(genreSection, 'h4', 'Populaire thema’s');
     if (!topGenres.length) {
       appendTextElement(genreSection, 'p', 'Nog geen favoriete genres beschikbaar.');
     } else {
