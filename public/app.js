@@ -1630,6 +1630,10 @@ function initStudentPage() {
   const studentGrade = document.querySelector('#student-grade');
   const borrowedList = document.querySelector('#student-borrowed-list');
   const borrowedEmpty = document.querySelector('#student-borrowed-empty');
+  const activitySection = document.querySelector('#student-activity');
+  const activityList = document.querySelector('#student-activity-list');
+  const activityEmpty = document.querySelector('#student-activity-empty');
+  const activitySubtitle = document.querySelector('#student-activity-subtitle');
   const logoutButton = document.querySelector('#student-logout');
   const searchInput = document.querySelector('#search-input');
   const sortSelect = document.querySelector('#book-sort-select');
@@ -1647,6 +1651,8 @@ function initStudentPage() {
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
   let sortBy = sortSelect?.value || 'title';
+  let activityRequestToken = 0;
+  let lastActivityMode = 'public';
 
   updateSortControlAccessibility(sortSelect, sortBy, {
     baseLabel: 'Sorteer de boeken',
@@ -1683,6 +1689,63 @@ function initStudentPage() {
         li.append(' ');
         appendTextElement(li, 'span', `Sinds ${formatDate(item.borrowedAt)}`);
       }
+    }
+  }
+
+  function getBookTitle(bookId) {
+    const book = allBooks.find((entry) => entry.id === bookId);
+    return book?.title || '';
+  }
+
+  function renderActivity({ mode, entries = [], loading = false, error = '' } = {}) {
+    if (!activitySection || !activityList || !activityEmpty) return;
+    const isPersonal = mode === 'personal';
+    lastActivityMode = mode || lastActivityMode;
+    if (activitySubtitle) {
+      activitySubtitle.textContent = isPersonal
+        ? 'Alleen jouw recente uitleningen en inleveringen.'
+        : 'Recente uitleen- en inlevermomenten zonder leerlingnamen.';
+    }
+    activityEmpty.classList.add('hidden');
+    activityList.replaceChildren();
+    if (loading) {
+      appendTextElement(activityList, 'li', 'Activiteit wordt geladen…', {
+        className: 'activity-list__item',
+      });
+      return;
+    }
+    if (error) {
+      activityEmpty.textContent = error;
+      activityEmpty.classList.remove('hidden');
+      activityEmpty.classList.add('error');
+      return;
+    }
+    activityEmpty.classList.remove('error');
+    const sortedEntries = [...entries].sort((a, b) =>
+      new Date(b?.timestamp || 0).getTime() - new Date(a?.timestamp || 0).getTime()
+    );
+    if (!sortedEntries.length) {
+      activityEmpty.textContent = isPersonal
+        ? 'Je hebt nog geen uitleen- of inlevermomenten.'
+        : 'Er zijn nog geen openbare activiteiten om te tonen.';
+      activityEmpty.classList.remove('hidden');
+      return;
+    }
+    for (const entry of sortedEntries) {
+      const li = appendElement(activityList, 'li', { className: 'activity-list__item' });
+      if (!li) continue;
+      const timestamp = entry?.timestamp ? new Date(entry.timestamp) : null;
+      const formatted = timestamp && !Number.isNaN(timestamp.getTime())
+        ? timestamp.toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })
+        : '';
+      const label = entry?.type === 'check_in' ? 'Ingeleverd' : 'Uitgeleend';
+      const title = entry?.title || getBookTitle(entry?.bookId) || 'Onbekend boek';
+      if (formatted) {
+        appendTextElement(li, 'span', formatted, { className: 'activity-list__time' });
+      }
+      const text = appendElement(li, 'div');
+      appendTextElement(text, 'strong', title);
+      appendTextElement(text, 'div', label, { className: 'muted' });
     }
   }
 
@@ -1727,9 +1790,32 @@ function initStudentPage() {
     if (!loggedIn) {
       resetBookResult();
     }
+    loadStudentActivity();
   }
 
   updateAuthUi = renderAuthState;
+
+  async function loadStudentActivity() {
+    if (!activityList || !activitySection) return;
+    const loggedIn = authUser && authUser.role === 'student';
+    const mode = loggedIn ? 'personal' : 'public';
+    lastActivityMode = mode;
+    const requestId = Date.now();
+    activityRequestToken = requestId;
+    renderActivity({ mode, loading: true });
+    try {
+      const endpoint = loggedIn && authUser?.id
+        ? `/api/students/${authUser.id}/loans`
+        : '/api/activity/public';
+      const result = await fetchJson(endpoint);
+      if (activityRequestToken !== requestId) return;
+      const entries = Array.isArray(result) ? result : [];
+      renderActivity({ mode, entries });
+    } catch (error) {
+      if (activityRequestToken !== requestId) return;
+      renderActivity({ mode, error: error?.message || 'Kon activiteit niet ophalen.' });
+    }
+  }
 
   function renderBooks() {
     renderBookGrid({
@@ -1967,6 +2053,7 @@ function initStudentPage() {
     }
     renderBorrowedBooks();
     renderBookPrompt();
+    loadStudentActivity();
   }
 
   loginForm?.addEventListener('submit', async (event) => {
