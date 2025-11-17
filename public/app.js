@@ -1883,8 +1883,7 @@ function initStudentPage() {
 
   async function loadBooks() {
     if (bookGrid) {
-      bookGrid.replaceChildren();
-      appendTextElement(bookGrid, 'p', 'Boeken laden…', {
+      replaceWithTextElement(bookGrid, 'p', 'Boeken laden…', {
         className: 'book-grid__status',
         role: 'status',
       });
@@ -4094,8 +4093,7 @@ function initStaffPage() {
 
   async function loadBooks() {
     if (bookGrid) {
-      bookGrid.replaceChildren();
-      appendTextElement(bookGrid, 'p', 'Boeken laden…', {
+      replaceWithTextElement(bookGrid, 'p', 'Boeken laden…', {
         className: 'book-grid__status',
         role: 'status',
       });
