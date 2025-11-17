@@ -288,6 +288,10 @@ body[data-page='staff'] .panel--login {
   max-width: 42rem;
 }
 
+#student-collection .panel__header {
+  margin-bottom: 0.5rem;
+}
+
 .muted {
   color: var(--muted);
 }
