@@ -1369,6 +1369,9 @@ function sortBooks(books, sortBy) {
   const compareOptions = { sensitivity: 'base', numeric: true };
   const getTitle = (book) => (book?.title ? String(book.title) : '');
   const getAuthor = (book) => (book?.author ? String(book.author) : '');
+  const getStatusRank = (book) =>
+    String(book?.status || '').toLowerCase() === 'available' ? 0 : 1;
+  const compareAvailability = (a, b) => getStatusRank(a) - getStatusRank(b);
   const normalizeCount = (value) => {
     const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : 0;
@@ -1376,6 +1379,10 @@ function sortBooks(books, sortBy) {
 
   if (sortBy === 'author') {
     sorted.sort((a, b) => {
+      const availabilityDiff = compareAvailability(a, b);
+      if (availabilityDiff !== 0) {
+        return availabilityDiff;
+      }
       const authorCompare = getAuthor(a).localeCompare(getAuthor(b), locale, compareOptions);
       if (authorCompare !== 0) {
         return authorCompare;
@@ -1387,6 +1394,10 @@ function sortBooks(books, sortBy) {
 
   if (sortBy === 'popular' || sortBy === 'popularity') {
     sorted.sort((a, b) => {
+      const availabilityDiff = compareAvailability(a, b);
+      if (availabilityDiff !== 0) {
+        return availabilityDiff;
+      }
       const countDiff = normalizeCount(b?.borrowCount) - normalizeCount(a?.borrowCount);
       if (countDiff !== 0) {
         return countDiff;
@@ -1401,6 +1412,10 @@ function sortBooks(books, sortBy) {
   }
 
   sorted.sort((a, b) => {
+    const availabilityDiff = compareAvailability(a, b);
+    if (availabilityDiff !== 0) {
+      return availabilityDiff;
+    }
     const titleCompare = getTitle(a).localeCompare(getTitle(b), locale, compareOptions);
     if (titleCompare !== 0) {
       return titleCompare;
