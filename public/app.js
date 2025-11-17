@@ -4133,6 +4133,16 @@ function initStaffPage() {
               );
               if (sharedClassIds.length) {
                 appendElement(actions, 'button', {
+                  className: 'btn btn--ghost btn--pill btn--compact',
+                  type: 'button',
+                  textContent: 'Bekijk statistieken',
+                  dataset: {
+                    studentStats: 'true',
+                    studentId: member.id,
+                    studentName: member.name,
+                  },
+                });
+                appendElement(actions, 'button', {
                   className: 'btn btn--ghost btn--compact',
                   type: 'button',
                   textContent: 'Wachtwoord resetten',
@@ -4765,10 +4775,12 @@ function initStaffPage() {
       return;
     }
 
-    const studentItem = event.target.closest('.class-card__student');
-    const interactiveTarget = event.target.closest('button, a, input, select, textarea');
-    if (!interactiveTarget && studentItem && classList.contains(studentItem)) {
-      openStudentStats(studentItem.dataset.studentId, studentItem.dataset.studentName);
+    const studentStatsButton = event.target.closest('[data-student-stats]');
+    if (studentStatsButton) {
+      openStudentStats(
+        studentStatsButton.dataset.studentId,
+        studentStatsButton.dataset.studentName
+      );
       return;
     }
 

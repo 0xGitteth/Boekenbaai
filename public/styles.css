@@ -650,9 +650,13 @@ body[data-page='staff'] .teacher-actions {
 .class-card__student-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem 0.5rem;
   justify-content: flex-end;
   cursor: default;
+}
+
+.class-card__student-actions .btn--pill {
+  padding: 0.35rem 0.95rem;
 }
 
 .class-card__students .btn {
