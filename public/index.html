@@ -47,7 +47,24 @@
           </div>
           <div class="form-field">
             <label for="student-login-password">Wachtwoord</label>
-            <input id="student-login-password" type="password" autocomplete="current-password" required />
+            <div class="password-field">
+              <input
+                id="student-login-password"
+                type="password"
+                autocomplete="current-password"
+                required
+              />
+              <button
+                id="student-login-password-toggle"
+                class="password-toggle"
+                type="button"
+                aria-pressed="false"
+                aria-label="Toon wachtwoord"
+              >
+                <span class="password-toggle__icon" aria-hidden="true">👁</span>
+                <span class="visually-hidden">Toon wachtwoord</span>
+              </button>
+            </div>
           </div>
           <button type="submit" class="btn">Inloggen</button>
         </form>
@@ -153,32 +170,68 @@
         <form id="password-change-form" class="password-change__form">
           <div class="form-field">
             <label for="password-change-current">Huidige wachtwoord</label>
-            <input
-              id="password-change-current"
-              type="password"
-              autocomplete="current-password"
-              required
-            />
+            <div class="password-field">
+              <input
+                id="password-change-current"
+                type="password"
+                autocomplete="current-password"
+                required
+              />
+              <button
+                id="password-change-current-toggle"
+                class="password-toggle"
+                type="button"
+                aria-pressed="false"
+                aria-label="Toon huidige wachtwoord"
+              >
+                <span class="password-toggle__icon" aria-hidden="true">👁</span>
+                <span class="visually-hidden">Toon huidige wachtwoord</span>
+              </button>
+            </div>
           </div>
           <div class="form-field">
             <label for="password-change-new">Nieuw wachtwoord</label>
-            <input
-              id="password-change-new"
-              type="password"
-              autocomplete="new-password"
-              minlength="6"
-              required
-            />
+            <div class="password-field">
+              <input
+                id="password-change-new"
+                type="password"
+                autocomplete="new-password"
+                minlength="6"
+                required
+              />
+              <button
+                id="password-change-new-toggle"
+                class="password-toggle"
+                type="button"
+                aria-pressed="false"
+                aria-label="Toon nieuw wachtwoord"
+              >
+                <span class="password-toggle__icon" aria-hidden="true">👁</span>
+                <span class="visually-hidden">Toon nieuw wachtwoord</span>
+              </button>
+            </div>
           </div>
           <div class="form-field">
             <label for="password-change-confirm">Bevestig nieuw wachtwoord</label>
-            <input
-              id="password-change-confirm"
-              type="password"
-              autocomplete="new-password"
-              minlength="6"
-              required
-            />
+            <div class="password-field">
+              <input
+                id="password-change-confirm"
+                type="password"
+                autocomplete="new-password"
+                minlength="6"
+                required
+              />
+              <button
+                id="password-change-confirm-toggle"
+                class="password-toggle"
+                type="button"
+                aria-pressed="false"
+                aria-label="Toon bevestiging"
+              >
+                <span class="password-toggle__icon" aria-hidden="true">👁</span>
+                <span class="visually-hidden">Toon bevestiging</span>
+              </button>
+            </div>
           </div>
           <p
             id="password-change-message"

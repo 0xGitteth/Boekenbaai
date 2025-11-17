@@ -376,10 +376,17 @@ function initPasswordChangeDialog() {
   const currentInput = container.querySelector('#password-change-current');
   const newInput = container.querySelector('#password-change-new');
   const confirmInput = container.querySelector('#password-change-confirm');
+  const currentToggle = container.querySelector('#password-change-current-toggle');
+  const newToggle = container.querySelector('#password-change-new-toggle');
+  const confirmToggle = container.querySelector('#password-change-confirm-toggle');
   const messageEl = container.querySelector('#password-change-message');
   const submitButton = container.querySelector('#password-change-submit');
   const logoutButton = container.querySelector('#password-change-logout');
   const descriptionEl = container.querySelector('#password-change-description');
+
+  initPasswordToggle(currentInput, currentToggle, { label: 'huidige wachtwoord' });
+  initPasswordToggle(newInput, newToggle, { label: 'nieuw wachtwoord' });
+  initPasswordToggle(confirmInput, confirmToggle, { label: 'bevestiging van het nieuwe wachtwoord' });
 
   let submitting = false;
   let visibleForUserId = null;
@@ -1619,11 +1626,44 @@ function readFileAsBase64(file) {
   });
 }
 
+function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) {
+  if (!input || !toggleButton) {
+    return;
+  }
+
+  const icon = toggleButton.querySelector('.password-toggle__icon');
+  const hiddenLabel = toggleButton.querySelector('.visually-hidden');
+  const labelText = label || 'wachtwoord';
+
+  function setVisible(isVisible) {
+    input.type = isVisible ? 'text' : 'password';
+    toggleButton.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+    const action = isVisible ? 'Verberg' : 'Toon';
+    const nextLabel = `${action} ${labelText}`.trim();
+    toggleButton.setAttribute('aria-label', nextLabel);
+    if (hiddenLabel) {
+      hiddenLabel.textContent = nextLabel;
+    }
+    if (icon) {
+      icon.textContent = isVisible ? '🙈' : '👁';
+    }
+  }
+
+  toggleButton.addEventListener('click', () => {
+    const willShow = input.type === 'password';
+    setVisible(willShow);
+    input.focus();
+  });
+
+  setVisible(input.type === 'text');
+}
+
 function initStudentPage() {
   const loginPanel = document.querySelector('#student-login-panel');
   const loginForm = document.querySelector('#student-login-form');
   const loginUsername = document.querySelector('#student-login-username');
   const loginPassword = document.querySelector('#student-login-password');
+  const loginPasswordToggle = document.querySelector('#student-login-password-toggle');
   const loginMessage = document.querySelector('#student-login-message');
   const dashboard = document.querySelector('#student-dashboard');
   const studentName = document.querySelector('#student-name');
@@ -1658,6 +1698,8 @@ function initStudentPage() {
     baseLabel: 'Sorteer de boeken',
     gridId: 'book-grid',
   });
+
+  initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
 
   function renderBorrowedBooks() {
     if (!borrowedList || !borrowedEmpty) return;
@@ -2143,6 +2185,7 @@ function initStaffPage() {
   const loginForm = document.querySelector('#login-form');
   const loginUsername = document.querySelector('#login-username');
   const loginPassword = document.querySelector('#login-password');
+  const loginPasswordToggle = document.querySelector('#login-password-toggle');
   const loginMessage = document.querySelector('#login-message');
   const staffSections = document.querySelectorAll('[data-visible-for]');
   const roleSpecificSections = document.querySelectorAll('[data-role-only]');
@@ -2289,6 +2332,8 @@ function initStaffPage() {
   const adminCustomThemes = new Map();
   let adminSelectedThemeKeys = new Set();
   let onlyExamList = false;
+
+  initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
 
   function updateAdminBookDeleteButtonVisibility() {
     if (!adminBookDeleteButton) return;
