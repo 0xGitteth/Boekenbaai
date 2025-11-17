@@ -932,6 +932,31 @@ function getStudentLoanHistory(db, studentId) {
   return loans;
 }
 
+function getPublicLoanActivity(db, { limit = 12 } = {}) {
+  const entries = Array.isArray(db.history) ? db.history : [];
+  const sanitized = entries
+    .filter((entry) =>
+      entry &&
+      (entry.type === 'check_out' || entry.type === 'check_in') &&
+      typeof entry.timestamp === 'string'
+    )
+    .map((entry) => {
+      const book = findBookById(db, entry.bookId);
+      return {
+        id: entry.id,
+        type: entry.type,
+        bookId: entry.bookId,
+        title: book?.title || 'Onbekend boek',
+        timestamp: entry.timestamp,
+      };
+    })
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  if (Number.isFinite(limit) && limit > 0) {
+    return sanitized.slice(0, limit);
+  }
+  return sanitized;
+}
+
 function getCurrentSchoolYearRange(now = new Date()) {
   const startYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
   const start = new Date(startYear, 7, 1, 0, 0, 0, 0);
@@ -1832,12 +1857,13 @@ async function handleApi(req, res, requestUrl) {
 
     const studentLoansMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)\/loans$/);
     if (studentLoansMatch && req.method === 'GET') {
-      if (!ensureRole(user, ['teacher', 'admin'])) {
-        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen uitleenlogs bekijken' });
-      }
       const studentId = studentLoansMatch[1];
       if (!studentId) {
         return sendJson(res, 400, { message: 'Leerling-id ontbreekt of is ongeldig' });
+      }
+      const isOwnAccount = user?.role === 'student' && user.id === studentId;
+      if (!isOwnAccount && !ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen uitleenlogs bekijken' });
       }
       const db = getDb();
       const student = findStudentById(db, studentId);
@@ -2790,6 +2816,13 @@ async function handleApi(req, res, requestUrl) {
         skipped,
         accounts: createdAccounts.concat(updatedAccounts),
       });
+    }
+
+    if (req.method === 'GET' && requestUrl.pathname === '/api/activity/public') {
+      const db = getDb();
+      const limit = Number(requestUrl.searchParams.get('limit')) || 12;
+      const activity = getPublicLoanActivity(db, { limit });
+      return sendJson(res, 200, activity);
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/history') {
