@@ -2837,7 +2837,60 @@ async function handleApi(req, res, requestUrl) {
       }
       const db = getDb();
       const limit = Number(requestUrl.searchParams.get('limit')) || 20;
-      return sendJson(res, 200, db.history.slice(0, limit));
+
+      let historyEntries = Array.isArray(db.history) ? db.history : [];
+
+      if (user.role === 'teacher') {
+        const teacherClassIds = new Set(
+          (Array.isArray(user.classIds) ? user.classIds : []).filter(Boolean)
+        );
+
+        const classesForTeacher = (Array.isArray(db.classes) ? db.classes : []).filter((klass) => {
+          if (!klass || typeof klass.id !== 'string') {
+            return false;
+          }
+          const teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
+          if (teacherIds.includes(user.id)) {
+            teacherClassIds.add(klass.id);
+            return true;
+          }
+          return teacherClassIds.has(klass.id);
+        });
+
+        const studentIds = new Set();
+        for (const klass of classesForTeacher) {
+          const studentsInClass = Array.isArray(klass.studentIds) ? klass.studentIds : [];
+          for (const studentId of studentsInClass) {
+            if (studentId) {
+              studentIds.add(studentId);
+            }
+          }
+        }
+
+        for (const student of Array.isArray(db.students) ? db.students : []) {
+          if (!student || !Array.isArray(student.classIds)) {
+            continue;
+          }
+          const belongsToTeacher = student.classIds.some((classId) => teacherClassIds.has(classId));
+          if (belongsToTeacher && student.id) {
+            studentIds.add(student.id);
+          }
+        }
+
+        historyEntries = historyEntries.filter(
+          (entry) => entry && typeof entry.studentId === 'string' && studentIds.has(entry.studentId)
+        );
+      }
+
+      const sortedHistory = historyEntries
+        .filter((entry) => entry && typeof entry.timestamp === 'string')
+        .slice()
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      if (Number.isFinite(limit) && limit > 0) {
+        return sendJson(res, 200, sortedHistory.slice(0, limit));
+      }
+      return sendJson(res, 200, sortedHistory);
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/stats/school') {

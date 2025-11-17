@@ -4119,6 +4119,12 @@ function initStaffPage() {
     try {
       const entries = await fetchJson('/api/history?limit=10');
       historyList.replaceChildren();
+      if (!entries.length) {
+        const li = appendElement(historyList, 'li', { className: 'history-item' });
+        appendTextElement(li, 'span', 'Geen recente activiteit binnen je klassen.');
+        return;
+      }
+
       for (const entry of entries) {
         const li = appendElement(historyList, 'li', { className: 'history-item' });
         if (!li) continue;
