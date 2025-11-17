@@ -211,12 +211,14 @@
                   <p class="hint">Gebruik een korte code (zoals nl, en of fr).</p>
                 </div>
                 <div class="form-field">
-                  <label for="admin-book-tags">Thema’s</label>
-                  <select id="admin-book-tags" multiple size="6"></select>
-                  <p class="hint">
-                    Houd Ctrl of Cmd ingedrukt om meerdere thema’s te selecteren. Thema’s komen
-                    overeen met de filters in het overzicht.
-                  </p>
+                  <label id="admin-book-tags-label">Thema’s</label>
+                  <div
+                    id="admin-book-tags"
+                    class="filters__pills admin-book-tags"
+                    role="group"
+                    aria-labelledby="admin-book-tags-label"
+                  ></div>
+                  <p class="hint">Selecteer één of meerdere thema’s via de knoppen.</p>
                 </div>
                 <div class="form-field">
                   <label for="admin-book-cover">Omslagafbeelding (URL)</label>

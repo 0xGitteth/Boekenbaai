@@ -1878,7 +1878,7 @@ function initStaffPage() {
   const adminBookYear = document.querySelector('#admin-book-year');
   const adminBookPages = document.querySelector('#admin-book-pages');
   const adminBookLanguage = document.querySelector('#admin-book-language');
-  const adminBookTagsSelect = document.querySelector('#admin-book-tags');
+  const adminBookTagsContainer = document.querySelector('#admin-book-tags');
   const adminBookCover = document.querySelector('#admin-book-cover');
   const adminBookMessage = document.querySelector('#admin-book-message');
   const bookImportForm = document.querySelector('#book-import-form');
@@ -1976,6 +1976,8 @@ function initStaffPage() {
   const filters = { query: '', sortBy: sortSelect?.value || 'title' };
   let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
+  const adminCustomThemes = new Map();
+  let adminSelectedThemeKeys = new Set();
   let onlyExamList = false;
 
   function updateAdminBookDeleteButtonVisibility() {
@@ -2007,62 +2009,118 @@ function initStaffPage() {
     updateAdminBookBarcode(adminBookBarcode.value);
   });
 
-  function getSelectedAdminThemes() {
-    if (!adminBookTagsSelect) return [];
-    return Array.from(adminBookTagsSelect.selectedOptions)
-      .map((option) => option.value)
-      .filter((value) => typeof value === 'string' && value.trim().length > 0);
+  function getAdminThemeEntries() {
+    const entries = new Map();
+    const registerEntry = (entry) => {
+      const label = typeof entry === 'string' ? entry : entry?.label;
+      const key =
+        typeof entry === 'string'
+          ? normalizeThemeKey(entry)
+          : entry?.key || normalizeThemeKey(entry?.label);
+      if (!key || !label || entries.has(key)) return;
+      entries.set(key, { key, label });
+    };
+
+    for (const theme of availableThemes) {
+      registerEntry(theme);
+    }
+    for (const [, theme] of adminCustomThemes) {
+      registerEntry(theme);
+    }
+    return Array.from(entries.values());
   }
 
-  function ensureAdminThemeOptions(labels = []) {
-    if (!adminBookTagsSelect) return;
-    const existingKeys = new Set(
-      Array.from(adminBookTagsSelect.options).map((option) => option.dataset.themeKey || normalizeThemeKey(option.value))
-    );
+  function getSelectedAdminThemes() {
+    if (!adminBookTagsContainer) return [];
+    const entries = getAdminThemeEntries();
+    const labelByKey = new Map(entries.map((entry) => [entry.key, entry.label]));
+    return Array.from(adminSelectedThemeKeys)
+      .map((key) => labelByKey.get(key) || key)
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => value.length > 0);
+  }
+
+  function ensureAdminThemeEntries(labels = []) {
     for (const label of labels) {
       if (typeof label !== 'string') continue;
       const trimmed = label.trim();
       const key = normalizeThemeKey(trimmed);
-      if (!trimmed || existingKeys.has(key)) continue;
-      const option = document.createElement('option');
-      option.value = trimmed;
-      option.textContent = trimmed;
-      option.dataset.themeKey = key;
-      adminBookTagsSelect.append(option);
-      existingKeys.add(key);
+      if (!trimmed || !key) continue;
+      const existsInAvailable = availableThemes.some(
+        (theme) => (theme.key || normalizeThemeKey(theme.label)) === key
+      );
+      if (!existsInAvailable) {
+        const existing = adminCustomThemes.get(key) || {};
+        adminCustomThemes.set(key, { key, label: existing.label || trimmed });
+      }
     }
   }
 
   function setSelectedAdminThemes(values = []) {
-    if (!adminBookTagsSelect) return;
-    const normalizedSelection = new Set(
+    ensureAdminThemeEntries(values);
+    adminSelectedThemeKeys = new Set(
       (Array.isArray(values) ? values : [])
         .map((value) => (typeof value === 'string' ? normalizeThemeKey(value) : ''))
         .filter(Boolean)
     );
-    ensureAdminThemeOptions(values);
-    Array.from(adminBookTagsSelect.options).forEach((option) => {
-      const optionKey = option.dataset.themeKey || normalizeThemeKey(option.value);
-      option.selected = normalizedSelection.has(optionKey);
-    });
+    renderAdminThemeOptions();
   }
 
   function renderAdminThemeOptions({ preserveSelection = true } = {}) {
-    if (!adminBookTagsSelect) return;
-    const previousSelection = preserveSelection ? getSelectedAdminThemes() : [];
-    adminBookTagsSelect.innerHTML = '';
+    if (!adminBookTagsContainer) return;
+    if (!preserveSelection) {
+      adminSelectedThemeKeys = new Set();
+    }
+
+    const entries = getAdminThemeEntries();
     const fragment = document.createDocumentFragment();
-    for (const theme of availableThemes) {
-      const option = document.createElement('option');
-      option.value = theme.label;
-      option.textContent = theme.label;
-      option.dataset.themeKey = theme.key;
-      fragment.append(option);
+
+    if (!entries.length) {
+      appendTextElement(fragment, 'span', "Geen thema's beschikbaar", {
+        className: 'filters__pill-placeholder',
+      });
     }
-    adminBookTagsSelect.append(fragment);
-    if (previousSelection.length) {
-      setSelectedAdminThemes(previousSelection);
+
+    for (const entry of entries) {
+      const button = appendTextElement(fragment, 'button', entry.label, {
+        className: 'filters__pill',
+        type: 'button',
+      });
+      const {
+        background,
+        hoverBackground,
+        activeBackground,
+        border,
+        activeBorder,
+        ring,
+        text,
+      } = resolveThemeColors(entry.label);
+      button.style.setProperty('--theme-pill-bg', background);
+      button.style.setProperty('--theme-pill-hover-bg', hoverBackground);
+      button.style.setProperty('--theme-pill-active-bg', activeBackground);
+      button.style.setProperty('--theme-pill-border', border);
+      button.style.setProperty('--theme-pill-active-border', activeBorder);
+      button.style.setProperty('--theme-pill-ring', ring);
+      button.style.setProperty('--theme-pill-text', text);
+      const isActive = adminSelectedThemeKeys.has(entry.key);
+      button.classList.toggle('filters__pill--active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      button.dataset.themeKey = entry.key;
+      button.dataset.themeLabel = entry.label;
+      button.addEventListener('click', () => {
+        const nextSelection = new Set(adminSelectedThemeKeys);
+        if (nextSelection.has(entry.key)) {
+          nextSelection.delete(entry.key);
+        } else {
+          nextSelection.add(entry.key);
+        }
+        adminSelectedThemeKeys = nextSelection;
+        renderAdminThemeOptions();
+      });
     }
+
+    adminBookTagsContainer.innerHTML = '';
+    adminBookTagsContainer.append(fragment);
   }
 
   function createResetNoticeController(element) {
@@ -2146,6 +2204,9 @@ function initStaffPage() {
       adminBookCancelButton && adminBookCancelButton.classList.add('hidden');
       adminBookForm && adminBookForm.reset();
       adminBookIdInput && (adminBookIdInput.value = '');
+      adminCustomThemes.clear();
+      adminSelectedThemeKeys = new Set();
+      renderAdminThemeOptions({ preserveSelection: false });
       studentImportMessage && (studentImportMessage.textContent = '');
       studentImportResults && (studentImportResults.innerHTML = '');
       adminClassMessage && (adminClassMessage.textContent = '');
@@ -2179,6 +2240,8 @@ function initStaffPage() {
       teachers = [];
       availableThemes = [];
       selectedThemeKeys.clear();
+      adminCustomThemes.clear();
+      adminSelectedThemeKeys = new Set();
       onlyExamList = false;
       filters.query = '';
       filters.sortBy = sortSelect?.value || 'title';
@@ -2421,7 +2484,7 @@ function initStaffPage() {
         adminBookLanguage.value = languageCandidate.toLowerCase();
       }
     }
-    if (adminBookTagsSelect && adminBookTagsSelect.selectedOptions.length === 0) {
+    if (adminBookTagsContainer && adminSelectedThemeKeys.size === 0) {
       const metadataTags = [];
       if (Array.isArray(metadata.subjects)) {
         for (const subject of metadata.subjects) {
