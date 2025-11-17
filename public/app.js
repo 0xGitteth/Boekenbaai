@@ -4211,8 +4211,15 @@ function initStaffPage() {
     const list = appendElement(container, 'dl', { className: 'stats-modal__list' });
     const totalBorrowed =
       stats?.totalBorrowed ?? stats?.borrowCount ?? stats?.borrowedCount ?? stats?.borrowFrequency ?? 0;
-    appendTextElement(list, 'dt', 'Uitleenfrequentie');
+    appendTextElement(list, 'dt', 'Totaal uitgeleend');
     appendTextElement(list, 'dd', `${totalBorrowed} uitleenmoment(en)`);
+
+    const schoolYearBorrowCount =
+      stats?.schoolYearBorrowCount ?? stats?.schoolYearBorrowed ?? stats?.borrowedThisYear;
+    if (schoolYearBorrowCount != null) {
+      appendTextElement(list, 'dt', 'Dit schooljaar');
+      appendTextElement(list, 'dd', `${schoolYearBorrowCount} uitleenmoment(en)`);
+    }
 
     const activeLoans = Array.isArray(stats?.activeLoans)
       ? stats.activeLoans
@@ -4227,12 +4234,15 @@ function initStaffPage() {
       const ul = appendElement(loanSection, 'ul', { className: 'stats-modal__items' });
       for (const loan of activeLoans) {
         const label = loan?.title || loan?.name || 'Onbekend boek';
-        appendTextElement(ul, 'li', label);
+        const borrowedLabel = loan?.daysBorrowed
+          ? `${label} — ${loan.daysBorrowed} dag(en) uitgeleend`
+          : label;
+        appendTextElement(ul, 'li', borrowedLabel);
       }
     }
 
     const lastReadDate =
-      stats?.lastReadAt || stats?.lastBorrowedAt || stats?.lastBorrowed || stats?.lastRead;
+      stats?.lastBorrowedAt || stats?.lastReadAt || stats?.lastBorrowed || stats?.lastRead;
     const lastReadSection = appendElement(container, 'div', { className: 'stats-modal__section' });
     appendTextElement(lastReadSection, 'h4', 'Laatst gelezen');
     appendTextElement(
@@ -4240,6 +4250,73 @@ function initStaffPage() {
       'p',
       lastReadDate ? formatDate(lastReadDate) : 'Nog geen leesactiviteiten geregistreerd.'
     );
+
+    const topGenres = Array.isArray(stats?.topGenres) ? stats.topGenres : [];
+    const genreSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(genreSection, 'h4', 'Topgenres');
+    if (!topGenres.length) {
+      appendTextElement(genreSection, 'p', 'Nog geen favoriete genres beschikbaar.');
+    } else {
+      const listEl = appendElement(genreSection, 'ol', { className: 'stats-modal__items' });
+      for (const genre of topGenres) {
+        appendTextElement(listEl, 'li', `${genre.name} — ${genre.count} uitleenmoment(en)`);
+      }
+    }
+
+    const borrowedTitles = Array.isArray(stats?.borrowedTitles)
+      ? stats.borrowedTitles
+      : Array.isArray(stats?.readingList)
+      ? stats.readingList
+      : [];
+    const pills = appendElement(container, 'div', { className: 'stats-modal__pills' });
+    const readingListSection = appendElement(container, 'div', {
+      className: 'stats-modal__section stats-modal__section--reading-list hidden',
+    });
+    appendTextElement(readingListSection, 'h4', 'Leeslijst');
+    const readingListContent = appendElement(readingListSection, 'div');
+    const readingListButton = appendElement(pills, 'button', {
+      type: 'button',
+      className: 'filters__pill',
+      textContent: `Leeslijst (${borrowedTitles.length})`,
+      aria: { expanded: 'false', controls: 'student-reading-list' },
+    });
+    if (readingListContent) {
+      readingListContent.id = 'student-reading-list';
+    }
+
+    function renderReadingList() {
+      readingListContent.replaceChildren();
+      if (!borrowedTitles.length) {
+        appendTextElement(
+          readingListContent,
+          'p',
+          `${studentName} heeft nog geen titels op de leeslijst.`,
+          { className: 'muted' }
+        );
+        return;
+      }
+      const listEl = appendElement(readingListContent, 'ul', { className: 'stats-modal__items' });
+      for (const title of borrowedTitles) {
+        const lastBorrowedText = title.lastBorrowedAt
+          ? ` (laatst geleend ${formatDate(title.lastBorrowedAt)})`
+          : '';
+        appendTextElement(
+          listEl,
+          'li',
+          `${title.title} — ${title.borrowCount || 1}x${lastBorrowedText}`
+        );
+      }
+    }
+
+    renderReadingList();
+
+    readingListButton?.addEventListener('click', () => {
+      const hidden = readingListSection.classList.toggle('hidden');
+      readingListButton.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+      if (!hidden) {
+        readingListSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
   }
 
   function renderClassStats(container, stats, className) {
