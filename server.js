@@ -2649,6 +2649,89 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, classes);
     }
 
+    const classStatsMatch = requestUrl.pathname.match(/^\/api\/classes\/([\w-]+)\/stats$/);
+    if (classStatsMatch && req.method === 'GET') {
+      if (!ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen klassen bekijken' });
+      }
+      const db = getDb();
+      const klass = db.classes.find((cls) => cls.id === classStatsMatch[1]);
+      if (!klass) {
+        return sendJson(res, 404, { message: 'Klas niet gevonden' });
+      }
+      if (user.role === 'teacher' && !(klass.teacherIds || []).includes(user.id)) {
+        return sendJson(res, 403, { message: 'Je mag alleen je eigen klassen bekijken' });
+      }
+
+      const studentIdsInClass = new Set([
+        ...(Array.isArray(klass.studentIds) ? klass.studentIds : []),
+        ...db.students
+          .filter((student) => Array.isArray(student.classIds) && student.classIds.includes(klass.id))
+          .map((student) => student.id),
+      ].filter(Boolean));
+
+      const classHistory = (Array.isArray(db.history) ? db.history : []).filter(
+        (entry) => entry && entry.type === 'check_out' && studentIdsInClass.has(entry.studentId)
+      );
+      const borrowCountPerStudent = new Map();
+      for (const entry of classHistory) {
+        const current = borrowCountPerStudent.get(entry.studentId) || 0;
+        borrowCountPerStudent.set(entry.studentId, current + 1);
+      }
+
+      const activeLoanCount = db.books.filter(
+        (book) => book.status === 'borrowed' && studentIdsInClass.has(book.borrowedBy)
+      ).length;
+
+      for (const student of db.students) {
+        if (!studentIdsInClass.has(student.id)) {
+          continue;
+        }
+        if (Array.isArray(student.borrowedBooks) && student.borrowedBooks.length > 0) {
+          const current = borrowCountPerStudent.get(student.id) || 0;
+          borrowCountPerStudent.set(student.id, current);
+        }
+      }
+
+      const activeReaders = Array.from(borrowCountPerStudent.keys()).filter((studentId) => {
+        const student = db.students.find((entry) => entry.id === studentId);
+        return (
+          (borrowCountPerStudent.get(studentId) || 0) > 0 ||
+          (student && Array.isArray(student.borrowedBooks) && student.borrowedBooks.length > 0)
+        );
+      }).length;
+
+      const topReaders = Array.from(borrowCountPerStudent.entries())
+        .map(([studentId, count]) => {
+          const student = db.students.find((entry) => entry.id === studentId);
+          return {
+            id: studentId,
+            name: student ? student.name : 'Onbekende leerling',
+            borrowCount: count,
+            totalBorrowed: count,
+            borrowedCount: count,
+          };
+        })
+        .sort((a, b) => b.borrowCount - a.borrowCount || a.name.localeCompare(b.name))
+        .slice(0, 3);
+
+      const stats = {
+        totalBorrowedBooks: classHistory.length,
+        totalBorrowed: classHistory.length,
+        borrowCount: classHistory.length,
+        borrowedCount: classHistory.length,
+        activeLoans: activeLoanCount,
+        currentLoans: activeLoanCount,
+        activeLoanCount: activeLoanCount,
+        activeStudents: activeReaders,
+        activeReaders,
+        readerCount: activeReaders,
+        topReaders,
+      };
+
+      return sendJson(res, 200, stats);
+    }
+
     const classMatch = requestUrl.pathname.match(/^\/api\/classes\/([\w-]+)$/);
     if (classMatch && req.method === 'PATCH') {
       if (!ensureRole(user, ['teacher', 'admin'])) {
