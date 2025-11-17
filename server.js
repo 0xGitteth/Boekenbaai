@@ -932,6 +932,13 @@ function getStudentLoanHistory(db, studentId) {
   return loans;
 }
 
+function getCurrentSchoolYearRange(now = new Date()) {
+  const startYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  const start = new Date(startYear, 7, 1, 0, 0, 0, 0);
+  const end = new Date(startYear + 1, 6, 31, 23, 59, 59, 999);
+  return { start, end };
+}
+
 function buildStudentStats(db, studentId) {
   const student = findStudentById(db, studentId);
   if (!student) {
@@ -939,20 +946,70 @@ function buildStudentStats(db, studentId) {
   }
 
   const loanHistory = getStudentLoanHistory(db, studentId);
-  const totalBorrowed = loanHistory.filter((entry) => entry.type === 'check_out').length;
+  const checkoutHistory = loanHistory.filter((entry) => entry.type === 'check_out');
+  const totalBorrowed = checkoutHistory.length;
+  const lastBorrowedAt = checkoutHistory.length ? checkoutHistory[0].timestamp : null;
+  const lastReadAt = loanHistory.length ? loanHistory[0].timestamp : lastBorrowedAt;
+
+  const { start: schoolYearStart, end: schoolYearEnd } = getCurrentSchoolYearRange();
+  const schoolYearBorrowCount = checkoutHistory.filter((entry) => {
+    const timestamp = entry?.timestamp ? new Date(entry.timestamp) : null;
+    return timestamp && timestamp >= schoolYearStart && timestamp <= schoolYearEnd;
+  }).length;
 
   const activeBorrowedBooks = Array.isArray(student.borrowedBooks) ? student.borrowedBooks : [];
+  const now = Date.now();
   const activeLoans = activeBorrowedBooks.map((loan) => {
     const book = findBookById(db, loan.bookId);
+    const borrowedAt = loan.borrowedAt || loan.timestamp || loan.date || book?.borrowedAt || null;
+    const borrowedMs = borrowedAt ? new Date(borrowedAt).getTime() : NaN;
+    const daysBorrowed = Number.isFinite(borrowedMs)
+      ? Math.max(0, Math.floor((now - borrowedMs) / (1000 * 60 * 60 * 24)))
+      : 0;
     return {
       bookId: loan.bookId,
       title: book?.title || loan.title || 'Onbekend boek',
-      borrowedAt: loan.borrowedAt || loan.timestamp || loan.date || null,
+      borrowedAt,
       dueDate: loan.dueDate || book?.dueDate || null,
+      daysBorrowed,
     };
   });
 
-  const lastReadAt = loanHistory.length ? loanHistory[0].timestamp : null;
+  const genreCounts = checkoutHistory.reduce((acc, entry) => {
+    const book = findBookById(db, entry.bookId);
+    const tags = Array.isArray(book?.tags) ? book.tags : [];
+    if (!tags.length) {
+      acc.set('Onbekend genre', (acc.get('Onbekend genre') || 0) + 1);
+      return acc;
+    }
+    for (const tag of tags) {
+      const key = String(tag || '').trim() || 'Onbekend genre';
+      acc.set(key, (acc.get(key) || 0) + 1);
+    }
+    return acc;
+  }, new Map());
+  const topGenres = Array.from(genreCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const borrowedTitlesMap = checkoutHistory.reduce((acc, entry) => {
+    const book = findBookById(db, entry.bookId);
+    const title = book?.title || entry.title || 'Onbekend boek';
+    const existing = acc.get(entry.bookId);
+    if (!existing) {
+      acc.set(entry.bookId, { bookId: entry.bookId, title, lastBorrowedAt: entry.timestamp, borrowCount: 1 });
+    } else {
+      existing.borrowCount += 1;
+      if (entry.timestamp && new Date(entry.timestamp) > new Date(existing.lastBorrowedAt)) {
+        existing.lastBorrowedAt = entry.timestamp;
+      }
+    }
+    return acc;
+  }, new Map());
+  const borrowedTitles = Array.from(borrowedTitlesMap.values()).sort(
+    (a, b) => new Date(b.lastBorrowedAt).getTime() - new Date(a.lastBorrowedAt).getTime()
+  );
 
   return {
     studentId,
@@ -960,9 +1017,13 @@ function buildStudentStats(db, studentId) {
     totalBorrowedBooks: totalBorrowed,
     borrowCount: totalBorrowed,
     borrowedCount: totalBorrowed,
+    schoolYearBorrowCount,
     activeLoans,
     activeLoanCount: activeLoans.length,
     lastReadAt,
+    lastBorrowedAt,
+    topGenres,
+    borrowedTitles,
   };
 }
 

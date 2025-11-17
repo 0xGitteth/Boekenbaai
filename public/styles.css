@@ -2073,6 +2073,17 @@ body[data-page='staff'] .class-card__student-actions .btn {
   color: var(--muted);
 }
 
+.stats-modal__pills {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.stats-modal__section--reading-list {
+  margin-top: -0.5rem;
+}
+
 .password-change__actions .btn {
   flex: 1 1 160px;
 }
