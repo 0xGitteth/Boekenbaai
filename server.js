@@ -932,6 +932,40 @@ function getStudentLoanHistory(db, studentId) {
   return loans;
 }
 
+function buildStudentStats(db, studentId) {
+  const student = findStudentById(db, studentId);
+  if (!student) {
+    return null;
+  }
+
+  const loanHistory = getStudentLoanHistory(db, studentId);
+  const totalBorrowed = loanHistory.filter((entry) => entry.type === 'check_out').length;
+
+  const activeBorrowedBooks = Array.isArray(student.borrowedBooks) ? student.borrowedBooks : [];
+  const activeLoans = activeBorrowedBooks.map((loan) => {
+    const book = findBookById(db, loan.bookId);
+    return {
+      bookId: loan.bookId,
+      title: book?.title || loan.title || 'Onbekend boek',
+      borrowedAt: loan.borrowedAt || loan.timestamp || loan.date || null,
+      dueDate: loan.dueDate || book?.dueDate || null,
+    };
+  });
+
+  const lastReadAt = loanHistory.length ? loanHistory[0].timestamp : null;
+
+  return {
+    studentId,
+    totalBorrowed,
+    totalBorrowedBooks: totalBorrowed,
+    borrowCount: totalBorrowed,
+    borrowedCount: totalBorrowed,
+    activeLoans,
+    activeLoanCount: activeLoans.length,
+    lastReadAt,
+  };
+}
+
 function findBookById(db, id) {
   return db.books.find((book) => book.id === id);
 }
@@ -1700,6 +1734,24 @@ async function handleApi(req, res, requestUrl) {
       }
       const loans = getStudentLoanHistory(db, studentId);
       return sendJson(res, 200, loans);
+    }
+
+    const studentStatsMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)\/stats$/);
+    if (studentStatsMatch && req.method === 'GET') {
+      const studentId = studentStatsMatch[1];
+      if (!studentId) {
+        return sendJson(res, 400, { message: 'Leerling-id ontbreekt of is ongeldig' });
+      }
+      const isOwnStats = user?.role === 'student' && user.id === studentId;
+      if (!isOwnStats && !ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen leerlingstatistieken bekijken' });
+      }
+      const db = getDb();
+      const stats = buildStudentStats(db, studentId);
+      if (!stats) {
+        return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+      }
+      return sendJson(res, 200, stats);
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/students') {
