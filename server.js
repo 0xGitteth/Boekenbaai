@@ -894,6 +894,10 @@ function parseBody(req) {
   });
 }
 
+/**
+ * Voeg een uitleenlogregel toe aan `db.history`.
+ * Wordt gebruikt voor check-ins/-outs en verwante gebeurtenissen.
+ */
 function appendHistory(db, entry) {
   db.history.unshift({
     id: crypto.randomUUID(),
@@ -901,6 +905,31 @@ function appendHistory(db, entry) {
     ...entry,
   });
   db.history = db.history.slice(0, 200);
+}
+
+/**
+ * Geef de uitleenlog van een leerling terug op basis van `db.history`.
+ * Filtert uitsluitend check-ins/-outs en sorteert op tijdstip.
+ */
+function getStudentLoanHistory(db, studentId) {
+  const entries = Array.isArray(db.history) ? db.history : [];
+  const loans = entries
+    .filter((entry) =>
+      entry &&
+      entry.studentId === studentId &&
+      (entry.type === 'check_out' || entry.type === 'check_in') &&
+      typeof entry.timestamp === 'string'
+    )
+    .map((entry) => ({
+      id: entry.id,
+      type: entry.type,
+      bookId: entry.bookId,
+      studentId: entry.studentId,
+      message: entry.message,
+      timestamp: entry.timestamp,
+    }))
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return loans;
 }
 
 function findBookById(db, id) {
@@ -1653,6 +1682,24 @@ async function handleApi(req, res, requestUrl) {
         console.error('ISBN-lookup mislukt:', error);
         return sendJson(res, 502, { message: 'Kon geen boekinformatie ophalen.' });
       }
+    }
+
+    const studentLoansMatch = requestUrl.pathname.match(/^\/api\/students\/([\w-]+)\/loans$/);
+    if (studentLoansMatch && req.method === 'GET') {
+      if (!ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen uitleenlogs bekijken' });
+      }
+      const studentId = studentLoansMatch[1];
+      if (!studentId) {
+        return sendJson(res, 400, { message: 'Leerling-id ontbreekt of is ongeldig' });
+      }
+      const db = getDb();
+      const student = findStudentById(db, studentId);
+      if (!student) {
+        return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+      }
+      const loans = getStudentLoanHistory(db, studentId);
+      return sendJson(res, 200, loans);
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/students') {
