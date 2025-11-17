@@ -147,11 +147,19 @@
         aria-labelledby="admin-panel-title"
         data-visible-for="admin"
       >
-        <div class="panel__header">
-          <h2 id="admin-panel-title">Beheer</h2>
-          <p class="panel__subtitle">
-            Voeg nieuwe boeken toe aan de collectie en importeer leerlingaccounts via Excel.
-          </p>
+        <div class="panel__header panel__header--admin">
+          <div>
+            <h2 id="admin-panel-title">Beheer</h2>
+            <p class="panel__subtitle">
+              Voeg nieuwe boeken toe aan de collectie en importeer leerlingaccounts via Excel.
+            </p>
+          </div>
+          <div class="panel__header-actions panel__header-actions--admin">
+            <button id="admin-stats-button" class="btn btn--pill" type="button">
+              Schoolstatistieken bekijken
+            </button>
+            <p id="admin-stats-message" class="hint" role="status" aria-live="polite"></p>
+          </div>
         </div>
         <div class="admin-dashboard">
           <section class="admin-card admin-card--books">
