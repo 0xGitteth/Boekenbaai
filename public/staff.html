@@ -431,40 +431,45 @@
                 wachtwoorden of klasindelingen.
               </p>
             </div>
-            <form id="admin-student-form" class="admin-form admin-form--compact" autocomplete="off">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="admin-student-name">Naam</label>
-                  <input id="admin-student-name" type="text" required />
-                </div>
-                <div class="form-field">
-                  <label for="admin-student-username">Gebruikersnaam</label>
-                  <input id="admin-student-username" type="text" required autocomplete="off" />
-                </div>
-                <div class="form-field">
-                  <label for="admin-student-password">Tijdelijk wachtwoord (optioneel)</label>
-                  <div class="form-field__group">
-                    <input id="admin-student-password" type="text" autocomplete="off" />
-                    <button
-                      id="admin-student-password-generate"
-                      type="button"
-                      class="btn btn--ghost"
-                    >
-                      Genereer tijdelijk wachtwoord
-                    </button>
+            <section class="admin-student-add" aria-labelledby="admin-student-add-title">
+              <h4 id="admin-student-add-title">Leerlingaccount aanmaken</h4>
+              <form id="admin-student-form" class="admin-form admin-form--compact" autocomplete="off">
+                <div class="form-grid form-grid--compact">
+                  <div class="form-field">
+                    <label for="admin-student-name">Naam</label>
+                    <input id="admin-student-name" type="text" required />
                   </div>
-                  <p class="hint">Of vul handmatig een eigen tijdelijk wachtwoord in.</p>
+                  <div class="form-field">
+                    <label for="admin-student-username">Gebruikersnaam</label>
+                    <input id="admin-student-username" type="text" required autocomplete="off" />
+                  </div>
                 </div>
-                <div class="form-field form-field--full">
-                  <label for="admin-student-class">Koppel direct aan klas</label>
-                  <select id="admin-student-class">
-                    <option value="">Geen klas koppelen</option>
-                  </select>
+                <div class="form-grid form-grid--compact">
+                  <div class="form-field">
+                    <label for="admin-student-password">Tijdelijk wachtwoord (optioneel)</label>
+                    <div class="form-field__group">
+                      <input id="admin-student-password" type="text" autocomplete="off" />
+                      <button
+                        id="admin-student-password-generate"
+                        type="button"
+                        class="btn btn--ghost"
+                      >
+                        Genereer tijdelijk wachtwoord
+                      </button>
+                    </div>
+                    <p class="hint">Of vul handmatig een eigen tijdelijk wachtwoord in.</p>
+                  </div>
+                  <div class="form-field">
+                    <label for="admin-student-class">Koppel direct aan klas</label>
+                    <select id="admin-student-class">
+                      <option value="">Geen klas koppelen</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
-              <button type="submit" class="btn btn--secondary">Account aanmaken</button>
-            </form>
-            <p id="admin-student-message" class="hint" role="status" aria-live="polite"></p>
+                <button type="submit" class="btn btn--secondary">Account aanmaken</button>
+              </form>
+              <p id="admin-student-message" class="hint" role="status" aria-live="polite"></p>
+            </section>
             <div
               id="admin-student-reset"
               class="student-reset hint hidden"
