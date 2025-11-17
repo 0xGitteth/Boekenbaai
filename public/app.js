@@ -1925,6 +1925,9 @@ function initStaffPage() {
   const adminStudentNameInput = document.querySelector('#admin-student-name');
   const adminStudentUsernameInput = document.querySelector('#admin-student-username');
   const adminStudentPasswordInput = document.querySelector('#admin-student-password');
+  const adminStudentPasswordGenerateButton = document.querySelector(
+    '#admin-student-password-generate'
+  );
   const adminStudentClassSelect = document.querySelector('#admin-student-class');
   const adminStudentMessage = document.querySelector('#admin-student-message');
   const adminStudentSearchInput = document.querySelector('#admin-student-search');
@@ -4162,6 +4165,20 @@ function initStaffPage() {
     }
   });
 
+  adminStudentPasswordGenerateButton?.addEventListener('click', () => {
+    if (!adminStudentPasswordInput) {
+      return;
+    }
+    const password = generateTemporaryPassword(10);
+    adminStudentPasswordInput.value = password;
+    adminStudentPasswordInput.focus();
+    adminStudentPasswordInput.select();
+    if (adminStudentMessage) {
+      adminStudentMessage.textContent =
+        'Tijdelijk wachtwoord ingevuld. Verstuur het formulier om het account aan te maken.';
+    }
+  });
+
   classList?.addEventListener('click', async (event) => {
     const resetButton = event.target.closest('[data-reset-password]');
     if (resetButton) {
@@ -4927,8 +4944,8 @@ function initStaffPage() {
     const username = adminStudentUsernameInput?.value?.trim() || '';
     const password = adminStudentPasswordInput?.value?.trim() || '';
     const classId = adminStudentClassSelect?.value || '';
-    if (!name || !username || !password) {
-      adminStudentMessage.textContent = 'Naam, gebruikersnaam en wachtwoord zijn verplicht.';
+    if (!name || !username) {
+      adminStudentMessage.textContent = 'Naam en gebruikersnaam zijn verplicht.';
       return;
     }
     const payload = {

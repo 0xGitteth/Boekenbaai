@@ -442,8 +442,18 @@
                   <input id="admin-student-username" type="text" required autocomplete="off" />
                 </div>
                 <div class="form-field">
-                  <label for="admin-student-password">Tijdelijk wachtwoord</label>
-                  <input id="admin-student-password" type="text" required autocomplete="off" />
+                  <label for="admin-student-password">Tijdelijk wachtwoord (optioneel)</label>
+                  <div class="form-field__group">
+                    <input id="admin-student-password" type="text" autocomplete="off" />
+                    <button
+                      id="admin-student-password-generate"
+                      type="button"
+                      class="btn btn--ghost"
+                    >
+                      Genereer tijdelijk wachtwoord
+                    </button>
+                  </div>
+                  <p class="hint">Of vul handmatig een eigen tijdelijk wachtwoord in.</p>
                 </div>
                 <div class="form-field form-field--full">
                   <label for="admin-student-class">Koppel direct aan klas</label>
