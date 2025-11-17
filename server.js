@@ -1861,9 +1861,15 @@ async function handleApi(req, res, requestUrl) {
       if (!studentId) {
         return sendJson(res, 400, { message: 'Leerling-id ontbreekt of is ongeldig' });
       }
-      const isOwnAccount = user?.role === 'student' && user.id === studentId;
-      if (!isOwnAccount && !ensureRole(user, ['teacher', 'admin'])) {
-        return sendJson(res, 403, { message: 'Alleen medewerkers kunnen uitleenlogs bekijken' });
+      const isStudent = user?.role === 'student';
+      const isOwnAccount = isStudent && user.id === studentId;
+      const isStaff = ensureRole(user, ['teacher', 'admin']);
+      if (!isOwnAccount && !isStaff) {
+        const statusCode = user ? 403 : 401;
+        const message = isStudent
+          ? 'Je kunt alleen je eigen uitleenlog bekijken.'
+          : 'Alleen medewerkers kunnen uitleenlogs bekijken';
+        return sendJson(res, statusCode, { message });
       }
       const db = getDb();
       const student = findStudentById(db, studentId);
