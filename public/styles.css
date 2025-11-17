@@ -660,6 +660,20 @@ body[data-page='staff'] .teacher-actions {
   gap: 1.25rem;
 }
 
+.admin-book-tags {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.25rem 0.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--accent-border);
+  background: #fff;
+  align-items: flex-start;
+}
+
+.admin-book-tags .filters__pill {
+  margin: 0.1rem 0;
+}
+
 .admin-form--compact {
   gap: 0.75rem;
 }
