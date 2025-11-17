@@ -4378,20 +4378,6 @@ function initStaffPage() {
       }
     }
 
-    const heavyReaders = Array.isArray(stats?.heavyReaders) ? stats.heavyReaders : [];
-    const heavyReadersSection = appendElement(container, 'div', { className: 'stats-modal__section' });
-    appendTextElement(heavyReadersSection, 'h4', 'Veel-lezers (dit schooljaar)');
-    if (!heavyReaders.length) {
-      appendTextElement(heavyReadersSection, 'p', `Geen veel-lezers gevonden voor ${className}.`);
-    } else {
-      const heavyList = appendElement(heavyReadersSection, 'ol', { className: 'stats-modal__items' });
-      for (const reader of heavyReaders) {
-        const name = reader?.name || 'Onbekende leerling';
-        const count = reader?.borrowCount ?? 0;
-        appendTextElement(heavyList, 'li', `${name} — ${count} uitleenmoment(en)`);
-      }
-    }
-
     const nonReaders = Array.isArray(stats?.nonReaders) ? stats.nonReaders : [];
     const nonReadersSection = appendElement(container, 'div', { className: 'stats-modal__section' });
     appendTextElement(nonReadersSection, 'h4', 'Niet-lezers (dit schooljaar)');
@@ -4406,7 +4392,7 @@ function initStaffPage() {
 
     const topGenres = Array.isArray(stats?.topGenres) ? stats.topGenres : [];
     const genresSection = appendElement(container, 'div', { className: 'stats-modal__section' });
-    appendTextElement(genresSection, 'h4', 'Topgenres (dit schooljaar)');
+    appendTextElement(genresSection, 'h4', 'Populaire thema’s (dit schooljaar)');
     if (!topGenres.length) {
       appendTextElement(genresSection, 'p', 'Nog geen genredata beschikbaar.');
     } else {
