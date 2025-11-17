@@ -492,11 +492,15 @@
               </div>
               <aside
                 id="admin-student-detail"
-                class="admin-student-detail"
+                class="admin-student-detail hidden"
                 aria-labelledby="admin-student-detail-name"
               >
-                <div id="admin-student-detail-placeholder" class="admin-student-detail__placeholder">
-                  <p>Selecteer een leerling om details te bekijken.</p>
+                <div
+                  id="admin-student-detail-placeholder"
+                  class="admin-student-detail__placeholder"
+                  aria-hidden="true"
+                >
+                  <p class="visually-hidden">Selecteer een leerling om details te bekijken.</p>
                 </div>
                 <div id="admin-student-detail-content" class="admin-student-detail__content hidden">
                   <header class="admin-student-detail__header">
