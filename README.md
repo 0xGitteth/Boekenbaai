@@ -59,3 +59,12 @@ DEPLOY_TARGET=gh-pages npm run build
 ```
 
 Upload vervolgens de inhoud van de map `dist/` naar GitHub Pages. Laat `BOEKENBAAI_ALLOWED_ORIGINS` op je Sliplane-server wijzen naar de GitHub Pages-origin en stel `BOEKENBAAI_PUBLIC_API_BASE` in op de URL van de Sliplane-deploy, zodat de statische pagina tegen dezelfde API kan praten.
+
+## API-notitie: uitleenlog per leerling
+
+- **Endpoint:** `GET /api/students/{id}/loans`
+- **Toegang:**
+  - Admins en docenten kunnen de uitleenlog van elke leerling opvragen.
+  - Een leerling kan alleen zijn of haar eigen uitleenlog opvragen met het eigen `studentId`.
+- **Respons:** lijst met uitleenactiviteiten voor de opgegeven leerling.
+- Bij een ontbrekende of verkeerde leerling-id volgt een `401/403` (toegang geweigerd) of `404` (leerling niet gevonden).

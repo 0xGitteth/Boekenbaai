@@ -1804,6 +1804,9 @@ function initStudentPage() {
     activityRequestToken = requestId;
     renderActivity({ mode, loading: true });
     try {
+      // Leerlingen mogen alleen hun eigen uitleenlog opvragen; de server weigert
+      // andere leerling-id's met een 401/403. Daarom sturen we uitsluitend het
+      // eigen studentId mee en vallen we anders terug op de openbare feed.
       const endpoint = loggedIn && authUser?.id
         ? `/api/students/${authUser.id}/loans`
         : '/api/activity/public';
