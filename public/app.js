@@ -1888,11 +1888,9 @@ function initStaffPage() {
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
   const adminBookCancelButton = document.querySelector('#admin-book-cancel');
   const adminBookDeleteButton = document.querySelector('#admin-book-delete');
-  const adminTeacherMessage = document.querySelector('#admin-teacher-message');
   const adminTeacherList = document.querySelector('#admin-teacher-list');
   const adminTeacherResetInfo = document.querySelector('#admin-teacher-reset');
   const adminTeacherSearchInput = document.querySelector('#admin-teacher-search');
-  const adminTeacherSelectionHint = document.querySelector('#admin-teacher-selection-hint');
   const adminTeacherAddForm = document.querySelector('#admin-teacher-add-form');
   const adminTeacherAddName = document.querySelector('#admin-teacher-add-name');
   const adminTeacherAddUsername = document.querySelector('#admin-teacher-add-username');
@@ -2167,6 +2165,14 @@ function initStaffPage() {
   const adminResetNotice = createResetNoticeController(adminStudentResetInfo);
   const adminTeacherResetNotice = createResetNoticeController(adminTeacherResetInfo);
 
+  function setAdminTeacherStatus(message = '') {
+    if (!adminTeacherDetailMessage) return;
+    adminTeacherDetailMessage.textContent = message;
+    if (!message) {
+      delete adminTeacherDetailMessage.dataset.teacherId;
+    }
+  }
+
   function renderStaffState() {
     const loggedIn = authUser && (authUser.role === 'teacher' || authUser.role === 'admin');
     loginPanel?.classList.toggle('hidden', loggedIn);
@@ -2187,7 +2193,7 @@ function initStaffPage() {
       section.classList.toggle('hidden', !show);
     });
     if (!authUser || authUser.role !== 'admin') {
-      adminTeacherMessage && (adminTeacherMessage.textContent = '');
+      setAdminTeacherStatus('');
       adminTeacherResetNotice.hide();
     }
     if (staffName) {
@@ -2227,7 +2233,7 @@ function initStaffPage() {
       if (adminStudentSearchInput) {
         adminStudentSearchInput.value = '';
       }
-      adminTeacherMessage && (adminTeacherMessage.textContent = '');
+      setAdminTeacherStatus('');
       adminTeacherList && (adminTeacherList.innerHTML = '');
       if (adminStudentClassSelect) {
         adminStudentClassSelect.replaceChildren();
@@ -3072,7 +3078,7 @@ function initStaffPage() {
       renderAdminTeacherDetail();
       return;
     }
-    adminTeacherMessage && (adminTeacherMessage.textContent = '');
+    setAdminTeacherStatus('');
     const rawQuery = adminTeacherSearchInput?.value || '';
     const query = rawQuery.trim().toLowerCase();
     adminTeacherList.replaceChildren();
@@ -3148,9 +3154,6 @@ function initStaffPage() {
       return;
     }
     const isAdmin = authUser?.role === 'admin';
-    if (!isAdmin && adminTeacherSelectionHint) {
-      adminTeacherSelectionHint.classList.add('hidden');
-    }
     if (!isAdmin) {
       adminTeacherDetailPlaceholder.classList.remove('hidden');
       adminTeacherDetailContent.classList.add('hidden');
@@ -3177,15 +3180,14 @@ function initStaffPage() {
     }
     const teacher = teachers.find((entry) => entry.id === selectedAdminTeacherId);
     if (!teacher) {
-      if (adminTeacherSelectionHint) {
-        adminTeacherSelectionHint.classList.remove('hidden');
-      }
       adminTeacherDetailPlaceholder.classList.remove('hidden');
       adminTeacherDetailContent.classList.add('hidden');
       adminTeacherDetailContent.dataset.teacherId = '';
       if (adminTeacherDetailMessage) {
-        adminTeacherDetailMessage.textContent = '';
-        delete adminTeacherDetailMessage.dataset.teacherId;
+        if (adminTeacherDetailMessage.dataset.teacherId) {
+          adminTeacherDetailMessage.textContent = '';
+          delete adminTeacherDetailMessage.dataset.teacherId;
+        }
       }
       if (adminTeacherPasswordInput) {
         adminTeacherPasswordInput.value = '';
@@ -3202,9 +3204,6 @@ function initStaffPage() {
       }
       adminTeacherResetNotice.hide();
       return;
-    }
-    if (adminTeacherSelectionHint) {
-      adminTeacherSelectionHint.classList.add('hidden');
     }
     const previousTeacherId = adminTeacherDetailContent.dataset.teacherId || '';
     adminTeacherDetailPlaceholder.classList.add('hidden');
@@ -3993,7 +3992,7 @@ function initStaffPage() {
       teachers = [];
       renderAdminTeacherSelect();
       renderAdminTeachers();
-      adminTeacherMessage && (adminTeacherMessage.textContent = '');
+      setAdminTeacherStatus('');
       return;
     }
     teachers = await fetchJson('/api/teachers');
@@ -4013,7 +4012,7 @@ function initStaffPage() {
       teachers = [];
       renderAdminTeacherSelect();
       renderAdminTeachers();
-      adminTeacherMessage && (adminTeacherMessage.textContent = '');
+      setAdminTeacherStatus('');
       adminTeacherResetNotice.hide();
     }
     await loadClasses();
@@ -4705,9 +4704,7 @@ function initStaffPage() {
       try {
         await fetchJson(`/api/teachers/${teacherId}`, { method: 'DELETE' });
         selectedAdminTeacherId = '';
-        if (adminTeacherMessage) {
-          adminTeacherMessage.textContent = 'Docent verwijderd.';
-        }
+        setAdminTeacherStatus('Docent verwijderd.');
         await Promise.all([loadTeachers(), loadClasses()]);
         renderAdminTeachers();
       } catch (error) {
