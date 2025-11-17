@@ -1970,6 +1970,10 @@ function initStaffPage() {
   let selectedBookId = null;
   let selectedAdminClassId = '';
   let selectedAdminStudentId = '';
+  let selectedAdminStudentLoanEntries = [];
+  let selectedAdminStudentLoansError = '';
+  let selectedAdminStudentLoanStudentId = '';
+  let studentLoanRequestToken = 0;
   let adminStudentSearchTerm = '';
   let selectedAdminTeacherId = '';
   let barcodeLookupTimer = null;
@@ -3125,6 +3129,68 @@ function initStaffPage() {
     renderSelectedAdminStudent();
   }
 
+  function renderStudentLoanHistory({ studentId, loading = false } = {}) {
+    if (!adminStudentDetailLoansList) return;
+    adminStudentDetailLoansList.replaceChildren();
+    if (!studentId) return;
+    if (loading) {
+      appendTextElement(adminStudentDetailLoansList, 'p', 'Uitleenlog wordt geladen…', {
+        className: 'hint',
+      });
+      return;
+    }
+    if (selectedAdminStudentLoansError) {
+      appendTextElement(adminStudentDetailLoansList, 'p', selectedAdminStudentLoansError, {
+        className: 'error',
+      });
+      return;
+    }
+    const loans = Array.isArray(selectedAdminStudentLoanEntries)
+      ? selectedAdminStudentLoanEntries
+      : [];
+    if (!loans.length) {
+      appendTextElement(adminStudentDetailLoansList, 'p', 'Geen uitleenactiviteiten gevonden.', {
+        className: 'hint',
+      });
+      return;
+    }
+    const list = appendElement(adminStudentDetailLoansList, 'ul');
+    for (const entry of loans) {
+      const li = appendElement(list, 'li');
+      if (!li) continue;
+      const timestamp = entry?.timestamp ? new Date(entry.timestamp) : null;
+      const formattedTime = timestamp && !Number.isNaN(timestamp.getTime())
+        ? timestamp.toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' })
+        : '';
+      const book = allBooks.find((item) => item.id === entry.bookId);
+      const fallbackMessage = entry?.type === 'check_in' ? 'Boek ingeleverd' : 'Boek uitgeleend';
+      const message = entry?.message || `${fallbackMessage}${book ? `: ${book.title}` : ''}`;
+      if (formattedTime) {
+        appendTextElement(li, 'span', formattedTime, { className: 'history-item__time' });
+      }
+      appendTextElement(li, 'span', message);
+    }
+  }
+
+  async function loadStudentLoanHistory(studentId) {
+    if (!adminStudentDetailLoansList || !studentId) return;
+    selectedAdminStudentLoanEntries = [];
+    selectedAdminStudentLoansError = '';
+    const requestId = Date.now();
+    studentLoanRequestToken = requestId;
+    renderStudentLoanHistory({ studentId, loading: true });
+    try {
+      const result = await fetchJson(`/api/students/${studentId}/loans`);
+      if (studentLoanRequestToken !== requestId) return;
+      selectedAdminStudentLoanEntries = Array.isArray(result) ? result : [];
+      renderStudentLoanHistory({ studentId });
+    } catch (error) {
+      if (studentLoanRequestToken !== requestId) return;
+      selectedAdminStudentLoansError = error?.message || 'Kon uitleenlog niet laden.';
+      renderStudentLoanHistory({ studentId });
+    }
+  }
+
   function renderSelectedAdminStudent() {
     if (!adminStudentDetailPlaceholder || !adminStudentDetailContent) {
       return;
@@ -3149,6 +3215,9 @@ function initStaffPage() {
       if (adminStudentDetailLoansList) {
         adminStudentDetailLoansList.replaceChildren();
       }
+      selectedAdminStudentLoanEntries = [];
+      selectedAdminStudentLoansError = '';
+      selectedAdminStudentLoanStudentId = '';
       if (adminStudentDetailGrade) {
         adminStudentDetailGrade.textContent = '';
       }
@@ -3259,29 +3328,14 @@ function initStaffPage() {
     }
 
     if (adminStudentDetailLoansList) {
-      adminStudentDetailLoansList.replaceChildren();
-      const loans = Array.isArray(student.borrowedBooks) ? student.borrowedBooks : [];
-      if (!loans.length) {
-        appendTextElement(adminStudentDetailLoansList, 'p', 'Geen uitgeleende boeken.', {
-          className: 'hint',
-        });
+      const isSameStudent = selectedAdminStudentLoanStudentId === student.id;
+      if (!isSameStudent) {
+        selectedAdminStudentLoanStudentId = student.id;
+        selectedAdminStudentLoanEntries = [];
+        selectedAdminStudentLoansError = '';
+        loadStudentLoanHistory(student.id);
       } else {
-        const list = appendElement(adminStudentDetailLoansList, 'ul');
-        for (const loan of loans) {
-          const li = appendElement(list, 'li');
-          if (!li) continue;
-          const book = allBooks.find((entry) => entry.id === loan.bookId);
-          appendTextElement(li, 'span', book?.title || 'Onbekend boek');
-          if (loan?.dueDate) {
-            const dueDate = new Date(loan.dueDate);
-            const formatted = Number.isNaN(dueDate.getTime())
-              ? null
-              : dueDate.toLocaleDateString('nl-NL');
-            if (formatted) {
-              appendTextElement(li, 'span', `Terug op: ${formatted}`);
-            }
-          }
-        }
+        renderStudentLoanHistory({ studentId: student.id });
       }
     }
 
