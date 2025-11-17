@@ -535,11 +535,6 @@ function formatDate(value) {
   return date.toLocaleDateString('nl-NL');
 }
 
-function findFolder(folders, id) {
-  if (!Array.isArray(folders)) return null;
-  return folders.find((folder) => folder.id === id) || null;
-}
-
 const THEME_COLOR_MAP = {
   avontuur: '#64b5f6',
   spanning: '#ff9aa2',
@@ -701,23 +696,17 @@ const bookDetailState = {
   metaYear: null,
   metaPages: null,
   metaLanguage: null,
-  metaFolder: null,
   metaBarcode: null,
   actions: null,
   editButton: null,
   closeButtons: [],
   previousFocus: null,
   currentBookId: null,
-  folderMap: new Map(),
   metadataCache: new Map(),
   adminEditHandler: null,
   handleEscape: null,
   editBook: null,
 };
-
-function setBookDetailFolders() {
-  bookDetailState.folderMap.clear();
-}
 
 function cacheIsbnMetadata(metadata) {
   if (!metadata || !metadata.barcode) return;
@@ -746,7 +735,6 @@ function ensureBookDetailElements() {
     bookDetailState.metaYear = bookDetailState.root.querySelector('#book-detail-year');
     bookDetailState.metaPages = bookDetailState.root.querySelector('#book-detail-pages');
     bookDetailState.metaLanguage = bookDetailState.root.querySelector('#book-detail-language');
-    bookDetailState.metaFolder = bookDetailState.root.querySelector('#book-detail-folder');
     bookDetailState.metaBarcode = bookDetailState.root.querySelector('#book-detail-barcode');
     bookDetailState.actions = bookDetailState.root.querySelector('.book-detail__actions');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
@@ -871,15 +859,7 @@ function extractMetadataCoverUrl(metadata) {
   return '';
 }
 
-async function resolveBookDetailFolderName(folderId) {
-  if (!folderId) return '';
-  if (bookDetailState.folderMap.has(folderId)) {
-    return bookDetailState.folderMap.get(folderId) || '';
-  }
-  return '';
-}
-
-function populateBookDetail(book, metadata, { folderName = '', metadataMessage = '' } = {}) {
+function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
   state.editBook = book;
@@ -964,9 +944,6 @@ function populateBookDetail(book, metadata, { folderName = '', metadataMessage =
     const metadataLanguage = (metadata?.language || '').trim();
     state.metaLanguage.textContent = manualLanguage || metadataLanguage || 'Onbekend';
   }
-  if (state.metaFolder) {
-    state.metaFolder.textContent = folderName || 'Geen map';
-  }
   if (state.metaBarcode) {
     state.metaBarcode.textContent = book.barcode || metadata?.barcode || '';
   }
@@ -1039,11 +1016,10 @@ async function openBookDetail(book) {
       metadataMessage = 'Geen aanvullende metadata gevonden.';
     }
   }
-  const folderName = await resolveBookDetailFolderName(detail.folderId);
   if (state.currentBookId !== bookId) {
     return;
   }
-  populateBookDetail(detail, metadata, { folderName, metadataMessage });
+  populateBookDetail(detail, metadata, { metadataMessage });
 }
 
 function collectUniqueThemes(books) {
@@ -1906,6 +1882,12 @@ function initStudentPage() {
   }
 
   async function loadBooks() {
+    if (bookGrid) {
+      replaceWithTextElement(bookGrid, 'p', 'Boeken laden…', {
+        className: 'book-grid__status',
+        role: 'status',
+      });
+    }
     try {
       allBooks = await fetchJson('/api/books');
       updateAvailableThemes();
@@ -1970,7 +1952,6 @@ function initStudentPage() {
       return;
     }
     const loggedIn = authUser && authUser.role === 'student';
-    const folder = findFolder(folders, currentBook.folderId);
     const borrowedByStudent = loggedIn && currentBook.borrowedBy === authUser.id;
     const borrowedByOther = currentBook.status === 'borrowed' && !borrowedByStudent;
     let statusText = 'Boek is beschikbaar';
@@ -1990,13 +1971,6 @@ function initStudentPage() {
     if (currentBook.description) {
       appendTextElement(bookResult, 'p', currentBook.description);
     }
-    const folderParagraph = appendElement(bookResult, 'p');
-    const folderLabel = appendTextElement(folderParagraph, 'strong', 'Map:');
-    if (folderLabel) {
-      folderParagraph.append(' ');
-    }
-    folderParagraph.append(document.createTextNode(folder ? folder.name : 'Geen map'));
-
     const barcodeParagraph = appendElement(bookResult, 'p');
     const barcodeLabel = appendTextElement(barcodeParagraph, 'strong', 'Barcode:');
     if (barcodeLabel) {
@@ -4114,6 +4088,12 @@ function initStaffPage() {
   }
 
   async function loadBooks() {
+    if (bookGrid) {
+      replaceWithTextElement(bookGrid, 'p', 'Boeken laden…', {
+        className: 'book-grid__status',
+        role: 'status',
+      });
+    }
     try {
       allBooks = await fetchJson('/api/books');
       updateAvailableThemes();
