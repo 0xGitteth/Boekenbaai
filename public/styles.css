@@ -418,6 +418,10 @@ select[multiple] {
   grid-column: 1 / -1;
 }
 
+.form-field--double {
+  grid-column: span 2;
+}
+
 .login-form {
   display: grid;
   gap: 1rem;
