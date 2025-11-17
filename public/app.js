@@ -345,7 +345,9 @@ async function fetchJson(url, options = {}) {
     if (response.status === 401) {
       clearAuth();
     }
-    throw new Error(payload.message || 'Er ging iets mis');
+    const error = new Error(payload.message || 'Er ging iets mis');
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -4263,7 +4265,27 @@ function initStaffPage() {
       titleText: `Statistieken van ${displayName}`,
       async render({ container, clearStatus, setStatus }) {
         try {
-          const stats = await fetchJson(`/api/students/${studentId}/stats`);
+          let stats;
+          try {
+            stats = await fetchJson(`/api/students/${studentId}/stats`);
+          } catch (statsError) {
+            if (statsError?.status !== 404) {
+              throw statsError;
+            }
+            const loans = await fetchJson(`/api/students/${studentId}/loans`);
+            const totalBorrowed = loans.filter((entry) => entry.type === 'check_out').length;
+            const lastReadAt = loans[0]?.timestamp || null;
+            stats = {
+              studentId,
+              totalBorrowed,
+              totalBorrowedBooks: totalBorrowed,
+              borrowCount: totalBorrowed,
+              borrowedCount: totalBorrowed,
+              activeLoans: [],
+              activeLoanCount: 0,
+              lastReadAt,
+            };
+          }
           container.replaceChildren();
           clearStatus();
           renderStudentStats(container, stats, displayName);
