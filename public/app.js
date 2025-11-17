@@ -3437,6 +3437,9 @@ function initStaffPage() {
       ? students.find((entry) => entry.id === selectedAdminStudentId)
       : null;
     const hasSelection = Boolean(student);
+    if (adminStudentDetail) {
+      adminStudentDetail.classList.toggle('hidden', !hasSelection);
+    }
     adminStudentDetailContent.classList.toggle('hidden', !hasSelection);
     adminStudentDetailPlaceholder.classList.toggle('hidden', hasSelection);
     if (!hasSelection) {
