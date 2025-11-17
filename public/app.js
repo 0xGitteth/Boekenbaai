@@ -1478,7 +1478,14 @@ function renderBookGrid({
     if (!card) {
       card = createBookCard(template, book, folders, options || {});
     } else if (card) {
-      updateCardSelectionState(card, options || {});
+      const rebuiltCard = createBookCard(template, book, folders, options || {});
+      if (rebuiltCard && rebuiltCard !== card) {
+        card.replaceWith(rebuiltCard);
+        card = rebuiltCard;
+        existingCards.set(bookId, card);
+      } else if (!rebuiltCard) {
+        updateCardSelectionState(card, options || {});
+      }
     }
 
     if (card) {
