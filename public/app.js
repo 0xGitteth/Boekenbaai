@@ -1916,7 +1916,9 @@ function initStaffPage() {
   const adminTeacherDeleteButton = document.querySelector('#admin-teacher-delete');
   const adminClassForm = document.querySelector('#admin-class-form');
   const adminClassNameInput = document.querySelector('#admin-class-name');
-  const adminClassTeachersSelect = document.querySelector('#admin-class-teachers');
+  const adminClassTeacherSearchInput = document.querySelector('#admin-class-teacher-search');
+  const adminClassTeacherResults = document.querySelector('#admin-class-teacher-results');
+  const adminClassSelectedTeachers = document.querySelector('#admin-class-selected-teachers');
   const adminClassMessage = document.querySelector('#admin-class-message');
   const adminClassList = document.querySelector('#admin-class-list');
   const adminClassSelect = document.querySelector('#admin-class-select');
@@ -1969,6 +1971,10 @@ function initStaffPage() {
   let teachers = [];
   let selectedBookId = null;
   let selectedAdminClassId = '';
+  let adminClassTeacherSearchTerm = '';
+  let adminClassSelectedTeacherIds = new Set();
+  const classTeacherSelections = new Map();
+  const classTeacherSearchTerms = new Map();
   let selectedAdminStudentId = '';
   let selectedAdminStudentLoanEntries = [];
   let selectedAdminStudentLoansError = '';
@@ -2542,14 +2548,155 @@ function initStaffPage() {
     return classes.filter((klass) => (klass.teacherIds || []).includes(authUser.id)).map((klass) => klass.id);
   }
 
-  function renderAdminTeacherSelect() {
-    if (!adminClassTeachersSelect) return;
-    adminClassTeachersSelect.innerHTML = '';
-    for (const teacher of teachers) {
-      appendTextElement(adminClassTeachersSelect, 'option', teacher.name, {
-        value: teacher.id,
+  function pruneTeacherSelection(selection = new Set()) {
+    const validIds = new Set(teachers.map((teacher) => teacher.id));
+    for (const value of selection) {
+      if (!validIds.has(value)) {
+        selection.delete(value);
+      }
+    }
+    return selection;
+  }
+
+  function filterTeachersBySearch(searchTerm = '', excludedIds = new Set()) {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    return teachers
+      .filter((teacher) => !excludedIds.has(teacher.id))
+      .filter((teacher) => {
+        if (!normalizedSearch) return true;
+        const nameMatch = teacher.name?.toLowerCase().includes(normalizedSearch);
+        const usernameMatch = teacher.username?.toLowerCase().includes(normalizedSearch);
+        return nameMatch || usernameMatch;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' }));
+  }
+
+  function renderTeacherChip(container, teacher, options = {}) {
+    if (!container || !teacher) return;
+    const chip = appendElement(container, 'span', { className: 'teacher-chip' });
+    if (!chip) return;
+    appendTextElement(chip, 'span', teacher.name);
+    if (teacher.username) {
+      appendTextElement(chip, 'small', `(${teacher.username})`);
+    }
+    if (options.removeAttribute) {
+      const removeButton = appendElement(chip, 'button', {
+        className: 'teacher-chip__remove',
+      });
+      if (removeButton) {
+        removeButton.type = 'button';
+        removeButton.dataset[options.removeAttribute] = teacher.id;
+        removeButton.textContent = '×';
+        removeButton.setAttribute('aria-label', `Verwijder ${teacher.name}`);
+      }
+    }
+  }
+
+  function renderAdminClassSelectedTeacherChips() {
+    if (!adminClassSelectedTeachers) return;
+    pruneTeacherSelection(adminClassSelectedTeacherIds);
+    adminClassSelectedTeachers.replaceChildren();
+    if (!teachers.length) {
+      appendTextElement(adminClassSelectedTeachers, 'p', 'Maak eerst docentaccounts aan.');
+      return;
+    }
+    if (!adminClassSelectedTeacherIds.size) {
+      appendTextElement(adminClassSelectedTeachers, 'p', 'Nog geen docenten geselecteerd.');
+      return;
+    }
+    for (const teacherId of adminClassSelectedTeacherIds) {
+      const teacher = teachers.find((entry) => entry.id === teacherId);
+      renderTeacherChip(adminClassSelectedTeachers, teacher, {
+        removeAttribute: 'removeAdminClassTeacher',
       });
     }
+  }
+
+  function renderAdminClassTeacherResults() {
+    if (!adminClassTeacherResults) return;
+    adminClassTeacherResults.replaceChildren();
+    if (!teachers.length) {
+      appendTextElement(adminClassTeacherResults, 'p', 'Nog geen docenten beschikbaar.');
+      return;
+    }
+    const matches = filterTeachersBySearch(adminClassTeacherSearchTerm, adminClassSelectedTeacherIds);
+    if (!matches.length) {
+      appendTextElement(adminClassTeacherResults, 'p', 'Geen docenten gevonden.');
+      return;
+    }
+    for (const teacher of matches) {
+      const button = appendElement(adminClassTeacherResults, 'button');
+      if (button) {
+        button.type = 'button';
+        button.dataset.addAdminClassTeacher = teacher.id;
+        button.textContent = `${teacher.name}${teacher.username ? ` – ${teacher.username}` : ''}`;
+      }
+    }
+  }
+
+  function renderAdminClassTeacherSearch() {
+    renderAdminClassSelectedTeacherChips();
+    renderAdminClassTeacherResults();
+    if (adminClassTeacherSearchInput) {
+      adminClassTeacherSearchInput.value = adminClassTeacherSearchTerm;
+      adminClassTeacherSearchInput.disabled = !teachers.length;
+    }
+  }
+
+  function getClassTeacherSelection(classId, initialIds = []) {
+    const current = classTeacherSelections.get(classId) || new Set();
+    for (const teacherId of initialIds) {
+      current.add(teacherId);
+    }
+    pruneTeacherSelection(current);
+    classTeacherSelections.set(classId, current);
+    return current;
+  }
+
+  function renderClassTeacherSelected(container, classId) {
+    if (!container) return;
+    const selection = getClassTeacherSelection(classId);
+    container.replaceChildren();
+    if (!teachers.length) {
+      appendTextElement(container, 'p', 'Maak eerst docentaccounts aan.');
+      return;
+    }
+    if (!selection.size) {
+      appendTextElement(container, 'p', 'Nog geen docenten geselecteerd.');
+      return;
+    }
+    for (const teacherId of selection) {
+      const teacher = teachers.find((entry) => entry.id === teacherId);
+      renderTeacherChip(container, teacher, { removeAttribute: 'removeClassTeacher' });
+    }
+  }
+
+  function renderClassTeacherResults(container, classId, searchTerm = '') {
+    if (!container) return;
+    const selection = getClassTeacherSelection(classId);
+    container.replaceChildren();
+    if (!teachers.length) {
+      appendTextElement(container, 'p', 'Nog geen docenten beschikbaar.');
+      return;
+    }
+    const matches = filterTeachersBySearch(searchTerm, selection);
+    if (!matches.length) {
+      appendTextElement(container, 'p', 'Geen docenten gevonden.');
+      return;
+    }
+    for (const teacher of matches) {
+      const button = appendElement(container, 'button');
+      if (button) {
+        button.type = 'button';
+        button.dataset.addClassTeacher = teacher.id;
+        button.dataset.classId = classId;
+        button.textContent = `${teacher.name}${teacher.username ? ` – ${teacher.username}` : ''}`;
+      }
+    }
+  }
+
+  function renderAdminTeacherSelect() {
+    renderAdminClassTeacherSearch();
     updateAdminClassDetails();
   }
 
@@ -2594,6 +2741,13 @@ function initStaffPage() {
 
   function renderAdminClasses() {
     if (!adminClassSelect || !adminClassDetails) return;
+    const classIds = new Set(classes.map((klass) => klass.id));
+    for (const classId of Array.from(classTeacherSelections.keys())) {
+      if (!classIds.has(classId)) {
+        classTeacherSelections.delete(classId);
+        classTeacherSearchTerms.delete(classId);
+      }
+    }
     if (authUser?.role !== 'admin') {
       adminClassSelect.replaceChildren();
       const option = appendTextElement(adminClassSelect, 'option', 'Kies een klas om te beheren');
@@ -2610,6 +2764,9 @@ function initStaffPage() {
     const sortedClasses = [...classes].sort((a, b) =>
       a.name.localeCompare(b.name, 'nl', { sensitivity: 'base' })
     );
+    for (const klass of sortedClasses) {
+      classTeacherSelections.set(klass.id, pruneTeacherSelection(new Set(klass.teacherIds || [])));
+    }
     adminClassSelect.replaceChildren();
     const placeholder = appendTextElement(adminClassSelect, 'option', 'Kies een klas om te beheren');
     if (placeholder) {
@@ -2692,35 +2849,39 @@ function initStaffPage() {
       teacherForm.dataset.classId = klass.id;
       const label = appendElement(teacherForm, 'label');
       if (label) {
-        label.setAttribute('for', `admin-teachers-${klass.id}`);
+        label.setAttribute('for', `admin-teachers-search-${klass.id}`);
         label.textContent = 'Docenten koppelen';
       }
-      const select = appendElement(teacherForm, 'select');
-      if (select) {
-        select.id = `admin-teachers-${klass.id}`;
-        select.multiple = true;
-        select.size = 4;
-        if (!teachers.length) {
-          select.disabled = true;
-          const option = appendTextElement(select, 'option', 'Geen docenten beschikbaar');
-          if (option) {
-            option.value = '';
-          }
-        } else {
-          for (const teacher of teachers) {
-            const option = appendTextElement(select, 'option', teacher.name);
-            if (option) {
-              option.value = teacher.id;
-              option.selected = (klass.teacherIds || []).includes(teacher.id);
-            }
-          }
-        }
+      const teacherPicker = appendElement(teacherForm, 'div', { className: 'teacher-picker' });
+      const selectedContainer = appendElement(teacherPicker, 'div', {
+        className: 'teacher-picker__selected',
+      });
+      const searchInput = appendElement(teacherPicker, 'input', {
+        type: 'search',
+        id: `admin-teachers-search-${klass.id}`,
+        placeholder: 'Zoek op naam of gebruikersnaam',
+        autocomplete: 'off',
+      });
+      const resultsContainer = appendElement(teacherPicker, 'div', {
+        className: 'teacher-picker__results',
+      });
+      if (searchInput) {
+        searchInput.dataset.classTeacherSearch = klass.id;
+        searchInput.value = classTeacherSearchTerms.get(klass.id) || '';
       }
+      if (selectedContainer) {
+        selectedContainer.dataset.classTeacherSelected = klass.id;
+      }
+      if (resultsContainer) {
+        resultsContainer.dataset.classTeacherResults = klass.id;
+      }
+      renderClassTeacherSelected(selectedContainer, klass.id);
+      renderClassTeacherResults(resultsContainer, klass.id, searchInput?.value || '');
       appendTextElement(
         teacherForm,
         'p',
         teachers.length
-          ? 'Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.'
+          ? 'Zoek en voeg docenten toe om ze aan de klas te koppelen.'
           : 'Maak eerst docentaccounts aan om ze te kunnen koppelen.',
         { className: 'hint' }
       );
@@ -3907,6 +4068,11 @@ function initStaffPage() {
     renderAdminTeachers();
   });
 
+  adminClassTeacherSearchInput?.addEventListener('input', () => {
+    adminClassTeacherSearchTerm = adminClassTeacherSearchInput.value;
+    renderAdminClassTeacherResults();
+  });
+
   sortSelect?.addEventListener('change', () => {
     filters.sortBy = sortSelect.value || 'title';
     updateSortControlAccessibility(sortSelect, filters.sortBy, {
@@ -4100,6 +4266,24 @@ function initStaffPage() {
     }, 400);
   });
 
+  adminClassTeacherResults?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-add-admin-class-teacher]');
+    if (!button) return;
+    adminClassSelectedTeacherIds.add(button.dataset.addAdminClassTeacher);
+    adminClassTeacherSearchTerm = '';
+    if (adminClassTeacherSearchInput) {
+      adminClassTeacherSearchInput.value = '';
+    }
+    renderAdminClassTeacherSearch();
+  });
+
+  adminClassSelectedTeachers?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-admin-class-teacher]');
+    if (!button) return;
+    adminClassSelectedTeacherIds.delete(button.dataset.removeAdminClassTeacher);
+    renderAdminClassTeacherSearch();
+  });
+
   if (adminClassForm) {
     adminClassForm.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -4108,12 +4292,7 @@ function initStaffPage() {
         return;
       }
       const name = adminClassNameInput.value.trim();
-      const teacherSelect = adminClassTeachersSelect;
-      const teacherIds = teacherSelect
-        ? Array.from(teacherSelect.selectedOptions)
-            .map((option) => option.value)
-            .filter(Boolean)
-        : [];
+      const teacherIds = Array.from(pruneTeacherSelection(adminClassSelectedTeacherIds));
       if (!name) {
         adminClassMessage.textContent = 'Geef een naam op voor de klas.';
         return;
@@ -4124,11 +4303,20 @@ function initStaffPage() {
           body: { name, teacherIds },
         });
         adminClassForm.reset();
+        adminClassSelectedTeacherIds = new Set();
+        adminClassTeacherSearchTerm = '';
+        renderAdminClassTeacherSearch();
         adminClassMessage.textContent = 'Klas opgeslagen.';
         await refreshStaffData();
       } catch (error) {
         adminClassMessage.textContent = error.message;
       }
+    });
+
+    adminClassForm.addEventListener('reset', () => {
+      adminClassSelectedTeacherIds = new Set();
+      adminClassTeacherSearchTerm = '';
+      renderAdminClassTeacherSearch();
     });
   }
 
@@ -4142,6 +4330,43 @@ function initStaffPage() {
     });
   }
 
+  adminClassDetails?.addEventListener('input', (event) => {
+    const searchInput = event.target.closest('[data-class-teacher-search]');
+    if (!searchInput) return;
+    const classId = searchInput.dataset.classTeacherSearch;
+    classTeacherSearchTerms.set(classId, searchInput.value);
+    const teacherForm = searchInput.closest('[data-class-teacher-form]');
+    const resultsContainer = teacherForm?.querySelector('[data-class-teacher-results]');
+    renderClassTeacherResults(resultsContainer, classId, searchInput.value);
+  });
+
+  adminClassDetails?.addEventListener('click', (event) => {
+    const addButton = event.target.closest('[data-add-class-teacher]');
+    if (addButton) {
+      const classId = addButton.dataset.classId;
+      const selection = getClassTeacherSelection(classId);
+      selection.add(addButton.dataset.addClassTeacher);
+      const teacherForm = addButton.closest('[data-class-teacher-form]');
+      const selectedContainer = teacherForm?.querySelector('[data-class-teacher-selected]');
+      const resultsContainer = teacherForm?.querySelector('[data-class-teacher-results]');
+      renderClassTeacherSelected(selectedContainer, classId);
+      renderClassTeacherResults(resultsContainer, classId, classTeacherSearchTerms.get(classId) || '');
+      return;
+    }
+    const removeButton = event.target.closest('[data-remove-class-teacher]');
+    if (removeButton) {
+      const teacherForm = removeButton.closest('[data-class-teacher-form]');
+      const classId = teacherForm?.dataset.classId;
+      if (!classId) return;
+      const selection = getClassTeacherSelection(classId);
+      selection.delete(removeButton.dataset.removeClassTeacher);
+      const selectedContainer = teacherForm?.querySelector('[data-class-teacher-selected]');
+      const resultsContainer = teacherForm?.querySelector('[data-class-teacher-results]');
+      renderClassTeacherSelected(selectedContainer, classId);
+      renderClassTeacherResults(resultsContainer, classId, classTeacherSearchTerms.get(classId) || '');
+    }
+  });
+
   if (adminClassDetails) {
     adminClassDetails.addEventListener('submit', async (event) => {
       const teacherForm = event.target.closest('[data-class-teacher-form]');
@@ -4152,14 +4377,8 @@ function initStaffPage() {
           return;
         }
         const classId = teacherForm.dataset.classId;
-        const select = teacherForm.querySelector('select');
-        if (!select) {
-          adminClassMessage.textContent = 'Kon de docentselectie niet vinden.';
-          return;
-        }
-        const teacherIds = Array.from(select.selectedOptions)
-          .map((option) => option.value)
-          .filter(Boolean);
+        const selection = getClassTeacherSelection(classId);
+        const teacherIds = Array.from(pruneTeacherSelection(selection));
         try {
           await fetchJson(`/api/classes/${classId}`, {
             method: 'PATCH',
