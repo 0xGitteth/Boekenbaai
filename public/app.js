@@ -4074,8 +4074,26 @@ function initStaffPage() {
         dataset: { classId: klass.id, className: klass.name },
       });
       if (header) {
-        appendTextElement(header, 'h4', klass.name);
-        appendTextElement(header, 'span', `${klass.studentIds?.length || 0} leerlingen`);
+        const headerTitle = appendElement(header, 'div', {
+          className: 'class-card__header-main',
+        });
+        if (headerTitle) {
+          appendTextElement(headerTitle, 'h4', klass.name);
+          appendTextElement(headerTitle, 'span', `(${klass.studentIds?.length || 0})`, {
+            className: 'class-card__count',
+          });
+        }
+
+        appendElement(header, 'button', {
+          className: 'btn btn--ghost btn--pill class-card__stats-button',
+          type: 'button',
+          textContent: 'Bekijk statistieken',
+          dataset: {
+            classStats: 'true',
+            classId: klass.id,
+            className: klass.name,
+          },
+        });
       }
 
       const memberList = appendElement(article, 'ul', { className: 'class-card__students' });
@@ -4738,15 +4756,19 @@ function initStaffPage() {
   });
 
   classList?.addEventListener('click', async (event) => {
+    const classStatsButton = event.target.closest('[data-class-stats]');
+    if (classStatsButton) {
+      openClassStats(
+        classStatsButton.dataset.classId,
+        classStatsButton.dataset.className
+      );
+      return;
+    }
+
     const studentItem = event.target.closest('.class-card__student');
-    const classHeader = event.target.closest('.class-card__header');
     const interactiveTarget = event.target.closest('button, a, input, select, textarea');
     if (!interactiveTarget && studentItem && classList.contains(studentItem)) {
       openStudentStats(studentItem.dataset.studentId, studentItem.dataset.studentName);
-      return;
-    }
-    if (!interactiveTarget && classHeader && classList.contains(classHeader)) {
-      openClassStats(classHeader.dataset.classId, classHeader.dataset.className);
       return;
     }
 
