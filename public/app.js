@@ -3282,7 +3282,7 @@ function initStaffPage() {
 
   function matchesAdminStudentSearch(student, normalizedTerm) {
     if (!normalizedTerm) {
-      return true;
+      return false;
     }
     const haystack = [
       student.name,
@@ -3313,6 +3313,17 @@ function initStaffPage() {
       return;
     }
     const normalizedSearch = adminStudentSearchTerm.trim().toLowerCase();
+    if (!normalizedSearch) {
+      replaceWithTextElement(
+        adminStudentList,
+        'p',
+        'Gebruik het zoekveld om een leerling te vinden.',
+        { className: 'hint' }
+      );
+      selectedAdminStudentId = '';
+      renderSelectedAdminStudent();
+      return;
+    }
     const filteredStudents = students.filter((student) =>
       matchesAdminStudentSearch(student, normalizedSearch)
     );
@@ -4064,6 +4075,11 @@ function initStaffPage() {
   searchInput?.addEventListener('input', () => {
     filters.query = searchInput.value;
     renderBooks();
+  });
+
+  adminStudentSearchInput?.addEventListener('input', () => {
+    adminStudentSearchTerm = adminStudentSearchInput.value || '';
+    renderAdminStudents();
   });
 
   adminTeacherSearchInput?.addEventListener('input', () => {
