@@ -1891,6 +1891,9 @@ function initStudentPage() {
     try {
       allBooks = await fetchJson('/api/books');
       updateAvailableThemes();
+      if (bookGrid) {
+        bookGrid.replaceChildren();
+      }
       renderBooks();
     } catch (error) {
       if (bookGrid) {
@@ -1898,7 +1901,8 @@ function initStudentPage() {
           error && error.message
             ? `Kan boeken niet laden: ${error.message}`
             : 'Kan boeken niet laden: onbekende fout.';
-        replaceWithTextElement(bookGrid, 'p', message, {
+        bookGrid.replaceChildren();
+        appendTextElement(bookGrid, 'p', message, {
           className: 'book-grid__status',
           role: 'status',
         });
@@ -4097,6 +4101,9 @@ function initStaffPage() {
     try {
       allBooks = await fetchJson('/api/books');
       updateAvailableThemes();
+      if (bookGrid) {
+        bookGrid.replaceChildren();
+      }
       renderBooks();
       if (selectedBookId) {
         const selectedBook = allBooks.find((entry) => entry.id === selectedBookId);
@@ -4112,7 +4119,8 @@ function initStaffPage() {
           error && error.message
             ? `Kan boeken niet laden: ${error.message}`
             : 'Kan boeken niet laden: onbekende fout.';
-        replaceWithTextElement(bookGrid, 'p', message, {
+        bookGrid.replaceChildren();
+        appendTextElement(bookGrid, 'p', message, {
           className: 'book-grid__status',
           role: 'status',
         });
