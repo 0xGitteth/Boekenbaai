@@ -2125,6 +2125,8 @@ function initStaffPage() {
   const adminClassList = document.querySelector('#admin-class-list');
   const adminClassSelect = document.querySelector('#admin-class-select');
   const adminClassDetails = document.querySelector('#admin-class-details');
+  const adminStatsButton = document.querySelector('#admin-stats-button');
+  const adminStatsMessage = document.querySelector('#admin-stats-message');
   const adminStudentForm = document.querySelector('#admin-student-form');
   const adminStudentNameInput = document.querySelector('#admin-student-name');
   const adminStudentUsernameInput = document.querySelector('#admin-student-username');
@@ -2425,6 +2427,7 @@ function initStaffPage() {
       adminTeacherResetNotice.hide();
       historyList && (historyList.innerHTML = '');
       classList && (classList.innerHTML = '');
+      adminStatsMessage && (adminStatsMessage.textContent = '');
       adminBookMessage && (adminBookMessage.textContent = '');
       adminBookLookupMessage && (adminBookLookupMessage.textContent = '');
       adminBookCancelButton && adminBookCancelButton.classList.add('hidden');
@@ -4272,6 +4275,44 @@ function initStaffPage() {
     }
   }
 
+  function renderSchoolStats(container, stats) {
+    const list = appendElement(container, 'dl', { className: 'stats-modal__list' });
+    const totalBorrowed =
+      stats?.totalBorrowed ?? stats?.borrowCount ?? stats?.borrowedCount ?? stats?.totalBorrowedBooks ?? 0;
+
+    appendTextElement(list, 'dt', 'Totaal aantal uitleningen');
+    appendTextElement(list, 'dd', `${totalBorrowed}`);
+
+    const topGenres = Array.isArray(stats?.topGenres) ? stats.topGenres : [];
+    const genreSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(genreSection, 'h4', 'Populairste genres');
+    if (!topGenres.length) {
+      appendTextElement(genreSection, 'p', 'Nog geen uitleengegevens per genre.');
+    } else {
+      const listEl = appendElement(genreSection, 'ol', { className: 'stats-modal__items' });
+      for (const genre of topGenres) {
+        const name = genre?.name || 'Onbekend genre';
+        const count = genre?.count ?? 0;
+        appendTextElement(listEl, 'li', `${name} — ${count} uitleenmoment(en)`);
+      }
+    }
+
+    const alwaysBorrowed = Array.isArray(stats?.alwaysBorrowed) ? stats.alwaysBorrowed : [];
+    const busySection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(busySection, 'h4', 'Altijd uitgeleend');
+    if (!alwaysBorrowed.length) {
+      appendTextElement(busySection, 'p', 'Geen boeken die momenteel zijn uitgeleend.');
+    } else {
+      const listEl = appendElement(busySection, 'ul', { className: 'stats-modal__items' });
+      for (const book of alwaysBorrowed) {
+        const title = book?.title || 'Onbekend boek';
+        const author = book?.author ? ` — ${book.author}` : '';
+        const count = book?.borrowCount ?? 0;
+        appendTextElement(listEl, 'li', `${title}${author} (totaal ${count}x uitgeleend)`);
+      }
+    }
+  }
+
   function openStudentStats(studentId, studentName) {
     if (!studentId) return;
     const displayName = studentName || 'leerling';
@@ -4323,6 +4364,29 @@ function initStaffPage() {
           renderClassStats(container, stats, displayName);
         } catch (error) {
           setStatus(error?.message || 'Kon klasstatistieken niet ophalen.');
+        }
+      },
+    });
+  }
+
+  function openSchoolStats() {
+    statsModal.open({
+      titleText: 'Schoolbrede statistieken',
+      async render({ container, clearStatus, setStatus }) {
+        try {
+          if (adminStatsMessage) {
+            adminStatsMessage.textContent = '';
+          }
+          const stats = await fetchJson('/api/stats/school');
+          container.replaceChildren();
+          clearStatus();
+          renderSchoolStats(container, stats);
+        } catch (error) {
+          const message = error?.message || 'Kon schoolstatistieken niet ophalen.';
+          if (adminStatsMessage) {
+            adminStatsMessage.textContent = message;
+          }
+          setStatus(message);
         }
       },
     });
@@ -5161,6 +5225,16 @@ function initStaffPage() {
     } finally {
       adminStudentDetailRemoveButton.disabled = false;
     }
+  });
+
+  adminStatsButton?.addEventListener('click', () => {
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminStatsMessage) {
+        adminStatsMessage.textContent = 'Alleen beheerders kunnen de schoolstatistieken openen.';
+      }
+      return;
+    }
+    openSchoolStats();
   });
 
   adminBookIdInput?.addEventListener('input', updateAdminBookDeleteButtonVisibility);

@@ -966,6 +966,57 @@ function buildStudentStats(db, studentId) {
   };
 }
 
+function buildSchoolStats(db) {
+  const history = Array.isArray(db.history) ? db.history : [];
+  const checkouts = history.filter((entry) => entry && entry.type === 'check_out');
+  const totalBorrowed = checkouts.length;
+
+  const borrowCountByBookId = new Map();
+  for (const entry of checkouts) {
+    if (!entry.bookId) continue;
+    const current = borrowCountByBookId.get(entry.bookId) || 0;
+    borrowCountByBookId.set(entry.bookId, current + 1);
+  }
+
+  const genreCounts = new Map();
+  for (const entry of checkouts) {
+    const book = findBookById(db, entry.bookId);
+    const tags = Array.isArray(book?.tags) ? book.tags : [];
+    for (const tag of tags) {
+      const label = String(tag || '').trim();
+      if (!label) continue;
+      genreCounts.set(label, (genreCounts.get(label) || 0) + 1);
+    }
+  }
+
+  const topGenres = Array.from(genreCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 5);
+
+  const alwaysBorrowed = db.books
+    .filter((book) => book.status === 'borrowed')
+    .map((book) => ({
+      id: book.id,
+      title: book.title,
+      author: book.author,
+      borrowCount: borrowCountByBookId.get(book.id) || 0,
+      borrowedBy: book.borrowedBy || null,
+      dueDate: book.dueDate || null,
+    }))
+    .sort((a, b) => b.borrowCount - a.borrowCount || a.title.localeCompare(b.title))
+    .slice(0, 5);
+
+  return {
+    totalBorrowed,
+    totalBorrowedBooks: totalBorrowed,
+    borrowCount: totalBorrowed,
+    borrowedCount: totalBorrowed,
+    topGenres,
+    alwaysBorrowed,
+  };
+}
+
 function findBookById(db, id) {
   return db.books.find((book) => book.id === id);
 }
@@ -2687,6 +2738,15 @@ async function handleApi(req, res, requestUrl) {
       const db = getDb();
       const limit = Number(requestUrl.searchParams.get('limit')) || 20;
       return sendJson(res, 200, db.history.slice(0, limit));
+    }
+
+    if (req.method === 'GET' && requestUrl.pathname === '/api/stats/school') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen schoolstatistieken bekijken' });
+      }
+      const db = getDb();
+      const stats = buildSchoolStats(db);
+      return sendJson(res, 200, stats);
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/classes') {
