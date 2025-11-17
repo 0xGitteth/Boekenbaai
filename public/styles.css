@@ -737,6 +737,80 @@ body[data-page='staff'] .teacher-actions {
   gap: 1.25rem;
 }
 
+.admin-class-create {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.teacher-picker {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.teacher-picker input[type='search'] {
+  width: 100%;
+}
+
+.teacher-picker__selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  min-height: 2.5rem;
+}
+
+.teacher-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border, rgba(var(--accent-rgb), 0.25));
+  color: var(--accent-strong, #041b3d);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.teacher-chip__remove {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+
+.teacher-picker__results {
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  border-radius: var(--radius-medium);
+  padding: 0.35rem;
+  display: grid;
+  gap: 0.35rem;
+  background: #fff;
+}
+
+.teacher-picker__results button {
+  width: 100%;
+  text-align: left;
+  background: #f7f9fc;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.1);
+  border-radius: var(--radius-small);
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+}
+
+.teacher-picker__results button:hover,
+.teacher-picker__results button:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.4);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.12);
+}
+
+.teacher-picker__results:empty {
+  display: none;
+}
+
 #admin-student-form .form-grid {
   gap: 0.75rem;
 }

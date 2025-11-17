@@ -388,21 +388,34 @@
             <p class="hint">
               Maak nieuwe klassen aan, koppel docenten en houd de groepen overzichtelijk.
             </p>
-            <form id="admin-class-form" class="admin-form admin-form--compact">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="admin-class-name">Naam van de klas</label>
-                  <input id="admin-class-name" type="text" required />
+            <div class="admin-class-create">
+              <h4>Klas aanmaken</h4>
+              <form id="admin-class-form" class="admin-form admin-form--compact">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label for="admin-class-name">Naam van de klas</label>
+                    <input id="admin-class-name" type="text" required />
+                  </div>
+                  <div class="form-field form-field--full">
+                    <label for="admin-class-teacher-search">Docenten</label>
+                    <div class="teacher-picker" aria-live="polite">
+                      <div class="teacher-picker__selected" id="admin-class-selected-teachers"></div>
+                      <input
+                        id="admin-class-teacher-search"
+                        type="search"
+                        placeholder="Zoek op naam of gebruikersnaam"
+                        autocomplete="off"
+                      />
+                      <div class="teacher-picker__results" id="admin-class-teacher-results"></div>
+                    </div>
+                    <p class="hint">Zoek en voeg één of meerdere docenten toe aan de klas.</p>
+                  </div>
                 </div>
-                <div class="form-field form-field--full">
-                  <label for="admin-class-teachers">Docenten</label>
-                  <select id="admin-class-teachers" multiple></select>
-                  <p class="hint">Houd Ctrl of Cmd ingedrukt om meerdere docenten te selecteren.</p>
-                </div>
-              </div>
-              <button type="submit" class="btn">Klas opslaan</button>
-            </form>
-            <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
+                <button type="submit" class="btn">Klas opslaan</button>
+              </form>
+              <p id="admin-class-message" class="hint" role="status" aria-live="polite"></p>
+            </div>
+            <h4>Klas wijzigen</h4>
             <div id="admin-class-manager" class="admin-class-manager">
               <label class="visually-hidden" for="admin-class-select">Selecteer een klas om te beheren</label>
               <select id="admin-class-select"></select>
