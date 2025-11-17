@@ -876,7 +876,8 @@ body[data-page='staff'] .teacher-actions {
 }
 
 .admin-teacher-add h4,
-.admin-teacher-edit-title {
+.admin-teacher-edit-title,
+.admin-student-edit-title {
   margin: 0;
   font-size: 1.1rem;
 }
@@ -912,8 +913,7 @@ body[data-page='staff'] .teacher-actions {
 }
 
 .admin-student-controls {
-  justify-content: flex-end;
-  margin-top: clamp(0.75rem, 2vw, 1.5rem);
+  justify-content: flex-start;
 }
 
 .admin-teacher-controls input[type='search'],
