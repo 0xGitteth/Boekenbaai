@@ -4243,11 +4243,20 @@ function initStaffPage() {
     const list = appendElement(container, 'dl', { className: 'stats-modal__list' });
     const totalBorrowed =
       stats?.totalBorrowedBooks ?? stats?.totalBorrowed ?? stats?.borrowCount ?? stats?.borrowedCount ?? 0;
+    const totalSchoolYear =
+      stats?.totalBorrowedThisSchoolYear ?? stats?.borrowedThisSchoolYear ?? totalBorrowed;
+    const borrowedLastMonth = stats?.borrowedLastMonth ?? 0;
     const activeLoans = stats?.activeLoans ?? stats?.currentLoans ?? stats?.activeLoanCount ?? 0;
     const activeStudents = stats?.activeStudents ?? stats?.activeReaders ?? stats?.readerCount;
 
-    appendTextElement(list, 'dt', 'Totaal uitgeleend');
+    appendTextElement(list, 'dt', 'Totaal uitgeleend (alle tijd)');
     appendTextElement(list, 'dd', `${totalBorrowed} uitleenmoment(en)`);
+
+    appendTextElement(list, 'dt', 'Leningen dit schooljaar');
+    appendTextElement(list, 'dd', `${totalSchoolYear} uitleenmoment(en)`);
+
+    appendTextElement(list, 'dt', 'Leningen afgelopen maand');
+    appendTextElement(list, 'dd', `${borrowedLastMonth} uitleenmoment(en)`);
 
     appendTextElement(list, 'dt', 'Actieve leningen');
     appendTextElement(list, 'dd', `${activeLoans || 0}`);
@@ -4268,6 +4277,60 @@ function initStaffPage() {
         const name = reader?.name || 'Onbekende leerling';
         const count = reader?.borrowCount ?? reader?.totalBorrowed ?? reader?.borrowedCount ?? 0;
         appendTextElement(listEl, 'li', `${name} — ${count} uitleenmoment(en)`);
+      }
+    }
+
+    const heavyReaders = Array.isArray(stats?.heavyReaders) ? stats.heavyReaders : [];
+    const heavyReadersSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(heavyReadersSection, 'h4', 'Veel-lezers (dit schooljaar)');
+    if (!heavyReaders.length) {
+      appendTextElement(heavyReadersSection, 'p', `Geen veel-lezers gevonden voor ${className}.`);
+    } else {
+      const heavyList = appendElement(heavyReadersSection, 'ol', { className: 'stats-modal__items' });
+      for (const reader of heavyReaders) {
+        const name = reader?.name || 'Onbekende leerling';
+        const count = reader?.borrowCount ?? 0;
+        appendTextElement(heavyList, 'li', `${name} — ${count} uitleenmoment(en)`);
+      }
+    }
+
+    const nonReaders = Array.isArray(stats?.nonReaders) ? stats.nonReaders : [];
+    const nonReadersSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(nonReadersSection, 'h4', 'Niet-lezers (dit schooljaar)');
+    if (!nonReaders.length) {
+      appendTextElement(nonReadersSection, 'p', `Iedereen in ${className} heeft iets geleend of staat open.`);
+    } else {
+      const listEl = appendElement(nonReadersSection, 'ul', { className: 'stats-modal__items' });
+      for (const entry of nonReaders) {
+        appendTextElement(listEl, 'li', entry?.name || 'Onbekende leerling');
+      }
+    }
+
+    const topGenres = Array.isArray(stats?.topGenres) ? stats.topGenres : [];
+    const genresSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(genresSection, 'h4', 'Topgenres (dit schooljaar)');
+    if (!topGenres.length) {
+      appendTextElement(genresSection, 'p', 'Nog geen genredata beschikbaar.');
+    } else {
+      const listEl = appendElement(genresSection, 'ol', { className: 'stats-modal__items' });
+      for (const genre of topGenres) {
+        const name = genre?.name || 'Onbekend genre';
+        const count = genre?.count ?? 0;
+        appendTextElement(listEl, 'li', `${name} — ${count} uitleenmoment(en)`);
+      }
+    }
+
+    const topTitles = Array.isArray(stats?.topTitles) ? stats.topTitles : [];
+    const titlesSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(titlesSection, 'h4', 'Top 5 titels (dit schooljaar)');
+    if (!topTitles.length) {
+      appendTextElement(titlesSection, 'p', 'Nog geen uitleenmomenten geregistreerd voor titels.');
+    } else {
+      const listEl = appendElement(titlesSection, 'ol', { className: 'stats-modal__items' });
+      for (const title of topTitles) {
+        const label = title?.title || 'Onbekende titel';
+        const count = title?.count ?? 0;
+        appendTextElement(listEl, 'li', `${label} — ${count} uitleenmoment(en)`);
       }
     }
   }

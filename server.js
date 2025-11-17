@@ -2745,6 +2745,33 @@ async function handleApi(req, res, requestUrl) {
         }
       }
 
+      const now = new Date();
+      const schoolYearStart = (() => {
+        const year = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+        return new Date(year, 7, 1);
+      })();
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const classHistoryThisSchoolYear = classHistory.filter((entry) => {
+        const date = new Date(entry.timestamp);
+        return !Number.isNaN(date.getTime()) && date >= schoolYearStart;
+      });
+
+      const classHistoryLastMonth = classHistory.filter((entry) => {
+        const date = new Date(entry.timestamp);
+        return !Number.isNaN(date.getTime()) && date >= monthAgo;
+      });
+
+      const borrowCountThisSchoolYear = new Map();
+      for (const entry of classHistoryThisSchoolYear) {
+        borrowCountThisSchoolYear.set(
+          entry.studentId,
+          (borrowCountThisSchoolYear.get(entry.studentId) || 0) + 1
+        );
+      }
+
+      const studentsInClass = db.students.filter((student) => studentIdsInClass.has(student.id));
+
       const activeReaders = Array.from(borrowCountPerStudent.keys()).filter((studentId) => {
         const student = db.students.find((entry) => entry.id === studentId);
         return (
@@ -2767,6 +2794,56 @@ async function handleApi(req, res, requestUrl) {
         .sort((a, b) => b.borrowCount - a.borrowCount || a.name.localeCompare(b.name))
         .slice(0, 3);
 
+      const nonReaders = studentsInClass
+        .filter((student) => {
+          const borrowCount = borrowCountThisSchoolYear.get(student.id) || 0;
+          const activeLoansForStudent = Array.isArray(student.borrowedBooks)
+            ? student.borrowedBooks.length
+            : 0;
+          return borrowCount === 0 && activeLoansForStudent === 0;
+        })
+        .map((student) => ({ id: student.id, name: student.name || 'Onbekende leerling' }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const heavyReaders = Array.from(borrowCountThisSchoolYear.entries())
+        .map(([studentId, count]) => {
+          const student = db.students.find((entry) => entry.id === studentId);
+          return {
+            id: studentId,
+            name: student ? student.name : 'Onbekende leerling',
+            borrowCount: count,
+          };
+        })
+        .sort((a, b) => b.borrowCount - a.borrowCount || a.name.localeCompare(b.name))
+        .slice(0, 5);
+
+      const genreCounts = new Map();
+      const titleCounts = new Map();
+      for (const entry of classHistoryThisSchoolYear) {
+        const book = findBookById(db, entry.bookId);
+        if (book) {
+          if (Array.isArray(book.tags)) {
+            for (const tag of book.tags) {
+              const normalizedTag = typeof tag === 'string' ? tag.trim() : String(tag ?? '').trim();
+              if (!normalizedTag) continue;
+              genreCounts.set(normalizedTag, (genreCounts.get(normalizedTag) || 0) + 1);
+            }
+          }
+          const key = book.title || 'Onbekende titel';
+          titleCounts.set(key, (titleCounts.get(key) || 0) + 1);
+        }
+      }
+
+      const topGenres = Array.from(genreCounts.entries())
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+        .slice(0, 5);
+
+      const topTitles = Array.from(titleCounts.entries())
+        .map(([title, count]) => ({ title, count }))
+        .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title))
+        .slice(0, 5);
+
       const stats = {
         totalBorrowedBooks: classHistory.length,
         totalBorrowed: classHistory.length,
@@ -2779,6 +2856,13 @@ async function handleApi(req, res, requestUrl) {
         activeReaders,
         readerCount: activeReaders,
         topReaders,
+        borrowedThisSchoolYear: classHistoryThisSchoolYear.length,
+        totalBorrowedThisSchoolYear: classHistoryThisSchoolYear.length,
+        borrowedLastMonth: classHistoryLastMonth.length,
+        nonReaders,
+        heavyReaders,
+        topGenres,
+        topTitles,
       };
 
       return sendJson(res, 200, stats);
