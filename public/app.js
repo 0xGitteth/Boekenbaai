@@ -1241,6 +1241,9 @@ function sortBooks(books, sortBy) {
   const compareOptions = { sensitivity: 'base', numeric: true };
   const getTitle = (book) => (book?.title ? String(book.title) : '');
   const getAuthor = (book) => (book?.author ? String(book.author) : '');
+  const getStatusRank = (book) =>
+    String(book?.status || '').toLowerCase() === 'available' ? 0 : 1;
+  const compareAvailability = (a, b) => getStatusRank(a) - getStatusRank(b);
   const normalizeCount = (value) => {
     const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : 0;
@@ -1248,6 +1251,10 @@ function sortBooks(books, sortBy) {
 
   if (sortBy === 'author') {
     sorted.sort((a, b) => {
+      const availabilityDiff = compareAvailability(a, b);
+      if (availabilityDiff !== 0) {
+        return availabilityDiff;
+      }
       const authorCompare = getAuthor(a).localeCompare(getAuthor(b), locale, compareOptions);
       if (authorCompare !== 0) {
         return authorCompare;
@@ -1259,6 +1266,10 @@ function sortBooks(books, sortBy) {
 
   if (sortBy === 'popular' || sortBy === 'popularity') {
     sorted.sort((a, b) => {
+      const availabilityDiff = compareAvailability(a, b);
+      if (availabilityDiff !== 0) {
+        return availabilityDiff;
+      }
       const countDiff = normalizeCount(b?.borrowCount) - normalizeCount(a?.borrowCount);
       if (countDiff !== 0) {
         return countDiff;
@@ -1273,6 +1284,10 @@ function sortBooks(books, sortBy) {
   }
 
   sorted.sort((a, b) => {
+    const availabilityDiff = compareAvailability(a, b);
+    if (availabilityDiff !== 0) {
+      return availabilityDiff;
+    }
     const titleCompare = getTitle(a).localeCompare(getTitle(b), locale, compareOptions);
     if (titleCompare !== 0) {
       return titleCompare;
@@ -1292,21 +1307,66 @@ function renderBookGrid({
   emptyMessage = 'Geen boeken gevonden voor deze selectie.',
 } = {}) {
   if (!grid) return;
-  const filtered = filterBooks(books, filters);
-  const sorted = sortBooks(filtered, filters?.sortBy);
-  grid.replaceChildren();
-  if (!sorted.length) {
-    replaceWithTextElement(grid, 'p', emptyMessage);
-    return;
+  const allBooks = Array.isArray(books) ? [...books] : [];
+  const filtered = filterBooks(allBooks, filters);
+  const sorted = sortBooks(allBooks, filters?.sortBy);
+  const visibleIds = new Set(filtered.map((book) => book.id || ''));
+  const existingCards = new Map(
+    Array.from(grid.children)
+      .filter((child) => child.classList?.contains('book-card'))
+      .map((card) => [card.dataset.bookId || '', card])
+  );
+
+  const updateCardSelectionState = (card, options = {}) => {
+    const isSelectable = Boolean(options.selectable);
+    card.classList.toggle('book-card--selectable', isSelectable);
+    if (isSelectable) {
+      card.classList.toggle('book-card--selected', Boolean(options.selected));
+      card.setAttribute('aria-pressed', options.selected ? 'true' : 'false');
+    } else {
+      card.classList.remove('book-card--selected');
+      card.removeAttribute('aria-pressed');
+    }
+  };
+
+  let emptyState = grid.querySelector('.book-grid__empty');
+  if (!emptyState) {
+    emptyState = document.createElement('p');
+    emptyState.className = 'book-grid__empty';
+    emptyState.setAttribute('role', 'status');
+    grid.append(emptyState);
   }
+  emptyState.textContent = emptyMessage;
+
+  const usedCardIds = new Set();
+
   for (const book of sorted) {
+    const bookId = book.id || '';
+    let card = existingCards.get(bookId);
     const options =
       typeof cardOptions === 'function' ? cardOptions(book) : cardOptions;
-    const card = createBookCard(template, book, folders, options || {});
+    if (!card) {
+      card = createBookCard(template, book, folders, options || {});
+    } else if (card) {
+      updateCardSelectionState(card, options || {});
+    }
+
     if (card) {
+      card.classList.toggle('book-card--hidden', !visibleIds.has(bookId));
+      usedCardIds.add(bookId);
       grid.append(card);
     }
   }
+
+  for (const [bookId, card] of existingCards.entries()) {
+    if (!usedCardIds.has(bookId)) {
+      card.remove();
+    }
+  }
+
+  const hasVisible = sorted.some((book) => visibleIds.has(book.id || ''));
+  emptyState.classList.toggle('hidden', hasVisible);
+  grid.classList.toggle('book-grid--empty', !hasVisible);
 }
 
 function createThemeFilterRenderer({
