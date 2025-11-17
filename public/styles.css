@@ -583,6 +583,7 @@ body[data-page='staff'] .teacher-actions {
   align-items: center;
   gap: 0.5rem;
   font-weight: 600;
+  cursor: pointer;
 }
 
 .class-card__header h4 {
@@ -611,6 +612,7 @@ body[data-page='staff'] .teacher-actions {
   align-items: center;
   gap: 1rem;
   border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  cursor: pointer;
 }
 
 .class-card__student-actions {
@@ -618,6 +620,7 @@ body[data-page='staff'] .teacher-actions {
   flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
+  cursor: default;
 }
 
 .class-card__students .btn {
@@ -1990,6 +1993,85 @@ body[data-page='staff'] .class-card__student-actions .btn {
   flex-wrap: wrap;
   gap: 0.75rem;
   justify-content: flex-end;
+}
+
+.stats-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  padding: clamp(1rem, 4vw, 2rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--brand-dark-rgb, 4, 27, 61), 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.stats-modal.hidden {
+  display: none !important;
+}
+
+.stats-modal__dialog {
+  width: min(100%, 640px);
+  background: var(--panel-background, #fff);
+  border-radius: var(--radius);
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  box-shadow: 0 20px 45px rgba(var(--brand-dark-rgb), 0.25);
+  display: grid;
+  gap: 1rem;
+  outline: none;
+}
+
+.stats-modal__title {
+  margin: 0;
+}
+
+.stats-modal__close {
+  justify-self: end;
+}
+
+.stats-modal__content {
+  display: grid;
+  gap: 1rem;
+}
+
+.stats-modal__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+}
+
+.stats-modal__list dt {
+  font-weight: 700;
+}
+
+.stats-modal__list dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.stats-modal__section {
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: rgba(var(--brand-dark-rgb), 0.04);
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.08);
+}
+
+.stats-modal__section h4 {
+  margin: 0 0 0.35rem;
+}
+
+.stats-modal__items {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.stats-modal__status {
+  margin: 0;
+  color: var(--muted);
 }
 
 .password-change__actions .btn {

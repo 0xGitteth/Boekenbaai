@@ -10,6 +10,7 @@ let authToken = localStorage.getItem('boekenbaai_token') || null;
 let authUser = null;
 let updateAuthUi = () => {};
 let passwordChangeController = null;
+let statsModalController = null;
 
 function appendElement(parent, tag, options = {}) {
   const element = document.createElement(tag);
@@ -94,6 +95,133 @@ function appendElement(parent, tag, options = {}) {
   }
   parent?.append(element);
   return element;
+}
+
+function createStatsModal() {
+  const body = document.body;
+  const overlay = appendElement(body, 'div', {
+    className: 'stats-modal hidden',
+    aria: { hidden: 'true' },
+  });
+  const dialog = appendElement(overlay, 'div', {
+    className: 'stats-modal__dialog',
+    role: 'dialog',
+    aria: { modal: 'true' },
+    tabIndex: -1,
+  });
+  const closeButton = appendElement(dialog, 'button', {
+    className: 'stats-modal__close btn btn--ghost',
+    type: 'button',
+    aria: { label: 'Sluit statistieken' },
+    textContent: 'Sluiten',
+  });
+  const title = appendElement(dialog, 'h3', {
+    className: 'stats-modal__title',
+    id: 'stats-modal-title',
+  });
+  dialog?.setAttribute('aria-labelledby', 'stats-modal-title');
+  const content = appendElement(dialog, 'div', {
+    className: 'stats-modal__content',
+  });
+
+  let active = false;
+  let statusEl = null;
+  let lastFocused = null;
+
+  const focusableSelector =
+    'a[href], area[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  function setStatus(message) {
+    if (!content) return;
+    if (!statusEl) {
+      statusEl = appendElement(content, 'p', {
+        className: 'stats-modal__status',
+      });
+    }
+    statusEl.textContent = message || '';
+  }
+
+  function clearStatus() {
+    statusEl?.remove();
+    statusEl = null;
+  }
+
+  function trapFocus(event) {
+    if (!active || event.key !== 'Tab' || !dialog) return;
+    const focusable = dialog.querySelectorAll(focusableSelector);
+    if (!focusable.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const goingBackwards = event.shiftKey;
+    const activeElement = document.activeElement;
+    if (!goingBackwards && activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (goingBackwards && activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    }
+  }
+
+  function close() {
+    if (!active) return;
+    overlay?.classList.add('hidden');
+    overlay?.setAttribute('aria-hidden', 'true');
+    active = false;
+    document.removeEventListener('keydown', trapFocus);
+    document.removeEventListener('keydown', handleEscape);
+    overlay?.removeEventListener('mousedown', handleOverlayClick);
+    if (lastFocused && typeof lastFocused.focus === 'function') {
+      lastFocused.focus();
+    }
+    lastFocused = null;
+  }
+
+  function handleEscape(event) {
+    if (event.key === 'Escape') {
+      close();
+    }
+  }
+
+  function handleOverlayClick(event) {
+    if (event.target === overlay) {
+      close();
+    }
+  }
+
+  function open({ titleText, render }) {
+    if (!dialog || !overlay) return;
+    title.textContent = titleText || 'Statistieken';
+    content.replaceChildren();
+    clearStatus();
+    setStatus('Gegevens worden opgehaald…');
+    overlay.classList.remove('hidden');
+    overlay.setAttribute('aria-hidden', 'false');
+    active = true;
+    lastFocused = document.activeElement;
+    document.addEventListener('keydown', trapFocus);
+    document.addEventListener('keydown', handleEscape);
+    overlay.addEventListener('mousedown', handleOverlayClick);
+    setTimeout(() => {
+      const focusTarget = dialog.querySelector(focusableSelector) || dialog;
+      focusTarget?.focus();
+    }, 20);
+    if (typeof render === 'function') {
+      Promise.resolve()
+        .then(() => render({ container: content, setStatus, clearStatus }))
+        .catch((error) => {
+          setStatus(error?.message || 'Het ophalen van statistieken is mislukt.');
+        });
+    }
+  }
+
+  closeButton?.addEventListener('click', () => close());
+
+  return { open, close };
 }
 
 function appendTextElement(parent, tag, text, options = {}) {
@@ -2010,6 +2138,9 @@ function initStaffPage() {
   const teacherStudentMessage = document.querySelector('#teacher-student-message');
   const teacherStudentResetInfo = document.querySelector('#teacher-student-reset');
 
+  const statsModal = createStatsModal();
+  statsModalController = statsModal;
+
   let folders = [];
   let allBooks = [];
   let classes = [];
@@ -3904,7 +4035,10 @@ function initStaffPage() {
       const article = appendElement(classList, 'article', { className: 'class-card' });
       if (!article) continue;
 
-      const header = appendElement(article, 'header', { className: 'class-card__header' });
+      const header = appendElement(article, 'header', {
+        className: 'class-card__header',
+        dataset: { classId: klass.id, className: klass.name },
+      });
       if (header) {
         appendTextElement(header, 'h4', klass.name);
         appendTextElement(header, 'span', `${klass.studentIds?.length || 0} leerlingen`);
@@ -3921,6 +4055,7 @@ function initStaffPage() {
           for (const member of members) {
             const li = appendElement(memberList, 'li', {
               className: 'class-card__student',
+              dataset: { studentId: member.id, studentName: member.name },
             });
             if (!li) continue;
             const info = appendElement(li, 'div', {
@@ -4036,6 +4171,110 @@ function initStaffPage() {
         }
       }
     }
+  }
+
+  function renderStudentStats(container, stats, studentName) {
+    const list = appendElement(container, 'dl', { className: 'stats-modal__list' });
+    const totalBorrowed =
+      stats?.totalBorrowed ?? stats?.borrowCount ?? stats?.borrowedCount ?? stats?.borrowFrequency ?? 0;
+    appendTextElement(list, 'dt', 'Uitleenfrequentie');
+    appendTextElement(list, 'dd', `${totalBorrowed} uitleenmoment(en)`);
+
+    const activeLoans = Array.isArray(stats?.activeLoans)
+      ? stats.activeLoans
+      : Array.isArray(stats?.currentLoans)
+      ? stats.currentLoans
+      : [];
+    const loanSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(loanSection, 'h4', 'Huidige leningen');
+    if (!activeLoans.length) {
+      appendTextElement(loanSection, 'p', `${studentName} heeft momenteel geen leningen.`);
+    } else {
+      const ul = appendElement(loanSection, 'ul', { className: 'stats-modal__items' });
+      for (const loan of activeLoans) {
+        const label = loan?.title || loan?.name || 'Onbekend boek';
+        appendTextElement(ul, 'li', label);
+      }
+    }
+
+    const lastReadDate =
+      stats?.lastReadAt || stats?.lastBorrowedAt || stats?.lastBorrowed || stats?.lastRead;
+    const lastReadSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(lastReadSection, 'h4', 'Laatst gelezen');
+    appendTextElement(
+      lastReadSection,
+      'p',
+      lastReadDate ? formatDate(lastReadDate) : 'Nog geen leesactiviteiten geregistreerd.'
+    );
+  }
+
+  function renderClassStats(container, stats, className) {
+    const list = appendElement(container, 'dl', { className: 'stats-modal__list' });
+    const totalBorrowed =
+      stats?.totalBorrowedBooks ?? stats?.totalBorrowed ?? stats?.borrowCount ?? stats?.borrowedCount ?? 0;
+    const activeLoans = stats?.activeLoans ?? stats?.currentLoans ?? stats?.activeLoanCount ?? 0;
+    const activeStudents = stats?.activeStudents ?? stats?.activeReaders ?? stats?.readerCount;
+
+    appendTextElement(list, 'dt', 'Totaal uitgeleend');
+    appendTextElement(list, 'dd', `${totalBorrowed} uitleenmoment(en)`);
+
+    appendTextElement(list, 'dt', 'Actieve leningen');
+    appendTextElement(list, 'dd', `${activeLoans || 0}`);
+
+    if (activeStudents != null) {
+      appendTextElement(list, 'dt', 'Actieve lezers');
+      appendTextElement(list, 'dd', `${activeStudents}`);
+    }
+
+    const topReaders = Array.isArray(stats?.topReaders) ? stats.topReaders : [];
+    const readersSection = appendElement(container, 'div', { className: 'stats-modal__section' });
+    appendTextElement(readersSection, 'h4', 'Actiefste lezers');
+    if (!topReaders.length) {
+      appendTextElement(readersSection, 'p', `Geen lezerstatistieken beschikbaar voor ${className}.`);
+    } else {
+      const listEl = appendElement(readersSection, 'ol', { className: 'stats-modal__items' });
+      for (const reader of topReaders) {
+        const name = reader?.name || 'Onbekende leerling';
+        const count = reader?.borrowCount ?? reader?.totalBorrowed ?? reader?.borrowedCount ?? 0;
+        appendTextElement(listEl, 'li', `${name} — ${count} uitleenmoment(en)`);
+      }
+    }
+  }
+
+  function openStudentStats(studentId, studentName) {
+    if (!studentId) return;
+    const displayName = studentName || 'leerling';
+    statsModal.open({
+      titleText: `Statistieken van ${displayName}`,
+      async render({ container, clearStatus, setStatus }) {
+        try {
+          const stats = await fetchJson(`/api/students/${studentId}/stats`);
+          container.replaceChildren();
+          clearStatus();
+          renderStudentStats(container, stats, displayName);
+        } catch (error) {
+          setStatus(error?.message || 'Kon leerlingstatistieken niet ophalen.');
+        }
+      },
+    });
+  }
+
+  function openClassStats(classId, className) {
+    if (!classId) return;
+    const displayName = className || 'deze klas';
+    statsModal.open({
+      titleText: `Statistieken voor ${displayName}`,
+      async render({ container, clearStatus, setStatus }) {
+        try {
+          const stats = await fetchJson(`/api/classes/${classId}/stats`);
+          container.replaceChildren();
+          clearStatus();
+          renderClassStats(container, stats, displayName);
+        } catch (error) {
+          setStatus(error?.message || 'Kon klasstatistieken niet ophalen.');
+        }
+      },
+    });
   }
 
   async function loadClasses() {
@@ -4244,6 +4483,18 @@ function initStaffPage() {
   });
 
   classList?.addEventListener('click', async (event) => {
+    const studentItem = event.target.closest('.class-card__student');
+    const classHeader = event.target.closest('.class-card__header');
+    const interactiveTarget = event.target.closest('button, a, input, select, textarea');
+    if (!interactiveTarget && studentItem && classList.contains(studentItem)) {
+      openStudentStats(studentItem.dataset.studentId, studentItem.dataset.studentName);
+      return;
+    }
+    if (!interactiveTarget && classHeader && classList.contains(classHeader)) {
+      openClassStats(classHeader.dataset.classId, classHeader.dataset.className);
+      return;
+    }
+
     const resetButton = event.target.closest('[data-reset-password]');
     if (resetButton) {
       if (!authUser || !['teacher', 'admin'].includes(authUser.role)) {
