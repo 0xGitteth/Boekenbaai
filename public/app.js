@@ -1472,9 +1472,14 @@ function renderBookGrid({
 
   for (const book of sorted) {
     const bookId = book.id || '';
+    const isVisible = visibleIds.has(bookId);
     let card = existingCards.get(bookId);
     const options =
       typeof cardOptions === 'function' ? cardOptions(book) : cardOptions;
+    if (!card && !isVisible) {
+      continue;
+    }
+
     if (!card) {
       card = createBookCard(template, book, folders, options || {});
     } else if (card) {
@@ -1489,9 +1494,11 @@ function renderBookGrid({
     }
 
     if (card) {
-      card.classList.toggle('book-card--hidden', !visibleIds.has(bookId));
-      usedCardIds.add(bookId);
-      grid.append(card);
+      card.classList.toggle('book-card--hidden', !isVisible);
+      if (isVisible) {
+        usedCardIds.add(bookId);
+        grid.append(card);
+      }
     }
   }
 
