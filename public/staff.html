@@ -616,11 +616,17 @@
                 <strong>auteur</strong> en <strong>barcode/ISBN</strong>. Voeg optioneel kolommen toe
                 voor <strong>uitgever</strong>, <strong>jaar</strong>, <strong>pagina’s</strong>,
                 <strong>taal</strong>, <strong>thema’s</strong> en een <strong>cover-URL</strong> zodat deze
-                velden direct gevuld worden. Thema’s splits je met komma’s of puntkomma’s.
+                velden direct gevuld worden. Thema’s splits je met komma’s of puntkomma’s. Wil je ontbrekende
+                velden automatisch laten aanvullen? Zet dan de ISBN-verrijking aan; de server vult lege velden aan met
+                gevonden metadata.
               </p>
               <form id="book-import-form" class="admin-import__form">
                 <label for="book-import-file">Excelbestand kiezen</label>
                 <input id="book-import-file" type="file" accept=".xlsx,.xls" />
+                <label class="checkbox">
+                  <input id="book-import-enrich" type="checkbox" />
+                  <span>Ontbrekende velden aanvullen via ISBN-zoekopdracht (Open Library / ISBNBarcode)</span>
+                </label>
                 <button type="submit" class="btn btn--secondary">Importeren</button>
               </form>
               <p id="book-import-message" class="hint" role="status" aria-live="polite"></p>

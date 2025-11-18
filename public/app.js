@@ -2198,6 +2198,7 @@ function initStaffPage() {
   const adminBookMessage = document.querySelector('#admin-book-message');
   const bookImportForm = document.querySelector('#book-import-form');
   const bookImportFile = document.querySelector('#book-import-file');
+  const bookImportEnrich = document.querySelector('#book-import-enrich');
   const bookImportMessage = document.querySelector('#book-import-message');
   const bookImportResults = document.querySelector('#book-import-results');
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
@@ -3983,6 +3984,13 @@ function initStaffPage() {
         if (Array.isArray(book?.tags) && book.tags.length) {
           appendImportMeta(item, 'Thema’s', book.tags);
         }
+        if (book?.enrichment) {
+          const sourceLabel = book.enrichment.source || 'onbekende bron';
+          const enrichmentLabel = book.enrichment.found
+            ? `Verrijkt via ${sourceLabel}`
+            : `Geen metadata gevonden${book.enrichment.source ? ` (${sourceLabel})` : ''}`;
+          appendImportMeta(item, 'ISBN-verrijking', enrichmentLabel);
+        }
       }
     } else if (accounts.length) {
       const list = appendElement(container, 'ul', {
@@ -5632,7 +5640,7 @@ function initStaffPage() {
       const base64 = await readFileAsBase64(file);
       const result = await fetchJson('/api/books/import', {
         method: 'POST',
-        body: { file: base64 },
+        body: { file: base64, enrichIsbn: Boolean(bookImportEnrich?.checked) },
       });
       if (bookImportFile) {
         bookImportFile.value = '';
