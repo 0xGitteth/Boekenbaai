@@ -729,10 +729,15 @@ const bookDetailState = {
   metaLanguage: null,
   metaBarcode: null,
   actions: null,
+  quantityActions: null,
+  addCopyButton: null,
+  removeCopyButton: null,
   editButton: null,
   closeButtons: [],
   previousFocus: null,
   currentBookId: null,
+  currentGroupKey: null,
+  currentDetail: null,
   metadataCache: new Map(),
   adminEditHandler: null,
   handleEscape: null,
@@ -774,8 +779,6 @@ function ensureBookDetailElements() {
     bookDetailState.metaPages = bookDetailState.root.querySelector('#book-detail-pages');
     bookDetailState.metaLanguage = bookDetailState.root.querySelector('#book-detail-language');
     bookDetailState.metaBarcode = bookDetailState.root.querySelector('#book-detail-barcode');
-    bookDetailState.availability = bookDetailState.root.querySelector('#book-detail-availability');
-    bookDetailState.copies = bookDetailState.root.querySelector('#book-detail-copies');
     bookDetailState.actions = bookDetailState.root.querySelector('.book-detail__actions');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
     bookDetailState.closeButtons = Array.from(
@@ -834,6 +837,8 @@ function closeBookDetail() {
   state.previousFocus = null;
   state.currentBookId = null;
   state.editBook = null;
+  state.currentGroupKey = null;
+  state.currentDetail = null;
 }
 
 function extractYear(value) {
@@ -904,6 +909,8 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (!state.root) return;
   const copies = Array.isArray(book?.copies) ? book.copies : [book];
   const representative = book?.representativeBook || copies[0] || book;
+  state.currentDetail = book;
+  state.currentGroupKey = getBookGroupKey(representative || book);
   const totalCopies = Number.isFinite(book?.totalCopies) ? book.totalCopies : copies.length;
   const borrowedCopies = Number.isFinite(book?.borrowedCopies)
     ? book.borrowedCopies
@@ -947,9 +954,9 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (state.status) {
     const statusValue = availableCopies > 0 ? 'available' : 'borrowed';
     const statusText =
-      totalCopies > 1 ? `${availableCopies}/${totalCopies} beschikbaar` : statusValue === 'available'
-      ? 'Beschikbaar'
-      : 'Uitgeleend';
+      statusValue === 'available'
+        ? `Beschikbaar (${availableCopies}/${totalCopies})`
+        : 'Uitgeleend';
     state.status.textContent = statusText;
     state.status.classList.remove('book-detail__status--available', 'book-detail__status--borrowed');
     state.status.classList.add(
@@ -1008,53 +1015,7 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.editButton.hidden = !isAdmin;
     state.editButton.disabled = !isAdmin;
   }
-  if (state.availability) {
-    state.availability.textContent = `Exemplaren: ${availableCopies}/${totalCopies} beschikbaar`;
-  }
-  if (state.copies) {
-    state.copies.innerHTML = '';
-    appendTextElement(state.copies, 'h4', 'Exemplaren', { className: 'book-detail__copies-title' });
-    const list = appendElement(state.copies, 'ul', { className: 'book-detail__copies-list' });
-    for (const copy of copies) {
-      const li = appendElement(list, 'li', { className: 'book-detail__copy' });
-      const copyStatus = String(copy.status || '').toLowerCase() === 'borrowed' ? 'borrowed' : 'available';
-      appendTextElement(li, 'span', copyStatus === 'borrowed' ? 'Uitgeleend' : 'Beschikbaar', {
-        className: `book-detail__copy-status book-detail__copy-status--${copyStatus}`,
-      });
-      const meta = appendElement(li, 'div', { className: 'book-detail__copy-meta' });
-      appendTextElement(meta, 'strong', copy.barcode || 'Onbekende barcode', {
-        className: 'book-detail__copy-barcode',
-      });
-      if (copyStatus === 'borrowed') {
-        const borrowerLabel = resolveBorrowerLabel(copy.borrowedBy);
-        if (borrowerLabel) {
-          appendTextElement(meta, 'span', `Lener: ${borrowerLabel}`, {
-            className: 'book-detail__copy-borrower',
-          });
-        }
-        if (copy.dueDate) {
-          const dateLabel = new Date(copy.dueDate).toLocaleDateString('nl-NL');
-          appendTextElement(meta, 'span', `Retour: ${dateLabel}`, {
-            className: 'book-detail__copy-due',
-          });
-        }
-      }
-      if (authUser?.role === 'admin') {
-        const editBtn = appendElement(li, 'button', {
-          className: 'btn btn--ghost book-detail__copy-edit',
-          type: 'button',
-          textContent: 'Bewerk dit exemplaar',
-        });
-        editBtn.addEventListener('click', () => {
-          state.editBook = copy;
-          if (typeof bookDetailState.adminEditHandler === 'function') {
-            bookDetailState.adminEditHandler(copy);
-          }
-          closeBookDetail();
-        });
-      }
-    }
-  }
+  
 }
 
 async function openBookDetail(book) {
@@ -2577,6 +2538,7 @@ function initStaffPage() {
   const adminBookLookupMessage = document.querySelector('#admin-book-lookup-message');
   const adminBarcodeResultsSection = document.querySelector('#admin-barcode-results-section');
   const adminBarcodeResults = document.querySelector('#admin-barcode-results');
+  const adminBookQuantity = document.querySelector('#admin-book-quantity');
   const adminBookExam = document.querySelector('#admin-book-exam');
   const adminBookDescription = document.querySelector('#admin-book-description');
   const adminBookPublisher = document.querySelector('#admin-book-publisher');
@@ -3173,6 +3135,9 @@ function initStaffPage() {
     if (adminBookLanguage) {
       adminBookLanguage.value = '';
     }
+    if (adminBookQuantity) {
+      adminBookQuantity.value = '1';
+    }
     if (adminBookMetadataIsbn) {
       adminBookMetadataIsbn.value = '';
     }
@@ -3194,6 +3159,9 @@ function initStaffPage() {
     }
     if (adminBookAuthor) {
       adminBookAuthor.value = book.author || '';
+    }
+    if (adminBookQuantity) {
+      adminBookQuantity.value = '1';
     }
     updateAdminBookBarcode(book.barcode || '');
     updateAdminBookMetadataIsbnValue(book.metadataIsbn || '');
@@ -6083,6 +6051,7 @@ function initStaffPage() {
     const languageValue = adminBookLanguage?.value?.trim() || '';
     const coverUrlValue = adminBookCover?.value?.trim() || '';
     const tags = getSelectedAdminThemes();
+    const quantityValue = Math.max(1, parseInt(adminBookQuantity?.value, 10) || 1);
     const payload = {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
@@ -6105,15 +6074,18 @@ function initStaffPage() {
     }
     try {
       const bookId = adminBookIdInput?.value?.trim();
+      if (!bookId) {
+        payload.quantity = quantityValue;
+      }
       const url = bookId ? `/api/books/${bookId}` : '/api/books';
       const method = bookId ? 'PUT' : 'POST';
-      await fetchJson(url, {
+      const result = await fetchJson(url, {
         method,
         body: payload,
       });
       adminBookMessage.textContent = bookId
         ? 'Boek bijgewerkt in de bibliotheek.'
-        : 'Boek opgeslagen in de bibliotheek.';
+        : `Boek opgeslagen in de bibliotheek (${result?.created || 1} exemplaar/exemplaren).`;
       resetAdminBookForm();
       await refreshStaffData();
     } catch (error) {
