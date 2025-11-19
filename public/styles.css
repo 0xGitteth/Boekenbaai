@@ -850,6 +850,66 @@ body[data-page='staff'] .teacher-actions {
   margin: 0;
 }
 
+.admin-book-grid__barcode-results {
+  grid-column: 1 / -1;
+}
+
+.admin-barcode-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.admin-barcode-result {
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.12);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 6px 14px rgba(var(--brand-dark-rgb), 0.08);
+}
+
+.admin-barcode-result__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-barcode-result__summary {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.admin-barcode-result__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.admin-barcode-result__copies {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-barcode-result__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: space-between;
+}
+
+.admin-barcode-result__copy-status {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .admin-book-grid {
   row-gap: 0.75rem;
 }
@@ -1703,6 +1763,25 @@ body[data-page='staff'] .class-card__student-actions .btn {
   border: 1px solid rgba(var(--brand-dark-rgb), 0.16);
   display: grid;
   gap: 0.75rem;
+}
+
+.book-result__group-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.book-result__select {
+  appearance: none;
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.2);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+  background: #fff;
+}
+
+.book-result__summary {
+  font-weight: 600;
 }
 
 .book-result__actions {

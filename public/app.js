@@ -1678,7 +1678,8 @@ function initStudentPage() {
 
   let folders = [];
   let allBooks = [];
-  let currentBook = null;
+  let currentBarcodeSelection = null;
+  let selectedBarcodeGroupId = '';
   let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
@@ -1805,7 +1806,101 @@ function initStudentPage() {
         { className: 'book-result__status' }
       );
     }
-    currentBook = null;
+    currentBarcodeSelection = null;
+    selectedBarcodeGroupId = '';
+  }
+
+  function chooseDefaultBarcodeGroup(groups) {
+    if (!Array.isArray(groups) || !groups.length) {
+      return '';
+    }
+    const preferred = groups.find((group) => group.availableCopies > 0);
+    return (preferred || groups[0]).id;
+  }
+
+  function getSelectedBarcodeGroup() {
+    if (!currentBarcodeSelection || !Array.isArray(currentBarcodeSelection.groups)) {
+      return null;
+    }
+    const groups = currentBarcodeSelection.groups;
+    if (!groups.length) {
+      return null;
+    }
+    const match = groups.find((group) => group.id === selectedBarcodeGroupId);
+    if (match) {
+      return match;
+    }
+    selectedBarcodeGroupId = chooseDefaultBarcodeGroup(groups);
+    return groups.find((group) => group.id === selectedBarcodeGroupId) || null;
+  }
+
+  function updateBarcodeSelection(selection) {
+    currentBarcodeSelection = selection;
+    const groups = Array.isArray(selection?.groups) ? selection.groups : [];
+    selectedBarcodeGroupId = groups.length ? chooseDefaultBarcodeGroup(groups) : '';
+  }
+
+  function updateGroupCounts(group) {
+    if (!group || !Array.isArray(group.books)) {
+      return;
+    }
+    const availableCopies = group.books.filter((book) => book.status !== 'borrowed').length;
+    group.totalCopies = group.books.length;
+    group.availableCopies = availableCopies;
+    group.borrowed = group.totalCopies - group.availableCopies;
+  }
+
+  function applyBookUpdateToSelection(updatedBook) {
+    if (!updatedBook?.id || !currentBarcodeSelection?.groups?.length) {
+      return;
+    }
+    for (const group of currentBarcodeSelection.groups) {
+      if (!Array.isArray(group.books)) {
+        continue;
+      }
+      const index = group.books.findIndex((book) => book.id === updatedBook.id);
+      if (index !== -1) {
+        group.books[index] = { ...group.books[index], ...updatedBook };
+        updateGroupCounts(group);
+        break;
+      }
+    }
+  }
+
+  function syncBarcodeSelectionWithLibrary() {
+    if (!currentBarcodeSelection?.groups?.length || !allBooks.length) {
+      return;
+    }
+    const map = new Map(allBooks.map((book) => [book.id, book]));
+    for (const group of currentBarcodeSelection.groups) {
+      if (!Array.isArray(group.books)) {
+        continue;
+      }
+      group.books = group.books.map((book) => map.get(book.id) || book);
+      updateGroupCounts(group);
+    }
+  }
+
+  function findAvailableBookInGroup(group) {
+    if (!group || !Array.isArray(group.books)) {
+      return null;
+    }
+    return group.books.find((book) => book.status !== 'borrowed') || null;
+  }
+
+  function findBorrowedBookForStudent(group) {
+    if (!group || !Array.isArray(group.books) || !authUser || authUser.role !== 'student') {
+      return null;
+    }
+    return group.books.find((book) => book.borrowedBy === authUser.id) || null;
+  }
+
+  function getGroupReferenceBook(group) {
+    return (
+      findBorrowedBookForStudent(group) ||
+      findAvailableBookInGroup(group) ||
+      (group?.books ? group.books[0] : null)
+    );
   }
 
   function renderAuthState() {
@@ -1953,10 +2048,20 @@ function initStudentPage() {
     const barcode = barcodeInput?.value.trim();
     if (!barcode) return;
     try {
-      currentBook = await fetchJson(`/api/books/barcode/${encodeURIComponent(barcode)}`);
+      const result = await fetchJson(`/api/books/barcode/${encodeURIComponent(barcode)}`);
+      const groups = Array.isArray(result.groups) ? result.groups : [];
+      if (!groups.length) {
+        updateBarcodeSelection(null);
+        resetBookResult();
+        return;
+      }
+      updateBarcodeSelection({
+        barcode: result.barcode || normalizeBarcode(barcode),
+        groups,
+      });
       renderBookPrompt();
     } catch (error) {
-      currentBook = null;
+      updateBarcodeSelection(null);
       if (bookResult) {
         replaceWithTextElement(bookResult, 'p', error.message, {
           className: 'book-result__status',
@@ -1967,59 +2072,104 @@ function initStudentPage() {
 
   function renderBookPrompt() {
     if (!bookResult) return;
-    if (!currentBook) {
+    if (!authUser || authUser.role !== 'student') {
+      resetBookResult();
+      return;
+    }
+    if (!currentBarcodeSelection?.groups?.length) {
+      resetBookResult();
+      return;
+    }
+    const groups = currentBarcodeSelection.groups;
+    const selectedGroup = getSelectedBarcodeGroup();
+    if (!selectedGroup) {
       resetBookResult();
       return;
     }
     const loggedIn = authUser && authUser.role === 'student';
-    const borrowedByStudent = loggedIn && currentBook.borrowedBy === authUser.id;
-    const borrowedByOther = currentBook.status === 'borrowed' && !borrowedByStudent;
-    let statusText = 'Boek is beschikbaar';
-    if (currentBook.status !== 'available') {
-      statusText = borrowedByStudent
-        ? 'Je hebt dit boek geleend'
-        : 'Dit boek is momenteel uitgeleend';
+    const borrowedByStudent = Boolean(findBorrowedBookForStudent(selectedGroup));
+    const availableBook = findAvailableBookInGroup(selectedGroup);
+    const hasAvailable = Boolean(availableBook);
+    const referenceBook = getGroupReferenceBook(selectedGroup);
+    let statusText = 'Er is een exemplaar beschikbaar.';
+    if (borrowedByStudent) {
+      statusText = 'Je hebt dit boek geleend.';
+    } else if (!hasAvailable) {
+      statusText = 'Dit boek is momenteel uitgeleend.';
+    } else if (selectedGroup.availableCopies === 1) {
+      statusText = 'Laatste exemplaar beschikbaar.';
     }
+
     bookResult.replaceChildren();
-    appendTextElement(bookResult, 'h3', currentBook.title);
-    if (currentBook.author) {
-      appendTextElement(bookResult, 'p', currentBook.author);
+
+    if (groups.length > 1) {
+      const groupSelect = appendElement(bookResult, 'div', {
+        className: 'book-result__group-select',
+      });
+      appendTextElement(groupSelect, 'label', 'Meerdere titels gevonden. Kies jouw titel.');
+      const select = appendElement(groupSelect, 'select', {
+        className: 'book-result__select',
+        aria: { label: 'Kies een titel voor deze barcode' },
+      });
+      for (const group of groups) {
+        const option = appendElement(select, 'option', {
+          value: group.id,
+        });
+        const labelParts = [group.title || 'Onbekende titel'];
+        if (group.author) {
+          labelParts.push(`– ${group.author}`);
+        }
+        labelParts.push(`(${group.availableCopies}/${group.totalCopies} beschikbaar)`);
+        option.textContent = labelParts.join(' ');
+      }
+      select.value = selectedGroup.id;
+      select.addEventListener('change', () => {
+        selectedBarcodeGroupId = select.value;
+        renderBookPrompt();
+      });
     }
-    appendTextElement(bookResult, 'p', statusText, {
-      className: 'book-result__status',
-    });
-    if (currentBook.description) {
-      appendTextElement(bookResult, 'p', currentBook.description);
+
+    appendTextElement(bookResult, 'h3', selectedGroup.title || referenceBook?.title || 'Onbekende titel');
+    if (selectedGroup.author || referenceBook?.author) {
+      appendTextElement(bookResult, 'p', selectedGroup.author || referenceBook?.author || '');
+    }
+    appendTextElement(
+      bookResult,
+      'p',
+      `Beschikbaar: ${selectedGroup.availableCopies} van ${selectedGroup.totalCopies} • Uitgeleend: ${selectedGroup.borrowed}`,
+      { className: 'book-result__summary' }
+    );
+    appendTextElement(bookResult, 'p', statusText, { className: 'book-result__status' });
+    if (referenceBook?.description) {
+      appendTextElement(bookResult, 'p', referenceBook.description);
     }
     const barcodeParagraph = appendElement(bookResult, 'p');
     const barcodeLabel = appendTextElement(barcodeParagraph, 'strong', 'Barcode:');
     if (barcodeLabel) {
       barcodeParagraph.append(' ');
     }
-    barcodeParagraph.append(document.createTextNode(currentBook.barcode || ''));
-
-    if (currentBook.suitableForExamList) {
+    barcodeParagraph.append(document.createTextNode(currentBarcodeSelection.barcode || referenceBook?.barcode || ''));
+    if (referenceBook?.suitableForExamList) {
       const examParagraph = appendElement(bookResult, 'p');
       appendTextElement(examParagraph, 'strong', '✔ Op de leeslijst');
     }
-    const actions = appendElement(bookResult, 'div', {
-      className: 'book-result__actions',
-    });
-    if (currentBook.status === 'available' && loggedIn) {
+
+    const actions = appendElement(bookResult, 'div', { className: 'book-result__actions' });
+    if (loggedIn && !borrowedByStudent && hasAvailable) {
       const borrowBtn = appendTextElement(actions, 'button', 'Ik leen dit boek', {
         className: 'btn',
         type: 'button',
       });
-      borrowBtn.addEventListener('click', () => handleBorrow(currentBook));
+      borrowBtn.addEventListener('click', () => handleBorrow(selectedGroup));
     }
-    if (borrowedByStudent) {
+    if (borrowedByStudent && loggedIn) {
       const returnBtn = appendTextElement(actions, 'button', 'Ik breng het terug', {
         className: 'btn btn--secondary',
         type: 'button',
       });
-      returnBtn.addEventListener('click', () => handleReturn(currentBook));
+      returnBtn.addEventListener('click', () => handleReturn(findBorrowedBookForStudent(selectedGroup), selectedGroup));
     }
-    if (borrowedByOther) {
+    if (!hasAvailable && !borrowedByStudent) {
       appendTextElement(
         actions,
         'p',
@@ -2029,20 +2179,22 @@ function initStudentPage() {
     }
   }
 
-  async function handleBorrow(book) {
-    if (!book) return;
+  async function handleBorrow(group) {
+    if (!group) return;
+    const availableBook = findAvailableBookInGroup(group);
+    const targetId = availableBook ? availableBook.id : group.id;
+    const payload = { groupId: group.id };
     try {
-      const result = await fetchJson(`/api/books/${book.id}/check-out`, {
+      const result = await fetchJson(`/api/books/${encodeURIComponent(targetId)}/check-out`, {
         method: 'POST',
-        body: {},
+        body: payload,
       });
-      currentBook = result.book;
+      applyBookUpdateToSelection(result.book);
+      renderBookPrompt();
       await refreshData();
       if (bookResult) {
         bookResult.innerHTML = '';
-        const message = appendElement(bookResult, 'p', {
-          className: 'book-result__status',
-        });
+        const message = appendElement(bookResult, 'p', { className: 'book-result__status' });
         message.append('Veel leesplezier met ');
         appendTextElement(message, 'strong', result.book.title);
         message.append('!');
@@ -2056,20 +2208,22 @@ function initStudentPage() {
     }
   }
 
-  async function handleReturn(book) {
-    if (!book) return;
+  async function handleReturn(book, group) {
+    if (!book && !group) return;
+    const targetId = book?.id || group?.id || currentBarcodeSelection?.barcode;
+    if (!targetId) return;
+    const payload = group?.id ? { groupId: group.id } : {};
     try {
-      const result = await fetchJson(`/api/books/${book.id}/check-in`, {
+      const result = await fetchJson(`/api/books/${encodeURIComponent(targetId)}/check-in`, {
         method: 'POST',
-        body: {},
+        body: payload,
       });
-      currentBook = result.book;
+      applyBookUpdateToSelection(result.book);
+      renderBookPrompt();
       await refreshData();
       if (bookResult) {
         bookResult.innerHTML = '';
-        const message = appendElement(bookResult, 'p', {
-          className: 'book-result__status',
-        });
+        const message = appendElement(bookResult, 'p', { className: 'book-result__status' });
         message.append('Bedankt! ');
         appendTextElement(message, 'strong', result.book.title);
         message.append(' is weer beschikbaar.');
@@ -2086,10 +2240,7 @@ function initStudentPage() {
   async function refreshData() {
     if (!authUser || authUser.role !== 'student') return;
     await Promise.all([loadBooks(), loadSummary(), reloadCurrentUser(['student'])]);
-    if (currentBook) {
-      const updated = allBooks.find((book) => book.id === currentBook.id);
-      currentBook = updated || null;
-    }
+    syncBarcodeSelectionWithLibrary();
     renderBorrowedBooks();
     renderBookPrompt();
     loadStudentActivity();
@@ -2204,6 +2355,8 @@ function initStaffPage() {
   const adminBookMetadataIsbn = document.querySelector('#admin-book-metadata-isbn');
   const adminBookLookupButton = document.querySelector('#admin-book-lookup');
   const adminBookLookupMessage = document.querySelector('#admin-book-lookup-message');
+  const adminBarcodeResultsSection = document.querySelector('#admin-barcode-results-section');
+  const adminBarcodeResults = document.querySelector('#admin-barcode-results');
   const adminBookExam = document.querySelector('#admin-book-exam');
   const adminBookDescription = document.querySelector('#admin-book-description');
   const adminBookPublisher = document.querySelector('#admin-book-publisher');
@@ -2328,6 +2481,7 @@ function initStaffPage() {
   const adminCustomThemes = new Map();
   let adminSelectedThemeKeys = new Set();
   let onlyExamList = false;
+  let adminBarcodeGroups = [];
 
   initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
 
@@ -2359,6 +2513,72 @@ function initStaffPage() {
   function updateAdminBookMetadataIsbnValue(value) {
     if (!adminBookMetadataIsbn) return;
     adminBookMetadataIsbn.value = value ? normalizeBarcode(value) : '';
+  }
+
+  function setAdminBarcodeGroups(groups) {
+    adminBarcodeGroups = Array.isArray(groups) ? groups : [];
+    renderAdminBarcodeGroups();
+  }
+
+  function renderAdminBarcodeGroups() {
+    if (!adminBarcodeResultsSection || !adminBarcodeResults) {
+      return;
+    }
+    const hasGroups = adminBarcodeGroups.length > 0;
+    adminBarcodeResultsSection.classList.toggle('hidden', !hasGroups);
+    adminBarcodeResults.replaceChildren();
+    if (!hasGroups) {
+      return;
+    }
+    for (const group of adminBarcodeGroups) {
+      const card = appendElement(adminBarcodeResults, 'article', {
+        className: 'admin-barcode-result',
+      });
+      const header = appendElement(card, 'div', { className: 'admin-barcode-result__header' });
+      const headerInfo = appendElement(header, 'div');
+      appendTextElement(headerInfo, 'strong', group.title || 'Onbekende titel');
+      if (group.author) {
+        appendTextElement(headerInfo, 'p', group.author, { className: 'muted' });
+      }
+      appendTextElement(
+        header,
+        'span',
+        `Beschikbaar: ${group.availableCopies} / ${group.totalCopies} • Uitgeleend: ${group.borrowed}`,
+        { className: 'admin-barcode-result__summary' }
+      );
+      const actions = appendElement(card, 'div', {
+        className: 'admin-barcode-result__actions',
+      });
+      const selectButton = appendTextElement(actions, 'button', 'Bewerk titel', {
+        className: 'btn btn--ghost',
+        type: 'button',
+      });
+      selectButton.addEventListener('click', () => handleAdminBarcodeGroupSelection(group));
+      const copies = appendElement(card, 'ul', { className: 'admin-barcode-result__copies' });
+      for (const book of group.books || []) {
+        const item = appendElement(copies, 'li', { className: 'admin-barcode-result__copy' });
+        appendTextElement(item, 'span', book.title || group.title || 'Onbekend exemplaar');
+        appendTextElement(item, 'span', book.status === 'borrowed' ? 'Uitgeleend' : 'Beschikbaar', {
+          className: 'admin-barcode-result__copy-status',
+        });
+        const openButton = appendTextElement(item, 'button', 'Bekijk exemplaar', {
+          className: 'btn btn--ghost',
+          type: 'button',
+        });
+        openButton.addEventListener('click', () => handleAdminBookSelection(book, { focus: true, scroll: true }));
+      }
+    }
+  }
+
+  function handleAdminBarcodeGroupSelection(group) {
+    const targetBook = group?.books?.[0];
+    if (!targetBook) {
+      return;
+    }
+    handleAdminBookSelection(targetBook, { focus: true, scroll: true, silent: true });
+    if (adminBookLookupMessage) {
+      adminBookLookupMessage.textContent = 'Titel geladen. Kies eventueel een specifiek exemplaar.';
+    }
   }
 
   adminBookBarcode?.addEventListener('blur', () => {
@@ -2720,6 +2940,7 @@ function initStaffPage() {
     if (adminBookLookupMessage) {
       adminBookLookupMessage.textContent = '';
     }
+    setAdminBarcodeGroups([]);
     if (adminBookPublisher) {
       adminBookPublisher.value = '';
     }
@@ -4102,11 +4323,13 @@ function initStaffPage() {
           ' Barcode-dubbelcontrole wordt overgeslagen omdat er een intern ISBN is opgegeven.';
       }
     }
+    setAdminBarcodeGroups([]);
 
-    let existingBook = null;
+    let existingGroups = [];
     if (!metadataOverride) {
       try {
-        existingBook = await fetchJson(`/api/books/barcode/${encodeURIComponent(sanitized)}`);
+        const response = await fetchJson(`/api/books/barcode/${encodeURIComponent(sanitized)}`);
+        existingGroups = Array.isArray(response.groups) ? response.groups : [];
       } catch (error) {
         if (!/geen boek gevonden/i.test(error.message || '')) {
           if (adminBookLookupMessage && !silent) {
@@ -4116,11 +4339,20 @@ function initStaffPage() {
         }
       }
 
-      if (existingBook) {
-        handleAdminBookSelection(existingBook, { silent: true });
-        if (adminBookLookupMessage && !silent) {
+      if (existingGroups.length) {
+        setAdminBarcodeGroups(existingGroups);
+        if (existingGroups.length === 1) {
+          const existingBook = existingGroups[0]?.books?.[0];
+          if (existingBook) {
+            handleAdminBookSelection(existingBook, { silent: true });
+          }
+          if (adminBookLookupMessage && !silent) {
+            adminBookLookupMessage.textContent =
+              'Dit boek staat al in de bibliotheek. Gegevens zijn geladen.';
+          }
+        } else if (adminBookLookupMessage && !silent) {
           adminBookLookupMessage.textContent =
-            'Dit boek staat al in de bibliotheek. Gegevens zijn geladen.';
+            'Er zijn meerdere titels met deze barcode. Kies hieronder welke je wilt bewerken.';
         }
         return;
       }
