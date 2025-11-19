@@ -306,6 +306,93 @@ function ensureBookShape(book) {
   return safeBook;
 }
 
+function normalizeGroupKeyPart(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return String(value).trim();
+}
+
+function getBookGroupKey(book) {
+  const title = normalizeGroupKeyPart(book?.title).toLowerCase();
+  const author = normalizeGroupKeyPart(book?.author).toLowerCase();
+  const metadataIsbn = normalizeGroupKeyPart(book?.metadataIsbn).toLowerCase();
+  return `${title}||${author}||${metadataIsbn}`;
+}
+
+function pickRepresentativeBook(current, candidate) {
+  if (!candidate) return current;
+  if (!current) return candidate;
+  const currentScore = (current.coverUrl ? 2 : 0) + (current.description ? 1 : 0);
+  const candidateScore = (candidate.coverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
+  if (candidateScore > currentScore) {
+    return candidate;
+  }
+  return current;
+}
+
+function groupBooksByTitleAuthor(books = []) {
+  const groups = new Map();
+
+  for (const book of books || []) {
+    if (!book) continue;
+    const key = getBookGroupKey(book);
+    const entry = groups.get(key) || {
+      id: key,
+      title: normalizeGroupKeyPart(book.title) || book.title || '',
+      author: normalizeGroupKeyPart(book.author) || book.author || '',
+      metadataIsbn: normalizeGroupKeyPart(book.metadataIsbn) || null,
+      copies: [],
+      tags: new Set(),
+      folderIds: new Set(),
+      representativeBook: null,
+    };
+    entry.copies.push(book);
+    entry.representativeBook = pickRepresentativeBook(entry.representativeBook, book);
+    if (Array.isArray(book.tags)) {
+      for (const tag of book.tags) {
+        if (typeof tag === 'string' && tag.trim()) {
+          entry.tags.add(tag.trim());
+        }
+      }
+    }
+    if (book.folderId) {
+      entry.folderIds.add(book.folderId);
+    }
+    groups.set(key, entry);
+  }
+
+  const result = [];
+  for (const value of groups.values()) {
+    const totalCopies = value.copies.length;
+    const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
+    const availableCopies = totalCopies - borrowedCopies;
+    const representative = value.representativeBook || value.copies[0] || {};
+    const folderIds = Array.from(value.folderIds);
+    const tags = Array.from(value.tags);
+    result.push({
+      id: value.id,
+      title: value.title || representative.title || '',
+      author: value.author || representative.author || '',
+      metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
+      description: representative.description || '',
+      coverUrl: representative.coverUrl || '',
+      coverColor: representative.coverColor || '#f9f9f9',
+      tags,
+      folderIds,
+      folderId: folderIds.length === 1 ? folderIds[0] : null,
+      suitableForExamList: value.copies.some((copy) => copy.suitableForExamList),
+      borrowCount: value.copies.reduce((total, copy) => total + (copy.borrowCount || 0), 0),
+      totalCopies,
+      borrowedCopies,
+      availableCopies,
+      copies: value.copies,
+    });
+  }
+
+  return result;
+}
+
 function ensureFolderShape(folder) {
   const source = typeof folder === 'object' && folder ? folder : {};
   const safeFolder = { ...source };
@@ -1651,11 +1738,18 @@ async function handleApi(req, res, requestUrl) {
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/status') {
       const db = getDb();
-      const totalBooks = db.books.length;
-      const borrowedBooks = db.books.filter((book) => book.status === 'borrowed').length;
-      const availableBooks = totalBooks - borrowedBooks;
+      const groupedBooks = groupBooksByTitleAuthor(db.books);
+      const totalBooks = groupedBooks.reduce((sum, group) => sum + group.totalCopies, 0);
+      const borrowedBooks = groupedBooks.reduce((sum, group) => sum + group.borrowedCopies, 0);
+      const availableBooks = groupedBooks.reduce((sum, group) => sum + group.availableCopies, 0);
       const examListBooks = db.books.filter((book) => book.suitableForExamList).length;
-      return sendJson(res, 200, { totalBooks, borrowedBooks, availableBooks, examListBooks });
+      return sendJson(res, 200, {
+        totalBooks,
+        borrowedBooks,
+        availableBooks,
+        examListBooks,
+        groupCount: groupedBooks.length,
+      });
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {

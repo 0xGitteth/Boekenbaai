@@ -11,6 +11,8 @@ let authUser = null;
 let updateAuthUi = () => {};
 let passwordChangeController = null;
 let statsModalController = null;
+let groupedBooks = [];
+const studentDirectory = new Map();
 
 function appendElement(parent, tag, options = {}) {
   const element = document.createElement(tag);
@@ -95,6 +97,24 @@ function appendElement(parent, tag, options = {}) {
   }
   parent?.append(element);
   return element;
+}
+
+function updateStudentDirectory(students = []) {
+  studentDirectory.clear();
+  for (const entry of students || []) {
+    if (entry?.id) {
+      studentDirectory.set(entry.id, entry.name || entry.username || entry.id);
+    }
+  }
+}
+
+function resolveBorrowerLabel(borrowerId) {
+  if (!borrowerId) return '';
+  const name = studentDirectory.get(borrowerId);
+  if (name) {
+    return `${name} (${borrowerId})`;
+  }
+  return borrowerId;
 }
 
 function createStatsModal() {
@@ -309,11 +329,13 @@ function normalizeBarcode(value) {
 
 function resolveBookMetadataKey(book) {
   if (!book) return '';
-  const metadataIsbn = normalizeBarcode(book.metadataIsbn);
+  const source =
+    book.representativeBook || (Array.isArray(book.copies) ? book.copies[0] : book) || book;
+  const metadataIsbn = normalizeBarcode(source.metadataIsbn || book.metadataIsbn);
   if (metadataIsbn) {
     return metadataIsbn;
   }
-  return normalizeBarcode(book.barcode);
+  return normalizeBarcode(source.barcode || book.barcode);
 }
 
 function generateTemporaryPassword(length = 10) {
@@ -752,6 +774,8 @@ function ensureBookDetailElements() {
     bookDetailState.metaPages = bookDetailState.root.querySelector('#book-detail-pages');
     bookDetailState.metaLanguage = bookDetailState.root.querySelector('#book-detail-language');
     bookDetailState.metaBarcode = bookDetailState.root.querySelector('#book-detail-barcode');
+    bookDetailState.availability = bookDetailState.root.querySelector('#book-detail-availability');
+    bookDetailState.copies = bookDetailState.root.querySelector('#book-detail-copies');
     bookDetailState.actions = bookDetailState.root.querySelector('.book-detail__actions');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
     bookDetailState.closeButtons = Array.from(
@@ -878,21 +902,30 @@ function extractMetadataCoverUrl(metadata) {
 function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
-  state.editBook = book;
+  const copies = Array.isArray(book?.copies) ? book.copies : [book];
+  const representative = book?.representativeBook || copies[0] || book;
+  const totalCopies = Number.isFinite(book?.totalCopies) ? book.totalCopies : copies.length;
+  const borrowedCopies = Number.isFinite(book?.borrowedCopies)
+    ? book.borrowedCopies
+    : copies.filter((copy) => String(copy.status || '').toLowerCase() === 'borrowed').length;
+  const availableCopies = Number.isFinite(book?.availableCopies)
+    ? book.availableCopies
+    : Math.max(totalCopies - borrowedCopies, 0);
+  state.editBook = copies[0] || book;
   if (state.loading) {
     state.loading.hidden = true;
   }
   if (state.content) {
     state.content.hidden = false;
   }
-  const manualCoverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
+  const manualCoverUrl = typeof representative.coverUrl === 'string' ? representative.coverUrl.trim() : '';
   const metadataCoverUrl = extractMetadataCoverUrl(metadata);
   const coverUrl = manualCoverUrl || metadataCoverUrl;
   const hasCover = Boolean(coverUrl);
   if (state.coverImage) {
     if (hasCover) {
       state.coverImage.src = coverUrl;
-      state.coverImage.alt = book.title ? `Omslag van ${book.title}` : 'Boekomslag';
+      state.coverImage.alt = representative.title ? `Omslag van ${representative.title}` : 'Boekomslag';
       state.coverImage.hidden = false;
     } else {
       state.coverImage.removeAttribute('src');
@@ -901,19 +934,22 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     }
   }
   if (state.coverFallback) {
-    const initial = (book.title || '').trim().charAt(0).toUpperCase();
+    const initial = (representative.title || '').trim().charAt(0).toUpperCase();
     state.coverFallback.textContent = initial || '📚';
     state.coverFallback.hidden = hasCover;
   }
   if (state.title) {
-    state.title.textContent = book.title || 'Onbekende titel';
+    state.title.textContent = representative.title || 'Onbekende titel';
   }
   if (state.author) {
-    state.author.textContent = book.author || '';
+    state.author.textContent = representative.author || '';
   }
   if (state.status) {
-    const statusValue = (book.status || 'available').toLowerCase();
-    const statusText = statusValue === 'available' ? 'Beschikbaar' : 'Uitgeleend';
+    const statusValue = availableCopies > 0 ? 'available' : 'borrowed';
+    const statusText =
+      totalCopies > 1 ? `${availableCopies}/${totalCopies} beschikbaar` : statusValue === 'available'
+      ? 'Beschikbaar'
+      : 'Uitgeleend';
     state.status.textContent = statusText;
     state.status.classList.remove('book-detail__status--available', 'book-detail__status--borrowed');
     state.status.classList.add(
@@ -932,36 +968,37 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
       li.style.setProperty('--theme-pill-border', border);
     }
   }
-  const descriptionText = (book.description || '').trim() || (metadata?.description || '').trim();
+  const descriptionText =
+    (representative.description || '').trim() || (metadata?.description || '').trim();
   if (state.description) {
     state.description.textContent = descriptionText || 'Geen beschrijving beschikbaar.';
   }
   if (state.metaPublisher) {
-    const manualPublisher = (book.publisher || '').trim();
+    const manualPublisher = (representative.publisher || '').trim();
     const metadataPublisher = (metadata?.publisher || '').trim();
     state.metaPublisher.textContent = manualPublisher || metadataPublisher || 'Onbekend';
   }
   if (state.metaYear) {
     const manualYear =
-      book.publishedYear != null && String(book.publishedYear).trim()
-        ? String(book.publishedYear)
-        : extractYear(book.publishedAt || '');
+      representative.publishedYear != null && String(representative.publishedYear).trim()
+        ? String(representative.publishedYear)
+        : extractYear(representative.publishedAt || '');
     const metadataYear = extractYear(
       metadata?.publishedYear || metadata?.publishedAt || metadata?.publishDate || metadata?.publish_date || ''
     );
     state.metaYear.textContent = manualYear || metadataYear || 'Onbekend';
   }
   if (state.metaPages) {
-    const pages = resolvePageCount(metadata, book);
+    const pages = resolvePageCount(metadata, representative);
     state.metaPages.textContent = pages ? `${pages}` : 'Onbekend';
   }
   if (state.metaLanguage) {
-    const manualLanguage = (book.language || '').trim();
+    const manualLanguage = (representative.language || '').trim();
     const metadataLanguage = (metadata?.language || '').trim();
     state.metaLanguage.textContent = manualLanguage || metadataLanguage || 'Onbekend';
   }
   if (state.metaBarcode) {
-    state.metaBarcode.textContent = book.barcode || metadata?.barcode || '';
+    state.metaBarcode.textContent = representative.barcode || metadata?.barcode || '';
   }
   if (state.message) {
     state.message.textContent = metadataMessage || '';
@@ -971,18 +1008,66 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.editButton.hidden = !isAdmin;
     state.editButton.disabled = !isAdmin;
   }
+  if (state.availability) {
+    state.availability.textContent = `Exemplaren: ${availableCopies}/${totalCopies} beschikbaar`;
+  }
+  if (state.copies) {
+    state.copies.innerHTML = '';
+    appendTextElement(state.copies, 'h4', 'Exemplaren', { className: 'book-detail__copies-title' });
+    const list = appendElement(state.copies, 'ul', { className: 'book-detail__copies-list' });
+    for (const copy of copies) {
+      const li = appendElement(list, 'li', { className: 'book-detail__copy' });
+      const copyStatus = String(copy.status || '').toLowerCase() === 'borrowed' ? 'borrowed' : 'available';
+      appendTextElement(li, 'span', copyStatus === 'borrowed' ? 'Uitgeleend' : 'Beschikbaar', {
+        className: `book-detail__copy-status book-detail__copy-status--${copyStatus}`,
+      });
+      const meta = appendElement(li, 'div', { className: 'book-detail__copy-meta' });
+      appendTextElement(meta, 'strong', copy.barcode || 'Onbekende barcode', {
+        className: 'book-detail__copy-barcode',
+      });
+      if (copyStatus === 'borrowed') {
+        const borrowerLabel = resolveBorrowerLabel(copy.borrowedBy);
+        if (borrowerLabel) {
+          appendTextElement(meta, 'span', `Lener: ${borrowerLabel}`, {
+            className: 'book-detail__copy-borrower',
+          });
+        }
+        if (copy.dueDate) {
+          const dateLabel = new Date(copy.dueDate).toLocaleDateString('nl-NL');
+          appendTextElement(meta, 'span', `Retour: ${dateLabel}`, {
+            className: 'book-detail__copy-due',
+          });
+        }
+      }
+      if (authUser?.role === 'admin') {
+        const editBtn = appendElement(li, 'button', {
+          className: 'btn btn--ghost book-detail__copy-edit',
+          type: 'button',
+          textContent: 'Bewerk dit exemplaar',
+        });
+        editBtn.addEventListener('click', () => {
+          state.editBook = copy;
+          if (typeof bookDetailState.adminEditHandler === 'function') {
+            bookDetailState.adminEditHandler(copy);
+          }
+          closeBookDetail();
+        });
+      }
+    }
+  }
 }
 
 async function openBookDetail(book) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
-  const bookId = typeof book === 'string' ? book : book?.id;
-  if (!bookId) return;
+  const providedGroup = book && Array.isArray(book.copies) ? book : null;
+  const bookId = providedGroup ? providedGroup.id : typeof book === 'string' ? book : book?.id;
+  if (!bookId && !providedGroup) return;
   state.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.root.classList.remove('hidden');
   state.root.setAttribute('aria-hidden', 'false');
   document.body.classList.add('book-detail-open');
-  state.currentBookId = bookId;
+  state.currentBookId = bookId || (providedGroup ? providedGroup.id : null);
   if (state.content) {
     state.content.hidden = true;
   }
@@ -996,23 +1081,32 @@ async function openBookDetail(book) {
   if (state.dialog) {
     state.dialog.focus({ preventScroll: true });
   }
-  let detail = null;
-  try {
-    detail = await fetchJson(`/api/books/${encodeURIComponent(bookId)}`);
-  } catch (error) {
-    if (book && typeof book === 'object') {
-      detail = book;
-    } else {
-      if (state.loading) {
-        state.loading.textContent = error.message || 'Kon boekdetails niet laden.';
+  let detail = providedGroup;
+  if (!detail && bookId) {
+    try {
+      detail = await fetchJson(`/api/books/${encodeURIComponent(bookId)}`);
+    } catch (error) {
+      if (book && typeof book === 'object') {
+        detail = book;
+      } else {
+        if (state.loading) {
+          state.loading.textContent = error.message || 'Kon boekdetails niet laden.';
+        }
+        return;
       }
-      return;
     }
   }
   if (!detail || state.currentBookId !== bookId) {
     return;
   }
-  const metadataLookupKey = resolveBookMetadataKey(detail);
+  const groupKey = detail.id ? detail.id : getBookGroupKey(detail);
+  const matchingGroup =
+    providedGroup ||
+    groupedBooks.find((group) => group.id === groupKey) ||
+    groupedBooks.find((group) => group.copies?.some((copy) => copy.id === detail.id)) ||
+    null;
+  const groupedDetail = matchingGroup || groupBooksByTitleAuthor([detail])[0] || detail;
+  const metadataLookupKey = resolveBookMetadataKey(groupedDetail);
   const canLookupMetadata = authUser?.role === 'admin';
   let metadata = metadataLookupKey ? bookDetailState.metadataCache.get(metadataLookupKey) : null;
   let metadataMessage = '';
@@ -1035,7 +1129,7 @@ async function openBookDetail(book) {
   if (state.currentBookId !== bookId) {
     return;
   }
-  populateBookDetail(detail, metadata, { metadataMessage });
+  populateBookDetail(groupedDetail, metadata, { metadataMessage });
 }
 
 function collectUniqueThemes(books) {
@@ -1213,6 +1307,94 @@ function renderThemePills(container, config = {}) {
   container.append(fragment);
 }
 
+function normalizeGroupKeyPart(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return String(value).trim();
+}
+
+function getBookGroupKey(book) {
+  const title = normalizeGroupKeyPart(book?.title).toLowerCase();
+  const author = normalizeGroupKeyPart(book?.author).toLowerCase();
+  const metadataIsbn = normalizeGroupKeyPart(book?.metadataIsbn).toLowerCase();
+  return `${title}||${author}||${metadataIsbn}`;
+}
+
+function pickRepresentativeBook(current, candidate) {
+  if (!candidate) return current;
+  if (!current) return candidate;
+  const currentScore = (current.coverUrl ? 2 : 0) + (current.description ? 1 : 0);
+  const candidateScore = (candidate.coverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
+  if (candidateScore > currentScore) {
+    return candidate;
+  }
+  return current;
+}
+
+function groupBooksByTitleAuthor(books = []) {
+  const groups = new Map();
+
+  for (const book of books || []) {
+    if (!book) continue;
+    const key = getBookGroupKey(book);
+    const entry = groups.get(key) || {
+      id: key,
+      title: normalizeGroupKeyPart(book.title) || book.title || '',
+      author: normalizeGroupKeyPart(book.author) || book.author || '',
+      metadataIsbn: normalizeGroupKeyPart(book.metadataIsbn) || null,
+      copies: [],
+      tags: new Set(),
+      folderIds: new Set(),
+      representativeBook: null,
+    };
+    entry.copies.push(book);
+    entry.representativeBook = pickRepresentativeBook(entry.representativeBook, book);
+    if (Array.isArray(book.tags)) {
+      for (const tag of book.tags) {
+        if (typeof tag === 'string' && tag.trim()) {
+          entry.tags.add(tag.trim());
+        }
+      }
+    }
+    if (book.folderId) {
+      entry.folderIds.add(book.folderId);
+    }
+    groups.set(key, entry);
+  }
+
+  const result = [];
+  for (const value of groups.values()) {
+    const totalCopies = value.copies.length;
+    const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
+    const availableCopies = totalCopies - borrowedCopies;
+    const representative = value.representativeBook || value.copies[0] || {};
+    const folderIds = Array.from(value.folderIds);
+    const tags = Array.from(value.tags);
+    result.push({
+      id: value.id,
+      title: value.title || representative.title || '',
+      author: value.author || representative.author || '',
+      metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
+      description: representative.description || '',
+      coverUrl: representative.coverUrl || '',
+      coverColor: representative.coverColor || '#f9f9f9',
+      tags,
+      folderIds,
+      folderId: folderIds.length === 1 ? folderIds[0] : null,
+      suitableForExamList: value.copies.some((copy) => copy.suitableForExamList),
+      borrowCount: value.copies.reduce((total, copy) => total + (copy.borrowCount || 0), 0),
+      totalCopies,
+      borrowedCopies,
+      availableCopies,
+      copies: value.copies,
+      representativeBook: representative,
+    });
+  }
+
+  return result;
+}
+
 function createBookCard(template, book, folders, options = {}) {
   if (!template) return null;
   const fragment = template.content.cloneNode(true);
@@ -1269,9 +1451,27 @@ function createBookCard(template, book, folders, options = {}) {
 
   if (statusBadge) {
     statusBadge.classList.remove('book-card__status--available', 'book-card__status--borrowed');
-    statusBadge.textContent = book.status === 'available' ? 'Beschikbaar' : 'Uitgeleend';
+    const totalCopies = Number.isFinite(book.totalCopies)
+      ? book.totalCopies
+      : (book.copies && book.copies.length) || (book.status ? 1 : 0);
+    const borrowedCopies = Number.isFinite(book.borrowedCopies)
+      ? book.borrowedCopies
+      : book.status === 'borrowed'
+      ? 1
+      : 0;
+    const availableCopies = Number.isFinite(book.availableCopies)
+      ? book.availableCopies
+      : Math.max(totalCopies - borrowedCopies, 0);
+    let statusText = 'Beschikbaar';
+    if (totalCopies > 1) {
+      statusText = `${availableCopies}/${totalCopies} beschikbaar`;
+    }
+    if (availableCopies <= 0) {
+      statusText = 'Uitgeleend';
+    }
+    statusBadge.textContent = statusText;
     statusBadge.classList.add(
-      book.status === 'available' ? 'book-card__status--available' : 'book-card__status--borrowed'
+      availableCopies > 0 ? 'book-card__status--available' : 'book-card__status--borrowed'
     );
   }
 
@@ -1291,7 +1491,7 @@ function createBookCard(template, book, folders, options = {}) {
     tagsList.classList.toggle('hidden', tagsList.childElementCount === 0);
   }
 
-  card.dataset.bookId = book.id || '';
+  card.dataset.bookId = book.id || getBookGroupKey(book) || '';
   const isSelectable = Boolean(options.selectable);
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
@@ -1328,7 +1528,15 @@ function createBookCard(template, book, folders, options = {}) {
 function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } = {}) {
   let list = Array.isArray(allBooks) ? [...allBooks] : [];
   if (folder) {
-    list = list.filter((book) => book.folderId === folder);
+    list = list.filter((book) => {
+      const folderIds = Array.isArray(book.folderIds)
+        ? book.folderIds.filter(Boolean)
+        : book.folderId
+        ? [book.folderId]
+        : [];
+      if (!folderIds.length) return false;
+      return folderIds.includes(folder);
+    });
   }
   if (onlyExamList) {
     list = list.filter((book) => book.suitableForExamList);
@@ -1351,6 +1559,7 @@ function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } =
         book.description,
         book.barcode,
         ...(book.tags || []),
+        ...(Array.isArray(book.copies) ? book.copies.map((copy) => copy.barcode) : []),
       ]
         .filter(Boolean)
         .join(' ')
@@ -1370,8 +1579,18 @@ function sortBooks(books, sortBy) {
   const compareOptions = { sensitivity: 'base', numeric: true };
   const getTitle = (book) => (book?.title ? String(book.title) : '');
   const getAuthor = (book) => (book?.author ? String(book.author) : '');
-  const getStatusRank = (book) =>
-    String(book?.status || '').toLowerCase() === 'available' ? 0 : 1;
+  const getStatusRank = (book) => {
+    if (Number.isFinite(book?.availableCopies)) {
+      return book.availableCopies > 0 ? 0 : 1;
+    }
+    if (Array.isArray(book?.copies)) {
+      const hasAvailable = book.copies.some(
+        (copy) => String(copy.status || '').toLowerCase() === 'available'
+      );
+      return hasAvailable ? 0 : 1;
+    }
+    return String(book?.status || '').toLowerCase() === 'available' ? 0 : 1;
+  };
   const compareAvailability = (a, b) => getStatusRank(a) - getStatusRank(b);
   const normalizeCount = (value) => {
     const number = Number(value);
@@ -1438,8 +1657,8 @@ function renderBookGrid({
   if (!grid) return;
   const allBooks = Array.isArray(books) ? [...books] : [];
   const filtered = filterBooks(allBooks, filters);
-  const sorted = sortBooks(allBooks, filters?.sortBy);
-  const visibleIds = new Set(filtered.map((book) => book.id || ''));
+  const sorted = sortBooks(filtered, filters?.sortBy);
+  const visibleIds = new Set(sorted.map((book) => book.id || ''));
   const existingCards = new Map(
     Array.from(grid.children)
       .filter((child) => child.classList?.contains('book-card'))
@@ -1952,7 +2171,7 @@ function initStudentPage() {
   function renderBooks() {
     renderBookGrid({
       grid: bookGrid,
-      books: allBooks,
+      books: groupedBooks,
       template: bookCardTemplate,
       folders,
       filters: {
@@ -1979,7 +2198,7 @@ function initStudentPage() {
   });
 
   function updateAvailableThemes() {
-    availableThemes = collectUniqueThemes(allBooks);
+    availableThemes = collectUniqueThemes(groupedBooks);
     const availableKeys = new Set(availableThemes.map((theme) => theme.key));
     for (const key of Array.from(selectedThemeKeys)) {
       if (!availableKeys.has(key)) {
@@ -2001,6 +2220,7 @@ function initStudentPage() {
     }
     try {
       allBooks = await fetchJson('/api/books');
+      groupedBooks = groupBooksByTitleAuthor(allBooks);
       updateAvailableThemes();
       if (bookGrid) {
         bookGrid.replaceChildren();
@@ -2827,6 +3047,7 @@ function initStaffPage() {
       classes = [];
       students = [];
       teachers = [];
+      groupedBooks = [];
       availableThemes = [];
       selectedThemeKeys.clear();
       adminCustomThemes.clear();
@@ -2851,7 +3072,7 @@ function initStaffPage() {
   function renderBooks() {
     renderBookGrid({
       grid: bookGrid,
-      books: allBooks,
+      books: groupedBooks,
       template: bookCardTemplate,
       folders,
       filters: {
@@ -2866,11 +3087,10 @@ function initStaffPage() {
           return undefined;
         }
         return {
-          selectable: true,
-          selected: selectedBookId === book.id,
-          onSelect: (selectedBook) => {
-            handleAdminBookSelection(selectedBook);
-          },
+          selectable: Boolean(selectedBookId),
+          selected: Array.isArray(book.copies)
+            ? book.copies.some((copy) => copy.id === selectedBookId)
+            : false,
         };
       },
     });
@@ -2890,7 +3110,7 @@ function initStaffPage() {
   });
 
   function updateAvailableThemes() {
-    availableThemes = collectUniqueThemes(allBooks);
+    availableThemes = collectUniqueThemes(groupedBooks);
     const availableKeys = new Set(availableThemes.map((theme) => theme.key));
     for (const key of Array.from(selectedThemeKeys)) {
       if (!availableKeys.has(key)) {
@@ -4387,6 +4607,7 @@ function initStaffPage() {
     }
     try {
       allBooks = await fetchJson('/api/books');
+      groupedBooks = groupBooksByTitleAuthor(allBooks);
       updateAvailableThemes();
       if (bookGrid) {
         bookGrid.replaceChildren();
@@ -4464,6 +4685,7 @@ function initStaffPage() {
 
   async function loadStudents() {
     students = await fetchJson('/api/students');
+    updateStudentDirectory(students);
     renderAdminStudents();
   }
 
