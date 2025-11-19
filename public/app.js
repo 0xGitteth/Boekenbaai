@@ -307,6 +307,15 @@ function normalizeBarcode(value) {
   return hasTrailingX ? `${digitsOnly}X` : digitsOnly;
 }
 
+function resolveBookMetadataKey(book) {
+  if (!book) return '';
+  const metadataIsbn = normalizeBarcode(book.metadataIsbn);
+  if (metadataIsbn) {
+    return metadataIsbn;
+  }
+  return normalizeBarcode(book.barcode);
+}
+
 function generateTemporaryPassword(length = 10) {
   const targetLength = Number.isFinite(length) ? Math.max(4, Math.floor(length)) : 10;
   const byteLength = Math.ceil(targetLength / 2);
@@ -708,9 +717,16 @@ const bookDetailState = {
   editBook: null,
 };
 
-function cacheIsbnMetadata(metadata) {
-  if (!metadata || !metadata.barcode) return;
-  bookDetailState.metadataCache.set(String(metadata.barcode), metadata);
+function cacheIsbnMetadata(metadata, { key } = {}) {
+  if (!metadata) return;
+  const lookupKey = normalizeBarcode(key || metadata.barcode);
+  const metadataBarcodeKey = normalizeBarcode(metadata.barcode);
+  if (lookupKey) {
+    bookDetailState.metadataCache.set(lookupKey, metadata);
+  }
+  if (metadataBarcodeKey && metadataBarcodeKey !== lookupKey) {
+    bookDetailState.metadataCache.set(metadataBarcodeKey, metadata);
+  }
 }
 
 function ensureBookDetailElements() {
@@ -996,14 +1012,14 @@ async function openBookDetail(book) {
   if (!detail || state.currentBookId !== bookId) {
     return;
   }
-  const barcode = (detail.barcode || '').replace(/[^0-9X]/gi, '');
+  const metadataLookupKey = resolveBookMetadataKey(detail);
   const canLookupMetadata = authUser?.role === 'admin';
-  let metadata = barcode ? bookDetailState.metadataCache.get(barcode) : null;
+  let metadata = metadataLookupKey ? bookDetailState.metadataCache.get(metadataLookupKey) : null;
   let metadataMessage = '';
-  if (!metadata && barcode && canLookupMetadata) {
+  if (!metadata && metadataLookupKey && canLookupMetadata) {
     try {
-      metadata = await fetchJson(`/api/isbn/${encodeURIComponent(barcode)}`);
-      cacheIsbnMetadata(metadata);
+      metadata = await fetchJson(`/api/isbn/${encodeURIComponent(metadataLookupKey)}`);
+      cacheIsbnMetadata(metadata, { key: metadataLookupKey });
     } catch (error) {
       metadataMessage = error.message || '';
     }
@@ -2185,6 +2201,7 @@ function initStaffPage() {
   const adminBookTitle = document.querySelector('#admin-book-title');
   const adminBookAuthor = document.querySelector('#admin-book-author');
   const adminBookBarcode = document.querySelector('#admin-book-barcode');
+  const adminBookMetadataIsbn = document.querySelector('#admin-book-metadata-isbn');
   const adminBookLookupButton = document.querySelector('#admin-book-lookup');
   const adminBookLookupMessage = document.querySelector('#admin-book-lookup-message');
   const adminBookExam = document.querySelector('#admin-book-exam');
@@ -2339,8 +2356,17 @@ function initStaffPage() {
     adminBookBarcode.value = value ? normalizeBarcode(value) : '';
   }
 
+  function updateAdminBookMetadataIsbnValue(value) {
+    if (!adminBookMetadataIsbn) return;
+    adminBookMetadataIsbn.value = value ? normalizeBarcode(value) : '';
+  }
+
   adminBookBarcode?.addEventListener('blur', () => {
     updateAdminBookBarcode(adminBookBarcode.value);
+  });
+
+  adminBookMetadataIsbn?.addEventListener('blur', () => {
+    updateAdminBookMetadataIsbnValue(adminBookMetadataIsbn.value);
   });
 
   function getAdminThemeEntries() {
@@ -2706,6 +2732,9 @@ function initStaffPage() {
     if (adminBookLanguage) {
       adminBookLanguage.value = '';
     }
+    if (adminBookMetadataIsbn) {
+      adminBookMetadataIsbn.value = '';
+    }
     setSelectedAdminThemes([]);
     if (adminBookCover) {
       adminBookCover.value = '';
@@ -2726,6 +2755,7 @@ function initStaffPage() {
       adminBookAuthor.value = book.author || '';
     }
     updateAdminBookBarcode(book.barcode || '');
+    updateAdminBookMetadataIsbnValue(book.metadataIsbn || '');
     if (adminBookDescription) {
       adminBookDescription.value = book.description || '';
     }
@@ -2772,6 +2802,9 @@ function initStaffPage() {
 
   function applyBookMetadata(metadata) {
     if (!metadata) return;
+    if (adminBookMetadataIsbn && !adminBookMetadataIsbn.value && metadata.barcode) {
+      updateAdminBookMetadataIsbnValue(metadata.barcode);
+    }
     if (metadata.title && adminBookTitle && !adminBookTitle.value) {
       adminBookTitle.value = metadata.title;
     }
@@ -3977,6 +4010,7 @@ function initStaffPage() {
         }
         appendImportMeta(item, 'Auteur', book?.author);
         appendImportMeta(item, 'Barcode', book?.barcode);
+        appendImportMeta(item, 'Metadata-ISBN', book?.metadataIsbn);
         appendImportMeta(item, 'Uitgever', book?.publisher);
         appendImportMeta(item, 'Jaar', book?.publishedYear);
         appendImportMeta(item, 'Pagina’s', book?.pageCount);
@@ -4046,9 +4080,6 @@ function initStaffPage() {
     if (auto && adminBookIdInput?.value) {
       return;
     }
-    if (adminBookLookupMessage && !silent) {
-      adminBookLookupMessage.textContent = 'Zoeken naar boekinformatie…';
-    }
     const sanitized = normalizeBarcode(trimmed);
     if (!sanitized) {
       if (adminBookLookupMessage && !silent) {
@@ -4059,42 +4090,58 @@ function initStaffPage() {
     if (adminBookBarcode && normalizeBarcode(adminBookBarcode.value) !== sanitized) {
       updateAdminBookBarcode(sanitized);
     }
+    const metadataOverride = normalizeBarcode(adminBookMetadataIsbn?.value);
+    const metadataLookupKey = metadataOverride || sanitized;
+    if (adminBookLookupMessage && !silent) {
+      const lookupLabel = metadataOverride
+        ? `metadata-ISBN ${metadataLookupKey}`
+        : `barcode ${metadataLookupKey}`;
+      adminBookLookupMessage.textContent = `Zoeken naar boekinformatie (${lookupLabel})…`;
+      if (metadataOverride) {
+        adminBookLookupMessage.textContent +=
+          ' Barcode-dubbelcontrole wordt overgeslagen omdat er een intern ISBN is opgegeven.';
+      }
+    }
 
     let existingBook = null;
-    try {
-      existingBook = await fetchJson(`/api/books/barcode/${encodeURIComponent(sanitized)}`);
-    } catch (error) {
-      if (!/geen boek gevonden/i.test(error.message || '')) {
+    if (!metadataOverride) {
+      try {
+        existingBook = await fetchJson(`/api/books/barcode/${encodeURIComponent(sanitized)}`);
+      } catch (error) {
+        if (!/geen boek gevonden/i.test(error.message || '')) {
+          if (adminBookLookupMessage && !silent) {
+            adminBookLookupMessage.textContent = error.message;
+          }
+          return;
+        }
+      }
+
+      if (existingBook) {
+        handleAdminBookSelection(existingBook, { silent: true });
         if (adminBookLookupMessage && !silent) {
-          adminBookLookupMessage.textContent = error.message;
+          adminBookLookupMessage.textContent =
+            'Dit boek staat al in de bibliotheek. Gegevens zijn geladen.';
         }
         return;
       }
     }
 
-    if (existingBook) {
-      handleAdminBookSelection(existingBook, { silent: true });
-      if (adminBookLookupMessage && !silent) {
-        adminBookLookupMessage.textContent = 'Dit boek staat al in de bibliotheek. Gegevens zijn geladen.';
-      }
-      return;
-    }
-
     try {
-      const metadata = await fetchJson(`/api/isbn/${sanitized}`);
-      cacheIsbnMetadata(metadata);
-      if (metadata && metadata.barcode) {
+      const metadata = await fetchJson(`/api/isbn/${metadataLookupKey}`);
+      cacheIsbnMetadata(metadata, { key: metadataLookupKey });
+      if (!metadataOverride && metadata && metadata.barcode) {
         updateAdminBookBarcode(metadata.barcode);
       }
       applyBookMetadata(metadata);
       if (adminBookLookupMessage && !silent) {
+        const lookupLabel = metadataOverride ? 'metadata-ISBN' : 'barcode';
         adminBookLookupMessage.textContent = metadata?.found
-          ? 'Boekinformatie is automatisch ingevuld. Controleer de gegevens en vul aan waar nodig.'
-          : 'Geen boekinformatie gevonden. Vul de gegevens handmatig in.';
+          ? `Boekinformatie is automatisch ingevuld (via ${lookupLabel} ${metadataLookupKey}). Controleer de gegevens en vul aan waar nodig.`
+          : `Geen boekinformatie gevonden voor ${lookupLabel} ${metadataLookupKey}. Vul de gegevens handmatig in.`;
       }
     } catch (error) {
       if (adminBookLookupMessage && !silent) {
-        adminBookLookupMessage.textContent = error.message;
+        adminBookLookupMessage.textContent = `${error.message} (sleutel: ${metadataLookupKey})`;
       }
     }
   }
@@ -5575,6 +5622,7 @@ function initStaffPage() {
       return;
     }
     const normalizedBarcode = normalizeBarcode(adminBookBarcode?.value);
+    const metadataIsbnValue = normalizeBarcode(adminBookMetadataIsbn?.value);
     const publisherValue = adminBookPublisher?.value?.trim() || '';
     const publishedYearValue = adminBookYear?.value?.trim() || '';
     const pageCountValue = adminBookPages?.value?.trim() || '';
@@ -5585,6 +5633,7 @@ function initStaffPage() {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
       barcode: normalizedBarcode,
+      metadataIsbn: metadataIsbnValue,
       suitableForExamList: Boolean(adminBookExam.checked),
       description: adminBookDescription.value.trim(),
       publisher: publisherValue,

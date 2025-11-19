@@ -283,6 +283,7 @@ function ensureBookShape(book) {
   safeBook.title = typeof source.title === 'string' ? source.title : '';
   safeBook.author = typeof source.author === 'string' ? source.author : '';
   safeBook.barcode = typeof source.barcode === 'string' ? source.barcode : '';
+  safeBook.metadataIsbn = sanitizeIsbn(source.metadataIsbn);
   safeBook.description = typeof source.description === 'string' ? source.description : '';
   if (typeof source.folderId === 'string' && source.folderId.trim()) {
     safeBook.folderId = source.folderId;
@@ -1164,12 +1165,31 @@ function findBookById(db, id) {
   return db.books.find((book) => book.id === id);
 }
 
+function findBookByMetadataIsbn(db, metadataIsbn, { excludeId = null } = {}) {
+  const normalized = sanitizeIsbn(metadataIsbn);
+  if (!normalized) {
+    return null;
+  }
+  return (
+    db.books.find((book) => {
+      if (excludeId && book.id === excludeId) {
+        return false;
+      }
+      return sanitizeIsbn(book.metadataIsbn) === normalized;
+    }) || null
+  );
+}
+
 function findBookByBarcode(db, barcode) {
   const normalized = normalizeBarcode(barcode);
   if (!normalized) {
     return null;
   }
   return db.books.find((book) => normalizeBarcode(book.barcode) === normalized) || null;
+}
+
+function resolveMetadataLookupKey(metadataIsbn, barcode) {
+  return sanitizeIsbn(metadataIsbn) || sanitizeIsbn(barcode) || normalizeBarcode(barcode);
 }
 
 function findStudentById(db, id) {
@@ -1402,7 +1422,13 @@ async function handleApi(req, res, requestUrl) {
       if (!normalizedBarcode) {
         return sendJson(res, 400, { message: 'Voer een geldige barcode in' });
       }
-      if (findBookByBarcode(db, normalizedBarcode)) {
+      const metadataIsbn = sanitizeIsbn(body.metadataIsbn);
+      if (metadataIsbn) {
+        const metadataConflict = findBookByMetadataIsbn(db, metadataIsbn);
+        if (metadataConflict) {
+          return sendJson(res, 409, { message: 'Er bestaat al een boek met dit metadata-ISBN' });
+        }
+      } else if (findBookByBarcode(db, normalizedBarcode)) {
         return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
       }
       const tags = parseMultiValueField(body.tags);
@@ -1417,6 +1443,7 @@ async function handleApi(req, res, requestUrl) {
         title: body.title,
         author: body.author,
         barcode: normalizedBarcode,
+        metadataIsbn,
         description: body.description || '',
         suitableForExamList: Boolean(body.suitableForExamList),
         status: 'available',
@@ -1457,13 +1484,22 @@ async function handleApi(req, res, requestUrl) {
       if (hasNewBarcode && !normalizedNewBarcode) {
         return sendJson(res, 400, { message: 'Voer een geldige barcode in' });
       }
-      const normalizedCurrentBarcode = normalizeBarcode(book.barcode);
-      if (
-        normalizedNewBarcode &&
-        normalizedNewBarcode !== normalizedCurrentBarcode &&
-        findBookByBarcode(db, normalizedNewBarcode)
-      ) {
-        return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
+      const hasMetadataIsbn = Object.prototype.hasOwnProperty.call(body, 'metadataIsbn');
+      const currentMetadataIsbn = sanitizeIsbn(book.metadataIsbn);
+      const nextMetadataIsbn = hasMetadataIsbn ? sanitizeIsbn(body.metadataIsbn) : currentMetadataIsbn;
+      if (nextMetadataIsbn) {
+        const metadataConflict = findBookByMetadataIsbn(db, nextMetadataIsbn, { excludeId: book.id });
+        if (metadataConflict) {
+          return sendJson(res, 409, { message: 'Er bestaat al een boek met dit metadata-ISBN' });
+        }
+      }
+      if (!nextMetadataIsbn && normalizedNewBarcode) {
+        const barcodeOwner = db.books.find(
+          (entry) => entry.id !== book.id && normalizeBarcode(entry.barcode) === normalizedNewBarcode
+        );
+        if (barcodeOwner) {
+          return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
+        }
       }
       const hasPublisher = Object.prototype.hasOwnProperty.call(body, 'publisher');
       const hasPublishedYear =
@@ -1489,6 +1525,7 @@ async function handleApi(req, res, requestUrl) {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
         barcode: normalizedNewBarcode || '',
+        metadataIsbn: nextMetadataIsbn,
         description: body.description ?? book.description,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
         tags: nextTags,
@@ -1555,6 +1592,15 @@ async function handleApi(req, res, requestUrl) {
           normalized['streepjescode'] ||
           normalized.code;
         const barcode = normalizeBarcode(barcodeSource);
+        const metadataIsbnSource =
+          normalized['metadata isbn'] ||
+          normalized['metadataisbn'] ||
+          normalized['intern isbn'] ||
+          normalized['intern-isbn'] ||
+          normalized['internisbn'] ||
+          normalized['isbn inwendig'] ||
+          normalized['isbn-inwendig'];
+        const metadataIsbn = sanitizeIsbn(metadataIsbnSource);
         const missingFields = [];
         if (!title) missingFields.push('titel');
         if (!author) missingFields.push('auteur');
@@ -1644,12 +1690,13 @@ async function handleApi(req, res, requestUrl) {
           normalized['exam list'];
         const suitableForExamList = parseBooleanFlag(examValue);
 
-        const cacheKey = getIsbnCacheKey(barcode);
+        const metadataLookupValue = resolveMetadataLookupKey(metadataIsbn, barcode);
+        const cacheKey = getIsbnCacheKey(metadataLookupValue);
         const allowLookup = importEnrichmentEnabled && !isbnLookupInflight.has(cacheKey);
         let metadata = null;
         if (allowLookup) {
           try {
-            metadata = await lookup(barcode);
+            metadata = await lookup(metadataLookupValue);
           } catch (error) {
             console.warn('ISBN-verrijking mislukt:', error?.message || error);
           }
@@ -1661,7 +1708,9 @@ async function handleApi(req, res, requestUrl) {
             ? { source: normalizedMetadata.source, found: Boolean(normalizedMetadata.found) }
             : null;
 
-        const existingBook = findBookByBarcode(db, barcode);
+        const existingBook = metadataIsbn
+          ? findBookByMetadataIsbn(db, metadataIsbn)
+          : findBookByBarcode(db, barcode);
         if (existingBook) {
           const nextTitle = title || existingBook.title || metadataFields?.title || '';
           const nextAuthor = author || existingBook.author || metadataFields?.author || '';
@@ -1692,6 +1741,9 @@ async function handleApi(req, res, requestUrl) {
             if (Array.isArray(existingBook.tags) && existingBook.tags.length) return existingBook.tags;
             return metadataFields?.tags || [];
           })();
+          const hasMetadataInput = metadataIsbnSource !== undefined;
+          const existingMetadataIsbn = sanitizeIsbn(existingBook.metadataIsbn);
+          const nextMetadataIsbn = hasMetadataInput ? metadataIsbn : existingMetadataIsbn;
 
           const updates = {};
           if (nextTitle !== existingBook.title) {
@@ -1718,6 +1770,9 @@ async function handleApi(req, res, requestUrl) {
           if (nextCoverUrl !== existingBook.coverUrl) {
             updates.coverUrl = nextCoverUrl;
           }
+          if (hasMetadataInput && nextMetadataIsbn !== existingMetadataIsbn) {
+            updates.metadataIsbn = nextMetadataIsbn;
+          }
           const currentTagKeys = new Set((existingBook.tags || []).map((tag) => tag.toLowerCase()));
           const newTagKeys = new Set(nextTags.map((tag) => tag.toLowerCase()));
           let tagsChanged = currentTagKeys.size !== newTagKeys.size;
@@ -1741,6 +1796,7 @@ async function handleApi(req, res, requestUrl) {
               title: existingBook.title,
               author: existingBook.author,
               barcode: existingBook.barcode,
+              metadataIsbn: existingBook.metadataIsbn,
               publisher: existingBook.publisher,
               publishedYear: existingBook.publishedYear,
               pageCount: existingBook.pageCount,
@@ -1759,6 +1815,7 @@ async function handleApi(req, res, requestUrl) {
           title: title || metadataFields?.title || '',
           author: author || metadataFields?.author || '',
           barcode,
+          metadataIsbn,
           description: description || metadataFields?.description || '',
           tags: tags.length ? tags : metadataFields?.tags || [],
           publisher: publisherSource !== undefined ? publisher : metadataFields?.publisher || '',
@@ -1788,6 +1845,7 @@ async function handleApi(req, res, requestUrl) {
           title: book.title,
           author: book.author,
           barcode: book.barcode,
+          metadataIsbn: book.metadataIsbn,
           publisher: book.publisher,
           publishedYear: book.publishedYear,
           pageCount: book.pageCount,
