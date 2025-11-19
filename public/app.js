@@ -1015,6 +1015,8 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.copies.innerHTML = '';
     appendTextElement(state.copies, 'h4', 'Exemplaren', { className: 'book-detail__copies-title' });
     const list = appendElement(state.copies, 'ul', { className: 'book-detail__copies-list' });
+    const canViewBorrowerDetails =
+      authUser?.role === 'teacher' || authUser?.role === 'admin';
     for (const copy of copies) {
       const li = appendElement(list, 'li', { className: 'book-detail__copy' });
       const copyStatus = String(copy.status || '').toLowerCase() === 'borrowed' ? 'borrowed' : 'available';
@@ -1025,7 +1027,7 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
       appendTextElement(meta, 'strong', copy.barcode || 'Onbekende barcode', {
         className: 'book-detail__copy-barcode',
       });
-      if (copyStatus === 'borrowed') {
+      if (copyStatus === 'borrowed' && canViewBorrowerDetails) {
         const borrowerLabel = resolveBorrowerLabel(copy.borrowedBy);
         if (borrowerLabel) {
           appendTextElement(meta, 'span', `Lener: ${borrowerLabel}`, {
