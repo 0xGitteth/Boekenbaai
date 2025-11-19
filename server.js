@@ -623,6 +623,289 @@ function normalizeBarcode(value) {
   return hasTrailingX ? `${digitsOnly}X` : digitsOnly;
 }
 
+function normalizeGroupValue(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim().toLowerCase();
+}
+
+function getBookGroupComponents(book) {
+  if (!book) {
+    return null;
+  }
+  const barcode = normalizeBarcode(book.barcode);
+  if (!barcode) {
+    return null;
+  }
+  return {
+    barcode,
+    titleKey: normalizeGroupValue(book.title || ''),
+    authorKey: normalizeGroupValue(book.author || ''),
+    metadataIsbnKey: sanitizeIsbn(book.metadataIsbn),
+  };
+}
+
+function createBarcodeGroupIdFromComponents(components) {
+  if (!components?.barcode) {
+    return '';
+  }
+  const base = [
+    components.barcode,
+    components.titleKey || '',
+    components.authorKey || '',
+    components.metadataIsbnKey || '',
+  ].join('|');
+  const hash = crypto.createHash('sha1').update(base).digest('hex');
+  return `grp_${components.barcode}_${hash}`;
+}
+
+function getBookGroupId(book) {
+  const components = getBookGroupComponents(book);
+  if (!components) {
+    return '';
+  }
+  return createBarcodeGroupIdFromComponents(components);
+}
+
+function isBarcodeGroupId(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return /^grp_[0-9X]+_[0-9a-f]{40}$/i.test(value.trim());
+}
+
+function parseBarcodeGroupId(value) {
+  if (!isBarcodeGroupId(value)) {
+    return null;
+  }
+  const match = value.trim().match(/^grp_([0-9X]+)_([0-9a-f]{40})$/i);
+  if (!match) {
+    return null;
+  }
+  return { barcode: match[1], hash: match[2] };
+}
+
+function buildBarcodeGroups(db, normalizedBarcode) {
+  const barcode = normalizeBarcode(normalizedBarcode);
+  if (!barcode) {
+    return { barcode: '', groups: [] };
+  }
+  const matches = db.books.filter((book) => normalizeBarcode(book.barcode) === barcode);
+  const groupsMap = new Map();
+  for (const book of matches) {
+    const components = getBookGroupComponents(book);
+    if (!components) {
+      continue;
+    }
+    const key = JSON.stringify([
+      components.titleKey || '',
+      components.authorKey || '',
+      components.metadataIsbnKey || '',
+    ]);
+    let group = groupsMap.get(key);
+    if (!group) {
+      group = {
+        id: createBarcodeGroupIdFromComponents(components),
+        barcode,
+        title: book.title,
+        author: book.author,
+        metadataIsbn: sanitizeIsbn(book.metadataIsbn),
+        books: [],
+      };
+      groupsMap.set(key, group);
+    }
+    group.books.push(book);
+  }
+  const groups = Array.from(groupsMap.values()).map((group) => {
+    const availableCopies = group.books.filter((entry) => entry.status !== 'borrowed').length;
+    const totalCopies = group.books.length;
+    return {
+      ...group,
+      totalCopies,
+      availableCopies,
+      borrowed: totalCopies - availableCopies,
+    };
+  });
+  groups.sort((a, b) => {
+    const titleDiff = normalizeGroupValue(a.title).localeCompare(normalizeGroupValue(b.title));
+    if (titleDiff !== 0) {
+      return titleDiff;
+    }
+    return normalizeGroupValue(a.author).localeCompare(normalizeGroupValue(b.author));
+  });
+  return { barcode, groups };
+}
+
+function sanitizeBarcodeGroupsForResponse(grouping) {
+  return {
+    barcode: grouping.barcode,
+    groups: grouping.groups.map(({ id, title, author, metadataIsbn, totalCopies, availableCopies, borrowed, books }) => ({
+      id,
+      title,
+      author,
+      metadataIsbn,
+      totalCopies,
+      availableCopies,
+      borrowed,
+      books,
+    })),
+  };
+}
+
+function findBarcodeGroupById(db, groupId) {
+  const parsed = parseBarcodeGroupId(groupId);
+  if (!parsed) {
+    return null;
+  }
+  const grouping = buildBarcodeGroups(db, parsed.barcode);
+  return grouping.groups.find((group) => group.id === groupId) || null;
+}
+
+function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false, studentId = null } = {}) {
+  if (!group) {
+    return null;
+  }
+  const books = Array.isArray(group.books) ? group.books : [];
+  if (requireAvailable) {
+    return books.find((book) => book.status !== 'borrowed') || null;
+  }
+  if (mustBeBorrowed) {
+    if (studentId) {
+      const studentLoan = books.find(
+        (book) => book.status === 'borrowed' && book.borrowedBy === studentId
+      );
+      if (studentLoan) {
+        return studentLoan;
+      }
+    }
+    return books.find((book) => book.status === 'borrowed') || null;
+  }
+  if (studentId) {
+    const owned = books.find((book) => book.borrowedBy === studentId);
+    if (owned) {
+      return owned;
+    }
+  }
+  return books[0] || null;
+}
+
+function getGroupForBook(db, book) {
+  if (!book) {
+    return null;
+  }
+  const groupId = getBookGroupId(book);
+  if (!groupId) {
+    return null;
+  }
+  return findBarcodeGroupById(db, groupId);
+}
+
+function studentHasLoanInGroup(student, group) {
+  if (!student || !group) {
+    return false;
+  }
+  const borrowedIds = new Set((student.borrowedBooks || []).map((entry) => entry.bookId));
+  return group.books.some((book) => borrowedIds.has(book.id));
+}
+
+function resolveBookSelection(db, identifier, options = {}) {
+  const {
+    body = {},
+    requireAvailable = false,
+    mustBeBorrowed = false,
+    studentId = null,
+  } = options;
+
+  const normalizedIdentifier = typeof identifier === 'string' ? identifier.trim() : '';
+  const candidateIds = Array.from(new Set([normalizedIdentifier, body.bookId])).filter(Boolean);
+  for (const candidate of candidateIds) {
+    const book = findBookById(db, candidate);
+    if (!book) {
+      continue;
+    }
+    if (requireAvailable && book.status === 'borrowed') {
+      return { error: 'Boek is al uitgeleend', statusCode: 400 };
+    }
+    if (mustBeBorrowed && book.status !== 'borrowed') {
+      return { error: 'Dit exemplaar is al beschikbaar', statusCode: 400 };
+    }
+    const group = getGroupForBook(db, book);
+    return { book, group };
+  }
+
+  const candidateGroupIds = Array.from(new Set([body.groupId, normalizedIdentifier])).filter((value) =>
+    isBarcodeGroupId(value)
+  );
+  for (const groupId of candidateGroupIds) {
+    const group = findBarcodeGroupById(db, groupId);
+    if (!group) {
+      continue;
+    }
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId });
+    if (!book) {
+      const message = requireAvailable
+        ? 'Geen beschikbare exemplaren voor deze titel'
+        : 'Geen uitgeleende exemplaren gevonden voor deze titel';
+      return { error: message, statusCode: requireAvailable ? 400 : 404 };
+    }
+    return { book, group };
+  }
+
+  const candidateBarcodes = Array.from(new Set([body.barcode, normalizedIdentifier]))
+    .map((value) => normalizeBarcode(value))
+    .filter(Boolean);
+  for (const barcode of candidateBarcodes) {
+    const grouping = buildBarcodeGroups(db, barcode);
+    if (!grouping.groups.length) {
+      continue;
+    }
+    let group = null;
+    if (body.groupId) {
+      group = grouping.groups.find((entry) => entry.id === body.groupId);
+    }
+    if (!group && body.metadataIsbn) {
+      const metadataKey = sanitizeIsbn(body.metadataIsbn);
+      group = grouping.groups.find((entry) => sanitizeIsbn(entry.metadataIsbn) === metadataKey);
+    }
+    if (!group && body.title) {
+      const titleKey = normalizeGroupValue(body.title);
+      const authorKey = normalizeGroupValue(body.author || '');
+      group = grouping.groups.find((entry) => {
+        const entryTitle = normalizeGroupValue(entry.title || '');
+        const entryAuthor = normalizeGroupValue(entry.author || '');
+        if (titleKey && entryTitle !== titleKey) {
+          return false;
+        }
+        if (authorKey && entryAuthor !== authorKey) {
+          return false;
+        }
+        return true;
+      });
+    }
+    if (!group) {
+      if (grouping.groups.length === 1) {
+        group = grouping.groups[0];
+      } else {
+        return {
+          error: 'Meerdere titels gevonden voor deze barcode. Geef een titel of groep-ID op.',
+          statusCode: 400,
+        };
+      }
+    }
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId });
+    if (!book) {
+      const message = requireAvailable
+        ? 'Geen beschikbare exemplaren voor deze titel'
+        : 'Geen uitgeleende exemplaren gevonden voor deze titel';
+      return { error: message, statusCode: requireAvailable ? 400 : 404 };
+    }
+    return { book, group };
+  }
+
+  return { error: 'Boek niet gevonden', statusCode: 404 };
+}
+
 function parseIsbnBarcodeData(data, fallbackBarcode) {
   if (!data || typeof data !== 'object') return null;
   const title = data.title || data.book_title || data.item_name || data.name || '';
@@ -1428,8 +1711,6 @@ async function handleApi(req, res, requestUrl) {
         if (metadataConflict) {
           return sendJson(res, 409, { message: 'Er bestaat al een boek met dit metadata-ISBN' });
         }
-      } else if (findBookByBarcode(db, normalizedBarcode)) {
-        return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
       }
       const tags = parseMultiValueField(body.tags);
       const publisher = normalizePublisher(body.publisher);
@@ -1491,14 +1772,6 @@ async function handleApi(req, res, requestUrl) {
         const metadataConflict = findBookByMetadataIsbn(db, nextMetadataIsbn, { excludeId: book.id });
         if (metadataConflict) {
           return sendJson(res, 409, { message: 'Er bestaat al een boek met dit metadata-ISBN' });
-        }
-      }
-      if (!nextMetadataIsbn && normalizedNewBarcode) {
-        const barcodeOwner = db.books.find(
-          (entry) => entry.id !== book.id && normalizeBarcode(entry.barcode) === normalizedNewBarcode
-        );
-        if (barcodeOwner) {
-          return sendJson(res, 409, { message: 'Er bestaat al een boek met deze barcode' });
         }
       }
       const hasPublisher = Object.prototype.hasOwnProperty.call(body, 'publisher');
@@ -1902,19 +2175,11 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 401, { message: 'Log eerst in om boeken te lenen' });
       }
       const db = getDb();
-      const book = findBookById(db, checkoutMatch[1]);
-      if (!book) {
-        return sendJson(res, 404, { message: 'Boek niet gevonden' });
-      }
-      if (book.status === 'borrowed') {
-        return sendJson(res, 400, { message: 'Boek is al uitgeleend' });
-      }
+      const body = await parseBody(req);
       let student = null;
-      let body = {};
       if (user.role === 'student') {
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
-        body = await parseBody(req);
         if (!body.studentId) {
           return sendJson(res, 400, { message: 'Selecteer eerst een leerling' });
         }
@@ -1923,9 +2188,23 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 400, { message: 'Leerling niet gevonden' });
       }
+      const selection = resolveBookSelection(db, checkoutMatch[1], {
+        body,
+        requireAvailable: true,
+        studentId: student.id,
+      });
+      if (selection.error) {
+        return sendJson(res, selection.statusCode || 400, { message: selection.error });
+      }
+      const { book, group } = selection;
       if (student.borrowedBooks.some((item) => item.bookId === book.id)) {
         return sendJson(res, 400, {
           message: 'Dit boek staat al op jouw uitleenlijst. Lever het eerst in.',
+        });
+      }
+      if (studentHasLoanInGroup(student, group)) {
+        return sendJson(res, 400, {
+          message: 'Je hebt al een exemplaar van deze titel geleend.',
         });
       }
 
@@ -1943,7 +2222,20 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} heeft ${book.title} geleend`,
       });
       saveDb(db);
-      return sendJson(res, 200, { book, student });
+      const payload = { book, student };
+      if (group) {
+        payload.group = {
+          id: group.id,
+          title: group.title,
+          author: group.author,
+          metadataIsbn: group.metadataIsbn,
+          barcode: group.barcode,
+          totalCopies: group.totalCopies,
+          availableCopies: group.availableCopies,
+          borrowed: group.borrowed,
+        };
+      }
+      return sendJson(res, 200, payload);
     }
 
     const checkinMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-in$/);
@@ -1952,18 +2244,11 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 401, { message: 'Log eerst in om boeken terug te brengen' });
       }
       const db = getDb();
-      const book = findBookById(db, checkinMatch[1]);
-      if (!book) {
-        return sendJson(res, 404, { message: 'Boek niet gevonden' });
-      }
-      if (book.status !== 'borrowed') {
-        return sendJson(res, 400, { message: 'Boek is al beschikbaar' });
-      }
+      const body = await parseBody(req);
       let student = null;
       if (user.role === 'student') {
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
-        const body = await parseBody(req);
         if (!body.studentId) {
           return sendJson(res, 400, { message: 'Selecteer eerst een leerling' });
         }
@@ -1972,6 +2257,15 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 400, { message: 'Leerling niet gevonden' });
       }
+      const selection = resolveBookSelection(db, checkinMatch[1], {
+        body,
+        mustBeBorrowed: true,
+        studentId: student.id,
+      });
+      if (selection.error) {
+        return sendJson(res, selection.statusCode || 400, { message: selection.error });
+      }
+      const { book } = selection;
       const hadBook = student.borrowedBooks.some((item) => item.bookId === book.id);
       if (!hadBook) {
         return sendJson(res, 400, { message: 'Dit boek stond niet op jouw uitleenlijst.' });
@@ -1999,11 +2293,11 @@ async function handleApi(req, res, requestUrl) {
       if (!normalizedBarcode) {
         return sendJson(res, 400, { message: 'Ongeldige barcode opgegeven' });
       }
-      const book = findBookByBarcode(db, normalizedBarcode);
-      if (!book) {
+      const grouping = buildBarcodeGroups(db, normalizedBarcode);
+      if (!grouping.groups.length) {
         return sendJson(res, 404, { message: 'Geen boek gevonden met deze barcode' });
       }
-      return sendJson(res, 200, book);
+      return sendJson(res, 200, sanitizeBarcodeGroupsForResponse(grouping));
     }
 
     const isbnLookupMatch = requestUrl.pathname.match(/^\/api\/isbn\/([\w-]+)$/i);
