@@ -52,6 +52,12 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 - Via de adminpagina kun je een Excelbestand met boeken uploaden. Zet de optie **ISBN-verrijking** aan om lege velden automatisch aan te vullen met metadata uit Open Library of ISBNBarcode.org.
 - De server gebruikt altijd de waarden uit het Excelbestand als bron; metadata vult alleen lege velden aan voor titel, auteur(s), beschrijving, uitgever, gepubliceerd jaar, aantal pagina’s, taal, cover-URL en tags.
 - Verrijking kan centraal worden geactiveerd met `BOEKENBAAI_IMPORT_ENRICH_ISBN=true` en per import worden aan- of uitgezet met de payload-flag `enrichIsbn`.
+- Heb je boekenseries met één gedeelde buitenste barcode, maar wil je wel unieke metadata ophalen? Voeg dan in Excel een kolom toe met de kop `metadata isbn`, `intern isbn` of `isbn inwendig`. Die waarde wordt opgeslagen als intern metadata-ISBN en voortaan als sleutel gebruikt voor verrijking.
+
+### Intern ISBN voor metadata
+
+- In het beheerdersformulier staat naast de barcode nu een veld **“Intern ISBN voor metadata”**. Vul dit alleen in wanneer meerdere boeken dezelfde fysieke barcode delen; het veld blijft optioneel voor reguliere titels.
+- Wanneer het veld gevuld is, gebruiken Boekenbaai én de Excel-import dit metadata-ISBN om dubbelen op te sporen en metadata op te halen. Is het veld leeg, dan valt het systeem automatisch terug op de barcode zoals voorheen.
 
 ### Sliplane vastloper oplossen
 

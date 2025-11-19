@@ -182,17 +182,23 @@
             </p>
             <form id="admin-book-form" class="admin-form" autocomplete="off">
               <input id="admin-book-id" type="hidden" />
-              <div class="form-grid">
-                <div class="form-field">
+              <div class="form-grid admin-book-grid">
+                <div class="form-field admin-book-grid__title">
                   <label for="admin-book-title">Titel</label>
                   <input id="admin-book-title" type="text" required />
                 </div>
-                <div class="form-field">
+                <div class="form-field admin-barcode-exam admin-book-grid__exam">
+                  <label for="admin-book-exam" class="admin-barcode-exam__label">
+                    <input id="admin-book-exam" type="checkbox" />
+                    <span>Geschikt voor de leeslijst</span>
+                  </label>
+                </div>
+                <div class="form-field admin-book-grid__author">
                   <label for="admin-book-author">Auteur</label>
                   <input id="admin-book-author" type="text" required />
                 </div>
-                <div class="form-field form-field--barcode">
-                  <label for="admin-book-barcode">Barcode</label>
+                <div class="form-field form-field--barcode admin-book-grid__barcode">
+                  <label for="admin-book-barcode">Barcode/ISBN</label>
                   <div class="form-field__group">
                     <input id="admin-book-barcode" type="text" required inputmode="numeric" />
                     <button id="admin-book-lookup" type="button" class="btn btn--ghost">
@@ -201,11 +207,18 @@
                   </div>
                   <p id="admin-book-lookup-message" class="hint" aria-live="polite"></p>
                 </div>
-                <div class="form-field admin-barcode-exam">
-                  <label for="admin-book-exam">Geschikt voor de leeslijst</label>
-                  <div class="admin-barcode-exam__control">
-                    <input id="admin-book-exam" type="checkbox" />
-                  </div>
+                <div class="form-field admin-book-grid__metadata">
+                  <label for="admin-book-metadata-isbn">Intern ISBN voor metadata</label>
+                  <input
+                    id="admin-book-metadata-isbn"
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="Bijv. 9789025869975"
+                  />
+                  <p class="hint">
+                    Optioneel: gebruik dit wanneer meerdere delen dezelfde buitenste barcode delen en je toch
+                    unieke metadata wilt ophalen.
+                  </p>
                 </div>
                 <div class="form-field form-field--full">
                   <label for="admin-book-description">Korte beschrijving</label>

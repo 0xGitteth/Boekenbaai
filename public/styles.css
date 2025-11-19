@@ -834,21 +834,65 @@ body[data-page='staff'] .teacher-actions {
   align-self: start;
 }
 
+
 .admin-barcode-exam {
-  display: grid;
-  gap: 0.5rem;
   align-content: start;
 }
 
-.admin-barcode-exam__control {
-  display: flex;
+.admin-barcode-exam__label {
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.admin-barcode-exam__label input {
+  margin: 0;
+}
+
+.admin-book-grid {
+  row-gap: 0.75rem;
+}
+
+.admin-book-grid__exam {
+  grid-column: 1 / -1;
+  margin-top: -0.65rem;
 }
 
 @media (min-width: 720px) {
   .admin-barcode-exam {
     align-self: start;
+  }
+
+  .admin-book-grid {
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+    grid-auto-flow: row;
+  }
+
+  .admin-book-grid__title {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .admin-book-grid__author {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .admin-book-grid__barcode {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+
+  .admin-book-grid__metadata {
+    grid-column: 4;
+    grid-row: 1 / span 2;
+  }
+
+  .admin-book-grid__exam {
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: -0.75rem;
   }
 }
 
