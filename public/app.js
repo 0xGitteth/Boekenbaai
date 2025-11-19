@@ -779,6 +779,8 @@ function ensureBookDetailElements() {
     bookDetailState.metaPages = bookDetailState.root.querySelector('#book-detail-pages');
     bookDetailState.metaLanguage = bookDetailState.root.querySelector('#book-detail-language');
     bookDetailState.metaBarcode = bookDetailState.root.querySelector('#book-detail-barcode');
+    bookDetailState.availability = bookDetailState.root.querySelector('#book-detail-availability');
+    bookDetailState.copies = bookDetailState.root.querySelector('#book-detail-copies');
     bookDetailState.actions = bookDetailState.root.querySelector('.book-detail__actions');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
     bookDetailState.closeButtons = Array.from(
@@ -1015,7 +1017,56 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.editButton.hidden = !isAdmin;
     state.editButton.disabled = !isAdmin;
   }
-  
+
+  if (state.availability) {
+    state.availability.textContent = `Exemplaren: ${availableCopies}/${totalCopies} beschikbaar`;
+  }
+
+  if (state.copies) {
+    state.copies.innerHTML = '';
+    appendTextElement(state.copies, 'h4', 'Exemplaren', { className: 'book-detail__copies-title' });
+    const list = appendElement(state.copies, 'ul', { className: 'book-detail__copies-list' });
+    for (const copy of copies) {
+      const li = appendElement(list, 'li', { className: 'book-detail__copy' });
+      const copyStatus = String(copy.status || '').toLowerCase() === 'borrowed' ? 'borrowed' : 'available';
+      appendTextElement(li, 'span', copyStatus === 'borrowed' ? 'Uitgeleend' : 'Beschikbaar', {
+        className: `book-detail__copy-status book-detail__copy-status--${copyStatus}`,
+      });
+      const meta = appendElement(li, 'div', { className: 'book-detail__copy-meta' });
+      appendTextElement(meta, 'strong', copy.barcode || 'Onbekende barcode', {
+        className: 'book-detail__copy-barcode',
+      });
+      if (copyStatus === 'borrowed') {
+        const borrowerLabel = resolveBorrowerLabel(copy.borrowedBy);
+        if (borrowerLabel) {
+          appendTextElement(meta, 'span', `Lener: ${borrowerLabel}`, {
+            className: 'book-detail__copy-borrower',
+          });
+        }
+        if (copy.dueDate) {
+          const dateLabel = new Date(copy.dueDate).toLocaleDateString('nl-NL');
+          appendTextElement(meta, 'span', `Retour: ${dateLabel}`, {
+            className: 'book-detail__copy-due',
+          });
+        }
+      }
+      if (authUser?.role === 'admin') {
+        const editBtn = appendElement(li, 'button', {
+          className: 'btn btn--ghost book-detail__copy-edit',
+          type: 'button',
+          textContent: 'Bewerk dit exemplaar',
+        });
+        editBtn.addEventListener('click', () => {
+          state.editBook = copy;
+          if (typeof bookDetailState.adminEditHandler === 'function') {
+            bookDetailState.adminEditHandler(copy);
+          }
+          closeBookDetail();
+        });
+      }
+    }
+  }
+
 }
 
 async function openBookDetail(book) {
