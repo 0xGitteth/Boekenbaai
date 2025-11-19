@@ -919,6 +919,11 @@ body[data-page='staff'] .teacher-actions {
   margin-top: -0.65rem;
 }
 
+.admin-book-grid__right {
+  display: grid;
+  row-gap: 0.35rem;
+}
+
 @media (min-width: 720px) {
   .admin-barcode-exam {
     align-self: start;
@@ -953,6 +958,29 @@ body[data-page='staff'] .teacher-actions {
     grid-column: 1;
     grid-row: 2;
     margin-top: -0.75rem;
+  }
+
+  .admin-book-grid__themes {
+    grid-column: 1 / span 2;
+    grid-row: 3;
+  }
+
+  .admin-book-grid__right {
+    grid-column: 3 / span 2;
+    grid-row: 3;
+    align-self: start;
+    grid-template-columns: 0.5fr 1fr;
+    column-gap: 0.75rem;
+    justify-items: start;
+  }
+
+  .admin-book-grid__cover {
+    grid-column: 1 / -1;
+  }
+
+  .admin-book-grid__quantity {
+    grid-column: 1;
+    align-self: start;
   }
 }
 
@@ -2504,68 +2532,6 @@ body.book-detail-open {
 .book-detail__availability {
   font-weight: 700;
   margin: 0.5rem 0 0;
-}
-
-.book-detail__copies {
-  margin-top: 0.75rem;
-}
-
-.book-detail__copies-title {
-  margin: 0 0 0.5rem;
-}
-
-.book-detail__copies-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.book-detail__copy {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 0.75rem;
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-
-.book-detail__copy-status {
-  padding: 0.25rem 0.65rem;
-  border-radius: 999px;
-  font-weight: 700;
-  font-size: 0.85rem;
-  align-self: flex-start;
-}
-
-.book-detail__copy-status--available {
-  background: #e0f2f1;
-  color: #0f766e;
-}
-
-.book-detail__copy-status--borrowed {
-  background: #ffe4e6;
-  color: #b42318;
-}
-
-.book-detail__copy-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 200px;
-}
-
-.book-detail__copy-borrower,
-.book-detail__copy-due {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.book-detail__copy-edit {
-  margin-left: auto;
 }
 
 .book-detail__meta {
