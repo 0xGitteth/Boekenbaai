@@ -37,6 +37,8 @@ const PUBLIC_API_BASE = process.env.BOEKENBAAI_PUBLIC_API_BASE || '';
 const ISBN_API_BASE = process.env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api';
 const ENABLE_ISBNBARCODE_LOOKUP =
   String(process.env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
+const IMPORT_ISBN_ENRICHMENT_ENABLED =
+  String(process.env.BOEKENBAAI_IMPORT_ENRICH_ISBN || '').toLowerCase() === 'true';
 const DEFAULT_ISBN_CACHE_TTL_MS = 5 * 60 * 1000;
 const ISBN_CACHE_TTL_MS = (() => {
   const raw = Number(process.env.BOEKENBAAI_ISBN_CACHE_TTL_MS);
@@ -101,6 +103,18 @@ const sessions = new Map();
 const isbnMetadataCache = new Map();
 const isbnLookupInflight = new Map();
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
+
+function getIsbnCacheKey(isbn) {
+  const sanitized = sanitizeIsbn(isbn);
+  return sanitized || `invalid:${String(isbn ?? '').trim()}`;
+}
+
+function resolveLookupIsbnMetadata() {
+  if (typeof globalThis.__BOEKENBAAI_MOCK_ISBN_LOOKUP === 'function') {
+    return globalThis.__BOEKENBAAI_MOCK_ISBN_LOOKUP;
+  }
+  return lookupIsbnMetadata;
+}
 
 function isOriginAllowed(origin, requestUrl) {
   if (!origin) return false;
@@ -372,6 +386,20 @@ function parseMultiValueField(value) {
     .split(/[,;/\n]/)
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function parseBooleanFlag(value) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return false;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return ['true', '1', 'yes', 'y', 'ja', 'on'].includes(normalized);
 }
 
 function collectTeacherNames(db, classRecords) {
@@ -664,9 +692,38 @@ function parseOpenLibraryData(data, fallbackBarcode) {
   };
 }
 
+function normalizeIsbnMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') {
+    return { fields: null, source: null, found: false };
+  }
+  const metadataAuthor = metadata.author || (Array.isArray(metadata.authors) ? metadata.authors.find(Boolean) : '');
+  const publisher = normalizePublisher(metadata.publisher);
+  const publishedYear = normalizePublishedYear(metadata.publishedYear ?? metadata.publishedAt);
+  const pageCount = normalizePageCountValue(metadata.pageCount);
+  const language = normalizeLanguageCode(metadata.language);
+  const coverUrl = normalizeCoverUrl(metadata.coverUrl);
+  const tags = parseMultiValueField(metadata.tags);
+  const fields = {
+    title: typeof metadata.title === 'string' ? metadata.title.trim() : '',
+    author: metadataAuthor ? String(metadataAuthor).trim() : '',
+    description: typeof metadata.description === 'string' ? metadata.description.trim() : '',
+    publisher,
+    publishedYear,
+    pageCount,
+    language,
+    coverUrl,
+    tags,
+  };
+  return {
+    fields,
+    source: metadata.source || null,
+    found: Boolean(metadata.found),
+  };
+}
+
 async function lookupIsbnMetadata(isbn) {
   const sanitized = sanitizeIsbn(isbn);
-  const cacheKey = sanitized || `invalid:${String(isbn ?? '').trim()}`;
+  const cacheKey = getIsbnCacheKey(isbn);
   const now = Date.now();
   const cached = isbnMetadataCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
@@ -1474,6 +1531,11 @@ async function handleApi(req, res, requestUrl) {
       const updatedBooks = [];
       const skipped = [];
       let changed = false;
+      const lookup = resolveLookupIsbnMetadata();
+      const importEnrichmentEnabled =
+        body.enrichIsbn === undefined
+          ? IMPORT_ISBN_ENRICHMENT_ENABLED
+          : parseBooleanFlag(body.enrichIsbn);
 
       for (const row of workbookResult.rows) {
         const normalized = normalizeRowKeys(row);
@@ -1582,58 +1644,93 @@ async function handleApi(req, res, requestUrl) {
           normalized['exam list'];
         const suitableForExamList = parseBooleanFlag(examValue);
 
+        const cacheKey = getIsbnCacheKey(barcode);
+        const allowLookup = importEnrichmentEnabled && !isbnLookupInflight.has(cacheKey);
+        let metadata = null;
+        if (allowLookup) {
+          try {
+            metadata = await lookup(barcode);
+          } catch (error) {
+            console.warn('ISBN-verrijking mislukt:', error?.message || error);
+          }
+        }
+        const normalizedMetadata = normalizeIsbnMetadata(metadata);
+        const metadataFields = normalizedMetadata.fields;
+        const enrichment =
+          importEnrichmentEnabled || metadata
+            ? { source: normalizedMetadata.source, found: Boolean(normalizedMetadata.found) }
+            : null;
+
         const existingBook = findBookByBarcode(db, barcode);
         if (existingBook) {
+          const nextTitle = title || existingBook.title || metadataFields?.title || '';
+          const nextAuthor = author || existingBook.author || metadataFields?.author || '';
+          const nextDescription =
+            description || existingBook.description || metadataFields?.description || '';
+          const hasPublisherInput = publisherSource !== undefined && String(publisherSource).trim();
+          const nextPublisher = hasPublisherInput
+            ? publisher
+            : existingBook.publisher || metadataFields?.publisher || '';
+          const hasPublishedYearInput = publishedYearSource !== undefined && publishedYearSource !== '';
+          const nextPublishedYear = hasPublishedYearInput
+            ? publishedYear
+            : existingBook.publishedYear ?? metadataFields?.publishedYear ?? null;
+          const hasPageCountInput = pageCountSource !== undefined && pageCountSource !== '';
+          const nextPageCount = hasPageCountInput
+            ? pageCount
+            : existingBook.pageCount ?? metadataFields?.pageCount ?? null;
+          const hasLanguageInput = languageSource !== undefined && String(languageSource).trim();
+          const nextLanguage = hasLanguageInput
+            ? language
+            : existingBook.language || metadataFields?.language || '';
+          const hasCoverInput = coverUrlSource !== undefined && String(coverUrlSource).trim();
+          const nextCoverUrl = hasCoverInput
+            ? coverUrl
+            : existingBook.coverUrl || metadataFields?.coverUrl || '';
+          const nextTags = (() => {
+            if (tags.length) return tags;
+            if (Array.isArray(existingBook.tags) && existingBook.tags.length) return existingBook.tags;
+            return metadataFields?.tags || [];
+          })();
+
           const updates = {};
-          if (title && title !== existingBook.title) {
-            updates.title = title;
+          if (nextTitle !== existingBook.title) {
+            updates.title = nextTitle;
           }
-          if (author && author !== existingBook.author) {
-            updates.author = author;
+          if (nextAuthor !== existingBook.author) {
+            updates.author = nextAuthor;
           }
-          if (description && description !== existingBook.description) {
-            updates.description = description;
+          if (nextDescription !== existingBook.description) {
+            updates.description = nextDescription;
           }
-          if (publisherSource !== undefined && String(publisherSource).trim() && publisher !== existingBook.publisher) {
-            updates.publisher = publisher;
+          if (nextPublisher !== existingBook.publisher) {
+            updates.publisher = nextPublisher;
           }
-          if (
-            publishedYearSource !== undefined &&
-            publishedYearSource !== '' &&
-            publishedYear !== null &&
-            publishedYear !== existingBook.publishedYear
-          ) {
-            updates.publishedYear = publishedYear;
+          if (nextPublishedYear !== existingBook.publishedYear) {
+            updates.publishedYear = nextPublishedYear;
           }
-          if (
-            pageCountSource !== undefined &&
-            pageCountSource !== '' &&
-            pageCount !== null &&
-            pageCount !== existingBook.pageCount
-          ) {
-            updates.pageCount = pageCount;
+          if (nextPageCount !== existingBook.pageCount) {
+            updates.pageCount = nextPageCount;
           }
-          if (languageSource !== undefined && String(languageSource).trim() && language && language !== existingBook.language) {
-            updates.language = language;
+          if (nextLanguage !== existingBook.language) {
+            updates.language = nextLanguage;
           }
-          if (coverUrlSource !== undefined && String(coverUrlSource).trim() && coverUrl && coverUrl !== existingBook.coverUrl) {
-            updates.coverUrl = coverUrl;
+          if (nextCoverUrl !== existingBook.coverUrl) {
+            updates.coverUrl = nextCoverUrl;
           }
-          if (tags.length) {
-            const currentTagKeys = new Set((existingBook.tags || []).map((tag) => tag.toLowerCase()));
-            const newTagKeys = new Set(tags.map((tag) => tag.toLowerCase()));
-            let tagsChanged = currentTagKeys.size !== newTagKeys.size;
-            if (!tagsChanged) {
-              for (const key of currentTagKeys) {
-                if (!newTagKeys.has(key)) {
-                  tagsChanged = true;
-                  break;
-                }
+          const currentTagKeys = new Set((existingBook.tags || []).map((tag) => tag.toLowerCase()));
+          const newTagKeys = new Set(nextTags.map((tag) => tag.toLowerCase()));
+          let tagsChanged = currentTagKeys.size !== newTagKeys.size;
+          if (!tagsChanged) {
+            for (const key of currentTagKeys) {
+              if (!newTagKeys.has(key)) {
+                tagsChanged = true;
+                break;
               }
             }
-            if (tagsChanged) {
-              updates.tags = tags;
-            }
+          }
+          if (tagsChanged) {
+            updates.tags = nextTags;
           }
           if (examValue !== undefined && examValue !== '' && suitableForExamList !== existingBook.suitableForExamList) {
             updates.suitableForExamList = suitableForExamList;
@@ -1650,6 +1747,7 @@ async function handleApi(req, res, requestUrl) {
               language: existingBook.language,
               tags: existingBook.tags,
               status: 'updated',
+              enrichment: enrichment || undefined,
             });
             changed = true;
           }
@@ -1658,16 +1756,28 @@ async function handleApi(req, res, requestUrl) {
 
         const book = ensureBookShape({
           id: crypto.randomUUID(),
-          title,
-          author,
+          title: title || metadataFields?.title || '',
+          author: author || metadataFields?.author || '',
           barcode,
-          description,
-          tags,
-          publisher,
-          publishedYear,
-          pageCount,
-          language,
-          coverUrl,
+          description: description || metadataFields?.description || '',
+          tags: tags.length ? tags : metadataFields?.tags || [],
+          publisher: publisherSource !== undefined ? publisher : metadataFields?.publisher || '',
+          publishedYear:
+            publishedYearSource !== undefined && publishedYearSource !== ''
+              ? publishedYear
+              : metadataFields?.publishedYear ?? null,
+          pageCount:
+            pageCountSource !== undefined && pageCountSource !== ''
+              ? pageCount
+              : metadataFields?.pageCount ?? null,
+          language:
+            languageSource !== undefined && String(languageSource).trim()
+              ? language
+              : metadataFields?.language || '',
+          coverUrl:
+            coverUrlSource !== undefined && String(coverUrlSource).trim()
+              ? coverUrl
+              : metadataFields?.coverUrl || '',
           suitableForExamList,
         });
         book.status = 'available';
@@ -1684,6 +1794,7 @@ async function handleApi(req, res, requestUrl) {
           language: book.language,
           tags: book.tags,
           status: 'created',
+          enrichment: enrichment || undefined,
         });
         changed = true;
       }
@@ -1847,7 +1958,8 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: 'Ongeldige barcode opgegeven' });
       }
       try {
-        const metadata = await lookupIsbnMetadata(isbn);
+        const lookup = resolveLookupIsbnMetadata();
+        const metadata = await lookup(isbn);
         return sendJson(res, 200, metadata);
       } catch (error) {
         console.error('ISBN-lookup mislukt:', error);
