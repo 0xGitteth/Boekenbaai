@@ -2304,7 +2304,11 @@ async function handleApi(req, res, requestUrl) {
             suitableForExamList,
           });
         }
-        const copiesToCreate = parseQuantityInput(quantityInput, {
+        const normalizedQuantityInput =
+          typeof quantityInput === 'string' && quantityInput.trim() === ''
+            ? undefined
+            : quantityInput;
+        const copiesToCreate = parseQuantityInput(normalizedQuantityInput, {
           defaultValue: existingBook ? 0 : 1,
           allowZero: true,
         });
