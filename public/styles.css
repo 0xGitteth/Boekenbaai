@@ -983,14 +983,22 @@ body[data-page='staff'] .teacher-actions {
     align-self: start;
     width: 100%;
     max-width: none;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    row-gap: 0.15rem;
   }
 
   .admin-book-grid__quantity label {
+    grid-column: 1 / -1;
     white-space: nowrap;
   }
 
   .admin-book-grid__quantity input {
-    max-width: 7.5rem;
+    grid-column: 1;
+    width: 7.5rem;
+    max-width: 100%;
+    justify-self: start;
   }
 }
 
