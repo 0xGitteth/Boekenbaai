@@ -256,7 +256,7 @@
                   <input id="admin-book-language" type="text" placeholder="Bijv. nl of en" maxlength="12" />
                   <p class="hint">Gebruik een korte code (zoals nl, en of fr).</p>
                 </div>
-                <div class="form-field form-field--double">
+                <div class="form-field form-field--double admin-book-grid__themes">
                   <label id="admin-book-tags-label">Thema’s</label>
                   <div
                     id="admin-book-tags"
@@ -266,10 +266,23 @@
                   ></div>
                   <p class="hint">Selecteer één of meerdere thema’s via de knoppen.</p>
                 </div>
-                <div class="form-field form-field--double">
-                  <label for="admin-book-cover">Omslagafbeelding (URL)</label>
-                  <input id="admin-book-cover" type="url" placeholder="https://…" />
-                  <p class="hint">Handige fallback wanneer er geen ISBN-omslag beschikbaar is.</p>
+                <div class="admin-book-grid__right">
+                  <div class="form-field form-field--double admin-book-grid__cover">
+                    <label for="admin-book-cover">Omslagafbeelding (URL)</label>
+                    <input id="admin-book-cover" type="url" placeholder="https://…" />
+                    <p class="hint">Handige fallback wanneer er geen ISBN-omslag beschikbaar is.</p>
+                  </div>
+                  <div class="form-field admin-book-grid__quantity">
+                    <label for="admin-book-quantity">Aantal exemplaren</label>
+                    <input
+                      id="admin-book-quantity"
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value="1"
+                    />
+                  </div>
                 </div>
               </div>
               <div class="admin-form__actions">
@@ -879,8 +892,6 @@
               <dd><span class="book-detail__status" id="book-detail-status"></span></dd>
             </div>
           </dl>
-          <div class="book-detail__availability" id="book-detail-availability"></div>
-          <div class="book-detail__copies" id="book-detail-copies"></div>
         </div>
         <div class="book-detail__footer">
           <p class="book-detail__message hint" id="book-detail-message" aria-live="polite"></p>
