@@ -969,24 +969,11 @@ body[data-page='staff'] .teacher-actions {
     grid-column: 3 / span 2;
     grid-row: 3;
     align-self: start;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    column-gap: 0.75rem;
-    justify-items: start;
   }
 
-  .admin-book-grid__cover {
-    grid-column: 1 / -1;
-  }
-
+  .admin-book-grid__cover,
   .admin-book-grid__quantity {
-    grid-column: 1 / span 2;
-    align-self: start;
-    width: 100%;
-    max-width: none;
-  }
-
-  .admin-book-grid__quantity input {
-    max-width: 7.5rem;
+    grid-column: 1 / -1;
   }
 }
 
