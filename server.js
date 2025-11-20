@@ -82,6 +82,21 @@ function ensureParentDirectory(filePath) {
   fs.mkdirSync(directory, { recursive: true });
 }
 
+function parseQuantityInput(value, { allowZero = false, defaultValue = 1 } = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return defaultValue;
+  }
+  const floored = Math.floor(number);
+  if (floored < 0) {
+    return allowZero ? 0 : defaultValue;
+  }
+  if (!allowZero && floored === 0) {
+    return defaultValue;
+  }
+  return floored;
+}
+
 function ensureDbFile() {
   try {
     fs.accessSync(DATA_PATH, fs.constants.F_OK);
@@ -304,6 +319,17 @@ function ensureBookShape(book) {
   safeBook.language = normalizeLanguageCode(source.language);
   safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
   return safeBook;
+}
+
+function createBookCopyFromTemplate(template) {
+  const base = ensureBookShape(template);
+  return {
+    ...base,
+    id: crypto.randomUUID(),
+    status: 'available',
+    borrowedBy: null,
+    dueDate: null,
+  };
 }
 
 function normalizeGroupKeyPart(value) {
@@ -1800,12 +1826,6 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: 'Voer een geldige barcode in' });
       }
       const metadataIsbn = sanitizeIsbn(body.metadataIsbn);
-      if (metadataIsbn) {
-        const metadataConflict = findBookByMetadataIsbn(db, metadataIsbn);
-        if (metadataConflict) {
-          return sendJson(res, 409, { message: 'Er bestaat al een boek met dit metadata-ISBN' });
-        }
-      }
       const tags = parseMultiValueField(body.tags);
       const publisher = normalizePublisher(body.publisher);
       const publishedYear = normalizePublishedYear(body.publishedYear ?? body.year ?? body.publishedAt);
@@ -1813,17 +1833,13 @@ async function handleApi(req, res, requestUrl) {
       const language = normalizeLanguageCode(body.language);
       const coverUrl = normalizeCoverUrl(body.coverUrl);
       const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
-      const book = {
-        id: crypto.randomUUID(),
+      const baseBook = {
         title: body.title,
         author: body.author,
         barcode: normalizedBarcode,
         metadataIsbn,
         description: body.description || '',
         suitableForExamList: Boolean(body.suitableForExamList),
-        status: 'available',
-        borrowedBy: null,
-        dueDate: null,
         tags,
         coverColor,
         publisher,
@@ -1832,14 +1848,28 @@ async function handleApi(req, res, requestUrl) {
         language,
         coverUrl,
       };
-      db.books.push(book);
+      const quantity = parseQuantityInput(body.quantity, { defaultValue: 1 });
+      const createdBooks = [];
+      for (let i = 0; i < quantity; i += 1) {
+        const copy = createBookCopyFromTemplate(baseBook);
+        createdBooks.push(copy);
+      }
+      db.books.push(...createdBooks);
       appendHistory(db, {
         type: 'book_created',
-        bookId: book.id,
-        message: `${book.title} is toegevoegd aan de bibliotheek`,
+        bookId: createdBooks[0]?.id,
+        message:
+          createdBooks.length === 1
+            ? `${createdBooks[0].title} is toegevoegd aan de bibliotheek`
+            : `${createdBooks.length} exemplaren van ${createdBooks[0].title} toegevoegd aan de bibliotheek`,
       });
       saveDb(db);
-      return sendJson(res, 201, book);
+      return sendJson(res, 201, {
+        created: createdBooks.length,
+        ids: createdBooks.map((entry) => entry.id),
+        books: createdBooks,
+        book: createdBooks[0] || null,
+      });
     }
 
     if (bookIdMatch && req.method === 'PUT') {
@@ -1862,12 +1892,6 @@ async function handleApi(req, res, requestUrl) {
       const hasMetadataIsbn = Object.prototype.hasOwnProperty.call(body, 'metadataIsbn');
       const currentMetadataIsbn = sanitizeIsbn(book.metadataIsbn);
       const nextMetadataIsbn = hasMetadataIsbn ? sanitizeIsbn(body.metadataIsbn) : currentMetadataIsbn;
-      if (nextMetadataIsbn) {
-        const metadataConflict = findBookByMetadataIsbn(db, nextMetadataIsbn, { excludeId: book.id });
-        if (metadataConflict) {
-          return sendJson(res, 409, { message: 'Er bestaat al een boek met dit metadata-ISBN' });
-        }
-      }
       const hasPublisher = Object.prototype.hasOwnProperty.call(body, 'publisher');
       const hasPublishedYear =
         Object.prototype.hasOwnProperty.call(body, 'publishedYear') ||
@@ -1888,6 +1912,14 @@ async function handleApi(req, res, requestUrl) {
         : book.pageCount;
       const nextLanguage = hasLanguage ? normalizeLanguageCode(body.language) : book.language;
       const nextCoverUrl = hasCoverUrl ? normalizeCoverUrl(body.coverUrl) : book.coverUrl;
+      const addCopies = parseQuantityInput(body.addCopies, { allowZero: true, defaultValue: 0 });
+      const removeCopies = parseQuantityInput(body.removeCopies, { allowZero: true, defaultValue: 0 });
+      const quantityChangeInput = Number(body.quantityChange);
+      const quantityChange = Number.isFinite(quantityChangeInput)
+        ? Math.trunc(quantityChangeInput)
+        : addCopies - removeCopies;
+      const createdCopies = [];
+      const removedCopies = [];
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -1903,13 +1935,72 @@ async function handleApi(req, res, requestUrl) {
         language: nextLanguage,
         coverUrl: nextCoverUrl,
       });
+      if (quantityChange !== 0) {
+        const groupId = getBookGroupId(book);
+        const groupCopies = groupId ? db.books.filter((entry) => getBookGroupId(entry) === groupId) : [book];
+        if (quantityChange > 0) {
+          const baseTemplate = { ...book };
+          for (let i = 0; i < quantityChange; i += 1) {
+            const copy = createBookCopyFromTemplate(baseTemplate);
+            createdCopies.push(copy);
+          }
+          db.books.push(...createdCopies);
+        } else {
+          const removeCount = Math.abs(quantityChange);
+          const preferredRemoveId = typeof body.removeCopyId === 'string' ? body.removeCopyId : book.id;
+          const removableCopies = groupCopies.filter((entry) => entry.status !== 'borrowed');
+          if (removableCopies.length < removeCount) {
+            return sendJson(res, 400, {
+              message: 'Er zijn niet genoeg beschikbare exemplaren om te verwijderen.',
+            });
+          }
+          const sortedRemovals = [];
+          const preferred = removableCopies.find((entry) => entry.id === preferredRemoveId);
+          if (preferred) {
+            sortedRemovals.push(preferred);
+          }
+          for (const entry of removableCopies) {
+            if (sortedRemovals.includes(entry)) continue;
+            sortedRemovals.push(entry);
+            if (sortedRemovals.length >= removeCount) {
+              break;
+            }
+          }
+          while (sortedRemovals.length > removeCount) {
+            sortedRemovals.pop();
+          }
+          for (const entry of sortedRemovals) {
+            const index = db.books.findIndex((bookEntry) => bookEntry.id === entry.id);
+            if (index !== -1) {
+              const [removed] = db.books.splice(index, 1);
+              removedCopies.push(removed);
+            }
+          }
+        }
+      }
+      const currentGroup = getGroupForBook(db, book);
+      const totalCopies = currentGroup?.books?.length ?? null;
+      const availableCopies = currentGroup?.books?.filter((entry) => entry.status !== 'borrowed').length ?? null;
+      const historyParts = [`${book.title} is bijgewerkt`];
+      if (createdCopies.length) {
+        historyParts.push(`+${createdCopies.length} exemplaren`);
+      }
+      if (removedCopies.length) {
+        historyParts.push(`-${removedCopies.length} exemplaren`);
+      }
       appendHistory(db, {
         type: 'book_updated',
         bookId: book.id,
-        message: `${book.title} is bijgewerkt`,
+        message: historyParts.join(' | '),
       });
       saveDb(db);
-      return sendJson(res, 200, book);
+      return sendJson(res, 200, {
+        book,
+        createdCopies: createdCopies.map((entry) => entry.id),
+        removedCopies: removedCopies.map((entry) => entry.id),
+        totalCopies,
+        availableCopies,
+      });
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import') {
@@ -1968,6 +2059,15 @@ async function handleApi(req, res, requestUrl) {
           normalized['isbn inwendig'] ||
           normalized['isbn-inwendig'];
         const metadataIsbn = sanitizeIsbn(metadataIsbnSource);
+        const quantityValue = parseQuantityInput(
+          normalized.aantal ||
+            normalized['aantal exemplaren'] ||
+            normalized.quantity ||
+            normalized.exemplaren ||
+            normalized.copies ||
+            normalized['number of copies'],
+          { defaultValue: 1 }
+        );
         const missingFields = [];
         if (!title) missingFields.push('titel');
         if (!author) missingFields.push('auteur');
@@ -2078,6 +2178,7 @@ async function handleApi(req, res, requestUrl) {
         const existingBook = metadataIsbn
           ? findBookByMetadataIsbn(db, metadataIsbn)
           : findBookByBarcode(db, barcode);
+        let baseTemplate = null;
         if (existingBook) {
           const nextTitle = title || existingBook.title || metadataFields?.title || '';
           const nextAuthor = author || existingBook.author || metadataFields?.author || '';
@@ -2174,54 +2275,58 @@ async function handleApi(req, res, requestUrl) {
             });
             changed = true;
           }
-          continue;
+          baseTemplate = { ...existingBook };
         }
-
-        const book = ensureBookShape({
-          id: crypto.randomUUID(),
-          title: title || metadataFields?.title || '',
-          author: author || metadataFields?.author || '',
-          barcode,
-          metadataIsbn,
-          description: description || metadataFields?.description || '',
-          tags: tags.length ? tags : metadataFields?.tags || [],
-          publisher: publisherSource !== undefined ? publisher : metadataFields?.publisher || '',
-          publishedYear:
-            publishedYearSource !== undefined && publishedYearSource !== ''
-              ? publishedYear
-              : metadataFields?.publishedYear ?? null,
-          pageCount:
-            pageCountSource !== undefined && pageCountSource !== ''
-              ? pageCount
-              : metadataFields?.pageCount ?? null,
-          language:
-            languageSource !== undefined && String(languageSource).trim()
-              ? language
-              : metadataFields?.language || '',
-          coverUrl:
-            coverUrlSource !== undefined && String(coverUrlSource).trim()
-              ? coverUrl
-              : metadataFields?.coverUrl || '',
-          suitableForExamList,
-        });
-        book.status = 'available';
-        book.borrowedBy = null;
-        book.dueDate = null;
-        db.books.push(book);
-        createdBooks.push({
-          title: book.title,
-          author: book.author,
-          barcode: book.barcode,
-          metadataIsbn: book.metadataIsbn,
-          publisher: book.publisher,
-          publishedYear: book.publishedYear,
-          pageCount: book.pageCount,
-          language: book.language,
-          tags: book.tags,
-          status: 'created',
-          enrichment: enrichment || undefined,
-        });
-        changed = true;
+        if (!baseTemplate) {
+          baseTemplate = ensureBookShape({
+            id: crypto.randomUUID(),
+            title: title || metadataFields?.title || '',
+            author: author || metadataFields?.author || '',
+            barcode,
+            metadataIsbn,
+            description: description || metadataFields?.description || '',
+            tags: tags.length ? tags : metadataFields?.tags || [],
+            publisher: publisherSource !== undefined ? publisher : metadataFields?.publisher || '',
+            publishedYear:
+              publishedYearSource !== undefined && publishedYearSource !== ''
+                ? publishedYear
+                : metadataFields?.publishedYear ?? null,
+            pageCount:
+              pageCountSource !== undefined && pageCountSource !== ''
+                ? pageCount
+                : metadataFields?.pageCount ?? null,
+            language:
+              languageSource !== undefined && String(languageSource).trim()
+                ? language
+                : metadataFields?.language || '',
+            coverUrl:
+              coverUrlSource !== undefined && String(coverUrlSource).trim()
+                ? coverUrl
+                : metadataFields?.coverUrl || '',
+            suitableForExamList,
+          });
+        }
+        const copiesToCreate = parseQuantityInput(quantityValue, { defaultValue: 1, allowZero: true });
+        for (let i = 0; i < copiesToCreate; i += 1) {
+          const copy = createBookCopyFromTemplate(baseTemplate);
+          db.books.push(copy);
+          createdBooks.push({
+            title: copy.title,
+            author: copy.author,
+            barcode: copy.barcode,
+            metadataIsbn: copy.metadataIsbn,
+            publisher: copy.publisher,
+            publishedYear: copy.publishedYear,
+            pageCount: copy.pageCount,
+            language: copy.language,
+            tags: copy.tags,
+            status: 'created',
+            enrichment: enrichment || undefined,
+          });
+        }
+        if (copiesToCreate > 0) {
+          changed = true;
+        }
       }
 
       if (changed) {
@@ -2249,18 +2354,35 @@ async function handleApi(req, res, requestUrl) {
       if (index === -1) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
+      const target = db.books[index];
+      if (target.status === 'borrowed') {
+        return sendJson(res, 400, {
+          message: 'Lever dit exemplaar eerst in voordat je het verwijdert.',
+        });
+      }
+      const groupId = getBookGroupId(target);
       const [removed] = db.books.splice(index, 1);
       for (const student of db.students) {
         if (!Array.isArray(student.borrowedBooks)) continue;
         student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== removed.id);
       }
+      const remainingCopies = groupId
+        ? db.books.filter((entry) => getBookGroupId(entry) === groupId)
+        : [];
       appendHistory(db, {
         type: 'book_deleted',
         bookId: removed.id,
         message: `${removed.title} is verwijderd uit de bibliotheek`,
       });
       saveDb(db);
-      return sendJson(res, 200, { message: 'Boek verwijderd' });
+      return sendJson(res, 200, {
+        message:
+          remainingCopies.length > 0
+            ? 'Exemplaar verwijderd. De titel blijft beschikbaar via andere exemplaren.'
+            : 'Titel en laatste exemplaar verwijderd.',
+        remainingCopies: remainingCopies.length,
+        availableCopies: remainingCopies.filter((entry) => entry.status !== 'borrowed').length,
+      });
     }
 
     const checkoutMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-out$/);
