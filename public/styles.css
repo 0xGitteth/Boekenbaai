@@ -1702,12 +1702,6 @@ button.student-list__item {
   .form-grid {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
-
-  /* Ensure the admin book form keeps its 4-column layout so the quantity field
-     remains half-width in the right column next to the themes area. */
-  .form-grid.admin-book-grid {
-    grid-template-columns: repeat(4, minmax(220px, 1fr));
-  }
 }
 
 .hint {
