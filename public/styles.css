@@ -1598,9 +1598,13 @@ body[data-page='staff'] .teacher-actions {
 }
 
 .btn--pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 999px;
   padding: 0.55rem 1rem;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .student-list--admin .student-list__item {
