@@ -1817,7 +1817,7 @@ function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) 
       hiddenLabel.textContent = nextLabel;
     }
     if (icon) {
-      icon.textContent = isVisible ? '🙈' : '👁';
+      icon.textContent = '';
     }
   }
 
