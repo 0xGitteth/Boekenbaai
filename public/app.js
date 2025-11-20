@@ -1079,13 +1079,9 @@ async function openBookDetail(book) {
       metadataMessage = error.message || '';
     }
   }
-  if (metadata && canLookupMetadata) {
-    if (metadata.found) {
-      const sourceLabel = metadata.source === 'openlibrary' ? 'Open Library' : metadata.source || 'de bron';
-      metadataMessage = `Gegevens aangevuld via ${sourceLabel}.`;
-    } else if (!metadataMessage) {
-      metadataMessage = 'Geen aanvullende metadata gevonden.';
-    }
+  if (metadata?.found && canLookupMetadata) {
+    const sourceLabel = metadata.source === 'openlibrary' ? 'Open Library' : metadata.source || 'de bron';
+    metadataMessage = `Gegevens aangevuld via ${sourceLabel}.`;
   }
   if (state.currentBookId !== bookId) {
     return;
