@@ -2059,15 +2059,13 @@ async function handleApi(req, res, requestUrl) {
           normalized['isbn inwendig'] ||
           normalized['isbn-inwendig'];
         const metadataIsbn = sanitizeIsbn(metadataIsbnSource);
-        const quantityValue = parseQuantityInput(
+        const quantityInput =
           normalized.aantal ||
-            normalized['aantal exemplaren'] ||
-            normalized.quantity ||
-            normalized.exemplaren ||
-            normalized.copies ||
-            normalized['number of copies'],
-          { defaultValue: 1 }
-        );
+          normalized['aantal exemplaren'] ||
+          normalized.quantity ||
+          normalized.exemplaren ||
+          normalized.copies ||
+          normalized['number of copies'];
         const missingFields = [];
         if (!title) missingFields.push('titel');
         if (!author) missingFields.push('auteur');
@@ -2306,7 +2304,10 @@ async function handleApi(req, res, requestUrl) {
             suitableForExamList,
           });
         }
-        const copiesToCreate = parseQuantityInput(quantityValue, { defaultValue: 1, allowZero: true });
+        const copiesToCreate = parseQuantityInput(quantityInput, {
+          defaultValue: existingBook ? 0 : 1,
+          allowZero: true,
+        });
         for (let i = 0; i < copiesToCreate; i += 1) {
           const copy = createBookCopyFromTemplate(baseTemplate);
           db.books.push(copy);
