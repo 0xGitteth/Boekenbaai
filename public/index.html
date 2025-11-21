@@ -14,6 +14,58 @@
     />
   </head>
   <body data-page="student">
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      width="0"
+      height="0"
+      style="position: absolute; width: 0; height: 0; overflow: hidden"
+    >
+      <symbol id="password-toggle-icon-eye" viewBox="0 0 24 24">
+        <path
+          d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+      </symbol>
+      <symbol id="password-toggle-icon-eye-off" viewBox="0 0 24 24">
+        <path
+          d="M3 3l18 18"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+        <path
+          d="M10.58 10.58A3 3 0 0 0 9 13a3 3 0 0 0 4.24 2.83M16.9 16.9A8.96 8.96 0 0 1 12 19c-6 0-10-7-10-7a17.93 17.93 0 0 1 4.31-5.15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M14.12 9.88A3 3 0 0 0 12 9a3 3 0 0 0-1 .17"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M9.88 7.12A8.96 8.96 0 0 1 12 5c6 0 10 7 10 7a17.91 17.91 0 0 1-2.6 3.31"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+    </svg>
     <header class="hero hero--student">
       <div class="hero__content">
         <h1>Welkom bij Boekenbaai</h1>
@@ -58,50 +110,22 @@
                 aria-pressed="false"
                 aria-label="Toon wachtwoord"
               >
-                <span class="password-toggle__icon" aria-hidden="true">
-                  <svg class="password-toggle__icon-eye" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+                <span class="password-toggle__icon" aria-hidden="true" role="presentation">
+                  <svg
+                    class="password-toggle__icon-eye"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye"></use>
                   </svg>
-                  <svg class="password-toggle__icon-eye-off" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M3 3l18 18"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                    />
-                    <path
-                      d="M10.58 10.58A3 3 0 0 0 9 13a3 3 0 0 0 4.24 2.83M16.9 16.9A8.96 8.96 0 0 1 12 19c-6 0-10-7-10-7a17.93 17.93 0 0 1 4.31-5.15"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M14.12 9.88A3 3 0 0 0 12 9a3 3 0 0 0-1 .17"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M9.88 7.12A8.96 8.96 0 0 1 12 5c6 0 10 7 10 7a17.91 17.91 0 0 1-2.6 3.31"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
+                  <svg
+                    class="password-toggle__icon-eye-off"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye-off"></use>
                   </svg>
                 </span>
                 <span class="visually-hidden">Toon wachtwoord</span>
@@ -220,50 +244,22 @@
                 aria-pressed="false"
                 aria-label="Toon huidige wachtwoord"
               >
-                <span class="password-toggle__icon" aria-hidden="true">
-                  <svg class="password-toggle__icon-eye" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+                <span class="password-toggle__icon" aria-hidden="true" role="presentation">
+                  <svg
+                    class="password-toggle__icon-eye"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye"></use>
                   </svg>
-                  <svg class="password-toggle__icon-eye-off" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M3 3l18 18"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                    />
-                    <path
-                      d="M10.58 10.58A3 3 0 0 0 9 13a3 3 0 0 0 4.24 2.83M16.9 16.9A8.96 8.96 0 0 1 12 19c-6 0-10-7-10-7a17.93 17.93 0 0 1 4.31-5.15"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M14.12 9.88A3 3 0 0 0 12 9a3 3 0 0 0-1 .17"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M9.88 7.12A8.96 8.96 0 0 1 12 5c6 0 10 7 10 7a17.91 17.91 0 0 1-2.6 3.31"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
+                  <svg
+                    class="password-toggle__icon-eye-off"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye-off"></use>
                   </svg>
                 </span>
                 <span class="visually-hidden">Toon huidige wachtwoord</span>
@@ -287,50 +283,22 @@
                 aria-pressed="false"
                 aria-label="Toon nieuw wachtwoord"
               >
-                <span class="password-toggle__icon" aria-hidden="true">
-                  <svg class="password-toggle__icon-eye" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+                <span class="password-toggle__icon" aria-hidden="true" role="presentation">
+                  <svg
+                    class="password-toggle__icon-eye"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye"></use>
                   </svg>
-                  <svg class="password-toggle__icon-eye-off" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M3 3l18 18"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                    />
-                    <path
-                      d="M10.58 10.58A3 3 0 0 0 9 13a3 3 0 0 0 4.24 2.83M16.9 16.9A8.96 8.96 0 0 1 12 19c-6 0-10-7-10-7a17.93 17.93 0 0 1 4.31-5.15"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M14.12 9.88A3 3 0 0 0 12 9a3 3 0 0 0-1 .17"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M9.88 7.12A8.96 8.96 0 0 1 12 5c6 0 10 7 10 7a17.91 17.91 0 0 1-2.6 3.31"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
+                  <svg
+                    class="password-toggle__icon-eye-off"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye-off"></use>
                   </svg>
                 </span>
                 <span class="visually-hidden">Toon nieuw wachtwoord</span>
@@ -354,50 +322,22 @@
                 aria-pressed="false"
                 aria-label="Toon bevestiging"
               >
-                <span class="password-toggle__icon" aria-hidden="true">
-                  <svg class="password-toggle__icon-eye" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+                <span class="password-toggle__icon" aria-hidden="true" role="presentation">
+                  <svg
+                    class="password-toggle__icon-eye"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye"></use>
                   </svg>
-                  <svg class="password-toggle__icon-eye-off" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M3 3l18 18"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                    />
-                    <path
-                      d="M10.58 10.58A3 3 0 0 0 9 13a3 3 0 0 0 4.24 2.83M16.9 16.9A8.96 8.96 0 0 1 12 19c-6 0-10-7-10-7a17.93 17.93 0 0 1 4.31-5.15"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M14.12 9.88A3 3 0 0 0 12 9a3 3 0 0 0-1 .17"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M9.88 7.12A8.96 8.96 0 0 1 12 5c6 0 10 7 10 7a17.91 17.91 0 0 1-2.6 3.31"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
+                  <svg
+                    class="password-toggle__icon-eye-off"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye-off"></use>
                   </svg>
                 </span>
                 <span class="visually-hidden">Toon bevestiging</span>
