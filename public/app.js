@@ -407,6 +407,9 @@ function initPasswordChangeDialog() {
   const currentInput = container.querySelector('#password-change-current');
   const newInput = container.querySelector('#password-change-new');
   const confirmInput = container.querySelector('#password-change-confirm');
+  const currentToggle = container.querySelector('#password-change-current-toggle');
+  const newToggle = container.querySelector('#password-change-new-toggle');
+  const confirmToggle = container.querySelector('#password-change-confirm-toggle');
   const messageEl = container.querySelector('#password-change-message');
   const submitButton = container.querySelector('#password-change-submit');
   const logoutButton = container.querySelector('#password-change-logout');
@@ -1796,8 +1799,21 @@ function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) 
     return;
   }
 
+  const container = toggleButton.closest('.password-field') || input.parentElement;
+  const toggles = Array.from(container?.querySelectorAll('.password-toggle') || []);
+  for (const existingToggle of toggles) {
+    if (existingToggle !== toggleButton) {
+      existingToggle.remove();
+    }
+  }
+
   const hiddenLabel = toggleButton.querySelector('.visually-hidden');
   const labelText = label || 'wachtwoord';
+  const alreadyInitialized = toggleButton.dataset.passwordToggleInitialized === 'true';
+
+  if (input.id) {
+    toggleButton.setAttribute('aria-controls', input.id);
+  }
 
   function setVisible(isVisible) {
     input.type = isVisible ? 'text' : 'password';
@@ -1811,11 +1827,14 @@ function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) 
     toggleButton.classList.toggle('password-toggle--visible', isVisible);
   }
 
-  toggleButton.addEventListener('click', () => {
-    const willShow = input.type === 'password';
-    setVisible(willShow);
-    input.focus();
-  });
+  if (!alreadyInitialized) {
+    toggleButton.dataset.passwordToggleInitialized = 'true';
+    toggleButton.addEventListener('click', () => {
+      const willShow = input.type === 'password';
+      setVisible(willShow);
+      input.focus();
+    });
+  }
 
   setVisible(input.type === 'text');
 }
