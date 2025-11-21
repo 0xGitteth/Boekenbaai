@@ -416,6 +416,10 @@ function initPasswordChangeDialog() {
   let visibleForUserId = null;
   let isVisible = false;
 
+  initPasswordToggle(currentInput, currentToggle, { label: 'huidige wachtwoord' });
+  initPasswordToggle(newInput, newToggle, { label: 'nieuw wachtwoord' });
+  initPasswordToggle(confirmInput, confirmToggle, { label: 'bevestiging van het nieuwe wachtwoord' });
+
   function setMessage(message) {
     if (messageEl) {
       messageEl.textContent = message || '';
@@ -1072,13 +1076,9 @@ async function openBookDetail(book) {
       metadataMessage = error.message || '';
     }
   }
-  if (metadata && canLookupMetadata) {
-    if (metadata.found) {
-      const sourceLabel = metadata.source === 'openlibrary' ? 'Open Library' : metadata.source || 'de bron';
-      metadataMessage = `Gegevens aangevuld via ${sourceLabel}.`;
-    } else if (!metadataMessage) {
-      metadataMessage = 'Geen aanvullende metadata gevonden.';
-    }
+  if (metadata?.found && canLookupMetadata) {
+    const sourceLabel = metadata.source === 'openlibrary' ? 'Open Library' : metadata.source || 'de bron';
+    metadataMessage = `Gegevens aangevuld via ${sourceLabel}.`;
   }
   if (state.currentBookId !== bookId) {
     return;
@@ -1789,6 +1789,35 @@ function readFileAsBase64(file) {
     reader.onerror = () => reject(new Error('Kon bestand niet lezen'));
     reader.readAsDataURL(file);
   });
+}
+
+function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) {
+  if (!input || !toggleButton) {
+    return;
+  }
+
+  const hiddenLabel = toggleButton.querySelector('.visually-hidden');
+  const labelText = label || 'wachtwoord';
+
+  function setVisible(isVisible) {
+    input.type = isVisible ? 'text' : 'password';
+    toggleButton.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+    const action = isVisible ? 'Verberg' : 'Toon';
+    const nextLabel = `${action} ${labelText}`.trim();
+    toggleButton.setAttribute('aria-label', nextLabel);
+    if (hiddenLabel) {
+      hiddenLabel.textContent = nextLabel;
+    }
+    toggleButton.classList.toggle('password-toggle--visible', isVisible);
+  }
+
+  toggleButton.addEventListener('click', () => {
+    const willShow = input.type === 'password';
+    setVisible(willShow);
+    input.focus();
+  });
+
+  setVisible(input.type === 'text');
 }
 
 function initStudentPage() {
@@ -2639,6 +2668,8 @@ function initStaffPage() {
     baseLabel: 'Sorteer de boeken',
     gridId: 'book-grid',
   });
+
+  initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
 
   updateAdminBookDeleteButtonVisibility();
 

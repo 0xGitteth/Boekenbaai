@@ -14,6 +14,58 @@
     />
   </head>
   <body data-page="staff">
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      width="0"
+      height="0"
+      style="position: absolute; width: 0; height: 0; overflow: hidden"
+    >
+      <symbol id="password-toggle-icon-eye" viewBox="0 0 24 24">
+        <path
+          d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2" />
+      </symbol>
+      <symbol id="password-toggle-icon-eye-off" viewBox="0 0 24 24">
+        <path
+          d="M3 3l18 18"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+        <path
+          d="M10.58 10.58A3 3 0 0 0 9 13a3 3 0 0 0 4.24 2.83M16.9 16.9A8.96 8.96 0 0 1 12 19c-6 0-10-7-10-7a17.93 17.93 0 0 1 4.31-5.15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M14.12 9.88A3 3 0 0 0 12 9a3 3 0 0 0-1 .17"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M9.88 7.12A8.96 8.96 0 0 1 12 5c6 0 10 7 10 7a17.91 17.91 0 0 1-2.6 3.31"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+    </svg>
     <header class="hero hero--staff">
       <div class="hero__content">
         <h1>Docentenportaal van Boekenbaai</h1>
@@ -43,12 +95,41 @@
           </div>
           <div class="form-field">
             <label for="login-password">Wachtwoord</label>
-            <input
-              id="login-password"
-              type="password"
-              autocomplete="current-password"
-              required
-            />
+            <div class="password-field">
+              <input
+                id="login-password"
+                type="password"
+                autocomplete="current-password"
+                required
+              />
+              <button
+                id="login-password-toggle"
+                class="password-toggle"
+                type="button"
+                aria-pressed="false"
+                aria-label="Toon wachtwoord"
+              >
+                <span class="password-toggle__icon" aria-hidden="true" role="presentation">
+                  <svg
+                    class="password-toggle__icon-eye"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye"></use>
+                  </svg>
+                  <svg
+                    class="password-toggle__icon-eye-off"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <use href="#password-toggle-icon-eye-off"></use>
+                  </svg>
+                </span>
+                <span class="visually-hidden">Toon wachtwoord</span>
+              </button>
+            </div>
           </div>
           <button type="submit" class="btn">Inloggen</button>
         </form>
@@ -270,7 +351,6 @@
                       required
                       value="1"
                     />
-                    <p class="hint">Gebruik de pijltjes om snel een exemplaar toe te voegen of te verwijderen.</p>
                   </div>
                 </div>
               </div>
@@ -654,14 +734,16 @@
                   <input id="book-import-enrich" type="checkbox" />
                   <span>Ontbrekende velden aanvullen via ISBN-zoekopdracht (Open Library / ISBNBarcode)</span>
                 </label>
-                <button type="submit" class="btn btn--secondary">Importeren</button>
-                <label class="checkbox">
-                  <input id="book-import-enrich" type="checkbox" />
-                  <span>Ontbrekende velden aanvullen via ISBN-zoekopdracht (Open Library / ISBNBarcode)</span>
-                </label>
               </form>
               <p id="book-import-message" class="hint" role="status" aria-live="polite"></p>
               <div id="book-import-results" class="import-results"></div>
+              <button
+                type="submit"
+                form="book-import-form"
+                class="btn btn--secondary admin-import__submit"
+              >
+                Importeren
+              </button>
             </div>
             <div class="admin-card__section admin-card__section--import">
               <h4>Leerlingaccounts importeren</h4>
@@ -675,10 +757,16 @@
               <form id="student-import-form" class="admin-import__form">
                 <label for="student-import-file">Excelbestand kiezen</label>
                 <input id="student-import-file" type="file" accept=".xlsx,.xls" />
-                <button type="submit" class="btn btn--secondary">Importeren</button>
               </form>
               <p id="student-import-message" class="hint" role="status" aria-live="polite"></p>
               <div id="student-import-results" class="import-results"></div>
+              <button
+                type="submit"
+                form="student-import-form"
+                class="btn btn--secondary admin-import__submit"
+              >
+                Importeren
+              </button>
             </div>
             <div class="admin-card__section admin-card__section--import">
               <h4>Docenten importeren</h4>
@@ -692,10 +780,16 @@
               <form id="teacher-import-form" class="admin-import__form">
                 <label for="teacher-import-file">Excelbestand kiezen</label>
                 <input id="teacher-import-file" type="file" accept=".xlsx,.xls" />
-                <button type="submit" class="btn btn--secondary">Importeren</button>
               </form>
               <p id="teacher-import-message" class="hint" role="status" aria-live="polite"></p>
               <div id="teacher-import-results" class="import-results"></div>
+              <button
+                type="submit"
+                form="teacher-import-form"
+                class="btn btn--secondary admin-import__submit"
+              >
+                Importeren
+              </button>
             </div>
           </section>
         </div>
