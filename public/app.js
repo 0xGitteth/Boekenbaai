@@ -419,10 +419,6 @@ function initPasswordChangeDialog() {
   let visibleForUserId = null;
   let isVisible = false;
 
-  initPasswordToggle(currentInput, currentToggle, { label: 'huidige wachtwoord' });
-  initPasswordToggle(newInput, newToggle, { label: 'nieuw wachtwoord' });
-  initPasswordToggle(confirmInput, confirmToggle, { label: 'bevestiging van het nieuwe wachtwoord' });
-
   function setMessage(message) {
     if (messageEl) {
       messageEl.textContent = message || '';
