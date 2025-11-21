@@ -415,13 +415,13 @@ function initPasswordChangeDialog() {
   const logoutButton = container.querySelector('#password-change-logout');
   const descriptionEl = container.querySelector('#password-change-description');
 
-  initPasswordToggle(currentInput, currentToggle, { label: 'huidige wachtwoord' });
-  initPasswordToggle(newInput, newToggle, { label: 'nieuw wachtwoord' });
-  initPasswordToggle(confirmInput, confirmToggle, { label: 'bevestiging van het nieuwe wachtwoord' });
-
   let submitting = false;
   let visibleForUserId = null;
   let isVisible = false;
+
+  initPasswordToggle(currentInput, currentToggle, { label: 'huidige wachtwoord' });
+  initPasswordToggle(newInput, newToggle, { label: 'nieuw wachtwoord' });
+  initPasswordToggle(confirmInput, confirmToggle, { label: 'bevestiging van het nieuwe wachtwoord' });
 
   function setMessage(message) {
     if (messageEl) {
@@ -1799,7 +1799,6 @@ function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) 
     return;
   }
 
-  const icon = toggleButton.querySelector('.password-toggle__icon');
   const hiddenLabel = toggleButton.querySelector('.visually-hidden');
   const labelText = label || 'wachtwoord';
 
@@ -1812,9 +1811,7 @@ function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) 
     if (hiddenLabel) {
       hiddenLabel.textContent = nextLabel;
     }
-    if (icon) {
-      icon.textContent = '';
-    }
+    toggleButton.classList.toggle('password-toggle--visible', isVisible);
   }
 
   toggleButton.addEventListener('click', () => {
@@ -2661,8 +2658,6 @@ function initStaffPage() {
   let onlyExamList = false;
   let adminBarcodeGroups = [];
 
-  initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
-
   function updateAdminBookDeleteButtonVisibility() {
     if (!adminBookDeleteButton) return;
     const hasId = Boolean(adminBookIdInput?.value?.trim());
@@ -2680,6 +2675,8 @@ function initStaffPage() {
     baseLabel: 'Sorteer de boeken',
     gridId: 'book-grid',
   });
+
+  initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
 
   updateAdminBookDeleteButtonVisibility();
 
