@@ -416,10 +416,6 @@ function initPasswordChangeDialog() {
   let visibleForUserId = null;
   let isVisible = false;
 
-  initPasswordToggle(currentInput, currentToggle, { label: 'huidige wachtwoord' });
-  initPasswordToggle(newInput, newToggle, { label: 'nieuw wachtwoord' });
-  initPasswordToggle(confirmInput, confirmToggle, { label: 'bevestiging van het nieuwe wachtwoord' });
-
   function setMessage(message) {
     if (messageEl) {
       messageEl.textContent = message || '';
@@ -1789,35 +1785,6 @@ function readFileAsBase64(file) {
     reader.onerror = () => reject(new Error('Kon bestand niet lezen'));
     reader.readAsDataURL(file);
   });
-}
-
-function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) {
-  if (!input || !toggleButton) {
-    return;
-  }
-
-  const hiddenLabel = toggleButton.querySelector('.visually-hidden');
-  const labelText = label || 'wachtwoord';
-
-  function setVisible(isVisible) {
-    input.type = isVisible ? 'text' : 'password';
-    toggleButton.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
-    const action = isVisible ? 'Verberg' : 'Toon';
-    const nextLabel = `${action} ${labelText}`.trim();
-    toggleButton.setAttribute('aria-label', nextLabel);
-    if (hiddenLabel) {
-      hiddenLabel.textContent = nextLabel;
-    }
-    toggleButton.classList.toggle('password-toggle--visible', isVisible);
-  }
-
-  toggleButton.addEventListener('click', () => {
-    const willShow = input.type === 'password';
-    setVisible(willShow);
-    input.focus();
-  });
-
-  setVisible(input.type === 'text');
 }
 
 function initStudentPage() {
