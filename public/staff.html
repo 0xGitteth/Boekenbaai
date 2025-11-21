@@ -665,10 +665,16 @@
                   <input id="book-import-enrich" type="checkbox" />
                   <span>Ontbrekende velden aanvullen via ISBN-zoekopdracht (Open Library / ISBNBarcode)</span>
                 </label>
-                <button type="submit" class="btn btn--secondary">Importeren</button>
               </form>
               <p id="book-import-message" class="hint" role="status" aria-live="polite"></p>
               <div id="book-import-results" class="import-results"></div>
+              <button
+                type="submit"
+                form="book-import-form"
+                class="btn btn--secondary admin-import__submit"
+              >
+                Importeren
+              </button>
             </div>
             <div class="admin-card__section admin-card__section--import">
               <h4>Leerlingaccounts importeren</h4>
@@ -682,10 +688,16 @@
               <form id="student-import-form" class="admin-import__form">
                 <label for="student-import-file">Excelbestand kiezen</label>
                 <input id="student-import-file" type="file" accept=".xlsx,.xls" />
-                <button type="submit" class="btn btn--secondary">Importeren</button>
               </form>
               <p id="student-import-message" class="hint" role="status" aria-live="polite"></p>
               <div id="student-import-results" class="import-results"></div>
+              <button
+                type="submit"
+                form="student-import-form"
+                class="btn btn--secondary admin-import__submit"
+              >
+                Importeren
+              </button>
             </div>
             <div class="admin-card__section admin-card__section--import">
               <h4>Docenten importeren</h4>
@@ -699,10 +711,16 @@
               <form id="teacher-import-form" class="admin-import__form">
                 <label for="teacher-import-file">Excelbestand kiezen</label>
                 <input id="teacher-import-file" type="file" accept=".xlsx,.xls" />
-                <button type="submit" class="btn btn--secondary">Importeren</button>
               </form>
               <p id="teacher-import-message" class="hint" role="status" aria-live="polite"></p>
               <div id="teacher-import-results" class="import-results"></div>
+              <button
+                type="submit"
+                form="teacher-import-form"
+                class="btn btn--secondary admin-import__submit"
+              >
+                Importeren
+              </button>
             </div>
           </section>
         </div>
