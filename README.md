@@ -71,7 +71,7 @@ Wil je de statische site toch nog als back-up op GitHub Pages houden? Bouw dan m
 DEPLOY_TARGET=gh-pages npm run build
 ```
 
-Upload vervolgens de inhoud van de map `dist/` naar GitHub Pages. Laat `BOEKENBAAI_ALLOWED_ORIGINS` op je Sliplane-server wijzen naar de GitHub Pages-origin en stel `BOEKENBAAI_PUBLIC_API_BASE` in op de URL van de Sliplane-deploy, zodat de statische pagina tegen dezelfde API kan praten.
+Upload vervolgens de inhoud van de map `dist/` naar GitHub Pages. Laat `BOEKENBAAI_ALLOWED_ORIGINS` op je Sliplane-server wijzen naar de GitHub Pages-origin en stel `BOEKENBAAI_PUBLIC_API_BASE` (of `VITE_BOEKENBAAI_API_BASE` tijdens de build) in op de URL van de Sliplane-deploy. Daarmee wordt de API-base automatisch in `server.js` en de gebuilde frontend gezet, zodat de statische pagina tegen dezelfde host kan praten en `/api/login` een 200/401 van de backend teruggeeft in plaats van een 404.
 
 ## API-notitie: uitleenlog per leerling
 

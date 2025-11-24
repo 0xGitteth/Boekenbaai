@@ -1,6 +1,12 @@
 const metaApiBase = document.querySelector('meta[name="boekenbaai-api-base"]');
+const envApiBase =
+  (typeof import.meta !== 'undefined' &&
+    import.meta.env &&
+    (import.meta.env.BOEKENBAAI_PUBLIC_API_BASE || import.meta.env.VITE_BOEKENBAAI_API_BASE)) ||
+  '';
 const apiBase = (
   (typeof window !== 'undefined' && window.BOEKENBAAI_API_BASE) ||
+  envApiBase ||
   metaApiBase?.content ||
   ''
 ).trim();
