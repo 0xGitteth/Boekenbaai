@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const publicRoot = resolve(projectRoot, 'public');
 
-const base = '/';
+const deployTarget = process.env.DEPLOY_TARGET;
+const configuredBase = process.env.BOEKENBAAI_BASE_PATH || process.env.BOEKENBAAI_BASE || null;
+const base = configuredBase ?? (deployTarget === 'gh-pages' ? '/Boekenbaai/' : '/');
 const publicApiBase =
   process.env.BOEKENBAAI_PUBLIC_API_BASE || process.env.VITE_BOEKENBAAI_API_BASE || '';
 

@@ -41,6 +41,7 @@ De server kiest automatisch de map `dist/` zodra je een build hebt gedraaid. Zon
 | `BOEKENBAAI_IMPORT_ENRICH_ISBN` | `true` | Zet op `true` om tijdens Excel-boekimport automatisch ontbrekende velden aan te vullen met ISBN-metadata. Kan per import worden overschreven met de payload-flag `enrichIsbn`. |
 | `BOEKENBAAI_ENABLE_ISBNBARCODE` | `true` | Zet op `true` om naast Open Library ook de ISBNBarcode.org API te raadplegen voor boekmetadata. Standaard staat alleen Open Library aan. |
 | `BOEKENBAAI_ISBN_CACHE_TTL_MS` | `300000` | Tijd (in milliseconden) dat ISBN-metadata in het in-memory cache blijft staan. Resultaten – ook "niet gevonden" – verlopen standaard na 5 minuten. |
+| `DEPLOY_TARGET` | `gh-pages` | Gebruik deze tijdens het bouwen (`DEPLOY_TARGET=gh-pages npm run build`) om de Vite-base op `/Boekenbaai/` te zetten voor GitHub Pages. |
 
 > 💡 **Tip:** Laat Sliplane tijdens de buildfase `npm run build` uitvoeren en tijdens de runtime alleen `npm start`. Dankzij `BOEKENBAAI_DATA_PATH` kun je het databestand op een volume laten schrijven zodat inloggegevens en uitleengeschiedenis bewaard blijven.
 
@@ -61,6 +62,16 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 ### Sliplane vastloper oplossen
 
 Loopt een deploy vast op Sliplane? Maak dan een nieuwe commit (bijvoorbeeld met de boodschap _"Trigger redeploy"_) zodat er een frisse container wordt uitgerold. Controleer daarna in de Sliplane-logs of de stappen `npm install`, `npm run build` en `npm start` zonder fouten doorlopen. Wanneer de server blijft hangen, herstart je de Sliplane-service vanuit het dashboard of voer lokaal `npm run build && npm start` uit om eventuele buildfouten op te sporen.
+
+## Fallback: hosten op GitHub Pages
+
+Wil je de statische site toch nog als back-up op GitHub Pages houden? Bouw dan met:
+
+```bash
+DEPLOY_TARGET=gh-pages npm run build
+```
+
+Upload vervolgens de inhoud van de map `dist/` naar GitHub Pages. Laat `BOEKENBAAI_ALLOWED_ORIGINS` op je Sliplane-server wijzen naar de GitHub Pages-origin en stel `BOEKENBAAI_PUBLIC_API_BASE` (of `VITE_BOEKENBAAI_API_BASE` tijdens de build) in op de URL van de Sliplane-deploy. Daarmee wordt de API-base automatisch in `server.js` en de gebuilde frontend gezet, zodat de statische pagina tegen dezelfde host kan praten en `/api/login` een 200/401 van de backend teruggeeft in plaats van een 404.
 
 ## API-notitie: uitleenlog per leerling
 
