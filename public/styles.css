@@ -872,6 +872,11 @@ body[data-page='staff'] .teacher-actions {
   margin-top: -0.65rem;
 }
 
+.admin-book-grid__easy-reading {
+  grid-column: 1 / -1;
+  margin-top: -0.65rem;
+}
+
 .admin-book-grid__right {
   display: grid;
   row-gap: 0.35rem;
@@ -909,6 +914,12 @@ body[data-page='staff'] .teacher-actions {
 
   .admin-book-grid__exam {
     grid-column: 1;
+    grid-row: 2;
+    margin-top: -0.75rem;
+  }
+
+  .admin-book-grid__easy-reading {
+    grid-column: 2;
     grid-row: 2;
     margin-top: -0.75rem;
   }

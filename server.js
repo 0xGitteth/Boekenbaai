@@ -306,6 +306,7 @@ function ensureBookShape(book) {
     safeBook.folderId = null;
   }
   safeBook.suitableForExamList = Boolean(source.suitableForExamList);
+  safeBook.easyReading = Boolean(source.easyReading);
   safeBook.status = typeof source.status === 'string' ? source.status : 'available';
   safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
@@ -408,6 +409,7 @@ function groupBooksByTitleAuthor(books = []) {
       folderIds,
       folderId: folderIds.length === 1 ? folderIds[0] : null,
       suitableForExamList: value.copies.some((copy) => copy.suitableForExamList),
+      easyReading: value.copies.some((copy) => copy.easyReading),
       borrowCount: value.copies.reduce((total, copy) => total + (copy.borrowCount || 0), 0),
       totalCopies,
       borrowedCopies,
@@ -1794,6 +1796,9 @@ async function handleApi(req, res, requestUrl) {
             book.title.toLowerCase().includes(term) ||
             book.author.toLowerCase().includes(term) ||
             (book.description && book.description.toLowerCase().includes(term)) ||
+            (book.language && book.language.toLowerCase().includes(term)) ||
+            (book.suitableForExamList && ['leeslijst', 'examenleeslijst', 'examen'].some((keyword) => keyword.includes(term) || term.includes(keyword))) ||
+            (book.easyReading && ['makkelijk lezen', 'makkelijklezen', 'ml'].some((keyword) => keyword.includes(term) || term.includes(keyword))) ||
             (book.tags || []).some((tag) => tag.toLowerCase().includes(term))
           );
         });
@@ -1840,6 +1845,7 @@ async function handleApi(req, res, requestUrl) {
         metadataIsbn,
         description: body.description || '',
         suitableForExamList: Boolean(body.suitableForExamList),
+        easyReading: Boolean(body.easyReading),
         tags,
         coverColor,
         publisher,
@@ -1927,6 +1933,7 @@ async function handleApi(req, res, requestUrl) {
         metadataIsbn: nextMetadataIsbn,
         description: body.description ?? book.description,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
+        easyReading: body.easyReading ?? book.easyReading,
         tags: nextTags,
         coverColor: body.coverColor ?? book.coverColor,
         publisher: nextPublisher,

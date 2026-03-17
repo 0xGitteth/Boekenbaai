@@ -571,6 +571,7 @@ function formatDate(value) {
 const THEME_COLOR_MAP = {
   avontuur: '#64b5f6',
   spanning: '#ff9aa2',
+  'makkelijk lezen': '#b8e994',
   romantiek: '#ffb3d9',
   fantasy: '#cdb4ff',
   informatief: '#8ddad5',
@@ -597,6 +598,7 @@ const DEFAULT_THEMES = [
   'Identiteit',
   'Diversiteit',
   'Maatschappij',
+  'Makkelijk Lezen',
 ];
 
 function normalizeThemeKey(theme) {
@@ -1141,16 +1143,18 @@ function renderThemePills(container, config = {}) {
     themes = [],
     selectedThemes = new Set(),
     onlyExamList = false,
+    onlyEasyReading = false,
     isExpanded = false,
     onToggleTheme,
     onToggleExam,
+    onToggleEasyReading,
     onClear,
     onToggleExpanded,
   } = config;
 
   const fragment = document.createDocumentFragment();
 
-  const examButton = appendTextElement(fragment, 'button', 'Leeslijst', {
+  const examButton = appendTextElement(fragment, 'button', 'Examenleeslijst', {
     className: 'filters__pill filters__pill--exam',
     type: 'button',
   });
@@ -1160,6 +1164,19 @@ function renderThemePills(container, config = {}) {
   examButton.addEventListener('click', () => {
     if (typeof onToggleExam === 'function') {
       onToggleExam(!examActive);
+    }
+  });
+
+  const easyReadingButton = appendTextElement(fragment, 'button', 'Makkelijk Lezen', {
+    className: 'filters__pill filters__pill--exam',
+    type: 'button',
+  });
+  const easyReadingActive = Boolean(onlyEasyReading);
+  easyReadingButton.classList.toggle('filters__pill--active', easyReadingActive);
+  easyReadingButton.setAttribute('aria-pressed', easyReadingActive ? 'true' : 'false');
+  easyReadingButton.addEventListener('click', () => {
+    if (typeof onToggleEasyReading === 'function') {
+      onToggleEasyReading(!easyReadingActive);
     }
   });
 
@@ -1248,7 +1265,8 @@ function renderThemePills(container, config = {}) {
   const hasSelection = Boolean(
     (selectedThemes instanceof Set && selectedThemes.size > 0) ||
       (Array.isArray(selectedThemes) && selectedThemes.length > 0) ||
-      onlyExamList
+      onlyExamList ||
+      onlyEasyReading
   );
   if (hasSelection) {
     const clearButton = appendTextElement(fragment, 'button', 'Wis selectie', {
@@ -1342,6 +1360,7 @@ function groupBooksByTitleAuthor(books = []) {
       folderIds,
       folderId: folderIds.length === 1 ? folderIds[0] : null,
       suitableForExamList: value.copies.some((copy) => copy.suitableForExamList),
+      easyReading: value.copies.some((copy) => copy.easyReading),
       borrowCount: value.copies.reduce((total, copy) => total + (copy.borrowCount || 0), 0),
       totalCopies,
       borrowedCopies,
@@ -1447,6 +1466,15 @@ function createBookCard(template, book, folders, options = {}) {
       li.style.setProperty('--theme-pill-text', text);
       li.style.setProperty('--theme-pill-border', border);
     }
+    if (book.easyReading) {
+      const easyLi = appendTextElement(tagsList, 'li', 'Makkelijk Lezen', {
+        className: 'book-card__tag',
+      });
+      const { background, text, border } = resolveThemeColors('Makkelijk Lezen');
+      easyLi.style.setProperty('--theme-pill-bg', background);
+      easyLi.style.setProperty('--theme-pill-text', text);
+      easyLi.style.setProperty('--theme-pill-border', border);
+    }
     tagsList.classList.toggle('hidden', tagsList.childElementCount === 0);
   }
 
@@ -1484,7 +1512,7 @@ function createBookCard(template, book, folders, options = {}) {
   return card;
 }
 
-function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } = {}) {
+function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList, onlyEasyReading } = {}) {
   let list = Array.isArray(allBooks) ? [...allBooks] : [];
   if (folder) {
     list = list.filter((book) => {
@@ -1499,6 +1527,9 @@ function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } =
   }
   if (onlyExamList) {
     list = list.filter((book) => book.suitableForExamList);
+  }
+  if (onlyEasyReading) {
+    list = list.filter((book) => book.easyReading);
   }
   const themes = selectedThemes ? Array.from(selectedThemes) : [];
   const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
@@ -1516,6 +1547,7 @@ function filterBooks(allBooks, { folder, query, selectedThemes, onlyExamList } =
         book.title,
         book.author,
         book.description,
+        book.language,
         book.barcode,
         ...(book.tags || []),
         ...(Array.isArray(book.copies) ? book.copies.map((copy) => copy.barcode) : []),
@@ -1696,6 +1728,8 @@ function createThemeFilterRenderer({
   getThemes,
   getOnlyExamList,
   setOnlyExamList,
+  getOnlyEasyReading,
+  setOnlyEasyReading,
   onChange,
 } = {}) {
   const notifyChange = () => {
@@ -1729,6 +1763,7 @@ function createThemeFilterRenderer({
       themes,
       selectedThemes: selectedThemeKeys,
       onlyExamList: typeof getOnlyExamList === 'function' ? getOnlyExamList() : false,
+      onlyEasyReading: typeof getOnlyEasyReading === 'function' ? getOnlyEasyReading() : false,
       isExpanded,
       onToggleTheme: ({ key, active }) => {
         if (!key) return;
@@ -1747,10 +1782,20 @@ function createThemeFilterRenderer({
         render();
         notifyChange();
       },
+      onToggleEasyReading: (nextValue) => {
+        if (typeof setOnlyEasyReading === 'function') {
+          setOnlyEasyReading(Boolean(nextValue));
+        }
+        render();
+        notifyChange();
+      },
       onClear: () => {
         selectedThemeKeys?.clear();
         if (typeof setOnlyExamList === 'function') {
           setOnlyExamList(false);
+        }
+        if (typeof setOnlyEasyReading === 'function') {
+          setOnlyEasyReading(false);
         }
         render();
         notifyChange();
@@ -1873,6 +1918,7 @@ function initStudentPage() {
   let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
   let onlyExamList = false;
+  let onlyEasyReading = false;
   let sortBy = sortSelect?.value || 'title';
   let activityRequestToken = 0;
   let lastActivityMode = 'public';
@@ -2148,6 +2194,7 @@ function initStudentPage() {
         query: searchInput?.value || '',
         selectedThemes: selectedThemeKeys,
         onlyExamList,
+        onlyEasyReading,
         sortBy,
       },
     });
@@ -2160,6 +2207,10 @@ function initStudentPage() {
     getOnlyExamList: () => onlyExamList,
     setOnlyExamList: (value) => {
       onlyExamList = Boolean(value);
+    },
+    getOnlyEasyReading: () => onlyEasyReading,
+    setOnlyEasyReading: (value) => {
+      onlyEasyReading = Boolean(value);
     },
     onChange: () => {
       renderBooks();
@@ -2340,7 +2391,7 @@ function initStudentPage() {
     barcodeParagraph.append(document.createTextNode(currentBarcodeSelection.barcode || referenceBook?.barcode || ''));
     if (referenceBook?.suitableForExamList) {
       const examParagraph = appendElement(bookResult, 'p');
-      appendTextElement(examParagraph, 'strong', '✔ Op de leeslijst');
+      appendTextElement(examParagraph, 'strong', '✔ Op de examenleeslijst');
     }
 
     const actions = appendElement(bookResult, 'div', { className: 'book-result__actions' });
@@ -2548,6 +2599,7 @@ function initStaffPage() {
   const adminBarcodeResults = document.querySelector('#admin-barcode-results');
   const adminBookQuantity = document.querySelector('#admin-book-quantity');
   const adminBookExam = document.querySelector('#admin-book-exam');
+  const adminBookEasyReading = document.querySelector('#admin-book-easy-reading');
   const adminBookDescription = document.querySelector('#admin-book-description');
   const adminBookPublisher = document.querySelector('#admin-book-publisher');
   const adminBookYear = document.querySelector('#admin-book-year');
@@ -2671,6 +2723,7 @@ function initStaffPage() {
   const adminCustomThemes = new Map();
   let adminSelectedThemeKeys = new Set();
   let onlyExamList = false;
+  let onlyEasyReading = false;
   let adminBarcodeGroups = [];
 
   function updateAdminBookDeleteButtonVisibility() {
@@ -3022,6 +3075,7 @@ function initStaffPage() {
       adminCustomThemes.clear();
       adminSelectedThemeKeys = new Set();
       onlyExamList = false;
+      onlyEasyReading = false;
       filters.query = '';
       filters.sortBy = sortSelect?.value || 'title';
       updateSortControlAccessibility(sortSelect, filters.sortBy, {
@@ -3049,6 +3103,7 @@ function initStaffPage() {
         query: filters.query,
         selectedThemes: selectedThemeKeys,
         onlyExamList,
+        onlyEasyReading,
         sortBy: filters.sortBy,
       },
       cardOptions: (book) => {
@@ -3072,6 +3127,10 @@ function initStaffPage() {
     getOnlyExamList: () => onlyExamList,
     setOnlyExamList: (value) => {
       onlyExamList = Boolean(value);
+    },
+    getOnlyEasyReading: () => onlyEasyReading,
+    setOnlyEasyReading: (value) => {
+      onlyEasyReading = Boolean(value);
     },
     onChange: () => {
       renderBooks();
@@ -3203,6 +3262,9 @@ function initStaffPage() {
     }
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
+    }
+    if (adminBookEasyReading) {
+      adminBookEasyReading.checked = Boolean(book.easyReading);
     }
     if (adminBookSubmitButton) {
       adminBookSubmitButton.textContent = 'Boek bijwerken';
@@ -6065,6 +6127,7 @@ function initStaffPage() {
       barcode: normalizedBarcode,
       metadataIsbn: metadataIsbnValue,
       suitableForExamList: Boolean(adminBookExam.checked),
+      easyReading: Boolean(adminBookEasyReading?.checked),
       description: adminBookDescription.value.trim(),
       publisher: publisherValue,
       publishedYear: publishedYearValue || null,
