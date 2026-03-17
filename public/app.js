@@ -2519,6 +2519,7 @@ function initStaffPage() {
   const loginForm = document.querySelector('#login-form');
   const loginUsername = document.querySelector('#login-username');
   const loginPassword = document.querySelector('#login-password');
+  const loginPasswordToggle = document.querySelector('#login-password-toggle');
   const loginMessage = document.querySelector('#login-message');
   const staffSections = document.querySelectorAll('[data-visible-for]');
   const roleSpecificSections = document.querySelectorAll('[data-role-only]');
