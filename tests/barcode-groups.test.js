@@ -54,7 +54,10 @@ function createDbFixture(filePath) {
         status: 'available',
         borrowedBy: null,
         dueDate: null,
-        tags: [],
+        language: 'nl',
+        suitableForExamList: true,
+        easyReading: true,
+        tags: ['Makkelijk Lezen'],
       },
       {
         id: 'copy-a2',
@@ -65,7 +68,10 @@ function createDbFixture(filePath) {
         status: 'borrowed',
         borrowedBy: 's1',
         dueDate: null,
-        tags: [],
+        language: 'nl',
+        suitableForExamList: true,
+        easyReading: true,
+        tags: ['Makkelijk Lezen'],
       },
       {
         id: 'copy-b1',
@@ -76,7 +82,10 @@ function createDbFixture(filePath) {
         status: 'borrowed',
         borrowedBy: 's2',
         dueDate: null,
-        tags: [],
+        language: 'en',
+        suitableForExamList: false,
+        easyReading: false,
+        tags: ['Mysterie'],
       },
       {
         id: 'copy-b2',
@@ -87,7 +96,10 @@ function createDbFixture(filePath) {
         status: 'available',
         borrowedBy: null,
         dueDate: null,
-        tags: [],
+        language: 'en',
+        suitableForExamList: false,
+        easyReading: false,
+        tags: ['Mysterie'],
       },
     ],
     students: [
@@ -143,6 +155,22 @@ async function runTests() {
   try {
     await waitForServer(serverProcess);
     const teacherToken = await login('teacher', 'teacher-pass');
+
+    const languageSearch = await request('/api/books?query=nl');
+    assert.strictEqual(languageSearch.status, 200);
+    assert.ok(Array.isArray(languageSearch.body));
+    assert.ok(languageSearch.body.length >= 2);
+    assert.ok(languageSearch.body.every((book) => (book.language || '').toLowerCase().includes('nl')));
+
+    const examListSearch = await request('/api/books?query=examenleeslijst');
+    assert.strictEqual(examListSearch.status, 200);
+    assert.ok(Array.isArray(examListSearch.body));
+    assert.ok(examListSearch.body.some((book) => book.id === 'copy-a1'));
+
+    const easyReadingSearch = await request('/api/books?query=makkelijk%20lezen');
+    assert.strictEqual(easyReadingSearch.status, 200);
+    assert.ok(Array.isArray(easyReadingSearch.body));
+    assert.ok(easyReadingSearch.body.every((book) => book.easyReading));
 
     const barcodeLookup = await request('/api/books/barcode/12345');
     assert.strictEqual(barcodeLookup.status, 200);
