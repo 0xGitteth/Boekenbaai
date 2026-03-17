@@ -306,6 +306,7 @@ function ensureBookShape(book) {
     safeBook.folderId = null;
   }
   safeBook.suitableForExamList = Boolean(source.suitableForExamList);
+  safeBook.easyReading = Boolean(source.easyReading);
   safeBook.status = typeof source.status === 'string' ? source.status : 'available';
   safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
@@ -2048,7 +2049,8 @@ async function handleApi(req, res, requestUrl) {
           normalized['ean13'] ||
           normalized['ean-13'] ||
           normalized['streepjescode'] ||
-          normalized.code;
+          normalized.code ||
+          normalized['isbn-nummer'];
         const barcode = normalizeBarcode(barcodeSource);
         const metadataIsbnSource =
           normalized['metadata isbn'] ||
@@ -2154,8 +2156,11 @@ async function handleApi(req, res, requestUrl) {
           normalized.leeslijst ||
           normalized['op de leeslijst'] ||
           normalized.examlist ||
-          normalized['exam list'];
+          normalized['exam list'] ||
+          normalized.examenmateriaal;
         const suitableForExamList = parseBooleanFlag(examValue);
+        const easyReadingValue = normalized['makkelijk lezen'] || normalized['makkelijk lezen?'];
+        const easyReading = parseBooleanFlag(easyReadingValue);
 
         const metadataLookupValue = resolveMetadataLookupKey(metadataIsbn, barcode);
         const cacheKey = getIsbnCacheKey(metadataLookupValue);
@@ -2258,6 +2263,9 @@ async function handleApi(req, res, requestUrl) {
           if (examValue !== undefined && examValue !== '' && suitableForExamList !== existingBook.suitableForExamList) {
             updates.suitableForExamList = suitableForExamList;
           }
+          if (easyReadingValue !== undefined && easyReadingValue !== '' && easyReading !== existingBook.easyReading) {
+            updates.easyReading = easyReading;
+          }
           if (Object.keys(updates).length) {
             Object.assign(existingBook, updates);
             updatedBooks.push({
@@ -2270,6 +2278,8 @@ async function handleApi(req, res, requestUrl) {
               pageCount: existingBook.pageCount,
               language: existingBook.language,
               tags: existingBook.tags,
+              suitableForExamList: existingBook.suitableForExamList,
+              easyReading: existingBook.easyReading,
               status: 'updated',
               enrichment: enrichment || undefined,
             });
@@ -2304,6 +2314,7 @@ async function handleApi(req, res, requestUrl) {
                 ? coverUrl
                 : metadataFields?.coverUrl || '',
             suitableForExamList,
+            easyReading,
           });
         }
         const copiesToCreate = parseQuantityInput(quantityValue, { defaultValue: 1, allowZero: true });
@@ -2320,6 +2331,8 @@ async function handleApi(req, res, requestUrl) {
             pageCount: copy.pageCount,
             language: copy.language,
             tags: copy.tags,
+            suitableForExamList: copy.suitableForExamList,
+            easyReading: copy.easyReading,
             status: 'created',
             enrichment: enrichment || undefined,
           });

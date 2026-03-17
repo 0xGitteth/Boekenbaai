@@ -156,6 +156,52 @@ async function runEnrichmentImportTest({ enableFlag, requestFlag }) {
   }
 }
 
+async function runEasyReadingTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-easy-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+
+    const workbookBase64 = buildWorkbookBase64([
+      {
+        Titel: 'Test Boek',
+        Auteur: 'Test Auteur',
+        Barcode: '9781111111111',
+        Leeslijst: 'Ja',
+        'Makkelijk lezen?': 'true',
+      },
+    ]);
+
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+
+    const books = importResponse.body.books || [];
+    return {
+      books,
+      importResponse,
+      dbPath,
+      token,
+      serverProcess,
+    };
+  } catch (error) {
+    serverProcess.kill('SIGINT');
+    throw error;
+  }
+}
+
 async function readBookCollection(token) {
   const { status, body } = await request('/api/books', {
     headers: { Authorization: `Bearer ${token}` },
@@ -200,6 +246,19 @@ async function runTests() {
     : '';
   assert.strictEqual(logContents, '', 'Lookup log should stay empty when enrichment is disabled');
   disabledResult.serverProcess.kill('SIGINT');
+
+  // Test easyReading and suitableForExamList import
+  const easyReadingResult = await runEasyReadingTest();
+  assert.strictEqual(easyReadingResult.importResponse.status, 200);
+  const [easyBook] = easyReadingResult.books;
+  assert.ok(easyBook);
+  assert.strictEqual(easyBook.suitableForExamList, true);
+  assert.strictEqual(easyBook.easyReading, true);
+  const booksWithFlags = await readBookCollection(easyReadingResult.token);
+  const storedWithFlags = booksWithFlags.find((book) => book.barcode === '9781111111111');
+  assert.strictEqual(storedWithFlags.suitableForExamList, true);
+  assert.strictEqual(storedWithFlags.easyReading, true);
+  easyReadingResult.serverProcess.kill('SIGINT');
 
   console.log('All import tests passed');
 }
