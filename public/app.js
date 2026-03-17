@@ -2990,7 +2990,6 @@ function initStaffPage() {
       studentImportResults && (studentImportResults.innerHTML = '');
       adminClassMessage && (adminClassMessage.textContent = '');
       adminClassList && (adminClassList.innerHTML = '');
-      adminClassTeachersSelect && (adminClassTeachersSelect.innerHTML = '');
       adminStudentMessage && (adminStudentMessage.textContent = '');
       adminStudentList && (adminStudentList.innerHTML = '');
       if (adminStudentSearchInput) {
