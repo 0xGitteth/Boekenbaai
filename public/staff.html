@@ -740,9 +740,17 @@
         aria-labelledby="history-title"
         data-visible-for="teacher,admin"
       >
-        <div class="panel__header">
-          <h2 id="history-title">Laatste activiteit</h2>
-          <p class="panel__subtitle">Wie leende of bracht wat terug? Je ziet het hier.</p>
+        <div class="panel__header panel__header--staff">
+          <div>
+            <h2 id="history-title">Laatste activiteit</h2>
+            <p class="panel__subtitle">Wie leende of bracht wat terug? Je ziet het hier.</p>
+          </div>
+          <div class="panel__header-actions hidden" id="history-actions" data-role-only="admin">
+            <button type="button" class="btn btn--ghost" id="history-clear-button">
+              Logboek wissen
+            </button>
+            <p id="history-message" class="hint" role="status" aria-live="polite"></p>
+          </div>
         </div>
         <ul class="history-list" id="history-list"></ul>
       </section>

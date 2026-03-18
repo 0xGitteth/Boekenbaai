@@ -3928,6 +3928,17 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, activity);
     }
 
+    if (req.method === 'POST' && requestUrl.pathname === '/api/history/clear') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen het logboek wissen' });
+      }
+      const db = getDb();
+      const clearedCount = Array.isArray(db.history) ? db.history.length : 0;
+      db.history = [];
+      saveDb(db);
+      return sendJson(res, 200, { clearedCount });
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/history') {
       if (!ensureRole(user, ['teacher', 'admin'])) {
         return sendJson(res, 403, { message: 'Alleen medewerkers kunnen de activiteit bekijken' });
