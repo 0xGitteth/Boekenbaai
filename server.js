@@ -1273,6 +1273,25 @@ function normalizeIsbnMetadata(metadata) {
   };
 }
 
+function hasCompleteNormalizedIsbnMetadata(metadata) {
+  const normalizedMetadata = normalizeIsbnMetadata(metadata);
+  const fields = normalizedMetadata.fields;
+  if (!normalizedMetadata.found || !fields) {
+    return false;
+  }
+
+  return Boolean(
+    fields.title
+      && fields.author
+      && fields.description
+      && fields.publisher
+      && fields.publishedYear
+      && fields.pageCount
+      && fields.language
+      && fields.coverUrl
+  );
+}
+
 async function lookupIsbnMetadata(isbn) {
   const sanitized = sanitizeIsbn(isbn);
   const cacheKey = getIsbnCacheKey(isbn);
@@ -1392,6 +1411,9 @@ async function lookupIsbnMetadata(isbn) {
           const metadata = source.parser(payload);
           if (metadata) {
             result = result ? mergeLookupMetadata(result, metadata) : metadata;
+            if (hasCompleteNormalizedIsbnMetadata(result)) {
+              break;
+            }
           }
         } catch (error) {
           console.warn(`Kon geen gegevens ophalen via ${source.name}:`, error.message || error);
