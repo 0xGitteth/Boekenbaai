@@ -1884,10 +1884,159 @@ function initPasswordToggle(input, toggleButton, { label = 'wachtwoord' } = {}) 
   setVisible(input.type === 'text');
 }
 
+function createLoginAutocomplete({ inputElement, suggestionsElement, type = 'student', onSelected } = {}) {
+  if (!inputElement || !suggestionsElement) {
+    return { destroy: () => {} };
+  }
+
+  let searchTimeout = null;
+  let selectedIndex = -1;
+  let currentMatches = [];
+
+  const clearSuggestions = () => {
+    suggestionsElement.innerHTML = '';
+    suggestionsElement.classList.add('hidden');
+    currentMatches = [];
+    selectedIndex = -1;
+  };
+
+  const renderSuggestions = (matches) => {
+    suggestionsElement.innerHTML = '';
+    currentMatches = matches;
+    selectedIndex = -1;
+
+    if (!matches.length) {
+      suggestionsElement.classList.add('hidden');
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    for (const match of matches) {
+      const li = document.createElement('li');
+      li.dataset.accountId = match.id;
+
+      const nameEl = document.createElement('strong');
+      nameEl.textContent = match.displayName || match.name;
+      li.append(nameEl);
+
+      if (match.class) {
+        const classEl = document.createElement('small');
+        classEl.textContent = match.class || '';
+        li.append(classEl);
+      } else if (match.grade) {
+        const gradeEl = document.createElement('small');
+        gradeEl.textContent = `Klas ${match.grade}`;
+        li.append(gradeEl);
+      }
+
+      li.addEventListener('click', () => {
+        inputElement.value = match.name;
+        inputElement.dataset.selectedAccountId = match.id;
+        if (typeof onSelected === 'function') {
+          onSelected(match);
+        }
+        clearSuggestions();
+        inputElement.blur();
+      });
+
+      fragment.append(li);
+    }
+
+    suggestionsElement.append(fragment);
+    suggestionsElement.classList.remove('hidden');
+  };
+
+  const searchAccounts = async (query) => {
+    if (!query || query.length < 2) {
+      clearSuggestions();
+      return;
+    }
+
+    try {
+      const typeParam = type === 'staff' ? 'staff' : 'student';
+      const result = await fetchJson(`/api/login-search?q=${encodeURIComponent(query)}&type=${typeParam}`);
+      renderSuggestions(Array.isArray(result.matches) ? result.matches : []);
+    } catch (error) {
+      clearSuggestions();
+    }
+  };
+
+  const handleInputChange = (event) => {
+    const query = inputElement.value.trim();
+    inputElement.removeAttribute('data-selected-account-id');
+    clearTimeout(searchTimeout);
+
+    if (!query || query.length < 2) {
+      clearSuggestions();
+      return;
+    }
+
+    searchTimeout = setTimeout(() => {
+      searchAccounts(query);
+    }, 300);
+  };
+
+  const handleKeyDown = (event) => {
+    if (!currentMatches.length) {
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, currentMatches.length - 1);
+        updateSelectedItem();
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, -1);
+        updateSelectedItem();
+        break;
+      case 'Enter':
+        if (selectedIndex >= 0 && selectedIndex < currentMatches.length) {
+          event.preventDefault();
+          const match = currentMatches[selectedIndex];
+          inputElement.value = match.name;
+          inputElement.dataset.selectedAccountId = match.id;
+          clearSuggestions();
+        }
+        break;
+      case 'Escape':
+        event.preventDefault();
+        clearSuggestions();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const updateSelectedItem = () => {
+    const items = suggestionsElement.querySelectorAll('li');
+    items.forEach((item, index) => {
+      item.setAttribute('aria-selected', index === selectedIndex ? 'true' : 'false');
+      item.classList.toggle('selected', index === selectedIndex);
+    });
+  };
+
+  inputElement.addEventListener('input', handleInputChange);
+  inputElement.addEventListener('keydown', handleKeyDown);
+  inputElement.addEventListener('blur', () => {
+    setTimeout(() => clearSuggestions(), 200);
+  });
+
+  return {
+    destroy: () => {
+      clearTimeout(searchTimeout);
+      inputElement.removeEventListener('input', handleInputChange);
+      inputElement.removeEventListener('keydown', handleKeyDown);
+    },
+  };
+}
+
 function initStudentPage() {
   const loginPanel = document.querySelector('#student-login-panel');
   const loginForm = document.querySelector('#student-login-form');
-  const loginUsername = document.querySelector('#student-login-username');
+  const loginName = document.querySelector('#student-login-name');
   const loginPassword = document.querySelector('#student-login-password');
   const loginMessage = document.querySelector('#student-login-message');
   const dashboard = document.querySelector('#student-dashboard');
@@ -1920,6 +2069,16 @@ function initStudentPage() {
   let sortBy = sortSelect?.value || 'title';
   let activityRequestToken = 0;
   let lastActivityMode = 'public';
+
+  // Initialiseer autocomplete voor student login
+  const loginSuggestions = document.querySelector('#student-login-suggestions');
+  if (loginName && loginSuggestions) {
+    createLoginAutocomplete({
+      inputElement: loginName,
+      suggestionsElement: loginSuggestions,
+      type: 'student',
+    });
+  }
 
   updateSortControlAccessibility(sortSelect, sortBy, {
     baseLabel: 'Sorteer de boeken',
@@ -2486,17 +2645,23 @@ function initStudentPage() {
 
   loginForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const username = loginUsername.value.trim();
+    const name = loginName.value.trim();
     const password = loginPassword.value;
-    if (!username || !password) {
-      loginMessage.textContent = 'Vul je gebruikersnaam en wachtwoord in.';
+    if (!name || !password) {
+      loginMessage.textContent = 'Vul je naam en wachtwoord in.';
       return;
     }
     try {
-      const result = await fetchJson('/api/login', {
+      const result = await fetchJson('/api/login-by-name', {
         method: 'POST',
-        body: { username, password },
+        body: { name, password, type: 'student' },
       });
+
+      if (result.multiple && Array.isArray(result.options) && result.options.length > 1) {
+        loginMessage.textContent = 'Meerdere accounts gevonden. Selecteer je account uit de dropdown.';
+        return;
+      }
+
       if (result.user.role !== 'student') {
         clearAuth({ silent: true });
         loginMessage.textContent = 'Gebruik voor medewerkers de docenteninlog.';
@@ -2566,7 +2731,7 @@ function initStudentPage() {
 function initStaffPage() {
   const loginPanel = document.querySelector('#staff-login-panel');
   const loginForm = document.querySelector('#login-form');
-  const loginUsername = document.querySelector('#login-username');
+  const loginName = document.querySelector('#login-name');
   const loginPassword = document.querySelector('#login-password');
   const loginPasswordToggle = document.querySelector('#login-password-toggle');
   const loginMessage = document.querySelector('#login-message');
@@ -2687,7 +2852,9 @@ function initStaffPage() {
   const teacherImportMessage = document.querySelector('#teacher-import-message');
   const teacherImportResults = document.querySelector('#teacher-import-results');
   const teacherStudentForm = document.querySelector('#teacher-student-form');
+  const teacherStudentNameInput = document.querySelector('#teacher-student-name');
   const teacherStudentUsernameInput = document.querySelector('#teacher-student-username');
+  const teacherStudentSuggestions = document.querySelector('#teacher-student-suggestions');
   const teacherStudentClassSelect = document.querySelector('#teacher-student-class');
   const teacherStudentMessage = document.querySelector('#teacher-student-message');
   const teacherStudentResetInfo = document.querySelector('#teacher-student-reset');
@@ -2742,6 +2909,30 @@ function initStaffPage() {
   });
 
   initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
+
+  // Initialiseer autocomplete voor staff login
+  const loginSuggestions = document.querySelector('#login-suggestions');
+  if (loginName && loginSuggestions) {
+    createLoginAutocomplete({
+      inputElement: loginName,
+      suggestionsElement: loginSuggestions,
+      type: 'staff',
+    });
+  }
+
+  // Initialiseer autocomplete voor teacher-student koppeling
+  if (teacherStudentNameInput && teacherStudentSuggestions) {
+    createLoginAutocomplete({
+      inputElement: teacherStudentNameInput,
+      suggestionsElement: teacherStudentSuggestions,
+      type: 'student',
+      onSelected: (match) => {
+        if (match && match.id) {
+          teacherStudentUsernameInput.value = match.id;
+        }
+      },
+    });
+  }
 
   updateAdminBookDeleteButtonVisibility();
 
@@ -5253,17 +5444,23 @@ function initStaffPage() {
 
   loginForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const username = loginUsername.value.trim();
+    const name = loginName.value.trim();
     const password = loginPassword.value;
-    if (!username || !password) {
-      loginMessage.textContent = 'Vul je gebruikersnaam en wachtwoord in.';
+    if (!name || !password) {
+      loginMessage.textContent = 'Vul je naam en wachtwoord in.';
       return;
     }
     try {
-      const result = await fetchJson('/api/login', {
+      const result = await fetchJson('/api/login-by-name', {
         method: 'POST',
-        body: { username, password },
+        body: { name, password, type: 'staff' },
       });
+
+      if (result.multiple && Array.isArray(result.options) && result.options.length > 1) {
+        loginMessage.textContent = 'Meerdere accounts gevonden. Selecteer je account uit de dropdown.';
+        return;
+      }
+
       if (!['teacher', 'admin'].includes(result.user.role)) {
         clearAuth({ silent: true });
         loginMessage.textContent = 'Gebruik de leerlingenpagina om in te loggen.';
@@ -5757,7 +5954,7 @@ function initStaffPage() {
       return;
     }
     if (!username) {
-      teacherStudentMessage.textContent = 'Vul een gebruikersnaam in.';
+      teacherStudentMessage.textContent = 'Selecteer een leerling.';
       return;
     }
     const teacherClassIds = getTeacherClassIds();
@@ -5770,9 +5967,12 @@ function initStaffPage() {
         method: 'POST',
         body: { username },
       });
+      if (teacherStudentNameInput) {
+        teacherStudentNameInput.value = '';
+        teacherStudentNameInput.focus();
+      }
       if (teacherStudentUsernameInput) {
         teacherStudentUsernameInput.value = '';
-        teacherStudentUsernameInput.focus();
       }
       const klass = classes.find((entry) => entry.id === classId);
       const studentName = result?.student?.name || username;

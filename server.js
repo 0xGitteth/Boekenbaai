@@ -1681,6 +1681,186 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 401, { message: 'Onjuiste inloggegevens' });
     }
 
+    if (req.method === 'POST' && requestUrl.pathname === '/api/login-by-name') {
+      const body = await parseBody(req);
+      const inputName = typeof body.name === 'string' ? body.name.trim() : '';
+      const password = typeof body.password === 'string' ? body.password : '';
+      const accountType = typeof body.type === 'string' ? body.type : 'student'; // 'student' of 'staff'
+
+      if (!inputName || !password) {
+        return sendJson(res, 400, { message: 'Naam en wachtwoord zijn verplicht' });
+      }
+
+      const database = getDb();
+      const passwordHash = hashPassword(password);
+      const normalizedInput = inputName.toLowerCase().trim();
+
+      let matchingAccounts = [];
+
+      if (accountType === 'staff') {
+        // Zoek in users (docenten/admin)
+        matchingAccounts = database.users.filter((entry) =>
+          entry.name.toLowerCase().trim() === normalizedInput
+        );
+      } else {
+        // Zoek in students
+        matchingAccounts = database.students.filter((entry) =>
+          entry.name.toLowerCase().trim() === normalizedInput
+        );
+      }
+
+      if (!matchingAccounts.length) {
+        return sendJson(res, 404, { message: `Geen account gevonden met de naam "${inputName}"` });
+      }
+
+      // Filter op correct wachtwoord
+      const validAccounts = matchingAccounts.filter(
+        (account) => account.passwordHash === passwordHash
+      );
+
+      if (!validAccounts.length) {
+        return sendJson(res, 401, { message: 'Wachtwoord klopt niet' });
+      }
+
+      // Als meerdere valide accounts: geef ze terug voor keuze
+      if (validAccounts.length > 1) {
+        const options = validAccounts.map((account) => {
+          if (accountType === 'student') {
+            const classes = database.classes
+              .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(account.id))
+              .map((cls) => cls.name)
+              .join(', ');
+            return {
+              id: account.id,
+              name: account.name,
+              class: classes || '',
+              grade: account.grade || '',
+            };
+          }
+          return {
+            id: account.id,
+            name: account.name,
+          };
+        });
+        return sendJson(res, 200, { multiple: true, options, requireSelection: true });
+      }
+
+      // Één match: automatisch inloggen
+      const account = validAccounts[0];
+      const token = crypto.randomUUID();
+
+      if (accountType === 'staff') {
+        sessions.set(token, { userId: account.id, type: 'staff', createdAt: Date.now() });
+        return sendJson(res, 200, {
+          token,
+          user: {
+            id: account.id,
+            name: account.name,
+            role: account.role,
+            mustChangePassword: Boolean(account.mustChangePassword),
+          },
+        });
+      } else {
+        sessions.set(token, { userId: account.id, type: 'student', createdAt: Date.now() });
+        return sendJson(res, 200, {
+          token,
+          user: {
+            id: account.id,
+            name: account.name,
+            role: 'student',
+            grade: account.grade || '',
+            mustChangePassword: Boolean(account.mustChangePassword),
+          },
+        });
+      }
+    }
+
+    // Helper functies voor naam anonimisering
+    function splitName(fullName) {
+      const parts = fullName.trim().split(/\s+/);
+      if (parts.length === 1) return { first: parts[0], last: '' };
+      const last = parts[parts.length - 1];
+      const first = parts.slice(0, -1).join(' ');
+      return { first, last };
+    }
+
+    function createDisplayName(fullName, letters) {
+      const { first, last } = splitName(fullName);
+      if (!last) return first;
+      return `${first} ${last.substring(0, letters)}.`;
+    }
+
+    if (req.method === 'GET' && requestUrl.pathname === '/api/login-search') {
+      const query = requestUrl.searchParams.get('q') || '';
+      const type = requestUrl.searchParams.get('type') || 'student'; // 'student' of 'staff'
+
+      if (!query || query.length < 2) {
+        return sendJson(res, 200, { matches: [] });
+      }
+
+      const database = getDb();
+      const normalizedQuery = query.toLowerCase().trim();
+      let matches = [];
+
+      if (type === 'staff') {
+        matches = database.users
+          .filter(
+            (entry) =>
+              entry.name.toLowerCase().includes(normalizedQuery) ||
+              (entry.username && entry.username.toLowerCase().includes(normalizedQuery))
+          )
+          .slice(0, 10)
+          .map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            displayName: entry.name, // voor staff volledige naam
+            type: 'staff',
+          }));
+      } else {
+        // Voor students: verzamel eerst de matches
+        const rawMatches = database.students
+          .filter((entry) => entry.name.toLowerCase().includes(normalizedQuery))
+          .slice(0, 10);
+
+        // Voor elke student, bepaal het aantal letters voor unieke displayName binnen klas
+        matches = rawMatches.map((entry) => {
+          const classes = database.classes
+            .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(entry.id))
+            .map((cls) => cls.name)
+            .join(', ');
+
+          // Bepaal letters
+          let letters = 1;
+          const { last } = splitName(entry.name);
+          while (letters <= last.length) {
+            const displayName = createDisplayName(entry.name, letters);
+            const hasConflict = rawMatches.some((other) => {
+              if (other.id === entry.id) return false;
+              const otherClasses = database.classes
+                .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(other.id))
+                .map((cls) => cls.name)
+                .join(', ');
+              const otherDisplayName = createDisplayName(other.name, letters);
+              return otherDisplayName === displayName && otherClasses === classes;
+            });
+            if (!hasConflict) break;
+            letters++;
+          }
+
+          return {
+            id: entry.id,
+            name: entry.name,
+            displayName: createDisplayName(entry.name, letters),
+            class: classes || '',
+            grade: entry.grade || '',
+            type: 'student',
+          };
+        });
+      }
+
+      return sendJson(res, 200, { matches });
+    }
+
     if (req.method === 'POST' && requestUrl.pathname === '/api/logout') {
       const token = getTokenFromHeader(req);
       if (token) {

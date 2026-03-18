@@ -38,8 +38,20 @@
         </div>
         <form id="login-form" class="login-form">
           <div class="form-field">
-            <label for="login-username">Gebruikersnaam</label>
-            <input id="login-username" type="text" autocomplete="username" required />
+            <label for="login-name">Je naam</label>
+            <input 
+              id="login-name" 
+              type="text" 
+              autocomplete="off" 
+              placeholder="Typ je voor- en achternaam"
+              required 
+            />
+            <ul 
+              id="login-suggestions" 
+              class="login-suggestions hidden" 
+              role="listbox"
+              aria-label="Naamvoorstellen"
+            ></ul>
           </div>
           <div class="form-field">
             <label for="login-password">Wachtwoord</label>
@@ -124,8 +136,21 @@
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="teacher-student-username">Gebruikersnaam leerling</label>
-                  <input id="teacher-student-username" type="text" required autocomplete="off" />
+                  <label for="teacher-student-name">Leerling naam</label>
+                  <input 
+                    id="teacher-student-name" 
+                    type="text" 
+                    autocomplete="off" 
+                    placeholder="Typ de naam van de leerling"
+                    required 
+                  />
+                  <ul 
+                    id="teacher-student-suggestions" 
+                    class="login-suggestions hidden" 
+                    role="listbox"
+                    aria-label="Leerlingvoorstellen"
+                  ></ul>
+                  <input id="teacher-student-username" type="hidden" />
                 </div>
               </div>
               <button type="submit" class="btn btn--secondary">Leerling koppelen</button>
@@ -307,10 +332,7 @@
                     <label for="admin-teacher-add-name">Naam</label>
                     <input id="admin-teacher-add-name" type="text" required autocomplete="off" />
                   </div>
-                  <div class="form-field">
-                    <label for="admin-teacher-add-username">Gebruikersnaam</label>
-                    <input id="admin-teacher-add-username" type="text" required autocomplete="off" />
-                  </div>
+                  <input id="admin-teacher-add-username" type="hidden" />
                 </div>
                 <div class="form-grid form-grid--compact">
                   <div class="form-field">
@@ -374,9 +396,6 @@
                 <div id="admin-teacher-detail-content" class="admin-teacher-detail__content hidden">
                   <header class="admin-teacher-detail__header">
                     <h4 id="admin-teacher-detail-name"></h4>
-                    <p class="admin-teacher-detail__username">
-                      Gebruikersnaam: <span id="admin-teacher-detail-username"></span>
-                    </p>
                   </header>
                   <p
                     id="admin-teacher-detail-message"
@@ -492,10 +511,7 @@
                     <label for="admin-student-name">Naam</label>
                     <input id="admin-student-name" type="text" required />
                   </div>
-                  <div class="form-field">
-                    <label for="admin-student-username">Gebruikersnaam</label>
-                    <input id="admin-student-username" type="text" required autocomplete="off" />
-                  </div>
+                  <input id="admin-student-username" type="hidden" />
                 </div>
                 <div class="form-grid form-grid--compact">
                   <div class="form-field">
@@ -558,9 +574,6 @@
                 <div id="admin-student-detail-content" class="admin-student-detail__content hidden">
                   <header class="admin-student-detail__header">
                     <h4 id="admin-student-detail-name"></h4>
-                    <p class="admin-student-detail__username">
-                      Gebruikersnaam: <span id="admin-student-detail-username"></span>
-                    </p>
                   </header>
                   <div class="admin-student-details__meta">
                     <span id="admin-student-detail-grade"></span>

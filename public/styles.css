@@ -481,6 +481,59 @@ select[multiple] {
   max-width: 420px;
 }
 
+.form-field {
+  position: relative;
+}
+
+.login-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0.25rem 0 0 0;
+  padding: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.login-suggestions.hidden {
+  display: none;
+}
+
+.login-suggestions li {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.login-suggestions li:last-child {
+  border-bottom: none;
+}
+
+.login-suggestions li:hover,
+.login-suggestions li[aria-selected="true"] {
+  background: var(--muted-light, rgba(0, 0, 0, 0.04));
+}
+
+.login-suggestions li strong {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.login-suggestions li small {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
 .form-inline {
   display: flex;
   flex-wrap: wrap;
@@ -2119,7 +2172,7 @@ body[data-page='staff'] .class-card__student-actions .btn {
 .book-card--exam-list::before {
   content: "";
   position: absolute;
-  top: -1.7rem;
+  top: -.45rem;
   right: 1.5rem;
   width: 45px;
   height: 100px;

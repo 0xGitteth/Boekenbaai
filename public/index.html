@@ -39,8 +39,20 @@
         </div>
         <form id="student-login-form" class="login-form">
           <div class="form-field">
-            <label for="student-login-username">Gebruikersnaam</label>
-            <input id="student-login-username" type="text" autocomplete="username" required />
+            <label for="student-login-name">Je naam</label>
+            <input 
+              id="student-login-name" 
+              type="text" 
+              autocomplete="off" 
+              placeholder="Typ je voor- en achternaam"
+              required 
+            />
+            <ul 
+              id="student-login-suggestions" 
+              class="login-suggestions hidden" 
+              role="listbox"
+              aria-label="Naamvoorstellen"
+            ></ul>
           </div>
           <div class="form-field">
             <label for="student-login-password">Wachtwoord</label>
