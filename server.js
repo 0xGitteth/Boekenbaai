@@ -2111,6 +2111,41 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, books);
     }
 
+    if (requestUrl.pathname === '/api/books' && req.method === 'DELETE') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken verwijderen' });
+      }
+      const db = getDb();
+      const borrowedBooks = db.books.filter((book) => book.status === 'borrowed');
+      if (borrowedBooks.length) {
+        return sendJson(res, 400, {
+          message: 'Lever eerst alle uitgeleende boeken in voordat je de bibliotheek leegt.',
+          borrowedCount: borrowedBooks.length,
+        });
+      }
+      const removedCount = db.books.length;
+      db.books = [];
+      for (const student of db.students) {
+        if (!Array.isArray(student.borrowedBooks)) continue;
+        student.borrowedBooks = [];
+      }
+      appendHistory(db, {
+        type: 'books_deleted',
+        message:
+          removedCount > 0
+            ? `${removedCount} boeken zijn verwijderd uit de bibliotheek`
+            : 'De bibliotheek is leeggemaakt',
+      });
+      saveDb(db);
+      return sendJson(res, 200, {
+        message:
+          removedCount > 0
+            ? `${removedCount} boeken verwijderd uit de bibliotheek.`
+            : 'Er waren geen boeken om te verwijderen.',
+        removedCount,
+      });
+    }
+
     const bookIdMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)$/);
     if (bookIdMatch && req.method === 'GET') {
       const db = getDb();

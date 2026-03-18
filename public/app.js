@@ -2780,6 +2780,7 @@ function initStaffPage() {
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
   const adminBookCancelButton = document.querySelector('#admin-book-cancel');
   const adminBookDeleteButton = document.querySelector('#admin-book-delete');
+  const adminBooksDeleteAllButton = document.querySelector('#admin-books-delete-all');
   const adminTeacherList = document.querySelector('#admin-teacher-list');
   const adminTeacherResetInfo = document.querySelector('#admin-teacher-reset');
   const adminTeacherSearchInput = document.querySelector('#admin-teacher-search');
@@ -2903,6 +2904,11 @@ function initStaffPage() {
       adminBookDeleteButton.classList.add('hidden');
       adminBookDeleteButton.disabled = true;
     }
+  }
+
+  function updateAdminDeleteAllBooksButtonState() {
+    if (!adminBooksDeleteAllButton) return;
+    adminBooksDeleteAllButton.disabled = authUser?.role !== 'admin' || allBooks.length === 0;
   }
 
   updateSortControlAccessibility(sortSelect, filters.sortBy, {
@@ -3376,6 +3382,7 @@ function initStaffPage() {
       adminBookCancelButton.classList.add('hidden');
     }
     updateAdminBookDeleteButtonVisibility();
+    updateAdminDeleteAllBooksButtonState();
     if (adminBookLookupMessage) {
       adminBookLookupMessage.textContent = '';
     }
@@ -4837,6 +4844,7 @@ function initStaffPage() {
       allBooks = await fetchJson('/api/books');
       groupedBooks = groupBooksByTitleAuthor(allBooks);
       updateAvailableThemes();
+      updateAdminDeleteAllBooksButtonState();
       if (bookGrid) {
         bookGrid.replaceChildren();
       }
@@ -4850,6 +4858,7 @@ function initStaffPage() {
         }
       }
     } catch (error) {
+      updateAdminDeleteAllBooksButtonState();
       if (bookGrid) {
         const message =
           error && error.message
@@ -6263,6 +6272,43 @@ function initStaffPage() {
   });
 
   adminBookIdInput?.addEventListener('input', updateAdminBookDeleteButtonVisibility);
+
+  adminBooksDeleteAllButton?.addEventListener('click', async () => {
+    if (!authUser || authUser.role !== 'admin') {
+      if (adminBookMessage) {
+        adminBookMessage.textContent = 'Alleen beheerders kunnen boeken verwijderen.';
+      }
+      return;
+    }
+    if (!allBooks.length) {
+      if (adminBookMessage) {
+        adminBookMessage.textContent = 'Er staan geen boeken in de bibliotheek.';
+      }
+      updateAdminDeleteAllBooksButtonState();
+      return;
+    }
+    if (!window.confirm('Weet je zeker dat je alle boeken uit de bibliotheek wilt verwijderen?')) {
+      return;
+    }
+    adminBooksDeleteAllButton.disabled = true;
+    if (adminBookMessage) {
+      adminBookMessage.textContent = 'Alle boeken worden verwijderd…';
+    }
+    try {
+      const result = await fetchJson('/api/books', { method: 'DELETE' });
+      if (adminBookMessage) {
+        adminBookMessage.textContent = result?.message || 'Alle boeken verwijderd uit de bibliotheek.';
+      }
+      await refreshStaffData();
+      resetAdminBookForm();
+    } catch (error) {
+      if (adminBookMessage) {
+        adminBookMessage.textContent = error.message;
+      }
+    } finally {
+      updateAdminDeleteAllBooksButtonState();
+    }
+  });
 
   adminBookDeleteButton?.addEventListener('click', async () => {
     if (!authUser || authUser.role !== 'admin') {
