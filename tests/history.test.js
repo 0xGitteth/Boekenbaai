@@ -85,7 +85,7 @@ function createDbFixture(filePath) {
         id: 'admin',
         name: 'Admin',
         username: 'admin',
-        passwordHash: '248492fae3bea4d587616021c3d873b1f758ced42136df9f9d9a8272d542a63f',
+        passwordHash: 'b630f5d579dfef28c45ddf5e3c7a65f09ebca4d5b064a70c4203578c8667fdeb',
         role: 'admin',
       },
     ],
@@ -178,6 +178,38 @@ async function runTests() {
 
     assert.strictEqual(noClassHistory.status, 200);
     assert.deepStrictEqual(noClassHistory.body, []);
+
+    const teacherClear = await request('/api/history/clear', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${teacherToken}` },
+    });
+
+    assert.strictEqual(teacherClear.status, 403);
+    assert.strictEqual(teacherClear.body.message, 'Alleen beheerders kunnen het logboek wissen');
+
+    const { body: adminLogin } = await request('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'admin-pass' }),
+    });
+
+    const adminToken = adminLogin.token;
+    assert.ok(adminToken, 'Admin token should be returned');
+
+    const clearHistory = await request('/api/history/clear', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    assert.strictEqual(clearHistory.status, 200);
+    assert.strictEqual(clearHistory.body.clearedCount, 3);
+
+    const adminHistoryAfterClear = await request('/api/history', {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    assert.strictEqual(adminHistoryAfterClear.status, 200);
+    assert.deepStrictEqual(adminHistoryAfterClear.body, []);
 
     console.log('All history tests passed');
   } finally {

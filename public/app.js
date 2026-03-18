@@ -2748,6 +2748,9 @@ function initStaffPage() {
   const bookGrid = document.querySelector('#book-grid');
   const themeFilterPills = document.querySelector('#theme-filter-pills');
   const historyList = document.querySelector('#history-list');
+  const historyActions = document.querySelector('#history-actions');
+  const historyClearButton = document.querySelector('#history-clear-button');
+  const historyMessage = document.querySelector('#history-message');
   const classList = document.querySelector('#class-list');
   const classMessage = document.querySelector('#class-message');
   const teacherLayout = document.querySelector('.teacher-layout');
@@ -3216,6 +3219,15 @@ function initStaffPage() {
     }
     if (logoutButton) {
       logoutButton.disabled = !loggedIn;
+    }
+    if (historyActions) {
+      historyActions.classList.toggle('hidden', !(loggedIn && authUser.role === 'admin'));
+    }
+    if (historyClearButton) {
+      historyClearButton.disabled = !(loggedIn && authUser.role === 'admin');
+    }
+    if (!loggedIn && historyMessage) {
+      historyMessage.textContent = '';
     }
     if (teacherLayout && teacherClassesPanel) {
       const classesHidden = teacherClassesPanel.classList.contains('hidden');
@@ -4899,7 +4911,11 @@ function initStaffPage() {
       historyList.replaceChildren();
       if (!entries.length) {
         const li = appendElement(historyList, 'li', { className: 'history-item' });
-        appendTextElement(li, 'span', 'Geen recente activiteit binnen je klassen.');
+        const emptyMessage =
+          authUser?.role === 'admin'
+            ? 'Het logboek is leeg.'
+            : 'Geen recente activiteit binnen je klassen.';
+        appendTextElement(li, 'span', emptyMessage);
         return;
       }
 
@@ -4919,6 +4935,40 @@ function initStaffPage() {
       appendTextElement(li, 'span', error.message);
     }
   }
+
+  historyClearButton?.addEventListener('click', async () => {
+    if (!authUser || authUser.role !== 'admin') {
+      if (historyMessage) {
+        historyMessage.textContent = 'Alleen beheerders kunnen het logboek wissen.';
+      }
+      return;
+    }
+    const confirmed = window.confirm(
+      'Weet je zeker dat je alleen het logboek van laatste activiteit wilt wissen?'
+    );
+    if (!confirmed) {
+      return;
+    }
+    historyClearButton.disabled = true;
+    if (historyMessage) {
+      historyMessage.textContent = 'Logboek wordt gewist...';
+    }
+    try {
+      const result = await fetchJson('/api/history/clear', { method: 'POST' });
+      await loadHistory();
+      if (historyMessage) {
+        const clearedCount = Number(result?.clearedCount) || 0;
+        historyMessage.textContent =
+          clearedCount === 1 ? '1 logregel is gewist.' : `${clearedCount} logregels zijn gewist.`;
+      }
+    } catch (error) {
+      if (historyMessage) {
+        historyMessage.textContent = error?.message || 'Logboek wissen is mislukt.';
+      }
+    } finally {
+      historyClearButton.disabled = false;
+    }
+  });
 
   async function loadStudents() {
     students = await fetchJson('/api/students');
