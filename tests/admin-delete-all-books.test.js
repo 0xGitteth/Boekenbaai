@@ -22,7 +22,7 @@ function createDbFixture(filePath, { withBorrowed = false } = {}) {
         barcode: '9780000000001',
         status: withBorrowed ? 'borrowed' : 'available',
         description: '',
-        tags: [],
+        tags: ['Fictie'],
         suitableForExamList: false,
         easyReading: false,
       },
@@ -59,7 +59,16 @@ function createDbFixture(filePath, { withBorrowed = false } = {}) {
         role: 'admin',
       },
     ],
-    history: [],
+    history: [
+      {
+        id: 'hist-checkout',
+        type: 'check_out',
+        bookId: 'b1',
+        studentId: 's1',
+        timestamp: '2024-04-10T10:00:00.000Z',
+        message: 'Boek Een is uitgeleend aan Student',
+      },
+    ],
   };
 
   fs.writeFileSync(filePath, JSON.stringify(db, null, 2));
@@ -111,6 +120,18 @@ async function loginAdmin() {
   return response.body.token;
 }
 
+async function getStudentStats(token, studentId) {
+  return request(`/api/students/${studentId}/stats`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+async function getSchoolStats(token) {
+  return request('/api/stats/school', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 async function runDeleteAllSuccessTest() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-delete-all-'));
   const dbPath = path.join(tempDir, 'db.json');
@@ -129,10 +150,21 @@ async function runDeleteAllSuccessTest() {
     assert.strictEqual(response.status, 200);
     assert.strictEqual(response.body.removedCount, 2);
 
+    const studentStats = await getStudentStats(token, 's1');
+    assert.strictEqual(studentStats.status, 200);
+    assert.strictEqual(studentStats.body.borrowedTitles[0].title, 'Boek Een');
+    assert.deepStrictEqual(studentStats.body.topGenres, [{ name: 'Fictie', count: 1 }]);
+
+    const schoolStats = await getSchoolStats(token);
+    assert.strictEqual(schoolStats.status, 200);
+    assert.deepStrictEqual(schoolStats.body.topGenres, [{ name: 'Fictie', count: 1 }]);
+
     const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.deepStrictEqual(db.books, []);
     assert.deepStrictEqual(db.students[0].borrowedBooks, []);
-    assert.strictEqual(db.history.at(-1).type, 'books_deleted');
+    assert.strictEqual(db.history.at(0).type, 'books_deleted');
+    assert.strictEqual(db.archivedBooks.length, 2);
+    assert.strictEqual(db.archivedBooks.find((book) => book.id === 'b1').title, 'Boek Een');
   } finally {
     serverProcess.kill('SIGINT');
   }
