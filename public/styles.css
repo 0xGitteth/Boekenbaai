@@ -1376,7 +1376,7 @@ body[data-page='staff'] .teacher-actions {
 
 @media (min-width: 900px) {
   .admin-teacher-layout {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
   }
 }
