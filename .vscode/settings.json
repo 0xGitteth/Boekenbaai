@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd /workspaces/Boekenbaai && node tests/import\\.test\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

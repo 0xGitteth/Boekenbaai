@@ -1987,6 +1987,7 @@ body[data-page='staff'] .class-card__student-actions .btn {
 
 .book-card {
   --book-cover-color: #dbe2f5;
+  position: relative;
   border-radius: 12px;
   padding: 0.85rem;
   background: #fff;
@@ -2102,6 +2103,26 @@ body[data-page='staff'] .class-card__student-actions .btn {
 .book-card--selected {
   border-color: var(--accent-border);
   box-shadow: 0 8px 20px rgba(var(--accent-rgb), 0.2);
+}
+
+.book-card--easy-reading {
+  outline: 2px solid rgba(16, 185, 129, 0.45);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25), 0 4px 12px rgba(var(--brand-dark-rgb), 0.08);
+}
+
+.book-card--exam-list::after {
+  content: '';
+  position: absolute;
+  top: 0.75rem;
+  right: 0.9rem;
+  width: 20px;
+  height: 26px;
+  border: 2px solid rgba(247, 181, 0, 0.9);
+  border-radius: 0.35rem 0.35rem 0.25rem 0.25rem;
+  background: rgba(247, 181, 0, 0.15);
+  clip-path: polygon(0 0, 100% 0, 100% 78%, 50% 100%, 0 78%);
+  z-index: 1;
 }
 
 .book-card__status {

@@ -2036,7 +2036,7 @@ async function handleApi(req, res, requestUrl) {
       const lookup = resolveLookupIsbnMetadata();
       const importEnrichmentEnabled =
         body.enrichIsbn === undefined
-          ? IMPORT_ISBN_ENRICHMENT_ENABLED
+          ? true
           : parseBooleanFlag(body.enrichIsbn);
 
       for (const row of workbookResult.rows) {

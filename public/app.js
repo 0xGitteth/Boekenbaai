@@ -1389,6 +1389,13 @@ function createBookCard(template, book, folders, options = {}) {
   const coverColor = book.coverColor || '#dbe2f5';
   card.style.setProperty('--book-cover-color', coverColor);
 
+  if (book.easyReading) {
+    card.classList.add('book-card--easy-reading');
+  }
+  if (book.suitableForExamList) {
+    card.classList.add('book-card--exam-list');
+  }
+
   const coverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
   const hasCover = Boolean(coverUrl);
 
@@ -1465,15 +1472,6 @@ function createBookCard(template, book, folders, options = {}) {
       li.style.setProperty('--theme-pill-bg', background);
       li.style.setProperty('--theme-pill-text', text);
       li.style.setProperty('--theme-pill-border', border);
-    }
-    if (book.easyReading) {
-      const easyLi = appendTextElement(tagsList, 'li', 'Makkelijk Lezen', {
-        className: 'book-card__tag',
-      });
-      const { background, text, border } = resolveThemeColors('Makkelijk Lezen');
-      easyLi.style.setProperty('--theme-pill-bg', background);
-      easyLi.style.setProperty('--theme-pill-text', text);
-      easyLi.style.setProperty('--theme-pill-border', border);
     }
     tagsList.classList.toggle('hidden', tagsList.childElementCount === 0);
   }
@@ -2610,7 +2608,6 @@ function initStaffPage() {
   const adminBookMessage = document.querySelector('#admin-book-message');
   const bookImportForm = document.querySelector('#book-import-form');
   const bookImportFile = document.querySelector('#book-import-file');
-  const bookImportEnrich = document.querySelector('#book-import-enrich');
   const bookImportMessage = document.querySelector('#book-import-message');
   const bookImportResults = document.querySelector('#book-import-results');
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
@@ -6185,7 +6182,7 @@ function initStaffPage() {
       const base64 = await readFileAsBase64(file);
       const result = await fetchJson('/api/books/import', {
         method: 'POST',
-        body: { file: base64, enrichIsbn: Boolean(bookImportEnrich?.checked) },
+        body: { file: base64 },
       });
       if (bookImportFile) {
         bookImportFile.value = '';
