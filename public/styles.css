@@ -2111,18 +2111,38 @@ body[data-page='staff'] .class-card__student-actions .btn {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25), 0 4px 12px rgba(var(--brand-dark-rgb), 0.08);
 }
 
+.book-card--exam-list {
+  position: relative;
+  overflow: visible;
+}
+
+.book-card--exam-list::before,
 .book-card--exam-list::after {
   content: '';
   position: absolute;
-  top: 0.75rem;
-  right: 0.9rem;
-  width: 20px;
-  height: 26px;
-  border: 2px solid rgba(247, 181, 0, 0.9);
-  border-radius: 0.35rem 0.35rem 0.25rem 0.25rem;
-  background: rgba(247, 181, 0, 0.15);
-  clip-path: polygon(0 0, 100% 0, 100% 78%, 50% 100%, 0 78%);
+  top: -0.13rem;
+  right: 2rem;
   z-index: 1;
+  pointer-events: none;
+  clip-path: polygon(0 0, 100% 0, 100% 78%, 50% 100%, 0 78%);
+}
+
+/* buitenste vorm = rand */
+.book-card--exam-list::before {
+  width: 34px;
+  height: 46px;
+  background: #f7b500;
+  border-radius: 0.45rem 0.45rem 0.25rem 0.25rem;
+}
+
+/* binnenste vorm = vulling */
+.book-card--exam-list::after {
+  width: 28px;
+  height: 40px;
+  top: 0.2rem;
+  right: calc(2rem + 3px);
+  background: #f7ebd6;
+  border-radius: 0.35rem 0.35rem 0.2rem 0.2rem;
 }
 
 .book-card__status {
