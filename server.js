@@ -1684,8 +1684,38 @@ function buildSchoolStats(db) {
   };
 }
 
+function getArchivedBooks(db) {
+  if (!Array.isArray(db.archivedBooks)) {
+    db.archivedBooks = [];
+  }
+  return db.archivedBooks;
+}
+
+function archiveBookRecord(db, book) {
+  if (!book || !book.id) {
+    return;
+  }
+  const archivedBooks = getArchivedBooks(db);
+  const archivedRecord = {
+    ...book,
+    archivedAt: new Date().toISOString(),
+  };
+  const existingIndex = archivedBooks.findIndex((entry) => entry.id === book.id);
+  if (existingIndex >= 0) {
+    archivedBooks[existingIndex] = archivedRecord;
+    return;
+  }
+  archivedBooks.push(archivedRecord);
+}
+
+function archiveBookRecords(db, books) {
+  for (const book of books) {
+    archiveBookRecord(db, book);
+  }
+}
+
 function findBookById(db, id) {
-  return db.books.find((book) => book.id === id);
+  return db.books.find((book) => book.id === id) || getArchivedBooks(db).find((book) => book.id === id);
 }
 
 function findBookByMetadataIsbn(db, metadataIsbn, { excludeId = null } = {}) {
@@ -2124,6 +2154,7 @@ async function handleApi(req, res, requestUrl) {
         });
       }
       const removedCount = db.books.length;
+      archiveBookRecords(db, db.books);
       db.books = [];
       for (const student of db.students) {
         if (!Array.isArray(student.borrowedBooks)) continue;
@@ -2721,6 +2752,7 @@ async function handleApi(req, res, requestUrl) {
       }
       const groupId = getBookGroupId(target);
       const [removed] = db.books.splice(index, 1);
+      archiveBookRecord(db, removed);
       for (const student of db.students) {
         if (!Array.isArray(student.borrowedBooks)) continue;
         student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== removed.id);
