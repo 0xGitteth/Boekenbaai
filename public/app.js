@@ -601,6 +601,8 @@ const DEFAULT_THEMES = [
   'Makkelijk Lezen',
 ];
 
+const EASY_READING_THEME_KEY = normalizeThemeKey('Makkelijk Lezen');
+
 function normalizeThemeKey(theme) {
   return typeof theme === 'string' ? theme.trim().toLowerCase() : '';
 }
@@ -3022,13 +3024,14 @@ function initStaffPage() {
 
   function getAdminThemeEntries() {
     const entries = new Map();
+    const shouldHideAdminTheme = (key) => key === EASY_READING_THEME_KEY;
     const registerEntry = (entry) => {
       const label = typeof entry === 'string' ? entry : entry?.label;
       const key =
         typeof entry === 'string'
           ? normalizeThemeKey(entry)
           : entry?.key || normalizeThemeKey(entry?.label);
-      if (!key || !label || entries.has(key)) return;
+      if (!key || !label || shouldHideAdminTheme(key) || entries.has(key)) return;
       entries.set(key, { key, label });
     };
 
@@ -3056,7 +3059,7 @@ function initStaffPage() {
       if (typeof label !== 'string') continue;
       const trimmed = label.trim();
       const key = normalizeThemeKey(trimmed);
-      if (!trimmed || !key) continue;
+      if (!trimmed || !key || key === EASY_READING_THEME_KEY) continue;
       const existsInAvailable = availableThemes.some(
         (theme) => (theme.key || normalizeThemeKey(theme.label)) === key
       );
@@ -3072,7 +3075,7 @@ function initStaffPage() {
     adminSelectedThemeKeys = new Set(
       (Array.isArray(values) ? values : [])
         .map((value) => (typeof value === 'string' ? normalizeThemeKey(value) : ''))
-        .filter(Boolean)
+        .filter((key) => Boolean(key) && key !== EASY_READING_THEME_KEY)
     );
     renderAdminThemeOptions();
   }
