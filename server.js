@@ -717,9 +717,58 @@ function toStringList(value) {
     .filter(Boolean);
 }
 
-function sanitizeIsbn(value) {
+function normalizeIsbn(value) {
   if (!value) return '';
-  return String(value).replace(/[^0-9X]/gi, '');
+  return String(value).toUpperCase().replace(/[^0-9X]/g, '');
+}
+
+function sanitizeIsbn(value) {
+  return normalizeIsbn(value);
+}
+
+function stripHtml(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function extractPublishedYear(publishedDate) {
+  return normalizePublishedYear(publishedDate);
+}
+
+function formatAuthors(authors) {
+  if (!Array.isArray(authors)) {
+    return '';
+  }
+  return authors
+    .filter((entry) => typeof entry === 'string' && entry.trim())
+    .join(', ');
+}
+
+function pickGoogleBooksCover(imageLinks) {
+  if (!imageLinks || typeof imageLinks !== 'object') {
+    return '';
+  }
+  const sizes = ['extraLarge', 'large', 'medium', 'small', 'thumbnail', 'smallThumbnail'];
+  for (const size of sizes) {
+    const candidate = normalizeCoverUrl(imageLinks[size]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+function hasExactIsbnMatch(item, isbn) {
+  const normalizedIsbn = normalizeIsbn(isbn);
+  if (!normalizedIsbn || !item || typeof item !== 'object') {
+    return false;
+  }
+  const identifiers = Array.isArray(item.volumeInfo?.industryIdentifiers)
+    ? item.volumeInfo.industryIdentifiers
+    : [];
+  return identifiers.some((identifier) => normalizeIsbn(identifier?.identifier) === normalizedIsbn);
 }
 
 function normalizeBarcode(value) {
@@ -1051,6 +1100,51 @@ function parseIsbnBarcodeData(data, fallbackBarcode) {
   };
 }
 
+function parseGoogleBooksData(data, fallbackBarcode) {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) {
+    return null;
+  }
+  const matchedItem = items.find((item) => hasExactIsbnMatch(item, fallbackBarcode)) || items[0];
+  const volumeInfo = matchedItem?.volumeInfo;
+  if (!volumeInfo || typeof volumeInfo !== 'object') {
+    return null;
+  }
+  const authors = Array.isArray(volumeInfo.authors)
+    ? volumeInfo.authors.filter((entry) => typeof entry === 'string' && entry.trim())
+    : [];
+  const title = typeof volumeInfo.title === 'string' ? volumeInfo.title.trim() : '';
+  const publisher = normalizePublisher(volumeInfo.publisher);
+  const description = stripHtml(volumeInfo.description);
+  const language = normalizeLanguageCode(volumeInfo.language);
+  const publishedYear = extractPublishedYear(volumeInfo.publishedDate);
+  const pageCount = normalizePageCountValue(volumeInfo.pageCount);
+  const previewLink = typeof volumeInfo.previewLink === 'string'
+    ? volumeInfo.previewLink.trim()
+    : typeof matchedItem.previewLink === 'string'
+      ? matchedItem.previewLink.trim()
+      : '';
+  const coverUrl = pickGoogleBooksCover(volumeInfo.imageLinks);
+  if (!title && !authors.length && !publisher && !description && !coverUrl) {
+    return null;
+  }
+  return {
+    barcode: fallbackBarcode,
+    title,
+    authors,
+    author: formatAuthors(authors),
+    publisher,
+    publishedYear,
+    description,
+    pageCount,
+    language,
+    previewLink,
+    coverUrl,
+    source: 'googlebooks',
+    found: true,
+  };
+}
+
 function parseOpenLibraryData(data, fallbackBarcode) {
   if (!data || typeof data !== 'object') return null;
   const title = data.title || '';
@@ -1149,7 +1243,11 @@ async function lookupIsbnMetadata(isbn) {
         description: '',
         publisher: '',
         publishedAt: '',
+        publishedYear: null,
+        pageCount: null,
         language: '',
+        previewLink: '',
+        coverUrl: '',
         source: 'unknown',
         found: false,
       };
@@ -1162,35 +1260,58 @@ async function lookupIsbnMetadata(isbn) {
         description: '',
         publisher: '',
         publishedAt: '',
+        publishedYear: null,
+        pageCount: null,
         language: '',
+        previewLink: '',
+        coverUrl: '',
         source: 'offline',
         found: false,
       };
     } else {
-      const headers = {
+      const defaultHeaders = {
         Accept: 'application/json',
         'User-Agent': 'Boekenbaai/1.0 (+https://boekenbaai.example)',
       };
 
-      const sources = [
-        {
-          name: 'openlibrary',
-          url: `https://openlibrary.org/isbn/${sanitized}.json`,
-          parser: (data) => parseOpenLibraryData(data, sanitized),
-        },
-      ];
+      const sources = [];
+
+      if (process.env.GOOGLE_BOOKS_API_KEY) {
+        const googleBooksUrl = new URL('https://www.googleapis.com/books/v1/volumes');
+        googleBooksUrl.searchParams.set('q', `isbn:${sanitized}`);
+        googleBooksUrl.searchParams.set('printType', 'books');
+        googleBooksUrl.searchParams.set('projection', 'full');
+        googleBooksUrl.searchParams.set('maxResults', '5');
+        sources.push({
+          name: 'googlebooks',
+          url: googleBooksUrl.toString(),
+          headers: {
+            ...defaultHeaders,
+            'x-goog-api-key': process.env.GOOGLE_BOOKS_API_KEY,
+          },
+          parser: (data) => parseGoogleBooksData(data, sanitized),
+        });
+      }
+
+      sources.push({
+        name: 'openlibrary',
+        url: `https://openlibrary.org/isbn/${sanitized}.json`,
+        headers: defaultHeaders,
+        parser: (data) => parseOpenLibraryData(data, sanitized),
+      });
 
       if (ENABLE_ISBNBARCODE_LOOKUP) {
         sources.push({
           name: 'isbnbarcode.org',
           url: `${ISBN_API_BASE.replace(/\/$/, '')}/${sanitized}`,
+          headers: defaultHeaders,
           parser: (data) => parseIsbnBarcodeData(data, sanitized),
         });
       }
 
       for (const source of sources) {
         try {
-          const response = await globalFetch(source.url, { headers });
+          const response = await globalFetch(source.url, { headers: source.headers || defaultHeaders });
           if (!response.ok) {
             if (response.status === 404) {
               continue;
@@ -1228,7 +1349,11 @@ async function lookupIsbnMetadata(isbn) {
           description: '',
           publisher: '',
           publishedAt: '',
+          publishedYear: null,
+          pageCount: null,
           language: '',
+          previewLink: '',
+          coverUrl: '',
           source: 'none',
           found: false,
         };
