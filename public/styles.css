@@ -85,6 +85,17 @@ body[data-page='staff'] .summary {
   margin-bottom: 1rem;
 }
 
+.filters__group {
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(100%, 14rem);
+}
+
+.filters__group input,
+.filters__group select {
+  width: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
