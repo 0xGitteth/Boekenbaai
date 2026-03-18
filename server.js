@@ -1105,8 +1105,11 @@ function parseGoogleBooksData(data, fallbackBarcode) {
   if (!items.length) {
     return null;
   }
-  const matchedItem = items.find((item) => hasExactIsbnMatch(item, fallbackBarcode)) || items[0];
-  const volumeInfo = matchedItem?.volumeInfo;
+  const matchedItem = items.find((item) => hasExactIsbnMatch(item, fallbackBarcode));
+  if (!matchedItem) {
+    return null;
+  }
+  const volumeInfo = matchedItem.volumeInfo;
   if (!volumeInfo || typeof volumeInfo !== 'object') {
     return null;
   }
@@ -1117,6 +1120,7 @@ function parseGoogleBooksData(data, fallbackBarcode) {
   const publisher = normalizePublisher(volumeInfo.publisher);
   const description = stripHtml(volumeInfo.description);
   const language = normalizeLanguageCode(volumeInfo.language);
+  const publishedAt = typeof volumeInfo.publishedDate === 'string' ? volumeInfo.publishedDate.trim() : '';
   const publishedYear = extractPublishedYear(volumeInfo.publishedDate);
   const pageCount = normalizePageCountValue(volumeInfo.pageCount);
   const previewLink = typeof volumeInfo.previewLink === 'string'
@@ -1134,6 +1138,7 @@ function parseGoogleBooksData(data, fallbackBarcode) {
     authors,
     author: formatAuthors(authors),
     publisher,
+    publishedAt,
     publishedYear,
     description,
     pageCount,
@@ -1143,6 +1148,60 @@ function parseGoogleBooksData(data, fallbackBarcode) {
     source: 'googlebooks',
     found: true,
   };
+}
+
+function mergeLookupMetadata(base, incoming) {
+  if (!incoming || typeof incoming !== 'object') {
+    return base;
+  }
+  if (!base || typeof base !== 'object') {
+    return { ...incoming, found: Boolean(incoming.found) };
+  }
+
+  const merged = { ...base };
+  const mergeableFields = [
+    'title',
+    'authors',
+    'author',
+    'description',
+    'publisher',
+    'publishedAt',
+    'publishedYear',
+    'pageCount',
+    'language',
+    'previewLink',
+    'coverUrl',
+  ];
+
+  for (const field of mergeableFields) {
+    const currentValue = merged[field];
+    const incomingValue = incoming[field];
+
+    if (Array.isArray(incomingValue)) {
+      if (!Array.isArray(currentValue) || currentValue.length === 0) {
+        merged[field] = incomingValue;
+      }
+      continue;
+    }
+
+    if (typeof incomingValue === 'string') {
+      if (!currentValue) {
+        merged[field] = incomingValue;
+      }
+      continue;
+    }
+
+    if (typeof incomingValue === 'number') {
+      if (currentValue === null || currentValue === undefined) {
+        merged[field] = incomingValue;
+      }
+    }
+  }
+
+  merged.found = Boolean(base.found || incoming.found);
+  merged.barcode = merged.barcode || incoming.barcode || '';
+  merged.source = base.source || incoming.source || null;
+  return merged;
 }
 
 function parseOpenLibraryData(data, fallbackBarcode) {
@@ -1332,8 +1391,7 @@ async function lookupIsbnMetadata(isbn) {
           }
           const metadata = source.parser(payload);
           if (metadata) {
-            result = metadata;
-            break;
+            result = result ? mergeLookupMetadata(result, metadata) : metadata;
           }
         } catch (error) {
           console.warn(`Kon geen gegevens ophalen via ${source.name}:`, error.message || error);
