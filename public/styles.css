@@ -2116,33 +2116,16 @@ body[data-page='staff'] .class-card__student-actions .btn {
   overflow: visible;
 }
 
-.book-card--exam-list::before,
-.book-card--exam-list::after {
+.book-card--exam-list::before {
   content: '';
   position: absolute;
   top: -0.13rem;
   right: 2rem;
-  z-index: 1;
-  pointer-events: none;
-  clip-path: polygon(0 0, 100% 0, 100% 78%, 50% 100%, 0 78%);
-}
-
-/* buitenste vorm = rand */
-.book-card--exam-list::before {
   width: 34px;
   height: 46px;
-  background: #f7b500;
-  border-radius: 0.45rem 0.45rem 0.25rem 0.25rem;
-}
-
-/* binnenste vorm = vulling */
-.book-card--exam-list::after {
-  width: 28px;
-  height: 40px;
-  top: 0.2rem;
-  right: calc(2rem + 3px);
-  background: #f7ebd6;
-  border-radius: 0.35rem 0.35rem 0.2rem 0.2rem;
+  background: url('/icons/bookmark.svg') no-repeat center/contain;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .book-card__status {
