@@ -1512,7 +1512,9 @@ function createBookCard(template, book, folders, options = {}) {
   return card;
 }
 
-function resolveBookLanguage(book) {
+function resolveBookLanguages(book) {
+  const languages = [];
+  const seen = new Set();
   const candidates = [
     book?.language,
     book?.representativeBook?.language,
@@ -1521,12 +1523,22 @@ function resolveBookLanguage(book) {
   for (const candidate of candidates) {
     if (typeof candidate !== 'string') continue;
     const trimmed = candidate.trim();
-    if (trimmed) return trimmed;
+    if (!trimmed) continue;
+    const normalized = trimmed.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    languages.push(trimmed);
   }
-  return '';
+  return languages;
 }
 
-function resolveBookPageCount(book) {
+function resolveBookLanguage(book) {
+  return resolveBookLanguages(book)[0] || '';
+}
+
+function resolveBookPageCounts(book) {
+  const pageCounts = [];
+  const seen = new Set();
   const candidates = [
     book?.pageCount,
     book?.pages,
@@ -1538,11 +1550,17 @@ function resolveBookPageCount(book) {
   ];
   for (const candidate of candidates) {
     const number = Number(candidate);
-    if (Number.isFinite(number) && number > 0) {
-      return number;
+    if (!Number.isFinite(number) || number <= 0 || seen.has(number)) {
+      continue;
     }
+    seen.add(number);
+    pageCounts.push(number);
   }
-  return 0;
+  return pageCounts;
+}
+
+function resolveBookPageCount(book) {
+  return resolveBookPageCounts(book)[0] || 0;
 }
 
 function matchesPageRange(pageCount, rangeValue) {
@@ -1592,10 +1610,14 @@ function filterBooks(allBooks, {
   }
   if (language) {
     const normalizedLanguage = String(language).trim().toLowerCase();
-    list = list.filter((book) => resolveBookLanguage(book).toLowerCase() === normalizedLanguage);
+    list = list.filter((book) =>
+      resolveBookLanguages(book).some((value) => value.toLowerCase() === normalizedLanguage)
+    );
   }
   if (pageRange) {
-    list = list.filter((book) => matchesPageRange(resolveBookPageCount(book), pageRange));
+    list = list.filter((book) =>
+      resolveBookPageCounts(book).some((pageCount) => matchesPageRange(pageCount, pageRange))
+    );
   }
   if (availability === 'available') {
     list = list.filter((book) => {
@@ -2405,7 +2427,7 @@ function initStudentPage() {
     if (!languageSelect) return;
     const currentValue = selectedLanguage;
     const languages = Array.from(
-      new Set(groupedBooks.map((book) => resolveBookLanguage(book)).filter(Boolean))
+      new Set(groupedBooks.flatMap((book) => resolveBookLanguages(book)).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, 'nl', { sensitivity: 'base' }));
     languageSelect.replaceChildren();
     const defaultOption = appendTextElement(languageSelect, 'option', 'Alle talen', { value: '' });
