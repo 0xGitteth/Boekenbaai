@@ -32,7 +32,20 @@ async function request(pathname, options = {}) {
 
 function createDbFixture(filePath) {
   const db = {
-    books: [],
+    books: [
+      {
+        id: 'b1',
+        title: 'Boek Een',
+        author: 'Auteur A',
+        status: 'available',
+      },
+      {
+        id: 'b2',
+        title: 'Boek Twee',
+        author: 'Auteur B',
+        status: 'available',
+      },
+    ],
     students: [
       {
         id: 's1',
@@ -94,6 +107,7 @@ function createDbFixture(filePath) {
         id: 'h3',
         type: 'check_out',
         studentId: 's1',
+        bookId: 'b1',
         message: 's1 pakt boek',
         timestamp: '2024-04-10T10:00:00.000Z',
       },
@@ -101,6 +115,7 @@ function createDbFixture(filePath) {
         id: 'h2',
         type: 'check_out',
         studentId: 's2',
+        bookId: 'b2',
         message: 's2 pakt boek',
         timestamp: '2024-04-09T09:00:00.000Z',
       },
@@ -108,6 +123,7 @@ function createDbFixture(filePath) {
         id: 'h1',
         type: 'check_in',
         studentId: 's1',
+        bookId: 'b1',
         message: 's1 levert boek in',
         timestamp: '2024-04-08T08:00:00.000Z',
       },
@@ -210,6 +226,24 @@ async function runTests() {
 
     assert.strictEqual(adminHistoryAfterClear.status, 200);
     assert.deepStrictEqual(adminHistoryAfterClear.body, []);
+
+    const studentHistoryAfterClear = await request('/api/students/s1/loans', {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    assert.strictEqual(studentHistoryAfterClear.status, 200);
+    assert.deepStrictEqual(
+      studentHistoryAfterClear.body.map((entry) => entry.id),
+      ['h3', 'h1'],
+      'Clearing the staff activity log must preserve per-student loan history'
+    );
+
+    const booksAfterClear = await request('/api/books');
+    assert.strictEqual(booksAfterClear.status, 200);
+    const bookOne = booksAfterClear.body.find((book) => book.id === 'b1');
+    const bookTwo = booksAfterClear.body.find((book) => book.id === 'b2');
+    assert.strictEqual(bookOne?.borrowCount, 1, 'Book one borrow count should be preserved after clear');
+    assert.strictEqual(bookTwo?.borrowCount, 1, 'Book two borrow count should be preserved after clear');
 
     console.log('All history tests passed');
   } finally {

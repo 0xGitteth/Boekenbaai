@@ -431,6 +431,16 @@ function ensureFolderShape(folder) {
   return safeFolder;
 }
 
+function getLoanHistoryEntries(db) {
+  if (Array.isArray(db?.loanHistory)) {
+    return db.loanHistory;
+  }
+  const historyEntries = Array.isArray(db?.history) ? db.history : [];
+  return historyEntries.filter(
+    (entry) => entry && (entry.type === 'check_out' || entry.type === 'check_in')
+  );
+}
+
 function getBorrowCountsMap(historyEntries) {
   const counts = new Map();
   const entries = Array.isArray(historyEntries) ? historyEntries : [];
@@ -1538,12 +1548,20 @@ function parseBody(req) {
  * Wordt gebruikt voor check-ins/-outs en verwante gebeurtenissen.
  */
 function appendHistory(db, entry) {
-  db.history.unshift({
+  const historyEntry = {
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     ...entry,
-  });
+  };
+
+  db.history = Array.isArray(db.history) ? db.history : [];
+  db.history.unshift(historyEntry);
   db.history = db.history.slice(0, 200);
+
+  if (historyEntry.type === 'check_out' || historyEntry.type === 'check_in') {
+    db.loanHistory = Array.isArray(db.loanHistory) ? db.loanHistory : getLoanHistoryEntries(db);
+    db.loanHistory.unshift({ ...historyEntry });
+  }
 }
 
 /**
@@ -1551,7 +1569,7 @@ function appendHistory(db, entry) {
  * Filtert uitsluitend check-ins/-outs en sorteert op tijdstip.
  */
 function getStudentLoanHistory(db, studentId) {
-  const entries = Array.isArray(db.history) ? db.history : [];
+  const entries = getLoanHistoryEntries(db);
   const loans = entries
     .filter((entry) =>
       entry &&
@@ -1572,7 +1590,7 @@ function getStudentLoanHistory(db, studentId) {
 }
 
 function getPublicLoanActivity(db, { limit = 12 } = {}) {
-  const entries = Array.isArray(db.history) ? db.history : [];
+  const entries = getLoanHistoryEntries(db);
   const sanitized = entries
     .filter((entry) =>
       entry &&
@@ -1692,7 +1710,7 @@ function buildStudentStats(db, studentId) {
 }
 
 function buildSchoolStats(db) {
-  const history = Array.isArray(db.history) ? db.history : [];
+  const history = getLoanHistoryEntries(db);
   const checkouts = history.filter((entry) => entry && entry.type === 'check_out');
   const totalBorrowed = checkouts.length;
 
@@ -2145,7 +2163,7 @@ async function handleApi(req, res, requestUrl) {
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
-      const borrowCounts = getBorrowCountsMap(db.history);
+      const borrowCounts = getBorrowCountsMap(getLoanHistoryEntries(db));
       let books = db.books.map((book) => withBorrowCount(book, borrowCounts));
       const folder = requestUrl.searchParams.get('folder');
       const query = requestUrl.searchParams.get('query');
@@ -2211,7 +2229,7 @@ async function handleApi(req, res, requestUrl) {
       if (!book) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
-      const borrowCounts = getBorrowCountsMap(db.history);
+      const borrowCounts = getBorrowCountsMap(getLoanHistoryEntries(db));
       return sendJson(res, 200, withBorrowCount(book, borrowCounts));
     }
 
@@ -3933,7 +3951,11 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen het logboek wissen' });
       }
       const db = getDb();
-      const clearedCount = Array.isArray(db.history) ? db.history.length : 0;
+      const historyEntries = Array.isArray(db.history) ? db.history : [];
+      const clearedCount = historyEntries.length;
+      if (!Array.isArray(db.loanHistory)) {
+        db.loanHistory = getLoanHistoryEntries(db);
+      }
       db.history = [];
       saveDb(db);
       return sendJson(res, 200, { clearedCount });
@@ -4043,7 +4065,7 @@ async function handleApi(req, res, requestUrl) {
           .map((student) => student.id),
       ].filter(Boolean));
 
-      const classHistory = (Array.isArray(db.history) ? db.history : []).filter(
+      const classHistory = getLoanHistoryEntries(db).filter(
         (entry) => entry && entry.type === 'check_out' && studentIdsInClass.has(entry.studentId)
       );
       const borrowCountPerStudent = new Map();
