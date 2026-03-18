@@ -116,14 +116,40 @@
               aria-labelledby="theme-filter-label"
             ></div>
           </div>
-          <label class="filters__label" for="search-input">Zoek:</label>
-          <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
-          <label class="filters__label" for="book-sort-select">Sorteer op:</label>
-          <select id="book-sort-select" aria-controls="book-grid">
-            <option value="title">Titel (A-Z)</option>
-            <option value="author">Auteur (A-Z)</option>
-            <option value="popular">Meest populair</option>
-          </select>
+          <div class="filters__group">
+            <label class="filters__label" for="search-input">Zoek:</label>
+            <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
+          </div>
+          <div class="filters__group">
+            <label class="filters__label" for="book-language-select">Taal:</label>
+            <select id="book-language-select" aria-controls="book-grid">
+              <option value="">Alle talen</option>
+            </select>
+          </div>
+          <div class="filters__group">
+            <label class="filters__label" for="book-page-range-select">Aantal bladzijdes:</label>
+            <select id="book-page-range-select" aria-controls="book-grid">
+              <option value="">Alle lengtes</option>
+              <option value="0-199">Tot 200 bladzijdes</option>
+              <option value="200-399">200 tot 399 bladzijdes</option>
+              <option value="400-9999">400+ bladzijdes</option>
+            </select>
+          </div>
+          <div class="filters__group">
+            <label class="filters__label" for="book-availability-select">Beschikbaarheid:</label>
+            <select id="book-availability-select" aria-controls="book-grid">
+              <option value="">Alles tonen</option>
+              <option value="available">Alleen beschikbaar</option>
+            </select>
+          </div>
+          <div class="filters__group">
+            <label class="filters__label" for="book-sort-select">Sorteer op:</label>
+            <select id="book-sort-select" aria-controls="book-grid">
+              <option value="title">Titel (A-Z)</option>
+              <option value="author">Auteur (A-Z)</option>
+              <option value="popular">Meest populair</option>
+            </select>
+          </div>
         </div>
         <div class="summary" id="summary"></div>
         <div class="book-grid" id="book-grid"></div>
