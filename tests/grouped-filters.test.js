@@ -16,14 +16,13 @@ function extractBetween(startMarker, endMarker) {
 const factory = new Function(
   [
     "function normalizeThemeKey(theme) { return typeof theme === 'string' ? theme.trim().toLowerCase() : ''; }",
-    extractBetween('function resolveBookLanguages(', 'function matchesPageRange('),
-    extractBetween('function matchesPageRange(', 'function filterBooks('),
+    extractBetween('function resolveBookLanguages(', 'function filterBooks('),
     extractBetween('function filterBooks(', 'function sortBooks('),
-    'return { resolveBookLanguages, resolveBookPageCounts, filterBooks };',
+    'return { resolveBookLanguages, resolveBookPageCounts, matchesCopyFilters, filterBooks };',
   ].join('\n\n')
 );
 
-const { resolveBookLanguages, resolveBookPageCounts, filterBooks } = factory();
+const { resolveBookLanguages, resolveBookPageCounts, matchesCopyFilters, filterBooks } = factory();
 
 const groupedBook = {
   id: 'groep-1',
@@ -40,8 +39,24 @@ const groupedBook = {
 
 assert.deepStrictEqual(resolveBookLanguages(groupedBook), ['nl', 'en']);
 assert.deepStrictEqual(resolveBookPageCounts(groupedBook), [120, 420]);
+assert.strictEqual(matchesCopyFilters(groupedBook, { language: 'en' }), true);
 assert.strictEqual(filterBooks([groupedBook], { language: 'en' }).length, 1);
 assert.strictEqual(filterBooks([groupedBook], { pageRange: '400-9999' }).length, 1);
 assert.strictEqual(filterBooks([groupedBook], { pageRange: '200-399' }).length, 0);
+assert.strictEqual(
+  filterBooks([groupedBook], { language: 'en', pageRange: '0-199' }).length,
+  0,
+  'Groep mag niet matchen wanneer taal en lengte op verschillende kopieën zitten'
+);
+assert.strictEqual(
+  filterBooks([groupedBook], { language: 'nl', availability: 'available' }).length,
+  0,
+  'Groep mag niet matchen wanneer taal en beschikbaarheid op verschillende kopieën zitten'
+);
+assert.strictEqual(
+  filterBooks([groupedBook], { language: 'en', pageRange: '400-9999', availability: 'available' }).length,
+  1,
+  'Groep moet blijven staan wanneer één kopie alle filters tegelijk haalt'
+);
 
 console.log('Grouped filter tests passed');

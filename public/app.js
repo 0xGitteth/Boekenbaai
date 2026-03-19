@@ -1580,6 +1580,47 @@ function matchesPageRange(pageCount, rangeValue) {
   return true;
 }
 
+function resolveBookFilterCandidates(book) {
+  if (Array.isArray(book?.copies) && book.copies.length) {
+    return book.copies.filter(Boolean);
+  }
+  const candidates = [book?.representativeBook, book].filter(Boolean);
+  return candidates.length ? candidates : [];
+}
+
+function matchesAvailabilityFilter(book, availability) {
+  if (availability !== 'available') {
+    return true;
+  }
+  if (Number.isFinite(book?.availableCopies)) {
+    return book.availableCopies > 0;
+  }
+  return String(book?.status || '').toLowerCase() !== 'borrowed';
+}
+
+function matchesCopyFilters(book, { language, pageRange, availability } = {}) {
+  const normalizedLanguage = language ? String(language).trim().toLowerCase() : '';
+  const candidates = resolveBookFilterCandidates(book);
+  if (!candidates.length) {
+    return false;
+  }
+  return candidates.some((candidate) => {
+    if (normalizedLanguage) {
+      const candidateLanguage = resolveBookLanguage(candidate).toLowerCase();
+      if (candidateLanguage !== normalizedLanguage) {
+        return false;
+      }
+    }
+    if (pageRange && !matchesPageRange(resolveBookPageCount(candidate), pageRange)) {
+      return false;
+    }
+    if (!matchesAvailabilityFilter(candidate, availability)) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function filterBooks(allBooks, {
   folder,
   query,
@@ -1608,27 +1649,8 @@ function filterBooks(allBooks, {
   if (onlyEasyReading) {
     list = list.filter((book) => book.easyReading);
   }
-  if (language) {
-    const normalizedLanguage = String(language).trim().toLowerCase();
-    list = list.filter((book) =>
-      resolveBookLanguages(book).some((value) => value.toLowerCase() === normalizedLanguage)
-    );
-  }
-  if (pageRange) {
-    list = list.filter((book) =>
-      resolveBookPageCounts(book).some((pageCount) => matchesPageRange(pageCount, pageRange))
-    );
-  }
-  if (availability === 'available') {
-    list = list.filter((book) => {
-      if (Number.isFinite(book?.availableCopies)) {
-        return book.availableCopies > 0;
-      }
-      if (Array.isArray(book?.copies)) {
-        return book.copies.some((copy) => String(copy.status || '').toLowerCase() !== 'borrowed');
-      }
-      return String(book?.status || '').toLowerCase() !== 'borrowed';
-    });
+  if (language || pageRange || availability === 'available') {
+    list = list.filter((book) => matchesCopyFilters(book, { language, pageRange, availability }));
   }
   const themes = selectedThemes ? Array.from(selectedThemes) : [];
   const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
