@@ -1607,9 +1607,10 @@ function matchesAvailabilityFilter(book, availability) {
   return String(book?.status || '').toLowerCase() !== 'borrowed';
 }
 
-function matchesCopyFilters(book, { language, pageRange, availability } = {}) {
+function matchesCopyFilters(book, { language, pageLimit, availability } = {}) {
   const normalizedLanguage = language ? String(language).trim().toLowerCase() : '';
   const candidates = resolveBookFilterCandidates(book);
+  const normalizedPageLimit = Number.isFinite(Number(pageLimit)) ? Number(pageLimit) : 0;
   if (!candidates.length) {
     return false;
   }
@@ -1620,7 +1621,8 @@ function matchesCopyFilters(book, { language, pageRange, availability } = {}) {
         return false;
       }
     }
-    if (pageRange && !matchesPageRange(resolveBookPageCount(candidate), pageRange)) {
+    const candidatePageCount = resolveBookPageCount(candidate);
+    if (!matchesPageLimit(candidatePageCount, normalizedPageLimit)) {
       return false;
     }
     if (!matchesAvailabilityFilter(candidate, availability)) {
@@ -1658,8 +1660,8 @@ function filterBooks(allBooks, {
   if (onlyEasyReading) {
     list = list.filter((book) => book.easyReading);
   }
-  if (language || pageRange || availability === 'available') {
-    list = list.filter((book) => matchesCopyFilters(book, { language, pageRange, availability }));
+  if (language || pageLimit || availability === 'available') {
+    list = list.filter((book) => matchesCopyFilters(book, { language, pageLimit, availability }));
   }
   const themes = selectedThemes ? Array.from(selectedThemes) : [];
   const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
