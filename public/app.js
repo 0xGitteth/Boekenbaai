@@ -1512,7 +1512,9 @@ function createBookCard(template, book, folders, options = {}) {
   return card;
 }
 
-function resolveBookLanguage(book) {
+function resolveBookLanguages(book) {
+  const languages = [];
+  const seen = new Set();
   const candidates = [
     book?.language,
     book?.representativeBook?.language,
@@ -1521,12 +1523,22 @@ function resolveBookLanguage(book) {
   for (const candidate of candidates) {
     if (typeof candidate !== 'string') continue;
     const trimmed = candidate.trim();
-    if (trimmed) return trimmed;
+    if (!trimmed) continue;
+    const normalized = trimmed.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    languages.push(trimmed);
   }
-  return '';
+  return languages;
 }
 
-function resolveBookPageCount(book) {
+function resolveBookLanguage(book) {
+  return resolveBookLanguages(book)[0] || '';
+}
+
+function resolveBookPageCounts(book) {
+  const pageCounts = [];
+  const seen = new Set();
   const candidates = [
     book?.pageCount,
     book?.pages,
@@ -1538,11 +1550,17 @@ function resolveBookPageCount(book) {
   ];
   for (const candidate of candidates) {
     const number = Number(candidate);
-    if (Number.isFinite(number) && number > 0) {
-      return number;
+    if (!Number.isFinite(number) || number <= 0 || seen.has(number)) {
+      continue;
     }
+    seen.add(number);
+    pageCounts.push(number);
   }
-  return 0;
+  return pageCounts;
+}
+
+function resolveBookPageCount(book) {
+  return resolveBookPageCounts(book)[0] || 0;
 }
 
 function matchesPageLimit(pageCount, pageLimit) {
@@ -1569,6 +1587,47 @@ function formatPageFilterLabel(pageLimit, pageFilterMax) {
     return 'Alle lengtes';
   }
   return `Tot ${pageLimit} bladzijdes`;
+}
+
+function resolveBookFilterCandidates(book) {
+  if (Array.isArray(book?.copies) && book.copies.length) {
+    return book.copies.filter(Boolean);
+  }
+  const candidates = [book?.representativeBook, book].filter(Boolean);
+  return candidates.length ? candidates : [];
+}
+
+function matchesAvailabilityFilter(book, availability) {
+  if (availability !== 'available') {
+    return true;
+  }
+  if (Number.isFinite(book?.availableCopies)) {
+    return book.availableCopies > 0;
+  }
+  return String(book?.status || '').toLowerCase() !== 'borrowed';
+}
+
+function matchesCopyFilters(book, { language, pageRange, availability } = {}) {
+  const normalizedLanguage = language ? String(language).trim().toLowerCase() : '';
+  const candidates = resolveBookFilterCandidates(book);
+  if (!candidates.length) {
+    return false;
+  }
+  return candidates.some((candidate) => {
+    if (normalizedLanguage) {
+      const candidateLanguage = resolveBookLanguage(candidate).toLowerCase();
+      if (candidateLanguage !== normalizedLanguage) {
+        return false;
+      }
+    }
+    if (pageRange && !matchesPageRange(resolveBookPageCount(candidate), pageRange)) {
+      return false;
+    }
+    if (!matchesAvailabilityFilter(candidate, availability)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function filterBooks(allBooks, {
@@ -1599,23 +1658,8 @@ function filterBooks(allBooks, {
   if (onlyEasyReading) {
     list = list.filter((book) => book.easyReading);
   }
-  if (language) {
-    const normalizedLanguage = String(language).trim().toLowerCase();
-    list = list.filter((book) => resolveBookLanguage(book).toLowerCase() === normalizedLanguage);
-  }
-  if (Number.isFinite(pageLimit) && pageLimit > 0) {
-    list = list.filter((book) => matchesPageLimit(resolveBookPageCount(book), pageLimit));
-  }
-  if (availability === 'available') {
-    list = list.filter((book) => {
-      if (Number.isFinite(book?.availableCopies)) {
-        return book.availableCopies > 0;
-      }
-      if (Array.isArray(book?.copies)) {
-        return book.copies.some((copy) => String(copy.status || '').toLowerCase() !== 'borrowed');
-      }
-      return String(book?.status || '').toLowerCase() !== 'borrowed';
-    });
+  if (language || pageRange || availability === 'available') {
+    list = list.filter((book) => matchesCopyFilters(book, { language, pageRange, availability }));
   }
   const themes = selectedThemes ? Array.from(selectedThemes) : [];
   const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
@@ -2417,7 +2461,7 @@ function initStudentPage() {
     if (!languageSelect) return;
     const currentValue = selectedLanguage;
     const languages = Array.from(
-      new Set(groupedBooks.map((book) => resolveBookLanguage(book)).filter(Boolean))
+      new Set(groupedBooks.flatMap((book) => resolveBookLanguages(book)).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b, 'nl', { sensitivity: 'base' }));
     languageSelect.replaceChildren();
     const defaultOption = appendTextElement(languageSelect, 'option', 'Alle talen', { value: '' });
