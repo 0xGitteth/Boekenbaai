@@ -544,6 +544,107 @@ function normalizeRowKeys(row) {
   return normalized;
 }
 
+function normalizeImportedCell(value) {
+  return String(value || '').trim();
+}
+
+function deriveNameParts(fullName) {
+  const cleanName = normalizeImportedCell(fullName);
+  if (!cleanName) {
+    return { firstName: '', middleName: '', lastName: '', fullName: '' };
+  }
+  const parts = cleanName.split(/\s+/);
+  if (parts.length === 1) {
+    return {
+      firstName: parts[0],
+      middleName: '',
+      lastName: '',
+      fullName: parts[0],
+    };
+  }
+  return {
+    firstName: parts[0],
+    middleName: parts.length > 2 ? parts.slice(1, -1).join(' ') : '',
+    lastName: parts[parts.length - 1],
+    fullName: cleanName,
+  };
+}
+
+function extractImportedName(normalized) {
+  const directName = normalizeImportedCell(
+    normalized.naam ||
+      normalized.name ||
+      normalized.leerling ||
+      normalized.student ||
+      normalized.docent ||
+      normalized.teacher ||
+      ''
+  );
+  const firstName = normalizeImportedCell(
+    normalized.voornaam ||
+      normalized.firstname ||
+      normalized['first name'] ||
+      normalized.roepnaam ||
+      ''
+  );
+  const middleName = normalizeImportedCell(
+    normalized.tussenvoegsel ||
+      normalized.voorvoegsel ||
+      normalized.infix ||
+      normalized.middle ||
+      normalized.middlename ||
+      normalized['middle name'] ||
+      ''
+  );
+  const lastName = normalizeImportedCell(
+    normalized.achternaam ||
+      normalized.lastname ||
+      normalized['last name'] ||
+      normalized.surname ||
+      normalized.familienaam ||
+      ''
+  );
+
+  if (directName) {
+    const derived = deriveNameParts(directName);
+    return {
+      fullName: directName,
+      firstName: firstName || derived.firstName,
+      middleName: middleName || derived.middleName,
+      lastName: lastName || derived.lastName,
+    };
+  }
+
+  return {
+    fullName: [firstName, middleName, lastName].filter(Boolean).join(' ').trim(),
+    firstName,
+    middleName,
+    lastName,
+  };
+}
+
+function getPreferredFirstName(account) {
+  if (account && typeof account.firstName === 'string' && account.firstName.trim()) {
+    return account.firstName.trim();
+  }
+  if (account && typeof account.name === 'string') {
+    const parts = account.name.trim().split(/\s+/).filter(Boolean);
+    return parts[0] || account.name.trim();
+  }
+  return '';
+}
+
+function createStudentDisplayName(account, letters = 1) {
+  const firstName = getPreferredFirstName(account);
+  const lastName = normalizeImportedCell(
+    account && account.lastName ? account.lastName : deriveNameParts(account?.name || '').lastName
+  );
+  if (!lastName) {
+    return firstName;
+  }
+  return `${firstName} ${lastName.substring(0, letters)}.`;
+}
+
 function readWorkbookRows(XLSX, base64) {
   let workbook;
   try {
@@ -1867,6 +1968,7 @@ async function handleApi(req, res, requestUrl) {
           user: {
             id: studentAccount.id,
             name: studentAccount.name,
+            firstName: getPreferredFirstName(studentAccount),
             role: 'student',
             grade: studentAccount.grade || '',
             mustChangePassword: Boolean(studentAccount.mustChangePassword),
@@ -1963,27 +2065,13 @@ async function handleApi(req, res, requestUrl) {
           user: {
             id: account.id,
             name: account.name,
+            firstName: getPreferredFirstName(account),
             role: 'student',
             grade: account.grade || '',
             mustChangePassword: Boolean(account.mustChangePassword),
           },
         });
       }
-    }
-
-    // Helper functies voor naam anonimisering
-    function splitName(fullName) {
-      const parts = fullName.trim().split(/\s+/);
-      if (parts.length === 1) return { first: parts[0], last: '' };
-      const last = parts[parts.length - 1];
-      const first = parts.slice(0, -1).join(' ');
-      return { first, last };
-    }
-
-    function createDisplayName(fullName, letters) {
-      const { first, last } = splitName(fullName);
-      if (!last) return first;
-      return `${first} ${last.substring(0, letters)}.`;
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/login-search') {
@@ -2027,16 +2115,18 @@ async function handleApi(req, res, requestUrl) {
 
           // Bepaal letters
           let letters = 1;
-          const { last } = splitName(entry.name);
-          while (letters <= last.length) {
-            const displayName = createDisplayName(entry.name, letters);
+          const lastName = normalizeImportedCell(
+            entry.lastName || deriveNameParts(entry.name).lastName
+          );
+          while (letters <= lastName.length) {
+            const displayName = createStudentDisplayName(entry, letters);
             const hasConflict = rawMatches.some((other) => {
               if (other.id === entry.id) return false;
               const otherClasses = database.classes
                 .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(other.id))
                 .map((cls) => cls.name)
                 .join(', ');
-              const otherDisplayName = createDisplayName(other.name, letters);
+              const otherDisplayName = createStudentDisplayName(other, letters);
               return otherDisplayName === displayName && otherClasses === classes;
             });
             if (!hasConflict) break;
@@ -2046,7 +2136,7 @@ async function handleApi(req, res, requestUrl) {
           return {
             id: entry.id,
             name: entry.name,
-            displayName: createDisplayName(entry.name, letters),
+            displayName: createStudentDisplayName(entry, letters),
             class: classes || '',
             grade: entry.grade || '',
             type: 'student',
@@ -2124,6 +2214,7 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 200, {
           id: student.id,
           name: student.name,
+          firstName: getPreferredFirstName(student),
           role: 'student',
           grade: student.grade || '',
           borrowedBooks: student.borrowedBooks || [],
@@ -3555,9 +3646,8 @@ async function handleApi(req, res, requestUrl) {
 
       for (const row of workbookResult.rows) {
         const normalized = normalizeRowKeys(row);
-        const name = String(
-          normalized.naam || normalized.name || normalized.leerling || normalized.student || ''
-        ).trim();
+        const importedName = extractImportedName(normalized);
+        const name = importedName.fullName;
         const username = String(
           normalized.gebruikersnaam || normalized.username || ''
         ).trim();
@@ -3622,6 +3712,9 @@ async function handleApi(req, res, requestUrl) {
             ? [...existingStudent.classIds]
             : [];
           existingStudent.name = name;
+          existingStudent.firstName = importedName.firstName;
+          existingStudent.middleName = importedName.middleName;
+          existingStudent.lastName = importedName.lastName;
           if (grade) {
             existingStudent.grade = grade;
           }
@@ -3660,6 +3753,7 @@ async function handleApi(req, res, requestUrl) {
           updatedAccounts.push({
             id: existingStudent.id,
             name: existingStudent.name,
+            firstName: getPreferredFirstName(existingStudent),
             username: existingStudent.username,
             password: passwordChanged ? password : null,
             classes: classRecords.map((klass) => klass.name),
@@ -3696,6 +3790,9 @@ async function handleApi(req, res, requestUrl) {
         const student = {
           id: crypto.randomUUID(),
           name,
+          firstName: importedName.firstName,
+          middleName: importedName.middleName,
+          lastName: importedName.lastName,
           username,
           passwordHash: hashPassword(password),
           mustChangePassword: true,
@@ -3713,6 +3810,7 @@ async function handleApi(req, res, requestUrl) {
         createdAccounts.push({
           id: student.id,
           name: student.name,
+          firstName: getPreferredFirstName(student),
           username: student.username,
           password,
           classes: classRecords.map((klass) => klass.name),
@@ -3768,9 +3866,8 @@ async function handleApi(req, res, requestUrl) {
 
       for (const row of workbookResult.rows) {
         const normalized = normalizeRowKeys(row);
-        const name = String(
-          normalized.naam || normalized.name || normalized.docent || normalized.teacher || ''
-        ).trim();
+        const importedName = extractImportedName(normalized);
+        const name = importedName.fullName;
         const username = String(
           normalized.gebruikersnaam || normalized.username || ''
         ).trim();
@@ -3851,6 +3948,9 @@ async function handleApi(req, res, requestUrl) {
             passwordChanged = true;
           }
           existingTeacher.name = name;
+          existingTeacher.firstName = importedName.firstName;
+          existingTeacher.middleName = importedName.middleName;
+          existingTeacher.lastName = importedName.lastName;
           existingTeacher.username = username;
           existingTeacher.role = 'teacher';
           existingTeacher.classIds = classIds;
@@ -3895,6 +3995,9 @@ async function handleApi(req, res, requestUrl) {
           id: crypto.randomUUID(),
           role: 'teacher',
           name,
+          firstName: importedName.firstName,
+          middleName: importedName.middleName,
+          lastName: importedName.lastName,
           username,
           passwordHash: hashPassword(password),
           mustChangePassword: true,

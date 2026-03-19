@@ -20,6 +20,17 @@ let statsModalController = null;
 let groupedBooks = [];
 const studentDirectory = new Map();
 
+function getUserGreetingName(user) {
+  if (!user) return '';
+  if (typeof user.firstName === 'string' && user.firstName.trim()) {
+    return user.firstName.trim();
+  }
+  if (typeof user.name === 'string') {
+    return user.name.trim();
+  }
+  return '';
+}
+
 function appendElement(parent, tag, options = {}) {
   const element = document.createElement(tag);
   if (options && typeof options === 'object') {
@@ -450,7 +461,7 @@ function initPasswordChangeDialog() {
       submitButton?.removeAttribute('disabled');
     }
     if (descriptionEl) {
-      const displayName = user.name ? ` ${user.name}` : '';
+      const displayName = getUserGreetingName(user) ? ` ${getUserGreetingName(user)}` : '';
       descriptionEl.textContent = `Hallo${displayName}, voor jouw veiligheid moet je nu een nieuw wachtwoord instellen voordat je verder gaat.`;
     }
     container.classList.remove('hidden');
@@ -2442,7 +2453,7 @@ function initStudentPage() {
     dashboard?.classList.toggle('hidden', !loggedIn);
     logoutButton?.classList.toggle('hidden', !loggedIn);
     if (studentName) {
-      studentName.textContent = loggedIn ? authUser.name : '';
+      studentName.textContent = loggedIn ? getUserGreetingName(authUser) : '';
     }
     if (studentGrade) {
       studentGrade.textContent = loggedIn && authUser.grade ? `Klas ${authUser.grade}` : '';
@@ -2869,7 +2880,7 @@ function initStudentPage() {
       setAuth(result.token);
       await reloadCurrentUser(['student']);
       loginForm.reset();
-      loginMessage.textContent = `Welkom ${authUser.name}!`;
+      loginMessage.textContent = `Welkom ${getUserGreetingName(authUser)}!`;
       await refreshData();
       barcodeInput?.focus();
     } catch (error) {
@@ -5753,7 +5764,7 @@ function initStaffPage() {
       setAuth(result.token);
       await reloadCurrentUser(['teacher', 'admin']);
       loginForm.reset();
-      loginMessage.textContent = `Welkom ${authUser.name}!`;
+      loginMessage.textContent = `Welkom ${getUserGreetingName(authUser)}!`;
       await refreshStaffData();
     } catch (error) {
       loginMessage.textContent = error.message;

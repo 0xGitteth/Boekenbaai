@@ -202,6 +202,50 @@ async function runEasyReadingTest() {
   }
 }
 
+async function runStudentImportNamePartsTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-students-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+
+    const workbookBase64 = buildWorkbookBase64([
+      {
+        Voornaam: 'Jan',
+        Voorvoegsel: 'van',
+        Achternaam: 'Dijk',
+        Gebruikersnaam: 'jan.vandijk',
+        Wachtwoord: 'Welkom123',
+        'Klas(sen)': '1A',
+      },
+    ]);
+
+    const importResponse = await request('/api/students/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+
+    return {
+      importResponse,
+      dbPath,
+      serverProcess,
+    };
+  } catch (error) {
+    serverProcess.kill('SIGINT');
+    throw error;
+  }
+}
+
 async function readBookCollection(token) {
   const { status, body } = await request('/api/books', {
     headers: { Authorization: `Bearer ${token}` },
@@ -259,6 +303,19 @@ async function runTests() {
   assert.strictEqual(storedWithFlags.suitableForExamList, true);
   assert.strictEqual(storedWithFlags.easyReading, true);
   easyReadingResult.serverProcess.kill('SIGINT');
+
+  // Student import should support separate name columns and store first name metadata.
+  const studentImportResult = await runStudentImportNamePartsTest();
+  assert.strictEqual(studentImportResult.importResponse.status, 200);
+  assert.strictEqual(studentImportResult.importResponse.body.created, 1);
+  assert.strictEqual(studentImportResult.importResponse.body.accounts[0].name, 'Jan van Dijk');
+  assert.strictEqual(studentImportResult.importResponse.body.accounts[0].firstName, 'Jan');
+  const importedDb = JSON.parse(fs.readFileSync(studentImportResult.dbPath, 'utf-8'));
+  assert.strictEqual(importedDb.students[0].name, 'Jan van Dijk');
+  assert.strictEqual(importedDb.students[0].firstName, 'Jan');
+  assert.strictEqual(importedDb.students[0].middleName, 'van');
+  assert.strictEqual(importedDb.students[0].lastName, 'Dijk');
+  studentImportResult.serverProcess.kill('SIGINT');
 
   console.log('All import tests passed');
 }
