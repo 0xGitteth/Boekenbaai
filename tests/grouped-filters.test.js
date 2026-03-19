@@ -40,11 +40,13 @@ const groupedBook = {
 assert.deepStrictEqual(resolveBookLanguages(groupedBook), ['nl', 'en']);
 assert.deepStrictEqual(resolveBookPageCounts(groupedBook), [120, 420]);
 assert.strictEqual(matchesCopyFilters(groupedBook, { language: 'en' }), true);
+assert.strictEqual(matchesCopyFilters(groupedBook, { pageLimit: 150 }), true);
+assert.strictEqual(matchesCopyFilters(groupedBook, { language: 'en', pageLimit: 150 }), false);
 assert.strictEqual(filterBooks([groupedBook], { language: 'en' }).length, 1);
-assert.strictEqual(filterBooks([groupedBook], { pageRange: '400-9999' }).length, 1);
-assert.strictEqual(filterBooks([groupedBook], { pageRange: '200-399' }).length, 0);
+assert.strictEqual(filterBooks([groupedBook], { pageLimit: 450 }).length, 1);
+assert.strictEqual(filterBooks([groupedBook], { pageLimit: 150 }).length, 1);
 assert.strictEqual(
-  filterBooks([groupedBook], { language: 'en', pageRange: '0-199' }).length,
+  filterBooks([groupedBook], { language: 'en', pageLimit: 150 }).length,
   0,
   'Groep mag niet matchen wanneer taal en lengte op verschillende kopieën zitten'
 );
@@ -54,7 +56,7 @@ assert.strictEqual(
   'Groep mag niet matchen wanneer taal en beschikbaarheid op verschillende kopieën zitten'
 );
 assert.strictEqual(
-  filterBooks([groupedBook], { language: 'en', pageRange: '400-9999', availability: 'available' }).length,
+  filterBooks([groupedBook], { language: 'en', pageLimit: 450, availability: 'available' }).length,
   1,
   'Groep moet blijven staan wanneer één kopie alle filters tegelijk haalt'
 );
