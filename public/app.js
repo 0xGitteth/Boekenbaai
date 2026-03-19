@@ -1571,6 +1571,21 @@ function matchesPageLimit(pageCount, pageLimit) {
   return pageCount <= pageLimit;
 }
 
+function matchesPageRange(pageCount, pageRange) {
+  if (typeof pageRange === 'string') {
+    const match = pageRange.trim().match(/^(\d+)\s*-\s*(\d+)$/);
+    if (match) {
+      const minimum = Number(match[1]);
+      const maximum = Number(match[2]);
+      if (!Number.isFinite(pageCount) || pageCount <= 0) {
+        return false;
+      }
+      return pageCount >= minimum && pageCount <= maximum;
+    }
+  }
+  return matchesPageLimit(pageCount, Number(pageRange));
+}
+
 function computePageFilterMax(books) {
   const highestPageCount = (Array.isArray(books) ? books : []).reduce((highest, book) => {
     const pageCount = resolveBookPageCount(book);
@@ -1637,6 +1652,7 @@ function filterBooks(allBooks, {
   onlyExamList,
   onlyEasyReading,
   language,
+  pageRange,
   pageLimit,
   availability,
 } = {}) {
@@ -1658,8 +1674,9 @@ function filterBooks(allBooks, {
   if (onlyEasyReading) {
     list = list.filter((book) => book.easyReading);
   }
-  if (language || pageRange || availability === 'available') {
-    list = list.filter((book) => matchesCopyFilters(book, { language, pageRange, availability }));
+  const effectivePageRange = pageRange ?? pageLimit;
+  if (language || effectivePageRange || availability === 'available') {
+    list = list.filter((book) => matchesCopyFilters(book, { language, pageRange: effectivePageRange, availability }));
   }
   const themes = selectedThemes ? Array.from(selectedThemes) : [];
   const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
