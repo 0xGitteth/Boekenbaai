@@ -1280,16 +1280,7 @@ function hasCompleteNormalizedIsbnMetadata(metadata) {
     return false;
   }
 
-  return Boolean(
-    fields.title
-      && fields.author
-      && fields.description
-      && fields.publisher
-      && fields.publishedYear
-      && fields.pageCount
-      && fields.language
-      && fields.coverUrl
-  );
+  return Boolean(fields.title && fields.author && fields.coverUrl);
 }
 
 async function lookupIsbnMetadata(isbn) {
