@@ -1563,21 +1563,30 @@ function resolveBookPageCount(book) {
   return resolveBookPageCounts(book)[0] || 0;
 }
 
-function matchesPageRange(pageCount, rangeValue) {
-  if (!rangeValue) return true;
-  const [minValue, maxValue] = String(rangeValue).split('-');
-  const min = Number(minValue);
-  const max = Number(maxValue);
+function matchesPageLimit(pageCount, pageLimit) {
+  if (!Number.isFinite(pageLimit) || pageLimit <= 0) return true;
   if (!Number.isFinite(pageCount) || pageCount <= 0) {
     return false;
   }
-  if (Number.isFinite(min) && pageCount < min) {
-    return false;
+  return pageCount <= pageLimit;
+}
+
+function computePageFilterMax(books) {
+  const highestPageCount = (Array.isArray(books) ? books : []).reduce((highest, book) => {
+    const pageCount = resolveBookPageCount(book);
+    return pageCount > highest ? pageCount : highest;
+  }, 0);
+  if (highestPageCount <= 0) {
+    return 1000;
   }
-  if (Number.isFinite(max) && pageCount > max) {
-    return false;
+  return Math.max(100, Math.ceil(highestPageCount / 50) * 50);
+}
+
+function formatPageFilterLabel(pageLimit, pageFilterMax) {
+  if (!Number.isFinite(pageLimit) || pageLimit <= 0 || pageLimit >= pageFilterMax) {
+    return 'Alle lengtes';
   }
-  return true;
+  return `Tot ${pageLimit} bladzijdes`;
 }
 
 function resolveBookFilterCandidates(book) {
@@ -1628,7 +1637,7 @@ function filterBooks(allBooks, {
   onlyExamList,
   onlyEasyReading,
   language,
-  pageRange,
+  pageLimit,
   availability,
 } = {}) {
   let list = Array.isArray(allBooks) ? [...allBooks] : [];
@@ -2176,7 +2185,9 @@ function initStudentPage() {
   const searchInput = document.querySelector('#search-input');
   const sortSelect = document.querySelector('#book-sort-select');
   const languageSelect = document.querySelector('#book-language-select');
-  const pageRangeSelect = document.querySelector('#book-page-range-select');
+  const pageRangeInput = document.querySelector('#book-page-range');
+  const pageRangeLabel = document.querySelector('#book-page-range-label');
+  const pageRangeReset = document.querySelector('#book-page-range-reset');
   const availabilitySelect = document.querySelector('#book-availability-select');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
@@ -2194,7 +2205,8 @@ function initStudentPage() {
   let onlyExamList = false;
   let onlyEasyReading = false;
   let selectedLanguage = '';
-  let selectedPageRange = '';
+  let selectedPageLimit = 0;
+  let currentPageFilterMax = Number(pageRangeInput?.max) || 1000;
   let selectedAvailability = '';
   let sortBy = sortSelect?.value || 'title';
   let activityRequestToken = 0;
@@ -2472,6 +2484,31 @@ function initStudentPage() {
     }
   }
 
+
+  function syncPageFilterUi() {
+    if (!pageRangeInput) return;
+    const max = Number(pageRangeInput.max) || currentPageFilterMax || 1000;
+    currentPageFilterMax = max;
+    const hasActiveLimit = Number.isFinite(selectedPageLimit) && selectedPageLimit > 0 && selectedPageLimit < max;
+    pageRangeInput.value = String(hasActiveLimit ? selectedPageLimit : max);
+    if (pageRangeLabel) {
+      pageRangeLabel.textContent = formatPageFilterLabel(selectedPageLimit, max);
+    }
+    pageRangeReset?.classList.toggle('hidden', !hasActiveLimit);
+  }
+
+  function updatePageFilterRange() {
+    if (!pageRangeInput) return;
+    const nextMax = computePageFilterMax(groupedBooks);
+    currentPageFilterMax = nextMax;
+    pageRangeInput.max = String(nextMax);
+    pageRangeInput.min = '0';
+    pageRangeInput.step = nextMax <= 300 ? '5' : '10';
+    if (!Number.isFinite(selectedPageLimit) || selectedPageLimit <= 0 || selectedPageLimit >= nextMax) {
+      selectedPageLimit = 0;
+    }
+    syncPageFilterUi();
+  }
   async function loadStudentActivity() {
     if (!activityList || !activitySection) return;
     const loggedIn = authUser && authUser.role === 'student';
@@ -2510,7 +2547,7 @@ function initStudentPage() {
         onlyExamList,
         onlyEasyReading,
         language: selectedLanguage,
-        pageRange: selectedPageRange,
+        pageLimit: selectedPageLimit,
         availability: selectedAvailability,
         sortBy,
       },
@@ -2560,6 +2597,7 @@ function initStudentPage() {
       groupedBooks = groupBooksByTitleAuthor(allBooks);
       updateAvailableThemes();
       renderLanguageOptions();
+      updatePageFilterRange();
       if (bookGrid) {
         bookGrid.replaceChildren();
       }
@@ -2871,8 +2909,17 @@ function initStudentPage() {
     renderBooks();
   });
 
-  pageRangeSelect?.addEventListener('change', () => {
-    selectedPageRange = pageRangeSelect.value || '';
+  pageRangeInput?.addEventListener('input', () => {
+    const nextValue = Number(pageRangeInput.value);
+    const max = Number(pageRangeInput.max) || currentPageFilterMax || 1000;
+    selectedPageLimit = Number.isFinite(nextValue) && nextValue > 0 && nextValue < max ? nextValue : 0;
+    syncPageFilterUi();
+    renderBooks();
+  });
+
+  pageRangeReset?.addEventListener('click', () => {
+    selectedPageLimit = 0;
+    syncPageFilterUi();
     renderBooks();
   });
 
@@ -2890,6 +2937,7 @@ function initStudentPage() {
     renderBooks();
   });
 
+  syncPageFilterUi();
   themeFilterRenderer.render();
   renderAuthState();
   Promise.all([loadBooks(), loadSummary()]).catch((error) => {

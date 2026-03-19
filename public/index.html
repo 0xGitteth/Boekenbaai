@@ -126,14 +126,15 @@
               <option value="">Alle talen</option>
             </select>
           </div>
-          <div class="filters__group">
-            <label class="filters__label" for="book-page-range-select">Aantal bladzijdes:</label>
-            <select id="book-page-range-select" aria-controls="book-grid">
-              <option value="">Alle lengtes</option>
-              <option value="0-199">Tot 200 bladzijdes</option>
-              <option value="200-399">200 tot 399 bladzijdes</option>
-              <option value="400-9999">400+ bladzijdes</option>
-            </select>
+          <div class="filters__group filters__group--pages">
+            <label class="filters__label" for="book-page-range">Aantal bladzijdes:</label>
+            <div class="page-filter" aria-controls="book-grid">
+              <input id="book-page-range" type="range" min="0" max="1000" step="10" value="1000" />
+              <div class="page-filter__meta">
+                <span id="book-page-range-label">Alle lengtes</span>
+                <button id="book-page-range-reset" class="page-filter__reset hidden" type="button">Reset</button>
+              </div>
+            </div>
           </div>
           <div class="filters__group">
             <label class="filters__label" for="book-availability-select">Beschikbaarheid:</label>
