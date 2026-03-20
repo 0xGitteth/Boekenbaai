@@ -1201,6 +1201,43 @@ function parseIsbnBarcodeData(data, fallbackBarcode) {
   };
 }
 
+function normalizeLookupTagValue(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim().toLowerCase();
+}
+
+function splitLookupTagParts(value) {
+  if (typeof value !== 'string') {
+    return [];
+  }
+  return value
+    .split(/\s*\/\s*|\s+[–-]\s+|\s+[–-]|[–-]\s+/)
+    .map((part) => normalizeLookupTagValue(part))
+    .filter(Boolean);
+}
+
+function appendUniqueLookupTags(target, values, { splitComposite = false } = {}) {
+  if (!Array.isArray(target)) {
+    return [];
+  }
+
+  const queue = Array.isArray(values) ? values : [values];
+  for (const entry of queue) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+    const parts = splitComposite ? splitLookupTagParts(entry) : [normalizeLookupTagValue(entry)];
+    for (const part of parts) {
+      if (part && !target.includes(part)) {
+        target.push(part);
+      }
+    }
+  }
+  return target;
+}
+
 function parseGoogleBooksData(data, fallbackBarcode) {
   const items = Array.isArray(data?.items) ? data.items : [];
   if (!items.length) {
@@ -1230,10 +1267,7 @@ function parseGoogleBooksData(data, fallbackBarcode) {
       ? matchedItem.previewLink.trim()
       : '';
   const coverUrl = pickGoogleBooksCover(volumeInfo.imageLinks);
-  if (!title && !authors.length && !publisher && !description && !coverUrl) {
-    return null;
-  }
-  return {
+  const metadata = {
     barcode: fallbackBarcode,
     title,
     authors,
@@ -1249,6 +1283,14 @@ function parseGoogleBooksData(data, fallbackBarcode) {
     source: 'googlebooks',
     found: true,
   };
+  const tags = Array.isArray(metadata.tags) ? [...metadata.tags] : [];
+  appendUniqueLookupTags(tags, volumeInfo.mainCategory);
+  appendUniqueLookupTags(tags, Array.isArray(volumeInfo.categories) ? volumeInfo.categories : volumeInfo.categories ? [volumeInfo.categories] : [], { splitComposite: true });
+  metadata.tags = Array.from(new Set(tags));
+  if (!title && !authors.length && !publisher && !description && !coverUrl && !metadata.tags.length) {
+    return null;
+  }
+  return metadata;
 }
 
 function mergeLookupMetadata(base, incoming) {
@@ -1299,6 +1341,20 @@ function mergeLookupMetadata(base, incoming) {
     }
   }
 
+  const tags = [];
+  const seenTags = new Set();
+  for (const tag of [...parseMultiValueField(base.tags), ...parseMultiValueField(incoming.tags)]) {
+    const normalizedTag = normalizeLookupTagValue(tag);
+    if (!normalizedTag || seenTags.has(normalizedTag)) {
+      continue;
+    }
+    seenTags.add(normalizedTag);
+    tags.push(normalizedTag);
+  }
+  if (tags.length) {
+    merged.tags = tags;
+  }
+
   merged.found = Boolean(base.found || incoming.found);
   merged.barcode = merged.barcode || incoming.barcode || '';
   merged.source = base.source || incoming.source || null;
@@ -1328,10 +1384,7 @@ function parseOpenLibraryData(data, fallbackBarcode) {
     })
     .filter(Boolean)
     .join(', ');
-  if (!title && !author && !description && !publisher) {
-    return null;
-  }
-  return {
+  const metadata = {
     barcode: sanitizeIsbn((data.isbn_13 && data.isbn_13[0]) || (data.isbn_10 && data.isbn_10[0]) || fallbackBarcode),
     title,
     author,
@@ -1343,6 +1396,24 @@ function parseOpenLibraryData(data, fallbackBarcode) {
     source: 'openlibrary',
     found: true,
   };
+  const tags = Array.isArray(metadata.tags) ? [...metadata.tags] : [];
+  const subjects = Array.isArray(data.subjects)
+    ? data.subjects.map((entry) => {
+      if (typeof entry === 'string') {
+        return entry;
+      }
+      if (entry && typeof entry === 'object' && typeof entry.name === 'string') {
+        return entry.name;
+      }
+      return null;
+    }).filter(Boolean)
+    : [];
+  appendUniqueLookupTags(tags, subjects);
+  metadata.tags = Array.from(new Set(tags));
+  if (!title && !author && !description && !publisher && !metadata.tags.length) {
+    return null;
+  }
+  return metadata;
 }
 
 function normalizeIsbnMetadata(metadata) {
@@ -1479,7 +1550,7 @@ async function lookupIsbnMetadata(isbn) {
         });
       }
 
-      for (const source of sources) {
+      for (const [sourceIndex, source] of sources.entries()) {
         try {
           const response = await globalFetch(source.url, { headers: source.headers || defaultHeaders });
           if (!response.ok) {
@@ -1503,7 +1574,11 @@ async function lookupIsbnMetadata(isbn) {
           const metadata = source.parser(payload);
           if (metadata) {
             result = result ? mergeLookupMetadata(result, metadata) : metadata;
-            if (hasCompleteNormalizedIsbnMetadata(result)) {
+            const normalizedResult = normalizeIsbnMetadata(result);
+            const hasRemainingOpenLibrarySource = sources.slice(sourceIndex + 1).some((candidate) => candidate.name === 'openlibrary');
+            if (hasCompleteNormalizedIsbnMetadata(result)
+              && normalizedResult.fields?.tags?.length
+              && !hasRemainingOpenLibrarySource) {
               break;
             }
           }
