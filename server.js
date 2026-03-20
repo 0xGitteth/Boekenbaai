@@ -289,6 +289,9 @@ function normalizeCoverUrl(value) {
     return '';
   }
   const text = String(value).trim();
+  if (text.startsWith('http://')) {
+    return `https://${text.slice('http://'.length)}`;
+  }
   return text;
 }
 

@@ -254,6 +254,108 @@ async function readBookCollection(token) {
   return body;
 }
 
+async function runManualCoverNormalizationTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-manual-cover-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+
+    const createResponse = await request('/api/books', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        title: 'Handmatig boek',
+        author: 'Auteur',
+        barcode: '9782222222222',
+        coverUrl: 'http://books.google.com/manual-cover.jpg',
+      }),
+    });
+    assert.strictEqual(createResponse.status, 201);
+    assert.strictEqual(
+      createResponse.body.book.coverUrl,
+      'https://books.google.com/manual-cover.jpg',
+    );
+
+    const updateResponse = await request(`/api/books/${createResponse.body.book.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        coverUrl: 'http://books.google.com/updated-cover.jpg',
+      }),
+    });
+    assert.strictEqual(updateResponse.status, 200);
+    assert.strictEqual(
+      updateResponse.body.book.coverUrl,
+      'https://books.google.com/updated-cover.jpg',
+    );
+
+    const storedBooks = await readBookCollection(token);
+    const stored = storedBooks.find((book) => book.id === createResponse.body.book.id);
+    assert.ok(stored);
+    assert.strictEqual(stored.coverUrl, 'https://books.google.com/updated-cover.jpg');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
+async function runImportCoverNormalizationTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-import-cover-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+
+    const workbookBase64 = buildWorkbookBase64([
+      {
+        Titel: 'Import boek',
+        Auteur: 'Import auteur',
+        Barcode: '9783333333333',
+        'Cover URL': 'http://books.google.com/import-cover.jpg',
+      },
+    ]);
+
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+
+    assert.strictEqual(importResponse.status, 200);
+    const [importedBook] = importResponse.body.books;
+    assert.ok(importedBook);
+    assert.strictEqual(importedBook.status, 'created');
+
+    const storedBooks = await readBookCollection(token);
+    const stored = storedBooks.find((book) => book.barcode === '9783333333333');
+    assert.ok(stored);
+    assert.strictEqual(stored.coverUrl, 'https://books.google.com/import-cover.jpg');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
 async function runTests() {
   // Enrichment enabled via request flag should merge metadata without overriding user fields.
   const enrichmentResult = await runEnrichmentImportTest({ enableFlag: false, requestFlag: true });
@@ -290,6 +392,9 @@ async function runTests() {
     : '';
   assert.strictEqual(logContents, '', 'Lookup log should stay empty when enrichment is disabled');
   disabledResult.serverProcess.kill('SIGINT');
+
+  await runManualCoverNormalizationTest();
+  await runImportCoverNormalizationTest();
 
   // Test easyReading and suitableForExamList import
   const easyReadingResult = await runEasyReadingTest();
