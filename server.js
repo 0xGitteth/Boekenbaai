@@ -289,6 +289,9 @@ function normalizeCoverUrl(value) {
     return '';
   }
   const text = String(value).trim();
+  if (/^http:\/\/books\.google\.com(?=\/|$)/i.test(text)) {
+    return `https://${text.slice('http://'.length)}`;
+  }
   return text;
 }
 

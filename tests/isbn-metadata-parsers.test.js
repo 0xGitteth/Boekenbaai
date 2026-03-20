@@ -28,7 +28,7 @@ function loadServerModule({ fetchImpl = global.fetch, env = {} } = {}) {
   fs.writeFileSync(dataPath, JSON.stringify({ books: [], students: [], folders: [], classes: [], users: [], history: [] }));
 
   const serverPath = path.join(__dirname, '..', 'server.js');
-  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata };`;
+  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, normalizeCoverUrl, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata };`;
   const actualHttp = require('http');
   const sandbox = {
     module: { exports: {} },
@@ -84,9 +84,25 @@ async function runTests() {
   const {
     parseGoogleBooksData,
     parseOpenLibraryData,
+    normalizeCoverUrl,
     normalizeIsbnMetadata,
     mergeLookupMetadata,
   } = loadServerModule();
+
+  assert.strictEqual(
+    normalizeCoverUrl('http://books.google.com/example-cover.jpg'),
+    'https://books.google.com/example-cover.jpg',
+  );
+  assert.strictEqual(
+    normalizeCoverUrl('https://books.google.com/example-cover.jpg'),
+    'https://books.google.com/example-cover.jpg',
+  );
+  assert.strictEqual(
+    normalizeCoverUrl('http://intranet.local/example-cover.jpg'),
+    'http://intranet.local/example-cover.jpg',
+  );
+  assert.strictEqual(normalizeCoverUrl(''), '');
+  assert.strictEqual(normalizeCoverUrl(null), '');
 
   const googleMetadata = parseGoogleBooksData({
     items: [
@@ -175,7 +191,7 @@ async function runTests() {
               industryIdentifiers: [
                 { type: 'ISBN_13', identifier: '9781234567890' },
               ],
-              imageLinks: { thumbnail: 'https://example.com/google-cover.jpg' },
+              imageLinks: { thumbnail: 'http://books.google.com/google-cover.jpg' },
               categories: ['Fiction / Adventure'],
               publisher: 'Google Uitgever',
             },
@@ -203,7 +219,7 @@ async function runTests() {
   assert.deepStrictEqual(fetchCalls.length, 2, 'Lookup should continue to Open Library for tag enrichment');
   assert.strictEqual(lookupResult.title, 'Google Titel');
   assert.strictEqual(lookupResult.author, 'Google Auteur');
-  assert.strictEqual(lookupResult.coverUrl, 'https://example.com/google-cover.jpg');
+  assert.strictEqual(lookupResult.coverUrl, 'https://books.google.com/google-cover.jpg');
   assert.strictEqual(lookupResult.publisher, 'Google Uitgever');
   assert.deepStrictEqual(
     Array.from(lookupResult.tags),
@@ -224,7 +240,7 @@ async function runTests() {
               industryIdentifiers: [
                 { type: 'ISBN_13', identifier: '9781234567890' },
               ],
-              imageLinks: { thumbnail: 'https://example.com/google-cover.jpg' },
+              imageLinks: { thumbnail: 'http://books.google.com/google-cover.jpg' },
             },
           },
         ],
@@ -249,7 +265,7 @@ async function runTests() {
   assert.deepStrictEqual(noGoogleTagCalls.length, 2, 'Lookup should not stop before Open Library adds tags');
   assert.strictEqual(lookupWithoutTagResult.title, 'Google Titel zonder tags');
   assert.strictEqual(lookupWithoutTagResult.author, 'Google Auteur');
-  assert.strictEqual(lookupWithoutTagResult.coverUrl, 'https://example.com/google-cover.jpg');
+  assert.strictEqual(lookupWithoutTagResult.coverUrl, 'https://books.google.com/google-cover.jpg');
   assert.deepStrictEqual(Array.from(lookupWithoutTagResult.tags), ['social themes']);
 
   console.log('ISBN metadata parser tests passed.');
