@@ -306,6 +306,32 @@ async function runManualCoverNormalizationTest() {
     const stored = storedBooks.find((book) => book.id === createResponse.body.book.id);
     assert.ok(stored);
     assert.strictEqual(stored.coverUrl, 'https://books.google.com/updated-cover.jpg');
+
+    const nonGoogleCreateResponse = await request('/api/books', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        title: 'Intranet boek',
+        author: 'Auteur',
+        barcode: '9782222222223',
+        coverUrl: 'http://intranet.local/manual-cover.jpg',
+      }),
+    });
+    assert.strictEqual(nonGoogleCreateResponse.status, 201);
+    assert.strictEqual(
+      nonGoogleCreateResponse.body.book.coverUrl,
+      'http://intranet.local/manual-cover.jpg',
+    );
+
+    const storedAfterNonGoogleCreate = await readBookCollection(token);
+    const nonGoogleStored = storedAfterNonGoogleCreate.find(
+      (book) => book.id === nonGoogleCreateResponse.body.book.id,
+    );
+    assert.ok(nonGoogleStored);
+    assert.strictEqual(nonGoogleStored.coverUrl, 'http://intranet.local/manual-cover.jpg');
   } finally {
     serverProcess.kill('SIGINT');
   }

@@ -97,6 +97,10 @@ async function runTests() {
     normalizeCoverUrl('https://books.google.com/example-cover.jpg'),
     'https://books.google.com/example-cover.jpg',
   );
+  assert.strictEqual(
+    normalizeCoverUrl('http://intranet.local/example-cover.jpg'),
+    'http://intranet.local/example-cover.jpg',
+  );
   assert.strictEqual(normalizeCoverUrl(''), '');
   assert.strictEqual(normalizeCoverUrl(null), '');
 

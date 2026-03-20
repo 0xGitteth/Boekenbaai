@@ -289,7 +289,7 @@ function normalizeCoverUrl(value) {
     return '';
   }
   const text = String(value).trim();
-  if (text.startsWith('http://')) {
+  if (/^http:\/\/books\.google\.com(?=\/|$)/i.test(text)) {
     return `https://${text.slice('http://'.length)}`;
   }
   return text;
