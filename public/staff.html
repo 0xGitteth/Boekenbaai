@@ -188,11 +188,25 @@
           </div>
         </div>
         <div class="admin-dashboard">
-          <section class="admin-card admin-card--books">
-            <h3>Boeken beheren</h3>
-            <p class="hint">
-              Voeg nieuwe titels toe, werk gegevens bij of verwijder boeken uit de collectie.
-            </p>
+          <section class="admin-card admin-card--books" data-collapsible-card>
+            <div class="admin-card__header">
+              <div class="admin-card__heading">
+                <h3>Boeken beheren</h3>
+                <p class="hint">
+                  Voeg nieuwe titels toe, werk gegevens bij of verwijder boeken uit de collectie.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn--ghost admin-card__toggle"
+                data-card-toggle
+                aria-expanded="true"
+                aria-controls="admin-card-books-content"
+              >
+                Invouwen
+              </button>
+            </div>
+            <div id="admin-card-books-content" class="admin-card__content">
             <form id="admin-book-form" class="admin-form" autocomplete="off">
               <input id="admin-book-id" type="hidden" />
               <div class="form-grid admin-book-grid">
@@ -317,16 +331,29 @@
             </form>
             <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
             <div id="admin-book-list" class="admin-book-list"></div>
+            </div>
           </section>
 
-          <section class="admin-card admin-card--teachers">
-            <div class="admin-card__intro">
-              <h3>Docentenaccounts beheren</h3>
-              <p class="hint">
-                Zoek bestaande docentenaccounts, wijs klassen toe en stel handmatig een tijdelijk
-                wachtwoord in.
-              </p>
+          <section class="admin-card admin-card--teachers" data-collapsible-card>
+            <div class="admin-card__header">
+              <div class="admin-card__intro admin-card__heading">
+                <h3>Docentenaccounts beheren</h3>
+                <p class="hint">
+                  Zoek bestaande docentenaccounts, wijs klassen toe en stel handmatig een tijdelijk
+                  wachtwoord in.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn--ghost admin-card__toggle"
+                data-card-toggle
+                aria-expanded="true"
+                aria-controls="admin-card-teachers-content"
+              >
+                Invouwen
+              </button>
             </div>
+            <div id="admin-card-teachers-content" class="admin-card__content">
             <section class="admin-teacher-add" aria-labelledby="admin-teacher-add-title">
               <h4 id="admin-teacher-add-title">Docentenaccount aanmaken</h4>
               <form id="admin-teacher-add-form" class="admin-teacher-add-form" autocomplete="off">
@@ -455,13 +482,28 @@
                 </div>
               </aside>
             </div>
+            </div>
           </section>
 
-          <section class="admin-card admin-card--classes">
-            <h3>Klassen beheren</h3>
-            <p class="hint">
-              Maak nieuwe klassen aan, koppel docenten en houd de groepen overzichtelijk.
-            </p>
+          <section class="admin-card admin-card--classes" data-collapsible-card>
+            <div class="admin-card__header">
+              <div class="admin-card__heading">
+                <h3>Klassen beheren</h3>
+                <p class="hint">
+                  Maak nieuwe klassen aan, koppel docenten en houd de groepen overzichtelijk.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn--ghost admin-card__toggle"
+                data-card-toggle
+                aria-expanded="true"
+                aria-controls="admin-card-classes-content"
+              >
+                Invouwen
+              </button>
+            </div>
+            <div id="admin-card-classes-content" class="admin-card__content">
             <div class="admin-class-create">
               <h4>Klas aanmaken</h4>
               <form id="admin-class-form" class="admin-form admin-form--compact">
@@ -496,16 +538,29 @@
               <div id="admin-class-details" class="admin-class-details"></div>
             </div>
             <div id="admin-class-list" class="class-list class-list--admin"></div>
+            </div>
           </section>
 
-          <section class="admin-card admin-card--students">
-            <div class="admin-card__intro">
-              <h3>Leerlingaccounts beheren</h3>
-              <p class="hint">
-                Maak nieuwe leerlingaccounts aan, zoek bestaande accounts en beheer tijdelijke
-                wachtwoorden of klasindelingen.
-              </p>
+          <section class="admin-card admin-card--students" data-collapsible-card>
+            <div class="admin-card__header">
+              <div class="admin-card__intro admin-card__heading">
+                <h3>Leerlingaccounts beheren</h3>
+                <p class="hint">
+                  Maak nieuwe leerlingaccounts aan, zoek bestaande accounts en beheer tijdelijke
+                  wachtwoorden of klasindelingen.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn--ghost admin-card__toggle"
+                data-card-toggle
+                aria-expanded="true"
+                aria-controls="admin-card-students-content"
+              >
+                Invouwen
+              </button>
             </div>
+            <div id="admin-card-students-content" class="admin-card__content">
             <section class="admin-student-add" aria-labelledby="admin-student-add-title">
               <h4 id="admin-student-add-title">Leerlingaccount aanmaken</h4>
               <form id="admin-student-form" class="admin-form admin-form--compact" autocomplete="off">
@@ -646,6 +701,7 @@
                   </button>
                 </div>
               </aside>
+            </div>
             </div>
           </section>
 
