@@ -330,7 +330,21 @@
               </div>
             </form>
             <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
-            <div id="admin-book-list" class="admin-book-list"></div>
+            <section class="admin-expandable" aria-labelledby="admin-book-overview-title">
+              <button
+                type="button"
+                class="btn btn--ghost admin-expandable__toggle"
+                data-expandable-toggle
+                aria-expanded="false"
+                aria-controls="admin-book-overview-content"
+                id="admin-book-overview-title"
+              >
+                Boekenoverzicht uitklappen
+              </button>
+              <div id="admin-book-overview-content" class="admin-expandable__content" hidden>
+                <div id="admin-book-list" class="admin-book-list"></div>
+              </div>
+            </section>
             </div>
           </section>
 
@@ -705,14 +719,26 @@
             </div>
           </section>
 
-          <section class="admin-card admin-card--imports">
-            <div class="admin-card__intro">
-              <h3>Importeren</h3>
-              <p class="hint">
-                Verwerk Excelbestanden voor grote wijzigingen in één keer. Alle accounts en boeken
-                worden automatisch bijgewerkt.
-              </p>
+          <section class="admin-card admin-card--imports" data-collapsible-card>
+            <div class="admin-card__header">
+              <div class="admin-card__intro admin-card__heading">
+                <h3>Importeren</h3>
+                <p class="hint">
+                  Verwerk Excelbestanden voor grote wijzigingen in één keer. Alle accounts en boeken
+                  worden automatisch bijgewerkt.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn--ghost admin-card__toggle"
+                data-card-toggle
+                aria-expanded="true"
+                aria-controls="admin-card-imports-content"
+              >
+                Invouwen
+              </button>
             </div>
+            <div id="admin-card-imports-content" class="admin-card__content">
             <div class="admin-card__section admin-card__section--import">
               <h4>Boeken importeren</h4>
               <p class="hint">
@@ -788,6 +814,7 @@
               >
                 Importeren
               </button>
+            </div>
             </div>
           </section>
         </div>
