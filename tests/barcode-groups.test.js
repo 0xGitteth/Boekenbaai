@@ -57,7 +57,7 @@ function createDbFixture(filePath) {
         language: 'nl',
         suitableForExamList: true,
         easyReading: true,
-        tags: ['Makkelijk Lezen'],
+        tags: ['Makkelijk Lezen', 'easy reading'],
       },
       {
         id: 'copy-a2',
@@ -71,7 +71,7 @@ function createDbFixture(filePath) {
         language: 'nl',
         suitableForExamList: true,
         easyReading: true,
-        tags: ['Makkelijk Lezen'],
+        tags: ['Makkelijk Lezen', 'easy reading'],
       },
       {
         id: 'copy-b1',
@@ -171,6 +171,11 @@ async function runTests() {
     assert.strictEqual(easyReadingSearch.status, 200);
     assert.ok(Array.isArray(easyReadingSearch.body));
     assert.ok(easyReadingSearch.body.every((book) => book.easyReading));
+    assert.ok(easyReadingSearch.body.every((book) => Array.isArray(book.themes) && !book.themes.includes('Makkelijk Lezen')));
+
+    const mysterySearch = await request('/api/books?query=mysterie');
+    assert.strictEqual(mysterySearch.status, 200);
+    assert.ok(mysterySearch.body.some((book) => (book.themes || []).includes('Mysterie')));
 
     const barcodeLookup = await request('/api/books/barcode/12345');
     assert.strictEqual(barcodeLookup.status, 200);
