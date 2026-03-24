@@ -33,7 +33,8 @@ const groupedBook = {
     { language: 'nl', pageCount: 120, status: 'borrowed', barcode: 'A' },
     { language: 'en', pageCount: 420, status: 'available', barcode: 'B' },
   ],
-  tags: ['Avontuur'],
+  tags: ['juvenile fiction'],
+  themes: ['Avontuur'],
   availableCopies: 1,
 };
 
@@ -57,6 +58,18 @@ assert.strictEqual(
   filterBooks([groupedBook], { language: 'en', pageRange: '400-9999', availability: 'available' }).length,
   1,
   'Groep moet blijven staan wanneer één kopie alle filters tegelijk haalt'
+);
+
+
+assert.strictEqual(
+  filterBooks([groupedBook], { selectedThemes: new Set(['avontuur']) }).length,
+  1,
+  'Themafilter moet op afgeleide themes werken'
+);
+assert.strictEqual(
+  filterBooks([{ ...groupedBook, themes: [], tags: ['Avontuur'] }], { selectedThemes: new Set(['avontuur']) }).length,
+  0,
+  'Ruwe tags mogen het zichtbare themafilter niet meer voeden'
 );
 
 console.log('Grouped filter tests passed');

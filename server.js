@@ -68,6 +68,530 @@ const allowedOrigins = (process.env.BOEKENBAAI_ALLOWED_ORIGINS || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+
+const CANONICAL_THEMES = [
+  'Avontuur',
+  'Diversiteit',
+  'Familie',
+  'Fantasy',
+  'Geschiedenis',
+  'Humor',
+  'Identiteit',
+  'Maatschappij',
+  'Mythologie',
+  'Mysterie',
+  'Natuur',
+  'Poëzie',
+  'Romantiek',
+  'School & Opgroeien',
+  'Spanning',
+  'Sport',
+  'Vriendschap',
+  'Wetenschap',
+];
+
+const SUPPRESSED_THEME_TAGS = new Set([
+  'fiction',
+  'juvenile fiction',
+  'juvenile literature',
+  'children',
+  'child',
+  'children’s stories',
+  "children's stories",
+  'stories',
+  'dutch fiction',
+  'dutch literature',
+  'dutch language',
+  'authors, dutch',
+  'author, dutch',
+  'popular literature',
+  'boys',
+  'girls',
+  'breast',
+  'english language',
+  'nederlands',
+  'english',
+  'novels',
+  'romans',
+  'verhalen',
+  'jeugdboeken',
+  'jeugdboeken ; verhalen',
+  'romans en novellen',
+  'romans en novellen ; oorspr. nederlands',
+  'fiction, general',
+  'general',
+  'youth',
+  'young adult fiction',
+  'easy reading',
+  'easy readers',
+  'makkelijk lezen',
+]);
+
+const SUPPRESSED_THEME_TAG_PATTERNS = [
+  'language',
+  'authors',
+  'literature',
+  'fiction',
+  'stories',
+  'novels',
+  'oorspr.',
+  'dutch',
+  'english language',
+];
+
+const EASY_READING_TAGS = new Set(['easy reading', 'easy readers', 'makkelijk lezen']);
+
+const EXACT_THEME_MAP = new Map([
+  ['adventure', 'Avontuur'],
+  ['avontuur', 'Avontuur'],
+  ['adventure stories', 'Avontuur'],
+  ['avonturen', 'Avontuur'],
+  ['avonturenverhalen', 'Avontuur'],
+  ['expedition', 'Avontuur'],
+  ['expeditions', 'Avontuur'],
+  ['quest', 'Avontuur'],
+  ['quests', 'Avontuur'],
+  ['treasure hunt', 'Avontuur'],
+  ['survival', 'Avontuur'],
+  ['camping', 'Avontuur'],
+  ['camps', 'Avontuur'],
+  ['reizen', 'Avontuur'],
+  ['reisverhalen', 'Avontuur'],
+  ['diversity', 'Diversiteit'],
+  ['diversiteit', 'Diversiteit'],
+  ['multiculturalism', 'Diversiteit'],
+  ['multiculturaliteit', 'Diversiteit'],
+  ['disability', 'Diversiteit'],
+  ['disabilities', 'Diversiteit'],
+  ['handicap', 'Diversiteit'],
+  ['beperking', 'Diversiteit'],
+  ['disabilities in children', 'Diversiteit'],
+  ['inclusion', 'Diversiteit'],
+  ['inclusie', 'Diversiteit'],
+  ['lhbti', 'Diversiteit'],
+  ['lgbt', 'Diversiteit'],
+  ['lgbtq', 'Diversiteit'],
+  ['queer representation', 'Diversiteit'],
+  ['family', 'Familie'],
+  ['familie', 'Familie'],
+  ['fathers and sons', 'Familie'],
+  ['mothers and daughters', 'Familie'],
+  ['parent and child', 'Familie'],
+  ['ouders en kinderen', 'Familie'],
+  ['siblings', 'Familie'],
+  ['broers en zussen', 'Familie'],
+  ['gezin', 'Familie'],
+  ['family life', 'Familie'],
+  ['fantasy', 'Fantasy'],
+  ['fantasy fiction', 'Fantasy'],
+  ['magic', 'Fantasy'],
+  ['magie', 'Fantasy'],
+  ['wizards', 'Fantasy'],
+  ['wizard', 'Fantasy'],
+  ['heksen', 'Fantasy'],
+  ['witches', 'Fantasy'],
+  ['dragons', 'Fantasy'],
+  ['dragon', 'Fantasy'],
+  ['elves', 'Fantasy'],
+  ['elf', 'Fantasy'],
+  ['magicians', 'Fantasy'],
+  ['tovenaars', 'Fantasy'],
+  ['magic realism', 'Fantasy'],
+  ['magic realism (literature)', 'Fantasy'],
+  ['history', 'Geschiedenis'],
+  ['geschiedenis', 'Geschiedenis'],
+  ['historical fiction', 'Geschiedenis'],
+  ['historical novels', 'Geschiedenis'],
+  ['second world war', 'Geschiedenis'],
+  ['world war, 1939-1945', 'Geschiedenis'],
+  ['world war ii', 'Geschiedenis'],
+  ['holocaust', 'Geschiedenis'],
+  ['oorlog', 'Geschiedenis'],
+  ['oorlogsverhalen', 'Geschiedenis'],
+  ['verzet', 'Geschiedenis'],
+  ['ancient history', 'Geschiedenis'],
+  ['middeleeuwen', 'Geschiedenis'],
+  ['humor', 'Humor'],
+  ['funny stories', 'Humor'],
+  ['comedy', 'Humor'],
+  ['komedie', 'Humor'],
+  ['grappig', 'Humor'],
+  ['satire', 'Humor'],
+  ['identity', 'Identiteit'],
+  ['identiteit', 'Identiteit'],
+  ['self-esteem', 'Identiteit'],
+  ['zelfbeeld', 'Identiteit'],
+  ['body image', 'Identiteit'],
+  ['zelfacceptatie', 'Identiteit'],
+  ['coming out', 'Identiteit'],
+  ['sexuality', 'Identiteit'],
+  ['sexual identity', 'Identiteit'],
+  ['gender identity', 'Identiteit'],
+  ['identiteit en zelfbeeld', 'Identiteit'],
+  ['society', 'Maatschappij'],
+  ['maatschappij', 'Maatschappij'],
+  ['social issues', 'Maatschappij'],
+  ['sociale problemen', 'Maatschappij'],
+  ['exploitation', 'Maatschappij'],
+  ['uitbuiting', 'Maatschappij'],
+  ['prostitution', 'Maatschappij'],
+  ['prostitutie', 'Maatschappij'],
+  ['poverty', 'Maatschappij'],
+  ['armoede', 'Maatschappij'],
+  ['racism', 'Maatschappij'],
+  ['racisme', 'Maatschappij'],
+  ['discrimination', 'Maatschappij'],
+  ['discriminatie', 'Maatschappij'],
+  ['refugees', 'Maatschappij'],
+  ['vluchtelingen', 'Maatschappij'],
+  ['cults', 'Maatschappij'],
+  ['sekten', 'Maatschappij'],
+  ['social justice', 'Maatschappij'],
+  ['mythology', 'Mythologie'],
+  ['mythologie', 'Mythologie'],
+  ['greek mythology', 'Mythologie'],
+  ['griekse mythologie', 'Mythologie'],
+  ['greek gods', 'Mythologie'],
+  ['griekse goden', 'Mythologie'],
+  ['hades', 'Mythologie'],
+  ['zeus', 'Mythologie'],
+  ['poseidon', 'Mythologie'],
+  ['athena', 'Mythologie'],
+  ['apollo', 'Mythologie'],
+  ['mythological fiction', 'Mythologie'],
+  ['mystery', 'Mysterie'],
+  ['mysterie', 'Mysterie'],
+  ['detective', 'Mysterie'],
+  ['detectives', 'Mysterie'],
+  ['detective stories', 'Mysterie'],
+  ['investigation', 'Mysterie'],
+  ['investigations', 'Mysterie'],
+  ['whodunit', 'Mysterie'],
+  ['disappearance', 'Mysterie'],
+  ['verdwenen', 'Mysterie'],
+  ['geheimen', 'Mysterie'],
+  ['secrets', 'Mysterie'],
+  ['puzzels', 'Mysterie'],
+  ['raadsels', 'Mysterie'],
+  ['nature', 'Natuur'],
+  ['natuur', 'Natuur'],
+  ['animals', 'Natuur'],
+  ['dieren', 'Natuur'],
+  ['wildlife', 'Natuur'],
+  ['ecology', 'Natuur'],
+  ['milieu', 'Natuur'],
+  ['environment', 'Natuur'],
+  ['natuurverhalen', 'Natuur'],
+  ['plants', 'Natuur'],
+  ['forests', 'Natuur'],
+  ['sea', 'Natuur'],
+  ['ocean', 'Natuur'],
+  ['poetry', 'Poëzie'],
+  ['poëzie', 'Poëzie'],
+  ['poems', 'Poëzie'],
+  ['gedichten', 'Poëzie'],
+  ['verse', 'Poëzie'],
+  ['romance', 'Romantiek'],
+  ['romantiek', 'Romantiek'],
+  ['love', 'Romantiek'],
+  ['liefde', 'Romantiek'],
+  ['verliefdheid', 'Romantiek'],
+  ['dating', 'Romantiek'],
+  ['relationships', 'Romantiek'],
+  ['liefdesverhalen', 'Romantiek'],
+  ['adolescence', 'School & Opgroeien'],
+  ['adolescentie', 'School & Opgroeien'],
+  ['teenagers', 'School & Opgroeien'],
+  ['tieners', 'School & Opgroeien'],
+  ['puberty', 'School & Opgroeien'],
+  ['puberteit', 'School & Opgroeien'],
+  ['high schools', 'School & Opgroeien'],
+  ['middelbare school', 'School & Opgroeien'],
+  ['school life', 'School & Opgroeien'],
+  ['coming of age', 'School & Opgroeien'],
+  ['coming-of-age', 'School & Opgroeien'],
+  ['opgroeien', 'School & Opgroeien'],
+  ['youth problems', 'School & Opgroeien'],
+  ['bullying', 'School & Opgroeien'],
+  ['pesten', 'School & Opgroeien'],
+  ['suspense', 'Spanning'],
+  ['spanning', 'Spanning'],
+  ['thriller', 'Spanning'],
+  ['thrillers', 'Spanning'],
+  ['horror', 'Spanning'],
+  ['ghosts', 'Spanning'],
+  ['spoken', 'Spanning'],
+  ['haunted', 'Spanning'],
+  ['vampires', 'Spanning'],
+  ['vampire', 'Spanning'],
+  ['dracula', 'Spanning'],
+  ['monsters', 'Spanning'],
+  ['danger', 'Spanning'],
+  ['gevaar', 'Spanning'],
+  ['murder', 'Spanning'],
+  ['crime', 'Spanning'],
+  ['sport', 'Sport'],
+  ['sports', 'Sport'],
+  ['sports & recreation', 'Sport'],
+  ['recreation', 'Sport'],
+  ['voetbal', 'Sport'],
+  ['football', 'Sport'],
+  ['soccer', 'Sport'],
+  ['hockey', 'Sport'],
+  ['tennis', 'Sport'],
+  ['judo', 'Sport'],
+  ['athletics', 'Sport'],
+  ['friendship', 'Vriendschap'],
+  ['vriendschap', 'Vriendschap'],
+  ['friends', 'Vriendschap'],
+  ['vrienden', 'Vriendschap'],
+  ['companionship', 'Vriendschap'],
+  ['interpersonal relations in adolescence', 'Vriendschap'],
+  ['companionship in children', 'Vriendschap'],
+  ['science', 'Wetenschap'],
+  ['wetenschap', 'Wetenschap'],
+  ['technology', 'Wetenschap'],
+  ['technologie', 'Wetenschap'],
+  ['robots', 'Wetenschap'],
+  ['robot', 'Wetenschap'],
+  ['invention', 'Wetenschap'],
+  ['inventions', 'Wetenschap'],
+  ['uitvindingen', 'Wetenschap'],
+  ['space', 'Wetenschap'],
+  ['ruimte', 'Wetenschap'],
+  ['astronomy', 'Wetenschap'],
+  ['sterrenkunde', 'Wetenschap'],
+  ['biology', 'Wetenschap'],
+  ['biologie', 'Wetenschap'],
+  ['chemistry', 'Wetenschap'],
+  ['scheikunde', 'Wetenschap'],
+  ['physics', 'Wetenschap'],
+  ['natuurkunde', 'Wetenschap'],
+  ['climate change', 'Wetenschap'],
+  ['klimaatverandering', 'Wetenschap'],
+]);
+
+const STRONG_CONTAINS_THEME_RULES = [
+  { theme: 'Mythologie', patterns: ['mytholog', 'greek god', 'greek deity', 'olympus', 'titan', 'zeus', 'hades', 'poseidon', 'athena', 'apollo'] },
+  { theme: 'Mysterie', patterns: ['mystery', 'detective', 'investigation', 'secret', 'disappearance', 'missing', 'murder investigation'] },
+  { theme: 'Spanning', patterns: ['thriller', 'horror', 'vampire', 'ghost', 'haunted', 'dracula', 'danger', 'killer', 'monster'] },
+  { theme: 'Fantasy', patterns: ['fantasy', 'magic', 'wizard', 'dragon', 'magic realism'] },
+  { theme: 'Geschiedenis', patterns: ['world war', 'historical', 'holocaust', 'verzet', 'oorlog', 'war child'] },
+  { theme: 'Avontuur', patterns: ['adventure', 'quest', 'treasure hunt', 'survival', 'expedition'] },
+  { theme: 'Familie', patterns: ['family', 'father', 'mother', 'parent', 'siblings'] },
+  { theme: 'Vriendschap', patterns: ['friendship', 'friend group', 'friend ', 'friends', 'companionship', 'social relations'] },
+  { theme: 'Romantiek', patterns: ['romance', 'love', 'dating', 'relationship', 'verliefd', 'heartbreak', 'love triangle'] },
+  { theme: 'Identiteit', patterns: ['identity', 'gender', 'sexuality', 'self-esteem', 'body image', 'coming out', 'self image', 'insecur'] },
+  { theme: 'Maatschappij', patterns: ['society', 'social issue', 'discrimination', 'racism', 'poverty', 'prostitution', 'refugee', 'cult', 'sect', 'migration', 'homeless', 'abuse', 'violence'] },
+  { theme: 'School & Opgroeien', patterns: ['school', 'high school', 'teen', 'adolesc', 'pubert', 'coming-of-age', 'coming of age', 'bully', 'pest'] },
+  { theme: 'Poëzie', patterns: ['poetry', 'poem', 'gedicht'] },
+  { theme: 'Sport', patterns: ['sport', 'football', 'soccer', 'hockey', 'tennis', 'judo'] },
+  { theme: 'Wetenschap', patterns: ['science', 'technology', 'robot', 'space', 'astronomy', 'climate', 'biology', 'chemistry', 'physics', 'invention'] },
+  { theme: 'Natuur', patterns: ['nature', 'animal', 'forest', 'ocean', 'sea', 'ecology', 'environment'] },
+];
+
+const SUGGESTION_RULES = [
+  { patterns: ['bullying', 'anxiety', 'depression', 'lonely', 'self image', 'insecur'], themes: ['Identiteit', 'School & Opgroeien'] },
+  { patterns: ['refugee', 'migration', 'war child', 'poverty', 'homeless', 'abuse', 'violence'], themes: ['Maatschappij'] },
+  { patterns: ['magic realism'], themes: ['Fantasy', 'Identiteit'] },
+  { patterns: ['myth', 'olympus', 'titan', 'zeus', 'hades', 'poseidon', 'athena', 'apollo'], themes: ['Mythologie'] },
+  { patterns: ['coming-of-age', 'coming of age', 'adolescence', 'high school', 'school life'], themes: ['School & Opgroeien'] },
+  { patterns: ['murder', 'killer', 'crime', 'missing'], themes: ['Mysterie', 'Spanning'] },
+  { patterns: ['ghost', 'vampire', 'monster', 'haunted'], themes: ['Spanning', 'Fantasy'] },
+  { patterns: ['love triangle', 'heartbreak', 'relationship'], themes: ['Romantiek'] },
+  { patterns: ['friend group', 'companionship', 'social relations'], themes: ['Vriendschap'] },
+  { patterns: ['ecology', 'animals', 'climate', 'environment'], themes: ['Natuur', 'Wetenschap'] },
+  { patterns: ['space', 'astronomy', 'robot', 'invention'], themes: ['Wetenschap'] },
+];
+
+function normalizeRawThemeTag(tag) {
+  if (tag === undefined || tag === null) {
+    return '';
+  }
+  return String(tag)
+    .trim()
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, ' ');
+}
+
+function isSuppressedThemeTag(tag) {
+  const normalized = normalizeRawThemeTag(tag);
+  if (!normalized) {
+    return true;
+  }
+  if (EXACT_THEME_MAP.has(normalized)) {
+    return false;
+  }
+  if (findThemesByContains(normalized).length) {
+    return false;
+  }
+  if (SUPPRESSED_THEME_TAGS.has(normalized)) {
+    return true;
+  }
+  return SUPPRESSED_THEME_TAG_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function mapExactTagToTheme(tag) {
+  const normalized = normalizeRawThemeTag(tag);
+  return EXACT_THEME_MAP.get(normalized) || null;
+}
+
+function findThemesByContains(tag, rules = STRONG_CONTAINS_THEME_RULES) {
+  const normalized = normalizeRawThemeTag(tag);
+  if (!normalized) {
+    return [];
+  }
+  return rules.flatMap((rule) => {
+    if (!rule.patterns.some((pattern) => normalized.includes(pattern))) {
+      return [];
+    }
+    if (Array.isArray(rule.themes)) {
+      return rule.themes;
+    }
+    return rule.theme ? [rule.theme] : [];
+  });
+}
+
+function suggestThemesFromTag(tag) {
+  return findThemesByContains(tag, SUGGESTION_RULES);
+}
+
+function sortThemesByCanonicalOrder(values) {
+  return Array.from(new Set(values)).sort((a, b) => {
+    const indexA = CANONICAL_THEMES.indexOf(a);
+    const indexB = CANONICAL_THEMES.indexOf(b);
+    if (indexA === -1 && indexB === -1) {
+      return a.localeCompare(b, 'nl', { sensitivity: 'base' });
+    }
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
+}
+
+
+function normalizeManualTheme(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+  const lowered = normalizeRawThemeTag(trimmed);
+  if (EASY_READING_TAGS.has(lowered) || lowered === 'makkelijklezen' || lowered === 'ml') {
+    return '';
+  }
+  const canonical = CANONICAL_THEMES.find((theme) => normalizeRawThemeTag(theme) === lowered);
+  return canonical || '';
+}
+
+function normalizeManualThemes(values) {
+  const parsed = parseMultiValueField(values)
+    .map(normalizeManualTheme)
+    .filter(Boolean);
+  return sortThemesByCanonicalOrder(parsed);
+}
+
+function deriveThemesFromTags(rawTags, options = {}) {
+  const tags = Array.isArray(rawTags) ? rawTags : parseMultiValueField(rawTags);
+  const normalizedTagEntries = [];
+  const seen = new Set();
+  for (const tag of tags) {
+    const original = typeof tag === 'string' ? tag.trim() : String(tag ?? '').trim();
+    const normalized = normalizeRawThemeTag(original);
+    if (!original || !normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    normalizedTagEntries.push({ original, normalized });
+  }
+
+  const directThemes = new Set();
+  const suggestionCounts = new Map();
+  const suppressed = new Set();
+  const handled = new Set();
+
+  for (const entry of normalizedTagEntries) {
+    if (isSuppressedThemeTag(entry.normalized)) {
+      suppressed.add(entry.normalized);
+      continue;
+    }
+
+    const exactTheme = mapExactTagToTheme(entry.normalized);
+    if (exactTheme) {
+      directThemes.add(exactTheme);
+      handled.add(entry.normalized);
+      continue;
+    }
+
+    const strongThemes = findThemesByContains(entry.normalized);
+    if (strongThemes.length) {
+      for (const theme of strongThemes) {
+        directThemes.add(theme);
+      }
+      handled.add(entry.normalized);
+      continue;
+    }
+
+    const suggestedThemes = suggestThemesFromTag(entry.normalized);
+    if (suggestedThemes.length) {
+      for (const theme of suggestedThemes) {
+        suggestionCounts.set(theme, (suggestionCounts.get(theme) || 0) + 1);
+      }
+      handled.add(entry.normalized);
+      continue;
+    }
+  }
+
+  const promotedThemes = [];
+  const remainingSuggestions = [];
+  for (const [theme, count] of suggestionCounts.entries()) {
+    if (directThemes.has(theme)) {
+      continue;
+    }
+    if (count >= 2) {
+      promotedThemes.push(theme);
+    } else {
+      remainingSuggestions.push(theme);
+    }
+  }
+
+  const themes = sortThemesByCanonicalOrder([...directThemes, ...promotedThemes]);
+  const suggestedThemes = sortThemesByCanonicalOrder(remainingSuggestions.filter((theme) => !themes.includes(theme)));
+  const unmappedTags = normalizedTagEntries
+    .filter((entry) => !suppressed.has(entry.normalized) && !handled.has(entry.normalized))
+    .map((entry) => entry.original);
+
+  const result = {
+    themes,
+    suggestedThemes,
+    unmappedTags,
+  };
+
+  if (options.includeEasyReadingSignal) {
+    result.easyReadingSignal = normalizedTagEntries.some((entry) => EASY_READING_TAGS.has(entry.normalized));
+  }
+
+  return result;
+}
+
+function attachDerivedThemeFields(book, options = {}) {
+  const source = typeof book === 'object' && book ? book : {};
+  const safeTags = parseMultiValueField(source.tags);
+  const manualThemes = normalizeManualThemes(source.manualThemes);
+  const derived = deriveThemesFromTags(safeTags, options);
+  return {
+    ...source,
+    tags: safeTags,
+    manualThemes,
+    themes: manualThemes.length ? manualThemes : derived.themes,
+    suggestedThemes: derived.suggestedThemes,
+    unmappedTags: derived.unmappedTags,
+  };
+}
+
 const EMPTY_DB = {
   books: [],
   students: [],
@@ -311,6 +835,7 @@ function ensureBookShape(book) {
   safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
   safeBook.tags = parseMultiValueField(source.tags);
+  safeBook.manualThemes = normalizeManualThemes(source.manualThemes);
   safeBook.coverColor = typeof source.coverColor === 'string' ? source.coverColor : '#f9f9f9';
   safeBook.publisher = normalizePublisher(source.publisher);
   safeBook.publishedYear = normalizePublishedYear(
@@ -319,7 +844,7 @@ function ensureBookShape(book) {
   safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
   safeBook.language = normalizeLanguageCode(source.language);
   safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
-  return safeBook;
+  return attachDerivedThemeFields(safeBook);
 }
 
 function createBookCopyFromTemplate(template) {
@@ -371,6 +896,9 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: normalizeGroupKeyPart(book.metadataIsbn) || null,
       copies: [],
       tags: new Set(),
+      themes: new Set(),
+      suggestedThemes: new Set(),
+      unmappedTags: new Set(),
       folderIds: new Set(),
       representativeBook: null,
     };
@@ -380,6 +908,27 @@ function groupBooksByTitleAuthor(books = []) {
       for (const tag of book.tags) {
         if (typeof tag === 'string' && tag.trim()) {
           entry.tags.add(tag.trim());
+        }
+      }
+    }
+    if (Array.isArray(book.themes)) {
+      for (const theme of book.themes) {
+        if (typeof theme === 'string' && theme.trim()) {
+          entry.themes.add(theme.trim());
+        }
+      }
+    }
+    if (Array.isArray(book.suggestedThemes)) {
+      for (const theme of book.suggestedThemes) {
+        if (typeof theme === 'string' && theme.trim()) {
+          entry.suggestedThemes.add(theme.trim());
+        }
+      }
+    }
+    if (Array.isArray(book.unmappedTags)) {
+      for (const tag of book.unmappedTags) {
+        if (typeof tag === 'string' && tag.trim()) {
+          entry.unmappedTags.add(tag.trim());
         }
       }
     }
@@ -397,6 +946,9 @@ function groupBooksByTitleAuthor(books = []) {
     const representative = value.representativeBook || value.copies[0] || {};
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
+    const themes = sortThemesByCanonicalOrder(Array.from(value.themes));
+    const suggestedThemes = sortThemesByCanonicalOrder(Array.from(value.suggestedThemes).filter((theme) => !themes.includes(theme)));
+    const unmappedTags = Array.from(value.unmappedTags);
     result.push({
       id: value.id,
       title: value.title || representative.title || '',
@@ -406,6 +958,9 @@ function groupBooksByTitleAuthor(books = []) {
       coverUrl: representative.coverUrl || '',
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
+      themes,
+      suggestedThemes,
+      unmappedTags,
       folderIds,
       folderId: folderIds.length === 1 ? folderIds[0] : null,
       suitableForExamList: value.copies.some((copy) => copy.suitableForExamList),
@@ -455,8 +1010,9 @@ function withBorrowCount(book, borrowCounts) {
   }
   const bookId = typeof book.id === 'string' ? book.id : book.id != null ? String(book.id) : '';
   const borrowCount = bookId && borrowCounts instanceof Map ? borrowCounts.get(bookId) || 0 : 0;
-  return { ...book, borrowCount };
+  return attachDerivedThemeFields({ ...book, borrowCount });
 }
+
 
 function findClassByName(db, name) {
   const key = normalizeClassKey(name);
@@ -2322,6 +2878,29 @@ async function handleApi(req, res, requestUrl) {
       });
     }
 
+    if (req.method === 'GET' && requestUrl.pathname === '/api/admin/themes/unmapped-tags') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen ongemapte tags bekijken' });
+      }
+      const db = getDb();
+      const stats = new Map();
+      for (const book of db.books.map((entry) => attachDerivedThemeFields(entry))) {
+        for (const tag of book.unmappedTags || []) {
+          const key = normalizeRawThemeTag(tag);
+          if (!key) continue;
+          const current = stats.get(key) || { tag: tag.trim(), count: 0, sampleTitles: [] };
+          current.count += 1;
+          if (book.title && current.sampleTitles.length < 3 && !current.sampleTitles.includes(book.title)) {
+            current.sampleTitles.push(book.title);
+          }
+          stats.set(key, current);
+        }
+      }
+      const unmappedTagStats = Array.from(stats.values())
+        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'nl', { sensitivity: 'base' }));
+      return sendJson(res, 200, { unmappedTagStats });
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
       const borrowCounts = getBorrowCountsMap(db.history);
@@ -2341,6 +2920,7 @@ async function handleApi(req, res, requestUrl) {
             (book.language && book.language.toLowerCase().includes(term)) ||
             (book.suitableForExamList && ['leeslijst', 'examenleeslijst', 'examen'].some((keyword) => keyword.includes(term) || term.includes(keyword))) ||
             (book.easyReading && ['makkelijk lezen', 'makkelijklezen', 'ml'].some((keyword) => keyword.includes(term) || term.includes(keyword))) ||
+            (book.themes || []).some((theme) => theme.toLowerCase().includes(term)) ||
             (book.tags || []).some((tag) => tag.toLowerCase().includes(term))
           );
         });
@@ -2409,6 +2989,7 @@ async function handleApi(req, res, requestUrl) {
       }
       const metadataIsbn = sanitizeIsbn(body.metadataIsbn);
       const tags = parseMultiValueField(body.tags);
+      const manualThemes = normalizeManualThemes(body.manualThemes);
       const publisher = normalizePublisher(body.publisher);
       const publishedYear = normalizePublishedYear(body.publishedYear ?? body.year ?? body.publishedAt);
       const pageCount = normalizePageCountValue(body.pageCount ?? body.pages);
@@ -2424,6 +3005,7 @@ async function handleApi(req, res, requestUrl) {
         suitableForExamList: Boolean(body.suitableForExamList),
         easyReading: Boolean(body.easyReading),
         tags,
+        manualThemes,
         coverColor,
         publisher,
         publishedYear,
@@ -2485,7 +3067,9 @@ async function handleApi(req, res, requestUrl) {
       const hasLanguage = Object.prototype.hasOwnProperty.call(body, 'language');
       const hasCoverUrl = Object.prototype.hasOwnProperty.call(body, 'coverUrl');
       const hasTags = Object.prototype.hasOwnProperty.call(body, 'tags');
+      const hasManualThemes = Object.prototype.hasOwnProperty.call(body, 'manualThemes');
       const nextTags = hasTags ? parseMultiValueField(body.tags) : book.tags;
+      const nextManualThemes = hasManualThemes ? normalizeManualThemes(body.manualThemes) : book.manualThemes;
       const nextPublisher = hasPublisher ? normalizePublisher(body.publisher) : book.publisher;
       const nextPublishedYear = hasPublishedYear
         ? normalizePublishedYear(body.publishedYear ?? body.year ?? body.publishedAt)
@@ -2512,6 +3096,7 @@ async function handleApi(req, res, requestUrl) {
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
         easyReading: body.easyReading ?? book.easyReading,
         tags: nextTags,
+        manualThemes: nextManualThemes,
         coverColor: body.coverColor ?? book.coverColor,
         publisher: nextPublisher,
         publishedYear: nextPublishedYear,
@@ -2562,6 +3147,7 @@ async function handleApi(req, res, requestUrl) {
           }
         }
       }
+      Object.assign(book, attachDerivedThemeFields(book));
       const currentGroup = getGroupForBook(db, book);
       const totalCopies = currentGroup?.books?.length ?? null;
       const availableCopies = currentGroup?.books?.filter((entry) => entry.status !== 'borrowed').length ?? null;

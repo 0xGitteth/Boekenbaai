@@ -595,21 +595,23 @@ const THEME_COLOR_MAP = {
 
 const DEFAULT_THEMES = [
   'Avontuur',
-  'Spanning',
-  'Mysterie',
-  'Romantiek',
-  'Fantasy',
-  'Humor',
-  'Geschiedenis',
-  'Wetenschap',
-  'Sport',
-  'Poëzie',
-  'Familie',
-  'Vriendschap',
-  'Identiteit',
   'Diversiteit',
+  'Familie',
+  'Fantasy',
+  'Geschiedenis',
+  'Humor',
+  'Identiteit',
   'Maatschappij',
-  'Makkelijk Lezen',
+  'Mythologie',
+  'Mysterie',
+  'Natuur',
+  'Poëzie',
+  'Romantiek',
+  'School & Opgroeien',
+  'Spanning',
+  'Sport',
+  'Vriendschap',
+  'Wetenschap',
 ];
 
 const EASY_READING_THEME_KEY = normalizeThemeKey('Makkelijk Lezen');
@@ -982,7 +984,7 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   }
   if (state.tags) {
     state.tags.innerHTML = '';
-    for (const tag of book.tags || []) {
+    for (const tag of book.themes || []) {
       const li = appendTextElement(state.tags, 'li', tag, {
         className: 'book-detail__tag',
       });
@@ -1114,13 +1116,10 @@ function collectUniqueThemes(books) {
     const trimmed = label.trim();
     if (!trimmed) return;
     const key = normalizeThemeKey(trimmed);
-    if (!key) return;
+    if (!key || key === EASY_READING_THEME_KEY) return;
     const existing = map.get(key);
     if (existing) {
       existing.count += increment;
-      if (!existing.label && trimmed) {
-        existing.label = trimmed;
-      }
       return;
     }
     map.set(key, {
@@ -1130,19 +1129,19 @@ function collectUniqueThemes(books) {
     });
   };
 
-  for (const label of DEFAULT_THEMES) {
-    registerTheme(label);
-  }
-
   for (const book of books || []) {
-    for (const tag of book?.tags || []) {
-      registerTheme(tag, { increment: 1 });
+    for (const theme of book?.themes || []) {
+      registerTheme(theme, { increment: 1 });
     }
   }
 
   return Array.from(map.values()).sort((a, b) => {
-    if (b.count !== a.count) {
-      return b.count - a.count;
+    const indexA = DEFAULT_THEMES.findIndex((theme) => normalizeThemeKey(theme) === a.key);
+    const indexB = DEFAULT_THEMES.findIndex((theme) => normalizeThemeKey(theme) === b.key);
+    if (indexA !== -1 || indexB !== -1) {
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
     }
     return a.label.localeCompare(b.label, 'nl', { sensitivity: 'base' });
   });
@@ -1335,6 +1334,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: normalizeGroupKeyPart(book.metadataIsbn) || null,
       copies: [],
       tags: new Set(),
+      themes: new Set(),
       folderIds: new Set(),
       representativeBook: null,
     };
@@ -1344,6 +1344,13 @@ function groupBooksByTitleAuthor(books = []) {
       for (const tag of book.tags) {
         if (typeof tag === 'string' && tag.trim()) {
           entry.tags.add(tag.trim());
+        }
+      }
+    }
+    if (Array.isArray(book.themes)) {
+      for (const theme of book.themes) {
+        if (typeof theme === 'string' && theme.trim()) {
+          entry.themes.add(theme.trim());
         }
       }
     }
@@ -1361,6 +1368,7 @@ function groupBooksByTitleAuthor(books = []) {
     const representative = value.representativeBook || value.copies[0] || {};
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
+    const themes = Array.from(value.themes);
     result.push({
       id: value.id,
       title: value.title || representative.title || '',
@@ -1370,6 +1378,7 @@ function groupBooksByTitleAuthor(books = []) {
       coverUrl: representative.coverUrl || '',
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
+      themes,
       folderIds,
       folderId: folderIds.length === 1 ? folderIds[0] : null,
       suitableForExamList: value.copies.some((copy) => copy.suitableForExamList),
@@ -1477,7 +1486,7 @@ function createBookCard(template, book, folders, options = {}) {
   author.textContent = book.author;
   if (tagsList) {
     tagsList.innerHTML = '';
-    for (const tag of book.tags || []) {
+    for (const tag of book.themes || []) {
       const li = appendTextElement(tagsList, 'li', tag, {
         className: 'book-card__tag',
       });
@@ -1693,7 +1702,7 @@ function filterBooks(allBooks, {
   const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
   if (normalizedThemes.length) {
     list = list.filter((book) => {
-      const tagKeys = (book.tags || []).map(normalizeThemeKey).filter(Boolean);
+      const tagKeys = (book.themes || []).map(normalizeThemeKey).filter(Boolean);
       if (!tagKeys.length) return false;
       return normalizedThemes.every((theme) => tagKeys.includes(theme));
     });
@@ -1708,6 +1717,7 @@ function filterBooks(allBooks, {
         resolveBookLanguage(book),
         resolveBookPageCount(book) ? String(resolveBookPageCount(book)) : '',
         book.barcode,
+        ...(book.themes || []),
         ...(book.tags || []),
         ...(Array.isArray(book.copies) ? book.copies.map((copy) => copy.barcode) : []),
       ]
@@ -3142,6 +3152,7 @@ function initStaffPage() {
   const selectedThemeKeys = new Set();
   const adminCustomThemes = new Map();
   let adminSelectedThemeKeys = new Set();
+  let adminBookRawTags = [];
   let onlyExamList = false;
   let onlyEasyReading = false;
   let adminBarcodeGroups = [];
@@ -3294,6 +3305,9 @@ function initStaffPage() {
       entries.set(key, { key, label });
     };
 
+    for (const theme of DEFAULT_THEMES) {
+      registerEntry(theme);
+    }
     for (const theme of availableThemes) {
       registerEntry(theme);
     }
@@ -3667,6 +3681,7 @@ function initStaffPage() {
     if (adminBookMetadataIsbn) {
       adminBookMetadataIsbn.value = '';
     }
+    adminBookRawTags = [];
     setSelectedAdminThemes([]);
     if (adminBookCover) {
       adminBookCover.value = '';
@@ -3716,7 +3731,11 @@ function initStaffPage() {
     if (adminBookLanguage) {
       adminBookLanguage.value = book.language || '';
     }
-    setSelectedAdminThemes(book.tags || []);
+    adminBookRawTags = Array.isArray(book.tags) ? [...book.tags] : [];
+    const editableThemes = Array.isArray(book.manualThemes) && book.manualThemes.length
+      ? book.manualThemes
+      : book.themes || [];
+    setSelectedAdminThemes(editableThemes);
     if (adminBookCover) {
       adminBookCover.value = book.coverUrl || '';
     }
@@ -6665,8 +6684,9 @@ function initStaffPage() {
     const pageCountValue = adminBookPages?.value?.trim() || '';
     const languageValue = adminBookLanguage?.value?.trim() || '';
     const coverUrlValue = adminBookCover?.value?.trim() || '';
-    const tags = getSelectedAdminThemes();
+    const selectedThemes = getSelectedAdminThemes();
     const quantityValue = Math.max(1, parseInt(adminBookQuantity?.value, 10) || 1);
+    const bookId = adminBookIdInput?.value?.trim();
     const payload = {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
@@ -6680,8 +6700,13 @@ function initStaffPage() {
       pageCount: pageCountValue || null,
       language: languageValue ? languageValue.toLowerCase() : '',
       coverUrl: coverUrlValue,
-      tags,
     };
+    payload.manualThemes = selectedThemes;
+    if (bookId) {
+      payload.tags = Array.isArray(adminBookRawTags) ? [...adminBookRawTags] : [];
+    } else {
+      payload.tags = selectedThemes;
+    }
     updateAdminBookBarcode(payload.barcode);
     if (!payload.title || !payload.author || !payload.barcode) {
       adminBookMessage.textContent = 'Titel, auteur en een geldige barcode zijn verplicht.';
@@ -6689,7 +6714,6 @@ function initStaffPage() {
       return;
     }
     try {
-      const bookId = adminBookIdInput?.value?.trim();
       if (!bookId) {
         payload.quantity = quantityValue;
       }
