@@ -71,6 +71,18 @@ function createDbFixture(filePath) {
         tags: ['easy reading', 'friendship'],
         manualThemes: ['Mysterie', 'Makkelijk Lezen'],
       },
+      {
+        id: 'book-3',
+        title: 'Gemengde handmatige thema’s',
+        author: 'Auteur Drie',
+        barcode: '33333',
+        status: 'available',
+        borrowedBy: null,
+        dueDate: null,
+        easyReading: false,
+        tags: ['adventure stories', 'friendship'],
+        manualThemes: ['Fantasy', 'Psychische gezondheid', 'Spanning'],
+      },
     ],
     students: [],
     folders: [],
@@ -112,6 +124,7 @@ async function runTests() {
     assert.strictEqual(listResponse.status, 200);
     const book1 = listResponse.body.find((book) => book.id === 'book-1');
     const book2 = listResponse.body.find((book) => book.id === 'book-2');
+    const book3 = listResponse.body.find((book) => book.id === 'book-3');
 
     assert.deepStrictEqual(book1.tags, ['juvenile fiction', 'friendship']);
     assert.deepStrictEqual(book1.themes, ['Vriendschap']);
@@ -121,6 +134,8 @@ async function runTests() {
     assert.deepStrictEqual(book2.manualThemes, ['Mysterie']);
     assert.deepStrictEqual(book2.themes, ['Mysterie']);
     assert.ok(!book2.themes.includes('Makkelijk Lezen'));
+    assert.deepStrictEqual(book3.manualThemes, ['Psychische gezondheid', 'Fantasy', 'Spanning']);
+    assert.deepStrictEqual(book3.themes, ['Psychische gezondheid', 'Fantasy', 'Spanning']);
 
     const updateResponse = await request('/api/books/book-1', {
       method: 'PUT',
@@ -165,6 +180,25 @@ async function runTests() {
     assert.deepStrictEqual(saveWithoutThemeChange.body.book.tags, ['easy reading', 'friendship']);
     assert.deepStrictEqual(saveWithoutThemeChange.body.book.manualThemes, ['Mysterie']);
     assert.deepStrictEqual(saveWithoutThemeChange.body.book.themes, ['Mysterie']);
+
+    const updateMixedThemes = await request('/api/books/book-3', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: 'Gemengde handmatige thema’s',
+        author: 'Auteur Drie',
+        barcode: '33333',
+        tags: ['adventure stories', 'friendship'],
+        manualThemes: ['Fantasy', 'Psychische gezondheid', 'Overleven', 'Makkelijk Lezen'],
+      }),
+    });
+    assert.strictEqual(updateMixedThemes.status, 200);
+    assert.deepStrictEqual(updateMixedThemes.body.book.tags, ['adventure stories', 'friendship']);
+    assert.deepStrictEqual(updateMixedThemes.body.book.manualThemes, ['Psychische gezondheid', 'Overleven', 'Fantasy']);
+    assert.deepStrictEqual(updateMixedThemes.body.book.themes, ['Psychische gezondheid', 'Overleven', 'Fantasy']);
 
     const postUpdateList = await request('/api/books');
     assert.strictEqual(postUpdateList.status, 200);

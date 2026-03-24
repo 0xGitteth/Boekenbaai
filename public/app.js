@@ -581,6 +581,15 @@ function formatDate(value) {
 
 const THEME_COLOR_MAP = {
   avontuur: '#64b5f6',
+  'psychische gezondheid': '#b39ddb',
+  verslaving: '#ffab91',
+  'media & invloed': '#90caf9',
+  'ziekte & verlies': '#bcaaa4',
+  pesten: '#ef9a9a',
+  'adoptie & afkomst': '#80cbc4',
+  'macht & hiërarchie': '#ce93d8',
+  isolatie: '#9fa8da',
+  overleven: '#aed581',
   spanning: '#ff9aa2',
   'makkelijk lezen': '#b8e994',
   romantiek: '#ffb3d9',
@@ -595,6 +604,15 @@ const THEME_COLOR_MAP = {
 
 const DEFAULT_THEMES = [
   'Avontuur',
+  'Psychische gezondheid',
+  'Verslaving',
+  'Media & Invloed',
+  'Ziekte & verlies',
+  'Pesten',
+  'Adoptie & afkomst',
+  'Macht & hiërarchie',
+  'Isolatie',
+  'Overleven',
   'Diversiteit',
   'Familie',
   'Fantasy',
