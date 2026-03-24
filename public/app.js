@@ -3181,6 +3181,30 @@ function initStaffPage() {
   });
 
   initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
+  initAdminCardCollapsibles();
+
+  function initAdminCardCollapsibles() {
+    const collapsibleCards = document.querySelectorAll('[data-collapsible-card]');
+    for (const card of collapsibleCards) {
+      const toggleButton = card.querySelector('[data-card-toggle]');
+      const content = card.querySelector('.admin-card__content');
+      if (!toggleButton || !content) continue;
+
+      const setCollapsed = (collapsed) => {
+        card.classList.toggle('admin-card--collapsed', collapsed);
+        content.hidden = collapsed;
+        toggleButton.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        toggleButton.textContent = collapsed ? 'Uitklappen' : 'Invouwen';
+      };
+
+      setCollapsed(false);
+
+      toggleButton.addEventListener('click', () => {
+        const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
+        setCollapsed(isExpanded);
+      });
+    }
+  }
 
   // Initialiseer autocomplete voor staff login
   const loginSuggestions = document.querySelector('#login-suggestions');
