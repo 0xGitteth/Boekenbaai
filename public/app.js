@@ -3200,6 +3200,7 @@ function initStaffPage() {
 
   initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
   initAdminCardCollapsibles();
+  initAdminExpandableSections();
 
   function initAdminCardCollapsibles() {
     const collapsibleCards = document.querySelectorAll('[data-collapsible-card]');
@@ -3220,6 +3221,31 @@ function initStaffPage() {
       toggleButton.addEventListener('click', () => {
         const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
         setCollapsed(isExpanded);
+      });
+    }
+  }
+
+  function initAdminExpandableSections() {
+    const expandables = document.querySelectorAll('[data-expandable-toggle]');
+    for (const toggleButton of expandables) {
+      const targetId = toggleButton.getAttribute('aria-controls');
+      if (!targetId) continue;
+      const content = document.getElementById(targetId);
+      if (!content) continue;
+
+      const setExpanded = (expanded) => {
+        content.hidden = !expanded;
+        toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        toggleButton.textContent = expanded
+          ? 'Boekenoverzicht inklappen'
+          : 'Boekenoverzicht uitklappen';
+      };
+
+      setExpanded(false);
+
+      toggleButton.addEventListener('click', () => {
+        const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
+        setExpanded(!isExpanded);
       });
     }
   }
