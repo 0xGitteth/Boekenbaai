@@ -741,6 +741,7 @@ select[multiple] {
   align-content: start;
 }
 
+body[data-page='staff'] .teacher-catalog-card,
 body[data-page='staff'] .teacher-actions {
   background: linear-gradient(
     135deg,
