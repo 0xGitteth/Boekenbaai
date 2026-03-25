@@ -176,6 +176,20 @@ body {
 .hero__illustration {
   position: relative;
   min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(0.75rem, 2vw, 1.1rem);
+  border-radius: 1rem;
+  background: rgba(4, 27, 61, 0.2);
+}
+
+.hero__logo {
+  width: min(100%, 440px);
+  max-height: 180px;
+  height: auto;
+  object-fit: contain;
+  display: block;
 }
 
 .hero__actions {
@@ -228,37 +242,6 @@ body {
   grid-area: illustration;
   align-self: start;
   justify-self: end;
-}
-
-.bubble {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(0.5px);
-  opacity: 0.85;
-}
-
-.bubble--pink {
-  background: rgba(207, 231, 255, 0.9);
-  width: 140px;
-  height: 140px;
-  top: 12%;
-  left: 14%;
-}
-
-.bubble--yellow {
-  background: rgba(247, 181, 0, 0.7);
-  width: 130px;
-  height: 130px;
-  bottom: 12%;
-  right: 16%;
-}
-
-.bubble--blue {
-  background: rgba(12, 109, 216, 0.75);
-  width: 110px;
-  height: 110px;
-  top: 38%;
-  right: 38%;
 }
 
 main {
