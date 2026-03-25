@@ -187,8 +187,10 @@ body {
 }
 
 .hero--staff .hero__actions {
+  grid-area: actions;
   width: 100%;
   justify-content: space-between;
+  flex-wrap: nowrap;
 }
 
 .hero__link {
@@ -210,6 +212,18 @@ body {
     rgba(4, 27, 61, 0.92),
     rgba(11, 44, 99, 0.88)
   );
+  grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
+  grid-template-areas:
+    "content illustration"
+    "actions actions";
+}
+
+.hero--staff .hero__content {
+  grid-area: content;
+}
+
+.hero--staff .hero__illustration {
+  grid-area: illustration;
 }
 
 .bubble {
@@ -615,6 +629,8 @@ select[multiple] {
 .staff-meta--hero {
   color: rgba(255, 255, 255, 0.92);
   margin-left: auto;
+  justify-content: flex-end;
+  text-align: right;
 }
 
 .staff-meta--hero .staff-meta__name,
@@ -2795,15 +2811,24 @@ body.book-detail-open {
 @media (max-width: 680px) {
   .hero--staff .hero__actions {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .staff-meta--hero {
     width: 100%;
     margin-left: 0;
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .teacher-overview__header {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+@media (max-width: 960px) {
+  .hero--staff .hero__actions {
+    flex-wrap: wrap;
   }
 }
