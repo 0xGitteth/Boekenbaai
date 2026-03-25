@@ -227,8 +227,8 @@ body {
 .hero--staff {
   --hero-gradient: linear-gradient(
     120deg,
-    rgba(4, 27, 61, 0.92),
-    rgba(11, 44, 99, 0.88)
+    rgba(18, 66, 129, 0.95),
+    rgba(104, 169, 228, 0.92)
   );
   grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
   grid-template-areas:
@@ -244,6 +244,14 @@ body {
   grid-area: illustration;
   align-self: start;
   justify-self: end;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.hero--staff .hero__logo {
+  filter: none;
 }
 
 main {
