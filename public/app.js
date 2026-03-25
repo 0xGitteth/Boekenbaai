@@ -3017,6 +3017,7 @@ function initStaffPage() {
   const loginMessage = document.querySelector('#login-message');
   const staffSections = document.querySelectorAll('[data-visible-for]');
   const roleSpecificSections = document.querySelectorAll('[data-role-only]');
+  const staffMeta = document.querySelector('#staff-meta');
   const staffName = document.querySelector('#staff-name');
   const staffRole = document.querySelector('#staff-role');
   const logoutButton = document.querySelector('#logout-button');
@@ -3563,6 +3564,9 @@ function initStaffPage() {
     if (!authUser || authUser.role !== 'admin') {
       setAdminTeacherStatus('');
       adminTeacherResetNotice.hide();
+    }
+    if (staffMeta) {
+      staffMeta.classList.toggle('hidden', !loggedIn);
     }
     if (staffName) {
       staffName.textContent = loggedIn ? authUser.name : '';
