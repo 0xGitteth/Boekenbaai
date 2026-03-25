@@ -224,6 +224,17 @@ body {
   );
 }
 
+.hero--student .hero__illustration {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.hero--student .hero__logo {
+  filter: none;
+}
+
 .hero--staff {
   --hero-gradient: linear-gradient(
     120deg,
