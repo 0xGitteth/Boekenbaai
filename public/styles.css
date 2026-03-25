@@ -304,10 +304,15 @@ body[data-page='staff'] .panel--login {
 
 .panel__header--staff {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-wrap: nowrap;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.panel__header-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .panel__header--admin {
@@ -637,16 +642,8 @@ select[multiple] {
 
 .teacher-overview__header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 1rem;
+  align-items: flex-start;
   margin-bottom: 1rem;
-}
-
-.teacher-overview__header .btn {
-  margin-top: 0;
-  align-self: center;
 }
 
 .teacher-overview__header h3 {

@@ -77,26 +77,26 @@
         data-visible-for="teacher,admin"
       >
         <div class="panel__header panel__header--staff">
-          <div>
+          <div class="panel__header-main">
             <h2 id="teacher-panel-title">Overzicht</h2>
             <p class="panel__subtitle">
               Bekijk de actuele collectie, filter op thema, zoek of sorteer en houd bij welke leerlingen lenen.
             </p>
           </div>
+          <button
+            type="button"
+            class="btn btn--ghost"
+            id="staff-book-overview-toggle"
+            aria-expanded="true"
+            aria-controls="staff-book-overview-content"
+          >
+            Inklappen
+          </button>
         </div>
         <div class="teacher-layout">
           <section class="teacher-layout__overview" aria-labelledby="staff-catalog-title">
             <div class="teacher-overview__header">
               <h3 id="staff-catalog-title">Boekenoverzicht</h3>
-              <button
-                type="button"
-                class="btn btn--ghost"
-                id="staff-book-overview-toggle"
-                aria-expanded="true"
-                aria-controls="staff-book-overview-content"
-              >
-                Inklappen
-              </button>
             </div>
             <div id="staff-book-overview-content">
             <div class="filters">
