@@ -163,6 +163,7 @@ body {
 .hero__content h1 {
   font-family: 'Baloo 2', cursive;
   font-size: clamp(2.4rem, 5vw, 3.2rem);
+  line-height: 1.1;
   margin: 0 0 1rem;
 }
 
@@ -171,6 +172,23 @@ body {
   max-width: 32rem;
   margin: 0;
   line-height: 1.5;
+}
+
+.hero--student .hero__content h1,
+.hero--staff .hero__content h1 {
+  font-size: clamp(2.4rem, 5vw, 3.2rem);
+}
+
+.hero--student .hero__content p,
+.hero--staff .hero__content p {
+  font-size: clamp(1.1rem, 2vw, 1.25rem);
+}
+
+.hero--student .hero__actions .btn,
+.hero--staff .hero__actions .btn {
+  font-size: 1rem;
+  padding: 0.75rem 1.4rem;
+  line-height: 1.2;
 }
 
 .hero__illustration {
@@ -240,10 +258,10 @@ body {
 }
 
 .hero--staff .hero__actions {
-  grid-column: 1 / -1;
-  width: 100%;
-  margin-top: 0;
-  justify-content: space-between;
+  grid-column: 1 / 2;
+  width: auto;
+  margin-top: 1.5rem;
+  justify-content: flex-start;
 }
 
 .hero--staff .hero__illustration {
@@ -254,7 +272,7 @@ body {
 }
 
 .hero--staff .hero__logo {
-  max-height: 156px;
+  max-height: 180px;
   filter: none;
 }
 
