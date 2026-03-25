@@ -202,12 +202,184 @@ async function runEasyReadingTest() {
   }
 }
 
+async function runStudentImportNamePartsTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-students-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+
+    const workbookBase64 = buildWorkbookBase64([
+      {
+        Voornaam: 'Jan',
+        Voorvoegsel: 'van',
+        Achternaam: 'Dijk',
+        Gebruikersnaam: 'jan.vandijk',
+        Wachtwoord: 'Welkom123',
+        'Klas(sen)': '1A',
+      },
+    ]);
+
+    const importResponse = await request('/api/students/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+
+    return {
+      importResponse,
+      dbPath,
+      serverProcess,
+    };
+  } catch (error) {
+    serverProcess.kill('SIGINT');
+    throw error;
+  }
+}
+
 async function readBookCollection(token) {
   const { status, body } = await request('/api/books', {
     headers: { Authorization: `Bearer ${token}` },
   });
   assert.strictEqual(status, 200);
   return body;
+}
+
+async function runManualCoverNormalizationTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-manual-cover-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+
+    const createResponse = await request('/api/books', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        title: 'Handmatig boek',
+        author: 'Auteur',
+        barcode: '9782222222222',
+        coverUrl: 'http://books.google.com/manual-cover.jpg',
+      }),
+    });
+    assert.strictEqual(createResponse.status, 201);
+    assert.strictEqual(
+      createResponse.body.book.coverUrl,
+      'https://books.google.com/manual-cover.jpg',
+    );
+
+    const updateResponse = await request(`/api/books/${createResponse.body.book.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        coverUrl: 'http://books.google.com/updated-cover.jpg',
+      }),
+    });
+    assert.strictEqual(updateResponse.status, 200);
+    assert.strictEqual(
+      updateResponse.body.book.coverUrl,
+      'https://books.google.com/updated-cover.jpg',
+    );
+
+    const storedBooks = await readBookCollection(token);
+    const stored = storedBooks.find((book) => book.id === createResponse.body.book.id);
+    assert.ok(stored);
+    assert.strictEqual(stored.coverUrl, 'https://books.google.com/updated-cover.jpg');
+
+    const nonGoogleCreateResponse = await request('/api/books', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        title: 'Intranet boek',
+        author: 'Auteur',
+        barcode: '9782222222223',
+        coverUrl: 'http://intranet.local/manual-cover.jpg',
+      }),
+    });
+    assert.strictEqual(nonGoogleCreateResponse.status, 201);
+    assert.strictEqual(
+      nonGoogleCreateResponse.body.book.coverUrl,
+      'http://intranet.local/manual-cover.jpg',
+    );
+
+    const storedAfterNonGoogleCreate = await readBookCollection(token);
+    const nonGoogleStored = storedAfterNonGoogleCreate.find(
+      (book) => book.id === nonGoogleCreateResponse.body.book.id,
+    );
+    assert.ok(nonGoogleStored);
+    assert.strictEqual(nonGoogleStored.coverUrl, 'http://intranet.local/manual-cover.jpg');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
+async function runImportCoverNormalizationTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-import-cover-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+
+    const workbookBase64 = buildWorkbookBase64([
+      {
+        Titel: 'Import boek',
+        Auteur: 'Import auteur',
+        Barcode: '9783333333333',
+        'Cover URL': 'http://books.google.com/import-cover.jpg',
+      },
+    ]);
+
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+
+    assert.strictEqual(importResponse.status, 200);
+    const [importedBook] = importResponse.body.books;
+    assert.ok(importedBook);
+    assert.strictEqual(importedBook.status, 'created');
+
+    const storedBooks = await readBookCollection(token);
+    const stored = storedBooks.find((book) => book.barcode === '9783333333333');
+    assert.ok(stored);
+    assert.strictEqual(stored.coverUrl, 'https://books.google.com/import-cover.jpg');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
 }
 
 async function runTests() {
@@ -247,6 +419,9 @@ async function runTests() {
   assert.strictEqual(logContents, '', 'Lookup log should stay empty when enrichment is disabled');
   disabledResult.serverProcess.kill('SIGINT');
 
+  await runManualCoverNormalizationTest();
+  await runImportCoverNormalizationTest();
+
   // Test easyReading and suitableForExamList import
   const easyReadingResult = await runEasyReadingTest();
   assert.strictEqual(easyReadingResult.importResponse.status, 200);
@@ -259,6 +434,19 @@ async function runTests() {
   assert.strictEqual(storedWithFlags.suitableForExamList, true);
   assert.strictEqual(storedWithFlags.easyReading, true);
   easyReadingResult.serverProcess.kill('SIGINT');
+
+  // Student import should support separate name columns and store first name metadata.
+  const studentImportResult = await runStudentImportNamePartsTest();
+  assert.strictEqual(studentImportResult.importResponse.status, 200);
+  assert.strictEqual(studentImportResult.importResponse.body.created, 1);
+  assert.strictEqual(studentImportResult.importResponse.body.accounts[0].name, 'Jan van Dijk');
+  assert.strictEqual(studentImportResult.importResponse.body.accounts[0].firstName, 'Jan');
+  const importedDb = JSON.parse(fs.readFileSync(studentImportResult.dbPath, 'utf-8'));
+  assert.strictEqual(importedDb.students[0].name, 'Jan van Dijk');
+  assert.strictEqual(importedDb.students[0].firstName, 'Jan');
+  assert.strictEqual(importedDb.students[0].middleName, 'van');
+  assert.strictEqual(importedDb.students[0].lastName, 'Dijk');
+  studentImportResult.serverProcess.kill('SIGINT');
 
   console.log('All import tests passed');
 }
