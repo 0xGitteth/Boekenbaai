@@ -233,6 +233,7 @@ body {
     rgba(18, 66, 129, 0.95),
     rgba(104, 169, 228, 0.92)
   );
+  align-items: start;
 }
 
 .hero--staff .hero__illustration {
@@ -243,6 +244,7 @@ body {
 }
 
 .hero--staff .hero__logo {
+  max-height: 156px;
   filter: none;
 }
 
