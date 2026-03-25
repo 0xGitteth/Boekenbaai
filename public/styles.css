@@ -186,6 +186,11 @@ body {
   align-items: center;
 }
 
+.hero--staff .hero__actions {
+  width: 100%;
+  justify-content: space-between;
+}
+
 .hero__link {
   text-decoration: none;
   font-weight: 600;
@@ -604,6 +609,33 @@ select[multiple] {
 
 .staff-meta__name {
   color: var(--text);
+}
+
+
+.staff-meta--hero {
+  color: rgba(255, 255, 255, 0.92);
+  margin-left: auto;
+}
+
+.staff-meta--hero .staff-meta__name,
+.staff-meta--hero .staff-meta__role {
+  color: #ffffff;
+}
+
+.teacher-overview__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.teacher-overview__header h3 {
+  margin: 0;
+}
+
+#staff-book-overview-content[hidden] {
+  display: none;
 }
 
 .btn--ghost {
@@ -2756,5 +2788,21 @@ body.book-detail-open {
   .book-detail__media {
     width: 100%;
     min-height: 220px;
+  }
+}
+
+@media (max-width: 680px) {
+  .hero--staff .hero__actions {
+    justify-content: flex-start;
+  }
+
+  .staff-meta--hero {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .teacher-overview__header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

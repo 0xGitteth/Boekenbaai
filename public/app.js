@@ -3017,6 +3017,7 @@ function initStaffPage() {
   const loginMessage = document.querySelector('#login-message');
   const staffSections = document.querySelectorAll('[data-visible-for]');
   const roleSpecificSections = document.querySelectorAll('[data-role-only]');
+  const staffMeta = document.querySelector('#staff-meta');
   const staffName = document.querySelector('#staff-name');
   const staffRole = document.querySelector('#staff-role');
   const logoutButton = document.querySelector('#logout-button');
@@ -3200,6 +3201,7 @@ function initStaffPage() {
 
   initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
   initAdminCardCollapsibles();
+  initStaffBookOverviewToggle();
   initAdminExpandableSections();
 
   function initAdminCardCollapsibles() {
@@ -3223,6 +3225,26 @@ function initStaffPage() {
         setCollapsed(isExpanded);
       });
     }
+  }
+
+
+  function initStaffBookOverviewToggle() {
+    const toggleButton = document.querySelector('#staff-book-overview-toggle');
+    const content = document.querySelector('#staff-book-overview-content');
+    if (!toggleButton || !content) return;
+
+    const setExpanded = (expanded) => {
+      content.hidden = !expanded;
+      toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      toggleButton.textContent = expanded ? 'Inklappen' : 'Uitklappen';
+    };
+
+    setExpanded(true);
+
+    toggleButton.addEventListener('click', () => {
+      const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
+      setExpanded(!isExpanded);
+    });
   }
 
   function initAdminExpandableSections() {
@@ -3542,6 +3564,9 @@ function initStaffPage() {
     if (!authUser || authUser.role !== 'admin') {
       setAdminTeacherStatus('');
       adminTeacherResetNotice.hide();
+    }
+    if (staffMeta) {
+      staffMeta.classList.toggle('hidden', !loggedIn);
     }
     if (staffName) {
       staffName.textContent = loggedIn ? authUser.name : '';
