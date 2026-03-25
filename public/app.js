@@ -3200,6 +3200,7 @@ function initStaffPage() {
 
   initPasswordToggle(loginPassword, loginPasswordToggle, { label: 'wachtwoord' });
   initAdminCardCollapsibles();
+  initStaffBookOverviewToggle();
   initAdminExpandableSections();
 
   function initAdminCardCollapsibles() {
@@ -3223,6 +3224,26 @@ function initStaffPage() {
         setCollapsed(isExpanded);
       });
     }
+  }
+
+
+  function initStaffBookOverviewToggle() {
+    const toggleButton = document.querySelector('#staff-book-overview-toggle');
+    const content = document.querySelector('#staff-book-overview-content');
+    if (!toggleButton || !content) return;
+
+    const setExpanded = (expanded) => {
+      content.hidden = !expanded;
+      toggleButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      toggleButton.textContent = expanded ? 'Inklappen' : 'Uitklappen';
+    };
+
+    setExpanded(true);
+
+    toggleButton.addEventListener('click', () => {
+      const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
+      setExpanded(!isExpanded);
+    });
   }
 
   function initAdminExpandableSections() {
