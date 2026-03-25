@@ -189,8 +189,10 @@ body {
 .hero--staff .hero__actions {
   grid-area: actions;
   width: 100%;
-  justify-content: space-between;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 1rem;
 }
 
 .hero__link {
@@ -628,22 +630,38 @@ select[multiple] {
 
 .staff-meta--hero {
   color: rgba(255, 255, 255, 0.92);
-  margin-left: auto;
+  justify-self: end;
   justify-content: flex-end;
+  align-items: center;
   text-align: right;
 }
 
 .staff-meta--hero .staff-meta__name,
 .staff-meta--hero .staff-meta__role {
   color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.staff-meta--hero .btn {
+  margin-top: 0;
+  align-self: center;
+  line-height: 1.2;
 }
 
 .teacher-overview__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.teacher-overview__header .btn {
+  margin-top: 0;
+  align-self: center;
 }
 
 .teacher-overview__header h3 {
@@ -2810,25 +2828,30 @@ body.book-detail-open {
 
 @media (max-width: 680px) {
   .hero--staff .hero__actions {
-    justify-content: flex-start;
-    flex-wrap: wrap;
+    grid-template-columns: 1fr;
+    row-gap: 0.75rem;
+    justify-items: start;
   }
 
   .staff-meta--hero {
     width: 100%;
-    margin-left: 0;
+    justify-self: start;
     justify-content: flex-start;
     text-align: left;
-  }
-
-  .teacher-overview__header {
-    flex-direction: column;
-    align-items: stretch;
   }
 }
 
 @media (max-width: 960px) {
   .hero--staff .hero__actions {
-    flex-wrap: wrap;
+    grid-template-columns: 1fr;
+    row-gap: 0.75rem;
+    justify-items: start;
+  }
+
+  .staff-meta--hero {
+    width: 100%;
+    justify-self: start;
+    justify-content: flex-start;
+    text-align: left;
   }
 }
