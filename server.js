@@ -373,7 +373,6 @@ const EXACT_THEME_MAP = new Map([
   ['natuurverhalen', 'Natuur'],
   ['plants', 'Natuur'],
   ['forests', 'Natuur'],
-  ['sea', 'Natuur'],
   ['ocean', 'Natuur'],
   ['poetry', 'Poëzie'],
   ['poëzie', 'Poëzie'],
@@ -459,7 +458,7 @@ const EXACT_THEME_MAP = new Map([
 ]);
 
 const STRONG_CONTAINS_THEME_RULES = [
-  { theme: 'Psychische gezondheid', patterns: ['mental health', 'anxiety', 'depression', 'psychosis', 'self-harm', 'panic', 'trauma', 'suicid', 'psychiatr', 'psycholog', 'eenzaam', 'waan', 'realiteit en waan'] },
+  { theme: 'Psychische gezondheid', patterns: ['mental health', 'anxiety', 'depression', 'psychosis', 'self-harm', /\bpanics?\b/, 'trauma', 'suicid', 'psychiatr', 'psycholog', 'eenzaam', 'waan', 'realiteit en waan'] },
   { theme: 'Verslaving', patterns: ['addiction', 'verslaving', 'alcohol abuse', 'middelengebruik', 'afhankelijk', 'obsessief gamen', 'drug', 'gaming addiction', 'game addiction'] },
   { theme: 'Media & Invloed', patterns: ['reality tv', 'media pressure', 'television culture', 'influence culture', 'uiterlijkheidscultuur', 'celebrity culture', 'public image', 'social media pressure', 'fame pressure'] },
   { theme: 'Ziekte & verlies', patterns: ['terminal illness', 'severe illness', 'cystic fibrosis', 'taaislijmziekte', 'dying', 'grief', 'mourning', 'verlies', 'rouw', 'sterven', 'ziekte'] },
@@ -478,12 +477,12 @@ const STRONG_CONTAINS_THEME_RULES = [
   { theme: 'Vriendschap', patterns: ['friendship', 'friend group', 'friend ', 'friends', 'companionship', 'social relations'] },
   { theme: 'Romantiek', patterns: ['romance', 'love', 'dating', 'relationship', 'verliefd', 'heartbreak', 'love triangle'] },
   { theme: 'Identiteit', patterns: ['identity', 'gender', 'sexuality', 'self-esteem', 'body image', 'coming out', 'self image', 'insecur'] },
-  { theme: 'Maatschappij', patterns: ['society', 'social issue', 'discrimination', 'racism', 'poverty', 'prostitution', 'refugee', 'cult', 'sect', 'migration', 'homeless', 'abuse', 'violence'] },
+  { theme: 'Maatschappij', patterns: ['society', 'social issue', 'discrimination', 'racism', 'poverty', 'prostitution', 'refugee', /\bcults?\b/, /\bsects?\b/, 'migration', 'homeless', 'abuse', 'violence'] },
   { theme: 'School & Opgroeien', patterns: ['school', 'high school', 'teen', 'adolesc', 'pubert', 'coming-of-age', 'coming of age'] },
   { theme: 'Poëzie', patterns: ['poetry', 'poem', 'gedicht'] },
   { theme: 'Sport', patterns: ['sport', 'football', 'soccer', 'hockey', 'tennis', 'judo'] },
   { theme: 'Wetenschap', patterns: ['science', 'technology', 'robot', 'space', 'astronomy', 'climate', 'biology', 'chemistry', 'physics', 'invention'] },
-  { theme: 'Natuur', patterns: ['nature', 'animal', 'forest', 'ocean', 'sea', 'ecology', 'environment'] },
+  { theme: 'Natuur', patterns: ['nature', 'animal', 'forest', 'ocean', 'ecology', 'environment'] },
 ];
 
 const SUGGESTION_RULES = [
@@ -538,8 +537,14 @@ function findThemesByContains(tag, rules = STRONG_CONTAINS_THEME_RULES) {
   if (!normalized) {
     return [];
   }
+  const matchesPattern = (pattern) => {
+    if (pattern instanceof RegExp) {
+      return pattern.test(normalized);
+    }
+    return normalized.includes(pattern);
+  };
   return rules.flatMap((rule) => {
-    if (!rule.patterns.some((pattern) => normalized.includes(pattern))) {
+    if (!rule.patterns.some((pattern) => matchesPattern(pattern))) {
       return [];
     }
     if (Array.isArray(rule.themes)) {
