@@ -190,7 +190,7 @@ body {
   grid-area: actions;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
   column-gap: 1rem;
 }
@@ -226,6 +226,8 @@ body {
 
 .hero--staff .hero__illustration {
   grid-area: illustration;
+  align-self: start;
+  justify-self: end;
 }
 
 .bubble {
