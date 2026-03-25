@@ -214,6 +214,8 @@ body {
     rgba(74, 183, 255, 0.92),
     rgba(207, 231, 255, 0.9)
   );
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
 }
 
 .hero--student .hero__illustration {
