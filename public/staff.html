@@ -80,14 +80,30 @@
               Bekijk de actuele collectie, filter op thema, zoek of sorteer en houd bij welke leerlingen lenen.
             </p>
           </div>
-          <div class="staff-meta" id="staff-meta">
-            <span id="staff-name" class="staff-meta__name"></span>
-            <span id="staff-role" class="staff-meta__role"></span>
-            <button id="logout-button" class="btn btn--ghost" type="button">Uitloggen</button>
-          </div>
+        </div>
+        <div class="staff-meta staff-meta--header" id="staff-meta">
+          <span id="staff-name" class="staff-meta__name"></span>
+          <span id="staff-role" class="staff-meta__role"></span>
+          <button id="logout-button" class="btn btn--ghost" type="button">Uitloggen</button>
         </div>
         <div class="teacher-layout">
-          <div class="teacher-layout__overview">
+          <section class="teacher-layout__overview teacher-catalog-card" aria-labelledby="staff-catalog-title">
+            <div class="teacher-catalog-card__header">
+              <div>
+                <h3 id="staff-catalog-title">Boekenoverzicht</h3>
+                <p class="hint">De volledige bibliotheek voor zoeken, filteren en lenen.</p>
+              </div>
+              <button
+                type="button"
+                class="btn btn--ghost teacher-catalog-card__toggle"
+                id="staff-book-overview-toggle"
+                aria-expanded="true"
+                aria-controls="staff-book-overview-content"
+              >
+                Inklappen
+              </button>
+            </div>
+            <div id="staff-book-overview-content" class="teacher-catalog-card__content">
             <div class="filters">
               <div class="filters__themes">
                 <span class="filters__label" id="theme-filter-label">Filter op thema:</span>
@@ -109,7 +125,8 @@
             </div>
             <div class="summary" id="summary"></div>
             <div class="book-grid" id="book-grid"></div>
-          </div>
+            </div>
+          </section>
         </div>
 
         <section class="teacher-layout__classes teacher-actions" data-role-only="teacher">
@@ -330,20 +347,9 @@
               </div>
             </form>
             <p id="admin-book-message" class="hint" role="status" aria-live="polite"></p>
-            <section class="admin-expandable" aria-labelledby="admin-book-overview-title">
-              <button
-                type="button"
-                class="btn btn--ghost admin-expandable__toggle"
-                data-expandable-toggle
-                aria-expanded="false"
-                aria-controls="admin-book-overview-content"
-                id="admin-book-overview-title"
-              >
-                Boekenoverzicht uitklappen
-              </button>
-              <div id="admin-book-overview-content" class="admin-expandable__content" hidden>
-                <div id="admin-book-list" class="admin-book-list"></div>
-              </div>
+            <section class="admin-card__section" aria-labelledby="admin-book-overview-title">
+              <h4 id="admin-book-overview-title">Boekenoverzicht</h4>
+              <div id="admin-book-list" class="admin-book-list"></div>
             </section>
             </div>
           </section>

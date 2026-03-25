@@ -606,6 +606,36 @@ select[multiple] {
   color: var(--text);
 }
 
+.staff-meta--header {
+  margin: 0 0 1rem;
+  justify-content: flex-end;
+}
+
+.teacher-catalog-card {
+  padding: clamp(1.25rem, 2vw, 1.75rem);
+  border-radius: var(--radius);
+  border: 1px solid rgba(var(--brand-dark-rgb), 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 28px rgba(var(--brand-dark-rgb), 0.12);
+}
+
+.teacher-catalog-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.teacher-catalog-card__header h3,
+.teacher-catalog-card__header .hint {
+  margin: 0;
+}
+
+.teacher-catalog-card__content[hidden] {
+  display: none;
+}
+
 .btn--ghost {
   background: transparent;
   color: var(--accent);
@@ -709,6 +739,7 @@ select[multiple] {
   align-content: start;
 }
 
+body[data-page='staff'] .teacher-catalog-card,
 body[data-page='staff'] .teacher-actions {
   background: linear-gradient(
     135deg,
@@ -2756,5 +2787,16 @@ body.book-detail-open {
   .book-detail__media {
     width: 100%;
     min-height: 220px;
+  }
+}
+
+@media (max-width: 680px) {
+  .staff-meta--header {
+    justify-content: flex-start;
+  }
+
+  .teacher-catalog-card__header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
