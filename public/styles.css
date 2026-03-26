@@ -258,10 +258,10 @@ body {
 }
 
 .hero--staff .hero__actions {
-  grid-column: 1 / 2;
-  width: auto;
+  grid-column: 1 / -1;
+  width: 100%;
   margin-top: 1.5rem;
-  justify-content: flex-start;
+  justify-content: space-between;
 }
 
 .hero--staff .hero__illustration {
@@ -653,6 +653,7 @@ select[multiple] {
 .staff-meta--hero {
   color: rgba(255, 255, 255, 0.92);
   justify-self: end;
+  margin-left: auto;
   justify-content: flex-end;
   align-items: center;
   text-align: right;
@@ -2858,9 +2859,5 @@ body.book-detail-open {
 @media (max-width: 960px) {
   .hero--staff .hero__actions {
     gap: 0.75rem 1rem;
-  }
-
-  .staff-meta--hero {
-    margin-left: auto;
   }
 }
