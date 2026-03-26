@@ -73,6 +73,9 @@ function loadServerModule({ fetchImpl = global.fetch, env = {} } = {}) {
         },
       };
     }
+    if (request.startsWith('./')) {
+      return require(path.join(path.dirname(serverPath), request));
+    }
     return require(request);
   };
 

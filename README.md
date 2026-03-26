@@ -63,6 +63,20 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 
 Loopt een deploy vast op Sliplane? Maak dan een nieuwe commit (bijvoorbeeld met de boodschap _"Trigger redeploy"_) zodat er een frisse container wordt uitgerold. Controleer daarna in de Sliplane-logs of de stappen `npm install`, `npm run build` en `npm start` zonder fouten doorlopen. Wanneer de server blijft hangen, herstart je de Sliplane-service vanuit het dashboard of voer lokaal `npm run build && npm start` uit om eventuele buildfouten op te sporen.
 
+## Legacy Open Library-cover URL's opschonen
+
+Boekenbaai normaliseert legacy Open Library `archive.org`-cover URL's tijdens lezen en schrijven automatisch naar `covers.openlibrary.org`. Wil je bestaande records permanent herschrijven in je databestand, gebruik dan:
+
+```bash
+node scripts/cleanup-legacy-openlibrary-covers.js --file=/pad/naar/db.json
+```
+
+Dit is standaard een **dry-run** en schrijft niets weg. Pas wijzigingen daadwerkelijk toe met:
+
+```bash
+node scripts/cleanup-legacy-openlibrary-covers.js --apply --file=/pad/naar/db.json
+```
+
 ## Fallback: hosten op GitHub Pages
 
 Wil je de statische site toch nog als back-up op GitHub Pages houden? Bouw dan met:

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "build": "vite build",
-    "test": "node tests/history.test.js && node tests/barcode-groups.test.js && node tests/grouped-filters.test.js && node tests/import.test.js && node tests/isbn-metadata-parsers.test.js && node tests/theme-derivation.test.js && node tests/manual-themes-persistence.test.js"
+    "test": "node tests/history.test.js && node tests/barcode-groups.test.js && node tests/grouped-filters.test.js && node tests/import.test.js && node tests/isbn-metadata-parsers.test.js && node tests/theme-derivation.test.js && node tests/manual-themes-persistence.test.js && node tests/cover-url-pipeline.test.js"
   },
   "dependencies": {
     "xlsx": "^0.18.5"

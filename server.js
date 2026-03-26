@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const { rewriteLegacyOpenLibraryArchiveCoverUrl } = require('./lib/cover-url');
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -921,29 +922,11 @@ function normalizeCoverUrl(value) {
 }
 
 function rewriteArchiveOpenLibraryCoverUrl(url) {
-  if (url === undefined || url === null) {
-    return url;
-  }
-  const text = String(url).trim();
-  if (!text) {
-    return text;
-  }
-  const match = text.match(
-    /^(?:https?:\/\/)?(?:www\.)?archive\.org\/download\/[^?#]+\/(\d+)-([sml])\.jpg(?:\?[^#]*)?(?:#.*)?$/i,
-  );
-  if (!match) {
-    return text;
-  }
-  const numericPart = match[1];
-  const size = String(match[2] || '').toUpperCase();
-  const coverId = Number.parseInt(numericPart, 10);
-  if (!Number.isInteger(coverId) || coverId <= 0) {
-    return text;
-  }
-  if (size !== 'S' && size !== 'M' && size !== 'L') {
-    return text;
-  }
-  return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg?default=false`;
+  return rewriteLegacyOpenLibraryArchiveCoverUrl(url);
+}
+
+function resolveEffectiveCoverUrl(value) {
+  return normalizeCoverUrl(rewriteArchiveOpenLibraryCoverUrl(value || ''));
 }
 
 function ensureBookShape(book) {
@@ -1007,10 +990,19 @@ function getBookGroupKey(book) {
 function pickRepresentativeBook(current, candidate) {
   if (!candidate) return current;
   if (!current) return candidate;
-  const currentScore = (current.coverUrl ? 2 : 0) + (current.description ? 1 : 0);
-  const candidateScore = (candidate.coverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
+  const currentCoverUrl = resolveEffectiveCoverUrl(current.coverUrl);
+  const candidateCoverUrl = resolveEffectiveCoverUrl(candidate.coverUrl);
+  const currentScore = (currentCoverUrl ? 2 : 0) + (current.description ? 1 : 0);
+  const candidateScore = (candidateCoverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
   if (candidateScore > currentScore) {
     return candidate;
+  }
+  if (candidateScore === currentScore && candidateCoverUrl && currentCoverUrl) {
+    const currentNeedsRewrite = currentCoverUrl !== normalizeCoverUrl(current.coverUrl || '');
+    const candidateNeedsRewrite = candidateCoverUrl !== normalizeCoverUrl(candidate.coverUrl || '');
+    if (currentNeedsRewrite && !candidateNeedsRewrite) {
+      return candidate;
+    }
   }
   return current;
 }
@@ -1087,7 +1079,7 @@ function groupBooksByTitleAuthor(books = []) {
       author: value.author || representative.author || '',
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
-      coverUrl: representative.coverUrl || '',
+      coverUrl: resolveEffectiveCoverUrl(representative.coverUrl),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
       themes,
@@ -2169,7 +2161,7 @@ function normalizeIsbnMetadata(metadata) {
   const publishedYear = normalizePublishedYear(metadata.publishedYear ?? metadata.publishedAt);
   const pageCount = normalizePageCountValue(metadata.pageCount);
   const language = normalizeLanguageCode(metadata.language);
-  const coverUrl = normalizeCoverUrl(rewriteArchiveOpenLibraryCoverUrl(metadata.coverUrl));
+  const coverUrl = resolveEffectiveCoverUrl(metadata.coverUrl);
   const tags = parseMultiValueField(metadata.tags);
   const fields = {
     title: typeof metadata.title === 'string' ? metadata.title.trim() : '',
@@ -2351,6 +2343,9 @@ async function lookupIsbnMetadata(isbn) {
       }
     }
 
+    if (result && typeof result === 'object') {
+      result.coverUrl = resolveEffectiveCoverUrl(result.coverUrl);
+    }
     isbnMetadataCache.set(cacheKey, {
       value: result,
       expiresAt: Date.now() + ISBN_CACHE_TTL_MS,
@@ -3182,7 +3177,7 @@ async function handleApi(req, res, requestUrl) {
       const publishedYear = normalizePublishedYear(body.publishedYear ?? body.year ?? body.publishedAt);
       const pageCount = normalizePageCountValue(body.pageCount ?? body.pages);
       const language = normalizeLanguageCode(body.language);
-      const coverUrl = normalizeCoverUrl(body.coverUrl);
+      const coverUrl = resolveEffectiveCoverUrl(body.coverUrl);
       const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
       const baseBook = {
         title: body.title,
@@ -3266,7 +3261,7 @@ async function handleApi(req, res, requestUrl) {
         ? normalizePageCountValue(body.pageCount ?? body.pages)
         : book.pageCount;
       const nextLanguage = hasLanguage ? normalizeLanguageCode(body.language) : book.language;
-      const nextCoverUrl = hasCoverUrl ? normalizeCoverUrl(body.coverUrl) : book.coverUrl;
+      const nextCoverUrl = hasCoverUrl ? resolveEffectiveCoverUrl(body.coverUrl) : resolveEffectiveCoverUrl(book.coverUrl);
       const addCopies = parseQuantityInput(body.addCopies, { allowZero: true, defaultValue: 0 });
       const removeCopies = parseQuantityInput(body.removeCopies, { allowZero: true, defaultValue: 0 });
       const quantityChangeInput = Number(body.quantityChange);
@@ -3487,7 +3482,7 @@ async function handleApi(req, res, requestUrl) {
           normalized.image ||
           normalized['image url'] ||
           normalized['afbeelding url'];
-        const coverUrl = rewriteArchiveOpenLibraryCoverUrl(normalizeCoverUrl(coverUrlSource));
+        const coverUrl = resolveEffectiveCoverUrl(coverUrlSource);
         const curatedThemeColumns = ["thema's", 'themas', 'thema'];
         const rawTagColumns = ['tags', 'trefwoorden', 'keywords', 'onderwerpen', 'onderwerp(en)'];
         const hasCuratedThemeColumns = hasImportColumn(normalized, curatedThemeColumns);
