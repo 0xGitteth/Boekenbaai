@@ -2329,6 +2329,29 @@ function createIsbnLookupDebugPayload(sanitizedIsbn) {
   };
 }
 
+function formatIsbnLookupResponse(lookupEntry, options = {}) {
+  const includeDebug = Boolean(options && options.includeDebug);
+  const cacheHit = Boolean(options && options.cacheHit);
+  const fallbackIsbn = options && typeof options.sanitizedIsbn === 'string' ? options.sanitizedIsbn : '';
+  if (!lookupEntry || typeof lookupEntry !== 'object') {
+    return lookupEntry;
+  }
+  if (!includeDebug) {
+    return lookupEntry.value;
+  }
+  if (!DEBUG_ISBN_LOOKUP) {
+    return lookupEntry.value;
+  }
+  const baseDebug = lookupEntry.debug || createIsbnLookupDebugPayload(fallbackIsbn);
+  return {
+    ...lookupEntry.value,
+    debug: {
+      ...baseDebug,
+      cacheHit,
+    },
+  };
+}
+
 async function lookupIsbnMetadata(isbn, options = {}) {
   const sanitized = sanitizeIsbn(isbn);
   const cacheKey = getIsbnCacheKey(isbn);
@@ -2337,10 +2360,7 @@ async function lookupIsbnMetadata(isbn, options = {}) {
   const cached = isbnMetadataCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
     logIsbnLookupDebug('cache_hit', { isbn: sanitized, cacheKey });
-    if (includeDebug) {
-      return { ...cached.value, debug: { cacheHit: true, ...createIsbnLookupDebugPayload(sanitized) } };
-    }
-    return cached.value;
+    return formatIsbnLookupResponse(cached, { includeDebug, cacheHit: true, sanitizedIsbn: sanitized });
   }
   if (cached) {
     isbnMetadataCache.delete(cacheKey);
@@ -2348,7 +2368,8 @@ async function lookupIsbnMetadata(isbn, options = {}) {
 
   const inflight = isbnLookupInflight.get(cacheKey);
   if (inflight) {
-    return inflight;
+    const inflightEntry = await inflight;
+    return formatIsbnLookupResponse(inflightEntry, { includeDebug, cacheHit: false, sanitizedIsbn: sanitized });
   }
 
   const lookupPromise = (async () => {
@@ -2562,19 +2583,19 @@ async function lookupIsbnMetadata(isbn, options = {}) {
       }
     }
     logIsbnLookupDebug('lookup_result', createMetadataFieldSummary(result));
-    isbnMetadataCache.set(cacheKey, {
+    const lookupEntry = {
       value: result,
+      debug: debugPayload,
       expiresAt: Date.now() + ISBN_CACHE_TTL_MS,
-    });
-    if (includeDebug && debugPayload) {
-      return { ...result, debug: debugPayload };
-    }
-    return result;
+    };
+    isbnMetadataCache.set(cacheKey, lookupEntry);
+    return lookupEntry;
   })();
 
   isbnLookupInflight.set(cacheKey, lookupPromise);
   try {
-    return await lookupPromise;
+    const lookupEntry = await lookupPromise;
+    return formatIsbnLookupResponse(lookupEntry, { includeDebug, cacheHit: false, sanitizedIsbn: sanitized });
   } finally {
     isbnLookupInflight.delete(cacheKey);
   }

@@ -35,7 +35,7 @@ function loadServerModule({ fetchImpl = global.fetch, env = {} } = {}) {
     exports: {},
     __dirname: path.dirname(serverPath),
     __filename: serverPath,
-    console: { log() {}, warn() {}, error() {} },
+    console: { log() {}, info() {}, warn() {}, error() {} },
     process: {
       ...process,
       env: {
@@ -319,6 +319,97 @@ async function runTests() {
   const openOnlyResult = await lookupOpenOnly('9781234567890');
   assert.strictEqual(openOnlyResult.source, 'openlibrary');
   assert.strictEqual(openOnlyResult.coverUrl, 'https://covers.openlibrary.org/b/id/12345-L.jpg');
+
+  {
+    let releaseFetch;
+    let lookupCalls = 0;
+    const delayedFetch = async () => {
+      lookupCalls += 1;
+      await new Promise((resolve) => {
+        releaseFetch = resolve;
+      });
+      return createMockResponse({
+        title: 'Inflight Titel',
+        authors: [{ name: 'Inflight Auteur' }],
+      });
+    };
+    const { lookupIsbnMetadata: inflightLookup } = loadServerModule({
+      fetchImpl: delayedFetch,
+      env: { BOEKENBAAI_DEBUG_ISBN_LOOKUP: 'true' },
+    });
+    const firstLookup = inflightLookup('9789999999991');
+    const secondLookup = inflightLookup('9789999999991', { includeDebug: true });
+    while (typeof releaseFetch !== 'function') {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    releaseFetch();
+    const [nonDebugResult, debugResult] = await Promise.all([firstLookup, secondLookup]);
+    assert.strictEqual(lookupCalls, 1, 'Concurrent non-debug and debug lookup should share one inflight external request');
+    assert.strictEqual(nonDebugResult.debug, undefined, 'Non-debug caller should not receive debug payload');
+    assert.ok(debugResult.debug, 'Debug caller should receive debug payload');
+  }
+
+  {
+    let releaseFetch;
+    let lookupCalls = 0;
+    const delayedFetch = async () => {
+      lookupCalls += 1;
+      await new Promise((resolve) => {
+        releaseFetch = resolve;
+      });
+      return createMockResponse({
+        title: 'Inflight Debug Eerst',
+        authors: [{ name: 'Auteur' }],
+      });
+    };
+    const { lookupIsbnMetadata: inflightLookup } = loadServerModule({
+      fetchImpl: delayedFetch,
+      env: { BOEKENBAAI_DEBUG_ISBN_LOOKUP: 'true' },
+    });
+    const debugLookup = inflightLookup('9789999999992', { includeDebug: true });
+    const nonDebugLookup = inflightLookup('9789999999992');
+    while (typeof releaseFetch !== 'function') {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    releaseFetch();
+    const [debugResult, nonDebugResult] = await Promise.all([debugLookup, nonDebugLookup]);
+    assert.strictEqual(lookupCalls, 1, 'Concurrent debug and non-debug lookup should share one inflight external request');
+    assert.ok(debugResult.debug, 'Debug caller should receive debug payload');
+    assert.strictEqual(nonDebugResult.debug, undefined, 'Non-debug caller should not receive debug payload');
+  }
+
+  {
+    let lookupCalls = 0;
+    const cacheFetch = async () => {
+      lookupCalls += 1;
+      return createMockResponse({
+        title: 'Cache Titel',
+        authors: [{ name: 'Cache Auteur' }],
+      });
+    };
+    const { lookupIsbnMetadata: cacheLookup } = loadServerModule({
+      fetchImpl: cacheFetch,
+      env: { BOEKENBAAI_DEBUG_ISBN_LOOKUP: 'true' },
+    });
+    const firstResult = await cacheLookup('9789999999993');
+    const cachedDebugResult = await cacheLookup('9789999999993', { includeDebug: true });
+    assert.strictEqual(lookupCalls, 1, 'Cache hit should not trigger a second external request');
+    assert.strictEqual(firstResult.debug, undefined, 'Non-debug caller should not receive debug payload');
+    assert.ok(cachedDebugResult.debug, 'Debug caller should receive debug payload on cache hit');
+    assert.strictEqual(cachedDebugResult.debug.cacheHit, true, 'Cache-hit debug payload should indicate cache hit');
+  }
+
+  {
+    const { lookupIsbnMetadata: lookupWithoutDebugEnabled } = loadServerModule({
+      fetchImpl: async () => createMockResponse({
+        title: 'Debug Uit',
+        authors: [{ name: 'Auteur' }],
+      }),
+      env: { BOEKENBAAI_DEBUG_ISBN_LOOKUP: 'false' },
+    });
+    const result = await lookupWithoutDebugEnabled('9789999999994', { includeDebug: true });
+    assert.strictEqual(result.debug, undefined, 'Debug output should stay disabled when BOEKENBAAI_DEBUG_ISBN_LOOKUP=false');
+  }
 
   console.log('ISBN metadata parser tests passed.');
 }
