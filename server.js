@@ -38,6 +38,8 @@ const PUBLIC_API_BASE = process.env.BOEKENBAAI_PUBLIC_API_BASE || '';
 const ISBN_API_BASE = process.env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api';
 const ENABLE_ISBNBARCODE_LOOKUP =
   String(process.env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
+const DEBUG_ISBN_LOOKUP =
+  String(process.env.BOEKENBAAI_DEBUG_ISBN_LOOKUP || '').toLowerCase() === 'true';
 const IMPORT_ISBN_ENRICHMENT_ENABLED =
   String(process.env.BOEKENBAAI_IMPORT_ENRICH_ISBN || '').toLowerCase() === 'true';
 const DEFAULT_ISBN_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1575,15 +1577,80 @@ function pickGoogleBooksCover(imageLinks) {
   return '';
 }
 
-function hasExactIsbnMatch(item, isbn) {
+function createMetadataFieldSummary(metadata) {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+  return {
+    title: typeof metadata.title === 'string' ? metadata.title : '',
+    author: typeof metadata.author === 'string' ? metadata.author : '',
+    publisher: typeof metadata.publisher === 'string' ? metadata.publisher : '',
+    hasDescription: Boolean(metadata.description),
+    hasCoverUrl: Boolean(metadata.coverUrl),
+    source: metadata.source || null,
+    found: Boolean(metadata.found),
+  };
+}
+
+function logIsbnLookupDebug(stage, details) {
+  if (!DEBUG_ISBN_LOOKUP) {
+    return;
+  }
+  if (details === undefined) {
+    console.info(`[ISBN_LOOKUP_DEBUG] ${stage}`);
+    return;
+  }
+  console.info(`[ISBN_LOOKUP_DEBUG] ${stage}`, details);
+}
+
+function summarizeIndustryIdentifiers(item) {
+  const identifiers = Array.isArray(item?.volumeInfo?.industryIdentifiers)
+    ? item.volumeInfo.industryIdentifiers
+    : [];
+  return identifiers.map((identifier) => ({
+    type: identifier?.type || '',
+    identifier: identifier?.identifier || '',
+    normalized: normalizeIsbn(identifier?.identifier),
+  }));
+}
+
+function hasExactIsbnMatch(item, isbn, debugInfo = null) {
   const normalizedIsbn = normalizeIsbn(isbn);
+  if (debugInfo && typeof debugInfo === 'object') {
+    debugInfo.normalizedTarget = normalizedIsbn;
+    debugInfo.identifiers = summarizeIndustryIdentifiers(item);
+  }
   if (!normalizedIsbn || !item || typeof item !== 'object') {
+    if (debugInfo && typeof debugInfo === 'object') {
+      debugInfo.match = false;
+      debugInfo.reason = !normalizedIsbn ? 'invalid_target_isbn' : 'invalid_item';
+    }
     return false;
   }
   const identifiers = Array.isArray(item.volumeInfo?.industryIdentifiers)
     ? item.volumeInfo.industryIdentifiers
     : [];
-  return identifiers.some((identifier) => normalizeIsbn(identifier?.identifier) === normalizedIsbn);
+  if (!identifiers.length) {
+    if (debugInfo && typeof debugInfo === 'object') {
+      debugInfo.match = false;
+      debugInfo.reason = 'no_industry_identifiers';
+    }
+    return false;
+  }
+  const matchedIdentifier = identifiers.find(
+    (identifier) => normalizeIsbn(identifier?.identifier) === normalizedIsbn
+  );
+  if (debugInfo && typeof debugInfo === 'object') {
+    debugInfo.match = Boolean(matchedIdentifier);
+    debugInfo.reason = matchedIdentifier ? 'exact_identifier_match' : 'identifier_mismatch';
+    debugInfo.matchedIdentifier = matchedIdentifier
+      ? {
+        type: matchedIdentifier.type || '',
+        identifier: matchedIdentifier.identifier || '',
+      }
+      : null;
+  }
+  return Boolean(matchedIdentifier);
 }
 
 function normalizeBarcode(value) {
@@ -1952,12 +2019,44 @@ function appendUniqueLookupTags(target, values, { splitComposite = false } = {})
   return target;
 }
 
-function parseGoogleBooksData(data, fallbackBarcode) {
+function parseGoogleBooksData(data, fallbackBarcode, debugTarget = null) {
   const items = Array.isArray(data?.items) ? data.items : [];
+  if (debugTarget && typeof debugTarget === 'object') {
+    debugTarget.itemCount = items.length;
+    debugTarget.exactMatchFound = false;
+    debugTarget.candidates = [];
+    debugTarget.extracted = null;
+  }
   if (!items.length) {
     return null;
   }
-  const matchedItem = items.find((item) => hasExactIsbnMatch(item, fallbackBarcode));
+  let matchedItem = null;
+  for (const item of items) {
+    const matchDebug = {};
+    const exactMatch = hasExactIsbnMatch(item, fallbackBarcode, matchDebug);
+    const volumeInfo = item?.volumeInfo || {};
+    const candidate = {
+      id: item?.id || '',
+      title: typeof volumeInfo.title === 'string' ? volumeInfo.title : '',
+      identifiers: matchDebug.identifiers || [],
+      hasDescription: Boolean(volumeInfo.description),
+      hasPublisher: Boolean(volumeInfo.publisher),
+      hasImageLinks: Boolean(volumeInfo.imageLinks && typeof volumeInfo.imageLinks === 'object'),
+      exactMatch,
+      rejectReason: matchDebug.reason || null,
+      chosen: false,
+    };
+    if (exactMatch && !matchedItem) {
+      matchedItem = item;
+      candidate.chosen = true;
+      if (debugTarget && typeof debugTarget === 'object') {
+        debugTarget.exactMatchFound = true;
+      }
+    }
+    if (debugTarget && typeof debugTarget === 'object') {
+      debugTarget.candidates.push(candidate);
+    }
+  }
   if (!matchedItem) {
     return null;
   }
@@ -2003,6 +2102,9 @@ function parseGoogleBooksData(data, fallbackBarcode) {
   metadata.tags = Array.from(new Set(tags));
   if (!title && !authors.length && !publisher && !description && !coverUrl && !metadata.tags.length) {
     return null;
+  }
+  if (debugTarget && typeof debugTarget === 'object') {
+    debugTarget.extracted = createMetadataFieldSummary(metadata);
   }
   return metadata;
 }
@@ -2191,12 +2293,53 @@ function hasCompleteNormalizedIsbnMetadata(metadata) {
   return Boolean(fields.title && fields.author && fields.coverUrl);
 }
 
-async function lookupIsbnMetadata(isbn) {
+function createIsbnLookupDebugPayload(sanitizedIsbn) {
+  return {
+    isbn: sanitizedIsbn,
+    sourcesConfigured: [],
+    sourcesTried: [],
+    googleBooks: {
+      enabled: Boolean(process.env.GOOGLE_BOOKS_API_KEY),
+      requestUrl: null,
+      responseStatus: null,
+      responseOk: null,
+      itemCount: 0,
+      exactMatchFound: false,
+      candidates: [],
+      extracted: null,
+      merged: false,
+    },
+    openLibrary: {
+      enabled: true,
+      requestUrl: null,
+      responseStatus: null,
+      responseOk: null,
+      extracted: null,
+      merged: false,
+    },
+    isbnbarcode: {
+      enabled: ENABLE_ISBNBARCODE_LOOKUP,
+      requestUrl: null,
+      responseStatus: null,
+      responseOk: null,
+      extracted: null,
+      merged: false,
+    },
+    mergedResult: null,
+  };
+}
+
+async function lookupIsbnMetadata(isbn, options = {}) {
   const sanitized = sanitizeIsbn(isbn);
   const cacheKey = getIsbnCacheKey(isbn);
+  const includeDebug = Boolean(options && options.includeDebug && DEBUG_ISBN_LOOKUP);
   const now = Date.now();
   const cached = isbnMetadataCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
+    logIsbnLookupDebug('cache_hit', { isbn: sanitized, cacheKey });
+    if (includeDebug) {
+      return { ...cached.value, debug: { cacheHit: true, ...createIsbnLookupDebugPayload(sanitized) } };
+    }
     return cached.value;
   }
   if (cached) {
@@ -2210,6 +2353,13 @@ async function lookupIsbnMetadata(isbn) {
 
   const lookupPromise = (async () => {
     let result;
+    const debugPayload = DEBUG_ISBN_LOOKUP ? createIsbnLookupDebugPayload(sanitized) : null;
+    logIsbnLookupDebug('lookup_start', {
+      isbn: sanitized,
+      googleBooksEnabled: Boolean(process.env.GOOGLE_BOOKS_API_KEY),
+      openLibraryEnabled: true,
+      isbnBarcodeEnabled: ENABLE_ISBNBARCODE_LOOKUP,
+    });
 
     if (!sanitized) {
       result = {
@@ -2266,7 +2416,7 @@ async function lookupIsbnMetadata(isbn) {
             ...defaultHeaders,
             'x-goog-api-key': process.env.GOOGLE_BOOKS_API_KEY,
           },
-          parser: (data) => parseGoogleBooksData(data, sanitized),
+          parser: (data) => parseGoogleBooksData(data, sanitized, debugPayload?.googleBooks),
         });
       }
 
@@ -2285,10 +2435,40 @@ async function lookupIsbnMetadata(isbn) {
           parser: (data) => parseIsbnBarcodeData(data, sanitized),
         });
       }
+      if (debugPayload) {
+        debugPayload.sourcesConfigured = sources.map((source) => source.name);
+      }
+      logIsbnLookupDebug('sources_configured', debugPayload?.sourcesConfigured || sources.map((source) => source.name));
 
       for (const [sourceIndex, source] of sources.entries()) {
+        if (debugPayload) {
+          debugPayload.sourcesTried.push(source.name);
+          if (source.name === 'googlebooks') debugPayload.googleBooks.requestUrl = source.url;
+          if (source.name === 'openlibrary') debugPayload.openLibrary.requestUrl = source.url;
+          if (source.name === 'isbnbarcode.org') debugPayload.isbnbarcode.requestUrl = source.url;
+        }
         try {
+          logIsbnLookupDebug('source_request', { source: source.name, url: source.url });
           const response = await globalFetch(source.url, { headers: source.headers || defaultHeaders });
+          if (debugPayload) {
+            if (source.name === 'googlebooks') {
+              debugPayload.googleBooks.responseStatus = response.status;
+              debugPayload.googleBooks.responseOk = response.ok;
+            }
+            if (source.name === 'openlibrary') {
+              debugPayload.openLibrary.responseStatus = response.status;
+              debugPayload.openLibrary.responseOk = response.ok;
+            }
+            if (source.name === 'isbnbarcode.org') {
+              debugPayload.isbnbarcode.responseStatus = response.status;
+              debugPayload.isbnbarcode.responseOk = response.ok;
+            }
+          }
+          logIsbnLookupDebug('source_response', {
+            source: source.name,
+            ok: response.ok,
+            status: response.status,
+          });
           if (!response.ok) {
             if (response.status === 404) {
               continue;
@@ -2308,8 +2488,36 @@ async function lookupIsbnMetadata(isbn) {
             }
           }
           const metadata = source.parser(payload);
+          if (source.name === 'googlebooks') {
+            logIsbnLookupDebug('googlebooks_parse', {
+              itemCount: debugPayload?.googleBooks?.itemCount ?? 0,
+              exactMatchFound: debugPayload?.googleBooks?.exactMatchFound ?? false,
+              candidates: debugPayload?.googleBooks?.candidates ?? [],
+            });
+          }
           if (metadata) {
             result = result ? mergeLookupMetadata(result, metadata) : metadata;
+            if (debugPayload) {
+              const summary = createMetadataFieldSummary(metadata);
+              if (source.name === 'googlebooks') {
+                debugPayload.googleBooks.extracted = summary;
+                debugPayload.googleBooks.merged = true;
+              }
+              if (source.name === 'openlibrary') {
+                debugPayload.openLibrary.extracted = summary;
+                debugPayload.openLibrary.merged = true;
+              }
+              if (source.name === 'isbnbarcode.org') {
+                debugPayload.isbnbarcode.extracted = summary;
+                debugPayload.isbnbarcode.merged = true;
+              }
+              debugPayload.mergedResult = createMetadataFieldSummary(result);
+            }
+            logIsbnLookupDebug('source_merged', {
+              source: source.name,
+              extracted: createMetadataFieldSummary(metadata),
+              merged: createMetadataFieldSummary(result),
+            });
             const normalizedResult = normalizeIsbnMetadata(result);
             const hasRemainingOpenLibrarySource = sources.slice(sourceIndex + 1).some((candidate) => candidate.name === 'openlibrary');
             if (hasCompleteNormalizedIsbnMetadata(result)
@@ -2320,6 +2528,10 @@ async function lookupIsbnMetadata(isbn) {
           }
         } catch (error) {
           console.warn(`Kon geen gegevens ophalen via ${source.name}:`, error.message || error);
+          logIsbnLookupDebug('source_error', {
+            source: source.name,
+            error: error?.message || String(error),
+          });
         }
       }
 
@@ -2345,11 +2557,18 @@ async function lookupIsbnMetadata(isbn) {
 
     if (result && typeof result === 'object') {
       result.coverUrl = resolveEffectiveCoverUrl(result.coverUrl);
+      if (debugPayload) {
+        debugPayload.mergedResult = createMetadataFieldSummary(result);
+      }
     }
+    logIsbnLookupDebug('lookup_result', createMetadataFieldSummary(result));
     isbnMetadataCache.set(cacheKey, {
       value: result,
       expiresAt: Date.now() + ISBN_CACHE_TTL_MS,
     });
+    if (includeDebug && debugPayload) {
+      return { ...result, debug: debugPayload };
+    }
     return result;
   })();
 
@@ -3911,7 +4130,7 @@ async function handleApi(req, res, requestUrl) {
       }
       try {
         const lookup = resolveLookupIsbnMetadata();
-        const metadata = await lookup(isbn);
+        const metadata = await lookup(isbn, { includeDebug: true });
         return sendJson(res, 200, metadata);
       } catch (error) {
         console.error('ISBN-lookup mislukt:', error);
