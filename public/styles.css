@@ -233,7 +233,15 @@ body {
     rgba(207, 231, 255, 0.9)
   );
   grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 0.9rem;
   align-items: start;
+}
+
+.hero--student .hero__actions {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 0.5rem;
+  justify-content: space-between;
 }
 
 .hero--student .hero__illustration {
@@ -244,7 +252,12 @@ body {
 }
 
 .hero--student .hero__logo {
+  max-height: 180px;
   filter: none;
+}
+
+.hero--student .hero__actions-spacer {
+  flex: 1;
 }
 
 .hero--staff {
