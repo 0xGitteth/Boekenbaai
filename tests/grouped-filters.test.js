@@ -18,11 +18,12 @@ const factory = new Function(
     "function normalizeThemeKey(theme) { return typeof theme === 'string' ? theme.trim().toLowerCase() : ''; }",
     extractBetween('function resolveBookLanguages(', 'function filterBooks('),
     extractBetween('function filterBooks(', 'function sortBooks('),
-    'return { resolveBookLanguages, resolveBookPageCounts, matchesCopyFilters, filterBooks };',
+    extractBetween('function sortBooks(', 'function renderBookGrid('),
+    'return { resolveBookLanguages, resolveBookPageCounts, matchesCopyFilters, filterBooks, sortBooks };',
   ].join('\n\n')
 );
 
-const { resolveBookLanguages, resolveBookPageCounts, matchesCopyFilters, filterBooks } = factory();
+const { resolveBookLanguages, resolveBookPageCounts, matchesCopyFilters, filterBooks, sortBooks } = factory();
 
 const groupedBook = {
   id: 'groep-1',
@@ -70,6 +71,20 @@ assert.strictEqual(
   filterBooks([{ ...groupedBook, themes: [], tags: ['Avontuur'] }], { selectedThemes: new Set(['avontuur']) }).length,
   0,
   'Ruwe tags mogen het zichtbare themafilter niet meer voeden'
+);
+
+const sortedByAuthorLastName = sortBooks(
+  [
+    { id: '3', title: 'Boek C', author: 'Anna van Buren', status: 'available' },
+    { id: '1', title: 'Boek A', author: 'Jan de Vries', status: 'available' },
+    { id: '2', title: 'Boek B', author: 'Piet Jansen', status: 'available' },
+  ],
+  'author'
+);
+assert.deepStrictEqual(
+  sortedByAuthorLastName.map((book) => book.id),
+  ['3', '2', '1'],
+  'Auteur-sortering moet op achternaam plaatsvinden'
 );
 
 console.log('Grouped filter tests passed');
