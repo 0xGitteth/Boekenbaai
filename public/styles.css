@@ -254,13 +254,14 @@ body {
     rgba(104, 169, 228, 0.92)
   );
   grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 0.9rem;
   align-items: start;
 }
 
 .hero--staff .hero__actions {
   grid-column: 1 / -1;
   width: 100%;
-  margin-top: 1.5rem;
+  margin-top: 0.5rem;
   justify-content: space-between;
 }
 
