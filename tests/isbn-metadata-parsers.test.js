@@ -137,6 +137,7 @@ async function runTests() {
   const openLibraryMetadata = parseOpenLibraryData({
     title: 'Onderwerpenboek',
     authors: [{ name: 'Tester' }],
+    covers: [9876543],
     subjects: [
       { name: 'Friendship' },
       '  Social life and customs ',
@@ -145,10 +146,18 @@ async function runTests() {
   }, '9780000000001');
 
   assert.ok(openLibraryMetadata, 'Expected Open Library metadata');
+  assert.strictEqual(
+    openLibraryMetadata.coverUrl,
+    'https://covers.openlibrary.org/b/id/9876543-L.jpg',
+  );
   assert.deepStrictEqual(Array.from(openLibraryMetadata.tags), ['friendship', 'social life and customs']);
   assert.deepStrictEqual(
     Array.from(normalizeIsbnMetadata(openLibraryMetadata).fields.tags),
     ['friendship', 'social life and customs'],
+  );
+  assert.strictEqual(
+    normalizeIsbnMetadata(openLibraryMetadata).fields.coverUrl,
+    'https://covers.openlibrary.org/b/id/9876543-L.jpg',
   );
 
   const rangedGoogleMetadata = parseGoogleBooksData({
@@ -267,6 +276,24 @@ async function runTests() {
   assert.strictEqual(lookupWithoutTagResult.author, 'Google Auteur');
   assert.strictEqual(lookupWithoutTagResult.coverUrl, 'https://books.google.com/google-cover.jpg');
   assert.deepStrictEqual(Array.from(lookupWithoutTagResult.tags), ['social themes']);
+
+  const openLibraryOnlyFetch = async (url) => {
+    if (url.includes(openLibraryUrlPart)) {
+      return createMockResponse({
+        title: 'Open Only Titel',
+        authors: [{ name: 'Open Only Auteur' }],
+        covers: ['12345'],
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  const { lookupIsbnMetadata: lookupOpenOnly } = loadServerModule({
+    fetchImpl: openLibraryOnlyFetch,
+    env: {},
+  });
+  const openOnlyResult = await lookupOpenOnly('9781234567890');
+  assert.strictEqual(openOnlyResult.source, 'openlibrary');
+  assert.strictEqual(openOnlyResult.coverUrl, 'https://covers.openlibrary.org/b/id/12345-L.jpg');
 
   console.log('ISBN metadata parser tests passed.');
 }
