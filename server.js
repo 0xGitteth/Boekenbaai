@@ -1987,6 +1987,22 @@ function parseGoogleBooksData(data, fallbackBarcode) {
   return metadata;
 }
 
+function buildOpenLibraryCoverUrlFromCoverId(coverId, size = 'L') {
+  const rawCoverId = String(coverId ?? '').trim();
+  if (!/^\d+$/.test(rawCoverId)) {
+    return '';
+  }
+  const normalizedCoverId = Number.parseInt(rawCoverId, 10);
+  if (!Number.isInteger(normalizedCoverId) || normalizedCoverId <= 0) {
+    return '';
+  }
+  const normalizedSize = typeof size === 'string' ? size.trim().toUpperCase() : 'L';
+  const validSize = normalizedSize === 'S' || normalizedSize === 'M' || normalizedSize === 'L'
+    ? normalizedSize
+    : 'L';
+  return `https://covers.openlibrary.org/b/id/${normalizedCoverId}-${validSize}.jpg`;
+}
+
 function mergeLookupMetadata(base, incoming) {
   if (!incoming || typeof incoming !== 'object') {
     return base;
@@ -2078,6 +2094,11 @@ function parseOpenLibraryData(data, fallbackBarcode) {
     })
     .filter(Boolean)
     .join(', ');
+  const coverUrl = Array.isArray(data.covers)
+    ? data.covers
+      .map((entry) => buildOpenLibraryCoverUrlFromCoverId(entry))
+      .find(Boolean) || ''
+    : '';
   const metadata = {
     barcode: sanitizeIsbn((data.isbn_13 && data.isbn_13[0]) || (data.isbn_10 && data.isbn_10[0]) || fallbackBarcode),
     title,
@@ -2087,6 +2108,7 @@ function parseOpenLibraryData(data, fallbackBarcode) {
     publisher,
     publishedAt,
     language,
+    coverUrl,
     source: 'openlibrary',
     found: true,
   };
@@ -2104,7 +2126,7 @@ function parseOpenLibraryData(data, fallbackBarcode) {
     : [];
   appendUniqueLookupTags(tags, subjects);
   metadata.tags = Array.from(new Set(tags));
-  if (!title && !author && !description && !publisher && !metadata.tags.length) {
+  if (!title && !author && !description && !publisher && !coverUrl && !metadata.tags.length) {
     return null;
   }
   return metadata;
