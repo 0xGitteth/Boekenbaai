@@ -277,10 +277,10 @@ function updateSortControlAccessibility(select, sortValue, { baseLabel = 'Sortee
   if (!select) return;
   const descriptions = {
     title: 'op titel van A tot Z',
-    author: 'op auteur van A tot Z',
+    author: 'op achternaam van de auteur (A tot Z)',
     popular: 'op populariteit (meest uitgeleend eerst)',
   };
-  const suffix = descriptions[sortValue] || descriptions.title;
+  const suffix = descriptions[sortValue] || descriptions.author;
   const label = `${baseLabel} ${suffix}`.trim();
   select.setAttribute('aria-label', label);
   select.setAttribute('title', label);
@@ -1757,6 +1757,12 @@ function sortBooks(books, sortBy) {
   const compareOptions = { sensitivity: 'base', numeric: true };
   const getTitle = (book) => (book?.title ? String(book.title) : '');
   const getAuthor = (book) => (book?.author ? String(book.author) : '');
+  const getAuthorLastName = (book) => {
+    const author = getAuthor(book).trim();
+    if (!author) return '';
+    const parts = author.split(/\s+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : author;
+  };
   const getStatusRank = (book) => {
     if (Number.isFinite(book?.availableCopies)) {
       return book.availableCopies > 0 ? 0 : 1;
@@ -1780,6 +1786,10 @@ function sortBooks(books, sortBy) {
       const availabilityDiff = compareAvailability(a, b);
       if (availabilityDiff !== 0) {
         return availabilityDiff;
+      }
+      const lastNameCompare = getAuthorLastName(a).localeCompare(getAuthorLastName(b), locale, compareOptions);
+      if (lastNameCompare !== 0) {
+        return lastNameCompare;
       }
       const authorCompare = getAuthor(a).localeCompare(getAuthor(b), locale, compareOptions);
       if (authorCompare !== 0) {
@@ -2264,7 +2274,7 @@ function initStudentPage() {
   let selectedPageLimit = 0;
   let currentPageFilterMax = Number(pageRangeInput?.max) || 1000;
   let selectedAvailability = '';
-  let sortBy = sortSelect?.value || 'title';
+  let sortBy = sortSelect?.value || 'author';
   let activityRequestToken = 0;
   let lastActivityMode = 'public';
 
@@ -2985,7 +2995,7 @@ function initStudentPage() {
   });
 
   sortSelect?.addEventListener('change', () => {
-    sortBy = sortSelect.value || 'title';
+    sortBy = sortSelect.value || 'author';
     updateSortControlAccessibility(sortSelect, sortBy, {
       baseLabel: 'Sorteer de boeken',
       gridId: 'book-grid',
@@ -3166,7 +3176,7 @@ function initStaffPage() {
   let adminStudentSearchTerm = '';
   let selectedAdminTeacherId = '';
   let barcodeLookupTimer = null;
-  const filters = { query: '', sortBy: sortSelect?.value || 'title' };
+  const filters = { query: '', sortBy: sortSelect?.value || 'author' };
   let availableThemes = collectUniqueThemes([]);
   const selectedThemeKeys = new Set();
   const adminCustomThemes = new Map();
@@ -3643,7 +3653,7 @@ function initStaffPage() {
       onlyExamList = false;
       onlyEasyReading = false;
       filters.query = '';
-      filters.sortBy = sortSelect?.value || 'title';
+      filters.sortBy = sortSelect?.value || 'author';
       updateSortControlAccessibility(sortSelect, filters.sortBy, {
         baseLabel: 'Sorteer de boeken',
         gridId: 'book-grid',
@@ -5931,7 +5941,7 @@ function initStaffPage() {
   });
 
   sortSelect?.addEventListener('change', () => {
-    filters.sortBy = sortSelect.value || 'title';
+    filters.sortBy = sortSelect.value || 'author';
     updateSortControlAccessibility(sortSelect, filters.sortBy, {
       baseLabel: 'Sorteer de boeken',
       gridId: 'book-grid',
