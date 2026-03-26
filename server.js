@@ -920,6 +920,32 @@ function normalizeCoverUrl(value) {
   return text;
 }
 
+function rewriteArchiveOpenLibraryCoverUrl(url) {
+  if (url === undefined || url === null) {
+    return url;
+  }
+  const text = String(url).trim();
+  if (!text) {
+    return text;
+  }
+  const match = text.match(
+    /^(?:https?:\/\/)?(?:www\.)?archive\.org\/download\/[^?#]+\/(\d+)-([sml])\.jpg(?:\?[^#]*)?(?:#.*)?$/i,
+  );
+  if (!match) {
+    return text;
+  }
+  const numericPart = match[1];
+  const size = String(match[2] || '').toUpperCase();
+  const coverId = Number.parseInt(numericPart, 10);
+  if (!Number.isInteger(coverId) || coverId <= 0) {
+    return text;
+  }
+  if (size !== 'S' && size !== 'M' && size !== 'L') {
+    return text;
+  }
+  return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg?default=false`;
+}
+
 function ensureBookShape(book) {
   const source = typeof book === 'object' && book ? book : {};
   const safeBook = { ...source };
@@ -2141,7 +2167,7 @@ function normalizeIsbnMetadata(metadata) {
   const publishedYear = normalizePublishedYear(metadata.publishedYear ?? metadata.publishedAt);
   const pageCount = normalizePageCountValue(metadata.pageCount);
   const language = normalizeLanguageCode(metadata.language);
-  const coverUrl = normalizeCoverUrl(metadata.coverUrl);
+  const coverUrl = normalizeCoverUrl(rewriteArchiveOpenLibraryCoverUrl(metadata.coverUrl));
   const tags = parseMultiValueField(metadata.tags);
   const fields = {
     title: typeof metadata.title === 'string' ? metadata.title.trim() : '',
@@ -3459,7 +3485,7 @@ async function handleApi(req, res, requestUrl) {
           normalized.image ||
           normalized['image url'] ||
           normalized['afbeelding url'];
-        const coverUrl = normalizeCoverUrl(coverUrlSource);
+        const coverUrl = rewriteArchiveOpenLibraryCoverUrl(normalizeCoverUrl(coverUrlSource));
         const curatedThemeColumns = ["thema's", 'themas', 'thema'];
         const rawTagColumns = ['tags', 'trefwoorden', 'keywords', 'onderwerpen', 'onderwerp(en)'];
         const hasCuratedThemeColumns = hasImportColumn(normalized, curatedThemeColumns);
