@@ -941,6 +941,31 @@ function extractMetadataCoverUrl(metadata) {
   return '';
 }
 
+function normalizeRenderedCoverUrl(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return '';
+  }
+  const match = text.match(
+    /^(?:https?:\/\/)?(?:www\.)?archive\.org\/download\/[^?#]+\/(\d+)-([sml])\.jpg(?:\?[^#]*)?(?:#.*)?$/i,
+  );
+  if (!match) {
+    return text;
+  }
+  const coverId = Number.parseInt(match[1], 10);
+  if (!Number.isInteger(coverId) || coverId <= 0) {
+    return text;
+  }
+  const size = String(match[2] || '').toUpperCase();
+  if (size !== 'S' && size !== 'M' && size !== 'L') {
+    return text;
+  }
+  return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg?default=false`;
+}
+
 function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
@@ -962,8 +987,8 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (state.content) {
     state.content.hidden = false;
   }
-  const manualCoverUrl = typeof representative.coverUrl === 'string' ? representative.coverUrl.trim() : '';
-  const metadataCoverUrl = extractMetadataCoverUrl(metadata);
+  const manualCoverUrl = normalizeRenderedCoverUrl(representative.coverUrl);
+  const metadataCoverUrl = normalizeRenderedCoverUrl(extractMetadataCoverUrl(metadata));
   const coverUrl = manualCoverUrl || metadataCoverUrl;
   const hasCover = Boolean(coverUrl);
   if (state.coverImage) {
@@ -1331,10 +1356,19 @@ function getBookGroupKey(book) {
 function pickRepresentativeBook(current, candidate) {
   if (!candidate) return current;
   if (!current) return candidate;
-  const currentScore = (current.coverUrl ? 2 : 0) + (current.description ? 1 : 0);
-  const candidateScore = (candidate.coverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
+  const currentCoverUrl = normalizeRenderedCoverUrl(current.coverUrl);
+  const candidateCoverUrl = normalizeRenderedCoverUrl(candidate.coverUrl);
+  const currentScore = (currentCoverUrl ? 2 : 0) + (current.description ? 1 : 0);
+  const candidateScore = (candidateCoverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
   if (candidateScore > currentScore) {
     return candidate;
+  }
+  if (candidateScore === currentScore && candidateCoverUrl && currentCoverUrl) {
+    const currentNeedsRewrite = currentCoverUrl !== (typeof current.coverUrl === 'string' ? current.coverUrl.trim() : '');
+    const candidateNeedsRewrite = candidateCoverUrl !== (typeof candidate.coverUrl === 'string' ? candidate.coverUrl.trim() : '');
+    if (currentNeedsRewrite && !candidateNeedsRewrite) {
+      return candidate;
+    }
   }
   return current;
 }
@@ -1393,7 +1427,7 @@ function groupBooksByTitleAuthor(books = []) {
       author: value.author || representative.author || '',
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
-      coverUrl: representative.coverUrl || '',
+      coverUrl: normalizeRenderedCoverUrl(representative.coverUrl),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
       themes,
@@ -1436,7 +1470,7 @@ function createBookCard(template, book, folders, options = {}) {
     card.classList.add('book-card--exam-list');
   }
 
-  const coverUrl = typeof book.coverUrl === 'string' ? book.coverUrl.trim() : '';
+  const coverUrl = normalizeRenderedCoverUrl(book.coverUrl);
   const hasCover = Boolean(coverUrl);
 
   if (coverFallback) {
