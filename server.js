@@ -1199,9 +1199,43 @@ function normalizeRowKeys(row) {
   const normalized = {};
   for (const [key, value] of Object.entries(row || {})) {
     if (!key) continue;
-    normalized[key.toLowerCase().trim()] = value;
+    const normalizedKey = normalizeImportHeaderName(key);
+    if (!Object.prototype.hasOwnProperty.call(normalized, normalizedKey)) {
+      normalized[normalizedKey] = value;
+      continue;
+    }
+    const existingValue = normalized[normalizedKey];
+    const hasExistingValue = String(existingValue ?? '').trim() !== '';
+    const hasNextValue = String(value ?? '').trim() !== '';
+    if (!hasExistingValue && hasNextValue) {
+      normalized[normalizedKey] = value;
+    }
   }
   return normalized;
+}
+
+function normalizeImportHeaderName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[’]/g, "'")
+    .replace(/\s+/g, ' ');
+}
+
+function hasImportColumn(normalizedRow, aliases) {
+  return aliases.some((alias) =>
+    Object.prototype.hasOwnProperty.call(normalizedRow, normalizeImportHeaderName(alias))
+  );
+}
+
+function collectImportColumnValues(normalizedRow, aliases) {
+  return aliases.flatMap((alias) => {
+    const key = normalizeImportHeaderName(alias);
+    if (!Object.prototype.hasOwnProperty.call(normalizedRow, key)) {
+      return [];
+    }
+    return parseMultiValueField(normalizedRow[key]);
+  });
 }
 
 function normalizeImportedCell(value) {
@@ -3404,27 +3438,23 @@ async function handleApi(req, res, requestUrl) {
           normalized['image url'] ||
           normalized['afbeelding url'];
         const coverUrl = normalizeCoverUrl(coverUrlSource);
-        const tagSources = [
-          normalized['thema\'s'],
-          normalized.themas,
-          normalized.thema,
-          normalized.tags,
-          normalized.trefwoorden,
-          normalized.keywords,
-          normalized.onderwerpen,
-          normalized['onderwerp(en)'],
-          normalized['thema s'],
-        ];
+        const curatedThemeColumns = ["thema's", 'themas', 'thema'];
+        const rawTagColumns = ['tags', 'trefwoorden', 'keywords', 'onderwerpen', 'onderwerp(en)'];
+        const hasCuratedThemeColumns = hasImportColumn(normalized, curatedThemeColumns);
+        const manualThemes = normalizeManualThemes(
+          collectImportColumnValues(normalized, curatedThemeColumns)
+        );
+        const hasRawTagColumns = hasImportColumn(normalized, rawTagColumns);
         const tags = Array.from(
           new Set(
-            tagSources
-              .flatMap(parseMultiValueField)
+            collectImportColumnValues(normalized, rawTagColumns)
               .map((value) =>
                 typeof value === 'string' ? value.trim() : String(value ?? '').trim()
               )
               .filter(Boolean)
           )
         );
+        const hasExplicitRawTagValues = hasRawTagColumns && tags.length > 0;
         const examValue =
           normalized.leeslijst ||
           normalized['op de leeslijst'] ||
@@ -3483,10 +3513,13 @@ async function handleApi(req, res, requestUrl) {
             ? coverUrl
             : existingBook.coverUrl || metadataFields?.coverUrl || '';
           const nextTags = (() => {
-            if (tags.length) return tags;
+            if (hasExplicitRawTagValues) return tags;
             if (Array.isArray(existingBook.tags) && existingBook.tags.length) return existingBook.tags;
             return metadataFields?.tags || [];
           })();
+          const nextManualThemes = hasCuratedThemeColumns
+            ? manualThemes
+            : normalizeManualThemes(existingBook.manualThemes);
           const hasMetadataInput = metadataIsbnSource !== undefined;
           const existingMetadataIsbn = sanitizeIsbn(existingBook.metadataIsbn);
           const nextMetadataIsbn = hasMetadataInput ? metadataIsbn : existingMetadataIsbn;
@@ -3533,6 +3566,22 @@ async function handleApi(req, res, requestUrl) {
           if (tagsChanged) {
             updates.tags = nextTags;
           }
+          const currentManualThemeKeys = new Set(
+            normalizeManualThemes(existingBook.manualThemes).map((theme) => theme.toLowerCase())
+          );
+          const newManualThemeKeys = new Set(nextManualThemes.map((theme) => theme.toLowerCase()));
+          let manualThemesChanged = currentManualThemeKeys.size !== newManualThemeKeys.size;
+          if (!manualThemesChanged) {
+            for (const key of currentManualThemeKeys) {
+              if (!newManualThemeKeys.has(key)) {
+                manualThemesChanged = true;
+                break;
+              }
+            }
+          }
+          if (manualThemesChanged) {
+            updates.manualThemes = nextManualThemes;
+          }
           if (examValue !== undefined && examValue !== '' && suitableForExamList !== existingBook.suitableForExamList) {
             updates.suitableForExamList = suitableForExamList;
           }
@@ -3541,6 +3590,7 @@ async function handleApi(req, res, requestUrl) {
           }
           if (Object.keys(updates).length) {
             Object.assign(existingBook, updates);
+            Object.assign(existingBook, attachDerivedThemeFields(existingBook));
             updatedBooks.push({
               title: existingBook.title,
               author: existingBook.author,
@@ -3551,6 +3601,8 @@ async function handleApi(req, res, requestUrl) {
               pageCount: existingBook.pageCount,
               language: existingBook.language,
               tags: existingBook.tags,
+              manualThemes: existingBook.manualThemes,
+              themes: existingBook.themes,
               suitableForExamList: existingBook.suitableForExamList,
               easyReading: existingBook.easyReading,
               status: 'updated',
@@ -3568,7 +3620,8 @@ async function handleApi(req, res, requestUrl) {
             barcode,
             metadataIsbn,
             description: description || metadataFields?.description || '',
-            tags: tags.length ? tags : metadataFields?.tags || [],
+            tags: hasExplicitRawTagValues ? tags : metadataFields?.tags || [],
+            manualThemes,
             publisher: publisherSource !== undefined ? publisher : metadataFields?.publisher || '',
             publishedYear:
               publishedYearSource !== undefined && publishedYearSource !== ''
