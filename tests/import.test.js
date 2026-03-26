@@ -395,6 +395,178 @@ async function runImportCoverNormalizationTest() {
   }
 }
 
+async function runStoredCoverRewriteOnLoadTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-stored-cover-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath, {
+    books: [
+      {
+        id: 'stale-archive',
+        title: 'De reis van de lege flessen',
+        author: 'Kader Abdolah',
+        barcode: '9789029078733',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: 'https://archive.org/download/l_covers_0013/l_covers_0013_53.zip/0013539664-L.jpg',
+        coverColor: '#f9f9f9',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: [],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'already-openlibrary',
+        title: 'Open Library',
+        author: 'Auteur',
+        barcode: '9789029078734',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: 'https://covers.openlibrary.org/b/id/13539664-L.jpg?default=false',
+        coverColor: '#f9f9f9',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: [],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'google-cover',
+        title: 'Google Book',
+        author: 'Auteur',
+        barcode: '9789029078735',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: 'https://books.google.com/google-cover.jpg',
+        coverColor: '#f9f9f9',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: [],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'blank-cover',
+        title: 'Leeg',
+        author: 'Auteur',
+        barcode: '9789029078736',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: '',
+        coverColor: '#f9f9f9',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: [],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'null-cover',
+        title: 'Null',
+        author: 'Auteur',
+        barcode: '9789029078737',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: null,
+        coverColor: '#f9f9f9',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: [],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'malformed-cover',
+        title: 'Malformed',
+        author: 'Auteur',
+        barcode: '9789029078738',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: 'not-a-url',
+        coverColor: '#f9f9f9',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: [],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  });
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const books = await readBookCollection(token);
+    const byBarcode = (barcode) => books.find((book) => book.barcode === barcode);
+
+    const staleArchive = byBarcode('9789029078733');
+    assert.ok(staleArchive);
+    assert.strictEqual(
+      staleArchive.coverUrl,
+      'https://covers.openlibrary.org/b/id/13539664-L.jpg?default=false',
+    );
+
+    const alreadyOpenLibrary = byBarcode('9789029078734');
+    assert.ok(alreadyOpenLibrary);
+    assert.strictEqual(
+      alreadyOpenLibrary.coverUrl,
+      'https://covers.openlibrary.org/b/id/13539664-L.jpg?default=false',
+    );
+
+    const googleCover = byBarcode('9789029078735');
+    assert.ok(googleCover);
+    assert.strictEqual(googleCover.coverUrl, 'https://books.google.com/google-cover.jpg');
+
+    const blankCover = byBarcode('9789029078736');
+    assert.ok(blankCover);
+    assert.strictEqual(blankCover.coverUrl, '');
+
+    const nullCover = byBarcode('9789029078737');
+    assert.ok(nullCover);
+    assert.strictEqual(nullCover.coverUrl, '');
+
+    const malformedCover = byBarcode('9789029078738');
+    assert.ok(malformedCover);
+    assert.strictEqual(malformedCover.coverUrl, 'not-a-url');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
 async function runThemeImportWorkflowTest() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-theme-import-'));
   const dbPath = path.join(tempDir, 'db.json');
@@ -551,6 +723,7 @@ async function runTests() {
 
   await runManualCoverNormalizationTest();
   await runImportCoverNormalizationTest();
+  await runStoredCoverRewriteOnLoadTest();
   await runThemeImportWorkflowTest();
 
   // Test easyReading and suitableForExamList import

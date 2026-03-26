@@ -973,7 +973,9 @@ function ensureBookShape(book) {
   );
   safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
   safeBook.language = normalizeLanguageCode(source.language);
-  safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
+  safeBook.coverUrl = normalizeCoverUrl(
+    rewriteArchiveOpenLibraryCoverUrl(source.coverUrl || source.cover || '')
+  );
   return attachDerivedThemeFields(safeBook);
 }
 
