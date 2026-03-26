@@ -358,6 +358,12 @@ async function runImportCoverNormalizationTest() {
         Barcode: '9783333333333',
         'Cover URL': 'http://books.google.com/import-cover.jpg',
       },
+      {
+        Titel: 'Import archiefcover',
+        Auteur: 'Import auteur',
+        Barcode: '9783333333334',
+        'Cover URL': 'https://archive.org/download/l_covers_0012/l_covers_0012_92.zip/0012920350-L.jpg',
+      },
     ]);
 
     const importResponse = await request('/api/books/import', {
@@ -378,6 +384,12 @@ async function runImportCoverNormalizationTest() {
     const stored = storedBooks.find((book) => book.barcode === '9783333333333');
     assert.ok(stored);
     assert.strictEqual(stored.coverUrl, 'https://books.google.com/import-cover.jpg');
+    const storedArchiveCover = storedBooks.find((book) => book.barcode === '9783333333334');
+    assert.ok(storedArchiveCover);
+    assert.strictEqual(
+      storedArchiveCover.coverUrl,
+      'https://covers.openlibrary.org/b/id/12920350-L.jpg?default=false',
+    );
   } finally {
     serverProcess.kill('SIGINT');
   }
