@@ -13,7 +13,7 @@ function hashPassword(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-function createDbFixture(filePath) {
+function createDbFixture(filePath, overrides = {}) {
   const db = {
     books: [],
     students: [],
@@ -29,6 +29,7 @@ function createDbFixture(filePath) {
       },
     ],
     history: [],
+    ...overrides,
   };
 
   fs.writeFileSync(filePath, JSON.stringify(db, null, 2));
@@ -382,6 +383,123 @@ async function runImportCoverNormalizationTest() {
   }
 }
 
+async function runThemeImportWorkflowTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-theme-import-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath, {
+    books: [
+      {
+        id: 'existing-f',
+        title: 'Bestaand F',
+        author: 'Auteur F',
+        barcode: '9786666666661',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: '',
+        coverColor: '',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: ['adventure stories', 'friendship'],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'existing-g',
+        title: 'Bestaand G',
+        author: 'Auteur G',
+        barcode: '9786666666662',
+        metadataIsbn: '',
+        description: '',
+        coverUrl: '',
+        coverColor: '',
+        publisher: '',
+        publishedYear: null,
+        pageCount: null,
+        language: '',
+        tags: ['adventure stories'],
+        manualThemes: [],
+        status: 'available',
+        suitableForExamList: false,
+        easyReading: false,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  });
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const workbookBase64 = buildWorkbookBase64([
+      { Titel: 'Case A', Auteur: 'Auteur', Barcode: '9784444444441', 'thema’s': 'Psychische gezondheid; Pesten' },
+      { Titel: 'Case B', Auteur: 'Auteur', Barcode: '9784444444442', "thema's": 'Psychische gezondheid; Pesten' },
+      { Titel: 'Case C', Auteur: 'Auteur', Barcode: '9784444444443', themas: 'Psychische gezondheid; Pesten' },
+      { Titel: 'Case D', Auteur: 'Auteur', Barcode: '9784444444444', themas: 'Media & Invloed; Spanning' },
+      { Titel: 'Case E', Auteur: 'Auteur', Barcode: '9784444444445', themas: 'Pesten', tags: 'bullying, school harassment' },
+      { Titel: 'Bestaand F update', Auteur: 'Auteur F', Barcode: '9786666666661', themas: 'Isolatie; Macht & hiërarchie' },
+      { Titel: 'Bestaand G update', Auteur: 'Auteur G', Barcode: '9786666666662', themas: 'Overleven', tags: 'survival, wilderness survival' },
+      { Titel: 'Case H', Auteur: 'Auteur', Barcode: '9784444444448', themas: 'Fantasy', 'Makkelijk lezen': 'true' },
+    ]);
+
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+    assert.strictEqual(importResponse.status, 200);
+
+    const books = await readBookCollection(token);
+    const byBarcode = (barcode) => books.find((book) => book.barcode === barcode);
+
+    const caseA = byBarcode('9784444444441');
+    const caseB = byBarcode('9784444444442');
+    const caseC = byBarcode('9784444444443');
+    assert.deepStrictEqual(caseA.manualThemes, ['Psychische gezondheid', 'Pesten']);
+    assert.deepStrictEqual(caseA.themes, ['Psychische gezondheid', 'Pesten']);
+    assert.deepStrictEqual(caseB.manualThemes, ['Psychische gezondheid', 'Pesten']);
+    assert.deepStrictEqual(caseB.themes, ['Psychische gezondheid', 'Pesten']);
+    assert.deepStrictEqual(caseC.manualThemes, ['Psychische gezondheid', 'Pesten']);
+    assert.deepStrictEqual(caseC.themes, ['Psychische gezondheid', 'Pesten']);
+
+    const caseD = byBarcode('9784444444444');
+    assert.deepStrictEqual(caseD.manualThemes, ['Media & Invloed', 'Spanning']);
+    assert.deepStrictEqual(caseD.tags, []);
+
+    const caseE = byBarcode('9784444444445');
+    assert.deepStrictEqual(caseE.manualThemes, ['Pesten']);
+    assert.deepStrictEqual(caseE.tags, ['bullying', 'school harassment']);
+    assert.deepStrictEqual(caseE.themes, ['Pesten']);
+
+    const caseF = byBarcode('9786666666661');
+    assert.deepStrictEqual(caseF.tags, ['adventure stories', 'friendship']);
+    assert.deepStrictEqual(caseF.manualThemes, ['Macht & hiërarchie', 'Isolatie']);
+    assert.deepStrictEqual(caseF.themes, ['Macht & hiërarchie', 'Isolatie']);
+
+    const caseG = byBarcode('9786666666662');
+    assert.deepStrictEqual(caseG.manualThemes, ['Overleven']);
+    assert.deepStrictEqual(caseG.tags, ['survival', 'wilderness survival']);
+    assert.deepStrictEqual(caseG.themes, ['Overleven']);
+
+    const caseH = byBarcode('9784444444448');
+    assert.strictEqual(caseH.easyReading, true);
+    assert.deepStrictEqual(caseH.manualThemes, ['Fantasy']);
+    assert.ok(!caseH.themes.includes('Makkelijk Lezen'));
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
 async function runTests() {
   // Enrichment enabled via request flag should merge metadata without overriding user fields.
   const enrichmentResult = await runEnrichmentImportTest({ enableFlag: false, requestFlag: true });
@@ -421,6 +539,7 @@ async function runTests() {
 
   await runManualCoverNormalizationTest();
   await runImportCoverNormalizationTest();
+  await runThemeImportWorkflowTest();
 
   // Test easyReading and suitableForExamList import
   const easyReadingResult = await runEasyReadingTest();
