@@ -1,0 +1,8 @@
+{
+  "name": "Boekenbaai",
+  "short_name": "Boekenbaai",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#0f766e",
+  "background_color": "#f8fafc"
+}
