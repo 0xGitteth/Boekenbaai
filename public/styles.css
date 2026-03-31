@@ -85,6 +85,21 @@ body[data-page='staff'] .summary {
   margin-bottom: 1rem;
 }
 
+body[data-page='student'],
+body[data-page='student'] * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+body[data-page='student'] input,
+body[data-page='student'] textarea,
+body[data-page='student'] [contenteditable]:not([contenteditable='false']) {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 .filters__group {
   display: grid;
   gap: 0.35rem;
