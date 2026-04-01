@@ -684,6 +684,125 @@ async function runThemeImportWorkflowTest() {
   }
 }
 
+async function runStrictTitleAuthorFallbackImportTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-import-fallback-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  const logPath = path.join(tempDir, 'lookups.log');
+  createDbFixture(dbPath, {
+    books: [
+      {
+        id: crypto.randomUUID(),
+        title: 'Hajar en Daan',
+        author: 'Carry Slee',
+        barcode: '9787000000005',
+        metadataIsbn: '',
+        description: '',
+        publisher: '',
+        language: 'nl',
+        coverUrl: 'https://example.com/already-set-cover.jpg',
+        status: 'available',
+      },
+    ],
+  });
+
+  const fixtures = {
+    '9787000000001': { title: 'Hajar en Daan', author: 'Carry Slee', coverUrl: '' },
+    '9787000000002': { title: 'Hajar en Daan', author: 'Carry Slee', publisher: '', description: '' },
+    '9787000000003': { title: 'Hajar en Daan', author: 'Carry Slee', coverUrl: '' },
+    '9787000000004': { title: 'Hajar en Daan', author: 'Carry Slee', coverUrl: '' },
+    '9787000000006': {
+      title: 'Hajar en Daan',
+      author: 'Carry Slee',
+      coverUrl: 'https://example.com/exact-rich.jpg',
+      publisher: 'Rijke Uitgever',
+      description: 'Rijke beschrijving',
+    },
+  };
+  const taFixtures = {
+    'hajar en daan|||carry slee': {
+      title: 'Hajar en Daan (Lijsters editie)',
+      author: 'Carry Slee',
+      coverUrl: 'https://example.com/fallback-cover.jpg',
+      publisher: 'Fallback Uitgever',
+      description: 'Fallback beschrijving',
+      language: 'nl',
+    },
+    'hajar en daan|||andere auteur': {
+      title: 'Hajar en Daan',
+      author: 'Volledig Andere',
+      coverUrl: 'https://example.com/wrong-author-cover.jpg',
+      language: 'nl',
+    },
+    'hajar en daan deel 2|||carry slee': {
+      title: 'Hajar en Daan omnibus',
+      author: 'Carry Slee',
+      coverUrl: 'https://example.com/omnibus-cover.jpg',
+      language: 'nl',
+    },
+  };
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+    BOEKENBAAI_ISBN_MOCK_LOG: logPath,
+    BOEKENBAAI_TEST_ISBN_FIXTURES: JSON.stringify(fixtures),
+    BOEKENBAAI_TEST_TITLE_AUTHOR_FIXTURES: JSON.stringify(taFixtures),
+    NODE_OPTIONS: `--require ${path.join(__dirname, 'mock-isbn-lookup.js')}`,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const workbookBase64 = buildWorkbookBase64([
+      { Titel: 'Hajar en Daan', Auteur: 'Carry Slee', Barcode: '9787000000001' },
+      { Titel: 'Hajar en Daan', Auteur: 'Carry Slee', Barcode: '9787000000002' },
+      { Titel: 'Hajar en Daan', Auteur: 'Andere Auteur', Barcode: '9787000000003' },
+      { Titel: 'Hajar en Daan Deel 2', Auteur: 'Carry Slee', Barcode: '9787000000004' },
+      { Titel: 'Hajar en Daan', Auteur: 'Carry Slee', Barcode: '9787000000005' },
+      { Titel: 'Hajar en Daan', Auteur: 'Carry Slee', Barcode: '9787000000006' },
+    ]);
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+    assert.strictEqual(importResponse.status, 200);
+    const books = await readBookCollection(token);
+    const byBarcode = (barcode) => books.find((book) => book.barcode === barcode);
+
+    const scenario1 = byBarcode('9787000000001');
+    assert.strictEqual(scenario1.coverUrl, 'https://example.com/fallback-cover.jpg');
+    assert.strictEqual(scenario1.title, 'Hajar en Daan');
+    assert.strictEqual(scenario1.author, 'Carry Slee');
+
+    const scenario2 = byBarcode('9787000000002');
+    assert.strictEqual(scenario2.publisher, 'Fallback Uitgever');
+    assert.strictEqual(scenario2.description, 'Fallback beschrijving');
+
+    const scenario3 = byBarcode('9787000000003');
+    assert.strictEqual(scenario3.coverUrl, '');
+
+    const scenario4 = byBarcode('9787000000004');
+    assert.strictEqual(scenario4.coverUrl, '');
+
+    const scenario5 = byBarcode('9787000000005');
+    assert.strictEqual(scenario5.coverUrl, 'https://example.com/already-set-cover.jpg');
+
+    const scenario6 = byBarcode('9787000000006');
+    assert.strictEqual(scenario6.coverUrl, 'https://example.com/exact-rich.jpg');
+    assert.strictEqual(scenario6.publisher, 'Rijke Uitgever');
+    assert.strictEqual(scenario6.description, 'Rijke beschrijving');
+
+    const logs = fs.readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
+    const taLookups = logs.filter((entry) => entry.startsWith('TA:'));
+    assert.strictEqual(taLookups.length, 5);
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
 async function runTests() {
   // Enrichment enabled via request flag should merge metadata without overriding user fields.
   const enrichmentResult = await runEnrichmentImportTest({ enableFlag: false, requestFlag: true });
@@ -725,6 +844,7 @@ async function runTests() {
   await runImportCoverNormalizationTest();
   await runStoredCoverRewriteOnLoadTest();
   await runThemeImportWorkflowTest();
+  await runStrictTitleAuthorFallbackImportTest();
 
   // Test easyReading and suitableForExamList import
   const easyReadingResult = await runEasyReadingTest();

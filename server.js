@@ -759,6 +759,13 @@ function resolveLookupIsbnMetadata() {
   return lookupIsbnMetadata;
 }
 
+function resolveLookupTitleAuthorMetadata() {
+  if (typeof globalThis.__BOEKENBAAI_MOCK_TITLE_AUTHOR_LOOKUP === 'function') {
+    return globalThis.__BOEKENBAAI_MOCK_TITLE_AUTHOR_LOOKUP;
+  }
+  return lookupMetadataByTitleAuthor;
+}
+
 function isOriginAllowed(origin, requestUrl) {
   if (!origin) return false;
   if (allowedOrigins.includes('*')) {
@@ -1989,6 +1996,102 @@ function normalizeLookupTagValue(value) {
   return value.trim().toLowerCase();
 }
 
+function normalizeWorkTitle(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) {
+    return '';
+  }
+  const editionTokens = new Set([
+    'druk', 'editie', 'edition', 'paperback', 'hardcover', 'lijsters', 'pocketserie',
+    'pocket', 'schooluitgave', 'school', 'herziene', 'uitgave',
+  ]);
+  return normalized
+    .split(' ')
+    .filter((token) => token && !editionTokens.has(token))
+    .join(' ')
+    .trim();
+}
+
+function normalizeAuthorName(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractSeriesPart(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const normalized = value.toLowerCase();
+  const match = normalized.match(/\b(?:deel|part|boek|book)\s*([0-9ivxlcdm]+)/i);
+  return match ? match[1] : '';
+}
+
+function hasCollectionMarker(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return /\b(omnibus|bundel|verzameld werk|anthology|collection)\b/i.test(value);
+}
+
+function isStrictWorkMatch(target, candidate) {
+  if (!target || !candidate) {
+    return false;
+  }
+  const targetTitle = normalizeWorkTitle(target.title);
+  const candidateTitle = normalizeWorkTitle(candidate.title);
+  if (!targetTitle || !candidateTitle || targetTitle !== candidateTitle) {
+    return false;
+  }
+
+  const targetAuthor = normalizeAuthorName(target.author);
+  const candidateAuthor = normalizeAuthorName(candidate.author);
+  if (!targetAuthor || !candidateAuthor) {
+    return false;
+  }
+  const exactAuthorMatch = targetAuthor === candidateAuthor;
+  const targetTokens = targetAuthor.split(' ').filter(Boolean);
+  const candidateTokens = candidateAuthor.split(' ').filter(Boolean);
+  const sameSurname = targetTokens[targetTokens.length - 1] && targetTokens[targetTokens.length - 1] === candidateTokens[candidateTokens.length - 1];
+  const firstInitialMatch = targetTokens[0]?.[0] && candidateTokens[0]?.[0] && targetTokens[0][0] === candidateTokens[0][0];
+  if (!exactAuthorMatch && !(sameSurname && firstInitialMatch)) {
+    return false;
+  }
+
+  if (target.language && candidate.language && normalizeLanguageCode(target.language) && normalizeLanguageCode(candidate.language)
+    && normalizeLanguageCode(target.language) !== normalizeLanguageCode(candidate.language)) {
+    return false;
+  }
+
+  const targetPart = extractSeriesPart(target.rawTitle || target.title);
+  const candidatePart = extractSeriesPart(candidate.rawTitle || candidate.title);
+  if (targetPart !== candidatePart) {
+    return false;
+  }
+
+  if (hasCollectionMarker(target.rawTitle || target.title) !== hasCollectionMarker(candidate.rawTitle || candidate.title)) {
+    return false;
+  }
+
+  return true;
+}
+
 function splitLookupTagParts(value) {
   if (typeof value !== 'string') {
     return [];
@@ -2107,6 +2210,65 @@ function parseGoogleBooksData(data, fallbackBarcode, debugTarget = null) {
     debugTarget.extracted = createMetadataFieldSummary(metadata);
   }
   return metadata;
+}
+
+function parseGoogleBooksTitleAuthorFallbackData(data, target) {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) {
+    return null;
+  }
+  for (const item of items) {
+    const volumeInfo = item?.volumeInfo;
+    if (!volumeInfo || typeof volumeInfo !== 'object') {
+      continue;
+    }
+    const authors = Array.isArray(volumeInfo.authors)
+      ? volumeInfo.authors.filter((entry) => typeof entry === 'string' && entry.trim())
+      : [];
+    const metadata = {
+      title: typeof volumeInfo.title === 'string' ? volumeInfo.title.trim() : '',
+      rawTitle: typeof volumeInfo.title === 'string' ? volumeInfo.title.trim() : '',
+      author: formatAuthors(authors),
+      language: normalizeLanguageCode(volumeInfo.language),
+      publisher: normalizePublisher(volumeInfo.publisher),
+      description: stripHtml(volumeInfo.description),
+      coverUrl: pickGoogleBooksCover(volumeInfo.imageLinks),
+      source: 'googlebooks-title-author',
+      found: true,
+    };
+    if (isStrictWorkMatch(target, metadata)) {
+      return metadata;
+    }
+  }
+  return null;
+}
+
+async function lookupMetadataByTitleAuthor(target) {
+  if (!globalFetch || !process.env.GOOGLE_BOOKS_API_KEY) {
+    return null;
+  }
+  const title = typeof target?.title === 'string' ? target.title.trim() : '';
+  const author = typeof target?.author === 'string' ? target.author.trim() : '';
+  if (!title || !author) {
+    return null;
+  }
+  const queryUrl = new URL('https://www.googleapis.com/books/v1/volumes');
+  queryUrl.searchParams.set('q', `intitle:${title} inauthor:${author}`);
+  queryUrl.searchParams.set('printType', 'books');
+  queryUrl.searchParams.set('projection', 'full');
+  queryUrl.searchParams.set('maxResults', '10');
+  const response = await globalFetch(queryUrl.toString(), {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'Boekenbaai/1.0 (+https://boekenbaai.example)',
+      'x-goog-api-key': process.env.GOOGLE_BOOKS_API_KEY,
+    },
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const payload = await response.json();
+  return parseGoogleBooksTitleAuthorFallbackData(payload, target);
 }
 
 function buildOpenLibraryCoverUrlFromCoverId(coverId, size = 'L') {
@@ -3620,6 +3782,7 @@ async function handleApi(req, res, requestUrl) {
       const skipped = [];
       let changed = false;
       const lookup = resolveLookupIsbnMetadata();
+      const titleAuthorLookup = resolveLookupTitleAuthorMetadata();
       const importEnrichmentEnabled =
         body.enrichIsbn === undefined
           ? true
@@ -3762,7 +3925,7 @@ async function handleApi(req, res, requestUrl) {
           }
         }
         const normalizedMetadata = normalizeIsbnMetadata(metadata);
-        const metadataFields = normalizedMetadata.fields;
+        let metadataFields = normalizedMetadata.fields;
         const enrichment =
           importEnrichmentEnabled || metadata
             ? { source: normalizedMetadata.source, found: Boolean(normalizedMetadata.found) }
@@ -3771,13 +3934,40 @@ async function handleApi(req, res, requestUrl) {
         const existingBook = metadataIsbn
           ? findBookByMetadataIsbn(db, metadataIsbn)
           : findBookByBarcode(db, barcode);
+        const hasCoverInput = coverUrlSource !== undefined && String(coverUrlSource).trim();
+        const hasPublisherInput = publisherSource !== undefined && String(publisherSource).trim();
+        const hasDescriptionInput = description.length > 0;
+        const shouldTryTitleAuthorFallback = importEnrichmentEnabled
+          && Boolean(titleAuthorLookup)
+          && Boolean((title || existingBook?.title) && (author || existingBook?.author))
+          && (
+            !(hasCoverInput || existingBook?.coverUrl || metadataFields?.coverUrl)
+            || !(hasPublisherInput || existingBook?.publisher || metadataFields?.publisher)
+            || !(hasDescriptionInput || existingBook?.description || metadataFields?.description)
+          );
+        if (shouldTryTitleAuthorFallback) {
+          const fallbackTarget = {
+            title: title || existingBook?.title || '',
+            author: author || existingBook?.author || '',
+            rawTitle: title || existingBook?.title || '',
+            language: language || existingBook?.language || metadataFields?.language || '',
+          };
+          try {
+            const strictFallbackMetadata = await titleAuthorLookup(fallbackTarget);
+            if (strictFallbackMetadata && typeof strictFallbackMetadata === 'object'
+              && isStrictWorkMatch(fallbackTarget, strictFallbackMetadata)) {
+              metadataFields = mergeLookupMetadata(metadataFields || {}, strictFallbackMetadata);
+            }
+          } catch (error) {
+            console.warn('Titel/auteur fallback-verrijking mislukt:', error?.message || error);
+          }
+        }
         let baseTemplate = null;
         if (existingBook) {
           const nextTitle = title || existingBook.title || metadataFields?.title || '';
           const nextAuthor = author || existingBook.author || metadataFields?.author || '';
           const nextDescription =
             description || existingBook.description || metadataFields?.description || '';
-          const hasPublisherInput = publisherSource !== undefined && String(publisherSource).trim();
           const nextPublisher = hasPublisherInput
             ? publisher
             : existingBook.publisher || metadataFields?.publisher || '';
@@ -3793,7 +3983,6 @@ async function handleApi(req, res, requestUrl) {
           const nextLanguage = hasLanguageInput
             ? language
             : existingBook.language || metadataFields?.language || '';
-          const hasCoverInput = coverUrlSource !== undefined && String(coverUrlSource).trim();
           const nextCoverUrl = hasCoverInput
             ? coverUrl
             : existingBook.coverUrl || metadataFields?.coverUrl || '';
