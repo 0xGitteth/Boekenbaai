@@ -28,7 +28,7 @@ function loadServerModule({ fetchImpl = global.fetch, env = {} } = {}) {
   fs.writeFileSync(dataPath, JSON.stringify({ books: [], students: [], folders: [], classes: [], users: [], history: [] }));
 
   const serverPath = path.join(__dirname, '..', 'server.js');
-  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, normalizeCoverUrl, rewriteArchiveOpenLibraryCoverUrl, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata };`;
+  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, parseGoogleBooksTitleAuthorFallbackData, normalizeCoverUrl, rewriteArchiveOpenLibraryCoverUrl, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata, lookupMetadataByTitleAuthor };`;
   const actualHttp = require('http');
   const sandbox = {
     module: { exports: {} },
@@ -87,10 +87,12 @@ async function runTests() {
   const {
     parseGoogleBooksData,
     parseOpenLibraryData,
+    parseGoogleBooksTitleAuthorFallbackData,
     normalizeCoverUrl,
     rewriteArchiveOpenLibraryCoverUrl,
     normalizeIsbnMetadata,
     mergeLookupMetadata,
+    lookupMetadataByTitleAuthor,
   } = loadServerModule();
 
   assert.strictEqual(
@@ -121,6 +123,84 @@ async function runTests() {
   );
   assert.strictEqual(rewriteArchiveOpenLibraryCoverUrl(''), '');
   assert.strictEqual(rewriteArchiveOpenLibraryCoverUrl(null), null);
+
+  const fallbackTarget = { title: 'Lopen voor je leven', author: 'Els Beerten', language: 'nl' };
+  const poorStrictCandidate = {
+    volumeInfo: {
+      title: 'Lopen voor je leven',
+      authors: ['Els Beerten'],
+      language: 'nl',
+    },
+  };
+  const richStrictCandidate = {
+    volumeInfo: {
+      title: 'Lopen voor je leven',
+      authors: ['Els Beerten'],
+      language: 'nl',
+      publisher: 'Uitgeverij X',
+      description: 'Rijke beschrijving',
+      imageLinks: { thumbnail: 'http://books.google.com/books/content?id=PVdxAAAAQBAJ' },
+    },
+  };
+  const richWrongAuthorCandidate = {
+    volumeInfo: {
+      title: 'Lopen voor je leven',
+      authors: ['Andere Auteur'],
+      language: 'nl',
+      publisher: 'Andere Uitgever',
+      description: 'Andere beschrijving',
+      imageLinks: { thumbnail: 'http://books.google.com/books/content?id=wrong-author' },
+    },
+  };
+  const richOmnibusCandidate = {
+    volumeInfo: {
+      title: 'Lopen voor je leven omnibus',
+      authors: ['Els Beerten'],
+      language: 'nl',
+      publisher: 'Bundel Uitgever',
+      description: 'Bundel beschrijving',
+      imageLinks: { thumbnail: 'http://books.google.com/books/content?id=omnibus' },
+    },
+  };
+
+  const scenario1 = parseGoogleBooksTitleAuthorFallbackData(
+    { items: [poorStrictCandidate, richStrictCandidate] },
+    fallbackTarget,
+  );
+  assert.ok(scenario1, 'Expected strict fallback match for scenario 1');
+  assert.strictEqual(scenario1.coverUrl, 'https://books.google.com/books/content?id=PVdxAAAAQBAJ');
+  assert.strictEqual(scenario1.publisher, 'Uitgeverij X');
+  assert.strictEqual(scenario1.description, 'Rijke beschrijving');
+
+  const scenario2 = parseGoogleBooksTitleAuthorFallbackData(
+    { items: [poorStrictCandidate, richStrictCandidate] },
+    fallbackTarget,
+  );
+  assert.ok(scenario2, 'Expected strict fallback match for scenario 2');
+  assert.strictEqual(scenario2.publisher, 'Uitgeverij X');
+
+  const scenario3 = parseGoogleBooksTitleAuthorFallbackData(
+    { items: [poorStrictCandidate, richWrongAuthorCandidate] },
+    fallbackTarget,
+  );
+  assert.ok(scenario3, 'Expected strict fallback match for scenario 3');
+  assert.strictEqual(scenario3.author, 'Els Beerten');
+  assert.strictEqual(scenario3.coverUrl, '');
+
+  const scenario4 = parseGoogleBooksTitleAuthorFallbackData(
+    { items: [richOmnibusCandidate] },
+    fallbackTarget,
+  );
+  assert.strictEqual(scenario4, null, 'Rich omnibus candidate should still be rejected');
+
+  const scenario5 = parseGoogleBooksTitleAuthorFallbackData(
+    { items: [poorStrictCandidate, richStrictCandidate] },
+    fallbackTarget,
+  );
+  assert.ok(scenario5, 'Expected strict fallback match for scenario 5');
+  assert.strictEqual(scenario5.coverUrl, 'https://books.google.com/books/content?id=PVdxAAAAQBAJ');
+  assert.strictEqual(scenario5.publisher, 'Uitgeverij X');
+  assert.strictEqual(scenario5.description, 'Rijke beschrijving');
 
   const googleMetadata = parseGoogleBooksData({
     items: [
@@ -260,6 +340,18 @@ async function runTests() {
     ['fiction', 'adventure', 'friendship'],
     'Tags from Google Books and Open Library should be merged and deduplicated',
   );
+
+  const queryUrls = [];
+  const queryFetch = async (url) => {
+    queryUrls.push(String(url));
+    return createMockResponse({ items: [] });
+  };
+  const { lookupMetadataByTitleAuthor: queryLookup } = loadServerModule({
+    fetchImpl: queryFetch,
+    env: { GOOGLE_BOOKS_API_KEY: 'test-key' },
+  });
+  await queryLookup({ title: 'Lopen voor je leven', author: 'Els Beerten' });
+  assert.ok(queryUrls[0].includes('q=intitle%3A%22Lopen+voor+je+leven%22+inauthor%3A%22Els+Beerten%22'));
 
   const noGoogleTagCalls = [];
   const lookupFetchWithoutGoogleTags = async (url) => {

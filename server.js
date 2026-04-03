@@ -2272,7 +2272,7 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
     });
     return null;
   }
-  let rejectedReason = 'no_strict_match';
+  const strictMatches = [];
   for (const item of items) {
     const volumeInfo = item?.volumeInfo;
     if (!volumeInfo || typeof volumeInfo !== 'object') {
@@ -2282,6 +2282,8 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
         hasCoverUrl: false,
         hasPublisher: false,
         hasDescription: false,
+        candidateRichnessScore: 0,
+        selectedCandidate: false,
         strictMatch: false,
         rejectReason: 'invalid_volume_info',
       });
@@ -2301,6 +2303,12 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
       source: 'googlebooks-title-author',
       found: true,
     };
+    const candidateRichnessScore = [
+      Boolean(metadata.coverUrl),
+      Boolean(metadata.publisher),
+      Boolean(metadata.description),
+      Boolean(metadata.author),
+    ].filter(Boolean).length;
     const strictMatch = isStrictWorkMatch(target, metadata);
     logImportFallbackDebug('fallback_candidate', {
       title: metadata.title,
@@ -2308,27 +2316,46 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
       hasCoverUrl: Boolean(metadata.coverUrl),
       hasPublisher: Boolean(metadata.publisher),
       hasDescription: Boolean(metadata.description),
+      candidateRichnessScore,
+      selectedCandidate: false,
       strictMatch,
       rejectReason: strictMatch ? null : 'strict_work_mismatch',
     });
     if (strictMatch) {
-      const acceptedFields = [];
-      if (metadata.coverUrl) acceptedFields.push('coverUrl');
-      if (metadata.publisher) acceptedFields.push('publisher');
-      if (metadata.description) acceptedFields.push('description');
-      logImportFallbackDebug('fallback_result', {
-        accepted: true,
-        acceptedFields,
-        source: metadata.source || 'googlebooks-title-author',
-        ...(debugContext && typeof debugContext === 'object' ? { context: debugContext } : {}),
-      });
-      return metadata;
+      strictMatches.push({ metadata, candidateRichnessScore });
     }
+  }
+  if (strictMatches.length) {
+    strictMatches.sort((left, right) => right.candidateRichnessScore - left.candidateRichnessScore);
+    const selected = strictMatches[0];
+    const selectedMetadata = selected.metadata;
+    logImportFallbackDebug('fallback_candidate_selected', {
+      title: selectedMetadata.title,
+      author: selectedMetadata.author,
+      hasCoverUrl: Boolean(selectedMetadata.coverUrl),
+      hasPublisher: Boolean(selectedMetadata.publisher),
+      hasDescription: Boolean(selectedMetadata.description),
+      candidateRichnessScore: selected.candidateRichnessScore,
+      selectedCandidate: true,
+      strictMatch: true,
+      rejectReason: null,
+    });
+    const acceptedFields = [];
+    if (selectedMetadata.coverUrl) acceptedFields.push('coverUrl');
+    if (selectedMetadata.publisher) acceptedFields.push('publisher');
+    if (selectedMetadata.description) acceptedFields.push('description');
+    logImportFallbackDebug('fallback_result', {
+      accepted: true,
+      acceptedFields,
+      source: selectedMetadata.source || 'googlebooks-title-author',
+      ...(debugContext && typeof debugContext === 'object' ? { context: debugContext } : {}),
+    });
+    return selectedMetadata;
   }
   logImportFallbackDebug('fallback_result', {
     accepted: false,
     acceptedFields: [],
-    rejectReason: rejectedReason,
+    rejectReason: 'no_strict_match',
     source: 'googlebooks',
     ...(debugContext && typeof debugContext === 'object' ? { context: debugContext } : {}),
   });
@@ -2350,7 +2377,7 @@ async function lookupMetadataByTitleAuthor(target) {
     source: 'googlebooks',
   });
   const queryUrl = new URL('https://www.googleapis.com/books/v1/volumes');
-  queryUrl.searchParams.set('q', `intitle:${title} inauthor:${author}`);
+  queryUrl.searchParams.set('q', `intitle:"${title}" inauthor:"${author}"`);
   queryUrl.searchParams.set('printType', 'books');
   queryUrl.searchParams.set('projection', 'full');
   queryUrl.searchParams.set('maxResults', '10');
