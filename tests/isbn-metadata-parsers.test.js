@@ -22,13 +22,18 @@ function createMockResponse(payload, { status = 200, headers = { 'content-type':
   };
 }
 
-function loadServerModule({ fetchImpl = global.fetch, env = {} } = {}) {
+function loadServerModule({
+  fetchImpl = global.fetch,
+  env = {},
+  setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
+} = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-parser-test-'));
   const dataPath = path.join(tempDir, 'db.json');
   fs.writeFileSync(dataPath, JSON.stringify({ books: [], students: [], folders: [], classes: [], users: [], history: [] }));
 
   const serverPath = path.join(__dirname, '..', 'server.js');
-  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, parseGoogleBooksTitleAuthorFallbackData, normalizeCoverUrl, rewriteArchiveOpenLibraryCoverUrl, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata, lookupMetadataByTitleAuthor };`;
+  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, parseGoogleBooksTitleAuthorFallbackData, normalizeCoverUrl, rewriteArchiveOpenLibraryCoverUrl, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata, lookupMetadataByTitleAuthor, fetchGoogleBooksFallbackWithRetry };`;
   const actualHttp = require('http');
   const sandbox = {
     module: { exports: {} },
@@ -51,8 +56,8 @@ function loadServerModule({ fetchImpl = global.fetch, env = {} } = {}) {
     },
     fetch: fetchImpl,
     Buffer,
-    setTimeout,
-    clearTimeout,
+    setTimeout: setTimeoutImpl,
+    clearTimeout: clearTimeoutImpl,
     setInterval,
     clearInterval,
   };
@@ -201,6 +206,38 @@ async function runTests() {
   assert.strictEqual(scenario5.coverUrl, 'https://books.google.com/books/content?id=PVdxAAAAQBAJ');
   assert.strictEqual(scenario5.publisher, 'Uitgeverij X');
   assert.strictEqual(scenario5.description, 'Rijke beschrijving');
+
+  const retryDelays = [];
+  let retryFetchCalls = 0;
+  const retryServer = loadServerModule({
+    env: { GOOGLE_BOOKS_API_KEY: 'test-key' },
+    fetchImpl: async () => {
+      retryFetchCalls += 1;
+      if (retryFetchCalls === 1) {
+        return createMockResponse(
+          { items: [] },
+          { status: 503, headers: { 'retry-after': '1', 'content-type': 'application/json' } },
+        );
+      }
+      return createMockResponse({ items: [] }, { status: 200 });
+    },
+    setTimeoutImpl: (fn, delay) => {
+      retryDelays.push(delay);
+      fn();
+      return 1;
+    },
+    clearTimeoutImpl: () => {},
+  });
+  const retryResponse = await retryServer.fetchGoogleBooksFallbackWithRetry(
+    'https://www.googleapis.com/books/v1/volumes?q=intitle%3A%22Retry%22',
+    'strict_quoted_title_author',
+  );
+  assert.strictEqual(retryResponse.status, 200);
+  assert.strictEqual(retryFetchCalls, 2);
+  assert.ok(
+    retryDelays[0] >= 1000,
+    `Expected Retry-After-driven delay for 503 to be >= 1000ms, received ${retryDelays[0]}`,
+  );
 
   const googleMetadata = parseGoogleBooksData({
     items: [
