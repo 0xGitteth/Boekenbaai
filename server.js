@@ -1610,6 +1610,17 @@ function logIsbnLookupDebug(stage, details) {
   console.info(`[ISBN_LOOKUP_DEBUG] ${stage}`, details);
 }
 
+function logImportFallbackDebug(stage, details) {
+  if (!DEBUG_ISBN_LOOKUP) {
+    return;
+  }
+  if (details === undefined) {
+    console.info(`[IMPORT_FALLBACK_DEBUG] ${stage}`);
+    return;
+  }
+  console.info(`[IMPORT_FALLBACK_DEBUG] ${stage}`, details);
+}
+
 function summarizeIndustryIdentifiers(item) {
   const identifiers = Array.isArray(item?.volumeInfo?.industryIdentifiers)
     ? item.volumeInfo.industryIdentifiers
@@ -2212,14 +2223,31 @@ function parseGoogleBooksData(data, fallbackBarcode, debugTarget = null) {
   return metadata;
 }
 
-function parseGoogleBooksTitleAuthorFallbackData(data, target) {
+function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = null) {
   const items = Array.isArray(data?.items) ? data.items : [];
   if (!items.length) {
+    logImportFallbackDebug('fallback_result', {
+      accepted: false,
+      acceptedFields: [],
+      rejectReason: 'no_candidates',
+      source: 'googlebooks',
+      ...(debugContext && typeof debugContext === 'object' ? { context: debugContext } : {}),
+    });
     return null;
   }
+  let rejectedReason = 'no_strict_match';
   for (const item of items) {
     const volumeInfo = item?.volumeInfo;
     if (!volumeInfo || typeof volumeInfo !== 'object') {
+      logImportFallbackDebug('fallback_candidate', {
+        title: '',
+        author: '',
+        hasCoverUrl: false,
+        hasPublisher: false,
+        hasDescription: false,
+        strictMatch: false,
+        rejectReason: 'invalid_volume_info',
+      });
       continue;
     }
     const authors = Array.isArray(volumeInfo.authors)
@@ -2236,10 +2264,37 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target) {
       source: 'googlebooks-title-author',
       found: true,
     };
-    if (isStrictWorkMatch(target, metadata)) {
+    const strictMatch = isStrictWorkMatch(target, metadata);
+    logImportFallbackDebug('fallback_candidate', {
+      title: metadata.title,
+      author: metadata.author,
+      hasCoverUrl: Boolean(metadata.coverUrl),
+      hasPublisher: Boolean(metadata.publisher),
+      hasDescription: Boolean(metadata.description),
+      strictMatch,
+      rejectReason: strictMatch ? null : 'strict_work_mismatch',
+    });
+    if (strictMatch) {
+      const acceptedFields = [];
+      if (metadata.coverUrl) acceptedFields.push('coverUrl');
+      if (metadata.publisher) acceptedFields.push('publisher');
+      if (metadata.description) acceptedFields.push('description');
+      logImportFallbackDebug('fallback_result', {
+        accepted: true,
+        acceptedFields,
+        source: metadata.source || 'googlebooks-title-author',
+        ...(debugContext && typeof debugContext === 'object' ? { context: debugContext } : {}),
+      });
       return metadata;
     }
   }
+  logImportFallbackDebug('fallback_result', {
+    accepted: false,
+    acceptedFields: [],
+    rejectReason: rejectedReason,
+    source: 'googlebooks',
+    ...(debugContext && typeof debugContext === 'object' ? { context: debugContext } : {}),
+  });
   return null;
 }
 
@@ -2252,6 +2307,11 @@ async function lookupMetadataByTitleAuthor(target) {
   if (!title || !author) {
     return null;
   }
+  logImportFallbackDebug('fallback_lookup_start', {
+    normalizedTitle: normalizeWorkTitle(title),
+    normalizedAuthor: normalizeAuthorName(author),
+    source: 'googlebooks',
+  });
   const queryUrl = new URL('https://www.googleapis.com/books/v1/volumes');
   queryUrl.searchParams.set('q', `intitle:${title} inauthor:${author}`);
   queryUrl.searchParams.set('printType', 'books');
@@ -2265,10 +2325,19 @@ async function lookupMetadataByTitleAuthor(target) {
     },
   });
   if (!response.ok) {
+    logImportFallbackDebug('fallback_result', {
+      accepted: false,
+      acceptedFields: [],
+      rejectReason: `http_${response.status}`,
+      source: 'googlebooks',
+    });
     return null;
   }
   const payload = await response.json();
-  return parseGoogleBooksTitleAuthorFallbackData(payload, target);
+  return parseGoogleBooksTitleAuthorFallbackData(payload, target, {
+    normalizedTitle: normalizeWorkTitle(title),
+    normalizedAuthor: normalizeAuthorName(author),
+  });
 }
 
 function buildOpenLibraryCoverUrlFromCoverId(coverId, size = 'L') {
@@ -3937,19 +4006,56 @@ async function handleApi(req, res, requestUrl) {
         const hasCoverInput = coverUrlSource !== undefined && String(coverUrlSource).trim();
         const hasPublisherInput = publisherSource !== undefined && String(publisherSource).trim();
         const hasDescriptionInput = description.length > 0;
+        const rowTitle = title || existingBook?.title || '';
+        const rowAuthor = author || existingBook?.author || '';
+        const hadExistingCoverUrl = Boolean(existingBook?.coverUrl);
+        const hadExistingPublisher = Boolean(existingBook?.publisher);
+        const hadExistingDescription = Boolean(existingBook?.description);
+        const missingFieldsBeforeFallback = [];
+        if (!(hasCoverInput || hadExistingCoverUrl || metadataFields?.coverUrl)) missingFieldsBeforeFallback.push('coverUrl');
+        if (!(hasPublisherInput || hadExistingPublisher || metadataFields?.publisher)) missingFieldsBeforeFallback.push('publisher');
+        if (!(hasDescriptionInput || hadExistingDescription || metadataFields?.description)) missingFieldsBeforeFallback.push('description');
         const shouldTryTitleAuthorFallback = importEnrichmentEnabled
           && Boolean(titleAuthorLookup)
-          && Boolean((title || existingBook?.title) && (author || existingBook?.author))
-          && (
-            !(hasCoverInput || existingBook?.coverUrl || metadataFields?.coverUrl)
-            || !(hasPublisherInput || existingBook?.publisher || metadataFields?.publisher)
-            || !(hasDescriptionInput || existingBook?.description || metadataFields?.description)
-          );
+          && Boolean(rowTitle && rowAuthor)
+          && missingFieldsBeforeFallback.length > 0;
+        logImportFallbackDebug('row_fallback_check', {
+          title: rowTitle,
+          author: rowAuthor,
+          barcode,
+          metadataIsbn,
+          missingFieldsBeforeFallback,
+          hadExistingCoverUrl: hadExistingCoverUrl ? 'yes' : 'no',
+          hadExistingPublisher: hadExistingPublisher ? 'yes' : 'no',
+          hadExistingDescription: hadExistingDescription ? 'yes' : 'no',
+        });
+        if (!shouldTryTitleAuthorFallback) {
+          const skipReason = !importEnrichmentEnabled
+            ? 'fallback_source_not_applicable'
+            : !titleAuthorLookup
+              ? 'fallback_source_not_applicable'
+              : missingFieldsBeforeFallback.length === 0
+                ? 'no_missing_fields'
+                : !rowTitle
+                  ? 'missing_title'
+                  : !rowAuthor
+                    ? 'missing_author'
+                    : 'exact_result_already_sufficient';
+          logImportFallbackDebug('row_fallback_skipped', {
+            reason: skipReason,
+            title: rowTitle,
+            author: rowAuthor,
+            barcode,
+            metadataIsbn,
+            missingFieldsBeforeFallback,
+          });
+        }
+        let fallbackUsed = false;
         if (shouldTryTitleAuthorFallback) {
           const fallbackTarget = {
-            title: title || existingBook?.title || '',
-            author: author || existingBook?.author || '',
-            rawTitle: title || existingBook?.title || '',
+            title: rowTitle,
+            author: rowAuthor,
+            rawTitle: rowTitle,
             language: language || existingBook?.language || metadataFields?.language || '',
           };
           try {
@@ -3957,11 +4063,54 @@ async function handleApi(req, res, requestUrl) {
             if (strictFallbackMetadata && typeof strictFallbackMetadata === 'object'
               && isStrictWorkMatch(fallbackTarget, strictFallbackMetadata)) {
               metadataFields = mergeLookupMetadata(metadataFields || {}, strictFallbackMetadata);
+              fallbackUsed = true;
+            } else {
+              logImportFallbackDebug('fallback_result', {
+                accepted: false,
+                acceptedFields: [],
+                rejectReason: 'strict_match_failed_or_empty',
+                source: strictFallbackMetadata?.source || null,
+              });
             }
           } catch (error) {
             console.warn('Titel/auteur fallback-verrijking mislukt:', error?.message || error);
+            logImportFallbackDebug('fallback_result', {
+              accepted: false,
+              acceptedFields: [],
+              rejectReason: 'lookup_error',
+              source: 'googlebooks',
+            });
           }
         }
+        const finalCoverUrlSource = hasCoverInput
+          ? 'input'
+          : existingBook?.coverUrl
+            ? 'existing'
+            : metadataFields?.coverUrl
+              ? (fallbackUsed && metadataFields?.source === 'googlebooks-title-author' ? 'fallback' : (metadataFields?.source || 'isbn'))
+              : '';
+        const finalPublisherSource = hasPublisherInput
+          ? 'input'
+          : existingBook?.publisher
+            ? 'existing'
+            : metadataFields?.publisher
+              ? (fallbackUsed && metadataFields?.source === 'googlebooks-title-author' ? 'fallback' : (metadataFields?.source || 'isbn'))
+              : '';
+        const finalDescriptionSource = hasDescriptionInput
+          ? 'input'
+          : existingBook?.description
+            ? 'existing'
+            : metadataFields?.description
+              ? (fallbackUsed && metadataFields?.source === 'googlebooks-title-author' ? 'fallback' : (metadataFields?.source || 'isbn'))
+              : '';
+        logImportFallbackDebug('row_final_metadata', {
+          title: rowTitle || metadataFields?.title || '',
+          author: rowAuthor || metadataFields?.author || '',
+          coverUrlSource: finalCoverUrlSource,
+          publisherSource: finalPublisherSource,
+          descriptionSource: finalDescriptionSource,
+          fallbackUsed,
+        });
         let baseTemplate = null;
         if (existingBook) {
           const nextTitle = title || existingBook.title || metadataFields?.title || '';
