@@ -2362,6 +2362,13 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
   return null;
 }
 
+function escapeGoogleBooksQuotedTerm(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"');
+}
+
 async function lookupMetadataByTitleAuthor(target) {
   if (!globalFetch || !process.env.GOOGLE_BOOKS_API_KEY) {
     return null;
@@ -2377,7 +2384,10 @@ async function lookupMetadataByTitleAuthor(target) {
     source: 'googlebooks',
   });
   const queryUrl = new URL('https://www.googleapis.com/books/v1/volumes');
-  queryUrl.searchParams.set('q', `intitle:"${title}" inauthor:"${author}"`);
+  queryUrl.searchParams.set(
+    'q',
+    `intitle:"${escapeGoogleBooksQuotedTerm(title)}" inauthor:"${escapeGoogleBooksQuotedTerm(author)}"`,
+  );
   queryUrl.searchParams.set('printType', 'books');
   queryUrl.searchParams.set('projection', 'full');
   queryUrl.searchParams.set('maxResults', '10');
