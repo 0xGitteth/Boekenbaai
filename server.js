@@ -2015,6 +2015,8 @@ function normalizeWorkTitle(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/\bp\s*\.?\s*s\s*\.?\b/gu, 'ps')
+    .replace(/^\s*[\p{L}\p{N}'’\- ]{2,50},\s*/u, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -2023,11 +2025,19 @@ function normalizeWorkTitle(value) {
   }
   const editionTokens = new Set([
     'druk', 'editie', 'edition', 'paperback', 'hardcover', 'lijsters', 'pocketserie',
-    'pocket', 'schooluitgave', 'school', 'herziene', 'uitgave',
+    'pocket', 'schooluitgave', 'school', 'herziene', 'uitgave', 'dr', 'ed',
   ]);
-  return normalized
-    .split(' ')
-    .filter((token) => token && !editionTokens.has(token))
+  const tokens = normalized.split(' ').filter(Boolean);
+  return tokens
+    .filter((token, index) => {
+      if (!token || editionTokens.has(token)) {
+        return false;
+      }
+      const prev = tokens[index - 1] || '';
+      const next = tokens[index + 1] || '';
+      const isEditionOrdinal = /^\d+(?:e|de|ste)?$/i.test(token) && (editionTokens.has(prev) || editionTokens.has(next));
+      return !isEditionOrdinal;
+    })
     .join(' ')
     .trim();
 }
@@ -2036,10 +2046,27 @@ function normalizeAuthorName(value) {
   if (typeof value !== 'string') {
     return '';
   }
-  return value
+  let normalized = value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/[.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const parts = normalized.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const betweenTokens = new Set(['van', 'de', 'den', 'der', 'ten', 'ter', 'het', 'op', "'t"]);
+    const headTokens = parts[0].split(' ').filter(Boolean);
+    const tailTokens = parts.slice(1).join(' ').split(' ').filter(Boolean);
+    if (tailTokens.length && tailTokens.every((token) => betweenTokens.has(token))) {
+      if (headTokens.length >= 2) {
+        normalized = `${headTokens.slice(0, -1).join(' ')} ${tailTokens.join(' ')} ${headTokens[headTokens.length - 1]}`;
+      } else if (headTokens.length === 1) {
+        normalized = `${tailTokens.join(' ')} ${headTokens[0]}`;
+      }
+    }
+  }
+  return normalized
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -2067,7 +2094,17 @@ function isStrictWorkMatch(target, candidate) {
   }
   const targetTitle = normalizeWorkTitle(target.title);
   const candidateTitle = normalizeWorkTitle(candidate.title);
-  if (!targetTitle || !candidateTitle || targetTitle !== candidateTitle) {
+  const targetPrimaryTitle = normalizeWorkTitle((target.title || '').replace(/\([^)]*\)/g, ' '));
+  const candidatePrimaryTitle = normalizeWorkTitle((candidate.title || '').replace(/\([^)]*\)/g, ' '));
+  const titleMatches = !!targetTitle
+    && !!candidateTitle
+    && (
+      targetTitle === candidateTitle
+      || (targetPrimaryTitle && targetPrimaryTitle === candidatePrimaryTitle)
+      || (targetPrimaryTitle && targetPrimaryTitle === candidateTitle)
+      || (candidatePrimaryTitle && candidatePrimaryTitle === targetTitle)
+    );
+  if (!titleMatches) {
     return false;
   }
 

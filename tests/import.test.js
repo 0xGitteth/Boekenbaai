@@ -717,6 +717,12 @@ async function runStrictTitleAuthorFallbackImportTest() {
       publisher: 'Rijke Uitgever',
       description: 'Rijke beschrijving',
     },
+    '9787000000007': { title: 'Door jou ben ik mij', author: 'Hinke Abbema, van', coverUrl: '' },
+    '9787000000008': { title: 'Geef me de ruimte', author: 'Thea Beckman', coverUrl: '' },
+    '9787000000009': { title: 'P.s. ik hou van je (p.s. i love you)', author: 'Cecelia Ahern', coverUrl: '' },
+    '9787000000010': { title: 'P.s. ik hou van je', author: 'Andere Auteur', coverUrl: '' },
+    '9787000000011': { title: 'Hajar en Daan!', author: 'Carry Slee', coverUrl: '' },
+    '9787000000012': { title: 'Hajar en Daan Deel 2.', author: 'Carry Slee', coverUrl: '' },
   };
   const taFixtures = {
     'hajar en daan|||carry slee': {
@@ -739,6 +745,48 @@ async function runStrictTitleAuthorFallbackImportTest() {
       coverUrl: 'https://example.com/omnibus-cover.jpg',
       language: 'nl',
     },
+    'door jou ben ik mij|||hinke abbema, van': {
+      title: 'Door jou ben ik mij',
+      author: 'Hinke van Abbema',
+      coverUrl: 'https://example.com/hinke-cover.jpg',
+      publisher: 'Fallback Uitgever',
+      description: 'Fallback beschrijving',
+      language: 'nl',
+    },
+    'geef me de ruimte|||thea beckman': {
+      title: 'Beckman, Geef me de ruimte!, 37e dr.',
+      author: 'Thea Beckman',
+      coverUrl: 'https://example.com/ruimte-cover.jpg',
+      publisher: 'Uitgever',
+      description: 'Beschrijving',
+      language: 'nl',
+    },
+    'p.s. ik hou van je (p.s. i love you)|||cecelia ahern': {
+      title: 'P.S. Ik hou van je',
+      author: 'Cecelia Ahern',
+      coverUrl: 'https://example.com/ps-cover.jpg',
+      publisher: 'PS Uitgever',
+      description: 'PS beschrijving',
+      language: 'nl',
+    },
+    'p.s. ik hou van je|||andere auteur': {
+      title: 'P.S. Ik hou van je',
+      author: 'Volledig Andere',
+      coverUrl: 'https://example.com/wrong-ps-cover.jpg',
+      language: 'nl',
+    },
+    'hajar en daan!|||carry slee': {
+      title: 'Hajar en Daan omnibus',
+      author: 'Carry Slee',
+      coverUrl: 'https://example.com/omnibus-no-part-cover.jpg',
+      language: 'nl',
+    },
+    'hajar en daan deel 2.|||carry slee': {
+      title: 'Hajar en Daan deel 3',
+      author: 'Carry Slee',
+      coverUrl: 'https://example.com/deel3-cover.jpg',
+      language: 'nl',
+    },
   };
 
   const serverProcess = startServer({
@@ -759,6 +807,12 @@ async function runStrictTitleAuthorFallbackImportTest() {
       { Titel: 'Hajar en Daan Deel 2', Auteur: 'Carry Slee', Barcode: '9787000000004' },
       { Titel: 'Hajar en Daan', Auteur: 'Carry Slee', Barcode: '9787000000005' },
       { Titel: 'Hajar en Daan', Auteur: 'Carry Slee', Barcode: '9787000000006' },
+      { Titel: 'Door jou ben ik mij', Auteur: 'Hinke Abbema, van', Barcode: '9787000000007' },
+      { Titel: 'Geef me de ruimte', Auteur: 'Thea Beckman', Barcode: '9787000000008' },
+      { Titel: 'P.s. ik hou van je (p.s. i love you)', Auteur: 'Cecelia Ahern', Barcode: '9787000000009' },
+      { Titel: 'P.s. ik hou van je', Auteur: 'Andere Auteur', Barcode: '9787000000010' },
+      { Titel: 'Hajar en Daan!', Auteur: 'Carry Slee', Barcode: '9787000000011' },
+      { Titel: 'Hajar en Daan Deel 2.', Auteur: 'Carry Slee', Barcode: '9787000000012' },
     ]);
     const importResponse = await request('/api/books/import', {
       method: 'POST',
@@ -795,9 +849,27 @@ async function runStrictTitleAuthorFallbackImportTest() {
     assert.strictEqual(scenario6.publisher, 'Rijke Uitgever');
     assert.strictEqual(scenario6.description, 'Rijke beschrijving');
 
+    const scenario7 = byBarcode('9787000000007');
+    assert.strictEqual(scenario7.coverUrl, 'https://example.com/hinke-cover.jpg');
+
+    const scenario8 = byBarcode('9787000000008');
+    assert.strictEqual(scenario8.coverUrl, 'https://example.com/ruimte-cover.jpg');
+
+    const scenario9 = byBarcode('9787000000009');
+    assert.strictEqual(scenario9.coverUrl, 'https://example.com/ps-cover.jpg');
+
+    const scenario10 = byBarcode('9787000000010');
+    assert.strictEqual(scenario10.coverUrl, '');
+
+    const scenario11 = byBarcode('9787000000011');
+    assert.strictEqual(scenario11.coverUrl, '');
+
+    const scenario12 = byBarcode('9787000000012');
+    assert.strictEqual(scenario12.coverUrl, '');
+
     const logs = fs.readFileSync(logPath, 'utf-8').trim().split('\n').filter(Boolean);
     const taLookups = logs.filter((entry) => entry.startsWith('TA:'));
-    assert.strictEqual(taLookups.length, 5);
+    assert.strictEqual(taLookups.length, 11);
   } finally {
     serverProcess.kill('SIGINT');
   }
