@@ -887,6 +887,7 @@ async function runGoogleBooksFallbackResilienceTest() {
   const qStrictWithParens = 'intitle:"Ladder Titel (schooleditie)" inauthor:"Carry Slee"';
   const qPrimaryWithParens = 'intitle:"Ladder Titel" inauthor:"Carry Slee"';
   const qRelaxedWithParens = 'intitle:"Ladder Titel (schooleditie)" inauthor:Carry Slee';
+  const qStrictLanguageCache = 'intitle:"Language Cache Titel" inauthor:"Carry Slee"';
   const queryPlan = {
     [qStrictRetry503]: [
       { status: 503, items: [] },
@@ -951,6 +952,34 @@ async function runGoogleBooksFallbackResilienceTest() {
         ],
       },
     ],
+    [qStrictLanguageCache]: [
+      {
+        status: 200,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Language Cache Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/language-cache.jpg' },
+            },
+          },
+        ],
+      },
+      {
+        status: 200,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Language Cache Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/language-cache.jpg' },
+            },
+          },
+        ],
+      },
+    ],
   };
 
   const serverProcess = startServer({
@@ -972,6 +1001,8 @@ async function runGoogleBooksFallbackResilienceTest() {
       { Titel: 'Fail 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000006' },
       { Titel: 'Retry 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000004' },
       { Titel: 'Ladder Titel (schooleditie)', Auteur: 'Carry Slee', Barcode: '9787100000005' },
+      { Titel: 'Language Cache Titel', Auteur: 'Carry Slee', Taal: 'nl', Barcode: '9787100000007' },
+      { Titel: 'Language Cache Titel', Auteur: 'Carry Slee', Taal: 'en', Barcode: '9787100000008' },
     ]);
     const importResponse = await request('/api/books/import', {
       method: 'POST',
@@ -993,6 +1024,8 @@ async function runGoogleBooksFallbackResilienceTest() {
     assert.strictEqual(byBarcode('9787100000005').coverUrl, 'https://example.com/ladder-rich.jpg');
     assert.strictEqual(byBarcode('9787100000005').publisher, 'Rijke Uitgever');
     assert.strictEqual(byBarcode('9787100000005').description, 'Rijke beschrijving');
+    assert.strictEqual(byBarcode('9787100000007').coverUrl, 'https://example.com/language-cache.jpg');
+    assert.strictEqual(byBarcode('9787100000008').coverUrl, '');
 
     const googleLogs = fs.readFileSync(googleLogPath, 'utf-8').trim().split('\n').filter(Boolean);
     const queryCount = (query) => googleLogs.filter((entry) => entry.includes(`GB:${query}#`)).length;
@@ -1002,6 +1035,7 @@ async function runGoogleBooksFallbackResilienceTest() {
     assert.strictEqual(queryCount(qStrictWithParens), 1);
     assert.strictEqual(queryCount(qPrimaryWithParens), 1);
     assert.strictEqual(queryCount(qRelaxedWithParens), 1);
+    assert.strictEqual(queryCount(qStrictLanguageCache), 2);
   } finally {
     serverProcess.kill('SIGINT');
   }

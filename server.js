@@ -2413,8 +2413,27 @@ function buildTitleAuthorLookupVariants(title, author) {
   return variants;
 }
 
-function getTitleAuthorFallbackCacheKey(title, author, variant) {
-  return `${normalizeWorkTitle(title)}|||${normalizeAuthorName(author)}|||${variant}`;
+function buildStrictWorkMatchConstraintFingerprint(target) {
+  if (!target || typeof target !== 'object') {
+    return '||||';
+  }
+  const normalizedTitle = normalizeWorkTitle(target.title);
+  const normalizedAuthor = normalizeAuthorName(target.author);
+  const normalizedLanguage = normalizeLanguageCode(target.language) || '';
+  const rawTitleContext = target.rawTitle || target.title || '';
+  const seriesPart = extractSeriesPart(rawTitleContext);
+  const collectionMarker = hasCollectionMarker(rawTitleContext) ? '1' : '0';
+  return [
+    normalizedTitle,
+    normalizedAuthor,
+    normalizedLanguage,
+    seriesPart,
+    collectionMarker,
+  ].join('|||');
+}
+
+function getTitleAuthorFallbackCacheKey(target, variant) {
+  return `${buildStrictWorkMatchConstraintFingerprint(target)}|||${variant}`;
 }
 
 function getCachedTitleAuthorFallbackResult(cacheKey, now = Date.now()) {
@@ -2500,7 +2519,7 @@ async function fetchGoogleBooksFallbackWithRetry(queryUrl, variant) {
         },
       });
       if (!response.ok && isTransientFallbackStatus(response.status) && attempt < TITLE_AUTHOR_FALLBACK_MAX_RETRIES) {
-        const { delayMs, usedRetryAfter } = getFallbackRetryDelayMs(attempt, response.status === 429 ? response : null);
+        const { delayMs, usedRetryAfter } = getFallbackRetryDelayMs(attempt, response);
         logImportFallbackDebug('fallback_lookup_retry', {
           variant,
           attempt: attempt + 1,
@@ -2554,7 +2573,7 @@ async function lookupMetadataByTitleAuthor(target) {
     source: 'googlebooks',
   });
   for (const entry of variants) {
-    const cacheKey = getTitleAuthorFallbackCacheKey(title, author, entry.variant);
+    const cacheKey = getTitleAuthorFallbackCacheKey(target, entry.variant);
     const cached = getCachedTitleAuthorFallbackResult(cacheKey);
     if (cached.hit) {
       logImportFallbackDebug('fallback_lookup_cache_hit', {
