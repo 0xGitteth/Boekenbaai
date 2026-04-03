@@ -875,6 +875,138 @@ async function runStrictTitleAuthorFallbackImportTest() {
   }
 }
 
+async function runGoogleBooksFallbackResilienceTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-import-fallback-google-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  const googleLogPath = path.join(tempDir, 'google.log');
+  createDbFixture(dbPath);
+  const emptyIsbnFixtures = {};
+  const qStrictRetry503 = 'intitle:"Retry 503 Titel" inauthor:"Carry Slee"';
+  const qStrictRetry429 = 'intitle:"Retry 429 Titel" inauthor:"Carry Slee"';
+  const qStrictFail503 = 'intitle:"Fail 503 Titel" inauthor:"Carry Slee"';
+  const qStrictWithParens = 'intitle:"Ladder Titel (schooleditie)" inauthor:"Carry Slee"';
+  const qPrimaryWithParens = 'intitle:"Ladder Titel" inauthor:"Carry Slee"';
+  const qRelaxedWithParens = 'intitle:"Ladder Titel (schooleditie)" inauthor:Carry Slee';
+  const queryPlan = {
+    [qStrictRetry503]: [
+      { status: 503, items: [] },
+      {
+        status: 200,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Retry 503 Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/retry-503.jpg' },
+            },
+          },
+        ],
+      },
+    ],
+    [qStrictRetry429]: [
+      { status: 429, items: [] },
+      {
+        status: 200,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Retry 429 Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/retry-429.jpg' },
+            },
+          },
+        ],
+      },
+    ],
+    [qStrictFail503]: [
+      { status: 503, items: [] },
+      { status: 503, items: [] },
+      { status: 503, items: [] },
+    ],
+    [qStrictWithParens]: [{ status: 200, items: [] }],
+    [qPrimaryWithParens]: [{ status: 200, items: [] }],
+    [qRelaxedWithParens]: [
+      {
+        status: 200,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Ladder Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/ladder-rich.jpg' },
+              publisher: 'Rijke Uitgever',
+              description: 'Rijke beschrijving',
+            },
+          },
+          {
+            volumeInfo: {
+              title: 'Ladder Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+    GOOGLE_BOOKS_API_KEY: 'test-google-key',
+    BOEKENBAAI_TEST_ISBN_FIXTURES: JSON.stringify(emptyIsbnFixtures),
+    BOEKENBAAI_TEST_GOOGLE_BOOKS_FALLBACK_PLAN: JSON.stringify(queryPlan),
+    BOEKENBAAI_TEST_GOOGLE_BOOKS_LOG: googleLogPath,
+    NODE_OPTIONS: `--require ${path.join(__dirname, 'mock-isbn-only-lookup.js')} --require ${path.join(__dirname, 'mock-google-books-fallback.js')}`,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const workbookBase64 = buildWorkbookBase64([
+      { Titel: 'Retry 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000001' },
+      { Titel: 'Retry 429 Titel', Auteur: 'Carry Slee', Barcode: '9787100000002' },
+      { Titel: 'Fail 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000003' },
+      { Titel: 'Fail 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000006' },
+      { Titel: 'Retry 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000004' },
+      { Titel: 'Ladder Titel (schooleditie)', Auteur: 'Carry Slee', Barcode: '9787100000005' },
+    ]);
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+    assert.strictEqual(importResponse.status, 200);
+
+    const books = await readBookCollection(token);
+    const byBarcode = (barcode) => books.find((book) => book.barcode === barcode);
+    assert.strictEqual(byBarcode('9787100000001').coverUrl, 'https://example.com/retry-503.jpg');
+    assert.strictEqual(byBarcode('9787100000002').coverUrl, 'https://example.com/retry-429.jpg');
+    assert.strictEqual(byBarcode('9787100000003').coverUrl, '');
+    assert.strictEqual(byBarcode('9787100000006').coverUrl, '');
+    assert.strictEqual(byBarcode('9787100000004').coverUrl, 'https://example.com/retry-503.jpg');
+    assert.strictEqual(byBarcode('9787100000005').coverUrl, 'https://example.com/ladder-rich.jpg');
+    assert.strictEqual(byBarcode('9787100000005').publisher, 'Rijke Uitgever');
+    assert.strictEqual(byBarcode('9787100000005').description, 'Rijke beschrijving');
+
+    const googleLogs = fs.readFileSync(googleLogPath, 'utf-8').trim().split('\n').filter(Boolean);
+    const queryCount = (query) => googleLogs.filter((entry) => entry.includes(`GB:${query}#`)).length;
+    assert.strictEqual(queryCount(qStrictRetry503), 2);
+    assert.strictEqual(queryCount(qStrictRetry429), 2);
+    assert.strictEqual(queryCount(qStrictFail503), 6);
+    assert.strictEqual(queryCount(qStrictWithParens), 1);
+    assert.strictEqual(queryCount(qPrimaryWithParens), 1);
+    assert.strictEqual(queryCount(qRelaxedWithParens), 1);
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
 async function runTests() {
   // Enrichment enabled via request flag should merge metadata without overriding user fields.
   const enrichmentResult = await runEnrichmentImportTest({ enableFlag: false, requestFlag: true });
@@ -917,6 +1049,7 @@ async function runTests() {
   await runStoredCoverRewriteOnLoadTest();
   await runThemeImportWorkflowTest();
   await runStrictTitleAuthorFallbackImportTest();
+  await runGoogleBooksFallbackResilienceTest();
 
   // Test easyReading and suitableForExamList import
   const easyReadingResult = await runEasyReadingTest();

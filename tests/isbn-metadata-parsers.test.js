@@ -352,17 +352,17 @@ async function runTests() {
   });
   await queryLookup({ title: 'He said "Yes"', author: 'Els Beerten' });
   assert.ok(
-    queryUrls[0].includes('q=intitle%3A%22He+said+%5C%22Yes%5C%22%22+inauthor%3A%22Els+Beerten%22'),
+    queryUrls.some((url) => url.includes('q=intitle%3A%22He+said+%5C%22Yes%5C%22%22+inauthor%3A%22Els+Beerten%22')),
     'Title with embedded quotes should be safely escaped inside quoted query terms',
   );
   await queryLookup({ title: 'Lopen voor je leven', author: 'A "Quoted" Author' });
   assert.ok(
-    queryUrls[1].includes('q=intitle%3A%22Lopen+voor+je+leven%22+inauthor%3A%22A+%5C%22Quoted%5C%22+Author%22'),
+    queryUrls.some((url) => url.includes('q=intitle%3A%22Lopen+voor+je+leven%22+inauthor%3A%22A+%5C%22Quoted%5C%22+Author%22')),
     'Author with embedded quotes should be safely escaped inside quoted query terms',
   );
   await queryLookup({ title: 'Lopen voor je leven', author: 'Els Beerten' });
   assert.ok(
-    queryUrls[2].includes('q=intitle%3A%22Lopen+voor+je+leven%22+inauthor%3A%22Els+Beerten%22'),
+    queryUrls.some((url) => url.includes('q=intitle%3A%22Lopen+voor+je+leven%22+inauthor%3A%22Els+Beerten%22')),
     'Existing no-quote behavior should remain unchanged',
   );
 

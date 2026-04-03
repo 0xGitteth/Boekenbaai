@@ -50,6 +50,16 @@ const ISBN_CACHE_TTL_MS = (() => {
   }
   return DEFAULT_ISBN_CACHE_TTL_MS;
 })();
+const DEFAULT_TITLE_AUTHOR_FALLBACK_CACHE_TTL_MS = 90 * 1000;
+const TITLE_AUTHOR_FALLBACK_CACHE_TTL_MS = (() => {
+  const raw = Number(process.env.BOEKENBAAI_TITLE_AUTHOR_CACHE_TTL_MS);
+  if (Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  return DEFAULT_TITLE_AUTHOR_FALLBACK_CACHE_TTL_MS;
+})();
+const TITLE_AUTHOR_FALLBACK_MAX_RETRIES = 2;
+const TITLE_AUTHOR_FALLBACK_RETRY_BASE_MS = 120;
 
 const STATIC_DIR = (() => {
   const candidates = [configuredStaticDir, DIST_DIR, PUBLIC_DIR].filter(Boolean);
@@ -745,6 +755,7 @@ console.log(`Boekenbaai serveert statische bestanden uit: ${STATIC_DIR}`);
 const sessions = new Map();
 const isbnMetadataCache = new Map();
 const isbnLookupInflight = new Map();
+const titleAuthorFallbackCache = new Map();
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
 
 function getIsbnCacheKey(isbn) {
@@ -2369,6 +2380,163 @@ function escapeGoogleBooksQuotedTerm(value) {
     .replace(/"/g, '\\"');
 }
 
+function getTitleAuthorFallbackPrimaryTitle(title) {
+  if (typeof title !== 'string') {
+    return '';
+  }
+  return title.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function buildTitleAuthorLookupVariants(title, author) {
+  const variants = [];
+  const quotedTitle = escapeGoogleBooksQuotedTerm(title);
+  const quotedAuthor = escapeGoogleBooksQuotedTerm(author);
+  variants.push({
+    variant: 'strict_quoted_title_author',
+    query: `intitle:"${quotedTitle}" inauthor:"${quotedAuthor}"`,
+  });
+  const primaryTitle = getTitleAuthorFallbackPrimaryTitle(title);
+  if (primaryTitle && primaryTitle !== title) {
+    variants.push({
+      variant: 'strict_primary_title_author',
+      query: `intitle:"${escapeGoogleBooksQuotedTerm(primaryTitle)}" inauthor:"${quotedAuthor}"`,
+    });
+  }
+  variants.push({
+    variant: 'quoted_title_relaxed_author',
+    query: `intitle:"${quotedTitle}" inauthor:${escapeGoogleBooksQuotedTerm(author)}`,
+  });
+  variants.push({
+    variant: 'quoted_title_only',
+    query: `intitle:"${quotedTitle}"`,
+  });
+  return variants;
+}
+
+function getTitleAuthorFallbackCacheKey(title, author, variant) {
+  return `${normalizeWorkTitle(title)}|||${normalizeAuthorName(author)}|||${variant}`;
+}
+
+function getCachedTitleAuthorFallbackResult(cacheKey, now = Date.now()) {
+  const cached = titleAuthorFallbackCache.get(cacheKey);
+  if (!cached) {
+    return { hit: false, value: null };
+  }
+  if (cached.expiresAt <= now) {
+    titleAuthorFallbackCache.delete(cacheKey);
+    return { hit: false, value: null };
+  }
+  return { hit: true, value: cached.value };
+}
+
+function setCachedTitleAuthorFallbackResult(cacheKey, value, now = Date.now()) {
+  titleAuthorFallbackCache.set(cacheKey, {
+    value,
+    expiresAt: now + TITLE_AUTHOR_FALLBACK_CACHE_TTL_MS,
+  });
+}
+
+function isTransientFallbackStatus(status) {
+  return status === 429 || status === 503;
+}
+
+function isTransientFallbackNetworkError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  if (code && ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED'].includes(code)) {
+    return true;
+  }
+  return error instanceof TypeError;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function parseRetryAfterMs(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+  const asSeconds = Number(text);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.round(asSeconds * 1000);
+  }
+  const asDate = Date.parse(text);
+  if (!Number.isFinite(asDate)) {
+    return null;
+  }
+  const delta = asDate - Date.now();
+  return delta > 0 ? delta : 0;
+}
+
+function getFallbackRetryDelayMs(attempt, response = null) {
+  const jitterMs = Math.round(Math.random() * 60);
+  const baseDelayMs = Math.round(TITLE_AUTHOR_FALLBACK_RETRY_BASE_MS * (2 ** attempt) + jitterMs);
+  const retryAfterHeader = response?.headers?.get?.('retry-after');
+  const retryAfterMs = parseRetryAfterMs(retryAfterHeader);
+  if (retryAfterMs === null) {
+    return { delayMs: baseDelayMs, usedRetryAfter: false };
+  }
+  return {
+    delayMs: Math.max(baseDelayMs, retryAfterMs),
+    usedRetryAfter: true,
+  };
+}
+
+async function fetchGoogleBooksFallbackWithRetry(queryUrl, variant) {
+  let attempt = 0;
+  for (;;) {
+    try {
+      const response = await globalFetch(queryUrl, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Boekenbaai/1.0 (+https://boekenbaai.example)',
+          'x-goog-api-key': process.env.GOOGLE_BOOKS_API_KEY,
+        },
+      });
+      if (!response.ok && isTransientFallbackStatus(response.status) && attempt < TITLE_AUTHOR_FALLBACK_MAX_RETRIES) {
+        const { delayMs, usedRetryAfter } = getFallbackRetryDelayMs(attempt, response.status === 429 ? response : null);
+        logImportFallbackDebug('fallback_lookup_retry', {
+          variant,
+          attempt: attempt + 1,
+          reason: `http_${response.status}`,
+          delayMs,
+          usedRetryAfter,
+        });
+        attempt += 1;
+        await wait(delayMs);
+        continue;
+      }
+      if (attempt > 0 && response.ok) {
+        logImportFallbackDebug('fallback_lookup_retry_success', {
+          variant,
+          attempt: attempt + 1,
+        });
+      }
+      return response;
+    } catch (error) {
+      if (isTransientFallbackNetworkError(error) && attempt < TITLE_AUTHOR_FALLBACK_MAX_RETRIES) {
+        const { delayMs } = getFallbackRetryDelayMs(attempt);
+        logImportFallbackDebug('fallback_lookup_retry', {
+          variant,
+          attempt: attempt + 1,
+          reason: 'network_error',
+          delayMs,
+        });
+        attempt += 1;
+        await wait(delayMs);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 async function lookupMetadataByTitleAuthor(target) {
   if (!globalFetch || !process.env.GOOGLE_BOOKS_API_KEY) {
     return null;
@@ -2378,40 +2546,75 @@ async function lookupMetadataByTitleAuthor(target) {
   if (!title || !author) {
     return null;
   }
+  const variants = buildTitleAuthorLookupVariants(title, author);
   logImportFallbackDebug('fallback_lookup_start', {
     normalizedTitle: normalizeWorkTitle(title),
     normalizedAuthor: normalizeAuthorName(author),
+    variants: variants.map((entry) => entry.variant),
     source: 'googlebooks',
   });
-  const queryUrl = new URL('https://www.googleapis.com/books/v1/volumes');
-  queryUrl.searchParams.set(
-    'q',
-    `intitle:"${escapeGoogleBooksQuotedTerm(title)}" inauthor:"${escapeGoogleBooksQuotedTerm(author)}"`,
-  );
-  queryUrl.searchParams.set('printType', 'books');
-  queryUrl.searchParams.set('projection', 'full');
-  queryUrl.searchParams.set('maxResults', '10');
-  const response = await globalFetch(queryUrl.toString(), {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'Boekenbaai/1.0 (+https://boekenbaai.example)',
-      'x-goog-api-key': process.env.GOOGLE_BOOKS_API_KEY,
-    },
-  });
-  if (!response.ok) {
-    logImportFallbackDebug('fallback_result', {
-      accepted: false,
-      acceptedFields: [],
-      rejectReason: `http_${response.status}`,
-      source: 'googlebooks',
+  for (const entry of variants) {
+    const cacheKey = getTitleAuthorFallbackCacheKey(title, author, entry.variant);
+    const cached = getCachedTitleAuthorFallbackResult(cacheKey);
+    if (cached.hit) {
+      logImportFallbackDebug('fallback_lookup_cache_hit', {
+        variant: entry.variant,
+        cacheKey,
+        hit: true,
+      });
+      if (cached.value && typeof cached.value === 'object') {
+        logImportFallbackDebug('fallback_lookup_variant_selected', {
+          variant: entry.variant,
+          source: cached.value.source || 'googlebooks-title-author',
+          fromCache: true,
+        });
+      }
+      if (cached.value) {
+        return cached.value;
+      }
+      continue;
+    }
+
+    const queryUrl = new URL('https://www.googleapis.com/books/v1/volumes');
+    queryUrl.searchParams.set('q', entry.query);
+    queryUrl.searchParams.set('printType', 'books');
+    queryUrl.searchParams.set('projection', 'full');
+    queryUrl.searchParams.set('maxResults', '10');
+    logImportFallbackDebug('fallback_lookup_variant_start', {
+      variant: entry.variant,
+      query: entry.query,
     });
-    return null;
+
+    const response = await fetchGoogleBooksFallbackWithRetry(queryUrl.toString(), entry.variant);
+    if (!response.ok) {
+      logImportFallbackDebug('fallback_result', {
+        accepted: false,
+        acceptedFields: [],
+        rejectReason: `http_${response.status}`,
+        source: 'googlebooks',
+        context: {
+          variant: entry.variant,
+        },
+      });
+      continue;
+    }
+    const payload = await response.json();
+    const metadata = parseGoogleBooksTitleAuthorFallbackData(payload, target, {
+      normalizedTitle: normalizeWorkTitle(title),
+      normalizedAuthor: normalizeAuthorName(author),
+      variant: entry.variant,
+    });
+    setCachedTitleAuthorFallbackResult(cacheKey, metadata || null);
+    if (metadata) {
+      logImportFallbackDebug('fallback_lookup_variant_selected', {
+        variant: entry.variant,
+        source: metadata.source || 'googlebooks-title-author',
+        fromCache: false,
+      });
+      return metadata;
+    }
   }
-  const payload = await response.json();
-  return parseGoogleBooksTitleAuthorFallbackData(payload, target, {
-    normalizedTitle: normalizeWorkTitle(title),
-    normalizedAuthor: normalizeAuthorName(author),
-  });
+  return null;
 }
 
 function buildOpenLibraryCoverUrlFromCoverId(coverId, size = 'L') {
