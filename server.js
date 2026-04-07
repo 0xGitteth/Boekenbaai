@@ -763,12 +763,33 @@ console.log(`Boekenbaai gebruikt data-bestand: ${DATA_PATH}`);
 console.log(`Boekenbaai serveert statische bestanden uit: ${STATIC_DIR}`);
 
 const sessions = new Map();
+const activeImportJobs = new Map();
 const isbnMetadataCache = new Map();
 const isbnLookupInflight = new Map();
 const titleAuthorFallbackCache = new Map();
 let googleBooksFallbackCooldownUntil = 0;
 let googleBooksFallbackCooldownReason = '';
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
+
+function markInterruptedImportJobs() {
+  const db = loadDb();
+  let changed = false;
+  for (const job of db.importJobs || []) {
+    if (job && (job.status === 'queued' || job.status === 'running')) {
+      const now = new Date().toISOString();
+      job.status = 'interrupted';
+      job.updatedAt = now;
+      job.finishedAt = now;
+      job.error = job.error || 'Import onderbroken door serverherstart';
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveDb(db);
+  }
+}
+
+markInterruptedImportJobs();
 
 function getIsbnCacheKey(isbn) {
   const sanitized = sanitizeIsbn(isbn);
@@ -1420,6 +1441,7 @@ function loadDb() {
   if (!Array.isArray(data.students)) data.students = [];
   if (!Array.isArray(data.folders)) data.folders = [];
   if (!Array.isArray(data.history)) data.history = [];
+  if (!Array.isArray(data.importJobs)) data.importJobs = [];
   data.books = data.books.map(ensureBookShape);
   data.students = data.students.map(ensureStudentShape);
   data.classes = data.classes.map(ensureClassShape);
@@ -1482,6 +1504,21 @@ function ensureRole(user, roles) {
   if (!user) return false;
   if (!roles || roles.length === 0) return true;
   return roles.includes(user.role);
+}
+
+function updateImportJob(db, jobId, updates = {}) {
+  if (!Array.isArray(db.importJobs)) {
+    db.importJobs = [];
+  }
+  const index = db.importJobs.findIndex((entry) => entry?.id === jobId);
+  if (index === -1) return null;
+  const updatedAt = new Date().toISOString();
+  db.importJobs[index] = {
+    ...db.importJobs[index],
+    ...updates,
+    updatedAt,
+  };
+  return db.importJobs[index];
 }
 
 function sanitizeStudent(student, options = {}) {
@@ -4208,6 +4245,142 @@ async function handleApi(req, res, requestUrl) {
         totalCopies,
         availableCopies,
       });
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/books/import-jobs') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
+      }
+      const XLSX = loadXlsx();
+      if (!XLSX) {
+        return sendJson(res, 503, {
+          message: 'Excel-import is momenteel niet beschikbaar omdat de "xlsx" module ontbreekt op de server',
+        });
+      }
+      if (!globalFetch) {
+        return sendJson(res, 503, { message: 'Background import is momenteel niet beschikbaar op deze server' });
+      }
+      const existingJob = (getDb().importJobs || []).find((entry) =>
+        entry
+        && entry.type === 'books_import'
+        && entry.createdBy === user.id
+        && (entry.status === 'queued' || entry.status === 'running')
+      );
+      if (existingJob) {
+        activeImportJobs.set(user.id, existingJob.id);
+        return sendJson(res, 200, { jobId: existingJob.id, reused: true });
+      }
+      const body = await parseBody(req);
+      if (!body.file) {
+        return sendJson(res, 400, { message: 'Geen bestand ontvangen' });
+      }
+      const workbookResult = readWorkbookRows(XLSX, body.file);
+      if (!workbookResult.ok) {
+        return sendJson(res, 400, { message: workbookResult.error });
+      }
+      const db = getDb();
+      const now = new Date().toISOString();
+      const jobId = crypto.randomUUID();
+      db.importJobs.push({
+        id: jobId,
+        type: 'books_import',
+        createdBy: user.id,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: null,
+        finishedAt: null,
+        status: 'queued',
+        fileName: typeof body.fileName === 'string' ? body.fileName : '',
+        total: workbookResult.rows.length,
+        processed: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        deferred: 0,
+        failed: 0,
+        summary: null,
+        result: null,
+        error: '',
+      });
+      saveDb(db);
+      activeImportJobs.set(user.id, jobId);
+      const token = getTokenFromHeader(req);
+
+      setImmediate(async () => {
+        try {
+          const runtimeDb = loadDb();
+          updateImportJob(runtimeDb, jobId, {
+            status: 'running',
+            startedAt: new Date().toISOString(),
+          });
+          saveDb(runtimeDb);
+          const response = await globalFetch(`http://127.0.0.1:${PORT}/api/books/import`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ file: body.file, enrichIsbn: body.enrichIsbn }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          const jobDb = loadDb();
+          if (!response.ok) {
+            updateImportJob(jobDb, jobId, {
+              status: 'failed',
+              finishedAt: new Date().toISOString(),
+              error: payload?.message || 'Importjob mislukt',
+              failed: 1,
+            });
+          } else {
+            const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+            updateImportJob(jobDb, jobId, {
+              status: 'completed',
+              finishedAt: new Date().toISOString(),
+              processed: workbookResult.rows.length,
+              created: Number(payload.created || 0),
+              updated: Number(payload.updated || 0),
+              skipped: skippedCount,
+              summary: {
+                created: Number(payload.created || 0),
+                updated: Number(payload.updated || 0),
+                skipped: skippedCount,
+                failed: 0,
+              },
+              result: payload,
+              error: '',
+            });
+          }
+          saveDb(jobDb);
+        } catch (error) {
+          const failedDb = loadDb();
+          updateImportJob(failedDb, jobId, {
+            status: 'failed',
+            finishedAt: new Date().toISOString(),
+            error: error?.message || 'Importjob mislukt',
+            failed: 1,
+          });
+          saveDb(failedDb);
+        } finally {
+          activeImportJobs.delete(user.id);
+        }
+      });
+      return sendJson(res, 202, { jobId });
+    }
+
+    const booksImportJobMatch = requestUrl.pathname.match(/^\/api\/books\/import-jobs\/([\w-]+)$/);
+    if (req.method === 'GET' && booksImportJobMatch) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
+      }
+      const db = getDb();
+      const job = (db.importJobs || []).find((entry) => entry?.id === booksImportJobMatch[1]);
+      if (!job) {
+        return sendJson(res, 404, { message: 'Importjob niet gevonden' });
+      }
+      if (job.createdBy !== user.id) {
+        return sendJson(res, 403, { message: 'Geen toegang tot deze importjob' });
+      }
+      return sendJson(res, 200, job);
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import') {

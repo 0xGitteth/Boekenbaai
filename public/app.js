@@ -404,8 +404,12 @@ async function reloadCurrentUser(expectedRoles) {
   if (!authToken) return null;
   const me = await fetchJson('/api/me');
   if (expectedRoles && !expectedRoles.includes(me.role)) {
-    clearAuth();
-    throw new Error('Geen toegang tot dit onderdeel');
+    authUser = me;
+    updateAuthUi();
+    const error = new Error('Geen toegang tot dit onderdeel');
+    error.code = 'ROLE_MISMATCH';
+    error.actualRole = me.role;
+    throw error;
   }
   authUser = me;
   updateAuthUi();
@@ -2962,7 +2966,6 @@ function initStudentPage() {
       }
 
       if (result.user.role !== 'student') {
-        clearAuth({ silent: true });
         loginMessage.textContent = 'Gebruik voor medewerkers de docenteninlog.';
         return;
       }
@@ -3046,7 +3049,12 @@ function initStudentPage() {
   if (authToken) {
     reloadCurrentUser(['student'])
       .then(refreshData)
-      .catch(() => {
+      .catch((error) => {
+        if (error?.code === 'ROLE_MISMATCH') {
+          renderAuthState();
+          loginMessage.textContent = 'Je bent ingelogd als medewerker. Ga naar de docentenpagina.';
+          return;
+        }
         clearAuth();
       });
   }
@@ -3187,6 +3195,9 @@ function initStaffPage() {
   const teacherStudentClassSelect = document.querySelector('#teacher-student-class');
   const teacherStudentMessage = document.querySelector('#teacher-student-message');
   const teacherStudentResetInfo = document.querySelector('#teacher-student-reset');
+  let currentBookImportJobId = null;
+  let bookImportPollTimer = null;
+  const BOOK_IMPORT_JOB_STORAGE_KEY = 'boekenbaai_last_books_import_job';
 
   const statsModal = createStatsModal();
   statsModalController = statsModal;
@@ -3635,6 +3646,7 @@ function initStaffPage() {
       teacherLayout.classList.toggle('teacher-layout--single', classesHidden);
     }
     if (!loggedIn) {
+      clearBookImportPoll();
       teacherResetNotice.hide();
       adminResetNotice.hide();
       adminTeacherResetNotice.hide();
@@ -3642,6 +3654,7 @@ function initStaffPage() {
       classList && (classList.innerHTML = '');
       adminStatsMessage && (adminStatsMessage.textContent = '');
       adminBookMessage && (adminBookMessage.textContent = '');
+      bookImportMessage && (bookImportMessage.textContent = '');
       adminBookLookupMessage && (adminBookLookupMessage.textContent = '');
       adminBookCancelButton && adminBookCancelButton.classList.add('hidden');
       adminBookForm && adminBookForm.reset();
@@ -3651,6 +3664,7 @@ function initStaffPage() {
       renderAdminThemeOptions({ preserveSelection: false });
       studentImportMessage && (studentImportMessage.textContent = '');
       studentImportResults && (studentImportResults.innerHTML = '');
+      bookImportResults && (bookImportResults.innerHTML = '');
       adminClassMessage && (adminClassMessage.textContent = '');
       adminClassList && (adminClassList.innerHTML = '');
       adminStudentMessage && (adminStudentMessage.textContent = '');
@@ -5167,6 +5181,93 @@ function initStaffPage() {
     }
   }
 
+  function getBookImportStorageKey() {
+    const userPart = authUser?.id ? `:${authUser.id}` : '';
+    return `${BOOK_IMPORT_JOB_STORAGE_KEY}${userPart}`;
+  }
+
+  function storeLastBookImportJob(jobId) {
+    if (!jobId) return;
+    currentBookImportJobId = jobId;
+    localStorage.setItem(getBookImportStorageKey(), jobId);
+  }
+
+  function clearBookImportPoll() {
+    if (bookImportPollTimer) {
+      clearTimeout(bookImportPollTimer);
+      bookImportPollTimer = null;
+    }
+  }
+
+  function renderBookImportJobStatus(job) {
+    if (!bookImportResults || !job) return;
+    const processed = Number(job.processed || 0);
+    const total = Number(job.total || 0);
+    const safeTotal = total > 0 ? total : Math.max(processed, 1);
+    const percent = Math.max(0, Math.min(100, Math.round((processed / safeTotal) * 100)));
+    bookImportResults.replaceChildren();
+    appendTextElement(bookImportResults, 'p', `Job ${job.id} — status: ${job.status}`);
+    const progressEl = appendElement(bookImportResults, 'progress', {
+      max: safeTotal,
+      value: Math.min(processed, safeTotal),
+    });
+    progressEl?.setAttribute('aria-label', 'Voortgang boekenimport');
+    appendTextElement(bookImportResults, 'p', `${processed} van ${total} verwerkt (${percent}%).`);
+    const statusList = appendElement(bookImportResults, 'ul', { className: 'import-results__list' });
+    appendTextElement(statusList, 'li', `Verwerkt: ${processed}`);
+    appendTextElement(statusList, 'li', `Nog bezig: ${Math.max(total - processed, 0)}`);
+    appendTextElement(statusList, 'li', `Tijdelijk uitgesteld: ${Number(job.deferred || 0)}`);
+    appendTextElement(statusList, 'li', `Mislukt: ${Number(job.failed || 0)}`);
+    if (job.status === 'completed' || job.status === 'failed' || job.status === 'interrupted') {
+      const summary = job.summary || {};
+      appendTextElement(
+        bookImportResults,
+        'p',
+        `Samenvatting — toegevoegd: ${summary.created ?? job.created ?? 0}, bijgewerkt: ${summary.updated ?? job.updated ?? 0}, overgeslagen: ${summary.skipped ?? job.skipped ?? 0}, mislukt: ${summary.failed ?? job.failed ?? 0}.`
+      );
+      if (job.result) {
+        appendTextElement(bookImportResults, 'h4', 'Details');
+        const detailsContainer = appendElement(bookImportResults, 'div');
+        renderImportResults(detailsContainer, job.result);
+      }
+    }
+  }
+
+  async function pollBookImportJob(jobId, { immediate = false } = {}) {
+    if (!jobId || !authUser || authUser.role !== 'admin') return;
+    clearBookImportPoll();
+    const run = async () => {
+      try {
+        const job = await fetchJson(`/api/books/import-jobs/${encodeURIComponent(jobId)}`);
+        storeLastBookImportJob(job.id);
+        renderBookImportJobStatus(job);
+        if (bookImportMessage) {
+          if (job.status === 'queued' || job.status === 'running') {
+            bookImportMessage.textContent = 'Import wordt verwerkt…';
+          } else if (job.status === 'completed') {
+            bookImportMessage.textContent = 'Import gereed.';
+          } else if (job.status === 'interrupted') {
+            bookImportMessage.textContent = 'Import onderbroken door serverherstart.';
+          } else if (job.status === 'failed') {
+            bookImportMessage.textContent = job.error || 'Import mislukt.';
+          }
+        }
+        if (job.status === 'queued' || job.status === 'running') {
+          bookImportPollTimer = setTimeout(run, 2000);
+        }
+      } catch (error) {
+        if (bookImportMessage) {
+          bookImportMessage.textContent = error.message;
+        }
+      }
+    };
+    if (immediate) {
+      await run();
+    } else {
+      bookImportPollTimer = setTimeout(run, 2000);
+    }
+  }
+
   async function lookupBarcode(barcode, { silent = false, auto = false } = {}) {
     if (!barcode) return;
     const trimmed = barcode.trim();
@@ -5908,6 +6009,12 @@ function initStaffPage() {
     }
     await loadClasses();
     await loadHistory();
+    if (authUser?.role === 'admin') {
+      const storedJobId = currentBookImportJobId || localStorage.getItem(getBookImportStorageKey());
+      if (storedJobId) {
+        pollBookImportJob(storedJobId, { immediate: true });
+      }
+    }
   }
 
   loginForm?.addEventListener('submit', async (event) => {
@@ -5930,7 +6037,6 @@ function initStaffPage() {
       }
 
       if (!['teacher', 'admin'].includes(result.user.role)) {
-        clearAuth({ silent: true });
         loginMessage.textContent = 'Gebruik de leerlingenpagina om in te loggen.';
         return;
       }
@@ -6887,24 +6993,21 @@ function initStaffPage() {
     }
     try {
       if (bookImportMessage) {
-        bookImportMessage.textContent = 'Bestand wordt verwerkt…';
+        bookImportMessage.textContent = 'Importjob wordt gestart…';
       }
       const base64 = await readFileAsBase64(file);
-      const result = await fetchJson('/api/books/import', {
+      const result = await fetchJson('/api/books/import-jobs', {
         method: 'POST',
-        body: { file: base64 },
+        body: { file: base64, fileName: file.name },
       });
       if (bookImportFile) {
         bookImportFile.value = '';
       }
-      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
-      if (bookImportMessage) {
-        bookImportMessage.textContent = `Import gereed: ${result.created} toegevoegd, ${result.updated} bijgewerkt${
-          skippedCount ? `, ${skippedCount} overgeslagen` : ''
-        }.`;
+      storeLastBookImportJob(result.jobId);
+      if (bookImportMessage && result.reused) {
+        bookImportMessage.textContent = 'Bestaande importjob wordt verder gevolgd…';
       }
-      renderImportResults(bookImportResults, result);
-      await refreshStaffData();
+      await pollBookImportJob(result.jobId, { immediate: true });
     } catch (error) {
       if (bookImportMessage) {
         bookImportMessage.textContent = error.message;
@@ -7020,7 +7123,12 @@ function initStaffPage() {
   if (authToken) {
     reloadCurrentUser(['teacher', 'admin'])
       .then(refreshStaffData)
-      .catch(() => {
+      .catch((error) => {
+        if (error?.code === 'ROLE_MISMATCH') {
+          renderStaffState();
+          loginMessage.textContent = 'Je bent ingelogd als leerling. Ga naar de leerlingenpagina.';
+          return;
+        }
         clearAuth();
       });
   }
