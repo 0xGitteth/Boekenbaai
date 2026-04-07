@@ -126,6 +126,7 @@ async function testImportJobLifecycle() {
     const workbookBase64 = buildWorkbookBase64([
       { Titel: 'Boek 1', Auteur: 'Auteur 1', Barcode: '9781234567890' },
       { Titel: 'Boek 2', Auteur: 'Auteur 2', Barcode: '9781234567891' },
+      { Titel: 'Boek 3', Auteur: 'Auteur 3', Barcode: '9781234567892' },
     ]);
 
     const startResponse = await request('/api/books/import-jobs', {
@@ -141,12 +142,21 @@ async function testImportJobLifecycle() {
     assert.ok(jobId, 'jobId ontbreekt');
 
     let job = null;
+    let sawRunningProgress = false;
+    let lastProcessed = -1;
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       assert.strictEqual(statusResponse.status, 200);
       job = statusResponse.body;
+      if (job.status === 'running') {
+        if (Number(job.processed) > 0) {
+          sawRunningProgress = true;
+        }
+        assert.ok(Number(job.processed) >= lastProcessed, 'processed mag niet teruglopen');
+        lastProcessed = Number(job.processed);
+      }
       if (job.status === 'completed' || job.status === 'failed') {
         break;
       }
@@ -158,6 +168,139 @@ async function testImportJobLifecycle() {
     assert.ok(['completed', 'failed'].includes(job.status), `Onverwachte jobstatus: ${job.status}`);
     assert.ok(Number.isFinite(job.total), 'job.total ontbreekt');
     assert.ok(Number.isFinite(job.processed), 'job.processed ontbreekt');
+    assert.ok(typeof job.currentStage === 'string', 'job.currentStage ontbreekt');
+    assert.ok(
+      job.lastProgressAt === null || typeof job.lastProgressAt === 'string',
+      'job.lastProgressAt ontbreekt'
+    );
+    assert.ok(typeof job.cancelRequested === 'boolean', 'job.cancelRequested ontbreekt');
+    assert.ok(sawRunningProgress || job.processed === job.total, 'running progress niet waargenomen');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
+async function testImportJobCancelLifecycle() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-job-cancel-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+  const serverProcess = startServer(dbPath);
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const rows = Array.from({ length: 250 }, (_, index) => ({
+      Titel: `Boek ${index + 1}`,
+      Auteur: `Auteur ${index + 1}`,
+      Barcode: `978${String(1000000000 + index).slice(0, 10)}`,
+    }));
+    const workbookBase64 = buildWorkbookBase64(rows);
+    const startResponse = await request('/api/books/import-jobs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64, fileName: 'cancel.xlsx', enrichIsbn: false }),
+    });
+    assert.ok([200, 202].includes(startResponse.status), `Onverwachte startstatus: ${startResponse.status}`);
+    const jobId = startResponse.body.jobId;
+    assert.ok(jobId, 'jobId ontbreekt');
+
+    let runningSeen = false;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.strictEqual(statusResponse.status, 200);
+      if (statusResponse.body.status === 'running') {
+        runningSeen = true;
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    assert.ok(runningSeen, 'Importjob kwam niet in running status');
+
+    const cancelResponse = await request(`/api/books/import-jobs/${jobId}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(cancelResponse.status, 200);
+    assert.ok(
+      ['running', 'cancelled'].includes(cancelResponse.body.status),
+      `Onverwachte cancelstatus: ${cancelResponse.body.status}`
+    );
+    assert.ok(cancelResponse.body.cancelRequested, 'cancelRequested werd niet gezet');
+
+    let finalJob = cancelResponse.body;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.strictEqual(statusResponse.status, 200);
+      finalJob = statusResponse.body;
+      if (finalJob.status === 'cancelled') {
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    assert.strictEqual(finalJob.status, 'cancelled');
+    assert.ok(typeof finalJob.cancelledAt === 'string' && finalJob.cancelledAt, 'cancelledAt ontbreekt');
+    assert.ok(finalJob.processed <= finalJob.total, 'processed mag total niet overschrijden');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
+async function testImmediateCancelBeforeStart() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-job-cancel-queued-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+  const serverProcess = startServer(dbPath);
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const rows = Array.from({ length: 200 }, (_, index) => ({
+      Titel: `QBoek ${index + 1}`,
+      Auteur: `QAuteur ${index + 1}`,
+      Barcode: `978${String(2000000000 + index).slice(0, 10)}`,
+    }));
+    const workbookBase64 = buildWorkbookBase64(rows);
+    const startResponse = await request('/api/books/import-jobs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64, fileName: 'queued-cancel.xlsx', enrichIsbn: false }),
+    });
+    assert.ok([200, 202].includes(startResponse.status), `Onverwachte startstatus: ${startResponse.status}`);
+    const jobId = startResponse.body.jobId;
+    assert.ok(jobId, 'jobId ontbreekt');
+
+    const cancelResponse = await request(`/api/books/import-jobs/${jobId}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(cancelResponse.status, 200);
+
+    let finalJob = cancelResponse.body;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.strictEqual(statusResponse.status, 200);
+      finalJob = statusResponse.body;
+      if (finalJob.status === 'cancelled') {
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    assert.strictEqual(finalJob.status, 'cancelled');
+    assert.strictEqual(Number(finalJob.processed), 0, 'Queued-cancel zou niet mogen starten met verwerken');
   } finally {
     serverProcess.kill('SIGINT');
   }
@@ -196,6 +339,8 @@ async function testInterruptedJobsOnRestart() {
 async function run() {
   await testAuthFrontendRegressionGuards();
   await testImportJobLifecycle();
+  await testImportJobCancelLifecycle();
+  await testImmediateCancelBeforeStart();
   await testInterruptedJobsOnRestart();
   console.log('Auth/import job tests passed');
 }

@@ -4290,6 +4290,10 @@ async function handleApi(req, res, requestUrl) {
         startedAt: null,
         finishedAt: null,
         status: 'queued',
+        currentStage: 'In wachtrij',
+        lastProgressAt: now,
+        cancelRequested: false,
+        cancelledAt: null,
         fileName: typeof body.fileName === 'string' ? body.fileName : '',
         total: workbookResult.rows.length,
         processed: 0,
@@ -4309,9 +4313,22 @@ async function handleApi(req, res, requestUrl) {
       setImmediate(async () => {
         try {
           const runtimeDb = loadDb();
+          const runtimeJob = (runtimeDb.importJobs || []).find((entry) => entry?.id === jobId);
+          if (!runtimeJob) {
+            return;
+          }
+          if (
+            runtimeJob.status !== 'queued'
+            || runtimeJob.status === 'cancelled'
+            || runtimeJob.cancelRequested
+          ) {
+            return;
+          }
           updateImportJob(runtimeDb, jobId, {
             status: 'running',
             startedAt: new Date().toISOString(),
+            currentStage: 'Voorbereiden',
+            lastProgressAt: new Date().toISOString(),
           });
           saveDb(runtimeDb);
           const response = await globalFetch(`http://127.0.0.1:${PORT}/api/books/import`, {
@@ -4319,6 +4336,7 @@ async function handleApi(req, res, requestUrl) {
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
+              'X-Import-Job-Id': jobId,
             },
             body: JSON.stringify({ file: body.file, enrichIsbn: body.enrichIsbn }),
           });
@@ -4332,23 +4350,47 @@ async function handleApi(req, res, requestUrl) {
               failed: 1,
             });
           } else {
-            const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+            const latestJob = (jobDb.importJobs || []).find((entry) => entry?.id === jobId);
+            const shouldCancelAtFinalize = Boolean(
+              payload?.cancelled
+              || latestJob?.cancelRequested
+              || latestJob?.status === 'cancelled'
+            );
+            if (shouldCancelAtFinalize) {
             updateImportJob(jobDb, jobId, {
-              status: 'completed',
+              status: 'cancelled',
               finishedAt: new Date().toISOString(),
-              processed: workbookResult.rows.length,
-              created: Number(payload.created || 0),
-              updated: Number(payload.updated || 0),
-              skipped: skippedCount,
+              cancelledAt: new Date().toISOString(),
+              currentStage: 'Geannuleerd',
               summary: {
                 created: Number(payload.created || 0),
                 updated: Number(payload.updated || 0),
-                skipped: skippedCount,
-                failed: 0,
+                skipped: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
+                failed: Number(payload.failed || 0),
               },
               result: payload,
               error: '',
             });
+            } else {
+              const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
+              updateImportJob(jobDb, jobId, {
+                status: 'completed',
+                finishedAt: new Date().toISOString(),
+                processed: workbookResult.rows.length,
+                created: Number(payload.created || 0),
+                updated: Number(payload.updated || 0),
+                skipped: skippedCount,
+                summary: {
+                  created: Number(payload.created || 0),
+                  updated: Number(payload.updated || 0),
+                  skipped: skippedCount,
+                  failed: 0,
+                },
+                currentStage: 'Voltooid',
+                result: payload,
+                error: '',
+              });
+            }
           }
           saveDb(jobDb);
         } catch (error) {
@@ -4383,6 +4425,43 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, job);
     }
 
+    const booksImportJobCancelMatch = requestUrl.pathname.match(/^\/api\/books\/import-jobs\/([\w-]+)\/cancel$/);
+    if (req.method === 'POST' && booksImportJobCancelMatch) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
+      }
+      const db = getDb();
+      const job = (db.importJobs || []).find((entry) => entry?.id === booksImportJobCancelMatch[1]);
+      if (!job) {
+        return sendJson(res, 404, { message: 'Importjob niet gevonden' });
+      }
+      if (job.createdBy !== user.id) {
+        return sendJson(res, 403, { message: 'Geen toegang tot deze importjob' });
+      }
+      if (!['queued', 'running'].includes(job.status)) {
+        return sendJson(res, 409, { message: 'Importjob kan niet meer geannuleerd worden' });
+      }
+      const now = new Date().toISOString();
+      if (job.status === 'queued') {
+        updateImportJob(db, job.id, {
+          status: 'cancelled',
+          cancelRequested: true,
+          cancelledAt: now,
+          finishedAt: now,
+          currentStage: 'Geannuleerd',
+          lastProgressAt: now,
+        });
+      } else {
+        updateImportJob(db, job.id, {
+          cancelRequested: true,
+          currentStage: 'Annulering aangevraagd',
+          lastProgressAt: now,
+        });
+      }
+      saveDb(db);
+      return sendJson(res, 200, (db.importJobs || []).find((entry) => entry?.id === job.id));
+    }
+
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import') {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
@@ -4402,10 +4481,30 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: workbookResult.error });
       }
       const db = getDb();
+      const importJobId = String(req.headers['x-import-job-id'] || '').trim();
+      const updateImportProgress = (updates) => {
+        if (!importJobId) return;
+        const jobDb = loadDb();
+        const existingJob = (jobDb.importJobs || []).find((entry) => entry?.id === importJobId);
+        if (!existingJob || existingJob.status === 'cancelled') return;
+        updateImportJob(jobDb, importJobId, {
+          ...updates,
+          lastProgressAt: new Date().toISOString(),
+        });
+        saveDb(jobDb);
+      };
+      const isImportCancelRequested = () => {
+        if (!importJobId) return false;
+        const jobDb = loadDb();
+        const existingJob = (jobDb.importJobs || []).find((entry) => entry?.id === importJobId);
+        return Boolean(existingJob?.cancelRequested);
+      };
       const createdBooks = [];
       const updatedBooks = [];
       const skipped = [];
       let changed = false;
+      let processedRows = 0;
+      let cancelled = false;
       const lookup = resolveLookupIsbnMetadata();
       const titleAuthorLookup = resolveLookupTitleAuthorMetadata();
       const importEnrichmentEnabled =
@@ -4417,8 +4516,17 @@ async function handleApi(req, res, requestUrl) {
       const IMPORT_FALLBACK_DEFERRED_MAX_DURATION_MS = 5000;
       const deferredFallbackRows = [];
       const deferredRetryStartedAt = Date.now();
+      updateImportProgress({
+        currentStage: 'Rijen verwerken',
+        total: workbookResult.rows.length,
+        processed: 0,
+      });
 
       for (const row of workbookResult.rows) {
+        if (isImportCancelRequested()) {
+          cancelled = true;
+          break;
+        }
         const fallbackAttempt = Number.isInteger(row?.__fallbackAttempt) ? row.__fallbackAttempt : 1;
         const normalized = normalizeRowKeys(row);
         const title = String(normalized.titel || normalized.title || '').trim();
@@ -4466,6 +4574,16 @@ async function handleApi(req, res, requestUrl) {
             author: author || '',
             barcode: barcodeSource ? String(barcodeSource).trim() : '',
             reason: `Ontbrekende ${missingFields.join(', ')}`,
+          });
+          processedRows += 1;
+          updateImportProgress({
+            processed: processedRows,
+            created: createdBooks.length,
+            updated: updatedBooks.length,
+            skipped: skipped.length,
+            deferred: deferredFallbackRows.length,
+            failed: 0,
+            currentStage: `Rij ${processedRows} van ${workbookResult.rows.length}`,
           });
           continue;
         }
@@ -4912,12 +5030,32 @@ async function handleApi(req, res, requestUrl) {
             });
           }
         }
+        processedRows += 1;
+        updateImportProgress({
+          processed: processedRows,
+          created: createdBooks.length,
+          updated: updatedBooks.length,
+          skipped: skipped.length,
+          deferred: deferredFallbackRows.length,
+          failed: 0,
+          currentStage: `Rij ${processedRows} van ${workbookResult.rows.length}`,
+        });
       }
 
       let deferredCycles = 0;
+      if (!cancelled && deferredFallbackRows.length) {
+        updateImportProgress({
+          currentStage: 'Uitgestelde metadata opnieuw proberen',
+          deferred: deferredFallbackRows.length,
+        });
+      }
       while (deferredFallbackRows.length
         && deferredCycles < IMPORT_FALLBACK_DEFERRED_MAX_CYCLES
         && (Date.now() - deferredRetryStartedAt) < IMPORT_FALLBACK_DEFERRED_MAX_DURATION_MS) {
+        if (isImportCancelRequested()) {
+          cancelled = true;
+          break;
+        }
         deferredFallbackRows.sort((left, right) => left.nextEligibleAt - right.nextEligibleAt);
         const job = deferredFallbackRows.shift();
         const waitMs = Math.max(0, job.nextEligibleAt - Date.now());
@@ -5030,6 +5168,39 @@ async function handleApi(req, res, requestUrl) {
         });
         saveDb(db);
       }
+
+      if (cancelled) {
+        updateImportProgress({
+          status: 'cancelled',
+          currentStage: 'Geannuleerd',
+          cancelledAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          processed: processedRows,
+          created: createdBooks.length,
+          updated: updatedBooks.length,
+          skipped: skipped.length,
+          deferred: deferredFallbackRows.length,
+          summary: {
+            created: createdBooks.length,
+            updated: updatedBooks.length,
+            skipped: skipped.length,
+            failed: 0,
+          },
+        });
+        return sendJson(res, 200, {
+          cancelled: true,
+          created: createdBooks.length,
+          updated: updatedBooks.length,
+          skipped,
+          books: createdBooks.concat(updatedBooks),
+          failed: 0,
+        });
+      }
+
+      updateImportProgress({
+        currentStage: 'Afronden',
+        processed: processedRows,
+      });
 
       return sendJson(res, 200, {
         created: createdBooks.length,
