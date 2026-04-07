@@ -3111,6 +3111,7 @@ function initStaffPage() {
   const bookImportFile = document.querySelector('#book-import-file');
   const bookImportMessage = document.querySelector('#book-import-message');
   const bookImportResults = document.querySelector('#book-import-results');
+  const bookImportCancelButton = document.querySelector('#book-import-cancel');
   const adminBookSubmitButton = document.querySelector('#admin-book-submit');
   const adminBookCancelButton = document.querySelector('#admin-book-cancel');
   const adminBookDeleteButton = document.querySelector('#admin-book-delete');
@@ -5200,6 +5201,13 @@ function initStaffPage() {
     }
   }
 
+  function updateBookImportCancelButton(job) {
+    if (!bookImportCancelButton) return;
+    const cancellable = Boolean(job) && (job.status === 'queued' || job.status === 'running');
+    bookImportCancelButton.disabled = !cancellable;
+    bookImportCancelButton.hidden = !job;
+  }
+
   function renderBookImportJobStatus(job) {
     if (!bookImportResults || !job) return;
     const processed = Number(job.processed || 0);
@@ -5217,21 +5225,31 @@ function initStaffPage() {
     const statusList = appendElement(bookImportResults, 'ul', { className: 'import-results__list' });
     appendTextElement(statusList, 'li', `Verwerkt: ${processed}`);
     appendTextElement(statusList, 'li', `Nog bezig: ${Math.max(total - processed, 0)}`);
+    appendTextElement(statusList, 'li', `Fase: ${job.currentStage || 'Voorbereiden'}`);
+    appendTextElement(
+      statusList,
+      'li',
+      `Laatste update: ${job.lastProgressAt ? new Date(job.lastProgressAt).toLocaleTimeString('nl-NL') : 'Actief bezig'}`
+    );
     appendTextElement(statusList, 'li', `Tijdelijk uitgesteld: ${Number(job.deferred || 0)}`);
     appendTextElement(statusList, 'li', `Mislukt: ${Number(job.failed || 0)}`);
-    if (job.status === 'completed' || job.status === 'failed' || job.status === 'interrupted') {
+    if (job.status === 'completed' || job.status === 'failed' || job.status === 'interrupted' || job.status === 'cancelled') {
       const summary = job.summary || {};
       appendTextElement(
         bookImportResults,
         'p',
         `Samenvatting — toegevoegd: ${summary.created ?? job.created ?? 0}, bijgewerkt: ${summary.updated ?? job.updated ?? 0}, overgeslagen: ${summary.skipped ?? job.skipped ?? 0}, mislukt: ${summary.failed ?? job.failed ?? 0}.`
       );
+      if (job.status === 'cancelled') {
+        appendTextElement(bookImportResults, 'p', 'Import geannuleerd.');
+      }
       if (job.result) {
         appendTextElement(bookImportResults, 'h4', 'Details');
         const detailsContainer = appendElement(bookImportResults, 'div');
         renderImportResults(detailsContainer, job.result);
       }
     }
+    updateBookImportCancelButton(job);
   }
 
   async function pollBookImportJob(jobId, { immediate = false } = {}) {
@@ -5249,6 +5267,8 @@ function initStaffPage() {
             bookImportMessage.textContent = 'Import gereed.';
           } else if (job.status === 'interrupted') {
             bookImportMessage.textContent = 'Import onderbroken door serverherstart.';
+          } else if (job.status === 'cancelled') {
+            bookImportMessage.textContent = 'Import geannuleerd.';
           } else if (job.status === 'failed') {
             bookImportMessage.textContent = job.error || 'Import mislukt.';
           }
@@ -7009,6 +7029,29 @@ function initStaffPage() {
         bookImportMessage.textContent = 'Bestaande importjob wordt verder gevolgd…';
       }
       await pollBookImportJob(result.jobId, { immediate: true });
+    } catch (error) {
+      if (bookImportMessage) {
+        bookImportMessage.textContent = error.message;
+      }
+    }
+  });
+
+  bookImportCancelButton?.addEventListener('click', async () => {
+    if (!currentBookImportJobId) return;
+    try {
+      const job = await fetchJson(`/api/books/import-jobs/${encodeURIComponent(currentBookImportJobId)}/cancel`, {
+        method: 'POST',
+      });
+      renderBookImportJobStatus(job);
+      if (bookImportMessage) {
+        bookImportMessage.textContent =
+          job.status === 'cancelled'
+            ? 'Import geannuleerd.'
+            : 'Annulering aangevraagd…';
+      }
+      if (job.status === 'queued' || job.status === 'running') {
+        pollBookImportJob(job.id, { immediate: false });
+      }
     } catch (error) {
       if (bookImportMessage) {
         bookImportMessage.textContent = error.message;
