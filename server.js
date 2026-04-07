@@ -60,6 +60,16 @@ const TITLE_AUTHOR_FALLBACK_CACHE_TTL_MS = (() => {
 })();
 const TITLE_AUTHOR_FALLBACK_MAX_RETRIES = 2;
 const TITLE_AUTHOR_FALLBACK_RETRY_BASE_MS = 120;
+const DEFAULT_TITLE_AUTHOR_FALLBACK_COOLDOWN_MS = 30 * 1000;
+const TITLE_AUTHOR_FALLBACK_COOLDOWN_MS = (() => {
+  const raw = Number(process.env.BOEKENBAAI_TITLE_AUTHOR_RATE_LIMIT_COOLDOWN_MS);
+  if (Number.isFinite(raw) && raw > 0) {
+    return raw;
+  }
+  return DEFAULT_TITLE_AUTHOR_FALLBACK_COOLDOWN_MS;
+})();
+const DEBUG_IMPORT_FALLBACK_VERBOSE =
+  String(process.env.BOEKENBAAI_DEBUG_IMPORT_FALLBACK_VERBOSE || '').toLowerCase() === 'true';
 
 const STATIC_DIR = (() => {
   const candidates = [configuredStaticDir, DIST_DIR, PUBLIC_DIR].filter(Boolean);
@@ -756,6 +766,8 @@ const sessions = new Map();
 const isbnMetadataCache = new Map();
 const isbnLookupInflight = new Map();
 const titleAuthorFallbackCache = new Map();
+let googleBooksFallbackCooldownUntil = 0;
+let googleBooksFallbackCooldownReason = '';
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
 
 function getIsbnCacheKey(isbn) {
@@ -1632,6 +1644,13 @@ function logImportFallbackDebug(stage, details) {
   console.info(`[IMPORT_FALLBACK_DEBUG] ${stage}`, details);
 }
 
+function logImportFallbackVerbose(stage, details) {
+  if (!DEBUG_IMPORT_FALLBACK_VERBOSE) {
+    return;
+  }
+  logImportFallbackDebug(stage, details);
+}
+
 function summarizeIndustryIdentifiers(item) {
   const identifiers = Array.isArray(item?.volumeInfo?.industryIdentifiers)
     ? item.volumeInfo.industryIdentifiers
@@ -2287,7 +2306,7 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
   for (const item of items) {
     const volumeInfo = item?.volumeInfo;
     if (!volumeInfo || typeof volumeInfo !== 'object') {
-      logImportFallbackDebug('fallback_candidate', {
+      logImportFallbackVerbose('fallback_candidate', {
         title: '',
         author: '',
         hasCoverUrl: false,
@@ -2321,7 +2340,7 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
       Boolean(metadata.author),
     ].filter(Boolean).length;
     const strictMatch = isStrictWorkMatch(target, metadata);
-    logImportFallbackDebug('fallback_candidate', {
+    logImportFallbackVerbose('fallback_candidate', {
       title: metadata.title,
       author: metadata.author,
       hasCoverUrl: Boolean(metadata.coverUrl),
@@ -2340,7 +2359,7 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
     strictMatches.sort((left, right) => right.candidateRichnessScore - left.candidateRichnessScore);
     const selected = strictMatches[0];
     const selectedMetadata = selected.metadata;
-    logImportFallbackDebug('fallback_candidate_selected', {
+    logImportFallbackVerbose('fallback_candidate_selected', {
       title: selectedMetadata.title,
       author: selectedMetadata.author,
       hasCoverUrl: Boolean(selectedMetadata.coverUrl),
@@ -2459,6 +2478,25 @@ function isTransientFallbackStatus(status) {
   return status === 429 || status === 503;
 }
 
+function getFallbackCooldownRemainingMs(now = Date.now()) {
+  if (!Number.isFinite(googleBooksFallbackCooldownUntil) || googleBooksFallbackCooldownUntil <= now) {
+    googleBooksFallbackCooldownUntil = 0;
+    googleBooksFallbackCooldownReason = '';
+    return 0;
+  }
+  return googleBooksFallbackCooldownUntil - now;
+}
+
+function activateFallbackCooldown(reason, retryAfterMs = null, now = Date.now()) {
+  const durationMs = Math.max(
+    TITLE_AUTHOR_FALLBACK_COOLDOWN_MS,
+    Number.isFinite(retryAfterMs) ? Math.max(0, retryAfterMs) : 0,
+  );
+  googleBooksFallbackCooldownUntil = now + durationMs;
+  googleBooksFallbackCooldownReason = reason || 'rate_limited';
+  return durationMs;
+}
+
 function isTransientFallbackNetworkError(error) {
   const code = String(error?.code || '').toUpperCase();
   if (code && ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED'].includes(code)) {
@@ -2518,7 +2556,8 @@ async function fetchGoogleBooksFallbackWithRetry(queryUrl, variant) {
           'x-goog-api-key': process.env.GOOGLE_BOOKS_API_KEY,
         },
       });
-      if (!response.ok && isTransientFallbackStatus(response.status) && attempt < TITLE_AUTHOR_FALLBACK_MAX_RETRIES) {
+      const shouldRetryStatus = response.status === 503;
+      if (!response.ok && shouldRetryStatus && attempt < TITLE_AUTHOR_FALLBACK_MAX_RETRIES) {
         const { delayMs, usedRetryAfter } = getFallbackRetryDelayMs(attempt, response);
         logImportFallbackDebug('fallback_lookup_retry', {
           variant,
@@ -2556,14 +2595,16 @@ async function fetchGoogleBooksFallbackWithRetry(queryUrl, variant) {
   }
 }
 
-async function lookupMetadataByTitleAuthor(target) {
+async function lookupMetadataByTitleAuthor(target, options = null) {
+  const includeStatus = Boolean(options && options.includeStatus);
+  const asResult = (metadata, extra = {}) => (includeStatus ? { metadata, ...extra } : metadata);
   if (!globalFetch || !process.env.GOOGLE_BOOKS_API_KEY) {
-    return null;
+    return asResult(null, { transientReason: null, outcome: 'not_configured' });
   }
   const title = typeof target?.title === 'string' ? target.title.trim() : '';
   const author = typeof target?.author === 'string' ? target.author.trim() : '';
   if (!title || !author) {
-    return null;
+    return asResult(null, { transientReason: null, outcome: 'invalid_target' });
   }
   const variants = buildTitleAuthorLookupVariants(title, author);
   logImportFallbackDebug('fallback_lookup_start', {
@@ -2593,6 +2634,18 @@ async function lookupMetadataByTitleAuthor(target) {
       }
       continue;
     }
+    const cooldownRemainingMs = getFallbackCooldownRemainingMs();
+    if (cooldownRemainingMs > 0) {
+      logImportFallbackDebug('fallback_lookup_skipped_cooldown', {
+        variant: entry.variant,
+        reason: googleBooksFallbackCooldownReason || 'rate_limited',
+        cooldownRemainingMs,
+      });
+      return asResult(null, {
+        transientReason: 'cooldown_active',
+        outcome: 'cooldown_skip',
+      });
+    }
 
     const queryUrl = new URL('https://www.googleapis.com/books/v1/volumes');
     queryUrl.searchParams.set('q', entry.query);
@@ -2604,8 +2657,36 @@ async function lookupMetadataByTitleAuthor(target) {
       query: entry.query,
     });
 
-    const response = await fetchGoogleBooksFallbackWithRetry(queryUrl.toString(), entry.variant);
+    let response;
+    try {
+      response = await fetchGoogleBooksFallbackWithRetry(queryUrl.toString(), entry.variant);
+    } catch (error) {
+      if (isTransientFallbackNetworkError(error)) {
+        const cooldownMs = activateFallbackCooldown('network_error');
+        logImportFallbackDebug('fallback_lookup_cooldown_start', {
+          variant: entry.variant,
+          reason: 'network_error',
+          cooldownMs,
+          usedRetryAfter: false,
+        });
+        return asResult(null, {
+          transientReason: 'network_error',
+          outcome: 'network_error',
+        });
+      }
+      throw error;
+    }
     if (!response.ok) {
+      if (isTransientFallbackStatus(response.status)) {
+        const retryAfterMs = parseRetryAfterMs(response?.headers?.get?.('retry-after'));
+        const cooldownMs = activateFallbackCooldown(`http_${response.status}`, retryAfterMs);
+        logImportFallbackDebug('fallback_lookup_cooldown_start', {
+          variant: entry.variant,
+          reason: `http_${response.status}`,
+          cooldownMs,
+          usedRetryAfter: Number.isFinite(retryAfterMs),
+        });
+      }
       logImportFallbackDebug('fallback_result', {
         accepted: false,
         acceptedFields: [],
@@ -2615,6 +2696,12 @@ async function lookupMetadataByTitleAuthor(target) {
           variant: entry.variant,
         },
       });
+      if (isTransientFallbackStatus(response.status)) {
+        return asResult(null, {
+          transientReason: `http_${response.status}`,
+          outcome: 'transient_http',
+        });
+      }
       continue;
     }
     const payload = await response.json();
@@ -2630,10 +2717,10 @@ async function lookupMetadataByTitleAuthor(target) {
         source: metadata.source || 'googlebooks-title-author',
         fromCache: false,
       });
-      return metadata;
+      return asResult(metadata, { transientReason: null, outcome: 'success' });
     }
   }
-  return null;
+  return asResult(null, { transientReason: null, outcome: 'no_match' });
 }
 
 function buildOpenLibraryCoverUrlFromCoverId(coverId, size = 'L') {
@@ -4152,8 +4239,14 @@ async function handleApi(req, res, requestUrl) {
         body.enrichIsbn === undefined
           ? true
           : parseBooleanFlag(body.enrichIsbn);
+      const IMPORT_FALLBACK_DEFERRED_MAX_ATTEMPTS = 4;
+      const IMPORT_FALLBACK_DEFERRED_MAX_CYCLES = 40;
+      const IMPORT_FALLBACK_DEFERRED_MAX_DURATION_MS = 5000;
+      const deferredFallbackRows = [];
+      const deferredRetryStartedAt = Date.now();
 
       for (const row of workbookResult.rows) {
+        const fallbackAttempt = Number.isInteger(row?.__fallbackAttempt) ? row.__fallbackAttempt : 1;
         const normalized = normalizeRowKeys(row);
         const title = String(normalized.titel || normalized.title || '').trim();
         const author = String(normalized.auteur || normalized.author || '').trim();
@@ -4299,6 +4392,10 @@ async function handleApi(req, res, requestUrl) {
         const existingBook = metadataIsbn
           ? findBookByMetadataIsbn(db, metadataIsbn)
           : findBookByBarcode(db, barcode);
+        const affectedBookIds = new Set();
+        if (existingBook?.id) {
+          affectedBookIds.add(existingBook.id);
+        }
         const hasCoverInput = coverUrlSource !== undefined && String(coverUrlSource).trim();
         const hasPublisherInput = publisherSource !== undefined && String(publisherSource).trim();
         const hasDescriptionInput = description.length > 0;
@@ -4315,7 +4412,7 @@ async function handleApi(req, res, requestUrl) {
           && Boolean(titleAuthorLookup)
           && Boolean(rowTitle && rowAuthor)
           && missingFieldsBeforeFallback.length > 0;
-        logImportFallbackDebug('row_fallback_check', {
+        logImportFallbackVerbose('row_fallback_check', {
           title: rowTitle,
           author: rowAuthor,
           barcode,
@@ -4347,20 +4444,35 @@ async function handleApi(req, res, requestUrl) {
           });
         }
         let fallbackUsed = false;
+        let fallbackTransientReason = null;
+        let fallbackTarget = null;
         if (shouldTryTitleAuthorFallback) {
-          const fallbackTarget = {
+          fallbackTarget = {
             title: rowTitle,
             author: rowAuthor,
             rawTitle: rowTitle,
             language: language || existingBook?.language || metadataFields?.language || '',
           };
           try {
-            const strictFallbackMetadata = await titleAuthorLookup(fallbackTarget);
+            const fallbackLookupResult = await titleAuthorLookup(fallbackTarget, { includeStatus: true });
+            const strictFallbackMetadata =
+              fallbackLookupResult
+              && typeof fallbackLookupResult === 'object'
+              && Object.prototype.hasOwnProperty.call(fallbackLookupResult, 'metadata')
+                ? fallbackLookupResult.metadata
+                : fallbackLookupResult;
+            if (
+              fallbackLookupResult
+              && typeof fallbackLookupResult === 'object'
+              && Object.prototype.hasOwnProperty.call(fallbackLookupResult, 'metadata')
+            ) {
+              fallbackTransientReason = fallbackLookupResult.transientReason || null;
+            }
             if (strictFallbackMetadata && typeof strictFallbackMetadata === 'object'
               && isStrictWorkMatch(fallbackTarget, strictFallbackMetadata)) {
               metadataFields = mergeLookupMetadata(metadataFields || {}, strictFallbackMetadata);
               fallbackUsed = true;
-            } else {
+            } else if (!fallbackTransientReason) {
               logImportFallbackDebug('fallback_result', {
                 accepted: false,
                 acceptedFields: [],
@@ -4370,12 +4482,16 @@ async function handleApi(req, res, requestUrl) {
             }
           } catch (error) {
             console.warn('Titel/auteur fallback-verrijking mislukt:', error?.message || error);
-            logImportFallbackDebug('fallback_result', {
-              accepted: false,
-              acceptedFields: [],
-              rejectReason: 'lookup_error',
-              source: 'googlebooks',
-            });
+            if (isTransientFallbackNetworkError(error)) {
+              fallbackTransientReason = 'network_error';
+            } else {
+              logImportFallbackDebug('fallback_result', {
+                accepted: false,
+                acceptedFields: [],
+                rejectReason: 'lookup_error',
+                source: 'googlebooks',
+              });
+            }
           }
         }
         const finalCoverUrlSource = hasCoverInput
@@ -4566,6 +4682,7 @@ async function handleApi(req, res, requestUrl) {
         for (let i = 0; i < copiesToCreate; i += 1) {
           const copy = createBookCopyFromTemplate(baseTemplate);
           db.books.push(copy);
+          affectedBookIds.add(copy.id);
           createdBooks.push({
             title: copy.title,
             author: copy.author,
@@ -4584,6 +4701,152 @@ async function handleApi(req, res, requestUrl) {
         }
         if (copiesToCreate > 0) {
           changed = true;
+        }
+        if (fallbackTransientReason) {
+          const retryAttempt = fallbackAttempt + 1;
+          const retryDelayMs = Math.max(getFallbackCooldownRemainingMs(), 50);
+          if (retryAttempt <= IMPORT_FALLBACK_DEFERRED_MAX_ATTEMPTS) {
+            deferredFallbackRows.push({
+              row,
+              fallbackTarget,
+              reason: fallbackTransientReason,
+              attempt: retryAttempt,
+              nextEligibleAt: Date.now() + retryDelayMs,
+              affectedBookIds: Array.from(affectedBookIds),
+            });
+            logImportFallbackDebug('row_deferred_transient', {
+              title: rowTitle,
+              author: rowAuthor,
+              barcode,
+              reason: fallbackTransientReason,
+              attempt: fallbackAttempt,
+            });
+            logImportFallbackDebug('row_retry_scheduled', {
+              title: rowTitle,
+              author: rowAuthor,
+              barcode,
+              reason: fallbackTransientReason,
+              nextAttempt: retryAttempt,
+              waitMs: retryDelayMs,
+            });
+          } else {
+            logImportFallbackDebug('row_retry_exhausted', {
+              title: rowTitle,
+              author: rowAuthor,
+              barcode,
+              reason: fallbackTransientReason,
+              attempt: fallbackAttempt,
+            });
+          }
+        }
+      }
+
+      let deferredCycles = 0;
+      while (deferredFallbackRows.length
+        && deferredCycles < IMPORT_FALLBACK_DEFERRED_MAX_CYCLES
+        && (Date.now() - deferredRetryStartedAt) < IMPORT_FALLBACK_DEFERRED_MAX_DURATION_MS) {
+        deferredFallbackRows.sort((left, right) => left.nextEligibleAt - right.nextEligibleAt);
+        const job = deferredFallbackRows.shift();
+        const waitMs = Math.max(0, job.nextEligibleAt - Date.now());
+        if (waitMs > 0) {
+          await wait(Math.min(waitMs, 120));
+        }
+        deferredCycles += 1;
+        const rowTitle = job.fallbackTarget?.title || '';
+        const rowAuthor = job.fallbackTarget?.author || '';
+        logImportFallbackDebug('row_retry_attempt', {
+          title: rowTitle,
+          author: rowAuthor,
+          reason: job.reason,
+          attempt: job.attempt,
+        });
+        let retryResult = null;
+        try {
+          retryResult = await titleAuthorLookup(job.fallbackTarget, { includeStatus: true });
+        } catch (error) {
+          if (isTransientFallbackNetworkError(error)) {
+            retryResult = { metadata: null, transientReason: 'network_error', outcome: 'network_error' };
+          } else {
+            retryResult = { metadata: null, transientReason: null, outcome: 'lookup_error' };
+          }
+        }
+        const retryMetadata = retryResult?.metadata || null;
+        if (retryMetadata && isStrictWorkMatch(job.fallbackTarget, retryMetadata)) {
+          let rowUpdated = false;
+          for (const bookId of job.affectedBookIds) {
+            const book = db.books.find((entry) => entry.id === bookId);
+            if (!book) continue;
+            let didUpdate = false;
+            if (!book.coverUrl && retryMetadata.coverUrl) {
+              book.coverUrl = retryMetadata.coverUrl;
+              didUpdate = true;
+            }
+            if (!book.publisher && retryMetadata.publisher) {
+              book.publisher = retryMetadata.publisher;
+              didUpdate = true;
+            }
+            if (!book.description && retryMetadata.description) {
+              book.description = retryMetadata.description;
+              didUpdate = true;
+            }
+            if (didUpdate) {
+              rowUpdated = true;
+            }
+          }
+          if (rowUpdated) {
+            changed = true;
+          }
+          logImportFallbackDebug('row_retry_completed', {
+            title: rowTitle,
+            author: rowAuthor,
+            attempt: job.attempt,
+            success: rowUpdated,
+          });
+          continue;
+        }
+        const transientReason = retryResult?.transientReason || null;
+        if (transientReason && job.attempt < IMPORT_FALLBACK_DEFERRED_MAX_ATTEMPTS) {
+          const nextAttempt = job.attempt + 1;
+          const retryDelayMs = Math.max(getFallbackCooldownRemainingMs(), 50);
+          deferredFallbackRows.push({
+            ...job,
+            reason: transientReason,
+            attempt: nextAttempt,
+            nextEligibleAt: Date.now() + retryDelayMs,
+          });
+          logImportFallbackDebug('row_retry_scheduled', {
+            title: rowTitle,
+            author: rowAuthor,
+            reason: transientReason,
+            nextAttempt,
+            waitMs: retryDelayMs,
+          });
+          continue;
+        }
+        if (transientReason) {
+          logImportFallbackDebug('row_retry_exhausted', {
+            title: rowTitle,
+            author: rowAuthor,
+            reason: transientReason,
+            attempt: job.attempt,
+          });
+        } else {
+          logImportFallbackDebug('row_retry_completed', {
+            title: rowTitle,
+            author: rowAuthor,
+            attempt: job.attempt,
+            success: false,
+          });
+        }
+      }
+      if (deferredFallbackRows.length) {
+        for (const job of deferredFallbackRows) {
+          logImportFallbackDebug('row_retry_exhausted', {
+            title: job.fallbackTarget?.title || '',
+            author: job.fallbackTarget?.author || '',
+            reason: job.reason || 'import_retry_limit_reached',
+            attempt: job.attempt,
+          });
         }
       }
 

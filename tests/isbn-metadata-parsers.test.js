@@ -403,6 +403,55 @@ async function runTests() {
     'Existing no-quote behavior should remain unchanged',
   );
 
+  {
+    const cooldownFetchCalls = [];
+    const cooldownFetch = async (url) => {
+      cooldownFetchCalls.push(String(url));
+      if (cooldownFetchCalls.length === 1) {
+        return createMockResponse(
+          { items: [] },
+          { status: 429, headers: { 'retry-after': '0.05', 'content-type': 'application/json' } },
+        );
+      }
+      return createMockResponse({
+        items: [
+          {
+            volumeInfo: {
+              title: 'Cooldown Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/cooldown-cover.jpg' },
+            },
+          },
+        ],
+      });
+    };
+    const { lookupMetadataByTitleAuthor: cooldownLookup } = loadServerModule({
+      fetchImpl: cooldownFetch,
+      env: {
+        GOOGLE_BOOKS_API_KEY: 'test-key',
+        BOEKENBAAI_TITLE_AUTHOR_RATE_LIMIT_COOLDOWN_MS: '10',
+      },
+    });
+    const firstAttempt = await cooldownLookup({ title: 'Cooldown Titel', author: 'Carry Slee' });
+    assert.strictEqual(firstAttempt, null, '429 response should not be treated as success');
+    assert.strictEqual(cooldownFetchCalls.length, 1, '429 should stop retries and variant ladder for that lookup');
+
+    const secondAttempt = await cooldownLookup({ title: 'Andere Titel', author: 'Carry Slee' });
+    assert.strictEqual(secondAttempt, null, 'Lookup should be skipped while cooldown is active');
+    assert.strictEqual(cooldownFetchCalls.length, 1, 'Cooldown skip should prevent extra requests');
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const thirdAttempt = await cooldownLookup({ title: 'Cooldown Titel', author: 'Carry Slee' });
+    assert.ok(thirdAttempt, 'Lookup should try again after cooldown ends');
+    assert.strictEqual(
+      thirdAttempt.coverUrl,
+      'https://example.com/cooldown-cover.jpg',
+      'Post-cooldown attempt should fetch fresh Google Books data',
+    );
+    assert.strictEqual(cooldownFetchCalls.length, 2, 'After cooldown expiry the fallback should call Google Books again');
+  }
+
   const noGoogleTagCalls = [];
   const lookupFetchWithoutGoogleTags = async (url) => {
     noGoogleTagCalls.push(url);

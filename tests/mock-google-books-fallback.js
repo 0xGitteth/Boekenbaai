@@ -37,8 +37,12 @@ global.fetch = async (input, init) => {
   const plannedResponses = Array.isArray(queryPlan[query]) ? queryPlan[query] : [];
   const selected = plannedResponses[Math.min(calls - 1, Math.max(plannedResponses.length - 1, 0))] || { status: 200, items: [] };
   logLookup(`GB:${query}#${calls}:http_${selected.status}`);
+  const headers = { 'Content-Type': 'application/json' };
+  if (selected.retryAfter !== undefined && selected.retryAfter !== null) {
+    headers['Retry-After'] = String(selected.retryAfter);
+  }
   return new Response(JSON.stringify({ items: selected.items || [] }), {
     status: selected.status || 200,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
   });
 };
