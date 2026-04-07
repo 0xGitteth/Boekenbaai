@@ -882,7 +882,6 @@ async function runGoogleBooksFallbackResilienceTest() {
   createDbFixture(dbPath);
   const emptyIsbnFixtures = {};
   const qStrictRetry503 = 'intitle:"Retry 503 Titel" inauthor:"Carry Slee"';
-  const qStrictRetry429 = 'intitle:"Retry 429 Titel" inauthor:"Carry Slee"';
   const qStrictFail503 = 'intitle:"Fail 503 Titel" inauthor:"Carry Slee"';
   const qStrictWithParens = 'intitle:"Ladder Titel (schooleditie)" inauthor:"Carry Slee"';
   const qPrimaryWithParens = 'intitle:"Ladder Titel" inauthor:"Carry Slee"';
@@ -900,22 +899,6 @@ async function runGoogleBooksFallbackResilienceTest() {
               authors: ['Carry Slee'],
               language: 'nl',
               imageLinks: { thumbnail: 'https://example.com/retry-503.jpg' },
-            },
-          },
-        ],
-      },
-    ],
-    [qStrictRetry429]: [
-      { status: 429, items: [] },
-      {
-        status: 200,
-        items: [
-          {
-            volumeInfo: {
-              title: 'Retry 429 Titel',
-              authors: ['Carry Slee'],
-              language: 'nl',
-              imageLinks: { thumbnail: 'https://example.com/retry-429.jpg' },
             },
           },
         ],
@@ -996,13 +979,12 @@ async function runGoogleBooksFallbackResilienceTest() {
     const token = await loginAdmin();
     const workbookBase64 = buildWorkbookBase64([
       { Titel: 'Retry 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000001' },
-      { Titel: 'Retry 429 Titel', Auteur: 'Carry Slee', Barcode: '9787100000002' },
-      { Titel: 'Fail 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000003' },
-      { Titel: 'Fail 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000006' },
       { Titel: 'Retry 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000004' },
       { Titel: 'Ladder Titel (schooleditie)', Auteur: 'Carry Slee', Barcode: '9787100000005' },
       { Titel: 'Language Cache Titel', Auteur: 'Carry Slee', Taal: 'nl', Barcode: '9787100000007' },
       { Titel: 'Language Cache Titel', Auteur: 'Carry Slee', Taal: 'en', Barcode: '9787100000008' },
+      { Titel: 'Fail 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000003' },
+      { Titel: 'Fail 503 Titel', Auteur: 'Carry Slee', Barcode: '9787100000006' },
     ]);
     const importResponse = await request('/api/books/import', {
       method: 'POST',
@@ -1017,7 +999,6 @@ async function runGoogleBooksFallbackResilienceTest() {
     const books = await readBookCollection(token);
     const byBarcode = (barcode) => books.find((book) => book.barcode === barcode);
     assert.strictEqual(byBarcode('9787100000001').coverUrl, 'https://example.com/retry-503.jpg');
-    assert.strictEqual(byBarcode('9787100000002').coverUrl, 'https://example.com/retry-429.jpg');
     assert.strictEqual(byBarcode('9787100000003').coverUrl, '');
     assert.strictEqual(byBarcode('9787100000006').coverUrl, '');
     assert.strictEqual(byBarcode('9787100000004').coverUrl, 'https://example.com/retry-503.jpg');
@@ -1030,12 +1011,148 @@ async function runGoogleBooksFallbackResilienceTest() {
     const googleLogs = fs.readFileSync(googleLogPath, 'utf-8').trim().split('\n').filter(Boolean);
     const queryCount = (query) => googleLogs.filter((entry) => entry.includes(`GB:${query}#`)).length;
     assert.strictEqual(queryCount(qStrictRetry503), 2);
-    assert.strictEqual(queryCount(qStrictRetry429), 2);
-    assert.strictEqual(queryCount(qStrictFail503), 6);
+    assert.strictEqual(queryCount(qStrictFail503), 3);
     assert.strictEqual(queryCount(qStrictWithParens), 1);
     assert.strictEqual(queryCount(qPrimaryWithParens), 1);
     assert.strictEqual(queryCount(qRelaxedWithParens), 1);
     assert.strictEqual(queryCount(qStrictLanguageCache), 2);
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
+async function runGoogleBooksFallbackDeferredQueueTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-import-fallback-deferred-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  const googleLogPath = path.join(tempDir, 'google.log');
+  createDbFixture(dbPath);
+  const qRetry503 = 'intitle:"Deferred 503 Titel" inauthor:"Carry Slee"';
+  const qCooldown = 'intitle:"Cooldown Titel" inauthor:"Carry Slee"';
+  const qNoMatch = 'intitle:"No Match Titel" inauthor:"Carry Slee"';
+  const queryPlan = {
+    [qRetry503]: [
+      { status: 503, items: [] },
+      { status: 503, items: [] },
+      { status: 503, items: [] },
+      {
+        status: 200,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Deferred 503 Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/deferred-503.jpg' },
+            },
+          },
+        ],
+      },
+    ],
+    [qCooldown]: [
+      {
+        status: 200,
+        items: [
+          {
+            volumeInfo: {
+              title: 'Cooldown Titel',
+              authors: ['Carry Slee'],
+              language: 'nl',
+              imageLinks: { thumbnail: 'https://example.com/cooldown-retry.jpg' },
+            },
+          },
+        ],
+      },
+    ],
+    [qNoMatch]: [{ status: 200, items: [] }],
+  };
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+    GOOGLE_BOOKS_API_KEY: 'test-google-key',
+    BOEKENBAAI_TITLE_AUTHOR_RATE_LIMIT_COOLDOWN_MS: '20',
+    BOEKENBAAI_TEST_ISBN_FIXTURES: JSON.stringify({}),
+    BOEKENBAAI_TEST_GOOGLE_BOOKS_FALLBACK_PLAN: JSON.stringify(queryPlan),
+    BOEKENBAAI_TEST_GOOGLE_BOOKS_LOG: googleLogPath,
+    NODE_OPTIONS: `--require ${path.join(__dirname, 'mock-isbn-only-lookup.js')} --require ${path.join(__dirname, 'mock-google-books-fallback.js')}`,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const workbookBase64 = buildWorkbookBase64([
+      { Titel: 'Deferred 503 Titel', Auteur: 'Carry Slee', Barcode: '9787200000001' },
+      { Titel: 'Cooldown Titel', Auteur: 'Carry Slee', Barcode: '9787200000002' },
+      { Titel: 'No Match Titel', Auteur: 'Carry Slee', Barcode: '9787200000003' },
+    ]);
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+    assert.strictEqual(importResponse.status, 200);
+
+    const books = await readBookCollection(token);
+    const byBarcode = (barcode) => books.find((book) => book.barcode === barcode);
+    assert.strictEqual(byBarcode('9787200000001').coverUrl, 'https://example.com/deferred-503.jpg');
+    assert.strictEqual(byBarcode('9787200000002').coverUrl, 'https://example.com/cooldown-retry.jpg');
+    assert.strictEqual(byBarcode('9787200000003').coverUrl, '');
+
+    const googleLogs = fs.readFileSync(googleLogPath, 'utf-8').trim().split('\n').filter(Boolean);
+    const queryCount = (query) => googleLogs.filter((entry) => entry.includes(`GB:${query}#`)).length;
+    assert.strictEqual(queryCount(qRetry503), 4, '503 row should be retried later in the same import run');
+    assert.strictEqual(queryCount(qCooldown), 1, 'Cooldown-skipped row should be retried after cooldown');
+    assert.strictEqual(queryCount(qNoMatch), 1, 'No-match row should not be retried indefinitely');
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
+async function runGoogleBooksFallbackDeferredBudgetTest() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-import-fallback-budget-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  const googleLogPath = path.join(tempDir, 'google.log');
+  createDbFixture(dbPath);
+  const qAlways503 = 'intitle:"Always 503 Titel" inauthor:"Carry Slee"';
+  const queryPlan = {
+    [qAlways503]: [{ status: 503, items: [] }],
+  };
+
+  const serverProcess = startServer({
+    BOEKENBAAI_DATA_PATH: dbPath,
+    GOOGLE_BOOKS_API_KEY: 'test-google-key',
+    BOEKENBAAI_TITLE_AUTHOR_RATE_LIMIT_COOLDOWN_MS: '5',
+    BOEKENBAAI_TEST_ISBN_FIXTURES: JSON.stringify({}),
+    BOEKENBAAI_TEST_GOOGLE_BOOKS_FALLBACK_PLAN: JSON.stringify(queryPlan),
+    BOEKENBAAI_TEST_GOOGLE_BOOKS_LOG: googleLogPath,
+    NODE_OPTIONS: `--require ${path.join(__dirname, 'mock-isbn-only-lookup.js')} --require ${path.join(__dirname, 'mock-google-books-fallback.js')}`,
+  });
+
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const workbookBase64 = buildWorkbookBase64([
+      { Titel: 'Always 503 Titel', Auteur: 'Carry Slee', Barcode: '9787200000010' },
+    ]);
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64 }),
+    });
+    assert.strictEqual(importResponse.status, 200);
+
+    const books = await readBookCollection(token);
+    const result = books.find((book) => book.barcode === '9787200000010');
+    assert.strictEqual(result.coverUrl, '');
+
+    const googleLogs = fs.readFileSync(googleLogPath, 'utf-8').trim().split('\n').filter(Boolean);
+    const queryCount = googleLogs.filter((entry) => entry.includes(`GB:${qAlways503}#`)).length;
+    assert.ok(queryCount <= 12, `Retry budget should be bounded, received ${queryCount} calls`);
   } finally {
     serverProcess.kill('SIGINT');
   }
@@ -1084,6 +1201,8 @@ async function runTests() {
   await runThemeImportWorkflowTest();
   await runStrictTitleAuthorFallbackImportTest();
   await runGoogleBooksFallbackResilienceTest();
+  await runGoogleBooksFallbackDeferredQueueTest();
+  await runGoogleBooksFallbackDeferredBudgetTest();
 
   // Test easyReading and suitableForExamList import
   const easyReadingResult = await runEasyReadingTest();
