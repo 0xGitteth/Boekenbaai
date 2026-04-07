@@ -3647,6 +3647,7 @@ function initStaffPage() {
     }
     if (!loggedIn) {
       clearBookImportPoll();
+      currentBookImportJobId = null;
       teacherResetNotice.hide();
       adminResetNotice.hide();
       adminTeacherResetNotice.hide();
@@ -6010,7 +6011,7 @@ function initStaffPage() {
     await loadClasses();
     await loadHistory();
     if (authUser?.role === 'admin') {
-      const storedJobId = currentBookImportJobId || localStorage.getItem(getBookImportStorageKey());
+      const storedJobId = localStorage.getItem(getBookImportStorageKey()) || currentBookImportJobId;
       if (storedJobId) {
         pollBookImportJob(storedJobId, { immediate: true });
       }

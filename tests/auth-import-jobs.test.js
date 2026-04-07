@@ -104,6 +104,14 @@ async function testAuthFrontendRegressionGuards() {
     appJs.includes("if (error?.code === 'ROLE_MISMATCH') {") && appJs.includes('clearAuth();'),
     'Bootstrap-afhandeling voor role mismatch ontbreekt'
   );
+  assert.ok(
+    appJs.includes('currentBookImportJobId = null;'),
+    'currentBookImportJobId moet gereset worden bij uitloggen/auth reset'
+  );
+  assert.ok(
+    appJs.includes('localStorage.getItem(getBookImportStorageKey()) || currentBookImportJobId'),
+    'refreshStaffData moet eerst user-gebonden localStorage key gebruiken'
+  );
 }
 
 async function testImportJobLifecycle() {
