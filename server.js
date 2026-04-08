@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
-const { rewriteLegacyOpenLibraryArchiveCoverUrl } = require('./lib/cover-url');
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -974,12 +973,8 @@ function normalizeCoverUrl(value) {
   return text;
 }
 
-function rewriteArchiveOpenLibraryCoverUrl(url) {
-  return rewriteLegacyOpenLibraryArchiveCoverUrl(url);
-}
-
 function resolveEffectiveCoverUrl(value) {
-  return normalizeCoverUrl(rewriteArchiveOpenLibraryCoverUrl(value || ''));
+  return normalizeCoverUrl(value || '');
 }
 
 function ensureBookShape(book) {
@@ -1009,9 +1004,7 @@ function ensureBookShape(book) {
   );
   safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
   safeBook.language = normalizeLanguageCode(source.language);
-  safeBook.coverUrl = normalizeCoverUrl(
-    rewriteArchiveOpenLibraryCoverUrl(source.coverUrl || source.cover || '')
-  );
+  safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
   return attachDerivedThemeFields(safeBook);
 }
 

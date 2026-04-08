@@ -113,7 +113,7 @@ async function runIntegrationChecks() {
     assert.strictEqual(readResponse.status, 200);
     const readBook = readResponse.body.find((entry) => entry.id === 'legacy-1');
     assert.ok(readBook);
-    assert.strictEqual(readBook.coverUrl, CANONICAL_URL, 'read path should normalize stale persisted URL');
+    assert.strictEqual(readBook.coverUrl, LEGACY_ARCHIVE_URL, 'read path should preserve legacy persisted URL');
 
     const putResponse = await request('/api/books/legacy-1', {
       method: 'PUT',
@@ -124,7 +124,7 @@ async function runIntegrationChecks() {
       body: JSON.stringify({ coverUrl: LEGACY_ARCHIVE_URL }),
     });
     assert.strictEqual(putResponse.status, 200);
-    assert.strictEqual(putResponse.body.book.coverUrl, CANONICAL_URL, 'PUT should store canonical cover URL');
+    assert.strictEqual(putResponse.body.book.coverUrl, LEGACY_ARCHIVE_URL, 'PUT should preserve provided legacy cover URL');
 
     const postResponse = await request('/api/books', {
       method: 'POST',
@@ -140,7 +140,7 @@ async function runIntegrationChecks() {
       }),
     });
     assert.strictEqual(postResponse.status, 201);
-    assert.strictEqual(postResponse.body.book.coverUrl, CANONICAL_URL, 'POST should store canonical cover URL');
+    assert.strictEqual(postResponse.body.book.coverUrl, LEGACY_ARCHIVE_URL, 'POST should preserve provided legacy cover URL');
 
     const workbookBase64 = buildWorkbookBase64([
       {
@@ -162,7 +162,7 @@ async function runIntegrationChecks() {
     const afterImport = await request('/api/books');
     const imported = afterImport.body.find((entry) => entry.barcode === '9781234567898');
     assert.ok(imported, 'imported book should exist');
-    assert.strictEqual(imported.coverUrl, CANONICAL_URL, 'import should store canonical cover URL');
+    assert.strictEqual(imported.coverUrl, LEGACY_ARCHIVE_URL, 'import should preserve provided legacy cover URL');
   } finally {
     serverProcess.kill('SIGINT');
     await new Promise((resolve) => serverProcess.once('exit', resolve));
