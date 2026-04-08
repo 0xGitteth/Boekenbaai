@@ -762,6 +762,7 @@ const bookDetailState = {
   status: null,
   tags: null,
   description: null,
+  descriptionExpandedContent: null,
   descriptionToggle: null,
   coverImage: null,
   coverFallback: null,
@@ -815,6 +816,9 @@ function ensureBookDetailElements() {
     bookDetailState.status = bookDetailState.root.querySelector('#book-detail-status');
     bookDetailState.tags = bookDetailState.root.querySelector('#book-detail-tags');
     bookDetailState.description = bookDetailState.root.querySelector('#book-detail-description');
+    bookDetailState.descriptionExpandedContent = bookDetailState.root.querySelector(
+      '#book-detail-description-expanded'
+    );
     bookDetailState.descriptionToggle = bookDetailState.root.querySelector('#book-detail-description-toggle');
     bookDetailState.coverImage = bookDetailState.root.querySelector('#book-detail-cover');
     bookDetailState.coverFallback = bookDetailState.root.querySelector('#book-detail-cover-fallback');
@@ -871,13 +875,16 @@ function ensureBookDetailElements() {
 
 function applyBookDetailDescriptionState() {
   const state = ensureBookDetailElements();
-  if (!state.description || !state.descriptionToggle) return;
+  if (!state.description || !state.descriptionToggle || !state.descriptionExpandedContent) return;
   const fullText = state.description.dataset.fullText || '';
+  const previewText = state.description.dataset.previewText || '';
   const shouldCollapse = state.description.dataset.collapsible === 'true';
   const fallbackText = 'Geen beschrijving beschikbaar.';
   if (!fullText) {
     state.description.textContent = fallbackText;
     state.description.classList.remove('book-detail__description--expanded');
+    state.descriptionExpandedContent.textContent = '';
+    state.descriptionExpandedContent.hidden = true;
     state.descriptionToggle.hidden = true;
     state.descriptionToggle.setAttribute('aria-expanded', 'false');
     return;
@@ -885,15 +892,115 @@ function applyBookDetailDescriptionState() {
   if (!shouldCollapse) {
     state.description.textContent = fullText;
     state.description.classList.remove('book-detail__description--expanded');
+    state.descriptionExpandedContent.textContent = '';
+    state.descriptionExpandedContent.hidden = true;
     state.descriptionToggle.hidden = true;
     state.descriptionToggle.setAttribute('aria-expanded', 'false');
     return;
   }
-  state.description.textContent = fullText;
+  state.description.textContent = previewText || fullText;
   state.description.classList.toggle('book-detail__description--expanded', state.descriptionExpanded);
+  state.descriptionExpandedContent.textContent = state.descriptionExpanded ? fullText : '';
+  state.descriptionExpandedContent.hidden = !state.descriptionExpanded;
   state.descriptionToggle.hidden = false;
   state.descriptionToggle.textContent = state.descriptionExpanded ? 'Lees minder' : 'Lees meer';
   state.descriptionToggle.setAttribute('aria-expanded', state.descriptionExpanded ? 'true' : 'false');
+}
+
+function normalizeDescriptionValue(value) {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (value && typeof value === 'object' && typeof value.value === 'string') {
+    return value.value.trim();
+  }
+  return '';
+}
+
+function shouldUseSingleSentencePreview(descriptionElement, firstSentence) {
+  const lineCount = measurePreviewLineCount(descriptionElement, firstSentence);
+  return lineCount > 1;
+}
+
+function measurePreviewLineCount(descriptionElement, text) {
+  if (!descriptionElement || !(descriptionElement instanceof HTMLElement)) {
+    return 0;
+  }
+  const measurementWidth = descriptionElement.clientWidth || descriptionElement.offsetWidth;
+  if (!measurementWidth) {
+    return 0;
+  }
+  const computed = window.getComputedStyle(descriptionElement);
+  const probe = document.createElement('span');
+  probe.textContent = text;
+  probe.style.position = 'fixed';
+  probe.style.visibility = 'hidden';
+  probe.style.pointerEvents = 'none';
+  probe.style.left = '-9999px';
+  probe.style.top = '0';
+  probe.style.width = `${measurementWidth}px`;
+  probe.style.whiteSpace = 'pre-wrap';
+  probe.style.fontFamily = computed.fontFamily;
+  probe.style.fontSize = computed.fontSize;
+  probe.style.fontWeight = computed.fontWeight;
+  probe.style.letterSpacing = computed.letterSpacing;
+  probe.style.lineHeight = computed.lineHeight;
+  document.body.appendChild(probe);
+  const measuredHeight = probe.getBoundingClientRect().height;
+  probe.remove();
+  const parsedLineHeight = Number.parseFloat(computed.lineHeight);
+  const fallbackLineHeight = Number.parseFloat(computed.fontSize) * 1.4;
+  const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fallbackLineHeight;
+  if (!lineHeight) {
+    return 0;
+  }
+  return Math.max(1, Math.round(measuredHeight / lineHeight));
+}
+
+function buildDescriptionPreview(fullText, descriptionElement) {
+  const normalized = String(fullText || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) {
+    return {
+      previewText: '',
+      isCollapsible: false,
+    };
+  }
+  const sentences = normalized.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if (sentences.length <= 1) {
+    return {
+      previewText: normalized,
+      isCollapsible: false,
+    };
+  }
+  const firstSentence = sentences[0].trim();
+  const useSingleSentence = shouldUseSingleSentencePreview(descriptionElement, firstSentence);
+  let previewSentenceCount = 2;
+  if (useSingleSentence) {
+    previewSentenceCount = 1;
+  } else {
+    const maxSentencePreview = Math.min(sentences.length, 4);
+    const contrastMarkerIndex = sentences
+      .slice(2, maxSentencePreview)
+      .findIndex((sentence) => /^\s*maar\b/i.test(sentence));
+    if (contrastMarkerIndex >= 0) {
+      previewSentenceCount = Math.min(4, contrastMarkerIndex + 3);
+    }
+  }
+  while (previewSentenceCount > 1) {
+    const candidateText = sentences.slice(0, previewSentenceCount).join(' ').trim();
+    const lineCount = measurePreviewLineCount(descriptionElement, candidateText);
+    if (!lineCount || lineCount <= 3) {
+      break;
+    }
+    previewSentenceCount -= 1;
+  }
+  const previewText = sentences.slice(0, previewSentenceCount).join(' ').trim();
+  return {
+    previewText,
+    isCollapsible: previewText.length < normalized.length,
+  };
 }
 
 function setBookDetailAdminEditHandler(handler) {
@@ -1079,11 +1186,13 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     }
   }
   const descriptionText =
-    (representative.description || '').trim() || (metadata?.description || '').trim();
+    normalizeDescriptionValue(representative.description) || normalizeDescriptionValue(metadata?.description);
   if (state.description) {
     const normalizedDescription = descriptionText || '';
+    const { previewText, isCollapsible } = buildDescriptionPreview(normalizedDescription, state.description);
     state.description.dataset.fullText = normalizedDescription;
-    state.description.dataset.collapsible = normalizedDescription.length > 260 ? 'true' : 'false';
+    state.description.dataset.previewText = previewText;
+    state.description.dataset.collapsible = isCollapsible ? 'true' : 'false';
     state.descriptionExpanded = false;
     applyBookDetailDescriptionState();
   }
