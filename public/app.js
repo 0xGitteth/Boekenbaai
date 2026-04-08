@@ -762,6 +762,7 @@ const bookDetailState = {
   status: null,
   tags: null,
   description: null,
+  descriptionToggle: null,
   coverImage: null,
   coverFallback: null,
   metaPublisher: null,
@@ -783,6 +784,7 @@ const bookDetailState = {
   adminEditHandler: null,
   handleEscape: null,
   editBook: null,
+  descriptionExpanded: false,
 };
 
 function cacheIsbnMetadata(metadata, { key } = {}) {
@@ -813,6 +815,7 @@ function ensureBookDetailElements() {
     bookDetailState.status = bookDetailState.root.querySelector('#book-detail-status');
     bookDetailState.tags = bookDetailState.root.querySelector('#book-detail-tags');
     bookDetailState.description = bookDetailState.root.querySelector('#book-detail-description');
+    bookDetailState.descriptionToggle = bookDetailState.root.querySelector('#book-detail-description-toggle');
     bookDetailState.coverImage = bookDetailState.root.querySelector('#book-detail-cover');
     bookDetailState.coverFallback = bookDetailState.root.querySelector('#book-detail-cover-fallback');
     bookDetailState.metaPublisher = bookDetailState.root.querySelector('#book-detail-publisher');
@@ -856,8 +859,41 @@ function ensureBookDetailElements() {
         }
       });
     }
+    if (bookDetailState.descriptionToggle) {
+      bookDetailState.descriptionToggle.addEventListener('click', () => {
+        bookDetailState.descriptionExpanded = !bookDetailState.descriptionExpanded;
+        applyBookDetailDescriptionState();
+      });
+    }
   }
   return bookDetailState;
+}
+
+function applyBookDetailDescriptionState() {
+  const state = ensureBookDetailElements();
+  if (!state.description || !state.descriptionToggle) return;
+  const fullText = state.description.dataset.fullText || '';
+  const shouldCollapse = state.description.dataset.collapsible === 'true';
+  const fallbackText = 'Geen beschrijving beschikbaar.';
+  if (!fullText) {
+    state.description.textContent = fallbackText;
+    state.description.classList.remove('book-detail__description--expanded');
+    state.descriptionToggle.hidden = true;
+    state.descriptionToggle.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  if (!shouldCollapse) {
+    state.description.textContent = fullText;
+    state.description.classList.remove('book-detail__description--expanded');
+    state.descriptionToggle.hidden = true;
+    state.descriptionToggle.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  state.description.textContent = fullText;
+  state.description.classList.toggle('book-detail__description--expanded', state.descriptionExpanded);
+  state.descriptionToggle.hidden = false;
+  state.descriptionToggle.textContent = state.descriptionExpanded ? 'Lees minder' : 'Lees meer';
+  state.descriptionToggle.setAttribute('aria-expanded', state.descriptionExpanded ? 'true' : 'false');
 }
 
 function setBookDetailAdminEditHandler(handler) {
@@ -880,6 +916,7 @@ function closeBookDetail() {
   state.editBook = null;
   state.currentGroupKey = null;
   state.currentDetail = null;
+  state.descriptionExpanded = false;
 }
 
 function extractYear(value) {
@@ -1044,7 +1081,11 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const descriptionText =
     (representative.description || '').trim() || (metadata?.description || '').trim();
   if (state.description) {
-    state.description.textContent = descriptionText || 'Geen beschrijving beschikbaar.';
+    const normalizedDescription = descriptionText || '';
+    state.description.dataset.fullText = normalizedDescription;
+    state.description.dataset.collapsible = normalizedDescription.length > 260 ? 'true' : 'false';
+    state.descriptionExpanded = false;
+    applyBookDetailDescriptionState();
   }
   if (state.metaPublisher) {
     const manualPublisher = (representative.publisher || '').trim();

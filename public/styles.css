@@ -2779,7 +2779,7 @@ body.book-detail-open {
 
 .book-detail__media {
   width: 140px;
-  min-height: 200px;
+  height: 200px;
   border-radius: 12px;
   overflow: hidden;
   position: relative;
@@ -2861,6 +2861,35 @@ body.book-detail-open {
 .book-detail__description {
   margin: 1rem 0 0;
   white-space: pre-line;
+  min-height: 3.75rem;
+  max-height: 3.75rem;
+  overflow: hidden;
+}
+
+.book-detail__description--expanded {
+  max-height: min(35vh, 16rem);
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.book-detail__description-toggle {
+  margin: 0.4rem 0 0;
+  border: none;
+  background: transparent;
+  color: var(--accent, #0c6dd8);
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+}
+
+.book-detail__description-toggle:hover {
+  text-decoration: underline;
+}
+
+.book-detail__description-toggle:focus-visible {
+  outline: 2px solid var(--focus-border, rgba(var(--accent-rgb, 12, 109, 216), 0.85));
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .book-detail__availability {
@@ -2930,7 +2959,7 @@ body.book-detail-open {
 
   .book-detail__media {
     width: 100%;
-    min-height: 220px;
+    height: 220px;
   }
 }
 
