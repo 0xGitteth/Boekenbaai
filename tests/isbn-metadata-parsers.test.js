@@ -33,7 +33,7 @@ function loadServerModule({
   fs.writeFileSync(dataPath, JSON.stringify({ books: [], students: [], folders: [], classes: [], users: [], history: [] }));
 
   const serverPath = path.join(__dirname, '..', 'server.js');
-  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, parseGoogleBooksTitleAuthorFallbackData, normalizeCoverUrl, rewriteArchiveOpenLibraryCoverUrl, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata, lookupMetadataByTitleAuthor, fetchGoogleBooksFallbackWithRetry };`;
+  const source = `${fs.readFileSync(serverPath, 'utf8')}\nmodule.exports = { parseGoogleBooksData, parseOpenLibraryData, parseGoogleBooksTitleAuthorFallbackData, normalizeCoverUrl, normalizeIsbnMetadata, mergeLookupMetadata, lookupIsbnMetadata, lookupMetadataByTitleAuthor, fetchGoogleBooksFallbackWithRetry };`;
   const actualHttp = require('http');
   const sandbox = {
     module: { exports: {} },
@@ -94,7 +94,6 @@ async function runTests() {
     parseOpenLibraryData,
     parseGoogleBooksTitleAuthorFallbackData,
     normalizeCoverUrl,
-    rewriteArchiveOpenLibraryCoverUrl,
     normalizeIsbnMetadata,
     mergeLookupMetadata,
     lookupMetadataByTitleAuthor,
@@ -114,20 +113,6 @@ async function runTests() {
   );
   assert.strictEqual(normalizeCoverUrl(''), '');
   assert.strictEqual(normalizeCoverUrl(null), '');
-  assert.strictEqual(
-    rewriteArchiveOpenLibraryCoverUrl('https://archive.org/download/l_covers_0012/l_covers_0012_92.zip/0012920350-L.jpg'),
-    'https://covers.openlibrary.org/b/id/12920350-L.jpg?default=false',
-  );
-  assert.strictEqual(
-    rewriteArchiveOpenLibraryCoverUrl('archive.org/download/olcovers687/olcovers687-L.zip/6878733-L.jpg'),
-    'https://covers.openlibrary.org/b/id/6878733-L.jpg?default=false',
-  );
-  assert.strictEqual(
-    rewriteArchiveOpenLibraryCoverUrl('https://books.google.com/books/content?id=abc123&printsec=frontcover&img=1&zoom=1'),
-    'https://books.google.com/books/content?id=abc123&printsec=frontcover&img=1&zoom=1',
-  );
-  assert.strictEqual(rewriteArchiveOpenLibraryCoverUrl(''), '');
-  assert.strictEqual(rewriteArchiveOpenLibraryCoverUrl(null), null);
 
   const fallbackTarget = { title: 'Lopen voor je leven', author: 'Els Beerten', language: 'nl' };
   const poorStrictCandidate = {
@@ -299,7 +284,7 @@ async function runTests() {
       coverUrl: 'https://archive.org/download/l_covers_0012/l_covers_0012_92.zip/0012920350-L.jpg',
       found: true,
     }).fields.coverUrl,
-    'https://covers.openlibrary.org/b/id/12920350-L.jpg?default=false',
+    'https://archive.org/download/l_covers_0012/l_covers_0012_92.zip/0012920350-L.jpg',
   );
 
   const rangedGoogleMetadata = parseGoogleBooksData({

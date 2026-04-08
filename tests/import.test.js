@@ -388,7 +388,7 @@ async function runImportCoverNormalizationTest() {
     assert.ok(storedArchiveCover);
     assert.strictEqual(
       storedArchiveCover.coverUrl,
-      'https://covers.openlibrary.org/b/id/12920350-L.jpg?default=false',
+      'https://archive.org/download/l_covers_0012/l_covers_0012_92.zip/0012920350-L.jpg',
     );
   } finally {
     serverProcess.kill('SIGINT');
@@ -537,7 +537,7 @@ async function runStoredCoverRewriteOnLoadTest() {
     assert.ok(staleArchive);
     assert.strictEqual(
       staleArchive.coverUrl,
-      'https://covers.openlibrary.org/b/id/13539664-L.jpg?default=false',
+      'https://archive.org/download/l_covers_0013/l_covers_0013_53.zip/0013539664-L.jpg',
     );
 
     const alreadyOpenLibrary = byBarcode('9789029078734');
