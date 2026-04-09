@@ -772,6 +772,8 @@ const bookDetailState = {
   metaLanguage: null,
   metaBarcode: null,
   actions: null,
+  importButton: null,
+  importData: null,
   quantityActions: null,
   addCopyButton: null,
   removeCopyButton: null,
@@ -781,6 +783,7 @@ const bookDetailState = {
   currentBookId: null,
   currentGroupKey: null,
   currentDetail: null,
+  currentImportDetail: null,
   metadataCache: new Map(),
   adminEditHandler: null,
   handleEscape: null,
@@ -828,6 +831,8 @@ function ensureBookDetailElements() {
     bookDetailState.metaLanguage = bookDetailState.root.querySelector('#book-detail-language');
     bookDetailState.metaBarcode = bookDetailState.root.querySelector('#book-detail-barcode');
     bookDetailState.actions = bookDetailState.root.querySelector('.book-detail__actions');
+    bookDetailState.importButton = bookDetailState.root.querySelector('[data-book-detail-import]');
+    bookDetailState.importData = bookDetailState.root.querySelector('#book-detail-import-data');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
     bookDetailState.closeButtons = Array.from(
       bookDetailState.root.querySelectorAll('[data-book-detail-close]')
@@ -861,6 +866,12 @@ function ensureBookDetailElements() {
         if (typeof bookDetailState.adminEditHandler === 'function') {
           bookDetailState.adminEditHandler(bookDetailState.editBook);
         }
+      });
+    }
+    if (bookDetailState.importButton) {
+      bookDetailState.importButton.addEventListener('click', () => {
+        const isOpen = !bookDetailState.importData?.classList.contains('hidden');
+        renderBookImportDetailBlock(isOpen ? null : bookDetailState.currentImportDetail);
       });
     }
     if (bookDetailState.descriptionToggle) {
@@ -1008,6 +1019,37 @@ function setBookDetailAdminEditHandler(handler) {
   bookDetailState.adminEditHandler = typeof handler === 'function' ? handler : null;
 }
 
+function renderBookImportDetailBlock(importDetail) {
+  const state = ensureBookDetailElements();
+  if (!state.importData || !state.importButton) return;
+  state.importData.replaceChildren();
+  if (!importDetail) {
+    state.importData.classList.add('hidden');
+    state.importButton.textContent = 'Importgegevens';
+    return;
+  }
+  appendTextElement(state.importData, 'h4', 'Importgegevens');
+  const list = appendElement(state.importData, 'dl', { className: 'book-detail__import-list' });
+  const appendRow = (label, value) => {
+    const resolved = value == null ? '' : String(value).trim();
+    if (!resolved) return;
+    appendTextElement(list, 'dt', label);
+    appendTextElement(list, 'dd', resolved);
+  };
+  appendRow('Status', importDetail.statusLabel || importDetail.status);
+  appendRow('Auteur', importDetail.author);
+  appendRow('Barcode', importDetail.barcode);
+  appendRow('Metadata-ISBN', importDetail.metadataIsbn);
+  appendRow('Uitgever', importDetail.publisher);
+  appendRow('Jaar', importDetail.publishedYear);
+  appendRow('Pagina’s', importDetail.pageCount);
+  appendRow('Taal', importDetail.language);
+  appendRow('Thema’s', Array.isArray(importDetail.tags) ? importDetail.tags.join(', ') : importDetail.tags);
+  appendRow('ISBN-verrijking', importDetail.enrichmentLabel);
+  state.importData.classList.remove('hidden');
+  state.importButton.textContent = 'Importgegevens verbergen';
+}
+
 function closeBookDetail() {
   const state = ensureBookDetailElements();
   if (!state.root) return;
@@ -1024,7 +1066,9 @@ function closeBookDetail() {
   state.editBook = null;
   state.currentGroupKey = null;
   state.currentDetail = null;
+  state.currentImportDetail = null;
   state.descriptionExpanded = false;
+  renderBookImportDetailBlock(null);
 }
 
 function extractYear(value) {
@@ -1227,6 +1271,15 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (state.message) {
     state.message.textContent = metadataMessage || '';
   }
+  const importDetail = getBookImportDetailForBook(representative);
+  state.currentImportDetail = importDetail;
+  if (state.importButton) {
+    const isAdmin = authUser?.role === 'admin';
+    const hasImportDetail = Boolean(importDetail);
+    state.importButton.hidden = !(isAdmin && hasImportDetail);
+    state.importButton.disabled = !(isAdmin && hasImportDetail);
+  }
+  renderBookImportDetailBlock(null);
   if (state.editButton) {
     const isAdmin = authUser?.role === 'admin';
     state.editButton.hidden = !isAdmin;
@@ -3349,6 +3402,7 @@ function initStaffPage() {
   const teacherStudentResetInfo = document.querySelector('#teacher-student-reset');
   let currentBookImportJobId = null;
   let bookImportPollTimer = null;
+  let latestBookImportDetailsByLookup = new Map();
   const BOOK_IMPORT_JOB_STORAGE_KEY = 'boekenbaai_last_books_import_job';
 
   const statsModal = createStatsModal();
@@ -3787,6 +3841,20 @@ function initStaffPage() {
     if (historyActions) {
       historyActions.classList.toggle('hidden', !(loggedIn && authUser.role === 'admin'));
     }
+    const detailState = ensureBookDetailElements();
+    if (detailState.editButton) {
+      const showAdminActions = loggedIn && authUser.role === 'admin';
+      detailState.editButton.hidden = !showAdminActions;
+      detailState.editButton.disabled = !showAdminActions;
+    }
+    if (detailState.importButton) {
+      const showAdminImport = loggedIn && authUser.role === 'admin' && Boolean(detailState.currentImportDetail);
+      detailState.importButton.hidden = !showAdminImport;
+      detailState.importButton.disabled = !showAdminImport;
+      if (!showAdminImport) {
+        renderBookImportDetailBlock(null);
+      }
+    }
     if (historyClearButton) {
       historyClearButton.disabled = !(loggedIn && authUser.role === 'admin');
     }
@@ -3800,6 +3868,7 @@ function initStaffPage() {
     if (!loggedIn) {
       clearBookImportPoll();
       currentBookImportJobId = null;
+      latestBookImportDetailsByLookup = new Map();
       teacherResetNotice.hide();
       adminResetNotice.hide();
       adminTeacherResetNotice.hide();
@@ -5249,6 +5318,58 @@ function initStaffPage() {
     appendTextElement(container, 'span', `${label}: ${resolved}`);
   }
 
+  function makeBookImportLookupKeys(book) {
+    const keys = [];
+    const barcodeKey = normalizeBarcode(book?.barcode || book?.metadataIsbn || '');
+    if (barcodeKey) {
+      keys.push(`barcode:${barcodeKey}`);
+    }
+    const titleKey = normalizeSearchValue(book?.title || '');
+    const authorKey = normalizeSearchValue(book?.author || '');
+    if (titleKey) {
+      keys.push(`title:${titleKey}`);
+      if (authorKey) {
+        keys.push(`title_author:${titleKey}::${authorKey}`);
+      }
+    }
+    return keys;
+  }
+
+  function indexBookImportDetails(result) {
+    const map = new Map();
+    const books = Array.isArray(result?.books) ? result.books : [];
+    for (const book of books) {
+      if (!book || typeof book !== 'object') continue;
+      const detail = {
+        ...book,
+        statusLabel: book.status === 'updated' ? 'Bijgewerkt boek' : 'Nieuw boek',
+        enrichmentLabel: book?.enrichment
+          ? book.enrichment.found
+            ? `Verrijkt via ${book.enrichment.source || 'onbekende bron'}`
+            : `Geen metadata gevonden${book.enrichment.source ? ` (${book.enrichment.source})` : ''}`
+          : '',
+      };
+      const keys = makeBookImportLookupKeys(book);
+      for (const key of keys) {
+        if (!map.has(key)) {
+          map.set(key, detail);
+        }
+      }
+    }
+    latestBookImportDetailsByLookup = map;
+  }
+
+  function getBookImportDetailForBook(book) {
+    if (!book || latestBookImportDetailsByLookup.size === 0) return null;
+    const lookupKeys = makeBookImportLookupKeys(book);
+    for (const key of lookupKeys) {
+      if (latestBookImportDetailsByLookup.has(key)) {
+        return latestBookImportDetailsByLookup.get(key);
+      }
+    }
+    return null;
+  }
+
   function renderImportResults(container, result) {
     if (!container) return;
     container.replaceChildren();
@@ -5395,9 +5516,15 @@ function initStaffPage() {
         appendTextElement(bookImportResults, 'p', 'Import geannuleerd.');
       }
       if (job.result) {
-        appendTextElement(bookImportResults, 'h4', 'Details');
-        const detailsContainer = appendElement(bookImportResults, 'div');
-        renderImportResults(detailsContainer, job.result);
+        indexBookImportDetails(job.result);
+        const importedCount = Array.isArray(job.result.books) ? job.result.books.length : 0;
+        if (importedCount > 0) {
+          appendTextElement(
+            bookImportResults,
+            'p',
+            `Importdetails zijn beschikbaar via de knop “Importgegevens” in de boekdetails (${importedCount} boeken).`
+          );
+        }
       }
     }
     updateBookImportCancelButton(job);
