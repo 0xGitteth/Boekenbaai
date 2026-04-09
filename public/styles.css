@@ -2774,7 +2774,7 @@ body.book-detail-open {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 1.5rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .book-detail__media {
@@ -2802,6 +2802,7 @@ body.book-detail-open {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  min-height: 100%;
 }
 
 .book-detail__title {
@@ -2860,16 +2861,16 @@ body.book-detail-open {
 
 .book-detail__description {
   margin: 1rem 0 0;
-  white-space: pre-line;
+  white-space: normal;
   min-height: 3.75rem;
-  max-height: 3.75rem;
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .book-detail__description--expanded {
-  max-height: min(35vh, 16rem);
-  overflow-y: auto;
-  padding-right: 0.35rem;
+  overflow: visible;
 }
 
 .book-detail__description-toggle {
@@ -2890,6 +2891,11 @@ body.book-detail-open {
   outline: 2px solid var(--focus-border, rgba(var(--accent-rgb, 12, 109, 216), 0.85));
   outline-offset: 3px;
   border-radius: 4px;
+}
+
+.book-detail__description-expanded {
+  margin: 1rem 0 0;
+  white-space: pre-line;
 }
 
 .book-detail__availability {
