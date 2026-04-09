@@ -969,9 +969,10 @@ function buildDescriptionPreview(fullText, descriptionElement) {
   }
   const sentences = normalized.split(/(?<=[.!?])\s+/).filter(Boolean);
   if (sentences.length <= 1) {
+    const lineCount = measurePreviewLineCount(descriptionElement, normalized);
     return {
       previewText: normalized,
-      isCollapsible: false,
+      isCollapsible: lineCount > 3,
     };
   }
   const firstSentence = sentences[0].trim();
