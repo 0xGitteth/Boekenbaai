@@ -958,6 +958,7 @@ function measurePreviewLineCount(descriptionElement, text) {
 }
 
 function buildDescriptionPreview(fullText, descriptionElement) {
+  const FALLBACK_COLLAPSIBLE_LENGTH = 280;
   const normalized = String(fullText || '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -970,9 +971,10 @@ function buildDescriptionPreview(fullText, descriptionElement) {
   const sentences = normalized.split(/(?<=[.!?])\s+/).filter(Boolean);
   if (sentences.length <= 1) {
     const lineCount = measurePreviewLineCount(descriptionElement, normalized);
+    const isLikelyLongDescription = normalized.length > FALLBACK_COLLAPSIBLE_LENGTH;
     return {
       previewText: normalized,
-      isCollapsible: lineCount > 3,
+      isCollapsible: lineCount > 3 || (!lineCount && isLikelyLongDescription),
     };
   }
   const firstSentence = sentences[0].trim();
