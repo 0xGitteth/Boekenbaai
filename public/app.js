@@ -5505,6 +5505,29 @@ function initStaffPage() {
     );
     appendTextElement(statusList, 'li', `Tijdelijk uitgesteld: ${Number(job.deferred || 0)}`);
     appendTextElement(statusList, 'li', `Mislukt: ${Number(job.failed || 0)}`);
+    if (job.status === 'failed') {
+      appendTextElement(
+        bookImportResults,
+        'p',
+        `Foutmelding: ${job.error || 'Onbekende fout tijdens de import.'}`
+      );
+      const skippedWithReasons = Array.isArray(job.result?.skipped)
+        ? job.result.skipped.filter((entry) => entry?.reason)
+        : [];
+      if (skippedWithReasons.length) {
+        appendTextElement(bookImportResults, 'p', 'Eerste fouten in rijen:');
+        const skippedList = appendElement(bookImportResults, 'ul', { className: 'import-results__skipped' });
+        skippedWithReasons.slice(0, 5).forEach((entry) => {
+          const context =
+            entry.title ||
+            entry.name ||
+            entry.username ||
+            entry.barcode ||
+            '(onbekende rij)';
+          appendTextElement(skippedList, 'li', `${context}: ${entry.reason}`);
+        });
+      }
+    }
     if (job.status === 'completed' || job.status === 'failed' || job.status === 'interrupted' || job.status === 'cancelled') {
       const summary = job.summary || {};
       appendTextElement(
