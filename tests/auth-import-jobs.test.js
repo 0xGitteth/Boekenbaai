@@ -112,6 +112,14 @@ async function testAuthFrontendRegressionGuards() {
     appJs.includes('localStorage.getItem(getBookImportStorageKey()) || currentBookImportJobId'),
     'refreshStaffData moet eerst user-gebonden localStorage key gebruiken'
   );
+  assert.ok(
+    appJs.includes('Voortgang tijdelijk niet beschikbaar; import kan nog steeds bezig zijn.'),
+    'Pollingfouten moeten duidelijk maken dat de import nog bezig kan zijn'
+  );
+  assert.ok(
+    appJs.includes('bookImportPollTimer = setTimeout(run, 4000);'),
+    'Polling moet opnieuw proberen na tijdelijke fouten'
+  );
 }
 
 async function testImportJobLifecycle() {

@@ -5579,8 +5579,15 @@ function initStaffPage() {
         }
       } catch (error) {
         if (bookImportMessage) {
-          bookImportMessage.textContent = error.message;
+          const message = error?.message || '';
+          const networkLikeError = /fetch failed|failed to fetch/i.test(message);
+          if (networkLikeError) {
+            bookImportMessage.textContent = 'Voortgang tijdelijk niet beschikbaar; import kan nog steeds bezig zijn.';
+          } else {
+            bookImportMessage.textContent = `Voortgang ophalen mislukt: ${message || 'onbekende fout'}`;
+          }
         }
+        bookImportPollTimer = setTimeout(run, 4000);
       }
     };
     if (immediate) {
@@ -7328,6 +7335,8 @@ function initStaffPage() {
       storeLastBookImportJob(result.jobId);
       if (bookImportMessage && result.reused) {
         bookImportMessage.textContent = 'Bestaande importjob wordt verder gevolgd…';
+      } else if (bookImportMessage) {
+        bookImportMessage.textContent = 'Import gestart. Voortgang wordt opgehaald…';
       }
       await pollBookImportJob(result.jobId, { immediate: true });
     } catch (error) {
