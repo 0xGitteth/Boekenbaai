@@ -53,13 +53,14 @@ function createDbFixture(filePath, overrides = {}) {
   fs.writeFileSync(filePath, JSON.stringify(db, null, 2));
 }
 
-function startServer(dbPath) {
+function startServer(dbPath, extraEnv = {}) {
   return spawn('node', ['server.js'], {
     env: {
       ...process.env,
       PORT,
       BOEKENBAAI_DATA_PATH: dbPath,
       BOEKENBAAI_STATIC_DIR: path.join(__dirname, '..', 'public'),
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -192,7 +193,9 @@ async function testImportJobCancelLifecycle() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-job-cancel-'));
   const dbPath = path.join(tempDir, 'db.json');
   createDbFixture(dbPath);
-  const serverProcess = startServer(dbPath);
+  const serverProcess = startServer(dbPath, {
+    BOEKENBAAI_IMPORT_FINALIZE_DELAY_MS: '2000',
+  });
 
   try {
     await waitForServer(serverProcess);
@@ -414,12 +417,92 @@ async function testDirectImportEndpointFinalizesJob() {
   }
 }
 
+async function testLateCancelWinsOverCompletedFinalization() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-job-late-cancel-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath);
+  const serverProcess = startServer(dbPath, {
+    BOEKENBAAI_IMPORT_FINALIZE_DELAY_MS: '250',
+  });
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const rows = Array.from({ length: 700 }, (_, index) => ({
+      Titel: `Laat Cancel Boek ${index + 1}`,
+      Auteur: `Auteur ${index + 1}`,
+      Barcode: `978${String(4100000000 + index).slice(0, 10)}`,
+    }));
+    const workbookBase64 = buildWorkbookBase64(rows);
+    const startResponse = await request('/api/books/import-jobs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ file: workbookBase64, fileName: 'late-cancel.xlsx', enrichIsbn: false }),
+    });
+    assert.ok([200, 202].includes(startResponse.status), `Onverwachte startstatus: ${startResponse.status}`);
+    const jobId = startResponse.body.jobId;
+    assert.ok(jobId, 'jobId ontbreekt');
+
+    let runningSeen = false;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.strictEqual(statusResponse.status, 200);
+      if (statusResponse.body.status === 'running') {
+        runningSeen = true;
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(runningSeen, 'Importjob kwam niet in running status');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const cancelResponse = await request(`/api/books/import-jobs/${jobId}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(cancelResponse.status, 200);
+
+    let finalJob = null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      assert.strictEqual(statusResponse.status, 200);
+      finalJob = statusResponse.body;
+      if (finalJob.status === 'cancelled') {
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    assert.ok(finalJob, 'Finale jobstatus ontbreekt');
+    assert.strictEqual(finalJob.status, 'cancelled');
+    assert.strictEqual(finalJob.currentStage, 'Geannuleerd');
+    assert.ok(finalJob.cancelRequested, 'cancelRequested moet true blijven');
+    assert.strictEqual(Number(finalJob.processed), Number(finalJob.total));
+
+    const booksResponse = await request('/api/books', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(booksResponse.status, 200);
+    assert.strictEqual(booksResponse.body.length, Number(finalJob.created || 0));
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
 async function run() {
   await testAuthFrontendRegressionGuards();
   await testImportJobLifecycle();
   await testImportJobCancelLifecycle();
   await testImmediateCancelBeforeStart();
   await testDirectImportEndpointFinalizesJob();
+  await testLateCancelWinsOverCompletedFinalization();
   await testInterruptedJobsOnRestart();
   console.log('Auth/import job tests passed');
 }

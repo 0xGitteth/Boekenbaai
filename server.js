@@ -4504,6 +4504,13 @@ async function handleApi(req, res, requestUrl) {
         body.enrichIsbn === undefined
           ? true
           : parseBooleanFlag(body.enrichIsbn);
+      const importFinalizeDelayMs = (() => {
+        const raw = Number(process.env.BOEKENBAAI_IMPORT_FINALIZE_DELAY_MS);
+        if (Number.isFinite(raw) && raw > 0) {
+          return Math.floor(raw);
+        }
+        return 0;
+      })();
       const IMPORT_FALLBACK_DEFERRED_MAX_ATTEMPTS = 4;
       const IMPORT_FALLBACK_DEFERRED_MAX_CYCLES = 40;
       const IMPORT_FALLBACK_DEFERRED_MAX_DURATION_MS = 5000;
@@ -5160,6 +5167,14 @@ async function handleApi(req, res, requestUrl) {
           message: `${createdBooks.length} boeken toegevoegd, ${updatedBooks.length} bijgewerkt via Excel-import`,
         });
         saveDb(db);
+      }
+
+      if (!cancelled && importFinalizeDelayMs > 0) {
+        await wait(importFinalizeDelayMs);
+      }
+
+      if (!cancelled && isImportCancelRequested()) {
+        cancelled = true;
       }
 
       if (cancelled) {
