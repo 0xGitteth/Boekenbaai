@@ -4504,6 +4504,13 @@ async function handleApi(req, res, requestUrl) {
         body.enrichIsbn === undefined
           ? true
           : parseBooleanFlag(body.enrichIsbn);
+      const importFinalizeDelayMs = (() => {
+        const raw = Number(process.env.BOEKENBAAI_IMPORT_FINALIZE_DELAY_MS);
+        if (Number.isFinite(raw) && raw > 0) {
+          return Math.floor(raw);
+        }
+        return 0;
+      })();
       const IMPORT_FALLBACK_DEFERRED_MAX_ATTEMPTS = 4;
       const IMPORT_FALLBACK_DEFERRED_MAX_CYCLES = 40;
       const IMPORT_FALLBACK_DEFERRED_MAX_DURATION_MS = 5000;
@@ -5162,6 +5169,14 @@ async function handleApi(req, res, requestUrl) {
         saveDb(db);
       }
 
+      if (!cancelled && importFinalizeDelayMs > 0) {
+        await wait(importFinalizeDelayMs);
+      }
+
+      if (!cancelled && isImportCancelRequested()) {
+        cancelled = true;
+      }
+
       if (cancelled) {
         updateImportProgress({
           status: 'cancelled',
@@ -5190,17 +5205,34 @@ async function handleApi(req, res, requestUrl) {
         });
       }
 
-      updateImportProgress({
-        currentStage: 'Afronden',
-        processed: processedRows,
-      });
-
-      return sendJson(res, 200, {
+      const successPayload = {
         created: createdBooks.length,
         updated: updatedBooks.length,
         skipped,
         books: createdBooks.concat(updatedBooks),
+      };
+
+      updateImportProgress({
+        status: 'completed',
+        currentStage: 'Voltooid',
+        finishedAt: new Date().toISOString(),
+        processed: processedRows,
+        created: createdBooks.length,
+        updated: updatedBooks.length,
+        skipped: skipped.length,
+        deferred: deferredFallbackRows.length,
+        failed: 0,
+        summary: {
+          created: createdBooks.length,
+          updated: updatedBooks.length,
+          skipped: skipped.length,
+          failed: 0,
+        },
+        result: successPayload,
+        error: '',
       });
+
+      return sendJson(res, 200, successPayload);
     }
 
     if (bookIdMatch && req.method === 'DELETE') {
