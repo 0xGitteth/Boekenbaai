@@ -344,11 +344,82 @@ async function testInterruptedJobsOnRestart() {
   }
 }
 
+async function testDirectImportEndpointFinalizesJob() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-job-direct-finalize-'));
+  const dbPath = path.join(tempDir, 'db.json');
+  createDbFixture(dbPath, {
+    importJobs: [
+      {
+        id: 'job-direct',
+        type: 'books_import',
+        createdBy: 'admin-1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        startedAt: new Date().toISOString(),
+        finishedAt: null,
+        status: 'running',
+        currentStage: 'Rijen verwerken',
+        lastProgressAt: new Date().toISOString(),
+        cancelRequested: false,
+        cancelledAt: null,
+        total: 2,
+        processed: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        deferred: 0,
+        failed: 0,
+        summary: null,
+        result: null,
+        error: '',
+      },
+    ],
+  });
+  const serverProcess = startServer(dbPath);
+  try {
+    await waitForServer(serverProcess);
+    const token = await loginAdmin();
+    const workbookBase64 = buildWorkbookBase64([
+      { Titel: 'Direct Boek 1', Auteur: 'Auteur A', Barcode: '9781234567001' },
+      { Titel: 'Direct Boek 2', Auteur: 'Auteur B', Barcode: '9781234567002' },
+    ]);
+    const importResponse = await request('/api/books/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'X-Import-Job-Id': 'job-direct',
+      },
+      body: JSON.stringify({ file: workbookBase64, enrichIsbn: false }),
+    });
+    assert.strictEqual(importResponse.status, 200);
+
+    const statusResponse = await request('/api/books/import-jobs/job-direct', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(statusResponse.status, 200);
+    assert.strictEqual(statusResponse.body.status, 'completed');
+    assert.strictEqual(statusResponse.body.currentStage, 'Voltooid');
+    assert.strictEqual(Number(statusResponse.body.processed), 2);
+    assert.strictEqual(Number(statusResponse.body.created), 2);
+    assert.strictEqual(Number(statusResponse.body.failed), 0);
+
+    const booksResponse = await request('/api/books', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(booksResponse.status, 200);
+    assert.strictEqual(booksResponse.body.length, 2);
+  } finally {
+    serverProcess.kill('SIGINT');
+  }
+}
+
 async function run() {
   await testAuthFrontendRegressionGuards();
   await testImportJobLifecycle();
   await testImportJobCancelLifecycle();
   await testImmediateCancelBeforeStart();
+  await testDirectImportEndpointFinalizesJob();
   await testInterruptedJobsOnRestart();
   console.log('Auth/import job tests passed');
 }

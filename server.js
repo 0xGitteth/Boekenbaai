@@ -5190,17 +5190,34 @@ async function handleApi(req, res, requestUrl) {
         });
       }
 
-      updateImportProgress({
-        currentStage: 'Afronden',
-        processed: processedRows,
-      });
-
-      return sendJson(res, 200, {
+      const successPayload = {
         created: createdBooks.length,
         updated: updatedBooks.length,
         skipped,
         books: createdBooks.concat(updatedBooks),
+      };
+
+      updateImportProgress({
+        status: 'completed',
+        currentStage: 'Voltooid',
+        finishedAt: new Date().toISOString(),
+        processed: processedRows,
+        created: createdBooks.length,
+        updated: updatedBooks.length,
+        skipped: skipped.length,
+        deferred: deferredFallbackRows.length,
+        failed: 0,
+        summary: {
+          created: createdBooks.length,
+          updated: updatedBooks.length,
+          skipped: skipped.length,
+          failed: 0,
+        },
+        result: successPayload,
+        error: '',
       });
+
+      return sendJson(res, 200, successPayload);
     }
 
     if (bookIdMatch && req.method === 'DELETE') {
