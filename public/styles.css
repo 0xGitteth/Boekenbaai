@@ -319,6 +319,10 @@ main {
   display: none !important;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .panel {
   background: var(--panel-background, #fff);
   border-radius: var(--radius);

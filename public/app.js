@@ -1367,12 +1367,17 @@ async function openBookDetail(book) {
   if (!state.root) return;
   const providedGroup = book && Array.isArray(book.copies) ? book : null;
   const bookId = providedGroup ? providedGroup.id : typeof book === 'string' ? book : book?.id;
+  const importInfoBookId = providedGroup
+    ? providedGroup.representativeBook?.id || providedGroup.copies?.[0]?.id || null
+    : typeof book === 'object' && book
+      ? book.id || null
+      : null;
   if (!bookId && !providedGroup) return;
   state.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.root.classList.remove('hidden');
   state.root.setAttribute('aria-hidden', 'false');
   document.body.classList.add('book-detail-open');
-  state.currentBookId = bookId || (providedGroup ? providedGroup.id : null);
+  state.currentBookId = importInfoBookId || bookId || (providedGroup ? providedGroup.id : null);
   if (state.content) {
     state.content.hidden = true;
   }
