@@ -977,6 +977,46 @@ function resolveEffectiveCoverUrl(value) {
   return normalizeCoverUrl(value || '');
 }
 
+function normalizeBookImportInfo(importInfo) {
+  if (!importInfo || typeof importInfo !== 'object') {
+    return null;
+  }
+  const importedAt = typeof importInfo.importedAt === 'string' && importInfo.importedAt.trim()
+    ? importInfo.importedAt
+    : '';
+  const importedBy = typeof importInfo.importedBy === 'string' && importInfo.importedBy.trim()
+    ? importInfo.importedBy
+    : null;
+  const importSource = typeof importInfo.importSource === 'string' && importInfo.importSource.trim()
+    ? importInfo.importSource
+    : '';
+  const importJobId = typeof importInfo.importJobId === 'string' && importInfo.importJobId.trim()
+    ? importInfo.importJobId
+    : null;
+  const rawStatus = typeof importInfo.importStatus === 'string' ? importInfo.importStatus.trim().toLowerCase() : '';
+  const importStatus = rawStatus === 'created' || rawStatus === 'updated' ? rawStatus : '';
+  const rawLookup = importInfo.metadataLookupSummary;
+  const metadataLookupSummary = rawLookup && typeof rawLookup === 'object'
+    ? {
+      found: Boolean(rawLookup.found),
+      source: typeof rawLookup.source === 'string' && rawLookup.source.trim()
+        ? rawLookup.source.trim()
+        : null,
+    }
+    : null;
+  if (!importedAt || !importSource || !importStatus) {
+    return null;
+  }
+  return {
+    importedAt,
+    importedBy,
+    importSource,
+    importJobId,
+    importStatus,
+    metadataLookupSummary,
+  };
+}
+
 function ensureBookShape(book) {
   const source = typeof book === 'object' && book ? book : {};
   const safeBook = { ...source };
@@ -1005,7 +1045,16 @@ function ensureBookShape(book) {
   safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
   safeBook.language = normalizeLanguageCode(source.language);
   safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
+  safeBook.importInfo = normalizeBookImportInfo(source.importInfo);
   return attachDerivedThemeFields(safeBook);
+}
+
+function sanitizeBookForResponse(book) {
+  if (!book || typeof book !== 'object') {
+    return book;
+  }
+  const { importInfo, ...sanitizedBook } = book;
+  return sanitizedBook;
 }
 
 function createBookCopyFromTemplate(template) {
@@ -1872,7 +1921,7 @@ function sanitizeBarcodeGroupsForResponse(grouping) {
       totalCopies,
       availableCopies,
       borrowed,
-      books,
+      books: books.map((book) => sanitizeBookForResponse(book)),
     })),
   };
 }
@@ -3992,7 +4041,7 @@ async function handleApi(req, res, requestUrl) {
           );
         });
       }
-      return sendJson(res, 200, books);
+      return sendJson(res, 200, books.map((book) => sanitizeBookForResponse(book)));
     }
 
     if (requestUrl.pathname === '/api/books' && req.method === 'DELETE') {
@@ -4038,7 +4087,24 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
       const borrowCounts = getBorrowCountsMap(db.history);
-      return sendJson(res, 200, withBorrowCount(book, borrowCounts));
+      const payload = withBorrowCount(book, borrowCounts);
+      return sendJson(res, 200, sanitizeBookForResponse(payload));
+    }
+
+    const bookImportInfoMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/import-info$/);
+    if (bookImportInfoMatch && req.method === 'GET') {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders kunnen importgegevens bekijken' });
+      }
+      const db = getDb();
+      const book = findBookById(db, bookImportInfoMatch[1]);
+      if (!book) {
+        return sendJson(res, 404, { message: 'Boek niet gevonden' });
+      }
+      if (!book.importInfo) {
+        return sendJson(res, 404, { message: 'Geen importgegevens bekend voor dit boek' });
+      }
+      return sendJson(res, 200, book.importInfo);
     }
 
     if (requestUrl.pathname === '/api/books' && req.method === 'POST') {
@@ -4682,6 +4748,18 @@ async function handleApi(req, res, requestUrl) {
           importEnrichmentEnabled || metadata
             ? { source: normalizedMetadata.source, found: Boolean(normalizedMetadata.found) }
             : null;
+        const importInfoBase = {
+          importedAt: new Date().toISOString(),
+          importedBy: user?.id || null,
+          importSource: 'excel',
+          importJobId: importJobId || null,
+          metadataLookupSummary: enrichment
+            ? {
+              found: Boolean(enrichment.found),
+              source: enrichment.source ? String(enrichment.source) : null,
+            }
+            : null,
+        };
 
         const existingBook = metadataIsbn
           ? findBookByMetadataIsbn(db, metadataIsbn)
@@ -4919,6 +4997,10 @@ async function handleApi(req, res, requestUrl) {
           }
           if (Object.keys(updates).length) {
             Object.assign(existingBook, updates);
+            existingBook.importInfo = normalizeBookImportInfo({
+              ...importInfoBase,
+              importStatus: 'updated',
+            });
             Object.assign(existingBook, attachDerivedThemeFields(existingBook));
             updatedBooks.push({
               title: existingBook.title,
@@ -4975,6 +5057,10 @@ async function handleApi(req, res, requestUrl) {
         const copiesToCreate = parseQuantityInput(quantityValue, { defaultValue: 1, allowZero: true });
         for (let i = 0; i < copiesToCreate; i += 1) {
           const copy = createBookCopyFromTemplate(baseTemplate);
+          copy.importInfo = normalizeBookImportInfo({
+            ...importInfoBase,
+            importStatus: 'created',
+          });
           db.books.push(copy);
           affectedBookIds.add(copy.id);
           createdBooks.push({
@@ -5331,7 +5417,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} heeft ${book.title} geleend`,
       });
       saveDb(db);
-      const payload = { book, student };
+      const payload = { book: sanitizeBookForResponse(book), student };
       if (group) {
         payload.group = {
           id: group.id,
@@ -5392,7 +5478,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} heeft ${book.title} teruggebracht`,
       });
       saveDb(db);
-      return sendJson(res, 200, { book, student });
+      return sendJson(res, 200, { book: sanitizeBookForResponse(book), student });
     }
 
     const barcodeMatch = requestUrl.pathname.match(/^\/api\/books\/barcode\/([\w-]+)$/);
