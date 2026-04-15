@@ -783,7 +783,8 @@ const bookDetailState = {
   currentBookId: null,
   currentGroupKey: null,
   currentDetail: null,
-  currentImportDetail: null,
+  currentImportInfo: null,
+  currentImportInfoLoaded: false,
   metadataCache: new Map(),
   adminEditHandler: null,
   handleEscape: null,
@@ -869,9 +870,45 @@ function ensureBookDetailElements() {
       });
     }
     if (bookDetailState.importButton) {
-      bookDetailState.importButton.addEventListener('click', () => {
+      bookDetailState.importButton.addEventListener('click', async () => {
+        if (authUser?.role !== 'admin') {
+          return;
+        }
+        if (!bookDetailState.currentBookId) {
+          return;
+        }
         const isOpen = !bookDetailState.importData?.classList.contains('hidden');
-        renderBookImportDetailBlock(isOpen ? null : bookDetailState.currentImportDetail);
+        if (isOpen) {
+          renderBookImportDetailBlock(null, bookDetailState.currentDetail);
+          return;
+        }
+        if (!bookDetailState.currentImportInfoLoaded) {
+          try {
+            const importInfo = await fetchJson(
+              `/api/books/${encodeURIComponent(bookDetailState.currentBookId)}/import-info`
+            );
+            bookDetailState.currentImportInfo = importInfo || null;
+            bookDetailState.currentImportInfoLoaded = true;
+            if (bookDetailState.message) {
+              bookDetailState.message.textContent = '';
+            }
+          } catch (error) {
+            bookDetailState.currentImportInfo = null;
+            bookDetailState.currentImportInfoLoaded = true;
+            renderBookImportDetailBlock(null, bookDetailState.currentDetail);
+            if (bookDetailState.message) {
+              if (error?.status === 404) {
+                bookDetailState.message.textContent = 'Geen importgegevens bekend voor dit boek.';
+              } else if (error?.status === 403) {
+                bookDetailState.message.textContent = 'Alleen beheerders kunnen importgegevens bekijken.';
+              } else {
+                bookDetailState.message.textContent = `Importgegevens ophalen mislukt: ${error?.message || 'onbekende fout'}`;
+              }
+            }
+            return;
+          }
+        }
+        renderBookImportDetailBlock(bookDetailState.currentImportInfo, bookDetailState.currentDetail);
       });
     }
     if (bookDetailState.descriptionToggle) {
@@ -1019,15 +1056,48 @@ function setBookDetailAdminEditHandler(handler) {
   bookDetailState.adminEditHandler = typeof handler === 'function' ? handler : null;
 }
 
-function renderBookImportDetailBlock(importDetail) {
+function formatImportStatusLabel(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'updated') {
+    return 'Bijgewerkt boek';
+  }
+  if (normalized === 'created') {
+    return 'Nieuw boek';
+  }
+  return '';
+}
+
+function formatImportEnrichmentLabel(metadataLookupSummary) {
+  if (!metadataLookupSummary || typeof metadataLookupSummary !== 'object') {
+    return '';
+  }
+  const sourceLabel = metadataLookupSummary.source || 'onbekende bron';
+  return metadataLookupSummary.found
+    ? `Verrijkt via ${sourceLabel}`
+    : `Geen metadata gevonden${metadataLookupSummary.source ? ` (${sourceLabel})` : ''}`;
+}
+
+function formatImportDateTime(value) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+  return parsed.toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function renderBookImportDetailBlock(importInfo, detailBook = null) {
   const state = ensureBookDetailElements();
   if (!state.importData || !state.importButton) return;
   state.importData.replaceChildren();
-  if (!importDetail) {
+  if (!importInfo) {
     state.importData.classList.add('hidden');
     state.importButton.textContent = 'Importgegevens';
     return;
   }
+  const detail = detailBook && typeof detailBook === 'object' ? detailBook : state.currentDetail;
+  const copies = Array.isArray(detail?.copies) ? detail.copies : [detail];
+  const representative = detail?.representativeBook || copies[0] || detail;
   appendTextElement(state.importData, 'h4', 'Importgegevens');
   const list = appendElement(state.importData, 'dl', { className: 'book-detail__import-list' });
   const appendRow = (label, value) => {
@@ -1036,16 +1106,19 @@ function renderBookImportDetailBlock(importDetail) {
     appendTextElement(list, 'dt', label);
     appendTextElement(list, 'dd', resolved);
   };
-  appendRow('Status', importDetail.statusLabel || importDetail.status);
-  appendRow('Auteur', importDetail.author);
-  appendRow('Barcode', importDetail.barcode);
-  appendRow('Metadata-ISBN', importDetail.metadataIsbn);
-  appendRow('Uitgever', importDetail.publisher);
-  appendRow('Jaar', importDetail.publishedYear);
-  appendRow('Pagina’s', importDetail.pageCount);
-  appendRow('Taal', importDetail.language);
-  appendRow('Thema’s', Array.isArray(importDetail.tags) ? importDetail.tags.join(', ') : importDetail.tags);
-  appendRow('ISBN-verrijking', importDetail.enrichmentLabel);
+  appendRow('Status', formatImportStatusLabel(importInfo.importStatus));
+  appendRow('Auteur', representative?.author || '');
+  appendRow('Barcode', representative?.barcode || '');
+  appendRow('Metadata-ISBN', representative?.metadataIsbn || '');
+  appendRow('Uitgever', representative?.publisher || '');
+  appendRow('Jaar', representative?.publishedYear);
+  appendRow('Pagina’s', representative?.pageCount);
+  appendRow('Taal', representative?.language || '');
+  appendRow('Thema’s', Array.isArray(representative?.tags) ? representative.tags.join(', ') : representative?.tags);
+  appendRow('ISBN-verrijking', formatImportEnrichmentLabel(importInfo.metadataLookupSummary));
+  appendRow('Geïmporteerd op', formatImportDateTime(importInfo.importedAt));
+  appendRow('Importbron', importInfo.importSource || '');
+  appendRow('Importjob', importInfo.importJobId || '');
   state.importData.classList.remove('hidden');
   state.importButton.textContent = 'Importgegevens verbergen';
 }
@@ -1066,9 +1139,10 @@ function closeBookDetail() {
   state.editBook = null;
   state.currentGroupKey = null;
   state.currentDetail = null;
-  state.currentImportDetail = null;
+  state.currentImportInfo = null;
+  state.currentImportInfoLoaded = false;
   state.descriptionExpanded = false;
-  renderBookImportDetailBlock(null);
+  renderBookImportDetailBlock(null, null);
 }
 
 function extractYear(value) {
@@ -1271,15 +1345,15 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (state.message) {
     state.message.textContent = metadataMessage || '';
   }
-  const importDetail = getBookImportDetailForBook(representative);
-  state.currentImportDetail = importDetail;
+  state.currentImportInfo = null;
+  state.currentImportInfoLoaded = false;
   if (state.importButton) {
     const isAdmin = authUser?.role === 'admin';
-    const hasImportDetail = Boolean(importDetail);
-    state.importButton.hidden = !(isAdmin && hasImportDetail);
-    state.importButton.disabled = !(isAdmin && hasImportDetail);
+    state.importButton.hidden = !isAdmin;
+    state.importButton.disabled = !isAdmin;
+    state.importButton.textContent = 'Importgegevens';
   }
-  renderBookImportDetailBlock(null);
+  renderBookImportDetailBlock(null, representative);
   if (state.editButton) {
     const isAdmin = authUser?.role === 'admin';
     state.editButton.hidden = !isAdmin;
@@ -3402,7 +3476,6 @@ function initStaffPage() {
   const teacherStudentResetInfo = document.querySelector('#teacher-student-reset');
   let currentBookImportJobId = null;
   let bookImportPollTimer = null;
-  let latestBookImportDetailsByLookup = new Map();
   const BOOK_IMPORT_JOB_STORAGE_KEY = 'boekenbaai_last_books_import_job';
 
   const statsModal = createStatsModal();
@@ -3848,11 +3921,13 @@ function initStaffPage() {
       detailState.editButton.disabled = !showAdminActions;
     }
     if (detailState.importButton) {
-      const showAdminImport = loggedIn && authUser.role === 'admin' && Boolean(detailState.currentImportDetail);
+      const showAdminImport = loggedIn && authUser.role === 'admin';
       detailState.importButton.hidden = !showAdminImport;
       detailState.importButton.disabled = !showAdminImport;
       if (!showAdminImport) {
-        renderBookImportDetailBlock(null);
+        detailState.currentImportInfo = null;
+        detailState.currentImportInfoLoaded = false;
+        renderBookImportDetailBlock(null, detailState.currentDetail);
       }
     }
     if (historyClearButton) {
@@ -3868,7 +3943,6 @@ function initStaffPage() {
     if (!loggedIn) {
       clearBookImportPoll();
       currentBookImportJobId = null;
-      latestBookImportDetailsByLookup = new Map();
       teacherResetNotice.hide();
       adminResetNotice.hide();
       adminTeacherResetNotice.hide();
@@ -5318,58 +5392,6 @@ function initStaffPage() {
     appendTextElement(container, 'span', `${label}: ${resolved}`);
   }
 
-  function makeBookImportLookupKeys(book) {
-    const keys = [];
-    const barcodeKey = normalizeBarcode(book?.barcode || book?.metadataIsbn || '');
-    if (barcodeKey) {
-      keys.push(`barcode:${barcodeKey}`);
-    }
-    const titleKey = normalizeSearchValue(book?.title || '');
-    const authorKey = normalizeSearchValue(book?.author || '');
-    if (titleKey) {
-      keys.push(`title:${titleKey}`);
-      if (authorKey) {
-        keys.push(`title_author:${titleKey}::${authorKey}`);
-      }
-    }
-    return keys;
-  }
-
-  function indexBookImportDetails(result) {
-    const map = new Map();
-    const books = Array.isArray(result?.books) ? result.books : [];
-    for (const book of books) {
-      if (!book || typeof book !== 'object') continue;
-      const detail = {
-        ...book,
-        statusLabel: book.status === 'updated' ? 'Bijgewerkt boek' : 'Nieuw boek',
-        enrichmentLabel: book?.enrichment
-          ? book.enrichment.found
-            ? `Verrijkt via ${book.enrichment.source || 'onbekende bron'}`
-            : `Geen metadata gevonden${book.enrichment.source ? ` (${book.enrichment.source})` : ''}`
-          : '',
-      };
-      const keys = makeBookImportLookupKeys(book);
-      for (const key of keys) {
-        if (!map.has(key)) {
-          map.set(key, detail);
-        }
-      }
-    }
-    latestBookImportDetailsByLookup = map;
-  }
-
-  function getBookImportDetailForBook(book) {
-    if (!book || latestBookImportDetailsByLookup.size === 0) return null;
-    const lookupKeys = makeBookImportLookupKeys(book);
-    for (const key of lookupKeys) {
-      if (latestBookImportDetailsByLookup.has(key)) {
-        return latestBookImportDetailsByLookup.get(key);
-      }
-    }
-    return null;
-  }
-
   function renderImportResults(container, result) {
     if (!container) return;
     container.replaceChildren();
@@ -5539,7 +5561,6 @@ function initStaffPage() {
         appendTextElement(bookImportResults, 'p', 'Import geannuleerd.');
       }
       if (job.result) {
-        indexBookImportDetails(job.result);
         const importedCount = Array.isArray(job.result.books) ? job.result.books.length : 0;
         if (importedCount > 0) {
           appendTextElement(
