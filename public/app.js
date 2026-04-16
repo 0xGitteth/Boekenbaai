@@ -884,9 +884,7 @@ function ensureBookDetailElements() {
         }
         if (!bookDetailState.currentImportInfoLoaded) {
           try {
-            const importInfo = await fetchJson(
-              `/api/books/${encodeURIComponent(bookDetailState.currentBookId)}/import-info`
-            );
+            const importInfo = await fetchImportInfoForBookDetail(bookDetailState);
             bookDetailState.currentImportInfo = importInfo || null;
             bookDetailState.currentImportInfoLoaded = true;
             if (bookDetailState.message) {
@@ -919,6 +917,44 @@ function ensureBookDetailElements() {
     }
   }
   return bookDetailState;
+}
+
+async function fetchImportInfoForBookDetail(state) {
+  const candidateIds = [];
+  const pushCandidateId = (value) => {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (!trimmed || candidateIds.includes(trimmed)) return;
+    candidateIds.push(trimmed);
+  };
+
+  pushCandidateId(state.currentBookId);
+  const copies = Array.isArray(state.currentDetail?.copies) ? state.currentDetail.copies : [];
+  for (const copy of copies) {
+    pushCandidateId(copy?.id);
+  }
+
+  let lastNotFoundError = null;
+  for (const candidateId of candidateIds) {
+    try {
+      const importInfo = await fetchJson(`/api/books/${encodeURIComponent(candidateId)}/import-info`);
+      state.currentBookId = candidateId;
+      return importInfo || null;
+    } catch (error) {
+      if (error?.status === 404) {
+        lastNotFoundError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (lastNotFoundError) {
+    throw lastNotFoundError;
+  }
+  const fallbackError = new Error('Geen geldig boek-id beschikbaar voor importgegevens.');
+  fallbackError.status = 404;
+  throw fallbackError;
 }
 
 function applyBookDetailDescriptionState() {
