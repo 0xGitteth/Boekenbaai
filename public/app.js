@@ -1367,6 +1367,7 @@ async function openBookDetail(book) {
   if (!state.root) return;
   const providedGroup = book && Array.isArray(book.copies) ? book : null;
   const bookId = providedGroup ? providedGroup.id : typeof book === 'string' ? book : book?.id;
+  const detailRequestId = bookId || (providedGroup ? providedGroup.id : null);
   const importInfoBookId = providedGroup
     ? providedGroup.representativeBook?.id || providedGroup.copies?.[0]?.id || null
     : typeof book === 'object' && book
@@ -1377,7 +1378,7 @@ async function openBookDetail(book) {
   state.root.classList.remove('hidden');
   state.root.setAttribute('aria-hidden', 'false');
   document.body.classList.add('book-detail-open');
-  state.currentBookId = importInfoBookId || bookId || (providedGroup ? providedGroup.id : null);
+  state.currentBookId = detailRequestId;
   if (state.content) {
     state.content.hidden = true;
   }
@@ -1406,7 +1407,7 @@ async function openBookDetail(book) {
       }
     }
   }
-  if (!detail || state.currentBookId !== bookId) {
+  if (!detail || state.currentBookId !== detailRequestId) {
     return;
   }
   const groupKey = detail.id ? detail.id : getBookGroupKey(detail);
@@ -1432,9 +1433,10 @@ async function openBookDetail(book) {
     const sourceLabel = metadata.source === 'openlibrary' ? 'Open Library' : metadata.source || 'de bron';
     metadataMessage = `Gegevens aangevuld via ${sourceLabel}.`;
   }
-  if (state.currentBookId !== bookId) {
+  if (state.currentBookId !== detailRequestId) {
     return;
   }
+  state.currentBookId = importInfoBookId || bookId || (providedGroup ? providedGroup.id : null);
   populateBookDetail(groupedDetail, metadata, { metadataMessage });
 }
 
