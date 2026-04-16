@@ -1122,6 +1122,38 @@ function formatImportDateTime(value) {
   return parsed.toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+function formatProvenanceSourceType(sourceType) {
+  const normalized = typeof sourceType === 'string' ? sourceType.trim().toLowerCase() : '';
+  if (normalized === 'excel') return 'Excel';
+  if (normalized === 'existing') return 'Bestaand record';
+  if (normalized === 'metadata') return 'Lookup metadata';
+  if (normalized === 'derived') return 'Afgeleid';
+  if (normalized === 'manual') return 'Handmatig';
+  return 'Onbekend';
+}
+
+function formatProvenanceSourceDetail(sourceDetail) {
+  const normalized = typeof sourceDetail === 'string' ? sourceDetail.trim().toLowerCase() : '';
+  if (!normalized) return '';
+  if (normalized === 'openlibrary') return 'Open Library';
+  if (normalized === 'googlebooks') return 'Google Books';
+  if (normalized === 'googlebooks-title-author') return 'Google Books (titel/auteur fallback)';
+  if (normalized === 'none') return 'Geen';
+  return sourceDetail;
+}
+
+function formatFieldSourceLabel(fieldSource) {
+  if (!fieldSource || typeof fieldSource !== 'object') {
+    return '';
+  }
+  const sourceTypeLabel = formatProvenanceSourceType(fieldSource.sourceType);
+  const sourceDetailLabel = formatProvenanceSourceDetail(fieldSource.sourceDetail);
+  if (sourceDetailLabel) {
+    return `${sourceTypeLabel} (${sourceDetailLabel})`;
+  }
+  return sourceTypeLabel;
+}
+
 function renderBookImportDetailBlock(importInfo, detailBook = null) {
   const state = ensureBookDetailElements();
   if (!state.importData || !state.importButton) return;
@@ -1155,6 +1187,40 @@ function renderBookImportDetailBlock(importInfo, detailBook = null) {
   appendRow('Geïmporteerd op', formatImportDateTime(importInfo.importedAt));
   appendRow('Importbron', importInfo.importSource || '');
   appendRow('Importjob', importInfo.importJobId || '');
+
+  const provenanceFields = importInfo?.importProvenance?.fieldSources;
+  if (provenanceFields && typeof provenanceFields === 'object' && Object.keys(provenanceFields).length) {
+    appendTextElement(state.importData, 'h5', 'Veldherkomst');
+    const provenanceList = appendElement(state.importData, 'dl', {
+      className: 'book-detail__import-list',
+    });
+    const fieldRows = [
+      ['Titel', provenanceFields.title],
+      ['Auteur', provenanceFields.author],
+      ['Barcode', provenanceFields.barcode],
+      ['Metadata-ISBN', provenanceFields.metadataIsbn],
+      ['Uitgever', provenanceFields.publisher],
+      ['Jaar', provenanceFields.publishedYear],
+      ['Pagina’s', provenanceFields.pageCount],
+      ['Taal', provenanceFields.language],
+      ['Tags', provenanceFields.tags],
+      ['Thema’s', provenanceFields.themes],
+      ['Omslag (coverUrl)', provenanceFields.coverUrl],
+    ];
+    for (const [label, fieldSource] of fieldRows) {
+      const value = formatFieldSourceLabel(fieldSource);
+      if (!value) continue;
+      appendTextElement(provenanceList, 'dt', label);
+      appendTextElement(provenanceList, 'dd', value);
+    }
+  } else {
+    appendTextElement(
+      state.importData,
+      'p',
+      'Geen veldherkomst beschikbaar voor dit boek (waarschijnlijk geïmporteerd vóór provenance-ondersteuning).',
+      { className: 'hint' }
+    );
+  }
   state.importData.classList.remove('hidden');
   state.importButton.textContent = 'Importgegevens verbergen';
 }
