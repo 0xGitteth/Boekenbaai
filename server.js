@@ -1017,6 +1017,65 @@ function normalizeBookImportInfo(importInfo) {
   };
 }
 
+const IMPORT_PROVENANCE_SOURCE_TYPES = new Set([
+  'excel',
+  'existing',
+  'metadata',
+  'derived',
+  'manual',
+  'unknown',
+]);
+
+function normalizeImportFieldSource(value) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const rawSourceType = typeof value.sourceType === 'string' ? value.sourceType.trim().toLowerCase() : '';
+  const sourceType = IMPORT_PROVENANCE_SOURCE_TYPES.has(rawSourceType) ? rawSourceType : 'unknown';
+  const sourceDetail = typeof value.sourceDetail === 'string' && value.sourceDetail.trim()
+    ? value.sourceDetail.trim().toLowerCase()
+    : null;
+  return { sourceType, sourceDetail };
+}
+
+function normalizeBookImportProvenance(provenance) {
+  if (!provenance || typeof provenance !== 'object') {
+    return null;
+  }
+  const rawFields = provenance.fieldSources;
+  if (!rawFields || typeof rawFields !== 'object') {
+    return null;
+  }
+  const normalizedFields = {};
+  for (const [fieldName, fieldSource] of Object.entries(rawFields)) {
+    const normalized = normalizeImportFieldSource(fieldSource);
+    if (normalized) {
+      normalizedFields[fieldName] = normalized;
+    }
+  }
+  if (!Object.keys(normalizedFields).length) {
+    return null;
+  }
+  return { fieldSources: normalizedFields };
+}
+
+function createFieldSource(sourceType, sourceDetail = null) {
+  return normalizeImportFieldSource({ sourceType, sourceDetail }) || {
+    sourceType: 'unknown',
+    sourceDetail: null,
+  };
+}
+
+function pickSourceDetailForMetadata(sourceType, metadataFields) {
+  if (sourceType !== 'metadata') {
+    return null;
+  }
+  if (typeof metadataFields?.source === 'string' && metadataFields.source.trim()) {
+    return metadataFields.source.trim().toLowerCase();
+  }
+  return null;
+}
+
 function ensureBookShape(book) {
   const source = typeof book === 'object' && book ? book : {};
   const safeBook = { ...source };
@@ -1046,6 +1105,7 @@ function ensureBookShape(book) {
   safeBook.language = normalizeLanguageCode(source.language);
   safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
   safeBook.importInfo = normalizeBookImportInfo(source.importInfo);
+  safeBook.importProvenance = normalizeBookImportProvenance(source.importProvenance);
   return attachDerivedThemeFields(safeBook);
 }
 
@@ -4104,7 +4164,10 @@ async function handleApi(req, res, requestUrl) {
       if (!book.importInfo) {
         return sendJson(res, 404, { message: 'Geen importgegevens bekend voor dit boek' });
       }
-      return sendJson(res, 200, book.importInfo);
+      return sendJson(res, 200, {
+        ...book.importInfo,
+        importProvenance: normalizeBookImportProvenance(book.importProvenance),
+      });
     }
 
     if (requestUrl.pathname === '/api/books' && req.method === 'POST') {
@@ -4887,6 +4950,7 @@ async function handleApi(req, res, requestUrl) {
             : metadataFields?.description
               ? (fallbackUsed && metadataFields?.source === 'googlebooks-title-author' ? 'fallback' : (metadataFields?.source || 'isbn'))
               : '';
+        const defaultMetadataSourceDetail = pickSourceDetailForMetadata('metadata', metadataFields);
         logImportFallbackDebug('row_final_metadata', {
           title: rowTitle || metadataFields?.title || '',
           author: rowAuthor || metadataFields?.author || '',
@@ -4930,6 +4994,50 @@ async function handleApi(req, res, requestUrl) {
           const hasMetadataInput = metadataIsbnSource !== undefined;
           const existingMetadataIsbn = sanitizeIsbn(existingBook.metadataIsbn);
           const nextMetadataIsbn = hasMetadataInput ? metadataIsbn : existingMetadataIsbn;
+          const provenanceByField = {
+            title: createFieldSource(
+              title ? 'excel' : existingBook.title ? 'existing' : metadataFields?.title ? 'metadata' : 'unknown',
+              title ? null : existingBook.title ? null : pickSourceDetailForMetadata('metadata', metadataFields)
+            ),
+            author: createFieldSource(
+              author ? 'excel' : existingBook.author ? 'existing' : metadataFields?.author ? 'metadata' : 'unknown',
+              author ? null : existingBook.author ? null : pickSourceDetailForMetadata('metadata', metadataFields)
+            ),
+            barcode: createFieldSource(existingBook.barcode ? 'existing' : barcode ? 'excel' : 'unknown'),
+            metadataIsbn: createFieldSource(
+              hasMetadataInput ? 'excel' : existingMetadataIsbn ? 'existing' : 'unknown'
+            ),
+            publisher: createFieldSource(
+              hasPublisherInput ? 'excel' : existingBook.publisher ? 'existing' : metadataFields?.publisher ? 'metadata' : 'unknown',
+              hasPublisherInput || existingBook.publisher ? null : defaultMetadataSourceDetail
+            ),
+            publishedYear: createFieldSource(
+              hasPublishedYearInput ? 'excel' : existingBook.publishedYear != null ? 'existing' : metadataFields?.publishedYear != null ? 'metadata' : 'unknown',
+              hasPublishedYearInput || existingBook.publishedYear != null ? null : defaultMetadataSourceDetail
+            ),
+            pageCount: createFieldSource(
+              hasPageCountInput ? 'excel' : existingBook.pageCount != null ? 'existing' : metadataFields?.pageCount != null ? 'metadata' : 'unknown',
+              hasPageCountInput || existingBook.pageCount != null ? null : defaultMetadataSourceDetail
+            ),
+            language: createFieldSource(
+              hasLanguageInput ? 'excel' : existingBook.language ? 'existing' : metadataFields?.language ? 'metadata' : 'unknown',
+              hasLanguageInput || existingBook.language ? null : defaultMetadataSourceDetail
+            ),
+            tags: createFieldSource(
+              hasExplicitRawTagValues ? 'excel' : (Array.isArray(existingBook.tags) && existingBook.tags.length) ? 'existing' : (Array.isArray(metadataFields?.tags) && metadataFields.tags.length) ? 'metadata' : 'unknown',
+              hasExplicitRawTagValues || (Array.isArray(existingBook.tags) && existingBook.tags.length)
+                ? null
+                : defaultMetadataSourceDetail
+            ),
+            themes: createFieldSource(
+              hasCuratedThemeColumns ? 'excel' : 'derived',
+              null
+            ),
+            coverUrl: createFieldSource(
+              hasCoverInput ? 'excel' : existingBook.coverUrl ? 'existing' : metadataFields?.coverUrl ? 'metadata' : 'unknown',
+              hasCoverInput || existingBook.coverUrl ? null : defaultMetadataSourceDetail
+            ),
+          };
 
           const updates = {};
           if (nextTitle !== existingBook.title) {
@@ -5001,6 +5109,9 @@ async function handleApi(req, res, requestUrl) {
               ...importInfoBase,
               importStatus: 'updated',
             });
+            existingBook.importProvenance = normalizeBookImportProvenance({
+              fieldSources: provenanceByField,
+            });
             Object.assign(existingBook, attachDerivedThemeFields(existingBook));
             updatedBooks.push({
               title: existingBook.title,
@@ -5024,6 +5135,25 @@ async function handleApi(req, res, requestUrl) {
           baseTemplate = { ...existingBook };
         }
         if (!baseTemplate) {
+          const hasPublishedYearInput = publishedYearSource !== undefined && publishedYearSource !== '';
+          const hasPageCountInput = pageCountSource !== undefined && pageCountSource !== '';
+          const hasLanguageInput = languageSource !== undefined && String(languageSource).trim();
+          const metadataSourceDetail = pickSourceDetailForMetadata('metadata', metadataFields);
+          const createdProvenance = normalizeBookImportProvenance({
+            fieldSources: {
+              title: createFieldSource(title ? 'excel' : metadataFields?.title ? 'metadata' : 'unknown', title ? null : metadataSourceDetail),
+              author: createFieldSource(author ? 'excel' : metadataFields?.author ? 'metadata' : 'unknown', author ? null : metadataSourceDetail),
+              barcode: createFieldSource('excel'),
+              metadataIsbn: createFieldSource(metadataIsbn ? 'excel' : 'unknown'),
+              publisher: createFieldSource(publisherSource !== undefined ? 'excel' : metadataFields?.publisher ? 'metadata' : 'unknown', publisherSource !== undefined ? null : metadataSourceDetail),
+              publishedYear: createFieldSource(hasPublishedYearInput ? 'excel' : metadataFields?.publishedYear != null ? 'metadata' : 'unknown', hasPublishedYearInput ? null : metadataSourceDetail),
+              pageCount: createFieldSource(hasPageCountInput ? 'excel' : metadataFields?.pageCount != null ? 'metadata' : 'unknown', hasPageCountInput ? null : metadataSourceDetail),
+              language: createFieldSource(hasLanguageInput ? 'excel' : metadataFields?.language ? 'metadata' : 'unknown', hasLanguageInput ? null : metadataSourceDetail),
+              tags: createFieldSource(hasExplicitRawTagValues ? 'excel' : (Array.isArray(metadataFields?.tags) && metadataFields.tags.length) ? 'metadata' : 'unknown', hasExplicitRawTagValues ? null : metadataSourceDetail),
+              themes: createFieldSource(hasCuratedThemeColumns ? 'excel' : 'derived'),
+              coverUrl: createFieldSource(hasCoverInput ? 'excel' : metadataFields?.coverUrl ? 'metadata' : 'unknown', hasCoverInput ? null : metadataSourceDetail),
+            },
+          });
           baseTemplate = ensureBookShape({
             id: crypto.randomUUID(),
             title: title || metadataFields?.title || '',
@@ -5052,6 +5182,7 @@ async function handleApi(req, res, requestUrl) {
                 : metadataFields?.coverUrl || '',
             suitableForExamList,
             easyReading,
+            importProvenance: createdProvenance,
           });
         }
         const copiesToCreate = parseQuantityInput(quantityValue, { defaultValue: 1, allowZero: true });
@@ -5061,6 +5192,7 @@ async function handleApi(req, res, requestUrl) {
             ...importInfoBase,
             importStatus: 'created',
           });
+          copy.importProvenance = normalizeBookImportProvenance(baseTemplate.importProvenance);
           db.books.push(copy);
           affectedBookIds.add(copy.id);
           createdBooks.push({
@@ -5179,10 +5311,22 @@ async function handleApi(req, res, requestUrl) {
             let didUpdate = false;
             if (!book.coverUrl && retryMetadata.coverUrl) {
               book.coverUrl = retryMetadata.coverUrl;
+              const existingProvenance = normalizeBookImportProvenance(book.importProvenance) || { fieldSources: {} };
+              existingProvenance.fieldSources.coverUrl = createFieldSource(
+                'metadata',
+                retryMetadata.source || 'googlebooks-title-author'
+              );
+              book.importProvenance = existingProvenance;
               didUpdate = true;
             }
             if (!book.publisher && retryMetadata.publisher) {
               book.publisher = retryMetadata.publisher;
+              const existingProvenance = normalizeBookImportProvenance(book.importProvenance) || { fieldSources: {} };
+              existingProvenance.fieldSources.publisher = createFieldSource(
+                'metadata',
+                retryMetadata.source || 'googlebooks-title-author'
+              );
+              book.importProvenance = existingProvenance;
               didUpdate = true;
             }
             if (!book.description && retryMetadata.description) {
