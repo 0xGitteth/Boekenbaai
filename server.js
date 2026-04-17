@@ -766,6 +766,14 @@ const activeImportJobs = new Map();
 const isbnMetadataCache = new Map();
 const isbnLookupInflight = new Map();
 const titleAuthorFallbackCache = new Map();
+const IMPORT_PROVENANCE_SOURCE_TYPES = new Set([
+  'excel',
+  'existing',
+  'metadata',
+  'derived',
+  'manual',
+  'unknown',
+]);
 let googleBooksFallbackCooldownUntil = 0;
 let googleBooksFallbackCooldownReason = '';
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
@@ -1052,15 +1060,6 @@ function normalizeBookImportInfo(importInfo) {
     process,
   };
 }
-
-const IMPORT_PROVENANCE_SOURCE_TYPES = new Set([
-  'excel',
-  'existing',
-  'metadata',
-  'derived',
-  'manual',
-  'unknown',
-]);
 
 function normalizeImportFieldSource(value) {
   if (!value || typeof value !== 'object') {
