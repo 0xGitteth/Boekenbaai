@@ -1113,6 +1113,10 @@ function formatImportEnrichmentLabel(metadataLookupSummary) {
     : `Geen metadata gevonden${metadataLookupSummary.source ? ` (${sourceLabel})` : ''}`;
 }
 
+function formatImportBooleanLabel(value) {
+  return value ? 'Ja' : 'Nee';
+}
+
 function formatImportDateTime(value) {
   if (!value) return '';
   const parsed = new Date(value);
@@ -1163,10 +1167,8 @@ function renderBookImportDetailBlock(importInfo, detailBook = null) {
     state.importButton.textContent = 'Importgegevens';
     return;
   }
-  const detail = detailBook && typeof detailBook === 'object' ? detailBook : state.currentDetail;
-  const copies = Array.isArray(detail?.copies) ? detail.copies : [detail];
-  const representative = detail?.representativeBook || copies[0] || detail;
   appendTextElement(state.importData, 'h4', 'Importgegevens');
+  appendTextElement(state.importData, 'h5', 'Importverloop');
   const list = appendElement(state.importData, 'dl', { className: 'book-detail__import-list' });
   const appendRow = (label, value) => {
     const resolved = value == null ? '' : String(value).trim();
@@ -1174,19 +1176,23 @@ function renderBookImportDetailBlock(importInfo, detailBook = null) {
     appendTextElement(list, 'dt', label);
     appendTextElement(list, 'dd', resolved);
   };
+  const process = importInfo?.process && typeof importInfo.process === 'object' ? importInfo.process : null;
   appendRow('Status', formatImportStatusLabel(importInfo.importStatus));
-  appendRow('Auteur', representative?.author || '');
-  appendRow('Barcode', representative?.barcode || '');
-  appendRow('Metadata-ISBN', representative?.metadataIsbn || '');
-  appendRow('Uitgever', representative?.publisher || '');
-  appendRow('Jaar', representative?.publishedYear);
-  appendRow('Pagina’s', representative?.pageCount);
-  appendRow('Taal', representative?.language || '');
-  appendRow('Thema’s', Array.isArray(representative?.tags) ? representative.tags.join(', ') : representative?.tags);
   appendRow('ISBN-verrijking', formatImportEnrichmentLabel(importInfo.metadataLookupSummary));
   appendRow('Geïmporteerd op', formatImportDateTime(importInfo.importedAt));
   appendRow('Importbron', importInfo.importSource || '');
   appendRow('Importjob', importInfo.importJobId || '');
+  if (process) {
+    appendRow('Lookup geprobeerd', formatImportBooleanLabel(process.lookupAttempted));
+    appendRow('Lookup gelukt', formatImportBooleanLabel(process.lookupFound));
+    appendRow('Lookupbron', process.lookupSource || '');
+    appendRow('Fallback gebruikt', formatImportBooleanLabel(process.fallbackUsed));
+    appendRow('Fallbackbron', process.fallbackSource || '');
+    const deferredLabel = process.wasDeferred
+      ? `Ja${Number(process.deferCount || 0) > 0 ? `, ${Number(process.deferCount || 0)} keer` : ''}`
+      : 'Nee';
+    appendRow('Tijdelijk uitgesteld', deferredLabel);
+  }
 
   const provenanceFields = importInfo?.importProvenance?.fieldSources;
   if (provenanceFields && typeof provenanceFields === 'object' && Object.keys(provenanceFields).length) {
@@ -1206,6 +1212,7 @@ function renderBookImportDetailBlock(importInfo, detailBook = null) {
       ['Tags', provenanceFields.tags],
       ['Thema’s', provenanceFields.themes],
       ['Omslag (coverUrl)', provenanceFields.coverUrl],
+      ['Omslagtekst (description)', provenanceFields.description],
     ];
     for (const [label, fieldSource] of fieldRows) {
       const value = formatFieldSourceLabel(fieldSource);
