@@ -977,6 +977,40 @@ function resolveEffectiveCoverUrl(value) {
   return normalizeCoverUrl(value || '');
 }
 
+function normalizeBookImportProcess(process, fallbackResult = '') {
+  if (!process || typeof process !== 'object') {
+    return null;
+  }
+  const rawResult = typeof process.result === 'string' ? process.result.trim().toLowerCase() : '';
+  const result = rawResult === 'created' || rawResult === 'updated' || rawResult === 'skipped' || rawResult === 'failed'
+    ? rawResult
+    : (fallbackResult || '');
+  const lookupAttempted = Boolean(process.lookupAttempted);
+  const lookupFound = Boolean(process.lookupFound);
+  const lookupSource = typeof process.lookupSource === 'string' && process.lookupSource.trim()
+    ? process.lookupSource.trim().toLowerCase()
+    : null;
+  const fallbackUsed = Boolean(process.fallbackUsed);
+  const fallbackSource = typeof process.fallbackSource === 'string' && process.fallbackSource.trim()
+    ? process.fallbackSource.trim().toLowerCase()
+    : null;
+  const wasDeferred = Boolean(process.wasDeferred);
+  const deferCountRaw = Number(process.deferCount);
+  const deferCount = Number.isFinite(deferCountRaw) && deferCountRaw > 0
+    ? Math.floor(deferCountRaw)
+    : 0;
+  return {
+    result,
+    lookupAttempted,
+    lookupFound,
+    lookupSource,
+    fallbackUsed,
+    fallbackSource,
+    wasDeferred,
+    deferCount,
+  };
+}
+
 function normalizeBookImportInfo(importInfo) {
   if (!importInfo || typeof importInfo !== 'object') {
     return null;
@@ -1007,6 +1041,7 @@ function normalizeBookImportInfo(importInfo) {
   if (!importedAt || !importSource || !importStatus) {
     return null;
   }
+  const process = normalizeBookImportProcess(importInfo.process, importStatus);
   return {
     importedAt,
     importedBy,
@@ -1014,6 +1049,7 @@ function normalizeBookImportInfo(importInfo) {
     importJobId,
     importStatus,
     metadataLookupSummary,
+    process,
   };
 }
 
@@ -4625,6 +4661,35 @@ async function handleApi(req, res, requestUrl) {
       const updatedBooks = [];
       const skipped = [];
       let changed = false;
+
+      const markBooksDeferred = (bookIds = []) => {
+        let didChange = false;
+        for (const bookId of bookIds) {
+          if (!bookId) continue;
+          const book = db.books.find((entry) => entry.id === bookId);
+          if (!book) continue;
+          const importInfo = normalizeBookImportInfo(book.importInfo);
+          if (!importInfo) continue;
+          const process = normalizeBookImportProcess(importInfo.process, importInfo.importStatus) || {
+            result: importInfo.importStatus,
+            lookupAttempted: false,
+            lookupFound: false,
+            lookupSource: null,
+            fallbackUsed: false,
+            fallbackSource: null,
+            wasDeferred: false,
+            deferCount: 0,
+          };
+          process.wasDeferred = true;
+          process.deferCount = (Number.isFinite(process.deferCount) ? process.deferCount : 0) + 1;
+          book.importInfo = normalizeBookImportInfo({
+            ...importInfo,
+            process,
+          });
+          didChange = true;
+        }
+        return didChange;
+      };
       let processedRows = 0;
       let cancelled = false;
       const lookup = resolveLookupIsbnMetadata();
@@ -4929,6 +4994,18 @@ async function handleApi(req, res, requestUrl) {
             }
           }
         }
+        const importProcessBase = {
+          result: existingBook ? 'updated' : 'created',
+          lookupAttempted: Boolean(allowLookup),
+          lookupFound: Boolean(enrichment?.found),
+          lookupSource: enrichment?.source ? String(enrichment.source).toLowerCase() : null,
+          fallbackUsed: Boolean(fallbackUsed),
+          fallbackSource: fallbackUsed && metadataFields?.source
+            ? String(metadataFields.source).toLowerCase()
+            : null,
+          wasDeferred: false,
+          deferCount: 0,
+        };
         const finalCoverUrlSource = hasCoverInput
           ? 'input'
           : existingBook?.coverUrl
@@ -5033,6 +5110,10 @@ async function handleApi(req, res, requestUrl) {
               hasCuratedThemeColumns ? 'excel' : 'derived',
               null
             ),
+            description: createFieldSource(
+              hasDescriptionInput ? 'excel' : existingBook.description ? 'existing' : metadataFields?.description ? 'metadata' : 'unknown',
+              hasDescriptionInput || existingBook.description ? null : defaultMetadataSourceDetail
+            ),
             coverUrl: createFieldSource(
               hasCoverInput ? 'excel' : existingBook.coverUrl ? 'existing' : metadataFields?.coverUrl ? 'metadata' : 'unknown',
               hasCoverInput || existingBook.coverUrl ? null : defaultMetadataSourceDetail
@@ -5108,6 +5189,10 @@ async function handleApi(req, res, requestUrl) {
             existingBook.importInfo = normalizeBookImportInfo({
               ...importInfoBase,
               importStatus: 'updated',
+              process: {
+                ...importProcessBase,
+                result: 'updated',
+              },
             });
             existingBook.importProvenance = normalizeBookImportProvenance({
               fieldSources: provenanceByField,
@@ -5151,6 +5236,7 @@ async function handleApi(req, res, requestUrl) {
               language: createFieldSource(hasLanguageInput ? 'excel' : metadataFields?.language ? 'metadata' : 'unknown', hasLanguageInput ? null : metadataSourceDetail),
               tags: createFieldSource(hasExplicitRawTagValues ? 'excel' : (Array.isArray(metadataFields?.tags) && metadataFields.tags.length) ? 'metadata' : 'unknown', hasExplicitRawTagValues ? null : metadataSourceDetail),
               themes: createFieldSource(hasCuratedThemeColumns ? 'excel' : 'derived'),
+              description: createFieldSource(hasDescriptionInput ? 'excel' : metadataFields?.description ? 'metadata' : 'unknown', hasDescriptionInput ? null : metadataSourceDetail),
               coverUrl: createFieldSource(hasCoverInput ? 'excel' : metadataFields?.coverUrl ? 'metadata' : 'unknown', hasCoverInput ? null : metadataSourceDetail),
             },
           });
@@ -5191,6 +5277,10 @@ async function handleApi(req, res, requestUrl) {
           copy.importInfo = normalizeBookImportInfo({
             ...importInfoBase,
             importStatus: 'created',
+            process: {
+              ...importProcessBase,
+              result: 'created',
+            },
           });
           copy.importProvenance = normalizeBookImportProvenance(baseTemplate.importProvenance);
           db.books.push(copy);
@@ -5218,6 +5308,9 @@ async function handleApi(req, res, requestUrl) {
           const retryAttempt = fallbackAttempt + 1;
           const retryDelayMs = Math.max(getFallbackCooldownRemainingMs(), 50);
           if (retryAttempt <= IMPORT_FALLBACK_DEFERRED_MAX_ATTEMPTS) {
+            if (markBooksDeferred(Array.from(affectedBookIds))) {
+              changed = true;
+            }
             deferredFallbackRows.push({
               row,
               fallbackTarget,
@@ -5331,7 +5424,53 @@ async function handleApi(req, res, requestUrl) {
             }
             if (!book.description && retryMetadata.description) {
               book.description = retryMetadata.description;
+              const existingProvenance = normalizeBookImportProvenance(book.importProvenance) || { fieldSources: {} };
+              existingProvenance.fieldSources.description = createFieldSource(
+                'metadata',
+                retryMetadata.source || 'googlebooks-title-author'
+              );
+              book.importProvenance = existingProvenance;
+              const importInfo = normalizeBookImportInfo(book.importInfo);
+              if (importInfo) {
+                const process = normalizeBookImportProcess(importInfo.process, importInfo.importStatus) || {
+                  result: importInfo.importStatus,
+                  lookupAttempted: false,
+                  lookupFound: false,
+                  lookupSource: null,
+                  fallbackUsed: false,
+                  fallbackSource: null,
+                  wasDeferred: false,
+                  deferCount: 0,
+                };
+                process.fallbackUsed = true;
+                process.fallbackSource = retryMetadata.source
+                  ? String(retryMetadata.source).toLowerCase()
+                  : (process.fallbackSource || 'googlebooks-title-author');
+                book.importInfo = normalizeBookImportInfo({
+                  ...importInfo,
+                  process,
+                });
+              }
               didUpdate = true;
+            }
+            const importInfo = normalizeBookImportInfo(book.importInfo);
+            if (importInfo && retryMetadata.source) {
+              const process = normalizeBookImportProcess(importInfo.process, importInfo.importStatus) || {
+                result: importInfo.importStatus,
+                lookupAttempted: false,
+                lookupFound: false,
+                lookupSource: null,
+                fallbackUsed: false,
+                fallbackSource: null,
+                wasDeferred: false,
+                deferCount: 0,
+              };
+              process.fallbackUsed = true;
+              process.fallbackSource = String(retryMetadata.source).toLowerCase();
+              book.importInfo = normalizeBookImportInfo({
+                ...importInfo,
+                process,
+              });
             }
             if (didUpdate) {
               rowUpdated = true;
@@ -5352,6 +5491,9 @@ async function handleApi(req, res, requestUrl) {
         if (transientReason && job.attempt < IMPORT_FALLBACK_DEFERRED_MAX_ATTEMPTS) {
           const nextAttempt = job.attempt + 1;
           const retryDelayMs = Math.max(getFallbackCooldownRemainingMs(), 50);
+          if (markBooksDeferred(Array.from(job.affectedBookIds || []))) {
+            changed = true;
+          }
           deferredFallbackRows.push({
             ...job,
             reason: transientReason,
