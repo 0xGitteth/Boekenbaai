@@ -24,6 +24,7 @@ const SELECTED_ACCOUNT_COOKIE = 'boekenbaai_google_selected_account';
 const SESSION_COOKIE = 'boekenbaai_session';
 const SESSION_HINT_COOKIE = 'boekenbaai_auth_hint';
 const SELECTION_MAX_AGE_MS = 15 * 60 * 1000;
+const START_TOKEN_MAX_AGE_MS = 2 * 60 * 1000;
 
 const originalCreateServer = http.createServer.bind(http);
 
@@ -50,6 +51,7 @@ function readMainDb() {
     throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   }
   if (!Array.isArray(db.students)) db.students = [];
+  if (!Array.isArray(db.users)) db.users = [];
   return db;
 }
 
@@ -165,6 +167,46 @@ function selectedAccountState(req) {
   };
 }
 
+function getStartAccount(db, type, accountId) {
+  const id = String(accountId || '').trim();
+  if (!id) return null;
+  if (type === 'student') {
+    return db.students.find((entry) => entry?.id === id) || null;
+  }
+  return db.users.find(
+    (entry) => entry?.id === id && entry?.role === 'teacher'
+  ) || null;
+}
+
+function createGoogleStartToken(res, requestUrl) {
+  if (!AUTH_SECRET) {
+    return sendJson(res, 503, { message: 'Google-inlog is nog niet geconfigureerd.' });
+  }
+  const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
+  const accountId = String(requestUrl.searchParams.get('accountId') || '').trim();
+  const account = getStartAccount(readMainDb(), type, accountId);
+  if (!account) {
+    return sendJson(res, 404, { message: 'Kies opnieuw een geldig Google-account uit de lijst.' });
+  }
+  const token = core.createSignedState(
+    { purpose: 'google-start', type, accountId, iat: Date.now() },
+    AUTH_SECRET
+  );
+  return sendJson(res, 200, { token });
+}
+
+function hasValidGoogleStartToken(requestUrl) {
+  if (!AUTH_SECRET) return false;
+  const raw = String(requestUrl.searchParams.get('handoffToken') || '');
+  const state = core.verifySignedState(raw, AUTH_SECRET, {
+    maxAgeMs: START_TOKEN_MAX_AGE_MS,
+  });
+  if (!state || state.purpose !== 'google-start') return false;
+  const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
+  const accountId = String(requestUrl.searchParams.get('accountId') || '').trim();
+  return state.type === type && String(state.accountId || '').trim() === accountId;
+}
+
 function pendingIdentityForRequest(req, store) {
   const token = parseCookies(req)[PENDING_COOKIE] || '';
   if (!token) return null;
@@ -238,11 +280,8 @@ function createAutomaticLinkRequest(req, res) {
     return sendJson(res, 401, { message: 'Google-koppeling is verlopen. Log opnieuw in.' });
   }
 
-  pending.studentId = studentId;
-
   const existingLink = core.findLinkByAccount(store, 'student', studentId);
   if (verifiedLinkConflicts(existingLink, pending)) {
-    saveAuthStore(store);
     clearSelectedAccountCookie(req, res);
     return sendJson(res, 409, {
       message:
@@ -251,13 +290,17 @@ function createAutomaticLinkRequest(req, res) {
   }
 
   if (identityLinkedElsewhere(store, pending, studentId)) {
-    saveAuthStore(store);
     clearSelectedAccountCookie(req, res);
     return sendJson(res, 409, {
       message:
         'Dit Google-account is al aan een ander Boekenbaai-account gekoppeld. Vraag je docent om hulp.',
     });
   }
+
+  // Pas na alle conflictcontroles wordt de pending identiteit definitief aan de
+  // eerder gekozen leerling gebonden. Een geweigerde poging laat dus geen half
+  // gebonden pending toestand achter.
+  pending.studentId = studentId;
 
   const current = findLatestRequest(store, pending, studentId);
   if (current?.status === 'pending' || current?.status === 'approved') {
@@ -417,7 +460,13 @@ function revokeMismatchedSession(req, res, selection, beforeStore) {
   if (!selection || !location.includes('googleAuth=success')) return false;
 
   const token = sessionTokenFromResponse(res);
-  if (!token) return false;
+  if (!token) {
+    removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
+    clearCookie(req, res, SESSION_COOKIE, true);
+    clearCookie(req, res, SESSION_HINT_COOKIE, false);
+    res.setHeader('Location', mismatchRedirect(selection));
+    return true;
+  }
 
   let store = loadAuthStore();
   const session = core.resolveSession(store, token);
@@ -478,6 +527,21 @@ function wrapRequestListener(listener) {
 
     try {
       if (
+        req.method === 'GET' &&
+        requestUrl.pathname === '/api/auth/google/start-token'
+      ) {
+        return createGoogleStartToken(res, requestUrl);
+      }
+      if (
+        req.method === 'GET' &&
+        requestUrl.pathname === '/api/auth/google/start' &&
+        !hasValidGoogleStartToken(requestUrl)
+      ) {
+        return sendJson(res, 403, {
+          message: 'Start Google-inlog opnieuw vanuit de Boekenbaai-inlogpagina.',
+        });
+      }
+      if (
         req.method === 'POST' &&
         requestUrl.pathname === '/api/auth/google/auto-link-request'
       ) {
@@ -527,6 +591,8 @@ module.exports = {
     AUTH_DATA_PATH,
     SELECTED_ACCOUNT_COOKIE,
     selectedAccountState,
+    getStartAccount,
+    hasValidGoogleStartToken,
     pendingIdentityForRequest,
     findLatestRequest,
     verifiedLinkConflicts,
