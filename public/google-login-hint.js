@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  const initialGoogleState =
+    new URLSearchParams(window.location.search).get('googleAuth') || '';
+
   function getPageState() {
     const isStaff = document.body?.dataset.page === 'staff';
     const form = document.querySelector(isStaff ? '#login-form' : '#student-login-form');
@@ -64,7 +67,7 @@
   }
 
   function enhancePendingLinkHandoff(attempt = 0) {
-    const googleState = new URLSearchParams(window.location.search).get('googleAuth') || '';
+    const googleState = initialGoogleState;
     if (document.body?.dataset.page !== 'student' || googleState !== 'link-required') return;
 
     const panel = document.querySelector('.google-link-request');
@@ -363,7 +366,7 @@
     showRemember(false);
     submit.disabled = !nameInput.value.trim();
 
-    const state = new URLSearchParams(window.location.search).get('googleAuth') || '';
+    const state = initialGoogleState;
     if (state === 'select-account') {
       setMessage('Kies je naam uit de lijst voordat je inlogt.');
     } else if (state === 'local-only') {
