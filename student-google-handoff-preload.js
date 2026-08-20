@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const { AsyncLocalStorage } = require('async_hooks');
@@ -69,7 +70,7 @@ function loadAuthStore() {
 function saveAuthStore(store) {
   const normalized = core.pruneStore(core.normalizeStore(store));
   fs.mkdirSync(path.dirname(AUTH_DATA_PATH), { recursive: true });
-  const tmp = `${AUTH_DATA_PATH}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = `${AUTH_DATA_PATH}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(normalized, null, 2));
   fs.renameSync(tmp, AUTH_DATA_PATH);
   return normalized;
@@ -208,8 +209,13 @@ function createAutomaticLinkRequest(req, res) {
     return sendJson(res, 401, { message: 'Google-koppeling is verlopen. Log opnieuw in.' });
   }
 
+  // Vanaf hier is deze pending Google-identiteit aan de eerder gekozen leerling gebonden.
+  // De oude handmatige zoekroute mag dit account daarna niet meer wisselen.
+  pending.studentId = studentId;
+
   const existingLink = core.findLinkByAccount(store, 'student', studentId);
   if (verifiedLinkConflicts(existingLink, pending)) {
+    saveAuthStore(store);
     clearSelectedAccountCookie(req, res);
     return sendJson(res, 409, {
       message:
@@ -219,6 +225,7 @@ function createAutomaticLinkRequest(req, res) {
 
   const current = findLatestRequest(store, pending, studentId);
   if (current?.status === 'pending') {
+    saveAuthStore(store);
     clearSelectedAccountCookie(req, res);
     return sendJson(res, 200, {
       automatic: true,
@@ -240,9 +247,8 @@ function createAutomaticLinkRequest(req, res) {
     }
   }
 
-  pending.studentId = studentId;
   const request = {
-    id: require('crypto').randomUUID(),
+    id: crypto.randomUUID(),
     studentId,
     email: pending.email,
     sub: pending.sub,
@@ -261,6 +267,17 @@ function createAutomaticLinkRequest(req, res) {
     requestId: request.id,
     message: 'Koppelverzoek verstuurd naar je docent.',
   });
+}
+
+function rejectBoundManualLinkRequest(req, res) {
+  const store = loadAuthStore();
+  const pending = pendingIdentityForRequest(req, store);
+  if (!pending?.studentId) return false;
+  sendJson(res, 409, {
+    message:
+      'Deze Google-login hoort al bij de leerlingnaam die je eerder koos. Log opnieuw in om een andere naam te kiezen.',
+  });
+  return true;
 }
 
 function buildContext(req) {
@@ -372,6 +389,13 @@ function wrapRequestListener(listener) {
           context.pathname === '/api/auth/google/auto-link-request'
         ) {
           return createAutomaticLinkRequest(req, res);
+        }
+        if (
+          req.method === 'POST' &&
+          context.pathname === '/api/auth/google/link-request' &&
+          rejectBoundManualLinkRequest(req, res)
+        ) {
+          return undefined;
         }
         installSelectedAccountCookie(req, res, context);
         wrapCallbackResponse(req, res, context);
