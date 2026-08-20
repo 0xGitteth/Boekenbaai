@@ -114,7 +114,7 @@ async function loginMode(type, accountId) {
   return response.json();
 }
 
-async function googleStartToken(type, accountId) {
+async function googleStartIntent(type, accountId) {
   const response = await fetch(
     `${baseUrl}/api/auth/google/start-token?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`
   );
@@ -127,7 +127,15 @@ async function googleStartToken(type, accountId) {
   assert.strictEqual(state?.purpose, 'google-start');
   assert.strictEqual(state?.type, type);
   assert.strictEqual(state?.accountId, accountId);
-  return payload.token;
+  assert.ok(state?.nonce);
+
+  const setCookie = response.headers.get('set-cookie') || '';
+  assert.match(setCookie, /boekenbaai_google_start_intent=/);
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /SameSite=Strict/i);
+  const intentCookie = extractCookieValue(setCookie, 'boekenbaai_google_start_intent');
+  assert.strictEqual(intentCookie, state.nonce);
+  return { token: payload.token, intentCookie };
 }
 
 (async () => {
@@ -161,18 +169,28 @@ async function googleStartToken(type, accountId) {
       'Een directe OAuth-start buiten de Boekenbaai-UI moet worden geweigerd'
     );
 
-    const teacherToken = await googleStartToken('staff', 'teacher-smoke');
+    const teacherIntent = await googleStartIntent('staff', 'teacher-smoke');
     const teacherGoogle = await fetch(
-      `${baseUrl}/api/auth/google/start?type=staff&accountId=teacher-smoke&handoffToken=${encodeURIComponent(teacherToken)}`,
-      { redirect: 'manual' }
+      `${baseUrl}/api/auth/google/start?type=staff&accountId=teacher-smoke&handoffToken=${encodeURIComponent(teacherIntent.token)}`,
+      {
+        redirect: 'manual',
+        headers: {
+          Cookie: `boekenbaai_google_start_intent=${encodeURIComponent(teacherIntent.intentCookie)}`,
+        },
+      }
     );
     assert.strictEqual(teacherGoogle.status, 302);
     assert.strictEqual(new URL(teacherGoogle.headers.get('location')).hostname, 'accounts.google.com');
 
-    const studentToken = await googleStartToken('student', 'student-smoke');
+    const studentIntent = await googleStartIntent('student', 'student-smoke');
     const studentGoogle = await fetch(
-      `${baseUrl}/api/auth/google/start?type=student&accountId=student-smoke&handoffToken=${encodeURIComponent(studentToken)}`,
-      { redirect: 'manual' }
+      `${baseUrl}/api/auth/google/start?type=student&accountId=student-smoke&handoffToken=${encodeURIComponent(studentIntent.token)}`,
+      {
+        redirect: 'manual',
+        headers: {
+          Cookie: `boekenbaai_google_start_intent=${encodeURIComponent(studentIntent.intentCookie)}`,
+        },
+      }
     );
     assert.strictEqual(studentGoogle.status, 302);
     const studentGoogleLocation = new URL(studentGoogle.headers.get('location'));
@@ -189,6 +207,11 @@ async function googleStartToken(type, accountId) {
       studentSetCookie,
       /boekenbaai_google_selected_account=/,
       'Production Google-start moet de beveiligde leerlingselectiecookie zetten'
+    );
+    assert.match(
+      studentSetCookie,
+      /boekenbaai_google_start_intent=;[^,]*Max-Age=0/,
+      'Production Google-start moet de browsergebonden startintent na gebruik wissen'
     );
     const selectedCookie = extractCookieValue(
       studentSetCookie,
