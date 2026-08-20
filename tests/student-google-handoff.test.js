@@ -91,35 +91,41 @@ function extractCookieValue(setCookieHeader, name) {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
+async function startSelection() {
+  const response = await fetch(
+    `${baseUrl}/api/auth/google/start?type=student&accountId=student-1`
+  );
+  assert.strictEqual(response.status, 200);
+  const payload = await response.json();
+  const oauthState = core.verifySignedState(payload.state, secret);
+  assert.strictEqual(oauthState?.type, 'student', 'Fixture OAuth-state moet geldig blijven');
+
+  const setCookie = response.headers.get('set-cookie') || '';
+  assert.match(setCookie, /boekenbaai_google_selected_account=/);
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /SameSite=Lax/i);
+  const selectedCookie = extractCookieValue(setCookie, 'boekenbaai_google_selected_account');
+  assert.ok(selectedCookie, 'Beveiligde leerlingselectiecookie ontbreekt');
+  const selection = core.verifySignedState(selectedCookie, secret, {
+    maxAgeMs: 15 * 60 * 1000,
+  });
+  assert.strictEqual(selection?.type, 'student');
+  assert.strictEqual(
+    selection?.accountId,
+    'student-1',
+    'De geselecteerde leerling moet cryptografisch in de HttpOnly handoff-cookie zitten'
+  );
+  return { payload, selectedCookie };
+}
+
 (async () => {
   try {
     await waitForServer();
 
-    const start = await fetch(
-      `${baseUrl}/api/auth/google/start?type=student&accountId=student-1`
-    );
-    assert.strictEqual(start.status, 200);
-    const startPayload = await start.json();
-    const signedState = core.verifySignedState(startPayload.state, secret);
-    assert.strictEqual(
-      signedState?.accountId,
-      'student-1',
-      'OAuth-state moet de geselecteerde leerling cryptografisch meenemen'
-    );
-
-    const setCookie = start.headers.get('set-cookie') || '';
-    assert.match(setCookie, /boekenbaai_google_selected_account=/);
-    assert.match(setCookie, /HttpOnly/i);
-    assert.match(setCookie, /SameSite=Lax/i);
-    const selectedCookie = extractCookieValue(
-      setCookie,
-      'boekenbaai_google_selected_account'
-    );
-    assert.ok(selectedCookie, 'Beveiligde leerlingselectiecookie ontbreekt');
-
+    const first = await startSelection();
     const selectedCookies =
       `boekenbaai_google_pending=${encodeURIComponent(pendingToken)}; ` +
-      `boekenbaai_google_selected_account=${encodeURIComponent(selectedCookie)}`;
+      `boekenbaai_google_selected_account=${encodeURIComponent(first.selectedCookie)}`;
 
     const raceSwitch = await fetch(`${baseUrl}/api/auth/google/link-request`, {
       method: 'POST',
@@ -144,7 +150,7 @@ function extractCookieValue(setCookieHeader, name) {
     assert.strictEqual(autoPayload.automatic, true);
     assert.strictEqual(autoPayload.studentId, 'student-1');
 
-    const store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    let store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
     assert.strictEqual(store.pendingIdentities[0].studentId, 'student-1');
     assert.strictEqual(store.linkRequests.length, 1);
     assert.strictEqual(store.linkRequests[0].studentId, 'student-1');
@@ -165,15 +171,63 @@ function extractCookieValue(setCookieHeader, name) {
     );
 
     const mismatch = await fetch(
-      `${baseUrl}/api/auth/google/callback?state=${encodeURIComponent(startPayload.state)}`,
-      { redirect: 'manual' }
+      `${baseUrl}/api/auth/google/callback?state=${encodeURIComponent(first.payload.state)}`,
+      {
+        redirect: 'manual',
+        headers: {
+          Cookie: `boekenbaai_google_selected_account=${encodeURIComponent(first.selectedCookie)}`,
+        },
+      }
     );
     assert.strictEqual(mismatch.status, 302);
     assert.strictEqual(
       new URL(mismatch.headers.get('location'), baseUrl).searchParams.get('googleAuth'),
       'account-mismatch',
-      'Een Google-identiteit die al bij een ander account hoort moet worden gestopt'
+      'Een sessie voor een ander account moet vóór verzending worden ingetrokken'
     );
+    store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    assert.strictEqual(
+      store.sessions.some((entry) => entry?.userId === 'student-2'),
+      false,
+      'De fout aangemaakte persistente sessie moet direct uit de auth-store verdwijnen'
+    );
+
+    // Een docent kan een verzoek per ongeluk afwijzen. Een nieuwe Google-login moet
+    // daarna opnieuw een verzoek mogen maken in plaats van permanent vast te lopen.
+    store.linkRequests[0].status = 'denied';
+    store.linkRequests[0].updatedAt = new Date().toISOString();
+    delete store.pendingIdentities[0].studentId;
+    fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
+
+    const retry = await startSelection();
+    const retryCookies =
+      `boekenbaai_google_pending=${encodeURIComponent(pendingToken)}; ` +
+      `boekenbaai_google_selected_account=${encodeURIComponent(retry.selectedCookie)}`;
+
+    const pendingBeforeRetry = await fetch(`${baseUrl}/api/auth/google/pending`, {
+      headers: { Cookie: retryCookies },
+    });
+    assert.strictEqual(pendingBeforeRetry.status, 200);
+    const pendingPayload = await pendingBeforeRetry.json();
+    assert.strictEqual(
+      pendingPayload.requestStatus,
+      'not-requested',
+      'Een verse beveiligde selectie moet een oude afwijzing niet als definitieve status overnemen'
+    );
+
+    const retryAuto = await fetch(`${baseUrl}/api/auth/google/auto-link-request`, {
+      method: 'POST',
+      headers: { Cookie: retryCookies },
+    });
+    assert.strictEqual(retryAuto.status, 202);
+    const retryPayload = await retryAuto.json();
+    assert.strictEqual(retryPayload.status, 'pending');
+
+    store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    assert.strictEqual(store.linkRequests.length, 2);
+    assert.strictEqual(store.linkRequests[0].status, 'denied');
+    assert.strictEqual(store.linkRequests[1].status, 'pending');
+    assert.strictEqual(store.linkRequests[1].studentId, 'student-1');
   } finally {
     await stop();
   }
