@@ -183,16 +183,21 @@ function verifiedLinkConflicts(link, pending) {
 }
 
 function identityLinkedElsewhere(store, pending, studentId) {
-  for (const accountType of ['student', 'staff']) {
-    const link = core.findLinkByIdentity(store, accountType, {
-      email: pending.email,
-      sub: pending.sub,
-    });
-    if (!link) continue;
-    if (accountType === 'student' && link.accountId === studentId) continue;
-    return link;
-  }
-  return null;
+  const email = core.normalizeEmail(pending?.email);
+  const sub = String(pending?.sub || '').trim();
+  return (store?.links || []).find((entry) => {
+    if (!entry) return false;
+    if (
+      typeof core.isLocalOnlyStaffAccount === 'function' &&
+      core.isLocalOnlyStaffAccount(entry.accountType, entry.accountId)
+    ) {
+      return false;
+    }
+    if (entry.accountType === 'student' && entry.accountId === studentId) return false;
+    const sameSub = Boolean(sub && String(entry.sub || '').trim() === sub);
+    const sameEmail = Boolean(email && core.normalizeEmail(entry.email) === email);
+    return sameSub || sameEmail;
+  }) || null;
 }
 
 function findLatestRequest(store, pending, studentId) {
