@@ -16,6 +16,22 @@ if (process.env.SEED_LEGACY === '1') {
   });
 }
 
+if (process.env.GOOGLE_TEST_IDENTITY === '1') {
+  globalThis.__BOEKENBAAI_EXCHANGE_GOOGLE_CODE = async (code) => {
+    if (code !== 'fixture-code') throw new Error('Onverwachte testcode');
+    return 'fixture-id-token';
+  };
+  globalThis.__BOEKENBAAI_VERIFY_GOOGLE_ID_TOKEN = async (idToken) => {
+    if (idToken !== 'fixture-id-token') throw new Error('Onverwacht testtoken');
+    return {
+      sub: 'fixture-google-sub',
+      email: 'docent@koraaledu.nl',
+      name: 'Docent',
+      givenName: 'Docent',
+    };
+  };
+}
+
 http.createServer((req, res) => {
   if (req.url === '/api/me') {
     const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
