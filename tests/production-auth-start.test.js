@@ -20,22 +20,40 @@ function hashPassword(password) {
 
 fs.writeFileSync(dbPath, JSON.stringify({
   books: [],
-  students: [],
+  students: [{
+    id: 'student-smoke',
+    name: 'Smoke Leerling',
+    username: 'smoke-student',
+    passwordHash: hashPassword('unused-student-password'),
+    borrowedBooks: [],
+    classIds: [],
+  }],
   folders: [],
   classes: [],
-  users: [{
-    id: 'admin-smoke',
-    name: 'Smoke Beheer',
-    username: 'smoke-admin',
-    passwordHash: hashPassword('smoke-password'),
-    role: 'admin',
-    mustChangePassword: false,
-  }],
+  users: [
+    {
+      id: 'admin-smoke',
+      name: 'Smoke Beheer',
+      username: 'smoke-admin',
+      passwordHash: hashPassword('smoke-password'),
+      role: 'admin',
+      mustChangePassword: false,
+    },
+    {
+      id: 'teacher-smoke',
+      name: 'Smoke Docent',
+      username: 'smoke-teacher',
+      passwordHash: hashPassword('unused-teacher-password'),
+      role: 'teacher',
+      classIds: [],
+    },
+  ],
   history: [],
 }, null, 2));
 
 const child = spawn(process.execPath, [
   '--require', path.join(root, 'google-auth-security-preload.js'),
+  '--require', path.join(root, 'login-flow-policy-preload.js'),
   '--require', path.join(root, 'google-auth-runtime-preload.js'),
   path.join(root, 'server.js'),
 ], {
@@ -81,12 +99,41 @@ async function stop() {
   await new Promise((resolve) => child.once('exit', resolve));
 }
 
+async function loginMode(type, accountId) {
+  const response = await fetch(
+    `${baseUrl}/api/auth/login-mode?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`
+  );
+  assert.strictEqual(response.status, 200);
+  return response.json();
+}
+
 (async () => {
   try {
     const configResponse = await waitForServer();
     const config = await configResponse.json();
     assert.strictEqual(config.enabled, true);
     assert.strictEqual(config.domain, 'koraaledu.nl');
+
+    assert.strictEqual((await loginMode('staff', 'admin-smoke')).authMode, 'password');
+    assert.strictEqual((await loginMode('staff', 'teacher-smoke')).authMode, 'google');
+    assert.strictEqual((await loginMode('student', 'student-smoke')).authMode, 'google');
+
+    const adminGoogle = await fetch(
+      `${baseUrl}/api/auth/google/start?type=staff&accountId=admin-smoke`,
+      { redirect: 'manual' }
+    );
+    assert.strictEqual(adminGoogle.status, 302);
+    assert.strictEqual(
+      new URL(adminGoogle.headers.get('location'), baseUrl).searchParams.get('googleAuth'),
+      'local-only'
+    );
+
+    const teacherGoogle = await fetch(
+      `${baseUrl}/api/auth/google/start?type=staff&accountId=teacher-smoke`,
+      { redirect: 'manual' }
+    );
+    assert.strictEqual(teacherGoogle.status, 302);
+    assert.strictEqual(new URL(teacherGoogle.headers.get('location')).hostname, 'accounts.google.com');
 
     const login = await fetch(`${baseUrl}/api/login-by-name`, {
       method: 'POST',
@@ -97,6 +144,7 @@ async function stop() {
     assert.strictEqual(login.status, 200, `Production password login faalde: ${loginText}`);
     const loginPayload = JSON.parse(loginText);
     assert.ok(loginPayload.token, 'Production login leverde geen bearer-token op');
+    assert.strictEqual(loginPayload.user.role, 'admin');
 
     const persist = await fetch(`${baseUrl}/api/auth/session/persist`, {
       method: 'POST',
