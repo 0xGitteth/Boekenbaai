@@ -115,25 +115,20 @@ function useSecureCookies(req) {
   return isHttpsRequest(req);
 }
 
-function serializeCookie(name, value, { httpOnly = true, maxAge } = {}) {
+function serializeCookie(name, value, { httpOnly = true, maxAge, secure = false } = {}) {
   const parts = [`${name}=${encodeURIComponent(value)}`, 'Path=/'];
   if (maxAge !== undefined) parts.push(`Max-Age=${Math.max(0, Math.floor(maxAge))}`);
   if (httpOnly) parts.push('HttpOnly');
-  if (useSecureCookieFlag) parts.push('Secure');
+  if (secure) parts.push('Secure');
   parts.push('SameSite=Lax');
   return parts.join('; ');
 }
 
-let useSecureCookieFlag = false;
-
 function cookieForRequest(req, name, value, options = {}) {
-  const previous = useSecureCookieFlag;
-  useSecureCookieFlag = useSecureCookies(req);
-  try {
-    return serializeCookie(name, value, options);
-  } finally {
-    useSecureCookieFlag = previous;
-  }
+  return serializeCookie(name, value, {
+    ...options,
+    secure: useSecureCookies(req),
+  });
 }
 
 function appendSetCookie(res, cookie) {
@@ -394,7 +389,25 @@ function mismatchRedirect(selection) {
   return `${page}?googleAuth=account-mismatch`;
 }
 
-function revokeMismatchedSession(req, res, selection) {
+function rollbackUnexpectedLink(store, beforeStore, accountType, accountId) {
+  if (!beforeStore || !accountId) return store;
+  const before = core.findLinkByAccount(beforeStore, accountType, accountId);
+  const current = core.findLinkByAccount(store, accountType, accountId);
+  if (!before || !current) return store;
+
+  const sameEmail = core.normalizeEmail(before.email) === core.normalizeEmail(current.email);
+  const wasUnverified = !String(before.sub || '').trim();
+  const becameVerified = Boolean(String(current.sub || '').trim());
+  if (!sameEmail || !wasUnverified || !becameVerified) return store;
+
+  const index = store.links.findIndex(
+    (entry) => entry?.accountType === accountType && entry?.accountId === accountId
+  );
+  if (index >= 0) store.links[index] = { ...before };
+  return store;
+}
+
+function revokeMismatchedSession(req, res, selection, beforeStore) {
   const location = String(res.getHeader('Location') || '');
   if (!selection || !location.includes('googleAuth=success')) return false;
 
@@ -408,8 +421,12 @@ function revokeMismatchedSession(req, res, selection) {
     return false;
   }
 
+  if (session?.userId) {
+    store = rollbackUnexpectedLink(store, beforeStore, expectedType, session.userId);
+  }
   store = core.removeSession(store, token);
   saveAuthStore(store);
+
   removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
   clearCookie(req, res, SESSION_COOKIE, true);
   clearCookie(req, res, SESSION_HINT_COOKIE, false);
@@ -420,6 +437,7 @@ function revokeMismatchedSession(req, res, selection) {
 function guardCallbackResponse(req, res, requestUrl) {
   if (requestUrl.pathname !== '/api/auth/google/callback') return;
   const selection = selectedAccountState(req);
+  const beforeStore = selection ? loadAuthStore() : null;
   const originalEnd = res.end.bind(res);
   let ending = false;
 
@@ -427,7 +445,7 @@ function guardCallbackResponse(req, res, requestUrl) {
     if (ending) return originalEnd(...args);
     ending = true;
     try {
-      revokeMismatchedSession(req, res, selection);
+      revokeMismatchedSession(req, res, selection, beforeStore);
     } catch (error) {
       console.error('[Student Google handoff] Sessiecontrole mislukt:', error?.message || error);
       removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
@@ -509,5 +527,6 @@ module.exports = {
     verifiedLinkConflicts,
     identityLinkedElsewhere,
     sessionTokenFromResponse,
+    rollbackUnexpectedLink,
   },
 };
