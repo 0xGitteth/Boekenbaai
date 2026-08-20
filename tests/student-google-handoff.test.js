@@ -117,13 +117,27 @@ function extractCookieValue(setCookieHeader, name) {
     );
     assert.ok(selectedCookie, 'Beveiligde leerlingselectiecookie ontbreekt');
 
-    const auto = await fetch(`${baseUrl}/api/auth/google/auto-link-request`, {
+    const selectedCookies =
+      `boekenbaai_google_pending=${encodeURIComponent(pendingToken)}; ` +
+      `boekenbaai_google_selected_account=${encodeURIComponent(selectedCookie)}`;
+
+    const raceSwitch = await fetch(`${baseUrl}/api/auth/google/link-request`, {
       method: 'POST',
       headers: {
-        Cookie:
-          `boekenbaai_google_pending=${encodeURIComponent(pendingToken)}; ` +
-          `boekenbaai_google_selected_account=${encodeURIComponent(selectedCookie)}`,
+        Cookie: selectedCookies,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ studentId: 'student-2' }),
+    });
+    assert.strictEqual(
+      raceSwitch.status,
+      409,
+      'De oude handmatige route mag de ondertekende selectie niet vóór auto-koppeling omzeilen'
+    );
+
+    const auto = await fetch(`${baseUrl}/api/auth/google/auto-link-request`, {
+      method: 'POST',
+      headers: { Cookie: selectedCookies },
     });
     const autoPayload = await auto.json();
     assert.strictEqual(auto.status, 202);
