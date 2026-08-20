@@ -38,18 +38,18 @@ function ensureParentDirectory(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
-function readJsonStrict(filePath, { missingValue = null, label = 'JSON-bestand' } = {}) {
+function readJsonStrict(filePath, { missingValue, label }) {
   let raw;
   try {
     raw = fs.readFileSync(filePath, 'utf8');
   } catch (error) {
-    if (error?.code === 'ENOENT' && missingValue !== null) return missingValue;
+    if (error?.code === 'ENOENT' && missingValue !== undefined) return missingValue;
     throw error;
   }
   try {
     return JSON.parse(raw);
   } catch (error) {
-    const wrapped = new Error(`${label} is beschadigd.`);
+    const wrapped = new Error(`${label || 'JSON-bestand'} is beschadigd.`);
     wrapped.code = 'CORRUPT_JSON';
     throw wrapped;
   }
@@ -57,7 +57,9 @@ function readJsonStrict(filePath, { missingValue = null, label = 'JSON-bestand' 
 
 function readMainDb() {
   const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
-  if (!db || typeof db !== 'object' || Array.isArray(db)) throw new Error('Boekenbaai database heeft een ongeldig formaat.');
+  if (!db || typeof db !== 'object' || Array.isArray(db)) {
+    throw new Error('Boekenbaai database heeft een ongeldig formaat.');
+  }
   if (!Array.isArray(db.users)) db.users = [];
   if (!Array.isArray(db.students)) db.students = [];
   if (!Array.isArray(db.classes)) db.classes = [];
@@ -69,9 +71,13 @@ function loadAuthStore() {
     missingValue: core.emptyAuthStore(),
     label: 'Auth-opslag',
   });
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Auth-opslag heeft een ongeldig formaat.');
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Auth-opslag heeft een ongeldig formaat.');
+  }
   for (const field of ['links', 'sessions', 'pendingIdentities', 'linkRequests']) {
-    if (raw[field] !== undefined && !Array.isArray(raw[field])) throw new Error(`Auth-opslagveld ${field} is ongeldig.`);
+    if (raw[field] !== undefined && !Array.isArray(raw[field])) {
+      throw new Error(`Auth-opslagveld ${field} is ongeldig.`);
+    }
   }
   return core.pruneStore(core.normalizeStore(raw));
 }
@@ -103,14 +109,30 @@ function parseCookies(req) {
 }
 
 function isHttpsRequest(req) {
-  const forwarded = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  const forwarded = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
   if (forwarded) return forwarded === 'https';
   return Boolean(req.socket?.encrypted);
 }
 
+function useSecureCookies(req) {
+  if (CONFIGURED_PUBLIC_URL) {
+    try {
+      return new URL(CONFIGURED_PUBLIC_URL).protocol === 'https:';
+    } catch (error) {
+      return isHttpsRequest(req);
+    }
+  }
+  return isHttpsRequest(req);
+}
+
 function serializeCookie(name, value, options = {}) {
   const parts = [`${name}=${encodeURIComponent(value)}`, `Path=${options.path || '/'}`];
-  if (options.maxAge !== undefined && options.maxAge !== null) parts.push(`Max-Age=${Math.max(0, Math.floor(options.maxAge))}`);
+  if (options.maxAge !== undefined && options.maxAge !== null) {
+    parts.push(`Max-Age=${Math.max(0, Math.floor(options.maxAge))}`);
+  }
   if (options.httpOnly) parts.push('HttpOnly');
   if (options.secure) parts.push('Secure');
   parts.push(`SameSite=${options.sameSite || 'Lax'}`);
@@ -124,16 +146,26 @@ function appendSetCookie(res, cookie) {
 }
 
 function setSessionCookies(req, res, token, remember) {
-  const secure = isHttpsRequest(req);
+  const secure = useSecureCookies(req);
   const maxAge = remember ? Math.floor(core.THIRTY_DAYS_MS / 1000) : undefined;
-  appendSetCookie(res, serializeCookie(SESSION_COOKIE, token, { httpOnly: true, secure, sameSite: 'Lax', maxAge }));
-  appendSetCookie(res, serializeCookie(SESSION_HINT_COOKIE, '1', { secure, sameSite: 'Lax', maxAge }));
+  appendSetCookie(res, serializeCookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure,
+    sameSite: 'Lax',
+    maxAge,
+  }));
+  appendSetCookie(res, serializeCookie(SESSION_HINT_COOKIE, '1', {
+    httpOnly: false,
+    secure,
+    sameSite: 'Lax',
+    maxAge,
+  }));
 }
 
 function clearCookie(req, res, name, httpOnly = true) {
   appendSetCookie(res, serializeCookie(name, '', {
     httpOnly,
-    secure: isHttpsRequest(req),
+    secure: useSecureCookies(req),
     sameSite: 'Lax',
     maxAge: 0,
   }));
@@ -194,7 +226,9 @@ function parseBody(req) {
 
 function getBaseUrl(req) {
   if (CONFIGURED_PUBLIC_URL) return CONFIGURED_PUBLIC_URL;
-  const host = String(req.headers.host || '').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .split(',')[0]
+    .trim();
   return `${isHttpsRequest(req) ? 'https' : 'http'}://${host}`;
 }
 
@@ -212,7 +246,9 @@ function findAccount(db, type, id) {
     const student = db.students.find((entry) => entry?.id === id);
     return student ? { ...student, role: 'student' } : null;
   }
-  return db.users.find((entry) => entry?.id === id && ['teacher', 'admin'].includes(entry?.role)) || null;
+  return db.users.find(
+    (entry) => entry?.id === id && ['teacher', 'admin'].includes(entry?.role)
+  ) || null;
 }
 
 function getSessionContextByToken(token) {
@@ -221,7 +257,11 @@ function getSessionContextByToken(token) {
   if (!session) {
     const persistent = core.resolveSession(loadAuthStore(), token);
     if (persistent) {
-      session = { userId: persistent.userId, type: persistent.type, createdAt: persistent.createdAt };
+      session = {
+        userId: persistent.userId,
+        type: persistent.type,
+        createdAt: persistent.createdAt,
+      };
       sessionsMap.set(token, session);
     }
   }
@@ -245,7 +285,9 @@ function hydrateDelegatedRequest(req) {
   const context = getAuthContext(req);
   if (!context) return null;
   const bearer = getBearerToken(req);
-  if (!bearer || bearer === SESSION_SENTINEL || bearer !== context.token) req.headers.authorization = `Bearer ${context.token}`;
+  if (!bearer || bearer === SESSION_SENTINEL || bearer !== context.token) {
+    req.headers.authorization = `Bearer ${context.token}`;
+  }
   return context;
 }
 
@@ -253,7 +295,12 @@ function createLoginSession(req, res, userId, type, remember) {
   const token = crypto.randomBytes(32).toString('base64url');
   const createdAt = Date.now();
   sessionsMap.set(token, { userId, type, createdAt });
-  const result = core.upsertSession(loadAuthStore(), token, { userId, type, remember, now: createdAt });
+  const result = core.upsertSession(loadAuthStore(), token, {
+    userId,
+    type,
+    remember,
+    now: createdAt,
+  });
   saveAuthStore(result.store);
   setSessionCookies(req, res, token, remember);
   return token;
@@ -262,7 +309,9 @@ function createLoginSession(req, res, userId, type, remember) {
 function removeLoginSession(req, res) {
   const bearer = getBearerToken(req);
   const cookieToken = parseCookies(req)[SESSION_COOKIE] || '';
-  const candidates = new Set([bearer !== SESSION_SENTINEL ? bearer : '', cookieToken].filter(Boolean));
+  const candidates = new Set(
+    [bearer !== SESSION_SENTINEL ? bearer : '', cookieToken].filter(Boolean)
+  );
   let store = loadAuthStore();
   for (const token of candidates) {
     sessionsMap.delete(token);
@@ -277,22 +326,40 @@ function isGoogleConfigured() {
 }
 
 function makeOauthErrorRedirect(type, code) {
-  return `${type === 'staff' ? '/staff.html' : '/index.html'}?googleAuth=${encodeURIComponent(code || 'error')}`;
+  const page = type === 'staff' ? '/staff.html' : '/index.html';
+  return `${page}?googleAuth=${encodeURIComponent(code || 'error')}`;
 }
 
 function normalizeName(value) {
-  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL') : '';
+  return typeof value === 'string'
+    ? value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL')
+    : '';
 }
 
-function findLoginHint(type, enteredName) {
+function getAccountCandidates(db, type, enteredName, accountId = '') {
+  if (accountId) {
+    const account = findAccount(db, type === 'staff' ? 'staff' : 'student', accountId);
+    return account ? [account] : [];
+  }
   const wanted = normalizeName(enteredName);
-  if (!wanted) return '';
+  if (!wanted) return [];
+  if (type === 'staff') {
+    return db.users.filter(
+      (entry) =>
+        ['teacher', 'admin'].includes(entry?.role) &&
+        (normalizeName(entry?.name) === wanted || normalizeName(entry?.username) === wanted)
+    );
+  }
+  return db.students.filter(
+    (entry) => normalizeName(entry?.name) === wanted || normalizeName(entry?.username) === wanted
+  );
+}
+
+function findLoginHint(type, enteredName, accountId = '') {
   const db = readMainDb();
-  const accountType = type === 'staff' ? 'staff' : 'student';
-  const candidates = type === 'staff'
-    ? db.users.filter((entry) => ['teacher', 'admin'].includes(entry?.role) && (normalizeName(entry?.name) === wanted || normalizeName(entry?.username) === wanted))
-    : db.students.filter((entry) => normalizeName(entry?.name) === wanted || normalizeName(entry?.username) === wanted);
+  const candidates = getAccountCandidates(db, type, enteredName, accountId);
   if (candidates.length !== 1 || !candidates[0]?.id) return '';
+  const accountType = type === 'staff' ? 'staff' : 'student';
   const link = core.findLinkByAccount(loadAuthStore(), accountType, candidates[0].id);
   const email = core.normalizeEmail(link?.email);
   return core.isAllowedSchoolEmail(email, GOOGLE_DOMAIN) ? email : '';
@@ -320,14 +387,19 @@ async function exchangeGoogleCode(code, redirectUri) {
   return payload.id_token;
 }
 
-async function verifyGoogleIdentity(idToken) {
+async function verifyGoogleIdentity(idToken, expectedNonce) {
   if (typeof globalThis.__BOEKENBAAI_VERIFY_GOOGLE_ID_TOKEN === 'function') {
     return globalThis.__BOEKENBAAI_VERIFY_GOOGLE_ID_TOKEN(idToken, {
       clientId: GOOGLE_CLIENT_ID,
       domain: GOOGLE_DOMAIN,
+      expectedNonce,
     });
   }
-  return verifyGoogleIdToken(idToken, { clientId: GOOGLE_CLIENT_ID, domain: GOOGLE_DOMAIN });
+  return verifyGoogleIdToken(idToken, {
+    clientId: GOOGLE_CLIENT_ID,
+    domain: GOOGLE_DOMAIN,
+    expectedNonce,
+  });
 }
 
 function resolveLinkedAccount(db, store, accountType, identity) {
@@ -335,7 +407,9 @@ function resolveLinkedAccount(db, store, accountType, identity) {
   if (!link) return { account: null, store };
   const account = findAccount(db, accountType, link.accountId);
   if (!account) return { account: null, store };
-  if (link.sub === identity.sub && core.normalizeEmail(link.email) === identity.email) return { account, store };
+  if (link.sub === identity.sub && core.normalizeEmail(link.email) === identity.email) {
+    return { account, store };
+  }
   const updated = core.upsertLink(store, {
     accountType,
     accountId: account.id,
@@ -350,7 +424,9 @@ function createPendingIdentity(req, res, identity) {
   const token = crypto.randomBytes(28).toString('base64url');
   const now = Date.now();
   const store = loadAuthStore();
-  store.pendingIdentities = store.pendingIdentities.filter((entry) => entry?.sub !== identity.sub && entry?.email !== identity.email);
+  store.pendingIdentities = store.pendingIdentities.filter(
+    (entry) => entry?.sub !== identity.sub && core.normalizeEmail(entry?.email) !== identity.email
+  );
   store.pendingIdentities.push({
     tokenHash: core.tokenHash(token),
     sub: identity.sub,
@@ -363,7 +439,7 @@ function createPendingIdentity(req, res, identity) {
   saveAuthStore(store);
   appendSetCookie(res, serializeCookie(PENDING_COOKIE, token, {
     httpOnly: true,
-    secure: isHttpsRequest(req),
+    secure: useSecureCookies(req),
     sameSite: 'Lax',
     maxAge: Math.floor(core.PENDING_IDENTITY_MAX_AGE_MS / 1000),
   }));
@@ -373,22 +449,25 @@ function getPendingIdentity(req, store = loadAuthStore()) {
   const token = parseCookies(req)[PENDING_COOKIE] || '';
   if (!token) return null;
   const hash = core.tokenHash(token);
-  return store.pendingIdentities.find((entry) => entry?.tokenHash === hash && Number(entry?.expiresAt) > Date.now()) || null;
+  return store.pendingIdentities.find(
+    (entry) => entry?.tokenHash === hash && Number(entry?.expiresAt) > Date.now()
+  ) || null;
 }
 
 function removePendingIdentity(store, pending) {
   if (!pending) return store;
-  store.pendingIdentities = store.pendingIdentities.filter((entry) => entry?.tokenHash !== pending.tokenHash);
+  store.pendingIdentities = store.pendingIdentities.filter(
+    (entry) => entry?.tokenHash !== pending.tokenHash
+  );
   return store;
 }
 
-function getStudentClassIds(db, studentId) {
-  return core.getStudentClassIds(db, studentId);
-}
-
 function getClassNamesForStudent(db, studentId) {
-  const classIds = new Set(getStudentClassIds(db, studentId));
-  return db.classes.filter((klass) => classIds.has(klass.id)).map((klass) => klass.name).filter(Boolean);
+  const classIds = new Set(core.getStudentClassIds(db, studentId));
+  return db.classes
+    .filter((klass) => classIds.has(klass.id))
+    .map((klass) => klass.name)
+    .filter(Boolean);
 }
 
 function getStudentSearchDisplayName(student) {
@@ -403,7 +482,12 @@ function accessibleStudents(db, user) {
 }
 
 function pendingRequestsForStaff(db, store, user) {
-  return store.linkRequests.filter((request) => request?.status === 'pending' && request?.studentId && core.canStaffManageStudent(db, user, request.studentId));
+  return store.linkRequests.filter(
+    (request) =>
+      request?.status === 'pending' &&
+      request?.studentId &&
+      core.canStaffManageStudent(db, user, request.studentId)
+  );
 }
 
 function sanitizeLinkRequest(db, request) {
@@ -421,8 +505,14 @@ function sanitizeLinkRequest(db, request) {
 
 function findLatestIdentityRequest(store, pending) {
   return store.linkRequests
-    .filter((entry) => entry?.sub === pending.sub && core.normalizeEmail(entry?.email) === pending.email)
-    .sort((a, b) => Date.parse(b?.createdAt || '') - Date.parse(a?.createdAt || ''))[0] || null;
+    .filter(
+      (entry) => entry?.sub === pending.sub && core.normalizeEmail(entry?.email) === pending.email
+    )
+    .sort((left, right) => {
+      const leftTime = Date.parse(left?.createdAt || '') || 0;
+      const rightTime = Date.parse(right?.createdAt || '') || 0;
+      return rightTime - leftTime;
+    })[0] || null;
 }
 
 function verifiedLinkConflicts(link, email, sub) {
@@ -432,71 +522,108 @@ function verifiedLinkConflicts(link, email, sub) {
   );
 }
 
+function handleGoogleStart(req, res, requestUrl) {
+  const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
+  const remember = type === 'staff' && requestUrl.searchParams.get('remember') === '1';
+  if (!isGoogleConfigured()) {
+    return redirect(res, makeOauthErrorRedirect(type, 'not-configured'));
+  }
+
+  const nonce = crypto.randomBytes(20).toString('base64url');
+  const state = core.createSignedState({ type, remember, nonce, iat: Date.now() }, AUTH_SECRET);
+  appendSetCookie(res, serializeCookie(OAUTH_NONCE_COOKIE, nonce, {
+    httpOnly: true,
+    secure: useSecureCookies(req),
+    sameSite: 'Lax',
+    maxAge: 10 * 60,
+  }));
+
+  const authorize = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authorize.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+  authorize.searchParams.set('redirect_uri', getRedirectUri(req));
+  authorize.searchParams.set('response_type', 'code');
+  authorize.searchParams.set('scope', 'openid email profile');
+  authorize.searchParams.set('state', state);
+  authorize.searchParams.set('nonce', nonce);
+  authorize.searchParams.set('hd', GOOGLE_DOMAIN);
+  const loginHint = findLoginHint(
+    type,
+    requestUrl.searchParams.get('name') || '',
+    requestUrl.searchParams.get('accountId') || ''
+  );
+  if (loginHint) authorize.searchParams.set('login_hint', loginHint);
+  else authorize.searchParams.set('prompt', 'select_account');
+  return redirect(res, authorize.toString());
+}
+
+async function handleGoogleCallback(req, res, requestUrl) {
+  const state = core.verifySignedState(requestUrl.searchParams.get('state'), AUTH_SECRET);
+  const type = state?.type === 'staff' ? 'staff' : 'student';
+  const nonceCookie = parseCookies(req)[OAUTH_NONCE_COOKIE] || '';
+  if (!state || !state.nonce || state.nonce !== nonceCookie) {
+    return redirect(res, makeOauthErrorRedirect(type, 'state-error'));
+  }
+  clearCookie(req, res, OAUTH_NONCE_COOKIE, true);
+
+  if (requestUrl.searchParams.get('error')) {
+    return redirect(res, makeOauthErrorRedirect(type, 'oauth-error'));
+  }
+  const code = requestUrl.searchParams.get('code') || '';
+  if (!code) return redirect(res, makeOauthErrorRedirect(type, 'oauth-error'));
+
+  try {
+    const idToken = await exchangeGoogleCode(code, getRedirectUri(req));
+    const identity = await verifyGoogleIdentity(idToken, state.nonce);
+    const db = readMainDb();
+    let store = loadAuthStore();
+    const resolved = resolveLinkedAccount(db, store, type, identity);
+    store = resolved.store;
+
+    if (resolved.account) {
+      saveAuthStore(store);
+      createLoginSession(req, res, resolved.account.id, type, Boolean(state.remember));
+      clearCookie(req, res, PENDING_COOKIE, true);
+      return redirect(
+        res,
+        type === 'staff' ? '/staff.html?googleAuth=success' : '/index.html?googleAuth=success'
+      );
+    }
+    if (type === 'staff') {
+      return redirect(res, makeOauthErrorRedirect('staff', 'staff-unlinked'));
+    }
+    createPendingIdentity(req, res, identity);
+    return redirect(res, '/index.html?googleAuth=link-required');
+  } catch (error) {
+    console.warn('[Google Auth] Callback mislukt:', error?.message || error);
+    const codeName = error?.code === 'WRONG_DOMAIN' ? 'wrong-domain' : 'oauth-error';
+    return redirect(res, makeOauthErrorRedirect(type, codeName));
+  }
+}
+
 async function handleCustomApi(req, res, requestUrl) {
   const pathname = requestUrl.pathname;
 
   if (req.method === 'GET' && pathname === '/api/auth/google/config') {
-    return sendJson(res, 200, { enabled: isGoogleConfigured(), domain: GOOGLE_DOMAIN, rememberDays: 30 });
+    return sendJson(res, 200, {
+      enabled: isGoogleConfigured(),
+      domain: GOOGLE_DOMAIN,
+      rememberDays: 30,
+    });
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/google/start') {
-    const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
-    const remember = type === 'staff' && requestUrl.searchParams.get('remember') === '1';
-    if (!isGoogleConfigured()) return redirect(res, makeOauthErrorRedirect(type, 'not-configured'));
-    const nonce = crypto.randomBytes(20).toString('base64url');
-    const state = core.createSignedState({ type, remember, nonce, iat: Date.now() }, AUTH_SECRET);
-    appendSetCookie(res, serializeCookie(OAUTH_NONCE_COOKIE, nonce, {
-      httpOnly: true,
-      secure: isHttpsRequest(req),
-      sameSite: 'Lax',
-      maxAge: 10 * 60,
-    }));
-    const authorize = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authorize.searchParams.set('client_id', GOOGLE_CLIENT_ID);
-    authorize.searchParams.set('redirect_uri', getRedirectUri(req));
-    authorize.searchParams.set('response_type', 'code');
-    authorize.searchParams.set('scope', 'openid email profile');
-    authorize.searchParams.set('state', state);
-    authorize.searchParams.set('hd', GOOGLE_DOMAIN);
-    const loginHint = findLoginHint(type, requestUrl.searchParams.get('name') || '');
-    if (loginHint) authorize.searchParams.set('login_hint', loginHint);
-    else authorize.searchParams.set('prompt', 'select_account');
-    return redirect(res, authorize.toString());
+    return handleGoogleStart(req, res, requestUrl);
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/google/callback') {
-    const state = core.verifySignedState(requestUrl.searchParams.get('state'), AUTH_SECRET);
-    const type = state?.type === 'staff' ? 'staff' : 'student';
-    const nonceCookie = parseCookies(req)[OAUTH_NONCE_COOKIE] || '';
-    if (!state || !state.nonce || state.nonce !== nonceCookie) return redirect(res, makeOauthErrorRedirect(type, 'state-error'));
-    clearCookie(req, res, OAUTH_NONCE_COOKIE, true);
-    const code = requestUrl.searchParams.get('code') || '';
-    if (!code) return redirect(res, makeOauthErrorRedirect(type, 'oauth-error'));
-    try {
-      const idToken = await exchangeGoogleCode(code, getRedirectUri(req));
-      const identity = await verifyGoogleIdentity(idToken);
-      const db = readMainDb();
-      let store = loadAuthStore();
-      const resolved = resolveLinkedAccount(db, store, type, identity);
-      store = resolved.store;
-      if (resolved.account) {
-        saveAuthStore(store);
-        createLoginSession(req, res, resolved.account.id, type, Boolean(state.remember));
-        clearCookie(req, res, PENDING_COOKIE, true);
-        return redirect(res, type === 'staff' ? '/staff.html?googleAuth=success' : '/index.html?googleAuth=success');
-      }
-      if (type === 'staff') return redirect(res, makeOauthErrorRedirect('staff', 'staff-unlinked'));
-      createPendingIdentity(req, res, identity);
-      return redirect(res, '/index.html?googleAuth=link-required');
-    } catch (error) {
-      console.warn('[Google Auth] Callback mislukt:', error?.message || error);
-      return redirect(res, makeOauthErrorRedirect(type, error?.code === 'WRONG_DOMAIN' ? 'wrong-domain' : 'oauth-error'));
-    }
+    return handleGoogleCallback(req, res, requestUrl);
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/session/persist') {
     const context = getAuthContext(req);
-    if (!context || !['teacher', 'admin'].includes(context.user.role)) return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
+    if (!context || !['teacher', 'admin'].includes(context.user.role)) {
+      return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
+    }
     const result = core.upsertSession(loadAuthStore(), context.token, {
       userId: context.session.userId,
       type: 'staff',
@@ -509,15 +636,22 @@ async function handleCustomApi(req, res, requestUrl) {
 
   if (req.method === 'GET' && pathname === '/api/auth/session/status') {
     const context = getAuthContext(req);
-    return sendJson(res, 200, { authenticated: Boolean(context), role: context?.user?.role || null });
+    return sendJson(res, 200, {
+      authenticated: Boolean(context),
+      role: context?.user?.role || null,
+    });
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/google/pending') {
     const store = loadAuthStore();
     const pending = getPendingIdentity(req, store);
-    if (!pending) return sendJson(res, 404, { message: 'Geen openstaande Google-koppeling' });
+    if (!pending) {
+      return sendJson(res, 404, { message: 'Geen openstaande Google-koppeling' });
+    }
     const request = findLatestIdentityRequest(store, pending);
-    const link = request?.studentId ? core.findLinkByAccount(store, 'student', request.studentId) : null;
+    const link = request?.studentId
+      ? core.findLinkByAccount(store, 'student', request.studentId)
+      : null;
     const approved = Boolean(
       request?.status === 'approved' &&
       link &&
@@ -535,32 +669,50 @@ async function handleCustomApi(req, res, requestUrl) {
 
   if (req.method === 'GET' && pathname === '/api/auth/google/student-options') {
     const pending = getPendingIdentity(req);
-    if (!pending) return sendJson(res, 401, { message: 'Google-koppeling is verlopen' });
-    const query = String(requestUrl.searchParams.get('q') || '').trim().toLowerCase();
+    if (!pending) {
+      return sendJson(res, 401, { message: 'Google-koppeling is verlopen' });
+    }
+    const query = String(requestUrl.searchParams.get('q') || '').trim().toLocaleLowerCase('nl-NL');
     if (query.length < 2) return sendJson(res, 200, { matches: [] });
     const db = readMainDb();
     const matches = db.students
-      .filter((student) => String(student?.name || '').toLowerCase().includes(query))
+      .filter((student) => normalizeName(student?.name).includes(query))
       .slice(0, 10)
-      .map((student) => ({ id: student.id, displayName: getStudentSearchDisplayName(student), classNames: getClassNamesForStudent(db, student.id) }));
+      .map((student) => ({
+        id: student.id,
+        displayName: getStudentSearchDisplayName(student),
+        classNames: getClassNamesForStudent(db, student.id),
+      }));
     return sendJson(res, 200, { matches });
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/google/link-request') {
-    let store = loadAuthStore();
-    const pending = getPendingIdentity(req, store);
-    if (!pending) return sendJson(res, 401, { message: 'Google-koppeling is verlopen' });
     const body = await parseBody(req);
     const studentId = String(body.studentId || '').trim();
     const db = readMainDb();
-    if (!db.students.some((entry) => entry?.id === studentId)) return sendJson(res, 404, { message: 'Leerlingaccount niet gevonden' });
+    if (!db.students.some((entry) => entry?.id === studentId)) {
+      return sendJson(res, 404, { message: 'Leerlingaccount niet gevonden' });
+    }
+
+    let store = loadAuthStore();
+    const pending = getPendingIdentity(req, store);
+    if (!pending) {
+      return sendJson(res, 401, { message: 'Google-koppeling is verlopen' });
+    }
     const existing = core.findLinkByAccount(store, 'student', studentId);
     if (verifiedLinkConflicts(existing, pending.email, pending.sub)) {
-      return sendJson(res, 409, { message: 'Dit leerlingaccount is al aan een ander geverifieerd Google-account gekoppeld.' });
+      return sendJson(res, 409, {
+        message: 'Dit leerlingaccount is al aan een ander geverifieerd Google-account gekoppeld.',
+      });
     }
+
     if (existing && !existing.sub && core.normalizeEmail(existing.email) === pending.email) {
       const linked = core.upsertLink(store, {
-        accountType: 'student', accountId: studentId, email: pending.email, sub: pending.sub, linkedBy: 'prelinked-email',
+        accountType: 'student',
+        accountId: studentId,
+        email: pending.email,
+        sub: pending.sub,
+        linkedBy: 'prelinked-email',
       });
       store = removePendingIdentity(linked.store, pending);
       saveAuthStore(store);
@@ -568,31 +720,51 @@ async function handleCustomApi(req, res, requestUrl) {
       clearCookie(req, res, PENDING_COOKIE, true);
       return sendJson(res, 200, { approved: true, loggedIn: true });
     }
+
+    const nowIso = new Date().toISOString();
     for (const entry of store.linkRequests) {
-      if (entry?.status === 'pending' && (entry?.sub === pending.sub || core.normalizeEmail(entry?.email) === pending.email)) {
+      if (
+        entry?.status === 'pending' &&
+        (entry?.sub === pending.sub || core.normalizeEmail(entry?.email) === pending.email)
+      ) {
         entry.status = 'superseded';
-        entry.updatedAt = new Date().toISOString();
+        entry.updatedAt = nowIso;
       }
     }
-    const nowIso = new Date().toISOString();
     const request = {
-      id: crypto.randomUUID(), studentId, email: pending.email, sub: pending.sub,
-      googleName: pending.name || '', status: 'pending', createdAt: nowIso, updatedAt: nowIso,
+      id: crypto.randomUUID(),
+      studentId,
+      email: pending.email,
+      sub: pending.sub,
+      googleName: pending.name || '',
+      status: 'pending',
+      createdAt: nowIso,
+      updatedAt: nowIso,
     };
     store.linkRequests.push(request);
     saveAuthStore(store);
-    return sendJson(res, 202, { approved: false, requestId: request.id, message: 'Koppelverzoek verstuurd naar je docent.' });
+    return sendJson(res, 202, {
+      approved: false,
+      requestId: request.id,
+      message: 'Koppelverzoek verstuurd naar je docent.',
+    });
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/google/pending/complete') {
     let store = loadAuthStore();
     const pending = getPendingIdentity(req, store);
-    if (!pending) return sendJson(res, 401, { message: 'Google-koppeling is verlopen' });
+    if (!pending) {
+      return sendJson(res, 401, { message: 'Google-koppeling is verlopen' });
+    }
     const request = findLatestIdentityRequest(store, pending);
-    if (!request || request.status !== 'approved') return sendJson(res, 409, { message: 'De koppeling is nog niet goedgekeurd' });
+    if (!request || request.status !== 'approved') {
+      return sendJson(res, 409, { message: 'De koppeling is nog niet goedgekeurd' });
+    }
     const link = core.findLinkByAccount(store, 'student', request.studentId);
     if (!link || core.normalizeEmail(link.email) !== pending.email || link.sub !== pending.sub) {
-      return sendJson(res, 409, { message: 'De goedgekeurde koppeling komt niet overeen met dit Google-account' });
+      return sendJson(res, 409, {
+        message: 'De goedgekeurde koppeling komt niet overeen met dit Google-account',
+      });
     }
     store = removePendingIdentity(store, pending);
     saveAuthStore(store);
@@ -603,92 +775,170 @@ async function handleCustomApi(req, res, requestUrl) {
 
   if (req.method === 'GET' && pathname === '/api/auth/google/manage') {
     const context = getAuthContext(req);
-    if (!context || !['teacher', 'admin'].includes(context.user.role)) return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
+    if (!context || !['teacher', 'admin'].includes(context.user.role)) {
+      return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
+    }
     const store = loadAuthStore();
     const students = accessibleStudents(context.db, context.user).map((student) => {
       const link = core.findLinkByAccount(store, 'student', student.id);
-      return { id: student.id, name: student.name || '', classNames: getClassNamesForStudent(context.db, student.id), googleEmail: link?.email || '', googleVerified: Boolean(link?.sub) };
+      return {
+        id: student.id,
+        name: student.name || '',
+        classNames: getClassNamesForStudent(context.db, student.id),
+        googleEmail: link?.email || '',
+        googleVerified: Boolean(link?.sub),
+      };
     });
-    const requests = pendingRequestsForStaff(context.db, store, context.user).map((request) => sanitizeLinkRequest(context.db, request));
+    const requests = pendingRequestsForStaff(context.db, store, context.user).map(
+      (request) => sanitizeLinkRequest(context.db, request)
+    );
     const staff = context.user.role === 'admin'
-      ? context.db.users.filter((entry) => ['teacher', 'admin'].includes(entry?.role)).map((entry) => {
+      ? context.db.users
+        .filter((entry) => ['teacher', 'admin'].includes(entry?.role))
+        .map((entry) => {
           const link = core.findLinkByAccount(store, 'staff', entry.id);
-          return { id: entry.id, name: entry.name || entry.username || '', role: entry.role, googleEmail: link?.email || '', googleVerified: Boolean(link?.sub) };
+          return {
+            id: entry.id,
+            name: entry.name || entry.username || '',
+            role: entry.role,
+            googleEmail: link?.email || '',
+            googleVerified: Boolean(link?.sub),
+          };
         })
       : [];
-    return sendJson(res, 200, { role: context.user.role, domain: GOOGLE_DOMAIN, students, staff, requests });
+    return sendJson(res, 200, {
+      role: context.user.role,
+      domain: GOOGLE_DOMAIN,
+      students,
+      staff,
+      requests,
+    });
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/google/student-email') {
-    const context = getAuthContext(req);
-    if (!context || !['teacher', 'admin'].includes(context.user.role)) return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
     const body = await parseBody(req);
+    const context = getAuthContext(req);
+    if (!context || !['teacher', 'admin'].includes(context.user.role)) {
+      return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
+    }
     const studentId = String(body.studentId || '').trim();
     const email = core.normalizeEmail(body.email);
-    if (!core.canStaffManageStudent(context.db, context.user, studentId)) return sendJson(res, 403, { message: 'Je mag alleen leerlingen uit jouw eigen klassen koppelen' });
-    if (!core.isAllowedSchoolEmail(email, GOOGLE_DOMAIN)) return sendJson(res, 400, { message: `Gebruik een @${GOOGLE_DOMAIN} e-mailadres` });
-    if (!context.db.students.some((entry) => entry?.id === studentId)) return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+    if (!core.canStaffManageStudent(context.db, context.user, studentId)) {
+      return sendJson(res, 403, {
+        message: 'Je mag alleen leerlingen uit jouw eigen klassen koppelen',
+      });
+    }
+    if (!core.isAllowedSchoolEmail(email, GOOGLE_DOMAIN)) {
+      return sendJson(res, 400, { message: `Gebruik een @${GOOGLE_DOMAIN} e-mailadres` });
+    }
+    if (!context.db.students.some((entry) => entry?.id === studentId)) {
+      return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+    }
     try {
       const store = loadAuthStore();
       const current = core.findLinkByAccount(store, 'student', studentId);
       const linked = core.upsertLink(store, {
-        accountType: 'student', accountId: studentId, email,
-        sub: current && core.normalizeEmail(current.email) === email ? current.sub : '', linkedBy: context.user.id,
+        accountType: 'student',
+        accountId: studentId,
+        email,
+        sub: current && core.normalizeEmail(current.email) === email ? current.sub : '',
+        linkedBy: context.user.id,
       });
       saveAuthStore(linked.store);
-      return sendJson(res, 200, { studentId, googleEmail: linked.link.email, googleVerified: Boolean(linked.link.sub) });
+      return sendJson(res, 200, {
+        studentId,
+        googleEmail: linked.link.email,
+        googleVerified: Boolean(linked.link.sub),
+      });
     } catch (error) {
       return sendJson(res, 409, { message: error.message });
     }
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/google/staff-email') {
-    const context = getAuthContext(req);
-    if (!context || context.user.role !== 'admin') return sendJson(res, 403, { message: 'Alleen beheerders kunnen medewerkeraccounts koppelen' });
     const body = await parseBody(req);
+    const context = getAuthContext(req);
+    if (!context || context.user.role !== 'admin') {
+      return sendJson(res, 403, { message: 'Alleen beheerders kunnen medewerkeraccounts koppelen' });
+    }
     const staffId = String(body.staffId || '').trim();
     const email = core.normalizeEmail(body.email);
-    if (!core.isAllowedSchoolEmail(email, GOOGLE_DOMAIN)) return sendJson(res, 400, { message: `Gebruik een @${GOOGLE_DOMAIN} e-mailadres` });
-    if (!context.db.users.some((entry) => entry?.id === staffId && ['teacher', 'admin'].includes(entry?.role))) return sendJson(res, 404, { message: 'Medewerker niet gevonden' });
+    if (!core.isAllowedSchoolEmail(email, GOOGLE_DOMAIN)) {
+      return sendJson(res, 400, { message: `Gebruik een @${GOOGLE_DOMAIN} e-mailadres` });
+    }
+    if (!context.db.users.some(
+      (entry) => entry?.id === staffId && ['teacher', 'admin'].includes(entry?.role)
+    )) {
+      return sendJson(res, 404, { message: 'Medewerker niet gevonden' });
+    }
     try {
       const store = loadAuthStore();
       const current = core.findLinkByAccount(store, 'staff', staffId);
       const linked = core.upsertLink(store, {
-        accountType: 'staff', accountId: staffId, email,
-        sub: current && core.normalizeEmail(current.email) === email ? current.sub : '', linkedBy: context.user.id,
+        accountType: 'staff',
+        accountId: staffId,
+        email,
+        sub: current && core.normalizeEmail(current.email) === email ? current.sub : '',
+        linkedBy: context.user.id,
       });
       saveAuthStore(linked.store);
-      return sendJson(res, 200, { staffId, googleEmail: linked.link.email, googleVerified: Boolean(linked.link.sub) });
+      return sendJson(res, 200, {
+        staffId,
+        googleEmail: linked.link.email,
+        googleVerified: Boolean(linked.link.sub),
+      });
     } catch (error) {
       return sendJson(res, 409, { message: error.message });
     }
   }
 
-  const actionMatch = pathname.match(/^\/api\/auth\/google\/link-requests\/([\w-]+)\/(approve|deny)$/);
+  const actionMatch = pathname.match(
+    /^\/api\/auth\/google\/link-requests\/([\w-]+)\/(approve|deny)$/
+  );
   if (req.method === 'POST' && actionMatch) {
     const context = getAuthContext(req);
-    if (!context || !['teacher', 'admin'].includes(context.user.role)) return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
+    if (!context || !['teacher', 'admin'].includes(context.user.role)) {
+      return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
+    }
     let store = loadAuthStore();
     const request = store.linkRequests.find((entry) => entry?.id === actionMatch[1]);
-    if (!request || request.status !== 'pending') return sendJson(res, 404, { message: 'Openstaand koppelverzoek niet gevonden' });
-    if (!core.canStaffManageStudent(context.db, context.user, request.studentId)) return sendJson(res, 403, { message: 'Dit verzoek hoort niet bij een leerling uit jouw klas' });
+    if (!request || request.status !== 'pending') {
+      return sendJson(res, 404, { message: 'Openstaand koppelverzoek niet gevonden' });
+    }
+    if (!core.canStaffManageStudent(context.db, context.user, request.studentId)) {
+      return sendJson(res, 403, {
+        message: 'Dit verzoek hoort niet bij een leerling uit jouw klas',
+      });
+    }
+
     const nowIso = new Date().toISOString();
     if (actionMatch[2] === 'deny') {
-      request.status = 'denied'; request.updatedAt = nowIso; request.reviewedBy = context.user.id;
+      request.status = 'denied';
+      request.updatedAt = nowIso;
+      request.reviewedBy = context.user.id;
       saveAuthStore(store);
       return sendJson(res, 200, { status: 'denied' });
     }
+
     const existing = core.findLinkByAccount(store, 'student', request.studentId);
     if (verifiedLinkConflicts(existing, request.email, request.sub)) {
-      return sendJson(res, 409, { message: 'Dit leerlingaccount is al aan een ander geverifieerd Google-account gekoppeld.' });
+      return sendJson(res, 409, {
+        message: 'Dit leerlingaccount is al aan een ander geverifieerd Google-account gekoppeld.',
+      });
     }
     try {
       const linked = core.upsertLink(store, {
-        accountType: 'student', accountId: request.studentId, email: request.email, sub: request.sub, linkedBy: context.user.id,
+        accountType: 'student',
+        accountId: request.studentId,
+        email: request.email,
+        sub: request.sub,
+        linkedBy: context.user.id,
       });
       store = linked.store;
       const updated = store.linkRequests.find((entry) => entry?.id === request.id);
-      updated.status = 'approved'; updated.updatedAt = nowIso; updated.approvedBy = context.user.id;
+      updated.status = 'approved';
+      updated.updatedAt = nowIso;
+      updated.approvedBy = context.user.id;
       saveAuthStore(store);
       return sendJson(res, 200, { status: 'approved' });
     } catch (error) {
@@ -699,28 +949,51 @@ async function handleCustomApi(req, res, requestUrl) {
   return false;
 }
 
-function injectGoogleAssets(res, listener, req) {
+function injectGoogleAssets(req, res, listener) {
   const originalWriteHead = res.writeHead.bind(res);
   const originalEnd = res.end.bind(res);
   let contentType = '';
+
   res.writeHead = function patchedWriteHead(statusCode, statusMessageOrHeaders, maybeHeaders) {
-    const headers = typeof statusMessageOrHeaders === 'object' && statusMessageOrHeaders !== null ? statusMessageOrHeaders : maybeHeaders;
-    const entry = headers && typeof headers === 'object' ? Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-type') : null;
+    const headers =
+      typeof statusMessageOrHeaders === 'object' && statusMessageOrHeaders !== null
+        ? statusMessageOrHeaders
+        : maybeHeaders;
+    const entry = headers && typeof headers === 'object'
+      ? Object.entries(headers).find(([key]) => key.toLowerCase() === 'content-type')
+      : null;
     if (entry) contentType = String(entry[1] || '');
     if (!contentType) contentType = String(res.getHeader('Content-Type') || '');
     return originalWriteHead(statusCode, statusMessageOrHeaders, maybeHeaders);
   };
+
   res.end = function patchedEnd(chunk, encoding, callback) {
     const detected = contentType || String(res.getHeader('Content-Type') || '');
     if (detected.includes('text/html') && chunk != null) {
       let html = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
-      if (!html.includes('/google-auth.css')) html = html.replace(/<\/head>/i, '    <link rel="stylesheet" href="/google-auth.css" />\n  </head>');
-      if (!html.includes('/google-auth.js')) html = html.replace(/<\/body>/i, '    <script src="/google-auth.js"></script>\n  </body>');
-      if (!html.includes('/google-login-hint.js')) html = html.replace(/<\/body>/i, '    <script src="/google-login-hint.js"></script>\n  </body>');
+      if (!html.includes('/google-auth.css')) {
+        html = html.replace(
+          /<\/head>/i,
+          '    <link rel="stylesheet" href="/google-auth.css" />\n  </head>'
+        );
+      }
+      if (!html.includes('/google-auth.js')) {
+        html = html.replace(
+          /<\/body>/i,
+          '    <script src="/google-auth.js"></script>\n  </body>'
+        );
+      }
+      if (!html.includes('/google-login-hint.js')) {
+        html = html.replace(
+          /<\/body>/i,
+          '    <script src="/google-login-hint.js"></script>\n  </body>'
+        );
+      }
       return originalEnd(html, encoding, callback);
     }
     return originalEnd(chunk, encoding, callback);
   };
+
   return listener(req, res);
 }
 
@@ -728,20 +1001,29 @@ function wrapRequestListener(listener) {
   return async function googleAuthRuntimeListener(req, res) {
     const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     try {
-      if (requestUrl.pathname.startsWith('/api/auth/google/') || requestUrl.pathname.startsWith('/api/auth/session/')) {
+      if (
+        requestUrl.pathname.startsWith('/api/auth/google/') ||
+        requestUrl.pathname.startsWith('/api/auth/session/')
+      ) {
         const handled = await handleCustomApi(req, res, requestUrl);
         if (handled !== false || res.writableEnded) return;
       }
+
       if (req.method === 'POST' && requestUrl.pathname === '/api/logout') {
         removeLoginSession(req, res);
         return sendJson(res, 200, { message: 'Afgemeld' });
       }
+
       hydrateDelegatedRequest(req);
-      if (!requestUrl.pathname.startsWith('/api/')) return injectGoogleAssets(res, listener, req);
+      if (!requestUrl.pathname.startsWith('/api/')) {
+        return injectGoogleAssets(req, res, listener);
+      }
       return listener(req, res);
     } catch (error) {
       console.error('[Google Auth] Interne fout:', error?.message || error);
-      if (!res.headersSent && !res.writableEnded) return sendJson(res, 500, { message: 'Google-inlog kon niet worden verwerkt' });
+      if (!res.headersSent && !res.writableEnded) {
+        return sendJson(res, 500, { message: 'Google-inlog kon niet worden verwerkt' });
+      }
       if (!res.writableEnded) res.end();
       return undefined;
     }
