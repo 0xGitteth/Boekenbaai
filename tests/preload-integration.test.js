@@ -161,6 +161,19 @@ function sessionCookie(token) {
     assert.strictEqual(persistedStore.sessions[0].authMethod, 'password');
     assert.match(persistedStore.sessions[0].accountFingerprint || '', /^[a-f0-9]{64}$/);
 
+    const legitimateMutation = await fetch(`${baseUrl}/api/auth/session/persist`, {
+      method: 'POST',
+      headers: {
+        Cookie: sessionCookie('legacy-token'),
+        Authorization: 'Bearer cookie',
+        Origin: baseUrl,
+        'Sec-Fetch-Site': 'same-origin',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ remember: true }),
+    });
+    assert.strictEqual(legitimateMutation.status, 200);
+
     const csrf = await fetch(`${baseUrl}/api/logout`, {
       method: 'POST',
       headers: {
