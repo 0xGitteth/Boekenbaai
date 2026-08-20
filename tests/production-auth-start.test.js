@@ -114,6 +114,22 @@ async function loginMode(type, accountId) {
   return response.json();
 }
 
+async function googleStartToken(type, accountId) {
+  const response = await fetch(
+    `${baseUrl}/api/auth/google/start-token?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`
+  );
+  assert.strictEqual(response.status, 200);
+  const payload = await response.json();
+  assert.ok(payload.token);
+  const state = core.verifySignedState(payload.token, 'test-auth-secret', {
+    maxAgeMs: 2 * 60 * 1000,
+  });
+  assert.strictEqual(state?.purpose, 'google-start');
+  assert.strictEqual(state?.type, type);
+  assert.strictEqual(state?.accountId, accountId);
+  return payload.token;
+}
+
 (async () => {
   try {
     const configResponse = await waitForServer();
@@ -135,15 +151,27 @@ async function loginMode(type, accountId) {
       'local-only'
     );
 
-    const teacherGoogle = await fetch(
+    const untrustedTeacherStart = await fetch(
       `${baseUrl}/api/auth/google/start?type=staff&accountId=teacher-smoke`,
+      { redirect: 'manual' }
+    );
+    assert.strictEqual(
+      untrustedTeacherStart.status,
+      403,
+      'Een directe OAuth-start buiten de Boekenbaai-UI moet worden geweigerd'
+    );
+
+    const teacherToken = await googleStartToken('staff', 'teacher-smoke');
+    const teacherGoogle = await fetch(
+      `${baseUrl}/api/auth/google/start?type=staff&accountId=teacher-smoke&handoffToken=${encodeURIComponent(teacherToken)}`,
       { redirect: 'manual' }
     );
     assert.strictEqual(teacherGoogle.status, 302);
     assert.strictEqual(new URL(teacherGoogle.headers.get('location')).hostname, 'accounts.google.com');
 
+    const studentToken = await googleStartToken('student', 'student-smoke');
     const studentGoogle = await fetch(
-      `${baseUrl}/api/auth/google/start?type=student&accountId=student-smoke`,
+      `${baseUrl}/api/auth/google/start?type=student&accountId=student-smoke&handoffToken=${encodeURIComponent(studentToken)}`,
       { redirect: 'manual' }
     );
     assert.strictEqual(studentGoogle.status, 302);
