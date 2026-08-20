@@ -2,7 +2,9 @@
 
 const http = require('http');
 
+const unrelatedBeforeThemes = new Map();
 const EXACT_THEME_MAP = new Map([['x', 'y']]);
+const unrelatedBeforeSessions = new Map();
 const sessions = new Map();
 const other = new Map();
 
@@ -24,7 +26,7 @@ http.createServer((req, res) => {
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ id: session.userId, role: 'teacher' }));
+    res.end(JSON.stringify({ id: session.userId, role: 'teacher', mustChangePassword: true }));
     return;
   }
 
@@ -34,5 +36,7 @@ http.createServer((req, res) => {
   );
 }).listen(Number(process.env.PORT || 31337));
 
+void unrelatedBeforeThemes;
 void EXACT_THEME_MAP;
+void unrelatedBeforeSessions;
 void other;
