@@ -176,6 +176,7 @@ function upsertLink(store, input) {
 
   const emailConflict = safe.links.find(
     (entry) =>
+      !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId) &&
       normalizeEmail(entry?.email) === email &&
       !(entry?.accountType === accountType && entry?.accountId === accountId)
   );
@@ -188,6 +189,7 @@ function upsertLink(store, input) {
   if (sub) {
     const subConflict = safe.links.find(
       (entry) =>
+        !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId) &&
         entry?.sub === sub &&
         !(entry?.accountType === accountType && entry?.accountId === accountId)
     );
