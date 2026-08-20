@@ -92,8 +92,20 @@ function extractCookieValue(setCookieHeader, name) {
 }
 
 async function startSelection() {
+  const tokenResponse = await fetch(
+    `${baseUrl}/api/auth/google/start-token?type=student&accountId=student-1`
+  );
+  assert.strictEqual(tokenResponse.status, 200);
+  const tokenPayload = await tokenResponse.json();
+  const startIntent = core.verifySignedState(tokenPayload.token, secret, {
+    maxAgeMs: 2 * 60 * 1000,
+  });
+  assert.strictEqual(startIntent?.purpose, 'google-start');
+  assert.strictEqual(startIntent?.type, 'student');
+  assert.strictEqual(startIntent?.accountId, 'student-1');
+
   const response = await fetch(
-    `${baseUrl}/api/auth/google/start?type=student&accountId=student-1`
+    `${baseUrl}/api/auth/google/start?type=student&accountId=student-1&handoffToken=${encodeURIComponent(tokenPayload.token)}`
   );
   assert.strictEqual(response.status, 200);
   const payload = await response.json();
@@ -128,6 +140,20 @@ function cookiesForSelection(selectedCookie) {
 (async () => {
   try {
     await waitForServer();
+
+    const untrustedStart = await fetch(
+      `${baseUrl}/api/auth/google/start?type=student&accountId=student-1`
+    );
+    assert.strictEqual(
+      untrustedStart.status,
+      403,
+      'Google-start zonder kortlevend same-origin handofftoken moet worden geblokkeerd'
+    );
+    assert.doesNotMatch(
+      untrustedStart.headers.get('set-cookie') || '',
+      /boekenbaai_google_selected_account=/,
+      'Een geblokkeerde start mag geen leerlingselectiecookie zetten'
+    );
 
     const first = await startSelection();
     const firstCookies = cookiesForSelection(first.selectedCookie);
@@ -168,10 +194,14 @@ function cookiesForSelection(selectedCookie) {
     assert.match(reusedPayload.message || '', /al aan een ander Boekenbaai-account gekoppeld/i);
     store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
     assert.strictEqual(store.linkRequests.length, 0);
+    assert.strictEqual(
+      store.pendingIdentities[0].studentId,
+      undefined,
+      'Een geweigerde conflictcheck mag de pending identiteit niet half aan een leerling binden'
+    );
 
     // Nieuwe echte login na het oplossen van dat conflict.
     store.links = store.links.filter((entry) => entry?.accountId !== 'student-2');
-    delete store.pendingIdentities[0].studentId;
     fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
     const selected = await startSelection();
