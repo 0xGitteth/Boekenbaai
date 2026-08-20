@@ -21,8 +21,9 @@ if (process.env.GOOGLE_TEST_IDENTITY === '1') {
     if (code !== 'fixture-code') throw new Error('Onverwachte testcode');
     return 'fixture-id-token';
   };
-  globalThis.__BOEKENBAAI_VERIFY_GOOGLE_ID_TOKEN = async (idToken) => {
+  globalThis.__BOEKENBAAI_VERIFY_GOOGLE_ID_TOKEN = async (idToken, options = {}) => {
     if (idToken !== 'fixture-id-token') throw new Error('Onverwacht testtoken');
+    if (!options.expectedNonce) throw new Error('OAuth nonce werd niet aan ID-token verificatie doorgegeven');
     return {
       sub: 'fixture-google-sub',
       email: 'docent@koraaledu.nl',
