@@ -21,6 +21,7 @@ const CONFIGURED_PUBLIC_URL = String(process.env.BOEKENBAAI_PUBLIC_URL || '').re
 
 const PENDING_COOKIE = 'boekenbaai_google_pending';
 const SELECTED_ACCOUNT_COOKIE = 'boekenbaai_google_selected_account';
+const START_INTENT_COOKIE = 'boekenbaai_google_start_intent';
 const SESSION_COOKIE = 'boekenbaai_session';
 const SESSION_HINT_COOKIE = 'boekenbaai_auth_hint';
 const SELECTION_MAX_AGE_MS = 15 * 60 * 1000;
@@ -117,12 +118,16 @@ function useSecureCookies(req) {
   return isHttpsRequest(req);
 }
 
-function serializeCookie(name, value, { httpOnly = true, maxAge, secure = false } = {}) {
+function serializeCookie(
+  name,
+  value,
+  { httpOnly = true, maxAge, secure = false, sameSite = 'Lax' } = {}
+) {
   const parts = [`${name}=${encodeURIComponent(value)}`, 'Path=/'];
   if (maxAge !== undefined) parts.push(`Max-Age=${Math.max(0, Math.floor(maxAge))}`);
   if (httpOnly) parts.push('HttpOnly');
   if (secure) parts.push('Secure');
-  parts.push('SameSite=Lax');
+  parts.push(`SameSite=${sameSite}`);
   return parts.join('; ');
 }
 
@@ -139,8 +144,11 @@ function appendSetCookie(res, cookie) {
   res.setHeader('Set-Cookie', [...values, cookie]);
 }
 
-function clearCookie(req, res, name, httpOnly = true) {
-  appendSetCookie(res, cookieForRequest(req, name, '', { httpOnly, maxAge: 0 }));
+function clearCookie(req, res, name, httpOnly = true, sameSite = 'Lax') {
+  appendSetCookie(
+    res,
+    cookieForRequest(req, name, '', { httpOnly, maxAge: 0, sameSite })
+  );
 }
 
 function clearSelectedAccountCookie(req, res) {
@@ -178,7 +186,17 @@ function getStartAccount(db, type, accountId) {
   ) || null;
 }
 
-function createGoogleStartToken(res, requestUrl) {
+function isKnownCrossOriginRequest(req) {
+  const site = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase();
+  return Boolean(site && site !== 'same-origin');
+}
+
+function createGoogleStartToken(req, res, requestUrl) {
+  if (isKnownCrossOriginRequest(req)) {
+    return sendJson(res, 403, {
+      message: 'Start Google-inlog vanuit de Boekenbaai-inlogpagina.',
+    });
+  }
   if (!AUTH_SECRET) {
     return sendJson(res, 503, { message: 'Google-inlog is nog niet geconfigureerd.' });
   }
@@ -188,23 +206,42 @@ function createGoogleStartToken(res, requestUrl) {
   if (!account) {
     return sendJson(res, 404, { message: 'Kies opnieuw een geldig Google-account uit de lijst.' });
   }
+
+  const nonce = crypto.randomBytes(20).toString('base64url');
   const token = core.createSignedState(
-    { purpose: 'google-start', type, accountId, iat: Date.now() },
+    { purpose: 'google-start', type, accountId, nonce, iat: Date.now() },
     AUTH_SECRET
+  );
+  appendSetCookie(
+    res,
+    cookieForRequest(req, START_INTENT_COOKIE, nonce, {
+      httpOnly: true,
+      maxAge: Math.floor(START_TOKEN_MAX_AGE_MS / 1000),
+      sameSite: 'Strict',
+    })
   );
   return sendJson(res, 200, { token });
 }
 
-function hasValidGoogleStartToken(requestUrl) {
+function consumeValidGoogleStartToken(req, res, requestUrl) {
   if (!AUTH_SECRET) return false;
   const raw = String(requestUrl.searchParams.get('handoffToken') || '');
   const state = core.verifySignedState(raw, AUTH_SECRET, {
     maxAgeMs: START_TOKEN_MAX_AGE_MS,
   });
-  if (!state || state.purpose !== 'google-start') return false;
+  const browserNonce = parseCookies(req)[START_INTENT_COOKIE] || '';
   const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
   const accountId = String(requestUrl.searchParams.get('accountId') || '').trim();
-  return state.type === type && String(state.accountId || '').trim() === accountId;
+  const valid = Boolean(
+    state &&
+    state.purpose === 'google-start' &&
+    state.type === type &&
+    String(state.accountId || '').trim() === accountId &&
+    state.nonce &&
+    state.nonce === browserNonce
+  );
+  if (browserNonce) clearCookie(req, res, START_INTENT_COOKIE, true, 'Strict');
+  return valid;
 }
 
 function pendingIdentityForRequest(req, store) {
@@ -297,9 +334,6 @@ function createAutomaticLinkRequest(req, res) {
     });
   }
 
-  // Pas na alle conflictcontroles wordt de pending identiteit definitief aan de
-  // eerder gekozen leerling gebonden. Een geweigerde poging laat dus geen half
-  // gebonden pending toestand achter.
   pending.studentId = studentId;
 
   const current = findLatestRequest(store, pending, studentId);
@@ -384,9 +418,6 @@ function rejectBoundManualLinkRequest(req, res) {
 }
 
 function installSelectedAccountCookie(req, res, requestUrl) {
-  if (req.method !== 'GET' || requestUrl.pathname !== '/api/auth/google/start' || !AUTH_SECRET) {
-    return;
-  }
   const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
   const accountId = String(requestUrl.searchParams.get('accountId') || '').trim();
   if (!accountId) return;
@@ -530,16 +561,16 @@ function wrapRequestListener(listener) {
         req.method === 'GET' &&
         requestUrl.pathname === '/api/auth/google/start-token'
       ) {
-        return createGoogleStartToken(res, requestUrl);
+        return createGoogleStartToken(req, res, requestUrl);
       }
-      if (
-        req.method === 'GET' &&
-        requestUrl.pathname === '/api/auth/google/start' &&
-        !hasValidGoogleStartToken(requestUrl)
-      ) {
-        return sendJson(res, 403, {
-          message: 'Start Google-inlog opnieuw vanuit de Boekenbaai-inlogpagina.',
-        });
+      if (req.method === 'GET' && requestUrl.pathname === '/api/auth/google/start') {
+        if (!consumeValidGoogleStartToken(req, res, requestUrl)) {
+          return sendJson(res, 403, {
+            message: 'Start Google-inlog opnieuw vanuit de Boekenbaai-inlogpagina.',
+          });
+        }
+        installSelectedAccountCookie(req, res, requestUrl);
+        return listener(req, res);
       }
       if (
         req.method === 'POST' &&
@@ -562,7 +593,6 @@ function wrapRequestListener(listener) {
         return undefined;
       }
 
-      installSelectedAccountCookie(req, res, requestUrl);
       guardCallbackResponse(req, res, requestUrl);
       return listener(req, res);
     } catch (error) {
@@ -590,9 +620,11 @@ module.exports = {
     DATA_PATH,
     AUTH_DATA_PATH,
     SELECTED_ACCOUNT_COOKIE,
+    START_INTENT_COOKIE,
     selectedAccountState,
     getStartAccount,
-    hasValidGoogleStartToken,
+    isKnownCrossOriginRequest,
+    consumeValidGoogleStartToken,
     pendingIdentityForRequest,
     findLatestRequest,
     verifiedLinkConflicts,
