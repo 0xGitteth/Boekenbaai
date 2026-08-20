@@ -1,3 +1,12 @@
+.login-form .form-field:has(#student-login-password),
+.login-form .form-field:has(#login-password) {
+  display: none;
+}
+
+body.login-local-password .login-form .form-field:has(#login-password) {
+  display: grid;
+}
+
 .google-login {
   display: grid;
   gap: 0.85rem;
@@ -24,6 +33,7 @@
   align-items: center;
   gap: 0.45rem;
   font-size: 0.95rem;
+  margin: 0;
 }
 
 .google-login__remember input {

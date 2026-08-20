@@ -7,6 +7,20 @@ const SESSION_WINDOW_MS = 12 * 60 * 60 * 1000;
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const PENDING_IDENTITY_MAX_AGE_MS = 30 * 60 * 1000;
 
+let localOnlyStaffAccountIds = new Set();
+
+function setLocalOnlyStaffAccountIds(accountIds = []) {
+  localOnlyStaffAccountIds = new Set(
+    Array.from(accountIds || [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+  );
+}
+
+function isLocalOnlyStaffAccount(accountType, accountId) {
+  return accountType === 'staff' && localOnlyStaffAccountIds.has(String(accountId || '').trim());
+}
+
 function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
@@ -117,6 +131,7 @@ function pruneStore(store, now = Date.now()) {
 }
 
 function findLinkByAccount(store, accountType, accountId) {
+  if (isLocalOnlyStaffAccount(accountType, accountId)) return null;
   return normalizeStore(store).links.find(
     (entry) => entry?.accountType === accountType && entry?.accountId === accountId
   ) || null;
@@ -125,7 +140,11 @@ function findLinkByAccount(store, accountType, accountId) {
 function findLinkByIdentity(store, accountType, { email, sub } = {}) {
   const normalizedEmail = normalizeEmail(email);
   const normalizedSub = typeof sub === 'string' ? sub.trim() : '';
-  const links = normalizeStore(store).links.filter((entry) => entry?.accountType === accountType);
+  const links = normalizeStore(store).links.filter(
+    (entry) =>
+      entry?.accountType === accountType &&
+      !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId)
+  );
   if (normalizedSub) {
     const bySub = links.find((entry) => entry?.sub === normalizedSub);
     if (bySub) return bySub;
@@ -149,9 +168,15 @@ function upsertLink(store, input) {
     error.code = 'INVALID_LINK';
     throw error;
   }
+  if (isLocalOnlyStaffAccount(accountType, accountId)) {
+    const error = new Error('Dit beheeraccount gebruikt alleen lokale wachtwoordlogin.');
+    error.code = 'LOCAL_ONLY_ACCOUNT';
+    throw error;
+  }
 
   const emailConflict = safe.links.find(
     (entry) =>
+      !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId) &&
       normalizeEmail(entry?.email) === email &&
       !(entry?.accountType === accountType && entry?.accountId === accountId)
   );
@@ -164,6 +189,7 @@ function upsertLink(store, input) {
   if (sub) {
     const subConflict = safe.links.find(
       (entry) =>
+        !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId) &&
         entry?.sub === sub &&
         !(entry?.accountType === accountType && entry?.accountId === accountId)
     );
@@ -267,6 +293,8 @@ module.exports = {
   SESSION_WINDOW_MS,
   OAUTH_STATE_MAX_AGE_MS,
   PENDING_IDENTITY_MAX_AGE_MS,
+  setLocalOnlyStaffAccountIds,
+  isLocalOnlyStaffAccount,
   normalizeEmail,
   normalizeDomain,
   isAllowedSchoolEmail,
