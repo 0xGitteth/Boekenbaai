@@ -1,0 +1,140 @@
+.google-login {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.google-login__divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+}
+
+.google-login__divider::before,
+.google-login__divider::after {
+  content: '';
+  height: 1px;
+  background: var(--accent-border);
+}
+
+.google-login__remember {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.95rem;
+}
+
+.google-login__remember input {
+  width: auto;
+}
+
+.google-login__button {
+  width: 100%;
+}
+
+.google-login__hint {
+  margin: 0;
+  text-align: center;
+}
+
+.google-link-request {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 14px;
+  background: var(--accent-softer);
+}
+
+.google-link-request h3,
+.google-link-request p {
+  margin: 0;
+}
+
+.google-link-request__results {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.google-link-request__match {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.google-link-request__match span {
+  color: var(--muted);
+}
+
+.google-manage {
+  margin-top: 1rem;
+}
+
+.google-manage__section {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--accent-border);
+}
+
+.google-manage__section h4 {
+  margin: 0;
+}
+
+.google-manage__request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.google-manage__request > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.google-manage__request span {
+  color: var(--muted);
+}
+
+.google-manage__actions,
+.google-manage__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.google-manage__form select,
+.google-manage__form input {
+  min-width: min(100%, 15rem);
+  flex: 1 1 15rem;
+}
+
+@media (max-width: 700px) {
+  .google-manage__request {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .google-manage__actions .btn,
+  .google-manage__form .btn {
+    width: 100%;
+  }
+}
