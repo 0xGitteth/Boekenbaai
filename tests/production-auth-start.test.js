@@ -146,6 +146,21 @@ async function loginMode(type, accountId) {
     assert.ok(loginPayload.token, 'Production login leverde geen bearer-token op');
     assert.strictEqual(loginPayload.user.role, 'admin');
 
+    const forbiddenLink = await fetch(`${baseUrl}/api/auth/google/staff-email`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${loginPayload.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        staffId: 'admin-smoke',
+        email: 'beheer@koraaledu.nl',
+      }),
+    });
+    const forbiddenLinkPayload = await forbiddenLink.json().catch(() => ({}));
+    assert.strictEqual(forbiddenLink.status, 409);
+    assert.match(forbiddenLinkPayload.message || '', /alleen lokale wachtwoordlogin/i);
+
     const persist = await fetch(`${baseUrl}/api/auth/session/persist`, {
       method: 'POST',
       headers: {
@@ -162,6 +177,11 @@ async function loginMode(type, accountId) {
     assert.strictEqual(store.sessions.length, 1, 'Production persistente sessie ontbreekt');
     assert.strictEqual(store.sessions[0].authMethod, 'password');
     assert.match(store.sessions[0].accountFingerprint || '', /^[a-f0-9]{64}$/);
+    assert.strictEqual(
+      store.links.some((link) => link.accountId === 'admin-smoke'),
+      false,
+      'Beheeraccount mag niet in de Google-linkstore terechtkomen'
+    );
   } finally {
     await stop();
   }
