@@ -62,6 +62,18 @@ function readAuthStoreStrict() {
     wrapped.code = 'AUTH_STORE_CORRUPT';
     throw wrapped;
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const error = new Error('Auth-opslag heeft een ongeldig formaat.');
+    error.code = 'AUTH_STORE_CORRUPT';
+    throw error;
+  }
+  for (const field of ['links', 'sessions', 'pendingIdentities', 'linkRequests']) {
+    if (parsed[field] !== undefined && !Array.isArray(parsed[field])) {
+      const error = new Error(`Auth-opslagveld ${field} heeft een ongeldig formaat.`);
+      error.code = 'AUTH_STORE_CORRUPT';
+      throw error;
+    }
+  }
   return core.normalizeStore(parsed);
 }
 
@@ -137,7 +149,12 @@ function wrapMeResponse(res, activeSession) {
   const originalEnd = res.end.bind(res);
   res.end = function patchedEnd(chunk, encoding, callback) {
     const contentType = String(res.getHeader('Content-Type') || '');
-    if (chunk != null && contentType.includes('application/json') && res.statusCode >= 200 && res.statusCode < 300) {
+    if (
+      chunk != null &&
+      contentType.includes('application/json') &&
+      res.statusCode >= 200 &&
+      res.statusCode < 300
+    ) {
       try {
         const raw = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
         const payload = JSON.parse(raw);
@@ -162,89 +179,96 @@ function applySecurityHeaders(res) {
 core.upsertSession = function hardenedUpsertSession(store, token, input = {}) {
   const result = originalUpsertSession(store, token, input);
   const context = requestContext.getStore() || {};
-  try {
-    return decorateSessionResult(result, readMainDb(), context.pathname || '');
-  } catch (error) {
-    return result;
-  }
+  return decorateSessionResult(result, readMainDb(), context.pathname || '');
 };
 
 function wrapRequestListener(listener) {
   return function securityGuardListener(req, res) {
-    const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    const pathname = requestUrl.pathname;
-    const expectedOrigin = getExpectedOrigin(req, CONFIGURED_PUBLIC_URL);
-    const secure = expectedOrigin.startsWith('https://');
-    const cookies = parseCookies(req);
-    const bearer = getBearerToken(req);
-    const hasAmbientAuth = Boolean(cookies[SESSION_COOKIE] || cookies[PENDING_COOKIE]);
+    try {
+      const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      const pathname = requestUrl.pathname;
+      const expectedOrigin = getExpectedOrigin(req, CONFIGURED_PUBLIC_URL);
+      const secure = expectedOrigin.startsWith('https://');
+      const cookies = parseCookies(req);
+      const bearer = getBearerToken(req);
+      const hasAmbientAuth = Boolean(cookies[SESSION_COOKIE] || cookies[PENDING_COOKIE]);
 
-    applySecurityHeaders(res);
+      applySecurityHeaders(res);
 
-    if (hasAmbientAuth && isMutationRequest(req.method) && !isSameOriginMutation(req, expectedOrigin)) {
-      return sendJson(res, 403, { message: 'Dit verzoek is om veiligheidsredenen geblokkeerd.' });
-    }
+      if (hasAmbientAuth && isMutationRequest(req.method) && !isSameOriginMutation(req, expectedOrigin)) {
+        return sendJson(res, 403, { message: 'Dit verzoek is om veiligheidsredenen geblokkeerd.' });
+      }
 
-    let authStore = null;
-    let activeSession = null;
-    if (shouldReadAuthStore(pathname, cookies, bearer)) {
-      try {
+      let authStore = null;
+      let activeSession = null;
+      if (shouldReadAuthStore(pathname, cookies, bearer)) {
         authStore = readAuthStoreStrict();
-      } catch (error) {
-        console.error('[Auth Security] Auth-opslag kon niet veilig worden gelezen:', error?.message || error);
-        return sendJson(res, 503, { message: 'Inloggen is tijdelijk niet beschikbaar.' });
       }
-    }
 
-    const cookieToken = cookies[SESSION_COOKIE] || '';
-    if (cookieToken) {
-      const cookieHash = core.tokenHash(cookieToken);
-      if (revokedTokenHashes.has(cookieHash)) {
-        clearAuthCookies(res, secure);
-        return pathname.startsWith('/api/')
-          ? sendJson(res, 401, { message: 'Sessie is verlopen' })
-          : listener(req, res);
+      const cookieToken = cookies[SESSION_COOKIE] || '';
+      if (cookieToken && bearer && bearer !== SESSION_SENTINEL && bearer !== cookieToken) {
+        return sendJson(res, 401, { message: 'Ongeldige combinatie van sessies' });
       }
-      const validation = validatePersistedSession(authStore || core.emptyAuthStore(), cookieToken, readMainDb());
-      if (!validation.valid) {
-        if (authStore) {
-          removePersistedToken(authStore, validation.tokenHash);
-          saveAuthStoreStrict(authStore);
-        }
-        clearAuthCookies(res, secure);
-        return pathname.startsWith('/api/')
-          ? sendJson(res, 401, { message: 'Sessie is verlopen' })
-          : listener(req, res);
-      }
-      activeSession = validation.session;
-    }
 
-    if (bearer && bearer !== SESSION_SENTINEL) {
-      const bearerHash = core.tokenHash(bearer);
-      if (revokedTokenHashes.has(bearerHash)) {
-        return sendJson(res, 401, { message: 'Sessie is verlopen' });
-      }
-      const persistent = (authStore?.sessions || []).find((entry) => entry?.tokenHash === bearerHash);
-      if (persistent) {
-        const validation = validatePersistedSession(authStore, bearer, readMainDb());
-        if (!validation.valid) {
-          removePersistedToken(authStore, validation.tokenHash);
-          saveAuthStoreStrict(authStore);
+      const db = cookieToken || (bearer && bearer !== SESSION_SENTINEL) ? readMainDb() : null;
+
+      if (cookieToken) {
+        const cookieHash = core.tokenHash(cookieToken);
+        if (revokedTokenHashes.has(cookieHash)) {
           clearAuthCookies(res, secure);
-          return sendJson(res, 401, { message: 'Sessie is verlopen' });
+          return pathname.startsWith('/api/')
+            ? sendJson(res, 401, { message: 'Sessie is verlopen' })
+            : listener(req, res);
         }
-        if (cookieToken && bearer !== cookieToken) {
-          return sendJson(res, 401, { message: 'Ongeldige combinatie van sessies' });
+        const validation = validatePersistedSession(
+          authStore || core.emptyAuthStore(),
+          cookieToken,
+          db
+        );
+        if (!validation.valid) {
+          if (authStore) {
+            removePersistedToken(authStore, validation.tokenHash);
+            saveAuthStoreStrict(authStore);
+          }
+          clearAuthCookies(res, secure);
+          return pathname.startsWith('/api/')
+            ? sendJson(res, 401, { message: 'Sessie is verlopen' })
+            : listener(req, res);
         }
         activeSession = validation.session;
       }
-    }
 
-    if (pathname === '/api/me' && activeSession) {
-      wrapMeResponse(res, activeSession);
-    }
+      if (bearer && bearer !== SESSION_SENTINEL) {
+        const bearerHash = core.tokenHash(bearer);
+        if (revokedTokenHashes.has(bearerHash)) {
+          return sendJson(res, 401, { message: 'Sessie is verlopen' });
+        }
+        const persistent = (authStore?.sessions || []).find((entry) => entry?.tokenHash === bearerHash);
+        if (persistent) {
+          const validation = validatePersistedSession(authStore, bearer, db);
+          if (!validation.valid) {
+            removePersistedToken(authStore, validation.tokenHash);
+            saveAuthStoreStrict(authStore);
+            clearAuthCookies(res, secure);
+            return sendJson(res, 401, { message: 'Sessie is verlopen' });
+          }
+          activeSession = validation.session;
+        }
+      }
 
-    return requestContext.run({ pathname }, () => listener(req, res));
+      if (pathname === '/api/me' && activeSession) {
+        wrapMeResponse(res, activeSession);
+      }
+
+      return requestContext.run({ pathname }, () => listener(req, res));
+    } catch (error) {
+      console.error('[Auth Security] Verzoek geblokkeerd door een interne fout:', error?.message || error);
+      if (!res.headersSent && !res.writableEnded) {
+        return sendJson(res, 503, { message: 'Inloggen is tijdelijk niet beschikbaar.' });
+      }
+      if (!res.writableEnded) res.end();
+      return undefined;
+    }
   };
 }
 
