@@ -41,11 +41,14 @@
   }
 
   function stripAdminGoogleManageOptions() {
-    for (const option of document.querySelectorAll('.google-manage select option')) {
+    const panel = document.querySelector('.google-manage');
+    if (!panel) return false;
+    for (const option of panel.querySelectorAll('select option')) {
       if (/\(admin\)\s*$/i.test(option.textContent || '')) {
         option.remove();
       }
     }
+    return true;
   }
 
   function enhanceLogin(attempt = 0) {
@@ -226,9 +229,12 @@
       setMessage('Dit beheeraccount logt lokaal in met een wachtwoord.');
     }
 
-    stripAdminGoogleManageOptions();
-    const manageObserver = new MutationObserver(stripAdminGoogleManageOptions);
-    manageObserver.observe(document.body, { childList: true, subtree: true });
+    if (isStaff && !stripAdminGoogleManageOptions()) {
+      const manageObserver = new MutationObserver(() => {
+        if (stripAdminGoogleManageOptions()) manageObserver.disconnect();
+      });
+      manageObserver.observe(document.body, { childList: true, subtree: true });
+    }
   }
 
   document.addEventListener('DOMContentLoaded', () => enhanceLogin());
