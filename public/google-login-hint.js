@@ -95,8 +95,13 @@
         passwordInput.required = visible;
         if (!visible) passwordInput.value = '';
       }
-      if (rememberLabel) rememberLabel.hidden = visible || !isStaff;
-      if (visible && rememberCheckbox) rememberCheckbox.checked = false;
+    }
+
+    function showRemember(show) {
+      if (!rememberLabel) return;
+      const visible = Boolean(show && isStaff);
+      rememberLabel.hidden = !visible;
+      if (!visible && rememberCheckbox) rememberCheckbox.checked = false;
     }
 
     function clearMode({ clearMessage = false } = {}) {
@@ -104,7 +109,7 @@
       selectedMode = '';
       selectedModeAccountId = '';
       showPassword(false);
-      if (rememberLabel) rememberLabel.hidden = true;
+      showRemember(false);
       submit.disabled = !nameInput.value.trim();
       if (clearMessage) setMessage('');
     }
@@ -120,6 +125,7 @@
       selectedMode = '';
       selectedModeAccountId = '';
       showPassword(false);
+      showRemember(false);
       submit.disabled = true;
       setMessage('Account wordt gecontroleerd…');
 
@@ -134,6 +140,7 @@
         selectedMode = authMode;
         selectedModeAccountId = accountId;
         showPassword(authMode === 'password');
+        showRemember(authMode === 'google');
         submit.disabled = false;
         if (authMode === 'password') {
           setMessage('');
@@ -209,6 +216,7 @@
     );
 
     showPassword(false);
+    showRemember(false);
     submit.disabled = !nameInput.value.trim();
 
     const state = new URLSearchParams(window.location.search).get('googleAuth') || '';
