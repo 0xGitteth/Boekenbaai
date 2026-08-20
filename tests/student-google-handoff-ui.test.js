@@ -21,6 +21,21 @@ assert.match(
 );
 assert.match(
   source,
+  /\/api\/auth\/google\/start-token/,
+  'Google-start moet eerst een kortlevend same-origin starttoken ophalen'
+);
+assert.match(
+  source,
+  /handoffToken:\s*startToken/,
+  'Het starttoken moet aan de uiteindelijke Google-start worden gebonden'
+);
+assert.match(
+  source,
+  /await fetchGoogleStartToken\(type, accountId\)/,
+  'De UI mag niet rechtstreeks naar de Google-start navigeren zonder starttoken'
+);
+assert.match(
+  source,
   /\/api\/auth\/google\/auto-link-request/,
   'Eerste niet-gekoppelde leerlinglogin moet automatisch een koppelverzoek starten'
 );
@@ -33,6 +48,11 @@ assert.match(
   source,
   /window\.setTimeout\(checkPending,\s*5000\)/,
   'De wachtpagina moet periodiek op docentgoedkeuring controleren'
+);
+assert.match(
+  source,
+  /existing\.automaticSelection\) hideManualSearch\(\)/,
+  'De handmatige tweede zoekstap moet direct verdwijnen zodra de server de veilige selectie bevestigt'
 );
 assert.match(
   source,
