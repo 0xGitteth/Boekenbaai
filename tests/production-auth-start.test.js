@@ -93,8 +93,9 @@ async function stop() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Smoke Beheer', password: 'smoke-password', type: 'staff' }),
     });
-    assert.strictEqual(login.status, 200, `Production password login faalde: ${await login.text()}`);
-    const loginPayload = await login.json();
+    const loginText = await login.text();
+    assert.strictEqual(login.status, 200, `Production password login faalde: ${loginText}`);
+    const loginPayload = JSON.parse(loginText);
     assert.ok(loginPayload.token, 'Production login leverde geen bearer-token op');
 
     const persist = await fetch(`${baseUrl}/api/auth/session/persist`, {
@@ -105,7 +106,8 @@ async function stop() {
       },
       body: JSON.stringify({ remember: true }),
     });
-    assert.strictEqual(persist.status, 200, `Production session persist faalde: ${await persist.text()}`);
+    const persistText = await persist.text();
+    assert.strictEqual(persist.status, 200, `Production session persist faalde: ${persistText}`);
     assert.match(persist.headers.get('set-cookie') || '', /boekenbaai_session=/);
 
     const store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
