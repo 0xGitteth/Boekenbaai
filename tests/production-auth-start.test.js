@@ -19,6 +19,11 @@ function hashPassword(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
+function extractCookieValue(setCookieHeader, name) {
+  const match = String(setCookieHeader || '').match(new RegExp(`${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 fs.writeFileSync(dbPath, JSON.stringify({
   books: [],
   students: [{
@@ -148,15 +153,27 @@ async function loginMode(type, accountId) {
       studentGoogleLocation.searchParams.get('state'),
       'test-auth-secret'
     );
-    assert.strictEqual(
-      studentOauthState?.accountId,
-      'student-smoke',
-      'Production OAuth-state moet de geselecteerde leerling meenemen'
-    );
+    assert.strictEqual(studentOauthState?.type, 'student');
+    assert.ok(studentOauthState?.nonce, 'Production OAuth-state moet de nonce behouden');
+
+    const studentSetCookie = studentGoogle.headers.get('set-cookie') || '';
     assert.match(
-      studentGoogle.headers.get('set-cookie') || '',
+      studentSetCookie,
       /boekenbaai_google_selected_account=/,
       'Production Google-start moet de beveiligde leerlingselectiecookie zetten'
+    );
+    const selectedCookie = extractCookieValue(
+      studentSetCookie,
+      'boekenbaai_google_selected_account'
+    );
+    const selectedState = core.verifySignedState(selectedCookie, 'test-auth-secret', {
+      maxAgeMs: 15 * 60 * 1000,
+    });
+    assert.strictEqual(selectedState?.type, 'student');
+    assert.strictEqual(
+      selectedState?.accountId,
+      'student-smoke',
+      'Production handoff-cookie moet de geselecteerde leerling ondertekend meenemen'
     );
 
     const login = await fetch(`${baseUrl}/api/login-by-name`, {
