@@ -18,7 +18,8 @@ assert.match(script, /stopImmediatePropagation/, 'Google-login moet de oude wach
 assert.match(script, /Kies je naam uit de lijst/, 'Vrij getypte namen moeten een duidelijke melding krijgen');
 assert.doesNotMatch(script, /googleButton\.click\s*\(/, 'Accountselectie mag niet automatisch naar Google doorgaan');
 assert.doesNotMatch(script, /google-login__fallback/, 'Er mag geen algemene wachtwoordfallback zichtbaar blijven');
-assert.match(script, /[(]admin[)]/, 'Admin mag niet in de Google-koppelkeuze blijven staan');
+assert.match(script, /stripAdminGoogleManageOptions/, 'Adminfilter voor Google-koppelingen moet aanwezig zijn');
+assert.match(script, /option\.remove\(\)/, 'Adminfilter moet de beheeroptie uit de Google-koppelkeuze verwijderen');
 
 assert.match(
   css,
