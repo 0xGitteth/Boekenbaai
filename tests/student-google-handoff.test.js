@@ -170,6 +170,18 @@ async function startSelection() {
       'Een gebonden Google-identiteit mag niet via de oude route van leerling wisselen'
     );
 
+    // Leg vóór de callback een prelink voor het verkeerde account vast. De fixture
+    // simuleert dat de runtime die link tijdens de callback van een sub voorziet.
+    // De handoff moet zowel die wijziging als de fout aangemaakte sessie terugdraaien.
+    store.links.push({
+      accountType: 'student',
+      accountId: 'student-2',
+      email: 'gekoppeld@koraaledu.nl',
+      sub: '',
+      linkedBy: 'teacher-test',
+    });
+    fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
+
     const mismatch = await fetch(
       `${baseUrl}/api/auth/google/callback?state=${encodeURIComponent(first.payload.state)}`,
       {
@@ -191,6 +203,15 @@ async function startSelection() {
       false,
       'De fout aangemaakte persistente sessie moet direct uit de auth-store verdwijnen'
     );
+    const restoredWrongLink = store.links.find(
+      (entry) => entry?.accountType === 'student' && entry?.accountId === 'student-2'
+    );
+    assert.strictEqual(
+      restoredWrongLink?.sub || '',
+      '',
+      'Een onbedoelde verificatie van de prelink van het verkeerde account moet worden teruggedraaid'
+    );
+    assert.strictEqual(restoredWrongLink?.linkedBy, 'teacher-test');
 
     // Een docent kan een verzoek per ongeluk afwijzen. Een nieuwe Google-login moet
     // daarna opnieuw een verzoek mogen maken in plaats van permanent vast te lopen.
