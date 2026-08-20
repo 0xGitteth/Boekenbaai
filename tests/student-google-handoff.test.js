@@ -213,6 +213,30 @@ async function startSelection() {
     );
     assert.strictEqual(restoredWrongLink?.linkedBy, 'teacher-test');
 
+    // Dezelfde guard mag een correcte callback voor de geselecteerde leerling juist
+    // niet aantasten.
+    const correct = await startSelection();
+    const correctCallback = await fetch(
+      `${baseUrl}/api/auth/google/callback?as=student-1&state=${encodeURIComponent(correct.payload.state)}`,
+      {
+        redirect: 'manual',
+        headers: {
+          Cookie: `boekenbaai_google_selected_account=${encodeURIComponent(correct.selectedCookie)}`,
+        },
+      }
+    );
+    assert.strictEqual(correctCallback.status, 302);
+    assert.strictEqual(
+      new URL(correctCallback.headers.get('location'), baseUrl).searchParams.get('googleAuth'),
+      'success'
+    );
+    store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    assert.strictEqual(
+      store.sessions.some((entry) => entry?.userId === 'student-1'),
+      true,
+      'Een correcte sessie voor de geselecteerde leerling moet blijven bestaan'
+    );
+
     // Een docent kan een verzoek per ongeluk afwijzen. Een nieuwe Google-login moet
     // daarna opnieuw een verzoek mogen maken in plaats van permanent vast te lopen.
     store.linkRequests[0].status = 'denied';
