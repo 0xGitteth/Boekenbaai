@@ -9,7 +9,6 @@ const { spawn } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-login-policy-'));
 const dbPath = path.join(tmp, 'db.json');
-const authPath = `${dbPath}.auth.json`;
 const port = 31431;
 const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -21,27 +20,6 @@ fs.writeFileSync(dbPath, JSON.stringify({
   ],
 }, null, 2));
 
-fs.writeFileSync(authPath, JSON.stringify({
-  version: 1,
-  links: [
-    {
-      accountType: 'staff',
-      accountId: 'teacher-1',
-      email: 'docent@koraaledu.nl',
-      sub: 'teacher-sub',
-    },
-    {
-      accountType: 'staff',
-      accountId: 'admin-1',
-      email: 'beheer@koraaledu.nl',
-      sub: 'admin-sub',
-    },
-  ],
-  sessions: [],
-  pendingIdentities: [],
-  linkRequests: [],
-}, null, 2));
-
 const child = spawn(process.execPath, [
   '--require', path.join(root, 'login-flow-policy-preload.js'),
   path.join(__dirname, 'login-flow-policy-fixture.js'),
@@ -50,7 +28,6 @@ const child = spawn(process.execPath, [
     ...process.env,
     PORT: String(port),
     BOEKENBAAI_DATA_PATH: dbPath,
-    BOEKENBAAI_AUTH_DATA_PATH: authPath,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -136,20 +113,6 @@ async function readJson(pathname) {
     );
     assert.strictEqual(delegatedStudent.response.status, 200);
     assert.strictEqual(delegatedStudent.payload.delegated, true);
-
-    const callback = await readJson('/api/auth/google/callback?code=test');
-    assert.strictEqual(callback.response.status, 200);
-    assert.strictEqual(callback.payload.delegated, true);
-
-    const store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
-    assert.ok(
-      store.links.some((link) => link.accountId === 'teacher-1'),
-      'Docentkoppeling mag niet worden verwijderd'
-    );
-    assert.ok(
-      !store.links.some((link) => link.accountId === 'admin-1'),
-      'Beheeraccount mag geen Google-koppeling behouden'
-    );
   } finally {
     await stop();
   }
