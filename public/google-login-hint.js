@@ -46,10 +46,21 @@
     return payload.authMode;
   }
 
-  function buildGoogleStartUrl({ isStaff, accountId, remember }) {
+  async function fetchGoogleStartToken(type, accountId) {
+    const payload = await requestJson(
+      `/api/auth/google/start-token?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`
+    );
+    if (!payload.token || typeof payload.token !== 'string') {
+      throw new Error('De Google-inlog kon niet veilig worden gestart. Probeer opnieuw.');
+    }
+    return payload.token;
+  }
+
+  function buildGoogleStartUrl({ isStaff, accountId, remember, startToken }) {
     const params = new URLSearchParams({
       type: isStaff ? 'staff' : 'student',
       accountId,
+      handoffToken: startToken,
     });
     if (isStaff && remember) params.set('remember', '1');
     return `/api/auth/google/start?${params.toString()}`;
@@ -72,7 +83,7 @@
 
     const panel = document.querySelector('.google-link-request');
     if (!panel) {
-      if (attempt < 80) window.setTimeout(() => enhancePendingLinkHandoff(attempt + 1), 50);
+      if (attempt < 200) window.setTimeout(() => enhancePendingLinkHandoff(attempt + 1), 50);
       return;
     }
     if (panel.dataset.selectedStudentHandoff === '1') return;
@@ -154,6 +165,7 @@
     (async () => {
       try {
         const existing = await requestJson('/api/auth/google/pending');
+        if (existing.automaticSelection) hideManualSearch();
         if (existing.studentId && existing.requestStatus !== 'not-requested') {
           hideManualSearch();
           if (existing.canComplete) {
@@ -329,7 +341,7 @@
 
     form.addEventListener(
       'submit',
-      (event) => {
+      async (event) => {
         const accountId = nameInput.dataset.selectedAccountId || '';
         const hasCurrentMode = Boolean(
           accountId && selectedMode && selectedModeAccountId === accountId
@@ -354,10 +366,29 @@
           setMessage('Google-inlog is nog niet ingesteld door de beheerder.');
           return;
         }
-        const remember = Boolean(isStaff && rememberCheckbox?.checked);
-        window.location.assign(
-          buildGoogleStartUrl({ isStaff, accountId, remember })
-        );
+
+        submit.disabled = true;
+        setMessage('Google-inlog wordt veilig gestart…');
+        try {
+          const type = isStaff ? 'staff' : 'student';
+          const startToken = await fetchGoogleStartToken(type, accountId);
+          if (
+            nameInput.dataset.selectedAccountId !== accountId ||
+            selectedModeAccountId !== accountId ||
+            selectedMode !== 'google'
+          ) {
+            submit.disabled = false;
+            setMessage('Je selectie is gewijzigd. Klik opnieuw op Inloggen.');
+            return;
+          }
+          const remember = Boolean(isStaff && rememberCheckbox?.checked);
+          window.location.assign(
+            buildGoogleStartUrl({ isStaff, accountId, remember, startToken })
+          );
+        } catch (error) {
+          submit.disabled = false;
+          setMessage(error.message);
+        }
       },
       true
     );
