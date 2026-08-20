@@ -7,26 +7,33 @@ const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const ACCEPTED_ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 const DEFAULT_JWKS_TTL_MS = 5 * 60 * 1000;
 const MAX_JWKS_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_ID_TOKEN_LENGTH = 16 * 1024;
 
 let cachedJwks = null;
 let cachedJwksExpiresAt = 0;
+
+function invalidToken(message) {
+  const error = new Error(message);
+  error.code = 'INVALID_ID_TOKEN';
+  return error;
+}
 
 function decodeJsonSegment(segment, label) {
   try {
     return JSON.parse(Buffer.from(String(segment || ''), 'base64url').toString('utf8'));
   } catch (error) {
-    const wrapped = new Error(`Google ID-token bevat ongeldige ${label}.`);
-    wrapped.code = 'INVALID_ID_TOKEN';
-    throw wrapped;
+    throw invalidToken(`Google ID-token bevat ongeldige ${label}.`);
   }
 }
 
 function parseJwt(idToken) {
-  const parts = String(idToken || '').split('.');
+  const raw = String(idToken || '');
+  if (!raw || raw.length > MAX_ID_TOKEN_LENGTH) {
+    throw invalidToken('Google ID-token heeft een ongeldig formaat.');
+  }
+  const parts = raw.split('.');
   if (parts.length !== 3 || parts.some((part) => !part)) {
-    const error = new Error('Google ID-token heeft een ongeldig formaat.');
-    error.code = 'INVALID_ID_TOKEN';
-    throw error;
+    throw invalidToken('Google ID-token heeft een ongeldig formaat.');
   }
   const header = decodeJsonSegment(parts[0], 'header');
   const payload = decodeJsonSegment(parts[1], 'payload');
@@ -34,9 +41,7 @@ function parseJwt(idToken) {
   try {
     signature = Buffer.from(parts[2], 'base64url');
   } catch (error) {
-    const wrapped = new Error('Google ID-token bevat een ongeldige handtekening.');
-    wrapped.code = 'INVALID_ID_TOKEN';
-    throw wrapped;
+    throw invalidToken('Google ID-token bevat een ongeldige handtekening.');
   }
   return {
     header,
@@ -78,17 +83,24 @@ async function fetchJwks(fetchFn, { force = false, now = Date.now() } = {}) {
   return cachedJwks;
 }
 
+function isUsableSigningKey(entry, kid) {
+  return Boolean(
+    entry?.kid === kid &&
+    entry?.kty === 'RSA' &&
+    (!entry?.use || entry.use === 'sig') &&
+    (!entry?.alg || entry.alg === 'RS256')
+  );
+}
+
 async function getSigningKey(kid, fetchFn, now) {
   let keys = await fetchJwks(fetchFn, { now });
-  let key = keys.find((entry) => entry?.kid === kid && entry?.kty === 'RSA');
+  let key = keys.find((entry) => isUsableSigningKey(entry, kid));
   if (!key) {
     keys = await fetchJwks(fetchFn, { force: true, now });
-    key = keys.find((entry) => entry?.kid === kid && entry?.kty === 'RSA');
+    key = keys.find((entry) => isUsableSigningKey(entry, kid));
   }
   if (!key) {
-    const error = new Error('Google ondertekeningssleutel is onbekend.');
-    error.code = 'INVALID_ID_TOKEN';
-    throw error;
+    throw invalidToken('Google ondertekeningssleutel is onbekend.');
   }
   return key;
 }
@@ -98,37 +110,40 @@ function audienceMatches(aud, clientId) {
   return String(aud || '') === clientId;
 }
 
-function validateClaims(payload, { clientId, domain, now = Date.now() }) {
+function validateClaims(payload, { clientId, domain, expectedNonce = '', now = Date.now() }) {
   const nowSeconds = Math.floor(now / 1000);
   if (!ACCEPTED_ISSUERS.has(String(payload?.iss || ''))) {
-    throw new Error('Onverwachte Google issuer.');
+    throw invalidToken('Onverwachte Google issuer.');
   }
   if (!audienceMatches(payload?.aud, clientId)) {
-    throw new Error('Google audience klopt niet.');
+    throw invalidToken('Google audience klopt niet.');
   }
   if (payload?.azp && String(payload.azp) !== clientId) {
-    throw new Error('Google authorized party klopt niet.');
+    throw invalidToken('Google authorized party klopt niet.');
   }
   const expiresAt = Number(payload?.exp);
   if (!Number.isFinite(expiresAt) || expiresAt <= nowSeconds) {
-    throw new Error('Google ID-token is verlopen.');
+    throw invalidToken('Google ID-token is verlopen.');
   }
   const issuedAt = Number(payload?.iat);
-  if (Number.isFinite(issuedAt) && issuedAt > nowSeconds + 60) {
-    throw new Error('Google ID-token heeft een ongeldige uitgiftetijd.');
+  if (!Number.isFinite(issuedAt) || issuedAt > nowSeconds + 60) {
+    throw invalidToken('Google ID-token heeft een ongeldige uitgiftetijd.');
+  }
+  if (expectedNonce && String(payload?.nonce || '') !== expectedNonce) {
+    throw invalidToken('Google ID-token hoort niet bij deze loginpoging.');
   }
   const normalizedDomain = normalizeDomain(domain);
   const hostedDomain = normalizeDomain(payload?.hd);
   const email = normalizeEmail(payload?.email);
   const emailVerified = payload?.email_verified === true || String(payload?.email_verified).toLowerCase() === 'true';
-  if (!emailVerified) throw new Error('Google e-mailadres is niet geverifieerd.');
+  if (!emailVerified) throw invalidToken('Google e-mailadres is niet geverifieerd.');
   if (hostedDomain !== normalizedDomain || !isAllowedSchoolEmail(email, normalizedDomain)) {
     const error = new Error(`Gebruik een @${normalizedDomain} account.`);
     error.code = 'WRONG_DOMAIN';
     throw error;
   }
   const sub = String(payload?.sub || '').trim();
-  if (!sub) throw new Error('Google account-id ontbreekt.');
+  if (!sub) throw invalidToken('Google account-id ontbreekt.');
   return {
     sub,
     email,
@@ -140,6 +155,7 @@ function validateClaims(payload, { clientId, domain, now = Date.now() }) {
 async function verifyGoogleIdToken(idToken, options = {}) {
   const clientId = String(options.clientId || '').trim();
   const domain = normalizeDomain(options.domain);
+  const expectedNonce = String(options.expectedNonce || '');
   const fetchFn = options.fetchFn || globalThis.fetch;
   const now = Number.isFinite(options.now) ? options.now : Date.now();
   if (!clientId || !domain || typeof fetchFn !== 'function') {
@@ -150,9 +166,7 @@ async function verifyGoogleIdToken(idToken, options = {}) {
 
   const parsed = parseJwt(idToken);
   if (parsed.header?.alg !== 'RS256' || !parsed.header?.kid) {
-    const error = new Error('Google ID-token gebruikt een ongeldige ondertekening.');
-    error.code = 'INVALID_ID_TOKEN';
-    throw error;
+    throw invalidToken('Google ID-token gebruikt een ongeldige ondertekening.');
   }
 
   const jwk = await getSigningKey(String(parsed.header.kid), fetchFn, now);
@@ -171,11 +185,9 @@ async function verifyGoogleIdToken(idToken, options = {}) {
     parsed.signature
   );
   if (!validSignature) {
-    const error = new Error('Google ID-token handtekening klopt niet.');
-    error.code = 'INVALID_ID_TOKEN';
-    throw error;
+    throw invalidToken('Google ID-token handtekening klopt niet.');
   }
-  return validateClaims(parsed.payload, { clientId, domain, now });
+  return validateClaims(parsed.payload, { clientId, domain, expectedNonce, now });
 }
 
 function resetJwksCacheForTests() {
