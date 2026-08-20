@@ -30,6 +30,7 @@ function makeToken(overrides = {}, headerOverrides = {}) {
     hd: 'koraaledu.nl',
     name: 'Leerling Test',
     given_name: 'Leerling',
+    nonce: 'test-nonce',
     iat: now - 10,
     exp: now + 3600,
     ...overrides,
@@ -39,28 +40,38 @@ function makeToken(overrides = {}, headerOverrides = {}) {
   return `${signingInput}.${signature.toString('base64url')}`;
 }
 
-function makeFetchCounter() {
+function makeFetchCounter(keys = [publicJwk]) {
   let calls = 0;
   const fetchFn = async () => {
     calls += 1;
     return {
       ok: true,
       status: 200,
-      headers: { get: (name) => String(name).toLowerCase() === 'cache-control' ? 'public, max-age=3600' : null },
-      json: async () => ({ keys: [publicJwk] }),
+      headers: {
+        get: (name) => String(name).toLowerCase() === 'cache-control'
+          ? 'public, max-age=3600'
+          : null,
+      },
+      json: async () => ({ keys }),
     };
   };
   return { fetchFn, get calls() { return calls; } };
 }
 
+function verify(token, fetchFn, overrides = {}) {
+  return verifyGoogleIdToken(token, {
+    clientId: 'client-id',
+    domain: 'koraaledu.nl',
+    expectedNonce: 'test-nonce',
+    fetchFn,
+    ...overrides,
+  });
+}
+
 (async () => {
   resetJwksCacheForTests();
   const counter = makeFetchCounter();
-  const identity = await verifyGoogleIdToken(makeToken(), {
-    clientId: 'client-id',
-    domain: 'koraaledu.nl',
-    fetchFn: counter.fetchFn,
-  });
+  const identity = await verify(makeToken(), counter.fetchFn);
   assert.deepStrictEqual(identity, {
     sub: 'google-sub-1',
     email: 'leerling@koraaledu.nl',
@@ -69,11 +80,7 @@ function makeFetchCounter() {
   });
   assert.strictEqual(counter.calls, 1);
 
-  await verifyGoogleIdToken(makeToken({ sub: 'google-sub-2' }), {
-    clientId: 'client-id',
-    domain: 'koraaledu.nl',
-    fetchFn: counter.fetchFn,
-  });
+  await verify(makeToken({ sub: 'google-sub-2' }), counter.fetchFn);
   assert.strictEqual(counter.calls, 1, 'JWKS moet binnen max-age uit cache komen');
 
   const valid = makeToken();
@@ -83,42 +90,51 @@ function makeFetchCounter() {
     sub: 'aanvaller',
   });
   await assert.rejects(
-    () => verifyGoogleIdToken(`${header}.${tamperedPayload}.${signature}`, {
-      clientId: 'client-id', domain: 'koraaledu.nl', fetchFn: counter.fetchFn,
-    }),
+    () => verify(`${header}.${tamperedPayload}.${signature}`, counter.fetchFn),
     /handtekening/
   );
 
   await assert.rejects(
-    () => verifyGoogleIdToken(makeToken({ aud: 'ander-client', azp: 'ander-client' }), {
-      clientId: 'client-id', domain: 'koraaledu.nl', fetchFn: counter.fetchFn,
-    }),
+    () => verify(makeToken({ aud: 'ander-client', azp: 'ander-client' }), counter.fetchFn),
     /audience/
   );
   await assert.rejects(
-    () => verifyGoogleIdToken(makeToken({ hd: 'gmail.com', email: 'leerling@gmail.com' }), {
-      clientId: 'client-id', domain: 'koraaledu.nl', fetchFn: counter.fetchFn,
-    }),
+    () => verify(makeToken({ hd: 'gmail.com', email: 'leerling@gmail.com' }), counter.fetchFn),
     /@koraaledu\.nl/
   );
   await assert.rejects(
-    () => verifyGoogleIdToken(makeToken({ email_verified: false }), {
-      clientId: 'client-id', domain: 'koraaledu.nl', fetchFn: counter.fetchFn,
-    }),
+    () => verify(makeToken({ email_verified: false }), counter.fetchFn),
     /niet geverifieerd/
   );
   await assert.rejects(
-    () => verifyGoogleIdToken(makeToken({ exp: Math.floor(Date.now() / 1000) - 1 }), {
-      clientId: 'client-id', domain: 'koraaledu.nl', fetchFn: counter.fetchFn,
-    }),
+    () => verify(makeToken({ exp: Math.floor(Date.now() / 1000) - 1 }), counter.fetchFn),
     /verlopen/
   );
   await assert.rejects(
-    () => verifyGoogleIdToken(makeToken({}, { alg: 'HS256' }), {
-      clientId: 'client-id', domain: 'koraaledu.nl', fetchFn: counter.fetchFn,
-    }),
+    () => verify(makeToken({ iat: 'geen-tijd' }), counter.fetchFn),
+    /uitgiftetijd/
+  );
+  await assert.rejects(
+    () => verify(makeToken({ nonce: 'andere-login' }), counter.fetchFn),
+    /loginpoging/
+  );
+  await assert.rejects(
+    () => verify(makeToken({}, { alg: 'HS256' }), counter.fetchFn),
     /ongeldige ondertekening/
   );
+  await assert.rejects(
+    () => verify('x'.repeat(16 * 1024 + 1), counter.fetchFn),
+    /ongeldig formaat/
+  );
+
+  resetJwksCacheForTests();
+  const wrongUseJwk = { ...publicJwk, use: 'enc' };
+  const wrongKeyCounter = makeFetchCounter([wrongUseJwk]);
+  await assert.rejects(
+    () => verify(makeToken(), wrongKeyCounter.fetchFn),
+    /ondertekeningssleutel is onbekend/
+  );
+  assert.strictEqual(wrongKeyCounter.calls, 2, 'Onbekende signing key moet één geforceerde refresh proberen');
 
   console.log('Google ID-token verificatietests geslaagd.');
 })().catch((error) => {
