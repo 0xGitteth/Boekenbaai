@@ -38,7 +38,18 @@ http.createServer((req, res) => {
 
   if (requestUrl.pathname === '/api/auth/google/callback') {
     const token = 'fixture-session-token';
-    const result = core.upsertSession(readStore(), token, {
+    let store = readStore();
+
+    // Simuleer precies het risicopad van de echte runtime: een bestaand, nog
+    // niet geverifieerd e-mailadres van een ander account krijgt tijdens de
+    // callback een Google sub en dat andere account krijgt een sessie.
+    const wrongPrelink = core.findLinkByAccount(store, 'student', 'student-2');
+    if (wrongPrelink && !wrongPrelink.sub) {
+      wrongPrelink.sub = 'gekoppeld-sub';
+      wrongPrelink.linkedBy = wrongPrelink.linkedBy || 'google-login';
+    }
+
+    const result = core.upsertSession(store, token, {
       userId: 'student-2',
       type: 'student',
       remember: false,
