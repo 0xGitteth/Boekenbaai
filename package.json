@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --require ./google-auth-security-preload.js --require ./google-login-hint-preload.js --require ./google-auth-preload.js server.js",
     "build": "vite build",
-    "test": "node tests/history.test.js && node tests/barcode-groups.test.js && node tests/grouped-filters.test.js && node tests/import.test.js && node tests/isbn-metadata-parsers.test.js && node tests/theme-derivation.test.js && node tests/manual-themes-persistence.test.js && node tests/cover-url-pipeline.test.js && node tests/auth-import-jobs.test.js && node tests/import-info-detail-fallback.test.js && node tests/google-auth.test.js && node tests/google-auth-security.test.js && node tests/preload-integration.test.js && node --check google-auth-security-preload.js && node --check google-login-hint-preload.js && node --check public/google-login-hint.js"
+    "test": "node tests/history.test.js && node tests/barcode-groups.test.js && node tests/grouped-filters.test.js && node tests/import.test.js && node tests/isbn-metadata-parsers.test.js && node tests/theme-derivation.test.js && node tests/manual-themes-persistence.test.js && node tests/cover-url-pipeline.test.js && node tests/run-auth-import-jobs.test.js && node tests/import-info-detail-fallback.test.js && node tests/google-auth.test.js && node tests/google-auth-security.test.js && node tests/preload-integration.test.js && node --check google-auth-security-preload.js && node --check google-login-hint-preload.js && node --check public/google-login-hint.js"
   },
   "dependencies": {
     "xlsx": "^0.18.5"
