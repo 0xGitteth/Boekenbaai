@@ -3,108 +3,224 @@
 
   function getPageState() {
     const isStaff = document.body?.dataset.page === 'staff';
+    const form = document.querySelector(isStaff ? '#login-form' : '#student-login-form');
     return {
       isStaff,
+      form,
       nameInput: document.querySelector(isStaff ? '#login-name' : '#student-login-name'),
       passwordInput: document.querySelector(
         isStaff ? '#login-password' : '#student-login-password'
       ),
-      suggestions: document.querySelector(
-        isStaff ? '#login-suggestions' : '#student-login-suggestions'
-      ),
+      message: document.querySelector(isStaff ? '#login-message' : '#student-login-message'),
+      submit: form?.querySelector('button[type="submit"]') || null,
     };
   }
 
-  function buildGoogleStartUrl() {
-    const { isStaff, nameInput } = getPageState();
-    const enteredName = nameInput?.value?.trim() || '';
-    const remember =
-      isStaff && document.querySelector('#boekenbaai-remember-login')?.checked;
+  async function fetchLoginMode(type, accountId) {
+    const response = await window.fetch(
+      `/api/auth/login-mode?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.message || 'Het gekozen account kon niet worden gecontroleerd.');
+    }
+    if (!['google', 'password'].includes(payload.authMode)) {
+      throw new Error('Het gekozen account heeft geen geldige inlogmethode.');
+    }
+    return payload.authMode;
+  }
 
-    const params = new URLSearchParams({ type: isStaff ? 'staff' : 'student' });
-    if (remember) params.set('remember', '1');
-    if (enteredName) params.set('name', enteredName);
+  function buildGoogleStartUrl({ isStaff, accountId, remember }) {
+    const params = new URLSearchParams({
+      type: isStaff ? 'staff' : 'student',
+      accountId,
+    });
+    if (isStaff && remember) params.set('remember', '1');
     return `/api/auth/google/start?${params.toString()}`;
   }
 
-  document.addEventListener(
-    'click',
-    (event) => {
-      const button = event.target.closest?.('.google-login__button');
-      if (!button || button.disabled) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      window.location.assign(buildGoogleStartUrl());
-    },
-    true
-  );
+  function stripAdminGoogleManageOptions() {
+    for (const option of document.querySelectorAll('.google-manage select option')) {
+      if (/\(admin\)\s*$/i.test(option.textContent || '')) {
+        option.remove();
+      }
+    }
+  }
 
   function enhanceLogin(attempt = 0) {
     const googleBlock = document.querySelector('.google-login');
     const googleButton = googleBlock?.querySelector('.google-login__button');
     if (!googleBlock || !googleButton) {
-      if (attempt < 60) window.setTimeout(() => enhanceLogin(attempt + 1), 50);
+      if (attempt < 80) window.setTimeout(() => enhanceLogin(attempt + 1), 50);
       return;
     }
-    if (googleBlock.dataset.nameFirstEnhanced === '1') return;
-    googleBlock.dataset.nameFirstEnhanced = '1';
+    if (document.body?.dataset.loginFlowEnhanced === '1') return;
+    document.body.dataset.loginFlowEnhanced = '1';
 
-    const { nameInput, passwordInput, suggestions } = getPageState();
-    if (!nameInput) return;
+    const { isStaff, form, nameInput, passwordInput, message, submit } = getPageState();
+    if (!form || !nameInput || !submit) return;
 
     const googleEnabled = !googleButton.disabled;
-    if (!googleEnabled) return;
+    const passwordField = passwordInput?.closest('.form-field') || null;
+    const rememberLabel = isStaff
+      ? googleBlock.querySelector('.google-login__remember')
+      : null;
+    const rememberCheckbox = rememberLabel?.querySelector('#boekenbaai-remember-login') || null;
 
-    const form = nameInput.closest('form');
-    const passwordField = passwordInput?.closest('.form-field');
-    const legacySubmit = form?.querySelector('button[type="submit"]');
-    const divider = googleBlock.querySelector('.google-login__divider');
-    const hint = googleBlock.querySelector('.google-login__hint');
+    googleBlock.querySelector('.google-login__divider')?.remove();
+    googleBlock.querySelector('.google-login__hint')?.remove();
+    googleButton.remove();
 
-    if (passwordField) passwordField.hidden = true;
-    if (legacySubmit) legacySubmit.hidden = true;
-    if (divider) divider.hidden = true;
-    if (hint) hint.textContent = 'Kies je naam. Daarna ga je automatisch door naar Google.';
-    googleButton.textContent = 'Verder met Google';
+    if (rememberLabel) {
+      rememberLabel.hidden = true;
+      form.insertBefore(rememberLabel, submit);
+    }
+    googleBlock.remove();
 
-    const fallbackButton = document.createElement('button');
-    fallbackButton.type = 'button';
-    fallbackButton.className = 'btn btn--ghost google-login__fallback';
-    fallbackButton.textContent = 'Inloggen met wachtwoord';
-    googleBlock.append(fallbackButton);
+    submit.textContent = 'Inloggen';
+    let selectedMode = '';
+    let selectedModeAccountId = '';
+    let modeRequestId = 0;
 
-    const syncGoogleButton = () => {
-      googleButton.disabled = !nameInput.value.trim();
-    };
-    syncGoogleButton();
-    nameInput.addEventListener('input', syncGoogleButton);
+    function setMessage(text) {
+      if (message) message.textContent = text || '';
+    }
 
-    fallbackButton.addEventListener('click', () => {
-      const legacyVisible = !passwordField?.hidden;
-      if (passwordField) passwordField.hidden = legacyVisible;
-      if (legacySubmit) legacySubmit.hidden = legacyVisible;
-      fallbackButton.textContent = legacyVisible
-        ? 'Inloggen met wachtwoord'
-        : 'Terug naar Google-inlog';
-      if (!legacyVisible) passwordInput?.focus();
-    });
+    function showPassword(show) {
+      const visible = Boolean(show && isStaff && passwordInput);
+      document.body.classList.toggle('login-local-password', visible);
+      if (passwordField) passwordField.hidden = !visible;
+      if (passwordInput) {
+        passwordInput.required = visible;
+        if (!visible) passwordInput.value = '';
+      }
+      if (rememberLabel) rememberLabel.hidden = visible || !isStaff;
+      if (visible && rememberCheckbox) rememberCheckbox.checked = false;
+    }
 
-    nameInput.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return;
-      syncGoogleButton();
-      if (googleButton.disabled) return;
-      event.preventDefault();
-      googleButton.click();
-    });
+    function clearMode({ clearMessage = false } = {}) {
+      modeRequestId += 1;
+      selectedMode = '';
+      selectedModeAccountId = '';
+      showPassword(false);
+      if (rememberLabel) rememberLabel.hidden = true;
+      submit.disabled = !nameInput.value.trim();
+      if (clearMessage) setMessage('');
+    }
 
-    suggestions?.addEventListener('click', () => {
-      window.setTimeout(() => {
-        syncGoogleButton();
-        if (!googleButton.disabled && nameInput.value.trim()) {
-          googleButton.click();
+    async function syncSelectedAccount() {
+      const accountId = nameInput.dataset.selectedAccountId || '';
+      if (!accountId) {
+        clearMode();
+        return;
+      }
+
+      const requestId = ++modeRequestId;
+      selectedMode = '';
+      selectedModeAccountId = '';
+      showPassword(false);
+      submit.disabled = true;
+      setMessage('Account wordt gecontroleerd…');
+
+      try {
+        const authMode = await fetchLoginMode(isStaff ? 'staff' : 'student', accountId);
+        if (
+          requestId !== modeRequestId ||
+          nameInput.dataset.selectedAccountId !== accountId
+        ) {
+          return;
         }
+        selectedMode = authMode;
+        selectedModeAccountId = accountId;
+        showPassword(authMode === 'password');
+        submit.disabled = false;
+        if (authMode === 'password') {
+          setMessage('');
+          window.setTimeout(() => passwordInput?.focus(), 0);
+        } else if (!googleEnabled) {
+          setMessage('Google-inlog is nog niet ingesteld door de beheerder.');
+        } else {
+          setMessage('');
+        }
+      } catch (error) {
+        if (requestId !== modeRequestId) return;
+        clearMode();
+        setMessage(error.message);
+      }
+    }
+
+    // De bestaande autocomplete zet dit attribuut alleen wanneer iemand echt
+    // een resultaat uit de lijst kiest. Typen alleen is dus niet voldoende.
+    const selectionObserver = new MutationObserver(() => {
+      syncSelectedAccount();
+    });
+    selectionObserver.observe(nameInput, {
+      attributes: true,
+      attributeFilter: ['data-selected-account-id'],
+    });
+
+    nameInput.addEventListener('input', () => {
+      if (!nameInput.dataset.selectedAccountId) {
+        clearMode({ clearMessage: true });
+      }
+    });
+
+    form.addEventListener('reset', () => {
+      window.setTimeout(() => {
+        nameInput.removeAttribute('data-selected-account-id');
+        clearMode({ clearMessage: true });
       }, 0);
     });
+
+    form.addEventListener(
+      'submit',
+      (event) => {
+        const accountId = nameInput.dataset.selectedAccountId || '';
+        const hasCurrentMode = Boolean(
+          accountId && selectedMode && selectedModeAccountId === accountId
+        );
+
+        if (!hasCurrentMode) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setMessage('Kies je naam uit de lijst voordat je inlogt.');
+          return;
+        }
+
+        if (selectedMode === 'password') {
+          // Alleen lokale beheeraccounts komen hier. De bestaande app.js
+          // verwerkt de vertrouwde naam+wachtwoordlogin verder.
+          return;
+        }
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!googleEnabled) {
+          setMessage('Google-inlog is nog niet ingesteld door de beheerder.');
+          return;
+        }
+        const remember = Boolean(isStaff && rememberCheckbox?.checked);
+        window.location.assign(
+          buildGoogleStartUrl({ isStaff, accountId, remember })
+        );
+      },
+      true
+    );
+
+    showPassword(false);
+    submit.disabled = !nameInput.value.trim();
+
+    const state = new URLSearchParams(window.location.search).get('googleAuth') || '';
+    if (state === 'select-account') {
+      setMessage('Kies je naam uit de lijst voordat je inlogt.');
+    } else if (state === 'local-only') {
+      setMessage('Dit beheeraccount logt lokaal in met een wachtwoord.');
+    }
+
+    stripAdminGoogleManageOptions();
+    const manageObserver = new MutationObserver(stripAdminGoogleManageOptions);
+    manageObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   document.addEventListener('DOMContentLoaded', () => enhanceLogin());
