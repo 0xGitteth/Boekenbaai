@@ -103,9 +103,34 @@ async function startSelection() {
   assert.strictEqual(startIntent?.purpose, 'google-start');
   assert.strictEqual(startIntent?.type, 'student');
   assert.strictEqual(startIntent?.accountId, 'student-1');
+  assert.ok(startIntent?.nonce, 'Het starttoken moet aan een browsernonce zijn gebonden');
+
+  const tokenSetCookie = tokenResponse.headers.get('set-cookie') || '';
+  assert.match(tokenSetCookie, /boekenbaai_google_start_intent=/);
+  assert.match(tokenSetCookie, /HttpOnly/i);
+  assert.match(tokenSetCookie, /SameSite=Strict/i);
+  const intentCookie = extractCookieValue(
+    tokenSetCookie,
+    'boekenbaai_google_start_intent'
+  );
+  assert.strictEqual(intentCookie, startIntent.nonce);
+
+  const stolenToken = await fetch(
+    `${baseUrl}/api/auth/google/start?type=student&accountId=student-1&handoffToken=${encodeURIComponent(tokenPayload.token)}`
+  );
+  assert.strictEqual(
+    stolenToken.status,
+    403,
+    'Een geldig starttoken uit een andere browser zonder bijbehorende HttpOnly-cookie moet waardeloos zijn'
+  );
 
   const response = await fetch(
-    `${baseUrl}/api/auth/google/start?type=student&accountId=student-1&handoffToken=${encodeURIComponent(tokenPayload.token)}`
+    `${baseUrl}/api/auth/google/start?type=student&accountId=student-1&handoffToken=${encodeURIComponent(tokenPayload.token)}`,
+    {
+      headers: {
+        Cookie: `boekenbaai_google_start_intent=${encodeURIComponent(intentCookie)}`,
+      },
+    }
   );
   assert.strictEqual(response.status, 200);
   const payload = await response.json();
@@ -116,6 +141,11 @@ async function startSelection() {
   assert.match(setCookie, /boekenbaai_google_selected_account=/);
   assert.match(setCookie, /HttpOnly/i);
   assert.match(setCookie, /SameSite=Lax/i);
+  assert.match(
+    setCookie,
+    /boekenbaai_google_start_intent=;[^,]*Max-Age=0/,
+    'De browsergebonden startintent-cookie moet na gebruik worden gewist'
+  );
   const selectedCookie = extractCookieValue(setCookie, 'boekenbaai_google_selected_account');
   assert.ok(selectedCookie, 'Beveiligde leerlingselectiecookie ontbreekt');
   const selection = core.verifySignedState(selectedCookie, secret, {
@@ -147,7 +177,7 @@ function cookiesForSelection(selectedCookie) {
     assert.strictEqual(
       untrustedStart.status,
       403,
-      'Google-start zonder kortlevend same-origin handofftoken moet worden geblokkeerd'
+      'Google-start zonder kortlevend handofftoken moet worden geblokkeerd'
     );
     assert.doesNotMatch(
       untrustedStart.headers.get('set-cookie') || '',
@@ -172,9 +202,6 @@ function cookiesForSelection(selectedCookie) {
       'De oude handmatige route mag de ondertekende selectie niet vóór auto-koppeling omzeilen'
     );
 
-    // Een reeds geverifieerde koppeling met hetzelfde e-mailadres maar een andere
-    // Google sub is geen geldige identiteit voor deze login. Maak dan niet eerst
-    // een docentverzoek aan dat bij goedkeuren toch op een e-mailconflict strandt.
     let store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
     store.links.push({
       accountType: 'student',
@@ -200,7 +227,6 @@ function cookiesForSelection(selectedCookie) {
       'Een geweigerde conflictcheck mag de pending identiteit niet half aan een leerling binden'
     );
 
-    // Nieuwe echte login na het oplossen van dat conflict.
     store.links = store.links.filter((entry) => entry?.accountId !== 'student-2');
     fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
@@ -235,9 +261,6 @@ function cookiesForSelection(selectedCookie) {
       'Een gebonden Google-identiteit mag niet via de oude route van leerling wisselen'
     );
 
-    // Leg vóór de callback een prelink voor het verkeerde account vast. De fixture
-    // simuleert dat de runtime die link tijdens de callback van een sub voorziet.
-    // De handoff moet zowel die wijziging als de fout aangemaakte sessie terugdraaien.
     store.links.push({
       accountType: 'student',
       accountId: 'student-2',
@@ -278,8 +301,6 @@ function cookiesForSelection(selectedCookie) {
     );
     assert.strictEqual(restoredWrongLink?.linkedBy, 'teacher-test');
 
-    // Dezelfde guard mag een correcte callback voor de geselecteerde leerling juist
-    // niet aantasten.
     const correct = await startSelection();
     const correctCallback = await fetch(
       `${baseUrl}/api/auth/google/callback?as=student-1&state=${encodeURIComponent(correct.payload.state)}`,
@@ -302,8 +323,6 @@ function cookiesForSelection(selectedCookie) {
       'Een correcte sessie voor de geselecteerde leerling moet blijven bestaan'
     );
 
-    // Een docent kan een verzoek per ongeluk afwijzen. Een nieuwe Google-login moet
-    // daarna opnieuw een verzoek mogen maken in plaats van permanent vast te lopen.
     store.linkRequests[0].status = 'denied';
     store.linkRequests[0].updatedAt = new Date().toISOString();
     delete store.pendingIdentities[0].studentId;
