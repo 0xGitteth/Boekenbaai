@@ -8,6 +8,7 @@ const {
   createSignedState,
   verifySignedState,
   emptyAuthStore,
+  findLinkByIdentity,
   upsertLink,
   upsertSession,
   resolveSession,
@@ -57,6 +58,38 @@ const {
       sub: 'sub-2',
     }),
     /ander account/
+  );
+})();
+
+(function testVerifiedLinkNeverFallsBackToReusedEmail() {
+  let store = emptyAuthStore();
+  store = upsertLink(store, {
+    accountType: 'student',
+    accountId: 'student-1',
+    email: 'hergebruikt@koraaledu.nl',
+    sub: 'original-sub',
+  }).store;
+
+  assert.strictEqual(
+    findLinkByIdentity(store, 'student', {
+      email: 'hergebruikt@koraaledu.nl',
+      sub: 'different-google-account',
+    }),
+    null
+  );
+
+  const prelinked = upsertLink(emptyAuthStore(), {
+    accountType: 'student',
+    accountId: 'student-2',
+    email: 'vooraf@koraaledu.nl',
+    sub: '',
+  }).store;
+  assert.strictEqual(
+    findLinkByIdentity(prelinked, 'student', {
+      email: 'vooraf@koraaledu.nl',
+      sub: 'first-verified-sub',
+    })?.accountId,
+    'student-2'
   );
 })();
 
