@@ -2,7 +2,9 @@
 
 const http = require('http');
 
+const unrelatedBeforeThemes = new Map();
 const EXACT_THEME_MAP = new Map([['x', 'y']]);
+const unrelatedBeforeSessions = new Map();
 const sessions = new Map();
 const other = new Map();
 
@@ -12,6 +14,23 @@ if (process.env.SEED_LEGACY === '1') {
     type: 'staff',
     createdAt: Date.now(),
   });
+}
+
+if (process.env.GOOGLE_TEST_IDENTITY === '1') {
+  globalThis.__BOEKENBAAI_EXCHANGE_GOOGLE_CODE = async (code) => {
+    if (code !== 'fixture-code') throw new Error('Onverwachte testcode');
+    return 'fixture-id-token';
+  };
+  globalThis.__BOEKENBAAI_VERIFY_GOOGLE_ID_TOKEN = async (idToken, options = {}) => {
+    if (idToken !== 'fixture-id-token') throw new Error('Onverwacht testtoken');
+    if (!options.expectedNonce) throw new Error('OAuth nonce werd niet aan ID-token verificatie doorgegeven');
+    return {
+      sub: 'fixture-google-sub',
+      email: 'docent@koraaledu.nl',
+      name: 'Docent',
+      givenName: 'Docent',
+    };
+  };
 }
 
 http.createServer((req, res) => {
@@ -24,7 +43,7 @@ http.createServer((req, res) => {
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ id: session.userId, role: 'teacher' }));
+    res.end(JSON.stringify({ id: session.userId, role: 'teacher', mustChangePassword: true }));
     return;
   }
 
@@ -34,5 +53,7 @@ http.createServer((req, res) => {
   );
 }).listen(Number(process.env.PORT || 31337));
 
+void unrelatedBeforeThemes;
 void EXACT_THEME_MAP;
+void unrelatedBeforeSessions;
 void other;
