@@ -118,6 +118,10 @@ function validateClaims(payload, { clientId, domain, expectedNonce = '', now = D
   if (!audienceMatches(payload?.aud, clientId)) {
     throw invalidToken('Google audience klopt niet.');
   }
+  const hasMultipleAudiences = Array.isArray(payload?.aud) && payload.aud.length > 1;
+  if (hasMultipleAudiences && String(payload?.azp || '') !== clientId) {
+    throw invalidToken('Google authorized party ontbreekt of klopt niet.');
+  }
   if (payload?.azp && String(payload.azp) !== clientId) {
     throw invalidToken('Google authorized party klopt niet.');
   }
