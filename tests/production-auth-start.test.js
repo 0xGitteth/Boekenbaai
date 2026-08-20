@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const core = require('../google-auth-core');
 
 const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-production-auth-'));
@@ -54,6 +55,7 @@ fs.writeFileSync(dbPath, JSON.stringify({
 const child = spawn(process.execPath, [
   '--require', path.join(root, 'google-auth-security-preload.js'),
   '--require', path.join(root, 'login-flow-policy-preload.js'),
+  '--require', path.join(root, 'student-google-handoff-preload.js'),
   '--require', path.join(root, 'google-auth-runtime-preload.js'),
   path.join(root, 'server.js'),
 ], {
@@ -134,6 +136,28 @@ async function loginMode(type, accountId) {
     );
     assert.strictEqual(teacherGoogle.status, 302);
     assert.strictEqual(new URL(teacherGoogle.headers.get('location')).hostname, 'accounts.google.com');
+
+    const studentGoogle = await fetch(
+      `${baseUrl}/api/auth/google/start?type=student&accountId=student-smoke`,
+      { redirect: 'manual' }
+    );
+    assert.strictEqual(studentGoogle.status, 302);
+    const studentGoogleLocation = new URL(studentGoogle.headers.get('location'));
+    assert.strictEqual(studentGoogleLocation.hostname, 'accounts.google.com');
+    const studentOauthState = core.verifySignedState(
+      studentGoogleLocation.searchParams.get('state'),
+      'test-auth-secret'
+    );
+    assert.strictEqual(
+      studentOauthState?.accountId,
+      'student-smoke',
+      'Production OAuth-state moet de geselecteerde leerling meenemen'
+    );
+    assert.match(
+      studentGoogle.headers.get('set-cookie') || '',
+      /boekenbaai_google_selected_account=/,
+      'Production Google-start moet de beveiligde leerlingselectiecookie zetten'
+    );
 
     const login = await fetch(`${baseUrl}/api/login-by-name`, {
       method: 'POST',
