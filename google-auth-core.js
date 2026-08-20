@@ -131,7 +131,9 @@ function findLinkByIdentity(store, accountType, { email, sub } = {}) {
     if (bySub) return bySub;
   }
   if (normalizedEmail) {
-    return links.find((entry) => normalizeEmail(entry?.email) === normalizedEmail) || null;
+    return links.find(
+      (entry) => !String(entry?.sub || '').trim() && normalizeEmail(entry?.email) === normalizedEmail
+    ) || null;
   }
   return null;
 }
