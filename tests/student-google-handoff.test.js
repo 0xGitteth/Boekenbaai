@@ -118,19 +118,24 @@ async function startSelection() {
   return { payload, selectedCookie };
 }
 
+function cookiesForSelection(selectedCookie) {
+  return (
+    `boekenbaai_google_pending=${encodeURIComponent(pendingToken)}; ` +
+    `boekenbaai_google_selected_account=${encodeURIComponent(selectedCookie)}`
+  );
+}
+
 (async () => {
   try {
     await waitForServer();
 
     const first = await startSelection();
-    const selectedCookies =
-      `boekenbaai_google_pending=${encodeURIComponent(pendingToken)}; ` +
-      `boekenbaai_google_selected_account=${encodeURIComponent(first.selectedCookie)}`;
+    const firstCookies = cookiesForSelection(first.selectedCookie);
 
     const raceSwitch = await fetch(`${baseUrl}/api/auth/google/link-request`, {
       method: 'POST',
       headers: {
-        Cookie: selectedCookies,
+        Cookie: firstCookies,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ studentId: 'student-2' }),
@@ -141,6 +146,36 @@ async function startSelection() {
       'De oude handmatige route mag de ondertekende selectie niet vóór auto-koppeling omzeilen'
     );
 
+    // Een reeds geverifieerde koppeling met hetzelfde e-mailadres maar een andere
+    // Google sub is geen geldige identiteit voor deze login. Maak dan niet eerst
+    // een docentverzoek aan dat bij goedkeuren toch op een e-mailconflict strandt.
+    let store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    store.links.push({
+      accountType: 'student',
+      accountId: 'student-2',
+      email: 'leerling@koraaledu.nl',
+      sub: 'andere-bestaande-sub',
+      linkedBy: 'teacher-existing',
+    });
+    fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
+
+    const reusedVerifiedEmail = await fetch(`${baseUrl}/api/auth/google/auto-link-request`, {
+      method: 'POST',
+      headers: { Cookie: firstCookies },
+    });
+    assert.strictEqual(reusedVerifiedEmail.status, 409);
+    const reusedPayload = await reusedVerifiedEmail.json();
+    assert.match(reusedPayload.message || '', /al aan een ander Boekenbaai-account gekoppeld/i);
+    store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    assert.strictEqual(store.linkRequests.length, 0);
+
+    // Nieuwe echte login na het oplossen van dat conflict.
+    store.links = store.links.filter((entry) => entry?.accountId !== 'student-2');
+    delete store.pendingIdentities[0].studentId;
+    fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
+
+    const selected = await startSelection();
+    const selectedCookies = cookiesForSelection(selected.selectedCookie);
     const auto = await fetch(`${baseUrl}/api/auth/google/auto-link-request`, {
       method: 'POST',
       headers: { Cookie: selectedCookies },
@@ -150,7 +185,7 @@ async function startSelection() {
     assert.strictEqual(autoPayload.automatic, true);
     assert.strictEqual(autoPayload.studentId, 'student-1');
 
-    let store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
     assert.strictEqual(store.pendingIdentities[0].studentId, 'student-1');
     assert.strictEqual(store.linkRequests.length, 1);
     assert.strictEqual(store.linkRequests[0].studentId, 'student-1');
@@ -183,11 +218,11 @@ async function startSelection() {
     fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
     const mismatch = await fetch(
-      `${baseUrl}/api/auth/google/callback?state=${encodeURIComponent(first.payload.state)}`,
+      `${baseUrl}/api/auth/google/callback?state=${encodeURIComponent(selected.payload.state)}`,
       {
         redirect: 'manual',
         headers: {
-          Cookie: `boekenbaai_google_selected_account=${encodeURIComponent(first.selectedCookie)}`,
+          Cookie: `boekenbaai_google_selected_account=${encodeURIComponent(selected.selectedCookie)}`,
         },
       }
     );
@@ -245,9 +280,7 @@ async function startSelection() {
     fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
     const retry = await startSelection();
-    const retryCookies =
-      `boekenbaai_google_pending=${encodeURIComponent(pendingToken)}; ` +
-      `boekenbaai_google_selected_account=${encodeURIComponent(retry.selectedCookie)}`;
+    const retryCookies = cookiesForSelection(retry.selectedCookie);
 
     const pendingBeforeRetry = await fetch(`${baseUrl}/api/auth/google/pending`, {
       headers: { Cookie: retryCookies },
