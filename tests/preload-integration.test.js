@@ -11,6 +11,7 @@ const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-auth-'));
 const dbPath = path.join(tmp, 'db.json');
 const authPath = `${dbPath}.auth.json`;
+const fixturePath = path.join(__dirname, 'preload-fixture.js');
 const port = 31421;
 const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -66,16 +67,15 @@ function start(seed) {
       '--require',
       path.join(root, 'google-auth-security-preload.js'),
       '--require',
-      path.join(root, 'google-login-hint-preload.js'),
-      '--require',
-      path.join(root, 'google-auth-preload.js'),
-      path.join(__dirname, 'preload-fixture.js'),
+      path.join(root, 'google-auth-runtime-preload.js'),
+      fixturePath,
     ],
     {
       env: {
         ...process.env,
         PORT: String(port),
         SEED_LEGACY: seed ? '1' : '0',
+        BOEKENBAAI_SERVER_ENTRY: fixturePath,
         BOEKENBAAI_DATA_PATH: dbPath,
         BOEKENBAAI_AUTH_DATA_PATH: authPath,
         BOEKENBAAI_GOOGLE_CLIENT_ID: 'test-client',
@@ -89,9 +89,18 @@ function start(seed) {
   );
 
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('fixture start timeout')), 3000);
+    const stderr = [];
+    child.stderr.on('data', (chunk) => stderr.push(chunk.toString()));
+    const timer = setTimeout(
+      () => reject(new Error(`fixture start timeout: ${stderr.join('')}`)),
+      3000
+    );
     child.on('error', reject);
     child.stdout.on('data', () => {});
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) reject(new Error(`fixture exited ${code}: ${stderr.join('')}`));
+    });
     const check = async () => {
       try {
         const response = await fetch(`${baseUrl}/`);
