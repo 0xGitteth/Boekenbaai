@@ -2,17 +2,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
+const authCore = require('./google-auth-core');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
   ? path.resolve(__dirname, process.env.BOEKENBAAI_DATA_PATH)
   : DEFAULT_DATA_PATH;
-const AUTH_DATA_PATH = process.env.BOEKENBAAI_AUTH_DATA_PATH
-  ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
-  : `${DATA_PATH}.auth.json`;
 
 const originalCreateServer = http.createServer.bind(http);
 
@@ -41,6 +38,20 @@ function readDatabase() {
   return db;
 }
 
+function applyLocalOnlyPolicy(db) {
+  const adminIds = (db?.users || [])
+    .filter((entry) => entry?.role === 'admin' && entry?.id)
+    .map((entry) => entry.id);
+  authCore.setLocalOnlyStaffAccountIds(adminIds);
+  return adminIds;
+}
+
+function readDatabaseWithPolicy() {
+  const db = readDatabase();
+  applyLocalOnlyPolicy(db);
+  return db;
+}
+
 function getSelectedAccount(db, type, accountId) {
   const id = String(accountId || '').trim();
   if (!id) return null;
@@ -59,43 +70,6 @@ function getSelectedAccount(db, type, accountId) {
   };
 }
 
-function writeJsonAtomic(filePath, value) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
-  fs.renameSync(tmp, filePath);
-}
-
-function removeAdminGoogleLinks() {
-  let raw;
-  try {
-    raw = fs.readFileSync(AUTH_DATA_PATH, 'utf8');
-  } catch (error) {
-    if (error?.code === 'ENOENT') return;
-    throw error;
-  }
-
-  const store = JSON.parse(raw);
-  if (!store || typeof store !== 'object' || Array.isArray(store)) {
-    throw new Error('Auth-opslag heeft een ongeldig formaat.');
-  }
-  if (!Array.isArray(store.links)) return;
-
-  const db = readDatabase();
-  const adminIds = new Set(
-    db.users.filter((entry) => entry?.role === 'admin' && entry?.id).map((entry) => entry.id)
-  );
-  if (!adminIds.size) return;
-
-  const before = store.links.length;
-  store.links = store.links.filter(
-    (link) => !(link?.accountType === 'staff' && adminIds.has(link?.accountId))
-  );
-  if (store.links.length !== before) {
-    writeJsonAtomic(AUTH_DATA_PATH, store);
-  }
-}
-
 function modeErrorRedirect(type, code) {
   const page = type === 'staff' ? '/staff.html' : '/index.html';
   return `${page}?googleAuth=${encodeURIComponent(code)}`;
@@ -111,10 +85,17 @@ function wrapRequestListener(listener) {
     }
 
     try {
+      if (
+        requestUrl.pathname === '/api/auth/login-mode' ||
+        requestUrl.pathname.startsWith('/api/auth/google/')
+      ) {
+        readDatabaseWithPolicy();
+      }
+
       if (req.method === 'GET' && requestUrl.pathname === '/api/auth/login-mode') {
         const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
         const accountId = requestUrl.searchParams.get('accountId') || '';
-        const account = getSelectedAccount(readDatabase(), type, accountId);
+        const account = getSelectedAccount(readDatabaseWithPolicy(), type, accountId);
         if (!account) {
           return sendJson(res, 404, { message: 'Kies een geldig account uit de lijst.' });
         }
@@ -127,7 +108,7 @@ function wrapRequestListener(listener) {
       if (req.method === 'GET' && requestUrl.pathname === '/api/auth/google/start') {
         const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
         const accountId = requestUrl.searchParams.get('accountId') || '';
-        const account = getSelectedAccount(readDatabase(), type, accountId);
+        const account = getSelectedAccount(readDatabaseWithPolicy(), type, accountId);
         if (!account) {
           return redirect(res, modeErrorRedirect(type, 'select-account'));
         }
@@ -135,13 +116,6 @@ function wrapRequestListener(listener) {
           return redirect(res, modeErrorRedirect(type, 'local-only'));
         }
         return listener(req, res);
-      }
-
-      if (req.method === 'GET' && requestUrl.pathname === '/api/auth/google/callback') {
-        // Beheeraccounts zijn bewust lokale nood-/overdrachtsaccounts. Verwijder
-        // eventuele oude of per ongeluk aangemaakte Google-links voordat de
-        // Google-runtime een identiteit kan omzetten naar een medewerkerssessie.
-        removeAdminGoogleLinks();
       }
 
       return listener(req, res);
@@ -168,9 +142,9 @@ http.createServer = function patchedCreateServer(...args) {
 module.exports = {
   __test: {
     DATA_PATH,
-    AUTH_DATA_PATH,
     readDatabase,
+    readDatabaseWithPolicy,
+    applyLocalOnlyPolicy,
     getSelectedAccount,
-    removeAdminGoogleLinks,
   },
 };
