@@ -68,6 +68,15 @@
             },
             body: JSON.stringify({ remember: true }),
           }).catch(() => null);
+          // Na het afronden van de bestaande login hoeft de echte bearer-token
+          // niet in localStorage te blijven staan. Bij een volgende paginalaad
+          // gebruikt app.js de HttpOnly sessiecookie via deze neutrale sentinel.
+          window.setTimeout(() => {
+            localStorage.setItem(TOKEN_KEY, COOKIE_SENTINEL);
+          }, 0);
+        }
+        if (payload?.token && ['teacher', 'admin'].includes(payload?.user?.role)) {
+          window.setTimeout(renderManagePanel, 350);
         }
       }
     } catch (error) {
