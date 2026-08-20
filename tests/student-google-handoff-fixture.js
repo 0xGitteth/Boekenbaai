@@ -1,11 +1,22 @@
 'use strict';
 
+const fs = require('fs');
 const http = require('http');
 const { URL } = require('url');
 const core = require('../google-auth-core');
 
 const port = Number(process.env.PORT || 31441);
 const secret = process.env.BOEKENBAAI_AUTH_SECRET || 'handoff-test-secret';
+const authPath = process.env.BOEKENBAAI_AUTH_DATA_PATH;
+
+function readStore() {
+  if (!authPath || !fs.existsSync(authPath)) return core.emptyAuthStore();
+  return core.normalizeStore(JSON.parse(fs.readFileSync(authPath, 'utf8')));
+}
+
+function writeStore(store) {
+  fs.writeFileSync(authPath, JSON.stringify(core.normalizeStore(store), null, 2));
+}
 
 http.createServer((req, res) => {
   const requestUrl = new URL(req.url, `http://${req.headers.host || `127.0.0.1:${port}`}`);
@@ -26,26 +37,26 @@ http.createServer((req, res) => {
   }
 
   if (requestUrl.pathname === '/api/auth/google/callback') {
-    const store = core.emptyAuthStore();
-    store.links.push({
-      accountType: 'student',
-      accountId: 'student-2',
-      email: 'gekoppeld@koraaledu.nl',
-      sub: 'gekoppeld-sub',
+    const token = 'fixture-session-token';
+    const result = core.upsertSession(readStore(), token, {
+      userId: 'student-2',
+      type: 'student',
+      remember: false,
+      now: Date.now(),
     });
-    try {
-      core.findLinkByIdentity(store, 'student', {
-        email: 'gekoppeld@koraaledu.nl',
-        sub: 'gekoppeld-sub',
-      });
-      res.statusCode = 302;
-      res.setHeader('Location', '/index.html?googleAuth=success');
-      return res.end();
-    } catch (error) {
-      res.statusCode = 302;
-      res.setHeader('Location', '/index.html?googleAuth=oauth-error');
-      return res.end();
-    }
+    writeStore(result.store);
+    res.statusCode = 302;
+    res.setHeader('Set-Cookie', [
+      `boekenbaai_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`,
+      'boekenbaai_auth_hint=1; Path=/; SameSite=Lax',
+    ]);
+    res.setHeader('Location', '/index.html?googleAuth=success');
+    return res.end();
+  }
+
+  if (requestUrl.pathname === '/api/auth/google/pending') {
+    res.statusCode = 418;
+    return res.end('delegated-pending');
   }
 
   if (requestUrl.pathname === '/api/auth/google/link-request') {
