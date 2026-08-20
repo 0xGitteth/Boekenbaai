@@ -27,6 +27,11 @@ assert.strictEqual(fixture.sessions, bridge.sessions);
 assert.notStrictEqual(fixture.firstMap, bridge.sessions);
 assert.notStrictEqual(fixture.secondUnrelatedMap, bridge.sessions);
 assert.notStrictEqual(fixture.afterSessionsMap, bridge.sessions);
+assert.strictEqual(
+  Object.prototype.hasOwnProperty.call(globalThis, '__BOEKENBAAI_SESSIONS'),
+  false,
+  'Globale sessiereferentie moet na laden opgeruimd zijn'
+);
 bridge.sessions.set('test-token', { userId: 'user-1' });
 assert.deepStrictEqual(fixture.sessions.get('test-token'), { userId: 'user-1' });
 bridge.restore();
@@ -35,6 +40,11 @@ const brokenPath = path.join(tmp, 'broken.js');
 fs.writeFileSync(brokenPath, "'use strict';\nconst somethingElse = new Map();\n");
 const brokenBridge = installSessionBridge({ target: brokenPath });
 assert.throws(() => require(brokenPath), /verwacht exact één sessiedeclaratie/);
+assert.strictEqual(
+  Object.prototype.hasOwnProperty.call(globalThis, '__BOEKENBAAI_SESSIONS'),
+  false,
+  'Globale sessiereferentie moet ook na een mislukte transformatie opgeruimd zijn'
+);
 brokenBridge.restore();
 
 console.log('Sessiebrugtests geslaagd.');
