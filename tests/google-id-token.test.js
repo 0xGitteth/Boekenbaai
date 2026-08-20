@@ -83,6 +83,25 @@ function verify(token, fetchFn, overrides = {}) {
   await verify(makeToken({ sub: 'google-sub-2' }), counter.fetchFn);
   assert.strictEqual(counter.calls, 1, 'JWKS moet binnen max-age uit cache komen');
 
+  await verify(
+    makeToken({ aud: ['client-id', 'andere-audience'], azp: 'client-id' }),
+    counter.fetchFn
+  );
+  await assert.rejects(
+    () => verify(
+      makeToken({ aud: ['client-id', 'andere-audience'], azp: undefined }),
+      counter.fetchFn
+    ),
+    /authorized party/
+  );
+  await assert.rejects(
+    () => verify(
+      makeToken({ aud: ['client-id', 'andere-audience'], azp: 'andere-client' }),
+      counter.fetchFn
+    ),
+    /authorized party/
+  );
+
   const valid = makeToken();
   const [header, payload, signature] = valid.split('.');
   const tamperedPayload = encodeJson({
