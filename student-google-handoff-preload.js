@@ -171,6 +171,22 @@ function verifiedLinkConflicts(link, pending) {
   );
 }
 
+function identityLinkedElsewhere(store, pending, studentId) {
+  const email = core.normalizeEmail(pending?.email);
+  const sub = String(pending?.sub || '').trim();
+  return store.links.find((entry) => {
+    if (!entry) return false;
+    if (typeof core.isLocalOnlyStaffAccount === 'function' &&
+        core.isLocalOnlyStaffAccount(entry.accountType, entry.accountId)) {
+      return false;
+    }
+    if (entry.accountType === 'student' && entry.accountId === studentId) return false;
+    const sameSub = Boolean(sub && String(entry.sub || '').trim() === sub);
+    const sameEmail = Boolean(email && core.normalizeEmail(entry.email) === email);
+    return sameSub || sameEmail;
+  }) || null;
+}
+
 function findLatestRequest(store, pending, studentId) {
   return store.linkRequests
     .filter(
@@ -223,6 +239,16 @@ function createAutomaticLinkRequest(req, res) {
     });
   }
 
+  const otherLink = identityLinkedElsewhere(store, pending, studentId);
+  if (otherLink) {
+    saveAuthStore(store);
+    clearSelectedAccountCookie(req, res);
+    return sendJson(res, 409, {
+      message:
+        'Dit Google-account is al aan een ander Boekenbaai-account gekoppeld. Vraag je docent om hulp.',
+    });
+  }
+
   const current = findLatestRequest(store, pending, studentId);
   if (current?.status === 'pending') {
     saveAuthStore(store);
@@ -233,6 +259,28 @@ function createAutomaticLinkRequest(req, res) {
       studentId,
       requestId: current.id,
       message: 'Je koppelverzoek wacht op goedkeuring van je docent.',
+    });
+  }
+  if (current?.status === 'approved') {
+    saveAuthStore(store);
+    clearSelectedAccountCookie(req, res);
+    return sendJson(res, 200, {
+      automatic: true,
+      status: 'approved',
+      studentId,
+      requestId: current.id,
+      message: 'Je koppelverzoek is goedgekeurd.',
+    });
+  }
+  if (current?.status === 'denied') {
+    saveAuthStore(store);
+    clearSelectedAccountCookie(req, res);
+    return sendJson(res, 200, {
+      automatic: true,
+      status: 'denied',
+      studentId,
+      requestId: current.id,
+      message: 'Je docent heeft het koppelverzoek afgewezen.',
     });
   }
 
@@ -272,7 +320,10 @@ function createAutomaticLinkRequest(req, res) {
 function rejectBoundManualLinkRequest(req, res) {
   const store = loadAuthStore();
   const pending = pendingIdentityForRequest(req, store);
-  if (!pending?.studentId) return false;
+  if (!pending) return false;
+  const selection = selectedAccountState(req);
+  const hasSecureStudentSelection = selection?.type === 'student' && selection?.accountId;
+  if (!pending.studentId && !hasSecureStudentSelection) return false;
   sendJson(res, 409, {
     message:
       'Deze Google-login hoort al bij de leerlingnaam die je eerder koos. Log opnieuw in om een andere naam te kiezen.',
@@ -430,5 +481,6 @@ module.exports = {
     pendingIdentityForRequest,
     findLatestRequest,
     verifiedLinkConflicts,
+    identityLinkedElsewhere,
   },
 };
