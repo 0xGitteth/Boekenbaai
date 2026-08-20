@@ -11,6 +11,16 @@ const source = fs.readFileSync(
 
 assert.match(
   source,
+  /const initialGoogleState[\s\S]*window\.location\.search/,
+  'Callbackstatus moet direct bij het laden worden vastgelegd vóór google-auth.js de query opruimt'
+);
+assert.match(
+  source,
+  /const googleState = initialGoogleState/,
+  'De handoff-retries moeten de vastgelegde callbackstatus gebruiken'
+);
+assert.match(
+  source,
   /\/api\/auth\/google\/auto-link-request/,
   'Eerste niet-gekoppelde leerlinglogin moet automatisch een koppelverzoek starten'
 );
@@ -31,7 +41,7 @@ assert.match(
 );
 assert.match(
   source,
-  /googleAuth[^\n]*account-mismatch|state === 'account-mismatch'/,
+  /state === 'account-mismatch'/,
   'Een gekozen naam die bij een ander Google-account hoort moet een duidelijke fout geven'
 );
 assert.match(
