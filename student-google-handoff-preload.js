@@ -5,7 +5,6 @@ const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
-const { AsyncLocalStorage } = require('async_hooks');
 const core = require('./google-auth-core');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
@@ -22,12 +21,11 @@ const CONFIGURED_PUBLIC_URL = String(process.env.BOEKENBAAI_PUBLIC_URL || '').re
 
 const PENDING_COOKIE = 'boekenbaai_google_pending';
 const SELECTED_ACCOUNT_COOKIE = 'boekenbaai_google_selected_account';
+const SESSION_COOKIE = 'boekenbaai_session';
+const SESSION_HINT_COOKIE = 'boekenbaai_auth_hint';
 const SELECTION_MAX_AGE_MS = 15 * 60 * 1000;
 
-const requestContext = new AsyncLocalStorage();
 const originalCreateServer = http.createServer.bind(http);
-const originalCreateSignedState = core.createSignedState.bind(core);
-const originalFindLinkByIdentity = core.findLinkByIdentity.bind(core);
 
 function readJsonStrict(filePath, { missingValue, label }) {
   let raw;
@@ -52,7 +50,6 @@ function readMainDb() {
     throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   }
   if (!Array.isArray(db.students)) db.students = [];
-  if (!Array.isArray(db.users)) db.users = [];
   return db;
 }
 
@@ -63,6 +60,11 @@ function loadAuthStore() {
   });
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('Auth-opslag heeft een ongeldig formaat.');
+  }
+  for (const field of ['links', 'sessions', 'pendingIdentities', 'linkRequests']) {
+    if (raw[field] !== undefined && !Array.isArray(raw[field])) {
+      throw new Error(`Auth-opslagveld ${field} is ongeldig.`);
+    }
   }
   return core.pruneStore(core.normalizeStore(raw));
 }
@@ -77,20 +79,20 @@ function saveAuthStore(store) {
 }
 
 function parseCookies(req) {
-  const cookies = {};
+  const result = {};
   for (const part of String(req.headers.cookie || '').split(';')) {
     const index = part.indexOf('=');
     if (index <= 0) continue;
     const key = part.slice(0, index).trim();
-    const rawValue = part.slice(index + 1).trim();
+    const value = part.slice(index + 1).trim();
     if (!key) continue;
     try {
-      cookies[key] = decodeURIComponent(rawValue);
+      result[key] = decodeURIComponent(value);
     } catch (error) {
-      cookies[key] = rawValue;
+      result[key] = value;
     }
   }
-  return cookies;
+  return result;
 }
 
 function isHttpsRequest(req) {
@@ -113,15 +115,25 @@ function useSecureCookies(req) {
   return isHttpsRequest(req);
 }
 
-function serializeCookie(name, value, options = {}) {
+function serializeCookie(name, value, { httpOnly = true, maxAge } = {}) {
   const parts = [`${name}=${encodeURIComponent(value)}`, 'Path=/'];
-  if (options.maxAge !== undefined) {
-    parts.push(`Max-Age=${Math.max(0, Math.floor(options.maxAge))}`);
-  }
-  if (options.httpOnly) parts.push('HttpOnly');
-  if (options.secure) parts.push('Secure');
+  if (maxAge !== undefined) parts.push(`Max-Age=${Math.max(0, Math.floor(maxAge))}`);
+  if (httpOnly) parts.push('HttpOnly');
+  if (useSecureCookieFlag) parts.push('Secure');
   parts.push('SameSite=Lax');
   return parts.join('; ');
+}
+
+let useSecureCookieFlag = false;
+
+function cookieForRequest(req, name, value, options = {}) {
+  const previous = useSecureCookieFlag;
+  useSecureCookieFlag = useSecureCookies(req);
+  try {
+    return serializeCookie(name, value, options);
+  } finally {
+    useSecureCookieFlag = previous;
+  }
 }
 
 function appendSetCookie(res, cookie) {
@@ -130,12 +142,12 @@ function appendSetCookie(res, cookie) {
   res.setHeader('Set-Cookie', [...values, cookie]);
 }
 
+function clearCookie(req, res, name, httpOnly = true) {
+  appendSetCookie(res, cookieForRequest(req, name, '', { httpOnly, maxAge: 0 }));
+}
+
 function clearSelectedAccountCookie(req, res) {
-  appendSetCookie(res, serializeCookie(SELECTED_ACCOUNT_COOKIE, '', {
-    httpOnly: true,
-    secure: useSecureCookies(req),
-    maxAge: 0,
-  }));
+  clearCookie(req, res, SELECTED_ACCOUNT_COOKIE, true);
 }
 
 function sendJson(res, statusCode, payload) {
@@ -152,7 +164,10 @@ function selectedAccountState(req) {
     maxAgeMs: SELECTION_MAX_AGE_MS,
   });
   if (!state || !state.accountId || !['student', 'staff'].includes(state.type)) return null;
-  return state;
+  return {
+    type: state.type,
+    accountId: String(state.accountId).trim(),
+  };
 }
 
 function pendingIdentityForRequest(req, store) {
@@ -167,24 +182,22 @@ function pendingIdentityForRequest(req, store) {
 function verifiedLinkConflicts(link, pending) {
   return Boolean(
     link?.sub &&
-    (link.sub !== pending.sub || core.normalizeEmail(link.email) !== core.normalizeEmail(pending.email))
+    (String(link.sub) !== String(pending.sub) ||
+      core.normalizeEmail(link.email) !== core.normalizeEmail(pending.email))
   );
 }
 
 function identityLinkedElsewhere(store, pending, studentId) {
-  const email = core.normalizeEmail(pending?.email);
-  const sub = String(pending?.sub || '').trim();
-  return store.links.find((entry) => {
-    if (!entry) return false;
-    if (typeof core.isLocalOnlyStaffAccount === 'function' &&
-        core.isLocalOnlyStaffAccount(entry.accountType, entry.accountId)) {
-      return false;
-    }
-    if (entry.accountType === 'student' && entry.accountId === studentId) return false;
-    const sameSub = Boolean(sub && String(entry.sub || '').trim() === sub);
-    const sameEmail = Boolean(email && core.normalizeEmail(entry.email) === email);
-    return sameSub || sameEmail;
-  }) || null;
+  for (const accountType of ['student', 'staff']) {
+    const link = core.findLinkByIdentity(store, accountType, {
+      email: pending.email,
+      sub: pending.sub,
+    });
+    if (!link) continue;
+    if (accountType === 'student' && link.accountId === studentId) continue;
+    return link;
+  }
+  return null;
 }
 
 function findLatestRequest(store, pending, studentId) {
@@ -192,7 +205,7 @@ function findLatestRequest(store, pending, studentId) {
     .filter(
       (entry) =>
         entry?.studentId === studentId &&
-        entry?.sub === pending.sub &&
+        String(entry?.sub || '') === String(pending.sub || '') &&
         core.normalizeEmail(entry?.email) === core.normalizeEmail(pending.email)
     )
     .sort((left, right) => {
@@ -212,9 +225,8 @@ function createAutomaticLinkRequest(req, res) {
   }
 
   const db = readMainDb();
-  const studentId = String(selection.accountId || '').trim();
-  const student = db.students.find((entry) => entry?.id === studentId);
-  if (!student) {
+  const studentId = selection.accountId;
+  if (!db.students.some((entry) => entry?.id === studentId)) {
     clearSelectedAccountCookie(req, res);
     return sendJson(res, 404, { message: 'Het gekozen leerlingaccount bestaat niet meer.' });
   }
@@ -222,11 +234,10 @@ function createAutomaticLinkRequest(req, res) {
   let store = loadAuthStore();
   const pending = pendingIdentityForRequest(req, store);
   if (!pending) {
+    clearSelectedAccountCookie(req, res);
     return sendJson(res, 401, { message: 'Google-koppeling is verlopen. Log opnieuw in.' });
   }
 
-  // Vanaf hier is deze pending Google-identiteit aan de eerder gekozen leerling gebonden.
-  // De oude handmatige zoekroute mag dit account daarna niet meer wisselen.
   pending.studentId = studentId;
 
   const existingLink = core.findLinkByAccount(store, 'student', studentId);
@@ -239,8 +250,7 @@ function createAutomaticLinkRequest(req, res) {
     });
   }
 
-  const otherLink = identityLinkedElsewhere(store, pending, studentId);
-  if (otherLink) {
+  if (identityLinkedElsewhere(store, pending, studentId)) {
     saveAuthStore(store);
     clearSelectedAccountCookie(req, res);
     return sendJson(res, 409, {
@@ -250,37 +260,18 @@ function createAutomaticLinkRequest(req, res) {
   }
 
   const current = findLatestRequest(store, pending, studentId);
-  if (current?.status === 'pending') {
+  if (current?.status === 'pending' || current?.status === 'approved') {
     saveAuthStore(store);
     clearSelectedAccountCookie(req, res);
     return sendJson(res, 200, {
       automatic: true,
-      status: 'pending',
+      status: current.status,
       studentId,
       requestId: current.id,
-      message: 'Je koppelverzoek wacht op goedkeuring van je docent.',
-    });
-  }
-  if (current?.status === 'approved') {
-    saveAuthStore(store);
-    clearSelectedAccountCookie(req, res);
-    return sendJson(res, 200, {
-      automatic: true,
-      status: 'approved',
-      studentId,
-      requestId: current.id,
-      message: 'Je koppelverzoek is goedgekeurd.',
-    });
-  }
-  if (current?.status === 'denied') {
-    saveAuthStore(store);
-    clearSelectedAccountCookie(req, res);
-    return sendJson(res, 200, {
-      automatic: true,
-      status: 'denied',
-      studentId,
-      requestId: current.id,
-      message: 'Je docent heeft het koppelverzoek afgewezen.',
+      message:
+        current.status === 'approved'
+          ? 'Je koppelverzoek is goedgekeurd.'
+          : 'Je koppelverzoek wacht op goedkeuring van je docent.',
     });
   }
 
@@ -288,7 +279,8 @@ function createAutomaticLinkRequest(req, res) {
   for (const entry of store.linkRequests) {
     if (
       entry?.status === 'pending' &&
-      (entry?.sub === pending.sub || core.normalizeEmail(entry?.email) === core.normalizeEmail(pending.email))
+      (String(entry?.sub || '') === String(pending.sub || '') ||
+        core.normalizeEmail(entry?.email) === core.normalizeEmail(pending.email))
     ) {
       entry.status = 'superseded';
       entry.updatedAt = nowIso;
@@ -317,12 +309,29 @@ function createAutomaticLinkRequest(req, res) {
   });
 }
 
+function freshSelectedPendingStatus(req, res) {
+  const selection = selectedAccountState(req);
+  if (!selection || selection.type !== 'student') return false;
+  const store = loadAuthStore();
+  const pending = pendingIdentityForRequest(req, store);
+  if (!pending || pending.studentId) return false;
+  sendJson(res, 200, {
+    email: pending.email,
+    googleName: pending.name || '',
+    requestStatus: 'not-requested',
+    studentId: null,
+    canComplete: false,
+    automaticSelection: true,
+  });
+  return true;
+}
+
 function rejectBoundManualLinkRequest(req, res) {
   const store = loadAuthStore();
   const pending = pendingIdentityForRequest(req, store);
   if (!pending) return false;
   const selection = selectedAccountState(req);
-  const hasSecureStudentSelection = selection?.type === 'student' && selection?.accountId;
+  const hasSecureStudentSelection = selection?.type === 'student' && selection.accountId;
   if (!pending.studentId && !hasSecureStudentSelection) return false;
   sendJson(res, 409, {
     message:
@@ -331,68 +340,102 @@ function rejectBoundManualLinkRequest(req, res) {
   return true;
 }
 
-function buildContext(req) {
-  let requestUrl = null;
-  try {
-    requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  } catch (error) {
-    return { requestUrl: null, pathname: '', oauthType: '', oauthAccountId: '', accountMismatch: false };
-  }
-
-  const context = {
-    requestUrl,
-    pathname: requestUrl.pathname,
-    oauthType: '',
-    oauthAccountId: '',
-    accountMismatch: false,
-  };
-
-  if (requestUrl.pathname === '/api/auth/google/callback' && AUTH_SECRET) {
-    const state = core.verifySignedState(requestUrl.searchParams.get('state'), AUTH_SECRET);
-    if (state?.accountId && ['student', 'staff'].includes(state?.type)) {
-      context.oauthType = state.type;
-      context.oauthAccountId = String(state.accountId).trim();
-    }
-  }
-  return context;
-}
-
-function installSelectedAccountCookie(req, res, context) {
-  if (
-    context.pathname !== '/api/auth/google/start' ||
-    req.method !== 'GET' ||
-    !AUTH_SECRET
-  ) {
+function installSelectedAccountCookie(req, res, requestUrl) {
+  if (req.method !== 'GET' || requestUrl.pathname !== '/api/auth/google/start' || !AUTH_SECRET) {
     return;
   }
-  const type = context.requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
-  const accountId = String(context.requestUrl.searchParams.get('accountId') || '').trim();
+  const type = requestUrl.searchParams.get('type') === 'staff' ? 'staff' : 'student';
+  const accountId = String(requestUrl.searchParams.get('accountId') || '').trim();
   if (!accountId) return;
-  const signed = originalCreateSignedState(
-    { type, accountId, iat: Date.now() },
-    AUTH_SECRET
+  const signed = core.createSignedState({ type, accountId, iat: Date.now() }, AUTH_SECRET);
+  appendSetCookie(
+    res,
+    cookieForRequest(req, SELECTED_ACCOUNT_COOKIE, signed, {
+      httpOnly: true,
+      maxAge: Math.floor(SELECTION_MAX_AGE_MS / 1000),
+    })
   );
-  appendSetCookie(res, serializeCookie(SELECTED_ACCOUNT_COOKIE, signed, {
-    httpOnly: true,
-    secure: useSecureCookies(req),
-    maxAge: Math.floor(SELECTION_MAX_AGE_MS / 1000),
-  }));
 }
 
-function wrapCallbackResponse(req, res, context) {
-  if (context.pathname !== '/api/auth/google/callback') return;
+function setCookieArray(res, values) {
+  if (values.length) res.setHeader('Set-Cookie', values);
+  else res.removeHeader('Set-Cookie');
+}
 
-  const originalSetHeader = res.setHeader.bind(res);
-  res.setHeader = function patchedSetHeader(name, value) {
-    if (String(name).toLowerCase() === 'location' && context.accountMismatch) {
-      const page = context.oauthType === 'staff' ? '/staff.html' : '/index.html';
-      return originalSetHeader(name, `${page}?googleAuth=account-mismatch`);
+function removeCookiesFromResponse(res, names) {
+  const current = res.getHeader('Set-Cookie');
+  const values = current ? (Array.isArray(current) ? current : [current]) : [];
+  const blocked = new Set(names.map((name) => String(name).toLowerCase()));
+  const kept = values.filter((entry) => {
+    const name = String(entry || '').split('=', 1)[0].trim().toLowerCase();
+    return !blocked.has(name);
+  });
+  setCookieArray(res, kept);
+}
+
+function sessionTokenFromResponse(res) {
+  const current = res.getHeader('Set-Cookie');
+  const values = current ? (Array.isArray(current) ? current : [current]) : [];
+  for (const entry of values) {
+    const text = String(entry || '');
+    if (!text.toLowerCase().startsWith(`${SESSION_COOKIE.toLowerCase()}=`)) continue;
+    const raw = text.slice(text.indexOf('=') + 1).split(';', 1)[0];
+    try {
+      return decodeURIComponent(raw);
+    } catch (error) {
+      return raw;
     }
-    return originalSetHeader(name, value);
-  };
+  }
+  return '';
+}
 
+function mismatchRedirect(selection) {
+  const page = selection?.type === 'staff' ? '/staff.html' : '/index.html';
+  return `${page}?googleAuth=account-mismatch`;
+}
+
+function revokeMismatchedSession(req, res, selection) {
+  const location = String(res.getHeader('Location') || '');
+  if (!selection || !location.includes('googleAuth=success')) return false;
+
+  const token = sessionTokenFromResponse(res);
+  if (!token) return false;
+
+  let store = loadAuthStore();
+  const session = core.resolveSession(store, token);
+  const expectedType = selection.type === 'staff' ? 'staff' : 'student';
+  if (session && session.userId === selection.accountId && session.type === expectedType) {
+    return false;
+  }
+
+  store = core.removeSession(store, token);
+  saveAuthStore(store);
+  removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
+  clearCookie(req, res, SESSION_COOKIE, true);
+  clearCookie(req, res, SESSION_HINT_COOKIE, false);
+  res.setHeader('Location', mismatchRedirect(selection));
+  return true;
+}
+
+function guardCallbackResponse(req, res, requestUrl) {
+  if (requestUrl.pathname !== '/api/auth/google/callback') return;
+  const selection = selectedAccountState(req);
   const originalEnd = res.end.bind(res);
-  res.end = function patchedEnd(...args) {
+  let ending = false;
+
+  res.end = function guardedEnd(...args) {
+    if (ending) return originalEnd(...args);
+    ending = true;
+    try {
+      revokeMismatchedSession(req, res, selection);
+    } catch (error) {
+      console.error('[Student Google handoff] Sessiecontrole mislukt:', error?.message || error);
+      removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
+      clearCookie(req, res, SESSION_COOKIE, true);
+      clearCookie(req, res, SESSION_HINT_COOKIE, false);
+      if (selection) res.setHeader('Location', mismatchRedirect(selection));
+    }
+
     const location = String(res.getHeader('Location') || '');
     if (!location.includes('googleAuth=link-required')) {
       clearSelectedAccountCookie(req, res);
@@ -401,65 +444,48 @@ function wrapCallbackResponse(req, res, context) {
   };
 }
 
-core.createSignedState = function createSignedStateWithSelectedAccount(payload, secret) {
-  const context = requestContext.getStore();
-  if (context?.pathname === '/api/auth/google/start' && payload && typeof payload === 'object') {
-    const accountId = String(context.requestUrl?.searchParams.get('accountId') || '').trim();
-    if (accountId) {
-      return originalCreateSignedState({ ...payload, accountId }, secret);
-    }
-  }
-  return originalCreateSignedState(payload, secret);
-};
-
-core.findLinkByIdentity = function findLinkByIdentityForSelectedAccount(store, accountType, identity) {
-  const link = originalFindLinkByIdentity(store, accountType, identity);
-  const context = requestContext.getStore();
-  const expectedType = context?.oauthType === 'staff' ? 'staff' : 'student';
-  if (
-    link &&
-    context?.oauthAccountId &&
-    accountType === expectedType &&
-    link.accountId !== context.oauthAccountId
-  ) {
-    context.accountMismatch = true;
-    const error = new Error('Het gekozen Boekenbaai-account hoort bij een ander Google-account.');
-    error.code = 'ACCOUNT_MISMATCH';
-    throw error;
-  }
-  return link;
-};
-
 function wrapRequestListener(listener) {
   return function studentGoogleHandoffListener(req, res) {
-    const context = buildContext(req);
-    return requestContext.run(context, () => {
-      try {
-        if (
-          req.method === 'POST' &&
-          context.pathname === '/api/auth/google/auto-link-request'
-        ) {
-          return createAutomaticLinkRequest(req, res);
-        }
-        if (
-          req.method === 'POST' &&
-          context.pathname === '/api/auth/google/link-request' &&
-          rejectBoundManualLinkRequest(req, res)
-        ) {
-          return undefined;
-        }
-        installSelectedAccountCookie(req, res, context);
-        wrapCallbackResponse(req, res, context);
-        return listener(req, res);
-      } catch (error) {
-        console.error('[Student Google handoff] Interne fout:', error?.message || error);
-        if (!res.headersSent && !res.writableEnded) {
-          return sendJson(res, 500, { message: 'De Google-koppeling kon niet worden voorbereid.' });
-        }
-        if (!res.writableEnded) res.end();
+    let requestUrl;
+    try {
+      requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    } catch (error) {
+      return listener(req, res);
+    }
+
+    try {
+      if (
+        req.method === 'POST' &&
+        requestUrl.pathname === '/api/auth/google/auto-link-request'
+      ) {
+        return createAutomaticLinkRequest(req, res);
+      }
+      if (
+        req.method === 'GET' &&
+        requestUrl.pathname === '/api/auth/google/pending' &&
+        freshSelectedPendingStatus(req, res)
+      ) {
         return undefined;
       }
-    });
+      if (
+        req.method === 'POST' &&
+        requestUrl.pathname === '/api/auth/google/link-request' &&
+        rejectBoundManualLinkRequest(req, res)
+      ) {
+        return undefined;
+      }
+
+      installSelectedAccountCookie(req, res, requestUrl);
+      guardCallbackResponse(req, res, requestUrl);
+      return listener(req, res);
+    } catch (error) {
+      console.error('[Student Google handoff] Interne fout:', error?.message || error);
+      if (!res.headersSent && !res.writableEnded) {
+        return sendJson(res, 500, { message: 'De Google-koppeling kon niet worden voorbereid.' });
+      }
+      if (!res.writableEnded) res.end();
+      return undefined;
+    }
   };
 }
 
@@ -482,5 +508,6 @@ module.exports = {
     findLatestRequest,
     verifiedLinkConflicts,
     identityLinkedElsewhere,
+    sessionTokenFromResponse,
   },
 };
