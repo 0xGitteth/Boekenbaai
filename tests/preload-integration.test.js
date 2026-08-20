@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -60,7 +61,7 @@ function emptyStore() {
 writeDb();
 fs.writeFileSync(authPath, JSON.stringify(emptyStore(), null, 2));
 
-function start(seed) {
+function start(seed, { googleTestIdentity = false } = {}) {
   const child = spawn(
     process.execPath,
     [
@@ -75,6 +76,7 @@ function start(seed) {
         ...process.env,
         PORT: String(port),
         SEED_LEGACY: seed ? '1' : '0',
+        GOOGLE_TEST_IDENTITY: googleTestIdentity ? '1' : '0',
         BOEKENBAAI_SERVER_ENTRY: fixturePath,
         BOEKENBAAI_DATA_PATH: dbPath,
         BOEKENBAAI_AUTH_DATA_PATH: authPath,
@@ -128,8 +130,13 @@ function sessionCookie(token) {
   return `boekenbaai_session=${encodeURIComponent(token)}; boekenbaai_auth_hint=1`;
 }
 
+function cookieValue(setCookieHeader, name) {
+  const match = String(setCookieHeader || '').match(new RegExp(`(?:^|,\\s*)${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 (async () => {
-  let child = await start(true);
+  let child = await start(true, { googleTestIdentity: true });
   try {
     const html = await (await fetch(`${baseUrl}/`)).text();
     assert.match(html, /google-auth\.css/);
@@ -144,6 +151,44 @@ function sessionCookie(token) {
     const hintedLocation = new URL(hintedStart.headers.get('location'));
     assert.strictEqual(hintedLocation.searchParams.get('login_hint'), 'docent@koraaledu.nl');
     assert.strictEqual(hintedLocation.searchParams.has('prompt'), false);
+
+    const oauthNonce = cookieValue(hintedStart.headers.get('set-cookie'), 'boekenbaai_oauth_nonce');
+    const oauthState = hintedLocation.searchParams.get('state');
+    assert.ok(oauthNonce, 'OAuth nonce-cookie ontbreekt');
+    assert.ok(oauthState, 'OAuth state ontbreekt');
+
+    const callback = await fetch(
+      `${baseUrl}/api/auth/google/callback?code=fixture-code&state=${encodeURIComponent(oauthState)}`,
+      {
+        redirect: 'manual',
+        headers: { Cookie: `boekenbaai_oauth_nonce=${encodeURIComponent(oauthNonce)}` },
+      }
+    );
+    assert.strictEqual(callback.status, 302);
+    assert.strictEqual(callback.headers.get('location'), '/staff.html?googleAuth=success');
+    const callbackCookies = callback.headers.get('set-cookie') || '';
+    const googleSessionToken = cookieValue(callbackCookies, 'boekenbaai_session');
+    assert.ok(googleSessionToken, 'Google callback zette geen sessiecookie');
+
+    const afterCallbackStore = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    const linkedStaff = afterCallbackStore.links.find((entry) => entry.accountId === 'teacher-1');
+    assert.strictEqual(linkedStaff.sub, 'fixture-google-sub');
+    const callbackSession = afterCallbackStore.sessions.find(
+      (entry) => entry.tokenHash === crypto.createHash('sha256').update(googleSessionToken).digest('hex')
+    );
+    assert.ok(callbackSession, 'Google callback sloeg de sessie niet persistent op');
+    assert.strictEqual(callbackSession.authMethod, 'google');
+
+    const callbackMe = await fetch(`${baseUrl}/api/me`, {
+      headers: {
+        Cookie: sessionCookie(googleSessionToken),
+        Authorization: 'Bearer cookie',
+      },
+    });
+    assert.strictEqual(callbackMe.status, 200);
+    const callbackMePayload = await callbackMe.json();
+    assert.strictEqual(callbackMePayload.id, 'teacher-1');
+    assert.strictEqual(callbackMePayload.mustChangePassword, false);
 
     const unknownStart = await fetch(
       `${baseUrl}/api/auth/google/start?type=staff&name=Onbekend`,
@@ -166,9 +211,12 @@ function sessionCookie(token) {
     assert.match(persist.headers.get('set-cookie') || '', /boekenbaai_session=legacy-token/);
 
     const persistedStore = JSON.parse(fs.readFileSync(authPath, 'utf8'));
-    assert.strictEqual(persistedStore.sessions.length, 1);
-    assert.strictEqual(persistedStore.sessions[0].authMethod, 'password');
-    assert.match(persistedStore.sessions[0].accountFingerprint || '', /^[a-f0-9]{64}$/);
+    const legacySession = persistedStore.sessions.find(
+      (entry) => entry.tokenHash === crypto.createHash('sha256').update('legacy-token').digest('hex')
+    );
+    assert.ok(legacySession, 'Persistente legacy-sessie ontbreekt');
+    assert.strictEqual(legacySession.authMethod, 'password');
+    assert.match(legacySession.accountFingerprint || '', /^[a-f0-9]{64}$/);
 
     const legitimateMutation = await fetch(`${baseUrl}/api/auth/session/persist`, {
       method: 'POST',
@@ -217,7 +265,9 @@ function sessionCookie(token) {
     assert.strictEqual((await me.json()).id, 'teacher-1');
 
     const expiredStore = JSON.parse(fs.readFileSync(authPath, 'utf8'));
-    expiredStore.sessions[0].expiresAt = Date.now() - 1;
+    const legacyHash = crypto.createHash('sha256').update('legacy-token').digest('hex');
+    const legacy = expiredStore.sessions.find((entry) => entry.tokenHash === legacyHash);
+    legacy.expiresAt = Date.now() - 1;
     fs.writeFileSync(authPath, JSON.stringify(expiredStore, null, 2));
 
     const expired = await fetch(`${baseUrl}/api/me`, {
@@ -235,7 +285,7 @@ function sessionCookie(token) {
   const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
   const googleStore = emptyStore();
   googleStore.sessions.push({
-    tokenHash: require('crypto').createHash('sha256').update(googleToken).digest('hex'),
+    tokenHash: crypto.createHash('sha256').update(googleToken).digest('hex'),
     userId: 'teacher-1',
     type: 'staff',
     remember: false,
@@ -276,7 +326,7 @@ function sessionCookie(token) {
     await stop(child);
   }
 
-  console.log('Google-auth preload integratietest geslaagd.');
+  console.log('Google-auth runtime integratietest geslaagd.');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
