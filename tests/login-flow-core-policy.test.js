@@ -66,5 +66,17 @@ const teacherUpdate = core.upsertLink(store, {
 });
 assert.strictEqual(teacherUpdate.link.accountId, 'teacher-1');
 
+const reusedAdminIdentity = core.upsertLink(store, {
+  accountType: 'staff',
+  accountId: 'teacher-2',
+  email: 'beheer@koraaledu.nl',
+  sub: 'admin-sub',
+});
+assert.strictEqual(
+  reusedAdminIdentity.link.accountId,
+  'teacher-2',
+  'Een inerte oude admin-link mag e-mail of sub niet bezet houden'
+);
+
 core.setLocalOnlyStaffAccountIds([]);
 console.log('Local-only auth-core policytests geslaagd.');
