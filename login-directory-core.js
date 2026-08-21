@@ -46,7 +46,10 @@ function cleanDisplayPart(value) {
 }
 
 function rawName(student) {
-  return cleanDisplayPart(student?.name || [student?.firstName, student?.middleName, student?.lastName].filter(Boolean).join(' '));
+  return cleanDisplayPart(
+    student?.name ||
+      [student?.firstName, student?.middleName, student?.lastName].filter(Boolean).join(' ')
+  );
 }
 
 function preferredFirstName(student) {
@@ -72,6 +75,12 @@ function surnameCandidate(student, letters) {
   return `${firstName} ${prefix}${length < lastName.length ? '.' : ''}`;
 }
 
+function fullStudentDisplayName(student) {
+  const firstName = preferredFirstName(student);
+  const lastName = preferredLastName(student);
+  return lastName ? `${firstName} ${lastName}` : firstName;
+}
+
 function sameDisplay(left, right) {
   return normalizeSearchText(left) === normalizeSearchText(right);
 }
@@ -85,7 +94,12 @@ function classesForStudent(studentId, classes) {
 }
 
 function shortStableCode(id) {
-  return crypto.createHash('sha256').update(String(id || '')).digest('base64url').slice(0, 4).toUpperCase();
+  return crypto
+    .createHash('sha256')
+    .update(String(id || ''))
+    .digest('base64url')
+    .slice(0, 4)
+    .toUpperCase();
 }
 
 function createStudentDisplayName(student, students, classes) {
@@ -104,17 +118,16 @@ function createStudentDisplayName(student, students, classes) {
     }
   }
 
-  const fullCandidate = lastName
-    ? `${preferredFirstName(student)} ${lastName}`
-    : preferredFirstName(student);
+  const fullCandidate = fullStudentDisplayName(student);
   const exactColliders = allStudents.filter(
-    (other) => other?.id !== student?.id && sameDisplay(fullCandidate, rawName(other) || preferredFirstName(other))
+    (other) =>
+      other?.id !== student?.id &&
+      sameDisplay(fullCandidate, fullStudentDisplayName(other))
   );
   if (!exactColliders.length) return fullCandidate;
 
-  // Alleen bij werkelijk identieke namen is extra context nodig. Gebruik dan
-  // liefst de klas in de zichtbare labeltekst; klas/leerjaar worden nooit als
-  // losse metadata aan het publieke endpoint teruggegeven.
+  // Alleen bij werkelijk identieke zichtbare namen is extra context nodig.
+  // Klas/leerjaar worden nooit als losse publieke metadata teruggegeven.
   const ownClasses = classesForStudent(student?.id, classes);
   for (const className of ownClasses) {
     const classIsUnique = exactColliders.every(
@@ -147,7 +160,10 @@ function buildStudentMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
       };
     })
     .sort((left, right) => left.displayName.localeCompare(right.displayName, 'nl'))
-    .slice(0, Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT)));
+    .slice(
+      0,
+      Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT))
+    );
 }
 
 function buildStaffMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
@@ -169,9 +185,10 @@ function buildStaffMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
     .map((entry) => {
       const normalized = normalizeSearchText(entry.name);
       const baseName = cleanDisplayPart(entry.name);
-      const displayName = nameCounts.get(normalized) > 1
-        ? `${baseName} (${shortStableCode(entry.id)})`
-        : baseName;
+      const displayName =
+        nameCounts.get(normalized) > 1
+          ? `${baseName} (${shortStableCode(entry.id)})`
+          : baseName;
       return {
         id: entry.id,
         name: displayName,
@@ -180,7 +197,10 @@ function buildStaffMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
       };
     })
     .sort((left, right) => left.displayName.localeCompare(right.displayName, 'nl'))
-    .slice(0, Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT)));
+    .slice(
+      0,
+      Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT))
+    );
 }
 
 class DirectoryRateLimiter {
@@ -225,13 +245,25 @@ class DirectoryRateLimiter {
     const browserEvents = this.browserEvents.get(browserKey) || [];
     const networkEvents = this.networkEvents.get(networkKey) || [];
     if (browserEvents.length >= this.browserMax) {
-      return { allowed: false, scope: 'browser', retryAfterSeconds: this._retryAfter(browserEvents, now) };
+      return {
+        allowed: false,
+        scope: 'browser',
+        retryAfterSeconds: this._retryAfter(browserEvents, now),
+      };
     }
     if (networkEvents.length >= this.networkMax) {
-      return { allowed: false, scope: 'network', retryAfterSeconds: this._retryAfter(networkEvents, now) };
+      return {
+        allowed: false,
+        scope: 'network',
+        retryAfterSeconds: this._retryAfter(networkEvents, now),
+      };
     }
     if (this.globalEvents.length >= this.globalMax) {
-      return { allowed: false, scope: 'global', retryAfterSeconds: this._retryAfter(this.globalEvents, now) };
+      return {
+        allowed: false,
+        scope: 'global',
+        retryAfterSeconds: this._retryAfter(this.globalEvents, now),
+      };
     }
 
     browserEvents.push(now);
