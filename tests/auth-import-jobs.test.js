@@ -89,6 +89,34 @@ async function request(pathname, options = {}) {
   return { status: response.status, body };
 }
 
+async function waitForStableTerminalJob(jobId, token, { maxAttempts = 120, intervalMs = 50 } = {}) {
+  let previousTerminal = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(statusResponse.status, 200);
+    const job = statusResponse.body;
+    assert.notStrictEqual(job.status, 'failed', 'Importjob mag niet falen in terminal-stability test');
+    if (job.status === 'completed' || job.status === 'cancelled') {
+      if (
+        previousTerminal
+        && previousTerminal.status === job.status
+        && previousTerminal.finishedAt === job.finishedAt
+        && previousTerminal.updatedAt === job.updatedAt
+      ) {
+        return job;
+      }
+      previousTerminal = job;
+    } else {
+      previousTerminal = null;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return null;
+}
+
 async function loginAdmin() {
   const response = await request('/api/login', {
     method: 'POST',
@@ -442,21 +470,9 @@ async function testCompletedImportCannotBeCancelled() {
     const jobId = startResponse.body.jobId;
     assert.ok(jobId, 'jobId ontbreekt');
 
-    let completedJob = null;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      assert.strictEqual(statusResponse.status, 200);
-      if (statusResponse.body.status === 'completed') {
-        completedJob = statusResponse.body;
-        break;
-      }
-      assert.notStrictEqual(statusResponse.body.status, 'failed', 'Importjob mag niet falen in completed-cancel test');
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    assert.ok(completedJob, 'Importjob werd niet voltooid binnen de testwindow');
+    const completedJob = await waitForStableTerminalJob(jobId, token);
+    assert.ok(completedJob, 'Importjob werd niet stabiel voltooid binnen de testwindow');
+    assert.strictEqual(completedJob.status, 'completed');
     assert.strictEqual(completedJob.currentStage, 'Voltooid');
     assert.strictEqual(completedJob.cancelRequested, false);
 
@@ -473,6 +489,7 @@ async function testCompletedImportCannotBeCancelled() {
     assert.strictEqual(afterCancel.body.status, 'completed');
     assert.strictEqual(afterCancel.body.cancelRequested, false);
     assert.strictEqual(afterCancel.body.finishedAt, completedJob.finishedAt);
+    assert.strictEqual(afterCancel.body.updatedAt, completedJob.updatedAt);
 
     const booksResponse = await request('/api/books', {
       headers: { Authorization: `Bearer ${token}` },
