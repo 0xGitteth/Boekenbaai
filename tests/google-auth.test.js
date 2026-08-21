@@ -3,11 +3,14 @@
 const assert = require('assert');
 const {
   THIRTY_DAYS_MS,
+  PENDING_LINK_REQUEST_MAX_AGE_MS,
+  LINK_REQUEST_HISTORY_MAX_AGE_MS,
   normalizeEmail,
   isAllowedSchoolEmail,
   createSignedState,
   verifySignedState,
   emptyAuthStore,
+  pruneStore,
   findLinkByIdentity,
   upsertLink,
   upsertSession,
@@ -105,6 +108,31 @@ const {
   assert.strictEqual(session.expiresAt - now, THIRTY_DAYS_MS);
   assert.ok(resolveSession(store, token, now + THIRTY_DAYS_MS - 1));
   assert.strictEqual(resolveSession(store, token, now + THIRTY_DAYS_MS + 1), null);
+})();
+
+(function testLinkRequestRetention() {
+  const now = Date.UTC(2026, 7, 21, 12, 0, 0);
+  const iso = (timestamp) => new Date(timestamp).toISOString();
+  const store = emptyAuthStore();
+  store.linkRequests = [
+    { id: 'pending-fresh', status: 'pending', createdAt: iso(now - PENDING_LINK_REQUEST_MAX_AGE_MS + 1) },
+    { id: 'pending-stale', status: 'pending', createdAt: iso(now - PENDING_LINK_REQUEST_MAX_AGE_MS - 1) },
+    { id: 'approved-fresh', status: 'approved', updatedAt: iso(now - LINK_REQUEST_HISTORY_MAX_AGE_MS + 1) },
+    { id: 'denied-fresh', status: 'denied', updatedAt: iso(now - 5 * 24 * 60 * 60 * 1000) },
+    { id: 'rejected-legacy', status: 'rejected', updatedAt: iso(now - 5 * 24 * 60 * 60 * 1000) },
+    { id: 'superseded-fresh', status: 'superseded', updatedAt: iso(now - 5 * 24 * 60 * 60 * 1000) },
+    { id: 'approved-stale', status: 'approved', updatedAt: iso(now - LINK_REQUEST_HISTORY_MAX_AGE_MS - 1) },
+    { id: 'missing-date', status: 'pending' },
+    { id: 'invalid-date', status: 'approved', updatedAt: 'geen-datum' },
+    { id: 'unknown-status', status: 'mystery', updatedAt: iso(now - 1_000) },
+    { id: 'future-date', status: 'pending', updatedAt: iso(now + 61_000) },
+  ];
+
+  const pruned = pruneStore(store, now);
+  assert.deepStrictEqual(
+    pruned.linkRequests.map((entry) => entry.id).sort(),
+    ['approved-fresh', 'denied-fresh', 'pending-fresh', 'rejected-legacy', 'superseded-fresh'].sort()
+  );
 })();
 
 (function testTeacherCanOnlyManageOwnStudents() {

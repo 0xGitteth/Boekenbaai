@@ -6,6 +6,8 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_WINDOW_MS = 12 * 60 * 60 * 1000;
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const PENDING_IDENTITY_MAX_AGE_MS = 30 * 60 * 1000;
+const PENDING_LINK_REQUEST_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const LINK_REQUEST_HISTORY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 let localOnlyStaffAccountIds = new Set();
 
@@ -115,17 +117,26 @@ function normalizeStore(input) {
   };
 }
 
+function requestTimestamp(entry) {
+  const timestamp = Date.parse(entry?.updatedAt || entry?.createdAt || '');
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function pruneStore(store, now = Date.now()) {
   const safe = normalizeStore(store);
   safe.sessions = safe.sessions.filter((entry) => Number(entry?.expiresAt) > now);
   safe.pendingIdentities = safe.pendingIdentities.filter(
     (entry) => Number(entry?.expiresAt) > now
   );
-  const historyCutoff = now - 90 * 24 * 60 * 60 * 1000;
+  const pendingCutoff = now - PENDING_LINK_REQUEST_MAX_AGE_MS;
+  const historyCutoff = now - LINK_REQUEST_HISTORY_MAX_AGE_MS;
   safe.linkRequests = safe.linkRequests.filter((entry) => {
-    if (entry?.status === 'pending') return true;
-    const updatedAt = Date.parse(entry?.updatedAt || entry?.createdAt || '');
-    return Number.isFinite(updatedAt) ? updatedAt >= historyCutoff : true;
+    const updatedAt = requestTimestamp(entry);
+    if (updatedAt === null || updatedAt > now + 60_000) return false;
+    if (entry?.status === 'pending') return updatedAt >= pendingCutoff;
+    return ['approved', 'denied', 'rejected', 'superseded'].includes(entry?.status)
+      ? updatedAt >= historyCutoff
+      : false;
   });
   return safe;
 }
@@ -293,6 +304,8 @@ module.exports = {
   SESSION_WINDOW_MS,
   OAUTH_STATE_MAX_AGE_MS,
   PENDING_IDENTITY_MAX_AGE_MS,
+  PENDING_LINK_REQUEST_MAX_AGE_MS,
+  LINK_REQUEST_HISTORY_MAX_AGE_MS,
   setLocalOnlyStaffAccountIds,
   isLocalOnlyStaffAccount,
   normalizeEmail,
