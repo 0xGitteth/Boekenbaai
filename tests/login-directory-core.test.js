@@ -58,12 +58,26 @@ const students = [
     middleName: 'van',
     lastName: 'Boer',
   },
+  {
+    id: 'student-alex-a',
+    name: 'Alex de Wit',
+    firstName: 'Alex',
+    middleName: 'de',
+    lastName: 'Wit',
+  },
+  {
+    id: 'student-alex-b',
+    name: 'Alex de Wit',
+    firstName: 'Alex',
+    middleName: 'de',
+    lastName: 'Wit',
+  },
   { id: 'student-bo', name: 'Bo', firstName: 'Bo' },
   { id: 'student-mirsad', name: 'Mirsad Smit', firstName: 'Mirsad', lastName: 'Smit' },
 ];
 const classes = [
-  { id: 'class-a', name: 'Structuur A', studentIds: ['student-gitte', 'student-sam-a'] },
-  { id: 'class-b', name: 'Structuur B', studentIds: ['student-sam-b'] },
+  { id: 'class-a', name: 'Structuur A', studentIds: ['student-gitte', 'student-sam-a', 'student-alex-a'] },
+  { id: 'class-b', name: 'Structuur B', studentIds: ['student-sam-b', 'student-alex-b'] },
 ];
 const db = {
   students,
@@ -80,8 +94,13 @@ assert.strictEqual(gitteLabel, 'Gitte Bake.', 'Gelijk beginnende achternamen moe
 
 const samALabel = createStudentDisplayName(students[3], students, classes);
 const samBLabel = createStudentDisplayName(students[4], students, classes);
-assert.strictEqual(samALabel, 'Sam Boer (Structuur A)');
-assert.strictEqual(samBLabel, 'Sam Boer (Structuur B)');
+assert.strictEqual(samALabel, 'Sam de Boer', 'Tussenvoegsel moet klasmetadata voorkomen als het al voldoende onderscheid geeft');
+assert.strictEqual(samBLabel, 'Sam van Boer');
+
+const alexALabel = createStudentDisplayName(students[5], students, classes);
+const alexBLabel = createStudentDisplayName(students[6], students, classes);
+assert.strictEqual(alexALabel, 'Alex de Wit (Structuur A)', 'Klas mag alleen zichtbaar worden bij werkelijk identieke volledige namen');
+assert.strictEqual(alexBLabel, 'Alex de Wit (Structuur B)');
 
 const studentMatches = buildStudentMatches(db, 'git');
 assert.strictEqual(studentMatches.length, 2);
