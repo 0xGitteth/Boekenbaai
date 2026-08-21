@@ -131,6 +131,29 @@ assert.strictEqual(buildStudentMatches(db, 'bo').some((entry) => entry.id === 's
 assert.strictEqual(buildStudentMatches(db, 'de').length, 0, 'Veelvoorkomend tweeletter-tussenvoegsel mag niets opsommen');
 assert.strictEqual(buildStudentMatches(db, 'van').length, 0, 'Los veelvoorkomend tussenvoegsel mag niets opsommen');
 
+const nineMatchesDb = {
+  students: [
+    ['nina-a', 'Nina Aarts', 'Aarts'],
+    ['nina-b', 'Nina Beks', 'Beks'],
+    ['nina-c', 'Nina Cornelissen', 'Cornelissen'],
+    ['nina-d', 'Nina Driessen', 'Driessen'],
+    ['nina-e', 'Nina Evers', 'Evers'],
+    ['nina-f', 'Nina Franssen', 'Franssen'],
+    ['nina-g', 'Nina Gerrits', 'Gerrits'],
+    ['nina-za', 'Nina Zaal', 'Zaal'],
+    ['nina-zo', 'Nina Zoon', 'Zoon'],
+  ].map(([id, name, lastName]) => ({ id, name, firstName: 'Nina', lastName })),
+  classes: [],
+};
+const limitedNine = buildStudentMatches(nineMatchesDb, 'nin');
+assert.strictEqual(limitedNine.length, 8);
+assert.strictEqual(limitedNine.some((entry) => entry.id === 'nina-zo'), false, 'Negende match hoort niet teruggegeven te worden');
+assert.strictEqual(
+  limitedNine.find((entry) => entry.id === 'nina-za').name,
+  'Nina Z.',
+  'Een verborgen negende match mag het zichtbare label van resultaat acht niet beïnvloeden'
+);
+
 const staffMatches = buildStaffMatches(db, 'doc');
 assert.deepStrictEqual(staffMatches, [
   { id: 'teacher-1', name: 'Docent Test', displayName: 'Docent Test', type: 'staff' },
