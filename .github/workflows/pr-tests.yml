@@ -3,33 +3,21 @@ name: Pull request tests
 on:
   pull_request:
     branches: [ main ]
+  push:
+    branches: [ main ]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - name: Regenerate dependency lock
-        run: npm install --package-lock-only --ignore-scripts
-      - name: Commit generated lock when needed
-        shell: bash
-        run: |
-          if ! git diff --quiet -- package-lock.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "Regenerate package lock on Node 24"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
       - run: npm test
