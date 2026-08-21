@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const core = require('../google-auth-core');
+const { isScryptHash } = require('../local-password-security-core');
 
 const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-production-auth-'));
@@ -59,6 +60,7 @@ fs.writeFileSync(dbPath, JSON.stringify({
 
 const child = spawn(process.execPath, [
   '--require', path.join(root, 'google-auth-security-preload.js'),
+  '--require', path.join(root, 'local-password-auth-preload.js'),
   '--require', path.join(root, 'login-flow-policy-preload.js'),
   '--require', path.join(root, 'student-google-handoff-preload.js'),
   '--require', path.join(root, 'google-auth-runtime-preload.js'),
@@ -149,6 +151,34 @@ async function googleStartIntent(type, accountId) {
     assert.strictEqual((await loginMode('staff', 'teacher-smoke')).authMode, 'google');
     assert.strictEqual((await loginMode('student', 'student-smoke')).authMode, 'google');
 
+    const blockedStudentPassword = await fetch(`${baseUrl}/api/login-by-name`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.30',
+      },
+      body: JSON.stringify({
+        name: 'Smoke Leerling',
+        password: 'unused-student-password',
+        type: 'student',
+      }),
+    });
+    assert.strictEqual(blockedStudentPassword.status, 401);
+
+    const blockedTeacherPassword = await fetch(`${baseUrl}/api/login-by-name`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.31',
+      },
+      body: JSON.stringify({
+        name: 'Smoke Docent',
+        password: 'unused-teacher-password',
+        type: 'staff',
+      }),
+    });
+    assert.strictEqual(blockedTeacherPassword.status, 401);
+
     const adminGoogle = await fetch(
       `${baseUrl}/api/auth/google/start?type=staff&accountId=admin-smoke`,
       { redirect: 'manual' }
@@ -227,21 +257,54 @@ async function googleStartIntent(type, accountId) {
       'Production handoff-cookie moet de geselecteerde leerling ondertekend meenemen'
     );
 
+    const legacyAdminHash = JSON.parse(fs.readFileSync(dbPath, 'utf8')).users.find(
+      (entry) => entry.id === 'admin-smoke'
+    ).passwordHash;
+    assert.match(legacyAdminHash, /^[a-f0-9]{64}$/);
+
     const login = await fetch(`${baseUrl}/api/login-by-name`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.40',
+      },
       body: JSON.stringify({ name: 'Smoke Beheer', password: 'smoke-password', type: 'staff' }),
     });
     const loginText = await login.text();
     assert.strictEqual(login.status, 200, `Production password login faalde: ${loginText}`);
     const loginPayload = JSON.parse(loginText);
-    assert.ok(loginPayload.token, 'Production login leverde geen bearer-token op');
+    assert.strictEqual(loginPayload.token, 'cookie');
     assert.strictEqual(loginPayload.user.role, 'admin');
+    const adminSession = extractCookieValue(
+      login.headers.get('set-cookie') || '',
+      'boekenbaai_session'
+    );
+    assert.ok(adminSession, 'Production adminlogin moet een HttpOnly sessiecookie zetten');
+    assert.match(login.headers.get('set-cookie') || '', /boekenbaai_session=[^;]+;[^,]*HttpOnly/i);
+
+    const migratedAdmin = JSON.parse(fs.readFileSync(dbPath, 'utf8')).users.find(
+      (entry) => entry.id === 'admin-smoke'
+    );
+    assert.ok(isScryptHash(migratedAdmin.passwordHash));
+    assert.notStrictEqual(migratedAdmin.passwordHash, legacyAdminHash);
+
+    const me = await fetch(`${baseUrl}/api/me`, {
+      headers: {
+        Cookie: `boekenbaai_session=${encodeURIComponent(adminSession)}`,
+        Authorization: 'Bearer cookie',
+      },
+    });
+    const mePayload = await me.json();
+    assert.strictEqual(me.status, 200);
+    assert.strictEqual(mePayload.role, 'admin');
 
     const forbiddenLink = await fetch(`${baseUrl}/api/auth/google/staff-email`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${loginPayload.token}`,
+        Authorization: 'Bearer cookie',
+        Cookie: `boekenbaai_session=${encodeURIComponent(adminSession)}`,
+        Origin: baseUrl,
+        'Sec-Fetch-Site': 'same-origin',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -253,21 +316,11 @@ async function googleStartIntent(type, accountId) {
     assert.strictEqual(forbiddenLink.status, 409);
     assert.match(forbiddenLinkPayload.message || '', /alleen lokale wachtwoordlogin/i);
 
-    const persist = await fetch(`${baseUrl}/api/auth/session/persist`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${loginPayload.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ remember: true }),
-    });
-    const persistText = await persist.text();
-    assert.strictEqual(persist.status, 200, `Production session persist faalde: ${persistText}`);
-    assert.match(persist.headers.get('set-cookie') || '', /boekenbaai_session=/);
-
     const store = JSON.parse(fs.readFileSync(authPath, 'utf8'));
-    assert.strictEqual(store.sessions.length, 1, 'Production persistente sessie ontbreekt');
+    assert.strictEqual(store.sessions.length, 1, 'Production adminlogin moet direct persistent beschermd zijn');
+    assert.strictEqual(store.sessions[0].userId, 'admin-smoke');
     assert.strictEqual(store.sessions[0].authMethod, 'password');
+    assert.strictEqual(store.sessions[0].remember, false);
     assert.match(store.sessions[0].accountFingerprint || '', /^[a-f0-9]{64}$/);
     assert.strictEqual(
       store.links.some((link) => link.accountId === 'admin-smoke'),
