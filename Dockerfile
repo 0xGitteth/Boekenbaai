@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-slim AS app
+FROM node:24-slim AS app
 WORKDIR /app
 
 # Installeer alle dependencies om de frontend te kunnen builden
