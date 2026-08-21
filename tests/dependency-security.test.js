@@ -7,12 +7,26 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
+const dockerfile = fs.readFileSync(path.join(root, 'Dockerfile'), 'utf8');
+const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'pr-tests.yml'), 'utf8');
 
 const SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz';
 
-assert.strictEqual(packageJson.engines?.node, '>=24 <25', 'Production Node-major moet expliciet op ondersteunde Node 24 LTS staan');
-assert.strictEqual(packageJson.dependencies?.xlsx, SHEETJS_URL, 'SheetJS moet naar de officiële gepatchte 0.20.3-tarball wijzen');
-assert.strictEqual(lock.packages?.['']?.dependencies?.xlsx, SHEETJS_URL, 'Lockfile-root moet dezelfde SheetJS-bron vastleggen');
+assert.strictEqual(
+  packageJson.engines?.node,
+  '>=24 <25',
+  'Production Node-major moet expliciet op ondersteunde Node 24 LTS staan'
+);
+assert.strictEqual(
+  packageJson.dependencies?.xlsx,
+  SHEETJS_URL,
+  'SheetJS moet naar de officiële gepatchte 0.20.3-tarball wijzen'
+);
+assert.strictEqual(
+  lock.packages?.['']?.dependencies?.xlsx,
+  SHEETJS_URL,
+  'Lockfile-root moet dezelfde SheetJS-bron vastleggen'
+);
 
 const lockedXlsx = lock.packages?.['node_modules/xlsx'];
 assert.ok(lockedXlsx, 'Lockfile moet xlsx bevatten');
@@ -23,6 +37,15 @@ assert.strictEqual(
   false,
   'SheetJS 0.20.3 hoort niet terug te vallen op de oude npm-transitives'
 );
+
+assert.match(dockerfile, /^FROM node:24-slim AS app$/m, 'Docker runtime moet dezelfde Node 24 major gebruiken');
+assert.match(workflow, /^\s*node-version:\s*24\s*$/m, 'CI moet expliciet Node 24 gebruiken');
+assert.match(workflow, /^\s*contents:\s*read\s*$/m, 'CI token moet read-only blijven');
+assert.doesNotMatch(workflow, /^\s*contents:\s*write\s*$/m, 'CI mag geen contents write-permission houden');
+assert.doesNotMatch(workflow, /git\s+push/i, 'CI mag de geteste branch niet zelf wijzigen');
+assert.doesNotMatch(workflow, /package-lock-only/i, 'Lockfilegeneratie hoort niet in de definitieve CI-run');
+assert.match(workflow, /^\s*push:\s*$/m, 'Main moet na merge opnieuw door CI worden gecontroleerd');
+assert.match(workflow, /npm audit --omit=dev --audit-level=high/, 'High-severity productie-audit moet een CI-gate blijven');
 
 const XLSX = require('xlsx');
 assert.strictEqual(XLSX.version, '0.20.3', 'Geïnstalleerde SheetJS-versie moet exact 0.20.3 zijn');
