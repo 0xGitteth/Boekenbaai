@@ -45,13 +45,10 @@ function parseScryptHash(storedHash) {
   const N = Number(parts[2]);
   const r = Number(parts[3]);
   const p = Number(parts[4]);
-  if (
-    !Number.isInteger(N) || N < 16384 || N > 262144 || (N & (N - 1)) !== 0 ||
-    !Number.isInteger(r) || r < 1 || r > 16 ||
-    !Number.isInteger(p) || p < 1 || p > 4
-  ) {
-    return null;
-  }
+  // v1 heeft één vaste, gereviewde kostenconfiguratie. Een databasewaarde mag
+  // niet zelf bepalen hoeveel CPU/geheugen een loginverificatie verbruikt.
+  if (N !== SCRYPT_N || r !== SCRYPT_R || p !== SCRYPT_P) return null;
+
   let salt;
   let hash;
   try {
@@ -60,7 +57,7 @@ function parseScryptHash(storedHash) {
   } catch (error) {
     return null;
   }
-  if (salt.length < 16 || salt.length > 64 || hash.length !== SCRYPT_KEY_LENGTH) return null;
+  if (salt.length !== SCRYPT_SALT_BYTES || hash.length !== SCRYPT_KEY_LENGTH) return null;
   return { N, r, p, salt, hash };
 }
 
