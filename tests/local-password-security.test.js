@@ -56,7 +56,7 @@ fs.writeFileSync(dbPath, JSON.stringify({
 
 const child = spawn(process.execPath, [
   '--require', path.join(root, 'google-auth-security-preload.js'),
-  '--require', path.join(root, 'local-password-security-preload.js'),
+  '--require', path.join(root, 'local-password-auth-preload.js'),
   path.join(__dirname, 'local-password-security-fixture.js'),
 ], {
   env: {
@@ -113,6 +113,17 @@ async function loginByName(name, password, type, forwardedFor) {
   });
 }
 
+async function loginByUsername(username, password, forwardedFor) {
+  return fetch(`${baseUrl}/api/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(forwardedFor ? { 'X-Forwarded-For': forwardedFor } : {}),
+    },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
 (async () => {
   try {
     await waitForServer();
@@ -131,7 +142,29 @@ async function loginByName(name, password, type, forwardedFor) {
       'staff',
       '203.0.113.11'
     );
-    assert.strictEqual(teacher.status, 401, 'Docenten mogen niet meer met lokaal wachtwoord inloggen');
+    assert.strictEqual(teacher.status, 401, 'Docenten mogen niet meer via naam+wachtwoord inloggen');
+
+    const teacherUsername = await loginByUsername(
+      'docent-test',
+      'teacher-password',
+      '203.0.113.15'
+    );
+    assert.strictEqual(
+      teacherUsername.status,
+      401,
+      'De oude gebruikersnaamroute mag een docentwachtwoord ook niet meer accepteren'
+    );
+
+    const studentUsername = await loginByUsername(
+      'leerling-test',
+      'student-password',
+      '203.0.113.16'
+    );
+    assert.strictEqual(
+      studentUsername.status,
+      401,
+      'De oude gebruikersnaamroute mag een leerlingwachtwoord ook niet meer accepteren'
+    );
 
     const legacyBefore = JSON.parse(fs.readFileSync(dbPath, 'utf8')).users.find(
       (entry) => entry.id === 'admin-1'
@@ -154,7 +187,11 @@ async function loginByName(name, password, type, forwardedFor) {
     );
     const firstPayload = await firstLogin.json();
     assert.strictEqual(firstLogin.status, 200);
-    assert.strictEqual(firstPayload.token, 'cookie', 'Raw admin-sessietoken mag niet in JSON/localStorage terechtkomen');
+    assert.strictEqual(
+      firstPayload.token,
+      'cookie',
+      'Raw admin-sessietoken mag niet in JSON/localStorage terechtkomen'
+    );
     assert.strictEqual(firstPayload.user.role, 'admin');
     const sessionA = extractCookie(firstLogin, 'boekenbaai_session');
     assert.ok(sessionA, 'HttpOnly admin-sessiecookie ontbreekt');
@@ -162,12 +199,20 @@ async function loginByName(name, password, type, forwardedFor) {
 
     const migratedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     const migratedAdmin = migratedDb.users.find((entry) => entry.id === 'admin-1');
-    assert.ok(isScryptHash(migratedAdmin.passwordHash), 'Eerste succesvolle legacy-login moet naar scrypt migreren');
+    assert.ok(
+      isScryptHash(migratedAdmin.passwordHash),
+      'Eerste succesvolle legacy-login moet naar scrypt migreren'
+    );
     assert.notStrictEqual(migratedAdmin.passwordHash, legacyBefore);
     assert.match(
       migratedDb.students[0].passwordHash,
       /^[a-f0-9]{64}$/,
       'Historische leerlinghash mag niet stil herschreven worden; lokale leerlinglogin is server-side geblokkeerd'
+    );
+    assert.match(
+      migratedDb.users.find((entry) => entry.id === 'teacher-1').passwordHash,
+      /^[a-f0-9]{64}$/,
+      'Historische docenthash mag niet stil herschreven worden; lokale docentlogin is server-side geblokkeerd'
     );
 
     const authAfterFirst = JSON.parse(fs.readFileSync(authPath, 'utf8'));
@@ -177,13 +222,15 @@ async function loginByName(name, password, type, forwardedFor) {
     assert.match(authAfterFirst.sessions[0].accountFingerprint || '', /^[a-f0-9]{64}$/);
 
     const migratedHashBeforeSecond = migratedAdmin.passwordHash;
-    const secondLogin = await loginByName(
-      'Boekenbaai Beheer',
+    const secondLogin = await loginByUsername(
+      'boekenbaai-beheer',
       'legacy-admin-password',
-      'staff',
       '203.0.113.13'
     );
+    const secondPayload = await secondLogin.json();
     assert.strictEqual(secondLogin.status, 200);
+    assert.strictEqual(secondPayload.token, 'cookie');
+    assert.strictEqual(secondPayload.user.role, 'admin');
     const sessionB = extractCookie(secondLogin, 'boekenbaai_session');
     assert.ok(sessionB && sessionB !== sessionA);
     const afterSecondDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
@@ -192,6 +239,22 @@ async function loginByName(name, password, type, forwardedFor) {
       migratedHashBeforeSecond,
       'Een bestaande scrypt-hash mag niet bij iedere login opnieuw worden gesalt'
     );
+
+    const tooShort = await fetch(`${baseUrl}/api/account/password`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: baseUrl,
+        'Sec-Fetch-Site': 'same-origin',
+        Cookie: `boekenbaai_session=${encodeURIComponent(sessionA)}`,
+        Authorization: 'Bearer cookie',
+      },
+      body: JSON.stringify({
+        currentPassword: 'legacy-admin-password',
+        newPassword: 'kort123',
+      }),
+    });
+    assert.strictEqual(tooShort.status, 400, 'Nieuwe beheerderswachtwoorden moeten minimaal 12 tekens zijn');
 
     const change = await fetch(`${baseUrl}/api/account/password`, {
       method: 'PATCH',
@@ -264,7 +327,11 @@ async function loginByName(name, password, type, forwardedFor) {
         'staff',
         '203.0.113.99'
       );
-      assert.strictEqual(failed.status, 401, `Poging ${attempt + 1} moet nog als mislukte login tellen`);
+      assert.strictEqual(
+        failed.status,
+        401,
+        `Poging ${attempt + 1} moet nog als mislukte login tellen`
+      );
     }
     const limited = await loginByName(
       'Boekenbaai Beheer',
@@ -272,7 +339,11 @@ async function loginByName(name, password, type, forwardedFor) {
       'staff',
       '203.0.113.99'
     );
-    assert.strictEqual(limited.status, 429, 'Negende mislukte poging vanaf dezelfde client moet worden afgeremd');
+    assert.strictEqual(
+      limited.status,
+      429,
+      'Negende mislukte poging vanaf dezelfde client moet worden afgeremd'
+    );
     assert.ok(Number(limited.headers.get('retry-after')) > 0);
   } finally {
     await stop();
