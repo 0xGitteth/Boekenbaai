@@ -4,6 +4,7 @@ const crypto = require('crypto');
 
 const DEFAULT_RESULT_LIMIT = 8;
 const MAX_QUERY_LENGTH = 80;
+const COMMON_NAME_PARTICLES = new Set(['de', 'den', 'der', 'het', 'te', 'ten', 'ter', 'van']);
 
 function normalizeSearchText(value) {
   return String(value || '')
@@ -28,10 +29,21 @@ function queryMatchesName(name, query) {
   const queryParts = searchTokens(normalizedQuery);
   if (!nameParts.length || !queryParts.length) return false;
 
-  // Twee letters zijn alleen bruikbaar voor een echte tweeletter-naam. Zo kan
-  // "mi" niet meteen Mike, Mirsad, Mila, ... opsommen, terwijl "Bo" wel werkt.
+  // Twee letters zijn alleen bruikbaar voor een echte tweeletter-voornaam. Zo
+  // kan "mi" niet Mike/Mirsad/Mila opsommen en "de" geen tussenvoegsel-dump
+  // geven, terwijl een leerling die echt "Bo" heet wel vindbaar blijft.
   if (normalizedQuery.length === 2 && queryParts.length === 1) {
-    return nameParts.includes(queryParts[0]);
+    return nameParts[0] === queryParts[0];
+  }
+
+  // Een los veelvoorkomend tussenvoegsel is te breed om een directoryresultaat
+  // op te leveren. In combinatie met een specifieker naamdeel werkt het wel.
+  if (
+    queryParts.length === 1 &&
+    COMMON_NAME_PARTICLES.has(queryParts[0]) &&
+    nameParts[0] !== queryParts[0]
+  ) {
+    return false;
   }
 
   // Zoek op het begin van naamdelen in plaats van willekeurige substrings.
@@ -111,13 +123,13 @@ function shortStableCode(id) {
 }
 
 function createStudentDisplayName(student, students, classes) {
-  const allStudents = Array.isArray(students) ? students : [];
+  const relevantStudents = Array.isArray(students) ? students : [];
   const lastName = preferredLastName(student);
 
   if (lastName) {
     for (let letters = 1; letters <= lastName.length; letters += 1) {
       const candidate = surnameCandidate(student, letters);
-      const collision = allStudents.some(
+      const collision = relevantStudents.some(
         (other) =>
           other?.id !== student?.id &&
           sameDisplay(candidate, surnameCandidate(other, letters))
@@ -127,7 +139,7 @@ function createStudentDisplayName(student, students, classes) {
   }
 
   const fullCandidate = fullStudentDisplayName(student);
-  const baseColliders = allStudents.filter(
+  const baseColliders = relevantStudents.filter(
     (other) =>
       other?.id !== student?.id &&
       sameDisplay(fullCandidate, fullStudentDisplayName(other))
@@ -164,10 +176,15 @@ function searchableStudentName(student) {
 function buildStudentMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
   const students = Array.isArray(db?.students) ? db.students : [];
   const classes = Array.isArray(db?.classes) ? db.classes : [];
-  return students
-    .filter((entry) => entry?.id && queryMatchesName(searchableStudentName(entry), query))
+  const candidates = students.filter(
+    (entry) => entry?.id && queryMatchesName(searchableStudentName(entry), query)
+  );
+
+  return candidates
     .map((entry) => {
-      const displayName = createStudentDisplayName(entry, students, classes);
+      // Alleen de huidige resultaten bepalen hoeveel achternaamletters nodig
+      // zijn; verborgen niet-matchende leerlingen beïnvloeden het label niet.
+      const displayName = createStudentDisplayName(entry, candidates, classes);
       return {
         id: entry.id,
         name: displayName,
