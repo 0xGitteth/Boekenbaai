@@ -81,6 +81,14 @@ function fullStudentDisplayName(student) {
   return lastName ? `${firstName} ${lastName}` : firstName;
 }
 
+function fullPersonalName(student) {
+  const explicit = [student?.firstName, student?.middleName, student?.lastName]
+    .map(cleanDisplayPart)
+    .filter(Boolean)
+    .join(' ');
+  return explicit || rawName(student) || fullStudentDisplayName(student);
+}
+
 function sameDisplay(left, right) {
   return normalizeSearchText(left) === normalizeSearchText(right);
 }
@@ -119,24 +127,32 @@ function createStudentDisplayName(student, students, classes) {
   }
 
   const fullCandidate = fullStudentDisplayName(student);
-  const exactColliders = allStudents.filter(
+  const baseColliders = allStudents.filter(
     (other) =>
       other?.id !== student?.id &&
       sameDisplay(fullCandidate, fullStudentDisplayName(other))
   );
-  if (!exactColliders.length) return fullCandidate;
+  if (!baseColliders.length) return fullCandidate;
 
-  // Alleen bij werkelijk identieke zichtbare namen is extra context nodig.
-  // Klas/leerjaar worden nooit als losse publieke metadata teruggegeven.
+  // Als een tussenvoegsel/middennaam al voldoende onderscheid geeft, is dat
+  // minder extra schoolmetadata dan het tonen van een klasnaam.
+  const personalCandidate = fullPersonalName(student);
+  const personalColliders = baseColliders.filter((other) =>
+    sameDisplay(personalCandidate, fullPersonalName(other))
+  );
+  if (!personalColliders.length) return personalCandidate;
+
+  // Alleen bij werkelijk identieke volledige namen is extra schoolcontext
+  // nodig. Klas/leerjaar worden nooit als losse publieke metadata teruggegeven.
   const ownClasses = classesForStudent(student?.id, classes);
   for (const className of ownClasses) {
-    const classIsUnique = exactColliders.every(
+    const classIsUnique = personalColliders.every(
       (other) => !classesForStudent(other?.id, classes).includes(className)
     );
-    if (classIsUnique) return `${fullCandidate} (${className})`;
+    if (classIsUnique) return `${personalCandidate} (${className})`;
   }
 
-  return `${fullCandidate} (${shortStableCode(student?.id)})`;
+  return `${personalCandidate} (${shortStableCode(student?.id)})`;
 }
 
 function searchableStudentName(student) {
