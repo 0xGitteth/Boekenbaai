@@ -134,7 +134,7 @@ function pruneStore(store, now = Date.now()) {
     const updatedAt = requestTimestamp(entry);
     if (updatedAt === null || updatedAt > now + 60_000) return false;
     if (entry?.status === 'pending') return updatedAt >= pendingCutoff;
-    return ['approved', 'rejected', 'superseded'].includes(entry?.status)
+    return ['approved', 'denied', 'rejected', 'superseded'].includes(entry?.status)
       ? updatedAt >= historyCutoff
       : false;
   });
