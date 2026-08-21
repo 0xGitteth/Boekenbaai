@@ -29,15 +29,10 @@ function queryMatchesName(name, query) {
   const queryParts = searchTokens(normalizedQuery);
   if (!nameParts.length || !queryParts.length) return false;
 
-  // Twee letters zijn alleen bruikbaar voor een echte tweeletter-voornaam. Zo
-  // kan "mi" niet Mike/Mirsad/Mila opsommen en "de" geen tussenvoegsel-dump
-  // geven, terwijl een leerling die echt "Bo" heet wel vindbaar blijft.
   if (normalizedQuery.length === 2 && queryParts.length === 1) {
     return nameParts[0] === queryParts[0];
   }
 
-  // Een los veelvoorkomend tussenvoegsel is te breed om een directoryresultaat
-  // op te leveren. In combinatie met een specifieker naamdeel werkt het wel.
   if (
     queryParts.length === 1 &&
     COMMON_NAME_PARTICLES.has(queryParts[0]) &&
@@ -46,8 +41,6 @@ function queryMatchesName(name, query) {
     return false;
   }
 
-  // Zoek op het begin van naamdelen in plaats van willekeurige substrings.
-  // Zowel "git" als "bak" kan dus "Gitte van Bakel" vinden, maar "itte" niet.
   return queryParts.every(
     (part) => part.length >= 2 && nameParts.some((namePart) => namePart.startsWith(part))
   );
@@ -146,16 +139,12 @@ function createStudentDisplayName(student, students, classes) {
   );
   if (!baseColliders.length) return fullCandidate;
 
-  // Als een tussenvoegsel/middennaam al voldoende onderscheid geeft, is dat
-  // minder extra schoolmetadata dan het tonen van een klasnaam.
   const personalCandidate = fullPersonalName(student);
   const personalColliders = baseColliders.filter((other) =>
     sameDisplay(personalCandidate, fullPersonalName(other))
   );
   if (!personalColliders.length) return personalCandidate;
 
-  // Alleen bij werkelijk identieke volledige namen is extra schoolcontext
-  // nodig. Klas/leerjaar worden nooit als losse publieke metadata teruggegeven.
   const ownClasses = classesForStudent(student?.id, classes);
   for (const className of ownClasses) {
     const classIsUnique = personalColliders.every(
@@ -173,67 +162,73 @@ function searchableStudentName(student) {
     .join(' ');
 }
 
+function clampResultLimit(limit) {
+  return Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT));
+}
+
+function deterministicCandidateSort(left, right, labelFn) {
+  const byLabel = normalizeSearchText(labelFn(left)).localeCompare(
+    normalizeSearchText(labelFn(right)),
+    'nl'
+  );
+  if (byLabel) return byLabel;
+  return String(left?.id || '').localeCompare(String(right?.id || ''), 'en');
+}
+
 function buildStudentMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
   const students = Array.isArray(db?.students) ? db.students : [];
   const classes = Array.isArray(db?.classes) ? db.classes : [];
-  const candidates = students.filter(
-    (entry) => entry?.id && queryMatchesName(searchableStudentName(entry), query)
-  );
+  const selected = students
+    .filter((entry) => entry?.id && queryMatchesName(searchableStudentName(entry), query))
+    .sort((left, right) => deterministicCandidateSort(left, right, fullPersonalName))
+    .slice(0, clampResultLimit(limit));
 
-  return candidates
-    .map((entry) => {
-      // Alleen de huidige resultaten bepalen hoeveel achternaamletters nodig
-      // zijn; verborgen niet-matchende leerlingen beïnvloeden het label niet.
-      const displayName = createStudentDisplayName(entry, candidates, classes);
-      return {
-        id: entry.id,
-        name: displayName,
-        displayName,
-        type: 'student',
-      };
-    })
-    .sort((left, right) => left.displayName.localeCompare(right.displayName, 'nl'))
-    .slice(
-      0,
-      Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT))
-    );
+  return selected.map((entry) => {
+    // Alleen daadwerkelijk teruggegeven resultaten mogen het zichtbare label
+    // van elkaar beïnvloeden. Een verborgen negende match lekt zo niet indirect.
+    const displayName = createStudentDisplayName(entry, selected, classes);
+    return {
+      id: entry.id,
+      name: displayName,
+      displayName,
+      type: 'student',
+    };
+  });
 }
 
 function buildStaffMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
   const users = Array.isArray(db?.users) ? db.users : [];
-  const candidates = users.filter(
-    (entry) =>
-      entry?.id &&
-      ['teacher', 'admin'].includes(entry?.role) &&
-      cleanDisplayPart(entry?.name) &&
-      queryMatchesName(entry.name, query)
-  );
+  const selected = users
+    .filter(
+      (entry) =>
+        entry?.id &&
+        ['teacher', 'admin'].includes(entry?.role) &&
+        cleanDisplayPart(entry?.name) &&
+        queryMatchesName(entry.name, query)
+    )
+    .sort((left, right) => deterministicCandidateSort(left, right, (entry) => entry?.name || ''))
+    .slice(0, clampResultLimit(limit));
+
   const nameCounts = new Map();
-  for (const entry of candidates) {
+  for (const entry of selected) {
     const normalized = normalizeSearchText(entry.name);
     nameCounts.set(normalized, (nameCounts.get(normalized) || 0) + 1);
   }
 
-  return candidates
-    .map((entry) => {
-      const normalized = normalizeSearchText(entry.name);
-      const baseName = cleanDisplayPart(entry.name);
-      const displayName =
-        nameCounts.get(normalized) > 1
-          ? `${baseName} (${shortStableCode(entry.id)})`
-          : baseName;
-      return {
-        id: entry.id,
-        name: displayName,
-        displayName,
-        type: 'staff',
-      };
-    })
-    .sort((left, right) => left.displayName.localeCompare(right.displayName, 'nl'))
-    .slice(
-      0,
-      Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT))
-    );
+  return selected.map((entry) => {
+    const normalized = normalizeSearchText(entry.name);
+    const baseName = cleanDisplayPart(entry.name);
+    const displayName =
+      nameCounts.get(normalized) > 1
+        ? `${baseName} (${shortStableCode(entry.id)})`
+        : baseName;
+    return {
+      id: entry.id,
+      name: displayName,
+      displayName,
+      type: 'staff',
+    };
+  });
 }
 
 class DirectoryRateLimiter {
