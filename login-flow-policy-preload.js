@@ -151,10 +151,14 @@ function hashRateKey(value) {
 }
 
 function directoryNetworkKey(req) {
-  const forwarded = String(req.headers['x-forwarded-for'] || '')
-    .split(',')[0]
-    .trim()
-    .slice(0, 128);
+  const forwardedParts = String(req.headers['x-forwarded-for'] || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  // Bij een proxy die een door de client meegegeven X-Forwarded-For aanvult,
+  // is het eerste element spoofbaar. De laatste doorgestuurde hop is daarom de
+  // conservatievere keuze; bij Sliplane's normale één-adresheader is dit gelijk.
+  const forwarded = String(forwardedParts[forwardedParts.length - 1] || '').slice(0, 128);
   const remote = String(req.socket?.remoteAddress || '').trim().slice(0, 128);
   return hashRateKey(`${forwarded || 'no-forwarded'}\u0000${remote || 'no-remote'}`);
 }
