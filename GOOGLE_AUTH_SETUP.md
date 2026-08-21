@@ -1,157 +1,206 @@
 # Google-login instellen voor Boekenbaai
 
-De code ondersteunt Google-login voor leerlingen, docenten en beheerders met uitsluitend accounts op `@koraaledu.nl`.
+Boekenbaai gebruikt Google-login voor **leerlingen en docenten** met uitsluitend geverifieerde accounts op exact `@koraaledu.nl`.
 
-De naamkeuze blijft de standaard ingang. Zodra Google-login is geconfigureerd kiest een leerling of medewerker eerst de naam en gaat daarna door naar Google. De bestaande naam- en wachtwoordlogin blijft beschikbaar als fallback.
+Het generieke **Boekenbaai Beheer**-account is bewust een uitzondering: dat account blijft lokaal met naam + wachtwoord inloggen en kan niet aan Google worden gekoppeld. Daardoor blijft het beheeraccount overdraagbaar zonder aan een persoonlijk schoolaccount vast te zitten.
 
-## Wat al in Boekenbaai geregeld is
+## Huidige loginflow
 
-- Alleen een geverifieerd Google-account met exact het domein `koraaledu.nl` wordt geaccepteerd.
-- De Google `sub` (stabiele account-id) wordt na de eerste geldige koppeling opgeslagen. Alleen het e-mailadres vergelijken is dus niet de uiteindelijke beveiliging.
-- Een docent kan het Google-e-mailadres vooraf koppelen voor leerlingen uit de eigen klas.
-- Een onbekende leerling kan na Google-login het eigen Boekenbaai-account koppelen via een verzoek aan de docent.
-- Alleen een docent van een klas van die leerling of een beheerder kan dat verzoek goedkeuren.
-- Een beheerder kan Google-e-mailadressen aan docent- en beheeraccounts koppelen.
-- Bij een bekende naam en vooraf gekoppeld schoolmailadres gebruikt de login dat adres als Google `login_hint`, zodat Google zo min mogelijk extra invoer vraagt.
-- Als nog geen gekoppeld schoolmailadres bekend is, laat Google de accountkeuze zien.
-- Medewerkers kunnen `Ingelogd blijven op dit apparaat (30 dagen)` aanvinken. Dit werkt zowel bij de bestaande wachtwoordlogin als bij Google-login.
-- Langdurige sessies overleven een serverrestart of nieuwe deploy.
-- Google-koppelingen en persistente sessies staan in een apart auth-bestand naast `db.json`, zodat de bestaande bibliotheekdata niet wordt aangepast.
-- De sessiecookie zelf is `HttpOnly`, `SameSite=Lax` en op HTTPS ook `Secure`.
+### Leerling
 
-## 1. OAuth-client maken bij Google
+1. Kies de leerling echt uit de naamdropdown.
+2. Klik op **Inloggen**.
+3. Boekenbaai start Google-login voor precies het geselecteerde account.
+4. Is het schoolmailadres al vooraf gekoppeld, dan wordt het als `login_hint` aan Google meegegeven.
+5. Is er nog geen koppeling, dan onthoudt Boekenbaai de gekozen leerling veilig tijdens de Google-omweg en maakt na de eerste geldige Google-login automatisch het juiste koppelverzoek aan.
+6. Na goedkeuring door een docent uit de eigen klas of een beheerder wordt de login automatisch afgerond.
 
-Ga in Google Cloud Console naar **APIs & Services > Credentials**.
+Leerlingen hebben geen lokale wachtwoordfallback meer.
 
-Maak een **OAuth client ID** van het type **Web application**.
+### Docent
 
-Voeg bij **Authorized redirect URIs** exact deze URI toe:
+1. Kies de docent echt uit de naamdropdown.
+2. Vink desgewenst **Ingelogd blijven op dit apparaat** aan.
+3. Klik op **Inloggen**.
+4. Boekenbaai gaat naar Google.
+
+Het schoolmailadres van een docent moet vooraf door een beheerder aan het bestaande docentaccount zijn gekoppeld. Docenten hebben geen lokale wachtwoordfallback meer.
+
+### Boekenbaai Beheer
+
+1. Kies **Boekenbaai Beheer** uit de naamdropdown.
+2. Alleen voor dit lokale beheeraccount verschijnt het wachtwoordveld.
+3. Log lokaal in met het beheerwachtwoord.
+
+Adminaccounts zijn server-side `local-only`: een directe Google-start of Google-koppeling voor een admin wordt geweigerd, ook als iemand de UI probeert te omzeilen.
+
+## Wat Boekenbaai server-side controleert
+
+- Alleen een door Google geverifieerd e-mailadres op exact `koraaledu.nl` wordt geaccepteerd.
+- De Google `sub` is de stabiele identiteit. Een later ander Google-account kan een bestaande geverifieerde koppeling niet claimen door hetzelfde e-mailadres te gebruiken.
+- Google ID-tokens worden cryptografisch gecontroleerd met Google's publieke JWKS-sleutels en gecontroleerd op onder andere signature, issuer, audience, `azp`, vervaldatum, uitgiftetijd, nonce, `email_verified`, hosted domain en `sub`.
+- OAuth state en OIDC nonce zijn aan de loginpoging gebonden.
+- De OAuth-start is aan een kortlevend, browsergebonden starttoken gekoppeld zodat een andere website niet ongemerkt een accountselectie kan forceren.
+- Docenten kunnen alleen leerlingen uit hun eigen klassen beheren.
+- Een wijziging van een bestaande Google-koppeling trekt oude sessies van dat account direct in, ook als het token al in het servergeheugen stond.
+- Openstaande leerling-koppelverzoeken verlopen na 30 dagen. Afgehandelde verzoeken worden maximaal 90 dagen bewaard als beperkte auditgeschiedenis.
+- Persistente sessies hebben een vervaldatum en worden ook ongeldig na relevante account-/credentialwijzigingen.
+- Google access tokens, refresh tokens en Google-wachtwoorden worden niet opgeslagen.
+- Sessietokens worden in de auth-opslag uitsluitend gehasht opgeslagen.
+
+## 1. Google Cloud OAuth-client
+
+Ga in Google Cloud Console naar **APIs & Services > Credentials** en maak een **OAuth client ID** van het type **Web application**.
+
+Gebruik voor de huidige Sliplane-installatie:
+
+**Authorized JavaScript origin**
 
 ```text
-https://JOUW-BOEKENBAAI-DOMEIN/api/auth/google/callback
+https://boekenbaai.sliplane.app
 ```
 
-Voorbeeld voor de huidige Sliplane-URL:
+**Authorized redirect URI**
 
 ```text
 https://boekenbaai.sliplane.app/api/auth/google/callback
 ```
 
-De redirect-URI moet letter voor letter overeenkomen met de URL die in Sliplane bij `BOEKENBAAI_PUBLIC_URL` staat.
-
-De login gebruikt alleen de standaard scopes `openid`, `email` en `profile`.
-
-> Een Google Workspace-beheerder kan centraal beperkingen voor externe OAuth-apps hebben ingesteld. Als Google bij het schoolaccount meldt dat de app door de organisatie is geblokkeerd, kan dat niet vanuit Boekenbaai worden omzeild en is toestemming van de Workspace-beheerder nodig.
-
-## 2. Omgevingsvariabelen in Sliplane
-
-Open in Sliplane de service van Boekenbaai en stel deze vier waarden in:
+De redirect-URI moet exact overeenkomen met de publieke Boekenbaai-URL. De login vraagt alleen de scopes:
 
 ```text
-BOEKENBAAI_GOOGLE_CLIENT_ID=<client-id uit Google>
-BOEKENBAAI_GOOGLE_CLIENT_SECRET=<client-secret uit Google>
+openid email profile
+```
+
+Boekenbaai gebruikt geen Google Drive-, Gmail- of andere Workspace-data.
+
+Een Google Workspace-beheerder kan externe OAuth-apps centraal blokkeren. Als een `@koraaledu.nl` account bij de echte test een melding zoals `admin_policy_enforced` of een organisatieblokkade krijgt, moet de Koraal Workspace-beheerder de app toestaan/trusten. Dat kan niet vanuit Boekenbaai worden omzeild.
+
+## 2. Sliplane omgevingsvariabelen
+
+Deze waarden moeten aanwezig zijn:
+
+```text
+BOEKENBAAI_GOOGLE_CLIENT_ID=<OAuth client-id>
+BOEKENBAAI_GOOGLE_CLIENT_SECRET=<OAuth client-secret>
 BOEKENBAAI_GOOGLE_DOMAIN=koraaledu.nl
 BOEKENBAAI_PUBLIC_URL=https://boekenbaai.sliplane.app
 ```
 
-`BOEKENBAAI_AUTH_SECRET` is optioneel. Als deze variabele niet is ingesteld, gebruikt Boekenbaai de Google Client Secret als geheime sleutel voor het ondertekenen van de tijdelijke OAuth-state. Voor deze installatie is het dus niet nodig om een vijfde secret aan te maken.
-
-Wil je later toch een aparte sleutel gebruiken, dan kan dat met:
-
-```text
-BOEKENBAAI_AUTH_SECRET=<lange willekeurige geheime waarde>
-```
-
-Deze waarde mag nooit in GitHub worden gezet.
-
-Optioneel kun je de redirect-URI expliciet vastzetten:
+Optioneel:
 
 ```text
 BOEKENBAAI_GOOGLE_REDIRECT_URI=https://boekenbaai.sliplane.app/api/auth/google/callback
 ```
 
-Dat is normaal niet nodig wanneer `BOEKENBAAI_PUBLIC_URL` correct staat.
+Dat is niet nodig als `BOEKENBAAI_PUBLIC_URL` correct staat.
 
-## 3. Persistente opslag
-
-Als `BOEKENBAAI_DATA_PATH` bijvoorbeeld is:
+`BOEKENBAAI_AUTH_SECRET` is eveneens optioneel. Zonder aparte waarde gebruikt Boekenbaai de Google Client Secret voor het ondertekenen van tijdelijke auth-state. Als je later een aparte sleutel wilt gebruiken:
 
 ```text
-/data/db.json
+BOEKENBAAI_AUTH_SECRET=<lange willekeurige geheime waarde>
 ```
 
-slaat de Google-authenticatielaag standaard zijn gegevens op in:
+Secrets horen alleen in Sliplane/secret storage en nooit in GitHub.
+
+## 3. Essentiële Sliplane deploymentchecks
+
+### Startcommando
+
+Sliplane moet de applicatie starten met:
+
+```text
+npm start
+```
+
+**Niet** met `node server.js`.
+
+`npm start` laadt eerst de beveiligings-, lokale beheerlogin-, loginpolicy-, leerlinghandoff- en Google-runtimepreloads en start daarna `server.js`. Een handmatige override naar `node server.js` zou de nieuwe authenticatielaag omzeilen.
+
+### Persistente opslag
+
+Gebruik een persistent Sliplane-volume en zet bijvoorbeeld:
+
+```text
+BOEKENBAAI_DATA_PATH=/data/db.json
+```
+
+De Google-authopslag komt dan standaard naast de database te staan:
 
 ```text
 /data/db.json.auth.json
 ```
 
-Daardoor gebruikt dit automatisch hetzelfde persistente Sliplane-volume als `db.json`.
-
-Je kunt desgewenst een ander pad instellen met:
+Je kunt die locatie desgewenst apart instellen:
 
 ```text
 BOEKENBAAI_AUTH_DATA_PATH=/data/google-auth.json
 ```
 
-Het auth-bestand bevat geen Google-wachtwoorden of OAuth access tokens. Sessietokens worden alleen als SHA-256 hash opgeslagen.
+Controleer dat `/data` daadwerkelijk een **persistent volume** is. Zonder persistent volume verdwijnen accountkoppelingen en onthouden sessies bij een nieuwe container/deploy.
 
-## 4. Eerste koppelingen maken
+## 4. Beheeraccount
 
-Na de deploy logt de beheerder één keer in via **Inloggen met wachtwoord**.
+Het generieke beheeraccount hoort niet bij een persoon en krijgt geen Google-mailadres.
 
-In het docentenportaal verschijnt **Google-accountkoppelingen**.
+Gebruik voor productie een sterk, uniek beheerwachtwoord. De repository bevat voorbeeld-/seeddata voor ontwikkeling. Als een productie-installatie ooit vanuit die publieke seed is gestart, controleer dan vóór ingebruikname dat het beheerwachtwoord inmiddels is gewijzigd. Gebruik nooit een publiek bekend demo-/seedwachtwoord als productiecredential.
+
+De lokale beheerlogin gebruikt scrypt voor nieuwe/migreerde wachtwoordhashes en heeft brute-force/rate limiting. Een oude legacy SHA-256 beheerhash wordt na de eerste succesvolle lokale login automatisch naar scrypt gemigreerd.
+
+## 5. Eerste koppelingen
+
+Log in als **Boekenbaai Beheer** en open in het docentenportaal **Google-accountkoppelingen**.
 
 Daar kan de beheerder:
 
-1. het eigen `@koraaledu.nl` e-mailadres aan het beheeraccount koppelen;
-2. e-mailadressen van andere medewerkers koppelen;
-3. e-mailadressen van leerlingen koppelen.
+- het `@koraaledu.nl` e-mailadres van docenten vooraf koppelen;
+- e-mailadressen van leerlingen vooraf koppelen;
+- openstaande leerling-koppelverzoeken bekijken en, waar toegestaan, goedkeuren of afwijzen.
 
-Docenten zien alleen leerlingen uit hun eigen klassen en kunnen daar zelf het schoolmailadres voor invullen.
+Een beheerder wordt zelf niet in de Google-koppellijst aangeboden.
 
-## 5. Snelle login na koppeling
+Docenten kunnen vanuit hetzelfde onderdeel alleen leerlingen uit hun eigen klassen beheren en daar zelf het juiste schoolmailadres invullen of verzoeken beoordelen.
 
-Voor leerlingen en medewerkers is de normale route:
+## 6. Eerste leerling-login zonder prelink
 
-1. naam typen of uit de bestaande dropdown kiezen;
-2. Boekenbaai zoekt intern of aan die naam al een schoolmailadres is gekoppeld;
-3. als dat bekend is, wordt dit als `login_hint` aan Google meegegeven;
-4. als Google dat account al in de browser kent, kan de login daardoor zeer snel worden afgerond;
-5. als nog geen gekoppeld adres bekend is, toont Google de accountkeuze.
+De leerling hoeft na Google niet opnieuw naar het eigen Boekenbaai-account te zoeken:
 
-De server controleert na terugkomst altijd zelfstandig het geverifieerde e-mailadres, het Google-domein en de Google account-id. De `login_hint` is dus alleen voor snelheid en geeft nooit op zichzelf toegang.
+1. leerling kiest vóór Google de juiste naam uit de dropdown;
+2. Boekenbaai bindt die keuze tijdelijk en ondertekend aan de loginpoging;
+3. leerling logt in met het eigen `@koraaledu.nl` Google-account;
+4. als er nog geen prelink is, maakt Boekenbaai automatisch voor precies die geselecteerde leerling een verzoek aan;
+5. de pagina wacht op goedkeuring;
+6. na goedkeuring wordt de login automatisch afgerond.
 
-## 6. Leerling zonder vooraf gekoppeld e-mailadres
+Een verkeerde Google-accountkeuze kan niet stil aan een ander Boekenbaai-account worden gekoppeld. Bij een mismatch wordt de sessie ingetrokken en een eventuele onbedoelde eerste `sub`-verificatie teruggedraaid.
 
-1. De leerling kiest de eigen naam en gaat door naar Google.
-2. Boekenbaai controleert dat Google het e-mailadres heeft geverifieerd en dat het exact op `@koraaledu.nl` eindigt.
-3. Als het account nog onbekend is, kan de leerling het eigen Boekenbaai-account koppelen.
-4. Er wordt een koppelverzoek aangemaakt.
-5. Een docent van de klas ziet dit verzoek in het docentenportaal en kiest **Goedkeuren** of **Afwijzen**.
-6. Na goedkeuring kan de leerling de koppeling afronden en inloggen.
+## 7. Controle na deploy
 
-Een docent kan dit verzoek voorkomen door vooraf het juiste schoolmailadres bij de leerling in te vullen.
+Voer minimaal deze echte controles uit:
 
-## 7. Medewerkerslogin
+1. **Boekenbaai Beheer** toont na selectie een wachtwoordveld en logt lokaal in.
+2. Een docent toont geen wachtwoordveld en gaat via **Inloggen** naar Google.
+3. Een leerling toont geen wachtwoordveld en gaat via **Inloggen** naar Google.
+4. Een vooraf gekoppelde leerling kan met het juiste Google-account direct inloggen.
+5. Een niet-vooraf gekoppelde leerling krijgt automatisch een verzoek voor de vóór Google geselecteerde leerling.
+6. Een docent ziet alleen leerlingen/verzoeken uit de eigen klas en kan een verzoek goedkeuren.
+7. Een `gmail.com`, ander domein of niet-geverifieerd account wordt geweigerd.
+8. Een verkeerde Google-accountkeuze geeft geen toegang tot het geselecteerde Boekenbaai-account.
+9. Een docent met **Ingelogd blijven** blijft na een Sliplane restart/deploy ingelogd binnen de geldigheidsduur.
+10. Het wijzigen van een bestaande Google-koppeling maakt een oude sessie van dat account ongeldig.
+11. Na een redeploy zijn de Google-koppelingen nog aanwezig; zo bevestig je meteen dat het volume echt persistent is.
 
-Een medewerkeraccount wordt niet automatisch op alleen een Google-naam geclaimd. Een beheerder koppelt eerst het juiste `@koraaledu.nl` e-mailadres aan het bestaande medewerkeraccount. Bij de eerste geldige Google-login wordt daarna de stabiele Google `sub` aan die koppeling toegevoegd.
+## Technische startvolgorde
 
-Dit voorkomt dat twee medewerkers met vergelijkbare namen per ongeluk het verkeerde account kunnen koppelen.
+De productie-start staat in `package.json` en is bewust:
 
-## 8. Controle na deploy
+```text
+node --require ./google-auth-security-preload.js \
+     --require ./local-password-auth-preload.js \
+     --require ./login-flow-policy-preload.js \
+     --require ./student-google-handoff-preload.js \
+     --require ./google-auth-runtime-preload.js \
+     server.js
+```
 
-Controleer na het instellen minimaal:
-
-1. de naamkeuze stuurt door naar Google;
-2. een gekoppelde leerling kan met Google inloggen;
-3. een niet-gekoppelde leerling kan een verzoek sturen;
-4. een docent ziet alleen verzoeken en leerlingen uit de eigen klassen;
-5. een docent kan zo'n verzoek goedkeuren;
-6. een `gmail.com` of ander niet-schoolaccount wordt geweigerd;
-7. een medewerker kan met Google inloggen nadat de beheerder het e-mailadres heeft gekoppeld;
-8. `Ingelogd blijven` blijft werken na een Sliplane restart.
-
-## Technische notitie
-
-De Google-authenticatielaag wordt als preload vóór de bestaande `server.js` geladen. Een kleine aanvullende preload regelt de naam-gebaseerde `login_hint` en de snelle naam-eerst interface. Daardoor blijven de bestaande API, bibliotheekfuncties en autorisatielaag intact en is de verandering geïsoleerd van de rest van Boekenbaai.
+Verander de volgorde of het Sliplane-startcommando niet zonder de volledige auth-integratietests opnieuw te draaien.

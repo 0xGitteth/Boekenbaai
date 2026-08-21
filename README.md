@@ -17,33 +17,41 @@ Boekenbaai is een vrolijke webapplicatie voor de schoolbibliotheek van VSO Het D
 ```bash
 npm install
 npm run build   # bouw de frontend met Vite
-npm start       # start de Node-server op http://localhost:3000
+npm start       # laadt de auth/security-preloads en start daarna de Node-server
 ```
 
 De server kiest automatisch de map `dist/` zodra je een build hebt gedraaid. Zonder build worden de bestanden direct uit `public/` geserveerd, zodat je lokaal snel kunt ontwikkelen.
 
 ## Deployen op Sliplane
 
-1. Zorg dat de dependancies aanwezig zijn: `npm install`.
-2. Bouw de frontend: `npm run build`.
-3. Laat Sliplane de app starten met `npm start` (dit voert `node server.js` uit).
-4. Koppel een persistente opslag aan de container en laat deze wijzen naar het pad dat je via `BOEKENBAAI_DATA_PATH` configureert (bijv. `/data/db.json`).
-5. Stel optioneel `BOEKENBAAI_ALLOWED_ORIGINS` in wanneer je vanaf een ander domein (zoals GitHub Pages) met de API wilt praten.
+1. Installeer de gelockte dependencies met `npm ci`.
+2. Bouw de frontend met `npm run build`.
+3. Laat Sliplane de app starten met **`npm start`**. Gebruik geen override naar `node server.js`: `npm start` laadt eerst de beveiligings- en Google-authpreloads die bij de productie-login horen.
+4. Koppel een persistent volume aan de container en zet `BOEKENBAAI_DATA_PATH` bijvoorbeeld op `/data/db.json`.
+5. Configureer de Google OAuth-variabelen en redirect zoals beschreven in [`GOOGLE_AUTH_SETUP.md`](./GOOGLE_AUTH_SETUP.md).
+6. Gebruik `BOEKENBAAI_ALLOWED_ORIGINS` alleen als een aparte frontend-origin echt nodig is en zet dit niet breed op `*` voor productie.
 
 ### Belangrijke omgevingsvariabelen
 
 | Variabele | Voorbeeldwaarde | Omschrijving |
 | --- | --- | --- |
-| `BOEKENBAAI_DATA_PATH` | `/data/db.json` | Locatie van het JSON-databestand. Wanneer het bestand nog niet bestaat wordt het automatisch aangemaakt (of gevuld met de voorbeelddata uit `data/db.json`). |
+| `BOEKENBAAI_DATA_PATH` | `/data/db.json` | Locatie van het JSON-databestand op het persistente volume. De repository bevat voorbeelddata; controleer dat productie niet afhankelijk is van publiek bekende demo-credentials. |
+| `BOEKENBAAI_AUTH_DATA_PATH` | `/data/db.json.auth.json` | Optionele aparte locatie voor Google-koppelingen en persistente sessies. Zonder deze variabele gebruikt Boekenbaai automatisch `<BOEKENBAAI_DATA_PATH>.auth.json`. |
+| `BOEKENBAAI_GOOGLE_CLIENT_ID` | `<Google OAuth client-id>` | OAuth-client voor de schoollogin. |
+| `BOEKENBAAI_GOOGLE_CLIENT_SECRET` | `<Google OAuth client-secret>` | OAuth-secret; alleen in Sliplane/secret storage bewaren. |
+| `BOEKENBAAI_GOOGLE_DOMAIN` | `koraaledu.nl` | Exact toegestane Google Workspace-domein. |
+| `BOEKENBAAI_PUBLIC_URL` | `https://boekenbaai.sliplane.app` | Publieke same-origin productie-URL, gebruikt voor OAuth en securitychecks. |
 | `BOEKENBAAI_STATIC_DIR` | `/app/dist` | Overschrijft de map van waaruit statische assets worden geserveerd. Standaard gebruikt de server `dist/` (na build) en anders `public/`. |
-| `BOEKENBAAI_PUBLIC_API_BASE` | `https://boekenbaai.sliplane.app` | Hiermee wordt het API-adres in de HTML-injectie gezet. Handig wanneer de frontend elders draait, maar je toch naar de Sliplane-backend wilt verwijzen. |
-| `BOEKENBAAI_ALLOWED_ORIGINS` | `https://jouwnaam.github.io` | Komma-gescheiden lijst met origins die cross-origin API-verkeer mogen doen. Zet op `*` om alles toe te staan. |
+| `BOEKENBAAI_PUBLIC_API_BASE` | `https://boekenbaai.sliplane.app` | API-base voor een eventueel apart gehoste statische frontend. De huidige Google-login is ontworpen en getest voor de same-origin Sliplane-app. |
+| `BOEKENBAAI_ALLOWED_ORIGINS` | `https://jouwnaam.github.io` | Komma-gescheiden expliciete origins voor toegestane cross-origin API-verzoeken. Gebruik geen wildcard voor productie. |
 | `BOEKENBAAI_IMPORT_ENRICH_ISBN` | `true` | Zet op `true` om tijdens Excel-boekimport automatisch ontbrekende velden aan te vullen met ISBN-metadata. Kan per import worden overschreven met de payload-flag `enrichIsbn`. |
 | `BOEKENBAAI_ENABLE_ISBNBARCODE` | `true` | Zet op `true` om naast Open Library ook de ISBNBarcode.org API te raadplegen voor boekmetadata. Standaard staat alleen Open Library aan. |
 | `BOEKENBAAI_ISBN_CACHE_TTL_MS` | `300000` | Tijd (in milliseconden) dat ISBN-metadata in het in-memory cache blijft staan. Resultaten – ook "niet gevonden" – verlopen standaard na 5 minuten. |
 | `DEPLOY_TARGET` | `gh-pages` | Gebruik deze tijdens het bouwen (`DEPLOY_TARGET=gh-pages npm run build`) om de Vite-base op `/Boekenbaai/` te zetten voor GitHub Pages. |
 
-> 💡 **Tip:** Laat Sliplane tijdens de buildfase `npm run build` uitvoeren en tijdens de runtime alleen `npm start`. Dankzij `BOEKENBAAI_DATA_PATH` kun je het databestand op een volume laten schrijven zodat inloggegevens en uitleengeschiedenis bewaard blijven.
+> **Belangrijk:** zowel `/data/db.json` als het auth-bestand moeten op persistent storage staan. Test dit na configuratie met een redeploy: bibliotheekdata, Google-koppelingen en onthouden sessies mogen niet terugvallen op de repositoryseed.
+
+> **Beheeraccount:** `Boekenbaai Beheer` blijft bewust lokaal en krijgt geen Google-account. Gebruik in productie een sterk uniek wachtwoord. Als de productie-database ooit uit de publieke voorbeelddata is ontstaan, controleer dan dat het oorspronkelijke demo-/seedwachtwoord niet meer actief is.
 
 De server probeert boekinformatie standaard eerst op te halen bij Open Library. Wanneer `BOEKENBAAI_ENABLE_ISBNBARCODE=true` staat, wordt daarna als fallback een verzoek naar ISBNBarcode.org gedaan en blijft de bestaande barcode-parser actief. De resultaten worden tijdelijk in een in-memory cache opgeslagen (standaard 5 minuten). Parallelle verzoeken naar dezelfde ISBN worden gecoördineerd zodat er maximaal één upstream-lookup tegelijk actief is. Omdat de cache alleen in het serverproces leeft, wordt deze gewist bij een herstart.
 
@@ -61,7 +69,7 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 
 ### Sliplane vastloper oplossen
 
-Loopt een deploy vast op Sliplane? Maak dan een nieuwe commit (bijvoorbeeld met de boodschap _"Trigger redeploy"_) zodat er een frisse container wordt uitgerold. Controleer daarna in de Sliplane-logs of de stappen `npm install`, `npm run build` en `npm start` zonder fouten doorlopen. Wanneer de server blijft hangen, herstart je de Sliplane-service vanuit het dashboard of voer lokaal `npm run build && npm start` uit om eventuele buildfouten op te sporen.
+Loopt een deploy vast op Sliplane? Controleer eerst in de Sliplane-logs of `npm ci`, `npm run build` en vooral `npm start` zonder fouten doorlopen. Herstart daarna zo nodig de service vanuit het dashboard. Vervang het runtimecommando niet door `node server.js`, omdat daarmee de auth/security-preloads worden overgeslagen.
 
 ## Legacy Open Library-cover URL's opschonen
 
@@ -79,13 +87,13 @@ node scripts/cleanup-legacy-openlibrary-covers.js --apply --file=/pad/naar/db.js
 
 ## Fallback: hosten op GitHub Pages
 
-Wil je de statische site toch nog als back-up op GitHub Pages houden? Bouw dan met:
+De statische site kan nog als aparte frontend worden gebouwd met:
 
 ```bash
 DEPLOY_TARGET=gh-pages npm run build
 ```
 
-Upload vervolgens de inhoud van de map `dist/` naar GitHub Pages. Laat `BOEKENBAAI_ALLOWED_ORIGINS` op je Sliplane-server wijzen naar de GitHub Pages-origin en stel `BOEKENBAAI_PUBLIC_API_BASE` (of `VITE_BOEKENBAAI_API_BASE` tijdens de build) in op de URL van de Sliplane-deploy. Daarmee wordt de API-base automatisch in `server.js` en de gebuilde frontend gezet, zodat de statische pagina tegen dezelfde host kan praten en `/api/login` een 200/401 van de backend teruggeeft in plaats van een 404.
+Stel dan een expliciete `BOEKENBAAI_ALLOWED_ORIGINS` en `BOEKENBAAI_PUBLIC_API_BASE` in voor de Sliplane-backend. Let op: de huidige Google-login, browsergebonden OAuth-start en cookiebeveiliging zijn als productiepad **same-origin op Sliplane** ontworpen en getest. Beschouw GitHub Pages daarom niet als een gelijkwaardige fallback voor de complete Google-authflow zonder aanvullende cross-origin integratietests.
 
 ## API-notitie: uitleenlog per leerling
 
