@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  const initialGoogleState =
+    new URLSearchParams(window.location.search).get('googleAuth') || '';
+
   function getPageState() {
     const isStaff = document.body?.dataset.page === 'staff';
     const form = document.querySelector(isStaff ? '#login-form' : '#student-login-form');
@@ -16,25 +19,48 @@
     };
   }
 
-  async function fetchLoginMode(type, accountId) {
-    const response = await window.fetch(
-      `/api/auth/login-mode?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`,
-      { headers: { Accept: 'application/json' } }
-    );
+  async function requestJson(url, options = {}) {
+    const response = await window.fetch(url, {
+      ...options,
+      headers: {
+        Accept: 'application/json',
+        ...(options.headers || {}),
+      },
+    });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.message || 'Het gekozen account kon niet worden gecontroleerd.');
+      const error = new Error(payload.message || 'Er ging iets mis.');
+      error.status = response.status;
+      throw error;
     }
+    return payload;
+  }
+
+  async function fetchLoginMode(type, accountId) {
+    const payload = await requestJson(
+      `/api/auth/login-mode?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`
+    );
     if (!['google', 'password'].includes(payload.authMode)) {
       throw new Error('Het gekozen account heeft geen geldige inlogmethode.');
     }
     return payload.authMode;
   }
 
-  function buildGoogleStartUrl({ isStaff, accountId, remember }) {
+  async function fetchGoogleStartToken(type, accountId) {
+    const payload = await requestJson(
+      `/api/auth/google/start-token?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`
+    );
+    if (!payload.token || typeof payload.token !== 'string') {
+      throw new Error('De Google-inlog kon niet veilig worden gestart. Probeer opnieuw.');
+    }
+    return payload.token;
+  }
+
+  function buildGoogleStartUrl({ isStaff, accountId, remember, startToken }) {
     const params = new URLSearchParams({
       type: isStaff ? 'staff' : 'student',
       accountId,
+      handoffToken: startToken,
     });
     if (isStaff && remember) params.set('remember', '1');
     return `/api/auth/google/start?${params.toString()}`;
@@ -49,6 +75,136 @@
       }
     }
     return true;
+  }
+
+  function enhancePendingLinkHandoff(attempt = 0) {
+    const googleState = initialGoogleState;
+    if (document.body?.dataset.page !== 'student' || googleState !== 'link-required') return;
+
+    const panel = document.querySelector('.google-link-request');
+    if (!panel) {
+      if (attempt < 200) window.setTimeout(() => enhancePendingLinkHandoff(attempt + 1), 50);
+      return;
+    }
+    if (panel.dataset.selectedStudentHandoff === '1') return;
+    panel.dataset.selectedStudentHandoff = '1';
+
+    const search = panel.querySelector('.google-link-request__search');
+    const results = panel.querySelector('.google-link-request__results');
+    const status = panel.querySelector('.google-link-request__status');
+    const intro = Array.from(panel.querySelectorAll('p')).find(
+      (entry) => !entry.classList.contains('google-link-request__status')
+    );
+    let pollTimer = null;
+    let stopped = false;
+
+    function hideManualSearch() {
+      if (search) search.hidden = true;
+      if (results) {
+        results.hidden = true;
+        results.replaceChildren();
+      }
+      if (intro) {
+        intro.textContent =
+          'Je Google-account wordt gekoppeld aan de leerlingnaam die je vóór het inloggen hebt gekozen.';
+      }
+    }
+
+    function setStatus(text) {
+      if (status) status.textContent = text || '';
+    }
+
+    function scheduleCheck() {
+      if (stopped) return;
+      window.clearTimeout(pollTimer);
+      pollTimer = window.setTimeout(checkPending, 5000);
+    }
+
+    async function completePending() {
+      stopped = true;
+      window.clearTimeout(pollTimer);
+      setStatus('Je docent heeft de koppeling goedgekeurd. Je wordt ingelogd…');
+      try {
+        const completed = await requestJson('/api/auth/google/pending/complete', {
+          method: 'POST',
+        });
+        if (completed.loggedIn) {
+          localStorage.setItem('boekenbaai_token', 'cookie');
+          window.location.replace('/index.html?googleAuth=success');
+        }
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function checkPending() {
+      if (stopped) return;
+      try {
+        const pending = await requestJson('/api/auth/google/pending');
+        if (pending.studentId) hideManualSearch();
+        if (pending.canComplete) {
+          await completePending();
+          return;
+        }
+        if (pending.requestStatus === 'pending' && pending.studentId) {
+          setStatus('Je koppelverzoek wacht nog op goedkeuring van een docent van jouw klas.');
+          scheduleCheck();
+          return;
+        }
+        if (pending.requestStatus === 'denied' && pending.studentId) {
+          stopped = true;
+          setStatus('Je docent heeft het koppelverzoek afgewezen. Vraag je docent om hulp.');
+        }
+      } catch (error) {
+        if (error.status !== 404 && error.status !== 401) {
+          setStatus(error.message);
+        }
+      }
+    }
+
+    (async () => {
+      try {
+        const existing = await requestJson('/api/auth/google/pending');
+        if (existing.automaticSelection) hideManualSearch();
+        if (existing.studentId && existing.requestStatus !== 'not-requested') {
+          hideManualSearch();
+          if (existing.canComplete) {
+            await completePending();
+            return;
+          }
+          if (existing.requestStatus === 'pending') {
+            setStatus('Je koppelverzoek wacht nog op goedkeuring van een docent van jouw klas.');
+            scheduleCheck();
+            return;
+          }
+          if (existing.requestStatus === 'denied') {
+            stopped = true;
+            setStatus('Je docent heeft het koppelverzoek afgewezen. Vraag je docent om hulp.');
+            return;
+          }
+        }
+      } catch (error) {
+        // De bestaande handmatige zoekflow blijft beschikbaar als fallback.
+      }
+
+      try {
+        const automatic = await requestJson('/api/auth/google/auto-link-request', {
+          method: 'POST',
+        });
+        if (!automatic.automatic) return;
+        hideManualSearch();
+        setStatus('Koppelverzoek verstuurd. Een docent van jouw klas kan het nu goedkeuren.');
+        scheduleCheck();
+      } catch (error) {
+        if (error.status === 404) {
+          // Oude of directe flow zonder beveiligde leerlingselectie: laat zoeken toe.
+          return;
+        }
+        hideManualSearch();
+        stopped = true;
+        setStatus(error.message);
+      }
+    })();
   }
 
   function enhanceLogin(attempt = 0) {
@@ -185,7 +341,7 @@
 
     form.addEventListener(
       'submit',
-      (event) => {
+      async (event) => {
         const accountId = nameInput.dataset.selectedAccountId || '';
         const hasCurrentMode = Boolean(
           accountId && selectedMode && selectedModeAccountId === accountId
@@ -210,10 +366,29 @@
           setMessage('Google-inlog is nog niet ingesteld door de beheerder.');
           return;
         }
-        const remember = Boolean(isStaff && rememberCheckbox?.checked);
-        window.location.assign(
-          buildGoogleStartUrl({ isStaff, accountId, remember })
-        );
+
+        submit.disabled = true;
+        setMessage('Google-inlog wordt veilig gestart…');
+        try {
+          const type = isStaff ? 'staff' : 'student';
+          const startToken = await fetchGoogleStartToken(type, accountId);
+          if (
+            nameInput.dataset.selectedAccountId !== accountId ||
+            selectedModeAccountId !== accountId ||
+            selectedMode !== 'google'
+          ) {
+            submit.disabled = false;
+            setMessage('Je selectie is gewijzigd. Klik opnieuw op Inloggen.');
+            return;
+          }
+          const remember = Boolean(isStaff && rememberCheckbox?.checked);
+          window.location.assign(
+            buildGoogleStartUrl({ isStaff, accountId, remember, startToken })
+          );
+        } catch (error) {
+          submit.disabled = false;
+          setMessage(error.message);
+        }
       },
       true
     );
@@ -222,11 +397,15 @@
     showRemember(false);
     submit.disabled = !nameInput.value.trim();
 
-    const state = new URLSearchParams(window.location.search).get('googleAuth') || '';
+    const state = initialGoogleState;
     if (state === 'select-account') {
       setMessage('Kies je naam uit de lijst voordat je inlogt.');
     } else if (state === 'local-only') {
       setMessage('Dit beheeraccount logt lokaal in met een wachtwoord.');
+    } else if (state === 'account-mismatch') {
+      setMessage(
+        'De gekozen naam hoort bij een ander Google-account. Kies opnieuw je eigen naam en schoolaccount.'
+      );
     }
 
     if (isStaff && !stripAdminGoogleManageOptions()) {
@@ -237,5 +416,8 @@
     }
   }
 
-  document.addEventListener('DOMContentLoaded', () => enhanceLogin());
+  document.addEventListener('DOMContentLoaded', () => {
+    enhanceLogin();
+    enhancePendingLinkHandoff();
+  });
 })();

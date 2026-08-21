@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const core = require('../google-auth-core');
 
 const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-production-auth-'));
@@ -16,6 +17,11 @@ const baseUrl = `http://127.0.0.1:${port}`;
 
 function hashPassword(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+function extractCookieValue(setCookieHeader, name) {
+  const match = String(setCookieHeader || '').match(new RegExp(`${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 fs.writeFileSync(dbPath, JSON.stringify({
@@ -54,6 +60,7 @@ fs.writeFileSync(dbPath, JSON.stringify({
 const child = spawn(process.execPath, [
   '--require', path.join(root, 'google-auth-security-preload.js'),
   '--require', path.join(root, 'login-flow-policy-preload.js'),
+  '--require', path.join(root, 'student-google-handoff-preload.js'),
   '--require', path.join(root, 'google-auth-runtime-preload.js'),
   path.join(root, 'server.js'),
 ], {
@@ -107,6 +114,30 @@ async function loginMode(type, accountId) {
   return response.json();
 }
 
+async function googleStartIntent(type, accountId) {
+  const response = await fetch(
+    `${baseUrl}/api/auth/google/start-token?type=${encodeURIComponent(type)}&accountId=${encodeURIComponent(accountId)}`
+  );
+  assert.strictEqual(response.status, 200);
+  const payload = await response.json();
+  assert.ok(payload.token);
+  const state = core.verifySignedState(payload.token, 'test-auth-secret', {
+    maxAgeMs: 2 * 60 * 1000,
+  });
+  assert.strictEqual(state?.purpose, 'google-start');
+  assert.strictEqual(state?.type, type);
+  assert.strictEqual(state?.accountId, accountId);
+  assert.ok(state?.nonce);
+
+  const setCookie = response.headers.get('set-cookie') || '';
+  assert.match(setCookie, /boekenbaai_google_start_intent=/);
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /SameSite=Strict/i);
+  const intentCookie = extractCookieValue(setCookie, 'boekenbaai_google_start_intent');
+  assert.strictEqual(intentCookie, state.nonce);
+  return { token: payload.token, intentCookie };
+}
+
 (async () => {
   try {
     const configResponse = await waitForServer();
@@ -128,12 +159,73 @@ async function loginMode(type, accountId) {
       'local-only'
     );
 
-    const teacherGoogle = await fetch(
+    const untrustedTeacherStart = await fetch(
       `${baseUrl}/api/auth/google/start?type=staff&accountId=teacher-smoke`,
       { redirect: 'manual' }
     );
+    assert.strictEqual(
+      untrustedTeacherStart.status,
+      403,
+      'Een directe OAuth-start buiten de Boekenbaai-UI moet worden geweigerd'
+    );
+
+    const teacherIntent = await googleStartIntent('staff', 'teacher-smoke');
+    const teacherGoogle = await fetch(
+      `${baseUrl}/api/auth/google/start?type=staff&accountId=teacher-smoke&handoffToken=${encodeURIComponent(teacherIntent.token)}`,
+      {
+        redirect: 'manual',
+        headers: {
+          Cookie: `boekenbaai_google_start_intent=${encodeURIComponent(teacherIntent.intentCookie)}`,
+        },
+      }
+    );
     assert.strictEqual(teacherGoogle.status, 302);
     assert.strictEqual(new URL(teacherGoogle.headers.get('location')).hostname, 'accounts.google.com');
+
+    const studentIntent = await googleStartIntent('student', 'student-smoke');
+    const studentGoogle = await fetch(
+      `${baseUrl}/api/auth/google/start?type=student&accountId=student-smoke&handoffToken=${encodeURIComponent(studentIntent.token)}`,
+      {
+        redirect: 'manual',
+        headers: {
+          Cookie: `boekenbaai_google_start_intent=${encodeURIComponent(studentIntent.intentCookie)}`,
+        },
+      }
+    );
+    assert.strictEqual(studentGoogle.status, 302);
+    const studentGoogleLocation = new URL(studentGoogle.headers.get('location'));
+    assert.strictEqual(studentGoogleLocation.hostname, 'accounts.google.com');
+    const studentOauthState = core.verifySignedState(
+      studentGoogleLocation.searchParams.get('state'),
+      'test-auth-secret'
+    );
+    assert.strictEqual(studentOauthState?.type, 'student');
+    assert.ok(studentOauthState?.nonce, 'Production OAuth-state moet de nonce behouden');
+
+    const studentSetCookie = studentGoogle.headers.get('set-cookie') || '';
+    assert.match(
+      studentSetCookie,
+      /boekenbaai_google_selected_account=/,
+      'Production Google-start moet de beveiligde leerlingselectiecookie zetten'
+    );
+    assert.match(
+      studentSetCookie,
+      /boekenbaai_google_start_intent=;[^,]*Max-Age=0/,
+      'Production Google-start moet de browsergebonden startintent na gebruik wissen'
+    );
+    const selectedCookie = extractCookieValue(
+      studentSetCookie,
+      'boekenbaai_google_selected_account'
+    );
+    const selectedState = core.verifySignedState(selectedCookie, 'test-auth-secret', {
+      maxAgeMs: 15 * 60 * 1000,
+    });
+    assert.strictEqual(selectedState?.type, 'student');
+    assert.strictEqual(
+      selectedState?.accountId,
+      'student-smoke',
+      'Production handoff-cookie moet de geselecteerde leerling ondertekend meenemen'
+    );
 
     const login = await fetch(`${baseUrl}/api/login-by-name`, {
       method: 'POST',
