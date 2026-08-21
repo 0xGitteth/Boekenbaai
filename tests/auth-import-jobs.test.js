@@ -421,7 +421,7 @@ async function testLateCancelWinsOverCompletedFinalization() {
   const dbPath = path.join(tempDir, 'db.json');
   createDbFixture(dbPath);
   const serverProcess = startServer(dbPath, {
-    BOEKENBAAI_IMPORT_FINALIZE_DELAY_MS: '250',
+    BOEKENBAAI_IMPORT_FINALIZE_DELAY_MS: '1500',
   });
   try {
     await waitForServer(serverProcess);
@@ -444,26 +444,39 @@ async function testLateCancelWinsOverCompletedFinalization() {
     const jobId = startResponse.body.jobId;
     assert.ok(jobId, 'jobId ontbreekt');
 
-    let runningSeen = false;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    let finalizeWindowSeen = false;
+    for (let attempt = 0; attempt < 300; attempt += 1) {
       const statusResponse = await request(`/api/books/import-jobs/${jobId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       assert.strictEqual(statusResponse.status, 200);
-      if (statusResponse.body.status === 'running') {
-        runningSeen = true;
+      const job = statusResponse.body;
+      if (
+        job.status === 'running' &&
+        Number(job.total) > 0 &&
+        Number(job.processed) === Number(job.total)
+      ) {
+        finalizeWindowSeen = true;
         break;
       }
+      assert.ok(
+        !['completed', 'failed', 'cancelled'].includes(job.status),
+        `Importjob finaliseerde vóór de late-cancel testwindow: ${job.status}`
+      );
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.ok(runningSeen, 'Importjob kwam niet in running status');
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.ok(
+      finalizeWindowSeen,
+      'Importjob bereikte niet de running finalisatiewindow nadat alle rijen verwerkt waren'
+    );
+
     const cancelResponse = await request(`/api/books/import-jobs/${jobId}/cancel`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.strictEqual(cancelResponse.status, 200);
+    assert.ok(cancelResponse.body.cancelRequested, 'Late cancel moet cancelRequested direct vastleggen');
 
     let finalJob = null;
     for (let attempt = 0; attempt < 60; attempt += 1) {
