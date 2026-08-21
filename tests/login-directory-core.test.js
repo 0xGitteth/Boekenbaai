@@ -16,7 +16,11 @@ assert.strictEqual(queryMatchesName('Gitte van Bakel', 'bak'), true);
 assert.strictEqual(queryMatchesName('Gitte van Bakel', 'git bak'), true);
 assert.strictEqual(queryMatchesName('Gitte van Bakel', 'itte'), false);
 assert.strictEqual(queryMatchesName('Mirsad Smit', 'mi'), false, 'Twee letters mogen geen prefixdump geven');
-assert.strictEqual(queryMatchesName('Bo Janssen', 'bo'), true, 'Een echte tweeletter-naam moet wel vindbaar blijven');
+assert.strictEqual(queryMatchesName('Bo Janssen', 'bo'), true, 'Een echte tweeletter-voornaam moet wel vindbaar blijven');
+assert.strictEqual(queryMatchesName('Jan de Boer', 'de'), false, 'Tweeletter-tussenvoegsel mag geen directorydump geven');
+assert.strictEqual(queryMatchesName('Jan van Dijk', 'van'), false, 'Los veelvoorkomend tussenvoegsel moet te breed zijn');
+assert.strictEqual(queryMatchesName('Jan van Dijk', 'van di'), true, 'Tussenvoegsel met specifieker naamdeel moet wel werken');
+assert.strictEqual(queryMatchesName('Van Morrison', 'van'), true, 'Een tussenvoegselwoord dat echt de voornaam is moet vindbaar blijven');
 
 const students = [
   {
@@ -118,9 +122,14 @@ for (const match of studentMatches) {
   assert.ok(!Object.hasOwn(match, 'passwordHash'));
 }
 assert.strictEqual(studentMatches.some((entry) => entry.name === 'Gitte van Bakel'), false, 'Volledige leerlingnaam mag niet onnodig terugkomen');
+const singleSpecificMatch = buildStudentMatches(db, 'bakel');
+assert.strictEqual(singleSpecificMatch.length, 1);
+assert.strictEqual(singleSpecificMatch[0].name, 'Gitte B.', 'Niet-matchende leerlingen mogen de zichtbare naam niet langer maken');
 assert.strictEqual(buildStudentMatches(db, 'itte').length, 0);
 assert.strictEqual(buildStudentMatches(db, 'mi').length, 0);
 assert.strictEqual(buildStudentMatches(db, 'bo').some((entry) => entry.id === 'student-bo'), true);
+assert.strictEqual(buildStudentMatches(db, 'de').length, 0, 'Veelvoorkomend tweeletter-tussenvoegsel mag niets opsommen');
+assert.strictEqual(buildStudentMatches(db, 'van').length, 0, 'Los veelvoorkomend tussenvoegsel mag niets opsommen');
 
 const staffMatches = buildStaffMatches(db, 'doc');
 assert.deepStrictEqual(staffMatches, [
