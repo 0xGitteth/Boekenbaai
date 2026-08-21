@@ -148,6 +148,12 @@ function assertMinimalDirectoryMatch(match, expectedType) {
     });
     assert.deepStrictEqual(twoLetterPrefix.payload.matches, []);
 
+    const broadParticle = await readJson('/api/login-search?q=van&type=student', {
+      headers: { 'X-Forwarded-For': '198.51.100.19' },
+    });
+    assert.strictEqual(broadParticle.response.status, 200);
+    assert.deepStrictEqual(broadParticle.payload.matches, []);
+
     const exactTwoLetter = await readJson('/api/login-search?q=bo&type=student', {
       headers: { 'X-Forwarded-For': '198.51.100.13' },
     });
@@ -186,20 +192,33 @@ function assertMinimalDirectoryMatch(match, expectedType) {
     });
     assert.strictEqual(crossSite.response.status, 403);
 
-    const limiterHeaders = {
-      Cookie: 'boekenbaai_login_directory=abcdefghijklmnopqrstuvwx12345678',
-      'X-Forwarded-For': '198.51.100.77',
-    };
+    const limiterCookie = 'boekenbaai_login_directory=abcdefghijklmnopqrstuvwx12345678';
     for (let index = 0; index < 30; index += 1) {
       const allowed = await readJson('/api/login-search?q=git&type=student', {
-        headers: limiterHeaders,
+        headers: {
+          Cookie: limiterCookie,
+          // De eerste XFF-hop varieert bewust alsof een client hem spoeft. De
+          // laatste proxy-hop blijft gelijk en moet dus dezelfde limiet raken.
+          'X-Forwarded-For': `203.0.113.${index + 1}, 198.51.100.77`,
+        },
       });
-      assert.strictEqual(allowed.response.status, 200, `Directory request ${index + 1} hoort binnen de browserlimiet te vallen`);
+      assert.strictEqual(
+        allowed.response.status,
+        200,
+        `Directory request ${index + 1} hoort binnen de browserlimiet te vallen`
+      );
     }
     const limited = await readJson('/api/login-search?q=git&type=student', {
-      headers: limiterHeaders,
+      headers: {
+        Cookie: limiterCookie,
+        'X-Forwarded-For': '192.0.2.250, 198.51.100.77',
+      },
     });
-    assert.strictEqual(limited.response.status, 429);
+    assert.strictEqual(
+      limited.response.status,
+      429,
+      'Een gespoofte eerste X-Forwarded-For-hop mag de browser/netwerklimiet niet omzeilen'
+    );
     assert.ok(Number(limited.response.headers.get('retry-after')) > 0);
 
     const student = await readJson('/api/auth/login-mode?type=student&accountId=student-1');
