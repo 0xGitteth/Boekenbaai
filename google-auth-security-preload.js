@@ -13,6 +13,11 @@ const {
   validatePersistedSession,
   decorateSessionResult,
 } = require('./google-auth-security-core');
+const {
+  snapshotGoogleLinks,
+  findChangedExistingGoogleAccounts,
+  revokePersistedSessionsForAccounts,
+} = require('./google-link-session-revocation-core');
 
 const originalCreateServer = http.createServer.bind(http);
 const originalUpsertSession = core.upsertSession;
@@ -33,6 +38,10 @@ const SESSION_HINT_COOKIE = 'boekenbaai_auth_hint';
 const OAUTH_NONCE_COOKIE = 'boekenbaai_oauth_nonce';
 const PENDING_COOKIE = 'boekenbaai_google_pending';
 const SESSION_SENTINEL = 'cookie';
+const GOOGLE_LINK_MUTATION_PATHS = new Set([
+  '/api/auth/google/student-email',
+  '/api/auth/google/staff-email',
+]);
 
 function ensureParentDirectory(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -142,6 +151,38 @@ function shouldReadAuthStore(pathname, cookies, bearer) {
     pathname.startsWith('/api/auth/google/') &&
     !['/api/auth/google/config', '/api/auth/google/start'].includes(pathname)
   ) || pathname.startsWith('/api/auth/session/');
+}
+
+function shouldWatchGoogleLinkMutation(req, pathname) {
+  if (String(req?.method || '').toUpperCase() !== 'POST') return false;
+  if (GOOGLE_LINK_MUTATION_PATHS.has(pathname)) return true;
+  return /^\/api\/auth\/google\/link-requests\/[\w-]+\/approve$/.test(pathname);
+}
+
+function installGoogleLinkSessionRevocation(res, beforeStore) {
+  const beforeSnapshot = snapshotGoogleLinks(beforeStore);
+  const originalEnd = res.end.bind(res);
+  let processed = false;
+
+  res.end = function patchedGoogleLinkMutationEnd(chunk, encoding, callback) {
+    if (!processed) {
+      processed = true;
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        const latestStore = readAuthStoreStrict();
+        const changedAccounts = findChangedExistingGoogleAccounts(beforeSnapshot, latestStore);
+        if (changedAccounts.length) {
+          const revoked = revokePersistedSessionsForAccounts(latestStore, changedAccounts);
+          if (revoked.revokedTokenHashes.length) {
+            for (const hash of revoked.revokedTokenHashes) {
+              revokedTokenHashes.add(hash);
+            }
+            saveAuthStoreStrict(revoked.store);
+          }
+        }
+      }
+    }
+    return originalEnd(chunk, encoding, callback);
+  };
 }
 
 function wrapMeResponse(res, activeSession) {
@@ -258,6 +299,9 @@ function wrapRequestListener(listener) {
 
       if (pathname === '/api/me' && activeSession) {
         wrapMeResponse(res, activeSession);
+      }
+      if (authStore && shouldWatchGoogleLinkMutation(req, pathname)) {
+        installGoogleLinkSessionRevocation(res, authStore);
       }
 
       return requestContext.run({ pathname }, () => listener(req, res));
