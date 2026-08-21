@@ -1,0 +1,318 @@
+'use strict';
+
+const crypto = require('crypto');
+
+const DEFAULT_RESULT_LIMIT = 8;
+const MAX_QUERY_LENGTH = 80;
+const COMMON_NAME_PARTICLES = new Set(['de', 'den', 'der', 'het', 'te', 'ten', 'ter', 'van']);
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .toLocaleLowerCase('nl-NL')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function searchTokens(value) {
+  const normalized = normalizeSearchText(value);
+  return normalized ? normalized.split(' ').filter(Boolean) : [];
+}
+
+function queryMatchesName(name, query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length < 2 || normalizedQuery.length > MAX_QUERY_LENGTH) return false;
+
+  const nameParts = searchTokens(name);
+  const queryParts = searchTokens(normalizedQuery);
+  if (!nameParts.length || !queryParts.length) return false;
+
+  if (normalizedQuery.length === 2 && queryParts.length === 1) {
+    return nameParts[0] === queryParts[0];
+  }
+
+  if (
+    queryParts.length === 1 &&
+    COMMON_NAME_PARTICLES.has(queryParts[0]) &&
+    nameParts[0] !== queryParts[0]
+  ) {
+    return false;
+  }
+
+  return queryParts.every(
+    (part) => part.length >= 2 && nameParts.some((namePart) => namePart.startsWith(part))
+  );
+}
+
+function cleanDisplayPart(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function rawName(student) {
+  return cleanDisplayPart(
+    student?.name ||
+      [student?.firstName, student?.middleName, student?.lastName].filter(Boolean).join(' ')
+  );
+}
+
+function preferredFirstName(student) {
+  const explicit = cleanDisplayPart(student?.firstName);
+  if (explicit) return explicit;
+  const name = rawName(student);
+  return name ? name.split(/\s+/)[0] : 'Leerling';
+}
+
+function preferredLastName(student) {
+  const explicit = cleanDisplayPart(student?.lastName);
+  if (explicit) return explicit;
+  const parts = rawName(student).split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
+function surnameCandidate(student, letters) {
+  const firstName = preferredFirstName(student);
+  const lastName = preferredLastName(student);
+  if (!lastName) return firstName;
+  const length = Math.max(1, Math.min(Number(letters) || 1, lastName.length));
+  const prefix = lastName.slice(0, length);
+  return `${firstName} ${prefix}${length < lastName.length ? '.' : ''}`;
+}
+
+function fullStudentDisplayName(student) {
+  const firstName = preferredFirstName(student);
+  const lastName = preferredLastName(student);
+  return lastName ? `${firstName} ${lastName}` : firstName;
+}
+
+function fullPersonalName(student) {
+  const explicit = [student?.firstName, student?.middleName, student?.lastName]
+    .map(cleanDisplayPart)
+    .filter(Boolean)
+    .join(' ');
+  return explicit || rawName(student) || fullStudentDisplayName(student);
+}
+
+function sameDisplay(left, right) {
+  return normalizeSearchText(left) === normalizeSearchText(right);
+}
+
+function classesForStudent(studentId, classes) {
+  return (Array.isArray(classes) ? classes : [])
+    .filter((entry) => Array.isArray(entry?.studentIds) && entry.studentIds.includes(studentId))
+    .map((entry) => cleanDisplayPart(entry?.name))
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right, 'nl'));
+}
+
+function shortStableCode(id) {
+  return crypto
+    .createHash('sha256')
+    .update(String(id || ''))
+    .digest('base64url')
+    .slice(0, 4)
+    .toUpperCase();
+}
+
+function createStudentDisplayName(student, students, classes) {
+  const relevantStudents = Array.isArray(students) ? students : [];
+  const lastName = preferredLastName(student);
+
+  if (lastName) {
+    for (let letters = 1; letters <= lastName.length; letters += 1) {
+      const candidate = surnameCandidate(student, letters);
+      const collision = relevantStudents.some(
+        (other) =>
+          other?.id !== student?.id &&
+          sameDisplay(candidate, surnameCandidate(other, letters))
+      );
+      if (!collision) return candidate;
+    }
+  }
+
+  const fullCandidate = fullStudentDisplayName(student);
+  const baseColliders = relevantStudents.filter(
+    (other) =>
+      other?.id !== student?.id &&
+      sameDisplay(fullCandidate, fullStudentDisplayName(other))
+  );
+  if (!baseColliders.length) return fullCandidate;
+
+  const personalCandidate = fullPersonalName(student);
+  const personalColliders = baseColliders.filter((other) =>
+    sameDisplay(personalCandidate, fullPersonalName(other))
+  );
+  if (!personalColliders.length) return personalCandidate;
+
+  const ownClasses = classesForStudent(student?.id, classes);
+  for (const className of ownClasses) {
+    const classIsUnique = personalColliders.every(
+      (other) => !classesForStudent(other?.id, classes).includes(className)
+    );
+    if (classIsUnique) return `${personalCandidate} (${className})`;
+  }
+
+  return `${personalCandidate} (${shortStableCode(student?.id)})`;
+}
+
+function searchableStudentName(student) {
+  return [student?.name, student?.firstName, student?.middleName, student?.lastName]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function clampResultLimit(limit) {
+  return Math.max(1, Math.min(Number(limit) || DEFAULT_RESULT_LIMIT, DEFAULT_RESULT_LIMIT));
+}
+
+function deterministicCandidateSort(left, right, labelFn) {
+  const byLabel = normalizeSearchText(labelFn(left)).localeCompare(
+    normalizeSearchText(labelFn(right)),
+    'nl'
+  );
+  if (byLabel) return byLabel;
+  return String(left?.id || '').localeCompare(String(right?.id || ''), 'en');
+}
+
+function buildStudentMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
+  const students = Array.isArray(db?.students) ? db.students : [];
+  const classes = Array.isArray(db?.classes) ? db.classes : [];
+  const selected = students
+    .filter((entry) => entry?.id && queryMatchesName(searchableStudentName(entry), query))
+    .sort((left, right) => deterministicCandidateSort(left, right, fullPersonalName))
+    .slice(0, clampResultLimit(limit));
+
+  return selected.map((entry) => {
+    // Alleen daadwerkelijk teruggegeven resultaten mogen het zichtbare label
+    // van elkaar beïnvloeden. Een verborgen negende match lekt zo niet indirect.
+    const displayName = createStudentDisplayName(entry, selected, classes);
+    return {
+      id: entry.id,
+      name: displayName,
+      displayName,
+      type: 'student',
+    };
+  });
+}
+
+function buildStaffMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
+  const users = Array.isArray(db?.users) ? db.users : [];
+  const selected = users
+    .filter(
+      (entry) =>
+        entry?.id &&
+        ['teacher', 'admin'].includes(entry?.role) &&
+        cleanDisplayPart(entry?.name) &&
+        queryMatchesName(entry.name, query)
+    )
+    .sort((left, right) => deterministicCandidateSort(left, right, (entry) => entry?.name || ''))
+    .slice(0, clampResultLimit(limit));
+
+  const nameCounts = new Map();
+  for (const entry of selected) {
+    const normalized = normalizeSearchText(entry.name);
+    nameCounts.set(normalized, (nameCounts.get(normalized) || 0) + 1);
+  }
+
+  return selected.map((entry) => {
+    const normalized = normalizeSearchText(entry.name);
+    const baseName = cleanDisplayPart(entry.name);
+    const displayName =
+      nameCounts.get(normalized) > 1
+        ? `${baseName} (${shortStableCode(entry.id)})`
+        : baseName;
+    return {
+      id: entry.id,
+      name: displayName,
+      displayName,
+      type: 'staff',
+    };
+  });
+}
+
+class DirectoryRateLimiter {
+  constructor({
+    windowMs = 60 * 1000,
+    browserMax = 30,
+    networkMax = 120,
+    globalMax = 1200,
+  } = {}) {
+    this.windowMs = windowMs;
+    this.browserMax = browserMax;
+    this.networkMax = networkMax;
+    this.globalMax = globalMax;
+    this.browserEvents = new Map();
+    this.networkEvents = new Map();
+    this.globalEvents = [];
+  }
+
+  _pruneList(events, cutoff) {
+    return (events || []).filter((time) => time > cutoff);
+  }
+
+  _pruneMap(map, cutoff) {
+    for (const [key, events] of map.entries()) {
+      const fresh = this._pruneList(events, cutoff);
+      if (fresh.length) map.set(key, fresh);
+      else map.delete(key);
+    }
+  }
+
+  _retryAfter(events, now) {
+    const first = events[0] || now;
+    return Math.max(1, Math.ceil((first + this.windowMs - now) / 1000));
+  }
+
+  checkAndRecord({ browserKey, networkKey }, now = Date.now()) {
+    const cutoff = now - this.windowMs;
+    this.globalEvents = this._pruneList(this.globalEvents, cutoff);
+    this._pruneMap(this.browserEvents, cutoff);
+    this._pruneMap(this.networkEvents, cutoff);
+
+    const browserEvents = this.browserEvents.get(browserKey) || [];
+    const networkEvents = this.networkEvents.get(networkKey) || [];
+    if (browserEvents.length >= this.browserMax) {
+      return {
+        allowed: false,
+        scope: 'browser',
+        retryAfterSeconds: this._retryAfter(browserEvents, now),
+      };
+    }
+    if (networkEvents.length >= this.networkMax) {
+      return {
+        allowed: false,
+        scope: 'network',
+        retryAfterSeconds: this._retryAfter(networkEvents, now),
+      };
+    }
+    if (this.globalEvents.length >= this.globalMax) {
+      return {
+        allowed: false,
+        scope: 'global',
+        retryAfterSeconds: this._retryAfter(this.globalEvents, now),
+      };
+    }
+
+    browserEvents.push(now);
+    networkEvents.push(now);
+    this.browserEvents.set(browserKey, browserEvents);
+    this.networkEvents.set(networkKey, networkEvents);
+    this.globalEvents.push(now);
+    return { allowed: true, scope: null, retryAfterSeconds: 0 };
+  }
+}
+
+module.exports = {
+  DEFAULT_RESULT_LIMIT,
+  MAX_QUERY_LENGTH,
+  normalizeSearchText,
+  searchTokens,
+  queryMatchesName,
+  preferredFirstName,
+  preferredLastName,
+  createStudentDisplayName,
+  buildStudentMatches,
+  buildStaffMatches,
+  DirectoryRateLimiter,
+};
