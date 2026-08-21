@@ -30,13 +30,20 @@ fs.writeFileSync(dbPath, JSON.stringify({
   students: [{
     id: 'student-smoke',
     name: 'Smoke Leerling',
+    firstName: 'Smoke',
+    lastName: 'Leerling',
     username: 'smoke-student',
     passwordHash: hashPassword('unused-student-password'),
+    grade: '4',
     borrowedBooks: [],
-    classIds: [],
+    classIds: ['class-smoke'],
   }],
   folders: [],
-  classes: [],
+  classes: [{
+    id: 'class-smoke',
+    name: 'Geheime Klas',
+    studentIds: ['student-smoke'],
+  }],
   users: [
     {
       id: 'admin-smoke',
@@ -146,6 +153,30 @@ async function googleStartIntent(type, accountId) {
     const config = await configResponse.json();
     assert.strictEqual(config.enabled, true);
     assert.strictEqual(config.domain, 'koraaledu.nl');
+
+    // Bewijs op de echte production startvolgorde dat de privacy-policy de oude
+    // ruimere /api/login-search-route vóór server.js onderschept.
+    const publicDirectory = await fetch(`${baseUrl}/api/login-search?q=smo&type=student`, {
+      headers: {
+        'Sec-Fetch-Site': 'same-origin',
+        'X-Forwarded-For': '198.51.100.200',
+      },
+    });
+    const publicDirectoryPayload = await publicDirectory.json();
+    assert.strictEqual(publicDirectory.status, 200);
+    assert.strictEqual(publicDirectoryPayload.matches.length, 1);
+    assert.deepStrictEqual(
+      Object.keys(publicDirectoryPayload.matches[0]).sort(),
+      ['displayName', 'id', 'name', 'type']
+    );
+    assert.strictEqual(publicDirectoryPayload.matches[0].id, 'student-smoke');
+    assert.strictEqual(publicDirectoryPayload.matches[0].name, 'Smoke L.');
+    const serializedDirectory = JSON.stringify(publicDirectoryPayload);
+    assert.doesNotMatch(serializedDirectory, /Geheime Klas/);
+    assert.doesNotMatch(serializedDirectory, /smoke-student/);
+    assert.doesNotMatch(serializedDirectory, /passwordHash/);
+    assert.doesNotMatch(serializedDirectory, /"grade"/);
+    assert.match(publicDirectory.headers.get('cache-control') || '', /no-store/i);
 
     assert.strictEqual((await loginMode('staff', 'admin-smoke')).authMode, 'password');
     assert.strictEqual((await loginMode('staff', 'teacher-smoke')).authMode, 'google');
