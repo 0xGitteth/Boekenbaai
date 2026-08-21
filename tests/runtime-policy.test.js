@@ -23,8 +23,8 @@ assert.match(workflow, /uses:\s*actions\/setup-node@v6/, 'CI moet setup-node geb
 assert.match(workflow, /node-version-file:\s*\.nvmrc/, 'CI moet dezelfde .nvmrc als productiebeleid gebruiken.');
 assert.match(
   workflow,
-  /npm audit --omit=dev --audit-level=critical/,
-  'CI moet kritieke productie-dependencykwetsbaarheden blokkeren.'
+  /npm audit --omit=dev --audit-level=high/,
+  'CI moet high en critical productie-dependencykwetsbaarheden blokkeren.'
 );
 assert.match(workflow, /npm test/, 'CI moet de volledige testsuite draaien.');
 assert.match(workflow, /npm run build/, 'CI moet de productiebuild draaien.');
