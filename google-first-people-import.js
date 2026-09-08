@@ -113,10 +113,11 @@ function extractName(row) {
     .trim();
   const resolvedFullName = fullName || combined;
   const fallbackParts = resolvedFullName.split(/\s+/).filter(Boolean);
+  const fallbackMiddle = fallbackParts.length > 2 ? fallbackParts.slice(1, -1).join(' ') : '';
   return {
     fullName: resolvedFullName,
     firstName: firstName || fallbackParts[0] || '',
-    middleName,
+    middleName: middleName || fallbackMiddle,
     lastName: lastName || (fallbackParts.length > 1 ? fallbackParts[fallbackParts.length - 1] : ''),
   };
 }
@@ -214,9 +215,14 @@ function ensureClass(db, name) {
 }
 
 function findAccountByLink(db, store, kind, email) {
-  if (!email) return null;
+  const wantedEmail = core.normalizeEmail(email);
+  if (!wantedEmail) return null;
   const accountType = kind === 'teacher' ? 'staff' : 'student';
-  const link = core.findLinkByIdentity(store, accountType, { email, sub: '' });
+  const link = (core.normalizeStore(store).links || []).find(
+    (entry) =>
+      entry?.accountType === accountType &&
+      core.normalizeEmail(entry?.email) === wantedEmail
+  );
   if (!link) return null;
   if (kind === 'teacher') {
     return (db.users || []).find((entry) => entry?.id === link.accountId && entry?.role === 'teacher') || null;
@@ -349,6 +355,23 @@ function isParnassysRow(kind, row) {
     : hasAnyKey(row, PARNASSYS_STUDENT_MARKERS);
 }
 
+function assertUniqueStudentNumbers(rows) {
+  const seen = new Map();
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = normalizeRow(rows[index]);
+    const studentNumber = normalizeExternalId(readFirst(row, STUDENT_NUMBER_KEYS));
+    if (!studentNumber) continue;
+    if (seen.has(studentNumber)) {
+      const error = new Error(
+        `Het leerlingenbestand bevat leerlingnummer ${studentNumber} meerdere keren (regels ${seen.get(studentNumber) + 2} en ${index + 2}). Controleer het bronbestand voordat je importeert.`
+      );
+      error.code = 'DUPLICATE_STUDENT_NUMBER';
+      throw error;
+    }
+    seen.set(studentNumber, index);
+  }
+}
+
 function applyPeopleImport(input) {
   const kind = input?.kind === 'teacher' ? 'teacher' : 'student';
   const domain = core.normalizeDomain(input?.domain || 'koraaledu.nl');
@@ -361,6 +384,8 @@ function applyPeopleImport(input) {
   if (!Array.isArray(db.users)) db.users = [];
   if (!Array.isArray(db.classes)) db.classes = [];
   if (!Array.isArray(db.history)) db.history = [];
+
+  if (kind === 'student') assertUniqueStudentNumbers(rows);
 
   core.setLocalOnlyStaffAccountIds(
     db.users.filter((entry) => entry?.role === 'admin').map((entry) => entry.id)
@@ -467,9 +492,16 @@ function applyPeopleImport(input) {
     let account = match.account;
     const wasCreated = !account;
     const beforeName = account?.name || '';
+    const beforeFirstName = account?.firstName || '';
+    const beforeMiddleName = account?.middleName || '';
+    const beforeLastName = account?.lastName || '';
+    const beforeUsername = account?.username || '';
     const beforeGrade = account?.grade || '';
     const beforeActive = account?.active;
+    const beforeInactiveAt = account?.inactiveAt ?? null;
+    const beforeInactiveReason = account?.inactiveReason ?? null;
     let numberChanged = false;
+    let linkChanged = false;
 
     if (!account) {
       const usernameSeed = providedUsername || (email ? email.split('@')[0] : studentNumber || name);
@@ -512,7 +544,6 @@ function applyPeopleImport(input) {
         }
         db.students.push(account);
       }
-      summary.created += 1;
     } else {
       account.name = name;
       account.firstName = nameParts.firstName || account.firstName || '';
@@ -530,7 +561,6 @@ function applyPeopleImport(input) {
       account.active = true;
       account.inactiveAt = null;
       account.inactiveReason = null;
-      summary.updated += 1;
     }
 
     if (kind === 'student' && studentNumber) {
@@ -557,6 +587,7 @@ function applyPeopleImport(input) {
         const accountType = kind === 'teacher' ? 'staff' : 'student';
         const linked = linkSchoolEmail(store, accountType, account.id, email, actorId);
         store = linked.store;
+        linkChanged = linked.changed;
         emailState = linked.verified ? 'verified' : 'prelinked';
         if (linked.changed) summary.linked += 1;
         if (linked.verified) summary.verified += 1;
@@ -572,10 +603,17 @@ function applyPeopleImport(input) {
 
     const changed = wasCreated ||
       beforeName !== account.name ||
+      beforeFirstName !== (account.firstName || '') ||
+      beforeMiddleName !== (account.middleName || '') ||
+      beforeLastName !== (account.lastName || '') ||
+      beforeUsername !== (account.username || '') ||
       beforeGrade !== (account.grade || '') ||
       beforeActive === false ||
+      beforeInactiveAt !== (account.inactiveAt ?? null) ||
+      beforeInactiveReason !== (account.inactiveReason ?? null) ||
       numberChanged ||
-      classResult.changed;
+      classResult.changed ||
+      linkChanged;
 
     results.push({
       row: rowNumber,
@@ -590,6 +628,8 @@ function applyPeopleImport(input) {
     });
   });
 
+  summary.created = results.filter((entry) => entry?.status === 'created').length;
+  summary.updated = results.filter((entry) => entry?.status === 'updated').length;
   if (summary.created || summary.updated) appendImportHistory(db, kind, summary);
   return { db, store, summary, results };
 }
