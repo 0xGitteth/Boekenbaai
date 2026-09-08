@@ -46,8 +46,11 @@ function assertUniqueSourceIdentities(input = {}) {
 }
 
 syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}) {
-  assertUniqueSourceIdentities(input);
-  if (input.kind !== 'student') return originalRunSchoolSync(input);
+  const rows = Array.isArray(input.rows) ? input.rows : [];
+  const kind = input.kind === 'teacher' ? 'teacher' : 'student';
+  syncCore.validateSchoolSyncRows(kind, rows);
+  assertUniqueSourceIdentities({ ...input, kind, rows });
+  if (kind !== 'student') return originalRunSchoolSync(input);
   const manualMatches = input.manualMatches && typeof input.manualMatches === 'object'
     ? input.manualMatches
     : {};
@@ -61,7 +64,7 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
 
   const normalRows = [];
   const createRows = [];
-  for (const row of Array.isArray(input.rows) ? input.rows : []) {
+  for (const row of rows) {
     const number = syncCore.studentNumberFromRow(row);
     if (number && createNewNumbers.has(number)) createRows.push(row);
     else normalRows.push(row);
@@ -69,11 +72,27 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
   const normalMatches = { ...manualMatches };
   for (const number of createNewNumbers) delete normalMatches[number];
 
-  const result = originalRunSchoolSync({
-    ...input,
-    rows: normalRows,
-    manualMatches: normalMatches,
-  });
+  const result = normalRows.length
+    ? originalRunSchoolSync({
+        ...input,
+        rows: normalRows,
+        manualMatches: normalMatches,
+      })
+    : {
+        db: input.db,
+        store: input.store,
+        summary: {
+          kind: 'student',
+          totalRows: 0,
+          created: 0,
+          updated: 0,
+          unchanged: 0,
+          needsReview: 0,
+          newClasses: 0,
+          studentNumbersStored: 0,
+        },
+        results: [],
+      };
   if (!createRows.length) return result;
 
   const imported = applyPeopleImport({
