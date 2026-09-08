@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const XLSX = require('xlsx');
 const core = require('../google-auth-core');
 const { accountCredentialFingerprint } = require('../google-auth-security-core');
 
@@ -14,7 +15,8 @@ const dbPath = path.join(tmp, 'db.json');
 const authPath = `${dbPath}.auth.json`;
 const port = 31459;
 const baseUrl = `http://127.0.0.1:${port}`;
-const token = 'production-stack-admin-token';
+const adminToken = 'production-stack-admin-token';
+const studentToken = 'production-stack-student-token';
 
 const admin = {
   id: 'admin-stack',
@@ -24,16 +26,28 @@ const admin = {
   role: 'admin',
   mustChangePassword: false,
 };
+const sessionStudent = {
+  id: 'student-session',
+  name: 'Session Student',
+  firstName: 'Session',
+  lastName: 'Student',
+  username: 'session-student',
+  passwordHash: 'student-test-hash',
+  mustChangePassword: false,
+  borrowedBooks: [],
+  classIds: ['class-a'],
+  active: true,
+};
 const db = {
   books: [],
-  students: [],
+  students: [sessionStudent],
   folders: [],
-  classes: [{ id: 'class-a', name: 'Klas A', teacherIds: [], studentIds: [] }],
+  classes: [{ id: 'class-a', name: 'Klas A', teacherIds: [], studentIds: [sessionStudent.id] }],
   users: [admin],
   history: [],
 };
 fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-let store = core.upsertSession(core.emptyAuthStore(), token, {
+let store = core.upsertSession(core.emptyAuthStore(), adminToken, {
   userId: admin.id,
   type: 'staff',
   remember: false,
@@ -41,7 +55,29 @@ let store = core.upsertSession(core.emptyAuthStore(), token, {
 }).store;
 store.sessions[0].authMethod = 'password';
 store.sessions[0].accountFingerprint = accountCredentialFingerprint(admin);
+store = core.upsertLink(store, {
+  accountType: 'student',
+  accountId: sessionStudent.id,
+  email: 'old.student@koraaledu.nl',
+  sub: 'student-google-sub',
+  linkedBy: admin.id,
+}).store;
+store = core.upsertSession(store, studentToken, {
+  userId: sessionStudent.id,
+  type: 'student',
+  remember: true,
+  now: Date.now(),
+}).store;
+const studentSession = store.sessions.find((entry) => entry.userId === sessionStudent.id);
+studentSession.authMethod = 'google';
+studentSession.accountFingerprint = accountCredentialFingerprint(sessionStudent);
 fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
+
+function workbookBase64(rows) {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Import');
+  return XLSX.write(workbook, { type: 'base64', bookType: 'xlsx' });
+}
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const startParts = String(packageJson.scripts?.start || '').trim().split(/\s+/).filter(Boolean);
@@ -112,7 +148,7 @@ async function stop() {
     const blocked = await fetch(`${baseUrl}/api/mentor/students`, {
       method: 'POST',
       headers: {
-        Cookie: `boekenbaai_session=${encodeURIComponent(token)}`,
+        Cookie: `boekenbaai_session=${encodeURIComponent(adminToken)}`,
         Origin: 'https://evil.example',
         'Sec-Fetch-Site': 'cross-site',
         'Content-Type': 'application/json',
@@ -124,7 +160,7 @@ async function stop() {
     const allowed = await fetch(`${baseUrl}/api/mentor/students`, {
       method: 'POST',
       headers: {
-        Cookie: `boekenbaai_session=${encodeURIComponent(token)}`,
+        Cookie: `boekenbaai_session=${encodeURIComponent(adminToken)}`,
         Origin: baseUrl,
         'Sec-Fetch-Site': 'same-origin',
         'Content-Type': 'application/json',
@@ -132,6 +168,39 @@ async function stop() {
       body: JSON.stringify({ name: 'Nieuwe Leerling', classId: 'class-a' }),
     });
     assert.ok([200, 201].includes(allowed.status), `Geldige mentoractie faalde (${allowed.status})`);
+
+    const warmBearer = await fetch(`${baseUrl}/api/auth/session/status`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    assert.strictEqual(warmBearer.status, 200);
+    assert.strictEqual((await warmBearer.json()).authenticated, true);
+
+    const importResponse = await fetch(`${baseUrl}/api/admin/google-first/import`, {
+      method: 'POST',
+      headers: {
+        Cookie: `boekenbaai_session=${encodeURIComponent(adminToken)}`,
+        Origin: baseUrl,
+        'Sec-Fetch-Site': 'same-origin',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        kind: 'student',
+        preview: false,
+        file: workbookBase64([{
+          Naam: 'Session Student',
+          Gebruikersnaam: 'session-student',
+          Schoolmail: 'new.student@koraaledu.nl',
+          Klas: 'Klas A',
+        }]),
+      }),
+    });
+    assert.strictEqual(importResponse.status, 200);
+
+    const staleBearer = await fetch(`${baseUrl}/api/auth/session/status`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    assert.strictEqual(staleBearer.status, 401, 'Een in RAM gecachete bearer moet na accountwijziging direct ongeldig zijn');
+
     const persisted = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(persisted.students.some((entry) => entry.name === 'Nieuwe Leerling'), true);
 
