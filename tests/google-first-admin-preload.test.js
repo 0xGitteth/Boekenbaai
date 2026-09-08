@@ -50,6 +50,7 @@ function makeWorkbookBase64(rows) {
 }
 
 const child = spawn(process.execPath, [
+  '--require', path.join(root, 'student-management-preload.js'),
   '--require', path.join(root, 'google-auth-security-preload.js'),
   '--require', path.join(root, 'local-password-auth-preload.js'),
   '--require', path.join(root, 'login-flow-policy-preload.js'),
@@ -115,6 +116,8 @@ function adminHeaders(extra = {}) {
     assert.match(html, /admin-modern\.css/);
     assert.match(html, /admin-modern\.js/);
     assert.match(html, /admin-google-links\.js/);
+    assert.match(html, /student-management\.css/);
+    assert.match(html, /student-management\.js/);
     assert.match(html, /google-auth\.js/);
 
     const denied = await fetch(`${baseUrl}/api/admin/google-first/summary`);
@@ -130,10 +133,12 @@ function adminHeaders(extra = {}) {
 
     const file = makeWorkbookBase64([
       {
-        Voornaam: 'Sanne',
+        Leerlingnummer: '50001',
+        'Huidige groep': 'SK BB',
+        Roepnaam: 'Sanne',
+        Voorvoegsel: '',
         Achternaam: 'Jansen',
-        Schoolmail: 's.jansen@koraaledu.nl',
-        Klassen: 'SK BB',
+        'Huidige status': 'Volgt onderwijs',
       },
     ]);
 
@@ -146,6 +151,8 @@ function adminHeaders(extra = {}) {
     const previewPayload = await preview.json();
     assert.strictEqual(previewPayload.preview, true);
     assert.strictEqual(previewPayload.summary.created, 1);
+    assert.strictEqual(previewPayload.summary.parnassysRows, 1);
+    assert.strictEqual(previewPayload.summary.linked, 0, 'Leerlingmail is niet nodig voor de ParnasSys-import');
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).students.length, 0);
 
     const imported = await fetch(`${baseUrl}/api/admin/google-first/import`, {
@@ -156,15 +163,18 @@ function adminHeaders(extra = {}) {
     assert.strictEqual(imported.status, 200);
     const importPayload = await imported.json();
     assert.strictEqual(importPayload.summary.created, 1);
-    assert.strictEqual(importPayload.summary.linked, 1);
+    assert.strictEqual(importPayload.summary.linked, 0);
 
     const persistedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(persistedDb.students.length, 1);
+    assert.strictEqual(persistedDb.students[0].parnassysStudentNumber, '50001');
+    assert.strictEqual(persistedDb.students[0].name, 'Sanne Jansen');
     assert.strictEqual(persistedDb.classes.length, 1);
+    assert.strictEqual(persistedDb.classes[0].name, 'SK BB');
+    assert.strictEqual(persistedDb.classes[0].studentIds.includes(persistedDb.students[0].id), true);
+
     const persistedStore = JSON.parse(fs.readFileSync(authPath, 'utf8'));
-    const studentLink = persistedStore.links.find((entry) => entry.accountType === 'student');
-    assert.ok(studentLink);
-    assert.strictEqual(studentLink.email, 's.jansen@koraaledu.nl');
+    assert.strictEqual(persistedStore.links.length, 0, 'Google-koppeling gebeurt pas bij de eerste login van de leerling');
 
     console.log('Google-first admin preload integration test geslaagd.');
   } finally {
