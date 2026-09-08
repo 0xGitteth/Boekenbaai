@@ -27,10 +27,6 @@
       teacherHint,
       'Upload de <strong>onbewerkte ParnasSys-medewerkerslijst</strong>. Boekenbaai gebruikt naam en <strong>Gekoppelde groepen</strong>. Alleen medewerkers die aan minimaal één groep gekoppeld zijn krijgen een docentaccount; bovenschoolse medewerkers zonder gekoppelde klas worden overgeslagen.'
     );
-
-    document.querySelectorAll('[data-admin-modern-tab="imports"]').forEach((button) => {
-      if (button.textContent.trim() === 'Importeren') button.textContent = 'Schoolgegevens';
-    });
   }
 
   function removeLegacyTeacherTools() {
@@ -69,8 +65,9 @@
     const adminDashboard = document.querySelector('#admin-dashboard');
     if (!adminDashboard || adminDashboard.classList.contains('hidden')) return;
     const panel = document.querySelector('#student-management-panel');
-    const host = document.querySelector('#admin-modern-google-host');
-    if (panel && host && panel.parentElement !== host) host.append(panel);
+    const studentView = document.querySelector('[data-admin-people-view="students"]');
+    if (!panel || !studentView) return;
+    if (panel.parentElement !== studentView) studentView.prepend(panel);
   }
 
   function apply() {
