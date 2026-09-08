@@ -37,12 +37,14 @@ fs.writeFileSync(dbPath, JSON.stringify({
     grade: '4',
     borrowedBooks: [],
     classIds: ['class-smoke'],
+    active: true,
   }],
   folders: [],
   classes: [{
     id: 'class-smoke',
     name: 'Geheime Klas',
     studentIds: ['student-smoke'],
+    teacherIds: [],
   }],
   users: [
     {
@@ -66,11 +68,13 @@ fs.writeFileSync(dbPath, JSON.stringify({
 }, null, 2));
 
 const child = spawn(process.execPath, [
+  '--require', path.join(root, 'student-management-preload.js'),
   '--require', path.join(root, 'google-auth-security-preload.js'),
   '--require', path.join(root, 'local-password-auth-preload.js'),
   '--require', path.join(root, 'login-flow-policy-preload.js'),
   '--require', path.join(root, 'student-google-handoff-preload.js'),
   '--require', path.join(root, 'google-auth-runtime-preload.js'),
+  '--require', path.join(root, 'google-first-admin-preload.js'),
   path.join(root, 'server.js'),
 ], {
   env: {
@@ -154,8 +158,8 @@ async function googleStartIntent(type, accountId) {
     assert.strictEqual(config.enabled, true);
     assert.strictEqual(config.domain, 'koraaledu.nl');
 
-    // Bewijs op de echte production startvolgorde dat de privacy-policy de oude
-    // ruimere /api/login-search-route vóór server.js onderschept.
+    // De publieke loginzoeker toont alleen een privacyveilige naam plus klas.
+    // De interne studentId blijft de daadwerkelijke selectie-identiteit.
     const publicDirectory = await fetch(`${baseUrl}/api/login-search?q=smo&type=student`, {
       headers: {
         'Sec-Fetch-Site': 'same-origin',
@@ -170,9 +174,9 @@ async function googleStartIntent(type, accountId) {
       ['displayName', 'id', 'name', 'type']
     );
     assert.strictEqual(publicDirectoryPayload.matches[0].id, 'student-smoke');
-    assert.strictEqual(publicDirectoryPayload.matches[0].name, 'Smoke L.');
+    assert.strictEqual(publicDirectoryPayload.matches[0].name, 'Smoke L. · Geheime Klas');
     const serializedDirectory = JSON.stringify(publicDirectoryPayload);
-    assert.doesNotMatch(serializedDirectory, /Geheime Klas/);
+    assert.match(serializedDirectory, /Geheime Klas/);
     assert.doesNotMatch(serializedDirectory, /smoke-student/);
     assert.doesNotMatch(serializedDirectory, /passwordHash/);
     assert.doesNotMatch(serializedDirectory, /"grade"/);
