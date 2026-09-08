@@ -192,6 +192,16 @@ async function json(pathname, { token, method = 'GET', body } = {}) {
     assert.ok(warning);
     assert.strictEqual(warning.nameMatch, 'warning', 'Andere Google-profielnaam moet zichtbaar worden als waarschuwing');
 
+    const wrongMentorApproval = await json('/api/auth/google/link-requests/google-request-warning/approve', {
+      token: tokens.teacherB,
+      method: 'POST',
+    });
+    assert.strictEqual(
+      wrongMentorApproval.response.status,
+      403,
+      'Een docent mag geen Google-koppeling van een leerling uit een andere klas goedkeuren'
+    );
+
     const created = await json('/api/mentor/students', {
       token: tokens.teacherA,
       method: 'POST',
