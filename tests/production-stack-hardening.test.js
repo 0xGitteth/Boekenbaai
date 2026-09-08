@@ -43,8 +43,10 @@ store.sessions[0].authMethod = 'password';
 store.sessions[0].accountFingerprint = accountCredentialFingerprint(admin);
 fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const child = spawn(npmCommand, ['start'], {
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const startParts = String(packageJson.scripts?.start || '').trim().split(/\s+/).filter(Boolean);
+assert.strictEqual(startParts.shift(), 'node', 'Production smoke test moet exact het package start-script gebruiken');
+const child = spawn(process.execPath, startParts, {
   cwd: root,
   env: {
     ...process.env,
@@ -68,7 +70,7 @@ child.stderr.on('data', (chunk) => stderr.push(chunk.toString()));
 async function waitForServer() {
   const deadline = Date.now() + 7000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`npm start stopte vroeg: ${stderr.join('')}`);
+    if (child.exitCode !== null) throw new Error(`Production stack stopte vroeg: ${stderr.join('')}`);
     try {
       const response = await fetch(`${baseUrl}/api/status`);
       if (response.ok) return;
@@ -77,7 +79,7 @@ async function waitForServer() {
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`npm start timeout: ${stderr.join('')}`);
+  throw new Error(`Production stack timeout: ${stderr.join('')}`);
 }
 
 async function stop() {
@@ -133,7 +135,7 @@ async function stop() {
     const persisted = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(persisted.students.some((entry) => entry.name === 'Nieuwe Leerling'), true);
 
-    console.log('Echte npm-start hardening test geslaagd.');
+    console.log('Echte production-stack hardening test geslaagd.');
   } finally {
     await stop();
     fs.rmSync(tmp, { recursive: true, force: true });
