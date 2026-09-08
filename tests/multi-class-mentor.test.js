@@ -69,6 +69,16 @@ function baseDb() {
   assert.match(source, /Deze leerling wordt automatisch toegevoegd aan \$\{teacherClass\.name\}/);
   assert.match(source, /state\.role === 'admin' \? classSelect\.value : activeClass\(\)\?\.id/);
   assert.match(source, /if \(classSelect\) form\.append\(field\('Klas', classSelect\)\)/);
+  assert.match(
+    source,
+    /if \(selected && \(student\?\.classIds \|\| \[\]\)\.includes\(selected\.id\)\) return selected\.id/,
+    'Een mentor met meerdere klassen moet een verplaatsing starten vanuit de actieve klas'
+  );
+  assert.match(
+    source,
+    /body:\s*\{\s*toClassId:\s*select\.value,\s*fromClassId:\s*sourceClassId\(student\)\s*\}/,
+    'De actieve bronklas moet naar de backend worden gestuurd'
+  );
 })();
 
 console.log('Multi-class mentor tests geslaagd.');
