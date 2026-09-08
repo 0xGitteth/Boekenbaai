@@ -234,6 +234,9 @@ function injectAdminAssets(req, res, listener) {
       if (!html.includes('/admin-modern.js')) {
         html = html.replace('</body>', '  <script src="/admin-modern.js"></script>\n</body>');
       }
+      if (!html.includes('/admin-google-links.js')) {
+        html = html.replace('</body>', '  <script src="/admin-google-links.js"></script>\n</body>');
+      }
       nextChunk = html;
       res.removeHeader('Content-Length');
     }
