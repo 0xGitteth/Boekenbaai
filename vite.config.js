@@ -15,6 +15,7 @@ const runtimeAuthAssets = [
   'admin-google-links.js',
   'student-management.css',
   'student-management.js',
+  'student-management-compat.js',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
