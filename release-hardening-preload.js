@@ -239,10 +239,14 @@ function installImportHardening() {
 
 installImportHardening();
 
+function isTransferMutation(pathname) {
+  return /^\/api\/mentor\/students\/[\w-]+\/transfer$/.test(pathname);
+}
+
 function shouldBufferBody(req, pathname) {
   if (String(req.method || '').toUpperCase() !== 'POST') return false;
   if (pathname === '/api/mentor/students') return true;
-  if (/^\/api\/mentor\/students\/[\w-]+\/transfer$/.test(pathname)) return true;
+  if (isTransferMutation(pathname)) return true;
   if (pathname === '/api/admin/google-first/import') return true;
   return ['/api/admin/school-sync/preview', '/api/admin/school-sync/apply'].includes(pathname);
 }
@@ -271,7 +275,38 @@ function replayBufferedRequest(req, body, listener) {
   return listener(req);
 }
 
-function bufferRequest(req, res, listener) {
+function transferTargetIssue(db, toClassId) {
+  const targetClass = (db?.classes || []).find((entry) => entry?.id === toClassId);
+  if (!targetClass) return null;
+  const hasMentor = Array.isArray(targetClass.teacherIds) && targetClass.teacherIds.length > 0;
+  return hasMentor ? null : 'class-without-mentor';
+}
+
+function rejectInvalidTransferTarget(res, pathname, body) {
+  if (!isTransferMutation(pathname) || !body.length) return false;
+  let parsed;
+  try {
+    parsed = JSON.parse(body.toString('utf8'));
+  } catch (error) {
+    return false;
+  }
+  const toClassId = String(parsed?.toClassId || '').trim();
+  if (!toClassId) return false;
+  let db;
+  try {
+    db = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+  } catch (error) {
+    return false;
+  }
+  if (transferTargetIssue(db, toClassId) !== 'class-without-mentor') return false;
+  sendJson(res, 409, {
+    code: 'class-without-mentor',
+    message: 'Deze klas heeft geen mentor gekoppeld. Laat Beheer de klasgegevens controleren.',
+  });
+  return true;
+}
+
+function bufferRequest(req, res, pathname, listener) {
   const chunks = [];
   let size = 0;
   let failed = false;
@@ -290,7 +325,9 @@ function bufferRequest(req, res, listener) {
       sendJson(res, 413, { message: 'Payload te groot' });
       return;
     }
-    replayBufferedRequest(req, Buffer.concat(chunks), listener);
+    const body = Buffer.concat(chunks);
+    if (rejectInvalidTransferTarget(res, pathname, body)) return;
+    replayBufferedRequest(req, body, listener);
   });
   req.on('error', (error) => {
     if (!res.writableEnded) sendJson(res, 400, { message: error?.message || 'Verzoek kon niet worden gelezen.' });
@@ -316,7 +353,7 @@ function wrapRequestListener(listener) {
     try {
       if (rejectRevokedRuntimeBearer(req, res)) return undefined;
       if (shouldBufferBody(req, pathname)) {
-        return bufferRequest(req, res, (preparedReq) => listener(preparedReq, res));
+        return bufferRequest(req, res, pathname, (preparedReq) => listener(preparedReq, res));
       }
       return listener(req, res);
     } catch (error) {
@@ -347,5 +384,6 @@ module.exports = {
     reconcileUngroupedTeachers,
     revokedRuntimeTokenHashes,
     shouldBufferBody,
+    transferTargetIssue,
   },
 };
