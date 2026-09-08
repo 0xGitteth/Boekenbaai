@@ -631,13 +631,18 @@ async function handleCustomRoute(req, res, requestUrl) {
     return true;
   }
   if (req.method === 'POST' && ['/api/admin/school-sync/preview', '/api/admin/school-sync/apply'].includes(pathname)) {
-    const context = resolveAdmin(req);
-    if (!context) {
+    const initialContext = resolveAdmin(req);
+    if (!initialContext) {
       sendJson(res, 403, { message: 'Alleen Boekenbaai Beheer kan schoolgegevens synchroniseren.' });
       return true;
     }
     try {
       const body = await parseBody(req);
+      const context = resolveAdmin(req);
+      if (!context) {
+        sendJson(res, 403, { message: 'Je beheerderssessie is niet meer geldig. Log opnieuw in.' });
+        return true;
+      }
       const payload = schoolSyncPreview(context, body, pathname.endsWith('/apply'));
       sendJson(res, 200, payload);
     } catch (error) {
