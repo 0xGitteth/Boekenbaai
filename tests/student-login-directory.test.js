@@ -102,7 +102,12 @@ async function stop() {
     const active = await activeResponse.json();
     assert.strictEqual(active.matches.length, 1);
     assert.strictEqual(active.matches[0].id, 'student-active');
-    assert.strictEqual(active.matches[0].class, 'Structuurklas Bovenbouw');
+    assert.strictEqual(active.matches[0].name, 'Sanne J. · Structuurklas Bovenbouw');
+    assert.strictEqual(active.matches[0].displayName, active.matches[0].name);
+    assert.deepStrictEqual(
+      Object.keys(active.matches[0]).sort(),
+      ['displayName', 'id', 'name', 'type']
+    );
     assert.strictEqual(Object.hasOwn(active.matches[0], 'parnassysStudentNumber'), false);
     assert.strictEqual(Object.hasOwn(active.matches[0], 'username'), false);
 
