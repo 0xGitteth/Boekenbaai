@@ -68,6 +68,7 @@ function readMainDb() {
   if (!Array.isArray(db.students)) db.students = [];
   if (!Array.isArray(db.classes)) db.classes = [];
   if (!Array.isArray(db.history)) db.history = [];
+  if (!Array.isArray(db.books)) db.books = [];
   return db;
 }
 
@@ -122,6 +123,7 @@ function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.end(JSON.stringify(payload));
 }
 
@@ -141,9 +143,9 @@ function parseBody(req) {
       if (tooLarge) return reject(Object.assign(new Error('Payload te groot'), { code: 'BODY_TOO_LARGE' }));
       if (!body) return resolve({});
       try {
-        return resolve(JSON.parse(body));
+        resolve(JSON.parse(body));
       } catch (error) {
-        return reject(Object.assign(new Error('Ongeldige JSON'), { code: 'INVALID_JSON' }));
+        reject(Object.assign(new Error('Ongeldige JSON'), { code: 'INVALID_JSON' }));
       }
     });
     req.on('error', reject);
@@ -169,13 +171,11 @@ function clone(value) {
 
 function importPeople(context, kind, file, preview) {
   const rows = decodeWorkbookRows(file);
-  const targetDb = clone(context.db);
-  const targetStore = clone(context.store);
   const result = applyPeopleImport({
     kind,
     rows,
-    db: targetDb,
-    store: targetStore,
+    db: clone(context.db),
+    store: clone(context.store),
     domain: GOOGLE_DOMAIN,
     actorId: context.user.id,
   });
@@ -192,8 +192,8 @@ function importPeople(context, kind, file, preview) {
 }
 
 function buildAdminSummary(context) {
-  const students = context.db.students || [];
-  const teachers = (context.db.users || []).filter((entry) => entry?.role === 'teacher');
+  const students = context.db.students.filter((entry) => entry?.active !== false);
+  const teachers = context.db.users.filter((entry) => entry?.role === 'teacher' && entry?.active !== false);
   const links = core.normalizeStore(context.store).links;
   const studentLinks = new Set(
     links.filter((entry) => entry?.accountType === 'student').map((entry) => entry.accountId)
@@ -207,8 +207,8 @@ function buildAdminSummary(context) {
   return {
     students: students.length,
     teachers: teachers.length,
-    classes: (context.db.classes || []).length,
-    books: (context.db.books || []).length,
+    classes: context.db.classes.length,
+    books: context.db.books.length,
     studentLinks: studentLinks.size,
     teacherLinks: teacherLinks.size,
     studentsUnlinked: students.filter((entry) => !studentLinks.has(entry.id)).length,
@@ -217,38 +217,15 @@ function buildAdminSummary(context) {
   };
 }
 
-function injectAdminAssets(req, res, listener) {
-  const requestUrl = new URL(req.url, 'http://localhost');
-  const pathname = requestUrl.pathname;
-  if (pathname !== '/staff.html' && pathname !== '/staff') return listener(req, res);
-
-  const originalEnd = res.end.bind(res);
-  res.end = function patchedEnd(chunk, encoding, callback) {
-    let nextChunk = chunk;
-    const contentType = String(res.getHeader('Content-Type') || '').toLowerCase();
-    if (chunk && (!contentType || contentType.includes('text/html'))) {
-      let html = Buffer.isBuffer(chunk) ? chunk.toString(encoding || 'utf8') : String(chunk);
-      if (!html.includes('/admin-modern.css')) {
-        html = html.replace('</head>', '  <link rel="stylesheet" href="/admin-modern.css" />\n</head>');
-      }
-      if (!html.includes('/admin-modern.js')) {
-        html = html.replace('</body>', '  <script src="/admin-modern.js"></script>\n</body>');
-      }
-      if (!html.includes('/admin-google-links.js')) {
-        html = html.replace('</body>', '  <script src="/admin-google-links.js"></script>\n</body>');
-      }
-      nextChunk = html;
-      res.removeHeader('Content-Length');
-    }
-    return originalEnd(nextChunk, encoding, callback);
-  };
-  return listener(req, res);
-}
-
-http.createServer = function patchedCreateServer(listener) {
-  return originalCreateServer(async (req, res) => {
+function wrapRequestListener(listener) {
+  return async function googleFirstAdminListener(req, res) {
+    let requestUrl;
     try {
-      const requestUrl = new URL(req.url, 'http://localhost');
+      requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    } catch (error) {
+      return listener(req, res);
+    }
+    try {
       if (requestUrl.pathname === '/api/admin/google-first/summary' && req.method === 'GET') {
         const context = resolveAdmin(req);
         if (!context) return sendJson(res, 403, { message: 'Alleen beheerders kunnen dit overzicht bekijken.' });
@@ -262,19 +239,41 @@ http.createServer = function patchedCreateServer(listener) {
         const kind = body.kind === 'teacher' ? 'teacher' : body.kind === 'student' ? 'student' : '';
         if (!kind) return sendJson(res, 400, { message: 'Kies leerlingen of docenten.' });
         if (!body.file) return sendJson(res, 400, { message: 'Geen Excelbestand ontvangen.' });
-        const result = importPeople(context, kind, body.file, Boolean(body.preview));
-        return sendJson(res, 200, result);
+        return sendJson(res, 200, importPeople(context, kind, body.file, Boolean(body.preview)));
       }
 
-      return injectAdminAssets(req, res, listener);
+      return listener(req, res);
     } catch (error) {
       console.error('[Google-first beheer]', error?.message || error);
-      if (!res.headersSent) {
+      if (!res.headersSent && !res.writableEnded) {
         return sendJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 400, {
           message: error?.message || 'Beheeractie mislukt.',
         });
       }
-      res.end();
+      if (!res.writableEnded) res.end();
+      return undefined;
     }
-  });
+  };
+}
+
+http.createServer = function patchedCreateServer(...args) {
+  const listenerIndex = typeof args[0] === 'function' ? 0 : 1;
+  const listener = args[listenerIndex];
+  if (typeof listener !== 'function') return originalCreateServer(...args);
+  const wrapped = wrapRequestListener(listener);
+  if (listenerIndex === 0) return originalCreateServer(wrapped);
+  return originalCreateServer(args[0], wrapped);
+};
+
+module.exports = {
+  __test: {
+    DATA_PATH,
+    AUTH_DATA_PATH,
+    readMainDb,
+    loadAuthStore,
+    resolveAdmin,
+    decodeWorkbookRows,
+    importPeople,
+    buildAdminSummary,
+  },
 };
