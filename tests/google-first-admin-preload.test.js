@@ -114,6 +114,7 @@ function adminHeaders(extra = {}) {
     const html = await staffPage.text();
     assert.match(html, /admin-modern\.css/);
     assert.match(html, /admin-modern\.js/);
+    assert.match(html, /admin-google-links\.js/);
     assert.match(html, /google-auth\.js/);
 
     const denied = await fetch(`${baseUrl}/api/admin/google-first/summary`);
