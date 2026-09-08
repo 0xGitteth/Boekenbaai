@@ -1,8 +1,10 @@
 (() => {
   'use strict';
 
+  const SESSION_CLASS_KEY = 'boekenbaai_active_mentor_class';
   let state = null;
   let installed = false;
+  let activeClassId = '';
 
   function make(tag, options = {}) {
     const element = document.createElement(tag);
@@ -39,9 +41,83 @@
     return (state?.classes || []).filter((entry) => entry.isOwn);
   }
 
+  function readStoredClassId() {
+    try {
+      return window.sessionStorage.getItem(SESSION_CLASS_KEY) || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function storeClassId(classId) {
+    try {
+      window.sessionStorage.setItem(SESSION_CLASS_KEY, classId);
+    } catch (error) {
+      // De klaskeuze hoeft alleen voor deze sessie onthouden te worden.
+    }
+  }
+
+  function activeClass() {
+    if (state?.role === 'admin') return null;
+    const classes = ownClasses();
+    if (!classes.length) {
+      activeClassId = '';
+      return null;
+    }
+    let selected = classes.find((entry) => entry.id === activeClassId);
+    if (!selected) {
+      const stored = readStoredClassId();
+      selected = classes.find((entry) => entry.id === stored) || classes[0];
+      activeClassId = selected.id;
+      storeClassId(activeClassId);
+    }
+    return selected;
+  }
+
+  function setActiveClass(classId) {
+    const selected = ownClasses().find((entry) => entry.id === classId);
+    if (!selected) return;
+    activeClassId = selected.id;
+    storeClassId(activeClassId);
+    render();
+  }
+
+  function studentsForClass(classId) {
+    return (state?.students || []).filter((student) => (student.classIds || []).includes(classId));
+  }
+
+  function googleRequestsForClass(klass) {
+    const all = state?.googleRequests || [];
+    if (state?.role === 'admin' || !klass) return all;
+    return all.filter((request) => (request.classNames || []).includes(klass.name));
+  }
+
+  function incomingForClass(klass) {
+    const all = state?.incoming || [];
+    if (state?.role === 'admin' || !klass) return all;
+    return all.filter((transfer) => transfer.toClassId === klass.id);
+  }
+
+  function outgoingForClass(klass) {
+    const all = (state?.outgoing || []).filter((entry) => ['pending', 'rejected'].includes(entry.status));
+    if (state?.role === 'admin' || !klass) return all;
+    return all.filter((transfer) => transfer.fromClassId === klass.id);
+  }
+
+  function actionCountForClass(klass) {
+    return googleRequestsForClass(klass).length + incomingForClass(klass).length;
+  }
+
   function targetClasses(student) {
     const current = new Set(student?.classIds || []);
     return (state?.classes || []).filter((entry) => !current.has(entry.id));
+  }
+
+  function sourceClassId(student) {
+    const selected = activeClass();
+    if (selected && (student?.classIds || []).includes(selected.id)) return selected.id;
+    const own = new Set(ownClasses().map((entry) => entry.id));
+    return (student?.classIds || []).find((id) => own.has(id)) || student?.classIds?.[0] || '';
   }
 
   function createDialog(title) {
@@ -68,10 +144,18 @@
   }
 
   function openAddStudent() {
+    const teacherClass = activeClass();
+    if (state.role !== 'admin' && !teacherClass) {
+      window.alert('Je bent nog niet aan een klas gekoppeld.');
+      return;
+    }
+
     const { dialog, form } = createDialog('Leerling toevoegen');
     form.append(make('p', {
       className: 'hint',
-      text: 'Naam en klas zijn genoeg. Een ParnasSys-leerlingnummer mag je invullen als je het al hebt, maar dat hoeft niet.',
+      text: state.role === 'admin'
+        ? 'Vul de naam in en kies de klas. Het ParnasSys-leerlingnummer is alleen nodig als je het al weet.'
+        : `Deze leerling wordt automatisch toegevoegd aan ${teacherClass.name}. Alleen de naam is nodig.`,
     }));
 
     const name = make('input');
@@ -79,30 +163,34 @@
     name.autocomplete = 'off';
     name.placeholder = 'Roepnaam en achternaam';
 
-    const classSelect = document.createElement('select');
-    classSelect.required = true;
-    classSelect.append(new Option('Kies klas', ''));
-    for (const klass of ownClasses()) classSelect.append(new Option(klass.name, klass.id));
-    if (ownClasses().length === 1) classSelect.value = ownClasses()[0].id;
-
-    const number = make('input');
-    number.autocomplete = 'off';
-    number.placeholder = 'optioneel';
+    let classSelect = null;
+    let number = null;
+    if (state.role === 'admin') {
+      classSelect = document.createElement('select');
+      classSelect.required = true;
+      classSelect.append(new Option('Kies klas', ''));
+      for (const klass of state.classes || []) classSelect.append(new Option(klass.name, klass.id));
+      number = make('input');
+      number.autocomplete = 'off';
+      number.placeholder = 'optioneel';
+    }
 
     const message = make('p', { className: 'student-management__message hint' });
     const actions = make('div', { className: 'student-management__dialog-actions' });
     const submit = make('button', { className: 'btn', text: 'Leerling toevoegen', type: 'submit' });
     actions.append(submit);
-    form.append(
-      field('Naam leerling', name),
-      field('Klas', classSelect),
-      field('ParnasSys-leerlingnummer (optioneel)', number),
-      message,
-      actions
-    );
+    form.append(field('Naam leerling', name));
+    if (classSelect) form.append(field('Klas', classSelect));
+    if (number) form.append(field('ParnasSys-leerlingnummer (optioneel)', number));
+    form.append(message, actions);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      const classId = state.role === 'admin' ? classSelect.value : activeClass()?.id || '';
+      if (!classId) {
+        message.textContent = 'Kies eerst een klas.';
+        return;
+      }
       submit.disabled = true;
       message.textContent = 'Leerling wordt toegevoegd…';
       try {
@@ -110,8 +198,8 @@
           method: 'POST',
           body: {
             name: name.value,
-            classId: classSelect.value,
-            parnassysStudentNumber: number.value,
+            classId,
+            parnassysStudentNumber: number?.value || '',
           },
         });
         dialog.close();
@@ -153,7 +241,7 @@
       try {
         await api(`/api/mentor/students/${encodeURIComponent(student.id)}/transfer`, {
           method: 'POST',
-          body: { toClassId: select.value, fromClassId: student.classIds?.[0] || '' },
+          body: { toClassId: select.value, fromClassId: sourceClassId(student) },
         });
         dialog.close();
         await refresh();
@@ -210,8 +298,8 @@
     }
   }
 
-  async function approveSafeGoogleRequests(button) {
-    const safe = (state.googleRequests || []).filter((entry) => entry.nameMatch === 'match');
+  async function approveSafeGoogleRequests(button, requests) {
+    const safe = requests.filter((entry) => entry.nameMatch === 'match');
     if (!safe.length) return;
     button.disabled = true;
     try {
@@ -280,10 +368,50 @@
     return row;
   }
 
+  function renderClassContext(panel) {
+    if (state.role === 'admin') return;
+    const classes = ownClasses();
+    const section = make('section', { className: 'student-management__class-context' });
+    if (!classes.length) {
+      section.append(
+        make('strong', { text: 'Geen klas gekoppeld' }),
+        make('span', { text: 'Beheer moet je eerst aan minimaal één klas koppelen.' })
+      );
+      panel.append(section);
+      return;
+    }
+
+    if (classes.length === 1) {
+      const klass = activeClass();
+      section.append(
+        make('span', { className: 'student-management__class-label', text: 'Mijn klas' }),
+        make('strong', { text: klass.name })
+      );
+      panel.append(section);
+      return;
+    }
+
+    const wrapper = make('label', { className: 'student-management__class-picker' });
+    wrapper.append(make('span', { className: 'student-management__class-label', text: 'Mijn klassen' }));
+    const select = document.createElement('select');
+    for (const klass of classes) {
+      const count = studentsForClass(klass.id).length;
+      const actions = actionCountForClass(klass);
+      const label = `${klass.name} · ${count} leerling${count === 1 ? '' : 'en'}${actions ? ` · ${actions} actie${actions === 1 ? '' : 's'}` : ''}`;
+      select.append(new Option(label, klass.id));
+    }
+    select.value = activeClass()?.id || classes[0].id;
+    select.addEventListener('change', () => setActiveClass(select.value));
+    wrapper.append(select);
+    section.append(wrapper);
+    panel.append(section);
+  }
+
   function renderRequests(panel) {
-    const google = state.googleRequests || [];
-    const incoming = state.incoming || [];
-    const escalated = state.escalated || [];
+    const klass = activeClass();
+    const google = googleRequestsForClass(klass);
+    const incoming = incomingForClass(klass);
+    const escalated = state.role === 'admin' ? state.escalated || [] : [];
     if (!google.length && !incoming.length && !escalated.length) return;
 
     const section = make('section', { className: 'student-management__section student-management__attention' });
@@ -295,7 +423,7 @@
       const safeCount = google.filter((entry) => entry.nameMatch === 'match').length;
       if (safeCount > 1) {
         const bulk = make('button', { className: 'btn btn--ghost', text: `${safeCount} zonder waarschuwing goedkeuren`, type: 'button' });
-        bulk.addEventListener('click', () => approveSafeGoogleRequests(bulk));
+        bulk.addEventListener('click', () => approveSafeGoogleRequests(bulk, google));
         head.append(bulk);
       }
       section.append(head);
@@ -303,7 +431,7 @@
     }
 
     if (incoming.length) {
-      section.append(make('h5', { text: `Nieuwe leerlingen voor je klas (${incoming.length})` }));
+      section.append(make('h5', { text: `Nieuwe leerlingen voor deze klas (${incoming.length})` }));
       incoming.forEach((transfer) => section.append(transferCard(transfer, 'incoming')));
     }
 
@@ -314,55 +442,78 @@
     panel.append(section);
   }
 
+  function studentRow(student) {
+    const row = make('div', { className: 'student-management__student-row' });
+    const info = make('div', { className: 'student-management__student-info' });
+    info.append(make('strong', { text: student.name }));
+    const meta = [];
+    if (state.role === 'admin' && student.parnassysStudentNumber) meta.push(`ParnasSys ${student.parnassysStudentNumber}`);
+    meta.push(student.googleLinked ? 'Google gekoppeld' : 'Google nog niet gekoppeld');
+    if (student.borrowedCount) meta.push(`${student.borrowedCount} boek${student.borrowedCount === 1 ? '' : 'en'} in bezit`);
+    info.append(make('span', { text: meta.join(' · ') }));
+    const actions = make('div', { className: 'student-management__row-actions' });
+    const move = make('button', { className: 'btn btn--ghost', text: 'Verplaatsen', type: 'button' });
+    const leave = make('button', { className: 'btn btn--ghost student-management__danger-button', text: 'Van school', type: 'button' });
+    move.addEventListener('click', () => openTransfer(student));
+    leave.addEventListener('click', () => deactivate(student));
+    actions.append(move, leave);
+    row.append(info, actions);
+    return row;
+  }
+
   function renderStudents(panel) {
     const section = make('section', { className: 'student-management__section' });
     const header = make('div', { className: 'student-management__section-head' });
-    header.append(make('div'));
-    header.firstChild.append(
-      make('h4', { text: state.role === 'admin' ? 'Leerlingen per klas' : 'Mijn leerlingen' }),
+    const heading = make('div');
+    const klass = activeClass();
+    heading.append(
+      make('h4', {
+        text: state.role === 'admin'
+          ? 'Leerlingen per klas'
+          : klass
+            ? `Leerlingen in ${klass.name}`
+            : 'Mijn leerlingen',
+      }),
       make('p', { className: 'hint', text: 'Tussentijdse instroom, klaswissels en uitstroom kun je hier direct regelen.' })
     );
+    header.append(heading);
     const add = make('button', { className: 'btn', text: '+ Leerling toevoegen', type: 'button' });
+    add.disabled = state.role !== 'admin' && !klass;
     add.addEventListener('click', openAddStudent);
     header.append(add);
     section.append(header);
 
-    const classes = state.role === 'admin' ? state.classes : ownClasses();
-    for (const klass of classes) {
-      const students = (state.students || []).filter((student) => (student.classIds || []).includes(klass.id));
+    if (state.role !== 'admin') {
+      if (!klass) {
+        section.append(make('p', { className: 'hint', text: 'Je hebt nog geen klas om leerlingen voor te beheren.' }));
+      } else {
+        const students = studentsForClass(klass.id);
+        section.append(make('p', {
+          className: 'student-management__class-count',
+          text: `${students.length} leerling${students.length === 1 ? '' : 'en'}`,
+        }));
+        if (!students.length) section.append(make('p', { className: 'hint', text: 'Nog geen leerlingen in deze klas.' }));
+        students.forEach((student) => section.append(studentRow(student)));
+      }
+      panel.append(section);
+      return;
+    }
+
+    for (const adminClass of state.classes || []) {
+      const students = studentsForClass(adminClass.id);
       const details = document.createElement('details');
       details.className = 'student-management__class';
-      if (classes.length <= 3) details.open = true;
-      const summary = make('summary', { text: `${klass.name} · ${students.length} leerling${students.length === 1 ? '' : 'en'}` });
-      details.append(summary);
-      if (!students.length) {
-        details.append(make('p', { className: 'hint', text: 'Nog geen leerlingen in deze klas.' }));
-      }
-      for (const student of students) {
-        const row = make('div', { className: 'student-management__student-row' });
-        const info = make('div', { className: 'student-management__student-info' });
-        info.append(make('strong', { text: student.name }));
-        const meta = [];
-        if (student.parnassysStudentNumber) meta.push(`ParnasSys ${student.parnassysStudentNumber}`);
-        meta.push(student.googleLinked ? 'Google gekoppeld' : 'Google nog niet gekoppeld');
-        if (student.borrowedCount) meta.push(`${student.borrowedCount} boek${student.borrowedCount === 1 ? '' : 'en'} in bezit`);
-        info.append(make('span', { text: meta.join(' · ') }));
-        const actions = make('div', { className: 'student-management__row-actions' });
-        const move = make('button', { className: 'btn btn--ghost', text: 'Verplaatsen', type: 'button' });
-        const leave = make('button', { className: 'btn btn--ghost student-management__danger-button', text: 'Van school', type: 'button' });
-        move.addEventListener('click', () => openTransfer(student));
-        leave.addEventListener('click', () => deactivate(student));
-        actions.append(move, leave);
-        row.append(info, actions);
-        details.append(row);
-      }
+      if ((state.classes || []).length <= 3) details.open = true;
+      details.append(make('summary', { text: `${adminClass.name} · ${students.length} leerling${students.length === 1 ? '' : 'en'}` }));
+      if (!students.length) details.append(make('p', { className: 'hint', text: 'Nog geen leerlingen in deze klas.' }));
+      students.forEach((student) => details.append(studentRow(student)));
       section.append(details);
     }
     panel.append(section);
   }
 
   function renderOutgoing(panel) {
-    const outgoing = (state.outgoing || []).filter((entry) => ['pending', 'rejected'].includes(entry.status));
+    const outgoing = outgoingForClass(activeClass());
     if (!outgoing.length) return;
     const details = document.createElement('details');
     details.className = 'student-management__section';
@@ -386,6 +537,7 @@
     );
     header.append(text);
     panel.append(header);
+    renderClassContext(panel);
     renderRequests(panel);
     renderStudents(panel);
     renderOutgoing(panel);
@@ -395,6 +547,7 @@
   async function refresh() {
     try {
       state = await api('/api/mentor/student-management');
+      activeClass();
       render();
     } catch (error) {
       // Niet ingelogd als medewerker of pagina nog niet klaar.
