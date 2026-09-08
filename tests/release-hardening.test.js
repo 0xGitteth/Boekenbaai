@@ -149,6 +149,17 @@ function baseDb() {
   assert.strictEqual(result.store.sessions.length, 0);
 })();
 
+(function testTransferTargetWithoutMentorIsInvalidData() {
+  const db = baseDb();
+  db.classes.push(
+    { id: 'class-a', name: 'Klas A', teacherIds: ['teacher-a'], studentIds: [] },
+    { id: 'class-b', name: 'Klas B', teacherIds: [], studentIds: [] }
+  );
+  assert.strictEqual(hardening.transferTargetIssue(db, 'class-a'), null);
+  assert.strictEqual(hardening.transferTargetIssue(db, 'class-b'), 'class-without-mentor');
+  assert.strictEqual(hardening.transferTargetIssue(db, 'missing-class'), null);
+})();
+
 (function testPreloadOrderKeepsMentorRoutesBehindSecurity() {
   const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const start = packageJson.scripts.start;
