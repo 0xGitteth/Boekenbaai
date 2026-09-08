@@ -11,6 +11,7 @@ const core = require('./google-auth-core');
 const { verifyGoogleIdToken } = require('./google-id-token');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const { runSchoolSync } = require('./school-sync-core');
+const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -32,6 +33,8 @@ const PENDING_MAX_AGE_MS = core.PENDING_IDENTITY_MAX_AGE_MS || 30 * 60 * 1000;
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const originalCreateServer = http.createServer.bind(http);
 const requestContext = new AsyncLocalStorage();
+
+recoverPairedJson({ dataPath: DATA_PATH, authPath: AUTH_DATA_PATH });
 
 function readJsonStrict(filePath, { missingValue, label }) {
   try {
@@ -552,8 +555,12 @@ function schoolSyncPreview(context, body, apply) {
   }
 
   if (apply) {
-    writeJsonAtomic(DATA_PATH, result.db);
-    writeJsonAtomic(AUTH_DATA_PATH, core.pruneStore(result.store));
+    commitPairedJson({
+      dataPath: DATA_PATH,
+      authPath: AUTH_DATA_PATH,
+      data: result.db,
+      auth: core.pruneStore(result.store),
+    });
   }
   return {
     preview: !apply,
