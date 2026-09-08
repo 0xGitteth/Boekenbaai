@@ -259,7 +259,9 @@ function findExistingAccount(db, store, kind, { email, username, name, studentNu
 
   if (name) {
     const wantedName = normalizeName(name);
-    const byName = collection.filter((entry) => normalizeName(entry?.name) === wantedName);
+    const byName = collection.filter(
+      (entry) => entry?.active !== false && normalizeName(entry?.name) === wantedName
+    );
     if (byName.length === 1) {
       if (
         kind === 'student' &&
@@ -497,6 +499,7 @@ function applyPeopleImport(input) {
     const beforeLastName = account?.lastName || '';
     const beforeUsername = account?.username || '';
     const beforeGrade = account?.grade || '';
+    const beforeSource = account?.source || '';
     const beforeActive = account?.active;
     const beforeInactiveAt = account?.inactiveAt ?? null;
     const beforeInactiveReason = account?.inactiveReason ?? null;
@@ -557,6 +560,7 @@ function applyPeopleImport(input) {
       if (kind === 'student' && gradeAuthoritative) account.grade = grade;
       if (kind === 'student' && studentNumber) numberChanged = setParnassysStudentNumber(account, studentNumber);
       if (kind === 'teacher') account.role = 'teacher';
+      if (parnassys) account.source = 'parnassys';
       account.mustChangePassword = false;
       account.active = true;
       account.inactiveAt = null;
@@ -608,6 +612,7 @@ function applyPeopleImport(input) {
       beforeLastName !== (account.lastName || '') ||
       beforeUsername !== (account.username || '') ||
       beforeGrade !== (account.grade || '') ||
+      beforeSource !== (account.source || '') ||
       beforeActive === false ||
       beforeInactiveAt !== (account.inactiveAt ?? null) ||
       beforeInactiveReason !== (account.inactiveReason ?? null) ||
