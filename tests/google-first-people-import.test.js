@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const core = require('../google-auth-core');
-const { applyPeopleImport } = require('../google-first-people-import');
+const { applyPeopleImport, getParnassysStudentNumber } = require('../google-first-people-import');
 
 function baseDb() {
   return {
@@ -89,7 +89,7 @@ function baseDb() {
     borrowedBooks: ['b1'],
     classIds: [],
   });
-  let store = core.upsertLink(core.emptyAuthStore(), {
+  const store = core.upsertLink(core.emptyAuthStore(), {
     accountType: 'student',
     accountId: 's1',
     email: 's.jansen@koraaledu.nl',
@@ -185,6 +185,134 @@ function baseDb() {
   assert.strictEqual(result.summary.created, 1);
   assert.strictEqual(result.summary.invalidEmail, 1);
   assert.strictEqual(result.store.links.length, 0);
+})();
+
+(function testParnassysStudentExportWorksWithoutEditingOrEmail() {
+  const result = applyPeopleImport({
+    kind: 'student',
+    domain: 'koraaledu.nl',
+    actorId: 'u-admin',
+    db: baseDb(),
+    store: core.emptyAuthStore(),
+    rows: [
+      {
+        Leerlingnummer: '10482',
+        'Huidige groep': 'Structuurklas Bovenbouw',
+        Roepnaam: 'Mirsad',
+        Voorvoegsel: '',
+        Achternaam: 'Yilmaz',
+        'Huidige status': 'Volgt onderwijs',
+      },
+    ],
+  });
+
+  assert.strictEqual(result.summary.parnassysRows, 1);
+  assert.strictEqual(result.summary.created, 1);
+  assert.strictEqual(result.summary.studentNumbersStored, 1);
+  assert.strictEqual(result.db.students[0].name, 'Mirsad Yilmaz');
+  assert.strictEqual(getParnassysStudentNumber(result.db.students[0]), '10482');
+  assert.strictEqual(result.db.classes[0].name, 'Structuurklas Bovenbouw');
+  assert.strictEqual(result.store.links.length, 0, 'Leerlingmail hoeft niet vooraf bekend te zijn');
+})();
+
+(function testParnassysNumberKeepsIdentityAcrossClassMove() {
+  const first = applyPeopleImport({
+    kind: 'student',
+    db: baseDb(),
+    store: core.emptyAuthStore(),
+    rows: [{
+      Leerlingnummer: '20001',
+      'Huidige groep': 'Klas A',
+      Roepnaam: 'Sanne',
+      Achternaam: 'Jansen',
+      'Huidige status': 'Volgt onderwijs',
+    }],
+  });
+  const studentId = first.db.students[0].id;
+
+  const second = applyPeopleImport({
+    kind: 'student',
+    db: first.db,
+    store: first.store,
+    rows: [{
+      Leerlingnummer: '20001',
+      'Huidige groep': 'Klas B',
+      Roepnaam: 'Sanne',
+      Achternaam: 'Jansen',
+      'Huidige status': 'Volgt onderwijs',
+    }],
+  });
+
+  assert.strictEqual(second.db.students.length, 1);
+  assert.strictEqual(second.db.students[0].id, studentId);
+  assert.strictEqual(second.summary.matchedByStudentNumber, 1);
+  assert.deepStrictEqual(
+    second.db.classes.filter((entry) => entry.studentIds.includes(studentId)).map((entry) => entry.name),
+    ['Klas B']
+  );
+})();
+
+(function testParnassysSyncBindsNumberToUniqueManualStudent() {
+  const db = baseDb();
+  db.classes.push({ id: 'class-a', name: 'Klas A', studentIds: ['manual-1'], teacherIds: [] });
+  db.students.push({
+    id: 'manual-1',
+    name: 'Nieuwe Leerling',
+    firstName: 'Nieuwe',
+    lastName: 'Leerling',
+    username: 'nieuwe.leerling',
+    passwordHash: 'x',
+    borrowedBooks: [],
+    classIds: ['class-a'],
+    active: true,
+    source: 'manual',
+  });
+
+  const result = applyPeopleImport({
+    kind: 'student',
+    db,
+    store: core.emptyAuthStore(),
+    rows: [{
+      Leerlingnummer: '30003',
+      'Huidige groep': 'Klas A',
+      Roepnaam: 'Nieuwe',
+      Achternaam: 'Leerling',
+      'Huidige status': 'Volgt onderwijs',
+    }],
+  });
+
+  assert.strictEqual(result.db.students.length, 1);
+  assert.strictEqual(result.db.students[0].id, 'manual-1');
+  assert.strictEqual(getParnassysStudentNumber(result.db.students[0]), '30003');
+})();
+
+(function testParnassysStaffExportOnlyCreatesPeopleWithLinkedGroups() {
+  const result = applyPeopleImport({
+    kind: 'teacher',
+    db: baseDb(),
+    store: core.emptyAuthStore(),
+    rows: [
+      {
+        Roepnaam: 'Gitte',
+        Voorvoegsel: 'van',
+        Achternaam: 'Bakel',
+        Rollen: 'Leerkracht',
+        'Gekoppelde groepen': 'Structuurklas Bovenbouw',
+      },
+      {
+        Roepnaam: 'Piet',
+        Achternaam: 'Beleid',
+        Rollen: 'Beleidsmedewerker',
+        'Gekoppelde groepen': '',
+      },
+    ],
+  });
+
+  const teachers = result.db.users.filter((entry) => entry.role === 'teacher');
+  assert.strictEqual(teachers.length, 1);
+  assert.strictEqual(teachers[0].name, 'Gitte van Bakel');
+  assert.strictEqual(result.summary.ignored, 1);
+  assert.strictEqual(result.db.classes[0].name, 'Structuurklas Bovenbouw');
 })();
 
 console.log('Google-first people import tests geslaagd.');
