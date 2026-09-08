@@ -6,21 +6,24 @@ const core = require('./google-auth-core');
 const EMAIL_KEYS = [
   'schoolmail',
   'schoolmailadres',
-  'school_email',
+  'school e-mail',
   'schoolemail',
   'email',
   'e-mail',
   'e-mailadres',
   'emailadres',
   'googleemail',
-  'google_email',
 ];
 const USERNAME_KEYS = ['gebruikersnaam', 'username', 'user', 'login'];
-const NAME_KEYS = ['naam', 'name', 'volledigenaam', 'volledige_naam', 'full_name', 'fullname'];
-const FIRST_NAME_KEYS = ['voornaam', 'firstname', 'first_name'];
-const MIDDLE_NAME_KEYS = ['tussenvoegsel', 'voorvoegsel', 'middlename', 'middle_name'];
-const LAST_NAME_KEYS = ['achternaam', 'lastname', 'last_name'];
+const NAME_KEYS = ['naam', 'name', 'volledigenaam', 'volledige naam', 'full name', 'fullname'];
+const FIRST_NAME_KEYS = ['roepnaam', 'voornaam', 'firstname', 'first name'];
+const MIDDLE_NAME_KEYS = ['voorvoegsel', 'tussenvoegsel', 'middlename', 'middle name'];
+const LAST_NAME_KEYS = ['achternaam', 'lastname', 'last name'];
 const CLASS_KEYS = [
+  'huidige groep',
+  'huidigegroep',
+  'gekoppelde groepen',
+  'gekoppeldegroepen',
   'klassen',
   'klas(sen)',
   'klas',
@@ -30,7 +33,17 @@ const CLASS_KEYS = [
   'class',
   'classes',
 ];
+const STUDENT_NUMBER_KEYS = [
+  'leerlingnummer',
+  'leerling nummer',
+  'leerlingnr',
+  'leerling nr',
+  'studentnummer',
+  'student number',
+];
 const GRADE_KEYS = ['leerjaar', 'grade', 'niveau'];
+const PARNASSYS_STUDENT_MARKERS = ['leerlingnummer', 'huidige groep', 'huidige status'];
+const PARNASSYS_TEACHER_MARKERS = ['gekoppelde groepen', 'rollen'];
 
 function normalizeKey(value) {
   return String(value || '')
@@ -38,8 +51,7 @@ function normalizeKey(value) {
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, '')
-    .replace(/_/g, '');
+    .replace(/[^a-z0-9]+/g, '');
 }
 
 function normalizeRow(row) {
@@ -82,7 +94,7 @@ function extractClassNames(row) {
   }
   const seen = new Set();
   return values.filter((value) => {
-    const key = value.toLocaleLowerCase('nl-NL');
+    const key = normalizeName(value);
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -94,18 +106,50 @@ function extractName(row) {
   const firstName = readFirst(row, FIRST_NAME_KEYS);
   const middleName = readFirst(row, MIDDLE_NAME_KEYS);
   const lastName = readFirst(row, LAST_NAME_KEYS);
-  const combined = [firstName, middleName, lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  const combined = [firstName, middleName, lastName]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const resolvedFullName = fullName || combined;
+  const fallbackParts = resolvedFullName.split(/\s+/).filter(Boolean);
   return {
     fullName: resolvedFullName,
-    firstName: firstName || (resolvedFullName ? resolvedFullName.split(/\s+/)[0] : ''),
+    firstName: firstName || fallbackParts[0] || '',
     middleName,
-    lastName: lastName || '',
+    lastName: lastName || (fallbackParts.length > 1 ? fallbackParts[fallbackParts.length - 1] : ''),
   };
 }
 
 function normalizeName(value) {
-  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('nl-NL');
+}
+
+function normalizeExternalId(value) {
+  return String(value || '').trim();
+}
+
+function getParnassysStudentNumber(student) {
+  return normalizeExternalId(
+    student?.parnassysStudentNumber ||
+    student?.externalIds?.parnassys ||
+    ''
+  );
+}
+
+function setParnassysStudentNumber(student, value) {
+  const number = normalizeExternalId(value);
+  if (!number) return false;
+  const before = getParnassysStudentNumber(student);
+  student.parnassysStudentNumber = number;
+  student.externalIds = student.externalIds && typeof student.externalIds === 'object'
+    ? student.externalIds
+    : {};
+  student.externalIds.parnassys = number;
+  return before !== number;
 }
 
 function slugUsername(value) {
@@ -151,7 +195,8 @@ function findClassByName(db, name) {
 }
 
 function ensureClass(db, name) {
-  const existing = findClassByName(db, name);
+  const cleanName = String(name || '').trim();
+  const existing = findClassByName(db, cleanName);
   if (existing) {
     if (!Array.isArray(existing.teacherIds)) existing.teacherIds = [];
     if (!Array.isArray(existing.studentIds)) existing.studentIds = [];
@@ -159,7 +204,7 @@ function ensureClass(db, name) {
   }
   const classRecord = {
     id: crypto.randomUUID(),
-    name: String(name || '').trim(),
+    name: cleanName,
     teacherIds: [],
     studentIds: [],
   };
@@ -179,7 +224,18 @@ function findAccountByLink(db, store, kind, email) {
   return (db.students || []).find((entry) => entry?.id === link.accountId) || null;
 }
 
-function findExistingAccount(db, store, kind, { email, username, name }) {
+function findStudentByNumber(db, studentNumber) {
+  const wanted = normalizeExternalId(studentNumber);
+  if (!wanted) return null;
+  return (db.students || []).find((entry) => getParnassysStudentNumber(entry) === wanted) || null;
+}
+
+function findExistingAccount(db, store, kind, { email, username, name, studentNumber }) {
+  if (kind === 'student' && studentNumber) {
+    const byStudentNumber = findStudentByNumber(db, studentNumber);
+    if (byStudentNumber) return { account: byStudentNumber, matchedBy: 'student-number' };
+  }
+
   const byLink = findAccountByLink(db, store, kind, email);
   if (byLink) return { account: byLink, matchedBy: 'schoolmail' };
 
@@ -198,7 +254,17 @@ function findExistingAccount(db, store, kind, { email, username, name }) {
   if (name) {
     const wantedName = normalizeName(name);
     const byName = collection.filter((entry) => normalizeName(entry?.name) === wantedName);
-    if (byName.length === 1) return { account: byName[0], matchedBy: 'name' };
+    if (byName.length === 1) {
+      if (
+        kind === 'student' &&
+        studentNumber &&
+        getParnassysStudentNumber(byName[0]) &&
+        getParnassysStudentNumber(byName[0]) !== normalizeExternalId(studentNumber)
+      ) {
+        return { account: null, matchedBy: 'student-number-conflict', conflict: true };
+      }
+      return { account: byName[0], matchedBy: 'name' };
+    }
     if (byName.length > 1) return { account: null, matchedBy: 'ambiguous-name', ambiguous: true };
   }
 
@@ -225,8 +291,9 @@ function removeAccountFromClasses(db, kind, accountId, keepClassIds) {
 function assignClasses(db, kind, account, classNames, authoritative) {
   if (!authoritative) {
     const existingIds = Array.isArray(account.classIds) ? account.classIds : [];
-    return { classIds: existingIds, newClasses: 0 };
+    return { classIds: existingIds, newClasses: 0, changed: false };
   }
+  const originalIds = Array.isArray(account.classIds) ? [...account.classIds] : [];
   const classIds = [];
   let newClasses = 0;
   for (const name of classNames) {
@@ -242,7 +309,8 @@ function assignClasses(db, kind, account, classNames, authoritative) {
   }
   removeAccountFromClasses(db, kind, account.id, classIds);
   account.classIds = classIds;
-  return { classIds, newClasses };
+  const changed = originalIds.length !== classIds.length || originalIds.some((id) => !classIds.includes(id));
+  return { classIds, newClasses, changed };
 }
 
 function linkSchoolEmail(store, accountType, accountId, email, actorId) {
@@ -271,8 +339,14 @@ function appendImportHistory(db, kind, summary) {
     id: crypto.randomUUID(),
     type: `${kind === 'teacher' ? 'teachers' : 'students'}_google_first_imported`,
     timestamp: new Date().toISOString(),
-    message: `${summary.created} ${label} toegevoegd, ${summary.updated} bijgewerkt en ${summary.linked} schoolaccounts gekoppeld via Google-first import`,
+    message: `${summary.created} ${label} toegevoegd, ${summary.updated} bijgewerkt via schoolimport`,
   });
+}
+
+function isParnassysRow(kind, row) {
+  return kind === 'teacher'
+    ? hasAnyKey(row, PARNASSYS_TEACHER_MARKERS)
+    : hasAnyKey(row, PARNASSYS_STUDENT_MARKERS);
 }
 
 function applyPeopleImport(input) {
@@ -286,6 +360,7 @@ function applyPeopleImport(input) {
   if (!Array.isArray(db.students)) db.students = [];
   if (!Array.isArray(db.users)) db.users = [];
   if (!Array.isArray(db.classes)) db.classes = [];
+  if (!Array.isArray(db.history)) db.history = [];
 
   core.setLocalOnlyStaffAccountIds(
     db.users.filter((entry) => entry?.role === 'admin').map((entry) => entry.id)
@@ -294,6 +369,7 @@ function applyPeopleImport(input) {
   const summary = {
     kind,
     totalRows: rows.length,
+    parnassysRows: 0,
     created: 0,
     updated: 0,
     linked: 0,
@@ -301,14 +377,21 @@ function applyPeopleImport(input) {
     missingEmail: 0,
     invalidEmail: 0,
     ambiguous: 0,
+    conflicts: 0,
     skipped: 0,
+    ignored: 0,
     newClasses: 0,
+    studentNumbersStored: 0,
+    matchedByStudentNumber: 0,
   };
   const results = [];
 
   rows.forEach((rawRow, index) => {
     const rowNumber = index + 2;
     const row = normalizeRow(rawRow);
+    const parnassys = isParnassysRow(kind, row);
+    if (parnassys) summary.parnassysRows += 1;
+
     const nameParts = extractName(row);
     const name = nameParts.fullName;
     const email = core.normalizeEmail(readFirst(row, EMAIL_KEYS));
@@ -317,6 +400,20 @@ function applyPeopleImport(input) {
     const classesAuthoritative = hasAnyKey(row, CLASS_KEYS);
     const grade = readFirst(row, GRADE_KEYS);
     const gradeAuthoritative = hasAnyKey(row, GRADE_KEYS);
+    const studentNumber = kind === 'student'
+      ? normalizeExternalId(readFirst(row, STUDENT_NUMBER_KEYS))
+      : '';
+
+    if (kind === 'teacher' && parnassys && !classNames.length) {
+      summary.ignored += 1;
+      results.push({
+        row: rowNumber,
+        name: name || '(onbekend)',
+        status: 'ignored',
+        reason: 'Geen gekoppelde groep; voor deze medewerker is geen Boekenbaai-account nodig.',
+      });
+      return;
+    }
 
     if (!name) {
       summary.skipped += 1;
@@ -324,28 +421,58 @@ function applyPeopleImport(input) {
       return;
     }
 
+    if (kind === 'student' && parnassys && !studentNumber) {
+      summary.skipped += 1;
+      results.push({
+        row: rowNumber,
+        name,
+        status: 'skipped',
+        reason: 'ParnasSys-leerlingnummer ontbreekt.',
+      });
+      return;
+    }
+
     const match = findExistingAccount(db, store, kind, {
       email: core.isAllowedSchoolEmail(email, domain) ? email : '',
       username: providedUsername,
       name,
+      studentNumber,
     });
+
     if (match.ambiguous) {
       summary.ambiguous += 1;
       summary.skipped += 1;
       results.push({
         row: rowNumber,
         name,
-        email,
+        studentNumber,
         status: 'skipped',
-        reason: 'Meerdere bestaande accounts hebben exact dezelfde naam. Voeg schoolmail of gebruikersnaam toe.',
+        reason: 'Meerdere bestaande accounts hebben exact dezelfde naam. Koppeling wordt niet gegokt.',
+      });
+      return;
+    }
+    if (match.conflict) {
+      summary.conflicts += 1;
+      summary.skipped += 1;
+      results.push({
+        row: rowNumber,
+        name,
+        studentNumber,
+        status: 'skipped',
+        reason: 'Deze naam bestaat al met een ander ParnasSys-leerlingnummer.',
       });
       return;
     }
 
     let account = match.account;
     const wasCreated = !account;
+    const beforeName = account?.name || '';
+    const beforeGrade = account?.grade || '';
+    const beforeActive = account?.active;
+    let numberChanged = false;
+
     if (!account) {
-      const usernameSeed = providedUsername || (email ? email.split('@')[0] : name);
+      const usernameSeed = providedUsername || (email ? email.split('@')[0] : studentNumber || name);
       const username = uniqueUsername(db, usernameSeed);
       if (kind === 'teacher') {
         account = {
@@ -359,6 +486,8 @@ function applyPeopleImport(input) {
           passwordHash: internalPasswordHash(),
           mustChangePassword: false,
           classIds: [],
+          active: true,
+          source: parnassys ? 'parnassys' : 'manual-import',
         };
         db.users.push(account);
       } else {
@@ -374,7 +503,13 @@ function applyPeopleImport(input) {
           grade: grade || '',
           borrowedBooks: [],
           classIds: [],
+          active: true,
+          source: parnassys ? 'parnassys' : 'manual-import',
         };
+        if (studentNumber) {
+          setParnassysStudentNumber(account, studentNumber);
+          numberChanged = true;
+        }
         db.students.push(account);
       }
       summary.created += 1;
@@ -386,12 +521,21 @@ function applyPeopleImport(input) {
       if (providedUsername && !usernameTaken(db, providedUsername, account.id)) {
         account.username = providedUsername;
       } else if (!account.username) {
-        account.username = uniqueUsername(db, email ? email.split('@')[0] : name, account.id);
+        account.username = uniqueUsername(db, email ? email.split('@')[0] : studentNumber || name, account.id);
       }
       if (kind === 'student' && gradeAuthoritative) account.grade = grade;
+      if (kind === 'student' && studentNumber) numberChanged = setParnassysStudentNumber(account, studentNumber);
       if (kind === 'teacher') account.role = 'teacher';
       account.mustChangePassword = false;
+      account.active = true;
+      account.inactiveAt = null;
+      account.inactiveReason = null;
       summary.updated += 1;
+    }
+
+    if (kind === 'student' && studentNumber) {
+      if (numberChanged) summary.studentNumbersStored += 1;
+      if (match.matchedBy === 'student-number') summary.matchedByStudentNumber += 1;
     }
 
     const classResult = assignClasses(db, kind, account, classNames, classesAuthoritative);
@@ -401,7 +545,9 @@ function applyPeopleImport(input) {
     let emailMessage = '';
     if (!email) {
       summary.missingEmail += 1;
-      emailMessage = 'Geen schoolmail opgegeven; account is wel verwerkt maar kan nog niet via Google inloggen.';
+      emailMessage = kind === 'student'
+        ? 'Geen schoolmail nodig: de leerling koppelt het Google-account bij de eerste login via mentorbevestiging.'
+        : 'Geen schoolmail opgegeven.';
     } else if (!core.isAllowedSchoolEmail(email, domain)) {
       summary.invalidEmail += 1;
       emailState = 'invalid';
@@ -411,37 +557,53 @@ function applyPeopleImport(input) {
         const accountType = kind === 'teacher' ? 'staff' : 'student';
         const linked = linkSchoolEmail(store, accountType, account.id, email, actorId);
         store = linked.store;
-        summary.linked += 1;
-        if (linked.verified) summary.verified += 1;
         emailState = linked.verified ? 'verified' : 'prelinked';
+        if (linked.changed) summary.linked += 1;
+        if (linked.verified) summary.verified += 1;
+        emailMessage = linked.verified
+          ? 'Google-account is al geverifieerd.'
+          : 'Schoolmail staat klaar voor de eerste Google-login.';
       } catch (error) {
+        summary.conflicts += 1;
         emailState = 'conflict';
-        emailMessage = error?.message || 'Schoolmail kon niet worden gekoppeld.';
+        emailMessage = error.message;
       }
     }
+
+    const changed = wasCreated ||
+      beforeName !== account.name ||
+      beforeGrade !== (account.grade || '') ||
+      beforeActive === false ||
+      numberChanged ||
+      classResult.changed;
 
     results.push({
       row: rowNumber,
       id: account.id,
       name: account.name,
-      username: account.username,
-      email,
+      studentNumber: kind === 'student' ? getParnassysStudentNumber(account) : '',
       classes: classNames,
-      matchedBy: match.matchedBy,
-      status: wasCreated ? 'created' : 'updated',
+      matchedBy: match.matchedBy || (wasCreated ? 'new' : ''),
+      status: wasCreated ? 'created' : changed ? 'updated' : 'unchanged',
       emailState,
       message: emailMessage,
     });
   });
 
-  appendImportHistory(db, kind, summary);
+  if (summary.created || summary.updated) appendImportHistory(db, kind, summary);
   return { db, store, summary, results };
 }
 
 module.exports = {
-  applyPeopleImport,
+  EMAIL_KEYS,
+  CLASS_KEYS,
+  STUDENT_NUMBER_KEYS,
+  normalizeKey,
   normalizeRow,
-  extractName,
   extractClassNames,
-  uniqueUsername,
+  extractName,
+  getParnassysStudentNumber,
+  setParnassysStudentNumber,
+  findStudentByNumber,
+  applyPeopleImport,
 };
