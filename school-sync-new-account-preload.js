@@ -72,27 +72,11 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
   const normalMatches = { ...manualMatches };
   for (const number of createNewNumbers) delete normalMatches[number];
 
-  const result = normalRows.length
-    ? originalRunSchoolSync({
-        ...input,
-        rows: normalRows,
-        manualMatches: normalMatches,
-      })
-    : {
-        db: input.db,
-        store: input.store,
-        summary: {
-          kind: 'student',
-          totalRows: 0,
-          created: 0,
-          updated: 0,
-          unchanged: 0,
-          needsReview: 0,
-          newClasses: 0,
-          studentNumbersStored: 0,
-        },
-        results: [],
-      };
+  const result = originalRunSchoolSync({
+    ...input,
+    rows: normalRows,
+    manualMatches: normalMatches,
+  });
   if (!createRows.length) return result;
 
   const imported = applyPeopleImport({
