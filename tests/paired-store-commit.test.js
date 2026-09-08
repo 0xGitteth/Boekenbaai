@@ -48,6 +48,20 @@ try {
   assert.strictEqual(fs.existsSync(journalPath), false, 'Herstel moet het journal pas na beide writes verwijderen');
   assert.strictEqual(recoverPairedJson({ dataPath, authPath }), false, 'Zonder journal is herstel een no-op');
 
+  const managementSource = fs.readFileSync(path.join(__dirname, '..', 'student-management-preload.js'), 'utf8');
+  const deactivateMatch = managementSource.match(/function deactivateStudent[\s\S]*?function stripCookie/);
+  assert.ok(deactivateMatch, 'De deactivatieroute moet vindbaar blijven voor de atomiciteitsregressie');
+  assert.match(
+    deactivateMatch[0],
+    /commitPairedJson\(\{[\s\S]*dataPath:\s*DATA_PATH[\s\S]*authPath:\s*AUTH_DATA_PATH/,
+    'Leerling afmelden moet database en auth-store via één herstelbare paired commit opslaan'
+  );
+  assert.doesNotMatch(
+    deactivateMatch[0],
+    /writeJsonAtomic\(DATA_PATH,[\s\S]*saveAuthStore\(/,
+    'Leerling afmelden mag database en auth-store niet meer als losse writes opslaan'
+  );
+
   console.log('Paired store commit tests geslaagd.');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
