@@ -5,7 +5,48 @@ const { applyPeopleImport } = require('./google-first-people-import');
 
 const originalRunSchoolSync = syncCore.runSchoolSync;
 
+function duplicateSourceIdentity(input = {}) {
+  const rows = Array.isArray(input.rows) ? input.rows : [];
+  const seen = new Map();
+  const kind = input.kind === 'teacher' ? 'teacher' : 'student';
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const rawIdentity = kind === 'student'
+      ? syncCore.studentNumberFromRow(rows[index])
+      : syncCore.personNameFromRow(rows[index]);
+    const identity = kind === 'student'
+      ? String(rawIdentity || '').trim()
+      : syncCore.normalizePersonName(rawIdentity);
+    if (!identity) continue;
+    if (seen.has(identity)) {
+      return {
+        kind,
+        identity,
+        firstRow: seen.get(identity) + 2,
+        secondRow: index + 2,
+        displayName: kind === 'teacher' ? String(rawIdentity || '').trim() : '',
+      };
+    }
+    seen.set(identity, index);
+  }
+  return null;
+}
+
+function assertUniqueSourceIdentities(input = {}) {
+  const duplicate = duplicateSourceIdentity(input);
+  if (!duplicate) return;
+  const error = new Error(
+    duplicate.kind === 'student'
+      ? `Het leerlingenbestand bevat leerlingnummer ${duplicate.identity} meerdere keren (regels ${duplicate.firstRow} en ${duplicate.secondRow}). Controleer de ParnasSys-export voordat je synchroniseert.`
+      : `Het medewerkersbestand bevat ${duplicate.displayName || 'dezelfde medewerkernaam'} meerdere keren (regels ${duplicate.firstRow} en ${duplicate.secondRow}). Boekenbaai kan zonder personeelsnummer niet veilig bepalen of dit dezelfde persoon is. Controleer de ParnasSys-export.`
+  );
+  error.code = 'DUPLICATE_SOURCE_IDENTITY';
+  error.duplicate = duplicate;
+  throw error;
+}
+
 syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}) {
+  assertUniqueSourceIdentities(input);
   if (input.kind !== 'student') return originalRunSchoolSync(input);
   const manualMatches = input.manualMatches && typeof input.manualMatches === 'object'
     ? input.manualMatches
@@ -59,5 +100,7 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
 module.exports = {
   __test: {
     createNewValue: '__new__',
+    duplicateSourceIdentity,
+    assertUniqueSourceIdentities,
   },
 };
