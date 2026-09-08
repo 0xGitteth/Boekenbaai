@@ -121,6 +121,13 @@ function studentClassNames(db, studentId) {
     .sort((a, b) => a.localeCompare(b, 'nl'));
 }
 
+function labelIncludesClass(displayName, classLabel) {
+  return Boolean(
+    classLabel &&
+    normalizeSearchText(displayName).includes(normalizeSearchText(classLabel))
+  );
+}
+
 function handleStudentDirectory(req, res, requestUrl) {
   if (isKnownCrossOriginRequest(req)) {
     return sendJson(res, 403, { message: 'Zoek namen vanuit de Boekenbaai-inlogpagina.' });
@@ -153,9 +160,10 @@ function handleStudentDirectory(req, res, requestUrl) {
   };
   const matches = buildStudentMatches(safeDb, query).map((match) => {
     const classLabel = studentClassNames(db, match.id).join(', ');
-    const displayName = classLabel
-      ? `${match.displayName || match.name} · ${classLabel}`
-      : (match.displayName || match.name);
+    const baseLabel = match.displayName || match.name;
+    const displayName = classLabel && !labelIncludesClass(baseLabel, classLabel)
+      ? `${baseLabel} · ${classLabel}`
+      : baseLabel;
     return {
       id: match.id,
       name: displayName,
@@ -174,6 +182,21 @@ function selectedInactiveStudent(requestUrl) {
   const db = readDatabase();
   const student = db.students.find((entry) => entry?.id === accountId);
   return !student || student.active === false ? accountId : null;
+}
+
+function guardLateContentLengthRemoval(res) {
+  if (res.__boekenbaaiSafeContentLengthRemoval) return;
+  res.__boekenbaaiSafeContentLengthRemoval = true;
+  const originalRemoveHeader = res.removeHeader.bind(res);
+  res.removeHeader = function safeRemoveHeader(name) {
+    if (
+      res.headersSent &&
+      String(name || '').toLowerCase() === 'content-length'
+    ) {
+      return undefined;
+    }
+    return originalRemoveHeader(name);
+  };
 }
 
 function injectCompatibilityAsset(req, res, listener) {
@@ -195,7 +218,7 @@ function injectCompatibilityAsset(req, res, listener) {
         html = html.replace(/<\/body>/i, '  <script src="/student-management-compat.js"></script>\n</body>');
       }
       nextChunk = html;
-      res.removeHeader('Content-Length');
+      if (!res.headersSent) res.removeHeader('Content-Length');
     }
     if (enc !== undefined) return originalEnd(nextChunk, enc, cb);
     return originalEnd(nextChunk, cb);
@@ -205,6 +228,7 @@ function injectCompatibilityAsset(req, res, listener) {
 
 function wrapRequestListener(listener) {
   return function studentLoginDirectoryListener(req, res) {
+    guardLateContentLengthRemoval(res);
     let requestUrl;
     try {
       requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -262,5 +286,6 @@ module.exports = {
     studentClassNames,
     selectedInactiveStudent,
     handleStudentDirectory,
+    guardLateContentLengthRemoval,
   },
 };
