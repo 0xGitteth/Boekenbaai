@@ -2,12 +2,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const XLSX = require('xlsx');
 const core = require('./google-auth-core');
 const { applyPeopleImport } = require('./google-first-people-import');
+const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -20,6 +20,8 @@ const GOOGLE_DOMAIN = core.normalizeDomain(process.env.BOEKENBAAI_GOOGLE_DOMAIN 
 const SESSION_COOKIE = 'boekenbaai_session';
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
 const originalCreateServer = http.createServer.bind(http);
+
+recoverPairedJson({ dataPath: DATA_PATH, authPath: AUTH_DATA_PATH });
 
 function readJsonStrict(filePath, { missingValue, label }) {
   let raw;
@@ -35,27 +37,6 @@ function readJsonStrict(filePath, { missingValue, label }) {
     const wrapped = new Error(`${label || 'JSON-bestand'} is beschadigd.`);
     wrapped.code = 'CORRUPT_JSON';
     throw wrapped;
-  }
-}
-
-function writeJsonAtomic(filePath, value) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  let mode = 0o600;
-  try {
-    mode = fs.statSync(filePath).mode & 0o777;
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
-  }
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(value, null, 2), { mode });
-    fs.renameSync(tmp, filePath);
-  } finally {
-    try {
-      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
-    } catch (error) {
-      // Best effort cleanup.
-    }
   }
 }
 
@@ -180,8 +161,12 @@ function importPeople(context, kind, file, preview) {
     actorId: context.user.id,
   });
   if (!preview) {
-    writeJsonAtomic(DATA_PATH, result.db);
-    writeJsonAtomic(AUTH_DATA_PATH, core.pruneStore(result.store));
+    commitPairedJson({
+      dataPath: DATA_PATH,
+      authPath: AUTH_DATA_PATH,
+      data: result.db,
+      auth: core.pruneStore(result.store),
+    });
   }
   return {
     preview: Boolean(preview),
