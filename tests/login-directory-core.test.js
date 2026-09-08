@@ -78,6 +78,7 @@ const students = [
   },
   { id: 'student-bo', name: 'Bo', firstName: 'Bo' },
   { id: 'student-mirsad', name: 'Mirsad Smit', firstName: 'Mirsad', lastName: 'Smit' },
+  { id: 'student-inactive', name: 'Gitte Weg', firstName: 'Gitte', lastName: 'Weg', active: false },
 ];
 const classes = [
   { id: 'class-a', name: 'Structuur A', studentIds: ['student-gitte', 'student-sam-a', 'student-alex-a'] },
@@ -103,11 +104,11 @@ assert.strictEqual(samBLabel, 'Sam van Boer');
 
 const alexALabel = createStudentDisplayName(students[5], students, classes);
 const alexBLabel = createStudentDisplayName(students[6], students, classes);
-assert.strictEqual(alexALabel, 'Alex de Wit (Structuur A)', 'Klas mag alleen zichtbaar worden bij werkelijk identieke volledige namen');
+assert.strictEqual(alexALabel, 'Alex de Wit (Structuur A)');
 assert.strictEqual(alexBLabel, 'Alex de Wit (Structuur B)');
 
 const studentMatches = buildStudentMatches(db, 'git');
-assert.strictEqual(studentMatches.length, 2);
+assert.strictEqual(studentMatches.length, 2, 'Inactieve leerlingen mogen niet in de loginzoeker verschijnen');
 for (const match of studentMatches) {
   assert.deepStrictEqual(
     Object.keys(match).sort(),
@@ -121,10 +122,13 @@ for (const match of studentMatches) {
   assert.ok(!Object.hasOwn(match, 'username'));
   assert.ok(!Object.hasOwn(match, 'passwordHash'));
 }
+const gitteDirectory = studentMatches.find((entry) => entry.id === 'student-gitte');
+assert.match(gitteDirectory.name, / · Structuur A$/, 'Klas moet zichtbaar zijn in de leerlingdropdown');
+assert.strictEqual(studentMatches.some((entry) => entry.id === 'student-inactive'), false);
 assert.strictEqual(studentMatches.some((entry) => entry.name === 'Gitte van Bakel'), false, 'Volledige leerlingnaam mag niet onnodig terugkomen');
 const singleSpecificMatch = buildStudentMatches(db, 'bakel');
 assert.strictEqual(singleSpecificMatch.length, 1);
-assert.strictEqual(singleSpecificMatch[0].name, 'Gitte B.', 'Niet-matchende leerlingen mogen de zichtbare naam niet langer maken');
+assert.strictEqual(singleSpecificMatch[0].name, 'Gitte B. · Structuur A', 'De zichtbare selectie toont een privacyveilige naam plus klas');
 assert.strictEqual(buildStudentMatches(db, 'itte').length, 0);
 assert.strictEqual(buildStudentMatches(db, 'mi').length, 0);
 assert.strictEqual(buildStudentMatches(db, 'bo').some((entry) => entry.id === 'student-bo'), true);
