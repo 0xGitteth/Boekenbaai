@@ -7,6 +7,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const XLSX = require('xlsx');
 const core = require('../google-auth-core');
+const { accountCredentialFingerprint } = require('../google-auth-security-core');
 
 const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-google-first-admin-'));
@@ -40,6 +41,8 @@ let store = core.upsertSession(core.emptyAuthStore(), adminToken, {
   remember: false,
   now: Date.now(),
 }).store;
+store.sessions[0].authMethod = 'password';
+store.sessions[0].accountFingerprint = accountCredentialFingerprint(db.users[0]);
 fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
 function makeWorkbookBase64(rows) {
