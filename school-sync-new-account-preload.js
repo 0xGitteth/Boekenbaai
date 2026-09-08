@@ -45,19 +45,15 @@ function assertUniqueSourceIdentities(input = {}) {
   throw error;
 }
 
-function markImportedTeachersAsParnassys(result) {
-  const importedIds = new Set(
-    (result?.results || [])
-      .map((entry) => String(entry?.id || '').trim())
-      .filter(Boolean)
+function ensureNoUnresolvedApply(result, input = {}) {
+  const needsReview = Number(result?.summary?.needsReview || 0);
+  if (!input.applyDeactivations || needsReview === 0) return result;
+  const error = new Error(
+    'De schoolgegevens zijn veranderd sinds de voorcontrole. Er zijn nieuwe twijfelgevallen ontstaan. Voer de voorcontrole opnieuw uit en koppel die leerlingen eerst.'
   );
-  if (!importedIds.size) return result;
-  for (const user of result?.db?.users || []) {
-    if (user?.role === 'teacher' && importedIds.has(String(user.id || ''))) {
-      user.source = 'parnassys';
-    }
-  }
-  return result;
+  error.code = 'SCHOOL_SYNC_REVIEW_REQUIRED';
+  error.summary = result.summary;
+  throw error;
 }
 
 syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}) {
@@ -66,7 +62,7 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
   syncCore.validateSchoolSyncRows(kind, rows);
   assertUniqueSourceIdentities({ ...input, kind, rows });
   if (kind === 'teacher') {
-    return markImportedTeachersAsParnassys(originalRunSchoolSync({ ...input, kind, rows }));
+    return ensureNoUnresolvedApply(originalRunSchoolSync({ ...input, kind, rows }), input);
   }
   const manualMatches = input.manualMatches && typeof input.manualMatches === 'object'
     ? input.manualMatches
@@ -77,7 +73,9 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
       .map(([number]) => String(number || '').trim())
       .filter(Boolean)
   );
-  if (!createNewNumbers.size) return originalRunSchoolSync(input);
+  if (!createNewNumbers.size) {
+    return ensureNoUnresolvedApply(originalRunSchoolSync(input), input);
+  }
 
   const normalRows = [];
   const createRows = [];
@@ -94,7 +92,7 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
     rows: normalRows,
     manualMatches: normalMatches,
   });
-  if (!createRows.length) return result;
+  if (!createRows.length) return ensureNoUnresolvedApply(result, input);
 
   const imported = applyPeopleImport({
     kind: 'student',
@@ -114,7 +112,7 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
   result.summary.updated = result.results.filter((entry) => entry?.status === 'updated').length;
   result.summary.unchanged = result.results.filter((entry) => entry?.status === 'unchanged').length;
   result.summary.needsReview = result.results.filter((entry) => entry?.status === 'needs-review').length;
-  return result;
+  return ensureNoUnresolvedApply(result, input);
 };
 
 module.exports = {
@@ -122,6 +120,6 @@ module.exports = {
     createNewValue: '__new__',
     duplicateSourceIdentity,
     assertUniqueSourceIdentities,
-    markImportedTeachersAsParnassys,
+    ensureNoUnresolvedApply,
   },
 };
