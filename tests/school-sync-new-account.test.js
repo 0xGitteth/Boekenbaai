@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const core = require('../google-auth-core');
 require('../school-sync-new-account-preload');
 const { runSchoolSync } = require('../school-sync-core');
@@ -50,5 +52,12 @@ const created = result.db.students.find((entry) => entry.parnassysStudentNumber 
 assert.ok(created);
 assert.notStrictEqual(created.id, 'manual-1');
 assert.strictEqual(result.db.students.find((entry) => entry.id === 'manual-1').parnassysStudentNumber, undefined);
+
+const uiSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'school-sync-finalize.js'), 'utf8');
+assert.match(uiSource, /Geen match, maak een nieuw leerlingaccount/);
+assert.match(uiSource, /'__new__'/);
+
+const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'school-sync-new-account-preload.js'), 'utf8');
+assert.doesNotMatch(preloadSource, /MutationObserver|createServer/, 'De nieuw-accountkeuze hoort geen extra DOM- of HTTP-wrapper meer nodig te hebben');
 
 console.log('School sync expliciet nieuw-account test geslaagd.');
