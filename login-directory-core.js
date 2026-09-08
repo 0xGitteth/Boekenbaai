@@ -156,6 +156,14 @@ function createStudentDisplayName(student, students, classes) {
   return `${personalCandidate} (${shortStableCode(student?.id)})`;
 }
 
+function createStudentDirectoryDisplayName(student, students, classes) {
+  const base = createStudentDisplayName(student, students, classes);
+  const ownClasses = classesForStudent(student?.id, classes);
+  if (!ownClasses.length) return base;
+  if (ownClasses.length === 1 && base.endsWith(`(${ownClasses[0]})`)) return base;
+  return `${base} · ${ownClasses.join(', ')}`;
+}
+
 function searchableStudentName(student) {
   return [student?.name, student?.firstName, student?.middleName, student?.lastName]
     .filter(Boolean)
@@ -179,14 +187,19 @@ function buildStudentMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
   const students = Array.isArray(db?.students) ? db.students : [];
   const classes = Array.isArray(db?.classes) ? db.classes : [];
   const selected = students
-    .filter((entry) => entry?.id && queryMatchesName(searchableStudentName(entry), query))
+    .filter(
+      (entry) =>
+        entry?.id &&
+        entry?.active !== false &&
+        queryMatchesName(searchableStudentName(entry), query)
+    )
     .sort((left, right) => deterministicCandidateSort(left, right, fullPersonalName))
     .slice(0, clampResultLimit(limit));
 
   return selected.map((entry) => {
     // Alleen daadwerkelijk teruggegeven resultaten mogen het zichtbare label
     // van elkaar beïnvloeden. Een verborgen negende match lekt zo niet indirect.
-    const displayName = createStudentDisplayName(entry, selected, classes);
+    const displayName = createStudentDirectoryDisplayName(entry, selected, classes);
     return {
       id: entry.id,
       name: displayName,
@@ -202,6 +215,7 @@ function buildStaffMatches(db, query, limit = DEFAULT_RESULT_LIMIT) {
     .filter(
       (entry) =>
         entry?.id &&
+        entry?.active !== false &&
         ['teacher', 'admin'].includes(entry?.role) &&
         cleanDisplayPart(entry?.name) &&
         queryMatchesName(entry.name, query)
@@ -312,6 +326,7 @@ module.exports = {
   preferredFirstName,
   preferredLastName,
   createStudentDisplayName,
+  createStudentDirectoryDisplayName,
   buildStudentMatches,
   buildStaffMatches,
   DirectoryRateLimiter,

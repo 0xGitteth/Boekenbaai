@@ -7,3 +7,5 @@ tmp/
 !.env.example
 *.auth.json
 *.auth.json.*.tmp
+*.paired-store-journal.json
+*.paired-store-journal.json.*.tmp

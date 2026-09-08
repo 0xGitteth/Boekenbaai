@@ -10,6 +10,12 @@ const runtimeAuthAssets = [
   'google-auth.css',
   'google-auth.js',
   'google-login-hint.js',
+  'admin-modern.css',
+  'admin-modern.js',
+  'admin-google-links.js',
+  'student-management.css',
+  'student-management.js',
+  'student-management-compat.js',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;

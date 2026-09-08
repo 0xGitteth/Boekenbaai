@@ -1,0 +1,241 @@
+.admin-modern__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0 0 1.25rem;
+  padding: 0.35rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.admin-modern__tab,
+.admin-modern__subtab {
+  appearance: none;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-modern__tab {
+  padding: 0.75rem 1rem;
+}
+
+.admin-modern__tab:hover,
+.admin-modern__subtab:hover {
+  background: var(--accent-softer);
+}
+
+.admin-modern__tab--active,
+.admin-modern__subtab--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.admin-modern__view[hidden],
+.admin-modern__people-view[hidden] {
+  display: none !important;
+}
+
+.admin-modern__view {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-modern__overview,
+.admin-modern__people {
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border: 1px solid var(--accent-border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.admin-modern__overview-header,
+.admin-modern__people-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-modern__overview-header h3,
+.admin-modern__people-header h3,
+.admin-modern__actions-panel h4,
+.admin-modern__danger h4 {
+  margin: 0;
+}
+
+.admin-modern__metrics,
+.admin-modern__preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-modern__metric {
+  display: grid;
+  gap: 0.15rem;
+  min-height: 88px;
+  align-content: center;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 14px;
+  background: var(--accent-softer);
+}
+
+.admin-modern__metric strong {
+  font-size: clamp(1.35rem, 3vw, 1.9rem);
+  line-height: 1;
+}
+
+.admin-modern__metric span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.admin-modern__actions-panel {
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 0.25rem;
+}
+
+.admin-modern__actions-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-modern__action-row {
+  width: 100%;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-modern__action-row:hover {
+  background: var(--accent-softer);
+}
+
+.admin-modern__subtabs {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.25rem;
+  border-radius: 12px;
+  background: var(--accent-softer);
+}
+
+.admin-modern__subtab {
+  padding: 0.55rem 0.85rem;
+}
+
+.admin-modern__people-view > .admin-card,
+.admin-modern__view > .admin-card {
+  margin: 0;
+}
+
+.admin-modern__view .admin-card__toggle,
+.admin-modern__people-view .admin-card__toggle {
+  display: none !important;
+}
+
+.admin-modern__google-host:empty {
+  display: none;
+}
+
+.admin-modern__google-panel {
+  margin: 0 0 0.25rem;
+  box-shadow: none;
+}
+
+.admin-modern__google-panel > .panel__header {
+  padding-top: 0;
+}
+
+.admin-modern__danger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, #b42318 42%, var(--accent-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, #b42318 5%, var(--surface));
+}
+
+.admin-modern__import-preview {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.admin-modern__import-warnings {
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in srgb, #b7791f 35%, var(--accent-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, #f6c453 12%, var(--surface));
+}
+
+.admin-modern__import-warnings h5 {
+  margin: 0 0 0.45rem;
+}
+
+.admin-modern__import-warnings ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.admin-modern__preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.admin-modern__import-done {
+  padding: 0.8rem 0.95rem;
+  border-radius: 12px;
+  background: var(--accent-softer);
+}
+
+#admin-teacher-password-form[hidden],
+#admin-student-detail-password-form[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .admin-modern__tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .admin-modern__tab {
+    white-space: nowrap;
+  }
+
+  .admin-modern__overview-header,
+  .admin-modern__people-header,
+  .admin-modern__danger {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-modern__subtabs {
+    width: 100%;
+  }
+
+  .admin-modern__subtab {
+    flex: 1;
+  }
+}

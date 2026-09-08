@@ -8,7 +8,7 @@ const {
   revokePersistedSessionsForAccounts,
 } = require('../google-link-session-revocation-core');
 
-(function testOnlyExistingIdentityChangesTriggerRevocation() {
+(function testIdentityChangesAndFirstLinksTriggerRevocation() {
   const before = {
     ...core.emptyAuthStore(),
     links: [
@@ -58,13 +58,13 @@ const {
     ...before,
     links: [
       ...before.links,
-      { accountType: 'staff', accountId: 'teacher-2', email: 'twee@koraaledu.nl', sub: '' },
+      { accountType: 'staff', accountId: 'teacher-2', email: 'twee@koraaledu.nl', sub: 'teacher-2-sub' },
     ],
   };
   assert.deepStrictEqual(
     findChangedExistingGoogleAccounts(snapshot, newLinkOnly),
-    [],
-    'Een eerste koppeling heeft geen oude Google-identiteit waarvoor sessies ingetrokken moeten worden'
+    [{ accountType: 'staff', accountId: 'teacher-2' }],
+    'Een eerste Google-koppeling is ook een identiteitsovergang en moet oudere sessies kunnen intrekken'
   );
 })();
 

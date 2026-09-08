@@ -102,6 +102,44 @@ const {
   );
 })();
 
+(function testInactiveAccountsInvalidatePersistedSessions() {
+  const now = 1_800_000_000_000;
+  const teacherDb = {
+    users: [{ id: 'teacher-inactive', role: 'teacher', passwordHash: 'hash', active: true }],
+    students: [],
+  };
+  let teacherResult = upsertSession(emptyAuthStore(), 'inactive-teacher-token', {
+    userId: 'teacher-inactive',
+    type: 'staff',
+    remember: true,
+    now,
+  });
+  teacherResult = decorateSessionResult(teacherResult, teacherDb, '/api/auth/google/callback');
+  teacherDb.users[0].active = false;
+  assert.strictEqual(
+    validatePersistedSession(teacherResult.store, 'inactive-teacher-token', teacherDb, now + 1000).reason,
+    'account-missing',
+    'Een inactieve docent mag nooit met een achtergebleven sessie door kunnen'
+  );
+
+  const studentDb = {
+    users: [],
+    students: [{ id: 'student-inactive', passwordHash: 'hash', active: true }],
+  };
+  let studentResult = upsertSession(emptyAuthStore(), 'inactive-student-token', {
+    userId: 'student-inactive',
+    type: 'student',
+    remember: true,
+    now,
+  });
+  studentResult = decorateSessionResult(studentResult, studentDb, '/api/auth/google/callback');
+  studentDb.students[0].active = false;
+  assert.strictEqual(
+    validatePersistedSession(studentResult.store, 'inactive-student-token', studentDb, now + 1000).reason,
+    'account-missing'
+  );
+})();
+
 (function testSessionsWithoutFingerprintAreRejected() {
   const token = 'legacy-record';
   const now = 1_800_000_000_000;

@@ -1,0 +1,189 @@
+.student-management {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.student-management__header,
+.student-management__section-head,
+.student-management__student-row,
+.student-management__request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.student-management__class-context {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-color, #d8d8d8);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.student-management__class-context > span:not(.student-management__class-label) {
+  opacity: 0.8;
+}
+
+.student-management__class-picker {
+  display: grid;
+  gap: 0.35rem;
+  width: min(34rem, 100%);
+}
+
+.student-management__class-picker select {
+  width: 100%;
+}
+
+.student-management__class-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.student-management__class-count {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.76;
+}
+
+.student-management__section {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #d8d8d8);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.student-management__attention {
+  border-width: 2px;
+}
+
+.student-management__section h4,
+.student-management__section h5,
+.student-management__header h3 {
+  margin: 0;
+}
+
+.student-management__class {
+  border-top: 1px solid var(--border-color, #e1e1e1);
+  padding-top: 0.75rem;
+}
+
+.student-management__class > summary,
+.student-management__section > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.student-management__student-row,
+.student-management__request {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border-color, #ececec);
+}
+
+.student-management__request--warning {
+  padding: 0.85rem;
+  border: 1px solid #d9a441;
+  border-radius: 0.75rem;
+}
+
+.student-management__student-info,
+.student-management__request-info {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.student-management__student-info span,
+.student-management__request-info span {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.student-management__row-actions,
+.student-management__dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.student-management__match {
+  font-weight: 600;
+}
+
+.student-management__match--ok {
+  opacity: 1 !important;
+}
+
+.student-management__match--warning,
+.student-management__danger-button {
+  font-weight: 700;
+}
+
+.student-management__dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  border: 0;
+  border-radius: 1rem;
+  padding: 0;
+  box-shadow: 0 1.25rem 4rem rgba(0, 0, 0, 0.2);
+}
+
+.student-management__dialog::backdrop {
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.student-management__dialog-form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.student-management__dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.student-management__dialog-header h3 {
+  margin: 0;
+}
+
+.student-management__field {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.student-management__field input,
+.student-management__field select {
+  width: 100%;
+}
+
+.student-management__message {
+  min-height: 1.2em;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .student-management__header,
+  .student-management__section-head,
+  .student-management__student-row,
+  .student-management__request,
+  .student-management__class-context {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .student-management__row-actions,
+  .student-management__dialog-actions {
+    justify-content: flex-start;
+  }
+}

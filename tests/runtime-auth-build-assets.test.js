@@ -12,6 +12,12 @@ const runtimeAuthAssets = [
   'google-auth.css',
   'google-auth.js',
   'google-login-hint.js',
+  'admin-modern.css',
+  'admin-modern.js',
+  'admin-google-links.js',
+  'student-management.css',
+  'student-management.js',
+  'student-management-compat.js',
 ];
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -41,4 +47,4 @@ for (const filename of runtimeAuthAssets) {
   );
 }
 
-console.log('Runtime Google-auth build assets test geslaagd.');
+console.log('Runtime Google-auth en beheer-assets build test geslaagd.');

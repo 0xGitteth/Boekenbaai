@@ -156,7 +156,10 @@ function shouldReadAuthStore(pathname, cookies, bearer) {
 function shouldWatchGoogleLinkMutation(req, pathname) {
   if (String(req?.method || '').toUpperCase() !== 'POST') return false;
   if (GOOGLE_LINK_MUTATION_PATHS.has(pathname)) return true;
-  return /^\/api\/auth\/google\/link-requests\/[\w-]+\/approve$/.test(pathname);
+  return (
+    /^\/api\/auth\/google\/link-requests\/[\w-]+\/approve$/.test(pathname) ||
+    /^\/api\/auth\/google\/staff-link-requests\/[\w-]+\/approve$/.test(pathname)
+  );
 }
 
 function installGoogleLinkSessionRevocation(res, beforeStore) {
@@ -171,12 +174,15 @@ function installGoogleLinkSessionRevocation(res, beforeStore) {
         const latestStore = readAuthStoreStrict();
         const changedAccounts = findChangedExistingGoogleAccounts(beforeSnapshot, latestStore);
         if (changedAccounts.length) {
-          const revoked = revokePersistedSessionsForAccounts(latestStore, changedAccounts);
-          if (revoked.revokedTokenHashes.length) {
-            for (const hash of revoked.revokedTokenHashes) {
-              revokedTokenHashes.add(hash);
-            }
-            saveAuthStoreStrict(revoked.store);
+          const beforeRevocation = revokePersistedSessionsForAccounts(beforeStore, changedAccounts);
+          const latestRevocation = revokePersistedSessionsForAccounts(latestStore, changedAccounts);
+          const hashes = new Set([
+            ...beforeRevocation.revokedTokenHashes,
+            ...latestRevocation.revokedTokenHashes,
+          ]);
+          for (const hash of hashes) revokedTokenHashes.add(hash);
+          if (latestRevocation.revokedTokenHashes.length) {
+            saveAuthStoreStrict(latestRevocation.store);
           }
         }
       }
@@ -330,5 +336,7 @@ module.exports = {
     DATA_PATH,
     AUTH_DATA_PATH,
     readAuthStoreStrict,
+    shouldWatchGoogleLinkMutation,
+    revokedTokenHashes,
   },
 };
