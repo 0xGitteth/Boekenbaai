@@ -152,10 +152,15 @@ function handleStudentDirectory(req, res, requestUrl) {
     students: db.students.filter((entry) => entry?.active !== false),
   };
   const matches = buildStudentMatches(safeDb, query).map((match) => {
-    const classNames = studentClassNames(db, match.id);
+    const classLabel = studentClassNames(db, match.id).join(', ');
+    const displayName = classLabel
+      ? `${match.displayName || match.name} · ${classLabel}`
+      : (match.displayName || match.name);
     return {
-      ...match,
-      class: classNames.join(', '),
+      id: match.id,
+      name: displayName,
+      displayName,
+      type: 'student',
     };
   });
   return sendJson(res, 200, { matches });
