@@ -16,15 +16,6 @@ const MAX_BUFFERED_BODY_BYTES = 21 * 1024 * 1024;
 const revokedRuntimeTokenHashes = new Set();
 const originalCreateServer = http.createServer.bind(http);
 
-function readAuthStore() {
-  try {
-    return core.pruneStore(core.normalizeStore(JSON.parse(fs.readFileSync(AUTH_DATA_PATH, 'utf8'))));
-  } catch (error) {
-    if (error?.code === 'ENOENT') return core.emptyAuthStore();
-    throw error;
-  }
-}
-
 function parseBearer(req) {
   const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : '';
@@ -107,15 +98,14 @@ function prepareImportRows(input) {
   return (Array.isArray(input.rows) ? input.rows : []).map((source) => {
     const row = { ...(source || {}) };
     const fullName = firstRowValue(row, ['Naam', 'Volledige naam']);
-    const hasFirst = hasRowKey(row, ['Voornaam', 'Roepnaam']);
-    const hasLast = hasRowKey(row, ['Achternaam']);
-    if (fullName && (!hasFirst || !hasLast)) {
+    const firstName = firstRowValue(row, ['Voornaam', 'Roepnaam']);
+    const middleName = firstRowValue(row, ['Voorvoegsel', 'Tussenvoegsel']);
+    const lastName = firstRowValue(row, ['Achternaam']);
+    if (fullName && (!firstName || !lastName)) {
       const parts = deriveNameParts(fullName);
-      if (!hasFirst && parts.first) row.Voornaam = parts.first;
-      if (!hasRowKey(row, ['Voorvoegsel', 'Tussenvoegsel']) && parts.middle) {
-        row.Voorvoegsel = parts.middle;
-      }
-      if (!hasLast && parts.last) row.Achternaam = parts.last;
+      if (!firstName && parts.first) row.Voornaam = parts.first;
+      if (!middleName && parts.middle) row.Voorvoegsel = parts.middle;
+      if (!lastName && parts.last) row.Achternaam = parts.last;
     }
 
     const email = firstRowValue(row, [
@@ -126,8 +116,8 @@ function prepareImportRows(input) {
       'Email',
       'Mailadres',
     ]);
-    const hasUsername = hasRowKey(row, ['Gebruikersnaam', 'Username', 'Login']);
-    if (email && !hasUsername) {
+    const username = firstRowValue(row, ['Gebruikersnaam', 'Username', 'Login']);
+    if (email && !username) {
       const account = accountByStoredEmail(input, email);
       if (account?.username) row.Gebruikersnaam = account.username;
     }
