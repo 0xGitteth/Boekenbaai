@@ -233,9 +233,11 @@ function wrapRequestListener(listener) {
       }
 
       if (requestUrl.pathname === '/api/admin/google-first/import' && req.method === 'POST') {
-        const context = resolveAdmin(req);
-        if (!context) return sendJson(res, 403, { message: 'Alleen beheerders kunnen personen importeren.' });
+        const initialContext = resolveAdmin(req);
+        if (!initialContext) return sendJson(res, 403, { message: 'Alleen beheerders kunnen personen importeren.' });
         const body = await parseBody(req);
+        const context = resolveAdmin(req);
+        if (!context) return sendJson(res, 403, { message: 'Je beheerderssessie is niet meer geldig. Log opnieuw in.' });
         const kind = body.kind === 'teacher' ? 'teacher' : body.kind === 'student' ? 'student' : '';
         if (!kind) return sendJson(res, 400, { message: 'Kies leerlingen of docenten.' });
         if (!body.file) return sendJson(res, 400, { message: 'Geen Excelbestand ontvangen.' });
