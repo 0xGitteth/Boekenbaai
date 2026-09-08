@@ -120,6 +120,7 @@
     }
     if (kind === 'teacher') {
       grid.append(metric('Zonder gekoppelde groep', summary.teachersWithoutGroups));
+      if (fullSchoolSync) grid.append(metric('Niet meer in medewerkerslijst', summary.missingTeachersFromImport));
     }
     wrapper.append(grid);
 
@@ -130,6 +131,18 @@
         make('p', {
           className: 'hint',
           text: 'Bij synchroniseren worden deze leerlingen inactief en verdwijnen ze uit de loginlijst. Hun uitleenhistorie blijft bewaard. Leerlingen met nog uitgeleende boeken worden niet automatisch afgemeld.',
+        })
+      );
+      wrapper.append(note);
+    }
+
+    if (kind === 'teacher' && fullSchoolSync && summary.missingTeachersFromImport) {
+      const note = make('div', { className: 'admin-modern__import-warnings' });
+      note.append(
+        make('h5', { text: `${summary.missingTeachersFromImport} docent${summary.missingTeachersFromImport === 1 ? '' : 'en'} niet meer in de export` }),
+        make('p', {
+          className: 'hint',
+          text: 'Bij synchroniseren worden deze docenten inactief en verliezen zij hun klasrechten. Bij een opvallend grote afname vraagt Boekenbaai extra bevestiging om een per ongeluk gefilterde of partiële export op te vangen.',
         })
       );
       wrapper.append(note);
@@ -217,10 +230,14 @@
       if (summary.needsReview) return;
       message.textContent = 'Synchronisatie wordt uitgevoerd…';
       let confirmLargeRemoval = false;
-      if (kind === 'student' && summary.largeRemovalWarning) {
-        confirmLargeRemoval = window.confirm(
-          `Let op: ${summary.missingFromImport} leerlingen staan niet in deze volledige schoollijst en worden inactief. Weet je zeker dat dit de volledige ParnasSys-export van school is?`
-        );
+      if (summary.largeRemovalWarning) {
+        const count = kind === 'teacher'
+          ? Number(summary.missingTeachersFromImport || 0)
+          : Number(summary.missingFromImport || 0);
+        const warning = kind === 'teacher'
+          ? `Let op: ${count} docenten staan niet in deze volledige medewerkerslijst en worden inactief. Weet je zeker dat dit de volledige ParnasSys-medewerkersexport is?`
+          : `Let op: ${count} leerlingen staan niet in deze volledige schoollijst en worden inactief. Weet je zeker dat dit de volledige ParnasSys-export van school is?`;
+        confirmLargeRemoval = window.confirm(warning);
         if (!confirmLargeRemoval) {
           message.textContent = 'Synchronisatie geannuleerd.';
           return;
