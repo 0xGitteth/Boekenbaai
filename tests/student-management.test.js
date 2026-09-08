@@ -154,6 +154,8 @@ async function stop() {
 function headers(token, extra = {}) {
   return {
     Cookie: `boekenbaai_session=${encodeURIComponent(token)}`,
+    Origin: baseUrl,
+    'Sec-Fetch-Site': 'same-origin',
     ...extra,
   };
 }
