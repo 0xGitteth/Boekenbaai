@@ -325,6 +325,10 @@ function largeRemovalThreshold(activeCount) {
   return Math.max(10, Math.ceil(Math.max(0, activeCount) * 0.2));
 }
 
+function largeTeacherRemovalThreshold(activeCount) {
+  return Math.max(3, Math.ceil(Math.max(0, activeCount) * 0.2));
+}
+
 function processMissingStudents(result, originalDb, incomingNumbers, options) {
   const activeNumberedBefore = (originalDb.students || []).filter(
     (student) => student?.active !== false && getParnassysStudentNumber(student)
@@ -395,41 +399,61 @@ function processTeacherDeactivations(result, originalDb, rows, options, incoming
     if (name && classNamesFromRow(row).length === 0) explicitNoGroups.push(name);
   }
 
-  const ids = new Set();
+  const explicitIds = new Set();
   for (const name of explicitNoGroups) {
     const teacher = findTeacherByExactName(result.db, name);
-    if (teacher?.active !== false) ids.add(teacher.id);
+    if (teacher?.active !== false) explicitIds.add(teacher.id);
   }
+
+  const missingIds = new Set();
+  const activeParnassysBefore = (originalDb.users || []).filter(
+    (teacher) =>
+      teacher?.role === 'teacher' &&
+      teacher?.active !== false &&
+      teacher?.source === 'parnassys'
+  );
   if (options.fullSchoolSync) {
-    for (const teacher of originalDb.users || []) {
+    for (const teacher of activeParnassysBefore) {
       if (
-        teacher?.role === 'teacher' &&
-        teacher?.active !== false &&
-        teacher?.source === 'parnassys' &&
         !incomingTeacherIds.has(teacher.id) &&
         !incomingNames.has(normalizePersonName(teacher?.name))
       ) {
-        ids.add(teacher.id);
+        missingIds.add(teacher.id);
       }
     }
   }
 
-  result.summary.teachersWithoutGroups = ids.size;
+  const ids = new Set([...explicitIds, ...missingIds]);
+  result.summary.teachersWithoutGroups = explicitIds.size;
+  result.summary.missingTeachersFromImport = options.fullSchoolSync ? missingIds.size : 0;
+  result.summary.largeRemovalWarning = Boolean(
+    options.fullSchoolSync &&
+    missingIds.size >= largeTeacherRemovalThreshold(activeParnassysBefore.length)
+  );
   result.summary.deactivated = result.summary.deactivated || 0;
+
   for (const id of ids) {
     const teacher = (result.db.users || []).find((entry) => entry?.id === id && entry?.role === 'teacher');
     if (!teacher || teacher.active === false) continue;
+    const missingFromImport = missingIds.has(id);
+    const inactiveReason = missingFromImport
+      ? 'not-in-parnassys-school-list'
+      : 'no-linked-parnassys-groups';
     if (options.applyDeactivations) {
-      deactivateTeacher(result.db, result.store, teacher, options.actorId, 'no-linked-parnassys-groups');
+      deactivateTeacher(result.db, result.store, teacher, options.actorId, inactiveReason);
       result.summary.deactivated += 1;
     }
     result.results.push({
       status: options.applyDeactivations ? 'deactivated' : 'would-deactivate',
       id: teacher.id,
       name: teacher.name || '',
-      reason: options.applyDeactivations
-        ? 'Geen gekoppelde ParnasSys-groep; docentaccount is inactief gemaakt.'
-        : 'Geen gekoppelde ParnasSys-groep; dit docentaccount wordt bij synchroniseren inactief.',
+      reason: missingFromImport
+        ? options.applyDeactivations
+          ? 'Niet meer in de volledige ParnasSys-medewerkerslijst en daarom inactief gemaakt.'
+          : 'Staat niet in deze volledige ParnasSys-medewerkerslijst.'
+        : options.applyDeactivations
+          ? 'Geen gekoppelde ParnasSys-groep; docentaccount is inactief gemaakt.'
+          : 'Geen gekoppelde ParnasSys-groep; dit docentaccount wordt bij synchroniseren inactief.',
     });
   }
 }
