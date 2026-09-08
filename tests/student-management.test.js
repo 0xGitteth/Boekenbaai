@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const core = require('../google-auth-core');
+const { accountCredentialFingerprint } = require('../google-auth-security-core');
 
 const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-student-management-'));
@@ -66,6 +67,14 @@ const db = {
 db.books.push({ id: 'book-1', title: 'Boek in bezit', status: 'borrowed', borrowedBy: 'student-borrowed' });
 fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
 
+function accountForSession(userId, type) {
+  if (type === 'student') {
+    const student = db.students.find((entry) => entry.id === userId);
+    return student ? { ...student, role: 'student' } : null;
+  }
+  return db.users.find((entry) => entry.id === userId) || null;
+}
+
 let store = core.emptyAuthStore();
 for (const [token, userId, type] of [
   [tokens.teacherA, 'teacher-a', 'staff'],
@@ -74,6 +83,10 @@ for (const [token, userId, type] of [
   [tokens.student, 'student-existing', 'student'],
 ]) {
   store = core.upsertSession(store, token, { userId, type, remember: false, now: Date.now() }).store;
+  const session = store.sessions.find((entry) => entry.tokenHash === core.tokenHash(token));
+  const account = accountForSession(userId, type);
+  session.accountFingerprint = accountCredentialFingerprint(account);
+  session.authMethod = type === 'student' || account?.role === 'teacher' ? 'google' : 'password';
 }
 store.linkRequests.push({
   id: 'google-request-warning',
