@@ -106,6 +106,8 @@ async function stop() {
 function adminHeaders(extra = {}) {
   return {
     Cookie: `boekenbaai_session=${encodeURIComponent(adminToken)}`,
+    Origin: baseUrl,
+    'Sec-Fetch-Site': 'same-origin',
     ...extra,
   };
 }
