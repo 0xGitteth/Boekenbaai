@@ -93,6 +93,54 @@ assert.throws(
   'De expliciet-nieuwkeuze mag de verplichte ParnasSys-bestandsvalidatie niet omzeilen'
 );
 
+const legacyTeacherDb = {
+  books: [],
+  students: [],
+  users: [{
+    id: 'legacy-teacher',
+    role: 'teacher',
+    name: 'Sam De Vries',
+    username: 'sam',
+    passwordHash: 'x',
+    classIds: ['teacher-class-a'],
+    active: true,
+    source: 'legacy',
+  }],
+  classes: [{
+    id: 'teacher-class-a',
+    name: 'Klas A',
+    studentIds: [],
+    teacherIds: ['legacy-teacher'],
+  }],
+  history: [],
+};
+const promotedTeacher = runSchoolSync({
+  kind: 'teacher',
+  db: legacyTeacherDb,
+  store: core.emptyAuthStore(),
+  rows: [{ Roepnaam: 'Sam', Achternaam: 'De Vries', 'Gekoppelde groepen': 'Klas A' }],
+  fullSchoolSync: true,
+});
+assert.strictEqual(
+  promotedTeacher.db.users.find((entry) => entry.id === 'legacy-teacher').source,
+  'parnassys',
+  'Een bestaande docent die succesvol uit ParnasSys wordt gematcht moet voortaan door ParnasSys beheerd worden'
+);
+const teacherMissingLater = runSchoolSync({
+  kind: 'teacher',
+  db: promotedTeacher.db,
+  store: promotedTeacher.store,
+  rows: [{ Roepnaam: 'Andere', Achternaam: 'Docent', 'Gekoppelde groepen': 'Klas B' }],
+  fullSchoolSync: true,
+  applyDeactivations: true,
+  actorId: 'admin',
+});
+assert.strictEqual(
+  teacherMissingLater.db.users.find((entry) => entry.id === 'legacy-teacher').active,
+  false,
+  'Een later ontbrekende gematchte ParnasSys-docent moet bij een volledige sync wel kunnen worden gedeactiveerd'
+);
+
 const uiSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'school-sync-finalize.js'), 'utf8');
 assert.match(uiSource, /Geen match, maak een nieuw leerlingaccount/);
 assert.match(uiSource, /'__new__'/);
