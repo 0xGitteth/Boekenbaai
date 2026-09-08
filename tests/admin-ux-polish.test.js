@@ -65,6 +65,16 @@ assert.match(
   /body: \{ staffId: currentId, email:/,
   'Schoolmail opslaan moet de geselecteerde docent gebruiken'
 );
+assert.match(
+  googleLinks,
+  /selectedTeacherId\(\) !== teacherId[\s\S]*scheduleRender\(\)/,
+  'Een oud laadantwoord mag niet in het detail van een nieuw geselecteerde docent terechtkomen'
+);
+assert.match(
+  googleLinks,
+  /selectedTeacherId\(\) !== currentId[\s\S]*scheduleRender\(\)/,
+  'Een schoolmail-save voor een vorige selectie mag de nieuwe docentweergave niet overschrijven'
+);
 assert.doesNotMatch(
   googleLinks,
   /Kies een docent/,
