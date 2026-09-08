@@ -70,11 +70,14 @@ function getSelectedAccount(db, type, accountId) {
   const id = String(accountId || '').trim();
   if (!id) return null;
   if (type === 'student') {
-    const account = db.students.find((entry) => entry?.id === id);
+    const account = db.students.find((entry) => entry?.id === id && entry?.active !== false);
     return account ? { id: account.id, role: 'student', authMode: 'google' } : null;
   }
   const account = db.users.find(
-    (entry) => entry?.id === id && ['teacher', 'admin'].includes(entry?.role)
+    (entry) =>
+      entry?.id === id &&
+      entry?.active !== false &&
+      ['teacher', 'admin'].includes(entry?.role)
   );
   if (!account) return null;
   return {
@@ -155,9 +158,6 @@ function directoryNetworkKey(req) {
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
-  // Bij een proxy die een door de client meegegeven X-Forwarded-For aanvult,
-  // is het eerste element spoofbaar. De laatste doorgestuurde hop is daarom de
-  // conservatievere keuze; bij Sliplane's normale één-adresheader is dit gelijk.
   const forwarded = String(forwardedParts[forwardedParts.length - 1] || '').slice(0, 128);
   const remote = String(req.socket?.remoteAddress || '').trim().slice(0, 128);
   return hashRateKey(`${forwarded || 'no-forwarded'}\u0000${remote || 'no-remote'}`);
@@ -236,7 +236,7 @@ function wrapRequestListener(listener) {
         const accountId = requestUrl.searchParams.get('accountId') || '';
         const account = getSelectedAccount(readDatabaseWithPolicy(), type, accountId);
         if (!account) {
-          return sendJson(res, 404, { message: 'Kies een geldig account uit de lijst.' });
+          return sendJson(res, 404, { message: 'Kies een geldig actief account uit de lijst.' });
         }
         return sendJson(res, 200, {
           accountId: account.id,
