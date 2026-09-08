@@ -12,6 +12,7 @@ const runtimeAuthAssets = [
   'google-login-hint.js',
   'admin-modern.css',
   'admin-modern.js',
+  'admin-google-links.js',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
