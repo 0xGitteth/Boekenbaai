@@ -2,8 +2,8 @@
   'use strict';
 
   const syncState = {
-    student: { fileData: '', manualMatches: {}, preview: null },
-    teacher: { fileData: '', manualMatches: {}, preview: null },
+    student: { fileData: '', manualMatches: {}, preview: null, revision: 0 },
+    teacher: { fileData: '', manualMatches: {}, preview: null, revision: 0 },
   };
 
   function make(tag, options = {}) {
@@ -95,6 +95,8 @@
       select.addEventListener('change', async () => {
         if (select.value) syncState[kind].manualMatches[review.studentNumber] = select.value;
         else delete syncState[kind].manualMatches[review.studentNumber];
+        syncState[kind].preview = null;
+        syncState[kind].revision += 1;
         select.disabled = true;
         await rerun();
       });
@@ -165,6 +167,7 @@
     sync.addEventListener('click', apply);
     cancel.addEventListener('click', () => {
       syncState[kind].preview = null;
+      syncState[kind].revision += 1;
       resultHost.replaceChildren();
     });
     actions.append(sync, cancel);
@@ -203,6 +206,11 @@
         message.textContent = 'Kies eerst een Excelbestand.';
         return;
       }
+      const requestRevision = syncState[kind].revision + 1;
+      syncState[kind].revision = requestRevision;
+      const fileData = syncState[kind].fileData;
+      const fullSchoolSync = full.checkbox.checked;
+      const manualMatches = { ...syncState[kind].manualMatches };
       previewButton.disabled = true;
       message.textContent = 'Voorcontrole wordt uitgevoerd…';
       try {
@@ -210,23 +218,33 @@
           method: 'POST',
           body: {
             kind,
-            file: syncState[kind].fileData,
-            fullSchoolSync: full.checkbox.checked,
-            manualMatches: syncState[kind].manualMatches,
+            file: fileData,
+            fullSchoolSync,
+            manualMatches,
           },
         });
+        if (
+          requestRevision !== syncState[kind].revision ||
+          fileData !== syncState[kind].fileData ||
+          fullSchoolSync !== full.checkbox.checked
+        ) return;
         syncState[kind].preview = payload;
         message.textContent = 'Voorcontrole gereed.';
-        renderPreview(kind, results, payload, full.checkbox.checked, runPreview, applySync);
+        renderPreview(kind, results, payload, fullSchoolSync, runPreview, applySync);
       } catch (error) {
-        message.textContent = error.message;
+        if (requestRevision === syncState[kind].revision) message.textContent = error.message;
       } finally {
-        previewButton.disabled = false;
+        if (requestRevision === syncState[kind].revision) previewButton.disabled = false;
       }
     }
 
     async function applySync() {
-      const summary = syncState[kind].preview?.summary || {};
+      const preview = syncState[kind].preview;
+      if (!preview) {
+        message.textContent = 'Voer eerst een actuele voorcontrole uit.';
+        return;
+      }
+      const summary = preview.summary || {};
       if (summary.needsReview) return;
       message.textContent = 'Synchronisatie wordt uitgevoerd…';
       let confirmLargeRemoval = false;
@@ -283,6 +301,9 @@
     file.addEventListener('change', async () => {
       syncState[kind].manualMatches = {};
       syncState[kind].preview = null;
+      syncState[kind].revision += 1;
+      const fileRevision = syncState[kind].revision;
+      previewButton.disabled = false;
       results.replaceChildren();
       const selected = file.files?.[0];
       if (!selected) {
@@ -292,16 +313,23 @@
       }
       message.textContent = 'Bestand wordt gelezen…';
       try {
-        syncState[kind].fileData = await readFileBase64(selected);
+        const fileData = await readFileBase64(selected);
+        if (fileRevision !== syncState[kind].revision) return;
+        syncState[kind].fileData = fileData;
         message.textContent = `${selected.name} klaar voor voorcontrole.`;
       } catch (error) {
+        if (fileRevision !== syncState[kind].revision) return;
         syncState[kind].fileData = '';
         message.textContent = error.message;
       }
     });
     previewButton.addEventListener('click', runPreview);
     full.checkbox.addEventListener('change', () => {
-      if (syncState[kind].preview) runPreview();
+      const hadPreview = Boolean(syncState[kind].preview);
+      syncState[kind].preview = null;
+      syncState[kind].revision += 1;
+      results.replaceChildren();
+      if (hadPreview && syncState[kind].fileData) runPreview();
     });
     return block;
   }
