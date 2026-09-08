@@ -50,6 +50,7 @@ function makeWorkbookBase64(rows) {
 }
 
 const child = spawn(process.execPath, [
+  '--require', path.join(root, 'student-login-directory-preload.js'),
   '--require', path.join(root, 'student-management-preload.js'),
   '--require', path.join(root, 'google-auth-security-preload.js'),
   '--require', path.join(root, 'local-password-auth-preload.js'),
@@ -118,6 +119,7 @@ function adminHeaders(extra = {}) {
     assert.match(html, /admin-google-links\.js/);
     assert.match(html, /student-management\.css/);
     assert.match(html, /student-management\.js/);
+    assert.match(html, /student-management-compat\.js/);
     assert.match(html, /google-auth\.js/);
 
     const denied = await fetch(`${baseUrl}/api/admin/google-first/summary`);
@@ -177,11 +179,12 @@ function adminHeaders(extra = {}) {
     assert.strictEqual(persistedStore.links.length, 0, 'Google-koppeling gebeurt pas bij de eerste login van de leerling');
 
     console.log('Google-first admin preload integration test geslaagd.');
+  } catch (error) {
+    console.error(error);
+    if (stderr.length) console.error(stderr.join(''));
+    process.exitCode = 1;
   } finally {
     await stop();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+})();
