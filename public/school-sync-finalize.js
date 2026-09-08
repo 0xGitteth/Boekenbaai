@@ -90,6 +90,7 @@
         const classes = (candidate.classNames || []).join(', ');
         select.append(new Option(`${candidate.name}${classes ? ` · ${classes}` : ''}`, candidate.id));
       }
+      select.append(new Option('Geen match, maak een nieuw leerlingaccount', '__new__'));
       select.value = syncState[kind].manualMatches[review.studentNumber] || '';
       select.addEventListener('change', async () => {
         if (select.value) syncState[kind].manualMatches[review.studentNumber] = select.value;
