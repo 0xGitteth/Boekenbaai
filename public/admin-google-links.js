@@ -4,6 +4,7 @@
   let renderBusy = false;
   let renderTimer = null;
   let lastStaffSignature = '';
+  let targetedObserversInstalled = false;
 
   function make(tag, options = {}) {
     const element = document.createElement(tag);
@@ -44,6 +45,16 @@
       .map((entry) => [entry.id, entry.name, entry.googleEmail, Boolean(entry.googleVerified)].join('|'))
       .sort()
       .join('\n');
+  }
+
+  function removeLegacyPanels() {
+    document.querySelectorAll('#teacher-dashboard .google-manage:not(.admin-modern-google-links)')
+      .forEach((node) => node.remove());
+    const host = document.querySelector('#admin-modern-google-host');
+    if (host) {
+      host.querySelectorAll('.google-manage:not(.admin-modern-google-links)')
+        .forEach((node) => node.remove());
+    }
   }
 
   function addEmailForm(section, { entries, endpoint, idField, domain }) {
@@ -141,6 +152,7 @@
       });
       panel.append(staffSection);
       host.append(panel);
+      removeLegacyPanels();
     } catch (error) {
       // Het paneel is aanvullend; de rest van beheer blijft bruikbaar.
     } finally {
@@ -153,27 +165,47 @@
     renderTimer = window.setTimeout(render, 150);
   }
 
-  function install() {
+  function installTargetedObservers() {
+    if (targetedObserversInstalled) return true;
     const dashboard = document.querySelector('#admin-dashboard');
-    if (!dashboard) return;
-    scheduleRender();
-    const observer = new MutationObserver(() => {
+    const teacherCard = document.querySelector('.admin-card--teachers');
+    const teacherDashboard = document.querySelector('#teacher-dashboard');
+    const host = document.querySelector('#admin-modern-google-host');
+    if (!dashboard || !teacherCard || !teacherDashboard || !host) return false;
+
+    targetedObserversInstalled = true;
+
+    const dashboardObserver = new MutationObserver(() => {
       if (dashboard.classList.contains('hidden')) {
         lastStaffSignature = '';
         return;
       }
       scheduleRender();
-      const host = document.querySelector('#admin-modern-google-host');
-      if (host) {
-        host.querySelectorAll('.google-manage:not(.admin-modern-google-links)').forEach((node) => node.remove());
-      }
     });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class'],
+    dashboardObserver.observe(dashboard, { attributes: true, attributeFilter: ['class'] });
+
+    const teacherObserver = new MutationObserver(() => {
+      lastStaffSignature = '';
+      scheduleRender();
     });
+    teacherObserver.observe(teacherCard, { childList: true, subtree: true });
+
+    const legacyObserver = new MutationObserver(() => {
+      removeLegacyPanels();
+    });
+    legacyObserver.observe(teacherDashboard, { childList: true, subtree: true });
+
+    removeLegacyPanels();
+    scheduleRender();
+    return true;
+  }
+
+  function install() {
+    if (installTargetedObservers()) return;
+    const bootstrapObserver = new MutationObserver(() => {
+      if (installTargetedObservers()) bootstrapObserver.disconnect();
+    });
+    bootstrapObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   document.addEventListener('DOMContentLoaded', install);
