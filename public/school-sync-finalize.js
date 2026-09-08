@@ -208,6 +208,8 @@
       }
       const requestRevision = syncState[kind].revision + 1;
       syncState[kind].revision = requestRevision;
+      syncState[kind].preview = null;
+      results.replaceChildren();
       const fileData = syncState[kind].fileData;
       const fullSchoolSync = full.checkbox.checked;
       const manualMatches = { ...syncState[kind].manualMatches };
@@ -301,13 +303,13 @@
     file.addEventListener('change', async () => {
       syncState[kind].manualMatches = {};
       syncState[kind].preview = null;
+      syncState[kind].fileData = '';
       syncState[kind].revision += 1;
       const fileRevision = syncState[kind].revision;
-      previewButton.disabled = false;
       results.replaceChildren();
       const selected = file.files?.[0];
+      previewButton.disabled = Boolean(selected);
       if (!selected) {
-        syncState[kind].fileData = '';
         message.textContent = '';
         return;
       }
@@ -316,10 +318,11 @@
         const fileData = await readFileBase64(selected);
         if (fileRevision !== syncState[kind].revision) return;
         syncState[kind].fileData = fileData;
+        previewButton.disabled = false;
         message.textContent = `${selected.name} klaar voor voorcontrole.`;
       } catch (error) {
         if (fileRevision !== syncState[kind].revision) return;
-        syncState[kind].fileData = '';
+        previewButton.disabled = false;
         message.textContent = error.message;
       }
     });
