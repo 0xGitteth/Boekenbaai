@@ -7,6 +7,7 @@ const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
 const { setParnassysStudentNumber, getParnassysStudentNumber } = require('./google-first-people-import');
+const { commitPairedJson } = require('./paired-store-commit');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -687,8 +688,12 @@ function deactivateStudent(context, studentId) {
     `${student.name} is van school afgemeld`,
     { studentId: student.id, changedBy: context.user.id }
   );
-  writeJsonAtomic(DATA_PATH, context.db);
-  saveAuthStore(context.store);
+  commitPairedJson({
+    dataPath: DATA_PATH,
+    authPath: AUTH_DATA_PATH,
+    data: context.db,
+    auth: core.pruneStore(context.store),
+  });
   return { status: 200, payload: { studentId: student.id, inactive: true } };
 }
 
