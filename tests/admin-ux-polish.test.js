@@ -22,8 +22,33 @@ assert.match(
 );
 assert.match(
   releaseUi,
+  /\[data-admin-people-view="students"\] \.admin-card--students[\s\S]*display: none !important/,
+  'De oude leerlingaccountkaart mag niet naast het nieuwe leerlingbeheer zichtbaar blijven'
+);
+assert.match(
+  releaseUi,
   /\+ Docent toevoegen/,
   'Docentenbeheer moet dezelfde duidelijke toevoegactie krijgen als leerlingbeheer'
+);
+assert.match(
+  releaseUi,
+  /Docenten staan per klas gegroepeerd/,
+  'Docentenbeheer moet standaard klasgericht worden uitgelegd'
+);
+assert.match(
+  releaseUi,
+  /teacherIdsForClass\(klass, teachers\)[\s\S]*createTeacherButton\(teacher, selectedId\)/,
+  'Docenten moeten per klas worden gerenderd met hun bestaande account-ID'
+);
+assert.match(
+  releaseUi,
+  /button\.dataset\.teacherId = teacher\.id/,
+  'Dezelfde docent moet vanuit iedere klasvermelding hetzelfde teacherId openen'
+);
+assert.match(
+  releaseUi,
+  /Zonder klas/,
+  'Handmatig aangemaakte docenten zonder klas moeten vindbaar blijven'
 );
 assert.match(
   releaseUi,
@@ -34,6 +59,21 @@ assert.match(
   releaseUi,
   /setTextIfChanged\(button, 'Importeren'\)/,
   'De beheer-tab moet Importeren heten'
+);
+assert.match(
+  releaseUi,
+  /startsWith\('boekenbaai_last_books_import_job'\)/,
+  'Een afgeronde boekenimport moet zijn herstelreferentie uit localStorage kunnen wissen'
+);
+assert.match(
+  releaseUi,
+  /text === 'Import gereed\.'/,
+  'De reset moet op een afgeronde boekenimport reageren'
+);
+assert.match(
+  releaseUi,
+  /resetBookImportUi/,
+  'De boekenimport-UI moet naar een schone beginstaat kunnen terugkeren'
 );
 assert.doesNotMatch(
   compat,
