@@ -402,7 +402,9 @@ function processTeacherDeactivations(result, originalDb, rows, options, incoming
   const explicitIds = new Set();
   for (const name of explicitNoGroups) {
     const teacher = findTeacherByExactName(result.db, name);
-    if (teacher && teacher.active !== false) explicitIds.add(teacher.id);
+    if (teacher && teacher.active !== false && teacher.source === 'parnassys') {
+      explicitIds.add(teacher.id);
+    }
   }
 
   const missingIds = new Set();
