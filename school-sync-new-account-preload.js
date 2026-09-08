@@ -1,14 +1,9 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-const http = require('http');
 const syncCore = require('./school-sync-core');
 const { applyPeopleImport } = require('./google-first-people-import');
 
 const originalRunSchoolSync = syncCore.runSchoolSync;
-const originalCreateServer = http.createServer.bind(http);
-const PUBLIC_SYNC_SCRIPT = path.join(__dirname, 'public', 'school-sync-finalize.js');
 
 syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}) {
   if (input.kind !== 'student') return originalRunSchoolSync(input);
@@ -59,58 +54,6 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
   result.summary.unchanged = result.results.filter((entry) => entry?.status === 'unchanged').length;
   result.summary.needsReview = result.results.filter((entry) => entry?.status === 'needs-review').length;
   return result;
-};
-
-const EXTRA_UI = `
-;(() => {
-  'use strict';
-  function addNewAccountChoice() {
-    document.querySelectorAll('.school-sync__review-row select').forEach((select) => {
-      if (Array.from(select.options).some((option) => option.value === '__new__')) return;
-      select.append(new Option('Geen match, maak een nieuw leerlingaccount', '__new__'));
-    });
-  }
-  function install() {
-    addNewAccountChoice();
-    const observer = new MutationObserver(addNewAccountChoice);
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
-  else install();
-})();
-`;
-
-function sendSyncScript(res) {
-  const source = fs.readFileSync(PUBLIC_SYNC_SCRIPT, 'utf8');
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.end(`${source}\n${EXTRA_UI}`);
-}
-
-function wrapRequestListener(listener) {
-  return function schoolSyncNewAccountListener(req, res) {
-    let pathname = '';
-    try {
-      pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
-    } catch (error) {
-      return listener(req, res);
-    }
-    if (req.method === 'GET' && pathname === '/school-sync-finalize.js') {
-      return sendSyncScript(res);
-    }
-    return listener(req, res);
-  };
-}
-
-http.createServer = function patchedCreateServer(...args) {
-  const listenerIndex = typeof args[0] === 'function' ? 0 : 1;
-  const listener = args[listenerIndex];
-  if (typeof listener !== 'function') return originalCreateServer(...args);
-  const wrapped = wrapRequestListener(listener);
-  if (listenerIndex === 0) return originalCreateServer(wrapped);
-  return originalCreateServer(args[0], wrapped);
 };
 
 module.exports = {
