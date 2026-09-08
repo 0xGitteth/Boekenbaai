@@ -271,6 +271,35 @@ async function json(pathname, { token, method = 'GET', body } = {}) {
     const afterAdmin = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(afterAdmin.classes.find((entry) => entry.id === 'class-a').studentIds.includes(newStudentId), true);
 
+    const staleRequest = await json(`/api/mentor/students/${newStudentId}/transfer`, {
+      token: tokens.teacherA,
+      method: 'POST',
+      body: { fromClassId: 'class-a', toClassId: 'class-b' },
+    });
+    assert.strictEqual(staleRequest.response.status, 201);
+    const staleId = staleRequest.payload.transfer.id;
+
+    const afterExternalMove = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const externallyMovedStudent = afterExternalMove.students.find((entry) => entry.id === newStudentId);
+    externallyMovedStudent.classIds = ['class-c'];
+    for (const klass of afterExternalMove.classes) {
+      klass.studentIds = (klass.studentIds || []).filter((id) => id !== newStudentId);
+    }
+    afterExternalMove.classes.find((entry) => entry.id === 'class-c').studentIds.push(newStudentId);
+    fs.writeFileSync(dbPath, JSON.stringify(afterExternalMove, null, 2));
+
+    const staleAccept = await json(`/api/mentor/student-transfers/${staleId}/accept`, {
+      token: tokens.teacherB,
+      method: 'POST',
+    });
+    assert.strictEqual(staleAccept.response.status, 409);
+    assert.strictEqual(staleAccept.payload.code, 'transfer-source-changed');
+    const afterStaleAccept = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const staleTransfer = afterStaleAccept.studentTransferRequests.find((entry) => entry.id === staleId);
+    assert.strictEqual(staleTransfer.status, 'cancelled');
+    assert.deepStrictEqual(afterStaleAccept.students.find((entry) => entry.id === newStudentId).classIds, ['class-c']);
+    assert.strictEqual(afterStaleAccept.classes.find((entry) => entry.id === 'class-b').studentIds.includes(newStudentId), false);
+
     const borrowedBlocked = await json('/api/mentor/students/student-borrowed/deactivate', {
       token: tokens.teacherA,
       method: 'POST',
