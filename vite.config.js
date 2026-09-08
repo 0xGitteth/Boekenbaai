@@ -13,6 +13,8 @@ const runtimeAuthAssets = [
   'admin-modern.css',
   'admin-modern.js',
   'admin-google-links.js',
+  'student-management.css',
+  'student-management.js',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
