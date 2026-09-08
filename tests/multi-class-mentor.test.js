@@ -76,8 +76,28 @@ function baseDb() {
   );
   assert.match(
     source,
-    /body:\s*\{\s*toClassId:\s*select\.value,\s*fromClassId:\s*sourceClassId\(student\)\s*\}/,
-    'De actieve bronklas moet naar de backend worden gestuurd'
+    /function openTransfer\(student, sourceClassOverride = ''\)/,
+    'De weergegeven klas moet expliciet aan het verplaatsingsdialoog kunnen worden meegegeven'
+  );
+  assert.match(
+    source,
+    /const fromClassId = sourceClassOverride \|\| sourceClassId\(student\)/,
+    'De expliciete bronklas moet voorrang krijgen op fallback-logica'
+  );
+  assert.match(
+    source,
+    /body:\s*\{\s*toClassId:\s*select\.value,\s*fromClassId\s*\}/,
+    'De vastgelegde bronklas moet naar de backend worden gestuurd'
+  );
+  assert.match(
+    source,
+    /students\.forEach\(\(student\) => section\.append\(studentRow\(student, klass\.id\)\)\)/,
+    'Een docent moet de actieve klas expliciet aan iedere leerlingrij meegeven'
+  );
+  assert.match(
+    source,
+    /students\.forEach\(\(student\) => details\.append\(studentRow\(student, adminClass\.id\)\)\)/,
+    'Beheer moet de bronklas van het zichtbare klasblok expliciet meegeven'
   );
 })();
 
