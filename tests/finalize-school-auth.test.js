@@ -16,6 +16,7 @@ const port = 31452;
 const baseUrl = `http://127.0.0.1:${port}`;
 const secret = 'finalize-auth-secret';
 const adminToken = 'admin-finalize-session';
+const legacyTeacherToken = 'teacher-legacy-session';
 
 const db = {
   books: [],
@@ -67,6 +68,17 @@ let auth = core.upsertSession(core.emptyAuthStore(), adminToken, {
 }).store;
 auth.sessions[0].authMethod = 'password';
 auth.sessions[0].accountFingerprint = accountCredentialFingerprint(db.users[0]);
+auth = core.upsertSession(auth, legacyTeacherToken, {
+  userId: 'teacher-1',
+  type: 'staff',
+  remember: true,
+  now: Date.now(),
+}).store;
+const legacyTeacherSession = auth.sessions.find(
+  (entry) => entry.tokenHash === core.tokenHash(legacyTeacherToken)
+);
+legacyTeacherSession.authMethod = 'password';
+legacyTeacherSession.accountFingerprint = accountCredentialFingerprint(db.users[1]);
 fs.writeFileSync(authPath, JSON.stringify(auth, null, 2));
 
 const child = spawn(process.execPath, [
@@ -234,6 +246,15 @@ function sameOriginHeaders(cookie, extra = {}) {
       'De mentorwaarschuwing moet de profielnaam uit de echt geverifieerde Google-login krijgen'
     );
 
+    const legacyTeacherMe = await fetch(`${baseUrl}/api/me`, {
+      headers: { Authorization: `Bearer ${legacyTeacherToken}` },
+    });
+    assert.strictEqual(
+      legacyTeacherMe.status,
+      200,
+      'De test moet de oude docentsessie eerst bewust in de runtimecache laden'
+    );
+
     const teacherStart = await prepareGoogleStart('staff', 'teacher-1');
     const teacherCallback = await callback({ ...teacherStart, code: 'teacher-code' });
     assert.strictEqual(teacherCallback.status, 302);
@@ -274,6 +295,15 @@ function sameOriginHeaders(cookie, extra = {}) {
       }
     );
     assert.strictEqual(approve.status, 200);
+
+    const legacyTeacherAfterApproval = await fetch(`${baseUrl}/api/me`, {
+      headers: { Authorization: `Bearer ${legacyTeacherToken}` },
+    });
+    assert.strictEqual(
+      legacyTeacherAfterApproval.status,
+      401,
+      'Eerste Google-goedkeuring moet ook een reeds gecachete oude docentsessie direct intrekken'
+    );
 
     const pendingStatus = await fetch(`${baseUrl}/api/auth/google/staff-pending`, {
       headers: { Cookie: cookieHeader({ boekenbaai_google_pending: teacherPending }) },
