@@ -27,12 +27,21 @@ function findChangedExistingGoogleAccounts(beforeSnapshot, afterStore) {
   const before = beforeSnapshot instanceof Map ? beforeSnapshot : new Map();
   const after = snapshotGoogleLinks(afterStore);
   const changed = [];
-  for (const [key, previous] of before.entries()) {
+  const keys = new Set([...before.keys(), ...after.keys()]);
+
+  for (const key of keys) {
+    const previous = before.get(key) || null;
     const next = after.get(key) || null;
-    if (!next || previous.email !== next.email || previous.sub !== next.sub) {
+    if (
+      !previous ||
+      !next ||
+      previous.email !== next.email ||
+      previous.sub !== next.sub
+    ) {
+      const identity = next || previous;
       changed.push({
-        accountType: previous.accountType,
-        accountId: previous.accountId,
+        accountType: identity.accountType,
+        accountId: identity.accountId,
       });
     }
   }
