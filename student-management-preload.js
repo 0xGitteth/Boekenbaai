@@ -123,7 +123,10 @@ function resolveStaff(req) {
     const session = core.resolveSession(store, token);
     if (!session || session.type !== 'staff') continue;
     const user = db.users.find(
-      (entry) => entry?.id === session.userId && ['teacher', 'admin'].includes(entry?.role)
+      (entry) =>
+        entry?.id === session.userId &&
+        entry?.active !== false &&
+        ['teacher', 'admin'].includes(entry?.role)
     );
     if (user) return { db, store, user, token };
   }
@@ -465,6 +468,15 @@ function createTransfer(context, studentId, body) {
   const toClassId = String(body.toClassId || '').trim();
   const targetClass = context.db.classes.find((entry) => entry?.id === toClassId);
   if (!targetClass) return { status: 404, payload: { message: 'Doelklas niet gevonden.' } };
+  if (!Array.isArray(targetClass.teacherIds) || targetClass.teacherIds.length === 0) {
+    return {
+      status: 409,
+      payload: {
+        code: 'class-without-mentor',
+        message: 'Deze klas heeft geen mentor gekoppeld. Laat Beheer de klasgegevens controleren.',
+      },
+    };
+  }
   const ownIds = managedClassIds(context.db, context.user);
   const currentIds = studentClassIds(context.db, student);
   const requestedFrom = String(body.fromClassId || '').trim();
@@ -479,7 +491,6 @@ function createTransfer(context, studentId, body) {
   if (existing) return { status: 409, payload: { message: 'Er staat al een verplaatsingsverzoek voor deze leerling open.' } };
 
   const now = new Date().toISOString();
-  const hasTargetMentor = Array.isArray(targetClass.teacherIds) && targetClass.teacherIds.length > 0;
   const request = {
     id: crypto.randomUUID(),
     studentId: student.id,
@@ -487,8 +498,8 @@ function createTransfer(context, studentId, body) {
     toClassId,
     requestedBy: context.user.id,
     status: 'pending',
-    escalatedToAdmin: !hasTargetMentor,
-    escalationReason: hasTargetMentor ? '' : 'no-target-mentor',
+    escalatedToAdmin: false,
+    escalationReason: '',
     createdAt: now,
     updatedAt: now,
   };
@@ -504,23 +515,62 @@ function createTransfer(context, studentId, body) {
   return { status: 201, payload: { transfer: transferForResponse(context.db, request) } };
 }
 
+function cancelStaleTransfer(db, request, reviewerId) {
+  const student = db.students.find((entry) => entry?.id === request.studentId && entry?.active !== false);
+  if (!student) return false;
+  const currentIds = studentClassIds(db, student);
+  if (currentIds.includes(request.fromClassId)) return false;
+  const now = new Date().toISOString();
+  request.status = 'cancelled';
+  request.reviewedBy = reviewerId;
+  request.updatedAt = now;
+  request.escalatedToAdmin = false;
+  request.escalationReason = 'source-membership-changed';
+  appendHistory(
+    db,
+    'student_transfer_cancelled_stale',
+    `Oud verplaatsingsverzoek voor ${student.name} is geannuleerd omdat de leerling niet meer in de bronklas zit`,
+    { studentId: student.id, fromClassId: request.fromClassId, toClassId: request.toClassId, changedBy: reviewerId }
+  );
+  return true;
+}
+
 function performTransfer(db, request, reviewerId) {
   const student = db.students.find((entry) => entry?.id === request.studentId && entry?.active !== false);
   const targetClass = db.classes.find((entry) => entry?.id === request.toClassId);
   if (!student || !targetClass) throw new Error('Leerling of doelklas bestaat niet meer.');
-  const currentIds = studentClassIds(db, student).filter((id) => id !== request.fromClassId);
-  if (!currentIds.includes(targetClass.id)) currentIds.push(targetClass.id);
-  ensureClassMembership(db, student, currentIds);
+  const currentIds = studentClassIds(db, student);
+  if (!currentIds.includes(request.fromClassId)) {
+    cancelStaleTransfer(db, request, reviewerId);
+    return { stale: true };
+  }
+  const nextIds = currentIds.filter((id) => id !== request.fromClassId);
+  if (!nextIds.includes(targetClass.id)) nextIds.push(targetClass.id);
+  ensureClassMembership(db, student, nextIds);
   request.status = 'accepted';
   request.reviewedBy = reviewerId;
   request.updatedAt = new Date().toISOString();
   request.escalatedToAdmin = false;
+  request.escalationReason = '';
   appendHistory(
     db,
     'student_transferred',
     `${student.name} is verplaatst naar ${targetClass.name}`,
     { studentId: student.id, fromClassId: request.fromClassId, toClassId: request.toClassId, changedBy: reviewerId }
   );
+  return { stale: false };
+}
+
+function staleTransferResult(context, request) {
+  writeJsonAtomic(DATA_PATH, context.db);
+  return {
+    status: 409,
+    payload: {
+      code: 'transfer-source-changed',
+      message: 'Deze leerling zit inmiddels niet meer in de oorspronkelijke klas. Het oude verplaatsingsverzoek is geannuleerd.',
+      transfer: transferForResponse(context.db, request),
+    },
+  };
 }
 
 function reviewTransfer(context, transferId, action) {
@@ -530,6 +580,9 @@ function reviewTransfer(context, transferId, action) {
   }
   if (!ownsClass(context.db, context.user, request.toClassId)) {
     return { status: 403, payload: { message: 'Alleen de nieuwe mentor of beheer kan dit verzoek beoordelen.' } };
+  }
+  if (cancelStaleTransfer(context.db, request, context.user.id)) {
+    return staleTransferResult(context, request);
   }
   if (action === 'accept') {
     performTransfer(context.db, request, context.user.id);
@@ -556,6 +609,9 @@ function resolveEscalatedTransfer(context, transferId, action) {
   const request = context.db.studentTransferRequests.find((entry) => entry?.id === transferId);
   if (!request || !['pending', 'rejected'].includes(request.status) || !request.escalatedToAdmin) {
     return { status: 404, payload: { message: 'Openstaand beheerverzoek niet gevonden.' } };
+  }
+  if (cancelStaleTransfer(context.db, request, context.user.id)) {
+    return staleTransferResult(context, request);
   }
   if (action === 'accept') {
     performTransfer(context.db, request, context.user.id);
@@ -714,7 +770,7 @@ function injectManagementAssets(req, res, listener) {
         if (!html.includes(needle)) html = html.replace(/<\/body>/i, `  ${tag}\n</body>`);
       }
       nextChunk = html;
-      res.removeHeader('Content-Length');
+      if (!res.headersSent) res.removeHeader('Content-Length');
     }
     if (enc !== undefined) return originalEnd(nextChunk, enc, cb);
     return originalEnd(nextChunk, cb);
@@ -739,8 +795,10 @@ function handleManagementApi(req, res, requestUrl) {
 
   if (req.method === 'POST' && requestUrl.pathname === '/api/mentor/students') {
     parseBody(req).then((body) => {
-      const result = addStudent(context, body);
-      sendJson(res, result.status, result.payload);
+      const freshContext = resolveStaff(req);
+      if (!freshContext) return sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
+      const result = addStudent(freshContext, body);
+      return sendJson(res, result.status, result.payload);
     }).catch((error) => sendJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 400, { message: error.message }));
     return true;
   }
@@ -748,29 +806,46 @@ function handleManagementApi(req, res, requestUrl) {
   const transferStart = requestUrl.pathname.match(/^\/api\/mentor\/students\/([\w-]+)\/transfer$/);
   if (req.method === 'POST' && transferStart) {
     parseBody(req).then((body) => {
-      const result = createTransfer(context, transferStart[1], body);
-      sendJson(res, result.status, result.payload);
+      const freshContext = resolveStaff(req);
+      if (!freshContext) return sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
+      const result = createTransfer(freshContext, transferStart[1], body);
+      return sendJson(res, result.status, result.payload);
     }).catch((error) => sendJson(res, 400, { message: error.message }));
     return true;
   }
 
   const review = requestUrl.pathname.match(/^\/api\/mentor\/student-transfers\/([\w-]+)\/(accept|reject)$/);
   if (req.method === 'POST' && review) {
-    const result = reviewTransfer(context, review[1], review[2]);
+    const freshContext = resolveStaff(req);
+    if (!freshContext) {
+      sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
+      return true;
+    }
+    const result = reviewTransfer(freshContext, review[1], review[2]);
     sendJson(res, result.status, result.payload);
     return true;
   }
 
   const resolve = requestUrl.pathname.match(/^\/api\/admin\/student-transfers\/([\w-]+)\/(accept|cancel)$/);
   if (req.method === 'POST' && resolve) {
-    const result = resolveEscalatedTransfer(context, resolve[1], resolve[2]);
+    const freshContext = resolveStaff(req);
+    if (!freshContext) {
+      sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
+      return true;
+    }
+    const result = resolveEscalatedTransfer(freshContext, resolve[1], resolve[2]);
     sendJson(res, result.status, result.payload);
     return true;
   }
 
   const deactivate = requestUrl.pathname.match(/^\/api\/mentor\/students\/([\w-]+)\/deactivate$/);
   if (req.method === 'POST' && deactivate) {
-    const result = deactivateStudent(context, deactivate[1]);
+    const freshContext = resolveStaff(req);
+    if (!freshContext) {
+      sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
+      return true;
+    }
+    const result = deactivateStudent(freshContext, deactivate[1]);
     sendJson(res, result.status, result.payload);
     return true;
   }
@@ -820,5 +895,6 @@ module.exports = {
     studentClassIds,
     buildManagementState,
     activeBorrowedBooks,
+    cancelStaleTransfer,
   },
 };
