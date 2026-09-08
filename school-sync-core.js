@@ -33,6 +33,11 @@ function normalizedRowValue(row, keys) {
   return '';
 }
 
+function normalizedRowHasKey(row, keys) {
+  const normalized = normalizeRow(row);
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(normalized, normalizeKey(key)));
+}
+
 function studentNumberFromRow(row) {
   return normalizedRowValue(row, [
     'Leerlingnummer',
@@ -48,6 +53,48 @@ function personNameFromRow(row) {
 
 function classNamesFromRow(row) {
   return extractClassNames(normalizeRow(row));
+}
+
+function validateSchoolSyncRows(kind, rows) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  const hasStudentNumber = rows.some((row) => normalizedRowHasKey(row, [
+    'Leerlingnummer',
+    'Leerling nummer',
+    'Leerlingnr',
+    'Studentnummer',
+  ]));
+  const hasCurrentGroup = rows.some((row) => normalizedRowHasKey(row, [
+    'Huidige groep',
+    'Huidigegroep',
+  ]));
+  const hasLinkedGroups = rows.some((row) => normalizedRowHasKey(row, [
+    'Gekoppelde groepen',
+  ]));
+
+  if (kind === 'student') {
+    if (hasLinkedGroups && !(hasStudentNumber && hasCurrentGroup)) {
+      const error = new Error('Dit lijkt een ParnasSys-medewerkersbestand. Upload hier de leerlingenexport met Leerlingnummer en Huidige groep.');
+      error.code = 'WRONG_PARNASSYS_EXPORT';
+      throw error;
+    }
+    if (!hasStudentNumber || !hasCurrentGroup) {
+      const error = new Error('Dit bestand wordt niet herkend als ParnasSys-leerlingenexport. Verwachte kolommen zijn onder andere Leerlingnummer en Huidige groep.');
+      error.code = 'UNKNOWN_PARNASSYS_EXPORT';
+      throw error;
+    }
+    return;
+  }
+
+  if (hasStudentNumber && !hasLinkedGroups) {
+    const error = new Error('Dit lijkt een ParnasSys-leerlingenbestand. Upload hier de medewerkersexport met Gekoppelde groepen.');
+    error.code = 'WRONG_PARNASSYS_EXPORT';
+    throw error;
+  }
+  if (!hasLinkedGroups || hasStudentNumber) {
+    const error = new Error('Dit bestand wordt niet herkend als ParnasSys-medewerkersexport. De kolom Gekoppelde groepen is vereist.');
+    error.code = 'UNKNOWN_PARNASSYS_EXPORT';
+    throw error;
+  }
 }
 
 function personParts(value) {
@@ -339,7 +386,7 @@ function findTeacherByExactName(db, name) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function processTeacherDeactivations(result, originalDb, rows, options) {
+function processTeacherDeactivations(result, originalDb, rows, options, incomingTeacherIds = new Set()) {
   const incomingNames = new Set();
   const explicitNoGroups = [];
   for (const row of rows) {
@@ -359,6 +406,7 @@ function processTeacherDeactivations(result, originalDb, rows, options) {
         teacher?.role === 'teacher' &&
         teacher?.active !== false &&
         teacher?.source === 'parnassys' &&
+        !incomingTeacherIds.has(teacher.id) &&
         !incomingNames.has(normalizePersonName(teacher?.name))
       ) {
         ids.add(teacher.id);
@@ -398,6 +446,8 @@ function runSchoolSync(input = {}) {
     actorId: clean(input.actorId),
   };
 
+  validateSchoolSyncRows(kind, rows);
+
   let preparedRows = rows;
   let reviews = [];
   let incomingNumbers = new Set();
@@ -423,7 +473,12 @@ function runSchoolSync(input = {}) {
   if (kind === 'student') {
     processMissingStudents(result, originalDb, incomingNumbers, options);
   } else {
-    processTeacherDeactivations(result, originalDb, rows, options);
+    const incomingTeacherIds = new Set(
+      (result.results || [])
+        .filter((entry) => entry?.id && ['created', 'updated', 'unchanged'].includes(entry?.status))
+        .map((entry) => entry.id)
+    );
+    processTeacherDeactivations(result, originalDb, rows, options, incomingTeacherIds);
   }
 
   return result;
@@ -438,5 +493,6 @@ module.exports = {
   personNameFromRow,
   classNamesFromRow,
   activeBorrowedBooks,
+  validateSchoolSyncRows,
   runSchoolSync,
 };
