@@ -81,6 +81,18 @@ assert.throws(
   'Zonder personeelsnummer mogen twee identieke docentnamen niet stilletjes worden samengevoegd'
 );
 
+assert.throws(
+  () => runSchoolSync({
+    kind: 'student',
+    db: { books: [], students: [], users: [], classes: [], history: [] },
+    store: core.emptyAuthStore(),
+    rows: [{ Leerlingnummer: '91001', Roepnaam: 'Losse', Achternaam: 'Rij' }],
+    manualMatches: { '91001': '__new__' },
+  }),
+  /niet herkend als ParnasSys-leerlingenexport/i,
+  'De expliciet-nieuwkeuze mag de verplichte ParnasSys-bestandsvalidatie niet omzeilen'
+);
+
 const uiSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'school-sync-finalize.js'), 'utf8');
 assert.match(uiSource, /Geen match, maak een nieuw leerlingaccount/);
 assert.match(uiSource, /'__new__'/);
