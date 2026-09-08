@@ -14,6 +14,43 @@
   gap: 1rem;
 }
 
+.student-management__class-context {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-color, #d8d8d8);
+  border-radius: 1rem;
+  background: var(--surface, #fff);
+}
+
+.student-management__class-context > span:not(.student-management__class-label) {
+  opacity: 0.8;
+}
+
+.student-management__class-picker {
+  display: grid;
+  gap: 0.35rem;
+  width: min(34rem, 100%);
+}
+
+.student-management__class-picker select {
+  width: 100%;
+}
+
+.student-management__class-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.student-management__class-count {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.76;
+}
+
 .student-management__section {
   display: grid;
   gap: 0.75rem;
@@ -139,7 +176,8 @@
   .student-management__header,
   .student-management__section-head,
   .student-management__student-row,
-  .student-management__request {
+  .student-management__request,
+  .student-management__class-context {
     align-items: stretch;
     flex-direction: column;
   }
