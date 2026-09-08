@@ -85,6 +85,10 @@
     renderBusy = true;
     try {
       const data = await api('/api/auth/google/manage');
+      if (selectedTeacherId() !== teacherId) {
+        scheduleRender();
+        return;
+      }
       if (data.role !== 'admin') return;
       const entry = (data.staff || []).find((staff) => staff?.id === teacherId && staff?.role !== 'admin');
       if (!entry) {
@@ -110,28 +114,35 @@
           event.preventDefault();
           const currentId = selectedTeacherId();
           if (!currentId) return;
+          const submittedEmail = email?.value || '';
           if (save) save.disabled = true;
           if (status) status.textContent = 'Schoolmail wordt opgeslagen…';
           try {
             const result = await api('/api/auth/google/staff-email', {
               method: 'POST',
-              body: { staffId: currentId, email: email?.value || '' },
+              body: { staffId: currentId, email: submittedEmail },
             });
+            if (selectedTeacherId() !== currentId) {
+              scheduleRender();
+              return;
+            }
             if (status) {
               status.textContent = result.googleVerified
-                ? `Google gekoppeld · ${result.googleEmail || email?.value || ''}`
-                : `Schoolmail opgeslagen · ${result.googleEmail || email?.value || ''}`;
+                ? `Google gekoppeld · ${result.googleEmail || submittedEmail}`
+                : `Schoolmail opgeslagen · ${result.googleEmail || submittedEmail}`;
             }
           } catch (error) {
-            if (status) status.textContent = error.message;
+            if (selectedTeacherId() === currentId && status) status.textContent = error.message;
           } finally {
             if (save) save.disabled = false;
           }
         });
       }
     } catch (error) {
-      const status = section.querySelector('#admin-teacher-google-status');
-      if (status) status.textContent = error.message;
+      if (selectedTeacherId() === teacherId) {
+        const status = section.querySelector('#admin-teacher-google-status');
+        if (status) status.textContent = error.message;
+      }
     } finally {
       renderBusy = false;
     }
