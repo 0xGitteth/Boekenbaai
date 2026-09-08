@@ -14,6 +14,7 @@ const runtimeAuthAssets = [
   'google-login-hint.js',
   'admin-modern.css',
   'admin-modern.js',
+  'admin-google-links.js',
 ];
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
