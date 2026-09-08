@@ -143,7 +143,15 @@ async function stop() {
 
     const hardeningAsset = await fetch(`${baseUrl}/release-ui-hardening.js`);
     assert.strictEqual(hardeningAsset.status, 200);
-    assert.match(await hardeningAsset.text(), /googleFirstPasswordShim/);
+    const hardeningSource = await hardeningAsset.text();
+    assert.match(hardeningSource, /removePassiveAccountActions/);
+    assert.doesNotMatch(hardeningSource, /Node\.prototype/, 'UI-hardening mag DOM-prototypes niet globaal monkeypatchen');
+
+    const adminModernAsset = await fetch(`${baseUrl}/admin-modern.js`);
+    assert.strictEqual(adminModernAsset.status, 200);
+    const adminModernSource = await adminModernAsset.text();
+    assert.match(adminModernSource, /googleFirstPasswordShim/, 'Verborgen technische wachtwoorden moeten lokaal door admin-modern worden ingevuld');
+    assert.match(adminModernSource, /setTextIfChanged/, 'Admin-modern moet observer-updates idempotent uitvoeren');
 
     const blocked = await fetch(`${baseUrl}/api/mentor/students`, {
       method: 'POST',
