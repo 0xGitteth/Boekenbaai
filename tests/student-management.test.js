@@ -88,6 +88,7 @@ store.linkRequests.push({
 fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
 const child = spawn(process.execPath, [
+  '--require', path.join(root, 'student-login-directory-preload.js'),
   '--require', path.join(root, 'student-management-preload.js'),
   '--require', path.join(root, 'google-auth-security-preload.js'),
   '--require', path.join(root, 'local-password-auth-preload.js'),
@@ -164,6 +165,7 @@ async function json(pathname, { token, method = 'GET', body } = {}) {
     const html = await page.text();
     assert.match(html, /student-management\.css/);
     assert.match(html, /student-management\.js/);
+    assert.match(html, /student-management-compat\.js/);
     assert.match(html, /admin-modern\.js/);
 
     const stateA = await json('/api/mentor/student-management', { token: tokens.teacherA });
@@ -270,7 +272,7 @@ async function json(pathname, { token, method = 'GET', body } = {}) {
     );
 
     const directory = await fetch(`${baseUrl}/api/login-search?q=san&type=student`, {
-      headers: { 'X-Forwarded-For': '198.51.100.91' },
+      headers: { 'Sec-Fetch-Site': 'same-origin', 'X-Forwarded-For': '198.51.100.91' },
     });
     const directoryPayload = await directory.json();
     assert.strictEqual(directoryPayload.matches.some((entry) => entry.id === 'student-existing'), false);
