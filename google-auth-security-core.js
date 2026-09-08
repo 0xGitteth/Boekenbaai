@@ -58,12 +58,17 @@ function accountCredentialFingerprint(account) {
 function findAccountForSession(db, session) {
   if (!session?.userId) return null;
   if (session.type === 'student') {
-    const student = (db?.students || []).find((entry) => entry?.id === session.userId);
+    const student = (db?.students || []).find(
+      (entry) => entry?.id === session.userId && entry?.active !== false
+    );
     return student ? { ...student, role: 'student' } : null;
   }
   return (
     (db?.users || []).find(
-      (entry) => entry?.id === session.userId && ['teacher', 'admin'].includes(entry?.role)
+      (entry) =>
+        entry?.id === session.userId &&
+        ['teacher', 'admin'].includes(entry?.role) &&
+        entry?.active !== false
     ) || null
   );
 }
