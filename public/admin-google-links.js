@@ -1,7 +1,9 @@
 (() => {
   'use strict';
 
-  let renderedForSession = false;
+  let renderBusy = false;
+  let renderTimer = null;
+  let lastStaffSignature = '';
 
   function make(tag, options = {}) {
     const element = document.createElement(tag);
@@ -34,6 +36,14 @@
       ? entry.googleVerified ? ' · Google gekoppeld' : ' · mail vooraf gekoppeld'
       : '';
     return `${entry.name || 'Onbekend'}${status}`;
+  }
+
+  function staffSignature(entries) {
+    return (entries || [])
+      .filter((entry) => entry?.role !== 'admin')
+      .map((entry) => [entry.id, entry.name, entry.googleEmail, Boolean(entry.googleVerified)].join('|'))
+      .sort()
+      .join('\n');
   }
 
   function addEmailForm(section, { entries, endpoint, idField, domain }) {
@@ -81,6 +91,8 @@
         status.textContent = result.googleVerified
           ? 'Schoolmail gekoppeld en Google-account geverifieerd.'
           : 'Schoolmail gekoppeld. Google verifieert dit bij de eerste login.';
+        lastStaffSignature = '';
+        scheduleRender();
       } catch (error) {
         status.textContent = error.message;
       } finally {
@@ -95,59 +107,73 @@
   async function render() {
     const dashboard = document.querySelector('#admin-dashboard');
     const host = document.querySelector('#admin-modern-google-host');
-    if (!dashboard || dashboard.classList.contains('hidden') || !host || renderedForSession) return;
+    if (!dashboard || dashboard.classList.contains('hidden') || !host || renderBusy) return;
 
-    let data;
+    renderBusy = true;
     try {
-      data = await api('/api/auth/google/manage');
+      const data = await api('/api/auth/google/manage');
+      if (data.role !== 'admin') return;
+      const signature = staffSignature(data.staff || []);
+      const existing = host.querySelector('.admin-modern-google-links');
+      if (existing && signature === lastStaffSignature) return;
+      lastStaffSignature = signature;
+      host.querySelectorAll('.admin-modern-google-links').forEach((node) => node.remove());
+
+      const panel = make('section', { className: 'google-manage panel admin-modern-google-links' });
+      const header = make('div', { className: 'panel__header' });
+      const headerText = make('div');
+      headerText.append(
+        make('h3', { text: 'Docentaccounts' }),
+        make('p', {
+          className: 'panel__subtitle',
+          text: 'Een schoolmail vooraf koppelen mag, maar hoeft niet. Zonder vooraf gekoppeld adres vraagt Boekenbaai Beheer de eerste Google-login eenmalig goed te keuren.',
+        })
+      );
+      header.append(headerText);
+      panel.append(header);
+
+      const staffSection = make('div', { className: 'google-manage__section' });
+      addEmailForm(staffSection, {
+        entries: data.staff || [],
+        endpoint: '/api/auth/google/staff-email',
+        idField: 'staffId',
+        domain: data.domain || 'koraaledu.nl',
+      });
+      panel.append(staffSection);
+      host.append(panel);
     } catch (error) {
-      return;
+      // Het paneel is aanvullend; de rest van beheer blijft bruikbaar.
+    } finally {
+      renderBusy = false;
     }
-    if (data.role !== 'admin') return;
+  }
 
-    renderedForSession = true;
-    host.querySelectorAll('.admin-modern-google-links').forEach((node) => node.remove());
-
-    const panel = make('section', { className: 'google-manage panel admin-modern-google-links' });
-    const header = make('div', { className: 'panel__header' });
-    const headerText = make('div');
-    headerText.append(
-      make('h3', { text: 'Docentaccounts' }),
-      make('p', {
-        className: 'panel__subtitle',
-        text: 'Alleen als je het schoolmailadres al weet kun je een docent vooraf koppelen. Leerlingen koppelen zichzelf bij hun eerste Google-login en worden door hun mentor gecontroleerd.',
-      })
-    );
-    header.append(headerText);
-    panel.append(header);
-
-    const staffSection = make('div', { className: 'google-manage__section' });
-    addEmailForm(staffSection, {
-      entries: data.staff || [],
-      endpoint: '/api/auth/google/staff-email',
-      idField: 'staffId',
-      domain: data.domain || 'koraaledu.nl',
-    });
-    panel.append(staffSection);
-    host.append(panel);
+  function scheduleRender() {
+    window.clearTimeout(renderTimer);
+    renderTimer = window.setTimeout(render, 150);
   }
 
   function install() {
     const dashboard = document.querySelector('#admin-dashboard');
     if (!dashboard) return;
-    render();
+    scheduleRender();
     const observer = new MutationObserver(() => {
       if (dashboard.classList.contains('hidden')) {
-        renderedForSession = false;
+        lastStaffSignature = '';
         return;
       }
-      render();
+      scheduleRender();
       const host = document.querySelector('#admin-modern-google-host');
       if (host) {
         host.querySelectorAll('.google-manage:not(.admin-modern-google-links)').forEach((node) => node.remove());
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class'],
+    });
   }
 
   document.addEventListener('DOMContentLoaded', install);
