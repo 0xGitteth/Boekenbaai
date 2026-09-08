@@ -42,6 +42,20 @@
     return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
   }
 
+  function setTextIfChanged(element, text) {
+    if (element && element.textContent !== text) element.textContent = text;
+  }
+
+  function installTechnicalPasswordShim(formSelector, inputSelector) {
+    const form = document.querySelector(formSelector);
+    if (!form || form.dataset.googleFirstPasswordShim) return;
+    form.dataset.googleFirstPasswordShim = 'true';
+    form.addEventListener('submit', () => {
+      const input = document.querySelector(inputSelector);
+      if (input && !input.value) input.value = randomLegacyPassword();
+    }, true);
+  }
+
   function hideLegacyPasswordUi() {
     const teacherPasswordForm = document.querySelector('#admin-teacher-password-form');
     if (teacherPasswordForm) teacherPasswordForm.hidden = true;
@@ -61,23 +75,17 @@
     document.querySelectorAll('[data-reset-teacher="true"], #admin-student-detail-password-generate, #admin-student-password-generate, #admin-teacher-add-password-generate')
       .forEach((element) => { element.hidden = true; });
 
-    const teacherHint = document.querySelector('.admin-card--teachers .admin-card__heading .hint');
-    if (teacherHint) {
-      teacherHint.textContent = 'Maak docenten aan, koppel klassen en beheer hun schoolaccount voor Google-inlog.';
-    }
-    const studentHint = document.querySelector('.admin-card--students .admin-card__heading .hint');
-    if (studentHint) {
-      studentHint.textContent = 'Maak leerlingaccounts aan, beheer klasindelingen en koppel schoolaccounts voor Google-inlog.';
-    }
+    setTextIfChanged(
+      document.querySelector('.admin-card--teachers .admin-card__heading .hint'),
+      'Maak docenten aan, koppel klassen en beheer hun schoolaccount voor Google-inlog.'
+    );
+    setTextIfChanged(
+      document.querySelector('.admin-card--students .admin-card__heading .hint'),
+      'Maak leerlingaccounts aan, beheer klasindelingen en koppel schoolaccounts voor Google-inlog.'
+    );
 
-    const teacherAddForm = document.querySelector('#admin-teacher-add-form');
-    if (teacherAddForm && !teacherAddForm.dataset.googleFirstPasswordShim) {
-      teacherAddForm.dataset.googleFirstPasswordShim = 'true';
-      teacherAddForm.addEventListener('submit', () => {
-        const input = document.querySelector('#admin-teacher-add-password');
-        if (input && !input.value) input.value = randomLegacyPassword();
-      }, true);
-    }
+    installTechnicalPasswordShim('#admin-teacher-add-form', '#admin-teacher-add-password');
+    installTechnicalPasswordShim('#admin-student-form', '#admin-student-password');
   }
 
   function expandCard(card) {
