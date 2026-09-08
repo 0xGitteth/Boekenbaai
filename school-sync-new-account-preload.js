@@ -45,12 +45,29 @@ function assertUniqueSourceIdentities(input = {}) {
   throw error;
 }
 
+function markImportedTeachersAsParnassys(result) {
+  const importedIds = new Set(
+    (result?.results || [])
+      .map((entry) => String(entry?.id || '').trim())
+      .filter(Boolean)
+  );
+  if (!importedIds.size) return result;
+  for (const user of result?.db?.users || []) {
+    if (user?.role === 'teacher' && importedIds.has(String(user.id || ''))) {
+      user.source = 'parnassys';
+    }
+  }
+  return result;
+}
+
 syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}) {
   const rows = Array.isArray(input.rows) ? input.rows : [];
   const kind = input.kind === 'teacher' ? 'teacher' : 'student';
   syncCore.validateSchoolSyncRows(kind, rows);
   assertUniqueSourceIdentities({ ...input, kind, rows });
-  if (kind !== 'student') return originalRunSchoolSync(input);
+  if (kind === 'teacher') {
+    return markImportedTeachersAsParnassys(originalRunSchoolSync({ ...input, kind, rows }));
+  }
   const manualMatches = input.manualMatches && typeof input.manualMatches === 'object'
     ? input.manualMatches
     : {};
@@ -105,5 +122,6 @@ module.exports = {
     createNewValue: '__new__',
     duplicateSourceIdentity,
     assertUniqueSourceIdentities,
+    markImportedTeachersAsParnassys,
   },
 };
