@@ -3,14 +3,14 @@
 
   let renderBusy = false;
   let renderTimer = null;
-  let lastStaffSignature = '';
-  let targetedObserversInstalled = false;
+  let installed = false;
 
   function make(tag, options = {}) {
     const element = document.createElement(tag);
     if (options.className) element.className = options.className;
     if (options.text !== undefined) element.textContent = options.text;
     if (options.type) element.type = options.type;
+    if (options.id) element.id = options.id;
     return element;
   }
 
@@ -32,129 +32,106 @@
     return payload;
   }
 
-  function optionLabel(entry) {
-    const status = entry.googleEmail
-      ? entry.googleVerified ? ' · Google gekoppeld' : ' · mail vooraf gekoppeld'
-      : '';
-    return `${entry.name || 'Onbekend'}${status}`;
+  function removeStandaloneTeacherLinkPanels() {
+    document.querySelectorAll('.admin-modern-google-links').forEach((node) => node.remove());
+    document.querySelectorAll('#teacher-dashboard .google-manage').forEach((node) => node.remove());
   }
 
-  function staffSignature(entries) {
-    return (entries || [])
-      .filter((entry) => entry?.role !== 'admin')
-      .map((entry) => [entry.id, entry.name, entry.googleEmail, Boolean(entry.googleVerified)].join('|'))
-      .sort()
-      .join('\n');
+  function selectedTeacherId() {
+    const content = document.querySelector('#admin-teacher-detail-content');
+    if (!content || content.classList.contains('hidden')) return '';
+    return String(content.dataset.teacherId || '').trim();
   }
 
-  function removeLegacyPanels() {
-    document.querySelectorAll('#teacher-dashboard .google-manage:not(.admin-modern-google-links)')
-      .forEach((node) => node.remove());
-    const host = document.querySelector('#admin-modern-google-host');
-    if (host) {
-      host.querySelectorAll('.google-manage:not(.admin-modern-google-links)')
-        .forEach((node) => node.remove());
-    }
+  function statusText(entry) {
+    if (entry?.googleVerified) return `Google gekoppeld · ${entry.googleEmail || 'schoolmail bekend'}`;
+    if (entry?.googleEmail) return `Schoolmail staat klaar voor eerste Google-login · ${entry.googleEmail}`;
+    return 'Nog geen Google-schoolaccount gekoppeld.';
   }
 
-  function addEmailForm(section, { entries, endpoint, idField, domain }) {
-    const form = make('form', { className: 'google-manage__form' });
-    const select = document.createElement('select');
-    select.required = true;
-    select.append(new Option('Kies een docent', ''));
-    for (const entry of entries || []) {
-      if (entry.role === 'admin') continue;
-      const option = new Option(optionLabel(entry), entry.id);
-      option.dataset.email = entry.googleEmail || '';
-      option.dataset.verified = entry.googleVerified ? 'true' : 'false';
-      select.append(option);
-    }
+  function ensureSection() {
+    const detail = document.querySelector('#admin-teacher-detail-content');
+    const classForm = document.querySelector('#admin-teacher-classes-form');
+    if (!detail || !classForm) return null;
 
-    const email = make('input');
-    email.type = 'email';
-    email.placeholder = `naam@${domain}`;
-    email.required = true;
-    const save = make('button', { className: 'btn btn--secondary', text: 'Schoolmail koppelen', type: 'submit' });
-    const status = make('p', { className: 'hint' });
+    let section = detail.querySelector('#admin-teacher-google-account');
+    if (section) return section;
 
-    select.addEventListener('change', () => {
-      const option = select.selectedOptions[0];
-      email.value = option?.dataset.email || '';
-      if (!option?.value) status.textContent = '';
-      else if (option.dataset.verified === 'true') status.textContent = 'Dit Google-account is geverifieerd.';
-      else if (option.dataset.email) status.textContent = 'Schoolmail staat klaar voor de eerste Google-login.';
-      else status.textContent = 'Nog geen schoolmail gekoppeld.';
+    section = make('section', {
+      className: 'admin-teacher-detail__section admin-ux__teacher-google',
+      id: 'admin-teacher-google-account',
     });
-
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      if (!select.value) return;
-      save.disabled = true;
-      status.textContent = 'Koppeling wordt opgeslagen…';
-      try {
-        const result = await api(endpoint, {
-          method: 'POST',
-          body: { [idField]: select.value, email: email.value },
-        });
-        const option = select.selectedOptions[0];
-        option.dataset.email = result.googleEmail || email.value;
-        option.dataset.verified = result.googleVerified ? 'true' : 'false';
-        status.textContent = result.googleVerified
-          ? 'Schoolmail gekoppeld en Google-account geverifieerd.'
-          : 'Schoolmail gekoppeld. Google verifieert dit bij de eerste login.';
-        lastStaffSignature = '';
-        scheduleRender();
-      } catch (error) {
-        status.textContent = error.message;
-      } finally {
-        save.disabled = false;
-      }
-    });
-
-    form.append(select, email, save);
-    section.append(form, status);
+    section.innerHTML = `
+      <h5>Google-schoolaccount</h5>
+      <p class="hint admin-ux__teacher-google-copy">Beheer hier de schoolmail van deze docent. Zonder vooraf gekoppeld adres kan de docent bij de eerste Google-login een goedkeuringsverzoek naar Beheer sturen.</p>
+      <form class="google-manage__form" id="admin-teacher-google-form">
+        <label class="visually-hidden" for="admin-teacher-google-email">Schoolmail</label>
+        <input id="admin-teacher-google-email" type="email" autocomplete="off" required />
+        <button class="btn btn--secondary" type="submit">Schoolmail opslaan</button>
+      </form>
+      <p id="admin-teacher-google-status" class="hint" role="status" aria-live="polite"></p>
+    `;
+    classForm.insertAdjacentElement('afterend', section);
+    return section;
   }
 
-  async function render() {
+  async function renderSelectedTeacher() {
     const dashboard = document.querySelector('#admin-dashboard');
-    const host = document.querySelector('#admin-modern-google-host');
-    if (!dashboard || dashboard.classList.contains('hidden') || !host || renderBusy) return;
+    const teacherId = selectedTeacherId();
+    if (!dashboard || dashboard.classList.contains('hidden') || !teacherId || renderBusy) return;
 
+    const section = ensureSection();
+    if (!section) return;
     renderBusy = true;
     try {
       const data = await api('/api/auth/google/manage');
       if (data.role !== 'admin') return;
-      const signature = staffSignature(data.staff || []);
-      const existing = host.querySelector('.admin-modern-google-links');
-      if (existing && signature === lastStaffSignature) return;
-      lastStaffSignature = signature;
-      host.querySelectorAll('.admin-modern-google-links').forEach((node) => node.remove());
+      const entry = (data.staff || []).find((staff) => staff?.id === teacherId && staff?.role !== 'admin');
+      if (!entry) {
+        section.hidden = true;
+        return;
+      }
+      section.hidden = false;
+      section.dataset.teacherId = teacherId;
 
-      const panel = make('section', { className: 'google-manage panel admin-modern-google-links' });
-      const header = make('div', { className: 'panel__header' });
-      const headerText = make('div');
-      headerText.append(
-        make('h3', { text: 'Docentaccounts' }),
-        make('p', {
-          className: 'panel__subtitle',
-          text: 'Een schoolmail vooraf koppelen mag, maar hoeft niet. Zonder vooraf gekoppeld adres vraagt Boekenbaai Beheer de eerste Google-login eenmalig goed te keuren.',
-        })
-      );
-      header.append(headerText);
-      panel.append(header);
+      const email = section.querySelector('#admin-teacher-google-email');
+      const status = section.querySelector('#admin-teacher-google-status');
+      const form = section.querySelector('#admin-teacher-google-form');
+      const save = form?.querySelector('[type="submit"]');
+      if (email) {
+        email.value = entry.googleEmail || '';
+        email.placeholder = `naam@${data.domain || 'koraaledu.nl'}`;
+      }
+      if (status) status.textContent = statusText(entry);
 
-      const staffSection = make('div', { className: 'google-manage__section' });
-      addEmailForm(staffSection, {
-        entries: data.staff || [],
-        endpoint: '/api/auth/google/staff-email',
-        idField: 'staffId',
-        domain: data.domain || 'koraaledu.nl',
-      });
-      panel.append(staffSection);
-      host.append(panel);
-      removeLegacyPanels();
+      if (form && !form.dataset.googleTeacherDetailBound) {
+        form.dataset.googleTeacherDetailBound = 'true';
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const currentId = selectedTeacherId();
+          if (!currentId) return;
+          if (save) save.disabled = true;
+          if (status) status.textContent = 'Schoolmail wordt opgeslagen…';
+          try {
+            const result = await api('/api/auth/google/staff-email', {
+              method: 'POST',
+              body: { staffId: currentId, email: email?.value || '' },
+            });
+            if (status) {
+              status.textContent = result.googleVerified
+                ? `Google gekoppeld · ${result.googleEmail || email?.value || ''}`
+                : `Schoolmail opgeslagen · ${result.googleEmail || email?.value || ''}`;
+            }
+          } catch (error) {
+            if (status) status.textContent = error.message;
+          } finally {
+            if (save) save.disabled = false;
+          }
+        });
+      }
     } catch (error) {
-      // Het paneel is aanvullend; de rest van beheer blijft bruikbaar.
+      const status = section.querySelector('#admin-teacher-google-status');
+      if (status) status.textContent = error.message;
     } finally {
       renderBusy = false;
     }
@@ -162,50 +139,25 @@
 
   function scheduleRender() {
     window.clearTimeout(renderTimer);
-    renderTimer = window.setTimeout(render, 150);
-  }
-
-  function installTargetedObservers() {
-    if (targetedObserversInstalled) return true;
-    const dashboard = document.querySelector('#admin-dashboard');
-    const teacherCard = document.querySelector('.admin-card--teachers');
-    const teacherDashboard = document.querySelector('#teacher-dashboard');
-    const host = document.querySelector('#admin-modern-google-host');
-    if (!dashboard || !teacherCard || !teacherDashboard || !host) return false;
-
-    targetedObserversInstalled = true;
-
-    const dashboardObserver = new MutationObserver(() => {
-      if (dashboard.classList.contains('hidden')) {
-        lastStaffSignature = '';
-        return;
-      }
-      scheduleRender();
-    });
-    dashboardObserver.observe(dashboard, { attributes: true, attributeFilter: ['class'] });
-
-    const teacherObserver = new MutationObserver(() => {
-      lastStaffSignature = '';
-      scheduleRender();
-    });
-    teacherObserver.observe(teacherCard, { childList: true, subtree: true });
-
-    const legacyObserver = new MutationObserver(() => {
-      removeLegacyPanels();
-    });
-    legacyObserver.observe(teacherDashboard, { childList: true, subtree: true });
-
-    removeLegacyPanels();
-    scheduleRender();
-    return true;
+    renderTimer = window.setTimeout(renderSelectedTeacher, 80);
   }
 
   function install() {
-    if (installTargetedObservers()) return;
-    const bootstrapObserver = new MutationObserver(() => {
-      if (installTargetedObservers()) bootstrapObserver.disconnect();
+    if (installed) return;
+    installed = true;
+    removeStandaloneTeacherLinkPanels();
+    scheduleRender();
+
+    const observer = new MutationObserver(() => {
+      removeStandaloneTeacherLinkPanels();
+      scheduleRender();
     });
-    bootstrapObserver.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-teacher-id'],
+    });
   }
 
   document.addEventListener('DOMContentLoaded', install);
