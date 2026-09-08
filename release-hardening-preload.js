@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const core = require('./google-auth-core');
+const { validatePersistedSession } = require('./google-auth-security-core');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -12,6 +13,7 @@ const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
 const AUTH_DATA_PATH = process.env.BOEKENBAAI_AUTH_DATA_PATH
   ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
   : `${DATA_PATH}.auth.json`;
+const SESSION_COOKIE = 'boekenbaai_session';
 const MAX_BUFFERED_BODY_BYTES = 21 * 1024 * 1024;
 const revokedRuntimeTokenHashes = new Set();
 const originalCreateServer = http.createServer.bind(http);
@@ -19,6 +21,23 @@ const originalCreateServer = http.createServer.bind(http);
 function parseBearer(req) {
   const match = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : '';
+}
+
+function parseCookies(req) {
+  const result = {};
+  for (const part of String(req?.headers?.cookie || '').split(';')) {
+    const index = part.indexOf('=');
+    if (index <= 0) continue;
+    const name = part.slice(0, index).trim();
+    const raw = part.slice(index + 1).trim();
+    if (!name) continue;
+    try {
+      result[name] = decodeURIComponent(raw);
+    } catch (error) {
+      result[name] = raw;
+    }
+  }
+  return result;
 }
 
 function sendJson(res, statusCode, payload) {
@@ -125,6 +144,35 @@ function prepareImportRows(input) {
   });
 }
 
+function duplicateStudentNumber(rows) {
+  const seen = new Map();
+  for (let index = 0; index < (rows || []).length; index += 1) {
+    const number = firstRowValue(rows[index], [
+      'Leerlingnummer',
+      'Leerling nummer',
+      'Leerlingnr',
+      'Studentnummer',
+    ]);
+    if (!number) continue;
+    if (seen.has(number)) {
+      return { number, firstRow: seen.get(number) + 2, secondRow: index + 2 };
+    }
+    seen.set(number, index);
+  }
+  return null;
+}
+
+function assertNoDuplicateImportStudentNumbers(input) {
+  if (input.kind !== 'student') return;
+  const duplicate = duplicateStudentNumber(input.rows);
+  if (!duplicate) return;
+  const error = new Error(
+    `Het leerlingenbestand bevat leerlingnummer ${duplicate.number} meerdere keren (regels ${duplicate.firstRow} en ${duplicate.secondRow}). Controleer het bronbestand voordat je importeert.`
+  );
+  error.code = 'DUPLICATE_STUDENT_NUMBER';
+  throw error;
+}
+
 function collectRemovedSessionHashes(beforeStore, afterStore) {
   const after = new Set((afterStore?.sessions || []).map((entry) => entry?.tokenHash).filter(Boolean));
   for (const entry of beforeStore?.sessions || []) {
@@ -220,6 +268,7 @@ function installImportHardening() {
   people.applyPeopleImport = function hardenedApplyPeopleImport(input = {}) {
     const beforeStore = core.normalizeStore(input.store);
     const preparedInput = { ...input, rows: prepareImportRows(input) };
+    assertNoDuplicateImportStudentNumbers(preparedInput);
     const result = originalApply(preparedInput);
     reconcileUngroupedTeachers(preparedInput, result);
     supersedeStaleRequests(beforeStore, result.store);
@@ -249,6 +298,53 @@ function shouldBufferBody(req, pathname) {
   if (isTransferMutation(pathname)) return true;
   if (pathname === '/api/admin/google-first/import') return true;
   return ['/api/admin/school-sync/preview', '/api/admin/school-sync/apply'].includes(pathname);
+}
+
+function requiredBufferedRole(pathname) {
+  if (pathname === '/api/admin/google-first/import' || pathname.startsWith('/api/admin/school-sync/')) {
+    return 'admin';
+  }
+  if (pathname === '/api/mentor/students' || isTransferMutation(pathname)) return 'staff';
+  return '';
+}
+
+function bufferedMutationAuthorization(req, pathname) {
+  const requiredRole = requiredBufferedRole(pathname);
+  if (!requiredRole) return { allowed: true, status: 200 };
+
+  const bearer = parseBearer(req);
+  const cookieToken = parseCookies(req)[SESSION_COOKIE] || '';
+  if (bearer && bearer !== 'cookie' && cookieToken && bearer !== cookieToken) {
+    return { allowed: false, status: 401, message: 'Ongeldige combinatie van sessies' };
+  }
+  const token = bearer && bearer !== 'cookie' ? bearer : cookieToken;
+  if (!token) return { allowed: false, status: 401, message: 'Log eerst in.' };
+  const tokenHash = core.tokenHash(token);
+  if (revokedRuntimeTokenHashes.has(tokenHash)) {
+    return { allowed: false, status: 401, message: 'Sessie is verlopen' };
+  }
+
+  let store;
+  let db;
+  try {
+    store = core.normalizeStore(JSON.parse(fs.readFileSync(AUTH_DATA_PATH, 'utf8')));
+    db = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { allowed: false, status: 401, message: 'Log eerst in.' };
+    throw error;
+  }
+  const validation = validatePersistedSession(store, token, db);
+  if (!validation.valid || validation.account?.active === false) {
+    return { allowed: false, status: 401, message: 'Sessie is verlopen' };
+  }
+  const role = validation.account?.role || '';
+  if (requiredRole === 'admin' && role !== 'admin') {
+    return { allowed: false, status: 403, message: 'Alleen Beheer kan deze actie uitvoeren.' };
+  }
+  if (requiredRole === 'staff' && !['teacher', 'admin'].includes(role)) {
+    return { allowed: false, status: 403, message: 'Log in als medewerker.' };
+  }
+  return { allowed: true, status: 200, role };
 }
 
 function replayBufferedRequest(req, body, listener) {
@@ -353,6 +449,10 @@ function wrapRequestListener(listener) {
     try {
       if (rejectRevokedRuntimeBearer(req, res)) return undefined;
       if (shouldBufferBody(req, pathname)) {
+        const authorization = bufferedMutationAuthorization(req, pathname);
+        if (!authorization.allowed) {
+          return sendJson(res, authorization.status, { message: authorization.message });
+        }
         return bufferRequest(req, res, pathname, (preparedReq) => listener(preparedReq, res));
       }
       return listener(req, res);
@@ -380,10 +480,14 @@ module.exports = {
   __test: {
     prepareImportRows,
     deriveNameParts,
+    duplicateStudentNumber,
+    assertNoDuplicateImportStudentNumbers,
     supersedeStaleRequests,
     reconcileUngroupedTeachers,
     revokedRuntimeTokenHashes,
     shouldBufferBody,
+    requiredBufferedRole,
+    bufferedMutationAuthorization,
     transferTargetIssue,
   },
 };
