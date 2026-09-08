@@ -214,14 +214,16 @@
     name.focus();
   }
 
-  function openTransfer(student) {
+  function openTransfer(student, sourceClassOverride = '') {
     const targets = targetClasses(student);
     if (!targets.length) {
       window.alert('Er is geen andere klas beschikbaar.');
       return;
     }
+    const fromClassId = sourceClassOverride || sourceClassId(student);
+    const sourceClass = (state?.classes || []).find((entry) => entry.id === fromClassId);
     const { dialog, form } = createDialog(`${student.name} verplaatsen`);
-    const current = (student.classNames || []).join(', ') || 'huidige klas';
+    const current = sourceClass?.name || (student.classNames || []).join(', ') || 'huidige klas';
     form.append(make('p', {
       className: 'hint',
       text: `De leerling blijft in ${current} totdat de nieuwe mentor het verzoek accepteert.`,
@@ -241,7 +243,7 @@
       try {
         await api(`/api/mentor/students/${encodeURIComponent(student.id)}/transfer`, {
           method: 'POST',
-          body: { toClassId: select.value, fromClassId: sourceClassId(student) },
+          body: { toClassId: select.value, fromClassId },
         });
         dialog.close();
         await refresh();
@@ -442,7 +444,7 @@
     panel.append(section);
   }
 
-  function studentRow(student) {
+  function studentRow(student, sourceClassOverride = '') {
     const row = make('div', { className: 'student-management__student-row' });
     const info = make('div', { className: 'student-management__student-info' });
     info.append(make('strong', { text: student.name }));
@@ -454,7 +456,7 @@
     const actions = make('div', { className: 'student-management__row-actions' });
     const move = make('button', { className: 'btn btn--ghost', text: 'Verplaatsen', type: 'button' });
     const leave = make('button', { className: 'btn btn--ghost student-management__danger-button', text: 'Van school', type: 'button' });
-    move.addEventListener('click', () => openTransfer(student));
+    move.addEventListener('click', () => openTransfer(student, sourceClassOverride));
     leave.addEventListener('click', () => deactivate(student));
     actions.append(move, leave);
     row.append(info, actions);
@@ -493,7 +495,7 @@
           text: `${students.length} leerling${students.length === 1 ? '' : 'en'}`,
         }));
         if (!students.length) section.append(make('p', { className: 'hint', text: 'Nog geen leerlingen in deze klas.' }));
-        students.forEach((student) => section.append(studentRow(student)));
+        students.forEach((student) => section.append(studentRow(student, klass.id)));
       }
       panel.append(section);
       return;
@@ -506,7 +508,7 @@
       if ((state.classes || []).length <= 3) details.open = true;
       details.append(make('summary', { text: `${adminClass.name} · ${students.length} leerling${students.length === 1 ? '' : 'en'}` }));
       if (!students.length) details.append(make('p', { className: 'hint', text: 'Nog geen leerlingen in deze klas.' }));
-      students.forEach((student) => details.append(studentRow(student)));
+      students.forEach((student) => details.append(studentRow(student, adminClass.id)));
       section.append(details);
     }
     panel.append(section);
