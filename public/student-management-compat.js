@@ -28,8 +28,8 @@
   function removeLegacyTeacherTools() {
     const teacherDashboard = document.querySelector('#teacher-dashboard');
     if (!teacherDashboard) return;
-    const legacyStudents = teacherDashboard.querySelector('.teacher-students');
-    if (legacyStudents) legacyStudents.hidden = true;
+    const legacyClasses = teacherDashboard.querySelector('.teacher-layout__classes.teacher-actions');
+    if (legacyClasses) legacyClasses.hidden = true;
     teacherDashboard.querySelectorAll('.google-manage').forEach((panel) => panel.remove());
   }
 
@@ -47,6 +47,18 @@
     });
   }
 
+  function placeTeacherStudentManagement() {
+    const adminDashboard = document.querySelector('#admin-dashboard');
+    if (adminDashboard && !adminDashboard.classList.contains('hidden')) return;
+    const teacherDashboard = document.querySelector('#teacher-dashboard');
+    const panel = document.querySelector('#student-management-panel');
+    const bookLayout = teacherDashboard?.querySelector('.teacher-layout');
+    if (!teacherDashboard || !panel || !bookLayout) return;
+    if (panel.parentElement !== teacherDashboard || panel.nextElementSibling !== bookLayout) {
+      teacherDashboard.insertBefore(panel, bookLayout);
+    }
+  }
+
   function placeAdminStudentManagement() {
     const adminDashboard = document.querySelector('#admin-dashboard');
     if (!adminDashboard || adminDashboard.classList.contains('hidden')) return;
@@ -60,6 +72,7 @@
     updateImportCopy();
     removeLegacyTeacherTools();
     simplifyAdminGooglePanel();
+    placeTeacherStudentManagement();
     placeAdminStudentManagement();
   }
 
