@@ -68,6 +68,7 @@ fs.writeFileSync(dbPath, JSON.stringify({
 }, null, 2));
 
 const child = spawn(process.execPath, [
+  '--require', path.join(root, 'student-login-directory-preload.js'),
   '--require', path.join(root, 'student-management-preload.js'),
   '--require', path.join(root, 'google-auth-security-preload.js'),
   '--require', path.join(root, 'local-password-auth-preload.js'),
