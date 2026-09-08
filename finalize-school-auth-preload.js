@@ -548,7 +548,14 @@ function schoolSyncPreview(context, body, apply) {
     result.summary.largeRemovalWarning &&
     !body.confirmLargeRemoval
   ) {
-    const error = new Error(`Deze synchronisatie zou ${result.summary.missingFromImport} leerlingen inactief maken. Bevestig dit eerst expliciet.`);
+    const count = kind === 'teacher'
+      ? Number(result.summary.missingTeachersFromImport || 0)
+      : Number(result.summary.missingFromImport || 0);
+    const error = new Error(
+      kind === 'teacher'
+        ? `Deze synchronisatie zou ${count} docenten inactief maken omdat ze niet in deze volledige ParnasSys-medewerkerslijst staan. Bevestig eerst dat dit echt de volledige export is.`
+        : `Deze synchronisatie zou ${count} leerlingen inactief maken. Bevestig eerst dat dit echt de volledige ParnasSys-export van school is.`
+    );
     error.code = 'LARGE_REMOVAL_CONFIRMATION';
     error.summary = result.summary;
     throw error;
