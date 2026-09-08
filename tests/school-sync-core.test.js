@@ -173,4 +173,62 @@ function baseDb() {
   assert.deepStrictEqual(old.classIds, []);
 })();
 
+(function testRenamedTeacherMatchedByUsernameStaysActive() {
+  const db = baseDb();
+  db.classes.push({ id: 'class-a', name: 'Klas A', studentIds: [], teacherIds: ['teacher-1'] });
+  db.users.push({
+    id: 'teacher-1', role: 'teacher', name: 'Sanne Jansen', username: 's.jansen', passwordHash: 'x',
+    classIds: ['class-a'], active: true, source: 'parnassys',
+  });
+
+  const result = runSchoolSync({
+    kind: 'teacher',
+    db,
+    store: core.emptyAuthStore(),
+    rows: [{
+      Roepnaam: 'Sanne',
+      Achternaam: 'De Vries',
+      Gebruikersnaam: 's.jansen',
+      'Gekoppelde groepen': 'Klas A',
+    }],
+    fullSchoolSync: true,
+    applyDeactivations: true,
+    actorId: 'admin',
+  });
+
+  const teacher = result.db.users.find((entry) => entry.id === 'teacher-1');
+  assert.ok(teacher);
+  assert.strictEqual(teacher.name, 'Sanne De Vries');
+  assert.strictEqual(teacher.active, true, 'Een gematchte docent met alleen een naamswijziging mag niet als verdwenen worden gedeactiveerd');
+  assert.deepStrictEqual(teacher.classIds, ['class-a']);
+})();
+
+(function testWrongParnassysExportTypeIsRejectedBeforeMutation() {
+  assert.throws(
+    () => runSchoolSync({
+      kind: 'teacher',
+      db: baseDb(),
+      store: core.emptyAuthStore(),
+      rows: [{ Leerlingnummer: '123', 'Huidige groep': 'Klas A', Roepnaam: 'Pupil', Achternaam: 'Een' }],
+      fullSchoolSync: true,
+      applyDeactivations: true,
+    }),
+    /leerlingenbestand/i,
+    'Een leerlingenexport mag nooit als medewerkersexport worden verwerkt'
+  );
+
+  assert.throws(
+    () => runSchoolSync({
+      kind: 'student',
+      db: baseDb(),
+      store: core.emptyAuthStore(),
+      rows: [{ Roepnaam: 'Docent', Achternaam: 'Een', 'Gekoppelde groepen': 'Klas A' }],
+      fullSchoolSync: true,
+      applyDeactivations: true,
+    }),
+    /medewerkersbestand/i,
+    'Een medewerkersexport mag nooit als leerlingenexport worden verwerkt'
+  );
+})();
+
 console.log('School sync core tests geslaagd.');
