@@ -17,6 +17,7 @@ const runtimeAuthAssets = [
   'admin-google-links.js',
   'student-management.css',
   'student-management.js',
+  'student-management-compat.js',
 ];
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
