@@ -1,0 +1,84 @@
+name: Temporary ISBN self-review round 3 repair
+
+on:
+  push:
+    branches:
+      - chatgpt/fix-isbn-review-regressions
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: chatgpt/fix-isbn-review-regressions
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply corrected round 3 patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/isbn-self-review-round3.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(workflow) if "python - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'PY')
+          script_lines = workflow[start:end]
+          nonempty = [len(line) - len(line.lstrip()) for line in script_lines if line.strip()]
+          indent = min(nonempty) if nonempty else 0
+          script = '\n'.join(line[indent:] if len(line) >= indent else '' for line in script_lines)
+          script = script.replace(
+              'pattern.subn(replacement, core, count=1)',
+              'pattern.subn(lambda _match: replacement, core, count=1)',
+          )
+          script = script.replace(
+              'lookup_cb_pattern.subn(lookup_cb, core, count=1)',
+              'lookup_cb_pattern.subn(lambda _match: lookup_cb, core, count=1)',
+          )
+          script = script.replace(
+              'lookup_google_pattern.subn(lookup_google, core, count=1)',
+              'lookup_google_pattern.subn(lambda _match: lookup_google, core, count=1)',
+          )
+          script = script.replace(
+              'lookup_ol_pattern.subn(lookup_ol, core, count=1)',
+              'lookup_ol_pattern.subn(lambda _match: lookup_ol, core, count=1)',
+          )
+          compile(script, '<round3-patch>', 'exec')
+          exec(compile(script, '<round3-patch>', 'exec'), {})
+          PY
+      - name: Check diff and syntax
+        run: |
+          git diff --check
+          node --check isbn-lookup-core-impl.js
+          node --check isbn-lookup-core.js
+          node --check server.js
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Run focused ISBN and import regressions
+        run: |
+          node tests/isbn-lookup-core.test.js
+          node tests/isbn-review-regressions.test.js
+          node tests/isbn-tag-fallback.test.js
+          node tests/isbn-wrapper-hardening.test.js
+          node tests/import.test.js
+      - name: Run full test suite
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Commit fixes and remove temporary workflows
+        if: success()
+        shell: bash
+        run: |
+          git config user.name "0xGitteth"
+          git config user.email "160280586+0xGitteth@users.noreply.github.com"
+          git rm .github/workflows/isbn-self-review-round3.yml .github/workflows/isbn-self-review-round3-repair.yml
+          git add isbn-lookup-core-impl.js server.js tests/isbn-lookup-core.test.js tests/import.test.js
+          git commit -m "Exhaust exact ISBN variants before work fallback"
+          git push origin HEAD:chatgpt/fix-isbn-review-regressions
