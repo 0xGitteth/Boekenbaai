@@ -34,17 +34,47 @@ function toStrings(value) {
   return text ? [text] : [];
 }
 
+function decodeHtml(value) {
+  const named = {
+    amp: '&',
+    quot: '"',
+    apos: "'",
+    lt: '<',
+    gt: '>',
+    nbsp: ' ',
+    ndash: '–',
+    mdash: '—',
+    bull: '•',
+  };
+  const decodeCodePoint = (match, codePoint) => {
+    const valueNumber = Number(codePoint);
+    if (!Number.isInteger(valueNumber)
+      || valueNumber < 0
+      || valueNumber > 0x10FFFF
+      || (valueNumber >= 0xD800 && valueNumber <= 0xDFFF)) {
+      return match;
+    }
+    return String.fromCodePoint(valueNumber);
+  };
+
+  return String(value || '')
+    .replace(/&#(\d+);/g, (match, code) => decodeCodePoint(match, Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (match, code) => (
+      decodeCodePoint(match, Number.parseInt(code, 16))
+    ))
+    .replace(/&([a-z]+);/gi, (match, name) => (
+      Object.prototype.hasOwnProperty.call(named, name.toLowerCase())
+        ? named[name.toLowerCase()]
+        : match
+    ));
+}
+
 function parseHtmlAttributes(tag) {
   const attrs = {};
   const pattern = /([:\w-]+)\s*=\s*(["'])([\s\S]*?)\2/g;
   let match;
   while ((match = pattern.exec(String(tag || '')))) {
-    attrs[match[1].toLowerCase()] = String(match[3] || '')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;|&apos;/gi, "'")
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&amp;/gi, '&');
+    attrs[match[1].toLowerCase()] = decodeHtml(match[3]);
   }
   return attrs;
 }
@@ -151,8 +181,10 @@ function createFetchWithCbMetaNormalization(fetchImpl) {
   };
 }
 
-function collectExplicitIdentifiers(data) {
-  if (!data || typeof data !== 'object') return [];
+function explicitIdentifierEvidence(data) {
+  if (!data || typeof data !== 'object') {
+    return { provided: false, identifiers: [] };
+  }
   const raw = [
     data.isbn,
     data.ean,
@@ -162,30 +194,45 @@ function collectExplicitIdentifiers(data) {
     data.isbn_10,
     data.barcode,
   ];
-  return raw.flatMap((entry) => (
+  const providedValues = raw.flatMap((entry) => (
     Array.isArray(entry) ? entry : entry === undefined || entry === null ? [] : [entry]
-  )).map(impl.normalizeIsbn).filter(Boolean);
+  )).filter((entry) => String(entry).trim() !== '');
+
+  return {
+    provided: providedValues.length > 0,
+    identifiers: providedValues.map(impl.normalizeIsbn).filter(Boolean),
+  };
 }
 
-function parseIsbnBarcodeData(data, targetIsbn) {
-  const parsed = impl.parseIsbnBarcodeData(data, targetIsbn);
-  if (parsed) return parsed;
-  if (!data || typeof data !== 'object') return null;
-
-  const family = new Set(impl.getEquivalentIsbns(targetIsbn));
-  if (!family.size) return null;
-  const explicitIdentifiers = collectExplicitIdentifiers(data);
-  if (explicitIdentifiers.length
-    && !explicitIdentifiers.some((identifier) => family.has(identifier))) {
-    return null;
-  }
-
-  const tags = uniqueStrings([
+function combinedIsbnBarcodeTags(data) {
+  if (!data || typeof data !== 'object') return [];
+  return uniqueStrings([
     ...toStrings(data.categories),
     ...toStrings(data.subjects),
     ...toStrings(data.tags),
   ].map((entry) => entry.toLowerCase()));
-  if (!tags.length) return null;
+}
+
+function parseIsbnBarcodeData(data, targetIsbn) {
+  if (!data || typeof data !== 'object') return null;
+  const family = new Set(impl.getEquivalentIsbns(targetIsbn));
+  if (!family.size) return null;
+
+  const evidence = explicitIdentifierEvidence(data);
+  if (evidence.provided
+    && !evidence.identifiers.some((identifier) => family.has(identifier))) {
+    return null;
+  }
+
+  const combinedTags = combinedIsbnBarcodeTags(data);
+  const parsed = impl.parseIsbnBarcodeData(data, targetIsbn);
+  if (parsed) {
+    return {
+      ...parsed,
+      tags: uniqueStrings([...(parsed.tags || []), ...combinedTags]),
+    };
+  }
+  if (!combinedTags.length) return null;
 
   return {
     barcode: impl.normalizeIsbn(targetIsbn),
@@ -199,7 +246,7 @@ function parseIsbnBarcodeData(data, targetIsbn) {
     pageCount: null,
     language: '',
     coverUrl: '',
-    tags,
+    tags: combinedTags,
     source: 'isbnbarcode.org',
     matchLevel: 'exact_isbn',
     found: true,
@@ -208,41 +255,89 @@ function parseIsbnBarcodeData(data, targetIsbn) {
 
 function mergeFallbackMetadata(result, fallback) {
   if (!fallback?.found) return result;
-  const currentTags = Array.isArray(result?.tags) ? result.tags : [];
-  const sources = Array.isArray(result?.sources) ? result.sources : [];
-  const currentAuthors = Array.isArray(result?.authors) ? result.authors : [];
-  const fallbackAuthors = Array.isArray(fallback?.authors) ? fallback.authors : [];
+
+  const base = result && typeof result === 'object' ? result : {};
+  const baseFound = Boolean(base.found);
+  const currentTags = Array.isArray(base.tags) ? base.tags : [];
+  const currentSources = Array.isArray(base.sources) ? base.sources : [];
+  const currentAuthors = Array.isArray(base.authors) ? base.authors : [];
+  const fallbackAuthors = Array.isArray(fallback.authors) ? fallback.authors : [];
+  const mergedAuthors = currentAuthors.length ? currentAuthors : fallbackAuthors;
+  const mergedAuthor = base.author || fallback.author || mergedAuthors.join(', ');
 
   return {
-    ...result,
-    title: result.title || fallback.title || '',
-    author: result.author || fallback.author || '',
-    authors: currentAuthors.length ? currentAuthors : fallbackAuthors,
-    description: result.description || fallback.description || '',
-    publisher: result.publisher || fallback.publisher || '',
-    publishedYear: result.publishedYear || fallback.publishedYear || null,
-    publishedAt: result.publishedAt || fallback.publishedAt || '',
-    pageCount: result.pageCount || fallback.pageCount || null,
-    language: result.language || fallback.language || '',
-    coverUrl: result.coverUrl || fallback.coverUrl || '',
+    ...base,
+    barcode: base.barcode || fallback.barcode || '',
+    title: base.title || fallback.title || '',
+    author: mergedAuthor,
+    authors: mergedAuthors,
+    description: base.description || fallback.description || '',
+    publisher: base.publisher || fallback.publisher || '',
+    publishedYear: base.publishedYear || fallback.publishedYear || null,
+    publishedAt: base.publishedAt || fallback.publishedAt || '',
+    pageCount: base.pageCount || fallback.pageCount || null,
+    language: base.language || fallback.language || '',
+    coverUrl: base.coverUrl || fallback.coverUrl || '',
+    previewLink: base.previewLink || fallback.previewLink || '',
     tags: uniqueStrings([...currentTags, ...(fallback.tags || [])]),
-    format: result.format || fallback.format || '',
-    sources: uniqueStrings([...sources, 'isbnbarcode.org']),
+    format: base.format || fallback.format || '',
+    source: baseFound && base.source && base.source !== 'none'
+      ? base.source
+      : fallback.source || 'isbnbarcode.org',
+    sources: uniqueStrings([...currentSources, fallback.source || 'isbnbarcode.org']),
+    sourceUrl: base.sourceUrl || fallback.sourceUrl || '',
+    matchLevel: baseFound && base.matchLevel && base.matchLevel !== 'none'
+      ? base.matchLevel
+      : fallback.matchLevel || 'exact_isbn',
+    found: true,
+  };
+}
+
+function withIsbnBarcodeConfiguredDebug(result) {
+  if (!result?.debug) return result;
+  return {
+    ...result,
+    debug: {
+      ...result.debug,
+      sourcesConfigured: uniqueStrings([
+        ...(result.debug.sourcesConfigured || []),
+        'isbnbarcode.org',
+      ]),
+      isbnbarcode: {
+        ...(result.debug.isbnbarcode || {}),
+        enabled: true,
+      },
+    },
   };
 }
 
 function createIsbnLookup(options = {}) {
   const env = options.env || process.env;
+  const enabled = String(env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
   const baseFetchImpl = options.fetchImpl || global.fetch;
   const fetchImpl = createFetchWithCbMetaNormalization(baseFetchImpl);
-  const lookup = impl.createIsbnLookup({ ...options, fetchImpl });
-  const enabled = String(env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
+
+  // ISBNBarcode is owned by this wrapper so every lookup path uses the same
+  // exact-ISBN validation, tag parsing, cache semantics, and debug behavior.
+  const innerEnv = enabled
+    ? { ...env, BOEKENBAAI_ENABLE_ISBNBARCODE: 'false' }
+    : env;
+  const lookup = impl.createIsbnLookup({ ...options, env: innerEnv, fetchImpl });
   if (!enabled) return lookup;
 
   const timeoutMs = positiveMs(options.timeoutMs, DEFAULT_TIMEOUT_MS);
   const cacheTtlMs = positiveMs(env.BOEKENBAAI_ISBN_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS);
-  const isbnBarcodeBase = String(env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api').replace(/\/$/, '');
-  const userAgent = String(env.BOEKENBAAI_ISBN_USER_AGENT || 'Boekenbaai/1.0 school-library ISBN metadata lookup');
+  const negativeCacheTtlMs = positiveMs(
+    env.BOEKENBAAI_ISBN_NEGATIVE_CACHE_TTL_MS,
+    cacheTtlMs,
+  );
+  const isbnBarcodeBase = String(
+    env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api',
+  ).replace(/\/$/, '');
+  const userAgent = String(
+    env.BOEKENBAAI_ISBN_USER_AGENT
+    || 'Boekenbaai/1.0 school-library ISBN metadata lookup',
+  );
   const fallbackCache = new Map();
   const fallbackInflight = new Map();
 
@@ -273,7 +368,13 @@ function createIsbnLookup(options = {}) {
             ...(controller ? { signal: controller.signal } : {}),
           },
         );
-        if (!response?.ok) return value;
+        if (!response?.ok) {
+          value = {
+            metadata: null,
+            status: response?.status === 404 ? 'not_found' : 'error',
+          };
+          return value;
+        }
 
         let data = null;
         const contentType = response.headers?.get?.('content-type') || '';
@@ -281,9 +382,21 @@ function createIsbnLookup(options = {}) {
           data = await response.json();
         } else if (typeof response.text === 'function') {
           const text = await response.text();
-          try { data = JSON.parse(text); } catch (_error) { data = null; }
+          if (!text.trim()) {
+            value = { metadata: null, status: 'not_found' };
+            return value;
+          }
+          try {
+            data = JSON.parse(text);
+          } catch (_error) {
+            value = { metadata: null, status: 'error' };
+            return value;
+          }
         } else if (typeof response.json === 'function') {
           data = await response.json();
+        } else {
+          value = { metadata: null, status: 'error' };
+          return value;
         }
 
         const metadata = parseIsbnBarcodeData(data, normalized);
@@ -300,9 +413,10 @@ function createIsbnLookup(options = {}) {
         return value;
       } finally {
         if (timer) clearTimeout(timer);
+        const ttl = value.metadata?.found ? cacheTtlMs : negativeCacheTtlMs;
         fallbackCache.set(cacheKey, {
           value,
-          expiresAt: Date.now() + cacheTtlMs,
+          expiresAt: Date.now() + ttl,
         });
       }
     })();
@@ -316,30 +430,33 @@ function createIsbnLookup(options = {}) {
   }
 
   return async function lookupWithFallbackEnrichment(isbn, lookupOptions = {}) {
-    const result = await lookup(isbn, lookupOptions);
+    const rawResult = await lookup(isbn, lookupOptions);
+    const result = withIsbnBarcodeConfiguredDebug(rawResult);
+    const normalized = impl.normalizeIsbn(isbn);
+    if (!impl.isValidIsbn(normalized)) return result;
+
     const currentTags = Array.isArray(result?.tags) ? result.tags : [];
-    const sources = Array.isArray(result?.sources) ? result.sources : [];
-    const alreadyTried = sources.some((source) => String(source).toLowerCase() === 'isbnbarcode.org');
-    const needsFallback = Boolean(
+    const coreComplete = Boolean(
       result?.found
       && result.title
       && result.author
       && result.coverUrl
-      && currentTags.length === 0
-      && !alreadyTried
     );
-
+    const needsFallback = !coreComplete || currentTags.length === 0;
     if (!needsFallback) return result;
 
-    const fallback = await loadFallback(isbn);
+    const fallback = await loadFallback(normalized);
     const enriched = mergeFallbackMetadata(result, fallback.metadata);
     if (!result?.debug) return enriched;
 
     return {
       ...enriched,
       debug: {
-        ...result.debug,
-        sourcesTried: uniqueStrings([...(result.debug.sourcesTried || []), 'isbnbarcode.org']),
+        ...enriched.debug,
+        sourcesTried: uniqueStrings([
+          ...(result.debug.sourcesTried || []),
+          'isbnbarcode.org',
+        ]),
         sourceStatus: {
           ...(result.debug.sourceStatus || {}),
           'isbnbarcode.org': fallback.status,
