@@ -327,6 +327,17 @@ async function run() {
   assert.strictEqual(aliasHeavy.publishedAt, '2026-09-09');
   assert.strictEqual(aliasHeavy.pageCount, 222);
   assert.deepStrictEqual(aliasHeavy.tags, ['fantasy']);
+  const arrayDescription = implDirect.parseIsbnBarcodeData({
+    isbn,
+    description: ['Beschrijving uit array'],
+    page_count: [144],
+  }, isbn);
+  assert.strictEqual(
+    arrayDescription.description,
+    'Beschrijving uit array',
+    'Array-valued description aliases must not be discarded',
+  );
+  assert.strictEqual(arrayDescription.pageCount, 144);
   const directAliasHeavy = implDirect.parseIsbnBarcodeData({
     isbn,
     author: [],

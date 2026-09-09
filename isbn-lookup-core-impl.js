@@ -560,23 +560,6 @@ function parseIsbnBarcodeData(data, targetIsbn) {
     }
     return '';
   };
-  const firstRawAlias = (...values) => {
-    for (const value of values) {
-      if (value === undefined || value === null) continue;
-      if (Array.isArray(value) && value.length === 0) continue;
-      if (typeof value === 'string' && !value.trim()) continue;
-      if (typeof value === 'number' && !Number.isFinite(value)) continue;
-      if (typeof value === 'object' && !Array.isArray(value)) {
-        if (typeof value.value === 'string' && value.value.trim()) return value;
-        const strings = toStringList(value);
-        if (!strings.length) continue;
-        return strings[0];
-      }
-      return value;
-    }
-    return undefined;
-  };
-
   const authors = mergeAliases(
     data.author,
     data.author_name,
@@ -589,14 +572,11 @@ function parseIsbnBarcodeData(data, targetIsbn) {
     data.item_name,
     data.name,
   );
-  const descriptionValue = firstRawAlias(
+  const description = firstAlias(
     data.description,
     data.synopsis,
     data.summary,
   );
-  const description = typeof descriptionValue === 'string'
-    ? descriptionValue
-    : descriptionValue?.value || '';
   const publishers = mergeAliases(
     data.publisher,
     data.publisher_name,
@@ -615,7 +595,7 @@ function parseIsbnBarcodeData(data, targetIsbn) {
     data.thumbnail,
   ).replace(/^http:\/\//i, 'https://');
   const publishedAt = firstAlias(data.publish_date, data.publication_date);
-  const pageCount = numberFromValue(firstRawAlias(
+  const pageCount = numberFromValue(firstAlias(
     data.page_count,
     data.pages,
     data.number_of_pages,
