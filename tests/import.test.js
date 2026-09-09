@@ -830,6 +830,17 @@ async function runStrictTitleAuthorFallbackImportTest() {
     assert.strictEqual(scenario1.coverUrl, 'https://example.com/fallback-cover.jpg');
     assert.strictEqual(scenario1.title, 'Hajar en Daan');
     assert.strictEqual(scenario1.author, 'Carry Slee');
+    const scenario1ImportInfo = await request(`/api/books/${scenario1.id}/import-info`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.strictEqual(scenario1ImportInfo.status, 200);
+    assert.strictEqual(scenario1ImportInfo.body?.process?.fallbackUsed, true);
+    assert.strictEqual(scenario1ImportInfo.body?.process?.lookupSource, 'mock');
+    assert.strictEqual(
+      scenario1ImportInfo.body?.process?.fallbackSource,
+      'mock-title-author',
+      'Fallback provenance must identify the actual title/author fallback source shown to admins',
+    );
 
     const scenario2 = byBarcode('9787000000002');
     assert.strictEqual(scenario2.publisher, 'Fallback Uitgever');
