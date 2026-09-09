@@ -12,21 +12,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Inspect metadata.isbn.nl exact ISBN search
+      - name: Inspect metadata.isbn.nl detail structure
         shell: bash
         run: |
           set -euxo pipefail
           UA='Boekenbaai/1.0 school-library metadata lookup research'
           ISBN='9789059965607'
-          curl -L --max-time 20 -A "$UA" -c /tmp/cookies.txt -o /tmp/home.html https://metadata.isbn.nl/
-          curl -L --max-time 20 -A "$UA" -b /tmp/cookies.txt -D /tmp/search-headers.txt \
-            --get --data-urlencode "search=$ISBN" \
-            -o /tmp/search.html https://metadata.isbn.nl/search.html
-          echo '--- SEARCH HEADERS ---'
-          cat /tmp/search-headers.txt
-          echo '--- SEARCH TITLE / LINKS / ISBN CONTEXT ---'
-          grep -Ein -C 4 "$ISBN|Zoekresultaten|Murdoku|href=" /tmp/search.html | head -n 220 || true
-          echo '--- DETAIL LINKS ---'
-          grep -Eio 'href="/[0-9]+/[^"]+\.html"' /tmp/search.html | head -n 30 || true
-          echo '--- RESPONSE SIZE ---'
-          wc -c /tmp/search.html
+          SEARCH='https://metadata.isbn.nl/search.html'
+          curl -L --max-time 20 -A "$UA" --get --data-urlencode "search=$ISBN" -o /tmp/search.html "$SEARCH"
+          DETAIL_PATH=$(grep -Eio 'href="/[0-9]+/[^"]+\.html"' /tmp/search.html | head -n 1 | sed -E 's/^href="|"$//g')
+          test -n "$DETAIL_PATH"
+          DETAIL_URL="https://metadata.isbn.nl${DETAIL_PATH}"
+          echo "DETAIL_URL=$DETAIL_URL"
+          curl -L --max-time 20 -A "$UA" -D /tmp/detail-headers.txt -o /tmp/detail.html "$DETAIL_URL"
+          echo '--- DETAIL STRUCTURE ---'
+          grep -Ein -C 5 'Auteur|NUR|Imprint|Uitgever|Taal|Vers\. datum|NSTC|uitvoeringen|ISBN|verschijningsdatum|Paperback|Hardback|E-book|flaptekst|mainimg|ie_fcache' /tmp/detail.html | head -n 420 || true
+          echo '--- H1 / IMAGES ---'
+          grep -Eio '<h1[^>]*>[^<]*</h1>|<img[^>]*src="[^"]+"[^>]*>' /tmp/detail.html | head -n 80 || true
+          echo '--- ROBOTS ---'
+          curl -L --max-time 20 -A "$UA" https://metadata.isbn.nl/robots.txt
