@@ -3,17 +3,29 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { isAllowedSchoolEmail } = require('../google-auth-core');
 
 const root = path.resolve(__dirname, '..');
 const helper = fs.readFileSync(path.join(root, 'public', 'schoolmail-domain-helper.js'), 'utf8');
 const preload = fs.readFileSync(path.join(root, 'schoolmail-domain-helper-preload.js'), 'utf8');
+const vite = fs.readFileSync(path.join(root, 'vite.config.js'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
-assert.match(helper, /const FALLBACK_DOMAIN = 'koraaledu\.nl'/, 'De standaard schoolmaildomain moet koraaledu.nl zijn');
+assert.match(helper, /const FALLBACK_DOMAIN = 'koraaledu\.nl'/, 'De standaard fallback moet koraaledu.nl zijn');
 assert.match(
   helper,
-  /if \(!input\.value\.trim\(\)\) input\.value = suffix/,
-  'Alleen een leeg schoolmailveld mag automatisch de domeinsuffix krijgen'
+  /fetch\(apiUrl\('\/api\/auth\/google\/config'\)/,
+  'Het daadwerkelijke Google-domein moet uit de runtime-config worden geladen'
+);
+assert.doesNotMatch(
+  helper,
+  /placeholder\.match\(\/@/,
+  'Een hard-coded placeholder mag niet meer bepalend zijn voor het schooldomein'
+);
+assert.match(
+  helper,
+  /if \(domainReady && !input\.value\.trim\(\)\) input\.value = suffixFor\(\)/,
+  'Alleen een leeg bewerkbaar schoolmailveld mag automatisch de domeinsuffix krijgen'
 );
 assert.match(
   helper,
@@ -23,25 +35,61 @@ assert.match(
 assert.match(
   helper,
   /input\.type = 'text'[\s\S]*input\.inputMode = 'email'[\s\S]*input\.setSelectionRange\(0, 0\)/,
-  'Tijdens het typen moet een leeg schoolmailveld de cursor betrouwbaar vóór de domeinsuffix zetten'
+  'Tijdens het typen moet de cursor betrouwbaar vóór de domeinsuffix kunnen staan'
+);
+assert.match(
+  helper,
+  /function handlePaste[\s\S]*pasted\.includes\('@'\)[\s\S]*event\.preventDefault\(\)[\s\S]*input\.value = pasted/,
+  'Een volledig geplakt mailadres moet de vooringevulde suffix vervangen'
+);
+assert.match(
+  helper,
+  /function normalizePrefilledAddress[\s\S]*prefix\.includes\('@'\)[\s\S]*input\.value = prefix/,
+  'Een handmatig volledig adres vóór de suffix moet vóór opslaan worden genormaliseerd'
 );
 assert.match(
   helper,
   /function stopSuffixEditing[\s\S]*input\.type = 'email'/,
-  'Na het bewerken moet het veld weer normale e-mailvalidatie gebruiken'
+  'Voor validatie en na het bewerken moet het veld weer type=email zijn'
 );
-assert.match(helper, /new MutationObserver/, 'Later dynamisch geopende leerling- en docentvelden moeten ook worden verbeterd');
 assert.match(
   helper,
-  /attributeFilter: \['placeholder', 'disabled', 'readonly'\]/,
-  'Dynamische Google-schoolmailvelden moeten opnieuw beoordeeld worden wanneer hun metadata wordt ingevuld'
+  /document\.addEventListener\('submit'[\s\S]*blockInvalidSave/,
+  'Enter/form-submit moet eerst de schoolmailvalidatie doorlopen'
 );
+assert.match(
+  helper,
+  /schoolmail opslaan[\s\S]*blockInvalidSave/,
+  'Ook schoolmailknoppen van niet-submit flows moeten eerst gevalideerd worden'
+);
+assert.match(helper, /new MutationObserver/, 'Later dynamisch geopende leerling- en docentvelden moeten ook worden verbeterd');
+
+assert.strictEqual(isAllowedSchoolEmail('leerling@koraaledu.nl', 'koraaledu.nl'), true);
+assert.strictEqual(
+  isAllowedSchoolEmail('leerling@koraaledu.nl@koraaledu.nl', 'koraaledu.nl'),
+  false,
+  'De backend mag meerdere @-tekens nooit accepteren'
+);
+assert.strictEqual(
+  isAllowedSchoolEmail('leer ling@koraaledu.nl', 'koraaledu.nl'),
+  false,
+  'De backend mag spaties in het lokale deel niet accepteren'
+);
+assert.strictEqual(isAllowedSchoolEmail('.leerling@koraaledu.nl', 'koraaledu.nl'), false);
+assert.strictEqual(isAllowedSchoolEmail('leerling..test@koraaledu.nl', 'koraaledu.nl'), false);
+assert.strictEqual(isAllowedSchoolEmail('leerling+test@koraaledu.nl', 'koraaledu.nl'), true);
 
 assert.match(preload, /SCRIPT_URL = '\/schoolmail-domain-helper\.js'/, 'De helper moet een eigen statische route hebben');
-assert.match(preload, /html\.includes\(SCRIPT_URL\)/, 'De helper mag maar één keer per HTML-pagina geïnjecteerd worden');
-assert.ok(
-  preload.includes('<script src="${SCRIPT_URL}"></script>'),
-  'De helper moet daadwerkelijk in HTML worden geladen'
+assert.match(preload, /html\.includes\(SCRIPT_NAME\)/, 'Serverinjectie mag geen dubbele helper-tag toevoegen');
+assert.match(
+  vite,
+  /runtimeAuthAssets[\s\S]*'schoolmail-domain-helper\.js'/,
+  'De helper moet naar de statische Vite-output worden gekopieerd'
+);
+assert.match(
+  vite,
+  /transformIndexHtml[\s\S]*schoolmail-domain-helper\.js/,
+  'Vite moet de helper in zowel index.html als staff.html injecteren'
 );
 
 assert.ok(
