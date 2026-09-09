@@ -450,6 +450,131 @@ async function run() {
     'og:title',
   ));
 
+  const oneSidedCategories = implDirect.parseGoogleBooksData({
+    items: [{
+      volumeInfo: {
+        title: 'Categorie test',
+        authors: ['Auteur'],
+        industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }],
+        categories: ['Self-Help', 'Fiction- Young Adult', 'History -War'],
+      },
+    }],
+  }, isbn);
+  assert.deepStrictEqual(
+    oneSidedCategories.tags,
+    ['self-help', 'fiction', 'young adult', 'history', 'war'],
+    'One-sided spaced hierarchy hyphens must split without breaking in-word hyphens',
+  );
+
+  const duplicateExactGoogle = implDirect.parseGoogleBooksData({
+    items: [
+      {
+        volumeInfo: {
+          title: 'Exact zonder cover',
+          authors: ['Auteur'],
+          industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }],
+        },
+      },
+      {
+        volumeInfo: {
+          title: 'Exact met kleine cover',
+          authors: ['Auteur'],
+          industryIdentifiers: [{ type: 'ISBN_13', identifier: isbn }],
+          imageLinks: { smallThumbnail: 'http://books.google.com/small-only.jpg' },
+        },
+      },
+    ],
+  }, isbn);
+  assert.strictEqual(
+    duplicateExactGoogle.coverUrl,
+    'https://books.google.com/small-only.jpg',
+    'Exact Google candidates with small/smallThumbnail covers must receive cover richness credit',
+  );
+
+  const openLibraryLanguage = implDirect.parseOpenLibraryData({
+    key: '/books/OL123M',
+    isbn_13: [isbn],
+    languages: [{ key: '/languages/eng' }],
+  }, isbn);
+  assert.ok(openLibraryLanguage?.found, 'Sparse exact Open Library edition objects must stay found');
+  assert.strictEqual(
+    openLibraryLanguage.language,
+    'en',
+    'Open Library ISO-639-3 language keys must normalize to the same two-letter code used by Google',
+  );
+
+  const sparseCbHtml = [
+    '<dl><dt>NUR code(s)</dt><dd><a>999 Verkeerde werktag</a></dd></dl>',
+    '<div class="card uitv extra" data-edition="1">',
+    '<div class="uvlabel">Paperback</div>',
+    '<a class="fancybox" href="//cdn.example.test/exact-cover.jpg"></a>',
+    `<span>ISBN</span><br>${isbn}<br><br>`,
+    '<span>verschijningsdatum</span><br>09/09/2026<br>',
+    '<div class="hidden pd-block">',
+    '<span>NUR</span><div><a>493 Puzzelboeken</a></div>',
+    '<span>taal</span> Engels<br>',
+    '</div>',
+    '</div>',
+  ].join('');
+  const sparseCb = parseCbDetailHtml(sparseCbHtml, isbn);
+  assert.ok(sparseCb?.found, 'An exact CB edition block must stay found even when work metadata is sparse');
+  assert.strictEqual(sparseCb.language, 'en');
+  assert.strictEqual(sparseCb.coverUrl, 'https://cdn.example.test/exact-cover.jpg');
+  assert.deepStrictEqual(
+    sparseCb.tags,
+    ['puzzelboeken'],
+    'Exact-edition NUR tags must win over broader work-level NUR tags when present',
+  );
+
+  const realNowForFallback = Date.now;
+  let fallbackNow = 2_000_000;
+  Date.now = () => fallbackNow;
+  try {
+    let noContentFallbackCalls = 0;
+    const noContentLookup = createIsbnLookup({
+      fetchImpl: primaryFetch({
+        isbn,
+        google: googlePayload(isbn, {
+          imageLinks: { thumbnail: 'https://example.test/google-cover.jpg' },
+        }),
+        fallback: async () => {
+          noContentFallbackCalls += 1;
+          return response('', { status: 204, contentType: '' });
+        },
+      }),
+      env: {
+        GOOGLE_BOOKS_API_KEY: 'test-key',
+        BOEKENBAAI_ENABLE_ISBNBARCODE: 'true',
+        BOEKENBAAI_DEBUG_ISBN_LOOKUP: 'true',
+        BOEKENBAAI_ISBN_CACHE_TTL_MS: '300000',
+        BOEKENBAAI_ISBN_NEGATIVE_CACHE_TTL_MS: '1000',
+      },
+    });
+
+    const noContentFirst = await noContentLookup(isbn, { includeDebug: true });
+    assert.strictEqual(noContentFirst.cacheHit, false);
+    assert.strictEqual(noContentFirst.debug.sourceStatus['isbnbarcode.org'], 'not_found');
+    assert.strictEqual(noContentFallbackCalls, 2);
+
+    fallbackNow += 500;
+    const noContentCached = await noContentLookup(isbn, { includeDebug: true });
+    assert.strictEqual(noContentCached.cacheHit, true);
+    assert.strictEqual(noContentCached.debug.cacheHit, true);
+    assert.strictEqual(noContentFallbackCalls, 2);
+
+    fallbackNow += 600;
+    const noContentRetried = await noContentLookup(isbn, { includeDebug: true });
+    assert.strictEqual(noContentFallbackCalls, 4);
+    assert.strictEqual(
+      noContentRetried.cacheHit,
+      false,
+      'A live supplemental fallback retry must make the whole lookup a non-cache hit',
+    );
+    assert.strictEqual(noContentRetried.debug.cacheHit, false);
+  } finally {
+    Date.now = realNowForFallback;
+  }
+
   console.log('ISBN wrapper hardening regression tests passed');
 }
 

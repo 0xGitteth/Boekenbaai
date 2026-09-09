@@ -120,6 +120,7 @@ function stripHtml(value) {
 function absoluteCbUrl(value) {
   const url = String(value || '').trim();
   if (!url || /no-image-available/i.test(url)) return '';
+  if (url.startsWith('//')) return `https:${url}`;
   if (/^https?:\/\//i.test(url)) return url.replace(/^http:/i, 'https:');
   return `${CB_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 }
@@ -138,9 +139,23 @@ function normalizeLanguage(value) {
   for (const [pattern, code] of mappings) {
     if (pattern.test(text)) return code;
   }
-  const languageKey = text.match(/\/languages\/([a-z]{2,3})\b/i);
-  if (languageKey) return languageKey[1].toLowerCase();
-  if (/^[a-z]{2,3}$/i.test(text)) return text;
+  const iso6393To1 = {
+    eng: 'en',
+    nld: 'nl',
+    dut: 'nl',
+    deu: 'de',
+    ger: 'de',
+    fra: 'fr',
+    fre: 'fr',
+    spa: 'es',
+    tur: 'tr',
+  };
+  const languageKey = text.match(/\/(?:languages|l)\/([a-z]{2,3})\b/i);
+  if (languageKey) {
+    const code = languageKey[1].toLowerCase();
+    return iso6393To1[code] || code;
+  }
+  if (/^[a-z]{2,3}$/i.test(text)) return iso6393To1[text] || text;
   return stripHtml(value);
 }
 
@@ -253,7 +268,7 @@ function extractCbSearchDetailPath(html) {
 
 function splitCbEditionBlocks(html) {
   const source = String(html || '');
-  const marker = /<div\s+class=["']uitv["']\s*>/gi;
+  const marker = /<div\b[^>]*class=["'][^"']*\buitv\b[^"']*["'][^>]*>/gi;
   const starts = [];
   let match;
   while ((match = marker.exec(source))) starts.push(match.index);
@@ -282,16 +297,33 @@ function extractEditionField(block, label) {
   return match ? stripHtml(match[1]) : '';
 }
 
+function parseNurTags(fragment) {
+  const anchors = Array.from(String(fragment || '').matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi))
+    .map((entry) => stripHtml(entry[1]).replace(/^\d{3}\s+/, '').trim().toLowerCase())
+    .filter(Boolean);
+  if (anchors.length) return Array.from(new Set(anchors));
+
+  const plain = stripHtml(fragment);
+  const values = [];
+  for (const match of plain.matchAll(/(?:^|\s)\d{3}\s+(.+?)(?=\s+\d{3}\s+|$)/g)) {
+    const label = String(match[1] || '').trim().toLowerCase();
+    if (label) values.push(label);
+  }
+  return Array.from(new Set(values));
+}
+
 function extractCbNurTags(html) {
   const match = String(html || '').match(
     /<dt>\s*NUR code\(s\)\s*<\/dt>\s*<dd>([\s\S]*?)<\/dd>/i,
   );
-  if (!match) return [];
-  return Array.from(new Set(
-    Array.from(match[1].matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi))
-      .map((entry) => stripHtml(entry[1]).replace(/^\d{3}\s+/, '').trim().toLowerCase())
-      .filter(Boolean),
-  ));
+  return match ? parseNurTags(match[1]) : [];
+}
+
+function extractCbEditionNurTags(block) {
+  const match = String(block || '').match(
+    /<span>\s*NUR\s*<\/span>([\s\S]*?)(?=<span>|$)/i,
+  );
+  return match ? parseNurTags(match[1]) : [];
 }
 
 function parseCbDetailHtml(html, targetIsbn) {
@@ -322,6 +354,8 @@ function parseCbDetailHtml(html, targetIsbn) {
     /<a[^>]+class=["'][^"']*fancybox[^"']*["'][^>]+href=["']([^"']+)["']/i,
   );
   const coverUrl = absoluteCbUrl(coverMatch?.[1] || '');
+  const editionNurTags = extractCbEditionNurTags(exactBlock);
+  const tags = editionNurTags.length ? editionNurTags : extractCbNurTags(html);
 
   return {
     barcode: normalizeIsbn(targetIsbn),
@@ -336,25 +370,20 @@ function parseCbDetailHtml(html, targetIsbn) {
     pageCount: null,
     language: normalizeLanguage(editionLanguage),
     coverUrl,
-    tags: extractCbNurTags(html),
+    tags,
     format: formatMatch ? stripHtml(formatMatch[1]) : '',
     source: 'Bureau ISBN',
     sourceUrl: extractMeta(html, 'og:url'),
     matchLevel: 'exact_isbn',
-    found: Boolean(
-      title
-      || authors.length
-      || description
-      || editionPublisher
-      || workPublisher
-      || coverUrl
-    ),
+    // Reaching this point means an ISBN from the requested equivalence family
+    // was present in this edition block. An incomplete exact record is still found.
+    found: true,
   };
 }
 
 function splitGoogleCategory(value) {
   return String(value || '')
-    .split(/\s*\/\s*|\s*;\s*|\s*>\s*|\s+[–-]\s+/)
+    .split(/\s*\/\s*|\s*;\s*|\s*>\s*|\s+[–-]\s+|\s+[–-]|[–-]\s+/)
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
 }
@@ -378,11 +407,16 @@ function parseGoogleBooksData(data, targetIsbn) {
       Array.isArray(info.authors) && info.authors.length,
       info.description,
       info.publisher,
+      info.publishedDate,
       info.pageCount,
+      info.language,
+      info.mainCategory || (Array.isArray(info.categories) && info.categories.length),
       info.imageLinks?.extraLarge
         || info.imageLinks?.large
         || info.imageLinks?.medium
-        || info.imageLinks?.thumbnail,
+        || info.imageLinks?.small
+        || info.imageLinks?.thumbnail
+        || info.imageLinks?.smallThumbnail,
     ].filter(Boolean).length;
     if (score > bestScore) {
       best = item;
@@ -492,8 +526,12 @@ function parseOpenLibraryData(data, targetIsbn) {
     tags: subjects.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean),
     source: 'Open Library',
     matchLevel: 'exact_isbn',
+    // A successful ISBN edition object is exact evidence even when its
+    // bibliographic fields are sparse; do not turn exact-but-incomplete into a miss.
     found: Boolean(
-      data.title
+      data.key
+      || returnedIsbns.length
+      || data.title
       || authors.length
       || publishers.length
       || coverId

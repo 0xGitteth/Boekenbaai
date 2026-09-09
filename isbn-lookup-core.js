@@ -114,9 +114,14 @@ function createIsbnLookup(options = {}) {
     const normalized = impl.normalizeIsbn(isbn);
     const cacheKey = impl.toIsbn13(normalized) || normalized;
     const cached = fallbackCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (cached && cached.expiresAt > Date.now()) {
+      return { ...cached.value, cacheHit: true };
+    }
     if (cached) fallbackCache.delete(cacheKey);
-    if (fallbackInflight.has(cacheKey)) return fallbackInflight.get(cacheKey);
+    if (fallbackInflight.has(cacheKey)) {
+      const value = await fallbackInflight.get(cacheKey);
+      return { ...value, cacheHit: false, joinedInflight: true };
+    }
 
     const promise = (async () => {
       if (typeof baseFetchImpl !== 'function') {
@@ -145,6 +150,7 @@ function createIsbnLookup(options = {}) {
             },
           );
 
+          if (response?.status === 204) continue;
           if (!response?.ok) {
             if (response?.status !== 404) sawError = true;
             continue;
@@ -203,7 +209,7 @@ function createIsbnLookup(options = {}) {
 
     fallbackInflight.set(cacheKey, promise);
     try {
-      return await promise;
+      return { ...(await promise), cacheHit: false };
     } finally {
       fallbackInflight.delete(cacheKey);
     }
@@ -225,13 +231,19 @@ function createIsbnLookup(options = {}) {
     if (coreComplete && currentTags.length > 0) return result;
 
     const fallback = await loadFallback(normalized);
-    const enriched = mergeFallbackMetadata(result, fallback.metadata);
+    const enriched = {
+      ...mergeFallbackMetadata(result, fallback.metadata),
+      // This lookup is a cache hit only when every required layer was served
+      // from cache. A live fallback request makes the overall result fresh.
+      cacheHit: Boolean(result?.cacheHit && fallback.cacheHit),
+    };
     if (!result?.debug) return enriched;
 
     return {
       ...enriched,
       debug: {
         ...enriched.debug,
+        cacheHit: enriched.cacheHit,
         sourcesTried: uniqueStrings([
           ...(result.debug.sourcesTried || []),
           'isbnbarcode.org',
