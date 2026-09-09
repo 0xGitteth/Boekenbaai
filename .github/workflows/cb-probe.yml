@@ -1,0 +1,27 @@
+name: CB metadata probe
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect metadata.isbn.nl search form
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --max-time 20 -A 'Boekenbaai/1.0 school-library metadata lookup research' -D /tmp/headers.txt -o /tmp/home.html https://metadata.isbn.nl/
+          echo '--- HEADERS ---'
+          cat /tmp/headers.txt
+          echo '--- FORMS / INPUTS / SCRIPTS ---'
+          grep -Eio '<form[^>]*>|<input[^>]*>|<script[^>]*src=[^>]*>|action="[^"]*"|name="[^"]*"' /tmp/home.html | head -n 120 || true
+          echo '--- SEARCH CONTEXT ---'
+          grep -Ein -C 4 'search|zoek naar titel|reeks|auteur' /tmp/home.html | head -n 160 || true
+          echo '--- ROBOTS ---'
+          curl -L --max-time 20 -A 'Boekenbaai/1.0 school-library metadata lookup research' https://metadata.isbn.nl/robots.txt || true
