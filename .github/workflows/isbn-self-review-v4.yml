@@ -1,0 +1,624 @@
+name: Temporary ISBN self-review v4
+on:
+  push:
+    branches: [chatgpt/fix-isbn-review-regressions]
+permissions:
+  contents: write
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: chatgpt/fix-isbn-review-regressions
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Apply independently reviewed fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'missing exact target: {label}')
+              return text.replace(old, new, 1)
+
+          def replace_block(text, start_marker, end_marker, replacement, label):
+              start = text.find(start_marker)
+              if start < 0:
+                  raise SystemExit(f'missing block start: {label}')
+              end = text.find(end_marker, start + len(start_marker))
+              if end < 0:
+                  raise SystemExit(f'missing block end: {label}')
+              return text[:start] + replacement + text[end:]
+
+          core_path = Path('isbn-lookup-core-impl.js')
+          core = core_path.read_text()
+
+          core = replace_exact(
+              core,
+              "const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;\n",
+              "const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;\nconst MAX_CB_SEARCH_RESULTS = 20;\n",
+              'CB result cap',
+          )
+
+          cb_parser = r'''function extractDivElementById(html, id) {
+            const source = String(html || '');
+            const safeId = escapeRegex(id);
+            const openingPattern = new RegExp(
+              `<div\\b[^>]*\\bid=["']${safeId}["'][^>]*>`,
+              'i',
+            );
+            const opening = openingPattern.exec(source);
+            if (!opening) return '';
+
+            const divPattern = /<\/?div\b[^>]*>/gi;
+            divPattern.lastIndex = opening.index;
+            let depth = 0;
+            let match;
+            while ((match = divPattern.exec(source))) {
+              const tag = match[0];
+              if (/^<\//.test(tag)) {
+                depth -= 1;
+              } else if (!/\/>\s*$/.test(tag)) {
+                depth += 1;
+              }
+              if (depth === 0) {
+                return source.slice(opening.index, divPattern.lastIndex);
+              }
+            }
+            return source.slice(opening.index);
+          }
+
+          function extractCbSearchDetailPaths(html, limit = MAX_CB_SEARCH_RESULTS) {
+            const workBlock = extractDivElementById(html, 'werk');
+            if (!workBlock) return [];
+
+            const starts = Array.from(workBlock.matchAll(
+              /<div\b[^>]*class=["'][^"']*\bwrk\b[^"']*["'][^>]*>/gi,
+            )).map((match) => match.index);
+            if (!starts.length) return [];
+
+            const numericLimit = Number(limit);
+            const boundedLimit = Number.isFinite(numericLimit) && numericLimit > 0
+              ? Math.min(MAX_CB_SEARCH_RESULTS, Math.floor(numericLimit))
+              : MAX_CB_SEARCH_RESULTS;
+            const paths = [];
+            const seen = new Set();
+
+            for (let index = 0; index < starts.length && paths.length < boundedLimit; index += 1) {
+              const block = workBlock.slice(starts[index], starts[index + 1] ?? workBlock.length);
+              const match = block.match(/<a[^>]+href=["'](\/\d+\/[^"']+\.html)["']/i);
+              const path = match?.[1] || '';
+              if (!path || seen.has(path)) continue;
+              seen.add(path);
+              paths.push(path);
+            }
+            return paths;
+          }
+
+          function extractCbSearchDetailPath(html) {
+            return extractCbSearchDetailPaths(html, 1)[0] || '';
+          }
+'''
+          core = replace_block(
+              core,
+              'function extractCbSearchDetailPath(html) {',
+              '\nfunction splitCbEditionBlocks(html) {',
+              cb_parser,
+              'CB result parser',
+          )
+
+          core = replace_exact(
+              core,
+              "  const workPublisher = extractDefinition(html, 'Uitgever\\\\(s\\\\)');\n  const editionPublisher = extractEditionField(exactBlock, 'uitgever');",
+              "  const editionPublisher = extractEditionField(exactBlock, 'uitgever');",
+              'remove work-level publisher fallback variable',
+          )
+          core = replace_exact(
+              core,
+              '    publisher: editionPublisher || workPublisher,',
+              '    publisher: editionPublisher,',
+              'edition-only CB publisher',
+          )
+
+          core = replace_exact(
+              core,
+              "  if (returnedIsbns.length && !returnedIsbns.some((isbn) => family.has(isbn))) {\n    return null;\n  }",
+              "  if (!returnedIsbns.some((isbn) => family.has(isbn))) {\n    return null;\n  }",
+              'Open Library exact ISBN evidence',
+          )
+          old_ol_found = """    // A successful ISBN edition object is exact evidence even when its
+    // bibliographic fields are sparse; do not turn exact-but-incomplete into a miss.
+    found: Boolean(
+      data.key
+      || returnedIsbns.length
+      || data.title
+      || authors.length
+      || publishers.length
+      || coverId
+      || data.number_of_pages
+      || description
+    ),"""
+          core = replace_exact(
+              core,
+              old_ol_found,
+              """    // The parser only reaches this point after an ISBN from the requested
+    // equivalence family is present in the response itself.
+    found: true,""",
+              'Open Library sparse exact found state',
+          )
+
+          same_source_helper = r'''function mergeSameSourceExactMetadata(base, incoming) {
+            if (!base?.found) return incoming || null;
+            if (!incoming?.found) return base;
+
+            const merged = { ...base };
+            for (const field of [
+              'title',
+              'author',
+              'description',
+              'publisher',
+              'publishedYear',
+              'publishedAt',
+              'pageCount',
+              'language',
+              'coverUrl',
+              'previewLink',
+              'format',
+              'sourceUrl',
+              'matchedIsbn',
+            ]) {
+              const current = merged[field];
+              const next = incoming[field];
+              const currentMissing = current === undefined || current === null || current === '';
+              const nextPresent = next !== undefined && next !== null && next !== '';
+              if (currentMissing && nextPresent) merged[field] = next;
+            }
+            merged.authors = base.authors?.length ? base.authors : incoming.authors || [];
+            merged.tags = dedupe([...(base.tags || []), ...(incoming.tags || [])]);
+            merged.source = base.source || incoming.source || '';
+            merged.matchLevel = 'exact_isbn';
+            merged.found = true;
+            return merged;
+          }
+
+'''
+          core = replace_exact(
+              core,
+              'function mergeExactMetadata({ cb, google, openLibrary, isbnBarcode } = {}, targetIsbn) {',
+              same_source_helper + 'function mergeExactMetadata({ cb, google, openLibrary, isbnBarcode } = {}, targetIsbn) {',
+              'same-source exact merge helper',
+          )
+
+          core = replace_exact(
+              core,
+              '    cacheHit: false,\n  };\n}\n\nfunction createIsbnLookup',
+              '    cacheHit: false,\n    transientFailure: false,\n  };\n}\n\nfunction createIsbnLookup',
+              'debug transient state',
+          )
+
+          lookup_cb = r'''  async function lookupCb(isbn, debug) {
+            const visitedDetailPaths = new Set();
+            const deadline = Date.now() + Math.max(timeoutMs * 3, timeoutMs);
+            const remainingTimeout = () => Math.max(
+              1,
+              Math.min(timeoutMs, deadline - Date.now()),
+            );
+
+            for (const candidate of getEquivalentIsbns(isbn)) {
+              if (Date.now() >= deadline) break;
+              let detailPaths = [];
+              try {
+                const searchUrl = new URL('/search.html', CB_BASE_URL);
+                searchUrl.searchParams.set('search', candidate);
+                debug?.sourcesTried.push('Bureau ISBN');
+                const searchHtml = await fetchText(
+                  fetchImpl,
+                  searchUrl.toString(),
+                  { headers },
+                  remainingTimeout(),
+                );
+                detailPaths = extractCbSearchDetailPaths(searchHtml);
+              } catch (error) {
+                if (debug) {
+                  debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
+                    ? 'timeout'
+                    : 'error';
+                  debug.transientFailure = true;
+                }
+                continue;
+              }
+
+              for (const detailPath of detailPaths) {
+                if (Date.now() >= deadline) break;
+                if (visitedDetailPaths.has(detailPath)) continue;
+                visitedDetailPaths.add(detailPath);
+                try {
+                  const detailHtml = await fetchText(
+                    fetchImpl,
+                    absoluteCbUrl(detailPath),
+                    { headers },
+                    remainingTimeout(),
+                  );
+                  const metadata = parseCbDetailHtml(detailHtml, isbn);
+                  if (metadata?.found) {
+                    if (debug) debug.sourceStatus['Bureau ISBN'] = 'found';
+                    return metadata;
+                  }
+                } catch (error) {
+                  if (debug) {
+                    debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
+                      ? 'timeout'
+                      : 'error';
+                    debug.transientFailure = true;
+                  }
+                }
+              }
+            }
+            if (debug && !debug.sourceStatus['Bureau ISBN']) {
+              debug.sourceStatus['Bureau ISBN'] = 'not_found';
+            }
+            return null;
+          }
+'''
+          core = replace_block(
+              core,
+              '  async function lookupCb(isbn, debug) {',
+              '\n\n  async function lookupGoogle(isbn, debug) {',
+              lookup_cb,
+              'lookupCb',
+          )
+
+          lookup_google = r'''  async function lookupGoogle(isbn, debug) {
+            if (!env.GOOGLE_BOOKS_API_KEY) return null;
+            let mergedMetadata = null;
+            for (const candidate of getEquivalentIsbns(isbn)) {
+              try {
+                const url = new URL(GOOGLE_BOOKS_URL);
+                url.searchParams.set('q', `isbn:${candidate}`);
+                url.searchParams.set('printType', 'books');
+                url.searchParams.set('projection', 'full');
+                url.searchParams.set('maxResults', '10');
+                debug?.sourcesTried.push('Google Books');
+                const data = await fetchJson(
+                  fetchImpl,
+                  url.toString(),
+                  {
+                    headers: {
+                      ...headers,
+                      Accept: 'application/json',
+                      'x-goog-api-key': env.GOOGLE_BOOKS_API_KEY,
+                    },
+                  },
+                  timeoutMs,
+                );
+                const metadata = parseGoogleBooksData(data, isbn);
+                if (metadata?.found) {
+                  mergedMetadata = mergeSameSourceExactMetadata(mergedMetadata, metadata);
+                  if (debug) {
+                    debug.googleBooks.exactMatchFound = true;
+                    debug.sourceStatus['Google Books'] = 'found';
+                  }
+                }
+              } catch (error) {
+                if (debug) {
+                  if (debug.sourceStatus['Google Books'] !== 'found') {
+                    debug.sourceStatus['Google Books'] = error?.name === 'AbortError'
+                      ? 'timeout'
+                      : 'error';
+                  }
+                  debug.transientFailure = true;
+                }
+              }
+            }
+            if (mergedMetadata) return mergedMetadata;
+            if (debug && !debug.sourceStatus['Google Books']) {
+              debug.sourceStatus['Google Books'] = 'not_found';
+            }
+            return null;
+          }
+'''
+          core = replace_block(
+              core,
+              '  async function lookupGoogle(isbn, debug) {',
+              '\n\n  async function lookupOpenLibrary(isbn, debug) {',
+              lookup_google,
+              'lookupGoogle',
+          )
+
+          lookup_ol = r'''  async function lookupOpenLibrary(isbn, debug) {
+            let mergedMetadata = null;
+            for (const candidate of getEquivalentIsbns(isbn)) {
+              try {
+                debug?.sourcesTried.push('Open Library');
+                const data = await fetchJson(
+                  fetchImpl,
+                  `${OPEN_LIBRARY_BASE_URL}/isbn/${encodeURIComponent(candidate)}.json`,
+                  { headers: { ...headers, Accept: 'application/json' } },
+                  timeoutMs,
+                );
+                const metadata = parseOpenLibraryData(data, isbn);
+                if (metadata?.found) {
+                  mergedMetadata = mergeSameSourceExactMetadata(mergedMetadata, metadata);
+                  if (debug) debug.sourceStatus['Open Library'] = 'found';
+                }
+              } catch (error) {
+                if (debug) {
+                  if (debug.sourceStatus['Open Library'] !== 'found') {
+                    debug.sourceStatus['Open Library'] = error?.name === 'AbortError'
+                      ? 'timeout'
+                      : 'error';
+                  }
+                  debug.transientFailure = true;
+                }
+              }
+            }
+            if (mergedMetadata) return mergedMetadata;
+            if (debug && !debug.sourceStatus['Open Library']) {
+              debug.sourceStatus['Open Library'] = 'not_found';
+            }
+            return null;
+          }
+'''
+          core = replace_block(
+              core,
+              '  async function lookupOpenLibrary(isbn, debug) {',
+              '\n\n  async function lookupIsbnBarcode(isbn, debug) {',
+              lookup_ol,
+              'lookupOpenLibrary',
+          )
+
+          core = replace_exact(
+              core,
+              "    const transientFailure = Object.values(sourceState.sourceStatus)\n      .some((status) => status === 'error' || status === 'timeout');",
+              "    const transientFailure = Boolean(sourceState.transientFailure)\n      || Object.values(sourceState.sourceStatus)\n        .some((status) => status === 'error' || status === 'timeout');",
+              'cache transient guard',
+          )
+          core = replace_exact(
+              core,
+              '  extractCbSearchDetailPath,\n',
+              '  extractCbSearchDetailPath,\n  extractCbSearchDetailPaths,\n',
+              'CB result parser export',
+          )
+          core_path.write_text(core)
+
+          server_path = Path('server.js')
+          server = server_path.read_text()
+          server = replace_exact(
+              server,
+              '        let fallbackUsed = false;\n        let fallbackTransientReason = null;\n        let fallbackTarget = null;',
+              '        let fallbackUsed = false;\n        let fallbackSourceUsed = null;\n        let fallbackTransientReason = null;\n        let fallbackTarget = null;',
+              'fallback provenance declaration',
+          )
+          server = replace_exact(
+              server,
+              "            if (strictFallbackMetadata && typeof strictFallbackMetadata === 'object'\n              && isStrictWorkMatch(fallbackTarget, strictFallbackMetadata)) {\n              metadataFields = mergeLookupMetadata(metadataFields || {}, strictFallbackMetadata);\n              fallbackUsed = true;",
+              "            if (strictFallbackMetadata && typeof strictFallbackMetadata === 'object'\n              && isStrictWorkMatch(fallbackTarget, strictFallbackMetadata)) {\n              fallbackSourceUsed = strictFallbackMetadata.source\n                ? String(strictFallbackMetadata.source).toLowerCase()\n                : 'googlebooks-title-author';\n              metadataFields = mergeLookupMetadata(metadataFields || {}, strictFallbackMetadata);\n              fallbackUsed = true;",
+              'capture actual fallback source',
+          )
+          server = replace_exact(
+              server,
+              "          fallbackSource: fallbackUsed && metadataFields?.source\n            ? String(metadataFields.source).toLowerCase()\n            : null,",
+              "          fallbackSource: fallbackUsed ? fallbackSourceUsed : null,",
+              'store actual fallback source',
+          )
+          server_path.write_text(server)
+
+          test_path = Path('tests/isbn-lookup-core.test.js')
+          test = test_path.read_text()
+          test = replace_exact(
+              test,
+              '  extractCbSearchDetailPath,\n  parseCbDetailHtml,\n  parseGoogleBooksData,',
+              '  extractCbSearchDetailPath,\n  extractCbSearchDetailPaths,\n  parseCbDetailHtml,\n  parseGoogleBooksData,\n  parseOpenLibraryData,',
+              'test imports',
+          )
+
+          regressions = r'''
+
+            const multiSearchHtml = `
+              <div class="iesearch">
+                <div class="tab-pane active" id="werk">
+                  <div class="span2 wrk"><div><a href="/111111/verkeerd-werk.html">Verkeerd</a></div></div>
+                  <div class="span2 wrk"><div><a href="/2095701/murdoku-terug-in-de-tijd.html">Murdoku</a></div></div>
+                </div>
+              </div>
+              <footer><div class="wrk"><a href="/999999/footer-result.html">Footer</a></div></footer>`;
+            assert.deepStrictEqual(
+              extractCbSearchDetailPaths(multiSearchHtml),
+              ['/111111/verkeerd-werk.html', '/2095701/murdoku-terug-in-de-tijd.html'],
+              'Only ordered work-result links inside #werk may be considered',
+            );
+
+            const wrongCbDetailHtml = `
+              <div class="uitv">
+                <span>ISBN</span></br>9789059969575<br /><br />
+              </div>`;
+            const multiCbRequests = [];
+            const multiCbLookup = createIsbnLookup({
+              fetchImpl: async (url) => {
+                const textUrl = String(url);
+                multiCbRequests.push(textUrl);
+                if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(multiSearchHtml);
+                if (textUrl === 'https://metadata.isbn.nl/111111/verkeerd-werk.html') return response(wrongCbDetailHtml);
+                if (textUrl === 'https://metadata.isbn.nl/2095701/murdoku-terug-in-de-tijd.html') return response(cbDetailHtml);
+                if (textUrl.startsWith('https://openlibrary.org/isbn/')) return response({}, { status: 404, json: true });
+                throw new Error(`Unexpected request ${textUrl}`);
+              },
+              env: {},
+              timeoutMs: 1000,
+            });
+            const multiCbResult = await multiCbLookup('9789059965607');
+            assert.strictEqual(multiCbResult.source, 'Bureau ISBN');
+            assert.ok(multiCbRequests.includes('https://metadata.isbn.nl/111111/verkeerd-werk.html'));
+            assert.ok(multiCbRequests.includes('https://metadata.isbn.nl/2095701/murdoku-terug-in-de-tijd.html'));
+
+            const workPublisherOnlyHtml = `
+              <meta property="og:title" content="Werk met andere uitgever">
+              <dl><dt>Uitgever(s)</dt><dd><a>Werkuitgever</a></dd></dl>
+              <div class="uitv">
+                <span>ISBN</span></br>9789059965607<br /><br />
+                <span>verschijningsdatum</span></br>22/05/2026<br />
+              </div>`;
+            assert.strictEqual(
+              parseCbDetailHtml(workPublisherOnlyHtml, '9789059965607').publisher,
+              '',
+              'A work-level publisher must not be promoted to exact-edition publisher metadata',
+            );
+
+            assert.strictEqual(
+              parseOpenLibraryData({ key: '/books/OL-NO-ISBN-M', title: 'Geen bewijs' }, '9789059965607'),
+              null,
+              'Open Library exact matches require equivalent ISBN evidence in the response itself',
+            );
+
+            const equivalentGoogleQueries = [];
+            const equivalentGoogleLookup = createIsbnLookup({
+              fetchImpl: async (url) => {
+                const textUrl = String(url);
+                if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(noResultHtml);
+                if (textUrl.startsWith('https://openlibrary.org/isbn/')) return response({}, { status: 404, json: true });
+                if (textUrl.startsWith('https://www.googleapis.com/books/v1/volumes')) {
+                  const q = new URL(textUrl).searchParams.get('q');
+                  equivalentGoogleQueries.push(q);
+                  if (q === 'isbn:9789059965607') {
+                    return response({ items: [{ volumeInfo: {
+                      title: 'Murdoku Terug in de tijd',
+                      authors: ['Manuel Garand'],
+                      industryIdentifiers: [{ type: 'ISBN_13', identifier: '9789059965607' }],
+                    } }] }, { json: true });
+                  }
+                  return response({ items: [{ volumeInfo: {
+                    title: 'Murdoku Terug in de tijd',
+                    authors: ['Manuel Garand'],
+                    publisher: 'Rijkere exacte Google uitgever',
+                    imageLinks: { smallThumbnail: 'http://books.google.com/equivalent-rich.jpg' },
+                    industryIdentifiers: [{ type: 'ISBN_10', identifier: '9059965604' }],
+                  } }] }, { json: true });
+                }
+                throw new Error(`Unexpected request ${textUrl}`);
+              },
+              env: { GOOGLE_BOOKS_API_KEY: 'test-key' },
+              timeoutMs: 1000,
+            });
+            const equivalentGoogleResult = await equivalentGoogleLookup('9789059965607');
+            assert.deepStrictEqual(equivalentGoogleQueries, ['isbn:9789059965607', 'isbn:9059965604']);
+            assert.strictEqual(equivalentGoogleResult.publisher, 'Rijkere exacte Google uitgever');
+            assert.strictEqual(equivalentGoogleResult.coverUrl, 'https://books.google.com/equivalent-rich.jpg');
+
+            const equivalentOlRequests = [];
+            const equivalentOlLookup = createIsbnLookup({
+              fetchImpl: async (url) => {
+                const textUrl = String(url);
+                if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(noResultHtml);
+                if (textUrl === 'https://openlibrary.org/isbn/9789059965607.json') {
+                  equivalentOlRequests.push('isbn13');
+                  return response({
+                    key: '/books/OL-SPARSE-M',
+                    isbn_13: ['9789059965607'],
+                    title: 'Murdoku Terug in de tijd',
+                  }, { json: true });
+                }
+                if (textUrl === 'https://openlibrary.org/isbn/9059965604.json') {
+                  equivalentOlRequests.push('isbn10');
+                  return response({
+                    key: '/books/OL-RICH-M',
+                    isbn_10: ['9059965604'],
+                    title: 'Murdoku Terug in de tijd',
+                    publishers: ['Rijkere exacte Open Library uitgever'],
+                    covers: [123456],
+                    languages: [{ key: '/languages/eng' }],
+                  }, { json: true });
+                }
+                throw new Error(`Unexpected request ${textUrl}`);
+              },
+              env: {},
+              timeoutMs: 1000,
+            });
+            const equivalentOlResult = await equivalentOlLookup('9789059965607');
+            assert.deepStrictEqual(equivalentOlRequests, ['isbn13', 'isbn10']);
+            assert.strictEqual(equivalentOlResult.publisher, 'Rijkere exacte Open Library uitgever');
+            assert.strictEqual(equivalentOlResult.coverUrl, 'https://covers.openlibrary.org/b/id/123456-L.jpg?default=false');
+
+            let transientEquivalentGoogleCalls = 0;
+            const transientEquivalentLookup = createIsbnLookup({
+              fetchImpl: async (url) => {
+                const textUrl = String(url);
+                if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(noResultHtml);
+                if (textUrl.startsWith('https://openlibrary.org/isbn/')) return response({}, { status: 404, json: true });
+                if (textUrl.startsWith('https://www.googleapis.com/books/v1/volumes')) {
+                  transientEquivalentGoogleCalls += 1;
+                  const q = new URL(textUrl).searchParams.get('q');
+                  if (q === 'isbn:9789059965607') {
+                    return response({ items: [{ volumeInfo: {
+                      title: 'Exact maar deels onbevestigd',
+                      authors: ['Auteur'],
+                      industryIdentifiers: [{ type: 'ISBN_13', identifier: '9789059965607' }],
+                    } }] }, { json: true });
+                  }
+                  return response({}, { status: 503, json: true });
+                }
+                throw new Error(`Unexpected request ${textUrl}`);
+              },
+              env: { GOOGLE_BOOKS_API_KEY: 'test-key' },
+              timeoutMs: 1000,
+            });
+            await transientEquivalentLookup('9789059965607');
+            await transientEquivalentLookup('9789059965607');
+            assert.strictEqual(
+              transientEquivalentGoogleCalls,
+              4,
+              'A partial exact hit must not be cached when another equivalent exact query failed transiently',
+            );
+          '''
+          test = replace_exact(
+              test,
+              "\n  console.log('ISBN exact-edition enrichment tests passed');",
+              regressions + "\n\n  console.log('ISBN exact-edition enrichment tests passed');",
+              'new exact-edition regressions',
+          )
+          test_path.write_text(test)
+
+          import_path = Path('tests/import.test.js')
+          import_test = import_path.read_text()
+          import_test = replace_exact(
+              import_test,
+              "    assert.strictEqual(scenario1.author, 'Carry Slee');\n",
+              "    assert.strictEqual(scenario1.author, 'Carry Slee');\n    assert.strictEqual(scenario1.importInfo?.process?.fallbackUsed, true);\n    assert.strictEqual(scenario1.importInfo?.process?.lookupSource, 'mock');\n    assert.strictEqual(\n      scenario1.importInfo?.process?.fallbackSource,\n      'mock-title-author',\n      'Fallback provenance must identify the actual title/author fallback source',\n    );\n",
+              'fallback provenance regression',
+          )
+          import_path.write_text(import_test)
+          PY
+      - name: Check syntax and diff
+        run: |
+          git diff --check
+          node --check isbn-lookup-core-impl.js
+          node --check isbn-lookup-core.js
+          node --check server.js
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Run focused regressions
+        run: |
+          node tests/isbn-lookup-core.test.js
+          node tests/isbn-review-regressions.test.js
+          node tests/isbn-tag-fallback.test.js
+          node tests/isbn-wrapper-hardening.test.js
+          node tests/import.test.js
+      - name: Run full suite
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Commit product fixes and remove workflow
+        if: success()
+        run: |
+          git config user.name "0xGitteth"
+          git config user.email "160280586+0xGitteth@users.noreply.github.com"
+          git rm .github/workflows/isbn-self-review-v4.yml
+          git add isbn-lookup-core-impl.js server.js tests/isbn-lookup-core.test.js tests/import.test.js
+          git commit -m "Exhaust exact ISBN evidence before work fallback"
+          git push origin HEAD:chatgpt/fix-isbn-review-regressions
