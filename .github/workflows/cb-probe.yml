@@ -12,22 +12,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Inspect metadata.isbn.nl detail structure
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Run focused exact-edition tests
+        run: node tests/isbn-lookup-core.test.js
+      - name: Live CB exact-ISBN smoke test
         shell: bash
         run: |
           set -euxo pipefail
-          UA='Boekenbaai/1.0 school-library metadata lookup research'
-          ISBN='9789059965607'
-          SEARCH='https://metadata.isbn.nl/search.html'
-          curl -L --max-time 20 -A "$UA" --get --data-urlencode "search=$ISBN" -o /tmp/search.html "$SEARCH"
-          DETAIL_PATH=$(grep -Eio 'href="/[0-9]+/[^"]+\.html"' /tmp/search.html | head -n 1 | sed -E 's/^href="|"$//g')
-          test -n "$DETAIL_PATH"
-          DETAIL_URL="https://metadata.isbn.nl${DETAIL_PATH}"
-          echo "DETAIL_URL=$DETAIL_URL"
-          curl -L --max-time 20 -A "$UA" -D /tmp/detail-headers.txt -o /tmp/detail.html "$DETAIL_URL"
-          echo '--- DETAIL STRUCTURE ---'
-          grep -Ein -C 5 'Auteur|NUR|Imprint|Uitgever|Taal|Vers\. datum|NSTC|uitvoeringen|ISBN|verschijningsdatum|Paperback|Hardback|E-book|flaptekst|mainimg|ie_fcache' /tmp/detail.html | head -n 420 || true
-          echo '--- H1 / IMAGES ---'
-          grep -Eio '<h1[^>]*>[^<]*</h1>|<img[^>]*src="[^"]+"[^>]*>' /tmp/detail.html | head -n 80 || true
-          echo '--- ROBOTS ---'
-          curl -L --max-time 20 -A "$UA" https://metadata.isbn.nl/robots.txt
+          node - <<'NODE'
+          const { createIsbnLookup } = require('./isbn-lookup-core');
+          (async () => {
+            const lookup = createIsbnLookup({ fetchImpl: global.fetch, env: process.env, timeoutMs: 3500 });
+            const result = await lookup('9789059965607');
+            if (!result.found || result.matchLevel !== 'exact_isbn') throw new Error('CB exact ISBN not found');
+            if (result.title !== 'Murdoku Terug in de tijd') throw new Error(`Unexpected title: ${result.title}`);
+            if (!result.sources.includes('Bureau ISBN')) throw new Error(`CB source missing: ${JSON.stringify(result.sources)}`);
+            console.log(JSON.stringify({ title: result.title, author: result.author, publisher: result.publisher, language: result.language, cover: Boolean(result.coverUrl), sources: result.sources }, null, 2));
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
