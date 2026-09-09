@@ -34,6 +34,123 @@ function toStrings(value) {
   return text ? [text] : [];
 }
 
+function parseHtmlAttributes(tag) {
+  const attrs = {};
+  const pattern = /([:\w-]+)\s*=\s*(["'])([\s\S]*?)\2/g;
+  let match;
+  while ((match = pattern.exec(String(tag || '')))) {
+    attrs[match[1].toLowerCase()] = String(match[3] || '')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&amp;/gi, '&');
+  }
+  return attrs;
+}
+
+function scanOpeningTags(html, tagName) {
+  const source = String(html || '');
+  const lower = source.toLowerCase();
+  const needle = `<${String(tagName || '').toLowerCase()}`;
+  const tags = [];
+  let cursor = 0;
+
+  while (cursor < source.length) {
+    const start = lower.indexOf(needle, cursor);
+    if (start < 0) break;
+    const boundary = lower[start + needle.length] || '';
+    if (boundary && !/[\s/>]/.test(boundary)) {
+      cursor = start + needle.length;
+      continue;
+    }
+
+    let quote = '';
+    let end = start + needle.length;
+    for (; end < source.length; end += 1) {
+      const char = source[end];
+      if (quote) {
+        if (char === quote) quote = '';
+        continue;
+      }
+      if (char === '"' || char === "'") {
+        quote = char;
+        continue;
+      }
+      if (char === '>') {
+        tags.push(source.slice(start, end + 1));
+        end += 1;
+        break;
+      }
+    }
+    cursor = Math.max(end, start + needle.length);
+  }
+
+  return tags;
+}
+
+function extractMeta(html, name) {
+  const wanted = String(name || '').toLowerCase();
+  for (const tag of scanOpeningTags(html, 'meta')) {
+    const attrs = parseHtmlAttributes(tag);
+    const nameKey = String(attrs.name || '').toLowerCase();
+    const propertyKey = String(attrs.property || '').toLowerCase();
+    if ((nameKey === wanted || propertyKey === wanted) && attrs.content !== undefined) {
+      return String(attrs.content).trim();
+    }
+  }
+  return '';
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function normalizeCbMetaProperties(html) {
+  const source = String(html || '');
+  const aliases = [];
+  for (const tag of scanOpeningTags(source, 'meta')) {
+    const attrs = parseHtmlAttributes(tag);
+    if (!attrs.name || !attrs.property || attrs.content === undefined) continue;
+    aliases.push(
+      `<meta property="${escapeHtmlAttribute(attrs.property)}" content="${escapeHtmlAttribute(attrs.content)}">`,
+    );
+  }
+  return aliases.length ? `${source}\n${aliases.join('\n')}` : source;
+}
+
+function parseCbDetailHtml(html, targetIsbn) {
+  return impl.parseCbDetailHtml(normalizeCbMetaProperties(html), targetIsbn);
+}
+
+function wrapCbResponse(response) {
+  if (!response || typeof response.text !== 'function') return response;
+  return new Proxy(response, {
+    get(target, property) {
+      if (property === 'text') {
+        return async () => normalizeCbMetaProperties(await target.text());
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+function createFetchWithCbMetaNormalization(fetchImpl) {
+  if (typeof fetchImpl !== 'function') return fetchImpl;
+  return async (input, init) => {
+    const response = await fetchImpl(input, init);
+    const url = String(input?.url || input || '');
+    return /https?:\/\/metadata\.isbn\.nl(?:\/|$)/i.test(url)
+      ? wrapCbResponse(response)
+      : response;
+  };
+}
+
 function collectExplicitIdentifiers(data) {
   if (!data || typeof data !== 'object') return [];
   const raw = [
@@ -63,10 +180,11 @@ function parseIsbnBarcodeData(data, targetIsbn) {
     return null;
   }
 
-  const tags = uniqueStrings(
-    toStrings(data.categories || data.subjects || data.tags)
-      .map((entry) => entry.toLowerCase()),
-  );
+  const tags = uniqueStrings([
+    ...toStrings(data.categories),
+    ...toStrings(data.subjects),
+    ...toStrings(data.tags),
+  ].map((entry) => entry.toLowerCase()));
   if (!tags.length) return null;
 
   return {
@@ -114,12 +232,13 @@ function mergeFallbackMetadata(result, fallback) {
 }
 
 function createIsbnLookup(options = {}) {
-  const lookup = impl.createIsbnLookup(options);
   const env = options.env || process.env;
+  const baseFetchImpl = options.fetchImpl || global.fetch;
+  const fetchImpl = createFetchWithCbMetaNormalization(baseFetchImpl);
+  const lookup = impl.createIsbnLookup({ ...options, fetchImpl });
   const enabled = String(env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
   if (!enabled) return lookup;
 
-  const fetchImpl = options.fetchImpl || global.fetch;
   const timeoutMs = positiveMs(options.timeoutMs, DEFAULT_TIMEOUT_MS);
   const cacheTtlMs = positiveMs(env.BOEKENBAAI_ISBN_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS);
   const isbnBarcodeBase = String(env.BOEKENBAAI_ISBN_API_BASE || 'https://isbnbarcode.org/api').replace(/\/$/, '');
@@ -140,11 +259,11 @@ function createIsbnLookup(options = {}) {
       const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
       let value = { metadata: null, status: 'not_found' };
       try {
-        if (typeof fetchImpl !== 'function') {
+        if (typeof baseFetchImpl !== 'function') {
           value = { metadata: null, status: 'error' };
           return value;
         }
-        const response = await fetchImpl(
+        const response = await baseFetchImpl(
           `${isbnBarcodeBase}/${encodeURIComponent(normalized)}`,
           {
             headers: {
@@ -232,6 +351,8 @@ function createIsbnLookup(options = {}) {
 
 module.exports = {
   ...impl,
+  extractMeta,
+  parseCbDetailHtml,
   parseIsbnBarcodeData,
   createIsbnLookup,
 };
