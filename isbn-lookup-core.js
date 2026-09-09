@@ -132,53 +132,8 @@ function extractMeta(html, name) {
   return '';
 }
 
-function escapeHtmlAttribute(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function normalizeCbMetaProperties(html) {
-  const source = String(html || '');
-  const aliases = [];
-  for (const tag of scanOpeningTags(source, 'meta')) {
-    const attrs = parseHtmlAttributes(tag);
-    if (!attrs.name || !attrs.property || attrs.content === undefined) continue;
-    aliases.push(
-      `<meta property="${escapeHtmlAttribute(attrs.property)}" content="${escapeHtmlAttribute(attrs.content)}">`,
-    );
-  }
-  return aliases.length ? `${source}\n${aliases.join('\n')}` : source;
-}
-
 function parseCbDetailHtml(html, targetIsbn) {
-  return impl.parseCbDetailHtml(normalizeCbMetaProperties(html), targetIsbn);
-}
-
-function wrapCbResponse(response) {
-  if (!response || typeof response.text !== 'function') return response;
-  return new Proxy(response, {
-    get(target, property) {
-      if (property === 'text') {
-        return async () => normalizeCbMetaProperties(await target.text());
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
-}
-
-function createFetchWithCbMetaNormalization(fetchImpl) {
-  if (typeof fetchImpl !== 'function') return fetchImpl;
-  return async (input, init) => {
-    const response = await fetchImpl(input, init);
-    const url = String(input?.url || input || '');
-    return /https?:\/\/metadata\.isbn\.nl(?:\/|$)/i.test(url)
-      ? wrapCbResponse(response)
-      : response;
-  };
+  return impl.parseCbDetailHtml(html, targetIsbn);
 }
 
 function explicitIdentifierEvidence(data) {
@@ -315,7 +270,7 @@ function createIsbnLookup(options = {}) {
   const env = options.env || process.env;
   const enabled = String(env.BOEKENBAAI_ENABLE_ISBNBARCODE || '').toLowerCase() === 'true';
   const baseFetchImpl = options.fetchImpl || global.fetch;
-  const fetchImpl = createFetchWithCbMetaNormalization(baseFetchImpl);
+  const fetchImpl = baseFetchImpl;
 
   // ISBNBarcode is owned by this wrapper so every lookup path uses the same
   // exact-ISBN validation, tag parsing, cache semantics, and debug behavior.
@@ -342,24 +297,29 @@ function createIsbnLookup(options = {}) {
   const fallbackInflight = new Map();
 
   async function loadFallback(isbn) {
-    const normalized = impl.normalizeIsbn(isbn);
-    const cacheKey = impl.toIsbn13(normalized) || normalized;
-    const cached = fallbackCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
-    if (cached) fallbackCache.delete(cacheKey);
-    if (fallbackInflight.has(cacheKey)) return fallbackInflight.get(cacheKey);
+  const normalized = impl.normalizeIsbn(isbn);
+  const cacheKey = impl.toIsbn13(normalized) || normalized;
+  const cached = fallbackCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (cached) fallbackCache.delete(cacheKey);
+  if (fallbackInflight.has(cacheKey)) return fallbackInflight.get(cacheKey);
 
-    const promise = (async () => {
+  const promise = (async () => {
+    if (typeof baseFetchImpl !== 'function') {
+      return { metadata: null, status: 'error', requestUrls: [] };
+    }
+
+    let sawError = false;
+    let sawTimeout = false;
+    const requestUrls = [];
+    for (const candidate of impl.getEquivalentIsbns(normalized)) {
       const controller = typeof AbortController === 'function' ? new AbortController() : null;
       const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-      let value = { metadata: null, status: 'not_found' };
+      const requestUrl = `${isbnBarcodeBase}/${encodeURIComponent(candidate)}`;
+      requestUrls.push(requestUrl);
       try {
-        if (typeof baseFetchImpl !== 'function') {
-          value = { metadata: null, status: 'error' };
-          return value;
-        }
         const response = await baseFetchImpl(
-          `${isbnBarcodeBase}/${encodeURIComponent(normalized)}`,
+          requestUrl,
           {
             headers: {
               Accept: 'application/json',
@@ -369,11 +329,8 @@ function createIsbnLookup(options = {}) {
           },
         );
         if (!response?.ok) {
-          value = {
-            metadata: null,
-            status: response?.status === 404 ? 'not_found' : 'error',
-          };
-          return value;
+          if (response?.status !== 404) sawError = true;
+          continue;
         }
 
         let data = null;
@@ -383,53 +340,59 @@ function createIsbnLookup(options = {}) {
         } else if (typeof response.text === 'function') {
           const text = await response.text();
           if (!text.trim()) {
-            value = { metadata: null, status: 'not_found' };
-            return value;
+            sawError = true;
+            continue;
           }
           try {
             data = JSON.parse(text);
           } catch (_error) {
-            value = { metadata: null, status: 'error' };
-            return value;
+            sawError = true;
+            continue;
           }
         } else if (typeof response.json === 'function') {
           data = await response.json();
         } else {
-          value = { metadata: null, status: 'error' };
-          return value;
+          sawError = true;
+          continue;
         }
 
         const metadata = parseIsbnBarcodeData(data, normalized);
-        value = {
-          metadata,
-          status: metadata?.found ? 'found' : 'not_found',
-        };
-        return value;
+        if (metadata?.found) {
+          const value = { metadata, status: 'found', requestUrls };
+          fallbackCache.set(cacheKey, {
+            value,
+            expiresAt: Date.now() + cacheTtlMs,
+          });
+          return value;
+        }
       } catch (error) {
-        value = {
-          metadata: null,
-          status: error?.name === 'AbortError' ? 'timeout' : 'error',
-        };
-        return value;
+        if (error?.name === 'AbortError') sawTimeout = true;
+        else sawError = true;
       } finally {
         if (timer) clearTimeout(timer);
-        const ttl = value.metadata?.found ? cacheTtlMs : negativeCacheTtlMs;
-        fallbackCache.set(cacheKey, {
-          value,
-          expiresAt: Date.now() + ttl,
-        });
       }
-    })();
-
-    fallbackInflight.set(cacheKey, promise);
-    try {
-      return await promise;
-    } finally {
-      fallbackInflight.delete(cacheKey);
     }
-  }
 
-  return async function lookupWithFallbackEnrichment(isbn, lookupOptions = {}) {
+    const status = sawError ? 'error' : sawTimeout ? 'timeout' : 'not_found';
+    const value = { metadata: null, status, requestUrls };
+    if (status === 'not_found') {
+      fallbackCache.set(cacheKey, {
+        value,
+        expiresAt: Date.now() + negativeCacheTtlMs,
+      });
+    }
+    return value;
+  })();
+
+  fallbackInflight.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    fallbackInflight.delete(cacheKey);
+  }
+}
+
+return async function lookupWithFallbackEnrichment(isbn, lookupOptions = {}) {
     const rawResult = await lookup(isbn, lookupOptions);
     const result = withIsbnBarcodeConfiguredDebug(rawResult);
     const normalized = impl.normalizeIsbn(isbn);
@@ -460,6 +423,12 @@ function createIsbnLookup(options = {}) {
         sourceStatus: {
           ...(result.debug.sourceStatus || {}),
           'isbnbarcode.org': fallback.status,
+        },
+        isbnbarcode: {
+          ...(result.debug.isbnbarcode || {}),
+          enabled: true,
+          requestUrl: fallback.requestUrls?.[0] || '',
+          requestUrls: fallback.requestUrls || [],
         },
       },
     };

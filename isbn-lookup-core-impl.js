@@ -86,9 +86,21 @@ function decodeHtml(value) {
     mdash: '—',
     bull: '•',
   };
+  const decodeCodePoint = (match, codePoint) => {
+    const number = Number(codePoint);
+    if (!Number.isInteger(number)
+      || number < 0
+      || number > 0x10FFFF
+      || (number >= 0xD800 && number <= 0xDFFF)) {
+      return match;
+    }
+    return String.fromCodePoint(number);
+  };
   return String(value || '')
-    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (match, code) => decodeCodePoint(match, Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (match, code) => (
+      decodeCodePoint(match, Number.parseInt(code, 16))
+    ))
     .replace(/&([a-z]+);/gi, (match, name) => (
       Object.prototype.hasOwnProperty.call(named, name.toLowerCase())
         ? named[name.toLowerCase()]
@@ -201,8 +213,9 @@ function extractMeta(html, name) {
   const wanted = String(name || '').toLowerCase();
   for (const tag of scanOpeningTags(html, 'meta')) {
     const attrs = parseHtmlAttributes(tag);
-    const key = String(attrs.name || attrs.property || '').toLowerCase();
-    if (key === wanted && attrs.content !== undefined) {
+    const nameKey = String(attrs.name || '').toLowerCase();
+    const propertyKey = String(attrs.property || '').toLowerCase();
+    if ((nameKey === wanted || propertyKey === wanted) && attrs.content !== undefined) {
       return String(attrs.content).trim();
     }
   }
@@ -491,25 +504,22 @@ function parseOpenLibraryData(data, targetIsbn) {
 }
 
 function toStringList(value) {
-  const list = value === undefined || value === null
-    ? []
-    : Array.isArray(value)
-      ? value
-      : [value];
-  return list.map((entry) => {
-    if (typeof entry === 'string') return entry.trim();
-    if (entry && typeof entry === 'object') {
-      return String(
-        entry.name
-        || entry.full_name
-        || entry.label
-        || entry.value
-        || entry.text
-        || '',
-      ).trim();
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value.flatMap(toStringList);
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text ? [text] : [];
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return [String(value)];
+  }
+  if (typeof value === 'object') {
+    for (const key of ['name', 'full_name', 'label', 'value', 'text', 'url', 'href']) {
+      const nested = toStringList(value[key]);
+      if (nested.length) return nested;
     }
-    return '';
-  }).filter(Boolean);
+  }
+  return [];
 }
 
 function collectIsbnBarcodeIdentifiers(data) {
@@ -522,9 +532,13 @@ function collectIsbnBarcodeIdentifiers(data) {
     data.isbn_10,
     data.barcode,
   ];
-  return raw.flatMap((entry) => (
+  const providedValues = raw.flatMap((entry) => (
     Array.isArray(entry) ? entry : entry === undefined || entry === null ? [] : [entry]
-  )).map(normalizeIsbn).filter(Boolean);
+  )).filter((entry) => String(entry).trim() !== '');
+  return {
+    provided: providedValues.length > 0,
+    identifiers: providedValues.map(normalizeIsbn).filter(Boolean),
+  };
 }
 
 function parseIsbnBarcodeData(data, targetIsbn) {
@@ -532,51 +546,109 @@ function parseIsbnBarcodeData(data, targetIsbn) {
   const family = new Set(getEquivalentIsbns(targetIsbn));
   if (!family.size) return null;
 
-  const explicitIdentifiers = collectIsbnBarcodeIdentifiers(data);
-  if (explicitIdentifiers.length
-    && !explicitIdentifiers.some((identifier) => family.has(identifier))) {
+  const identifierEvidence = collectIsbnBarcodeIdentifiers(data);
+  if (identifierEvidence.provided
+    && !identifierEvidence.identifiers.some((identifier) => family.has(identifier))) {
     return null;
   }
 
-  const authors = toStringList(
-    data.author || data.author_name || data.authors || data.contributors,
-  );
-  const title = String(
-    data.title || data.book_title || data.item_name || data.name || '',
-  ).trim();
-  const author = typeof data.author === 'string'
-    ? data.author.trim()
-    : authors.join(', ');
-  const description = typeof data.description === 'string'
-    ? data.description
-    : data.description?.value || data.synopsis || data.summary || '';
-  const publishers = toStringList(
-    data.publisher || data.publisher_name || data.publishers,
-  );
-  const coverUrl = String(
-    data.cover || data.cover_url || data.image || data.image_url || data.thumbnail || '',
-  ).trim().replace(/^http:\/\//i, 'https://');
+  const mergeAliases = (...values) => dedupe(values.flatMap(toStringList));
+  const firstAlias = (...values) => {
+    for (const value of values) {
+      const strings = toStringList(value);
+      if (strings.length) return strings[0];
+    }
+    return '';
+  };
+  const firstRawAlias = (...values) => {
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      if (Array.isArray(value) && value.length === 0) continue;
+      if (typeof value === 'string' && !value.trim()) continue;
+      if (typeof value === 'number' && !Number.isFinite(value)) continue;
+      if (typeof value === 'object' && !Array.isArray(value)) {
+        if (typeof value.value === 'string' && value.value.trim()) return value;
+        const strings = toStringList(value);
+        if (!strings.length) continue;
+        return strings[0];
+      }
+      return value;
+    }
+    return undefined;
+  };
 
-  if (!title && !author && !description && !publishers.length && !coverUrl) {
+  const authors = mergeAliases(
+    data.author,
+    data.author_name,
+    data.authors,
+    data.contributors,
+  );
+  const title = firstAlias(
+    data.title,
+    data.book_title,
+    data.item_name,
+    data.name,
+  );
+  const descriptionValue = firstRawAlias(
+    data.description,
+    data.synopsis,
+    data.summary,
+  );
+  const description = typeof descriptionValue === 'string'
+    ? descriptionValue
+    : descriptionValue?.value || '';
+  const publishers = mergeAliases(
+    data.publisher,
+    data.publisher_name,
+    data.publishers,
+  );
+  const languages = mergeAliases(
+    data.language,
+    data.languages,
+    data.language_name,
+  );
+  const coverUrl = firstAlias(
+    data.cover,
+    data.cover_url,
+    data.image,
+    data.image_url,
+    data.thumbnail,
+  ).replace(/^http:\/\//i, 'https://');
+  const publishedAt = firstAlias(data.publish_date, data.publication_date);
+  const pageCount = numberFromValue(firstRawAlias(
+    data.page_count,
+    data.pages,
+    data.number_of_pages,
+  ));
+  const tags = mergeAliases(data.categories, data.subjects, data.tags)
+    .map((entry) => entry.toLowerCase());
+  const language = normalizeLanguage(languages.join(' '));
+
+  if (!title
+    && !authors.length
+    && !description
+    && !publishers.length
+    && !coverUrl
+    && !publishedAt
+    && !pageCount
+    && !language
+    && !tags.length) {
     return null;
   }
 
   return {
     barcode: normalizeIsbn(targetIsbn),
     title,
-    author,
+    author: authors.join(', '),
     authors,
     description: stripHtml(description),
     publisher: publishers.join(', '),
-    publishedAt: String(data.publish_date || data.publication_date || '').trim(),
-    publishedYear: yearFromDate(data.publish_date || data.publication_date),
-    pageCount: numberFromValue(data.page_count || data.pages || data.number_of_pages),
-    language: normalizeLanguage(
-      toStringList(data.language || data.languages || data.language_name).join(' '),
-    ),
+    publishedAt,
+    publishedYear: yearFromDate(publishedAt),
+    pageCount,
+    language,
     coverUrl,
-    tags: toStringList(data.categories || data.subjects || data.tags)
-      .map((entry) => entry.toLowerCase()),
+    tags,
     source: 'isbnbarcode.org',
     matchLevel: 'exact_isbn',
     found: true,
@@ -718,7 +790,16 @@ async function fetchAndConsume(fetchImpl, url, options, timeoutMs, consume) {
       url,
       controller ? { ...options, signal: controller.signal } : options,
     );
-    if (!response?.ok) return { response, value: null };
+    const status = Number(response?.status) || 0;
+    if (!response) throw new Error('empty_fetch_response');
+    if (!response.ok) {
+      if (status === 404) return { response, value: null };
+      const error = new Error(`http_${status || 'error'}`);
+      error.name = 'HttpError';
+      error.status = status;
+      throw error;
+    }
+    if (status === 204) return { response, value: null };
     const value = await consume(response);
     return { response, value };
   } finally {
@@ -750,13 +831,17 @@ async function fetchJson(fetchImpl, url, options = {}, timeoutMs = DEFAULT_TIMEO
       }
       if (typeof response.text === 'function') {
         const text = await response.text();
+        if (!text.trim()) throw new Error('empty_json_response');
         try {
           return JSON.parse(text);
-        } catch (_error) {
-          return null;
+        } catch (error) {
+          const syntaxError = new SyntaxError('invalid_json_response');
+          syntaxError.cause = error;
+          throw syntaxError;
         }
       }
-      return typeof response.json === 'function' ? response.json() : null;
+      if (typeof response.json === 'function') return response.json();
+      throw new Error('json_body_unavailable');
     },
   );
   return value;
@@ -920,35 +1005,45 @@ function createIsbnLookup({
   }
 
   async function lookupIsbnBarcode(isbn, debug) {
-    if (!isbnBarcodeEnabled) return null;
+  if (!isbnBarcodeEnabled) return null;
+  for (const candidate of getEquivalentIsbns(isbn)) {
     try {
       debug?.sourcesTried.push('isbnbarcode.org');
       const data = await fetchJson(
         fetchImpl,
-        `${isbnBarcodeBase}/${encodeURIComponent(isbn)}`,
+        `${isbnBarcodeBase}/${encodeURIComponent(candidate)}`,
         { headers: { ...headers, Accept: 'application/json' } },
         timeoutMs,
       );
       const metadata = parseIsbnBarcodeData(data, isbn);
-      if (debug) {
-        debug.sourceStatus['isbnbarcode.org'] = metadata?.found
-          ? 'found'
-          : 'not_found';
+      if (metadata?.found) {
+        if (debug) debug.sourceStatus['isbnbarcode.org'] = 'found';
+        return metadata;
       }
-      return metadata;
     } catch (error) {
       if (debug) {
         debug.sourceStatus['isbnbarcode.org'] = error?.name === 'AbortError'
           ? 'timeout'
           : 'error';
       }
-      return null;
     }
   }
-
-  function isComplete(result) {
-    return Boolean(result?.found && result.title && result.author && result.coverUrl);
+  if (debug && !debug.sourceStatus['isbnbarcode.org']) {
+    debug.sourceStatus['isbnbarcode.org'] = 'not_found';
   }
+  return null;
+}
+
+function isComplete(result) {
+  return Boolean(
+    result?.found
+    && result.title
+    && result.author
+    && result.coverUrl
+    && Array.isArray(result.tags)
+    && result.tags.length,
+  );
+}
 
   return async function lookupIsbnMetadata(isbn, options = {}) {
     const normalized = normalizeIsbn(isbn);
@@ -1005,44 +1100,44 @@ function createIsbnLookup({
     }
 
     const lookupPromise = (async () => {
-      const debug = debugEnabled ? createDebugPayload(normalized, env) : null;
-      if (debug) {
-        debug.sourcesConfigured = [
-          'Bureau ISBN',
-          ...(env.GOOGLE_BOOKS_API_KEY ? ['Google Books'] : []),
-          'Open Library',
-          ...(isbnBarcodeEnabled ? ['isbnbarcode.org'] : []),
-        ];
-      }
+    const sourceState = createDebugPayload(normalized, env);
+    sourceState.sourcesConfigured = [
+      'Bureau ISBN',
+      ...(env.GOOGLE_BOOKS_API_KEY ? ['Google Books'] : []),
+      'Open Library',
+      ...(isbnBarcodeEnabled ? ['isbnbarcode.org'] : []),
+    ];
 
-      const [cbSettled, googleSettled, openSettled] = await Promise.allSettled([
-        lookupCb(normalized, debug),
-        lookupGoogle(normalized, debug),
-        lookupOpenLibrary(normalized, debug),
-      ]);
+    const [cbSettled, googleSettled, openSettled] = await Promise.allSettled([
+      lookupCb(normalized, sourceState),
+      lookupGoogle(normalized, sourceState),
+      lookupOpenLibrary(normalized, sourceState),
+    ]);
 
-      const cb = cbSettled.status === 'fulfilled' ? cbSettled.value : null;
-      const google = googleSettled.status === 'fulfilled' ? googleSettled.value : null;
-      const openLibrary = openSettled.status === 'fulfilled' ? openSettled.value : null;
+    const cb = cbSettled.status === 'fulfilled' ? cbSettled.value : null;
+    const google = googleSettled.status === 'fulfilled' ? googleSettled.value : null;
+    const openLibrary = openSettled.status === 'fulfilled' ? openSettled.value : null;
 
-      let result = mergeExactMetadata({ cb, google, openLibrary }, normalized);
-      if (isbnBarcodeEnabled && !isComplete(result)) {
-        const isbnBarcode = await lookupIsbnBarcode(normalized, debug);
-        result = mergeExactMetadata({ cb, google, openLibrary, isbnBarcode }, normalized);
-      }
+    let result = mergeExactMetadata({ cb, google, openLibrary }, normalized);
+    if (isbnBarcodeEnabled && !isComplete(result)) {
+      const isbnBarcode = await lookupIsbnBarcode(normalized, sourceState);
+      result = mergeExactMetadata({ cb, google, openLibrary, isbnBarcode }, normalized);
+    }
 
-      result.barcode = normalized;
-      const ttl = result.found ? cacheTtlMs : negativeCacheTtlMs;
-      const entry = {
-        value: result,
-        debug,
-        expiresAt: Date.now() + ttl,
-      };
-      cache.set(cacheKey, entry);
-      return entry;
-    })();
+    result.barcode = normalized;
+    const transientFailure = Object.values(sourceState.sourceStatus)
+      .some((status) => status === 'error' || status === 'timeout');
+    const ttl = result.found ? cacheTtlMs : negativeCacheTtlMs;
+    const entry = {
+      value: result,
+      debug: debugEnabled ? sourceState : null,
+      expiresAt: Date.now() + ttl,
+    };
+    if (!transientFailure) cache.set(cacheKey, entry);
+    return entry;
+  })();
 
-    inflight.set(cacheKey, lookupPromise);
+  inflight.set(cacheKey, lookupPromise);
     try {
       const entry = await lookupPromise;
       const result = {
