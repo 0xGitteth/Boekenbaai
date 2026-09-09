@@ -1,4 +1,4 @@
-name: Temporary ISBN self-review v6
+name: Temporary ISBN self-review v7
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
           cache: npm
 
       - name: Apply reviewed patch
-        run: python .github/scripts/isbn_self_review_v6.py
+        run: python .github/scripts/isbn_self_review_v7.py
 
       - name: Check syntax and diff hygiene
         run: |
@@ -59,7 +59,7 @@ jobs:
         run: |
           git config user.name "0xGitteth"
           git config user.email "160280586+0xGitteth@users.noreply.github.com"
-          git rm .github/workflows/isbn-self-review-v5.yml .github/scripts/isbn_self_review_v5.py .github/scripts/isbn_self_review_v6.py
+          git rm .github/workflows/isbn-self-review-v5.yml .github/scripts/isbn_self_review_v5.py .github/scripts/isbn_self_review_v6.py .github/scripts/isbn_self_review_v7.py
           git add isbn-lookup-core-impl.js server.js tests/isbn-lookup-core.test.js tests/isbn-review-regressions.test.js tests/import.test.js
           git diff --cached --check
           git commit -m "Harden exact-edition lookup after self-review"
