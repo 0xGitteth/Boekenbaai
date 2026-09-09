@@ -103,6 +103,40 @@
     return document.querySelector('#admin-teacher-detail-content')?.dataset.teacherId || '';
   }
 
+  function scrollTeacherDetailIntoView() {
+    const detail = document.querySelector('#admin-teacher-detail-content');
+    if (!detail || detail.classList.contains('hidden')) return;
+    const narrow = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 900px)').matches
+      : window.innerWidth <= 900;
+    if (!narrow) return;
+    window.requestAnimationFrame(() => {
+      detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function prepareGroupedTeacherActivation(event) {
+    const button = event.target.closest('[data-select-teacher="true"]');
+    if (!button || !button.closest('.teacher-groups-live')) return;
+
+    const search = document.querySelector('#admin-teacher-search');
+    if (!search || search.value.trim()) return;
+
+    // app.js wist een geselecteerde docent wanneer zijn oude renderer met een leeg
+    // zoekveld opnieuw draait. Geef die renderer voor deze ene klik tijdelijk een
+    // geldige zoekterm, zodat de bestaande detailhandler de selectie kan behouden.
+    const temporaryQuery = button.querySelector('strong')?.textContent?.trim() || '';
+    if (!temporaryQuery) return;
+    search.value = temporaryQuery;
+
+    window.setTimeout(() => {
+      if (search.value === temporaryQuery) search.value = '';
+      queueRender();
+      ensureTeacherEditor();
+      scrollTeacherDetailIntoView();
+    }, 0);
+  }
+
   function ensureTeacherEditor() {
     const detail = document.querySelector('#admin-teacher-detail-content');
     if (!detail || detail.classList.contains('hidden')) return;
@@ -283,10 +317,14 @@
     const list = document.querySelector('#admin-teacher-list');
     if (list && !list.dataset.teacherGroupsObserved) {
       list.dataset.teacherGroupsObserved = 'true';
+      list.addEventListener('click', prepareGroupedTeacherActivation, true);
       list.addEventListener('click', (event) => {
         const button = event.target.closest('[data-select-teacher="true"]');
         if (!button) return;
-        window.setTimeout(ensureTeacherEditor, 0);
+        window.setTimeout(() => {
+          ensureTeacherEditor();
+          scrollTeacherDetailIntoView();
+        }, 0);
       });
       const observer = new MutationObserver(() => {
         if (!list.querySelector('.teacher-groups-live')) {
