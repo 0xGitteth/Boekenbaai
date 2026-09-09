@@ -164,6 +164,23 @@ async function request(pathname, token = '') {
       'Op smallere schermen moet de nieuwe editor in beeld worden gebracht'
     );
 
+    const installSource = scriptText.match(/function install\(\) \{([\s\S]*?)\n  \}\n\n  function boot/)?.[1] || '';
+    assert.match(
+      installSource,
+      /let changed = false/,
+      'De DOM-installer moet bijhouden of er werkelijk nieuwe hooks zijn geïnstalleerd'
+    );
+    assert.match(
+      installSource,
+      /if \(changed\) queueRender\(\);/,
+      'Een observer-callback mag alleen opnieuw renderen als de installatie echt veranderd is'
+    );
+    assert.doesNotMatch(
+      installSource,
+      /ensureEditorContainer\(\);\s*queueRender\(\);/,
+      'De installer mag niet na iedere DOM-mutatie onvoorwaardelijk renderen, anders klappen details meteen weer dicht'
+    );
+
     const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
     assert.match(
       serverSource,
