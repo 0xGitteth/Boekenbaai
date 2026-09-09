@@ -134,14 +134,37 @@ async function request(pathname, token = '') {
     assert.match(
       scriptText,
       /function handleGroupedTeacherClick[\s\S]*preventDefault\(\)[\s\S]*stopImmediatePropagation\(\)[\s\S]*selectedTeacherId = teacherId/,
-      'De nieuwe per-klaslaag moet de docentklik zelf afhandelen in plaats van terugvallen op de oude zoekrenderer'
+      'De per-klaslaag moet de docentklik zelf afhandelen'
+    );
+    assert.doesNotMatch(
+      scriptText.match(/function handleGroupedTeacherClick\(event\) \{([\s\S]*?)\n  \}/)?.[1] || '',
+      /queueRender\(\)/,
+      'Een docentklik mag de klassenlijst niet opnieuw renderen; de geopende klas moet open blijven'
     );
     assert.match(
       scriptText,
       /hideLegacyTeacherDetail[\s\S]*admin-teacher-detail[\s\S]*legacy\.hidden = true/,
-      'De oude halfgevulde docentdetailkaart moet in de nieuwe Beheerflow verborgen zijn'
+      'De oude halfgevulde docentdetailkaart moet verborgen blijven'
     );
-    assert.match(scriptText, /teacher-groups-live-editor/, 'Er moet één eigen docenteditor zijn');
+    assert.match(
+      scriptText,
+      /document\.createElement\('dialog'\)[\s\S]*teacher-groups-live-editor/,
+      'De docenteditor moet als native modal-dialog worden opgebouwd'
+    );
+    assert.match(scriptText, /showModal\(\)/, 'De docenteditor moet als modal worden geopend');
+    assert.match(
+      scriptText,
+      /event\.target === editor[\s\S]*editor\.close\(\)/,
+      'Klikken op de backdrop moet de docentmodal sluiten'
+    );
+    assert.match(
+      scriptText,
+      /addEventListener\('close'[\s\S]*selectedTeacherId = ''[\s\S]*clearSelectedTeacherHighlight/,
+      'Sluiten via kruis, Esc of backdrop moet de selectie opruimen'
+    );
+    assert.match(scriptText, /aria-label', 'Sluiten'/, 'De sluitknop moet toegankelijk gelabeld zijn');
+    assert.doesNotMatch(scriptText, /scrollEditorIntoView/, 'De modalflow mag niet meer afhankelijk zijn van naar beneden scrollen');
+
     assert.match(scriptText, /teacher-groups-profile-name/, 'De docentnaam moet bewerkbaar zijn');
     assert.match(scriptText, /data-teacher-group-class/, 'Klassen moeten in hetzelfde detail bewerkbaar zijn');
     assert.match(
@@ -153,16 +176,7 @@ async function request(pathname, token = '') {
     assert.match(scriptText, /\/api\/auth\/google\/manage/, 'Google-status moet vanuit de bestaande beheerroute worden geladen');
     assert.match(scriptText, /\/api\/auth\/google\/staff-email/, 'Schoolmail moet via de bestaande beveiligde Google-route worden opgeslagen');
     assert.match(scriptText, /Docent verwijderen/, 'De verwijderactie moet onderaan hetzelfde detail staan');
-    assert.match(
-      scriptText,
-      /method: 'DELETE'/,
-      'Docent verwijderen moet de bestaande DELETE-route blijven gebruiken'
-    );
-    assert.match(
-      scriptText,
-      /scrollEditorIntoView[\s\S]*scrollIntoView/,
-      'Op smallere schermen moet de nieuwe editor in beeld worden gebracht'
-    );
+    assert.match(scriptText, /method: 'DELETE'/, 'Docent verwijderen moet de bestaande DELETE-route blijven gebruiken');
 
     const installSource = scriptText.match(/function install\(\) \{([\s\S]*?)\n  \}\n\n  function boot/)?.[1] || '';
     assert.match(
@@ -178,7 +192,7 @@ async function request(pathname, token = '') {
     assert.doesNotMatch(
       installSource,
       /ensureEditorContainer\(\);\s*queueRender\(\);/,
-      'De installer mag niet na iedere DOM-mutatie onvoorwaardelijk renderen, anders klappen details meteen weer dicht'
+      'De installer mag niet na iedere DOM-mutatie onvoorwaardelijk renderen'
     );
 
     const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
@@ -198,7 +212,7 @@ async function request(pathname, token = '') {
     const html = await page.text();
     assert.match(html, /<script src="\/teacher-groups\.js"><\/script>/);
 
-    console.log('Complete docenteditor en klasgroepering regressietest geslaagd.');
+    console.log('Docentmodal en klasgroepering regressietest geslaagd.');
   } finally {
     await stop();
   }
