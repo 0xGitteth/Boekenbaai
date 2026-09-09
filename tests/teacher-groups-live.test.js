@@ -128,25 +128,40 @@ async function request(pathname, token = '') {
     const script = await request('/teacher-groups.js');
     assert.strictEqual(script.status, 200);
     const scriptText = await script.text();
+
     assert.match(scriptText, /teacher-groups-live/);
-    assert.match(scriptText, /data-select-teacher/);
-    assert.match(scriptText, /teacher-groups-edit-form/);
-    assert.match(scriptText, /\/api\/teachers\//, 'Docentdetail moet de bestaande PATCH-route gebruiken');
-    assert.match(scriptText, /admin-teacher-password-form[\s\S]*hidden = true/, 'Tijdelijk wachtwoord hoort niet prominent in de Google-first docentflow');
+    assert.match(scriptText, /data-teacher-groups-teacher/);
     assert.match(
       scriptText,
-      /function prepareGroupedTeacherActivation[\s\S]*search\.value = temporaryQuery[\s\S]*search\.value === temporaryQuery[\s\S]*search\.value = ''/,
-      'Een docentklik uit de klasgroepering moet de lege-zoekveld reset van de oude renderer overbruggen'
+      /function handleGroupedTeacherClick[\s\S]*preventDefault\(\)[\s\S]*stopImmediatePropagation\(\)[\s\S]*selectedTeacherId = teacherId/,
+      'De nieuwe per-klaslaag moet de docentklik zelf afhandelen in plaats van terugvallen op de oude zoekrenderer'
     );
     assert.match(
       scriptText,
-      /addEventListener\('click', prepareGroupedTeacherActivation, true\)/,
-      'De click-bridge moet in capture-fase draaien vóór de bestaande app.js docenthandler'
+      /hideLegacyTeacherDetail[\s\S]*admin-teacher-detail[\s\S]*legacy\.hidden = true/,
+      'De oude halfgevulde docentdetailkaart moet in de nieuwe Beheerflow verborgen zijn'
+    );
+    assert.match(scriptText, /teacher-groups-live-editor/, 'Er moet één eigen docenteditor zijn');
+    assert.match(scriptText, /teacher-groups-profile-name/, 'De docentnaam moet bewerkbaar zijn');
+    assert.match(scriptText, /data-teacher-group-class/, 'Klassen moeten in hetzelfde detail bewerkbaar zijn');
+    assert.match(
+      scriptText,
+      /method: 'PATCH'[\s\S]*body: \{ name, classIds \}/,
+      'Naam en klassen moeten samen via de bestaande docent-PATCH opgeslagen worden'
+    );
+    assert.match(scriptText, /Google-schoolaccount/, 'Google-schoolaccount moet onderdeel zijn van hetzelfde detail');
+    assert.match(scriptText, /\/api\/auth\/google\/manage/, 'Google-status moet vanuit de bestaande beheerroute worden geladen');
+    assert.match(scriptText, /\/api\/auth\/google\/staff-email/, 'Schoolmail moet via de bestaande beveiligde Google-route worden opgeslagen');
+    assert.match(scriptText, /Docent verwijderen/, 'De verwijderactie moet onderaan hetzelfde detail staan');
+    assert.match(
+      scriptText,
+      /method: 'DELETE'/,
+      'Docent verwijderen moet de bestaande DELETE-route blijven gebruiken'
     );
     assert.match(
       scriptText,
-      /scrollTeacherDetailIntoView[\s\S]*scrollIntoView/,
-      'Op smallere schermen moet het geopende docentdetail zichtbaar in beeld worden gebracht'
+      /scrollEditorIntoView[\s\S]*scrollIntoView/,
+      'Op smallere schermen moet de nieuwe editor in beeld worden gebracht'
     );
 
     const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
@@ -166,7 +181,7 @@ async function request(pathname, token = '') {
     const html = await page.text();
     assert.match(html, /<script src="\/teacher-groups\.js"><\/script>/);
 
-    console.log('Live docentgroepering, docentbewerking en detailklik-regressietest geslaagd.');
+    console.log('Complete docenteditor en klasgroepering regressietest geslaagd.');
   } finally {
     await stop();
   }
