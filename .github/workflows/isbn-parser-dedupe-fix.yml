@@ -21,14 +21,14 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Remove remaining alias edge case
+      - name: Apply final alias cleanup
         shell: bash
         run: |
           python <<'PY'
           from pathlib import Path
           p = Path('isbn-lookup-core-impl.js')
           text = p.read_text()
-          old = '''  const firstRawAlias = (...values) => {
+          raw_block = """  const firstRawAlias = (...values) => {
     for (const value of values) {
       if (value === undefined || value === null) continue;
       if (Array.isArray(value) && value.length === 0) continue;
@@ -45,11 +45,11 @@ jobs:
     return undefined;
   };
 
-'''
-          if old not in text:
+"""
+          if raw_block not in text:
               raise SystemExit('firstRawAlias block not found')
-          text = text.replace(old, '', 1)
-          old_desc = '''  const descriptionValue = firstRawAlias(
+          text = text.replace(raw_block, '', 1)
+          old_desc = """  const descriptionValue = firstRawAlias(
     data.description,
     data.synopsis,
     data.summary,
@@ -57,32 +57,31 @@ jobs:
   const description = typeof descriptionValue === 'string'
     ? descriptionValue
     : descriptionValue?.value || '';
-'''
-          new_desc = '''  const description = firstAlias(
+"""
+          new_desc = """  const description = firstAlias(
     data.description,
     data.synopsis,
     data.summary,
   );
-'''
+"""
           if old_desc not in text:
-              raise SystemExit('description alias block not found')
+              raise SystemExit('description block not found')
           text = text.replace(old_desc, new_desc, 1)
-          old_pages = '''  const pageCount = numberFromValue(firstRawAlias(
+          old_pages = """  const pageCount = numberFromValue(firstRawAlias(
     data.page_count,
     data.pages,
     data.number_of_pages,
   ));
-'''
-          new_pages = '''  const pageCount = numberFromValue(firstAlias(
+"""
+          new_pages = """  const pageCount = numberFromValue(firstAlias(
     data.page_count,
     data.pages,
     data.number_of_pages,
   ));
-'''
+"""
           if old_pages not in text:
-              raise SystemExit('page alias block not found')
-          text = text.replace(old_pages, new_pages, 1)
-          p.write_text(text)
+              raise SystemExit('page block not found')
+          p.write_text(text.replace(old_pages, new_pages, 1))
 
           p = Path('tests/isbn-wrapper-hardening.test.js')
           text = p.read_text()
@@ -93,26 +92,26 @@ jobs:
     description: ['Beschrijving uit array'],
     page_count: [144],
   }, isbn);
-  assert.strictEqual(
-    arrayDescription.description,
-    'Beschrijving uit array',
-    'Array-valued description aliases must not be discarded',
-  );
+  assert.strictEqual(arrayDescription.description, 'Beschrijving uit array');
   assert.strictEqual(arrayDescription.pageCount, 144);
 """
           if needle not in text:
               raise SystemExit('test insertion point not found')
           p.write_text(text.replace(needle, addition, 1))
           PY
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - run: node tests/isbn-wrapper-hardening.test.js && node tests/isbn-review-regressions.test.js && node tests/isbn-tag-fallback.test.js && node tests/isbn-lookup-core.test.js
-      - run: npm test
-      - run: npm run build
-      - name: Commit and remove temporary workflow
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused ISBN regressions
+        run: |
+          node tests/isbn-wrapper-hardening.test.js
+          node tests/isbn-review-regressions.test.js
+          node tests/isbn-tag-fallback.test.js
+          node tests/isbn-lookup-core.test.js
+      - name: Run full tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Commit fixes and remove temporary workflow
         shell: bash
         run: |
           git config user.name "0xGitteth"
