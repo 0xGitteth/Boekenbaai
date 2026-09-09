@@ -1,7 +1,11 @@
 'use strict';
 
 const assert = require('assert');
-const { createIsbnLookup, parseIsbnBarcodeData } = require('../isbn-lookup-core');
+const {
+  createIsbnLookup,
+  extractMeta,
+  parseIsbnBarcodeData,
+} = require('../isbn-lookup-core');
 
 function response(body, { status = 200, contentType = 'application/json' } = {}) {
   return {
@@ -51,12 +55,70 @@ function basePrimaryFetch(isbn, fallbackHandler) {
 async function run() {
   const isbn = '9789059965607';
 
+  assert.strictEqual(
+    extractMeta(
+      '<meta name="twitter:title" property="og:title" content="Correcte titel">',
+      'og:title',
+    ),
+    'Correcte titel',
+    'Meta extraction must match property even when name is present on the same tag',
+  );
+
+  const cbDualAttributeFetch = async (url) => {
+    const textUrl = String(url);
+    if (textUrl.includes('metadata.isbn.nl/search')) {
+      return response(
+        '<div id="werk"><div class="wrk"><a href="/123456/testboek.html">Testboek</a></div></div>',
+        { contentType: 'text/html' },
+      );
+    }
+    if (textUrl.includes('metadata.isbn.nl/123456/testboek.html')) {
+      return response(
+        [
+          '<meta name="twitter:title" property="og:title" content="Correcte CB titel">',
+          '<div class="uitv">',
+          '<div class="uvlabel">Paperback</div>',
+          '<span>ISBN</span><br>9789059965607<br><br>',
+          '</div>',
+        ].join(''),
+        { contentType: 'text/html' },
+      );
+    }
+    if (textUrl.includes('openlibrary.org')) return response({}, { status: 404 });
+    throw new Error(`Unexpected request ${textUrl}`);
+  };
+  const cbDualAttributeLookup = createIsbnLookup({
+    fetchImpl: cbDualAttributeFetch,
+    env: {},
+  });
+  const cbDualAttributeResult = await cbDualAttributeLookup(isbn);
+  assert.strictEqual(
+    cbDualAttributeResult.title,
+    'Correcte CB titel',
+    'Bureau ISBN lookup must preserve property metadata when name and property share a meta tag',
+  );
+  assert.ok(cbDualAttributeResult.sources.includes('Bureau ISBN'));
+
   const tagOnlyParsed = parseIsbnBarcodeData({
     isbn,
     categories: ['Jeugd', 'Fantasy'],
   }, isbn);
   assert.ok(tagOnlyParsed?.found, 'Tag-only exact ISBNBarcode records must be accepted');
   assert.deepStrictEqual(tagOnlyParsed.tags, ['jeugd', 'fantasy']);
+
+  const combinedTagParsed = parseIsbnBarcodeData({
+    isbn,
+    categories: [],
+    subjects: ['Fantasy'],
+    tags: ['Young Adult', 'Fantasy'],
+  }, isbn);
+  assert.ok(combinedTagParsed?.found, 'Tag fields must be combined even when categories is empty');
+  assert.deepStrictEqual(
+    combinedTagParsed.tags,
+    ['fantasy', 'young adult'],
+    'categories, subjects and tags must all contribute without duplicates',
+  );
+
   assert.strictEqual(
     parseIsbnBarcodeData({
       isbn: '9789059969575',
