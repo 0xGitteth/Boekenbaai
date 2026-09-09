@@ -348,8 +348,12 @@ function extractEditionField(block, label) {
 
 function parseNurTags(fragment) {
   const anchors = Array.from(String(fragment || '').matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi))
-    .map((entry) => stripHtml(entry[1]).replace(/^\d{3}\s+/, '').trim().toLowerCase())
-    .filter(Boolean);
+    .flatMap((entry) => {
+      const text = stripHtml(entry[1]);
+      const match = text.match(/^\d{3}\s+(.+)$/);
+      const label = String(match?.[1] || '').trim().toLowerCase();
+      return label ? [label] : [];
+    });
   if (anchors.length) return Array.from(new Set(anchors));
 
   const plain = stripHtml(fragment);
@@ -369,10 +373,51 @@ function extractCbNurTags(html) {
 }
 
 function extractCbEditionNurTags(block) {
-  const match = String(block || '').match(
-    /<span>\s*NUR\s*<\/span>([\s\S]*?)(?=<span>|$)/i,
-  );
-  return match ? parseNurTags(match[1]) : [];
+  const source = String(block || '');
+  const nurMarker = /<span>\s*NUR\s*<\/span>/i;
+  const marker = nurMarker.exec(source);
+  if (!marker) return [];
+
+  // NUR lives in the edition's hidden pd-block. The final edition block may
+  // extend to the end of the document, so first isolate that pd-block instead
+  // of allowing footer/navigation anchors to leak into edition classifications.
+  const prefix = source.slice(0, marker.index);
+  const pdOpenings = Array.from(prefix.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bpd-block\b[^"']*["'][^>]*>/gi,
+  ));
+  const pdOpening = pdOpenings[pdOpenings.length - 1];
+
+  let scoped = source;
+  if (pdOpening) {
+    const divPattern = /<\/?div\b[^>]*>/gi;
+    divPattern.lastIndex = pdOpening.index;
+    let depth = 0;
+    let end = source.length;
+    let divMatch;
+    while ((divMatch = divPattern.exec(source))) {
+      if (/^<\//.test(divMatch[0])) depth -= 1;
+      else depth += 1;
+      if (depth === 0) {
+        end = divPattern.lastIndex;
+        break;
+      }
+    }
+    const candidate = source.slice(pdOpening.index, end);
+    if (nurMarker.test(candidate)) scoped = candidate;
+  }
+
+  const scopedMarker = nurMarker.exec(scoped);
+  if (!scopedMarker) return [];
+  let fragment = scoped.slice(scopedMarker.index + scopedMarker[0].length);
+  const nextSpan = fragment.search(/<span\b/i);
+  if (nextSpan >= 0) fragment = fragment.slice(0, nextSpan);
+
+  if (!pdOpening) {
+    const closingDiv = fragment.search(/<\/div\s*>/i);
+    if (closingDiv >= 0) fragment = fragment.slice(0, closingDiv);
+  }
+
+  return parseNurTags(fragment);
 }
 
 function parseCbDetailHtml(html, targetIsbn) {

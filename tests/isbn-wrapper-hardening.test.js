@@ -526,6 +526,27 @@ async function run() {
     'Exact-edition NUR tags must win over broader work-level NUR tags when present',
   );
 
+  const terminalNurHtml = [
+    '<div class="uitv">',
+    `<span>ISBN</span><br>${isbn}<br><br>`,
+    '<div class="hidden pd-block">',
+    '<span>NUR</span>',
+    '<div><a>493 Puzzelboeken</a><br><a>494 Spelen, spelletjes</a></div>',
+    '</div>',
+    '</div>',
+    '<footer>',
+    '<a href="/footer">Navigatie zonder NUR</a>',
+    '<a href="/coded-footer">123 Footer die op een NUR lijkt</a>',
+    '</footer>',
+  ].join('');
+  const terminalNur = parseCbDetailHtml(terminalNurHtml, isbn);
+  assert.ok(terminalNur?.found);
+  assert.deepStrictEqual(
+    terminalNur.tags,
+    ['puzzelboeken', 'spelen, spelletjes'],
+    'The last edition NUR field must stop at its pd-block and never absorb footer anchors',
+  );
+
   const realNowForFallback = Date.now;
   let fallbackNow = 2_000_000;
   Date.now = () => fallbackNow;
