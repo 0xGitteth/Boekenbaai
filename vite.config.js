@@ -16,6 +16,7 @@ const runtimeAuthAssets = [
   'student-management.css',
   'student-management.js',
   'student-management-compat.js',
+  'schoolmail-domain-helper.js',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
@@ -28,6 +29,13 @@ function copyRuntimeAuthAssets() {
   return {
     name: 'boekenbaai-copy-runtime-auth-assets',
     apply: 'build',
+    transformIndexHtml(html) {
+      if (html.includes('schoolmail-domain-helper.js')) return html;
+      return html.replace(
+        /<\/body>/i,
+        '    <script src="schoolmail-domain-helper.js" defer></script>\n  </body>'
+      );
+    },
     closeBundle() {
       mkdirSync(outputRoot, { recursive: true });
       for (const filename of runtimeAuthAssets) {

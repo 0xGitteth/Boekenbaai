@@ -37,9 +37,16 @@ function isAllowedSchoolEmail(email, domain) {
   const normalizedEmail = normalizeEmail(email);
   const normalizedDomain = normalizeDomain(domain);
   if (!normalizedEmail || !normalizedDomain) return false;
-  const at = normalizedEmail.lastIndexOf('@');
-  if (at <= 0) return false;
-  return normalizedEmail.slice(at + 1) === normalizedDomain;
+
+  const parts = normalizedEmail.split('@');
+  if (parts.length !== 2) return false;
+  const [localPart, emailDomain] = parts;
+  if (!localPart || emailDomain !== normalizedDomain) return false;
+  if (/\s/.test(localPart) || localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) {
+    return false;
+  }
+  if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(localPart)) return false;
+  return true;
 }
 
 function base64urlEncode(value) {
