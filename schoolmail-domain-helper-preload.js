@@ -7,6 +7,7 @@ const { URL } = require('url');
 
 const SCRIPT_PATH = path.join(__dirname, 'public', 'schoolmail-domain-helper.js');
 const SCRIPT_URL = '/schoolmail-domain-helper.js';
+const SCRIPT_NAME = 'schoolmail-domain-helper.js';
 const originalCreateServer = http.createServer.bind(http);
 
 function serveScript(res) {
@@ -27,8 +28,8 @@ function injectScript(req, res, listener) {
 
     if (chunk != null && (!contentType || contentType.includes('text/html'))) {
       let html = Buffer.isBuffer(chunk) ? chunk.toString(actualEncoding || 'utf8') : String(chunk);
-      if (!html.includes(SCRIPT_URL)) {
-        html = html.replace(/<\/body>/i, `    <script src="${SCRIPT_URL}"></script>\n  </body>`);
+      if (!html.includes(SCRIPT_NAME)) {
+        html = html.replace(/<\/body>/i, `    <script src="${SCRIPT_URL}" defer></script>\n  </body>`);
         nextChunk = html;
         if (!res.headersSent) res.removeHeader('Content-Length');
       }
@@ -63,4 +64,4 @@ http.createServer = function patchedCreateServer(...args) {
   return originalCreateServer(args[0], wrapped);
 };
 
-module.exports = { __test: { SCRIPT_URL } };
+module.exports = { __test: { SCRIPT_URL, SCRIPT_NAME } };
