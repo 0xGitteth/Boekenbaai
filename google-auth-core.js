@@ -37,9 +37,16 @@ function isAllowedSchoolEmail(email, domain) {
   const normalizedEmail = normalizeEmail(email);
   const normalizedDomain = normalizeDomain(domain);
   if (!normalizedEmail || !normalizedDomain) return false;
-  const at = normalizedEmail.lastIndexOf('@');
-  if (at <= 0) return false;
-  return normalizedEmail.slice(at + 1) === normalizedDomain;
+
+  const parts = normalizedEmail.split('@');
+  if (parts.length !== 2) return false;
+  const [localPart, emailDomain] = parts;
+  if (!localPart || emailDomain !== normalizedDomain) return false;
+  if (/\s/.test(localPart) || localPart.startsWith('.') || localPart.endsWith('.') || localPart.includes('..')) {
+    return false;
+  }
+  if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(localPart)) return false;
+  return true;
 }
 
 function base64urlEncode(value) {
@@ -80,18 +87,9 @@ function verifySignedState(state, secret, options = {}) {
     return null;
   }
   const now = Number.isFinite(options.now) ? options.now : Date.now();
-  const maxAgeMs = Number.isFinite(options.maxAgeMs)
-    ? options.maxAgeMs
-    : OAUTH_STATE_MAX_AGE_MS;
-  const issuedAt = Number(payload?.iat);
-  if (!Number.isFinite(issuedAt) || issuedAt > now + 60_000 || now - issuedAt > maxAgeMs) {
-    return null;
-  }
+  const maxAgeMs = Number.isFinite(options.maxAgeMs) ? options.maxAgeMs : OAUTH_STATE_MAX_AGE_MS;
+  if (!Number.isFinite(payload?.iat) || payload.iat > now + 60_000 || now - payload.iat > maxAgeMs) return null;
   return payload;
-}
-
-function tokenHash(token) {
-  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
 }
 
 function emptyAuthStore() {
@@ -105,205 +103,262 @@ function emptyAuthStore() {
 }
 
 function normalizeStore(input) {
-  const source = input && typeof input === 'object' ? input : {};
+  const store = input && typeof input === 'object' ? input : {};
   return {
-    version: 1,
-    links: Array.isArray(source.links) ? source.links.filter(Boolean) : [],
-    sessions: Array.isArray(source.sessions) ? source.sessions.filter(Boolean) : [],
-    pendingIdentities: Array.isArray(source.pendingIdentities)
-      ? source.pendingIdentities.filter(Boolean)
-      : [],
-    linkRequests: Array.isArray(source.linkRequests) ? source.linkRequests.filter(Boolean) : [],
+    version: Number(store.version) || 1,
+    links: Array.isArray(store.links) ? store.links.filter(Boolean) : [],
+    sessions: Array.isArray(store.sessions) ? store.sessions.filter(Boolean) : [],
+    pendingIdentities: Array.isArray(store.pendingIdentities) ? store.pendingIdentities.filter(Boolean) : [],
+    linkRequests: Array.isArray(store.linkRequests) ? store.linkRequests.filter(Boolean) : [],
   };
 }
 
-function requestTimestamp(entry) {
-  const timestamp = Date.parse(entry?.updatedAt || entry?.createdAt || '');
-  return Number.isFinite(timestamp) ? timestamp : null;
+function timestamp(value) {
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function pruneStore(store, now = Date.now()) {
-  const safe = normalizeStore(store);
-  safe.sessions = safe.sessions.filter((entry) => Number(entry?.expiresAt) > now);
-  safe.pendingIdentities = safe.pendingIdentities.filter(
-    (entry) => Number(entry?.expiresAt) > now
-  );
-  const pendingCutoff = now - PENDING_LINK_REQUEST_MAX_AGE_MS;
-  const historyCutoff = now - LINK_REQUEST_HISTORY_MAX_AGE_MS;
-  safe.linkRequests = safe.linkRequests.filter((entry) => {
-    const updatedAt = requestTimestamp(entry);
-    if (updatedAt === null || updatedAt > now + 60_000) return false;
-    if (entry?.status === 'pending') return updatedAt >= pendingCutoff;
-    return ['approved', 'denied', 'rejected', 'superseded'].includes(entry?.status)
-      ? updatedAt >= historyCutoff
-      : false;
+function pruneStore(input, options = {}) {
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const store = normalizeStore(input);
+  store.sessions = store.sessions.filter((session) => {
+    const expiresAt = Number(session?.expiresAt);
+    return Number.isFinite(expiresAt) && expiresAt > now;
   });
-  return safe;
+  store.pendingIdentities = store.pendingIdentities.filter((identity) => {
+    const expiresAt = Number(identity?.expiresAt);
+    return Number.isFinite(expiresAt) && expiresAt > now;
+  });
+  store.linkRequests = store.linkRequests.filter((request) => {
+    const status = String(request?.status || 'open');
+    const createdAt = timestamp(request?.createdAt);
+    const resolvedAt = timestamp(request?.resolvedAt || request?.updatedAt);
+    if (status === 'open') return !createdAt || now - createdAt <= PENDING_LINK_REQUEST_MAX_AGE_MS;
+    return !resolvedAt || now - resolvedAt <= LINK_REQUEST_HISTORY_MAX_AGE_MS;
+  });
+  return store;
 }
 
 function findLinkByAccount(store, accountType, accountId) {
-  if (isLocalOnlyStaffAccount(accountType, accountId)) return null;
   return normalizeStore(store).links.find(
-    (entry) => entry?.accountType === accountType && entry?.accountId === accountId
+    (link) => link?.accountType === accountType && link?.accountId === accountId
   ) || null;
 }
 
-function findLinkByIdentity(store, accountType, { email, sub } = {}) {
-  const normalizedEmail = normalizeEmail(email);
-  const normalizedSub = typeof sub === 'string' ? sub.trim() : '';
-  const links = normalizeStore(store).links.filter(
-    (entry) =>
-      entry?.accountType === accountType &&
-      !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId)
-  );
-  if (normalizedSub) {
-    const bySub = links.find((entry) => entry?.sub === normalizedSub);
+function findLinkBySub(store, sub) {
+  if (!sub) return null;
+  return normalizeStore(store).links.find((link) => link?.sub === sub) || null;
+}
+
+function findLinkByEmail(store, email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  return normalizeStore(store).links.find((link) => normalizeEmail(link?.email) === normalized) || null;
+}
+
+function findLinkByIdentity(store, accountType, identity = {}) {
+  const normalized = normalizeStore(store);
+  const sub = String(identity?.sub || '').trim();
+  if (sub) {
+    const bySub = normalized.links.find((link) => link?.accountType === accountType && link?.sub === sub) || null;
     if (bySub) return bySub;
   }
-  if (normalizedEmail) {
-    return links.find(
-      (entry) => !String(entry?.sub || '').trim() && normalizeEmail(entry?.email) === normalizedEmail
-    ) || null;
-  }
-  return null;
-}
-
-function upsertLink(store, input) {
-  const safe = normalizeStore(store);
-  const accountType = input?.accountType;
-  const accountId = input?.accountId;
-  const email = normalizeEmail(input?.email);
-  const sub = typeof input?.sub === 'string' ? input.sub.trim() : '';
-  if (!['student', 'staff'].includes(accountType) || !accountId || !email) {
-    const error = new Error('Ongeldige accountkoppeling');
-    error.code = 'INVALID_LINK';
-    throw error;
-  }
-  if (isLocalOnlyStaffAccount(accountType, accountId)) {
-    const error = new Error('Dit beheeraccount gebruikt alleen lokale wachtwoordlogin.');
-    error.code = 'LOCAL_ONLY_ACCOUNT';
-    throw error;
-  }
-
-  const emailConflict = safe.links.find(
-    (entry) =>
-      !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId) &&
-      normalizeEmail(entry?.email) === email &&
-      !(entry?.accountType === accountType && entry?.accountId === accountId)
-  );
-  if (emailConflict) {
-    const error = new Error('Dit Google e-mailadres is al aan een ander account gekoppeld.');
-    error.code = 'EMAIL_CONFLICT';
-    throw error;
-  }
-
-  if (sub) {
-    const subConflict = safe.links.find(
-      (entry) =>
-        !isLocalOnlyStaffAccount(entry?.accountType, entry?.accountId) &&
-        entry?.sub === sub &&
-        !(entry?.accountType === accountType && entry?.accountId === accountId)
-    );
-    if (subConflict) {
-      const error = new Error('Dit Google-account is al aan een ander account gekoppeld.');
-      error.code = 'SUB_CONFLICT';
-      throw error;
-    }
-  }
-
-  const nowIso = new Date().toISOString();
-  const existingIndex = safe.links.findIndex(
-    (entry) => entry?.accountType === accountType && entry?.accountId === accountId
-  );
-  const existing = existingIndex >= 0 ? safe.links[existingIndex] : null;
-  const emailChanged = existing && normalizeEmail(existing.email) !== email;
-  const next = {
-    accountType,
-    accountId,
-    email,
-    sub: sub || (emailChanged ? '' : existing?.sub || ''),
-    createdAt: existing?.createdAt || nowIso,
-    updatedAt: nowIso,
-    linkedBy: input?.linkedBy || existing?.linkedBy || null,
-  };
-  if (existingIndex >= 0) safe.links[existingIndex] = next;
-  else safe.links.push(next);
-  return { store: safe, link: next };
-}
-
-function createSessionRecord(token, input = {}) {
-  const now = Number.isFinite(input.now) ? input.now : Date.now();
-  const remember = Boolean(input.remember);
-  const ttl = remember ? THIRTY_DAYS_MS : SESSION_WINDOW_MS;
-  return {
-    tokenHash: tokenHash(token),
-    userId: input.userId,
-    type: input.type,
-    remember,
-    createdAt: now,
-    expiresAt: now + ttl,
-  };
-}
-
-function upsertSession(store, token, input = {}) {
-  const safe = pruneStore(store, Number.isFinite(input.now) ? input.now : Date.now());
-  const record = createSessionRecord(token, input);
-  safe.sessions = safe.sessions.filter((entry) => entry?.tokenHash !== record.tokenHash);
-  safe.sessions.push(record);
-  return { store: safe, session: record };
-}
-
-function resolveSession(store, token, now = Date.now()) {
-  const hash = tokenHash(token);
-  return pruneStore(store, now).sessions.find(
-    (entry) => entry?.tokenHash === hash && Number(entry?.expiresAt) > now
+  const email = normalizeEmail(identity?.email);
+  if (!email) return null;
+  return normalized.links.find(
+    (link) => link?.accountType === accountType && !link?.sub && normalizeEmail(link?.email) === email
   ) || null;
 }
 
-function removeSession(store, token) {
-  const safe = normalizeStore(store);
-  const hash = tokenHash(token);
-  safe.sessions = safe.sessions.filter((entry) => entry?.tokenHash !== hash);
-  return safe;
+function upsertLink(input, values = {}) {
+  const store = normalizeStore(input);
+  const accountType = values.accountType;
+  const accountId = String(values.accountId || '').trim();
+  const email = normalizeEmail(values.email);
+  const sub = String(values.sub || '').trim();
+  if (!['student', 'staff'].includes(accountType) || !accountId) {
+    throw new Error('Ongeldige accountkoppeling');
+  }
+  if (isLocalOnlyStaffAccount(accountType, accountId)) {
+    throw new Error('Dit beheeraccount is alleen lokaal en kan niet aan Google worden gekoppeld');
+  }
+  const bySub = sub ? findLinkBySub(store, sub) : null;
+  if (bySub && (bySub.accountType !== accountType || bySub.accountId !== accountId)) {
+    throw new Error('Dit Google-account is al aan een ander account gekoppeld');
+  }
+  const byEmail = email ? findLinkByEmail(store, email) : null;
+  if (byEmail && byEmail.sub && sub && byEmail.sub !== sub) {
+    throw new Error('Dit schoolmailadres is al aan een ander Google-account gekoppeld');
+  }
+  if (byEmail && (byEmail.accountType !== accountType || byEmail.accountId !== accountId)) {
+    throw new Error('Dit schoolmailadres is al aan een ander account gekoppeld');
+  }
+  const existingIndex = store.links.findIndex(
+    (link) => link?.accountType === accountType && link?.accountId === accountId
+  );
+  const existing = existingIndex >= 0 ? store.links[existingIndex] : null;
+  if (existing?.sub && sub && existing.sub !== sub) {
+    throw new Error('Dit account is al aan een ander Google-account gekoppeld');
+  }
+  const link = {
+    ...(existing || {}),
+    accountType,
+    accountId,
+    email: email || existing?.email || '',
+    sub: sub || existing?.sub || '',
+    updatedAt: new Date().toISOString(),
+  };
+  if (!link.createdAt) link.createdAt = link.updatedAt;
+  if (existingIndex >= 0) store.links[existingIndex] = link;
+  else store.links.push(link);
+  return { store, link };
 }
 
-function getTeacherClassIds(db, teacherId) {
-  const ids = new Set();
-  const teacher = (db?.users || []).find((entry) => entry?.id === teacherId);
-  for (const classId of teacher?.classIds || []) {
-    if (classId) ids.add(classId);
-  }
-  for (const klass of db?.classes || []) {
-    if ((klass?.teacherIds || []).includes(teacherId) && klass?.id) ids.add(klass.id);
-  }
-  return Array.from(ids);
+function removeLink(input, accountType, accountId) {
+  const store = normalizeStore(input);
+  const before = store.links.length;
+  store.links = store.links.filter(
+    (link) => !(link?.accountType === accountType && link?.accountId === accountId)
+  );
+  return { store, removed: before !== store.links.length };
 }
 
-function getStudentClassIds(db, studentId) {
-  const ids = new Set();
-  const student = (db?.students || []).find((entry) => entry?.id === studentId);
-  for (const classId of student?.classIds || []) {
-    if (classId) ids.add(classId);
-  }
-  for (const klass of db?.classes || []) {
-    if ((klass?.studentIds || []).includes(studentId) && klass?.id) ids.add(klass.id);
-  }
-  return Array.from(ids);
+function sessionLifetime(remember) {
+  return remember ? THIRTY_DAYS_MS : SESSION_WINDOW_MS;
 }
 
-function canStaffManageStudent(db, staffUser, studentId) {
-  if (!staffUser || !studentId) return false;
-  if (staffUser.role === 'admin') return true;
-  if (staffUser.role !== 'teacher') return false;
-  const teacherClasses = new Set(getTeacherClassIds(db, staffUser.id));
-  return getStudentClassIds(db, studentId).some((classId) => teacherClasses.has(classId));
+function upsertSession(input, token, values = {}) {
+  const store = normalizeStore(input);
+  const cleanToken = String(token || '').trim();
+  const userId = String(values.userId || '').trim();
+  const type = values.type;
+  if (!cleanToken || !userId || !['student', 'staff'].includes(type)) {
+    throw new Error('Ongeldige sessie');
+  }
+  const now = Number.isFinite(values.now) ? values.now : Date.now();
+  const remember = Boolean(values.remember);
+  const session = {
+    token: cleanToken,
+    userId,
+    type,
+    remember,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: now + sessionLifetime(remember),
+  };
+  const index = store.sessions.findIndex((entry) => entry?.token === cleanToken);
+  if (index >= 0) store.sessions[index] = session;
+  else store.sessions.push(session);
+  return { store, session };
+}
+
+function resolveSession(input, token, options = {}) {
+  const store = pruneStore(input, options);
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) return null;
+  return store.sessions.find((session) => session?.token === cleanToken) || null;
+}
+
+function removeSessionsForUser(input, type, userId) {
+  const store = normalizeStore(input);
+  const before = store.sessions.length;
+  store.sessions = store.sessions.filter(
+    (session) => !(session?.type === type && session?.userId === userId)
+  );
+  return { store, removed: before - store.sessions.length };
+}
+
+function removeSessionToken(input, token) {
+  const store = normalizeStore(input);
+  const cleanToken = String(token || '').trim();
+  const before = store.sessions.length;
+  store.sessions = store.sessions.filter((session) => session?.token !== cleanToken);
+  return { store, removed: before !== store.sessions.length };
+}
+
+function createPendingIdentity(input, values = {}) {
+  const store = normalizeStore(input);
+  const now = Number.isFinite(values.now) ? values.now : Date.now();
+  const id = String(values.id || crypto.randomUUID());
+  const pending = {
+    id,
+    type: values.type,
+    email: normalizeEmail(values.email),
+    sub: String(values.sub || '').trim(),
+    profileName: String(values.profileName || '').trim(),
+    accountHint: String(values.accountHint || '').trim(),
+    createdAt: new Date(now).toISOString(),
+    expiresAt: now + PENDING_IDENTITY_MAX_AGE_MS,
+  };
+  store.pendingIdentities = store.pendingIdentities.filter(
+    (entry) => !(entry?.sub && pending.sub && entry.sub === pending.sub)
+  );
+  store.pendingIdentities.push(pending);
+  return { store, pending };
+}
+
+function consumePendingIdentity(input, id, options = {}) {
+  const store = pruneStore(input, options);
+  const index = store.pendingIdentities.findIndex((identity) => identity?.id === id);
+  if (index < 0) return { store, identity: null };
+  const [identity] = store.pendingIdentities.splice(index, 1);
+  return { store, identity };
+}
+
+function upsertLinkRequest(input, values = {}) {
+  const store = normalizeStore(input);
+  const now = Number.isFinite(values.now) ? values.now : Date.now();
+  const request = {
+    id: String(values.id || crypto.randomUUID()),
+    type: values.type,
+    accountId: String(values.accountId || '').trim(),
+    email: normalizeEmail(values.email),
+    sub: String(values.sub || '').trim(),
+    profileName: String(values.profileName || '').trim(),
+    selectedName: String(values.selectedName || '').trim(),
+    selectedClass: String(values.selectedClass || '').trim(),
+    similarity: values.similarity || null,
+    status: values.status || 'open',
+    createdAt: new Date(now).toISOString(),
+  };
+  if (request.sub) {
+    const conflict = store.linkRequests.find(
+      (entry) => entry?.status === 'open' && entry?.sub === request.sub && entry?.accountId !== request.accountId
+    );
+    if (conflict) throw new Error('Dit Google-account heeft al een openstaand koppelverzoek');
+  }
+  store.linkRequests.push(request);
+  return { store, request };
+}
+
+function resolveLinkRequest(input, id, values = {}) {
+  const store = normalizeStore(input);
+  const request = store.linkRequests.find((entry) => entry?.id === id) || null;
+  if (!request) return { store, request: null };
+  request.status = values.status || 'approved';
+  request.resolvedBy = values.resolvedBy || '';
+  request.resolvedAt = new Date(Number.isFinite(values.now) ? values.now : Date.now()).toISOString();
+  if (values.note) request.note = String(values.note);
+  return { store, request };
+}
+
+function canStaffManageStudent(db, staff, student) {
+  if (!staff || !student) return false;
+  if (staff.role === 'admin') return true;
+  if (staff.role !== 'teacher') return false;
+  const staffClassIds = new Set(Array.isArray(staff.classIds) ? staff.classIds : []);
+  const studentClassIds = new Set(Array.isArray(student.classIds) ? student.classIds : []);
+  if ([...studentClassIds].some((id) => staffClassIds.has(id))) return true;
+  const classes = Array.isArray(db?.classes) ? db.classes : [];
+  return classes.some((entry) => {
+    const teacherIds = Array.isArray(entry?.teacherIds) ? entry.teacherIds : [];
+    const studentIds = Array.isArray(entry?.studentIds) ? entry.studentIds : [];
+    return teacherIds.includes(staff.id) && studentIds.includes(student.id);
+  });
 }
 
 module.exports = {
   THIRTY_DAYS_MS,
   SESSION_WINDOW_MS,
-  OAUTH_STATE_MAX_AGE_MS,
-  PENDING_IDENTITY_MAX_AGE_MS,
   PENDING_LINK_REQUEST_MAX_AGE_MS,
   LINK_REQUEST_HISTORY_MAX_AGE_MS,
   setLocalOnlyStaffAccountIds,
@@ -313,18 +368,22 @@ module.exports = {
   isAllowedSchoolEmail,
   createSignedState,
   verifySignedState,
-  tokenHash,
   emptyAuthStore,
   normalizeStore,
   pruneStore,
   findLinkByAccount,
+  findLinkBySub,
+  findLinkByEmail,
   findLinkByIdentity,
   upsertLink,
-  createSessionRecord,
+  removeLink,
   upsertSession,
   resolveSession,
-  removeSession,
-  getTeacherClassIds,
-  getStudentClassIds,
+  removeSessionsForUser,
+  removeSessionToken,
+  createPendingIdentity,
+  consumePendingIdentity,
+  upsertLinkRequest,
+  resolveLinkRequest,
   canStaffManageStudent,
 };
