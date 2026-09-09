@@ -3,6 +3,7 @@
 
   const FALLBACK_DOMAIN = 'koraaledu.nl';
   const BOUND_FLAG = 'schoolmailDomainHelperBound';
+  const EDITING_FLAG = 'schoolmailDomainEditing';
 
   function domainFor(input) {
     const placeholder = String(input?.placeholder || '');
@@ -29,17 +30,23 @@
     return `@${domainFor(input)}`;
   }
 
-  function moveCaretBeforeDomain(input) {
+  function startSuffixEditing(input) {
     const suffix = suffixFor(input);
     if (input.value !== suffix) return;
+
+    input.dataset[EDITING_FLAG] = 'true';
+    input.type = 'text';
+    input.inputMode = 'email';
     window.requestAnimationFrame(() => {
       if (input.value !== suffix) return;
-      try {
-        input.setSelectionRange(0, 0);
-      } catch (error) {
-        // Sommige oudere browsers ondersteunen selectie op e-mailvelden beperkt.
-      }
+      input.setSelectionRange(0, 0);
     });
+  }
+
+  function stopSuffixEditing(input) {
+    if (input.dataset[EDITING_FLAG] !== 'true') return;
+    delete input.dataset[EDITING_FLAG];
+    input.type = 'email';
   }
 
   function enhanceInput(input) {
@@ -50,7 +57,8 @@
 
     if (input.dataset[BOUND_FLAG] === 'true') return;
     input.dataset[BOUND_FLAG] = 'true';
-    input.addEventListener('focus', () => moveCaretBeforeDomain(input));
+    input.addEventListener('focus', () => startSuffixEditing(input));
+    input.addEventListener('blur', () => stopSuffixEditing(input));
   }
 
   function enhanceAll(root = document) {
