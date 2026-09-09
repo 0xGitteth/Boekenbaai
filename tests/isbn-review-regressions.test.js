@@ -6,6 +6,7 @@ const {
   parseCbDetailHtml,
   parseGoogleBooksData,
   parseOpenLibraryData,
+  parseIsbnBarcodeData,
   createIsbnLookup,
 } = require('../isbn-lookup-core');
 
@@ -35,6 +36,11 @@ async function run() {
     extractMeta('<meta name="og:description" content="L\'enfant perdu">', 'og:description'),
     "L'enfant perdu",
     'Apostrophes inside double-quoted meta content must be preserved',
+  );
+  assert.strictEqual(
+    extractMeta('<meta property="og:title" content="1 > 0">', 'og:title'),
+    '1 > 0',
+    'Literal > characters inside quoted meta content must not terminate the tag scan',
   );
 
   const detailNoEditionCover = `
@@ -75,6 +81,22 @@ async function run() {
     'Hyphenated category names must stay intact',
   );
 
+  const compactHierarchyGoogle = parseGoogleBooksData({
+    items: [{
+      volumeInfo: {
+        title: 'Test',
+        authors: ['Auteur'],
+        industryIdentifiers: [{ identifier: isbn10 }],
+        categories: ['Fiction>Fantasy', 'Self-Help'],
+      },
+    }],
+  }, isbn);
+  assert.deepStrictEqual(
+    compactHierarchyGoogle.tags,
+    ['fiction', 'fantasy', 'self-help'],
+    'Compact > category hierarchies must split while hyphenated category names stay intact',
+  );
+
   const openLibrary = parseOpenLibraryData({
     title: 'Test',
     authors: [{ name: 'Auteur' }],
@@ -85,6 +107,25 @@ async function run() {
     parseOpenLibraryData({ title: 'Test', authors: [{ name: 'Auteur' }], covers: [-1, 0, 1.5] }, isbn).coverUrl,
     '',
     'Invalid Open Library cover identifiers must be ignored',
+  );
+
+  assert.strictEqual(
+    parseIsbnBarcodeData({
+      isbn: '9789059969575',
+      title: 'Verkeerde editie',
+      author: 'Auteur',
+      cover_url: 'https://example.test/wrong.jpg',
+    }, isbn),
+    null,
+    'ISBNBarcode records with an explicit mismatched ISBN must be rejected',
+  );
+  assert.ok(
+    parseIsbnBarcodeData({
+      isbn: isbn10,
+      title: 'Zelfde editie',
+      author: 'Auteur',
+    }, isbn),
+    'An explicitly equivalent ISBN-10 from ISBNBarcode must be accepted',
   );
 
   const calls = [];
@@ -144,6 +185,43 @@ async function run() {
   await shortCacheLookup(isbn);
   assert.ok(cacheCalls > beforeCache, 'Configured cache TTL must be honored');
 
+  const realDateNow = Date.now;
+  let fakeNow = 1_000_000;
+  let negativeCacheCalls = 0;
+  try {
+    Date.now = () => fakeNow;
+    const negativeCacheFetch = async (url) => {
+      negativeCacheCalls += 1;
+      if (String(url).includes('metadata.isbn.nl/search')) {
+        return response('<div id="werk"></div>', { contentType: 'text/html' });
+      }
+      if (String(url).includes('openlibrary')) return response({}, { status: 404 });
+      throw new Error(String(url));
+    };
+    const negativeCacheLookup = createIsbnLookup({
+      fetchImpl: negativeCacheFetch,
+      env: {},
+    });
+    await negativeCacheLookup(isbn);
+    const afterInitialNegativeLookup = negativeCacheCalls;
+    fakeNow += 61 * 1000;
+    const stillCachedNegative = await negativeCacheLookup(isbn10);
+    assert.strictEqual(stillCachedNegative.cacheHit, true);
+    assert.strictEqual(
+      negativeCacheCalls,
+      afterInitialNegativeLookup,
+      'Default not-found cache entries must remain cached beyond 60 seconds',
+    );
+    fakeNow += 4 * 60 * 1000;
+    await negativeCacheLookup(isbn);
+    assert.ok(
+      negativeCacheCalls > afterInitialNegativeLookup,
+      'Default not-found cache entries must expire after the documented five-minute TTL',
+    );
+  } finally {
+    Date.now = realDateNow;
+  }
+
   let fallbackCalls = 0;
   const fallbackFetch = async (url) => {
     const textUrl = String(url);
@@ -166,6 +244,28 @@ async function run() {
   const fallbackResult = await fallbackLookup(isbn);
   assert.strictEqual(fallbackResult.title, 'Fallback titel');
   assert.strictEqual(fallbackCalls, 1, 'Configured ISBNBarcode fallback must remain active');
+
+  const mismatchedFallbackFetch = async (url) => {
+    const textUrl = String(url);
+    if (textUrl.includes('metadata.isbn.nl/search')) return response('<div id="werk"></div>', { contentType: 'text/html' });
+    if (textUrl.includes('openlibrary')) return response({}, { status: 404 });
+    if (textUrl.includes('isbnbarcode.org/api')) {
+      return response({
+        isbn: '9789059969575',
+        title: 'Verkeerde editie',
+        author: 'Verkeerde auteur',
+        cover_url: 'https://example.test/wrong.jpg',
+      });
+    }
+    throw new Error(textUrl);
+  };
+  const mismatchedFallbackLookup = createIsbnLookup({
+    fetchImpl: mismatchedFallbackFetch,
+    env: { BOEKENBAAI_ENABLE_ISBNBARCODE: 'true' },
+  });
+  const mismatchedFallbackResult = await mismatchedFallbackLookup(isbn);
+  assert.strictEqual(mismatchedFallbackResult.found, false);
+  assert.strictEqual(mismatchedFallbackResult.title, '');
 
   const debugLookup = createIsbnLookup({
     fetchImpl: fallbackFetch,
