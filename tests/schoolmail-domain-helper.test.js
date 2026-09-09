@@ -22,8 +22,13 @@ assert.match(
 );
 assert.match(
   helper,
-  /input\.setSelectionRange\(0, 0\)/,
-  'Bij een lege schoolmail moet de cursor vóór @koraaledu.nl komen te staan'
+  /input\.type = 'text'[\s\S]*input\.inputMode = 'email'[\s\S]*input\.setSelectionRange\(0, 0\)/,
+  'Tijdens het typen moet een leeg schoolmailveld de cursor betrouwbaar vóór de domeinsuffix zetten'
+);
+assert.match(
+  helper,
+  /function stopSuffixEditing[\s\S]*input\.type = 'email'/,
+  'Na het bewerken moet het veld weer normale e-mailvalidatie gebruiken'
 );
 assert.match(helper, /new MutationObserver/, 'Later dynamisch geopende leerling- en docentvelden moeten ook worden verbeterd');
 assert.match(
@@ -34,7 +39,10 @@ assert.match(
 
 assert.match(preload, /SCRIPT_URL = '\/schoolmail-domain-helper\.js'/, 'De helper moet een eigen statische route hebben');
 assert.match(preload, /html\.includes\(SCRIPT_URL\)/, 'De helper mag maar één keer per HTML-pagina geïnjecteerd worden');
-assert.match(preload, /<script src=\\"\$\{SCRIPT_URL\}\\"><\/script>/, 'De helper moet daadwerkelijk in HTML worden geladen');
+assert.ok(
+  preload.includes('<script src="${SCRIPT_URL}"></script>'),
+  'De helper moet daadwerkelijk in HTML worden geladen'
+);
 
 assert.ok(
   pkg.scripts.start.includes('--require ./schoolmail-domain-helper-preload.js'),
