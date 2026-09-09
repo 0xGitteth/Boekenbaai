@@ -1,4 +1,4 @@
-name: Temporary ISBN self-review v5
+name: Temporary ISBN self-review v6
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
           cache: npm
 
       - name: Apply reviewed patch
-        run: python .github/scripts/isbn_self_review_v5.py
+        run: python .github/scripts/isbn_self_review_v6.py
 
       - name: Check syntax and diff hygiene
         run: |
@@ -32,6 +32,7 @@ jobs:
           node --check isbn-lookup-core-impl.js
           node --check server.js
           node --check tests/isbn-lookup-core.test.js
+          node --check tests/isbn-review-regressions.test.js
           node --check tests/import.test.js
 
       - name: Install dependencies
@@ -58,8 +59,8 @@ jobs:
         run: |
           git config user.name "0xGitteth"
           git config user.email "160280586+0xGitteth@users.noreply.github.com"
-          git rm .github/workflows/isbn-self-review-v5.yml .github/scripts/isbn_self_review_v5.py
-          git add isbn-lookup-core-impl.js server.js tests/isbn-lookup-core.test.js tests/import.test.js
+          git rm .github/workflows/isbn-self-review-v5.yml .github/scripts/isbn_self_review_v5.py .github/scripts/isbn_self_review_v6.py
+          git add isbn-lookup-core-impl.js server.js tests/isbn-lookup-core.test.js tests/isbn-review-regressions.test.js tests/import.test.js
           git diff --cached --check
           git commit -m "Harden exact-edition lookup after self-review"
           git push origin HEAD:chatgpt/fix-isbn-review-regressions
