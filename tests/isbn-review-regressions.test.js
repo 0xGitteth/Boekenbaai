@@ -98,13 +98,14 @@ async function run() {
   );
 
   const openLibrary = parseOpenLibraryData({
+    isbn_13: [isbn],
     title: 'Test',
     authors: [{ name: 'Auteur' }],
     covers: [-1, 0, 1.5, 55],
   }, isbn);
   assert.strictEqual(openLibrary.coverUrl, 'https://covers.openlibrary.org/b/id/55-L.jpg?default=false');
   assert.strictEqual(
-    parseOpenLibraryData({ title: 'Test', authors: [{ name: 'Auteur' }], covers: [-1, 0, 1.5] }, isbn).coverUrl,
+    parseOpenLibraryData({ isbn_13: [isbn], title: 'Test', authors: [{ name: 'Auteur' }], covers: [-1, 0, 1.5] }, isbn).coverUrl,
     '',
     'Invalid Open Library cover identifiers must be ignored',
   );

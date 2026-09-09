@@ -7,8 +7,10 @@ const {
   toIsbn13,
   getEquivalentIsbns,
   extractCbSearchDetailPath,
+  extractCbSearchDetailPaths,
   parseCbDetailHtml,
   parseGoogleBooksData,
+  parseOpenLibraryData,
   mergeExactMetadata,
   createIsbnLookup,
 } = require('../isbn-lookup-core');
@@ -196,6 +198,163 @@ async function run() {
   const cached = await lookup('9059965604');
   assert.strictEqual(cached.cacheHit, true, 'ISBN-10 and ISBN-13 should share one cache entry');
   assert.strictEqual(requests.length, requestsBeforeCache, 'Cached equivalent ISBN must not perform network requests');
+
+
+  const multiSearchHtml = `
+    <div class="iesearch">
+      <div class="tab-pane active" id="werk">
+        <div class="span2 wrk"><div><a href="/111111/verkeerd-werk.html">Verkeerd</a></div></div>
+        <div class="span2 wrk"><div><a href="/2095701/murdoku-terug-in-de-tijd.html">Murdoku</a></div></div>
+      </div>
+    </div>
+    <footer><div class="wrk"><a href="/999999/footer-result.html">Footer</a></div></footer>`;
+  assert.deepStrictEqual(
+    extractCbSearchDetailPaths(multiSearchHtml),
+    ['/111111/verkeerd-werk.html', '/2095701/murdoku-terug-in-de-tijd.html'],
+    'Only ordered work-result links inside #werk may be considered',
+  );
+
+  const wrongCbDetailHtml = `
+    <div class="uitv">
+      <span>ISBN</span></br>9789059969575<br /><br />
+    </div>`;
+  const multiCbRequests = [];
+  const multiCbLookup = createIsbnLookup({
+    fetchImpl: async (url) => {
+      const textUrl = String(url);
+      multiCbRequests.push(textUrl);
+      if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(multiSearchHtml);
+      if (textUrl === 'https://metadata.isbn.nl/111111/verkeerd-werk.html') return response(wrongCbDetailHtml);
+      if (textUrl === 'https://metadata.isbn.nl/2095701/murdoku-terug-in-de-tijd.html') return response(cbDetailHtml);
+      if (textUrl.startsWith('https://openlibrary.org/isbn/')) return response({}, { status: 404, json: true });
+      throw new Error(`Unexpected request ${textUrl}`);
+    },
+    env: {},
+    timeoutMs: 1000,
+  });
+  const multiCbResult = await multiCbLookup('9789059965607');
+  assert.strictEqual(multiCbResult.source, 'Bureau ISBN');
+  assert.ok(multiCbRequests.includes('https://metadata.isbn.nl/111111/verkeerd-werk.html'));
+  assert.ok(multiCbRequests.includes('https://metadata.isbn.nl/2095701/murdoku-terug-in-de-tijd.html'));
+
+  const workPublisherOnlyHtml = `
+    <meta property="og:title" content="Werk met andere uitgever">
+    <dl><dt>Uitgever(s)</dt><dd><a>Werkuitgever</a></dd></dl>
+    <div class="uitv">
+      <span>ISBN</span></br>9789059965607<br /><br />
+      <span>verschijningsdatum</span></br>22/05/2026<br />
+    </div>`;
+  assert.strictEqual(
+    parseCbDetailHtml(workPublisherOnlyHtml, '9789059965607').publisher,
+    '',
+    'A work-level publisher must not be promoted to exact-edition publisher metadata',
+  );
+
+  assert.strictEqual(
+    parseOpenLibraryData({ key: '/books/OL-NO-ISBN-M', title: 'Geen bewijs' }, '9789059965607'),
+    null,
+    'Open Library exact matches require equivalent ISBN evidence in the response itself',
+  );
+
+  const equivalentGoogleQueries = [];
+  const equivalentGoogleLookup = createIsbnLookup({
+    fetchImpl: async (url) => {
+      const textUrl = String(url);
+      if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(noResultHtml);
+      if (textUrl.startsWith('https://openlibrary.org/isbn/')) return response({}, { status: 404, json: true });
+      if (textUrl.startsWith('https://www.googleapis.com/books/v1/volumes')) {
+        const q = new URL(textUrl).searchParams.get('q');
+        equivalentGoogleQueries.push(q);
+        if (q === 'isbn:9789059965607') {
+          return response({ items: [{ volumeInfo: {
+            title: 'Murdoku Terug in de tijd',
+            authors: ['Manuel Garand'],
+            industryIdentifiers: [{ type: 'ISBN_13', identifier: '9789059965607' }],
+          } }] }, { json: true });
+        }
+        return response({ items: [{ volumeInfo: {
+          title: 'Murdoku Terug in de tijd',
+          authors: ['Manuel Garand'],
+          publisher: 'Rijkere exacte Google uitgever',
+          imageLinks: { smallThumbnail: 'http://books.google.com/equivalent-rich.jpg' },
+          industryIdentifiers: [{ type: 'ISBN_10', identifier: '9059965604' }],
+        } }] }, { json: true });
+      }
+      throw new Error(`Unexpected request ${textUrl}`);
+    },
+    env: { GOOGLE_BOOKS_API_KEY: 'test-key' },
+    timeoutMs: 1000,
+  });
+  const equivalentGoogleResult = await equivalentGoogleLookup('9789059965607');
+  assert.deepStrictEqual(equivalentGoogleQueries, ['isbn:9789059965607', 'isbn:9059965604']);
+  assert.strictEqual(equivalentGoogleResult.publisher, 'Rijkere exacte Google uitgever');
+  assert.strictEqual(equivalentGoogleResult.coverUrl, 'https://books.google.com/equivalent-rich.jpg');
+
+  const equivalentOlRequests = [];
+  const equivalentOlLookup = createIsbnLookup({
+    fetchImpl: async (url) => {
+      const textUrl = String(url);
+      if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(noResultHtml);
+      if (textUrl === 'https://openlibrary.org/isbn/9789059965607.json') {
+        equivalentOlRequests.push('isbn13');
+        return response({
+          key: '/books/OL-SPARSE-M',
+          isbn_13: ['9789059965607'],
+          title: 'Murdoku Terug in de tijd',
+        }, { json: true });
+      }
+      if (textUrl === 'https://openlibrary.org/isbn/9059965604.json') {
+        equivalentOlRequests.push('isbn10');
+        return response({
+          key: '/books/OL-RICH-M',
+          isbn_10: ['9059965604'],
+          title: 'Murdoku Terug in de tijd',
+          publishers: ['Rijkere exacte Open Library uitgever'],
+          covers: [123456],
+          languages: [{ key: '/languages/eng' }],
+        }, { json: true });
+      }
+      throw new Error(`Unexpected request ${textUrl}`);
+    },
+    env: {},
+    timeoutMs: 1000,
+  });
+  const equivalentOlResult = await equivalentOlLookup('9789059965607');
+  assert.deepStrictEqual(equivalentOlRequests, ['isbn13', 'isbn10']);
+  assert.strictEqual(equivalentOlResult.publisher, 'Rijkere exacte Open Library uitgever');
+  assert.strictEqual(equivalentOlResult.coverUrl, 'https://covers.openlibrary.org/b/id/123456-L.jpg?default=false');
+
+  let transientEquivalentGoogleCalls = 0;
+  const transientEquivalentLookup = createIsbnLookup({
+    fetchImpl: async (url) => {
+      const textUrl = String(url);
+      if (textUrl.startsWith('https://metadata.isbn.nl/search.html')) return response(noResultHtml);
+      if (textUrl.startsWith('https://openlibrary.org/isbn/')) return response({}, { status: 404, json: true });
+      if (textUrl.startsWith('https://www.googleapis.com/books/v1/volumes')) {
+        transientEquivalentGoogleCalls += 1;
+        const q = new URL(textUrl).searchParams.get('q');
+        if (q === 'isbn:9789059965607') {
+          return response({ items: [{ volumeInfo: {
+            title: 'Exact maar deels onbevestigd',
+            authors: ['Auteur'],
+            industryIdentifiers: [{ type: 'ISBN_13', identifier: '9789059965607' }],
+          } }] }, { json: true });
+        }
+        return response({}, { status: 503, json: true });
+      }
+      throw new Error(`Unexpected request ${textUrl}`);
+    },
+    env: { GOOGLE_BOOKS_API_KEY: 'test-key' },
+    timeoutMs: 1000,
+  });
+  await transientEquivalentLookup('9789059965607');
+  await transientEquivalentLookup('9789059965607');
+  assert.strictEqual(
+    transientEquivalentGoogleCalls,
+    4,
+    'A partial exact hit must not be cached when another equivalent exact query failed transiently',
+  );
+
 
   console.log('ISBN exact-edition enrichment tests passed');
 }

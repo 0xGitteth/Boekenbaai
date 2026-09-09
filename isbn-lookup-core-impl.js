@@ -2,6 +2,7 @@
 
 const DEFAULT_TIMEOUT_MS = 2800;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CB_SEARCH_RESULTS = 20;
 const CB_BASE_URL = 'https://metadata.isbn.nl';
 const OPEN_LIBRARY_BASE_URL = 'https://openlibrary.org';
 const GOOGLE_BOOKS_URL = 'https://www.googleapis.com/books/v1/volumes';
@@ -255,15 +256,63 @@ function extractDefinitionValues(html, labelPattern) {
   return plain ? [plain] : [];
 }
 
-function extractCbSearchDetailPath(html) {
+function extractDivElementById(html, id) {
   const source = String(html || '');
-  const workTabIndex = source.search(/<div[^>]+id=["']werk["'][^>]*>/i);
-  if (workTabIndex < 0) return '';
-  const scoped = source.slice(workTabIndex, workTabIndex + 12000);
-  const match = scoped.match(
-    /<div[^>]+class=["'][^"']*\bwrk\b[^"']*["'][^>]*>[\s\S]*?<a[^>]+href=["'](\/\d+\/[^"']+\.html)["']/i,
+  const safeId = escapeRegex(id);
+  const openingPattern = new RegExp(
+    `<div\\b[^>]*\\bid=["']${safeId}["'][^>]*>`,
+    'i',
   );
-  return match ? match[1] : '';
+  const opening = openingPattern.exec(source);
+  if (!opening) return '';
+
+  const divPattern = /<\/?div\b[^>]*>/gi;
+  divPattern.lastIndex = opening.index;
+  let depth = 0;
+  let match;
+  while ((match = divPattern.exec(source))) {
+    const tag = match[0];
+    if (/^<\//.test(tag)) {
+      depth -= 1;
+    } else if (!/\/>\s*$/.test(tag)) {
+      depth += 1;
+    }
+    if (depth === 0) {
+      return source.slice(opening.index, divPattern.lastIndex);
+    }
+  }
+  return source.slice(opening.index);
+}
+
+function extractCbSearchDetailPaths(html, limit = MAX_CB_SEARCH_RESULTS) {
+  const workBlock = extractDivElementById(html, 'werk');
+  if (!workBlock) return [];
+
+  const starts = Array.from(workBlock.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bwrk\b[^"']*["'][^>]*>/gi,
+  )).map((match) => match.index);
+  if (!starts.length) return [];
+
+  const numericLimit = Number(limit);
+  const boundedLimit = Number.isFinite(numericLimit) && numericLimit > 0
+    ? Math.min(MAX_CB_SEARCH_RESULTS, Math.floor(numericLimit))
+    : MAX_CB_SEARCH_RESULTS;
+  const paths = [];
+  const seen = new Set();
+
+  for (let index = 0; index < starts.length && paths.length < boundedLimit; index += 1) {
+    const block = workBlock.slice(starts[index], starts[index + 1] ?? workBlock.length);
+    const match = block.match(/<a[^>]+href=["'](\/\d+\/[^"']+\.html)["']/i);
+    const path = match?.[1] || '';
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  return paths;
+}
+
+function extractCbSearchDetailPath(html) {
+  return extractCbSearchDetailPaths(html, 1)[0] || '';
 }
 
 function splitCbEditionBlocks(html) {
@@ -345,7 +394,6 @@ function parseCbDetailHtml(html, targetIsbn) {
   const title = extractMeta(html, 'og:title') || extractMeta(html, 'twitter:title');
   const description = extractMeta(html, 'og:description') || extractMeta(html, 'description');
   const authors = extractDefinitionValues(html, 'Auteur\\(s\\)');
-  const workPublisher = extractDefinition(html, 'Uitgever\\(s\\)');
   const editionPublisher = extractEditionField(exactBlock, 'uitgever');
   const editionLanguage = extractEditionField(exactBlock, 'taal');
   const publicationDate = extractSpanValue(exactBlock, 'verschijningsdatum');
@@ -364,7 +412,7 @@ function parseCbDetailHtml(html, targetIsbn) {
     author: authors.join(', '),
     authors,
     description: stripHtml(description),
-    publisher: editionPublisher || workPublisher,
+    publisher: editionPublisher,
     publishedYear: yearFromDate(publicationDate),
     publishedAt: publicationDate,
     pageCount: null,
@@ -475,7 +523,7 @@ function parseOpenLibraryData(data, targetIsbn) {
     ...(Array.isArray(data.isbn_13) ? data.isbn_13 : []),
     ...(Array.isArray(data.isbn_10) ? data.isbn_10 : []),
   ].map(normalizeIsbn).filter(Boolean);
-  if (returnedIsbns.length && !returnedIsbns.some((isbn) => family.has(isbn))) {
+  if (!returnedIsbns.some((isbn) => family.has(isbn))) {
     return null;
   }
 
@@ -526,18 +574,9 @@ function parseOpenLibraryData(data, targetIsbn) {
     tags: subjects.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean),
     source: 'Open Library',
     matchLevel: 'exact_isbn',
-    // A successful ISBN edition object is exact evidence even when its
-    // bibliographic fields are sparse; do not turn exact-but-incomplete into a miss.
-    found: Boolean(
-      data.key
-      || returnedIsbns.length
-      || data.title
-      || authors.length
-      || publishers.length
-      || coverId
-      || data.number_of_pages
-      || description
-    ),
+    // The parser only reaches this point after an ISBN from the requested
+    // equivalence family is present in the response itself.
+    found: true,
   };
 }
 
@@ -684,6 +723,40 @@ function dedupe(values) {
     output.push(text);
   }
   return output;
+}
+
+function mergeSameSourceExactMetadata(base, incoming) {
+  if (!base?.found) return incoming || null;
+  if (!incoming?.found) return base;
+
+  const merged = { ...base };
+  for (const field of [
+    'title',
+    'author',
+    'description',
+    'publisher',
+    'publishedYear',
+    'publishedAt',
+    'pageCount',
+    'language',
+    'coverUrl',
+    'previewLink',
+    'format',
+    'sourceUrl',
+    'matchedIsbn',
+  ]) {
+    const current = merged[field];
+    const next = incoming[field];
+    const currentMissing = current === undefined || current === null || current === '';
+    const nextPresent = next !== undefined && next !== null && next !== '';
+    if (currentMissing && nextPresent) merged[field] = next;
+  }
+  merged.authors = base.authors?.length ? base.authors : incoming.authors || [];
+  merged.tags = dedupe([...(base.tags || []), ...(incoming.tags || [])]);
+  merged.source = base.source || incoming.source || '';
+  merged.matchLevel = 'exact_isbn';
+  merged.found = true;
+  return merged;
 }
 
 function mergeExactMetadata({ cb, google, openLibrary, isbnBarcode } = {}, targetIsbn) {
@@ -881,6 +954,7 @@ function createDebugPayload(isbn, env) {
     },
     bureauIsbn: { enabled: true },
     cacheHit: false,
+    transientFailure: false,
   };
 }
 
@@ -911,7 +985,16 @@ function createIsbnLookup({
   const headers = { Accept: '*/*', 'User-Agent': userAgent };
 
   async function lookupCb(isbn, debug) {
+    const visitedDetailPaths = new Set();
+    const deadline = Date.now() + Math.max(timeoutMs * 3, timeoutMs);
+    const remainingTimeout = () => Math.max(
+      1,
+      Math.min(timeoutMs, deadline - Date.now()),
+    );
+
     for (const candidate of getEquivalentIsbns(isbn)) {
+      if (Date.now() >= deadline) break;
+      let detailPaths = [];
       try {
         const searchUrl = new URL('/search.html', CB_BASE_URL);
         searchUrl.searchParams.set('search', candidate);
@@ -920,26 +1003,42 @@ function createIsbnLookup({
           fetchImpl,
           searchUrl.toString(),
           { headers },
-          timeoutMs,
+          remainingTimeout(),
         );
-        const detailPath = extractCbSearchDetailPath(searchHtml);
-        if (!detailPath) continue;
-        const detailHtml = await fetchText(
-          fetchImpl,
-          absoluteCbUrl(detailPath),
-          { headers },
-          timeoutMs,
-        );
-        const metadata = parseCbDetailHtml(detailHtml, isbn);
-        if (metadata?.found) {
-          if (debug) debug.sourceStatus['Bureau ISBN'] = 'found';
-          return metadata;
-        }
+        detailPaths = extractCbSearchDetailPaths(searchHtml);
       } catch (error) {
         if (debug) {
           debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
             ? 'timeout'
             : 'error';
+          debug.transientFailure = true;
+        }
+        continue;
+      }
+
+      for (const detailPath of detailPaths) {
+        if (Date.now() >= deadline) break;
+        if (visitedDetailPaths.has(detailPath)) continue;
+        visitedDetailPaths.add(detailPath);
+        try {
+          const detailHtml = await fetchText(
+            fetchImpl,
+            absoluteCbUrl(detailPath),
+            { headers },
+            remainingTimeout(),
+          );
+          const metadata = parseCbDetailHtml(detailHtml, isbn);
+          if (metadata?.found) {
+            if (debug) debug.sourceStatus['Bureau ISBN'] = 'found';
+            return metadata;
+          }
+        } catch (error) {
+          if (debug) {
+            debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
+              ? 'timeout'
+              : 'error';
+            debug.transientFailure = true;
+          }
         }
       }
     }
@@ -949,8 +1048,10 @@ function createIsbnLookup({
     return null;
   }
 
+
   async function lookupGoogle(isbn, debug) {
     if (!env.GOOGLE_BOOKS_API_KEY) return null;
+    let mergedMetadata = null;
     for (const candidate of getEquivalentIsbns(isbn)) {
       try {
         const url = new URL(GOOGLE_BOOKS_URL);
@@ -973,27 +1074,33 @@ function createIsbnLookup({
         );
         const metadata = parseGoogleBooksData(data, isbn);
         if (metadata?.found) {
+          mergedMetadata = mergeSameSourceExactMetadata(mergedMetadata, metadata);
           if (debug) {
             debug.googleBooks.exactMatchFound = true;
             debug.sourceStatus['Google Books'] = 'found';
           }
-          return metadata;
         }
       } catch (error) {
         if (debug) {
-          debug.sourceStatus['Google Books'] = error?.name === 'AbortError'
-            ? 'timeout'
-            : 'error';
+          if (debug.sourceStatus['Google Books'] !== 'found') {
+            debug.sourceStatus['Google Books'] = error?.name === 'AbortError'
+              ? 'timeout'
+              : 'error';
+          }
+          debug.transientFailure = true;
         }
       }
     }
+    if (mergedMetadata) return mergedMetadata;
     if (debug && !debug.sourceStatus['Google Books']) {
       debug.sourceStatus['Google Books'] = 'not_found';
     }
     return null;
   }
 
+
   async function lookupOpenLibrary(isbn, debug) {
+    let mergedMetadata = null;
     for (const candidate of getEquivalentIsbns(isbn)) {
       try {
         debug?.sourcesTried.push('Open Library');
@@ -1005,22 +1112,27 @@ function createIsbnLookup({
         );
         const metadata = parseOpenLibraryData(data, isbn);
         if (metadata?.found) {
+          mergedMetadata = mergeSameSourceExactMetadata(mergedMetadata, metadata);
           if (debug) debug.sourceStatus['Open Library'] = 'found';
-          return metadata;
         }
       } catch (error) {
         if (debug) {
-          debug.sourceStatus['Open Library'] = error?.name === 'AbortError'
-            ? 'timeout'
-            : 'error';
+          if (debug.sourceStatus['Open Library'] !== 'found') {
+            debug.sourceStatus['Open Library'] = error?.name === 'AbortError'
+              ? 'timeout'
+              : 'error';
+          }
+          debug.transientFailure = true;
         }
       }
     }
+    if (mergedMetadata) return mergedMetadata;
     if (debug && !debug.sourceStatus['Open Library']) {
       debug.sourceStatus['Open Library'] = 'not_found';
     }
     return null;
   }
+
 
   async function lookupIsbnBarcode(isbn, debug) {
   if (!isbnBarcodeEnabled) return null;
@@ -1143,8 +1255,9 @@ function isComplete(result) {
     }
 
     result.barcode = normalized;
-    const transientFailure = Object.values(sourceState.sourceStatus)
-      .some((status) => status === 'error' || status === 'timeout');
+    const transientFailure = Boolean(sourceState.transientFailure)
+      || Object.values(sourceState.sourceStatus)
+        .some((status) => status === 'error' || status === 'timeout');
     const ttl = result.found ? cacheTtlMs : negativeCacheTtlMs;
     const entry = {
       value: result,
@@ -1187,6 +1300,7 @@ module.exports = {
   getEquivalentIsbns,
   extractMeta,
   extractCbSearchDetailPath,
+  extractCbSearchDetailPaths,
   parseCbDetailHtml,
   parseGoogleBooksData,
   parseOpenLibraryData,

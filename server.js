@@ -4943,6 +4943,7 @@ async function handleApi(req, res, requestUrl) {
           });
         }
         let fallbackUsed = false;
+        let fallbackSourceUsed = null;
         let fallbackTransientReason = null;
         let fallbackTarget = null;
         if (shouldTryTitleAuthorFallback) {
@@ -4969,6 +4970,9 @@ async function handleApi(req, res, requestUrl) {
             }
             if (strictFallbackMetadata && typeof strictFallbackMetadata === 'object'
               && isStrictWorkMatch(fallbackTarget, strictFallbackMetadata)) {
+              fallbackSourceUsed = strictFallbackMetadata.source
+                ? String(strictFallbackMetadata.source).toLowerCase()
+                : 'googlebooks-title-author';
               metadataFields = mergeLookupMetadata(metadataFields || {}, strictFallbackMetadata);
               fallbackUsed = true;
             } else if (!fallbackTransientReason) {
@@ -4999,9 +5003,7 @@ async function handleApi(req, res, requestUrl) {
           lookupFound: Boolean(enrichment?.found),
           lookupSource: enrichment?.source ? String(enrichment.source).toLowerCase() : null,
           fallbackUsed: Boolean(fallbackUsed),
-          fallbackSource: fallbackUsed && metadataFields?.source
-            ? String(metadataFields.source).toLowerCase()
-            : null,
+          fallbackSource: fallbackUsed ? fallbackSourceUsed : null,
           wasDeferred: false,
           deferCount: 0,
         };
