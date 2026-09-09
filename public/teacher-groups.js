@@ -125,29 +125,108 @@
     if (legacy.getAttribute('aria-hidden') !== 'true') legacy.setAttribute('aria-hidden', 'true');
   }
 
+  function ensureEditorStyles() {
+    if (document.querySelector('#teacher-groups-modal-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'teacher-groups-modal-styles';
+    style.textContent = `
+      .teacher-groups-live-editor {
+        width: min(94vw, 720px);
+        max-height: 88vh;
+        border: 0;
+        border-radius: 20px;
+        padding: 0;
+        overflow: hidden;
+        box-shadow: 0 24px 70px rgba(18,34,58,.25);
+      }
+      .teacher-groups-live-editor::backdrop {
+        background: rgba(20,28,40,.42);
+      }
+      .teacher-groups-live-editor__content {
+        display: grid;
+        gap: 1rem;
+        padding: 1.35rem;
+        max-height: 88vh;
+        overflow-y: auto;
+        box-sizing: border-box;
+      }
+      .teacher-groups-live-editor__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+      }
+      .teacher-groups-live-editor__header h3 {
+        margin: 0;
+      }
+      .teacher-groups-live-editor__close {
+        flex: 0 0 auto;
+        min-width: 2.5rem;
+        padding-inline: .7rem;
+        font-size: 1.35rem;
+        line-height: 1;
+      }
+      .teacher-groups-live-editor .admin-teacher-detail__section {
+        border: 1px solid rgba(65,86,117,.14);
+        border-radius: 15px;
+        padding: 1rem;
+        background: rgba(255,255,255,.52);
+      }
+      @media (max-width: 620px) {
+        .teacher-groups-live-editor {
+          width: calc(100vw - 1rem);
+          max-height: calc(100vh - 1rem);
+          border-radius: 16px;
+        }
+        .teacher-groups-live-editor__content {
+          max-height: calc(100vh - 1rem);
+          padding: 1rem;
+        }
+      }
+    `;
+    document.head.append(style);
+  }
+
+  function clearSelectedTeacherHighlight() {
+    document.querySelectorAll('[data-teacher-groups-teacher="true"]')
+      .forEach((button) => button.classList.remove('student-list__item--active'));
+  }
+
   function ensureEditorContainer() {
     const list = document.querySelector('#admin-teacher-list');
-    const layout = list?.closest('.admin-teacher-layout');
-    if (!list || !layout) return null;
+    if (!list) return null;
 
     hideLegacyTeacherDetail();
+    ensureEditorStyles();
 
-    let editor = layout.querySelector('#teacher-groups-live-editor');
+    let editor = document.querySelector('#teacher-groups-live-editor');
     if (editor) return editor;
 
-    editor = document.createElement('aside');
+    editor = document.createElement('dialog');
     editor.id = 'teacher-groups-live-editor';
-    editor.className = 'admin-teacher-detail teacher-groups-live-editor hidden';
-    editor.setAttribute('aria-live', 'polite');
-    editor.setAttribute('aria-hidden', 'true');
-    layout.append(editor);
+    editor.className = 'teacher-groups-live-editor';
+    editor.setAttribute('aria-labelledby', 'teacher-groups-live-editor-title');
+
+    editor.addEventListener('click', (event) => {
+      if (event.target === editor) editor.close();
+    });
+    editor.addEventListener('close', () => {
+      googleRequestVersion += 1;
+      selectedTeacherId = '';
+      clearSelectedTeacherHighlight();
+    });
+
+    document.body.append(editor);
     return editor;
   }
 
   function setEditorVisible(editor, visible) {
     if (!editor) return;
-    editor.classList.toggle('hidden', !visible);
-    editor.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    if (visible) {
+      if (!editor.open) editor.showModal();
+      return;
+    }
+    if (editor.open) editor.close();
   }
 
   function addHeading(parent, text, level = 'h5') {
@@ -177,17 +256,6 @@
     selectedTeacherId = teacherId && allTeachers().has(teacherId) ? teacherId : '';
     queueRender();
     await renderTeacherEditor();
-  }
-
-  function scrollEditorIntoView(editor) {
-    if (!editor) return;
-    const narrow = typeof window.matchMedia === 'function'
-      ? window.matchMedia('(max-width: 900px)').matches
-      : window.innerWidth <= 900;
-    if (!narrow) return;
-    window.requestAnimationFrame(() => {
-      editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   }
 
   function renderNameAndClasses(editor, teacher) {
@@ -387,16 +455,27 @@
     editor.replaceChildren();
     editor.dataset.teacherId = teacher.id;
 
-    const header = document.createElement('header');
-    header.className = 'admin-teacher-detail__header';
-    const title = document.createElement('h4');
-    title.textContent = teacher.name || 'Docent';
-    header.append(title);
-    editor.append(header);
+    const content = document.createElement('div');
+    content.className = 'teacher-groups-live-editor__content';
 
-    renderNameAndClasses(editor, teacher);
-    const googleRender = renderGoogleSection(editor, teacher);
-    renderDangerZone(editor, teacher);
+    const header = document.createElement('header');
+    header.className = 'teacher-groups-live-editor__header';
+    const title = document.createElement('h3');
+    title.id = 'teacher-groups-live-editor-title';
+    title.textContent = teacher.name || 'Docent';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn btn--ghost teacher-groups-live-editor__close';
+    close.textContent = '×';
+    close.setAttribute('aria-label', 'Sluiten');
+    close.addEventListener('click', () => editor.close());
+    header.append(title, close);
+    content.append(header);
+
+    renderNameAndClasses(content, teacher);
+    const googleRender = renderGoogleSection(content, teacher);
+    renderDangerZone(content, teacher);
+    editor.append(content);
     setEditorVisible(editor, true);
     await googleRender;
   }
@@ -450,7 +529,7 @@
     }
 
     list.replaceChildren(wrapper);
-    await renderTeacherEditor();
+    if (selectedTeacherId) await renderTeacherEditor();
   }
 
   function queueRender() {
@@ -466,12 +545,11 @@
     event.stopImmediatePropagation();
     const teacherId = button.dataset.teacherId || '';
     if (!teacherId) return;
+
+    clearSelectedTeacherHighlight();
     selectedTeacherId = teacherId;
-    queueRender();
-    window.requestAnimationFrame(async () => {
-      await renderTeacherEditor();
-      scrollEditorIntoView(ensureEditorContainer());
-    });
+    button.classList.add('student-list__item--active');
+    renderTeacherEditor();
   }
 
   function install() {
