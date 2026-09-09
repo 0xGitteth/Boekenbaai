@@ -133,6 +133,21 @@ async function request(pathname, token = '') {
     assert.match(scriptText, /teacher-groups-edit-form/);
     assert.match(scriptText, /\/api\/teachers\//, 'Docentdetail moet de bestaande PATCH-route gebruiken');
     assert.match(scriptText, /admin-teacher-password-form[\s\S]*hidden = true/, 'Tijdelijk wachtwoord hoort niet prominent in de Google-first docentflow');
+    assert.match(
+      scriptText,
+      /function prepareGroupedTeacherActivation[\s\S]*search\.value = temporaryQuery[\s\S]*search\.value === temporaryQuery[\s\S]*search\.value = ''/,
+      'Een docentklik uit de klasgroepering moet de lege-zoekveld reset van de oude renderer overbruggen'
+    );
+    assert.match(
+      scriptText,
+      /addEventListener\('click', prepareGroupedTeacherActivation, true\)/,
+      'De click-bridge moet in capture-fase draaien vóór de bestaande app.js docenthandler'
+    );
+    assert.match(
+      scriptText,
+      /scrollTeacherDetailIntoView[\s\S]*scrollIntoView/,
+      'Op smallere schermen moet het geopende docentdetail zichtbaar in beeld worden gebracht'
+    );
 
     const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
     assert.match(
@@ -151,7 +166,7 @@ async function request(pathname, token = '') {
     const html = await page.text();
     assert.match(html, /<script src="\/teacher-groups\.js"><\/script>/);
 
-    console.log('Live docentgroepering en docentbewerking integratietest geslaagd.');
+    console.log('Live docentgroepering, docentbewerking en detailklik-regressietest geslaagd.');
   } finally {
     await stop();
   }
