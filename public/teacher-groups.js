@@ -5,6 +5,9 @@
   let loading = false;
   let renderQueued = false;
   let retryTimer = null;
+  let selectedTeacherId = '';
+  let googleManagePayload = null;
+  let googleRequestVersion = 0;
 
   function authHeaders(extra = {}) {
     const headers = { Accept: 'application/json', ...extra };
@@ -14,11 +17,17 @@
   }
 
   async function api(pathname, options = {}) {
-    const response = await fetch(pathname, {
+    const config = {
+      method: 'GET',
       credentials: 'same-origin',
       ...options,
       headers: authHeaders(options.headers || {}),
-    });
+    };
+    if (config.body && typeof config.body !== 'string') {
+      config.body = JSON.stringify(config.body);
+      if (!config.headers['Content-Type']) config.headers['Content-Type'] = 'application/json';
+    }
+    const response = await fetch(pathname, config);
     let body = null;
     try {
       body = await response.json();
@@ -63,11 +72,21 @@
     return byId;
   }
 
-  function teacherButton(teacher, selectedId) {
+  function classIdsForTeacher(teacherId) {
+    const ids = new Set();
+    for (const klass of Array.isArray(payload?.classes) ? payload.classes : []) {
+      if ((Array.isArray(klass?.teachers) ? klass.teachers : []).some((teacher) => teacher?.id === teacherId)) {
+        ids.add(klass.id);
+      }
+    }
+    return ids;
+  }
+
+  function teacherButton(teacher) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `student-list__item student-list__item--selectable${teacher.id === selectedId ? ' student-list__item--active' : ''}`;
-    button.dataset.selectTeacher = 'true';
+    button.className = `student-list__item student-list__item--selectable${teacher.id === selectedTeacherId ? ' student-list__item--active' : ''}`;
+    button.dataset.teacherGroupsTeacher = 'true';
     button.dataset.teacherId = teacher.id;
     const name = document.createElement('strong');
     name.textContent = teacher.name || teacher.username || 'Docent';
@@ -75,10 +94,10 @@
     return button;
   }
 
-  function groupSection(name, teachers, selectedId, { open = false, emptyText = '' } = {}) {
+  function groupSection(name, teachers, { open = false, emptyText = '' } = {}) {
     const details = document.createElement('details');
     details.className = 'admin-ux__teacher-class';
-    details.open = open;
+    details.open = open || teachers.some((teacher) => teacher.id === selectedTeacherId);
 
     const summary = document.createElement('summary');
     const count = teachers.length;
@@ -88,7 +107,7 @@
     const rows = document.createElement('div');
     rows.className = 'admin-ux__teacher-class-list';
     if (teachers.length) {
-      teachers.forEach((teacher) => rows.append(teacherButton(teacher, selectedId)));
+      teachers.forEach((teacher) => rows.append(teacherButton(teacher)));
     } else if (emptyText) {
       const empty = document.createElement('p');
       empty.className = 'hint';
@@ -99,142 +118,287 @@
     return details;
   }
 
-  function selectedTeacherId() {
-    return document.querySelector('#admin-teacher-detail-content')?.dataset.teacherId || '';
+  function hideLegacyTeacherDetail() {
+    const legacy = document.querySelector('#admin-teacher-detail');
+    if (!legacy) return;
+    if (!legacy.hidden) legacy.hidden = true;
+    if (legacy.getAttribute('aria-hidden') !== 'true') legacy.setAttribute('aria-hidden', 'true');
   }
 
-  function scrollTeacherDetailIntoView() {
-    const detail = document.querySelector('#admin-teacher-detail-content');
-    if (!detail || detail.classList.contains('hidden')) return;
+  function ensureEditorContainer() {
+    const list = document.querySelector('#admin-teacher-list');
+    const layout = list?.closest('.admin-teacher-layout');
+    if (!list || !layout) return null;
+
+    hideLegacyTeacherDetail();
+
+    let editor = layout.querySelector('#teacher-groups-live-editor');
+    if (editor) return editor;
+
+    editor = document.createElement('aside');
+    editor.id = 'teacher-groups-live-editor';
+    editor.className = 'admin-teacher-detail teacher-groups-live-editor hidden';
+    editor.setAttribute('aria-live', 'polite');
+    editor.setAttribute('aria-hidden', 'true');
+    layout.append(editor);
+    return editor;
+  }
+
+  function setEditorVisible(editor, visible) {
+    if (!editor) return;
+    editor.classList.toggle('hidden', !visible);
+    editor.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+
+  function addHeading(parent, text, level = 'h5') {
+    const heading = document.createElement(level);
+    heading.textContent = text;
+    parent.append(heading);
+    return heading;
+  }
+
+  function addStatus(parent) {
+    const status = document.createElement('p');
+    status.className = 'hint';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    parent.append(status);
+    return status;
+  }
+
+  function currentTeacher() {
+    if (!selectedTeacherId || !payload) return null;
+    return allTeachers().get(selectedTeacherId) || null;
+  }
+
+  async function refreshGroupsAndEditor(teacherId = selectedTeacherId) {
+    payload = null;
+    await loadGroups();
+    selectedTeacherId = teacherId && allTeachers().has(teacherId) ? teacherId : '';
+    queueRender();
+    await renderTeacherEditor();
+  }
+
+  function scrollEditorIntoView(editor) {
+    if (!editor) return;
     const narrow = typeof window.matchMedia === 'function'
       ? window.matchMedia('(max-width: 900px)').matches
       : window.innerWidth <= 900;
     if (!narrow) return;
     window.requestAnimationFrame(() => {
-      detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      editor.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
 
-  function prepareGroupedTeacherActivation(event) {
-    const button = event.target.closest('[data-select-teacher="true"]');
-    if (!button || !button.closest('.teacher-groups-live')) return;
+  function renderNameAndClasses(editor, teacher) {
+    const form = document.createElement('form');
+    form.id = 'teacher-groups-profile-form';
+    form.className = 'admin-teacher-detail__section teacher-groups-profile';
+    addHeading(form, 'Docentgegevens');
 
-    const search = document.querySelector('#admin-teacher-search');
-    if (!search || search.value.trim()) return;
+    const nameField = document.createElement('label');
+    nameField.className = 'form-field';
+    const nameLabel = document.createElement('span');
+    nameLabel.textContent = 'Naam';
+    const nameInput = document.createElement('input');
+    nameInput.id = 'teacher-groups-profile-name';
+    nameInput.type = 'text';
+    nameInput.required = true;
+    nameInput.autocomplete = 'off';
+    nameInput.value = teacher.name || '';
+    nameField.append(nameLabel, nameInput);
+    form.append(nameField);
 
-    // app.js wist een geselecteerde docent wanneer zijn oude renderer met een leeg
-    // zoekveld opnieuw draait. Geef die renderer voor deze ene klik tijdelijk een
-    // geldige zoekterm, zodat de bestaande detailhandler de selectie kan behouden.
-    const temporaryQuery = button.querySelector('strong')?.textContent?.trim() || '';
-    if (!temporaryQuery) return;
-    search.value = temporaryQuery;
+    addHeading(form, 'Klassen');
+    const classList = document.createElement('div');
+    classList.className = 'admin-teacher-class-list';
+    const selectedClasses = classIdsForTeacher(teacher.id);
 
-    window.setTimeout(() => {
-      if (search.value === temporaryQuery) search.value = '';
-      queueRender();
-      ensureTeacherEditor();
-      scrollTeacherDetailIntoView();
-    }, 0);
-  }
-
-  function ensureTeacherEditor() {
-    const detail = document.querySelector('#admin-teacher-detail-content');
-    if (!detail || detail.classList.contains('hidden')) return;
-    const teacherId = detail.dataset.teacherId || '';
-    if (!teacherId || !payload) return;
-
-    const teacher = allTeachers().get(teacherId);
-    if (!teacher) return;
-
-    const passwordForm = document.querySelector('#admin-teacher-password-form');
-    if (passwordForm) {
-      passwordForm.hidden = true;
-      passwordForm.setAttribute('aria-hidden', 'true');
+    for (const klass of Array.isArray(payload?.classes) ? payload.classes : []) {
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = klass.id;
+      checkbox.checked = selectedClasses.has(klass.id);
+      checkbox.dataset.teacherGroupClass = 'true';
+      const text = document.createElement('span');
+      text.textContent = klass.name || 'Naamloze klas';
+      label.append(checkbox, text);
+      classList.append(label);
     }
+    form.append(classList);
 
-    const classesForm = document.querySelector('#admin-teacher-classes-form');
-    const classesHeading = classesForm?.querySelector('h5');
-    if (classesHeading && classesHeading.textContent !== 'Klassen') classesHeading.textContent = 'Klassen';
-
-    const title = document.querySelector('#admin-teacher-detail-name');
-    if (title && title.textContent !== teacher.name) title.textContent = teacher.name;
-
-    let form = detail.querySelector('#teacher-groups-edit-form');
-    if (form && form.dataset.teacherId !== teacherId) {
-      form.remove();
-      form = null;
-    }
-    if (form) {
-      const nameInput = form.querySelector('#teacher-groups-edit-name');
-      if (nameInput && document.activeElement !== nameInput && nameInput.value !== teacher.name) {
-        nameInput.value = teacher.name;
-      }
-      return;
-    }
-
-    form = document.createElement('form');
-    form.id = 'teacher-groups-edit-form';
-    form.className = 'admin-teacher-detail__section teacher-groups-edit';
-    form.dataset.teacherId = teacherId;
-
-    const heading = document.createElement('h5');
-    heading.textContent = 'Docentgegevens';
-
-    const field = document.createElement('label');
-    field.className = 'form-field';
-    const label = document.createElement('span');
-    label.textContent = 'Naam';
-    const input = document.createElement('input');
-    input.id = 'teacher-groups-edit-name';
-    input.type = 'text';
-    input.required = true;
-    input.autocomplete = 'off';
-    input.value = teacher.name || '';
-    field.append(label, input);
-
-    const message = document.createElement('p');
-    message.className = 'hint';
-    message.setAttribute('role', 'status');
-    message.setAttribute('aria-live', 'polite');
-
+    const actions = document.createElement('div');
+    actions.className = 'admin-form__actions';
     const save = document.createElement('button');
     save.type = 'submit';
     save.className = 'btn btn--secondary';
-    save.textContent = 'Naam opslaan';
-
-    form.append(heading, field, save, message);
-    const header = detail.querySelector('.admin-teacher-detail__header');
-    if (classesForm) detail.insertBefore(form, classesForm);
-    else if (header?.nextSibling) detail.insertBefore(form, header.nextSibling);
-    else detail.append(form);
+    save.textContent = 'Wijzigingen opslaan';
+    actions.append(save);
+    form.append(actions);
+    const status = addStatus(form);
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const name = input.value.trim();
+      const name = nameInput.value.trim();
       if (!name) {
-        message.textContent = 'Naam mag niet leeg zijn.';
+        status.textContent = 'Naam mag niet leeg zijn.';
         return;
       }
+      const classIds = Array.from(form.querySelectorAll('[data-teacher-group-class="true"]:checked'))
+        .map((checkbox) => checkbox.value)
+        .filter(Boolean);
       save.disabled = true;
-      message.textContent = 'Wijziging wordt opgeslagen…';
+      status.textContent = 'Wijzigingen worden opgeslagen…';
       try {
-        await api(`/api/teachers/${encodeURIComponent(teacherId)}`, {
+        await api(`/api/teachers/${encodeURIComponent(teacher.id)}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
+          body: { name, classIds },
         });
-        payload = null;
-        await loadGroups();
-        message.textContent = 'Naam opgeslagen.';
-        const refreshed = allTeachers().get(teacherId);
-        if (title && refreshed) title.textContent = refreshed.name;
-        queueRender();
+        await refreshGroupsAndEditor(teacher.id);
       } catch (error) {
-        message.textContent = error.message;
+        status.textContent = error.message;
       } finally {
         save.disabled = false;
       }
     });
+
+    editor.append(form);
+  }
+
+  function googleStatusText(entry) {
+    if (entry?.googleVerified) return `Google gekoppeld · ${entry.googleEmail || 'schoolmail bekend'}`;
+    if (entry?.googleEmail) return `Schoolmail staat klaar voor eerste Google-login · ${entry.googleEmail}`;
+    return 'Nog geen Google-schoolaccount gekoppeld.';
+  }
+
+  async function renderGoogleSection(editor, teacher) {
+    const section = document.createElement('section');
+    section.id = 'teacher-groups-google-section';
+    section.className = 'admin-teacher-detail__section admin-ux__teacher-google';
+    addHeading(section, 'Google-schoolaccount');
+
+    const copy = document.createElement('p');
+    copy.className = 'hint';
+    copy.textContent = 'Beheer hier de schoolmail die bij de Google-login van deze docent hoort.';
+    section.append(copy);
+
+    const form = document.createElement('form');
+    form.id = 'teacher-groups-google-form';
+    form.className = 'google-manage__form';
+    const email = document.createElement('input');
+    email.type = 'email';
+    email.autocomplete = 'off';
+    email.required = true;
+    email.placeholder = 'naam@koraaledu.nl';
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.className = 'btn btn--secondary';
+    save.textContent = 'Schoolmail opslaan';
+    form.append(email, save);
+    section.append(form);
+    const status = addStatus(section);
+    status.textContent = 'Google-status wordt geladen…';
+    editor.append(section);
+
+    const version = ++googleRequestVersion;
+    try {
+      if (!googleManagePayload) googleManagePayload = await api('/api/auth/google/manage');
+      if (version !== googleRequestVersion || selectedTeacherId !== teacher.id) return;
+      const entry = (Array.isArray(googleManagePayload?.staff) ? googleManagePayload.staff : [])
+        .find((staff) => staff?.id === teacher.id && staff?.role !== 'admin');
+      email.placeholder = `naam@${googleManagePayload?.domain || 'koraaledu.nl'}`;
+      email.value = entry?.googleEmail || '';
+      status.textContent = googleStatusText(entry);
+    } catch (error) {
+      if (version === googleRequestVersion && selectedTeacherId === teacher.id) {
+        status.textContent = error.message;
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const submittedEmail = email.value.trim();
+      save.disabled = true;
+      status.textContent = 'Schoolmail wordt opgeslagen…';
+      try {
+        const result = await api('/api/auth/google/staff-email', {
+          method: 'POST',
+          body: { staffId: teacher.id, email: submittedEmail },
+        });
+        googleManagePayload = null;
+        if (selectedTeacherId !== teacher.id) return;
+        status.textContent = result?.googleVerified
+          ? `Google gekoppeld · ${result.googleEmail || submittedEmail}`
+          : `Schoolmail opgeslagen · ${result?.googleEmail || submittedEmail}`;
+      } catch (error) {
+        if (selectedTeacherId === teacher.id) status.textContent = error.message;
+      } finally {
+        save.disabled = false;
+      }
+    });
+  }
+
+  function renderDangerZone(editor, teacher) {
+    const section = document.createElement('section');
+    section.className = 'admin-teacher-detail__section teacher-groups-danger';
+    addHeading(section, 'Account verwijderen');
+    const copy = document.createElement('p');
+    copy.className = 'hint';
+    copy.textContent = 'Verwijder het docentaccount alleen als deze persoon niet meer in Boekenbaai hoort.';
+    section.append(copy);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn--danger';
+    button.textContent = 'Docent verwijderen';
+    section.append(button);
+    const status = addStatus(section);
+
+    button.addEventListener('click', async () => {
+      const confirmed = window.confirm(`Docent ${teacher.name || ''} verwijderen?`);
+      if (!confirmed) return;
+      button.disabled = true;
+      status.textContent = 'Docent wordt verwijderd…';
+      try {
+        await api(`/api/teachers/${encodeURIComponent(teacher.id)}`, { method: 'DELETE' });
+        selectedTeacherId = '';
+        googleManagePayload = null;
+        await refreshGroupsAndEditor('');
+      } catch (error) {
+        status.textContent = error.message;
+        button.disabled = false;
+      }
+    });
+
+    editor.append(section);
+  }
+
+  async function renderTeacherEditor() {
+    const editor = ensureEditorContainer();
+    if (!editor) return;
+    const teacher = currentTeacher();
+    if (!teacher) {
+      googleRequestVersion += 1;
+      editor.replaceChildren();
+      setEditorVisible(editor, false);
+      return;
+    }
+
+    editor.replaceChildren();
+    editor.dataset.teacherId = teacher.id;
+
+    const header = document.createElement('header');
+    header.className = 'admin-teacher-detail__header';
+    const title = document.createElement('h4');
+    title.textContent = teacher.name || 'Docent';
+    header.append(title);
+    editor.append(header);
+
+    renderNameAndClasses(editor, teacher);
+    const googleRender = renderGoogleSection(editor, teacher);
+    renderDangerZone(editor, teacher);
+    setEditorVisible(editor, true);
+    await googleRender;
   }
 
   async function render() {
@@ -243,18 +407,16 @@
     const list = document.querySelector('#admin-teacher-list');
     if (!view || view.hidden || !list) return;
 
+    hideLegacyTeacherDetail();
+
     const search = document.querySelector('#admin-teacher-search');
     const query = (search?.value || '').trim().toLocaleLowerCase('nl-NL');
-    const existing = list.querySelector('.teacher-groups-live');
-    if (existing && existing.dataset.query === query) {
-      ensureTeacherEditor();
-      return;
-    }
 
     if (!payload) await loadGroups();
     if (!payload) return;
 
-    const selectedId = selectedTeacherId();
+    if (selectedTeacherId && !allTeachers().has(selectedTeacherId)) selectedTeacherId = '';
+
     const wrapper = document.createElement('div');
     wrapper.className = 'admin-ux__teacher-groups teacher-groups-live';
     wrapper.dataset.query = query;
@@ -267,7 +429,6 @@
       wrapper.append(groupSection(
         klass.name || 'Naamloze klas',
         teachers,
-        selectedId,
         {
           open: Boolean(query),
           emptyText: 'Geen docenten gekoppeld aan deze klas.',
@@ -278,7 +439,7 @@
     const unassigned = (Array.isArray(payload.unassigned) ? payload.unassigned : [])
       .filter((teacher) => teacherMatches(teacher, query));
     if (unassigned.length) {
-      wrapper.append(groupSection('Zonder klas', unassigned, selectedId, { open: Boolean(query) }));
+      wrapper.append(groupSection('Zonder klas', unassigned, { open: Boolean(query) }));
     }
 
     if (!wrapper.children.length) {
@@ -289,7 +450,7 @@
     }
 
     list.replaceChildren(wrapper);
-    ensureTeacherEditor();
+    await renderTeacherEditor();
   }
 
   function queueRender() {
@@ -298,7 +459,24 @@
     window.requestAnimationFrame(render);
   }
 
+  function handleGroupedTeacherClick(event) {
+    const button = event.target.closest('[data-teacher-groups-teacher="true"]');
+    if (!button || !button.closest('.teacher-groups-live')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const teacherId = button.dataset.teacherId || '';
+    if (!teacherId) return;
+    selectedTeacherId = teacherId;
+    queueRender();
+    window.requestAnimationFrame(async () => {
+      await renderTeacherEditor();
+      scrollEditorIntoView(ensureEditorContainer());
+    });
+  }
+
   function install() {
+    hideLegacyTeacherDetail();
+
     const search = document.querySelector('#admin-teacher-search');
     if (search && !search.dataset.teacherGroupsLive) {
       search.dataset.teacherGroupsLive = 'true';
@@ -310,6 +488,7 @@
       button.dataset.teacherGroupsLive = 'true';
       button.addEventListener('click', () => {
         payload = null;
+        googleManagePayload = null;
         queueRender();
       });
     });
@@ -317,15 +496,7 @@
     const list = document.querySelector('#admin-teacher-list');
     if (list && !list.dataset.teacherGroupsObserved) {
       list.dataset.teacherGroupsObserved = 'true';
-      list.addEventListener('click', prepareGroupedTeacherActivation, true);
-      list.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-select-teacher="true"]');
-        if (!button) return;
-        window.setTimeout(() => {
-          ensureTeacherEditor();
-          scrollTeacherDetailIntoView();
-        }, 0);
-      });
+      list.addEventListener('click', handleGroupedTeacherClick, true);
       const observer = new MutationObserver(() => {
         if (!list.querySelector('.teacher-groups-live')) {
           payload = null;
@@ -335,30 +506,8 @@
       observer.observe(list, { childList: true, subtree: false });
     }
 
-    const detail = document.querySelector('#admin-teacher-detail-content');
-    if (detail && !detail.dataset.teacherGroupsObserved) {
-      detail.dataset.teacherGroupsObserved = 'true';
-      const observer = new MutationObserver(ensureTeacherEditor);
-      observer.observe(detail, {
-        attributes: true,
-        attributeFilter: ['class', 'data-teacher-id'],
-        childList: true,
-      });
-    }
-
-    const classesForm = document.querySelector('#admin-teacher-classes-form');
-    if (classesForm && !classesForm.dataset.teacherGroupsRefresh) {
-      classesForm.dataset.teacherGroupsRefresh = 'true';
-      classesForm.addEventListener('submit', () => {
-        window.setTimeout(() => {
-          payload = null;
-          queueRender();
-        }, 400);
-      });
-    }
-
+    ensureEditorContainer();
     queueRender();
-    ensureTeacherEditor();
   }
 
   function boot() {
