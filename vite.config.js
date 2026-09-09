@@ -16,6 +16,7 @@ const runtimeAuthAssets = [
   'student-management.css',
   'student-management.js',
   'student-management-compat.js',
+  'schoolmail-domain-helper.js',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
