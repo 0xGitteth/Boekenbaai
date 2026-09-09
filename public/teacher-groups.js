@@ -120,10 +120,9 @@
 
   function hideLegacyTeacherDetail() {
     const legacy = document.querySelector('#admin-teacher-detail');
-    if (legacy) {
-      legacy.hidden = true;
-      legacy.setAttribute('aria-hidden', 'true');
-    }
+    if (!legacy) return;
+    if (!legacy.hidden) legacy.hidden = true;
+    if (legacy.getAttribute('aria-hidden') !== 'true') legacy.setAttribute('aria-hidden', 'true');
   }
 
   function ensureEditorContainer() {
@@ -140,6 +139,7 @@
     editor.id = 'teacher-groups-live-editor';
     editor.className = 'admin-teacher-detail teacher-groups-live-editor hidden';
     editor.setAttribute('aria-live', 'polite');
+    editor.setAttribute('aria-hidden', 'true');
     layout.append(editor);
     return editor;
   }
@@ -395,10 +395,10 @@
     editor.append(header);
 
     renderNameAndClasses(editor, teacher);
-    await renderGoogleSection(editor, teacher);
-    if (selectedTeacherId !== teacher.id) return;
+    const googleRender = renderGoogleSection(editor, teacher);
     renderDangerZone(editor, teacher);
     setEditorVisible(editor, true);
+    await googleRender;
   }
 
   async function render() {
