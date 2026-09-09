@@ -475,12 +475,14 @@
   }
 
   function install() {
+    let changed = false;
     hideLegacyTeacherDetail();
 
     const search = document.querySelector('#admin-teacher-search');
     if (search && !search.dataset.teacherGroupsLive) {
       search.dataset.teacherGroupsLive = 'true';
       search.addEventListener('input', queueRender);
+      changed = true;
     }
 
     document.querySelectorAll('[data-admin-people-tab="teachers"]').forEach((button) => {
@@ -491,6 +493,7 @@
         googleManagePayload = null;
         queueRender();
       });
+      changed = true;
     });
 
     const list = document.querySelector('#admin-teacher-list');
@@ -504,10 +507,14 @@
         }
       });
       observer.observe(list, { childList: true, subtree: false });
+      changed = true;
     }
 
-    ensureEditorContainer();
-    queueRender();
+    const hadEditor = Boolean(document.querySelector('#teacher-groups-live-editor'));
+    const editor = ensureEditorContainer();
+    if (editor && !hadEditor) changed = true;
+
+    if (changed) queueRender();
   }
 
   function boot() {
