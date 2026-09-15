@@ -25,6 +25,8 @@ const {
   resolveMetadata,
 } = require('./book-import-analysis-metadata');
 
+const IDENTIFIER_SOURCE_FIELDS = new Set(['isbn', 'metadataIsbn', 'ambiguousIdentifier']);
+
 function finalizeRowStatus(row) {
   if (row.context.excludeFromSchoolCollection) {
     if (row.issues.some((issue) => issue.code === 'own_book_context_conflict')) return 'conflict';
@@ -51,6 +53,13 @@ function flagConflictingRepairSuggestions(row) {
   if (suggestedIsbns.length <= 1) return false;
   addIssue(row, 'conflicting_isbn_repair_suggestions', 'conflict', { suggestedIsbns });
   return true;
+}
+
+function hasBlockingIdentifierConflict(row) {
+  return row.issues.some((issue) => (
+    issue.code === 'conflicting_edition_isbns'
+    || (issue.code === 'conflicting_source_columns' && IDENTIFIER_SOURCE_FIELDS.has(issue.field))
+  ));
 }
 
 function isClearJunkRow(mapped) {
@@ -178,7 +187,8 @@ async function analyzeBookImportRows(rows, options = {}) {
     if (!row.book.author) addIssue(row, 'missing_author', 'warning');
 
     const hasConflictingRepairSuggestions = flagConflictingRepairSuggestions(row);
-    if (!hasConflictingRepairSuggestions) await resolveMetadata(row, options);
+    const hasIdentifierConflict = hasBlockingIdentifierConflict(row);
+    if (!hasConflictingRepairSuggestions && !hasIdentifierConflict) await resolveMetadata(row, options);
 
     if (!row.book.title) addIssue(row, 'missing_title_after_metadata', 'warning');
     if (!row.book.author) addIssue(row, 'missing_author_after_metadata', 'warning');
@@ -194,7 +204,7 @@ async function analyzeBookImportRows(rows, options = {}) {
         row.status = 'conflict';
       } else {
         totalCopies += requestedCopies;
-        if (row.book.editionIsbn) {
+        if (row.book.editionIsbn && !hasBlockingIdentifierConflict(row)) {
           for (let copyIndex = 0; copyIndex < requestedCopies; copyIndex += 1) {
             editionCopies.push({
               title: row.book.title,

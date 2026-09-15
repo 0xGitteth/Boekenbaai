@@ -30,6 +30,21 @@ module.exports = async function runFinalReviewTests() {
   assert.ok(suggestionConflict);
   assert.deepStrictEqual(suggestionConflict.suggestedIsbns, [ISBN, ISBN_ALT].sort());
 
+  let identityConflictLookups = 0;
+  const identityConflictRow = { Titel: 'Bronconflict', Auteur: 'A Auteur' };
+  Object.defineProperty(identityConflictRow, 'ISBN-nummer', { value: ISBN, enumerable: true });
+  Object.defineProperty(identityConflictRow, 'ISBN-nummer_1', { value: ISBN_ALT, enumerable: true });
+  const identityConflict = await analyzeBookImportRows([identityConflictRow], {
+    lookupTitleAuthor: async () => {
+      identityConflictLookups += 1;
+      return { title: 'Bronconflict', author: 'A Auteur', barcode: ISBN, found: true, source: 'test' };
+    },
+  });
+  assert.strictEqual(identityConflict.rows[0].status, 'conflict');
+  assert.strictEqual(identityConflict.rows[0].book.editionIsbn, '');
+  assert.strictEqual(identityConflictLookups, 0, 'Conflicting identifier source columns must not be resolved by work-level metadata');
+  assert.strictEqual(identityConflict.groups.length, 0, 'Rows with unresolved identifier-source conflicts must not enter edition groups');
+
   const quantityConflict = { Titel: 'Aantal conflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(quantityConflict, 'Aantal', { value: 2, enumerable: true });
   Object.defineProperty(quantityConflict, 'Aantal_1', { value: 900, enumerable: true });
