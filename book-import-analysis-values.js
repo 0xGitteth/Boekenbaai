@@ -111,6 +111,19 @@ function isSupportedIdentifierType(value) {
   return typeof value === 'number' && Number.isFinite(value) && Number.isSafeInteger(value);
 }
 
+function compactIdentifierText(value) {
+  return scalarCellText(value).normalize('NFKC').trim().replace(/[\s-]+/g, '');
+}
+
+function looksLikeIsbnCandidate(value) {
+  if (!isSupportedIdentifierType(value)) return false;
+  const compact = compactIdentifierText(value);
+  return /^\d{8}[0-9Xx]$/.test(compact)
+    || /^\d{9}[0-9Xx]$/.test(compact)
+    || /^(?:978|979)\d{9}$/.test(compact)
+    || /^(?:978|979)\d{10}$/.test(compact);
+}
+
 function analyzeIdentifier(value) {
   const raw = scalarCellText(value);
   if (isBlankCellValue(value)) return { raw, canonical: '', repair: null, suggestion: null, unsupportedType: false };
@@ -118,22 +131,20 @@ function analyzeIdentifier(value) {
   const direct = canonicalizeBookIsbn13(value);
   if (direct) return { raw, canonical: direct, repair: null, suggestion: null, unsupportedType: false };
 
-  const compact = raw.normalize('NFKC').trim().replace(/[\s-]+/g, '');
-  if (/^(?:\d{13}|\d{9}[0-9Xx])$/.test(compact)) {
-    const canonical = canonicalizeBookIsbn13(compact);
-    if (canonical) return { raw, canonical, repair: { kind: 'formatting', from: raw, to: canonical, canonical, confidence: 'high' }, suggestion: null, unsupportedType: false };
-  }
-  if (/^\d{9}$/.test(compact)) {
-    const restored = `0${compact}`;
+  const trimmed = raw.normalize('NFKC').trim();
+  const compact = compactIdentifierText(raw);
+  if (/^\d{8}[0-9Xx]$/.test(trimmed)) {
+    const restored = `0${trimmed}`;
     const canonical = canonicalizeBookIsbn13(restored);
     if (canonical) return { raw, canonical, repair: { kind: 'leading_zero_restored', from: raw, to: restored, canonical, confidence: 'high' }, suggestion: null, unsupportedType: false };
   }
-  if (/^(?:978|979)\d{9}$/.test(compact)) {
+  const unformatted = trimmed === compact;
+  if (unformatted && /^(?:978|979)\d{9}$/.test(compact)) {
     const candidate = `${compact}${isbn13CheckDigit(compact)}`;
     const canonical = canonicalizeBookIsbn13(candidate);
     if (canonical) return { raw, canonical: '', repair: null, suggestion: { kind: 'missing_check_digit', from: raw, to: candidate, canonical, confidence: 'medium' }, unsupportedType: false };
   }
-  if (/^(?:978|979)\d{10}$/.test(compact)) {
+  if (unformatted && /^(?:978|979)\d{10}$/.test(compact)) {
     const candidate = `${compact.slice(0, 12)}${isbn13CheckDigit(compact.slice(0, 12))}`;
     const canonical = canonicalizeBookIsbn13(candidate);
     if (canonical && candidate !== compact) return { raw, canonical: '', repair: null, suggestion: { kind: 'check_digit', from: raw, to: candidate, canonical, confidence: 'medium' }, unsupportedType: false };
@@ -155,5 +166,6 @@ module.exports = {
   normalizeLanguage,
   parseEasyReading,
   parseExamMaterial,
+  looksLikeIsbnCandidate,
   analyzeIdentifier,
 };

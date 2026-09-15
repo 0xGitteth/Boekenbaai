@@ -1,6 +1,7 @@
 'use strict';
 
 const { getOwnDataValue, normalizeBookIdentityText } = require('./book-edition-core');
+const { isBlankCellValue } = require('./book-import-workbook');
 const { addIssue, comparableText, splitMultiValue, valueText, jsonSafeIdentifier } = require('./book-import-analysis-values');
 
 const SPECIAL_FIXED_LOCATION_ALIASES = new Map([
@@ -9,6 +10,75 @@ const SPECIAL_FIXED_LOCATION_ALIASES = new Map([
 ]);
 const FIXED_LOCATION_MARKERS = new Set(['vast in de klas', 'klassenboek']);
 const OWN_BOOK_MARKERS = new Set(['eigen boek']);
+
+function markerKind(value) {
+  const comparable = comparableText(value);
+  if (OWN_BOOK_MARKERS.has(comparable)) return 'own_book';
+  if (FIXED_LOCATION_MARKERS.has(comparable)) return 'fixed_location';
+  return '';
+}
+
+function semanticMarkerTokens(value) {
+  return splitMultiValue(value)
+    .map((token) => ({ token, kind: markerKind(token) }))
+    .filter((entry) => entry.kind);
+}
+
+function stripSemanticMarkers(value) {
+  const tokens = splitMultiValue(value);
+  if (!tokens.length) return value;
+  const containsMarker = tokens.some((token) => markerKind(token));
+  if (!containsMarker) return value;
+  return tokens.filter((token) => !markerKind(token)).join('; ');
+}
+
+function isPureSemanticMarker(value) {
+  const tokens = splitMultiValue(value);
+  return Boolean(tokens.length && tokens.every((token) => markerKind(token)));
+}
+
+function collectSemanticMarkers(mapped) {
+  const ownBook = [];
+  const fixedLocation = [];
+  for (const [field, entries] of Object.entries(mapped?.sources || {})) {
+    for (const entry of entries || []) {
+      for (const marker of semanticMarkerTokens(entry.value)) {
+        const target = marker.kind === 'own_book' ? ownBook : fixedLocation;
+        target.push({ field, header: entry.header, value: marker.token });
+      }
+    }
+  }
+  for (const entry of mapped?.unknown || []) {
+    for (const marker of semanticMarkerTokens(entry.value)) {
+      const target = marker.kind === 'own_book' ? ownBook : fixedLocation;
+      target.push({ field: null, header: entry.header, value: marker.token });
+    }
+  }
+  return { ownBook, fixedLocation };
+}
+
+function getDataFields(mapped) {
+  const fields = Object.create(null);
+  for (const [field, entries] of Object.entries(mapped?.sources || {})) {
+    const current = mapped?.fields?.[field];
+    if (!isBlankCellValue(current) && !isPureSemanticMarker(current)) {
+      fields[field] = stripSemanticMarkers(current);
+      continue;
+    }
+    for (const entry of entries || []) {
+      const cleaned = stripSemanticMarkers(entry.value);
+      if (isBlankCellValue(cleaned)) continue;
+      fields[field] = cleaned;
+      break;
+    }
+  }
+  for (const [field, value] of Object.entries(mapped?.fields || {})) {
+    if (Object.prototype.hasOwnProperty.call(fields, field)) continue;
+    if (isBlankCellValue(value) || isPureSemanticMarker(value)) continue;
+    fields[field] = stripSemanticMarkers(value);
+  }
+  return fields;
+}
 
 function safeEntityNames(entity) {
   if (!entity || typeof entity !== 'object' || Array.isArray(entity)) return [];
@@ -42,26 +112,12 @@ function matchEntityByName(value, entities) {
   return { status: 'unmatched', matches: [] };
 }
 
-function collectSemanticMarkers(fields) {
-  const ownBook = [];
-  const fixedLocation = [];
-  for (const [field, value] of Object.entries(fields || {})) {
-    for (const token of splitMultiValue(value)) {
-      const comparable = comparableText(token);
-      if (OWN_BOOK_MARKERS.has(comparable)) ownBook.push({ field, value: token });
-      if (FIXED_LOCATION_MARKERS.has(comparable)) fixedLocation.push({ field, value: token });
-    }
-  }
-  return { ownBook, fixedLocation };
-}
-
 function applyContext(mapped, row, options) {
-  const f = mapped.fields;
+  const f = getDataFields(mapped);
   const classTokens = splitMultiValue(f.classes);
   const studentLoan = valueText(f.studentLoan);
   const classLoan = valueText(f.classLoan);
-  const studentMarker = comparableText(studentLoan);
-  const markers = collectSemanticMarkers(f);
+  const markers = collectSemanticMarkers(mapped);
 
   if (markers.ownBook.length) {
     row.context.ownBook = true;
@@ -70,38 +126,33 @@ function applyContext(mapped, row, options) {
     return;
   }
 
-  const ordinaryClassTokens = classTokens.filter((token) => {
-    const comparable = comparableText(token);
-    return !OWN_BOOK_MARKERS.has(comparable) && !FIXED_LOCATION_MARKERS.has(comparable);
-  });
-  if (ordinaryClassTokens.length) {
-    row.context.classContext = ordinaryClassTokens;
-    addIssue(row, 'class_context_needs_review', 'warning', { values: ordinaryClassTokens });
+  if (classTokens.length) {
+    row.context.classContext = classTokens;
+    addIssue(row, 'class_context_needs_review', 'warning', { values: classTokens });
   }
 
   if (markers.fixedLocation.length) {
     row.context.fixedLocation = {
       status: 'needs_review',
-      label: classLoan || (ordinaryClassTokens.length === 1 ? ordinaryClassTokens[0] : ''),
+      label: classTokens.length === 1 ? classTokens[0] : '',
       source: 'semantic_marker',
     };
     addIssue(row, 'fixed_location_needs_review', 'warning', {
       markers: markers.fixedLocation,
-      classContext: ordinaryClassTokens,
-      classLoanValue: classLoan || '',
+      classContext: classTokens,
     });
   }
 
   const structureClassLoan = SPECIAL_FIXED_LOCATION_ALIASES.get(comparableText(classLoan));
-  const hasRealStudentLoan = Boolean(studentLoan && !OWN_BOOK_MARKERS.has(studentMarker) && !FIXED_LOCATION_MARKERS.has(studentMarker));
+  const hasRealStudentLoan = Boolean(studentLoan);
   const classLoanIsFixedMlLocation = Boolean(structureClassLoan && row.book.easyReading && !hasRealStudentLoan);
   if (classLoanIsFixedMlLocation) {
     row.context.fixedLocation = { status: 'resolved', label: structureClassLoan, source: 'ml_class_loan_rule' };
     addIssue(row, 'ml_structuurbb_fixed_location', 'info');
   }
 
-  if (classLoan && hasRealStudentLoan && !markers.fixedLocation.length) addIssue(row, 'multiple_loan_contexts', 'conflict');
-  if (classLoan && !classLoanIsFixedMlLocation && !markers.fixedLocation.length) {
+  if (classLoan && hasRealStudentLoan) addIssue(row, 'multiple_loan_contexts', 'conflict');
+  if (classLoan && !classLoanIsFixedMlLocation) {
     const match = matchEntityByName(classLoan, options.classes);
     if (match.status === 'matched') row.context.classLoan = { status: 'matched', ...match.matches[0] };
     else {
@@ -119,4 +170,12 @@ function applyContext(mapped, row, options) {
   }
 }
 
-module.exports = { matchEntityByName, applyContext };
+module.exports = {
+  markerKind,
+  stripSemanticMarkers,
+  isPureSemanticMarker,
+  collectSemanticMarkers,
+  getDataFields,
+  matchEntityByName,
+  applyContext,
+};

@@ -21,13 +21,24 @@ const {
 const { analyzeIdentifier } = require('./book-import-analysis-values');
 
 function finalizeRowStatus(row) {
-  if (row.context.excludeFromSchoolCollection) return 'skipped';
+  if (row.context.excludeFromSchoolCollection || row.context.skipReason === 'junk') return 'skipped';
   if (row.issues.some((issue) => issue.severity === 'conflict')) return 'conflict';
   if (!row.book.title || JUNK_ONLY_TOKENS.has(comparableText(row.book.title))) return 'unresolved';
   if (!row.book.author) return 'unresolved';
-  if (!row.book.editionIsbn && !row.book.metadataIsbn) return 'unresolved';
+  if (!row.book.editionIsbn) return 'unresolved';
   if (row.issues.some((issue) => issue.severity === 'warning')) return 'warning';
   return 'ready';
+}
+
+function isClearJunkRow(mapped) {
+  if (mapped.ignoredDangerousHeaders.length) return false;
+  const values = [];
+  for (const entries of Object.values(mapped.sources || {})) {
+    for (const entry of entries || []) values.push(entry.value);
+  }
+  for (const entry of mapped.unknown || []) values.push(entry.value);
+  const populated = values.map((value) => comparableText(value)).filter(Boolean);
+  return Boolean(populated.length && populated.every((value) => JUNK_ONLY_TOKENS.has(value)));
 }
 
 function collectColumnSummary(mappedRows) {
@@ -51,7 +62,7 @@ function collectColumnSummary(mappedRows) {
 function markDuplicateBarcodes(analyzedRows) {
   const barcodeRows = new Map();
   for (const row of analyzedRows) {
-    if (!row.book.barcode || row.context.excludeFromSchoolCollection) continue;
+    if (!row.book.barcode || row.context.excludeFromSchoolCollection || row.context.skipReason === 'junk') continue;
     const key = comparableText(row.book.barcode);
     if (!key) continue;
     const indexes = barcodeRows.get(key) || [];
@@ -104,7 +115,7 @@ async function analyzeBookImportRows(rows, options = {}) {
 
   const mappedRows = inputRows.map(mapImportRow);
   const analyzedRows = [];
-  const copies = [];
+  const editionCopies = [];
   let totalCopies = 0;
 
   for (let index = 0; index < mappedRows.length; index += 1) {
@@ -119,11 +130,25 @@ async function analyzeBookImportRows(rows, options = {}) {
       issues: [],
       unknownColumns: mapped.unknown.map((entry) => entry.header),
     };
+
+    if (isClearJunkRow(mapped)) {
+      row.context.skipReason = 'junk';
+      row.status = 'skipped';
+      analyzedRows.push(row);
+      continue;
+    }
+
     applySourceCollisions(mapped, row);
     row.book = normalizeBookFields(mapped, row);
     row.identifierAnalysis = normalizeIdentifierFields(mapped, row, row.book);
     row.provenance = provenanceForBook(mapped, row.book, row.identifierAnalysis);
     applyContext(mapped, row, options);
+
+    if (row.context.excludeFromSchoolCollection) {
+      row.status = 'skipped';
+      analyzedRows.push(row);
+      continue;
+    }
 
     if (!row.book.title) addIssue(row, 'missing_title', 'warning');
     else if (JUNK_ONLY_TOKENS.has(comparableText(row.book.title))) addIssue(row, 'junk_title', 'warning');
@@ -139,24 +164,26 @@ async function analyzeBookImportRows(rows, options = {}) {
 
     row.status = finalizeRowStatus(row);
     const requestedCopies = row.book.quantity.value;
-    if (!row.context.excludeFromSchoolCollection && row.book.quantity.valid && requestedCopies > 0) {
+    if (row.book.quantity.valid && requestedCopies > 0) {
       if (totalCopies + requestedCopies > maxCopies) {
         addIssue(row, 'copy_limit_exceeded', 'conflict', { requestedCopies, maxCopies });
         row.status = 'conflict';
       } else {
-        for (let copyIndex = 0; copyIndex < requestedCopies; copyIndex += 1) {
-          copies.push({
-            title: row.book.title,
-            author: row.book.author,
-            authors: [...row.book.authors],
-            editionIsbn: row.book.editionIsbn,
-            metadataIsbn: row.book.metadataIsbn,
-            barcode: requestedCopies === 1 ? row.book.barcode : '',
-            __importRowIndex: index,
-            __copyIndex: copyIndex,
-          });
-        }
         totalCopies += requestedCopies;
+        if (row.book.editionIsbn) {
+          for (let copyIndex = 0; copyIndex < requestedCopies; copyIndex += 1) {
+            editionCopies.push({
+              title: row.book.title,
+              author: row.book.author,
+              authors: [...row.book.authors],
+              editionIsbn: row.book.editionIsbn,
+              metadataIsbn: row.book.metadataIsbn,
+              barcode: requestedCopies === 1 ? row.book.barcode : '',
+              __importRowIndex: index,
+              __copyIndex: copyIndex,
+            });
+          }
+        }
       }
     }
     analyzedRows.push(row);
@@ -166,7 +193,7 @@ async function analyzeBookImportRows(rows, options = {}) {
 
   let grouped = { groups: [], conflicts: [] };
   try {
-    grouped = groupBookCopiesByEdition(copies);
+    grouped = groupBookCopiesByEdition(editionCopies);
   } catch {
     return {
       ok: false,
@@ -179,7 +206,7 @@ async function analyzeBookImportRows(rows, options = {}) {
     };
   }
 
-  applyEditionConflicts(analyzedRows, copies, grouped.conflicts);
+  applyEditionConflicts(analyzedRows, editionCopies, grouped.conflicts);
   for (const group of grouped.groups) {
     for (const copy of group.copies || []) {
       delete copy.__importRowIndex;

@@ -16,35 +16,67 @@ const {
   normalizeLanguage,
   parseEasyReading,
   parseExamMaterial,
+  looksLikeIsbnCandidate,
   analyzeIdentifier,
   valueText,
 } = require('./book-import-analysis-values');
+const {
+  getDataFields,
+  stripSemanticMarkers,
+} = require('./book-import-analysis-context');
 
 function fieldSource(mapped, field, fallback = 'unknown') {
   const candidates = mapped.sources[field] || [];
-  const first = candidates.find((entry) => !isBlankCellValue(entry.value));
+  const first = candidates.find((entry) => !isBlankCellValue(stripSemanticMarkers(entry.value)));
   if (!first) return { source: fallback };
   return { source: 'excel', header: first.header, raw: first.value };
 }
 
+function collisionDataCandidates(collision) {
+  if (!collision || !Array.isArray(collision.candidates)) return [];
+  const result = [];
+  const seen = new Set();
+  for (const entry of collision.candidates) {
+    const value = stripSemanticMarkers(entry.value);
+    if (isBlankCellValue(value)) continue;
+    const key = comparableText(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ ...entry, value });
+  }
+  return result;
+}
+
 function collisionIsSemanticallyEquivalent(collision) {
-  if (!collision || !['isbn', 'metadataIsbn', 'ambiguousIdentifier'].includes(collision.field)) return false;
-  const canonical = collision.candidates.map((entry) => analyzeIdentifier(entry.value).canonical).filter(Boolean);
-  return canonical.length === collision.candidates.length && new Set(canonical).size === 1;
+  const candidates = collisionDataCandidates(collision);
+  if (candidates.length < 2) return true;
+  if (!['isbn', 'metadataIsbn', 'ambiguousIdentifier'].includes(collision.field)) return false;
+  const canonical = candidates.map((entry) => analyzeIdentifier(entry.value).canonical).filter(Boolean);
+  return canonical.length === candidates.length && new Set(canonical).size === 1;
 }
 
 function blockingCollisionFields(mapped) {
   const fields = new Set();
   for (const collision of mapped.collisions) {
-    if (!collisionIsSemanticallyEquivalent(collision)) fields.add(collision.field);
+    const candidates = collisionDataCandidates(collision);
+    if (candidates.length < 2 || collisionIsSemanticallyEquivalent({ ...collision, candidates })) continue;
+    fields.add(collision.field);
   }
   return fields;
 }
 
+function normalizeDirectAuthors(value) {
+  if (Array.isArray(value)) return normalizeAuthorList(value);
+  const text = normalizeBookIdentityText(value);
+  if (!text) return [];
+  const candidates = text.split(/[;\n\r]+|\s+&\s+/).map((entry) => normalizeBookIdentityText(entry)).filter(Boolean);
+  return normalizeAuthorList(candidates, text);
+}
+
 function normalizeBookFields(mapped, row) {
-  const f = mapped.fields;
+  const f = getDataFields(mapped);
   const blocked = blockingCollisionFields(mapped);
-  const directAuthor = blocked.has('author') ? [] : normalizeAuthorList(undefined, f.author);
+  const directAuthor = blocked.has('author') ? [] : normalizeDirectAuthors(f.author);
   const first = blocked.has('authorFirst') ? '' : normalizeBookIdentityText(f.authorFirst);
   const last = blocked.has('authorLast') ? '' : normalizeBookIdentityText(f.authorLast);
   const combined = normalizeAuthorList(undefined, [first, last].filter(Boolean).join(' '));
@@ -99,7 +131,7 @@ function normalizeBookFields(mapped, row) {
 }
 
 function normalizeIdentifierFields(mapped, row, book) {
-  const f = mapped.fields;
+  const f = getDataFields(mapped);
   const blocked = blockingCollisionFields(mapped);
   const explicit = analyzeIdentifier(f.isbn);
   const legacy = analyzeIdentifier(f.metadataIsbn);
@@ -121,7 +153,9 @@ function normalizeIdentifierFields(mapped, row, book) {
 
   let barcode = blocked.has('barcode') ? '' : valueText(f.barcode);
   let ambiguousAsBarcode = false;
-  if (!barcode && !isBlankCellValue(f.ambiguousIdentifier) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')) {
+  const ambiguousLikelyIsbn = looksLikeIsbnCandidate(f.ambiguousIdentifier);
+  if (!barcode && !isBlankCellValue(f.ambiguousIdentifier) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')
+    && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
     barcode = valueText(f.ambiguousIdentifier);
     ambiguousAsBarcode = true;
     addIssue(row, 'ambiguous_identifier_interpreted_as_barcode', 'warning');
@@ -148,15 +182,16 @@ function normalizeIdentifierFields(mapped, row, book) {
   }
 
   book.editionIsbn = editionIsbn;
-  book.metadataIsbn = blocked.has('metadataIsbn') ? '' : (legacy.canonical || valueText(f.metadataIsbn));
+  book.metadataIsbn = blocked.has('metadataIsbn') ? '' : legacy.canonical;
   book.barcode = barcode;
   return { explicit, legacy, ambiguous };
 }
 
 function applySourceCollisions(mapped, row) {
   for (const collision of mapped.collisions) {
-    if (collisionIsSemanticallyEquivalent(collision)) continue;
-    addIssue(row, 'conflicting_source_columns', 'conflict', { field: collision.field, candidates: collision.candidates });
+    const candidates = collisionDataCandidates(collision);
+    if (candidates.length < 2 || collisionIsSemanticallyEquivalent({ ...collision, candidates })) continue;
+    addIssue(row, 'conflicting_source_columns', 'conflict', { field: collision.field, candidates });
   }
   if (mapped.ignoredDangerousHeaders.length) addIssue(row, 'dangerous_headers_ignored', 'warning', { headers: [...mapped.ignoredDangerousHeaders] });
   const nonblankUnknown = mapped.unknown.filter((entry) => !isBlankCellValue(entry.value));
@@ -189,7 +224,7 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   };
   if (provenance.author.source === 'unknown' && book.author) {
     const sourceHeaders = [...(mapped.sources.authorFirst || []), ...(mapped.sources.authorLast || [])]
-      .filter((entry) => !isBlankCellValue(entry.value)).map((entry) => entry.header);
+      .filter((entry) => !isBlankCellValue(stripSemanticMarkers(entry.value))).map((entry) => entry.header);
     if (sourceHeaders.length) provenance.author = { source: 'excel', headers: sourceHeaders, derived: 'combined_name_parts' };
   }
   if (provenance.language.source === 'unknown' && book.language && fieldSource(mapped, 'examMaterial').source === 'excel') {

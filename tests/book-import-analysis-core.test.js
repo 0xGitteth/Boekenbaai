@@ -40,6 +40,9 @@ module.exports = async function runCoreTests() {
     { Titel: 'Klascontext', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT, Klassen: 'Ond BKT', 'Geleend door klas': 'Arbeid' },
     { Titel: 'Globaal eigen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Klassen: 'eigen boek' },
     { Titel: 'Globaal vast', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT, 'Aanwezig bieb': 'Klassenboek' },
+    { Titel: 'Onbekende kolom', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'eigen boek' },
+    { Titel: 'Klassenboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT },
+    { Titel: 'Vast en geleend', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Klassen: '2A; vast in de klas', 'Geleend door klas': 'Arbeid' },
   ], { classes: [{ id: 'c1', name: 'Arbeid' }] });
   assert.strictEqual(semantics.rows[0].status, 'skipped');
   assert.strictEqual(semantics.rows[0].context.excludeFromSchoolCollection, true);
@@ -51,9 +54,22 @@ module.exports = async function runCoreTests() {
   assert.strictEqual(semantics.rows[3].context.classLoan.status, 'matched');
   assert.ok(codes(semantics.rows[3]).has('class_context_needs_review'));
   assert.strictEqual(semantics.rows[4].status, 'skipped');
-  assert.strictEqual(semantics.rows[4].context.excludeFromSchoolCollection, true);
   assert.strictEqual(semantics.rows[5].context.fixedLocation.status, 'needs_review');
-  assert.ok(codes(semantics.rows[5]).has('fixed_location_needs_review'));
+  assert.strictEqual(semantics.rows[6].status, 'skipped');
+  assert.strictEqual(semantics.rows[6].context.excludeFromSchoolCollection, true);
+  assert.strictEqual(semantics.rows[7].book.title, '');
+  assert.strictEqual(semantics.rows[7].context.fixedLocation.status, 'needs_review');
+  assert.strictEqual(semantics.rows[7].status, 'unresolved');
+  assert.deepStrictEqual(semantics.rows[8].context.classContext, ['2A']);
+  assert.strictEqual(semantics.rows[8].context.fixedLocation.label, '2A');
+  assert.strictEqual(semantics.rows[8].context.classLoan.status, 'matched');
+
+  const duplicateMarker = { Titel: 'Dubbele klas', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(duplicateMarker, 'Klassen', { value: '2A', enumerable: true });
+  Object.defineProperty(duplicateMarker, 'Klassen_1', { value: '2A; Klassenboek', enumerable: true });
+  const duplicateMarkerResult = await analyzeBookImportRows([duplicateMarker]);
+  assert.strictEqual(duplicateMarkerResult.rows[0].context.fixedLocation.label, '2A');
+  assert.ok(!codes(duplicateMarkerResult.rows[0]).has('conflicting_source_columns'));
 
   const flags = await analyzeBookImportRows([
     { Titel: 'Strip', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Examenmateriaal: 'Strip' },
@@ -78,6 +94,12 @@ module.exports = async function runCoreTests() {
   assert.strictEqual(placeholder.rows[0].book.author, 'Carry Slee');
   assert.ok(!codes(placeholder.rows[0]).has('author_sources_differ'));
 
+  const multipleAuthors = await analyzeBookImportRows([{
+    Titel: 'Samen', Auteur: 'Carry Slee; Paul van Loon', 'ISBN-nummer': ISBN,
+  }]);
+  assert.deepStrictEqual(multipleAuthors.rows[0].book.authors, ['Carry Slee', 'Paul van Loon']);
+  assert.strictEqual(multipleAuthors.rows[0].book.author, 'Carry Slee & Paul van Loon');
+
   const equivalent = { Titel: 'Equivalent', Auteur: 'A Auteur' };
   Object.defineProperty(equivalent, 'ISBN-nummer', { value: ISBN10, enumerable: true });
   Object.defineProperty(equivalent, 'ISBN-nummer_1', { value: ISBN, enumerable: true });
@@ -94,6 +116,19 @@ module.exports = async function runCoreTests() {
   assert.strictEqual(invalidIssue.field, 'isbn');
   assert.strictEqual(fallback.rows[0].provenance.editionIsbn.header, 'Intern ISBN');
   assert.strictEqual(fallback.rows[0].provenance.editionIsbn.raw, ISBN);
+
+  const invalidLegacy = await analyzeBookImportRows([{
+    Titel: 'Legacy fout', Auteur: 'A Auteur', 'Intern ISBN': 'legacy-bad',
+  }]);
+  assert.strictEqual(invalidLegacy.rows[0].book.editionIsbn, '');
+  assert.strictEqual(invalidLegacy.rows[0].book.metadataIsbn, '');
+  assert.strictEqual(invalidLegacy.rows[0].status, 'unresolved');
+  assert.ok(codes(invalidLegacy.rows[0]).has('invalid_or_unrecognized_isbn'));
+  assert.strictEqual(invalidLegacy.groups.length, 0, 'Unresolved new import rows must not use PR1 legacy grouping');
+
+  const missingEdition = await analyzeBookImportRows([{ Titel: 'Geen editie', Auteur: 'A Auteur' }]);
+  assert.strictEqual(missingEdition.rows[0].status, 'unresolved');
+  assert.strictEqual(missingEdition.groups.length, 0);
 
   const conflicting = { Titel: 'Conflict', Auteur: 'A Auteur' };
   Object.defineProperty(conflicting, 'ISBN-nummer', { value: ISBN, enumerable: true });

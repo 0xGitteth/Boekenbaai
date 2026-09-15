@@ -29,6 +29,13 @@ module.exports = async function runSafetyTests() {
   assert.strictEqual(invalid.rows[2].status, 'conflict');
   assert.ok(codes(invalid.rows[2]).has('barcode_with_multiple_copies'));
 
+  const likelyBadIsbn = await analyzeBookImportRows([{
+    Titel: 'Geen barcode', Auteur: 'A Auteur', 'Barcode / ISBN': '9780306406158',
+  }]);
+  assert.strictEqual(likelyBadIsbn.rows[0].book.barcode, '');
+  assert.ok(codes(likelyBadIsbn.rows[0]).has('isbn_repair_suggested'));
+  assert.ok(!codes(likelyBadIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+
   const duplicate = await analyzeBookImportRows([
     { Titel: 'A', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: 'PHYS-1' },
     { Titel: 'B', Auteur: 'B Auteur', 'ISBN-nummer': ISBN_ALT, Barcode: 'PHYS-1' },
@@ -36,6 +43,19 @@ module.exports = async function runSafetyTests() {
   assert.strictEqual(duplicate.rows[0].status, 'conflict');
   assert.strictEqual(duplicate.rows[1].status, 'conflict');
   assert.ok(codes(duplicate.rows[0]).has('duplicate_physical_barcode'));
+
+  const junk = await analyzeBookImportRows([{ Titel: 'hh' }]);
+  assert.strictEqual(junk.rows[0].status, 'skipped');
+  assert.strictEqual(junk.rows[0].context.skipReason, 'junk');
+  assert.deepStrictEqual(junk.rows[0].issues, []);
+  assert.strictEqual(junk.summary.physicalCopies, 0);
+
+  let skippedLookupCalls = 0;
+  const ownBook = await analyzeBookImportRows([{ Titel: 'Boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'eigen boek' }], {
+    lookupIsbn: async () => { skippedLookupCalls += 1; return null; },
+  });
+  assert.strictEqual(ownBook.rows[0].status, 'skipped');
+  assert.strictEqual(skippedLookupCalls, 0);
 
   const bigId = await analyzeBookImportRows([{ Titel: 'Big', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'Sam Test' }], {
     students: [{ id: 12345678901234567890n, name: 'Sam Test' }],

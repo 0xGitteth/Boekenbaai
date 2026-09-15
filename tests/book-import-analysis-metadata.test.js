@@ -24,6 +24,14 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(missingCheck.suggestion.canonical, ISBN);
   assert.strictEqual(analyzeIdentifier(true).unsupportedType, true);
 
+  const invalidBoundary = analyzeIdentifier('978-03-0-640615-7');
+  assert.strictEqual(invalidBoundary.canonical, '');
+  assert.strictEqual(invalidBoundary.repair, null, 'Invalid official component boundaries must not be erased as formatting');
+  assert.strictEqual(invalidBoundary.suggestion, null);
+  const invalidBoundaryAndChecksum = analyzeIdentifier('978-03-0-640615-8');
+  assert.strictEqual(invalidBoundaryAndChecksum.canonical, '');
+  assert.strictEqual(invalidBoundaryAndChecksum.suggestion, null, 'Formatted invalid boundaries must not become arithmetic ISBN suggestions');
+
   assert.strictEqual(normalizeMetadataCandidate({ found: false, fields: { title: 'LEK', isbn13: ISBN } }), null);
   const candidate = normalizeMetadataCandidate({ fields: { title: 'Goed', editionIsbn: '', isbn13: ISBN, author: 'A Auteur' } });
   assert.strictEqual(candidate.editionIsbn, ISBN);
@@ -39,6 +47,21 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(ambiguous.conflict.code, 'ambiguous_metadata_editions');
   assert.strictEqual(selectIsbnMetadataCandidate(ISBN, [normalizeMetadataCandidate({ title: 'X', author: 'Y', isbn13: ISBN_ALT })]).conflict.code, 'ambiguous_isbn_lookup_results');
 
+  const preferEdition = selectMetadataCandidate(strictRow, [
+    normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
+    normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', publisher: 'Rijk', publishedYear: 2020, pageCount: 100, language: 'nl', description: 'Veel metadata' }),
+  ]);
+  assert.strictEqual(preferEdition.candidate.editionIsbn, ISBN);
+  const preferExact = selectIsbnMetadataCandidate(ISBN, [
+    normalizeMetadataCandidate({ title: 'X', author: 'Y', isbn13: ISBN }),
+    normalizeMetadataCandidate({ title: 'X', author: 'Y', publisher: 'Rijk', publishedYear: 2020, pageCount: 100, language: 'nl', description: 'Veel metadata' }),
+  ]);
+  assert.strictEqual(preferExact.candidate.editionIsbn, ISBN);
+  const rejectContradictingIdentifierless = selectIsbnMetadataCandidate(ISBN, [
+    normalizeMetadataCandidate({ title: 'Ander boek', author: 'Andere Auteur', publisher: 'Fout' }),
+  ], { title: 'Strict titel', author: 'A Auteur' });
+  assert.strictEqual(rejectContradictingIdentifierless.candidate, null);
+
   const resolved = await analyzeBookImportRows([{
     Titel: 'Metadata resolve', Auteur: 'A Auteur', 'ISBN-nummer': '978030640615',
   }], {
@@ -47,6 +70,15 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(resolved.rows[0].book.editionIsbn, ISBN);
   assert.strictEqual(resolved.rows[0].book.publisher, 'Uitgever');
   assert.ok(codes(resolved.rows[0]).has('isbn_resolved_from_metadata'));
+
+  const suggestionConflict = await analyzeBookImportRows([{
+    Titel: 'Metadata resolve', Auteur: 'A Auteur', 'ISBN-nummer': '978030640615',
+  }], {
+    lookupTitleAuthor: async () => ({ title: 'Metadata resolve', author: 'A Auteur', isbn13: ISBN_ALT, found: true, source: 'test' }),
+  });
+  assert.strictEqual(suggestionConflict.rows[0].book.editionIsbn, '');
+  assert.strictEqual(suggestionConflict.rows[0].status, 'conflict');
+  assert.ok(codes(suggestionConflict.rows[0]).has('metadata_isbn_conflicts_with_repair_suggestion'));
 
   const wrongAuthor = await analyzeBookImportRows([{ Titel: 'Strict titel', Auteur: 'Juiste Auteur' }], {
     lookupTitleAuthor: async () => ({ title: 'Strict titel', author: 'Andere Auteur', isbn13: ISBN, found: true }),
@@ -64,19 +96,48 @@ module.exports = async function runMetadataTests() {
   assert.ok(codes(multi.rows[0]).has('ambiguous_metadata_editions'));
 
   let titleLookups = 0;
-  const complete = await analyzeBookImportRows([{ Titel: 'Verrijk', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }], {
+  const incompleteExact = await analyzeBookImportRows([{ Titel: 'Verrijk', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }], {
     lookupIsbn: async () => ({
       title: 'Verrijk', author: 'A Auteur', isbn13: ISBN, publisher: 'P', publishedYear: 2020,
-      pageCount: 123, language: 'nl', coverUrl: 'https://example.invalid/c.jpg', description: 'D', found: true,
+      pageCount: 123, language: 'nl', coverUrl: 'https://example.invalid/c.jpg', found: true,
     }),
-    lookupTitleAuthor: async () => { titleLookups += 1; return null; },
+    lookupTitleAuthor: async () => { titleLookups += 1; return { candidates: [
+      { title: 'Verrijk', author: 'A Auteur', isbn13: ISBN },
+      { title: 'Verrijk', author: 'A Auteur', isbn13: ISBN_ALT },
+    ] }; },
   });
-  assert.strictEqual(complete.rows[0].book.pageCount, 123);
-  assert.strictEqual(complete.rows[0].book.publishedYear, 2020);
-  assert.strictEqual(titleLookups, 0, 'Exact ISBN metadata should prevent redundant title/author lookup when complete');
+  assert.strictEqual(incompleteExact.rows[0].book.pageCount, 123);
+  assert.strictEqual(incompleteExact.rows[0].book.publishedYear, 2020);
+  assert.strictEqual(titleLookups, 0, 'Known edition ISBN must not fall back to a work-level title/author search');
+  assert.ok(!codes(incompleteExact.rows[0]).has('ambiguous_metadata_editions'));
+
+  const identifierlessWrongBook = await analyzeBookImportRows([{ Titel: 'Juist boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }], {
+    lookupIsbn: async () => ({ title: 'Ander boek', author: 'Andere Auteur', publisher: 'Verkeerd', found: true }),
+  });
+  assert.strictEqual(identifierlessWrongBook.rows[0].book.publisher, '');
+  assert.ok(codes(identifierlessWrongBook.rows[0]).has('metadata_not_usable'));
+
+  let exactLookupsAfterResolve = 0;
+  const resolvedThenEnriched = await analyzeBookImportRows([{ Titel: 'Tweestaps', Auteur: 'A Auteur' }], {
+    lookupTitleAuthor: async () => ({ title: 'Tweestaps', author: 'A Auteur', isbn13: ISBN, found: true, source: 'title' }),
+    lookupIsbn: async () => {
+      exactLookupsAfterResolve += 1;
+      return { title: 'Tweestaps', author: 'A Auteur', isbn13: ISBN, description: 'Exact verrijkt', found: true, source: 'isbn' };
+    },
+  });
+  assert.strictEqual(resolvedThenEnriched.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(resolvedThenEnriched.rows[0].book.description, 'Exact verrijkt');
+  assert.strictEqual(exactLookupsAfterResolve, 1);
+
+  const titleConflict = await analyzeBookImportRows([{ Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }], {
+    lookupIsbn: async () => ({ title: 'Andere titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Mag niet lekken', found: true }),
+  });
+  assert.strictEqual(titleConflict.rows[0].status, 'conflict');
+  assert.strictEqual(titleConflict.rows[0].book.publisher, '');
+  assert.ok(codes(titleConflict.rows[0]).has('metadata_title_conflict'));
 
   const preserveExcel = await analyzeBookImportRows([{ Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Uitgever: 'Excel P' }], {
-    lookupIsbn: async () => ({ title: 'Andere titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Metadata P', found: true }),
+    lookupIsbn: async () => ({ title: 'Excel titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Metadata P', found: true }),
   });
   assert.strictEqual(preserveExcel.rows[0].book.title, 'Excel titel');
   assert.strictEqual(preserveExcel.rows[0].book.publisher, 'Excel P');

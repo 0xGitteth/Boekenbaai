@@ -112,6 +112,22 @@ function strictMetadataMatch(rowBook, candidate) {
   return rowAuthors.every((author) => candidateAuthors.includes(author));
 }
 
+function metadataDoesNotContradict(rowBook, candidate) {
+  const rowTitle = comparableText(rowBook.title);
+  const candidateTitle = comparableText(candidate.title);
+  if (rowTitle && candidateTitle && rowTitle !== candidateTitle) return false;
+  const rowAuthors = normalizeAuthorList(rowBook.authors, rowBook.author).map(comparableText).filter(Boolean);
+  const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
+  if (rowAuthors.length && candidateAuthors.length && !rowAuthors.every((author) => candidateAuthors.includes(author))) return false;
+  return true;
+}
+
+function titleDoesNotContradict(rowBook, candidate) {
+  const rowTitle = comparableText(rowBook?.title);
+  const candidateTitle = comparableText(candidate?.title);
+  return !(rowTitle && candidateTitle && rowTitle !== candidateTitle);
+}
+
 function candidateScore(candidate) {
   return [
     candidate.editionIsbn ? 1 : 0,
@@ -126,34 +142,44 @@ function candidateScore(candidate) {
   ].reduce((sum, value) => sum + value, 0);
 }
 
+function candidateSemanticSignature(candidate) {
+  return JSON.stringify([
+    comparableText(candidate.title),
+    normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).sort(),
+    comparableText(candidate.publisher),
+    candidate.publishedYear,
+    candidate.pageCount,
+    comparableText(candidate.language),
+  ]);
+}
+
 function selectMetadataCandidate(rowBook, candidates) {
   const strict = candidates.filter((candidate) => strictMetadataMatch(rowBook, candidate));
   if (!strict.length) return { candidate: null, conflict: null };
   const editionIsbns = Array.from(new Set(strict.map((candidate) => candidate.editionIsbn).filter(Boolean))).sort();
   if (editionIsbns.length > 1) return { candidate: null, conflict: { code: 'ambiguous_metadata_editions', editionIsbns } };
   if (strict.length > 1 && !editionIsbns.length) {
-    const signatures = new Set(strict.map((candidate) => JSON.stringify([
-      comparableText(candidate.title),
-      normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).sort(),
-      comparableText(candidate.publisher),
-      candidate.publishedYear,
-      candidate.pageCount,
-      comparableText(candidate.language),
-    ])));
+    const signatures = new Set(strict.map(candidateSemanticSignature));
     if (signatures.size > 1) return { candidate: null, conflict: { code: 'ambiguous_metadata_results' } };
   }
-  const ranked = strict.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
+  const rankedPool = editionIsbns.length === 1
+    ? strict.filter((candidate) => candidate.editionIsbn === editionIsbns[0])
+    : strict;
+  const ranked = rankedPool.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
   return { candidate: ranked[0], conflict: null };
 }
 
-function selectIsbnMetadataCandidate(requestedIsbn, candidates) {
+function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) {
   const requested = canonicalizeBookIsbn13(requestedIsbn);
   if (!requested) return { candidate: null, conflict: null };
-  const matching = [];
+  const exact = [];
+  const identifierless = [];
   const mismatched = [];
   for (const candidate of candidates) {
-    if (!candidate.editionIsbn || candidate.editionIsbn === requested) matching.push(candidate);
-    else mismatched.push(candidate);
+    if (candidate.editionIsbn === requested) exact.push(candidate);
+    else if (!candidate.editionIsbn) {
+      if (!rowBook || metadataDoesNotContradict(rowBook, candidate)) identifierless.push(candidate);
+    } else mismatched.push(candidate);
   }
   if (mismatched.length) {
     return {
@@ -165,9 +191,34 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates) {
       },
     };
   }
-  if (!matching.length) return { candidate: null, conflict: null };
-  const ranked = matching.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
-  return { candidate: ranked[0], conflict: null };
+  const compatibleExact = rowBook ? exact.filter((candidate) => titleDoesNotContradict(rowBook, candidate)) : exact;
+  if (exact.length && !compatibleExact.length) {
+    return {
+      candidate: null,
+      conflict: {
+        code: 'metadata_title_conflict',
+        editionIsbn: requested,
+        titles: Array.from(new Set(exact.map((candidate) => candidate.title).filter(Boolean))),
+      },
+    };
+  }
+  const rankedExact = compatibleExact.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
+  if (rankedExact.length) return { candidate: rankedExact[0], conflict: null };
+  if (identifierless.length > 1) {
+    const signatures = new Set(identifierless.map(candidateSemanticSignature));
+    if (signatures.size > 1) {
+      return { candidate: null, conflict: { code: 'ambiguous_isbn_lookup_results', requestedIsbn: requested, returnedIsbns: [] } };
+    }
+  }
+  const rankedIdentifierless = identifierless.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
+  return { candidate: rankedIdentifierless[0] || null, conflict: null };
+}
+
+function sourceSuggestedIsbns(row) {
+  const analyses = row?.identifierAnalysis
+    ? [row.identifierAnalysis.explicit, row.identifierAnalysis.legacy, row.identifierAnalysis.ambiguous]
+    : [];
+  return Array.from(new Set(analyses.map((analysis) => analysis?.suggestion?.canonical).filter(Boolean))).sort();
 }
 
 function setMetadataField(row, field, value, candidate) {
@@ -225,25 +276,27 @@ async function resolveMetadata(row, options) {
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
   const hasMissingMetadata = () => !row.book.title || !row.book.author || !row.book.publisher || row.book.publishedYear == null
     || row.book.pageCount == null || !row.book.language || !row.book.coverUrl || !row.book.description;
-  if (row.book.editionIsbn && lookupIsbn && hasMissingMetadata()) {
+
+  const enrichExactIsbn = async () => {
+    if (!lookupIsbn || !row.book.editionIsbn || !hasMissingMetadata()) return;
     try {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
       const candidates = metadataCandidatesFromResult(result);
-      const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates);
+      const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book);
       if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       else if (selection.candidate) applyMetadataCandidate(row, selection.candidate);
       else if (candidates.length) addIssue(row, 'metadata_not_usable', 'warning');
     } catch {
       addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'isbn' });
     }
+  };
+
+  if (row.book.editionIsbn) {
+    await enrichExactIsbn();
+    return;
   }
 
-  const hasPotentialIdentifierProblem = !row.book.editionIsbn && row.identifierAnalysis
-    && [row.identifierAnalysis.explicit, row.identifierAnalysis.legacy, row.identifierAnalysis.ambiguous]
-      .some((analysis) => analysis.raw && !analysis.canonical);
-  const shouldLookupByTitle = lookupTitleAuthor && row.book.title && row.book.author
-    && (!row.book.editionIsbn || hasMissingMetadata() || hasPotentialIdentifierProblem);
-  if (!shouldLookupByTitle) return;
+  if (!lookupTitleAuthor || !row.book.title || !row.book.author) return;
   try {
     const result = await lookupTitleAuthor({ title: row.book.title, author: row.book.author, language: row.book.language });
     const candidates = metadataCandidatesFromResult(result);
@@ -256,7 +309,16 @@ async function resolveMetadata(row, options) {
       if (candidates.length) addIssue(row, 'metadata_not_strict_match', 'warning');
       return;
     }
+    const suggestedIsbns = sourceSuggestedIsbns(row);
+    if (selection.candidate.editionIsbn && suggestedIsbns.length && !suggestedIsbns.includes(selection.candidate.editionIsbn)) {
+      addIssue(row, 'metadata_isbn_conflicts_with_repair_suggestion', 'conflict', {
+        suggestedIsbns,
+        metadataIsbn: selection.candidate.editionIsbn,
+      });
+      return;
+    }
     applyMetadataCandidate(row, selection.candidate, { allowIsbnResolution: true });
+    if (row.book.editionIsbn) await enrichExactIsbn();
   } catch {
     addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'title_author' });
   }
