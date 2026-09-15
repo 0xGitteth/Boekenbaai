@@ -41,7 +41,6 @@ module.exports = async function runCoreTests() {
     { Titel: 'Globaal eigen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Klassen: 'eigen boek' },
     { Titel: 'Globaal vast', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT, 'Aanwezig bieb': 'Klassenboek' },
     { Titel: 'Onbekende kolom', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'eigen boek' },
-    { Titel: 'Klassenboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT },
     { Titel: 'Vast en geleend', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Klassen: '2A; vast in de klas', 'Geleend door klas': 'Arbeid' },
   ], { classes: [{ id: 'c1', name: 'Arbeid' }] });
   assert.strictEqual(semantics.rows[0].status, 'skipped');
@@ -57,12 +56,16 @@ module.exports = async function runCoreTests() {
   assert.strictEqual(semantics.rows[5].context.fixedLocation.status, 'needs_review');
   assert.strictEqual(semantics.rows[6].status, 'skipped');
   assert.strictEqual(semantics.rows[6].context.excludeFromSchoolCollection, true);
-  assert.strictEqual(semantics.rows[7].book.title, '');
-  assert.strictEqual(semantics.rows[7].context.fixedLocation.status, 'needs_review');
-  assert.strictEqual(semantics.rows[7].status, 'unresolved');
-  assert.deepStrictEqual(semantics.rows[8].context.classContext, ['2A']);
-  assert.strictEqual(semantics.rows[8].context.fixedLocation.label, '2A');
-  assert.strictEqual(semantics.rows[8].context.classLoan.status, 'matched');
+  assert.deepStrictEqual(semantics.rows[7].context.classContext, ['2A']);
+  assert.strictEqual(semantics.rows[7].context.fixedLocation.label, '2A');
+  assert.strictEqual(semantics.rows[7].context.classLoan.status, 'matched');
+
+  const markerTitle = await analyzeBookImportRows([{
+    Titel: 'Klassenboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT,
+  }]);
+  assert.strictEqual(markerTitle.rows[0].book.title, '');
+  assert.strictEqual(markerTitle.rows[0].context.fixedLocation.status, 'needs_review');
+  assert.strictEqual(markerTitle.rows[0].status, 'unresolved');
 
   const duplicateMarker = { Titel: 'Dubbele klas', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(duplicateMarker, 'Klassen', { value: '2A', enumerable: true });
