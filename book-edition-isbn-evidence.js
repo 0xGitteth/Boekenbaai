@@ -2,6 +2,7 @@
 
 const {
   normalizeBookIdentityText,
+  stringifyIdentifierValue,
   compareStableText,
   getOwnDataValue,
   cloneJsonSafeOwnData,
@@ -46,7 +47,7 @@ function normalizeEvidenceCandidateSources(value) {
     if (!entry || typeof entry !== 'object') continue;
     const field = getOwnDataValue(entry, 'field');
     if (!ISBN_CANDIDATE_FIELDS.includes(field)) continue;
-    const rawValue = normalizeBookIdentityText(getOwnDataValue(entry, 'value'));
+    const rawValue = stringifyIdentifierValue(getOwnDataValue(entry, 'value'));
     const canonicalIsbn = canonicalizeBookIsbn13(getOwnDataValue(entry, 'canonicalIsbn') || rawValue);
     if (!rawValue || !canonicalIsbn) continue;
     const key = JSON.stringify([field, canonicalIsbn]);
@@ -99,13 +100,13 @@ function getEditionIsbnEvidence(book) {
     } else if (edited && canonical) {
       candidateSources.push({
         field,
-        value: normalizeBookIdentityText(observation.value),
+        value: stringifyIdentifierValue(observation.value),
         canonicalIsbn: canonical,
       });
     } else if (!previous && canonical) {
       candidateSources.push({
         field,
-        value: normalizeBookIdentityText(observation.value),
+        value: stringifyIdentifierValue(observation.value),
         canonicalIsbn: canonical,
       });
     }

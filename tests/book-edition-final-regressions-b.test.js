@@ -83,8 +83,9 @@ for (const [field, unsupported, reason] of [
 }
 
 // Unedited source provenance remains the original reportable ISBN representation.
-for (const originalValue of ['978-0-306-40615-7','0-306-40615-2','978 0 306 40615 7']) {
+for (const originalValue of ['978-0-306-40615-7','0-306-40615-2','978 0 306 40615 7','978   0 306 40615 7','\t978 0 306 40615 7\n']) {
   const first=c.normalizeBookIdentityShape({title:'T',author:'A',editionIsbn:originalValue});
+  assert.strictEqual(first.editionIsbnEvidence.candidateSources[0].value,originalValue,`source value captured exactly: ${JSON.stringify(originalValue)}`);
   const originalSources=JSON.parse(JSON.stringify(first.editionIsbnEvidence.candidateSources));
   const normalizedAgain=c.normalizeBookIdentityShape(first);
   eq(normalizedAgain.editionIsbnEvidence.candidateSources,originalSources,`source value survives normalize: ${originalValue}`);
