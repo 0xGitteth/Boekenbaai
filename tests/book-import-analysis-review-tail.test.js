@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const { analyzeBookImportRows } = require('../book-import-analysis');
+const { readBookImportWorkbook } = require('../book-import-workbook');
 
 const ISBN = '9780306406157';
 const ISBN_ALT = '9780439554930';
@@ -53,4 +54,87 @@ module.exports = async function runReviewTailTests() {
   assert.notStrictEqual(literalMarkerTitle.rows[0].context.excludeFromSchoolCollection, true);
   assert.ok(!issueCodes(literalMarkerTitle.rows[0]).has('own_book_excluded'));
   assert.strictEqual(literalMarkerTitle.groups.length, 1);
+
+  const copyLimitDuplicate = await analyzeBookImportRows([
+    { Titel: 'Eerste', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '55555', Aantal: 1 },
+    { Titel: 'Tweede', Auteur: 'B Auteur', 'ISBN-nummer': ISBN_ALT, Barcode: '55555', Aantal: 1 },
+  ], { maxCopies: 1 });
+  assert.strictEqual(copyLimitDuplicate.summary.physicalCopies, 1);
+  assert.strictEqual(copyLimitDuplicate.rows[0].status, 'ready');
+  assert.ok(!issueCodes(copyLimitDuplicate.rows[0]).has('duplicate_physical_barcode'));
+  assert.ok(issueCodes(copyLimitDuplicate.rows[1]).has('copy_limit_exceeded'));
+  assert.ok(!issueCodes(copyLimitDuplicate.rows[1]).has('duplicate_physical_barcode'));
+  assert.strictEqual(copyLimitDuplicate.groups.length, 1);
+
+  const alreadyConflictedDuplicate = { Auteur: 'B Auteur', 'ISBN-nummer': ISBN_ALT, Barcode: '66666' };
+  Object.defineProperty(alreadyConflictedDuplicate, 'Titel', { value: 'Titel A', enumerable: true });
+  Object.defineProperty(alreadyConflictedDuplicate, 'Titel_1', { value: 'Titel B', enumerable: true });
+  const conflictedDuplicateResult = await analyzeBookImportRows([
+    { Titel: 'Geldig', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '66666' },
+    alreadyConflictedDuplicate,
+  ]);
+  assert.strictEqual(conflictedDuplicateResult.rows[0].status, 'ready');
+  assert.ok(!issueCodes(conflictedDuplicateResult.rows[0]).has('duplicate_physical_barcode'));
+  assert.strictEqual(conflictedDuplicateResult.rows[1].status, 'conflict');
+  assert.ok(!issueCodes(conflictedDuplicateResult.rows[1]).has('duplicate_physical_barcode'));
+
+  const metadataTitleConflict = await analyzeBookImportRows([{
+    Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Andere titel', author: 'A Auteur', barcode: ISBN, publisher: 'Niet toepassen', found: true, source: 'test',
+    }),
+  });
+  assert.strictEqual(metadataTitleConflict.rows[0].status, 'conflict');
+  assert.ok(issueCodes(metadataTitleConflict.rows[0]).has('metadata_title_conflict'));
+  assert.strictEqual(metadataTitleConflict.groups.length, 0, 'Title-conflicted rows must not appear in safe edition groups');
+
+  const duplicateTitleColumns = { Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(duplicateTitleColumns, 'Titel', { value: 'Titel A', enumerable: true });
+  Object.defineProperty(duplicateTitleColumns, 'Titel_1', { value: 'Titel B', enumerable: true });
+  const duplicateTitleResult = await analyzeBookImportRows([duplicateTitleColumns]);
+  assert.strictEqual(duplicateTitleResult.rows[0].status, 'conflict');
+  assert.ok(issueCodes(duplicateTitleResult.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(duplicateTitleResult.groups.length, 0, 'Rows with conflicting title columns must not enter edition groups');
+
+  const unresolvedWithIsbn = await analyzeBookImportRows([{
+    Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(unresolvedWithIsbn.rows[0].status, 'unresolved');
+  assert.strictEqual(unresolvedWithIsbn.groups.length, 0, 'Rows with incomplete edition evidence must remain outside safe groups');
+
+  const contradictoryExactCandidates = await analyzeBookImportRows([{
+    Titel: 'Juiste titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      source: 'same-isbn-search',
+      candidates: [
+        { title: 'Juiste titel', author: 'A Auteur', barcode: ISBN, publisher: 'Juiste uitgever', found: true },
+        { title: 'Andere titel', author: 'A Auteur', barcode: ISBN, publisher: 'Andere uitgever', found: true },
+      ],
+    }),
+  });
+  assert.strictEqual(contradictoryExactCandidates.rows[0].status, 'conflict');
+  assert.ok(issueCodes(contradictoryExactCandidates.rows[0]).has('metadata_title_conflict'));
+  assert.strictEqual(contradictoryExactCandidates.rows[0].book.publisher, '');
+  assert.strictEqual(contradictoryExactCandidates.groups.length, 0);
+
+  let decodedBase64 = false;
+  const originalBufferFrom = Buffer.from;
+  Buffer.from = function monitoredBufferFrom(value, encoding, ...rest) {
+    if (typeof value === 'string' && encoding === 'base64') decodedBase64 = true;
+    return originalBufferFrom.call(Buffer, value, encoding, ...rest);
+  };
+  let encodedLimitResult;
+  try {
+    encodedLimitResult = readBookImportWorkbook({
+      read: () => { throw new Error('must not parse'); },
+      utils: { sheet_to_json: () => [] },
+    }, 'AAAAAAAA', { maxBytes: 4 });
+  } finally {
+    Buffer.from = originalBufferFrom;
+  }
+  assert.strictEqual(encodedLimitResult.ok, false);
+  assert.strictEqual(encodedLimitResult.error, 'file_too_large');
+  assert.strictEqual(decodedBase64, false, 'Oversized base64 must be rejected before allocating the decoded Buffer');
 };

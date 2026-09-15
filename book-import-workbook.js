@@ -153,6 +153,22 @@ function decodeWorkbookInput(input) {
   try { return Buffer.from(raw, 'base64'); } catch { return null; }
 }
 
+function base64PayloadInfo(input) {
+  if (typeof input !== 'string') return null;
+  let start = 0;
+  const prefix = /^data:[^,]{0,4096};base64,/i.exec(input);
+  if (prefix) start = prefix[0].length;
+  let end = input.length;
+  while (start < end && /\s/.test(input[start])) start += 1;
+  while (end > start && /\s/.test(input[end - 1])) end -= 1;
+  const encodedLength = end - start;
+  let padding = 0;
+  if (encodedLength > 0 && input[end - 1] === '=') padding += 1;
+  if (encodedLength > 1 && input[end - 2] === '=') padding += 1;
+  const estimatedDecodedLength = Math.max(0, Math.floor((encodedLength * 3) / 4) - padding);
+  return { encodedLength, estimatedDecodedLength };
+}
+
 function ownDataValue(source, key) {
   if (!source || typeof source !== 'object') return undefined;
   let descriptor;
@@ -196,9 +212,19 @@ function firstSheet(workbook) {
 
 function readBookImportWorkbook(XLSX, input, options = {}) {
   if (!XLSX || typeof XLSX.read !== 'function' || !XLSX.utils || typeof XLSX.utils.sheet_to_json !== 'function') return { ok: false, error: 'xlsx_unavailable' };
+  const maxBytes = Number.isInteger(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 25 * 1024 * 1024;
+  const encodedSize = base64PayloadInfo(input);
+  if (encodedSize && encodedSize.estimatedDecodedLength > maxBytes) {
+    return {
+      ok: false,
+      error: 'file_too_large',
+      encodedLength: encodedSize.encodedLength,
+      estimatedByteLength: encodedSize.estimatedDecodedLength,
+      maxBytes,
+    };
+  }
   const buffer = decodeWorkbookInput(input);
   if (!buffer || !buffer.length) return { ok: false, error: 'empty_file' };
-  const maxBytes = Number.isInteger(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 25 * 1024 * 1024;
   if (buffer.length > maxBytes) return { ok: false, error: 'file_too_large', byteLength: buffer.length, maxBytes };
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : 20000;
   const initialSheetRows = Math.min(maxRows + 2, Number.MAX_SAFE_INTEGER);

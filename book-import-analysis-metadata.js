@@ -188,6 +188,15 @@ function selectMetadataCandidate(rowBook, candidates) {
   return { candidate: ranked[0], conflict: null };
 }
 
+function distinctCandidateTitles(candidates) {
+  const titles = new Map();
+  for (const candidate of candidates) {
+    const key = comparableText(candidate.title);
+    if (key && !titles.has(key)) titles.set(key, candidate.title);
+  }
+  return Array.from(titles.values());
+}
+
 function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) {
   const requested = canonicalizeBookIsbn13(requestedIsbn);
   if (!requested) return { candidate: null, conflict: null };
@@ -199,6 +208,17 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) 
     else if (!candidate.editionIsbn) {
       if (!rowBook || metadataDoesNotContradict(rowBook, candidate)) identifierless.push(candidate);
     } else mismatched.push(candidate);
+  }
+  const exactTitles = distinctCandidateTitles(exact);
+  if (exactTitles.length > 1) {
+    return {
+      candidate: null,
+      conflict: {
+        code: 'metadata_title_conflict',
+        editionIsbn: requested,
+        titles: exactTitles,
+      },
+    };
   }
   const compatibleExact = rowBook ? exact.filter((candidate) => titleDoesNotContradict(rowBook, candidate)) : exact;
   if (exact.length && !compatibleExact.length) {

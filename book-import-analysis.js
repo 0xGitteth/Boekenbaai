@@ -93,9 +93,11 @@ function collectColumnSummary(mappedRows) {
   };
 }
 
-function markDuplicateBarcodes(analyzedRows) {
+function markDuplicateBarcodes(analyzedRows, stagedPhysicalRowIndexes) {
   const barcodeRows = new Map();
   for (const row of analyzedRows) {
+    if (!stagedPhysicalRowIndexes.has(row.index)) continue;
+    if (row.status !== 'ready' && row.status !== 'warning') continue;
     if (!row.book.barcode || row.context.excludeFromSchoolCollection || row.context.skipReason === 'junk') continue;
     if (!row.book.quantity?.valid || row.book.quantity.value !== 1) continue;
     const key = normalizeRuntimeBarcode(row.book.barcode);
@@ -163,6 +165,7 @@ async function analyzeBookImportRows(rows, options = {}) {
   const mappedRows = inputRows.map(mapImportRow);
   const analyzedRows = [];
   const editionCopies = [];
+  const stagedPhysicalRowIndexes = new Set();
   let totalCopies = 0;
 
   for (let index = 0; index < mappedRows.length; index += 1) {
@@ -219,6 +222,7 @@ async function analyzeBookImportRows(rows, options = {}) {
         row.status = 'conflict';
       } else {
         totalCopies += requestedCopies;
+        stagedPhysicalRowIndexes.add(index);
         if (row.book.editionIsbn && !hasConflictingRepairSuggestions && !hasBlockingIdentifierConflict(row)) {
           for (let copyIndex = 0; copyIndex < requestedCopies; copyIndex += 1) {
             editionCopies.push({
@@ -238,11 +242,15 @@ async function analyzeBookImportRows(rows, options = {}) {
     analyzedRows.push(row);
   }
 
-  markDuplicateBarcodes(analyzedRows);
+  markDuplicateBarcodes(analyzedRows, stagedPhysicalRowIndexes);
+  const groupableCopies = editionCopies.filter((copy) => {
+    const status = analyzedRows[copy.__importRowIndex]?.status;
+    return status === 'ready' || status === 'warning';
+  });
 
   let grouped = { groups: [], conflicts: [] };
   try {
-    grouped = groupBookCopiesByEdition(editionCopies);
+    grouped = groupBookCopiesByEdition(groupableCopies);
   } catch {
     return {
       ok: false,
@@ -255,8 +263,8 @@ async function analyzeBookImportRows(rows, options = {}) {
     };
   }
 
-  applyEditionConflicts(analyzedRows, editionCopies, grouped.conflicts);
-  const exposedConflicts = exposeEditionConflicts(editionCopies, grouped.conflicts);
+  applyEditionConflicts(analyzedRows, groupableCopies, grouped.conflicts);
+  const exposedConflicts = exposeEditionConflicts(groupableCopies, grouped.conflicts);
   for (const group of grouped.groups) {
     for (const copy of group.copies || []) {
       delete copy.__importRowIndex;
