@@ -45,8 +45,9 @@ module.exports = async function runCoreTests() {
   ], { classes: [{ id: 'c1', name: 'Arbeid' }] });
   assert.strictEqual(semantics.rows[0].status, 'skipped');
   assert.strictEqual(semantics.rows[0].context.excludeFromSchoolCollection, true);
-  assert.strictEqual(semantics.rows[1].status, 'skipped');
-  assert.strictEqual(semantics.rows[1].context.excludeFromSchoolCollection, true);
+  assert.strictEqual(semantics.rows[1].book.title, 'Eigen boek');
+  assert.notStrictEqual(semantics.rows[1].context.excludeFromSchoolCollection, true);
+  assert.ok(!codes(semantics.rows[1]).has('own_book_excluded'));
   assert.strictEqual(semantics.rows[2].context.fixedLocation.status, 'needs_review');
   assert.ok(codes(semantics.rows[2]).has('fixed_location_needs_review'));
   assert.deepStrictEqual(semantics.rows[3].context.classContext, ['Ond BKT']);
@@ -54,8 +55,8 @@ module.exports = async function runCoreTests() {
   assert.ok(codes(semantics.rows[3]).has('class_context_needs_review'));
   assert.strictEqual(semantics.rows[4].status, 'skipped');
   assert.strictEqual(semantics.rows[5].context.fixedLocation.status, 'needs_review');
-  assert.strictEqual(semantics.rows[6].status, 'skipped');
-  assert.strictEqual(semantics.rows[6].context.excludeFromSchoolCollection, true);
+  assert.notStrictEqual(semantics.rows[6].context.excludeFromSchoolCollection, true);
+  assert.ok(!codes(semantics.rows[6]).has('own_book_excluded'));
   assert.deepStrictEqual(semantics.rows[7].context.classContext, ['2A']);
   assert.strictEqual(semantics.rows[7].context.fixedLocation.label, '2A');
   assert.strictEqual(semantics.rows[7].context.classLoan.status, 'matched');
@@ -63,9 +64,9 @@ module.exports = async function runCoreTests() {
   const markerTitle = await analyzeBookImportRows([{
     Titel: 'Klassenboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT,
   }]);
-  assert.strictEqual(markerTitle.rows[0].book.title, '');
-  assert.strictEqual(markerTitle.rows[0].context.fixedLocation.status, 'needs_review');
-  assert.strictEqual(markerTitle.rows[0].status, 'unresolved');
+  assert.strictEqual(markerTitle.rows[0].book.title, 'Klassenboek');
+  assert.strictEqual(markerTitle.rows[0].context.fixedLocation, undefined);
+  assert.ok(!codes(markerTitle.rows[0]).has('fixed_location_needs_review'));
 
   const duplicateMarker = { Titel: 'Dubbele klas', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(duplicateMarker, 'Klassen', { value: '2A', enumerable: true });
