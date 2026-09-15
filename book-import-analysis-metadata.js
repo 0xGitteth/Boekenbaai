@@ -110,7 +110,12 @@ function metadataCandidatesFromResult(result) {
   const object = ownObject(result);
   if (!object || getOwnDataValue(object, 'found') === false) return [];
   const candidates = getOwnDataValue(object, 'candidates');
-  if (Array.isArray(candidates)) return candidates.map(normalizeMetadataCandidate).filter(Boolean);
+  if (Array.isArray(candidates)) {
+    const wrapperSource = normalizeBookIdentityText(getOwnDataValue(object, 'source'));
+    return candidates.map(normalizeMetadataCandidate).filter(Boolean).map((candidate) => (
+      candidate.source || !wrapperSource ? candidate : { ...candidate, source: wrapperSource }
+    ));
+  }
   const normalized = normalizeMetadataCandidate(object);
   return normalized ? [normalized] : [];
 }
@@ -195,16 +200,6 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) 
       if (!rowBook || metadataDoesNotContradict(rowBook, candidate)) identifierless.push(candidate);
     } else mismatched.push(candidate);
   }
-  if (mismatched.length) {
-    return {
-      candidate: null,
-      conflict: {
-        code: 'ambiguous_isbn_lookup_results',
-        requestedIsbn: requested,
-        returnedIsbns: Array.from(new Set(mismatched.map((candidate) => candidate.editionIsbn))).sort(),
-      },
-    };
-  }
   const compatibleExact = rowBook ? exact.filter((candidate) => titleDoesNotContradict(rowBook, candidate)) : exact;
   if (exact.length && !compatibleExact.length) {
     return {
@@ -218,6 +213,16 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) 
   }
   const rankedExact = compatibleExact.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
   if (rankedExact.length) return { candidate: rankedExact[0], conflict: null };
+  if (mismatched.length) {
+    return {
+      candidate: null,
+      conflict: {
+        code: 'ambiguous_isbn_lookup_results',
+        requestedIsbn: requested,
+        returnedIsbns: Array.from(new Set(mismatched.map((candidate) => candidate.editionIsbn))).sort(),
+      },
+    };
+  }
   if (identifierless.length > 1) {
     const signatures = new Set(identifierless.map(candidateSemanticSignature));
     if (signatures.size > 1) {
