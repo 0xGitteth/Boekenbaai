@@ -221,9 +221,27 @@ function sourceSuggestedIsbns(row) {
   return Array.from(new Set(analyses.map((analysis) => analysis?.suggestion?.canonical).filter(Boolean))).sort();
 }
 
+function invalidSuppliedScalar(row, field) {
+  if (!['publishedYear', 'pageCount'].includes(field)) return null;
+  if (row?.book?.[field] !== null) return null;
+  const provenance = row?.provenance?.[field];
+  if (!provenance || provenance.source !== 'excel') return null;
+  return provenance;
+}
+
 function setMetadataField(row, field, value, candidate) {
   if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return;
   const current = row.book[field];
+  const invalidSource = invalidSuppliedScalar(row, field);
+  if (invalidSource) {
+    addIssue(row, 'metadata_differs_from_excel', 'warning', {
+      field,
+      excelValue: Object.prototype.hasOwnProperty.call(invalidSource, 'raw') ? invalidSource.raw : null,
+      metadataValue: value,
+      sourceInvalid: true,
+    });
+    return;
+  }
   const currentEmpty = current === null || current === undefined || current === '' || (Array.isArray(current) && !current.length);
   if (field === 'tags' && Array.isArray(value) && row.provenance.tags?.source !== 'excel') {
     const merged = Array.isArray(current) ? [...current] : [];
@@ -275,7 +293,9 @@ async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
   const hasMissingMetadata = () => !row.book.title || !row.book.author || !row.book.publisher || row.book.publishedYear == null
-    || row.book.pageCount == null || !row.book.language || !row.book.coverUrl || !row.book.description;
+    || row.book.pageCount == null || !row.book.language || !row.book.coverUrl || !row.book.description
+    || !Array.isArray(row.book.tags) || !row.book.tags.length
+    || !Array.isArray(row.book.themes) || !row.book.themes.length;
 
   const enrichExactIsbn = async () => {
     if (!lookupIsbn || !row.book.editionIsbn || !hasMissingMetadata()) return;

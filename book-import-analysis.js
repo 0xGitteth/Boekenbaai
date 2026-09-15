@@ -2,7 +2,13 @@
 
 const { groupBookCopiesByEdition } = require('./book-edition-core');
 const { mapImportRow, readBookImportWorkbook } = require('./book-import-workbook');
-const { JUNK_ONLY_TOKENS, addIssue, comparableText } = require('./book-import-analysis-values');
+const {
+  JUNK_ONLY_TOKENS,
+  addIssue,
+  comparableText,
+  normalizeRuntimeBarcode,
+  analyzeIdentifier,
+} = require('./book-import-analysis-values');
 const {
   applySourceCollisions,
   normalizeBookFields,
@@ -18,10 +24,13 @@ const {
   selectIsbnMetadataCandidate,
   resolveMetadata,
 } = require('./book-import-analysis-metadata');
-const { analyzeIdentifier } = require('./book-import-analysis-values');
 
 function finalizeRowStatus(row) {
-  if (row.context.excludeFromSchoolCollection || row.context.skipReason === 'junk') return 'skipped';
+  if (row.context.excludeFromSchoolCollection) {
+    if (row.issues.some((issue) => issue.code === 'own_book_context_conflict')) return 'conflict';
+    return 'skipped';
+  }
+  if (row.context.skipReason === 'junk') return 'skipped';
   if (row.issues.some((issue) => issue.severity === 'conflict')) return 'conflict';
   if (!row.book.title || JUNK_ONLY_TOKENS.has(comparableText(row.book.title))) return 'unresolved';
   if (!row.book.author) return 'unresolved';
@@ -63,7 +72,7 @@ function markDuplicateBarcodes(analyzedRows) {
   const barcodeRows = new Map();
   for (const row of analyzedRows) {
     if (!row.book.barcode || row.context.excludeFromSchoolCollection || row.context.skipReason === 'junk') continue;
-    const key = comparableText(row.book.barcode);
+    const key = normalizeRuntimeBarcode(row.book.barcode);
     if (!key) continue;
     const indexes = barcodeRows.get(key) || [];
     indexes.push(row.index);
@@ -145,7 +154,7 @@ async function analyzeBookImportRows(rows, options = {}) {
     applyContext(mapped, row, options);
 
     if (row.context.excludeFromSchoolCollection) {
-      row.status = 'skipped';
+      row.status = finalizeRowStatus(row);
       analyzedRows.push(row);
       continue;
     }

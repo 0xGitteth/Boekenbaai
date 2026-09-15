@@ -153,25 +153,65 @@ function decodeWorkbookInput(input) {
   try { return Buffer.from(raw, 'base64'); } catch { return null; }
 }
 
+function ownDataValue(source, key) {
+  if (!source || typeof source !== 'object') return undefined;
+  let descriptor;
+  try { descriptor = Object.getOwnPropertyDescriptor(source, key); } catch { return undefined; }
+  return descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value') ? descriptor.value : undefined;
+}
+
+function worksheetRangeRowCount(XLSX, rangeValue) {
+  if (typeof rangeValue !== 'string' || !rangeValue.trim()) return null;
+  if (XLSX?.utils && typeof XLSX.utils.decode_range === 'function') {
+    try {
+      const decoded = XLSX.utils.decode_range(rangeValue);
+      if (decoded && Number.isInteger(decoded?.s?.r) && Number.isInteger(decoded?.e?.r) && decoded.e.r >= decoded.s.r) {
+        return decoded.e.r - decoded.s.r + 1;
+      }
+    } catch {
+      // Fall through to the conservative text parser.
+    }
+  }
+  const match = rangeValue.match(/(?:^|:)[A-Za-z]+(\d+)$/);
+  if (!match) return null;
+  const endRow = Number(match[1]);
+  const startMatch = rangeValue.match(/^\$?[A-Za-z]+\$?(\d+)(?::|$)/);
+  const startRow = startMatch ? Number(startMatch[1]) : 1;
+  if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(endRow) || endRow < startRow) return null;
+  return endRow - startRow + 1;
+}
+
 function readBookImportWorkbook(XLSX, input, options = {}) {
   if (!XLSX || typeof XLSX.read !== 'function' || !XLSX.utils || typeof XLSX.utils.sheet_to_json !== 'function') return { ok: false, error: 'xlsx_unavailable' };
   const buffer = decodeWorkbookInput(input);
   if (!buffer || !buffer.length) return { ok: false, error: 'empty_file' };
   const maxBytes = Number.isInteger(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 25 * 1024 * 1024;
   if (buffer.length > maxBytes) return { ok: false, error: 'file_too_large', byteLength: buffer.length, maxBytes };
+  const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : 20000;
+  const sheetRows = Math.min(maxRows + 2, Number.MAX_SAFE_INTEGER);
 
   let workbook;
-  try { workbook = XLSX.read(buffer, { type: 'buffer' }); } catch { return { ok: false, error: 'invalid_workbook' }; }
+  try {
+    workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows });
+  } catch {
+    return { ok: false, error: 'invalid_workbook' };
+  }
   const sheetName = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames[0] : '';
   const sheets = workbook && workbook.Sheets && typeof workbook.Sheets === 'object' ? workbook.Sheets : null;
   let sheetDescriptor = null;
   try { sheetDescriptor = sheets ? Object.getOwnPropertyDescriptor(sheets, sheetName) : null; } catch { sheetDescriptor = null; }
   if (!sheetName || !sheetDescriptor || !Object.prototype.hasOwnProperty.call(sheetDescriptor, 'value') || !sheetDescriptor.value) return { ok: false, error: 'missing_sheet' };
 
+  const sheet = sheetDescriptor.value;
+  const originalRange = ownDataValue(sheet, '!fullref');
+  const originalRangeRows = worksheetRangeRowCount(XLSX, originalRange);
+  if (Number.isInteger(originalRangeRows) && originalRangeRows > maxRows + 1) {
+    return { ok: false, error: 'too_many_rows', sheetName, worksheetRows: originalRangeRows, maxRows };
+  }
+
   let rows;
-  try { rows = XLSX.utils.sheet_to_json(sheetDescriptor.value, { defval: '', raw: true }); } catch { return { ok: false, error: 'invalid_sheet' }; }
+  try { rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true }); } catch { return { ok: false, error: 'invalid_sheet' }; }
   if (!Array.isArray(rows) || !rows.length) return { ok: false, error: 'empty_sheet', sheetName };
-  const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : 20000;
   if (rows.length > maxRows) return { ok: false, error: 'too_many_rows', sheetName, rowCount: rows.length, maxRows };
 
   const headers = [];

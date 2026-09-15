@@ -136,6 +136,68 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(titleConflict.rows[0].book.publisher, '');
   assert.ok(codes(titleConflict.rows[0]).has('metadata_title_conflict'));
 
+  let collectionLookups = 0;
+  const collectionEnrichment = await analyzeBookImportRows([{
+    Titel: 'Collecties',
+    Auteur: 'A Auteur',
+    'ISBN-nummer': ISBN,
+    Uitgever: 'P',
+    Jaar: 2020,
+    Paginas: 123,
+    Taal: 'nl',
+    'Cover URL': 'https://example.invalid/c.jpg',
+    Beschrijving: 'D',
+  }], {
+    lookupIsbn: async () => {
+      collectionLookups += 1;
+      return {
+        title: 'Collecties', author: 'A Auteur', isbn13: ISBN,
+        tags: ['avontuur'], themes: ['vriendschap'], found: true, source: 'test',
+      };
+    },
+  });
+  assert.strictEqual(collectionLookups, 1, 'Missing enrichable collections should trigger exact ISBN metadata');
+  assert.deepStrictEqual(collectionEnrichment.rows[0].book.tags, ['avontuur']);
+  assert.deepStrictEqual(collectionEnrichment.rows[0].book.themes, ['vriendschap']);
+  assert.strictEqual(collectionEnrichment.rows[0].provenance.tags.source, 'metadata');
+  assert.strictEqual(collectionEnrichment.rows[0].provenance.themes.source, 'metadata');
+
+  const invalidSupplied = await analyzeBookImportRows([{
+    Titel: 'Bronwaarden',
+    Auteur: 'A Auteur',
+    'ISBN-nummer': ISBN,
+    Uitgever: 'P',
+    Jaar: 'twenty',
+    Paginas: 'many',
+    Taal: 'nl',
+    'Cover URL': 'https://example.invalid/c.jpg',
+    Beschrijving: 'D',
+    Tags: 'bron-tag',
+    "Thema's": 'bron-thema',
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Bronwaarden', author: 'A Auteur', isbn13: ISBN,
+      publishedYear: 2020, pageCount: 123, found: true, source: 'test',
+    }),
+  });
+  const invalidRow = invalidSupplied.rows[0];
+  assert.strictEqual(invalidRow.book.publishedYear, null);
+  assert.strictEqual(invalidRow.book.pageCount, null);
+  assert.strictEqual(invalidRow.provenance.publishedYear.source, 'excel');
+  assert.strictEqual(invalidRow.provenance.publishedYear.raw, 'twenty');
+  assert.strictEqual(invalidRow.provenance.pageCount.source, 'excel');
+  assert.strictEqual(invalidRow.provenance.pageCount.raw, 'many');
+  assert.ok(codes(invalidRow).has('invalid_published_year'));
+  assert.ok(codes(invalidRow).has('invalid_page_count'));
+  const yearDifference = invalidRow.issues.find((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'publishedYear');
+  const pageDifference = invalidRow.issues.find((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'pageCount');
+  assert.strictEqual(yearDifference.excelValue, 'twenty');
+  assert.strictEqual(yearDifference.metadataValue, 2020);
+  assert.strictEqual(yearDifference.sourceInvalid, true);
+  assert.strictEqual(pageDifference.excelValue, 'many');
+  assert.strictEqual(pageDifference.metadataValue, 123);
+  assert.strictEqual(pageDifference.sourceInvalid, true);
+
   const preserveExcel = await analyzeBookImportRows([{ Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Uitgever: 'Excel P' }], {
     lookupIsbn: async () => ({ title: 'Excel titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Metadata P', found: true }),
   });

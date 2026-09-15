@@ -122,6 +122,19 @@ function applyContext(mapped, row, options) {
   if (markers.ownBook.length) {
     row.context.ownBook = true;
     row.context.excludeFromSchoolCollection = true;
+    if (studentLoan) row.context.studentLoan = { status: 'conflicting', name: studentLoan };
+    if (classLoan) row.context.classLoan = { status: 'conflicting', name: classLoan };
+    if (markers.fixedLocation.length) {
+      row.context.fixedLocation = { status: 'conflicting', label: '', source: 'semantic_marker' };
+    }
+    if (studentLoan || classLoan || markers.fixedLocation.length) {
+      addIssue(row, 'own_book_context_conflict', 'conflict', {
+        studentLoan: studentLoan || '',
+        classLoan: classLoan || '',
+        ownBookMarkers: markers.ownBook,
+        fixedLocationMarkers: markers.fixedLocation,
+      });
+    }
     addIssue(row, 'own_book_excluded', 'info', { markers: markers.ownBook });
     return;
   }

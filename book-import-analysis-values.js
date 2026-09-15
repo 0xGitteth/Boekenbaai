@@ -42,21 +42,42 @@ function jsonSafeIdentifier(value) {
   return null;
 }
 
+function parseBoundedDecimalInteger(value, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  let numeric;
+  if (typeof value === 'number') {
+    numeric = value;
+  } else if (typeof value === 'bigint') {
+    if (value < BigInt(min) || value > BigInt(max)) return null;
+    numeric = Number(value);
+  } else if (typeof value === 'string') {
+    const text = value.normalize('NFKC').trim();
+    if (!/^\d+$/.test(text)) return null;
+    numeric = Number(text);
+  } else {
+    return null;
+  }
+  if (!Number.isSafeInteger(numeric) || numeric < min || numeric > max) return null;
+  return numeric;
+}
+
 function parseQuantity(value) {
   if (isBlankCellValue(value)) return { value: 1, valid: true, supplied: false };
-  if (!['string', 'number', 'bigint'].includes(typeof value)) return { value: 1, valid: false, supplied: true };
-  const text = valueText(value);
-  if (!text) return { value: 1, valid: false, supplied: true };
-  const numeric = Number(text.replace(',', '.'));
-  if (!Number.isInteger(numeric) || numeric < 0 || numeric > 1000) return { value: 1, valid: false, supplied: true };
+  const numeric = parseBoundedDecimalInteger(value, { min: 0, max: 1000 });
+  if (numeric === null) return { value: 1, valid: false, supplied: true };
   return { value: numeric, valid: true, supplied: true };
 }
 
 function normalizeYear(value) {
   if (isBlankCellValue(value)) return null;
-  const text = valueText(value);
-  const numeric = Number(text);
-  if (Number.isInteger(numeric) && numeric >= 1000 && numeric <= 3000) return numeric;
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    return parseBoundedDecimalInteger(value, { min: 1000, max: 3000 });
+  }
+  if (typeof value !== 'string') return null;
+  const text = value.normalize('NFC').trim();
+  if (/^\d{4}$/.test(text)) {
+    const year = Number(text);
+    return year >= 1000 && year <= 3000 ? year : null;
+  }
   const match = text.match(/(?:^|\D)(\d{4})(?:\D|$)/);
   if (!match) return null;
   const year = Number(match[1]);
@@ -65,8 +86,7 @@ function normalizeYear(value) {
 
 function normalizePageCount(value) {
   if (isBlankCellValue(value)) return null;
-  const numeric = Number(valueText(value));
-  return Number.isInteger(numeric) && numeric > 0 && numeric <= 100000 ? numeric : null;
+  return parseBoundedDecimalInteger(value, { min: 1, max: 100000 });
 }
 
 function normalizeLanguage(value) {
@@ -97,6 +117,16 @@ function parseExamMaterial(value) {
   if (raw === 'strip') return { suitableForExamList: false, languageHint: '', formatHint: 'comic', warning: '' };
   if (raw === 'engels' || raw === 'english') return { suitableForExamList: false, languageHint: 'en', formatHint: '', warning: '' };
   return { suitableForExamList: false, languageHint: '', formatHint: '', warning: 'unexpected_exam_material_value' };
+}
+
+function normalizeRuntimeBarcode(value) {
+  if (value == null) return '';
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+  const hasTrailingX = /x$/i.test(trimmed);
+  const digitsOnly = trimmed.replace(/[^0-9]/g, '');
+  if (!digitsOnly && !hasTrailingX) return '';
+  return hasTrailingX ? `${digitsOnly}X` : digitsOnly;
 }
 
 function isbn13CheckDigit(firstTwelve) {
@@ -166,6 +196,7 @@ module.exports = {
   normalizeLanguage,
   parseEasyReading,
   parseExamMaterial,
+  normalizeRuntimeBarcode,
   looksLikeIsbnCandidate,
   analyzeIdentifier,
 };
