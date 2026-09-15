@@ -12,6 +12,7 @@ const {
   hasOwnAccessor,
   cloneJsonSafeOwnData,
 } = require('./book-edition-utils');
+const { isValidIsbnRegistrantRange } = require('./book-edition-isbn-ranges');
 
 const OFFICIAL_ISBN_FIELDS = Object.freeze(['editionIsbn', 'isbn13']);
 const ISBN_CANDIDATE_FIELDS = Object.freeze(['editionIsbn', 'metadataIsbn', 'isbn13']);
@@ -42,10 +43,12 @@ function normalizeOfficialIsbnInput(value) {
   const joined = parts.join('');
   if (joined.length === 13) {
     if (parts.length !== 5 || !/^(?:978|979)$/.test(parts[0]) || !/^\d$/.test(parts[4])) return '';
+    if (!isValidIsbnRegistrantRange(parts[0], parts[1], parts[2])) return '';
     return normalizedSeparators;
   }
   if (joined.length === 10) {
     if (parts.length !== 4 || !/^[0-9Xx]$/.test(parts[3])) return '';
+    if (!isValidIsbnRegistrantRange('978', parts[0], parts[1])) return '';
     return normalizedSeparators;
   }
   return '';
