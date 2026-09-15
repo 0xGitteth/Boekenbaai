@@ -111,6 +111,14 @@ function normalizeIdentifierFields(mapped, row, book) {
     if (analysis.suggestion) addIssue(row, 'isbn_repair_suggested', 'warning', { field, suggestion: analysis.suggestion });
   }
 
+  for (const [field, sourceValue, analysis] of [
+    ['isbn', f.isbn, explicit],
+    ['metadataIsbn', f.metadataIsbn, legacy],
+  ]) {
+    if (isBlankCellValue(sourceValue) || analysis.canonical || analysis.repair || analysis.suggestion || analysis.unsupportedType) continue;
+    addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field, raw: valueText(sourceValue) });
+  }
+
   let barcode = blocked.has('barcode') ? '' : valueText(f.barcode);
   let ambiguousAsBarcode = false;
   if (!barcode && !isBlankCellValue(f.ambiguousIdentifier) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')) {
@@ -134,12 +142,9 @@ function normalizeIdentifierFields(mapped, row, book) {
     });
   }
 
-  if (!editionIsbn && !distinct.length) {
-    const hadIdentifier = !isBlankCellValue(f.isbn) || !isBlankCellValue(f.metadataIsbn)
-      || (!isBlankCellValue(f.ambiguousIdentifier) && !ambiguousAsBarcode);
-    const hasSuggestion = explicit.suggestion || legacy.suggestion || ambiguous.suggestion;
-    const unsupported = explicit.unsupportedType || legacy.unsupportedType || ambiguous.unsupportedType;
-    if (hadIdentifier && !hasSuggestion && !unsupported) addIssue(row, 'invalid_or_unrecognized_isbn', 'warning');
+  if (!editionIsbn && !distinct.length && !ambiguousAsBarcode && !isBlankCellValue(f.ambiguousIdentifier)
+    && !ambiguous.suggestion && !ambiguous.unsupportedType) {
+    addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field: 'ambiguousIdentifier', raw: valueText(f.ambiguousIdentifier) });
   }
 
   book.editionIsbn = editionIsbn;
@@ -159,10 +164,15 @@ function applySourceCollisions(mapped, row) {
 }
 
 function provenanceForBook(mapped, book, identifierAnalysis) {
+  const editionSource = [
+    ['isbn', identifierAnalysis.explicit],
+    ['metadataIsbn', identifierAnalysis.legacy],
+    ['ambiguousIdentifier', identifierAnalysis.ambiguous],
+  ].find(([, analysis]) => analysis.canonical && analysis.canonical === book.editionIsbn);
   const provenance = {
     title: fieldSource(mapped, 'title'),
     author: fieldSource(mapped, 'author'),
-    editionIsbn: fieldSource(mapped, 'isbn'),
+    editionIsbn: editionSource ? fieldSource(mapped, editionSource[0]) : { source: 'unknown' },
     barcode: fieldSource(mapped, 'barcode'),
     metadataIsbn: fieldSource(mapped, 'metadataIsbn'),
     description: fieldSource(mapped, 'description'),
@@ -182,7 +192,6 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
       .filter((entry) => !isBlankCellValue(entry.value)).map((entry) => entry.header);
     if (sourceHeaders.length) provenance.author = { source: 'excel', headers: sourceHeaders, derived: 'combined_name_parts' };
   }
-  if (provenance.editionIsbn.source === 'unknown' && identifierAnalysis.ambiguous.canonical) provenance.editionIsbn = fieldSource(mapped, 'ambiguousIdentifier');
   if (provenance.language.source === 'unknown' && book.language && fieldSource(mapped, 'examMaterial').source === 'excel') {
     provenance.language = { ...fieldSource(mapped, 'examMaterial'), derived: 'exam_material_language_hint' };
   }

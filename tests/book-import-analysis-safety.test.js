@@ -43,13 +43,16 @@ module.exports = async function runSafetyTests() {
   assert.strictEqual(bigId.rows[0].context.studentLoan.id, '12345678901234567890');
   assert.doesNotThrow(() => JSON.stringify(bigId));
 
+  const workbookRow = { Titel: 'Werkboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(workbookRow, '__rowNum__', { value: 5, enumerable: false });
   const fakeXlsx = {
     read() { return { SheetNames: ['Boeken'], Sheets: { Boeken: { fake: true } } }; },
-    utils: { sheet_to_json() { return [{ Titel: 'Werkboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }]; } },
+    utils: { sheet_to_json() { return [workbookRow]; } },
   };
   const workbook = await analyzeBookImportWorkbook(fakeXlsx, Buffer.from('fake'));
   assert.strictEqual(workbook.ok, true);
   assert.strictEqual(workbook.workbook.sheetName, 'Boeken');
+  assert.strictEqual(workbook.rows[0].sourceRowNumber, 6);
   const tooMany = readBookImportWorkbook({
     read() { return { SheetNames: ['B'], Sheets: { B: {} } }; },
     utils: { sheet_to_json() { return new Array(3).fill({ Titel: 'x' }); } },

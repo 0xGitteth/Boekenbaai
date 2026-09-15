@@ -42,19 +42,31 @@ function matchEntityByName(value, entities) {
   return { status: 'unmatched', matches: [] };
 }
 
+function collectSemanticMarkers(fields) {
+  const ownBook = [];
+  const fixedLocation = [];
+  for (const [field, value] of Object.entries(fields || {})) {
+    for (const token of splitMultiValue(value)) {
+      const comparable = comparableText(token);
+      if (OWN_BOOK_MARKERS.has(comparable)) ownBook.push({ field, value: token });
+      if (FIXED_LOCATION_MARKERS.has(comparable)) fixedLocation.push({ field, value: token });
+    }
+  }
+  return { ownBook, fixedLocation };
+}
+
 function applyContext(mapped, row, options) {
   const f = mapped.fields;
   const classTokens = splitMultiValue(f.classes);
-  const presenceTokens = splitMultiValue(f.libraryPresence);
   const studentLoan = valueText(f.studentLoan);
   const classLoan = valueText(f.classLoan);
   const studentMarker = comparableText(studentLoan);
+  const markers = collectSemanticMarkers(f);
 
-  const markerTokens = [...classTokens, ...presenceTokens].map((token) => comparableText(token));
-  if (OWN_BOOK_MARKERS.has(studentMarker) || markerTokens.some((token) => OWN_BOOK_MARKERS.has(token))) {
+  if (markers.ownBook.length) {
     row.context.ownBook = true;
     row.context.excludeFromSchoolCollection = true;
-    addIssue(row, 'own_book_excluded', 'info');
+    addIssue(row, 'own_book_excluded', 'info', { markers: markers.ownBook });
     return;
   }
 
@@ -67,17 +79,14 @@ function applyContext(mapped, row, options) {
     addIssue(row, 'class_context_needs_review', 'warning', { values: ordinaryClassTokens });
   }
 
-  const fixedStudentMarker = FIXED_LOCATION_MARKERS.has(studentMarker);
-  const fixedOtherMarker = markerTokens.some((token) => FIXED_LOCATION_MARKERS.has(token));
-  const hasFixedMarker = fixedStudentMarker || fixedOtherMarker;
-  if (hasFixedMarker) {
+  if (markers.fixedLocation.length) {
     row.context.fixedLocation = {
       status: 'needs_review',
       label: classLoan || (ordinaryClassTokens.length === 1 ? ordinaryClassTokens[0] : ''),
-      source: 'excel_marker',
+      source: 'semantic_marker',
     };
     addIssue(row, 'fixed_location_needs_review', 'warning', {
-      marker: fixedStudentMarker ? studentLoan : 'fixed_location_marker',
+      markers: markers.fixedLocation,
       classContext: ordinaryClassTokens,
       classLoanValue: classLoan || '',
     });
@@ -91,8 +100,8 @@ function applyContext(mapped, row, options) {
     addIssue(row, 'ml_structuurbb_fixed_location', 'info');
   }
 
-  if (classLoan && hasRealStudentLoan) addIssue(row, 'multiple_loan_contexts', 'conflict');
-  if (classLoan && !classLoanIsFixedMlLocation && !hasFixedMarker) {
+  if (classLoan && hasRealStudentLoan && !markers.fixedLocation.length) addIssue(row, 'multiple_loan_contexts', 'conflict');
+  if (classLoan && !classLoanIsFixedMlLocation && !markers.fixedLocation.length) {
     const match = matchEntityByName(classLoan, options.classes);
     if (match.status === 'matched') row.context.classLoan = { status: 'matched', ...match.matches[0] };
     else {

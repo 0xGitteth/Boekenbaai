@@ -38,6 +38,8 @@ module.exports = async function runCoreTests() {
     { Titel: 'Eigen boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT },
     { Titel: 'Vast', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'vast in de klas', Klassen: '2A' },
     { Titel: 'Klascontext', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT, Klassen: 'Ond BKT', 'Geleend door klas': 'Arbeid' },
+    { Titel: 'Globaal eigen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Klassen: 'eigen boek' },
+    { Titel: 'Globaal vast', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT, 'Aanwezig bieb': 'Klassenboek' },
   ], { classes: [{ id: 'c1', name: 'Arbeid' }] });
   assert.strictEqual(semantics.rows[0].status, 'skipped');
   assert.strictEqual(semantics.rows[0].context.excludeFromSchoolCollection, true);
@@ -47,6 +49,10 @@ module.exports = async function runCoreTests() {
   assert.deepStrictEqual(semantics.rows[3].context.classContext, ['Ond BKT']);
   assert.strictEqual(semantics.rows[3].context.classLoan.status, 'matched');
   assert.ok(codes(semantics.rows[3]).has('class_context_needs_review'));
+  assert.strictEqual(semantics.rows[4].status, 'skipped');
+  assert.strictEqual(semantics.rows[4].context.excludeFromSchoolCollection, true);
+  assert.strictEqual(semantics.rows[5].context.fixedLocation.status, 'needs_review');
+  assert.ok(codes(semantics.rows[5]).has('fixed_location_needs_review'));
 
   const flags = await analyzeBookImportRows([
     { Titel: 'Strip', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Examenmateriaal: 'Strip' },
@@ -77,6 +83,16 @@ module.exports = async function runCoreTests() {
   const equivalentResult = await analyzeBookImportRows([equivalent]);
   assert.strictEqual(equivalentResult.rows[0].book.editionIsbn, ISBN);
   assert.ok(!codes(equivalentResult.rows[0]).has('conflicting_source_columns'));
+
+  const fallback = await analyzeBookImportRows([{
+    Titel: 'Fallback', Auteur: 'A Auteur', 'ISBN-nummer': 'bad', 'Intern ISBN': ISBN,
+  }]);
+  assert.strictEqual(fallback.rows[0].book.editionIsbn, ISBN);
+  assert.ok(codes(fallback.rows[0]).has('invalid_or_unrecognized_isbn'));
+  const invalidIssue = fallback.rows[0].issues.find((issue) => issue.code === 'invalid_or_unrecognized_isbn');
+  assert.strictEqual(invalidIssue.field, 'isbn');
+  assert.strictEqual(fallback.rows[0].provenance.editionIsbn.header, 'Intern ISBN');
+  assert.strictEqual(fallback.rows[0].provenance.editionIsbn.raw, ISBN);
 
   const conflicting = { Titel: 'Conflict', Auteur: 'A Auteur' };
   Object.defineProperty(conflicting, 'ISBN-nummer', { value: ISBN, enumerable: true });

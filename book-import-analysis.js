@@ -111,7 +111,7 @@ async function analyzeBookImportRows(rows, options = {}) {
     const mapped = mappedRows[index];
     const row = {
       index,
-      sourceRowNumber: index + 2,
+      sourceRowNumber: Number.isInteger(mapped.worksheetRowNumber) ? mapped.worksheetRowNumber + 1 : index + 2,
       status: 'unresolved',
       book: {},
       context: {},
