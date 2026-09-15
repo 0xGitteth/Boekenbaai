@@ -26,6 +26,19 @@ const {
 } = require('./book-import-analysis-metadata');
 
 const IDENTIFIER_SOURCE_FIELDS = new Set(['isbn', 'metadataIsbn', 'ambiguousIdentifier']);
+const EDITION_IDENTITY_SOURCE_FIELDS = new Set([
+  'title', 'author', 'authorFirst', 'authorLast',
+  'isbn', 'metadataIsbn', 'ambiguousIdentifier',
+]);
+const EDITION_IDENTITY_CONFLICT_CODES = new Set([
+  'author_sources_differ',
+  'conflicting_edition_isbns',
+  'conflicting_isbn_repair_suggestions',
+  'metadata_title_conflict',
+  'metadata_isbn_differs',
+  'metadata_isbn_conflicts_with_repair_suggestion',
+  'ambiguous_metadata_editions',
+]);
 
 function finalizeRowStatus(row) {
   if (row.context.excludeFromSchoolCollection) {
@@ -61,6 +74,15 @@ function hasBlockingIdentifierConflict(row) {
   return row.issues.some((issue) => (
     issue.code === 'conflicting_edition_isbns'
     || (issue.code === 'conflicting_source_columns' && IDENTIFIER_SOURCE_FIELDS.has(issue.field))
+  ));
+}
+
+function isSafeEditionGroupRow(row) {
+  if (!row?.book?.title || JUNK_ONLY_TOKENS.has(comparableText(row.book.title))) return false;
+  if (!row.book.author || !row.book.editionIsbn) return false;
+  return !row.issues.some((issue) => issue.severity === 'conflict' && (
+    EDITION_IDENTITY_CONFLICT_CODES.has(issue.code)
+    || (issue.code === 'conflicting_source_columns' && EDITION_IDENTITY_SOURCE_FIELDS.has(issue.field))
   ));
 }
 
@@ -243,10 +265,7 @@ async function analyzeBookImportRows(rows, options = {}) {
   }
 
   markDuplicateBarcodes(analyzedRows, stagedPhysicalRowIndexes);
-  const groupableCopies = editionCopies.filter((copy) => {
-    const status = analyzedRows[copy.__importRowIndex]?.status;
-    return status === 'ready' || status === 'warning';
-  });
+  const groupableCopies = editionCopies.filter((copy) => isSafeEditionGroupRow(analyzedRows[copy.__importRowIndex]));
 
   let grouped = { groups: [], conflicts: [] };
   try {

@@ -78,6 +78,24 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(conflictedDuplicateResult.rows[1].status, 'conflict');
   assert.ok(!issueCodes(conflictedDuplicateResult.rows[1]).has('duplicate_physical_barcode'));
 
+  const duplicateBarcodeSafeGrouping = await analyzeBookImportRows([
+    { Titel: 'Zelfde editie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '77777' },
+    { Titel: 'Zelfde editie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '77777' },
+  ]);
+  assert.strictEqual(duplicateBarcodeSafeGrouping.rows[0].status, 'conflict');
+  assert.strictEqual(duplicateBarcodeSafeGrouping.rows[1].status, 'conflict');
+  assert.ok(issueCodes(duplicateBarcodeSafeGrouping.rows[0]).has('duplicate_physical_barcode'));
+  assert.ok(issueCodes(duplicateBarcodeSafeGrouping.rows[1]).has('duplicate_physical_barcode'));
+  assert.strictEqual(duplicateBarcodeSafeGrouping.groups.length, 1, 'Physical barcode conflicts must not erase safe edition identity');
+  assert.strictEqual(duplicateBarcodeSafeGrouping.groups[0].copies.length, 2);
+
+  const loanConflictSafeGrouping = await analyzeBookImportRows([{
+    Titel: 'Leenconflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Geleend door klas': 'Onbekende klas',
+  }]);
+  assert.strictEqual(loanConflictSafeGrouping.rows[0].status, 'conflict');
+  assert.ok(issueCodes(loanConflictSafeGrouping.rows[0]).has('class_loan_unmatched'));
+  assert.strictEqual(loanConflictSafeGrouping.groups.length, 1, 'Loan-context conflicts must stay separate from edition identity');
+
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
   }], {
