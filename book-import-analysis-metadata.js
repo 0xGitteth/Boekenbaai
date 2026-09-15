@@ -57,12 +57,14 @@ function metadataEditionIsbn(payload) {
   return '';
 }
 
-function firstPresent(payload, keys) {
+function firstNormalized(payload, keys, normalizer) {
   for (const key of keys) {
     const value = getOwnDataValue(payload, key);
-    if (value !== null && value !== undefined && value !== '') return value;
+    if (value === null || value === undefined || value === '') continue;
+    const normalized = normalizer(value);
+    if (normalized !== null && normalized !== undefined && normalized !== '') return normalized;
   }
-  return undefined;
+  return null;
 }
 
 function normalizeMetadataCandidate(result) {
@@ -73,8 +75,8 @@ function normalizeMetadataCandidate(result) {
   const authors = metadataAuthors(payload);
   const title = normalizeBookIdentityText(getOwnDataValue(payload, 'title'));
   const publisher = normalizeBookIdentityText(getOwnDataValue(payload, 'publisher'));
-  const publishedYear = normalizeYear(firstPresent(payload, ['publishedYear', 'year', 'publishedAt']));
-  const pageCount = normalizePageCount(firstPresent(payload, ['pageCount', 'pages']));
+  const publishedYear = firstNormalized(payload, ['publishedYear', 'year', 'publishedAt'], normalizeYear);
+  const pageCount = firstNormalized(payload, ['pageCount', 'pages'], normalizePageCount);
   const language = normalizeLanguage(getOwnDataValue(payload, 'language'));
   const coverUrl = normalizeBookIdentityText(getOwnDataValue(payload, 'coverUrl'));
   const description = normalizeBookIdentityText(getOwnDataValue(payload, 'description'));
@@ -348,6 +350,9 @@ async function resolveMetadata(row, options) {
         metadataIsbn: selection.candidate.editionIsbn,
       });
       return;
+    }
+    if (!selection.candidate.editionIsbn) {
+      addIssue(row, 'title_author_metadata_missing_edition_isbn', 'warning', { source: selection.candidate.source || null });
     }
     applyMetadataCandidate(row, selection.candidate, { allowIsbnResolution: true });
     if (row.book.editionIsbn) await enrichExactIsbn();

@@ -16,6 +16,7 @@ const {
   normalizeLanguage,
   parseEasyReading,
   parseExamMaterial,
+  normalizeRuntimeBarcode,
   looksLikeIsbnCandidate,
   analyzeIdentifier,
   valueText,
@@ -154,14 +155,27 @@ function normalizeIdentifierFields(mapped, row, book) {
     addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field, raw: valueText(sourceValue) });
   }
 
-  let barcode = blocked.has('barcode') ? '' : valueText(f.barcode);
+  let barcode = '';
+  if (!blocked.has('barcode')) {
+    const rawBarcode = valueText(f.barcode);
+    if (rawBarcode) {
+      barcode = normalizeRuntimeBarcode(rawBarcode);
+      if (!barcode) addIssue(row, 'invalid_physical_barcode', 'conflict', { field: 'barcode', raw: rawBarcode });
+    }
+  }
   let ambiguousAsBarcode = false;
   const ambiguousLikelyIsbn = looksLikeIsbnCandidate(f.ambiguousIdentifier);
   if (!barcode && !isBlankCellValue(f.ambiguousIdentifier) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')
     && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
-    barcode = valueText(f.ambiguousIdentifier);
-    ambiguousAsBarcode = true;
-    addIssue(row, 'ambiguous_identifier_interpreted_as_barcode', 'warning');
+    const rawAmbiguousBarcode = valueText(f.ambiguousIdentifier);
+    const normalizedAmbiguousBarcode = normalizeRuntimeBarcode(rawAmbiguousBarcode);
+    if (normalizedAmbiguousBarcode) {
+      barcode = normalizedAmbiguousBarcode;
+      ambiguousAsBarcode = true;
+      addIssue(row, 'ambiguous_identifier_interpreted_as_barcode', 'warning');
+    } else {
+      addIssue(row, 'invalid_physical_barcode', 'conflict', { field: 'ambiguousIdentifier', raw: rawAmbiguousBarcode });
+    }
   } else if (ambiguous.canonical && !blocked.has('ambiguousIdentifier')) {
     addIssue(row, 'ambiguous_identifier_interpreted_as_isbn', 'warning');
   }

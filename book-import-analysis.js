@@ -50,8 +50,10 @@ function sourceSuggestedIsbns(row) {
 
 function flagConflictingRepairSuggestions(row) {
   const suggestedIsbns = sourceSuggestedIsbns(row);
-  if (suggestedIsbns.length <= 1) return false;
-  addIssue(row, 'conflicting_isbn_repair_suggestions', 'conflict', { suggestedIsbns });
+  const resolvedIsbn = row?.book?.editionIsbn || '';
+  const evidenceIsbns = new Set([resolvedIsbn, ...suggestedIsbns].filter(Boolean));
+  if (evidenceIsbns.size <= 1) return false;
+  addIssue(row, 'conflicting_isbn_repair_suggestions', 'conflict', { suggestedIsbns, resolvedIsbn });
   return true;
 }
 
@@ -216,7 +218,7 @@ async function analyzeBookImportRows(rows, options = {}) {
         row.status = 'conflict';
       } else {
         totalCopies += requestedCopies;
-        if (row.book.editionIsbn && !hasBlockingIdentifierConflict(row)) {
+        if (row.book.editionIsbn && !hasConflictingRepairSuggestions && !hasBlockingIdentifierConflict(row)) {
           for (let copyIndex = 0; copyIndex < requestedCopies; copyIndex += 1) {
             editionCopies.push({
               title: row.book.title,

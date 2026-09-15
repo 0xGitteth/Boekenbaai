@@ -30,6 +30,18 @@ module.exports = async function runFinalReviewTests() {
   assert.ok(suggestionConflict);
   assert.deepStrictEqual(suggestionConflict.suggestedIsbns, [ISBN, ISBN_ALT].sort());
 
+  const resolvedSuggestionConflict = await analyzeBookImportRows([{
+    Titel: 'Bronbewijs conflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Intern ISBN': '978043955493',
+  }]);
+  const resolvedSuggestionRow = resolvedSuggestionConflict.rows[0];
+  assert.strictEqual(resolvedSuggestionRow.status, 'conflict');
+  assert.strictEqual(resolvedSuggestionRow.book.editionIsbn, ISBN);
+  assert.strictEqual(resolvedSuggestionConflict.groups.length, 0, 'Contradictory repair evidence must block grouping even when one valid ISBN is present');
+  const resolvedSuggestionIssue = resolvedSuggestionRow.issues.find((issue) => issue.code === 'conflicting_isbn_repair_suggestions');
+  assert.ok(resolvedSuggestionIssue);
+  assert.strictEqual(resolvedSuggestionIssue.resolvedIsbn, ISBN);
+  assert.deepStrictEqual(resolvedSuggestionIssue.suggestedIsbns, [ISBN_ALT]);
+
   let identityConflictLookups = 0;
   const identityConflictRow = { Titel: 'Bronconflict', Auteur: 'A Auteur' };
   Object.defineProperty(identityConflictRow, 'ISBN-nummer', { value: ISBN, enumerable: true });
@@ -44,6 +56,13 @@ module.exports = async function runFinalReviewTests() {
   assert.strictEqual(identityConflict.rows[0].book.editionIsbn, '');
   assert.strictEqual(identityConflictLookups, 0, 'Conflicting identifier source columns must not be resolved by work-level metadata');
   assert.strictEqual(identityConflict.groups.length, 0, 'Rows with unresolved identifier-source conflicts must not enter edition groups');
+
+  const invalidBarcode = await analyzeBookImportRows([{
+    Titel: 'Barcode conflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: 'ABC',
+  }]);
+  assert.strictEqual(invalidBarcode.rows[0].status, 'conflict');
+  assert.strictEqual(invalidBarcode.rows[0].book.barcode, '');
+  assert.ok(issueCodes(invalidBarcode.rows[0]).has('invalid_physical_barcode'));
 
   const quantityConflict = { Titel: 'Aantal conflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(quantityConflict, 'Aantal', { value: 2, enumerable: true });
@@ -105,6 +124,19 @@ module.exports = async function runFinalReviewTests() {
   assert.deepStrictEqual(multiAuthorMetadata.rows[0].book.authors, ['Alice', 'Bob']);
   assert.ok(issueCodes(multiAuthorMetadata.rows[0]).has('isbn_resolved_from_metadata'));
 
+  const identifierlessTitleLookup = await analyzeBookImportRows([{
+    Titel: 'Zonder editie', Auteur: 'A Auteur',
+  }], {
+    lookupTitleAuthor: async () => ({
+      title: 'Zonder editie', author: 'A Auteur', publisher: 'Bron uitgever', found: true, source: 'metadata-only',
+    }),
+  });
+  assert.strictEqual(identifierlessTitleLookup.rows[0].status, 'unresolved');
+  assert.strictEqual(identifierlessTitleLookup.rows[0].book.editionIsbn, '');
+  assert.strictEqual(identifierlessTitleLookup.rows[0].book.publisher, 'Bron uitgever');
+  assert.ok(issueCodes(identifierlessTitleLookup.rows[0]).has('title_author_metadata_missing_edition_isbn'));
+  assert.strictEqual(identifierlessTitleLookup.groups.length, 0);
+
   const publishedAt = await analyzeBookImportRows([{
     Titel: 'Datumboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
   }], {
@@ -114,6 +146,27 @@ module.exports = async function runFinalReviewTests() {
   });
   assert.strictEqual(publishedAt.rows[0].book.publishedYear, 2019);
   assert.strictEqual(publishedAt.rows[0].provenance.publishedYear.detail, 'openlibrary');
+
+  const metadataAliasFallback = await analyzeBookImportRows([{
+    Titel: 'Aliasboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Aliasboek', author: 'A Auteur', barcode: ISBN,
+      publishedYear: 'unknown', publishedAt: '2019-10-02', pageCount: 'many', pages: 321,
+      found: true, source: 'alias-fallback',
+    }),
+  });
+  assert.strictEqual(metadataAliasFallback.rows[0].book.publishedYear, 2019);
+  assert.strictEqual(metadataAliasFallback.rows[0].book.pageCount, 321);
+  assert.strictEqual(metadataAliasFallback.rows[0].provenance.publishedYear.detail, 'alias-fallback');
+  assert.strictEqual(metadataAliasFallback.rows[0].provenance.pageCount.detail, 'alias-fallback');
+
+  const libraryPresence = await analyzeBookImportRows([{
+    Titel: 'Niet aanwezig', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Aanwezig bieb': 'Nee',
+  }]);
+  assert.deepStrictEqual(libraryPresence.rows[0].context.libraryPresence, { status: 'needs_review', value: 'Nee' });
+  assert.ok(issueCodes(libraryPresence.rows[0]).has('library_presence_needs_review'));
+  assert.strictEqual(libraryPresence.rows[0].status, 'warning');
 
   const stripTag = await analyzeBookImportRows([{
     Titel: 'Stripboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Examenmateriaal: 'Strip',

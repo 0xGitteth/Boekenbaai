@@ -117,6 +117,7 @@ function applyContext(mapped, row, options) {
   const classTokens = splitMultiValue(f.classes);
   const studentLoan = valueText(f.studentLoan);
   const classLoan = valueText(f.classLoan);
+  const libraryPresence = valueText(f.libraryPresence);
   const markers = collectSemanticMarkers(mapped);
 
   if (markers.ownBook.length) {
@@ -137,6 +138,11 @@ function applyContext(mapped, row, options) {
     }
     addIssue(row, 'own_book_excluded', 'info', { markers: markers.ownBook });
     return;
+  }
+
+  if (libraryPresence) {
+    row.context.libraryPresence = { status: 'needs_review', value: libraryPresence };
+    addIssue(row, 'library_presence_needs_review', 'warning', { value: libraryPresence });
   }
 
   if (classTokens.length) {
