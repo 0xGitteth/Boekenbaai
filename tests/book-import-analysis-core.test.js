@@ -43,7 +43,8 @@ module.exports = async function runCoreTests() {
   ], { classes: [{ id: 'c1', name: 'Arbeid' }] });
   assert.strictEqual(semantics.rows[0].status, 'skipped');
   assert.strictEqual(semantics.rows[0].context.excludeFromSchoolCollection, true);
-  assert.notStrictEqual(semantics.rows[1].status, 'skipped');
+  assert.strictEqual(semantics.rows[1].status, 'skipped');
+  assert.strictEqual(semantics.rows[1].context.excludeFromSchoolCollection, true);
   assert.strictEqual(semantics.rows[2].context.fixedLocation.status, 'needs_review');
   assert.ok(codes(semantics.rows[2]).has('fixed_location_needs_review'));
   assert.deepStrictEqual(semantics.rows[3].context.classContext, ['Ond BKT']);
