@@ -45,4 +45,12 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(exactWithNoise.rows[0].book.publisher, 'Exact uitgever');
   assert.ok(!issueCodes(exactWithNoise.rows[0]).has('ambiguous_isbn_lookup_results'));
   assert.ok(!issueCodes(exactWithNoise.rows[0]).has('metadata_title_conflict'));
+
+  const literalMarkerTitle = await analyzeBookImportRows([{
+    Titel: 'Eigen boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(literalMarkerTitle.rows[0].book.title, 'Eigen boek');
+  assert.notStrictEqual(literalMarkerTitle.rows[0].context.excludeFromSchoolCollection, true);
+  assert.ok(!issueCodes(literalMarkerTitle.rows[0]).has('own_book_excluded'));
+  assert.strictEqual(literalMarkerTitle.groups.length, 1);
 };
