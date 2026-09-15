@@ -160,25 +160,38 @@ function ownDataValue(source, key) {
   return descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value') ? descriptor.value : undefined;
 }
 
-function worksheetRangeRowCount(XLSX, rangeValue) {
+function worksheetRangeInfo(XLSX, rangeValue) {
   if (typeof rangeValue !== 'string' || !rangeValue.trim()) return null;
   if (XLSX?.utils && typeof XLSX.utils.decode_range === 'function') {
     try {
       const decoded = XLSX.utils.decode_range(rangeValue);
       if (decoded && Number.isInteger(decoded?.s?.r) && Number.isInteger(decoded?.e?.r) && decoded.e.r >= decoded.s.r) {
-        return decoded.e.r - decoded.s.r + 1;
+        return {
+          startRow: decoded.s.r + 1,
+          endRow: decoded.e.r + 1,
+          rowCount: decoded.e.r - decoded.s.r + 1,
+        };
       }
     } catch {
       // Fall through to the conservative text parser.
     }
   }
-  const match = rangeValue.match(/(?:^|:)[A-Za-z]+(\d+)$/);
-  if (!match) return null;
-  const endRow = Number(match[1]);
+  const endMatch = rangeValue.match(/(?:^|:)\$?[A-Za-z]+\$?(\d+)$/);
   const startMatch = rangeValue.match(/^\$?[A-Za-z]+\$?(\d+)(?::|$)/);
-  const startRow = startMatch ? Number(startMatch[1]) : 1;
-  if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(endRow) || endRow < startRow) return null;
-  return endRow - startRow + 1;
+  if (!endMatch || !startMatch) return null;
+  const startRow = Number(startMatch[1]);
+  const endRow = Number(endMatch[1]);
+  if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(endRow) || startRow < 1 || endRow < startRow) return null;
+  return { startRow, endRow, rowCount: endRow - startRow + 1 };
+}
+
+function firstSheet(workbook) {
+  const sheetName = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames[0] : '';
+  const sheets = workbook && workbook.Sheets && typeof workbook.Sheets === 'object' ? workbook.Sheets : null;
+  let sheetDescriptor = null;
+  try { sheetDescriptor = sheets ? Object.getOwnPropertyDescriptor(sheets, sheetName) : null; } catch { sheetDescriptor = null; }
+  if (!sheetName || !sheetDescriptor || !Object.prototype.hasOwnProperty.call(sheetDescriptor, 'value') || !sheetDescriptor.value) return null;
+  return { sheetName, sheet: sheetDescriptor.value };
 }
 
 function readBookImportWorkbook(XLSX, input, options = {}) {
@@ -188,31 +201,40 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
   const maxBytes = Number.isInteger(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 25 * 1024 * 1024;
   if (buffer.length > maxBytes) return { ok: false, error: 'file_too_large', byteLength: buffer.length, maxBytes };
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : 20000;
-  const sheetRows = Math.min(maxRows + 2, Number.MAX_SAFE_INTEGER);
+  const initialSheetRows = Math.min(maxRows + 2, Number.MAX_SAFE_INTEGER);
 
   let workbook;
   try {
-    workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows });
+    workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows: initialSheetRows });
   } catch {
     return { ok: false, error: 'invalid_workbook' };
   }
-  const sheetName = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames[0] : '';
-  const sheets = workbook && workbook.Sheets && typeof workbook.Sheets === 'object' ? workbook.Sheets : null;
-  let sheetDescriptor = null;
-  try { sheetDescriptor = sheets ? Object.getOwnPropertyDescriptor(sheets, sheetName) : null; } catch { sheetDescriptor = null; }
-  if (!sheetName || !sheetDescriptor || !Object.prototype.hasOwnProperty.call(sheetDescriptor, 'value') || !sheetDescriptor.value) return { ok: false, error: 'missing_sheet' };
+  let resolvedSheet = firstSheet(workbook);
+  if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
 
-  const sheet = sheetDescriptor.value;
-  const originalRange = ownDataValue(sheet, '!fullref');
-  const originalRangeRows = worksheetRangeRowCount(XLSX, originalRange);
-  if (Number.isInteger(originalRangeRows) && originalRangeRows > maxRows + 1) {
-    return { ok: false, error: 'too_many_rows', sheetName, worksheetRows: originalRangeRows, maxRows };
+  let rangeInfo = worksheetRangeInfo(XLSX, ownDataValue(resolvedSheet.sheet, '!fullref'));
+  if (rangeInfo && rangeInfo.rowCount > maxRows + 1) {
+    return { ok: false, error: 'too_many_rows', sheetName: resolvedSheet.sheetName, worksheetRows: rangeInfo.rowCount, maxRows };
+  }
+
+  if (rangeInfo && rangeInfo.endRow > initialSheetRows && rangeInfo.rowCount <= maxRows + 1) {
+    try {
+      workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows: rangeInfo.endRow });
+    } catch {
+      return { ok: false, error: 'invalid_workbook' };
+    }
+    resolvedSheet = firstSheet(workbook);
+    if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
+    rangeInfo = worksheetRangeInfo(XLSX, ownDataValue(resolvedSheet.sheet, '!fullref')) || rangeInfo;
+    if (rangeInfo && rangeInfo.rowCount > maxRows + 1) {
+      return { ok: false, error: 'too_many_rows', sheetName: resolvedSheet.sheetName, worksheetRows: rangeInfo.rowCount, maxRows };
+    }
   }
 
   let rows;
-  try { rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true }); } catch { return { ok: false, error: 'invalid_sheet' }; }
-  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: 'empty_sheet', sheetName };
-  if (rows.length > maxRows) return { ok: false, error: 'too_many_rows', sheetName, rowCount: rows.length, maxRows };
+  try { rows = XLSX.utils.sheet_to_json(resolvedSheet.sheet, { defval: '', raw: true }); } catch { return { ok: false, error: 'invalid_sheet' }; }
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: 'empty_sheet', sheetName: resolvedSheet.sheetName };
+  if (rows.length > maxRows) return { ok: false, error: 'too_many_rows', sheetName: resolvedSheet.sheetName, rowCount: rows.length, maxRows };
 
   const headers = [];
   const seen = new Set();
@@ -223,7 +245,7 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
       headers.push(header);
     }
   }
-  return { ok: true, sheetName, headers, rows };
+  return { ok: true, sheetName: resolvedSheet.sheetName, headers, rows };
 }
 
 module.exports = {

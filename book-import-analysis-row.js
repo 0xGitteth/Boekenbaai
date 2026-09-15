@@ -231,12 +231,20 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
       .filter((entry) => !isBlankCellValue(stripSemanticMarkers(entry.value))).map((entry) => entry.header);
     if (sourceHeaders.length) provenance.author = { source: 'excel', headers: sourceHeaders, derived: 'combined_name_parts' };
   }
-  if (provenance.language.source === 'unknown' && book.language && fieldSource(mapped, 'examMaterial').source === 'excel') {
-    provenance.language = { ...fieldSource(mapped, 'examMaterial'), derived: 'exam_material_language_hint' };
+  const examSource = fieldSource(mapped, 'examMaterial');
+  if (provenance.language.source === 'unknown' && book.language && examSource.source === 'excel') {
+    provenance.language = { ...examSource, derived: 'exam_material_language_hint' };
   }
   provenance.formatHint = book.formatHint
-    ? { ...fieldSource(mapped, 'examMaterial'), derived: 'exam_material_format_hint' }
+    ? { ...examSource, derived: 'exam_material_format_hint' }
     : { source: 'unknown' };
+  if (book.formatHint === 'comic' && book.tags.some((tag) => comparableText(tag) === 'strip') && examSource.source === 'excel') {
+    if (provenance.tags.source === 'unknown') {
+      provenance.tags = { source: 'derived', detail: 'exam_material_strip_tag', header: examSource.header, raw: examSource.raw };
+    } else {
+      provenance.tags = { ...provenance.tags, includesDerivedValues: true, derived: 'exam_material_strip_tag' };
+    }
+  }
   if (book.barcode && provenance.barcode.source === 'unknown' && !identifierAnalysis.ambiguous.canonical) provenance.barcode = fieldSource(mapped, 'ambiguousIdentifier');
   return provenance;
 }

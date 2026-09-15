@@ -111,13 +111,18 @@ function markDuplicateBarcodes(analyzedRows) {
   }
 }
 
+function conflictSourceRowIndexes(copies, conflict) {
+  const sourceRows = new Set();
+  for (const copyIndex of conflict?.inputIndexes || []) {
+    const sourceRowIndex = copies[copyIndex]?.__importRowIndex;
+    if (Number.isInteger(sourceRowIndex)) sourceRows.add(sourceRowIndex);
+  }
+  return Array.from(sourceRows).sort((left, right) => left - right);
+}
+
 function applyEditionConflicts(analyzedRows, copies, conflicts) {
   for (const conflict of conflicts || []) {
-    const sourceRows = new Set();
-    for (const copyIndex of conflict.inputIndexes || []) {
-      const sourceRowIndex = copies[copyIndex]?.__importRowIndex;
-      if (Number.isInteger(sourceRowIndex)) sourceRows.add(sourceRowIndex);
-    }
+    const sourceRows = conflictSourceRowIndexes(copies, conflict);
     for (const sourceRowIndex of sourceRows) {
       const row = analyzedRows[sourceRowIndex];
       if (!row) continue;
@@ -128,6 +133,13 @@ function applyEditionConflicts(analyzedRows, copies, conflicts) {
       row.status = 'conflict';
     }
   }
+}
+
+function exposeEditionConflicts(copies, conflicts) {
+  return (conflicts || []).map((conflict) => ({
+    ...conflict,
+    inputIndexes: conflictSourceRowIndexes(copies, conflict),
+  }));
 }
 
 async function analyzeBookImportRows(rows, options = {}) {
@@ -241,6 +253,7 @@ async function analyzeBookImportRows(rows, options = {}) {
   }
 
   applyEditionConflicts(analyzedRows, editionCopies, grouped.conflicts);
+  const exposedConflicts = exposeEditionConflicts(editionCopies, grouped.conflicts);
   for (const group of grouped.groups) {
     for (const copy of group.copies || []) {
       delete copy.__importRowIndex;
@@ -257,14 +270,14 @@ async function analyzeBookImportRows(rows, options = {}) {
       sourceRows: analyzedRows.length,
       physicalCopies: totalCopies,
       editionGroups: grouped.groups.length,
-      editionConflicts: grouped.conflicts.length,
+      editionConflicts: exposedConflicts.length,
       repairs: repairCount,
       ...counts,
     },
     columns: collectColumnSummary(mappedRows),
     rows: analyzedRows,
     groups: grouped.groups,
-    conflicts: grouped.conflicts,
+    conflicts: exposedConflicts,
   };
 }
 

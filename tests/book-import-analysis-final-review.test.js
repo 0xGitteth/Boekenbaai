@@ -115,6 +115,28 @@ module.exports = async function runFinalReviewTests() {
   assert.strictEqual(publishedAt.rows[0].book.publishedYear, 2019);
   assert.strictEqual(publishedAt.rows[0].provenance.publishedYear.detail, 'openlibrary');
 
+  const stripTag = await analyzeBookImportRows([{
+    Titel: 'Stripboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Examenmateriaal: 'Strip',
+  }]);
+  const stripRow = stripTag.rows[0];
+  assert.ok(stripRow.book.tags.includes('strip'));
+  assert.strictEqual(stripRow.provenance.tags.source, 'derived');
+  assert.strictEqual(stripRow.provenance.tags.detail, 'exam_material_strip_tag');
+  assert.strictEqual(stripRow.provenance.tags.header, 'Examenmateriaal');
+  assert.strictEqual(stripRow.provenance.tags.raw, 'Strip');
+
+  const groupedConflict = await analyzeBookImportRows([
+    { Titel: 'Titel A', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Aantal: 2 },
+    { Titel: 'Titel B', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Aantal: 1 },
+  ]);
+  assert.strictEqual(groupedConflict.summary.physicalCopies, 3);
+  assert.strictEqual(groupedConflict.conflicts.length, 1);
+  assert.strictEqual(groupedConflict.conflicts[0].type, 'same_isbn_different_title');
+  assert.deepStrictEqual(groupedConflict.conflicts[0].inputIndexes, [0, 1]);
+  assert.ok(groupedConflict.conflicts[0].inputIndexes.every((index) => index < groupedConflict.rows.length));
+  assert.strictEqual(groupedConflict.rows[0].status, 'conflict');
+  assert.strictEqual(groupedConflict.rows[1].status, 'conflict');
+
   const rows = [['Titel', 'Auteur', 'ISBN-nummer']];
   for (let index = 0; index < 100; index += 1) rows.push([`Boek ${index}`, 'A Auteur', ISBN]);
   const sheet = XLSX.utils.aoa_to_sheet(rows);
@@ -137,4 +159,18 @@ module.exports = async function runFinalReviewTests() {
   assert.strictEqual(limited.ok, false);
   assert.strictEqual(limited.error, 'too_many_rows');
   assert.strictEqual(sheetToJsonCalled, false, 'Real SheetJS row limiting should reject oversized sheets before JSON materialization');
+
+  const leadingBlankSheet = {};
+  XLSX.utils.sheet_add_aoa(leadingBlankSheet, [
+    ['Titel', 'Auteur', 'ISBN-nummer'],
+    ['Boek A', 'A Auteur', ISBN],
+    ['Boek B', 'B Auteur', ISBN_ALT],
+  ], { origin: 'A3' });
+  const leadingBlankWorkbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(leadingBlankWorkbook, leadingBlankSheet, 'Boeken');
+  const leadingBlankBuffer = XLSX.write(leadingBlankWorkbook, { type: 'buffer', bookType: 'xlsx' });
+  const leadingBlankResult = readBookImportWorkbook(XLSX, leadingBlankBuffer, { maxRows: 2 });
+  assert.strictEqual(leadingBlankResult.ok, true, 'Leading blank worksheet rows must not cause valid tail rows to be truncated');
+  assert.strictEqual(leadingBlankResult.rows.length, 2);
+  assert.deepStrictEqual(leadingBlankResult.rows.map((row) => row.Titel), ['Boek A', 'Boek B']);
 };
