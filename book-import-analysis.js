@@ -39,6 +39,20 @@ function finalizeRowStatus(row) {
   return 'ready';
 }
 
+function sourceSuggestedIsbns(row) {
+  const analyses = row?.identifierAnalysis
+    ? [row.identifierAnalysis.explicit, row.identifierAnalysis.legacy, row.identifierAnalysis.ambiguous]
+    : [];
+  return Array.from(new Set(analyses.map((analysis) => analysis?.suggestion?.canonical).filter(Boolean))).sort();
+}
+
+function flagConflictingRepairSuggestions(row) {
+  const suggestedIsbns = sourceSuggestedIsbns(row);
+  if (suggestedIsbns.length <= 1) return false;
+  addIssue(row, 'conflicting_isbn_repair_suggestions', 'conflict', { suggestedIsbns });
+  return true;
+}
+
 function isClearJunkRow(mapped) {
   if (mapped.ignoredDangerousHeaders.length) return false;
   const values = [];
@@ -163,7 +177,8 @@ async function analyzeBookImportRows(rows, options = {}) {
     else if (JUNK_ONLY_TOKENS.has(comparableText(row.book.title))) addIssue(row, 'junk_title', 'warning');
     if (!row.book.author) addIssue(row, 'missing_author', 'warning');
 
-    await resolveMetadata(row, options);
+    const hasConflictingRepairSuggestions = flagConflictingRepairSuggestions(row);
+    if (!hasConflictingRepairSuggestions) await resolveMetadata(row, options);
 
     if (!row.book.title) addIssue(row, 'missing_title_after_metadata', 'warning');
     if (!row.book.author) addIssue(row, 'missing_author_after_metadata', 'warning');
