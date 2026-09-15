@@ -23,12 +23,12 @@ const {
 } = require('./book-import-analysis-values');
 const {
   getDataFields,
-  stripSemanticMarkers,
+  contextFieldValue,
 } = require('./book-import-analysis-context');
 
 function fieldSource(mapped, field, fallback = 'unknown') {
   const candidates = mapped.sources[field] || [];
-  const first = candidates.find((entry) => !isBlankCellValue(stripSemanticMarkers(entry.value)));
+  const first = candidates.find((entry) => !isBlankCellValue(contextFieldValue(field, entry.value)));
   if (!first) return { source: fallback };
   return { source: 'excel', header: first.header, raw: first.value };
 }
@@ -38,7 +38,7 @@ function collisionDataCandidates(collision) {
   const result = [];
   const seen = new Set();
   for (const entry of collision.candidates) {
-    const value = stripSemanticMarkers(entry.value);
+    const value = contextFieldValue(collision.field, entry.value);
     if (isBlankCellValue(value)) continue;
     const key = comparableText(value);
     if (seen.has(key)) continue;
@@ -242,7 +242,7 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   };
   if (provenance.author.source === 'unknown' && book.author) {
     const sourceHeaders = [...(mapped.sources.authorFirst || []), ...(mapped.sources.authorLast || [])]
-      .filter((entry) => !isBlankCellValue(stripSemanticMarkers(entry.value))).map((entry) => entry.header);
+      .filter((entry) => !isBlankCellValue(contextFieldValue('authorFirst', entry.value))).map((entry) => entry.header);
     if (sourceHeaders.length) provenance.author = { source: 'excel', headers: sourceHeaders, derived: 'combined_name_parts' };
   }
   const examSource = fieldSource(mapped, 'examMaterial');
