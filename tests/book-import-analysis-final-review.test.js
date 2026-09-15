@@ -166,6 +166,7 @@ module.exports = async function runFinalReviewTests() {
     ['Boek A', 'A Auteur', ISBN],
     ['Boek B', 'B Auteur', ISBN_ALT],
   ], { origin: 'A3' });
+  leadingBlankSheet['!ref'] = 'A3:C5';
   const leadingBlankWorkbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(leadingBlankWorkbook, leadingBlankSheet, 'Boeken');
   const leadingBlankBuffer = XLSX.write(leadingBlankWorkbook, { type: 'buffer', bookType: 'xlsx' });
