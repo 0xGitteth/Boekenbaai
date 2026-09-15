@@ -197,6 +197,7 @@ module.exports = {
   markerKind,
   stripSemanticMarkers,
   isPureSemanticMarker,
+  contextFieldValue,
   collectSemanticMarkers,
   getDataFields,
   matchEntityByName,
