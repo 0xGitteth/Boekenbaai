@@ -88,8 +88,11 @@ function normalizeBookFields(mapped, row) {
 
   const title = blocked.has('title') ? '' : normalizeBookIdentityText(f.title);
   const author = createAuthorDisplay(authors);
-  const quantity = parseQuantity(f.quantity);
-  if (!quantity.valid) addIssue(row, 'invalid_quantity', 'conflict', { raw: fieldSource(mapped, 'quantity').raw ?? null });
+  const quantityBlocked = blocked.has('quantity');
+  const quantity = quantityBlocked
+    ? { value: 1, valid: false, supplied: true, blockedByConflict: true }
+    : parseQuantity(f.quantity);
+  if (!quantity.valid && !quantityBlocked) addIssue(row, 'invalid_quantity', 'conflict', { raw: fieldSource(mapped, 'quantity').raw ?? null });
 
   const exam = parseExamMaterial(f.examMaterial);
   if (exam.warning) addIssue(row, exam.warning, 'warning', { raw: fieldSource(mapped, 'examMaterial').raw ?? null });
@@ -199,6 +202,7 @@ function applySourceCollisions(mapped, row) {
 }
 
 function provenanceForBook(mapped, book, identifierAnalysis) {
+  const blocked = blockingCollisionFields(mapped);
   const editionSource = [
     ['isbn', identifierAnalysis.explicit],
     ['metadataIsbn', identifierAnalysis.legacy],
@@ -206,7 +210,7 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   ].find(([, analysis]) => analysis.canonical && analysis.canonical === book.editionIsbn);
   const provenance = {
     title: fieldSource(mapped, 'title'),
-    author: fieldSource(mapped, 'author'),
+    author: blocked.has('author') ? { source: 'unknown' } : fieldSource(mapped, 'author'),
     editionIsbn: editionSource ? fieldSource(mapped, editionSource[0]) : { source: 'unknown' },
     barcode: fieldSource(mapped, 'barcode'),
     metadataIsbn: fieldSource(mapped, 'metadataIsbn'),

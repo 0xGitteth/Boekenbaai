@@ -31,7 +31,16 @@ function metadataPayloadFromResult(result) {
 }
 
 function metadataAuthors(payload) {
-  return normalizeAuthorList(getOwnDataValue(payload, 'authors'), getOwnDataValue(payload, 'author'));
+  const rawAuthors = getOwnDataValue(payload, 'authors');
+  const rawAuthor = normalizeBookIdentityText(getOwnDataValue(payload, 'author'));
+  if (Array.isArray(rawAuthors) && rawAuthors.length) return normalizeAuthorList(rawAuthors, rawAuthor);
+  if (!rawAuthor) return [];
+  const displayParts = rawAuthor
+    .split(/[;\n\r]+|\s+&\s+|\s*,\s*/)
+    .map((entry) => normalizeBookIdentityText(entry))
+    .filter(Boolean);
+  if (displayParts.length > 1) return normalizeAuthorList(displayParts, rawAuthor);
+  return normalizeAuthorList(undefined, rawAuthor);
 }
 
 function metadataEditionIsbn(payload) {
@@ -40,6 +49,7 @@ function metadataEditionIsbn(payload) {
     getOwnDataValue(payload, 'isbn13'),
     getOwnDataValue(payload, 'isbn'),
     getOwnDataValue(payload, 'metadataIsbn'),
+    getOwnDataValue(payload, 'barcode'),
   ]) {
     const canonical = canonicalizeBookIsbn13(candidate);
     if (canonical) return canonical;
@@ -56,12 +66,14 @@ function firstPresent(payload, keys) {
 }
 
 function normalizeMetadataCandidate(result) {
+  const wrapper = ownObject(result);
+  const wrapperSource = normalizeBookIdentityText(getOwnDataValue(wrapper, 'source'));
   const payload = metadataPayloadFromResult(result);
   if (!payload) return null;
   const authors = metadataAuthors(payload);
   const title = normalizeBookIdentityText(getOwnDataValue(payload, 'title'));
   const publisher = normalizeBookIdentityText(getOwnDataValue(payload, 'publisher'));
-  const publishedYear = normalizeYear(firstPresent(payload, ['publishedYear', 'year']));
+  const publishedYear = normalizeYear(firstPresent(payload, ['publishedYear', 'year', 'publishedAt']));
   const pageCount = normalizePageCount(firstPresent(payload, ['pageCount', 'pages']));
   const language = normalizeLanguage(getOwnDataValue(payload, 'language'));
   const coverUrl = normalizeBookIdentityText(getOwnDataValue(payload, 'coverUrl'));
@@ -70,7 +82,7 @@ function normalizeMetadataCandidate(result) {
   const rawThemes = getOwnDataValue(payload, 'themes');
   const tags = splitTagValue(Array.isArray(rawTags) ? rawTags.join(';') : rawTags);
   const themes = splitTagValue(Array.isArray(rawThemes) ? rawThemes.join(';') : rawThemes);
-  const source = normalizeBookIdentityText(getOwnDataValue(payload, 'source'));
+  const source = normalizeBookIdentityText(getOwnDataValue(payload, 'source')) || wrapperSource;
   const editionIsbn = metadataEditionIsbn(payload);
   if (!title && !authors.length && !publisher && !publishedYear && !pageCount && !language && !coverUrl
     && !description && !tags.length && !themes.length && !editionIsbn) return null;
