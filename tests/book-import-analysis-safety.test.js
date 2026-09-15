@@ -79,14 +79,14 @@ module.exports = async function runSafetyTests() {
   assert.strictEqual(junk.summary.physicalCopies, 0);
 
   let skippedLookupCalls = 0;
-  const ownBook = await analyzeBookImportRows([{ Titel: 'Boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'eigen boek' }], {
+  const ownBook = await analyzeBookImportRows([{ Titel: 'Boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'eigen boek' }], {
     lookupIsbn: async () => { skippedLookupCalls += 1; return null; },
   });
   assert.strictEqual(ownBook.rows[0].status, 'skipped');
   assert.strictEqual(skippedLookupCalls, 0);
 
   const ownBookWithBadSource = await analyzeBookImportRows([{
-    Titel: 'Privé bronfout', Auteur: 'A Auteur', 'ISBN-nummer': 'bad', Notitie: 'eigen boek',
+    Titel: 'Privé bronfout', Auteur: 'A Auteur', 'ISBN-nummer': 'bad', 'naam leerling': 'eigen boek',
   }]);
   assert.strictEqual(ownBookWithBadSource.rows[0].context.excludeFromSchoolCollection, true);
   assert.strictEqual(ownBookWithBadSource.rows[0].status, 'skipped');
@@ -104,7 +104,7 @@ module.exports = async function runSafetyTests() {
   assert.strictEqual(conflictingOwnBookResult.rows[0].context.studentLoan.name, 'Sam Test');
 
   const ownAndFixed = await analyzeBookImportRows([{
-    Titel: 'Dubbele betekenis', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT, Notitie: 'eigen boek; Klassenboek',
+    Titel: 'Dubbele betekenis', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT, 'naam leerling': 'eigen boek; Klassenboek',
   }]);
   assert.strictEqual(ownAndFixed.rows[0].context.excludeFromSchoolCollection, true);
   assert.strictEqual(ownAndFixed.rows[0].context.fixedLocation.status, 'conflicting');
