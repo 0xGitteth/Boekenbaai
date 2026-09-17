@@ -268,7 +268,7 @@ function invalidSuppliedScalar(row, field) {
   return provenance;
 }
 
-function setMetadataField(row, field, value, candidate) {
+function setMetadataField(row, field, value, candidate, { replaceExistingMetadata = false } = {}) {
   if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return;
   const current = row.book[field];
   const invalidSource = invalidSuppliedScalar(row, field);
@@ -291,6 +291,11 @@ function setMetadataField(row, field, value, candidate) {
     row.provenance.tags = { source: 'metadata', detail: candidate.source || null, includesDerivedValues: Boolean(current?.length) };
     return;
   }
+  if (replaceExistingMetadata && row.provenance?.[field]?.source === 'metadata') {
+    row.book[field] = Array.isArray(value) ? [...value] : value;
+    row.provenance[field] = { source: 'metadata', detail: candidate.source || null };
+    return;
+  }
   if (currentEmpty) {
     row.book[field] = Array.isArray(value) ? [...value] : value;
     row.provenance[field] = { source: 'metadata', detail: candidate.source || null };
@@ -301,7 +306,7 @@ function setMetadataField(row, field, value, candidate) {
   if (!same) addIssue(row, 'metadata_differs_from_excel', 'warning', { field, excelValue: current, metadataValue: value });
 }
 
-function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } = {}) {
+function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false, exactEditionMetadata = false } = {}) {
   if (!candidate) return;
   if (allowIsbnResolution && !row.book.editionIsbn && candidate.editionIsbn) {
     row.book.editionIsbn = candidate.editionIsbn;
@@ -310,22 +315,31 @@ function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } 
   } else if (row.book.editionIsbn && candidate.editionIsbn && row.book.editionIsbn !== candidate.editionIsbn) {
     addIssue(row, 'metadata_isbn_differs', 'conflict', { excelIsbn: row.book.editionIsbn, metadataIsbn: candidate.editionIsbn });
   }
-  setMetadataField(row, 'title', candidate.title, candidate);
+  const setField = (field, value) => setMetadataField(row, field, value, candidate, {
+    replaceExistingMetadata: exactEditionMetadata,
+  });
+  setField('title', candidate.title);
   if (!row.book.author && candidate.author) {
     row.book.author = candidate.author;
     row.book.authors = [...candidate.authors];
     row.provenance.author = { source: 'metadata', detail: candidate.source || null };
   } else if (candidate.author && comparableText(row.book.author) !== comparableText(candidate.author)) {
-    addIssue(row, 'metadata_differs_from_excel', 'warning', { field: 'author', excelValue: row.book.author, metadataValue: candidate.author });
+    if (exactEditionMetadata && row.provenance.author?.source === 'metadata') {
+      row.book.author = candidate.author;
+      row.book.authors = [...candidate.authors];
+      row.provenance.author = { source: 'metadata', detail: candidate.source || null };
+    } else {
+      addIssue(row, 'metadata_differs_from_excel', 'warning', { field: 'author', excelValue: row.book.author, metadataValue: candidate.author });
+    }
   }
-  setMetadataField(row, 'publisher', candidate.publisher, candidate);
-  setMetadataField(row, 'publishedYear', candidate.publishedYear, candidate);
-  setMetadataField(row, 'pageCount', candidate.pageCount, candidate);
-  setMetadataField(row, 'language', candidate.language, candidate);
-  setMetadataField(row, 'coverUrl', candidate.coverUrl, candidate);
-  setMetadataField(row, 'description', candidate.description, candidate);
-  setMetadataField(row, 'tags', candidate.tags, candidate);
-  setMetadataField(row, 'themes', candidate.themes, candidate);
+  setField('publisher', candidate.publisher);
+  setField('publishedYear', candidate.publishedYear);
+  setField('pageCount', candidate.pageCount);
+  setField('language', candidate.language);
+  setField('coverUrl', candidate.coverUrl);
+  setField('description', candidate.description);
+  setField('tags', candidate.tags);
+  setField('themes', candidate.themes);
 }
 
 async function resolveMetadata(row, options) {
@@ -336,14 +350,14 @@ async function resolveMetadata(row, options) {
     || !Array.isArray(row.book.tags) || !row.book.tags.length
     || !Array.isArray(row.book.themes) || !row.book.themes.length;
 
-  const enrichExactIsbn = async () => {
-    if (!lookupIsbn || !row.book.editionIsbn || !hasMissingMetadata()) return;
+  const enrichExactIsbn = async ({ force = false } = {}) => {
+    if (!lookupIsbn || !row.book.editionIsbn || (!force && !hasMissingMetadata())) return;
     try {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
       const candidates = metadataCandidatesFromResult(result);
       const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book);
       if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
-      else if (selection.candidate) applyMetadataCandidate(row, selection.candidate);
+      else if (selection.candidate) applyMetadataCandidate(row, selection.candidate, { exactEditionMetadata: true });
       else if (candidates.length) addIssue(row, 'metadata_not_usable', 'warning');
     } catch {
       addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'isbn' });
@@ -380,7 +394,7 @@ async function resolveMetadata(row, options) {
       addIssue(row, 'title_author_metadata_missing_edition_isbn', 'warning', { source: selection.candidate.source || null });
     }
     applyMetadataCandidate(row, selection.candidate, { allowIsbnResolution: true });
-    if (row.book.editionIsbn) await enrichExactIsbn();
+    if (row.book.editionIsbn) await enrichExactIsbn({ force: true });
   } catch {
     addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'title_author' });
   }
