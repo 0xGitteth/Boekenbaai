@@ -122,7 +122,6 @@ function markDuplicateBarcodes(analyzedRows, stagedPhysicalRowIndexes) {
   const barcodeRows = new Map();
   for (const row of analyzedRows) {
     if (!stagedPhysicalRowIndexes.has(row.index)) continue;
-    if (row.status !== 'ready' && row.status !== 'warning') continue;
     if (!row.book.barcode || row.context.excludeFromSchoolCollection || row.context.skipReason === 'junk') continue;
     if (!row.book.quantity?.valid || row.book.quantity.value !== 1) continue;
     const key = normalizeRuntimeBarcode(row.book.barcode);
