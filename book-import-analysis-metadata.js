@@ -271,6 +271,7 @@ function invalidSuppliedScalar(row, field) {
 function setMetadataField(row, field, value, candidate) {
   if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return;
   const current = row.book[field];
+  const currentProvenance = row.provenance?.[field];
   const invalidSource = invalidSuppliedScalar(row, field);
   if (invalidSource) {
     addIssue(row, 'metadata_differs_from_excel', 'warning', {
@@ -291,7 +292,7 @@ function setMetadataField(row, field, value, candidate) {
     row.provenance.tags = { source: 'metadata', detail: candidate.source || null, includesDerivedValues: Boolean(current?.length) };
     return;
   }
-  if (currentEmpty) {
+  if (currentEmpty || currentProvenance?.source === 'metadata') {
     row.book[field] = Array.isArray(value) ? [...value] : value;
     row.provenance[field] = { source: 'metadata', detail: candidate.source || null };
     return;

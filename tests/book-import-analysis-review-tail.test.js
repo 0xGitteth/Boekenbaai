@@ -96,6 +96,22 @@ module.exports = async function runReviewTailTests() {
   assert.ok(issueCodes(loanConflictSafeGrouping.rows[0]).has('class_loan_unmatched'));
   assert.strictEqual(loanConflictSafeGrouping.groups.length, 1, 'Loan-context conflicts must stay separate from edition identity');
 
+  const equivalentBarcodeColumns = { Titel: 'Barcode-equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentBarcodeColumns, 'Barcode', { value: '123-456', enumerable: true });
+  Object.defineProperty(equivalentBarcodeColumns, 'Barcode_1', { value: '123456', enumerable: true });
+  const equivalentBarcodeResult = await analyzeBookImportRows([equivalentBarcodeColumns]);
+  assert.strictEqual(equivalentBarcodeResult.rows[0].book.barcode, '123456');
+  assert.ok(!issueCodes(equivalentBarcodeResult.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(equivalentBarcodeResult.groups.length, 1);
+
+  const placeholderAuthorProvenance = await analyzeBookImportRows([{
+    Titel: 'Placeholder auteur', Auteur: 'nvt', 'Voornaam schrijver': 'Carry', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(placeholderAuthorProvenance.rows[0].book.author, 'Carry Slee');
+  assert.strictEqual(placeholderAuthorProvenance.rows[0].provenance.author.source, 'excel');
+  assert.strictEqual(placeholderAuthorProvenance.rows[0].provenance.author.derived, 'combined_name_parts');
+  assert.deepStrictEqual(placeholderAuthorProvenance.rows[0].provenance.author.headers, ['Voornaam schrijver', 'Achternaam schrijver']);
+
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
   }], {
@@ -137,6 +153,45 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(contradictoryExactCandidates.rows[0].book.publisher, '');
   assert.strictEqual(contradictoryExactCandidates.groups.length, 0);
 
+  const mismatchedExactIsbn = await analyzeBookImportRows([{
+    Titel: 'Verkeerde editie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Verkeerde editie', author: 'A Auteur', barcode: ISBN_ALT, found: true, source: 'mismatch',
+    }),
+  });
+  assert.strictEqual(mismatchedExactIsbn.rows[0].status, 'conflict');
+  assert.ok(issueCodes(mismatchedExactIsbn.rows[0]).has('ambiguous_isbn_lookup_results'));
+  assert.strictEqual(mismatchedExactIsbn.groups.length, 0, 'Mismatched exact-ISBN evidence must block safe edition grouping');
+
+  const unsupportedWithFallback = await analyzeBookImportRows([{
+    Titel: 'Unsupported bron', Auteur: 'A Auteur', 'ISBN-nummer': true, 'Intern ISBN': ISBN,
+  }]);
+  assert.strictEqual(unsupportedWithFallback.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(unsupportedWithFallback.rows[0].status, 'conflict');
+  assert.ok(issueCodes(unsupportedWithFallback.rows[0]).has('unsupported_identifier_type'));
+  assert.strictEqual(unsupportedWithFallback.groups.length, 0, 'Unsupported identifier evidence must block safe edition grouping');
+
+  let exactLookupCalls = 0;
+  const metadataReconciliation = await analyzeBookImportRows([{
+    Titel: 'Metadata reconcile', Auteur: 'A Auteur',
+  }], {
+    lookupTitleAuthor: async () => ({
+      title: 'Metadata reconcile', author: 'A Auteur', barcode: ISBN, publisher: 'Work-level', found: true, source: 'work-level',
+    }),
+    lookupIsbn: async () => {
+      exactLookupCalls += 1;
+      return {
+        title: 'Metadata reconcile', author: 'A Auteur', barcode: ISBN, publisher: 'Exact-edition', found: true, source: 'exact-edition',
+      };
+    },
+  });
+  assert.strictEqual(exactLookupCalls, 1);
+  assert.strictEqual(metadataReconciliation.rows[0].book.publisher, 'Exact-edition');
+  assert.strictEqual(metadataReconciliation.rows[0].provenance.publisher.source, 'metadata');
+  assert.strictEqual(metadataReconciliation.rows[0].provenance.publisher.detail, 'exact-edition');
+  assert.ok(!metadataReconciliation.rows[0].issues.some((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'publisher'));
+
   let decodedBase64 = false;
   const originalBufferFrom = Buffer.from;
   Buffer.from = function monitoredBufferFrom(value, encoding, ...rest) {
@@ -155,4 +210,11 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(encodedLimitResult.ok, false);
   assert.strictEqual(encodedLimitResult.error, 'file_too_large');
   assert.strictEqual(decodedBase64, false, 'Oversized base64 must be rejected before allocating the decoded Buffer');
+
+  const whitespaceBase64 = readBookImportWorkbook({
+    read: () => { throw new Error('decoded input reached parser'); },
+    utils: { sheet_to_json: () => [] },
+  }, 'AAAA\n \tAAAA', { maxBytes: 6 });
+  assert.strictEqual(whitespaceBase64.ok, false);
+  assert.strictEqual(whitespaceBase64.error, 'invalid_workbook', 'Internal base64 whitespace must not inflate the pre-decode size estimate');
 };
