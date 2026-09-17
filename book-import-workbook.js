@@ -101,17 +101,29 @@ function valuesEquivalent(left, right) {
   return a === b;
 }
 
+function duplicateBaseHeader(entries, header) {
+  const match = String(header).match(/^(.*)_\d+$/);
+  if (!match || !match[1]) return '';
+  const base = normalizeImportHeader(match[1]);
+  return entries.some(([candidate]) => String(candidate) !== String(header) && normalizeImportHeader(candidate) === base)
+    ? match[1]
+    : '';
+}
+
 function mapImportRow(row) {
   const fields = Object.create(null);
   const sources = Object.create(null);
   const unknown = [];
   const ignoredDangerousHeaders = [];
+  const entries = safeRowEntries(row);
 
-  for (const [header, value] of safeRowEntries(row)) {
-    const rawHeader = String(header).trim().toLowerCase();
-    const deduplicatedRawHeader = String(header).replace(/_\d+$/, '').trim().toLowerCase();
+  for (const [header, value] of entries) {
+    const rawHeaderText = String(header);
+    const rawHeader = rawHeaderText.trim().toLowerCase();
+    const potentialDeduplicatedHeader = rawHeaderText.replace(/_\d+$/, '');
+    const deduplicatedRawHeader = potentialDeduplicatedHeader.trim().toLowerCase();
     const normalizedHeader = normalizeImportHeader(header);
-    const deduplicatedNormalizedHeader = normalizeImportHeader(String(header).replace(/_\d+$/, ''));
+    const deduplicatedNormalizedHeader = normalizeImportHeader(potentialDeduplicatedHeader);
     const headerKey = importHeaderKey(header);
     if (DANGEROUS_KEYS.has(rawHeader) || DANGEROUS_KEYS.has(deduplicatedRawHeader)
       || DANGEROUS_KEYS.has(normalizedHeader) || DANGEROUS_KEYS.has(deduplicatedNormalizedHeader)
@@ -119,8 +131,9 @@ function mapImportRow(row) {
       ignoredDangerousHeaders.push(header);
       continue;
     }
-    const deduplicatedHeaderKey = importHeaderKey(String(header).replace(/_\d+$/, ''));
-    const field = HEADER_FIELD_MAP.get(headerKey) || HEADER_FIELD_MAP.get(deduplicatedHeaderKey);
+    const actualDuplicateBase = duplicateBaseHeader(entries, header);
+    const deduplicatedHeaderKey = actualDuplicateBase ? importHeaderKey(actualDuplicateBase) : '';
+    const field = HEADER_FIELD_MAP.get(headerKey) || (deduplicatedHeaderKey ? HEADER_FIELD_MAP.get(deduplicatedHeaderKey) : undefined);
     if (!field) {
       unknown.push({ header, value: jsonSafeCellValue(value) });
       continue;
