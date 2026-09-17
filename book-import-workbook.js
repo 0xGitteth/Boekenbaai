@@ -158,13 +158,19 @@ function base64PayloadInfo(input) {
   let start = 0;
   const prefix = /^data:[^,]{0,4096};base64,/i.exec(input);
   if (prefix) start = prefix[0].length;
-  let end = input.length;
-  while (start < end && /\s/.test(input[start])) start += 1;
-  while (end > start && /\s/.test(input[end - 1])) end -= 1;
-  const encodedLength = end - start;
+  let encodedLength = 0;
+  let lastSignificant = '';
+  let previousSignificant = '';
+  for (let index = start; index < input.length; index += 1) {
+    const character = input[index];
+    if (/\s/.test(character)) continue;
+    encodedLength += 1;
+    previousSignificant = lastSignificant;
+    lastSignificant = character;
+  }
   let padding = 0;
-  if (encodedLength > 0 && input[end - 1] === '=') padding += 1;
-  if (encodedLength > 1 && input[end - 2] === '=') padding += 1;
+  if (lastSignificant === '=') padding += 1;
+  if (previousSignificant === '=') padding += 1;
   const estimatedDecodedLength = Math.max(0, Math.floor((encodedLength * 3) / 4) - padding);
   return { encodedLength, estimatedDecodedLength };
 }
