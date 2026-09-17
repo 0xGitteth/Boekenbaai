@@ -51,6 +51,10 @@ function collisionDataCandidates(collision) {
 function collisionIsSemanticallyEquivalent(collision) {
   const candidates = collisionDataCandidates(collision);
   if (candidates.length < 2) return true;
+  if (collision.field === 'barcode') {
+    const normalized = candidates.map((entry) => normalizeRuntimeBarcode(entry.value));
+    return normalized.every(Boolean) && new Set(normalized).size === 1;
+  }
   if (!['isbn', 'metadataIsbn', 'ambiguousIdentifier'].includes(collision.field)) return false;
   const canonical = candidates.map((entry) => analyzeIdentifier(entry.value).canonical).filter(Boolean);
   return canonical.length === candidates.length && new Set(canonical).size === 1;
@@ -217,6 +221,8 @@ function applySourceCollisions(mapped, row) {
 
 function provenanceForBook(mapped, book, identifierAnalysis) {
   const blocked = blockingCollisionFields(mapped);
+  const dataFields = getDataFields(mapped);
+  const directAuthors = blocked.has('author') ? [] : normalizeDirectAuthors(dataFields.author);
   const editionSource = [
     ['isbn', identifierAnalysis.explicit],
     ['metadataIsbn', identifierAnalysis.legacy],
@@ -224,7 +230,7 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   ].find(([, analysis]) => analysis.canonical && analysis.canonical === book.editionIsbn);
   const provenance = {
     title: fieldSource(mapped, 'title'),
-    author: blocked.has('author') ? { source: 'unknown' } : fieldSource(mapped, 'author'),
+    author: directAuthors.length ? fieldSource(mapped, 'author') : { source: 'unknown' },
     editionIsbn: editionSource ? fieldSource(mapped, editionSource[0]) : { source: 'unknown' },
     barcode: fieldSource(mapped, 'barcode'),
     metadataIsbn: fieldSource(mapped, 'metadataIsbn'),
