@@ -38,6 +38,8 @@ const EDITION_IDENTITY_CONFLICT_CODES = new Set([
   'metadata_isbn_differs',
   'metadata_isbn_conflicts_with_repair_suggestion',
   'ambiguous_metadata_editions',
+  'ambiguous_isbn_lookup_results',
+  'unsupported_identifier_type',
 ]);
 
 function finalizeRowStatus(row) {
