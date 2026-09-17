@@ -26,11 +26,26 @@ const {
   contextFieldValue,
 } = require('./book-import-analysis-context');
 
+const IDENTIFIER_FIELDS = new Set(['isbn', 'metadataIsbn', 'ambiguousIdentifier']);
+
 function fieldSource(mapped, field, fallback = 'unknown') {
   const candidates = mapped.sources[field] || [];
   const first = candidates.find((entry) => !isBlankCellValue(contextFieldValue(field, entry.value)));
   if (!first) return { source: fallback };
   return { source: 'excel', header: first.header, raw: first.value };
+}
+
+function identifierFieldSource(mapped, field, canonical) {
+  const candidates = mapped.sources[field] || [];
+  const matching = candidates.find((entry) => analyzeIdentifier(entry.value).canonical === canonical);
+  if (!matching) return fieldSource(mapped, field);
+  return { source: 'excel', header: matching.header, raw: matching.value };
+}
+
+function preferredIdentifierValue(mapped, field, fallback) {
+  const candidates = mapped.sources[field] || [];
+  const canonical = candidates.find((entry) => !isBlankCellValue(entry.value) && analyzeIdentifier(entry.value).canonical);
+  return canonical ? canonical.value : fallback;
 }
 
 function collisionDataCandidates(collision) {
@@ -55,9 +70,14 @@ function collisionIsSemanticallyEquivalent(collision) {
     const normalized = candidates.map((entry) => normalizeRuntimeBarcode(entry.value));
     return normalized.every(Boolean) && new Set(normalized).size === 1;
   }
-  if (!['isbn', 'metadataIsbn', 'ambiguousIdentifier'].includes(collision.field)) return false;
-  const canonical = candidates.map((entry) => analyzeIdentifier(entry.value).canonical).filter(Boolean);
-  return canonical.length === candidates.length && new Set(canonical).size === 1;
+  if (!IDENTIFIER_FIELDS.has(collision.field)) return false;
+  const analyses = candidates.map((entry) => analyzeIdentifier(entry.value));
+  const canonical = analyses.map((analysis) => analysis.canonical).filter(Boolean);
+  if (!canonical.length || new Set(canonical).size !== 1) return false;
+  const target = canonical[0];
+  return analyses.every((analysis) => analysis.canonical === target
+    || analysis.repair?.canonical === target
+    || analysis.suggestion?.canonical === target);
 }
 
 function blockingCollisionFields(mapped) {
@@ -141,9 +161,12 @@ function normalizeBookFields(mapped, row) {
 function normalizeIdentifierFields(mapped, row, book) {
   const f = getDataFields(mapped);
   const blocked = blockingCollisionFields(mapped);
-  const explicit = analyzeIdentifier(f.isbn);
-  const legacy = analyzeIdentifier(f.metadataIsbn);
-  const ambiguous = analyzeIdentifier(f.ambiguousIdentifier);
+  const explicitValue = preferredIdentifierValue(mapped, 'isbn', f.isbn);
+  const legacyValue = preferredIdentifierValue(mapped, 'metadataIsbn', f.metadataIsbn);
+  const ambiguousValue = preferredIdentifierValue(mapped, 'ambiguousIdentifier', f.ambiguousIdentifier);
+  const explicit = analyzeIdentifier(explicitValue);
+  const legacy = analyzeIdentifier(legacyValue);
+  const ambiguous = analyzeIdentifier(ambiguousValue);
 
   for (const [field, analysis] of [['isbn', explicit], ['metadataIsbn', legacy], ['ambiguousIdentifier', ambiguous]]) {
     if (analysis.unsupportedType) addIssue(row, 'unsupported_identifier_type', 'conflict', { field });
@@ -152,8 +175,8 @@ function normalizeIdentifierFields(mapped, row, book) {
   }
 
   for (const [field, sourceValue, analysis] of [
-    ['isbn', f.isbn, explicit],
-    ['metadataIsbn', f.metadataIsbn, legacy],
+    ['isbn', explicitValue, explicit],
+    ['metadataIsbn', legacyValue, legacy],
   ]) {
     if (isBlankCellValue(sourceValue) || analysis.canonical || analysis.repair || analysis.suggestion || analysis.unsupportedType) continue;
     addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field, raw: valueText(sourceValue) });
@@ -168,15 +191,22 @@ function normalizeIdentifierFields(mapped, row, book) {
     }
   }
   let ambiguousAsBarcode = false;
-  const ambiguousLikelyIsbn = looksLikeIsbnCandidate(f.ambiguousIdentifier);
-  if (!barcode && !isBlankCellValue(f.ambiguousIdentifier) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')
+  const ambiguousLikelyIsbn = looksLikeIsbnCandidate(ambiguousValue);
+  if (!isBlankCellValue(ambiguousValue) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')
     && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
-    const rawAmbiguousBarcode = valueText(f.ambiguousIdentifier);
+    const rawAmbiguousBarcode = valueText(ambiguousValue);
     const normalizedAmbiguousBarcode = normalizeRuntimeBarcode(rawAmbiguousBarcode);
     if (normalizedAmbiguousBarcode) {
-      barcode = normalizedAmbiguousBarcode;
       ambiguousAsBarcode = true;
       addIssue(row, 'ambiguous_identifier_interpreted_as_barcode', 'warning');
+      if (barcode && barcode !== normalizedAmbiguousBarcode) {
+        addIssue(row, 'conflicting_physical_barcodes', 'conflict', {
+          dedicatedBarcode: barcode,
+          combinedBarcode: normalizedAmbiguousBarcode,
+        });
+      } else if (!barcode) {
+        barcode = normalizedAmbiguousBarcode;
+      }
     } else {
       addIssue(row, 'invalid_physical_barcode', 'conflict', { field: 'ambiguousIdentifier', raw: rawAmbiguousBarcode });
     }
@@ -197,9 +227,9 @@ function normalizeIdentifierFields(mapped, row, book) {
     });
   }
 
-  if (!editionIsbn && !distinct.length && !ambiguousAsBarcode && !isBlankCellValue(f.ambiguousIdentifier)
+  if (!editionIsbn && !distinct.length && !ambiguousAsBarcode && !isBlankCellValue(ambiguousValue)
     && !ambiguous.suggestion && !ambiguous.unsupportedType) {
-    addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field: 'ambiguousIdentifier', raw: valueText(f.ambiguousIdentifier) });
+    addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field: 'ambiguousIdentifier', raw: valueText(ambiguousValue) });
   }
 
   book.editionIsbn = editionIsbn;
@@ -211,7 +241,22 @@ function normalizeIdentifierFields(mapped, row, book) {
 function applySourceCollisions(mapped, row) {
   for (const collision of mapped.collisions) {
     const candidates = collisionDataCandidates(collision);
-    if (candidates.length < 2 || collisionIsSemanticallyEquivalent({ ...collision, candidates })) continue;
+    if (candidates.length < 2) continue;
+    if (collisionIsSemanticallyEquivalent({ ...collision, candidates })) {
+      if (IDENTIFIER_FIELDS.has(collision.field)) {
+        for (const candidate of candidates) {
+          const analysis = analyzeIdentifier(candidate.value);
+          if (analysis.suggestion) {
+            addIssue(row, 'isbn_repair_suggested', 'warning', {
+              field: collision.field,
+              header: candidate.header,
+              suggestion: analysis.suggestion,
+            });
+          }
+        }
+      }
+      continue;
+    }
     addIssue(row, 'conflicting_source_columns', 'conflict', { field: collision.field, candidates });
   }
   if (mapped.ignoredDangerousHeaders.length) addIssue(row, 'dangerous_headers_ignored', 'warning', { headers: [...mapped.ignoredDangerousHeaders] });
@@ -231,9 +276,10 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   const provenance = {
     title: fieldSource(mapped, 'title'),
     author: directAuthor.length ? fieldSource(mapped, 'author') : { source: 'unknown' },
-    editionIsbn: editionSource ? fieldSource(mapped, editionSource[0]) : { source: 'unknown' },
+    editionIsbn: editionSource ? identifierFieldSource(mapped, editionSource[0], book.editionIsbn) : { source: 'unknown' },
     barcode: fieldSource(mapped, 'barcode'),
     metadataIsbn: fieldSource(mapped, 'metadataIsbn'),
+    quantity: fieldSource(mapped, 'quantity'),
     description: fieldSource(mapped, 'description'),
     publisher: fieldSource(mapped, 'publisher'),
     publishedYear: fieldSource(mapped, 'publishedYear'),
