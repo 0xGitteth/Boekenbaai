@@ -129,6 +129,24 @@ module.exports = async function runReviewTailTests() {
   assert.ok(!issueCodes(equivalentBarcodeResult.rows[0]).has('conflicting_source_columns'));
   assert.strictEqual(equivalentBarcodeResult.groups.length, 1);
 
+  const equivalentCombinedBarcodeColumns = { Titel: 'Combined barcode-equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentCombinedBarcodeColumns, 'Barcode / ISBN', { value: '123-456', enumerable: true });
+  Object.defineProperty(equivalentCombinedBarcodeColumns, 'Barcode / ISBN_1', { value: '123456', enumerable: true });
+  const equivalentCombinedBarcodeResult = await analyzeBookImportRows([equivalentCombinedBarcodeColumns]);
+  assert.strictEqual(equivalentCombinedBarcodeResult.rows[0].book.barcode, '123456');
+  assert.ok(!issueCodes(equivalentCombinedBarcodeResult.rows[0]).has('conflicting_source_columns'));
+  assert.ok(issueCodes(equivalentCombinedBarcodeResult.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+  assert.strictEqual(equivalentCombinedBarcodeResult.rows[0].provenance.barcode.header, 'Barcode / ISBN');
+  assert.strictEqual(equivalentCombinedBarcodeResult.groups.length, 1);
+
+  const isbnLikeCombinedCollision = { Titel: 'ISBN-achtige combined collision', Auteur: 'A Auteur' };
+  Object.defineProperty(isbnLikeCombinedCollision, 'Barcode / ISBN', { value: '9780306406158', enumerable: true });
+  Object.defineProperty(isbnLikeCombinedCollision, 'Barcode / ISBN_1', { value: '978-0-306-40615-8', enumerable: true });
+  const isbnLikeCombinedCollisionResult = await analyzeBookImportRows([isbnLikeCombinedCollision]);
+  assert.strictEqual(isbnLikeCombinedCollisionResult.rows[0].book.barcode, '');
+  assert.strictEqual(isbnLikeCombinedCollisionResult.rows[0].status, 'conflict');
+  assert.ok(issueCodes(isbnLikeCombinedCollisionResult.rows[0]).has('conflicting_source_columns'));
+
   const conflictingCombinedBarcode = await analyzeBookImportRows([{
     Titel: 'Barcode-bronnen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '123', 'Barcode / ISBN': '456',
   }]);
@@ -285,6 +303,31 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(commaFixedMarker.rows[0].context.fixedLocation.status, 'needs_review');
   assert.deepStrictEqual(commaFixedMarker.rows[0].book.themes, ['fantasy']);
   assert.strictEqual(commaFixedMarker.groups.length, 1);
+
+  const commaAuthorMarker = await analyzeBookImportRows([{
+    Titel: 'Auteurinterpunctie', Auteur: 'Doe, John, Klassenboek', 'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(commaAuthorMarker.rows[0].book.author, 'Doe, John');
+  assert.deepStrictEqual(commaAuthorMarker.rows[0].book.authors, ['Doe, John']);
+  assert.strictEqual(commaAuthorMarker.rows[0].context.fixedLocation.status, 'needs_review');
+
+  const commaTitleMarker = await analyzeBookImportRows([{
+    Titel: 'Titel, met komma, Klassenboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(commaTitleMarker.rows[0].book.title, 'Titel, met komma');
+  assert.strictEqual(commaTitleMarker.rows[0].context.fixedLocation.status, 'needs_review');
+
+  const semicolonAuthorMarker = await analyzeBookImportRows([{
+    Titel: 'Meerdere auteurs', Auteur: 'Alice; Klassenboek; Bob', 'ISBN-nummer': ISBN,
+  }]);
+  assert.deepStrictEqual(semicolonAuthorMarker.rows[0].book.authors, ['Alice', 'Bob']);
+  assert.strictEqual(semicolonAuthorMarker.rows[0].book.author, 'Alice & Bob');
+
+  const mixedDelimiterAuthorMarker = await analyzeBookImportRows([{
+    Titel: 'Gemengde auteurscheiding', Auteur: 'Alice, Klassenboek; Bob', 'ISBN-nummer': ISBN,
+  }]);
+  assert.deepStrictEqual(mixedDelimiterAuthorMarker.rows[0].book.authors, ['Alice', 'Bob']);
+  assert.strictEqual(mixedDelimiterAuthorMarker.rows[0].book.author, 'Alice & Bob');
 
   const partialSplitAuthor = await analyzeBookImportRows([{
     Titel: 'Spijt!', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN,
@@ -460,6 +503,40 @@ module.exports = async function runReviewTailTests() {
   assert.deepStrictEqual(derivedStripWithMetadata.rows[0].book.tags, ['strip', 'avontuur']);
   assert.strictEqual(derivedStripWithMetadata.rows[0].provenance.tags.source, 'metadata');
   assert.strictEqual(derivedStripWithMetadata.rows[0].provenance.tags.includesDerivedValues, true);
+
+  const oversizedUint8 = new Uint8Array(5);
+  let copiedOversizedUint8 = false;
+  const originalBufferFromForUint8 = Buffer.from;
+  Buffer.from = function monitoredUint8BufferFrom(value, ...rest) {
+    if (value === oversizedUint8) copiedOversizedUint8 = true;
+    return originalBufferFromForUint8.call(Buffer, value, ...rest);
+  };
+  let oversizedUint8Result;
+  try {
+    oversizedUint8Result = readBookImportWorkbook({
+      read: () => { throw new Error('must not parse oversized Uint8Array'); },
+      utils: { sheet_to_json: () => [] },
+    }, oversizedUint8, { maxBytes: 4 });
+  } finally {
+    Buffer.from = originalBufferFromForUint8;
+  }
+  assert.strictEqual(oversizedUint8Result.ok, false);
+  assert.strictEqual(oversizedUint8Result.error, 'file_too_large');
+  assert.strictEqual(oversizedUint8Result.byteLength, 5);
+  assert.strictEqual(copiedOversizedUint8, false, 'Oversized Uint8Array must be rejected before Buffer.from copies it');
+
+  const largeBacking = new Uint8Array(32);
+  const boundedView = largeBacking.subarray(10, 12);
+  let boundedViewBufferLength = 0;
+  const boundedViewResult = readBookImportWorkbook({
+    read(input) {
+      boundedViewBufferLength = input.length;
+      return { SheetNames: ['B'], Sheets: { B: {} } };
+    },
+    utils: { sheet_to_json: () => [{ Titel: 'Binnen limiet' }] },
+  }, boundedView, { maxBytes: 2 });
+  assert.strictEqual(boundedViewResult.ok, true);
+  assert.strictEqual(boundedViewBufferLength, 2, 'Uint8Array limits must use the view byteLength, not the backing buffer size');
 
   let decodedBase64 = false;
   const originalBufferFrom = Buffer.from;

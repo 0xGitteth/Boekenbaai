@@ -79,6 +79,19 @@ function collisionDataCandidates(collision) {
   return result;
 }
 
+function collisionCandidatesShareRuntimeBarcode(candidates) {
+  const normalized = [];
+  for (const entry of candidates) {
+    const analysis = analyzeIdentifier(entry.value);
+    if (analysis.canonical || analysis.repair || analysis.suggestion || analysis.unsupportedType
+      || looksLikeIsbnCandidate(entry.value)) return false;
+    const barcode = normalizeRuntimeBarcode(entry.value);
+    if (!barcode) return false;
+    normalized.push(barcode);
+  }
+  return new Set(normalized).size === 1;
+}
+
 function collisionIsSemanticallyEquivalent(collision) {
   const candidates = collisionDataCandidates(collision);
   if (candidates.length < 2) return true;
@@ -86,6 +99,7 @@ function collisionIsSemanticallyEquivalent(collision) {
     const normalized = candidates.map((entry) => normalizeRuntimeBarcode(entry.value));
     return normalized.every(Boolean) && new Set(normalized).size === 1;
   }
+  if (collision.field === 'ambiguousIdentifier' && collisionCandidatesShareRuntimeBarcode(candidates)) return true;
   if (!IDENTIFIER_FIELDS.has(collision.field)) return false;
   const analyses = candidates.map((entry) => analyzeIdentifier(entry.value));
   const canonical = analyses.map((analysis) => analysis.canonical).filter(Boolean);
