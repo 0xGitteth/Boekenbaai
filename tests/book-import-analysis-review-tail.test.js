@@ -64,6 +64,13 @@ module.exports = async function runReviewTailTests() {
   assert.ok(issueCodes(unknownColumnMarker.rows[0]).has('own_book_excluded'));
   assert.strictEqual(unknownColumnMarker.groups.length, 0);
 
+  const commaUnknownMarker = await analyzeBookImportRows([{
+    Titel: 'Komma notitie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'school, eigen boek',
+  }]);
+  assert.strictEqual(commaUnknownMarker.rows[0].status, 'skipped');
+  assert.strictEqual(commaUnknownMarker.rows[0].context.excludeFromSchoolCollection, true);
+  assert.ok(issueCodes(commaUnknownMarker.rows[0]).has('own_book_excluded'));
+
   const copyLimitDuplicate = await analyzeBookImportRows([
     { Titel: 'Eerste', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '55555', Aantal: 1 },
     { Titel: 'Tweede', Auteur: 'B Auteur', 'ISBN-nummer': ISBN_ALT, Barcode: '55555', Aantal: 1 },
@@ -224,6 +231,34 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.supplementedFrom.incomplete, true);
   assert.ok(!partialSplitAuthor.rows[0].issues.some((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'author'));
 
+  let partialOnlyLookupCalls = 0;
+  const partialOnlyMissingAuthor = await analyzeBookImportRows([{
+    Titel: 'Volledige metadata behalve voornaam',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+    Uitgever: 'Bestaand',
+    Jaar: 2020,
+    Paginas: 100,
+    Taal: 'nl',
+    Cover: 'https://example.test/existing.jpg',
+    Beschrijving: 'Bestaand',
+    Tags: 'bestaand',
+    "Thema's": 'bestaand',
+  }], {
+    lookupIsbn: async () => {
+      partialOnlyLookupCalls += 1;
+      return {
+        title: 'Volledige metadata behalve voornaam',
+        author: 'Carry Slee',
+        barcode: ISBN,
+        found: true,
+        source: 'exact-author-only',
+      };
+    },
+  });
+  assert.strictEqual(partialOnlyLookupCalls, 1, 'Incomplete split author must itself trigger exact metadata enrichment');
+  assert.strictEqual(partialOnlyMissingAuthor.rows[0].book.author, 'Carry Slee');
+
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
   }], {
@@ -307,6 +342,8 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(metadataReconciliation.rows[0].book.publishedYear, 2021);
   assert.strictEqual(metadataReconciliation.rows[0].book.pageCount, 110);
   assert.strictEqual(metadataReconciliation.rows[0].book.description, 'exact');
+  assert.deepStrictEqual(metadataReconciliation.rows[0].book.tags, ['exact']);
+  assert.deepStrictEqual(metadataReconciliation.rows[0].book.themes, ['exact']);
   assert.strictEqual(metadataReconciliation.rows[0].provenance.publisher.source, 'metadata');
   assert.strictEqual(metadataReconciliation.rows[0].provenance.publisher.detail, 'exact-edition');
   assert.ok(!metadataReconciliation.rows[0].issues.some((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'publisher'));
