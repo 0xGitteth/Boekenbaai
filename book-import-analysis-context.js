@@ -10,7 +10,6 @@ const SPECIAL_FIXED_LOCATION_ALIASES = new Map([
 ]);
 const FIXED_LOCATION_MARKERS = new Set(['vast in de klas', 'klassenboek']);
 const OWN_BOOK_MARKERS = new Set(['eigen boek']);
-const SEMANTIC_MARKER_FIELDS = new Set(['classes', 'classLoan', 'studentLoan', 'libraryPresence']);
 
 function markerKind(value) {
   const comparable = comparableText(value);
@@ -38,20 +37,25 @@ function isPureSemanticMarker(value) {
   return Boolean(tokens.length && tokens.every((token) => markerKind(token)));
 }
 
-function contextFieldValue(field, value) {
-  return SEMANTIC_MARKER_FIELDS.has(field) ? stripSemanticMarkers(value) : value;
+function contextFieldValue(_field, value) {
+  return stripSemanticMarkers(value);
 }
 
 function collectSemanticMarkers(mapped) {
   const ownBook = [];
   const fixedLocation = [];
   for (const [field, entries] of Object.entries(mapped?.sources || {})) {
-    if (!SEMANTIC_MARKER_FIELDS.has(field)) continue;
     for (const entry of entries || []) {
       for (const marker of semanticMarkerTokens(entry.value)) {
         const target = marker.kind === 'own_book' ? ownBook : fixedLocation;
         target.push({ field, header: entry.header, value: marker.token });
       }
+    }
+  }
+  for (const entry of mapped?.unknown || []) {
+    for (const marker of semanticMarkerTokens(entry.value)) {
+      const target = marker.kind === 'own_book' ? ownBook : fixedLocation;
+      target.push({ field: 'unknown', header: entry.header, value: marker.token });
     }
   }
   return { ownBook, fixedLocation };
@@ -62,7 +66,7 @@ function getDataFields(mapped) {
   for (const [field, entries] of Object.entries(mapped?.sources || {})) {
     const current = mapped?.fields?.[field];
     const currentValue = contextFieldValue(field, current);
-    const currentIsMarkerOnly = SEMANTIC_MARKER_FIELDS.has(field) && isPureSemanticMarker(current);
+    const currentIsMarkerOnly = isPureSemanticMarker(current);
     if (!isBlankCellValue(currentValue) && !currentIsMarkerOnly) {
       fields[field] = currentValue;
       continue;
@@ -77,7 +81,7 @@ function getDataFields(mapped) {
   for (const [field, value] of Object.entries(mapped?.fields || {})) {
     if (Object.prototype.hasOwnProperty.call(fields, field)) continue;
     const cleaned = contextFieldValue(field, value);
-    const markerOnly = SEMANTIC_MARKER_FIELDS.has(field) && isPureSemanticMarker(value);
+    const markerOnly = isPureSemanticMarker(value);
     if (isBlankCellValue(cleaned) || markerOnly) continue;
     fields[field] = cleaned;
   }
