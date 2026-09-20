@@ -219,6 +219,10 @@ module.exports = async function runFinalReviewTests() {
   assert.strictEqual(archiveReadCalled, false, 'ZIP entry-count limits must be enforced before XLSX.read');
 
   const compressedBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
+  const validCompressedWorkbook = readBookImportWorkbook(XLSX, compressedBuffer, { maxRows: 200 });
+  assert.strictEqual(validCompressedWorkbook.ok, true, 'Ordinary compressed XLSX files must remain accepted under default archive limits');
+  assert.strictEqual(validCompressedWorkbook.rows.length, 100);
+
   archiveReadCalled = false;
   const compressionRatioLimit = readBookImportWorkbook(archiveGuardXlsx, compressedBuffer, { maxCompressionRatio: 1 });
   assert.strictEqual(compressionRatioLimit.ok, false);
