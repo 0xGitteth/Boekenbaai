@@ -150,8 +150,7 @@ function looksLikeIsbnCandidate(value) {
   const compact = compactIdentifierText(value);
   return /^\d{8}[0-9Xx]$/.test(compact)
     || /^\d{9}[0-9Xx]$/.test(compact)
-    || /^(?:978|979)\d{9}$/.test(compact)
-    || /^(?:978|979)\d{10}$/.test(compact);
+    || /^(?:978|979)\d{7,10}[0-9Xx]$/.test(compact);
 }
 
 function analyzeIdentifier(value) {
