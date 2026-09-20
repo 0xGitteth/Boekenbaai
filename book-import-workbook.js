@@ -1,5 +1,7 @@
 'use strict';
 
+const { inflateRawSync } = require('node:zlib');
+
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function normalizeImportHeader(value) {
@@ -278,11 +280,44 @@ function archiveLimitError(reason, details = {}) {
   return { ok: false, error: 'file_too_large', reason, ...details };
 }
 
+function invalidArchive(reason) {
+  return { ok: false, error: 'invalid_workbook', reason };
+}
+
+function boundedInflateRaw(compressedData, limits, remainingExpandedBytes) {
+  const expansionLimit = Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, remainingExpandedBytes + 1));
+  const ratioProduct = compressedData.length * limits.maxCompressionRatio;
+  const ratioLimit = Math.max(1, Math.min(
+    Number.MAX_SAFE_INTEGER,
+    Number.isFinite(ratioProduct) ? Math.floor(ratioProduct) + 1 : Number.MAX_SAFE_INTEGER,
+  ));
+  const maxOutputLength = Math.min(expansionLimit, ratioLimit);
+  try {
+    return {
+      ok: true,
+      result: inflateRawSync(compressedData, { info: true, maxOutputLength }),
+    };
+  } catch (error) {
+    if (error && error.code === 'ERR_BUFFER_TOO_LARGE') {
+      if (ratioLimit < expansionLimit) {
+        return archiveLimitError('archive_compression_ratio', {
+          compressedByteLength: compressedData.length,
+          maxCompressionRatio: limits.maxCompressionRatio,
+        });
+      }
+      return archiveLimitError('archive_expansion_limit', {
+        maxExpandedBytes: limits.maxExpandedBytes,
+      });
+    }
+    return invalidArchive('invalid_zip_stream');
+  }
+}
+
 function inspectZipExpansion(buffer, options, maxBytes) {
   if (!isZipContainer(buffer)) return { ok: true, isZip: false };
 
   const eocdOffset = findZipEndOfCentralDirectory(buffer);
-  if (eocdOffset < 0) return { ok: false, error: 'invalid_workbook', reason: 'invalid_zip_directory' };
+  if (eocdOffset < 0) return invalidArchive('invalid_zip_directory');
 
   const diskNumber = buffer.readUInt16LE(eocdOffset + 4);
   const centralDiskNumber = buffer.readUInt16LE(eocdOffset + 6);
@@ -293,7 +328,7 @@ function inspectZipExpansion(buffer, options, maxBytes) {
   const limits = workbookArchiveLimits(options, maxBytes);
 
   if (diskNumber !== 0 || centralDiskNumber !== 0 || entriesOnDisk !== totalEntries) {
-    return { ok: false, error: 'invalid_workbook', reason: 'multi_disk_zip_not_supported' };
+    return invalidArchive('multi_disk_zip_not_supported');
   }
   if (totalEntries === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) {
     return archiveLimitError('zip64_archive_not_bounded', {
@@ -308,83 +343,163 @@ function inspectZipExpansion(buffer, options, maxBytes) {
   }
 
   const centralEnd = centralOffset + centralSize;
-  if (!Number.isSafeInteger(centralEnd) || centralOffset < 0 || centralEnd > eocdOffset || centralEnd > buffer.length) {
-    return { ok: false, error: 'invalid_workbook', reason: 'invalid_zip_directory' };
+  if (!Number.isSafeInteger(centralEnd) || centralEnd > eocdOffset || centralEnd > buffer.length) {
+    return invalidArchive('invalid_zip_directory');
   }
 
+  const entries = [];
   let offset = centralOffset;
-  let totalCompressedBytes = 0;
-  let totalExpandedBytes = 0;
+  let declaredCompressedBytes = 0;
+  let declaredExpandedBytes = 0;
   for (let index = 0; index < totalEntries; index += 1) {
     if (offset + 46 > centralEnd || buffer.readUInt32LE(offset) !== ZIP_CENTRAL_DIRECTORY_HEADER) {
-      return { ok: false, error: 'invalid_workbook', reason: 'invalid_zip_directory' };
+      return invalidArchive('invalid_zip_directory');
     }
+    const flags = buffer.readUInt16LE(offset + 8);
+    const method = buffer.readUInt16LE(offset + 10);
     const compressedBytes = buffer.readUInt32LE(offset + 20);
     const expandedBytes = buffer.readUInt32LE(offset + 24);
     const fileNameLength = buffer.readUInt16LE(offset + 28);
     const extraLength = buffer.readUInt16LE(offset + 30);
     const commentLength = buffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
 
-    if (compressedBytes === 0xffffffff || expandedBytes === 0xffffffff) {
+    if (compressedBytes === 0xffffffff || expandedBytes === 0xffffffff || localHeaderOffset === 0xffffffff) {
       return archiveLimitError('zip64_archive_not_bounded', {
         maxExpandedBytes: limits.maxExpandedBytes,
       });
     }
 
-    totalCompressedBytes += compressedBytes;
-    totalExpandedBytes += expandedBytes;
-    if (!Number.isSafeInteger(totalCompressedBytes) || !Number.isSafeInteger(totalExpandedBytes)) {
-      return archiveLimitError('archive_expansion_limit', {
-        maxExpandedBytes: limits.maxExpandedBytes,
-      });
-    }
-    if (totalExpandedBytes > limits.maxExpandedBytes) {
-      return archiveLimitError('archive_expansion_limit', {
-        expandedByteLength: totalExpandedBytes,
-        maxExpandedBytes: limits.maxExpandedBytes,
-      });
-    }
-    if (expandedBytes > 0) {
-      const compressionRatio = compressedBytes > 0 ? expandedBytes / compressedBytes : Number.POSITIVE_INFINITY;
-      if (compressionRatio > limits.maxCompressionRatio) {
-        return archiveLimitError('archive_compression_ratio', {
-          compressionRatio,
-          maxCompressionRatio: limits.maxCompressionRatio,
-          expandedByteLength: expandedBytes,
-          compressedByteLength: compressedBytes,
-        });
-      }
-    }
-
     const nextOffset = offset + 46 + fileNameLength + extraLength + commentLength;
     if (!Number.isSafeInteger(nextOffset) || nextOffset > centralEnd) {
-      return { ok: false, error: 'invalid_workbook', reason: 'invalid_zip_directory' };
+      return invalidArchive('invalid_zip_directory');
     }
+
+    declaredCompressedBytes += compressedBytes;
+    declaredExpandedBytes += expandedBytes;
+    if (!Number.isSafeInteger(declaredCompressedBytes) || !Number.isSafeInteger(declaredExpandedBytes)) {
+      return archiveLimitError('archive_expansion_limit', { maxExpandedBytes: limits.maxExpandedBytes });
+    }
+    if (declaredExpandedBytes > limits.maxExpandedBytes) {
+      return archiveLimitError('archive_expansion_limit', {
+        expandedByteLength: declaredExpandedBytes,
+        maxExpandedBytes: limits.maxExpandedBytes,
+      });
+    }
+
+    entries.push({
+      flags,
+      method,
+      compressedBytes,
+      expandedBytes,
+      localHeaderOffset,
+      fileName: buffer.subarray(offset + 46, offset + 46 + fileNameLength),
+    });
     offset = nextOffset;
   }
 
   if (offset < centralEnd) {
     if (offset + 6 > centralEnd || buffer.readUInt32LE(offset) !== ZIP_CENTRAL_DIRECTORY_DIGITAL_SIGNATURE) {
-      return { ok: false, error: 'invalid_workbook', reason: 'invalid_zip_directory' };
+      return invalidArchive('invalid_zip_directory');
     }
     const signatureLength = buffer.readUInt16LE(offset + 4);
-    if (offset + 6 + signatureLength !== centralEnd) {
-      return { ok: false, error: 'invalid_workbook', reason: 'invalid_zip_directory' };
-    }
+    if (offset + 6 + signatureLength !== centralEnd) return invalidArchive('invalid_zip_directory');
   } else if (offset !== centralEnd) {
-    return { ok: false, error: 'invalid_workbook', reason: 'invalid_zip_directory' };
+    return invalidArchive('invalid_zip_directory');
   }
 
-  if (totalExpandedBytes > 0) {
-    const totalRatio = totalCompressedBytes > 0
-      ? totalExpandedBytes / totalCompressedBytes
+  let actualCompressedBytes = 0;
+  let actualExpandedBytes = 0;
+  for (const entry of entries) {
+    if (entry.flags & 0x0001) return invalidArchive('encrypted_zip_not_supported');
+    if (entry.method !== 0 && entry.method !== 8) return invalidArchive('unsupported_zip_compression');
+    if (entry.localHeaderOffset + 30 > centralOffset
+      || buffer.readUInt32LE(entry.localHeaderOffset) !== ZIP_LOCAL_FILE_HEADER) {
+      return invalidArchive('invalid_zip_local_header');
+    }
+
+    const localFlags = buffer.readUInt16LE(entry.localHeaderOffset + 6);
+    const localMethod = buffer.readUInt16LE(entry.localHeaderOffset + 8);
+    const localCompressedBytes = buffer.readUInt32LE(entry.localHeaderOffset + 18);
+    const localExpandedBytes = buffer.readUInt32LE(entry.localHeaderOffset + 22);
+    const localFileNameLength = buffer.readUInt16LE(entry.localHeaderOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(entry.localHeaderOffset + 28);
+    const dataStart = entry.localHeaderOffset + 30 + localFileNameLength + localExtraLength;
+    const dataEnd = dataStart + entry.compressedBytes;
+
+    if (localFlags !== entry.flags || localMethod !== entry.method
+      || !Number.isSafeInteger(dataStart) || !Number.isSafeInteger(dataEnd)
+      || dataStart > centralOffset || dataEnd > centralOffset) {
+      return invalidArchive('invalid_zip_local_header');
+    }
+    const localFileName = buffer.subarray(
+      entry.localHeaderOffset + 30,
+      entry.localHeaderOffset + 30 + localFileNameLength,
+    );
+    if (!localFileName.equals(entry.fileName)) return invalidArchive('zip_filename_mismatch');
+
+    const usesDataDescriptor = Boolean(entry.flags & 0x0008);
+    if (!usesDataDescriptor
+      && (localCompressedBytes !== entry.compressedBytes || localExpandedBytes !== entry.expandedBytes)) {
+      return invalidArchive('zip_size_mismatch');
+    }
+
+    const compressedData = buffer.subarray(dataStart, dataEnd);
+    let actualExpanded = 0;
+    let consumedCompressed = entry.compressedBytes;
+
+    if (entry.method === 0) {
+      if (entry.compressedBytes !== entry.expandedBytes) return invalidArchive('zip_size_mismatch');
+      actualExpanded = compressedData.length;
+    } else {
+      const remainingExpandedBytes = Math.max(0, limits.maxExpandedBytes - actualExpandedBytes);
+      const inflated = boundedInflateRaw(compressedData, limits, remainingExpandedBytes);
+      if (!inflated.ok) return inflated;
+      consumedCompressed = inflated.result.engine.bytesWritten;
+      actualExpanded = inflated.result.buffer.length;
+      if (consumedCompressed !== entry.compressedBytes) return invalidArchive('zip_compressed_size_mismatch');
+      if (actualExpanded !== entry.expandedBytes) {
+        if (actualExpandedBytes + actualExpanded > limits.maxExpandedBytes) {
+          return archiveLimitError('archive_expansion_limit', {
+            expandedByteLength: actualExpandedBytes + actualExpanded,
+            maxExpandedBytes: limits.maxExpandedBytes,
+          });
+        }
+        return invalidArchive('zip_expanded_size_mismatch');
+      }
+    }
+
+    actualCompressedBytes += consumedCompressed;
+    actualExpandedBytes += actualExpanded;
+    if (actualExpandedBytes > limits.maxExpandedBytes) {
+      return archiveLimitError('archive_expansion_limit', {
+        expandedByteLength: actualExpandedBytes,
+        maxExpandedBytes: limits.maxExpandedBytes,
+      });
+    }
+    if (actualExpanded > 0) {
+      const entryRatio = consumedCompressed > 0 ? actualExpanded / consumedCompressed : Number.POSITIVE_INFINITY;
+      if (entryRatio > limits.maxCompressionRatio) {
+        return archiveLimitError('archive_compression_ratio', {
+          compressionRatio: entryRatio,
+          maxCompressionRatio: limits.maxCompressionRatio,
+          expandedByteLength: actualExpanded,
+          compressedByteLength: consumedCompressed,
+        });
+      }
+    }
+  }
+
+  if (actualExpandedBytes > 0) {
+    const totalRatio = actualCompressedBytes > 0
+      ? actualExpandedBytes / actualCompressedBytes
       : Number.POSITIVE_INFINITY;
     if (totalRatio > limits.maxCompressionRatio) {
       return archiveLimitError('archive_compression_ratio', {
         compressionRatio: totalRatio,
         maxCompressionRatio: limits.maxCompressionRatio,
-        expandedByteLength: totalExpandedBytes,
-        compressedByteLength: totalCompressedBytes,
+        expandedByteLength: actualExpandedBytes,
+        compressedByteLength: actualCompressedBytes,
       });
     }
   }
@@ -392,9 +507,9 @@ function inspectZipExpansion(buffer, options, maxBytes) {
   return {
     ok: true,
     isZip: true,
-    archiveEntries: totalEntries,
-    expandedByteLength: totalExpandedBytes,
-    compressedEntryByteLength: totalCompressedBytes,
+    archiveEntries: entries.length,
+    expandedByteLength: actualExpandedBytes,
+    compressedEntryByteLength: actualCompressedBytes,
   };
 }
 
