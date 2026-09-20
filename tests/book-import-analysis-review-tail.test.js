@@ -161,6 +161,14 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(duplicateMetadataIsbnResult.rows[0].provenance.metadataIsbn.header, 'Intern ISBN_1');
   assert.strictEqual(duplicateMetadataIsbnResult.rows[0].provenance.metadataIsbn.raw, ISBN);
 
+  const blockedBarcodeEvidence = { Titel: 'Geblokkeerde barcodebron', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': '789' };
+  Object.defineProperty(blockedBarcodeEvidence, 'Barcode', { value: '789', enumerable: true });
+  Object.defineProperty(blockedBarcodeEvidence, 'Barcode_1', { value: '456', enumerable: true });
+  const blockedBarcodeResult = await analyzeBookImportRows([blockedBarcodeEvidence]);
+  assert.strictEqual(blockedBarcodeResult.rows[0].book.barcode, '789');
+  assert.strictEqual(blockedBarcodeResult.rows[0].provenance.barcode.header, 'Barcode / ISBN');
+  assert.ok(issueCodes(blockedBarcodeResult.rows[0]).has('conflicting_source_columns'));
+
   const quantityProvenance = await analyzeBookImportRows([{
     Titel: 'Aantal bron', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Aantal exemplaren': '01',
   }]);
@@ -220,6 +228,31 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(duplicateRepairedMetadataResult.rows[0].book.metadataIsbn, ISBN);
   assert.strictEqual(duplicateRepairedMetadataResult.rows[0].provenance.metadataIsbn.header, 'Intern ISBN_1');
   assert.ok(issueCodes(duplicateRepairedMetadataResult.rows[0]).has('isbn_repaired'));
+
+  const blockedExplicitWithLegacyFallback = { Titel: 'Geblokkeerd ISBN bewijs', Auteur: 'A Auteur', 'Intern ISBN': ISBN };
+  Object.defineProperty(blockedExplicitWithLegacyFallback, 'ISBN-nummer', { value: ISBN, enumerable: true });
+  Object.defineProperty(blockedExplicitWithLegacyFallback, 'ISBN-nummer_1', { value: ISBN_ALT, enumerable: true });
+  const blockedExplicitWithLegacyResult = await analyzeBookImportRows([blockedExplicitWithLegacyFallback]);
+  assert.strictEqual(blockedExplicitWithLegacyResult.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(blockedExplicitWithLegacyResult.rows[0].provenance.editionIsbn.header, 'Intern ISBN');
+  assert.ok(issueCodes(blockedExplicitWithLegacyResult.rows[0]).has('conflicting_source_columns'));
+
+  const conflictedFirstNames = { Titel: 'Conflicterende voornamen', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN };
+  Object.defineProperty(conflictedFirstNames, 'Voornaam schrijver', { value: 'Carry', enumerable: true });
+  Object.defineProperty(conflictedFirstNames, 'Voornaam schrijver_1', { value: 'Carla', enumerable: true });
+  const conflictedFirstNamesResult = await analyzeBookImportRows([conflictedFirstNames], {
+    lookupIsbn: async () => ({
+      title: 'Conflicterende voornamen',
+      author: 'Carry Slee',
+      barcode: ISBN,
+      found: true,
+      source: 'exact-after-name-conflict',
+    }),
+  });
+  assert.strictEqual(conflictedFirstNamesResult.rows[0].book.author, 'Carry Slee');
+  assert.deepStrictEqual(conflictedFirstNamesResult.rows[0].provenance.author.supplementedFrom.headers, ['Achternaam schrijver']);
+  assert.strictEqual(conflictedFirstNamesResult.rows[0].provenance.author.supplementedFrom.incomplete, true);
+  assert.ok(issueCodes(conflictedFirstNamesResult.rows[0]).has('conflicting_source_columns'));
 
   const commaOwnBookMarker = await analyzeBookImportRows([{
     Titel: 'Tag marker', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Tags: 'fiction, eigen boek',
