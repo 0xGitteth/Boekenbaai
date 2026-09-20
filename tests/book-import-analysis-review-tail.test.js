@@ -50,10 +50,19 @@ module.exports = async function runReviewTailTests() {
   const literalMarkerTitle = await analyzeBookImportRows([{
     Titel: 'Eigen boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
   }]);
-  assert.strictEqual(literalMarkerTitle.rows[0].book.title, 'Eigen boek');
-  assert.notStrictEqual(literalMarkerTitle.rows[0].context.excludeFromSchoolCollection, true);
-  assert.ok(!issueCodes(literalMarkerTitle.rows[0]).has('own_book_excluded'));
-  assert.strictEqual(literalMarkerTitle.groups.length, 1);
+  assert.strictEqual(literalMarkerTitle.rows[0].book.title, '');
+  assert.strictEqual(literalMarkerTitle.rows[0].status, 'skipped');
+  assert.strictEqual(literalMarkerTitle.rows[0].context.excludeFromSchoolCollection, true);
+  assert.ok(issueCodes(literalMarkerTitle.rows[0]).has('own_book_excluded'));
+  assert.strictEqual(literalMarkerTitle.groups.length, 0);
+
+  const unknownColumnMarker = await analyzeBookImportRows([{
+    Titel: 'Notitieboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'eigen boek',
+  }]);
+  assert.strictEqual(unknownColumnMarker.rows[0].status, 'skipped');
+  assert.strictEqual(unknownColumnMarker.rows[0].context.excludeFromSchoolCollection, true);
+  assert.ok(issueCodes(unknownColumnMarker.rows[0]).has('own_book_excluded'));
+  assert.strictEqual(unknownColumnMarker.groups.length, 0);
 
   const copyLimitDuplicate = await analyzeBookImportRows([
     { Titel: 'Eerste', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '55555', Aantal: 1 },
