@@ -42,6 +42,16 @@ function identifierFieldSource(mapped, field, canonical) {
   return { source: 'excel', header: matching.header, raw: matching.value };
 }
 
+function barcodeFieldSource(mapped, barcode) {
+  if (!barcode) return fieldSource(mapped, 'barcode');
+  for (const field of ['barcode', 'ambiguousIdentifier']) {
+    const candidates = mapped.sources[field] || [];
+    const matching = candidates.find((entry) => normalizeRuntimeBarcode(contextFieldValue(field, entry.value)) === barcode);
+    if (matching) return { source: 'excel', header: matching.header, raw: matching.value };
+  }
+  return { source: 'unknown' };
+}
+
 function preferredIdentifierValue(mapped, field, fallback) {
   const candidates = mapped.sources[field] || [];
   const canonical = candidates.find((entry) => !isBlankCellValue(entry.value) && analyzeIdentifier(entry.value).canonical);
@@ -284,8 +294,10 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
     title: fieldSource(mapped, 'title'),
     author: directAuthor.length ? fieldSource(mapped, 'author') : { source: 'unknown' },
     editionIsbn: editionSource ? identifierFieldSource(mapped, editionSource[0], book.editionIsbn) : { source: 'unknown' },
-    barcode: fieldSource(mapped, 'barcode'),
-    metadataIsbn: fieldSource(mapped, 'metadataIsbn'),
+    barcode: barcodeFieldSource(mapped, book.barcode),
+    metadataIsbn: book.metadataIsbn
+      ? identifierFieldSource(mapped, 'metadataIsbn', book.metadataIsbn)
+      : fieldSource(mapped, 'metadataIsbn'),
     quantity: fieldSource(mapped, 'quantity'),
     description: fieldSource(mapped, 'description'),
     publisher: fieldSource(mapped, 'publisher'),
@@ -302,7 +314,12 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   if (provenance.author.source === 'unknown' && book.author) {
     const sourceHeaders = [...(mapped.sources.authorFirst || []), ...(mapped.sources.authorLast || [])]
       .filter((entry) => !isBlankCellValue(contextFieldValue('authorFirst', entry.value))).map((entry) => entry.header);
-    if (sourceHeaders.length) provenance.author = { source: 'excel', headers: sourceHeaders, derived: 'combined_name_parts' };
+    if (sourceHeaders.length) provenance.author = {
+      source: 'excel',
+      headers: sourceHeaders,
+      derived: 'combined_name_parts',
+      incomplete: sourceHeaders.length < 2,
+    };
   }
   const examSource = fieldSource(mapped, 'examMaterial');
   if (provenance.language.source === 'unknown' && book.language && examSource.source === 'excel') {
@@ -318,7 +335,6 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
       provenance.tags = { ...provenance.tags, includesDerivedValues: true, derived: 'exam_material_strip_tag' };
     }
   }
-  if (book.barcode && provenance.barcode.source === 'unknown' && !identifierAnalysis.ambiguous.canonical) provenance.barcode = fieldSource(mapped, 'ambiguousIdentifier');
   return provenance;
 }
 
