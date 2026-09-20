@@ -79,12 +79,31 @@ function collisionDataCandidates(collision) {
   return result;
 }
 
+function collisionCandidatesShareRuntimeBarcode(candidates) {
+  const normalized = [];
+  for (const entry of candidates) {
+    const analysis = analyzeIdentifier(entry.value);
+    if (analysis.canonical || analysis.repair || analysis.suggestion || analysis.unsupportedType
+      || looksLikeIsbnCandidate(entry.value)) return false;
+    const barcode = normalizeRuntimeBarcode(entry.value);
+    if (!barcode) return false;
+    normalized.push(barcode);
+  }
+  return new Set(normalized).size === 1;
+}
+
 function collisionIsSemanticallyEquivalent(collision) {
   const candidates = collisionDataCandidates(collision);
   if (candidates.length < 2) return true;
   if (collision.field === 'barcode') {
     const normalized = candidates.map((entry) => normalizeRuntimeBarcode(entry.value));
     return normalized.every(Boolean) && new Set(normalized).size === 1;
+  }
+  if (collision.field === 'ambiguousIdentifier' && collisionCandidatesShareRuntimeBarcode(candidates)) return true;
+  if (collision.field === 'quantity') {
+    const parsed = candidates.map((entry) => parseQuantity(entry.value));
+    return parsed.every((quantity) => quantity.valid)
+      && new Set(parsed.map((quantity) => quantity.value)).size === 1;
   }
   if (!IDENTIFIER_FIELDS.has(collision.field)) return false;
   const analyses = candidates.map((entry) => analyzeIdentifier(entry.value));
@@ -123,15 +142,24 @@ function normalizeBookFields(mapped, row) {
   const combined = normalizeAuthorList(undefined, [first, last].filter(Boolean).join(' '));
   let authors = directAuthor;
   if (!authors.length && combined.length) authors = combined;
-  if (authors.length && combined.length && comparableText(authors[0]) !== comparableText(combined[0])) {
+  if (directAuthor.length && combined.length) {
+    const combinedComparable = comparableText(combined[0]);
+    const directComparables = directAuthor.map((author) => comparableText(author)).filter(Boolean);
+    const exactSplitCorroboratesDirect = directComparables.includes(combinedComparable);
     const splitIncomplete = !first || !last;
-    const splitTokens = comparableText(combined[0]).split(/\s+/).filter(Boolean);
-    const directTokens = new Set(comparableText(authors[0]).split(/\s+/).filter(Boolean));
+    const splitTokens = combinedComparable.split(/\s+/).filter(Boolean);
     const incompleteSplitCorroboratesDirect = splitIncomplete
       && splitTokens.length
-      && splitTokens.every((token) => directTokens.has(token));
-    if (!incompleteSplitCorroboratesDirect) {
-      addIssue(row, 'author_sources_differ', 'conflict', { directAuthor: authors[0], combinedAuthor: combined[0] });
+      && directComparables.some((author) => {
+        const directTokens = new Set(author.split(/\s+/).filter(Boolean));
+        return splitTokens.every((token) => directTokens.has(token));
+      });
+    if (!exactSplitCorroboratesDirect && !incompleteSplitCorroboratesDirect) {
+      addIssue(row, 'author_sources_differ', 'conflict', {
+        directAuthor: directAuthor[0],
+        directAuthors: [...directAuthor],
+        combinedAuthor: combined[0],
+      });
     }
   }
 

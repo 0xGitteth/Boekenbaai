@@ -62,6 +62,21 @@ module.exports = async function runMetadataTests() {
   ], { title: 'Strict titel', author: 'A Auteur' });
   assert.strictEqual(rejectContradictingIdentifierless.candidate, null);
 
+  const contradictoryExactWithTitleless = selectIsbnMetadataCandidate(ISBN, [
+    normalizeMetadataCandidate({ title: 'Andere titel', author: 'A Auteur', isbn13: ISBN }),
+    normalizeMetadataCandidate({ author: 'A Auteur', isbn13: ISBN, publisher: 'Mag niet winnen' }),
+  ], { title: 'Strict titel', author: 'A Auteur' });
+  assert.strictEqual(contradictoryExactWithTitleless.candidate, null);
+  assert.strictEqual(contradictoryExactWithTitleless.conflict.code, 'metadata_title_conflict');
+  assert.deepStrictEqual(contradictoryExactWithTitleless.conflict.titles, ['Andere titel']);
+
+  const matchingExactWithTitleless = selectIsbnMetadataCandidate(ISBN, [
+    normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
+    normalizeMetadataCandidate({ author: 'A Auteur', isbn13: ISBN, publisher: 'Rijke exacte bron' }),
+  ], { title: 'Strict titel', author: 'A Auteur' });
+  assert.strictEqual(matchingExactWithTitleless.conflict, null);
+  assert.strictEqual(matchingExactWithTitleless.candidate.publisher, 'Rijke exacte bron');
+
   const resolved = await analyzeBookImportRows([{
     Titel: 'Metadata resolve', Auteur: 'A Auteur', 'ISBN-nummer': '978030640615',
   }], {
@@ -135,6 +150,22 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(titleConflict.rows[0].status, 'conflict');
   assert.strictEqual(titleConflict.rows[0].book.publisher, '');
   assert.ok(codes(titleConflict.rows[0]).has('metadata_title_conflict'));
+
+  const hiddenTitleConflict = await analyzeBookImportRows([{
+    Titel: 'Correct', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      source: 'same-isbn-mixed',
+      candidates: [
+        { title: 'Different', author: 'A Auteur', isbn13: ISBN, found: true },
+        { author: 'A Auteur', isbn13: ISBN, publisher: 'Chosen', found: true },
+      ],
+    }),
+  });
+  assert.strictEqual(hiddenTitleConflict.rows[0].status, 'conflict');
+  assert.strictEqual(hiddenTitleConflict.rows[0].book.publisher, '');
+  assert.ok(codes(hiddenTitleConflict.rows[0]).has('metadata_title_conflict'));
+  assert.strictEqual(hiddenTitleConflict.groups.length, 0);
 
   let collectionLookups = 0;
   const collectionEnrichment = await analyzeBookImportRows([{

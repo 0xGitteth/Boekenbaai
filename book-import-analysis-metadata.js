@@ -217,7 +217,10 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, 
     } else mismatched.push(candidate);
   }
   const exactTitles = distinctCandidateTitles(exact);
-  if (exactTitles.length > 1) {
+  const contradictoryExactTitles = rowBook
+    ? distinctCandidateTitles(exact.filter((candidate) => !titleDoesNotContradict(rowBook, candidate)))
+    : [];
+  if (exactTitles.length > 1 || contradictoryExactTitles.length) {
     return {
       candidate: null,
       conflict: {
@@ -228,16 +231,6 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, 
     };
   }
   const compatibleExact = rowBook ? exact.filter((candidate) => titleDoesNotContradict(rowBook, candidate)) : exact;
-  if (exact.length && !compatibleExact.length) {
-    return {
-      candidate: null,
-      conflict: {
-        code: 'metadata_title_conflict',
-        editionIsbn: requested,
-        titles: Array.from(new Set(exact.map((candidate) => candidate.title).filter(Boolean))),
-      },
-    };
-  }
   const rankedExact = compatibleExact.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
   if (rankedExact.length) return { candidate: rankedExact[0], conflict: null };
   if (mismatched.length) {
