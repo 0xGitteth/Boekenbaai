@@ -321,7 +321,7 @@ module.exports = async function runReviewTailTests() {
     Titel: 'Meerdere auteurs', Auteur: 'Alice; Klassenboek; Bob', 'ISBN-nummer': ISBN,
   }]);
   assert.deepStrictEqual(semicolonAuthorMarker.rows[0].book.authors, ['Alice', 'Bob']);
-  assert.strictEqual(semicolonAuthorMarker.rows[0].book.author, 'Alice; Bob');
+  assert.strictEqual(semicolonAuthorMarker.rows[0].book.author, 'Alice & Bob');
 
   const partialSplitAuthor = await analyzeBookImportRows([{
     Titel: 'Spijt!', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN,
