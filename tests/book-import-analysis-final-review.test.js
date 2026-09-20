@@ -50,6 +50,23 @@ function buildDeflateZip(payload, { compressedSizeDelta = 0, declaredExpandedByt
   return Buffer.concat([local, compressed, central, eocd]);
 }
 
+function duplicateCentralDirectoryEntry(zipBuffer) {
+  const eocdOffset = zipBuffer.length - 22;
+  const centralSize = zipBuffer.readUInt32LE(eocdOffset + 12);
+  const centralOffset = zipBuffer.readUInt32LE(eocdOffset + 16);
+  const central = zipBuffer.subarray(centralOffset, centralOffset + centralSize);
+  const eocd = Buffer.from(zipBuffer.subarray(eocdOffset));
+  eocd.writeUInt16LE(2, 8);
+  eocd.writeUInt16LE(2, 10);
+  eocd.writeUInt32LE(centralSize * 2, 12);
+  return Buffer.concat([
+    zipBuffer.subarray(0, centralOffset),
+    central,
+    central,
+    eocd,
+  ]);
+}
+
 module.exports = async function runFinalReviewTests() {
   let titleAuthorLookups = 0;
   const conflictingSuggestions = await analyzeBookImportRows([{
@@ -252,6 +269,20 @@ module.exports = async function runFinalReviewTests() {
   assert.strictEqual(hiddenExpansionResult.error, 'file_too_large');
   assert.strictEqual(hiddenExpansionResult.reason, 'archive_expansion_limit');
   assert.strictEqual(hiddenExpansionReadCalled, false);
+
+  const overlappingEntryZip = duplicateCentralDirectoryEntry(buildDeflateZip(Buffer.alloc(256, 67)));
+  let overlappingReadCalled = false;
+  const overlappingEntryResult = readBookImportWorkbook({
+    read() {
+      overlappingReadCalled = true;
+      throw new Error('Overlapping ZIP entries must be rejected before SheetJS');
+    },
+    utils: { sheet_to_json: () => [] },
+  }, overlappingEntryZip, { maxExpandedBytes: 4096 });
+  assert.strictEqual(overlappingEntryResult.ok, false);
+  assert.strictEqual(overlappingEntryResult.error, 'invalid_workbook');
+  assert.strictEqual(overlappingEntryResult.reason, 'overlapping_zip_entries');
+  assert.strictEqual(overlappingReadCalled, false);
 
   const truncatedDeflateZip = buildDeflateZip(Buffer.alloc(1024, 66), { compressedSizeDelta: -1 });
   let truncatedReadCalled = false;
