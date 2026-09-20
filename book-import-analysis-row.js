@@ -44,9 +44,10 @@ function identifierFieldSource(mapped, field, canonical) {
   return { source: 'excel', header: matching.entry.header, raw: matching.entry.value };
 }
 
-function barcodeFieldSource(mapped, barcode) {
+function barcodeFieldSource(mapped, barcode, blockedFields = new Set()) {
   if (!barcode) return fieldSource(mapped, 'barcode');
   for (const field of ['barcode', 'ambiguousIdentifier']) {
+    if (blockedFields.has(field)) continue;
     const candidates = mapped.sources[field] || [];
     const matching = candidates.find((entry) => normalizeRuntimeBarcode(contextFieldValue(field, entry.value)) === barcode);
     if (matching) return { source: 'excel', header: matching.header, raw: matching.value };
@@ -294,13 +295,13 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
     ['isbn', identifierAnalysis.explicit],
     ['metadataIsbn', identifierAnalysis.legacy],
     ['ambiguousIdentifier', identifierAnalysis.ambiguous],
-  ].filter(([, analysis]) => analysis.canonical && analysis.canonical === book.editionIsbn);
+  ].filter(([field, analysis]) => !blocked.has(field) && analysis.canonical && analysis.canonical === book.editionIsbn);
   const editionSource = editionSources.find(([, analysis]) => !analysis.repair) || editionSources[0];
   const provenance = {
     title: fieldSource(mapped, 'title'),
     author: directAuthor.length ? fieldSource(mapped, 'author') : { source: 'unknown' },
     editionIsbn: editionSource ? identifierFieldSource(mapped, editionSource[0], book.editionIsbn) : { source: 'unknown' },
-    barcode: barcodeFieldSource(mapped, book.barcode),
+    barcode: barcodeFieldSource(mapped, book.barcode, blocked),
     metadataIsbn: book.metadataIsbn
       ? identifierFieldSource(mapped, 'metadataIsbn', book.metadataIsbn)
       : fieldSource(mapped, 'metadataIsbn'),
@@ -318,9 +319,9 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
     easyReading: fieldSource(mapped, 'easyReading'),
   };
   if (provenance.author.source === 'unknown' && book.author) {
-    const firstHeaders = (mapped.sources.authorFirst || [])
+    const firstHeaders = blocked.has('authorFirst') ? [] : (mapped.sources.authorFirst || [])
       .filter((entry) => !isBlankCellValue(contextFieldValue('authorFirst', entry.value))).map((entry) => entry.header);
-    const lastHeaders = (mapped.sources.authorLast || [])
+    const lastHeaders = blocked.has('authorLast') ? [] : (mapped.sources.authorLast || [])
       .filter((entry) => !isBlankCellValue(contextFieldValue('authorLast', entry.value))).map((entry) => entry.header);
     const sourceHeaders = [...firstHeaders, ...lastHeaders];
     if (sourceHeaders.length) provenance.author = {
