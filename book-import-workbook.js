@@ -236,6 +236,12 @@ function firstSheet(workbook) {
 function readBookImportWorkbook(XLSX, input, options = {}) {
   if (!XLSX || typeof XLSX.read !== 'function' || !XLSX.utils || typeof XLSX.utils.sheet_to_json !== 'function') return { ok: false, error: 'xlsx_unavailable' };
   const maxBytes = Number.isInteger(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 25 * 1024 * 1024;
+  const directByteLength = Buffer.isBuffer(input)
+    ? input.length
+    : (input instanceof Uint8Array ? input.byteLength : null);
+  if (directByteLength !== null && directByteLength > maxBytes) {
+    return { ok: false, error: 'file_too_large', byteLength: directByteLength, maxBytes };
+  }
   const encodedSize = base64PayloadInfo(input);
   if (encodedSize && encodedSize.estimatedDecodedLength > maxBytes) {
     return {
