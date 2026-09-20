@@ -37,6 +37,22 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(candidate.editionIsbn, ISBN);
   assert.deepStrictEqual(metadataCandidatesFromResult({ found: false, candidates: [{ title: 'LEK', isbn13: ISBN }] }), []);
 
+  const singularCommaAuthor = normalizeMetadataCandidate({
+    title: 'Bibliografische auteur', author: 'Doe, John', isbn13: ISBN,
+  });
+  assert.deepStrictEqual(singularCommaAuthor.authors, ['Doe, John']);
+  assert.strictEqual(singularCommaAuthor.author, 'Doe, John');
+
+  const explicitCommaAuthors = normalizeMetadataCandidate({
+    title: 'Expliciete auteurs', authors: ['Doe, John', 'Smith, Jane'], isbn13: ISBN,
+  });
+  assert.deepStrictEqual(explicitCommaAuthors.authors, ['Doe, John', 'Smith, Jane']);
+
+  const delimitedSingularAuthors = normalizeMetadataCandidate({
+    title: 'Delimited auteurs', author: 'Alice & Bob', isbn13: ISBN,
+  });
+  assert.deepStrictEqual(delimitedSingularAuthors.authors, ['Alice', 'Bob']);
+
   const strictRow = { title: 'Strict titel', author: 'A Auteur' };
   assert.strictEqual(strictMetadataMatch(strictRow, { title: 'Strict titel', author: 'A Auteur', authors: ['A Auteur'] }), true);
   assert.strictEqual(strictMetadataMatch(strictRow, { title: 'Strict titel extra', author: 'A Auteur', authors: ['A Auteur'] }), false);
@@ -143,6 +159,40 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(resolvedThenEnriched.rows[0].book.editionIsbn, ISBN);
   assert.strictEqual(resolvedThenEnriched.rows[0].book.description, 'Exact verrijkt');
   assert.strictEqual(exactLookupsAfterResolve, 1);
+
+  const commaAuthorEnrichment = await analyzeBookImportRows([{
+    Titel: 'Komma-auteur uit metadata', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Komma-auteur uit metadata', author: 'Doe, John', isbn13: ISBN,
+      found: true, source: 'exact-comma-author',
+    }),
+  });
+  assert.strictEqual(commaAuthorEnrichment.rows[0].book.author, 'Doe, John');
+  assert.deepStrictEqual(commaAuthorEnrichment.rows[0].book.authors, ['Doe, John']);
+
+  let derivedStripExactCalls = 0;
+  const derivedStripAcrossReconciliation = await analyzeBookImportRows([{
+    Titel: 'Tweestaps strip', Auteur: 'A Auteur', Examenmateriaal: 'Strip',
+  }], {
+    lookupTitleAuthor: async () => ({
+      title: 'Tweestaps strip', author: 'A Auteur', isbn13: ISBN,
+      tags: ['werk-tag'], found: true, source: 'work-level-strip',
+    }),
+    lookupIsbn: async () => {
+      derivedStripExactCalls += 1;
+      return {
+        title: 'Tweestaps strip', author: 'A Auteur', isbn13: ISBN,
+        tags: ['exact-tag'], found: true, source: 'exact-strip',
+      };
+    },
+  });
+  assert.strictEqual(derivedStripExactCalls, 1);
+  assert.deepStrictEqual(derivedStripAcrossReconciliation.rows[0].book.tags, ['strip', 'exact-tag']);
+  assert.strictEqual(derivedStripAcrossReconciliation.rows[0].provenance.tags.source, 'metadata');
+  assert.strictEqual(derivedStripAcrossReconciliation.rows[0].provenance.tags.detail, 'exact-strip');
+  assert.strictEqual(derivedStripAcrossReconciliation.rows[0].provenance.tags.includesDerivedValues, true);
+  assert.deepStrictEqual(derivedStripAcrossReconciliation.rows[0].provenance.tags.derivedValues, ['strip']);
 
   const titleConflict = await analyzeBookImportRows([{ Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }], {
     lookupIsbn: async () => ({ title: 'Andere titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Mag niet lekken', found: true }),
