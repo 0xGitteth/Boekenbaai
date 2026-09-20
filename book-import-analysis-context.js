@@ -60,7 +60,8 @@ function stripDelimitedSemanticMarkers(value) {
   for (let index = 1; index < keptIndexes.length; index += 1) {
     const previousIndex = keptIndexes[index - 1];
     const currentIndex = keptIndexes[index];
-    const delimiter = delimiters[previousIndex] || delimiters[currentIndex - 1] || '; ';
+    const between = delimiters.slice(previousIndex, currentIndex);
+    const delimiter = between.find((candidate) => /[;\n\r]/.test(candidate)) || between[0] || '; ';
     result += delimiter + values[currentIndex];
   }
   return result.trim();
