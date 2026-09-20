@@ -305,6 +305,19 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(duplicateRepairedIsbnResult.groups.length, 1);
   assert.strictEqual(duplicateRepairedIsbnResult.rows[0].provenance.editionIsbn.header, 'ISBN-nummer_1');
 
+  const repairAndSuggestionEvidence = { Titel: 'Repair plus suggestie', Auteur: 'A Auteur' };
+  Object.defineProperty(repairAndSuggestionEvidence, 'ISBN-nummer', { value: '306406152', enumerable: true });
+  Object.defineProperty(repairAndSuggestionEvidence, 'ISBN-nummer_1', { value: '978030640615', enumerable: true });
+  const repairAndSuggestionResult = await analyzeBookImportRows([repairAndSuggestionEvidence]);
+  const repairIssues = repairAndSuggestionResult.rows[0].issues.filter((issue) => issue.code === 'isbn_repaired');
+  const suggestionIssues = repairAndSuggestionResult.rows[0].issues.filter((issue) => issue.code === 'isbn_repair_suggested');
+  assert.strictEqual(repairIssues.length, 1, 'One repaired source cell must produce one repair issue');
+  assert.strictEqual(suggestionIssues.length, 1, 'The separate suggestion source must remain visible once');
+  assert.strictEqual(repairIssues[0].header, 'ISBN-nummer');
+  assert.strictEqual(suggestionIssues[0].header, 'ISBN-nummer_1');
+  assert.strictEqual(repairAndSuggestionResult.summary.repairs, 1);
+  assert.strictEqual(repairAndSuggestionResult.rows[0].book.editionIsbn, ISBN);
+
   const repairedExplicitWithExactLegacy = await analyzeBookImportRows([{
     Titel: 'Sterkste ISBN bron',
     Auteur: 'A Auteur',
