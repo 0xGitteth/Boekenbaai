@@ -28,12 +28,53 @@ function semanticMarkerTokens(value, field = '') {
     .filter((entry) => entry.kind);
 }
 
+function stripDelimitedSemanticMarkers(value) {
+  const text = valueText(value);
+  if (!text) return value;
+
+  const values = [];
+  const delimiters = [];
+  const delimiterPattern = /[;,\n\r]+/g;
+  let start = 0;
+  let match;
+  while ((match = delimiterPattern.exec(text))) {
+    values.push(text.slice(start, match.index));
+    delimiters.push(match[0]);
+    start = match.index + match[0].length;
+  }
+  values.push(text.slice(start));
+
+  const keptIndexes = [];
+  let removedMarker = false;
+  for (let index = 0; index < values.length; index += 1) {
+    if (markerKind(values[index])) {
+      removedMarker = true;
+      continue;
+    }
+    if (normalizeBookIdentityText(values[index])) keptIndexes.push(index);
+  }
+  if (!removedMarker) return value;
+  if (!keptIndexes.length) return '';
+
+  let result = values[keptIndexes[0]].trimStart();
+  for (let index = 1; index < keptIndexes.length; index += 1) {
+    const previousIndex = keptIndexes[index - 1];
+    const currentIndex = keptIndexes[index];
+    const delimiter = delimiters[previousIndex] || delimiters[currentIndex - 1] || '; ';
+    result += delimiter + values[currentIndex];
+  }
+  return result.trim();
+}
+
 function stripSemanticMarkers(value, field = '') {
   const tokens = semanticValueTokens(field, value);
   if (!tokens.length) return value;
   const containsMarker = tokens.some((token) => markerKind(token));
   if (!containsMarker) return value;
-  return tokens.filter((token) => !markerKind(token)).join('; ');
+  if (field === 'tags' || field === 'themes') {
+    return tokens.filter((token) => !markerKind(token)).join('; ');
+  }
+  return stripDelimitedSemanticMarkers(value);
 }
 
 function isPureSemanticMarker(value, field = '') {
