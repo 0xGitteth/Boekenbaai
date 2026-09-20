@@ -222,8 +222,16 @@ function normalizeIdentifierFields(mapped, row, book) {
 
   for (const [field, analysis] of [['isbn', explicit], ['metadataIsbn', legacy], ['ambiguousIdentifier', ambiguous]]) {
     if (analysis.unsupportedType) addIssue(row, 'unsupported_identifier_type', 'conflict', { field });
-    if (analysis.repair) addIssue(row, 'isbn_repaired', 'warning', { field, repair: analysis.repair });
-    if (analysis.suggestion) addIssue(row, 'isbn_repair_suggested', 'warning', { field, suggestion: analysis.suggestion });
+    if (analysis.repair) {
+      const alreadyRecorded = row.issues.some((issue) => issue.code === 'isbn_repaired'
+        && issue.field === field && JSON.stringify(issue.repair) === JSON.stringify(analysis.repair));
+      if (!alreadyRecorded) addIssue(row, 'isbn_repaired', 'warning', { field, repair: analysis.repair });
+    }
+    if (analysis.suggestion) {
+      const alreadyRecorded = row.issues.some((issue) => issue.code === 'isbn_repair_suggested'
+        && issue.field === field && JSON.stringify(issue.suggestion) === JSON.stringify(analysis.suggestion));
+      if (!alreadyRecorded) addIssue(row, 'isbn_repair_suggested', 'warning', { field, suggestion: analysis.suggestion });
+    }
   }
 
   for (const [field, sourceValue, analysis] of [

@@ -36,7 +36,7 @@ function metadataAuthors(payload) {
   if (Array.isArray(rawAuthors) && rawAuthors.length) return normalizeAuthorList(rawAuthors, rawAuthor);
   if (!rawAuthor) return [];
   const displayParts = rawAuthor
-    .split(/[;\n\r]+|\s+&\s+|\s*,\s*/)
+    .split(/[;\n\r]+|\s+&\s+/)
     .map((entry) => normalizeBookIdentityText(entry))
     .filter(Boolean);
   if (displayParts.length > 1) return normalizeAuthorList(displayParts, rawAuthor);
@@ -283,14 +283,24 @@ function setMetadataField(row, field, value, candidate) {
     return;
   }
   const currentEmpty = current === null || current === undefined || current === '' || (Array.isArray(current) && !current.length);
-  if (field === 'tags' && Array.isArray(value)
-    && row.provenance.tags?.source !== 'excel' && row.provenance.tags?.source !== 'metadata') {
-    const merged = Array.isArray(current) ? [...current] : [];
+  if (field === 'tags' && Array.isArray(value) && currentProvenance?.source !== 'excel') {
+    const derivedValues = currentProvenance?.source === 'derived'
+      ? (Array.isArray(current) ? [...current] : [])
+      : (currentProvenance?.includesDerivedValues && Array.isArray(currentProvenance.derivedValues)
+        ? [...currentProvenance.derivedValues]
+        : []);
+    const merged = currentProvenance?.source === 'metadata'
+      ? [...derivedValues]
+      : (Array.isArray(current) ? [...current] : []);
     for (const tag of value) {
       if (!merged.some((existing) => comparableText(existing) === comparableText(tag))) merged.push(tag);
     }
     row.book.tags = merged;
-    row.provenance.tags = { source: 'metadata', detail: candidate.source || null, includesDerivedValues: Boolean(current?.length) };
+    row.provenance.tags = {
+      source: 'metadata',
+      detail: candidate.source || null,
+      ...(derivedValues.length ? { includesDerivedValues: true, derivedValues } : {}),
+    };
     return;
   }
   if (currentEmpty || currentProvenance?.source === 'metadata') {

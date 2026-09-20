@@ -2,12 +2,70 @@
 
 const assert = require('assert');
 const XLSX = require('xlsx');
+const { deflateRawSync } = require('node:zlib');
 const { analyzeBookImportRows } = require('../book-import-analysis');
 const { readBookImportWorkbook } = require('../book-import-workbook');
 
 const ISBN = '9780306406157';
 const ISBN_ALT = '9780439554930';
 const issueCodes = (row) => new Set(row.issues.map((issue) => issue.code));
+
+function buildDeflateZip(payload, { compressedSizeDelta = 0, declaredExpandedBytes = payload.length } = {}) {
+  const fileName = Buffer.from('xl/worksheets/sheet1.xml');
+  const compressed = deflateRawSync(payload);
+  const declaredCompressedBytes = Math.max(0, compressed.length + compressedSizeDelta);
+
+  const local = Buffer.alloc(30 + fileName.length);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0, 6);
+  local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(0, 14);
+  local.writeUInt32LE(declaredCompressedBytes, 18);
+  local.writeUInt32LE(declaredExpandedBytes, 22);
+  local.writeUInt16LE(fileName.length, 26);
+  fileName.copy(local, 30);
+
+  const central = Buffer.alloc(46 + fileName.length);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(0, 8);
+  central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(0, 16);
+  central.writeUInt32LE(declaredCompressedBytes, 20);
+  central.writeUInt32LE(declaredExpandedBytes, 24);
+  central.writeUInt16LE(fileName.length, 28);
+  central.writeUInt32LE(0, 42);
+  fileName.copy(central, 46);
+
+  const centralOffset = local.length + compressed.length;
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(1, 8);
+  eocd.writeUInt16LE(1, 10);
+  eocd.writeUInt32LE(central.length, 12);
+  eocd.writeUInt32LE(centralOffset, 16);
+
+  return Buffer.concat([local, compressed, central, eocd]);
+}
+
+function duplicateCentralDirectoryEntry(zipBuffer) {
+  const eocdOffset = zipBuffer.length - 22;
+  const centralSize = zipBuffer.readUInt32LE(eocdOffset + 12);
+  const centralOffset = zipBuffer.readUInt32LE(eocdOffset + 16);
+  const central = zipBuffer.subarray(centralOffset, centralOffset + centralSize);
+  const eocd = Buffer.from(zipBuffer.subarray(eocdOffset));
+  eocd.writeUInt16LE(2, 8);
+  eocd.writeUInt16LE(2, 10);
+  eocd.writeUInt32LE(centralSize * 2, 12);
+  return Buffer.concat([
+    zipBuffer.subarray(0, centralOffset),
+    central,
+    central,
+    eocd,
+  ]);
+}
 
 module.exports = async function runFinalReviewTests() {
   let titleAuthorLookups = 0;
@@ -117,7 +175,7 @@ module.exports = async function runFinalReviewTests() {
     Titel: 'Samen geschreven', Auteur: 'Alice; Bob',
   }], {
     lookupTitleAuthor: async () => ({
-      title: 'Samen geschreven', author: 'Alice, Bob', barcode: ISBN, found: true, source: 'title-author',
+      title: 'Samen geschreven', authors: ['Alice', 'Bob'], barcode: ISBN, found: true, source: 'title-author',
     }),
   });
   assert.strictEqual(multiAuthorMetadata.rows[0].book.editionIsbn, ISBN);
@@ -196,6 +254,49 @@ module.exports = async function runFinalReviewTests() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, 'Boeken');
   const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+  const hiddenExpansionPayload = Buffer.alloc(4096, 65);
+  const hiddenExpansionZip = buildDeflateZip(hiddenExpansionPayload, { declaredExpandedBytes: 64 });
+  let hiddenExpansionReadCalled = false;
+  const hiddenExpansionResult = readBookImportWorkbook({
+    read() {
+      hiddenExpansionReadCalled = true;
+      throw new Error('Hidden expansion must be rejected before SheetJS');
+    },
+    utils: { sheet_to_json: () => [] },
+  }, hiddenExpansionZip, { maxExpandedBytes: 128, maxCompressionRatio: 1000 });
+  assert.strictEqual(hiddenExpansionResult.ok, false);
+  assert.strictEqual(hiddenExpansionResult.error, 'file_too_large');
+  assert.strictEqual(hiddenExpansionResult.reason, 'archive_expansion_limit');
+  assert.strictEqual(hiddenExpansionReadCalled, false);
+
+  const overlappingEntryZip = duplicateCentralDirectoryEntry(buildDeflateZip(Buffer.alloc(256, 67)));
+  let overlappingReadCalled = false;
+  const overlappingEntryResult = readBookImportWorkbook({
+    read() {
+      overlappingReadCalled = true;
+      throw new Error('Overlapping ZIP entries must be rejected before SheetJS');
+    },
+    utils: { sheet_to_json: () => [] },
+  }, overlappingEntryZip, { maxExpandedBytes: 4096 });
+  assert.strictEqual(overlappingEntryResult.ok, false);
+  assert.strictEqual(overlappingEntryResult.error, 'invalid_workbook');
+  assert.strictEqual(overlappingEntryResult.reason, 'overlapping_zip_entries');
+  assert.strictEqual(overlappingReadCalled, false);
+
+  const truncatedDeflateZip = buildDeflateZip(Buffer.alloc(1024, 66), { compressedSizeDelta: -1 });
+  let truncatedReadCalled = false;
+  const truncatedDeflateResult = readBookImportWorkbook({
+    read() {
+      truncatedReadCalled = true;
+      throw new Error('Truncated deflate declaration must be rejected before SheetJS');
+    },
+    utils: { sheet_to_json: () => [] },
+  }, truncatedDeflateZip, { maxExpandedBytes: 4096 });
+  assert.strictEqual(truncatedDeflateResult.ok, false);
+  assert.strictEqual(truncatedDeflateResult.error, 'invalid_workbook');
+  assert.strictEqual(truncatedDeflateResult.reason, 'invalid_zip_stream');
+  assert.strictEqual(truncatedReadCalled, false);
 
   let archiveReadCalled = false;
   const archiveGuardXlsx = {
