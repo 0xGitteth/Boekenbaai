@@ -124,7 +124,15 @@ function normalizeBookFields(mapped, row) {
   let authors = directAuthor;
   if (!authors.length && combined.length) authors = combined;
   if (authors.length && combined.length && comparableText(authors[0]) !== comparableText(combined[0])) {
-    addIssue(row, 'author_sources_differ', 'conflict', { directAuthor: authors[0], combinedAuthor: combined[0] });
+    const splitIncomplete = !first || !last;
+    const splitTokens = comparableText(combined[0]).split(/\s+/).filter(Boolean);
+    const directTokens = new Set(comparableText(authors[0]).split(/\s+/).filter(Boolean));
+    const incompleteSplitCorroboratesDirect = splitIncomplete
+      && splitTokens.length
+      && splitTokens.every((token) => directTokens.has(token));
+    if (!incompleteSplitCorroboratesDirect) {
+      addIssue(row, 'author_sources_differ', 'conflict', { directAuthor: authors[0], combinedAuthor: combined[0] });
+    }
   }
 
   const title = blocked.has('title') ? '' : normalizeBookIdentityText(f.title);
