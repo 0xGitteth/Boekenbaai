@@ -18,8 +18,8 @@ function markerKind(value) {
   return '';
 }
 
-function semanticValueTokens(field, value) {
-  return field === 'tags' || field === 'themes' ? splitTagValue(value) : splitMultiValue(value);
+function semanticValueTokens(_field, value) {
+  return splitTagValue(value);
 }
 
 function semanticMarkerTokens(value, field = '') {
