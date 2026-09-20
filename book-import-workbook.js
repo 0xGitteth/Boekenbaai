@@ -410,7 +410,9 @@ function inspectZipExpansion(buffer, options, maxBytes) {
 
   let actualCompressedBytes = 0;
   let actualExpandedBytes = 0;
-  for (const entry of entries) {
+  let previousDataEnd = -1;
+  const localOrderEntries = entries.slice().sort((left, right) => left.localHeaderOffset - right.localHeaderOffset);
+  for (const entry of localOrderEntries) {
     if (entry.flags & 0x0001) return invalidArchive('encrypted_zip_not_supported');
     if (entry.method !== 0 && entry.method !== 8) return invalidArchive('unsupported_zip_compression');
     if (entry.localHeaderOffset + 30 > centralOffset
@@ -432,6 +434,10 @@ function inspectZipExpansion(buffer, options, maxBytes) {
       || dataStart > centralOffset || dataEnd > centralOffset) {
       return invalidArchive('invalid_zip_local_header');
     }
+    if (entry.localHeaderOffset < previousDataEnd || dataStart < previousDataEnd) {
+      return invalidArchive('overlapping_zip_entries');
+    }
+    previousDataEnd = dataEnd;
     const localFileName = buffer.subarray(
       entry.localHeaderOffset + 30,
       entry.localHeaderOffset + 30 + localFileNameLength,
