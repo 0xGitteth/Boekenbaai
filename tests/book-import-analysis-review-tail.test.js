@@ -201,6 +201,25 @@ module.exports = async function runReviewTailTests() {
   assert.ok(!issueCodes(duplicateRepairedIsbnResult.rows[0]).has('conflicting_source_columns'));
   assert.ok(issueCodes(duplicateRepairedIsbnResult.rows[0]).has('isbn_repaired'));
   assert.strictEqual(duplicateRepairedIsbnResult.groups.length, 1);
+  assert.strictEqual(duplicateRepairedIsbnResult.rows[0].provenance.editionIsbn.header, 'ISBN-nummer_1');
+
+  const repairedExplicitWithExactLegacy = await analyzeBookImportRows([{
+    Titel: 'Sterkste ISBN bron',
+    Auteur: 'A Auteur',
+    'ISBN-nummer': '306406152',
+    'Intern ISBN': ISBN,
+  }]);
+  assert.strictEqual(repairedExplicitWithExactLegacy.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(repairedExplicitWithExactLegacy.rows[0].provenance.editionIsbn.header, 'Intern ISBN');
+  assert.ok(issueCodes(repairedExplicitWithExactLegacy.rows[0]).has('isbn_repaired'));
+
+  const duplicateRepairedMetadataEvidence = { Titel: 'Metadata reparatiebron', Auteur: 'A Auteur' };
+  Object.defineProperty(duplicateRepairedMetadataEvidence, 'Intern ISBN', { value: '306406152', enumerable: true });
+  Object.defineProperty(duplicateRepairedMetadataEvidence, 'Intern ISBN_1', { value: ISBN, enumerable: true });
+  const duplicateRepairedMetadataResult = await analyzeBookImportRows([duplicateRepairedMetadataEvidence]);
+  assert.strictEqual(duplicateRepairedMetadataResult.rows[0].book.metadataIsbn, ISBN);
+  assert.strictEqual(duplicateRepairedMetadataResult.rows[0].provenance.metadataIsbn.header, 'Intern ISBN_1');
+  assert.ok(issueCodes(duplicateRepairedMetadataResult.rows[0]).has('isbn_repaired'));
 
   const commaOwnBookMarker = await analyzeBookImportRows([{
     Titel: 'Tag marker', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Tags: 'fiction, eigen boek',
@@ -274,6 +293,22 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(identifierlessExactPartialAuthor.rows[0].book.author, 'Carry Slee');
   assert.strictEqual(identifierlessExactPartialAuthor.rows[0].provenance.author.source, 'metadata');
   assert.strictEqual(identifierlessExactPartialAuthor.rows[0].provenance.author.detail, 'exact-without-identifier');
+
+  const duplicatedFirstNameOnly = { Titel: 'Dubbele voornaam', 'ISBN-nummer': ISBN };
+  Object.defineProperty(duplicatedFirstNameOnly, 'Voornaam schrijver', { value: 'Carry', enumerable: true });
+  Object.defineProperty(duplicatedFirstNameOnly, 'Voornaam schrijver_1', { value: 'Carry', enumerable: true });
+  const duplicatedFirstNameOnlyResult = await analyzeBookImportRows([duplicatedFirstNameOnly], {
+    lookupIsbn: async () => ({
+      title: 'Dubbele voornaam',
+      author: 'Carry Slee',
+      barcode: ISBN,
+      found: true,
+      source: 'exact-duplicate-first',
+    }),
+  });
+  assert.strictEqual(duplicatedFirstNameOnlyResult.rows[0].book.author, 'Carry Slee');
+  assert.strictEqual(duplicatedFirstNameOnlyResult.rows[0].provenance.author.source, 'metadata');
+  assert.strictEqual(duplicatedFirstNameOnlyResult.rows[0].provenance.author.supplementedFrom.incomplete, true);
 
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
