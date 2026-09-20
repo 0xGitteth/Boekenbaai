@@ -154,6 +154,15 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(duplicateIsbnResult.rows[0].provenance.editionIsbn.header, 'ISBN-nummer_1');
   assert.strictEqual(duplicateIsbnResult.groups.length, 1);
 
+  const duplicateRepairedIsbnEvidence = { Titel: 'ISBN reparatiebewijs', Auteur: 'A Auteur' };
+  Object.defineProperty(duplicateRepairedIsbnEvidence, 'ISBN-nummer', { value: '306406152', enumerable: true });
+  Object.defineProperty(duplicateRepairedIsbnEvidence, 'ISBN-nummer_1', { value: ISBN, enumerable: true });
+  const duplicateRepairedIsbnResult = await analyzeBookImportRows([duplicateRepairedIsbnEvidence]);
+  assert.strictEqual(duplicateRepairedIsbnResult.rows[0].book.editionIsbn, ISBN);
+  assert.ok(!issueCodes(duplicateRepairedIsbnResult.rows[0]).has('conflicting_source_columns'));
+  assert.ok(issueCodes(duplicateRepairedIsbnResult.rows[0]).has('isbn_repaired'));
+  assert.strictEqual(duplicateRepairedIsbnResult.groups.length, 1);
+
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
   }], {
