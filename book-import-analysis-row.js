@@ -36,16 +36,32 @@ function fieldSource(mapped, field, fallback = 'unknown') {
 }
 
 function identifierFieldSource(mapped, field, canonical) {
-  const candidates = mapped.sources[field] || [];
-  const matching = candidates.find((entry) => analyzeIdentifier(entry.value).canonical === canonical);
+  const candidates = (mapped.sources[field] || [])
+    .map((entry) => ({ entry, analysis: analyzeIdentifier(entry.value) }))
+    .filter(({ analysis }) => analysis.canonical === canonical);
+  const matching = candidates.find(({ analysis }) => !analysis.repair) || candidates[0];
   if (!matching) return fieldSource(mapped, field);
-  return { source: 'excel', header: matching.header, raw: matching.value };
+  return { source: 'excel', header: matching.entry.header, raw: matching.entry.value };
+}
+
+function barcodeFieldSource(mapped, barcode, blockedFields = new Set()) {
+  if (!barcode) return fieldSource(mapped, 'barcode');
+  for (const field of ['barcode', 'ambiguousIdentifier']) {
+    if (blockedFields.has(field)) continue;
+    const candidates = mapped.sources[field] || [];
+    const matching = candidates.find((entry) => normalizeRuntimeBarcode(contextFieldValue(field, entry.value)) === barcode);
+    if (matching) return { source: 'excel', header: matching.header, raw: matching.value };
+  }
+  return { source: 'unknown' };
 }
 
 function preferredIdentifierValue(mapped, field, fallback) {
-  const candidates = mapped.sources[field] || [];
-  const canonical = candidates.find((entry) => !isBlankCellValue(entry.value) && analyzeIdentifier(entry.value).canonical);
-  return canonical ? canonical.value : fallback;
+  const candidates = (mapped.sources[field] || [])
+    .filter((entry) => !isBlankCellValue(entry.value))
+    .map((entry) => ({ entry, analysis: analyzeIdentifier(entry.value) }))
+    .filter(({ analysis }) => analysis.canonical);
+  const preferred = candidates.find(({ analysis }) => !analysis.repair) || candidates[0];
+  return preferred ? preferred.entry.value : fallback;
 }
 
 function collisionDataCandidates(collision) {
@@ -108,7 +124,15 @@ function normalizeBookFields(mapped, row) {
   let authors = directAuthor;
   if (!authors.length && combined.length) authors = combined;
   if (authors.length && combined.length && comparableText(authors[0]) !== comparableText(combined[0])) {
-    addIssue(row, 'author_sources_differ', 'conflict', { directAuthor: authors[0], combinedAuthor: combined[0] });
+    const splitIncomplete = !first || !last;
+    const splitTokens = comparableText(combined[0]).split(/\s+/).filter(Boolean);
+    const directTokens = new Set(comparableText(authors[0]).split(/\s+/).filter(Boolean));
+    const incompleteSplitCorroboratesDirect = splitIncomplete
+      && splitTokens.length
+      && splitTokens.every((token) => directTokens.has(token));
+    if (!incompleteSplitCorroboratesDirect) {
+      addIssue(row, 'author_sources_differ', 'conflict', { directAuthor: authors[0], combinedAuthor: combined[0] });
+    }
   }
 
   const title = blocked.has('title') ? '' : normalizeBookIdentityText(f.title);
@@ -275,17 +299,20 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   const blocked = blockingCollisionFields(mapped);
   const dataFields = getDataFields(mapped);
   const directAuthor = blocked.has('author') ? [] : normalizeDirectAuthors(dataFields.author);
-  const editionSource = [
+  const editionSources = [
     ['isbn', identifierAnalysis.explicit],
     ['metadataIsbn', identifierAnalysis.legacy],
     ['ambiguousIdentifier', identifierAnalysis.ambiguous],
-  ].find(([, analysis]) => analysis.canonical && analysis.canonical === book.editionIsbn);
+  ].filter(([field, analysis]) => !blocked.has(field) && analysis.canonical && analysis.canonical === book.editionIsbn);
+  const editionSource = editionSources.find(([, analysis]) => !analysis.repair) || editionSources[0];
   const provenance = {
     title: fieldSource(mapped, 'title'),
     author: directAuthor.length ? fieldSource(mapped, 'author') : { source: 'unknown' },
     editionIsbn: editionSource ? identifierFieldSource(mapped, editionSource[0], book.editionIsbn) : { source: 'unknown' },
-    barcode: fieldSource(mapped, 'barcode'),
-    metadataIsbn: fieldSource(mapped, 'metadataIsbn'),
+    barcode: barcodeFieldSource(mapped, book.barcode, blocked),
+    metadataIsbn: book.metadataIsbn
+      ? identifierFieldSource(mapped, 'metadataIsbn', book.metadataIsbn)
+      : fieldSource(mapped, 'metadataIsbn'),
     quantity: fieldSource(mapped, 'quantity'),
     description: fieldSource(mapped, 'description'),
     publisher: fieldSource(mapped, 'publisher'),
@@ -300,9 +327,17 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
     easyReading: fieldSource(mapped, 'easyReading'),
   };
   if (provenance.author.source === 'unknown' && book.author) {
-    const sourceHeaders = [...(mapped.sources.authorFirst || []), ...(mapped.sources.authorLast || [])]
+    const firstHeaders = blocked.has('authorFirst') ? [] : (mapped.sources.authorFirst || [])
       .filter((entry) => !isBlankCellValue(contextFieldValue('authorFirst', entry.value))).map((entry) => entry.header);
-    if (sourceHeaders.length) provenance.author = { source: 'excel', headers: sourceHeaders, derived: 'combined_name_parts' };
+    const lastHeaders = blocked.has('authorLast') ? [] : (mapped.sources.authorLast || [])
+      .filter((entry) => !isBlankCellValue(contextFieldValue('authorLast', entry.value))).map((entry) => entry.header);
+    const sourceHeaders = [...firstHeaders, ...lastHeaders];
+    if (sourceHeaders.length) provenance.author = {
+      source: 'excel',
+      headers: sourceHeaders,
+      derived: 'combined_name_parts',
+      incomplete: !firstHeaders.length || !lastHeaders.length,
+    };
   }
   const examSource = fieldSource(mapped, 'examMaterial');
   if (provenance.language.source === 'unknown' && book.language && examSource.source === 'excel') {
@@ -318,7 +353,6 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
       provenance.tags = { ...provenance.tags, includesDerivedValues: true, derived: 'exam_material_strip_tag' };
     }
   }
-  if (book.barcode && provenance.barcode.source === 'unknown' && !identifierAnalysis.ambiguous.canonical) provenance.barcode = fieldSource(mapped, 'ambiguousIdentifier');
   return provenance;
 }
 

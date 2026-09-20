@@ -131,13 +131,20 @@ function strictMetadataMatch(rowBook, candidate) {
   return rowAuthors.every((author) => candidateAuthors.includes(author));
 }
 
-function metadataDoesNotContradict(rowBook, candidate) {
+function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
   const rowTitle = comparableText(rowBook.title);
   const candidateTitle = comparableText(candidate.title);
   if (rowTitle && candidateTitle && rowTitle !== candidateTitle) return false;
   const rowAuthors = normalizeAuthorList(rowBook.authors, rowBook.author).map(comparableText).filter(Boolean);
   const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
-  if (rowAuthors.length && candidateAuthors.length && !rowAuthors.every((author) => candidateAuthors.includes(author))) return false;
+  if (rowAuthors.length && candidateAuthors.length && !rowAuthors.every((author) => candidateAuthors.includes(author))) {
+    const incompleteSplitAuthor = rowProvenance?.author?.source === 'excel'
+      && rowProvenance.author.derived === 'combined_name_parts'
+      && rowProvenance.author.incomplete === true;
+    const rowTokens = comparableText(rowBook.author).split(/\s+/).filter(Boolean);
+    const candidateTokens = new Set(comparableText(candidate.author).split(/\s+/).filter(Boolean));
+    if (!incompleteSplitAuthor || !rowTokens.length || !rowTokens.every((token) => candidateTokens.has(token))) return false;
+  }
   return true;
 }
 
@@ -197,7 +204,7 @@ function distinctCandidateTitles(candidates) {
   return Array.from(titles.values());
 }
 
-function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) {
+function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, rowProvenance = null) {
   const requested = canonicalizeBookIsbn13(requestedIsbn);
   if (!requested) return { candidate: null, conflict: null };
   const exact = [];
@@ -206,7 +213,7 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) 
   for (const candidate of candidates) {
     if (candidate.editionIsbn === requested) exact.push(candidate);
     else if (!candidate.editionIsbn) {
-      if (!rowBook || metadataDoesNotContradict(rowBook, candidate)) identifierless.push(candidate);
+      if (!rowBook || metadataDoesNotContradict(rowBook, candidate, rowProvenance)) identifierless.push(candidate);
     } else mismatched.push(candidate);
   }
   const exactTitles = distinctCandidateTitles(exact);
@@ -283,7 +290,8 @@ function setMetadataField(row, field, value, candidate) {
     return;
   }
   const currentEmpty = current === null || current === undefined || current === '' || (Array.isArray(current) && !current.length);
-  if (field === 'tags' && Array.isArray(value) && row.provenance.tags?.source !== 'excel') {
+  if (field === 'tags' && Array.isArray(value)
+    && row.provenance.tags?.source !== 'excel' && row.provenance.tags?.source !== 'metadata') {
     const merged = Array.isArray(current) ? [...current] : [];
     for (const tag of value) {
       if (!merged.some((existing) => comparableText(existing) === comparableText(tag))) merged.push(tag);
@@ -300,6 +308,15 @@ function setMetadataField(row, field, value, candidate) {
   const same = JSON.stringify(current) === JSON.stringify(value)
     || (typeof current === 'string' && typeof value === 'string' && comparableText(current) === comparableText(value));
   if (!same) addIssue(row, 'metadata_differs_from_excel', 'warning', { field, excelValue: current, metadataValue: value });
+}
+
+function metadataAuthorExtendsIncompleteExcelAuthor(row, candidate) {
+  if (!candidate?.author) return false;
+  const provenance = row?.provenance?.author;
+  if (!provenance || provenance.source !== 'excel' || provenance.derived !== 'combined_name_parts' || provenance.incomplete !== true) return false;
+  const currentTokens = comparableText(row?.book?.author).split(/\s+/).filter(Boolean);
+  const candidateTokens = new Set(comparableText(candidate.author).split(/\s+/).filter(Boolean));
+  return Boolean(currentTokens.length && currentTokens.every((token) => candidateTokens.has(token)));
 }
 
 function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } = {}) {
@@ -321,6 +338,15 @@ function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } 
       row.book.author = candidate.author;
       row.book.authors = [...candidate.authors];
       row.provenance.author = { source: 'metadata', detail: candidate.source || null };
+    } else if (metadataAuthorExtendsIncompleteExcelAuthor(row, candidate)) {
+      const supplementedFrom = row.provenance.author;
+      row.book.author = candidate.author;
+      row.book.authors = [...candidate.authors];
+      row.provenance.author = {
+        source: 'metadata',
+        detail: candidate.source || null,
+        supplementedFrom,
+      };
     } else {
       addIssue(row, 'metadata_differs_from_excel', 'warning', { field: 'author', excelValue: row.book.author, metadataValue: candidate.author });
     }
@@ -338,7 +364,8 @@ function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } 
 async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
-  const hasMissingMetadata = () => !row.book.title || !row.book.author || !row.book.publisher || row.book.publishedYear == null
+  const hasMissingMetadata = () => !row.book.title || !row.book.author || row.provenance?.author?.incomplete === true
+    || !row.book.publisher || row.book.publishedYear == null
     || row.book.pageCount == null || !row.book.language || !row.book.coverUrl || !row.book.description
     || !Array.isArray(row.book.tags) || !row.book.tags.length
     || !Array.isArray(row.book.themes) || !row.book.themes.length;
@@ -348,7 +375,7 @@ async function resolveMetadata(row, options) {
     try {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
       const candidates = metadataCandidatesFromResult(result);
-      const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book);
+      const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book, row.provenance);
       if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       else if (selection.candidate) applyMetadataCandidate(row, selection.candidate);
       else if (candidates.length) addIssue(row, 'metadata_not_usable', 'warning');

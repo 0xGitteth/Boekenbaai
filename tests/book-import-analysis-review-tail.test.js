@@ -64,6 +64,13 @@ module.exports = async function runReviewTailTests() {
   assert.ok(issueCodes(unknownColumnMarker.rows[0]).has('own_book_excluded'));
   assert.strictEqual(unknownColumnMarker.groups.length, 0);
 
+  const commaUnknownMarker = await analyzeBookImportRows([{
+    Titel: 'Komma notitie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'school, eigen boek',
+  }]);
+  assert.strictEqual(commaUnknownMarker.rows[0].status, 'skipped');
+  assert.strictEqual(commaUnknownMarker.rows[0].context.excludeFromSchoolCollection, true);
+  assert.ok(issueCodes(commaUnknownMarker.rows[0]).has('own_book_excluded'));
+
   const copyLimitDuplicate = await analyzeBookImportRows([
     { Titel: 'Eerste', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '55555', Aantal: 1 },
     { Titel: 'Tweede', Auteur: 'B Auteur', 'ISBN-nummer': ISBN_ALT, Barcode: '55555', Aantal: 1 },
@@ -138,6 +145,48 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(placeholderAuthorProvenance.rows[0].provenance.author.derived, 'combined_name_parts');
   assert.deepStrictEqual(placeholderAuthorProvenance.rows[0].provenance.author.headers, ['Voornaam schrijver', 'Achternaam schrijver']);
 
+  const directWithPartialSplit = await analyzeBookImportRows([{
+    Titel: 'Corroborerende auteur',
+    Auteur: 'Carry Slee',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(directWithPartialSplit.rows[0].book.author, 'Carry Slee');
+  assert.ok(!issueCodes(directWithPartialSplit.rows[0]).has('author_sources_differ'));
+
+  const directWithContradictingPartialSplit = await analyzeBookImportRows([{
+    Titel: 'Tegenstrijdige auteur',
+    Auteur: 'Paul van Loon',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+  }]);
+  assert.ok(issueCodes(directWithContradictingPartialSplit.rows[0]).has('author_sources_differ'));
+  assert.strictEqual(directWithContradictingPartialSplit.rows[0].status, 'conflict');
+
+  const fallbackBarcodeProvenance = await analyzeBookImportRows([{
+    Titel: 'Barcode fallback', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: 'ABC', 'Barcode / ISBN': '12345',
+  }]);
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].book.barcode, '12345');
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].provenance.barcode.source, 'excel');
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].provenance.barcode.header, 'Barcode / ISBN');
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].provenance.barcode.raw, '12345');
+
+  const duplicateMetadataIsbnEvidence = { Titel: 'Metadata ISBN bron', Auteur: 'A Auteur' };
+  Object.defineProperty(duplicateMetadataIsbnEvidence, 'Intern ISBN', { value: '978030640615', enumerable: true });
+  Object.defineProperty(duplicateMetadataIsbnEvidence, 'Intern ISBN_1', { value: ISBN, enumerable: true });
+  const duplicateMetadataIsbnResult = await analyzeBookImportRows([duplicateMetadataIsbnEvidence]);
+  assert.strictEqual(duplicateMetadataIsbnResult.rows[0].book.metadataIsbn, ISBN);
+  assert.strictEqual(duplicateMetadataIsbnResult.rows[0].provenance.metadataIsbn.header, 'Intern ISBN_1');
+  assert.strictEqual(duplicateMetadataIsbnResult.rows[0].provenance.metadataIsbn.raw, ISBN);
+
+  const blockedBarcodeEvidence = { Titel: 'Geblokkeerde barcodebron', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': '789' };
+  Object.defineProperty(blockedBarcodeEvidence, 'Barcode', { value: '789', enumerable: true });
+  Object.defineProperty(blockedBarcodeEvidence, 'Barcode_1', { value: '456', enumerable: true });
+  const blockedBarcodeResult = await analyzeBookImportRows([blockedBarcodeEvidence]);
+  assert.strictEqual(blockedBarcodeResult.rows[0].book.barcode, '789');
+  assert.strictEqual(blockedBarcodeResult.rows[0].provenance.barcode.header, 'Barcode / ISBN');
+  assert.ok(issueCodes(blockedBarcodeResult.rows[0]).has('conflicting_source_columns'));
+
   const quantityProvenance = await analyzeBookImportRows([{
     Titel: 'Aantal bron', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Aantal exemplaren': '01',
   }]);
@@ -178,6 +227,139 @@ module.exports = async function runReviewTailTests() {
   assert.ok(!issueCodes(duplicateRepairedIsbnResult.rows[0]).has('conflicting_source_columns'));
   assert.ok(issueCodes(duplicateRepairedIsbnResult.rows[0]).has('isbn_repaired'));
   assert.strictEqual(duplicateRepairedIsbnResult.groups.length, 1);
+  assert.strictEqual(duplicateRepairedIsbnResult.rows[0].provenance.editionIsbn.header, 'ISBN-nummer_1');
+
+  const repairedExplicitWithExactLegacy = await analyzeBookImportRows([{
+    Titel: 'Sterkste ISBN bron',
+    Auteur: 'A Auteur',
+    'ISBN-nummer': '306406152',
+    'Intern ISBN': ISBN,
+  }]);
+  assert.strictEqual(repairedExplicitWithExactLegacy.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(repairedExplicitWithExactLegacy.rows[0].provenance.editionIsbn.header, 'Intern ISBN');
+  assert.ok(issueCodes(repairedExplicitWithExactLegacy.rows[0]).has('isbn_repaired'));
+
+  const duplicateRepairedMetadataEvidence = { Titel: 'Metadata reparatiebron', Auteur: 'A Auteur' };
+  Object.defineProperty(duplicateRepairedMetadataEvidence, 'Intern ISBN', { value: '306406152', enumerable: true });
+  Object.defineProperty(duplicateRepairedMetadataEvidence, 'Intern ISBN_1', { value: ISBN, enumerable: true });
+  const duplicateRepairedMetadataResult = await analyzeBookImportRows([duplicateRepairedMetadataEvidence]);
+  assert.strictEqual(duplicateRepairedMetadataResult.rows[0].book.metadataIsbn, ISBN);
+  assert.strictEqual(duplicateRepairedMetadataResult.rows[0].provenance.metadataIsbn.header, 'Intern ISBN_1');
+  assert.ok(issueCodes(duplicateRepairedMetadataResult.rows[0]).has('isbn_repaired'));
+
+  const blockedExplicitWithLegacyFallback = { Titel: 'Geblokkeerd ISBN bewijs', Auteur: 'A Auteur', 'Intern ISBN': ISBN };
+  Object.defineProperty(blockedExplicitWithLegacyFallback, 'ISBN-nummer', { value: ISBN, enumerable: true });
+  Object.defineProperty(blockedExplicitWithLegacyFallback, 'ISBN-nummer_1', { value: ISBN_ALT, enumerable: true });
+  const blockedExplicitWithLegacyResult = await analyzeBookImportRows([blockedExplicitWithLegacyFallback]);
+  assert.strictEqual(blockedExplicitWithLegacyResult.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(blockedExplicitWithLegacyResult.rows[0].provenance.editionIsbn.header, 'Intern ISBN');
+  assert.ok(issueCodes(blockedExplicitWithLegacyResult.rows[0]).has('conflicting_source_columns'));
+
+  const conflictedFirstNames = { Titel: 'Conflicterende voornamen', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN };
+  Object.defineProperty(conflictedFirstNames, 'Voornaam schrijver', { value: 'Carry', enumerable: true });
+  Object.defineProperty(conflictedFirstNames, 'Voornaam schrijver_1', { value: 'Carla', enumerable: true });
+  const conflictedFirstNamesResult = await analyzeBookImportRows([conflictedFirstNames], {
+    lookupIsbn: async () => ({
+      title: 'Conflicterende voornamen',
+      author: 'Carry Slee',
+      barcode: ISBN,
+      found: true,
+      source: 'exact-after-name-conflict',
+    }),
+  });
+  assert.strictEqual(conflictedFirstNamesResult.rows[0].book.author, 'Carry Slee');
+  assert.deepStrictEqual(conflictedFirstNamesResult.rows[0].provenance.author.supplementedFrom.headers, ['Achternaam schrijver']);
+  assert.strictEqual(conflictedFirstNamesResult.rows[0].provenance.author.supplementedFrom.incomplete, true);
+  assert.ok(issueCodes(conflictedFirstNamesResult.rows[0]).has('conflicting_source_columns'));
+
+  const commaOwnBookMarker = await analyzeBookImportRows([{
+    Titel: 'Tag marker', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Tags: 'fiction, eigen boek',
+  }]);
+  assert.strictEqual(commaOwnBookMarker.rows[0].status, 'skipped');
+  assert.strictEqual(commaOwnBookMarker.rows[0].context.excludeFromSchoolCollection, true);
+  assert.deepStrictEqual(commaOwnBookMarker.rows[0].book.tags, ['fiction']);
+
+  const commaFixedMarker = await analyzeBookImportRows([{
+    Titel: 'Thema marker', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, "Thema's": 'fantasy, Klassenboek',
+  }]);
+  assert.strictEqual(commaFixedMarker.rows[0].context.fixedLocation.status, 'needs_review');
+  assert.deepStrictEqual(commaFixedMarker.rows[0].book.themes, ['fantasy']);
+  assert.strictEqual(commaFixedMarker.groups.length, 1);
+
+  const partialSplitAuthor = await analyzeBookImportRows([{
+    Titel: 'Spijt!', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Spijt!', author: 'Carry Slee', barcode: ISBN, found: true, source: 'exact-author',
+    }),
+  });
+  assert.strictEqual(partialSplitAuthor.rows[0].book.author, 'Carry Slee');
+  assert.deepStrictEqual(partialSplitAuthor.rows[0].book.authors, ['Carry Slee']);
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.source, 'metadata');
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.detail, 'exact-author');
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.supplementedFrom.derived, 'combined_name_parts');
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.supplementedFrom.incomplete, true);
+  assert.ok(!partialSplitAuthor.rows[0].issues.some((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'author'));
+
+  let partialOnlyLookupCalls = 0;
+  const partialOnlyMissingAuthor = await analyzeBookImportRows([{
+    Titel: 'Volledige metadata behalve voornaam',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+    Uitgever: 'Bestaand',
+    Jaar: 2020,
+    Paginas: 100,
+    Taal: 'nl',
+    Cover: 'https://example.test/existing.jpg',
+    Beschrijving: 'Bestaand',
+    Tags: 'bestaand',
+    "Thema's": 'bestaand',
+  }], {
+    lookupIsbn: async () => {
+      partialOnlyLookupCalls += 1;
+      return {
+        title: 'Volledige metadata behalve voornaam',
+        author: 'Carry Slee',
+        barcode: ISBN,
+        found: true,
+        source: 'exact-author-only',
+      };
+    },
+  });
+  assert.strictEqual(partialOnlyLookupCalls, 1, 'Incomplete split author must itself trigger exact metadata enrichment');
+  assert.strictEqual(partialOnlyMissingAuthor.rows[0].book.author, 'Carry Slee');
+
+  const identifierlessExactPartialAuthor = await analyzeBookImportRows([{
+    Titel: 'Identifierless exact auteur',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Identifierless exact auteur',
+      author: 'Carry Slee',
+      found: true,
+      source: 'exact-without-identifier',
+    }),
+  });
+  assert.strictEqual(identifierlessExactPartialAuthor.rows[0].book.author, 'Carry Slee');
+  assert.strictEqual(identifierlessExactPartialAuthor.rows[0].provenance.author.source, 'metadata');
+  assert.strictEqual(identifierlessExactPartialAuthor.rows[0].provenance.author.detail, 'exact-without-identifier');
+
+  const duplicatedFirstNameOnly = { Titel: 'Dubbele voornaam', 'ISBN-nummer': ISBN };
+  Object.defineProperty(duplicatedFirstNameOnly, 'Voornaam schrijver', { value: 'Carry', enumerable: true });
+  Object.defineProperty(duplicatedFirstNameOnly, 'Voornaam schrijver_1', { value: 'Carry', enumerable: true });
+  const duplicatedFirstNameOnlyResult = await analyzeBookImportRows([duplicatedFirstNameOnly], {
+    lookupIsbn: async () => ({
+      title: 'Dubbele voornaam',
+      author: 'Carry Slee',
+      barcode: ISBN,
+      found: true,
+      source: 'exact-duplicate-first',
+    }),
+  });
+  assert.strictEqual(duplicatedFirstNameOnlyResult.rows[0].book.author, 'Carry Slee');
+  assert.strictEqual(duplicatedFirstNameOnlyResult.rows[0].provenance.author.source, 'metadata');
+  assert.strictEqual(duplicatedFirstNameOnlyResult.rows[0].provenance.author.supplementedFrom.incomplete, true);
 
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
@@ -262,9 +444,22 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(metadataReconciliation.rows[0].book.publishedYear, 2021);
   assert.strictEqual(metadataReconciliation.rows[0].book.pageCount, 110);
   assert.strictEqual(metadataReconciliation.rows[0].book.description, 'exact');
+  assert.deepStrictEqual(metadataReconciliation.rows[0].book.tags, ['exact']);
+  assert.deepStrictEqual(metadataReconciliation.rows[0].book.themes, ['exact']);
   assert.strictEqual(metadataReconciliation.rows[0].provenance.publisher.source, 'metadata');
   assert.strictEqual(metadataReconciliation.rows[0].provenance.publisher.detail, 'exact-edition');
   assert.ok(!metadataReconciliation.rows[0].issues.some((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'publisher'));
+
+  const derivedStripWithMetadata = await analyzeBookImportRows([{
+    Titel: 'Strip metadata', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Examenmateriaal: 'Strip',
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Strip metadata', author: 'A Auteur', barcode: ISBN, tags: ['avontuur'], found: true, source: 'exact-strip',
+    }),
+  });
+  assert.deepStrictEqual(derivedStripWithMetadata.rows[0].book.tags, ['strip', 'avontuur']);
+  assert.strictEqual(derivedStripWithMetadata.rows[0].provenance.tags.source, 'metadata');
+  assert.strictEqual(derivedStripWithMetadata.rows[0].provenance.tags.includesDerivedValues, true);
 
   let decodedBase64 = false;
   const originalBufferFrom = Buffer.from;

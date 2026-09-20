@@ -2,7 +2,7 @@
 
 const { getOwnDataValue, normalizeBookIdentityText } = require('./book-edition-core');
 const { isBlankCellValue } = require('./book-import-workbook');
-const { addIssue, comparableText, splitMultiValue, valueText, jsonSafeIdentifier } = require('./book-import-analysis-values');
+const { addIssue, comparableText, splitMultiValue, splitTagValue, valueText, jsonSafeIdentifier } = require('./book-import-analysis-values');
 
 const SPECIAL_FIXED_LOCATION_ALIASES = new Map([
   ['structuurbb', 'SK BB'],
@@ -18,27 +18,31 @@ function markerKind(value) {
   return '';
 }
 
-function semanticMarkerTokens(value) {
-  return splitMultiValue(value)
+function semanticValueTokens(_field, value) {
+  return splitTagValue(value);
+}
+
+function semanticMarkerTokens(value, field = '') {
+  return semanticValueTokens(field, value)
     .map((token) => ({ token, kind: markerKind(token) }))
     .filter((entry) => entry.kind);
 }
 
-function stripSemanticMarkers(value) {
-  const tokens = splitMultiValue(value);
+function stripSemanticMarkers(value, field = '') {
+  const tokens = semanticValueTokens(field, value);
   if (!tokens.length) return value;
   const containsMarker = tokens.some((token) => markerKind(token));
   if (!containsMarker) return value;
   return tokens.filter((token) => !markerKind(token)).join('; ');
 }
 
-function isPureSemanticMarker(value) {
-  const tokens = splitMultiValue(value);
+function isPureSemanticMarker(value, field = '') {
+  const tokens = semanticValueTokens(field, value);
   return Boolean(tokens.length && tokens.every((token) => markerKind(token)));
 }
 
-function contextFieldValue(_field, value) {
-  return stripSemanticMarkers(value);
+function contextFieldValue(field, value) {
+  return stripSemanticMarkers(value, field);
 }
 
 function collectSemanticMarkers(mapped) {
@@ -46,7 +50,7 @@ function collectSemanticMarkers(mapped) {
   const fixedLocation = [];
   for (const [field, entries] of Object.entries(mapped?.sources || {})) {
     for (const entry of entries || []) {
-      for (const marker of semanticMarkerTokens(entry.value)) {
+      for (const marker of semanticMarkerTokens(entry.value, field)) {
         const target = marker.kind === 'own_book' ? ownBook : fixedLocation;
         target.push({ field, header: entry.header, value: marker.token });
       }
@@ -66,7 +70,7 @@ function getDataFields(mapped) {
   for (const [field, entries] of Object.entries(mapped?.sources || {})) {
     const current = mapped?.fields?.[field];
     const currentValue = contextFieldValue(field, current);
-    const currentIsMarkerOnly = isPureSemanticMarker(current);
+    const currentIsMarkerOnly = isPureSemanticMarker(current, field);
     if (!isBlankCellValue(currentValue) && !currentIsMarkerOnly) {
       fields[field] = currentValue;
       continue;
@@ -81,7 +85,7 @@ function getDataFields(mapped) {
   for (const [field, value] of Object.entries(mapped?.fields || {})) {
     if (Object.prototype.hasOwnProperty.call(fields, field)) continue;
     const cleaned = contextFieldValue(field, value);
-    const markerOnly = isPureSemanticMarker(value);
+    const markerOnly = isPureSemanticMarker(value, field);
     if (isBlankCellValue(cleaned) || markerOnly) continue;
     fields[field] = cleaned;
   }
