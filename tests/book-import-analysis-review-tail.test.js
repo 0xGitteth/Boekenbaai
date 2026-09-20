@@ -323,6 +323,12 @@ module.exports = async function runReviewTailTests() {
   assert.deepStrictEqual(semicolonAuthorMarker.rows[0].book.authors, ['Alice', 'Bob']);
   assert.strictEqual(semicolonAuthorMarker.rows[0].book.author, 'Alice & Bob');
 
+  const mixedDelimiterAuthorMarker = await analyzeBookImportRows([{
+    Titel: 'Gemengde auteurscheiding', Auteur: 'Alice, Klassenboek; Bob', 'ISBN-nummer': ISBN,
+  }]);
+  assert.deepStrictEqual(mixedDelimiterAuthorMarker.rows[0].book.authors, ['Alice', 'Bob']);
+  assert.strictEqual(mixedDelimiterAuthorMarker.rows[0].book.author, 'Alice & Bob');
+
   const partialSplitAuthor = await analyzeBookImportRows([{
     Titel: 'Spijt!', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN,
   }], {
