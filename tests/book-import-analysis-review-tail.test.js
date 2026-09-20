@@ -172,6 +172,36 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(directWithPartialSplit.rows[0].book.author, 'Carry Slee');
   assert.ok(!issueCodes(directWithPartialSplit.rows[0]).has('author_sources_differ'));
 
+  const splitMatchesSecondDirectAuthor = await analyzeBookImportRows([{
+    Titel: 'Tweede auteur bevestigd',
+    Auteur: 'Alice A; Bob Jones',
+    'Voornaam schrijver': 'Bob',
+    'Achternaam schrijver': 'Jones',
+    'ISBN-nummer': ISBN,
+  }]);
+  assert.deepStrictEqual(splitMatchesSecondDirectAuthor.rows[0].book.authors, ['Alice A', 'Bob Jones']);
+  assert.ok(!issueCodes(splitMatchesSecondDirectAuthor.rows[0]).has('author_sources_differ'));
+  assert.strictEqual(splitMatchesSecondDirectAuthor.groups.length, 1);
+
+  const partialSplitMatchesSecondDirectAuthor = await analyzeBookImportRows([{
+    Titel: 'Tweede auteur gedeeltelijk bevestigd',
+    Auteur: 'Alice A; Bob Jones',
+    'Achternaam schrijver': 'Jones',
+    'ISBN-nummer': ISBN,
+  }]);
+  assert.deepStrictEqual(partialSplitMatchesSecondDirectAuthor.rows[0].book.authors, ['Alice A', 'Bob Jones']);
+  assert.ok(!issueCodes(partialSplitMatchesSecondDirectAuthor.rows[0]).has('author_sources_differ'));
+
+  const splitContradictsEveryDirectAuthor = await analyzeBookImportRows([{
+    Titel: 'Geen auteur bevestigd',
+    Auteur: 'Alice A; Bob Jones',
+    'Voornaam schrijver': 'Charlie',
+    'Achternaam schrijver': 'Else',
+    'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(splitContradictsEveryDirectAuthor.rows[0].status, 'conflict');
+  assert.ok(issueCodes(splitContradictsEveryDirectAuthor.rows[0]).has('author_sources_differ'));
+
   const directWithContradictingPartialSplit = await analyzeBookImportRows([{
     Titel: 'Tegenstrijdige auteur',
     Auteur: 'Paul van Loon',
@@ -212,6 +242,34 @@ module.exports = async function runReviewTailTests() {
   assert.deepStrictEqual(quantityProvenance.rows[0].provenance.quantity, {
     source: 'excel', header: 'Aantal exemplaren', raw: '01',
   });
+
+  const equivalentQuantityColumns = { Titel: 'Aantal equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentQuantityColumns, 'Aantal', { value: '01', enumerable: true });
+  Object.defineProperty(equivalentQuantityColumns, 'Aantal_1', { value: 1, enumerable: true });
+  const equivalentQuantityResult = await analyzeBookImportRows([equivalentQuantityColumns]);
+  assert.strictEqual(equivalentQuantityResult.rows[0].book.quantity.value, 1);
+  assert.strictEqual(equivalentQuantityResult.rows[0].book.quantity.valid, true);
+  assert.ok(!issueCodes(equivalentQuantityResult.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(equivalentQuantityResult.summary.physicalCopies, 1);
+  assert.strictEqual(equivalentQuantityResult.groups.length, 1);
+
+  const equivalentZeroQuantityColumns = { Titel: 'Aantal nul equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentZeroQuantityColumns, 'Aantal', { value: 0, enumerable: true });
+  Object.defineProperty(equivalentZeroQuantityColumns, 'Aantal_1', { value: '00', enumerable: true });
+  const equivalentZeroQuantityResult = await analyzeBookImportRows([equivalentZeroQuantityColumns]);
+  assert.strictEqual(equivalentZeroQuantityResult.rows[0].book.quantity.value, 0);
+  assert.strictEqual(equivalentZeroQuantityResult.rows[0].book.quantity.valid, true);
+  assert.ok(!issueCodes(equivalentZeroQuantityResult.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(equivalentZeroQuantityResult.summary.physicalCopies, 0);
+
+  const invalidQuantityLookalike = { Titel: 'Aantal ongeldig equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(invalidQuantityLookalike, 'Aantal', { value: '0x1', enumerable: true });
+  Object.defineProperty(invalidQuantityLookalike, 'Aantal_1', { value: 1, enumerable: true });
+  const invalidQuantityLookalikeResult = await analyzeBookImportRows([invalidQuantityLookalike]);
+  assert.strictEqual(invalidQuantityLookalikeResult.rows[0].status, 'conflict');
+  assert.strictEqual(invalidQuantityLookalikeResult.rows[0].book.quantity.blockedByConflict, true);
+  assert.ok(issueCodes(invalidQuantityLookalikeResult.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(invalidQuantityLookalikeResult.summary.physicalCopies, 0);
 
   const customSuffixedHeader = await analyzeBookImportRows([{
     Titel: 'Custom ISBN kolom', Auteur: 'A Auteur', ISBN_2024: ISBN,
