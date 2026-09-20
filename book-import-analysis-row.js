@@ -246,6 +246,13 @@ function applySourceCollisions(mapped, row) {
       if (IDENTIFIER_FIELDS.has(collision.field)) {
         for (const candidate of candidates) {
           const analysis = analyzeIdentifier(candidate.value);
+          if (analysis.repair) {
+            addIssue(row, 'isbn_repaired', 'warning', {
+              field: collision.field,
+              header: candidate.header,
+              repair: analysis.repair,
+            });
+          }
           if (analysis.suggestion) {
             addIssue(row, 'isbn_repair_suggested', 'warning', {
               field: collision.field,
