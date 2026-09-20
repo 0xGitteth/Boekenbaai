@@ -399,6 +399,17 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(metadataReconciliation.rows[0].provenance.publisher.detail, 'exact-edition');
   assert.ok(!metadataReconciliation.rows[0].issues.some((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'publisher'));
 
+  const derivedStripWithMetadata = await analyzeBookImportRows([{
+    Titel: 'Strip metadata', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Examenmateriaal: 'Strip',
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Strip metadata', author: 'A Auteur', barcode: ISBN, tags: ['avontuur'], found: true, source: 'exact-strip',
+    }),
+  });
+  assert.deepStrictEqual(derivedStripWithMetadata.rows[0].book.tags, ['strip', 'avontuur']);
+  assert.strictEqual(derivedStripWithMetadata.rows[0].provenance.tags.source, 'metadata');
+  assert.strictEqual(derivedStripWithMetadata.rows[0].provenance.tags.includesDerivedValues, true);
+
   let decodedBase64 = false;
   const originalBufferFrom = Buffer.from;
   Buffer.from = function monitoredBufferFrom(value, encoding, ...rest) {
