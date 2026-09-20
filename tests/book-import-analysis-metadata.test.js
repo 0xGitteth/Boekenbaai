@@ -198,10 +198,15 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(pageDifference.metadataValue, 123);
   assert.strictEqual(pageDifference.sourceInvalid, true);
 
-  const preserveExcel = await analyzeBookImportRows([{ Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Uitgever: 'Excel P' }], {
-    lookupIsbn: async () => ({ title: 'Excel titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Metadata P', found: true }),
+  const preserveExcel = await analyzeBookImportRows([{
+    Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Uitgever: 'Excel P', Tags: 'excel-tag',
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Excel titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Metadata P', tags: ['metadata-tag'], found: true,
+    }),
   });
   assert.strictEqual(preserveExcel.rows[0].book.title, 'Excel titel');
   assert.strictEqual(preserveExcel.rows[0].book.publisher, 'Excel P');
+  assert.deepStrictEqual(preserveExcel.rows[0].book.tags, ['excel-tag']);
   assert.ok(codes(preserveExcel.rows[0]).has('metadata_differs_from_excel'));
 };
