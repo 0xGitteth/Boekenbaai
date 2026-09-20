@@ -259,6 +259,22 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(partialOnlyLookupCalls, 1, 'Incomplete split author must itself trigger exact metadata enrichment');
   assert.strictEqual(partialOnlyMissingAuthor.rows[0].book.author, 'Carry Slee');
 
+  const identifierlessExactPartialAuthor = await analyzeBookImportRows([{
+    Titel: 'Identifierless exact auteur',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Identifierless exact auteur',
+      author: 'Carry Slee',
+      found: true,
+      source: 'exact-without-identifier',
+    }),
+  });
+  assert.strictEqual(identifierlessExactPartialAuthor.rows[0].book.author, 'Carry Slee');
+  assert.strictEqual(identifierlessExactPartialAuthor.rows[0].provenance.author.source, 'metadata');
+  assert.strictEqual(identifierlessExactPartialAuthor.rows[0].provenance.author.detail, 'exact-without-identifier');
+
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
   }], {
