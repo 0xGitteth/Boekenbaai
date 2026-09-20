@@ -36,10 +36,12 @@ function fieldSource(mapped, field, fallback = 'unknown') {
 }
 
 function identifierFieldSource(mapped, field, canonical) {
-  const candidates = mapped.sources[field] || [];
-  const matching = candidates.find((entry) => analyzeIdentifier(entry.value).canonical === canonical);
+  const candidates = (mapped.sources[field] || [])
+    .map((entry) => ({ entry, analysis: analyzeIdentifier(entry.value) }))
+    .filter(({ analysis }) => analysis.canonical === canonical);
+  const matching = candidates.find(({ analysis }) => !analysis.repair) || candidates[0];
   if (!matching) return fieldSource(mapped, field);
-  return { source: 'excel', header: matching.header, raw: matching.value };
+  return { source: 'excel', header: matching.entry.header, raw: matching.entry.value };
 }
 
 function barcodeFieldSource(mapped, barcode) {
@@ -53,9 +55,12 @@ function barcodeFieldSource(mapped, barcode) {
 }
 
 function preferredIdentifierValue(mapped, field, fallback) {
-  const candidates = mapped.sources[field] || [];
-  const canonical = candidates.find((entry) => !isBlankCellValue(entry.value) && analyzeIdentifier(entry.value).canonical);
-  return canonical ? canonical.value : fallback;
+  const candidates = (mapped.sources[field] || [])
+    .filter((entry) => !isBlankCellValue(entry.value))
+    .map((entry) => ({ entry, analysis: analyzeIdentifier(entry.value) }))
+    .filter(({ analysis }) => analysis.canonical);
+  const preferred = candidates.find(({ analysis }) => !analysis.repair) || candidates[0];
+  return preferred ? preferred.entry.value : fallback;
 }
 
 function collisionDataCandidates(collision) {
@@ -285,11 +290,12 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
   const blocked = blockingCollisionFields(mapped);
   const dataFields = getDataFields(mapped);
   const directAuthor = blocked.has('author') ? [] : normalizeDirectAuthors(dataFields.author);
-  const editionSource = [
+  const editionSources = [
     ['isbn', identifierAnalysis.explicit],
     ['metadataIsbn', identifierAnalysis.legacy],
     ['ambiguousIdentifier', identifierAnalysis.ambiguous],
-  ].find(([, analysis]) => analysis.canonical && analysis.canonical === book.editionIsbn);
+  ].filter(([, analysis]) => analysis.canonical && analysis.canonical === book.editionIsbn);
+  const editionSource = editionSources.find(([, analysis]) => !analysis.repair) || editionSources[0];
   const provenance = {
     title: fieldSource(mapped, 'title'),
     author: directAuthor.length ? fieldSource(mapped, 'author') : { source: 'unknown' },
@@ -312,13 +318,16 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
     easyReading: fieldSource(mapped, 'easyReading'),
   };
   if (provenance.author.source === 'unknown' && book.author) {
-    const sourceHeaders = [...(mapped.sources.authorFirst || []), ...(mapped.sources.authorLast || [])]
+    const firstHeaders = (mapped.sources.authorFirst || [])
       .filter((entry) => !isBlankCellValue(contextFieldValue('authorFirst', entry.value))).map((entry) => entry.header);
+    const lastHeaders = (mapped.sources.authorLast || [])
+      .filter((entry) => !isBlankCellValue(contextFieldValue('authorLast', entry.value))).map((entry) => entry.header);
+    const sourceHeaders = [...firstHeaders, ...lastHeaders];
     if (sourceHeaders.length) provenance.author = {
       source: 'excel',
       headers: sourceHeaders,
       derived: 'combined_name_parts',
-      incomplete: sourceHeaders.length < 2,
+      incomplete: !firstHeaders.length || !lastHeaders.length,
     };
   }
   const examSource = fieldSource(mapped, 'examMaterial');
