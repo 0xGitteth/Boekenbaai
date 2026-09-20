@@ -138,6 +138,22 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(placeholderAuthorProvenance.rows[0].provenance.author.derived, 'combined_name_parts');
   assert.deepStrictEqual(placeholderAuthorProvenance.rows[0].provenance.author.headers, ['Voornaam schrijver', 'Achternaam schrijver']);
 
+  const fallbackBarcodeProvenance = await analyzeBookImportRows([{
+    Titel: 'Barcode fallback', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: 'ABC', 'Barcode / ISBN': '12345',
+  }]);
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].book.barcode, '12345');
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].provenance.barcode.source, 'excel');
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].provenance.barcode.header, 'Barcode / ISBN');
+  assert.strictEqual(fallbackBarcodeProvenance.rows[0].provenance.barcode.raw, '12345');
+
+  const duplicateMetadataIsbnEvidence = { Titel: 'Metadata ISBN bron', Auteur: 'A Auteur' };
+  Object.defineProperty(duplicateMetadataIsbnEvidence, 'Intern ISBN', { value: '978030640615', enumerable: true });
+  Object.defineProperty(duplicateMetadataIsbnEvidence, 'Intern ISBN_1', { value: ISBN, enumerable: true });
+  const duplicateMetadataIsbnResult = await analyzeBookImportRows([duplicateMetadataIsbnEvidence]);
+  assert.strictEqual(duplicateMetadataIsbnResult.rows[0].book.metadataIsbn, ISBN);
+  assert.strictEqual(duplicateMetadataIsbnResult.rows[0].provenance.metadataIsbn.header, 'Intern ISBN_1');
+  assert.strictEqual(duplicateMetadataIsbnResult.rows[0].provenance.metadataIsbn.raw, ISBN);
+
   const quantityProvenance = await analyzeBookImportRows([{
     Titel: 'Aantal bron', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Aantal exemplaren': '01',
   }]);
@@ -178,6 +194,35 @@ module.exports = async function runReviewTailTests() {
   assert.ok(!issueCodes(duplicateRepairedIsbnResult.rows[0]).has('conflicting_source_columns'));
   assert.ok(issueCodes(duplicateRepairedIsbnResult.rows[0]).has('isbn_repaired'));
   assert.strictEqual(duplicateRepairedIsbnResult.groups.length, 1);
+
+  const commaOwnBookMarker = await analyzeBookImportRows([{
+    Titel: 'Tag marker', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Tags: 'fiction, eigen boek',
+  }]);
+  assert.strictEqual(commaOwnBookMarker.rows[0].status, 'skipped');
+  assert.strictEqual(commaOwnBookMarker.rows[0].context.excludeFromSchoolCollection, true);
+  assert.deepStrictEqual(commaOwnBookMarker.rows[0].book.tags, ['fiction']);
+
+  const commaFixedMarker = await analyzeBookImportRows([{
+    Titel: 'Thema marker', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, "Thema's": 'fantasy, Klassenboek',
+  }]);
+  assert.strictEqual(commaFixedMarker.rows[0].context.fixedLocation.status, 'needs_review');
+  assert.deepStrictEqual(commaFixedMarker.rows[0].book.themes, ['fantasy']);
+  assert.strictEqual(commaFixedMarker.groups.length, 1);
+
+  const partialSplitAuthor = await analyzeBookImportRows([{
+    Titel: 'Spijt!', 'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Spijt!', author: 'Carry Slee', barcode: ISBN, found: true, source: 'exact-author',
+    }),
+  });
+  assert.strictEqual(partialSplitAuthor.rows[0].book.author, 'Carry Slee');
+  assert.deepStrictEqual(partialSplitAuthor.rows[0].book.authors, ['Carry Slee']);
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.source, 'metadata');
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.detail, 'exact-author');
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.supplementedFrom.derived, 'combined_name_parts');
+  assert.strictEqual(partialSplitAuthor.rows[0].provenance.author.supplementedFrom.incomplete, true);
+  assert.ok(!partialSplitAuthor.rows[0].issues.some((issue) => issue.code === 'metadata_differs_from_excel' && issue.field === 'author'));
 
   const metadataTitleConflict = await analyzeBookImportRows([{
     Titel: 'Bron titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
