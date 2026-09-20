@@ -105,6 +105,12 @@ function collisionIsSemanticallyEquivalent(collision) {
     return parsed.every((quantity) => quantity.valid)
       && new Set(parsed.map((quantity) => quantity.value)).size === 1;
   }
+  if (collision.field === 'author') {
+    const signatures = candidates.map((entry) => JSON.stringify(
+      normalizeDirectAuthors(entry.value).map((author) => comparableText(author)).filter(Boolean).sort(),
+    ));
+    return new Set(signatures).size === 1;
+  }
   if (!IDENTIFIER_FIELDS.has(collision.field)) return false;
   const analyses = candidates.map((entry) => analyzeIdentifier(entry.value));
   const canonical = analyses.map((analysis) => analysis.canonical).filter(Boolean);
