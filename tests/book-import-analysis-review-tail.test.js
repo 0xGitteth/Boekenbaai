@@ -145,6 +145,24 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(placeholderAuthorProvenance.rows[0].provenance.author.derived, 'combined_name_parts');
   assert.deepStrictEqual(placeholderAuthorProvenance.rows[0].provenance.author.headers, ['Voornaam schrijver', 'Achternaam schrijver']);
 
+  const directWithPartialSplit = await analyzeBookImportRows([{
+    Titel: 'Corroborerende auteur',
+    Auteur: 'Carry Slee',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(directWithPartialSplit.rows[0].book.author, 'Carry Slee');
+  assert.ok(!issueCodes(directWithPartialSplit.rows[0]).has('author_sources_differ'));
+
+  const directWithContradictingPartialSplit = await analyzeBookImportRows([{
+    Titel: 'Tegenstrijdige auteur',
+    Auteur: 'Paul van Loon',
+    'Achternaam schrijver': 'Slee',
+    'ISBN-nummer': ISBN,
+  }]);
+  assert.ok(issueCodes(directWithContradictingPartialSplit.rows[0]).has('author_sources_differ'));
+  assert.strictEqual(directWithContradictingPartialSplit.rows[0].status, 'conflict');
+
   const fallbackBarcodeProvenance = await analyzeBookImportRows([{
     Titel: 'Barcode fallback', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: 'ABC', 'Barcode / ISBN': '12345',
   }]);
