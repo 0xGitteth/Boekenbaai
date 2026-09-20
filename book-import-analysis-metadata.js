@@ -283,7 +283,8 @@ function setMetadataField(row, field, value, candidate) {
     return;
   }
   const currentEmpty = current === null || current === undefined || current === '' || (Array.isArray(current) && !current.length);
-  if (field === 'tags' && Array.isArray(value) && row.provenance.tags?.source !== 'excel') {
+  if (field === 'tags' && Array.isArray(value)
+    && row.provenance.tags?.source !== 'excel' && row.provenance.tags?.source !== 'metadata') {
     const merged = Array.isArray(current) ? [...current] : [];
     for (const tag of value) {
       if (!merged.some((existing) => comparableText(existing) === comparableText(tag))) merged.push(tag);
