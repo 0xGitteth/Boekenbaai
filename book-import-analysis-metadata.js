@@ -131,13 +131,20 @@ function strictMetadataMatch(rowBook, candidate) {
   return rowAuthors.every((author) => candidateAuthors.includes(author));
 }
 
-function metadataDoesNotContradict(rowBook, candidate) {
+function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
   const rowTitle = comparableText(rowBook.title);
   const candidateTitle = comparableText(candidate.title);
   if (rowTitle && candidateTitle && rowTitle !== candidateTitle) return false;
   const rowAuthors = normalizeAuthorList(rowBook.authors, rowBook.author).map(comparableText).filter(Boolean);
   const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
-  if (rowAuthors.length && candidateAuthors.length && !rowAuthors.every((author) => candidateAuthors.includes(author))) return false;
+  if (rowAuthors.length && candidateAuthors.length && !rowAuthors.every((author) => candidateAuthors.includes(author))) {
+    const incompleteSplitAuthor = rowProvenance?.author?.source === 'excel'
+      && rowProvenance.author.derived === 'combined_name_parts'
+      && rowProvenance.author.incomplete === true;
+    const rowTokens = comparableText(rowBook.author).split(/\s+/).filter(Boolean);
+    const candidateTokens = new Set(comparableText(candidate.author).split(/\s+/).filter(Boolean));
+    if (!incompleteSplitAuthor || !rowTokens.length || !rowTokens.every((token) => candidateTokens.has(token))) return false;
+  }
   return true;
 }
 
@@ -197,7 +204,7 @@ function distinctCandidateTitles(candidates) {
   return Array.from(titles.values());
 }
 
-function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) {
+function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, rowProvenance = null) {
   const requested = canonicalizeBookIsbn13(requestedIsbn);
   if (!requested) return { candidate: null, conflict: null };
   const exact = [];
@@ -206,7 +213,7 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null) 
   for (const candidate of candidates) {
     if (candidate.editionIsbn === requested) exact.push(candidate);
     else if (!candidate.editionIsbn) {
-      if (!rowBook || metadataDoesNotContradict(rowBook, candidate)) identifierless.push(candidate);
+      if (!rowBook || metadataDoesNotContradict(rowBook, candidate, rowProvenance)) identifierless.push(candidate);
     } else mismatched.push(candidate);
   }
   const exactTitles = distinctCandidateTitles(exact);
@@ -368,7 +375,7 @@ async function resolveMetadata(row, options) {
     try {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
       const candidates = metadataCandidatesFromResult(result);
-      const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book);
+      const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book, row.provenance);
       if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       else if (selection.candidate) applyMetadataCandidate(row, selection.candidate);
       else if (candidates.length) addIssue(row, 'metadata_not_usable', 'warning');
