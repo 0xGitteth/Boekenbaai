@@ -197,6 +197,35 @@ module.exports = async function runFinalReviewTests() {
   XLSX.utils.book_append_sheet(workbook, sheet, 'Boeken');
   const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
+  let archiveReadCalled = false;
+  const archiveGuardXlsx = {
+    read() {
+      archiveReadCalled = true;
+      throw new Error('Archive preflight must run before SheetJS');
+    },
+    utils: { ...XLSX.utils },
+  };
+  const expandedArchiveLimit = readBookImportWorkbook(archiveGuardXlsx, buffer, { maxExpandedBytes: 1 });
+  assert.strictEqual(expandedArchiveLimit.ok, false);
+  assert.strictEqual(expandedArchiveLimit.error, 'file_too_large');
+  assert.strictEqual(expandedArchiveLimit.reason, 'archive_expansion_limit');
+  assert.strictEqual(archiveReadCalled, false, 'ZIP expansion limits must be enforced before XLSX.read');
+
+  archiveReadCalled = false;
+  const archiveEntryLimit = readBookImportWorkbook(archiveGuardXlsx, buffer, { maxArchiveEntries: 1 });
+  assert.strictEqual(archiveEntryLimit.ok, false);
+  assert.strictEqual(archiveEntryLimit.error, 'file_too_large');
+  assert.strictEqual(archiveEntryLimit.reason, 'archive_entry_limit');
+  assert.strictEqual(archiveReadCalled, false, 'ZIP entry-count limits must be enforced before XLSX.read');
+
+  const compressedBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
+  archiveReadCalled = false;
+  const compressionRatioLimit = readBookImportWorkbook(archiveGuardXlsx, compressedBuffer, { maxCompressionRatio: 1 });
+  assert.strictEqual(compressionRatioLimit.ok, false);
+  assert.strictEqual(compressionRatioLimit.error, 'file_too_large');
+  assert.strictEqual(compressionRatioLimit.reason, 'archive_compression_ratio');
+  assert.strictEqual(archiveReadCalled, false, 'Suspicious ZIP compression ratios must be rejected before XLSX.read');
+
   let sheetToJsonCalled = false;
   const guardedXlsx = {
     read: (...args) => XLSX.read(...args),
