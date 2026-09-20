@@ -102,12 +102,16 @@ function valuesEquivalent(left, right) {
 }
 
 function duplicateBaseHeader(entries, header) {
-  const match = String(header).match(/^(.*)_\d+$/);
+  const match = String(header).match(/^(.*)_(\d+)$/);
   if (!match || !match[1]) return '';
-  const base = normalizeImportHeader(match[1]);
-  return entries.some(([candidate]) => String(candidate) !== String(header) && normalizeImportHeader(candidate) === base)
-    ? match[1]
-    : '';
+  const duplicateIndex = Number(match[2]);
+  if (!Number.isSafeInteger(duplicateIndex) || duplicateIndex < 1 || duplicateIndex >= entries.length) return '';
+  const headers = new Set(entries.map(([candidate]) => String(candidate)));
+  if (!headers.has(match[1])) return '';
+  for (let index = 1; index < duplicateIndex; index += 1) {
+    if (!headers.has(`${match[1]}_${index}`)) return '';
+  }
+  return match[1];
 }
 
 function mapImportRow(row) {
