@@ -356,7 +356,8 @@ function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } 
 async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
-  const hasMissingMetadata = () => !row.book.title || !row.book.author || !row.book.publisher || row.book.publishedYear == null
+  const hasMissingMetadata = () => !row.book.title || !row.book.author || row.provenance?.author?.incomplete === true
+    || !row.book.publisher || row.book.publishedYear == null
     || row.book.pageCount == null || !row.book.language || !row.book.coverUrl || !row.book.description
     || !Array.isArray(row.book.tags) || !row.book.tags.length
     || !Array.isArray(row.book.themes) || !row.book.themes.length;
