@@ -302,6 +302,15 @@ function setMetadataField(row, field, value, candidate) {
   if (!same) addIssue(row, 'metadata_differs_from_excel', 'warning', { field, excelValue: current, metadataValue: value });
 }
 
+function metadataAuthorExtendsIncompleteExcelAuthor(row, candidate) {
+  if (!candidate?.author) return false;
+  const provenance = row?.provenance?.author;
+  if (!provenance || provenance.source !== 'excel' || provenance.derived !== 'combined_name_parts' || provenance.incomplete !== true) return false;
+  const currentTokens = comparableText(row?.book?.author).split(/\s+/).filter(Boolean);
+  const candidateTokens = new Set(comparableText(candidate.author).split(/\s+/).filter(Boolean));
+  return Boolean(currentTokens.length && currentTokens.every((token) => candidateTokens.has(token)));
+}
+
 function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } = {}) {
   if (!candidate) return;
   if (allowIsbnResolution && !row.book.editionIsbn && candidate.editionIsbn) {
@@ -321,6 +330,15 @@ function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } 
       row.book.author = candidate.author;
       row.book.authors = [...candidate.authors];
       row.provenance.author = { source: 'metadata', detail: candidate.source || null };
+    } else if (metadataAuthorExtendsIncompleteExcelAuthor(row, candidate)) {
+      const supplementedFrom = row.provenance.author;
+      row.book.author = candidate.author;
+      row.book.authors = [...candidate.authors];
+      row.provenance.author = {
+        source: 'metadata',
+        detail: candidate.source || null,
+        supplementedFrom,
+      };
     } else {
       addIssue(row, 'metadata_differs_from_excel', 'warning', { field: 'author', excelValue: row.book.author, metadataValue: candidate.author });
     }
