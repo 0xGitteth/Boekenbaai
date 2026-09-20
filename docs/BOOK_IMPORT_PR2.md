@@ -71,4 +71,4 @@ The staged result contains:
 - class/student/fixed-location/library-presence context for later review;
 - edition groups and edition conflicts only for rows with a resolved canonical edition ISBN whose source evidence is not conflicting.
 
-The result is JSON-safe and is intended to feed the PR3 preview/correction layer. PR2 itself performs no persistence. Workbook rows and requested physical-copy expansion are bounded so malformed or unexpectedly large input becomes an explicit analysis error/conflict instead of unbounded work.
+The result is JSON-safe and is intended to feed the PR3 preview/correction layer. PR2 itself performs no persistence. Workbook rows and requested physical-copy expansion are bounded so malformed or unexpectedly large input becomes an explicit analysis error/conflict instead of unbounded work. ZIP-based workbook containers are also inspected before SheetJS parsing: compressed upload size, declared expanded entry size, archive entry count and extreme compression ratios are bounded before any worksheet XML is decompressed.
