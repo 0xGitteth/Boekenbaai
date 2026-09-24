@@ -43,18 +43,18 @@ function metadataAuthors(payload) {
   return normalizeAuthorList(undefined, rawAuthor);
 }
 
-function metadataEditionIsbn(payload) {
-  for (const candidate of [
-    getOwnDataValue(payload, 'editionIsbn'),
-    getOwnDataValue(payload, 'isbn13'),
-    getOwnDataValue(payload, 'isbn'),
-    getOwnDataValue(payload, 'metadataIsbn'),
-    getOwnDataValue(payload, 'barcode'),
-  ]) {
-    const canonical = canonicalizeBookIsbn13(candidate);
-    if (canonical) return canonical;
+function metadataEditionEvidence(payload) {
+  const evidence = [];
+  for (const field of ['editionIsbn', 'isbn13', 'isbn', 'metadataIsbn', 'barcode']) {
+    const canonical = canonicalizeBookIsbn13(getOwnDataValue(payload, field));
+    if (canonical) evidence.push({ field, canonical });
   }
-  return '';
+  const editionIsbns = Array.from(new Set(evidence.map((entry) => entry.canonical))).sort();
+  return {
+    editionIsbn: editionIsbns.length === 1 ? editionIsbns[0] : '',
+    editionIsbns,
+    evidence,
+  };
 }
 
 function firstNormalized(payload, keys, normalizer) {
@@ -85,14 +85,16 @@ function normalizeMetadataCandidate(result) {
   const tags = splitTagValue(Array.isArray(rawTags) ? rawTags.join(';') : rawTags);
   const themes = splitTagValue(Array.isArray(rawThemes) ? rawThemes.join(';') : rawThemes);
   const source = normalizeBookIdentityText(getOwnDataValue(payload, 'source')) || wrapperSource;
-  const editionIsbn = metadataEditionIsbn(payload);
+  const identifierEvidence = metadataEditionEvidence(payload);
   if (!title && !authors.length && !publisher && !publishedYear && !pageCount && !language && !coverUrl
-    && !description && !tags.length && !themes.length && !editionIsbn) return null;
+    && !description && !tags.length && !themes.length && !identifierEvidence.editionIsbns.length) return null;
   return {
     title,
     author: createAuthorDisplay(authors),
     authors,
-    editionIsbn,
+    editionIsbn: identifierEvidence.editionIsbn,
+    identifierIsbns: identifierEvidence.editionIsbns,
+    identifierEvidence: identifierEvidence.evidence,
     publisher,
     publishedYear,
     pageCount,
@@ -179,9 +181,33 @@ function candidateSemanticSignature(candidate) {
   ]);
 }
 
+function candidateIdentifierConflict(candidate) {
+  const editionIsbns = Array.isArray(candidate?.identifierIsbns) ? candidate.identifierIsbns : [];
+  if (editionIsbns.length < 2) return null;
+  return {
+    code: 'metadata_identifier_conflict',
+    editionIsbns: [...editionIsbns],
+    evidence: Array.isArray(candidate.identifierEvidence)
+      ? candidate.identifierEvidence.map((entry) => ({ field: entry.field, canonical: entry.canonical }))
+      : [],
+  };
+}
+
+function combinedIdentifierConflict(candidates) {
+  const conflicts = candidates.map(candidateIdentifierConflict).filter(Boolean);
+  if (!conflicts.length) return null;
+  return {
+    code: 'metadata_identifier_conflict',
+    editionIsbns: Array.from(new Set(conflicts.flatMap((conflict) => conflict.editionIsbns))).sort(),
+    evidence: conflicts.flatMap((conflict) => conflict.evidence),
+  };
+}
+
 function selectMetadataCandidate(rowBook, candidates) {
   const strict = candidates.filter((candidate) => strictMetadataMatch(rowBook, candidate));
   if (!strict.length) return { candidate: null, conflict: null };
+  const identifierConflict = combinedIdentifierConflict(strict);
+  if (identifierConflict) return { candidate: null, conflict: identifierConflict };
   const editionIsbns = Array.from(new Set(strict.map((candidate) => candidate.editionIsbn).filter(Boolean))).sort();
   if (editionIsbns.length > 1) return { candidate: null, conflict: { code: 'ambiguous_metadata_editions', editionIsbns } };
   if (strict.length > 1 && !editionIsbns.length) {
@@ -210,11 +236,22 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, 
   const exact = [];
   const identifierless = [];
   const mismatched = [];
+  const mismatchedIdentifierIsbns = new Set();
+  const requestedIdentifierConflicts = [];
   for (const candidate of candidates) {
+    const internalConflict = candidateIdentifierConflict(candidate);
+    if (internalConflict) {
+      if (internalConflict.editionIsbns.includes(requested)) requestedIdentifierConflicts.push(candidate);
+      else for (const isbn of internalConflict.editionIsbns) mismatchedIdentifierIsbns.add(isbn);
+      continue;
+    }
     if (candidate.editionIsbn === requested) exact.push(candidate);
     else if (!candidate.editionIsbn) {
       if (!rowBook || metadataDoesNotContradict(rowBook, candidate, rowProvenance)) identifierless.push(candidate);
     } else mismatched.push(candidate);
+  }
+  if (requestedIdentifierConflicts.length) {
+    return { candidate: null, conflict: combinedIdentifierConflict(requestedIdentifierConflicts) };
   }
   const exactTitles = distinctCandidateTitles(exact);
   const contradictoryExactTitles = rowBook
@@ -233,13 +270,16 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, 
   const compatibleExact = rowBook ? exact.filter((candidate) => titleDoesNotContradict(rowBook, candidate)) : exact;
   const rankedExact = compatibleExact.slice().sort((left, right) => candidateScore(right) - candidateScore(left));
   if (rankedExact.length) return { candidate: rankedExact[0], conflict: null };
-  if (mismatched.length) {
+  if (mismatched.length || mismatchedIdentifierIsbns.size) {
     return {
       candidate: null,
       conflict: {
         code: 'ambiguous_isbn_lookup_results',
         requestedIsbn: requested,
-        returnedIsbns: Array.from(new Set(mismatched.map((candidate) => candidate.editionIsbn))).sort(),
+        returnedIsbns: Array.from(new Set([
+          ...mismatched.map((candidate) => candidate.editionIsbn),
+          ...mismatchedIdentifierIsbns,
+        ])).filter(Boolean).sort(),
       },
     };
   }

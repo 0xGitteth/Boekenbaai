@@ -147,6 +147,31 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(isbnLikeCombinedCollisionResult.rows[0].status, 'conflict');
   assert.ok(issueCodes(isbnLikeCombinedCollisionResult.rows[0]).has('conflicting_source_columns'));
 
+  for (const malformedBookland of ['97803064061', '97803064061570', '97803064061X']) {
+    const malformedBooklandResult = await analyzeBookImportRows([{
+      Titel: 'Afgekapt Bookland', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': malformedBookland,
+    }]);
+    assert.strictEqual(malformedBooklandResult.rows[0].book.barcode, '');
+    assert.ok(issueCodes(malformedBooklandResult.rows[0]).has('invalid_or_unrecognized_isbn'));
+    assert.ok(!issueCodes(malformedBooklandResult.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+  }
+
+  const nonBooklandElevenDigitBarcode = await analyzeBookImportRows([{
+    Titel: 'Elf cijfers barcode', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': '12345678901',
+  }]);
+  assert.strictEqual(nonBooklandElevenDigitBarcode.rows[0].book.barcode, '12345678901');
+  assert.ok(issueCodes(nonBooklandElevenDigitBarcode.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+
+  for (const repairableBookland of ['978030640615', '9780306406158']) {
+    const repairableCombinedIsbn = await analyzeBookImportRows([{
+      Titel: 'Herstelbare combined ISBN', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': repairableBookland,
+    }]);
+    assert.strictEqual(repairableCombinedIsbn.rows[0].book.barcode, '');
+    assert.ok(issueCodes(repairableCombinedIsbn.rows[0]).has('isbn_repair_suggested'));
+    assert.ok(!issueCodes(repairableCombinedIsbn.rows[0]).has('invalid_or_unrecognized_isbn'));
+    assert.ok(!issueCodes(repairableCombinedIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+  }
+
   const conflictingCombinedBarcode = await analyzeBookImportRows([{
     Titel: 'Barcode-bronnen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '123', 'Barcode / ISBN': '456',
   }]);
@@ -162,6 +187,29 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(placeholderAuthorProvenance.rows[0].provenance.author.source, 'excel');
   assert.strictEqual(placeholderAuthorProvenance.rows[0].provenance.author.derived, 'combined_name_parts');
   assert.deepStrictEqual(placeholderAuthorProvenance.rows[0].provenance.author.headers, ['Voornaam schrijver', 'Achternaam schrijver']);
+
+  const equivalentAuthorColumns = { Titel: 'Auteur equivalent', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentAuthorColumns, 'Auteur', { value: 'Alice; Bob', enumerable: true });
+  Object.defineProperty(equivalentAuthorColumns, 'Auteur_1', { value: 'Bob & Alice', enumerable: true });
+  const equivalentAuthorResult = await analyzeBookImportRows([equivalentAuthorColumns]);
+  assert.deepStrictEqual(equivalentAuthorResult.rows[0].book.authors, ['Alice', 'Bob']);
+  assert.strictEqual(equivalentAuthorResult.rows[0].book.author, 'Alice & Bob');
+  assert.ok(!issueCodes(equivalentAuthorResult.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(equivalentAuthorResult.groups.length, 1);
+
+  const duplicateAuthorListColumns = { Titel: 'Auteur dedupe equivalent', 'ISBN-nummer': ISBN };
+  Object.defineProperty(duplicateAuthorListColumns, 'Auteur', { value: 'Alice; Alice; Bob', enumerable: true });
+  Object.defineProperty(duplicateAuthorListColumns, 'Auteur_1', { value: 'Bob & Alice', enumerable: true });
+  const duplicateAuthorListResult = await analyzeBookImportRows([duplicateAuthorListColumns]);
+  assert.ok(!issueCodes(duplicateAuthorListResult.rows[0]).has('conflicting_source_columns'));
+  assert.deepStrictEqual(duplicateAuthorListResult.rows[0].book.authors, ['Alice', 'Bob']);
+
+  const nonEquivalentAuthorColumns = { Titel: 'Auteur niet equivalent', 'ISBN-nummer': ISBN };
+  Object.defineProperty(nonEquivalentAuthorColumns, 'Auteur', { value: 'Doe, John', enumerable: true });
+  Object.defineProperty(nonEquivalentAuthorColumns, 'Auteur_1', { value: 'John Doe', enumerable: true });
+  const nonEquivalentAuthorResult = await analyzeBookImportRows([nonEquivalentAuthorColumns]);
+  assert.strictEqual(nonEquivalentAuthorResult.rows[0].status, 'conflict');
+  assert.ok(issueCodes(nonEquivalentAuthorResult.rows[0]).has('conflicting_source_columns'));
 
   const directWithPartialSplit = await analyzeBookImportRows([{
     Titel: 'Corroborerende auteur',

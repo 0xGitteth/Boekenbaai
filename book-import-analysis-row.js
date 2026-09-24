@@ -105,6 +105,12 @@ function collisionIsSemanticallyEquivalent(collision) {
     return parsed.every((quantity) => quantity.valid)
       && new Set(parsed.map((quantity) => quantity.value)).size === 1;
   }
+  if (collision.field === 'author') {
+    const signatures = candidates.map((entry) => JSON.stringify(
+      normalizeDirectAuthors(entry.value).map((author) => comparableText(author)).filter(Boolean).sort(),
+    ));
+    return new Set(signatures).size === 1;
+  }
   if (!IDENTIFIER_FIELDS.has(collision.field)) return false;
   const analyses = candidates.map((entry) => analyzeIdentifier(entry.value));
   const canonical = analyses.map((analysis) => analysis.canonical).filter(Boolean);
@@ -252,6 +258,13 @@ function normalizeIdentifierFields(mapped, row, book) {
   }
   let ambiguousAsBarcode = false;
   const ambiguousLikelyIsbn = looksLikeIsbnCandidate(ambiguousValue);
+  if (!isBlankCellValue(ambiguousValue) && ambiguousLikelyIsbn
+    && !ambiguous.canonical && !ambiguous.repair && !ambiguous.suggestion && !ambiguous.unsupportedType) {
+    addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', {
+      field: 'ambiguousIdentifier',
+      raw: valueText(ambiguousValue),
+    });
+  }
   if (!isBlankCellValue(ambiguousValue) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')
     && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
     const rawAmbiguousBarcode = valueText(ambiguousValue);
@@ -288,7 +301,7 @@ function normalizeIdentifierFields(mapped, row, book) {
   }
 
   if (!editionIsbn && !distinct.length && !ambiguousAsBarcode && !isBlankCellValue(ambiguousValue)
-    && !ambiguous.suggestion && !ambiguous.unsupportedType) {
+    && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
     addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field: 'ambiguousIdentifier', raw: valueText(ambiguousValue) });
   }
 

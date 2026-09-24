@@ -13,6 +13,7 @@ const {
 
 const ISBN = '9780306406157';
 const ISBN_ALT = '9780439554930';
+const ISBN_THIRD = '9780061120084';
 const codes = (row) => new Set(row.issues.map((issue) => issue.code));
 
 module.exports = async function runMetadataTests() {
@@ -36,6 +37,24 @@ module.exports = async function runMetadataTests() {
   const candidate = normalizeMetadataCandidate({ fields: { title: 'Goed', editionIsbn: '', isbn13: ISBN, author: 'A Auteur' } });
   assert.strictEqual(candidate.editionIsbn, ISBN);
   assert.deepStrictEqual(metadataCandidatesFromResult({ found: false, candidates: [{ title: 'LEK', isbn13: ISBN }] }), []);
+
+  const equivalentMetadataIdentifiers = normalizeMetadataCandidate({
+    title: 'Zelfde editie bewijs',
+    editionIsbn: ISBN,
+    isbn: '0-306-40615-2',
+    barcode: ISBN,
+  });
+  assert.strictEqual(equivalentMetadataIdentifiers.editionIsbn, ISBN);
+  assert.deepStrictEqual(equivalentMetadataIdentifiers.identifierIsbns, [ISBN]);
+
+  const conflictingMetadataIdentifiers = normalizeMetadataCandidate({
+    title: 'Twee edities in één payload',
+    author: 'A Auteur',
+    editionIsbn: ISBN,
+    barcode: ISBN_ALT,
+  });
+  assert.strictEqual(conflictingMetadataIdentifiers.editionIsbn, '');
+  assert.deepStrictEqual(conflictingMetadataIdentifiers.identifierIsbns, [ISBN, ISBN_ALT].sort());
 
   const singularCommaAuthor = normalizeMetadataCandidate({
     title: 'Bibliografische auteur', author: 'Doe, John', isbn13: ISBN,
@@ -62,6 +81,32 @@ module.exports = async function runMetadataTests() {
   ]);
   assert.strictEqual(ambiguous.conflict.code, 'ambiguous_metadata_editions');
   assert.strictEqual(selectIsbnMetadataCandidate(ISBN, [normalizeMetadataCandidate({ title: 'X', author: 'Y', isbn13: ISBN_ALT })]).conflict.code, 'ambiguous_isbn_lookup_results');
+
+  const strictInternalIdentifierConflict = selectMetadataCandidate(strictRow, [
+    normalizeMetadataCandidate({
+      title: 'Strict titel', author: 'A Auteur', editionIsbn: ISBN, barcode: ISBN_ALT,
+    }),
+  ]);
+  assert.strictEqual(strictInternalIdentifierConflict.candidate, null);
+  assert.strictEqual(strictInternalIdentifierConflict.conflict.code, 'metadata_identifier_conflict');
+  assert.deepStrictEqual(strictInternalIdentifierConflict.conflict.editionIsbns, [ISBN, ISBN_ALT].sort());
+
+  const exactInternalIdentifierConflict = selectIsbnMetadataCandidate(ISBN, [
+    normalizeMetadataCandidate({
+      title: 'Strict titel', author: 'A Auteur', editionIsbn: ISBN, barcode: ISBN_ALT,
+    }),
+  ], strictRow);
+  assert.strictEqual(exactInternalIdentifierConflict.candidate, null);
+  assert.strictEqual(exactInternalIdentifierConflict.conflict.code, 'metadata_identifier_conflict');
+
+  const exactWithUnrelatedConflictedNoise = selectIsbnMetadataCandidate(ISBN, [
+    normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', editionIsbn: ISBN }),
+    normalizeMetadataCandidate({
+      title: 'Noise', author: 'Andere Auteur', editionIsbn: ISBN_ALT, barcode: ISBN_THIRD,
+    }),
+  ], strictRow);
+  assert.strictEqual(exactWithUnrelatedConflictedNoise.conflict, null);
+  assert.strictEqual(exactWithUnrelatedConflictedNoise.candidate.editionIsbn, ISBN);
 
   const preferEdition = selectMetadataCandidate(strictRow, [
     normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
@@ -101,6 +146,41 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(resolved.rows[0].book.editionIsbn, ISBN);
   assert.strictEqual(resolved.rows[0].book.publisher, 'Uitgever');
   assert.ok(codes(resolved.rows[0]).has('isbn_resolved_from_metadata'));
+
+  const exactPayloadIdentifierConflict = await analyzeBookImportRows([{
+    Titel: 'Interne metadata botsing', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }], {
+    lookupIsbn: async () => ({
+      title: 'Interne metadata botsing',
+      author: 'A Auteur',
+      editionIsbn: ISBN,
+      barcode: ISBN_ALT,
+      publisher: 'Mag niet lekken',
+      found: true,
+      source: 'conflicting-exact',
+    }),
+  });
+  assert.strictEqual(exactPayloadIdentifierConflict.rows[0].status, 'conflict');
+  assert.ok(codes(exactPayloadIdentifierConflict.rows[0]).has('metadata_identifier_conflict'));
+  assert.strictEqual(exactPayloadIdentifierConflict.rows[0].book.publisher, '');
+  assert.strictEqual(exactPayloadIdentifierConflict.groups.length, 0);
+
+  const titlePayloadIdentifierConflict = await analyzeBookImportRows([{
+    Titel: 'Work metadata botsing', Auteur: 'A Auteur',
+  }], {
+    lookupTitleAuthor: async () => ({
+      title: 'Work metadata botsing',
+      author: 'A Auteur',
+      editionIsbn: ISBN,
+      barcode: ISBN_ALT,
+      found: true,
+      source: 'conflicting-work',
+    }),
+  });
+  assert.strictEqual(titlePayloadIdentifierConflict.rows[0].status, 'conflict');
+  assert.strictEqual(titlePayloadIdentifierConflict.rows[0].book.editionIsbn, '');
+  assert.ok(codes(titlePayloadIdentifierConflict.rows[0]).has('metadata_identifier_conflict'));
+  assert.strictEqual(titlePayloadIdentifierConflict.groups.length, 0);
 
   const suggestionConflict = await analyzeBookImportRows([{
     Titel: 'Metadata resolve', Auteur: 'A Auteur', 'ISBN-nummer': '978030640615',
