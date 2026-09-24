@@ -9,6 +9,7 @@ const { isBlankCellValue } = require('./book-import-workbook');
 const {
   addIssue,
   comparableText,
+  splitMultiValue,
   splitTagValue,
   parseQuantity,
   normalizeYear,
@@ -134,6 +135,12 @@ function collisionIsSemanticallyEquivalent(collision) {
   if (collision.field === 'tags' || collision.field === 'themes') {
     const signatures = candidates.map((entry) => JSON.stringify(Array.from(new Set(
       splitTagValue(entry.value).map((value) => comparableText(value)).filter(Boolean),
+    )).sort()));
+    return new Set(signatures).size === 1;
+  }
+  if (collision.field === 'classes') {
+    const signatures = candidates.map((entry) => JSON.stringify(Array.from(new Set(
+      splitMultiValue(entry.value).map((value) => comparableText(value)).filter(Boolean),
     )).sort()));
     return new Set(signatures).size === 1;
   }
