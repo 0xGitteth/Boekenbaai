@@ -190,12 +190,14 @@ module.exports = async function runReviewTailTests() {
     assert.ok(!issueCodes(labelledMalformedResult.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
   }
 
-  const labelledValidIsbn = await analyzeBookImportRows([{
-    Titel: 'Gelabelde geldige ISBN', Auteur: 'A Auteur', 'Barcode / ISBN': 'ISBN-13: 978-0-306-40615-7',
-  }]);
-  assert.strictEqual(labelledValidIsbn.rows[0].book.editionIsbn, ISBN);
-  assert.strictEqual(labelledValidIsbn.rows[0].book.barcode, '');
-  assert.ok(issueCodes(labelledValidIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_isbn'));
+  for (const labelledValid of ['ISBN-13: 978-0-306-40615-7', 'ISBN–13: 978-0-306-40615-7']) {
+    const labelledValidIsbn = await analyzeBookImportRows([{
+      Titel: 'Gelabelde geldige ISBN', Auteur: 'A Auteur', 'Barcode / ISBN': labelledValid,
+    }]);
+    assert.strictEqual(labelledValidIsbn.rows[0].book.editionIsbn, ISBN);
+    assert.strictEqual(labelledValidIsbn.rows[0].book.barcode, '');
+    assert.ok(issueCodes(labelledValidIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_isbn'));
+  }
 
   const conflictingCombinedBarcode = await analyzeBookImportRows([{
     Titel: 'Barcode-bronnen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '123', 'Barcode / ISBN': '456',
@@ -263,6 +265,13 @@ module.exports = async function runReviewTailTests() {
   const equivalentTagResult = await analyzeBookImportRows([equivalentTagColumns]);
   assert.deepStrictEqual(equivalentTagResult.rows[0].book.tags, ['Fantasy', 'Magic']);
   assert.ok(!issueCodes(equivalentTagResult.rows[0]).has('conflicting_source_columns'));
+
+  const equivalentClassColumns = { Titel: 'Klassen equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentClassColumns, 'Klassen', { value: '2A; 3B', enumerable: true });
+  Object.defineProperty(equivalentClassColumns, 'Klassen_1', { value: '3B; 2A', enumerable: true });
+  const equivalentClassResult = await analyzeBookImportRows([equivalentClassColumns]);
+  assert.ok(!issueCodes(equivalentClassResult.rows[0]).has('conflicting_source_columns'));
+  assert.deepStrictEqual(equivalentClassResult.rows[0].context.classContext, ['2A', '3B']);
 
   const conflictingLanguageColumns = { Titel: 'Taal conflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(conflictingLanguageColumns, 'Taal', { value: 'Nederlands', enumerable: true });
