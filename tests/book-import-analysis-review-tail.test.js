@@ -172,6 +172,31 @@ module.exports = async function runReviewTailTests() {
     assert.ok(!issueCodes(repairableCombinedIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
   }
 
+  for (const labelledRepairable of ['ISBN: 978030640615', 'ISBN-13: 9780306406158']) {
+    const labelledRepairableResult = await analyzeBookImportRows([{
+      Titel: 'Gelabelde herstelbare ISBN', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': labelledRepairable,
+    }]);
+    assert.strictEqual(labelledRepairableResult.rows[0].book.barcode, '');
+    assert.ok(issueCodes(labelledRepairableResult.rows[0]).has('isbn_repair_suggested'));
+    assert.ok(!issueCodes(labelledRepairableResult.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+  }
+
+  for (const labelledMalformed of ['ISBN: 97803064061', 'ISBN 12345678901', 'ISBN-10: nonsense']) {
+    const labelledMalformedResult = await analyzeBookImportRows([{
+      Titel: 'Gelabelde ongeldige ISBN', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': labelledMalformed,
+    }]);
+    assert.strictEqual(labelledMalformedResult.rows[0].book.barcode, '');
+    assert.ok(issueCodes(labelledMalformedResult.rows[0]).has('invalid_or_unrecognized_isbn'));
+    assert.ok(!issueCodes(labelledMalformedResult.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+  }
+
+  const labelledValidIsbn = await analyzeBookImportRows([{
+    Titel: 'Gelabelde geldige ISBN', Auteur: 'A Auteur', 'Barcode / ISBN': 'ISBN-13: 978-0-306-40615-7',
+  }]);
+  assert.strictEqual(labelledValidIsbn.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(labelledValidIsbn.rows[0].book.barcode, '');
+  assert.ok(issueCodes(labelledValidIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_isbn'));
+
   const conflictingCombinedBarcode = await analyzeBookImportRows([{
     Titel: 'Barcode-bronnen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '123', 'Barcode / ISBN': '456',
   }]);
@@ -210,6 +235,41 @@ module.exports = async function runReviewTailTests() {
   const nonEquivalentAuthorResult = await analyzeBookImportRows([nonEquivalentAuthorColumns]);
   assert.strictEqual(nonEquivalentAuthorResult.rows[0].status, 'conflict');
   assert.ok(issueCodes(nonEquivalentAuthorResult.rows[0]).has('conflicting_source_columns'));
+
+  const equivalentLanguageColumns = { Titel: 'Taal equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentLanguageColumns, 'Taal', { value: 'Nederlands', enumerable: true });
+  Object.defineProperty(equivalentLanguageColumns, 'Taal_1', { value: 'nl', enumerable: true });
+  const equivalentLanguageResult = await analyzeBookImportRows([equivalentLanguageColumns]);
+  assert.strictEqual(equivalentLanguageResult.rows[0].book.language, 'nl');
+  assert.ok(!issueCodes(equivalentLanguageResult.rows[0]).has('conflicting_source_columns'));
+
+  const equivalentYearColumns = { Titel: 'Jaar equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentYearColumns, 'Jaar', { value: '2020', enumerable: true });
+  Object.defineProperty(equivalentYearColumns, 'Jaar_1', { value: '2020-05-03', enumerable: true });
+  const equivalentYearResult = await analyzeBookImportRows([equivalentYearColumns]);
+  assert.strictEqual(equivalentYearResult.rows[0].book.publishedYear, 2020);
+  assert.ok(!issueCodes(equivalentYearResult.rows[0]).has('conflicting_source_columns'));
+
+  const equivalentPageColumns = { Titel: 'Pagina equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentPageColumns, 'Paginas', { value: '0100', enumerable: true });
+  Object.defineProperty(equivalentPageColumns, 'Paginas_1', { value: 100, enumerable: true });
+  const equivalentPageResult = await analyzeBookImportRows([equivalentPageColumns]);
+  assert.strictEqual(equivalentPageResult.rows[0].book.pageCount, 100);
+  assert.ok(!issueCodes(equivalentPageResult.rows[0]).has('conflicting_source_columns'));
+
+  const equivalentTagColumns = { Titel: 'Tag equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentTagColumns, 'Tags', { value: 'Fantasy; Magic', enumerable: true });
+  Object.defineProperty(equivalentTagColumns, 'Tags_1', { value: 'magic, fantasy', enumerable: true });
+  const equivalentTagResult = await analyzeBookImportRows([equivalentTagColumns]);
+  assert.deepStrictEqual(equivalentTagResult.rows[0].book.tags, ['Fantasy', 'Magic']);
+  assert.ok(!issueCodes(equivalentTagResult.rows[0]).has('conflicting_source_columns'));
+
+  const conflictingLanguageColumns = { Titel: 'Taal conflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(conflictingLanguageColumns, 'Taal', { value: 'Nederlands', enumerable: true });
+  Object.defineProperty(conflictingLanguageColumns, 'Taal_1', { value: 'Engels', enumerable: true });
+  const conflictingLanguageResult = await analyzeBookImportRows([conflictingLanguageColumns]);
+  assert.strictEqual(conflictingLanguageResult.rows[0].status, 'conflict');
+  assert.ok(issueCodes(conflictingLanguageResult.rows[0]).has('conflicting_source_columns'));
 
   const directWithPartialSplit = await analyzeBookImportRows([{
     Titel: 'Corroborerende auteur',
@@ -675,6 +735,26 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(encodedLimitResult.ok, false);
   assert.strictEqual(encodedLimitResult.error, 'file_too_large');
   assert.strictEqual(decodedBase64, false, 'Oversized base64 must be rejected before allocating the decoded Buffer');
+
+  let excessiveWhitespaceDecoded = false;
+  const originalBufferFromForWhitespace = Buffer.from;
+  Buffer.from = function monitoredWhitespaceBufferFrom(value, encoding, ...rest) {
+    if (typeof value === 'string' && encoding === 'base64') excessiveWhitespaceDecoded = true;
+    return originalBufferFromForWhitespace.call(Buffer, value, encoding, ...rest);
+  };
+  let excessiveWhitespaceResult;
+  try {
+    excessiveWhitespaceResult = readBookImportWorkbook({
+      read: () => { throw new Error('excessive encoded overhead must not reach parser'); },
+      utils: { sheet_to_json: () => [] },
+    }, `AAAA${' '.repeat(2048)}AAAA`, { maxBytes: 6 });
+  } finally {
+    Buffer.from = originalBufferFromForWhitespace;
+  }
+  assert.strictEqual(excessiveWhitespaceResult.ok, false);
+  assert.strictEqual(excessiveWhitespaceResult.error, 'file_too_large');
+  assert.strictEqual(excessiveWhitespaceResult.reason, 'encoded_input_overhead');
+  assert.strictEqual(excessiveWhitespaceDecoded, false, 'Excessive base64 whitespace must be rejected before decoding');
 
   const whitespaceBase64 = readBookImportWorkbook({
     read: () => { throw new Error('decoded input reached parser'); },
