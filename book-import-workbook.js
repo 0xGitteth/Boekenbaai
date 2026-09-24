@@ -97,10 +97,11 @@ function worksheetRowNumber(row) {
   return Number.isInteger(descriptor.value) && descriptor.value >= 0 ? descriptor.value : null;
 }
 
-function valuesEquivalent(left, right) {
-  const a = scalarCellText(left).normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
-  const b = scalarCellText(right).normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
-  return a === b;
+function valuesEquivalent(left, right, field = '') {
+  const a = scalarCellText(left).normalize('NFKC').trim();
+  const b = scalarCellText(right).normalize('NFKC').trim();
+  if (field === 'coverUrl') return a === b;
+  return a.replace(/\s+/g, ' ').toLowerCase() === b.replace(/\s+/g, ' ').toLowerCase();
 }
 
 function duplicateBaseHeader(entries, header) {
@@ -155,7 +156,7 @@ function mapImportRow(row) {
     if (populated.length < 2) continue;
     const distinct = [];
     for (const entry of populated) {
-      if (!distinct.some((known) => valuesEquivalent(known.value, entry.value))) distinct.push(entry);
+      if (!distinct.some((known) => valuesEquivalent(known.value, entry.value, field))) distinct.push(entry);
     }
     if (distinct.length > 1) collisions.push({ field, candidates: distinct });
   }
@@ -225,29 +226,82 @@ function ownDataValue(source, key) {
   return descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value') ? descriptor.value : undefined;
 }
 
+function excelColumnIndex(label) {
+  const text = String(label ?? '').toUpperCase();
+  if (!/^[A-Z]+$/.test(text)) return null;
+  let value = 0;
+  for (const char of text) {
+    value = value * 26 + (char.charCodeAt(0) - 64);
+    if (!Number.isSafeInteger(value)) return null;
+  }
+  return value - 1;
+}
+
+function worksheetRangeDetails(startRowIndex, endRowIndex, startColumnIndex, endColumnIndex) {
+  if (![startRowIndex, endRowIndex, startColumnIndex, endColumnIndex].every(Number.isInteger)) return null;
+  if (startRowIndex < 0 || endRowIndex < startRowIndex || startColumnIndex < 0 || endColumnIndex < startColumnIndex) return null;
+  const rowCount = endRowIndex - startRowIndex + 1;
+  const columnCount = endColumnIndex - startColumnIndex + 1;
+  const cellCount = rowCount > Math.floor(Number.MAX_SAFE_INTEGER / columnCount)
+    ? Number.MAX_SAFE_INTEGER
+    : rowCount * columnCount;
+  return {
+    startRow: startRowIndex + 1,
+    endRow: endRowIndex + 1,
+    rowCount,
+    startColumn: startColumnIndex + 1,
+    endColumn: endColumnIndex + 1,
+    columnCount,
+    cellCount,
+  };
+}
+
 function worksheetRangeInfo(XLSX, rangeValue) {
   if (typeof rangeValue !== 'string' || !rangeValue.trim()) return null;
   if (XLSX?.utils && typeof XLSX.utils.decode_range === 'function') {
     try {
       const decoded = XLSX.utils.decode_range(rangeValue);
-      if (decoded && Number.isInteger(decoded?.s?.r) && Number.isInteger(decoded?.e?.r) && decoded.e.r >= decoded.s.r) {
-        return {
-          startRow: decoded.s.r + 1,
-          endRow: decoded.e.r + 1,
-          rowCount: decoded.e.r - decoded.s.r + 1,
-        };
-      }
+      const decodedRange = worksheetRangeDetails(decoded?.s?.r, decoded?.e?.r, decoded?.s?.c, decoded?.e?.c);
+      if (decodedRange) return decodedRange;
     } catch {
       // Fall through to the conservative text parser.
     }
   }
-  const endMatch = rangeValue.match(/(?:^|:)\$?[A-Za-z]+\$?(\d+)$/);
-  const startMatch = rangeValue.match(/^\$?[A-Za-z]+\$?(\d+)(?::|$)/);
-  if (!endMatch || !startMatch) return null;
-  const startRow = Number(startMatch[1]);
-  const endRow = Number(endMatch[1]);
-  if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(endRow) || startRow < 1 || endRow < startRow) return null;
-  return { startRow, endRow, rowCount: endRow - startRow + 1 };
+  const match = rangeValue.trim().match(/^\$?([A-Za-z]+)\$?(\d+)(?::\$?([A-Za-z]+)\$?(\d+))?$/);
+  if (!match) return null;
+  const startRow = Number(match[2]);
+  const endRow = Number(match[4] || match[2]);
+  const startColumn = excelColumnIndex(match[1]);
+  const endColumn = excelColumnIndex(match[3] || match[1]);
+  if (!Number.isSafeInteger(startRow) || !Number.isSafeInteger(endRow) || startRow < 1 || endRow < startRow
+    || startColumn === null || endColumn === null) return null;
+  return worksheetRangeDetails(startRow - 1, endRow - 1, startColumn, endColumn);
+}
+
+function worksheetRangeLimitError(rangeInfo, sheetName, { maxRows, maxColumns, maxWorksheetCells }) {
+  if (!rangeInfo) return null;
+  if (rangeInfo.rowCount > maxRows + 1) {
+    return { ok: false, error: 'too_many_rows', sheetName, worksheetRows: rangeInfo.rowCount, maxRows };
+  }
+  if (rangeInfo.columnCount > maxColumns) {
+    return {
+      ok: false,
+      error: 'too_many_columns',
+      sheetName,
+      worksheetColumns: rangeInfo.columnCount,
+      maxColumns,
+    };
+  }
+  if (rangeInfo.cellCount > maxWorksheetCells) {
+    return {
+      ok: false,
+      error: 'worksheet_range_too_large',
+      sheetName,
+      worksheetCells: rangeInfo.cellCount,
+      maxWorksheetCells,
+    };
+  }
+  return null;
 }
 
 function firstSheet(workbook) {
@@ -610,6 +664,15 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
   const archiveInspection = inspectZipExpansion(buffer, options, maxBytes);
   if (!archiveInspection.ok) return archiveInspection;
   const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : 20000;
+  const maxColumns = Number.isInteger(options.maxColumns) && options.maxColumns > 0 ? options.maxColumns : 256;
+  const defaultWorksheetCells = Math.max(
+    maxRows + 1,
+    Math.min(5_000_000, (maxRows + 1) * maxColumns),
+  );
+  const maxWorksheetCells = Number.isSafeInteger(options.maxWorksheetCells) && options.maxWorksheetCells > 0
+    ? options.maxWorksheetCells
+    : defaultWorksheetCells;
+  const worksheetLimits = { maxRows, maxColumns, maxWorksheetCells };
   const initialSheetRows = Math.min(maxRows + 2, Number.MAX_SAFE_INTEGER);
 
   let workbook;
@@ -621,10 +684,12 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
   let resolvedSheet = firstSheet(workbook);
   if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
 
-  let rangeInfo = worksheetRangeInfo(XLSX, ownDataValue(resolvedSheet.sheet, '!fullref'));
-  if (rangeInfo && rangeInfo.rowCount > maxRows + 1) {
-    return { ok: false, error: 'too_many_rows', sheetName: resolvedSheet.sheetName, worksheetRows: rangeInfo.rowCount, maxRows };
-  }
+  let rangeInfo = worksheetRangeInfo(
+    XLSX,
+    ownDataValue(resolvedSheet.sheet, '!fullref') || ownDataValue(resolvedSheet.sheet, '!ref'),
+  );
+  const initialRangeError = worksheetRangeLimitError(rangeInfo, resolvedSheet.sheetName, worksheetLimits);
+  if (initialRangeError) return initialRangeError;
 
   if (rangeInfo && rangeInfo.endRow > initialSheetRows && rangeInfo.rowCount <= maxRows + 1) {
     try {
@@ -634,10 +699,12 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
     }
     resolvedSheet = firstSheet(workbook);
     if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
-    rangeInfo = worksheetRangeInfo(XLSX, ownDataValue(resolvedSheet.sheet, '!fullref')) || rangeInfo;
-    if (rangeInfo && rangeInfo.rowCount > maxRows + 1) {
-      return { ok: false, error: 'too_many_rows', sheetName: resolvedSheet.sheetName, worksheetRows: rangeInfo.rowCount, maxRows };
-    }
+    rangeInfo = worksheetRangeInfo(
+      XLSX,
+      ownDataValue(resolvedSheet.sheet, '!fullref') || ownDataValue(resolvedSheet.sheet, '!ref'),
+    ) || rangeInfo;
+    const rereadRangeError = worksheetRangeLimitError(rangeInfo, resolvedSheet.sheetName, worksheetLimits);
+    if (rereadRangeError) return rereadRangeError;
   }
 
   let rows;
