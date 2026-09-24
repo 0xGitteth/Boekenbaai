@@ -24,9 +24,16 @@ function metadataPayloadFromResult(result) {
   const object = ownObject(result);
   if (!object || getOwnDataValue(object, 'found') === false) return null;
   const metadata = ownObject(getOwnDataValue(object, 'metadata'));
-  if (metadata && getOwnDataValue(metadata, 'found') !== false) return metadata;
   const fields = ownObject(getOwnDataValue(object, 'fields'));
-  if (fields && getOwnDataValue(fields, 'found') !== false) return fields;
+  if (metadata) {
+    if (getOwnDataValue(metadata, 'found') !== false) return metadata;
+    if (fields && getOwnDataValue(fields, 'found') !== false) return fields;
+    return null;
+  }
+  if (fields) {
+    if (getOwnDataValue(fields, 'found') !== false) return fields;
+    return null;
+  }
   return object;
 }
 
