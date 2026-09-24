@@ -10,17 +10,33 @@ const ISBN = '9780306406157';
 const ISBN_ALT = '9780439554930';
 const issueCodes = (row) => new Set(row.issues.map((issue) => issue.code));
 
-function buildDeflateZip(payload, { compressedSizeDelta = 0, declaredExpandedBytes = payload.length } = {}) {
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function buildDeflateZip(payload, {
+  compressedSizeDelta = 0,
+  declaredExpandedBytes = payload.length,
+  crcOverride = null,
+  localCrcOverride = null,
+} = {}) {
   const fileName = Buffer.from('xl/worksheets/sheet1.xml');
   const compressed = deflateRawSync(payload);
   const declaredCompressedBytes = Math.max(0, compressed.length + compressedSizeDelta);
+  const declaredCrc = crcOverride === null ? crc32(payload) : crcOverride >>> 0;
+  const localCrc = localCrcOverride === null ? declaredCrc : localCrcOverride >>> 0;
 
   const local = Buffer.alloc(30 + fileName.length);
   local.writeUInt32LE(0x04034b50, 0);
   local.writeUInt16LE(20, 4);
   local.writeUInt16LE(0, 6);
   local.writeUInt16LE(8, 8);
-  local.writeUInt32LE(0, 14);
+  local.writeUInt32LE(localCrc, 14);
   local.writeUInt32LE(declaredCompressedBytes, 18);
   local.writeUInt32LE(declaredExpandedBytes, 22);
   local.writeUInt16LE(fileName.length, 26);
@@ -32,7 +48,7 @@ function buildDeflateZip(payload, { compressedSizeDelta = 0, declaredExpandedByt
   central.writeUInt16LE(20, 6);
   central.writeUInt16LE(0, 8);
   central.writeUInt16LE(8, 10);
-  central.writeUInt32LE(0, 16);
+  central.writeUInt32LE(declaredCrc, 16);
   central.writeUInt32LE(declaredCompressedBytes, 20);
   central.writeUInt32LE(declaredExpandedBytes, 24);
   central.writeUInt16LE(fileName.length, 28);
@@ -269,6 +285,34 @@ module.exports = async function runFinalReviewTests() {
   assert.strictEqual(hiddenExpansionResult.error, 'file_too_large');
   assert.strictEqual(hiddenExpansionResult.reason, 'archive_expansion_limit');
   assert.strictEqual(hiddenExpansionReadCalled, false);
+
+  const staleCrcZip = buildDeflateZip(Buffer.from('crc-integrity-check'), { crcOverride: 0 });
+  let staleCrcReadCalled = false;
+  const staleCrcResult = readBookImportWorkbook({
+    read() {
+      staleCrcReadCalled = true;
+      throw new Error('CRC-invalid ZIP must be rejected before SheetJS');
+    },
+    utils: { sheet_to_json: () => [] },
+  }, staleCrcZip, { maxExpandedBytes: 4096 });
+  assert.strictEqual(staleCrcResult.ok, false);
+  assert.strictEqual(staleCrcResult.error, 'invalid_workbook');
+  assert.strictEqual(staleCrcResult.reason, 'zip_crc_mismatch');
+  assert.strictEqual(staleCrcReadCalled, false);
+
+  const localCrcMismatchZip = buildDeflateZip(Buffer.from('local-crc-check'), { localCrcOverride: 0 });
+  let localCrcReadCalled = false;
+  const localCrcMismatchResult = readBookImportWorkbook({
+    read() {
+      localCrcReadCalled = true;
+      throw new Error('Local/central CRC mismatch must be rejected before SheetJS');
+    },
+    utils: { sheet_to_json: () => [] },
+  }, localCrcMismatchZip, { maxExpandedBytes: 4096 });
+  assert.strictEqual(localCrcMismatchResult.ok, false);
+  assert.strictEqual(localCrcMismatchResult.error, 'invalid_workbook');
+  assert.strictEqual(localCrcMismatchResult.reason, 'zip_local_crc_mismatch');
+  assert.strictEqual(localCrcReadCalled, false);
 
   const overlappingEntryZip = duplicateCentralDirectoryEntry(buildDeflateZip(Buffer.alloc(256, 67)));
   let overlappingReadCalled = false;
