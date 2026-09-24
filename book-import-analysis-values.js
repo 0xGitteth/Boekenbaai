@@ -143,7 +143,7 @@ function isSupportedIdentifierType(value) {
 
 function isbnLabelInfo(value) {
   const text = scalarCellText(value).normalize('NFKC').trim();
-  const match = /^isbn(?:(?:\s*[- ]?\s*)(?:10|13))?(?=\s|:|-|$)(?:\s*:\s*|\s+|\s*-\s*)?(.*)$/i.exec(text);
+  const match = /^isbn(?:(?:\s*[-\u2010-\u2015 ]?\s*)(?:10|13))?(?=\s|:|[-\u2010-\u2015]|$)(?:\s*:\s*|\s+|\s*[-\u2010-\u2015]\s*)?(.*)$/i.exec(text);
   if (!match) return { labelled: false, text };
   return { labelled: true, text: String(match[1] ?? '').trim() };
 }
