@@ -40,6 +40,21 @@ module.exports = async function runSafetyTests() {
     assert.strictEqual(quantityRow.book.quantity.valid, false);
   }
 
+  const zeroQuantity = await analyzeBookImportRows([{
+    Titel: 'Nul exemplaren', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Aantal: 0,
+  }]);
+  assert.strictEqual(zeroQuantity.rows[0].status, 'conflict');
+  assert.ok(codes(zeroQuantity.rows[0]).has('invalid_quantity'));
+  assert.strictEqual(zeroQuantity.rows[0].book.quantity.valid, false);
+  assert.strictEqual(zeroQuantity.summary.physicalCopies, 0);
+  assert.strictEqual(zeroQuantity.groups.length, 0);
+
+  const zeroStringQuantity = await analyzeBookImportRows([{
+    Titel: 'Nul als tekst', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Aantal: '00',
+  }]);
+  assert.strictEqual(zeroStringQuantity.rows[0].status, 'conflict');
+  assert.ok(codes(zeroStringQuantity.rows[0]).has('invalid_quantity'));
+
   const malformedNumericMetadata = await analyzeBookImportRows([{
     Titel: 'Numeriek bronformaat', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Jaar: '0x7e4', Paginas: '1e3',
   }]);
@@ -147,6 +162,46 @@ module.exports = async function runSafetyTests() {
   }, Buffer.from('x'), { maxRows: 2 });
   assert.strictEqual(oversizedRange.error, 'too_many_rows');
   assert.strictEqual(materializedOversizedSheet, false, 'Oversized worksheet ranges must be rejected before JSON materialization');
+
+  let materializedWideSheet = false;
+  const wideRange = readBookImportWorkbook({
+    read() {
+      return { SheetNames: ['B'], Sheets: { B: { '!fullref': 'A1:XFD20001' } } };
+    },
+    utils: {
+      decode_range() { return { s: { r: 0, c: 0 }, e: { r: 20000, c: 16383 } }; },
+      sheet_to_json() { materializedWideSheet = true; return []; },
+    },
+  }, Buffer.from('x'));
+  assert.strictEqual(wideRange.error, 'too_many_columns');
+  assert.strictEqual(wideRange.worksheetColumns, 16384);
+  assert.strictEqual(materializedWideSheet, false, 'Excessive worksheet width must be rejected before JSON materialization');
+
+  let materializedFallbackWideSheet = false;
+  const fallbackWideRange = readBookImportWorkbook({
+    read() {
+      return { SheetNames: ['B'], Sheets: { B: { '!ref': 'A1:XFD2' } } };
+    },
+    utils: {
+      sheet_to_json() { materializedFallbackWideSheet = true; return []; },
+    },
+  }, Buffer.from('x'));
+  assert.strictEqual(fallbackWideRange.error, 'too_many_columns');
+  assert.strictEqual(materializedFallbackWideSheet, false, 'The !ref fallback must also enforce worksheet width');
+
+  let materializedLargeCellRange = false;
+  const largeCellRange = readBookImportWorkbook({
+    read() {
+      return { SheetNames: ['B'], Sheets: { B: { '!fullref': 'A1:J20' } } };
+    },
+    utils: {
+      decode_range() { return { s: { r: 0, c: 0 }, e: { r: 19, c: 9 } }; },
+      sheet_to_json() { materializedLargeCellRange = true; return []; },
+    },
+  }, Buffer.from('x'), { maxRows: 100, maxColumns: 20, maxWorksheetCells: 100 });
+  assert.strictEqual(largeCellRange.error, 'worksheet_range_too_large');
+  assert.strictEqual(largeCellRange.worksheetCells, 200);
+  assert.strictEqual(materializedLargeCellRange, false, 'Excessive worksheet cell ranges must be rejected before JSON materialization');
 
   const tooMany = readBookImportWorkbook({
     read() { return { SheetNames: ['B'], Sheets: { B: {} } }; },
