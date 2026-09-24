@@ -258,6 +258,13 @@ function normalizeIdentifierFields(mapped, row, book) {
   }
   let ambiguousAsBarcode = false;
   const ambiguousLikelyIsbn = looksLikeIsbnCandidate(ambiguousValue);
+  if (!isBlankCellValue(ambiguousValue) && ambiguousLikelyIsbn
+    && !ambiguous.canonical && !ambiguous.repair && !ambiguous.suggestion && !ambiguous.unsupportedType) {
+    addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', {
+      field: 'ambiguousIdentifier',
+      raw: valueText(ambiguousValue),
+    });
+  }
   if (!isBlankCellValue(ambiguousValue) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')
     && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
     const rawAmbiguousBarcode = valueText(ambiguousValue);
@@ -294,7 +301,7 @@ function normalizeIdentifierFields(mapped, row, book) {
   }
 
   if (!editionIsbn && !distinct.length && !ambiguousAsBarcode && !isBlankCellValue(ambiguousValue)
-    && !ambiguous.suggestion && !ambiguous.unsupportedType) {
+    && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
     addIssue(row, 'invalid_or_unrecognized_isbn', 'warning', { field: 'ambiguousIdentifier', raw: valueText(ambiguousValue) });
   }
 
