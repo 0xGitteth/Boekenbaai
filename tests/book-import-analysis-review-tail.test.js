@@ -147,7 +147,7 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(isbnLikeCombinedCollisionResult.rows[0].status, 'conflict');
   assert.ok(issueCodes(isbnLikeCombinedCollisionResult.rows[0]).has('conflicting_source_columns'));
 
-  for (const malformedBookland of ['97803064061', '9780306406158', '97803064061570', '97803064061X']) {
+  for (const malformedBookland of ['97803064061', '97803064061570', '97803064061X']) {
     const malformedBooklandResult = await analyzeBookImportRows([{
       Titel: 'Afgekapt Bookland', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': malformedBookland,
     }]);
@@ -162,13 +162,15 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(nonBooklandElevenDigitBarcode.rows[0].book.barcode, '12345678901');
   assert.ok(issueCodes(nonBooklandElevenDigitBarcode.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
 
-  const repairableCombinedIsbn = await analyzeBookImportRows([{
-    Titel: 'Herstelbare combined ISBN', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': '978030640615',
-  }]);
-  assert.strictEqual(repairableCombinedIsbn.rows[0].book.barcode, '');
-  assert.ok(issueCodes(repairableCombinedIsbn.rows[0]).has('isbn_repair_suggested'));
-  assert.ok(!issueCodes(repairableCombinedIsbn.rows[0]).has('invalid_or_unrecognized_isbn'));
-  assert.ok(!issueCodes(repairableCombinedIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+  for (const repairableBookland of ['978030640615', '9780306406158']) {
+    const repairableCombinedIsbn = await analyzeBookImportRows([{
+      Titel: 'Herstelbare combined ISBN', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': repairableBookland,
+    }]);
+    assert.strictEqual(repairableCombinedIsbn.rows[0].book.barcode, '');
+    assert.ok(issueCodes(repairableCombinedIsbn.rows[0]).has('isbn_repair_suggested'));
+    assert.ok(!issueCodes(repairableCombinedIsbn.rows[0]).has('invalid_or_unrecognized_isbn'));
+    assert.ok(!issueCodes(repairableCombinedIsbn.rows[0]).has('ambiguous_identifier_interpreted_as_barcode'));
+  }
 
   const conflictingCombinedBarcode = await analyzeBookImportRows([{
     Titel: 'Barcode-bronnen', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '123', 'Barcode / ISBN': '456',
