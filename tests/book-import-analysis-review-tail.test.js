@@ -273,6 +273,36 @@ module.exports = async function runReviewTailTests() {
   assert.ok(!issueCodes(equivalentClassResult.rows[0]).has('conflicting_source_columns'));
   assert.deepStrictEqual(equivalentClassResult.rows[0].context.classContext, ['2A', '3B']);
 
+  const coverUrlCaseConflict = { Titel: 'Cover hoofdletterconflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(coverUrlCaseConflict, 'Cover', { value: 'https://cdn.example/A.jpg', enumerable: true });
+  Object.defineProperty(coverUrlCaseConflict, 'Cover_1', { value: 'https://cdn.example/a.jpg', enumerable: true });
+  const coverUrlCaseConflictResult = await analyzeBookImportRows([coverUrlCaseConflict]);
+  assert.strictEqual(coverUrlCaseConflictResult.rows[0].status, 'conflict');
+  assert.ok(issueCodes(coverUrlCaseConflictResult.rows[0]).has('conflicting_source_columns'));
+
+  const equivalentCoverUrlWhitespace = { Titel: 'Cover whitespace equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentCoverUrlWhitespace, 'Cover', { value: ' https://cdn.example/A.jpg ', enumerable: true });
+  Object.defineProperty(equivalentCoverUrlWhitespace, 'Cover_1', { value: 'https://cdn.example/A.jpg', enumerable: true });
+  const equivalentCoverUrlWhitespaceResult = await analyzeBookImportRows([equivalentCoverUrlWhitespace]);
+  assert.strictEqual(equivalentCoverUrlWhitespaceResult.rows[0].book.coverUrl, 'https://cdn.example/A.jpg');
+  assert.ok(!issueCodes(equivalentCoverUrlWhitespaceResult.rows[0]).has('conflicting_source_columns'));
+
+  const equivalentEasyReadingColumns = { Titel: 'Makkelijk lezen equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentEasyReadingColumns, 'Makkelijk lezen?', { value: 'Ja', enumerable: true });
+  Object.defineProperty(equivalentEasyReadingColumns, 'Makkelijk lezen?_1', { value: 'misschien', enumerable: true });
+  const equivalentEasyReadingResult = await analyzeBookImportRows([equivalentEasyReadingColumns]);
+  assert.strictEqual(equivalentEasyReadingResult.rows[0].book.easyReading, true);
+  assert.ok(!issueCodes(equivalentEasyReadingResult.rows[0]).has('conflicting_source_columns'));
+  assert.ok(issueCodes(equivalentEasyReadingResult.rows[0]).has('nonstandard_easy_reading_value'));
+
+  const equivalentExamMaterialColumns = { Titel: 'Examenmateriaal equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
+  Object.defineProperty(equivalentExamMaterialColumns, 'Examenmateriaal', { value: 'Nee', enumerable: true });
+  Object.defineProperty(equivalentExamMaterialColumns, 'Examenmateriaal_1', { value: 'onbekend', enumerable: true });
+  const equivalentExamMaterialResult = await analyzeBookImportRows([equivalentExamMaterialColumns]);
+  assert.strictEqual(equivalentExamMaterialResult.rows[0].book.suitableForExamList, false);
+  assert.ok(!issueCodes(equivalentExamMaterialResult.rows[0]).has('conflicting_source_columns'));
+  assert.ok(issueCodes(equivalentExamMaterialResult.rows[0]).has('unexpected_exam_material_value'));
+
   const conflictingLanguageColumns = { Titel: 'Taal conflict', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(conflictingLanguageColumns, 'Taal', { value: 'Nederlands', enumerable: true });
   Object.defineProperty(conflictingLanguageColumns, 'Taal_1', { value: 'Engels', enumerable: true });
