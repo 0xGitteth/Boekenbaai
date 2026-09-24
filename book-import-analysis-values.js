@@ -141,12 +141,21 @@ function isSupportedIdentifierType(value) {
   return typeof value === 'number' && Number.isFinite(value) && Number.isSafeInteger(value);
 }
 
+function isbnLabelInfo(value) {
+  const text = scalarCellText(value).normalize('NFKC').trim();
+  const match = /^isbn(?:(?:\s*[-\u2010-\u2015 ]?\s*)(?:10|13))?(?=\s|:|[-\u2010-\u2015]|$)(?:\s*:\s*|\s+|\s*[-\u2010-\u2015]\s*)?(.*)$/i.exec(text);
+  if (!match) return { labelled: false, text };
+  return { labelled: true, text: String(match[1] ?? '').trim() };
+}
+
 function compactIdentifierText(value) {
-  return scalarCellText(value).normalize('NFKC').trim().replace(/[\s-]+/g, '');
+  return isbnLabelInfo(value).text.replace(/[\s-]+/g, '');
 }
 
 function looksLikeIsbnCandidate(value) {
   if (!isSupportedIdentifierType(value)) return false;
+  const label = isbnLabelInfo(value);
+  if (label.labelled) return true;
   const compact = compactIdentifierText(value);
   return /^\d{8}[0-9Xx]$/.test(compact)
     || /^\d{9}[0-9Xx]$/.test(compact)
@@ -157,11 +166,12 @@ function analyzeIdentifier(value) {
   const raw = scalarCellText(value);
   if (isBlankCellValue(value)) return { raw, canonical: '', repair: null, suggestion: null, unsupportedType: false };
   if (!isSupportedIdentifierType(value)) return { raw, canonical: '', repair: null, suggestion: null, unsupportedType: true };
-  const direct = canonicalizeBookIsbn13(value);
+  const labelled = isbnLabelInfo(raw);
+  const trimmed = labelled.text;
+  const direct = canonicalizeBookIsbn13(trimmed);
   if (direct) return { raw, canonical: direct, repair: null, suggestion: null, unsupportedType: false };
 
-  const trimmed = raw.normalize('NFKC').trim();
-  const compact = compactIdentifierText(raw);
+  const compact = compactIdentifierText(trimmed);
   if (/^\d{8}[0-9Xx]$/.test(trimmed)) {
     const restored = `0${trimmed}`;
     const canonical = canonicalizeBookIsbn13(restored);

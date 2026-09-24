@@ -9,6 +9,7 @@ const { isBlankCellValue } = require('./book-import-workbook');
 const {
   addIssue,
   comparableText,
+  splitMultiValue,
   splitTagValue,
   parseQuantity,
   normalizeYear,
@@ -109,6 +110,38 @@ function collisionIsSemanticallyEquivalent(collision) {
     const signatures = candidates.map((entry) => JSON.stringify(
       normalizeDirectAuthors(entry.value).map((author) => comparableText(author)).filter(Boolean).sort(),
     ));
+    return new Set(signatures).size === 1;
+  }
+  if (collision.field === 'language') {
+    const normalized = candidates.map((entry) => comparableText(normalizeLanguage(entry.value))).filter(Boolean);
+    return normalized.length === candidates.length && new Set(normalized).size === 1;
+  }
+  if (collision.field === 'publishedYear') {
+    const normalized = candidates.map((entry) => normalizeYear(entry.value));
+    return normalized.every((value) => value !== null) && new Set(normalized).size === 1;
+  }
+  if (collision.field === 'pageCount') {
+    const normalized = candidates.map((entry) => normalizePageCount(entry.value));
+    return normalized.every((value) => value !== null) && new Set(normalized).size === 1;
+  }
+  if (collision.field === 'easyReading') {
+    const signatures = candidates.map((entry) => JSON.stringify(parseEasyReading(entry.value)));
+    return new Set(signatures).size === 1;
+  }
+  if (collision.field === 'examMaterial') {
+    const signatures = candidates.map((entry) => JSON.stringify(parseExamMaterial(entry.value)));
+    return new Set(signatures).size === 1;
+  }
+  if (collision.field === 'tags' || collision.field === 'themes') {
+    const signatures = candidates.map((entry) => JSON.stringify(Array.from(new Set(
+      splitTagValue(entry.value).map((value) => comparableText(value)).filter(Boolean),
+    )).sort()));
+    return new Set(signatures).size === 1;
+  }
+  if (collision.field === 'classes') {
+    const signatures = candidates.map((entry) => JSON.stringify(Array.from(new Set(
+      splitMultiValue(entry.value).map((value) => comparableText(value)).filter(Boolean),
+    )).sort()));
     return new Set(signatures).size === 1;
   }
   if (!IDENTIFIER_FIELDS.has(collision.field)) return false;

@@ -129,7 +129,7 @@ function strictMetadataMatch(rowBook, candidate) {
   const rowAuthors = normalizeAuthorList(rowBook.authors, rowBook.author).map(comparableText).filter(Boolean);
   const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
   if (!rowAuthors.length) return true;
-  if (!candidateAuthors.length) return false;
+  if (!candidateAuthors.length || rowAuthors.length !== candidateAuthors.length) return false;
   return rowAuthors.every((author) => candidateAuthors.includes(author));
 }
 

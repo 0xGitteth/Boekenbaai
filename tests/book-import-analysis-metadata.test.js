@@ -75,6 +75,15 @@ module.exports = async function runMetadataTests() {
   const strictRow = { title: 'Strict titel', author: 'A Auteur' };
   assert.strictEqual(strictMetadataMatch(strictRow, { title: 'Strict titel', author: 'A Auteur', authors: ['A Auteur'] }), true);
   assert.strictEqual(strictMetadataMatch(strictRow, { title: 'Strict titel extra', author: 'A Auteur', authors: ['A Auteur'] }), false);
+  assert.strictEqual(strictMetadataMatch(strictRow, { title: 'Strict titel', author: 'A Auteur & B Auteur', authors: ['A Auteur', 'B Auteur'] }), false);
+  assert.strictEqual(strictMetadataMatch(
+    { title: 'Strict titel', author: 'A Auteur & B Auteur', authors: ['A Auteur', 'B Auteur'] },
+    { title: 'Strict titel', author: 'B Auteur & A Auteur', authors: ['B Auteur', 'A Auteur'] },
+  ), true);
+  assert.strictEqual(strictMetadataMatch(
+    { title: 'Strict titel', author: 'A Auteur & B Auteur', authors: ['A Auteur', 'B Auteur'] },
+    { title: 'Strict titel', author: 'A Auteur', authors: ['A Auteur'] },
+  ), false);
   const ambiguous = selectMetadataCandidate(strictRow, [
     normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
     normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN_ALT }),
@@ -146,6 +155,36 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(resolved.rows[0].book.editionIsbn, ISBN);
   assert.strictEqual(resolved.rows[0].book.publisher, 'Uitgever');
   assert.ok(codes(resolved.rows[0]).has('isbn_resolved_from_metadata'));
+
+  const titleLookupExtraAuthor = await analyzeBookImportRows([{
+    Titel: 'Gedeelde titel', Auteur: 'Alice',
+  }], {
+    lookupTitleAuthor: async () => ({
+      title: 'Gedeelde titel',
+      authors: ['Alice', 'Bob'],
+      isbn13: ISBN,
+      found: true,
+      source: 'extra-author',
+    }),
+  });
+  assert.strictEqual(titleLookupExtraAuthor.rows[0].book.editionIsbn, '');
+  assert.strictEqual(titleLookupExtraAuthor.rows[0].status, 'unresolved');
+  assert.ok(codes(titleLookupExtraAuthor.rows[0]).has('metadata_not_strict_match'));
+  assert.strictEqual(titleLookupExtraAuthor.groups.length, 0);
+
+  const titleLookupSameAuthorsDifferentOrder = await analyzeBookImportRows([{
+    Titel: 'Samen exact', Auteur: 'Alice; Bob',
+  }], {
+    lookupTitleAuthor: async () => ({
+      title: 'Samen exact',
+      authors: ['Bob', 'Alice'],
+      isbn13: ISBN,
+      found: true,
+      source: 'same-authors-reordered',
+    }),
+  });
+  assert.strictEqual(titleLookupSameAuthorsDifferentOrder.rows[0].book.editionIsbn, ISBN);
+  assert.ok(codes(titleLookupSameAuthorsDifferentOrder.rows[0]).has('isbn_resolved_from_metadata'));
 
   const exactPayloadIdentifierConflict = await analyzeBookImportRows([{
     Titel: 'Interne metadata botsing', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
