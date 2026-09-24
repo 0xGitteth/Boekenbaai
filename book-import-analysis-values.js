@@ -62,7 +62,7 @@ function parseBoundedDecimalInteger(value, { min = 0, max = Number.MAX_SAFE_INTE
 
 function parseQuantity(value) {
   if (isBlankCellValue(value)) return { value: 1, valid: true, supplied: false };
-  const numeric = parseBoundedDecimalInteger(value, { min: 0, max: 1000 });
+  const numeric = parseBoundedDecimalInteger(value, { min: 1, max: 1000 });
   if (numeric === null) return { value: 1, valid: false, supplied: true };
   return { value: numeric, valid: true, supplied: true };
 }
