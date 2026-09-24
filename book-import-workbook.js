@@ -194,6 +194,30 @@ function base64PayloadInfo(input) {
   return { encodedLength, estimatedDecodedLength };
 }
 
+function base64RawInputInfo(input, maxBytes, options = {}) {
+  if (typeof input !== 'string') return null;
+  const prefixProbe = input.slice(0, Math.min(input.length, 4128));
+  const prefix = /^data:[^,]{0,4096};base64,/i.exec(prefixProbe);
+  const prefixLength = prefix ? prefix[0].length : 0;
+  const encodedProduct = Math.ceil(maxBytes / 3) * 4;
+  const maxEncodedLength = Number.isSafeInteger(encodedProduct)
+    ? encodedProduct
+    : Number.MAX_SAFE_INTEGER;
+  const defaultOverhead = Math.max(64, Math.min(1024 * 1024, Math.ceil(maxEncodedLength / 8)));
+  const maxOverheadBytes = Number.isSafeInteger(options.maxBase64OverheadBytes) && options.maxBase64OverheadBytes >= 0
+    ? options.maxBase64OverheadBytes
+    : defaultOverhead;
+  const rawLimitSum = prefixLength + maxEncodedLength + maxOverheadBytes;
+  const maxRawLength = Number.isSafeInteger(rawLimitSum) ? rawLimitSum : Number.MAX_SAFE_INTEGER;
+  return {
+    rawLength: input.length,
+    prefixLength,
+    maxEncodedLength,
+    maxOverheadBytes,
+    maxRawLength,
+  };
+}
+
 function ownDataValue(source, key) {
   if (!source || typeof source !== 'object') return undefined;
   let descriptor;
@@ -233,6 +257,24 @@ function firstSheet(workbook) {
   try { sheetDescriptor = sheets ? Object.getOwnPropertyDescriptor(sheets, sheetName) : null; } catch { sheetDescriptor = null; }
   if (!sheetName || !sheetDescriptor || !Object.prototype.hasOwnProperty.call(sheetDescriptor, 'value') || !sheetDescriptor.value) return null;
   return { sheetName, sheet: sheetDescriptor.value };
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff];
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 const ZIP_LOCAL_FILE_HEADER = 0x04034b50;
@@ -357,6 +399,7 @@ function inspectZipExpansion(buffer, options, maxBytes) {
     }
     const flags = buffer.readUInt16LE(offset + 8);
     const method = buffer.readUInt16LE(offset + 10);
+    const crc = buffer.readUInt32LE(offset + 16);
     const compressedBytes = buffer.readUInt32LE(offset + 20);
     const expandedBytes = buffer.readUInt32LE(offset + 24);
     const fileNameLength = buffer.readUInt16LE(offset + 28);
@@ -390,6 +433,7 @@ function inspectZipExpansion(buffer, options, maxBytes) {
     entries.push({
       flags,
       method,
+      crc,
       compressedBytes,
       expandedBytes,
       localHeaderOffset,
@@ -422,6 +466,7 @@ function inspectZipExpansion(buffer, options, maxBytes) {
 
     const localFlags = buffer.readUInt16LE(entry.localHeaderOffset + 6);
     const localMethod = buffer.readUInt16LE(entry.localHeaderOffset + 8);
+    const localCrc = buffer.readUInt32LE(entry.localHeaderOffset + 14);
     const localCompressedBytes = buffer.readUInt32LE(entry.localHeaderOffset + 18);
     const localExpandedBytes = buffer.readUInt32LE(entry.localHeaderOffset + 22);
     const localFileNameLength = buffer.readUInt16LE(entry.localHeaderOffset + 26);
@@ -449,20 +494,26 @@ function inspectZipExpansion(buffer, options, maxBytes) {
       && (localCompressedBytes !== entry.compressedBytes || localExpandedBytes !== entry.expandedBytes)) {
       return invalidArchive('zip_size_mismatch');
     }
+    if (!usesDataDescriptor && localCrc !== entry.crc) {
+      return invalidArchive('zip_local_crc_mismatch');
+    }
 
     const compressedData = buffer.subarray(dataStart, dataEnd);
+    let expandedData = null;
     let actualExpanded = 0;
     let consumedCompressed = entry.compressedBytes;
 
     if (entry.method === 0) {
       if (entry.compressedBytes !== entry.expandedBytes) return invalidArchive('zip_size_mismatch');
+      expandedData = compressedData;
       actualExpanded = compressedData.length;
     } else {
       const remainingExpandedBytes = Math.max(0, limits.maxExpandedBytes - actualExpandedBytes);
       const inflated = boundedInflateRaw(compressedData, limits, remainingExpandedBytes);
       if (!inflated.ok) return inflated;
       consumedCompressed = inflated.result.engine.bytesWritten;
-      actualExpanded = inflated.result.buffer.length;
+      expandedData = inflated.result.buffer;
+      actualExpanded = expandedData.length;
       if (consumedCompressed !== entry.compressedBytes) return invalidArchive('zip_compressed_size_mismatch');
       if (actualExpanded !== entry.expandedBytes) {
         if (actualExpandedBytes + actualExpanded > limits.maxExpandedBytes) {
@@ -473,6 +524,10 @@ function inspectZipExpansion(buffer, options, maxBytes) {
         }
         return invalidArchive('zip_expanded_size_mismatch');
       }
+    }
+
+    if (!expandedData || crc32(expandedData) !== entry.crc) {
+      return invalidArchive('zip_crc_mismatch');
     }
 
     actualCompressedBytes += consumedCompressed;
@@ -527,6 +582,17 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
     : (input instanceof Uint8Array ? input.byteLength : null);
   if (directByteLength !== null && directByteLength > maxBytes) {
     return { ok: false, error: 'file_too_large', byteLength: directByteLength, maxBytes };
+  }
+  const rawEncodedInput = base64RawInputInfo(input, maxBytes, options);
+  if (rawEncodedInput && rawEncodedInput.rawLength > rawEncodedInput.maxRawLength) {
+    return {
+      ok: false,
+      error: 'file_too_large',
+      reason: 'encoded_input_overhead',
+      rawEncodedLength: rawEncodedInput.rawLength,
+      maxRawEncodedLength: rawEncodedInput.maxRawLength,
+      maxBytes,
+    };
   }
   const encodedSize = base64PayloadInfo(input);
   if (encodedSize && encodedSize.estimatedDecodedLength > maxBytes) {
