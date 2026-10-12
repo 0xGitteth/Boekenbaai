@@ -48,6 +48,10 @@ module.exports = async function runMetadataTests() {
   });
   assert.strictEqual(successfulFieldsBesideNegativeMetadata.editionIsbn, ISBN);
   assert.strictEqual(successfulFieldsBesideNegativeMetadata.title, 'Fields fallback');
+  assert.strictEqual(normalizeMetadataCandidate({
+    metadata: { found: false },
+    fields: { title: 'Implicit sibling must not override', author: 'A Auteur', isbn13: ISBN },
+  }), null);
   assert.deepStrictEqual(metadataCandidatesFromResult({ found: false, candidates: [{ title: 'LEK', isbn13: ISBN }] }), []);
 
   const nestedNegativeMetadataResult = await analyzeBookImportRows([{
