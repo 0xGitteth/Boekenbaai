@@ -151,12 +151,8 @@ function collisionIsSemanticallyEquivalent(collision) {
     });
     return new Set(signatures).size === 1;
   }
-  if (collision.field === 'tags' || collision.field === 'themes') {
-    const signatures = candidates.map((entry) => JSON.stringify(Array.from(new Set(
-      splitTagValue(entry.value).map((value) => comparableText(value)).filter(Boolean),
-    )).sort()));
-    return new Set(signatures).size === 1;
-  }
+  // Multiple tag/theme columns are additive rather than mutually exclusive.
+  if (collision.field === 'tags' || collision.field === 'themes') return true;
   if (collision.field === 'classes') {
     const signatures = candidates.map((entry) => JSON.stringify(Array.from(new Set(
       splitMultiValue(entry.value).map((value) => comparableText(value)).filter(Boolean),
@@ -165,12 +161,10 @@ function collisionIsSemanticallyEquivalent(collision) {
   }
   if (!IDENTIFIER_FIELDS.has(collision.field)) return false;
   const analyses = candidates.map((entry) => analyzeIdentifier(entry.value));
-  const canonical = analyses.map((analysis) => analysis.canonical).filter(Boolean);
-  if (!canonical.length || new Set(canonical).size !== 1) return false;
-  const target = canonical[0];
-  return analyses.every((analysis) => analysis.canonical === target
-    || analysis.repair?.canonical === target
-    || analysis.suggestion?.canonical === target);
+  const suggestedCanonicals = analyses.map((analysis) => (
+    analysis.canonical || analysis.repair?.canonical || analysis.suggestion?.canonical || ''
+  ));
+  return suggestedCanonicals.every(Boolean) && new Set(suggestedCanonicals).size === 1;
 }
 
 function blockingCollisionFields(mapped) {
@@ -189,6 +183,24 @@ function normalizeDirectAuthors(value) {
   if (!text) return [];
   const candidates = text.split(/[;\n\r]+|\s+&\s+/).map((entry) => normalizeBookIdentityText(entry)).filter(Boolean);
   return normalizeAuthorList(candidates, text);
+}
+
+function mergeListSourceValues(mapped, field, fallback) {
+  const sourceValues = (mapped.sources[field] || [])
+    .map((entry) => contextFieldValue(field, entry.value))
+    .filter((value) => !isBlankCellValue(value));
+  const values = sourceValues.length ? sourceValues : [fallback];
+  const merged = [];
+  const seen = new Set();
+  for (const value of values) {
+    for (const item of splitTagValue(value)) {
+      const normalized = comparableText(item);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      merged.push(item);
+    }
+  }
+  return merged;
 }
 
 function normalizeBookFields(mapped, row) {
@@ -263,8 +275,8 @@ function normalizeBookFields(mapped, row) {
   const pageCount = normalizePageCount(f.pageCount);
   if (!isBlankCellValue(f.pageCount) && pageCount === null) addIssue(row, 'invalid_page_count', 'warning');
 
-  const manualThemes = splitTagValue(f.themes);
-  const tags = splitTagValue(f.tags);
+  const manualThemes = mergeListSourceValues(mapped, 'themes', f.themes);
+  const tags = mergeListSourceValues(mapped, 'tags', f.tags);
   if (exam.formatHint === 'comic' && !tags.some((tag) => comparableText(tag) === 'strip')) tags.push('strip');
   return {
     title,
