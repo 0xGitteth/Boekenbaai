@@ -129,6 +129,35 @@ async function run() {
     // This edition already exists, so the stage cannot apply despite having a fresh barcode.
     assert.strictEqual(stageWithRace.body.decisions.summary.readyToApply, false);
 
+    // A separate admin may create the same edition after preview. Applying
+    // must re-check the latest database rather than trusting stale preview.
+    const raceIsbn = '9780140328721';
+    const validBeforeRace = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Race test', Auteur: 'Auteur', 'ISBN-nummer': raceIsbn }]),
+    });
+    assert.strictEqual(validBeforeRace.status, 201);
+    assert.strictEqual(validBeforeRace.body.decisions.summary.readyToApply, true);
+    const otherAdminCreate = await call('/api/books', token2, {
+      title: 'Race test', author: 'Auteur', barcode: '909090', metadataIsbn: raceIsbn,
+    });
+    assert.strictEqual(otherAdminCreate.status, 201, JSON.stringify(otherAdminCreate.body));
+    const staleApply = await call('/api/admin/book-import-stages/' + validBeforeRace.body.id + '/apply', token1, {
+      revision: 1, confirm: true,
+    });
+    assert.strictEqual(staleApply.status, 409);
+    assert.strictEqual(staleApply.body.error, 'review_not_ready');
+    const afterRace = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(afterRace.books.filter((book) => book.metadataIsbn === raceIsbn).length, 1,
+      'A race must not create a second physical copy');
+    assert.strictEqual(afterRace.bookImportReports.length, 1,
+      'Rejected apply must not persist an import report');
+
+    const malformed = await call('/api/admin/book-import-stages', token1, {
+      file: Buffer.from('definitely not a spreadsheet').toString('base64'),
+    });
+    assert.strictEqual(malformed.status, 400);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.length, 3);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
