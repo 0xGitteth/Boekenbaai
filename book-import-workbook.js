@@ -419,7 +419,15 @@ function boundedInflateRaw(compressedData, limits, remainingExpandedBytes) {
 }
 
 function inspectZipExpansion(buffer, options, maxBytes) {
-  if (!isZipContainer(buffer)) return { ok: true, isZip: false };
+  // Some ZIP readers accept a self-extracting/prefixed archive whose local
+  // header is not at byte zero. Never pass those bytes to SheetJS without
+  // inspecting their compressed payloads.
+  if (!isZipContainer(buffer)) {
+    if (findZipEndOfCentralDirectory(buffer) >= 0) {
+      return invalidArchive('zip_leading_bytes_not_supported');
+    }
+    return { ok: true, isZip: false };
+  }
 
   const eocdOffset = findZipEndOfCentralDirectory(buffer);
   if (eocdOffset < 0) return invalidArchive('invalid_zip_directory');

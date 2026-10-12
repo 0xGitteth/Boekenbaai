@@ -368,6 +368,16 @@ module.exports = async function runFinalReviewTests() {
   assert.strictEqual(validCompressedWorkbook.ok, true, 'Ordinary compressed XLSX files must remain accepted under default archive limits');
   assert.strictEqual(validCompressedWorkbook.rows.length, 100);
 
+  for (const prefix of [Buffer.from([0]), Buffer.from('MZ'), Buffer.alloc(256, 65)]) {
+    archiveReadCalled = false;
+    const prefixedWorkbook = Buffer.concat([prefix, compressedBuffer]);
+    const prefixedResult = readBookImportWorkbook(archiveGuardXlsx, prefixedWorkbook);
+    assert.strictEqual(prefixedResult.ok, false, 'ZIP payloads hidden behind leading bytes must not pass');
+    assert.strictEqual(prefixedResult.error, 'invalid_workbook');
+    assert.strictEqual(prefixedResult.reason, 'zip_leading_bytes_not_supported');
+    assert.strictEqual(archiveReadCalled, false, 'Prefixed ZIP archives must be rejected before XLSX.read');
+  }
+
   archiveReadCalled = false;
   const compressionRatioLimit = readBookImportWorkbook(archiveGuardXlsx, compressedBuffer, { maxCompressionRatio: 1 });
   assert.strictEqual(compressionRatioLimit.ok, false);
