@@ -36,7 +36,38 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(normalizeMetadataCandidate({ found: false, fields: { title: 'LEK', isbn13: ISBN } }), null);
   const candidate = normalizeMetadataCandidate({ fields: { title: 'Goed', editionIsbn: '', isbn13: ISBN, author: 'A Auteur' } });
   assert.strictEqual(candidate.editionIsbn, ISBN);
+  assert.strictEqual(normalizeMetadataCandidate({
+    title: 'Wrapper echo',
+    author: 'A Auteur',
+    isbn13: ISBN,
+    metadata: { found: false },
+  }), null);
+  const successfulFieldsBesideNegativeMetadata = normalizeMetadataCandidate({
+    metadata: { found: false },
+    fields: { found: true, title: 'Fields fallback', author: 'A Auteur', isbn13: ISBN },
+  });
+  assert.strictEqual(successfulFieldsBesideNegativeMetadata.editionIsbn, ISBN);
+  assert.strictEqual(successfulFieldsBesideNegativeMetadata.title, 'Fields fallback');
+  assert.strictEqual(normalizeMetadataCandidate({
+    metadata: { found: false },
+    fields: { title: 'Implicit sibling must not override', author: 'A Auteur', isbn13: ISBN },
+  }), null);
   assert.deepStrictEqual(metadataCandidatesFromResult({ found: false, candidates: [{ title: 'LEK', isbn13: ISBN }] }), []);
+
+  const nestedNegativeMetadataResult = await analyzeBookImportRows([{
+    Titel: 'Wrapper echo', Auteur: 'A Auteur',
+  }], {
+    lookupTitleAuthor: async () => ({
+      title: 'Wrapper echo',
+      author: 'A Auteur',
+      isbn13: ISBN,
+      metadata: { found: false },
+      source: 'negative-nested',
+    }),
+  });
+  assert.strictEqual(nestedNegativeMetadataResult.rows[0].book.editionIsbn, '');
+  assert.strictEqual(nestedNegativeMetadataResult.rows[0].status, 'unresolved');
+  assert.strictEqual(nestedNegativeMetadataResult.groups.length, 0);
 
   const equivalentMetadataIdentifiers = normalizeMetadataCandidate({
     title: 'Zelfde editie bewijs',

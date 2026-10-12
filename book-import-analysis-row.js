@@ -72,7 +72,9 @@ function collisionDataCandidates(collision) {
   for (const entry of collision.candidates) {
     const value = contextFieldValue(collision.field, entry.value);
     if (isBlankCellValue(value)) continue;
-    const key = comparableText(value);
+    const key = collision.field === 'coverUrl'
+      ? valueText(value).normalize('NFKC').trim()
+      : comparableText(value);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push({ ...entry, value });
@@ -103,8 +105,18 @@ function collisionIsSemanticallyEquivalent(collision) {
   if (collision.field === 'ambiguousIdentifier' && collisionCandidatesShareRuntimeBarcode(candidates)) return true;
   if (collision.field === 'quantity') {
     const parsed = candidates.map((entry) => parseQuantity(entry.value));
-    return parsed.every((quantity) => quantity.valid)
-      && new Set(parsed.map((quantity) => quantity.value)).size === 1;
+    if (parsed.every((quantity) => quantity.valid)) {
+      return new Set(parsed.map((quantity) => quantity.value)).size === 1;
+    }
+    if (!parsed.every((quantity) => !quantity.valid)) return false;
+    const normalizedInvalidDecimals = candidates.map((entry) => {
+      const text = valueText(entry.value).normalize('NFKC').trim();
+      if (!/^\d+$/.test(text)) return '';
+      const numeric = Number(text);
+      return Number.isSafeInteger(numeric) ? String(numeric) : '';
+    });
+    return normalizedInvalidDecimals.every(Boolean)
+      && new Set(normalizedInvalidDecimals).size === 1;
   }
   if (collision.field === 'author') {
     const signatures = candidates.map((entry) => JSON.stringify(
@@ -125,11 +137,18 @@ function collisionIsSemanticallyEquivalent(collision) {
     return normalized.every((value) => value !== null) && new Set(normalized).size === 1;
   }
   if (collision.field === 'easyReading') {
-    const signatures = candidates.map((entry) => JSON.stringify(parseEasyReading(entry.value)));
-    return new Set(signatures).size === 1;
+    const normalized = candidates.map((entry) => parseEasyReading(entry.value).value);
+    return new Set(normalized).size === 1;
   }
   if (collision.field === 'examMaterial') {
-    const signatures = candidates.map((entry) => JSON.stringify(parseExamMaterial(entry.value)));
+    const signatures = candidates.map((entry) => {
+      const parsed = parseExamMaterial(entry.value);
+      return JSON.stringify({
+        suitableForExamList: parsed.suitableForExamList,
+        languageHint: parsed.languageHint,
+        formatHint: parsed.formatHint,
+      });
+    });
     return new Set(signatures).size === 1;
   }
   if (collision.field === 'tags' || collision.field === 'themes') {
@@ -211,9 +230,27 @@ function normalizeBookFields(mapped, row) {
   if (!quantity.valid && !quantityBlocked) addIssue(row, 'invalid_quantity', 'conflict', { raw: fieldSource(mapped, 'quantity').raw ?? null });
 
   const exam = parseExamMaterial(f.examMaterial);
-  if (exam.warning) addIssue(row, exam.warning, 'warning', { raw: fieldSource(mapped, 'examMaterial').raw ?? null });
+  const examWarningSource = (mapped.sources.examMaterial || []).find((entry) => {
+    const value = contextFieldValue('examMaterial', entry.value);
+    return !isBlankCellValue(value) && Boolean(parseExamMaterial(value).warning);
+  });
+  if (examWarningSource) {
+    addIssue(row, parseExamMaterial(contextFieldValue('examMaterial', examWarningSource.value)).warning, 'warning', {
+      raw: examWarningSource.value,
+      header: examWarningSource.header,
+    });
+  }
   const easy = parseEasyReading(f.easyReading);
-  if (easy.nonstandard) addIssue(row, 'nonstandard_easy_reading_value', 'warning', { raw: fieldSource(mapped, 'easyReading').raw ?? null });
+  const nonstandardEasySource = (mapped.sources.easyReading || []).find((entry) => {
+    const value = contextFieldValue('easyReading', entry.value);
+    return !isBlankCellValue(value) && parseEasyReading(value).nonstandard;
+  });
+  if (nonstandardEasySource) {
+    addIssue(row, 'nonstandard_easy_reading_value', 'warning', {
+      raw: nonstandardEasySource.value,
+      header: nonstandardEasySource.header,
+    });
+  }
 
   const rawLanguage = normalizeLanguage(f.language);
   const language = rawLanguage || exam.languageHint;
