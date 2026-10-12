@@ -278,6 +278,12 @@ function worksheetRangeInfo(XLSX, rangeValue) {
   return worksheetRangeDetails(startRow - 1, endRow - 1, startColumn, endColumn);
 }
 
+function worksheetRangeFromSheet(XLSX, sheet) {
+  const fullRange = worksheetRangeInfo(XLSX, ownDataValue(sheet, '!fullref'));
+  if (fullRange) return fullRange;
+  return worksheetRangeInfo(XLSX, ownDataValue(sheet, '!ref'));
+}
+
 function worksheetRangeLimitError(rangeInfo, sheetName, { maxRows, maxColumns, maxWorksheetCells }) {
   if (!rangeInfo) return null;
   if (rangeInfo.rowCount > maxRows + 1) {
@@ -684,10 +690,7 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
   let resolvedSheet = firstSheet(workbook);
   if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
 
-  let rangeInfo = worksheetRangeInfo(
-    XLSX,
-    ownDataValue(resolvedSheet.sheet, '!fullref') || ownDataValue(resolvedSheet.sheet, '!ref'),
-  );
+  let rangeInfo = worksheetRangeFromSheet(XLSX, resolvedSheet.sheet);
   const initialRangeError = worksheetRangeLimitError(rangeInfo, resolvedSheet.sheetName, worksheetLimits);
   if (initialRangeError) return initialRangeError;
 
@@ -699,10 +702,7 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
     }
     resolvedSheet = firstSheet(workbook);
     if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
-    rangeInfo = worksheetRangeInfo(
-      XLSX,
-      ownDataValue(resolvedSheet.sheet, '!fullref') || ownDataValue(resolvedSheet.sheet, '!ref'),
-    ) || rangeInfo;
+    rangeInfo = worksheetRangeFromSheet(XLSX, resolvedSheet.sheet) || rangeInfo;
     const rereadRangeError = worksheetRangeLimitError(rangeInfo, resolvedSheet.sheetName, worksheetLimits);
     if (rereadRangeError) return rereadRangeError;
   }
