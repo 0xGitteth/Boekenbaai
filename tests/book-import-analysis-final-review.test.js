@@ -379,6 +379,15 @@ module.exports = async function runFinalReviewTests() {
   }
 
   archiveReadCalled = false;
+  const prefixedWithTrailingJunk = Buffer.concat([
+    Buffer.from('MZ'), compressedBuffer, Buffer.from('junk after ZIP directory'),
+  ]);
+  const suffixedPrefixedResult = readBookImportWorkbook(archiveGuardXlsx, prefixedWithTrailingJunk);
+  assert.strictEqual(suffixedPrefixedResult.error, 'invalid_workbook');
+  assert.strictEqual(suffixedPrefixedResult.reason, 'zip_leading_bytes_not_supported');
+  assert.strictEqual(archiveReadCalled, false, 'Trailing junk must not hide a prefixed ZIP from preflight');
+
+  archiveReadCalled = false;
   const compressionRatioLimit = readBookImportWorkbook(archiveGuardXlsx, compressedBuffer, { maxCompressionRatio: 1 });
   assert.strictEqual(compressionRatioLimit.ok, false);
   assert.strictEqual(compressionRatioLimit.error, 'file_too_large');
