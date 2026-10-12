@@ -191,6 +191,27 @@ async function run() {
     assert.strictEqual(finalData.books.filter((book) => book.metadataIsbn === schoolIsbn).length, 1);
     assert.strictEqual(finalData.bookImportReports.length, 2);
     assert.strictEqual(finalData.bookImportReports[1].rows[0].context.fixedLocation.label, 'SK BB');
+    const schoolCopy = finalData.books.find((book) => book.metadataIsbn === schoolIsbn);
+    assert.strictEqual(schoolCopy.fixedLocation, 'SK BB',
+      'A confirmed fixed shelf location must survive on the physical book, not only in the report');
+
+    const blockedLocation = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{
+        Titel: 'Klascontext', Auteur: 'Auteur', 'ISBN-nummer': '9780747532699',
+        Klassen: 'Bovenbouw', 'Aanwezig bieb': 'nee',
+      }]),
+    });
+    assert.strictEqual(blockedLocation.status, 201);
+    const acceptedLocationWarnings = await call(
+      '/api/admin/book-import-stages/' + blockedLocation.body.id + '/review', token1,
+      { revision: 1, acceptWarnings: true, corrections: [] },
+    );
+    assert.strictEqual(acceptedLocationWarnings.status, 200);
+    assert.strictEqual(acceptedLocationWarnings.body.decisions.rows[0].reason, 'location_context_requires_followup');
+    assert.strictEqual(acceptedLocationWarnings.body.decisions.summary.readyToApply, false);
+    const forbiddenLocationApply = await call('/api/admin/book-import-stages/' + blockedLocation.body.id + '/apply',
+      token1, { revision: 2, confirm: true });
+    assert.strictEqual(forbiddenLocationApply.status, 409);
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
