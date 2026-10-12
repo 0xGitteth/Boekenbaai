@@ -1,7 +1,7 @@
 'use strict';
 
 const { groupBookCopiesByEdition } = require('./book-edition-core');
-const { mapImportRow, readBookImportWorkbook } = require('./book-import-workbook');
+const { mapImportRow, readBookImportWorkbook, isBlankCellValue } = require('./book-import-workbook');
 const {
   JUNK_ONLY_TOKENS,
   addIssue,
@@ -88,6 +88,35 @@ function isSafeEditionGroupRow(row) {
     EDITION_IDENTITY_CONFLICT_CODES.has(issue.code)
     || (issue.code === 'conflicting_source_columns' && EDITION_IDENTITY_SOURCE_FIELDS.has(issue.field))
   ));
+}
+
+function isCompletelyEmptyRow(mapped) {
+  if (mapped.ignoredDangerousHeaders.length) return false;
+  for (const entries of Object.values(mapped.sources || {})) {
+    if (entries.some((entry) => !isBlankCellValue(entry.value))) return false;
+  }
+  return !(mapped.unknown || []).some((entry) => !isBlankCellValue(entry.value));
+}
+
+function cacheMetadataLookups(options) {
+  const cached = { ...options };
+  if (typeof options.lookupIsbn === 'function') {
+    const cache = new Map();
+    cached.lookupIsbn = (isbn, context) => {
+      const key = JSON.stringify([isbn, context?.title || '', context?.author || '']);
+      if (!cache.has(key)) cache.set(key, Promise.resolve().then(() => options.lookupIsbn(isbn, context)));
+      return cache.get(key);
+    };
+  }
+  if (typeof options.lookupTitleAuthor === 'function') {
+    const cache = new Map();
+    cached.lookupTitleAuthor = (query) => {
+      const key = JSON.stringify([query?.title || '', query?.author || '', query?.language || '']);
+      if (!cache.has(key)) cache.set(key, Promise.resolve().then(() => options.lookupTitleAuthor(query)));
+      return cache.get(key);
+    };
+  }
+  return cached;
 }
 
 function isClearJunkRow(mapped) {
@@ -188,6 +217,7 @@ async function analyzeBookImportRows(rows, options = {}) {
   }
 
   const mappedRows = inputRows.map(mapImportRow);
+  const metadataOptions = cacheMetadataLookups(options);
   const analyzedRows = [];
   const editionCopies = [];
   const stagedPhysicalRowIndexes = new Set();
@@ -205,6 +235,13 @@ async function analyzeBookImportRows(rows, options = {}) {
       issues: [],
       unknownColumns: mapped.unknown.map((entry) => entry.header),
     };
+
+    if (isCompletelyEmptyRow(mapped)) {
+      row.context.skipReason = 'empty';
+      row.status = 'skipped';
+      analyzedRows.push(row);
+      continue;
+    }
 
     if (isClearJunkRow(mapped)) {
       row.context.skipReason = 'junk';
@@ -231,7 +268,7 @@ async function analyzeBookImportRows(rows, options = {}) {
 
     const hasConflictingRepairSuggestions = flagConflictingRepairSuggestions(row);
     const hasIdentifierConflict = hasBlockingIdentifierConflict(row);
-    if (!hasConflictingRepairSuggestions && !hasIdentifierConflict) await resolveMetadata(row, options);
+    if (!hasConflictingRepairSuggestions && !hasIdentifierConflict) await resolveMetadata(row, metadataOptions);
 
     if (!row.book.title) addIssue(row, 'missing_title_after_metadata', 'warning');
     if (!row.book.author) addIssue(row, 'missing_author_after_metadata', 'warning');

@@ -4,6 +4,7 @@ const {
   normalizeBookIdentityText,
   normalizeAuthorList,
   createAuthorDisplay,
+  isPlaceholderAuthor,
 } = require('./book-edition-core');
 const { isBlankCellValue } = require('./book-import-workbook');
 const {
@@ -207,8 +208,10 @@ function normalizeBookFields(mapped, row) {
   const f = getDataFields(mapped);
   const blocked = blockingCollisionFields(mapped);
   const directAuthor = blocked.has('author') ? [] : normalizeDirectAuthors(f.author);
-  const first = blocked.has('authorFirst') ? '' : normalizeBookIdentityText(f.authorFirst);
-  const last = blocked.has('authorLast') ? '' : normalizeBookIdentityText(f.authorLast);
+  const rawFirst = blocked.has('authorFirst') ? '' : normalizeBookIdentityText(f.authorFirst);
+  const rawLast = blocked.has('authorLast') ? '' : normalizeBookIdentityText(f.authorLast);
+  const first = isPlaceholderAuthor(rawFirst) ? '' : rawFirst;
+  const last = isPlaceholderAuthor(rawLast) ? '' : rawLast;
   const combined = normalizeAuthorList(undefined, [first, last].filter(Boolean).join(' '));
   let authors = directAuthor;
   if (!authors.length && combined.length) authors = combined;
@@ -333,7 +336,11 @@ function normalizeIdentifierFields(mapped, row, book) {
   let barcode = '';
   if (!blocked.has('barcode')) {
     const rawBarcode = valueText(f.barcode);
-    if (rawBarcode) {
+    const invalidNumericBarcode = typeof f.barcode === 'number'
+      && (!Number.isSafeInteger(f.barcode) || f.barcode < 0);
+    if (invalidNumericBarcode) {
+      addIssue(row, 'invalid_physical_barcode', 'conflict', { field: 'barcode', raw: rawBarcode });
+    } else if (rawBarcode) {
       barcode = normalizeRuntimeBarcode(rawBarcode);
       if (!barcode) addIssue(row, 'invalid_physical_barcode', 'conflict', { field: 'barcode', raw: rawBarcode });
     }
@@ -462,12 +469,16 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
       .filter((entry) => !isBlankCellValue(contextFieldValue('authorFirst', entry.value))).map((entry) => entry.header);
     const lastHeaders = blocked.has('authorLast') ? [] : (mapped.sources.authorLast || [])
       .filter((entry) => !isBlankCellValue(contextFieldValue('authorLast', entry.value))).map((entry) => entry.header);
-    const sourceHeaders = [...firstHeaders, ...lastHeaders];
+    const effectiveFirstHeaders = firstHeaders.filter((header) => (mapped.sources.authorFirst || [])
+      .some((entry) => entry.header === header && !isPlaceholderAuthor(contextFieldValue('authorFirst', entry.value))));
+    const effectiveLastHeaders = lastHeaders.filter((header) => (mapped.sources.authorLast || [])
+      .some((entry) => entry.header === header && !isPlaceholderAuthor(contextFieldValue('authorLast', entry.value))));
+    const sourceHeaders = [...effectiveFirstHeaders, ...effectiveLastHeaders];
     if (sourceHeaders.length) provenance.author = {
       source: 'excel',
       headers: sourceHeaders,
       derived: 'combined_name_parts',
-      incomplete: !firstHeaders.length || !lastHeaders.length,
+      incomplete: !effectiveFirstHeaders.length || !effectiveLastHeaders.length,
     };
   }
   const examSource = fieldSource(mapped, 'examMaterial');

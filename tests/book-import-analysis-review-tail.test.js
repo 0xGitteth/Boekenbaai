@@ -349,6 +349,21 @@ module.exports = async function runReviewTailTests() {
   assert.strictEqual(directWithPartialSplit.rows[0].book.author, 'Carry Slee');
   assert.ok(!issueCodes(directWithPartialSplit.rows[0]).has('author_sources_differ'));
 
+  const placeholderFirstName = await analyzeBookImportRows([{
+    Titel: 'Placeholder voornaam', 'Voornaam schrijver': 'nvt',
+    'Achternaam schrijver': 'Slee', 'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(placeholderFirstName.rows[0].book.author, 'Slee');
+  assert.strictEqual(placeholderFirstName.rows[0].provenance.author.incomplete, true);
+  assert.ok(!issueCodes(placeholderFirstName.rows[0]).has('author_sources_differ'));
+
+  const placeholderLastName = await analyzeBookImportRows([{
+    Titel: 'Placeholder achternaam', 'Voornaam schrijver': 'Paul',
+    'Achternaam schrijver': 'n.v.t.', 'ISBN-nummer': ISBN,
+  }]);
+  assert.strictEqual(placeholderLastName.rows[0].book.author, 'Paul');
+  assert.strictEqual(placeholderLastName.rows[0].provenance.author.incomplete, true);
+
   const splitMatchesSecondDirectAuthor = await analyzeBookImportRows([{
     Titel: 'Tweede auteur bevestigd',
     Auteur: 'Alice A; Bob Jones',
