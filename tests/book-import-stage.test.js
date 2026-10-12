@@ -43,6 +43,22 @@ const ISBN2 = '9780439554930';
     { id: 'existing-barcode', title: 'Andere titel', barcode: '9780306406157' },
   ]).error, 'review_not_ready');
 
+  // Copies without a physical barcode must still be discoverable by the
+  // existing scanner through their edition ISBN. Duplicate copies of the
+  // same edition share that generated group barcode deliberately.
+  assert.strictEqual(buildStageApplyPlan({ ...empty, acceptWarnings: false }, []).created[0].barcode, ISBN);
+  const multipleUnlabelled = await analyzeReviewedImport([
+    { Titel: 'Dezelfde editie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Aantal: 2 },
+    { Titel: 'Dezelfde editie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Aantal: 1 },
+  ]);
+  const multiplePlan = buildStageApplyPlan({ ...multipleUnlabelled, acceptWarnings: false }, []);
+  assert.strictEqual(multiplePlan.ok, true);
+  assert.strictEqual(multiplePlan.totalCopies, 3);
+  assert.ok(multiplePlan.created.every((entry) => entry.barcode === ISBN));
+  assert.strictEqual(buildStageApplyPlan({ ...empty, acceptWarnings: false }, [
+    { title: 'Andere editie', barcode: ISBN, metadataIsbn: ISBN2 },
+  ]).error, 'review_not_ready', 'Existing ISBN barcode must be reserved');
+
   const barcode = await analyzeReviewedImport(rows);
   assert.strictEqual(buildStageApplyPlan({ ...barcode, acceptWarnings: false }, [
     { title: 'Andere editie', metadataIsbn: ISBN2, barcode: '12345' },
