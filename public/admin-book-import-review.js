@@ -207,6 +207,19 @@
         const done = stage.result || {};
         results.append(make('h4', '', 'Import voltooid'));
         results.append(make('p', '', done.created + ' fysieke exemplaren opgeslagen. Importverslag: ' + (done.batchId || 'onbekend')));
+        if (done.report) {
+          const download = button('Download importverslag (JSON)', 'btn btn--secondary');
+          download.addEventListener('click', () => {
+            const blob = new Blob([JSON.stringify(done.report, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'boekenbaai-import-' + done.batchId + '.json';
+            link.click();
+            URL.revokeObjectURL(url);
+          });
+          results.append(download);
+        }
         setNotice('De gecontroleerde import is afgerond.');
         return;
       }
