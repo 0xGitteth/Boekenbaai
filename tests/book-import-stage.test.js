@@ -50,7 +50,8 @@ const ISBN2 = '9780439554930';
   const loanRow = await analyzeReviewedImport([{
     Titel: 'Boek bij leerling', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'Lisa Leerling',
   }], [], { students: [{ id: 'student-1', name: 'Lisa Leerling' }] });
-  assert.strictEqual(buildStageApplyPlan({ ...loanRow, acceptWarnings: true }, []).error, 'loan_context_requires_followup');
+  assert.strictEqual(loanRow.decisions.rows[0].reason, 'loan_context_requires_followup');
+  assert.strictEqual(buildStageApplyPlan({ ...loanRow, acceptWarnings: true }, []).error, 'review_not_ready');
 
   const mixed = await analyzeReviewedImport([
     { Titel: 'Klaar', Auteur: 'Auteur', 'ISBN-nummer': ISBN },
