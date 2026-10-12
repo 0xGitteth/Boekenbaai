@@ -105,8 +105,18 @@ function collisionIsSemanticallyEquivalent(collision) {
   if (collision.field === 'ambiguousIdentifier' && collisionCandidatesShareRuntimeBarcode(candidates)) return true;
   if (collision.field === 'quantity') {
     const parsed = candidates.map((entry) => parseQuantity(entry.value));
-    return parsed.every((quantity) => quantity.valid)
-      && new Set(parsed.map((quantity) => quantity.value)).size === 1;
+    if (parsed.every((quantity) => quantity.valid)) {
+      return new Set(parsed.map((quantity) => quantity.value)).size === 1;
+    }
+    if (!parsed.every((quantity) => !quantity.valid)) return false;
+    const normalizedInvalidDecimals = candidates.map((entry) => {
+      const text = valueText(entry.value).normalize('NFKC').trim();
+      if (!/^\d+$/.test(text)) return '';
+      const numeric = Number(text);
+      return Number.isSafeInteger(numeric) ? String(numeric) : '';
+    });
+    return normalizedInvalidDecimals.every(Boolean)
+      && new Set(normalizedInvalidDecimals).size === 1;
   }
   if (collision.field === 'author') {
     const signatures = candidates.map((entry) => JSON.stringify(
