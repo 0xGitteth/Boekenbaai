@@ -72,7 +72,9 @@ function collisionDataCandidates(collision) {
   for (const entry of collision.candidates) {
     const value = contextFieldValue(collision.field, entry.value);
     if (isBlankCellValue(value)) continue;
-    const key = comparableText(value);
+    const key = collision.field === 'coverUrl'
+      ? valueText(value).normalize('NFKC').trim()
+      : comparableText(value);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push({ ...entry, value });
