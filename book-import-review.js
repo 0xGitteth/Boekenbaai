@@ -21,6 +21,12 @@ const CORRECTION_COLUMNS = Object.freeze({
   coverUrl: { header: 'Cover URL', fields: ['coverUrl'], type: 'text' },
   tags: { header: 'Tags', fields: ['tags'], type: 'text' },
   themes: { header: "Thema's", fields: ['themes'], type: 'text' },
+  easyReading: { header: 'Makkelijk lezen?', fields: ['easyReading'], type: 'text' },
+  examMaterial: { header: 'Examenmateriaal', fields: ['examMaterial'], type: 'text' },
+  studentLoan: { header: 'naam leerling', fields: ['studentLoan'], type: 'text' },
+  classLoan: { header: 'Geleend door klas', fields: ['classLoan'], type: 'text' },
+  classes: { header: 'Klassen', fields: ['classes'], type: 'text' },
+  libraryPresence: { header: 'Aanwezig bieb', fields: ['libraryPresence'], type: 'text' },
 });
 const MAX_CORRECTIONS = 20000;
 const MAX_CORRECTION_TEXT = 4000;
