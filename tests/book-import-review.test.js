@@ -1,0 +1,92 @@
+'use strict';
+const assert = require('assert');
+const { analyzeReviewedImport, normalizeCorrections, applyCorrectionsToRows } = require('../book-import-review');
+
+const ISBN = '9780306406157';
+const OTHER_ISBN = '9780439554930';
+
+(async () => {
+  const original = [
+    { Titel: 'Spijt!', Auteur: 'Carry Slee', 'ISBN-nummer': ISBN, Aantal: 2 },
+    { Titel: 'Tweede titel', Auteur: 'Ander', 'ISBN-nummer': OTHER_ISBN },
+  ];
+  const baseline = await analyzeReviewedImport(original);
+  assert.strictEqual(baseline.ok, true);
+  assert.strictEqual(baseline.summary.physicalCopies, 3);
+  assert.strictEqual(baseline.decisions.summary.readyToApply, true);
+  assert.strictEqual(baseline.decisions.summary.safeRows, 2);
+  assert.strictEqual(baseline.decisions.summary.blockedRows, 0);
+
+  const corrected = await analyzeReviewedImport(original, [
+    { index: 0, fields: { title: 'Spijt! (herzien)', author: 'C. Slee', quantity: '3' } },
+    { index: 1, skip: true },
+  ]);
+  assert.strictEqual(corrected.ok, true);
+  assert.strictEqual(corrected.rows[0].book.title, 'Spijt! (herzien)');
+  assert.strictEqual(corrected.rows[0].book.author, 'C. Slee');
+  assert.strictEqual(corrected.summary.physicalCopies, 3);
+  assert.strictEqual(corrected.rows[1].status, 'skipped');
+  assert.strictEqual(corrected.decisions.summary.safeRows, 1);
+  assert.strictEqual(corrected.decisions.summary.skippedRows, 1);
+  assert.strictEqual(original[0].Titel, 'Spijt!', 'Original Excel data must remain unchanged');
+  assert.strictEqual(original[0].Aantal, 2);
+
+  const conflicting = {
+    Titel: 'Een titel', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Intern ISBN': OTHER_ISBN,
+  };
+  const beforeFix = await analyzeReviewedImport([conflicting]);
+  assert.strictEqual(beforeFix.rows[0].status, 'conflict');
+  assert.strictEqual(beforeFix.decisions.summary.readyToApply, false);
+  const afterFix = await analyzeReviewedImport([conflicting], [{ index: 0, fields: { editionIsbn: ISBN } }]);
+  assert.strictEqual(afterFix.ok, true);
+  assert.strictEqual(afterFix.rows[0].book.editionIsbn, ISBN);
+  assert.notStrictEqual(afterFix.rows[0].status, 'conflict');
+  assert.strictEqual(afterFix.decisions.summary.safeRows, 1);
+  assert.strictEqual(conflicting['Intern ISBN'], OTHER_ISBN);
+
+  const duplicateCollision = {
+    Titel: 'Dubbel', Auteur: 'A', 'ISBN-nummer': ISBN, 'ISBN-nummer_1': OTHER_ISBN,
+  };
+  const correctedDuplicate = await analyzeReviewedImport([duplicateCollision],
+    [{ index: 0, fields: { editionIsbn: ISBN } }]);
+  assert.strictEqual(correctedDuplicate.rows[0].book.editionIsbn, ISBN);
+  assert.ok(!correctedDuplicate.rows[0].issues.some((issue) => issue.code === 'conflicting_source_columns'));
+  assert.strictEqual(correctedDuplicate.correctedRows[0]['ISBN-nummer_1'], undefined);
+
+  const existing = await analyzeReviewedImport(original, [], {
+    existingBooks: [{ id: 'old-1', title: 'Spijt!', metadataIsbn: ISBN, status: 'borrowed' }],
+  });
+  assert.strictEqual(existing.decisions.rows[0].reason, 'existing_edition_requires_review');
+  assert.strictEqual(existing.decisions.rows[0].existing[0].borrowed, true);
+  assert.strictEqual(existing.decisions.summary.readyToApply, false);
+  assert.strictEqual(existing.decisions.rows[1].canCreate, true);
+
+  const warningRow = [{ Titel: 'Waarschuwing', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
+  const unapproved = await analyzeReviewedImport(warningRow);
+  assert.strictEqual(unapproved.rows[0].status, 'warning');
+  assert.strictEqual(unapproved.decisions.rows[0].reason, 'warnings_need_confirmation');
+  const approved = await analyzeReviewedImport(warningRow, [], { acceptWarnings: true });
+  assert.strictEqual(approved.decisions.rows[0].canCreate, true);
+
+  const invalid = [
+    [{ index: -1, fields: { title: 'X' } }],
+    [{ index: 0, fields: { passwordHash: 'x' } }],
+    [{ index: 0, fields: { editionIsbn: 'invalid' } }],
+    [{ index: 0, fields: { quantity: '0' } }],
+    [{ index: 0, fields: { title: 'x' } }, { index: 0, skip: true }],
+    [{ index: 0, skip: true, fields: { title: 'x' } }],
+    [{ index: 0, skip: false }],
+  ];
+  for (const corrections of invalid) {
+    assert.strictEqual(normalizeCorrections(corrections, original.length).ok, false);
+  }
+
+  const skipped = applyCorrectionsToRows(original, new Map([[0, { skip: true, fields: {} }]]));
+  assert.strictEqual(Object.keys(skipped[0]).length, 0);
+  assert.strictEqual(original[0].Titel, 'Spijt!');
+
+  console.log('PR3 book import review correction tests passed');
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
