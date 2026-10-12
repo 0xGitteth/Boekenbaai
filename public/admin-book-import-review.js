@@ -10,6 +10,7 @@
     existing_edition_requires_review: 'Dit ISBN bestaat al in de collectie. Sla deze rij over of beoordeel dit later bij synchroniseren.',
     source_conflict_or_missing_identity: 'Corrigeer de brongegevens of sla deze rij over.',
     warnings_need_confirmation: 'Controleer de waarschuwingen en geef toestemming voordat je importeert.',
+    loan_context_requires_followup: 'Volgens Excel is dit boek al uitgeleend. Corrigeer de leenstatus of sla de rij over; PR5 ondersteunt het overnemen van leningen.',
     skipped: 'Wordt niet geïmporteerd.',
   };
   const issueNames = {
@@ -34,7 +35,10 @@
     ['publisher', 'Uitgever'], ['publishedYear', 'Uitgavejaar'],
     ['pageCount', 'Pagina’s'], ['language', 'Taal'],
     ['tags', 'Tags'], ['themes', 'Thema’s'], ['coverUrl', 'Cover URL'],
-    ['description', 'Beschrijving'],
+    ['description', 'Beschrijving'], ['easyReading', 'Makkelijk lezen?'],
+    ['examMaterial', 'Examenmateriaal'], ['classes', 'Klassen'],
+    ['studentLoan', 'Uitgeleend aan leerling'], ['classLoan', 'Uitgeleend aan klas'],
+    ['libraryPresence', 'Aanwezig in bibliotheek'],
   ];
 
   const make = (tag, cls = '', content = '') => {
@@ -154,6 +158,12 @@
       if (field === 'editionIsbn') return book.editionIsbn || row.identifierAnalysis?.explicit?.raw || '';
       if (field === 'tags') return (book.tags || []).join('; ');
       if (field === 'themes') return (book.manualThemes || book.themes || []).join('; ');
+      if (field === 'easyReading') return book.easyReading ? 'ja' : '';
+      if (field === 'examMaterial') return book.suitableForExamList ? 'Ja' : '';
+      if (field === 'studentLoan') return row.context?.studentLoan?.name || '';
+      if (field === 'classLoan') return row.context?.classLoan?.name || '';
+      if (field === 'classes') return (row.context?.classContext || []).join('; ');
+      if (field === 'libraryPresence') return row.context?.libraryPresence?.value || '';
       return String(book[field] ?? '');
     }
 
