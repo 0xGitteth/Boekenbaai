@@ -21,6 +21,12 @@ const CORRECTION_COLUMNS = Object.freeze({
   coverUrl: { header: 'Cover URL', fields: ['coverUrl'], type: 'text' },
   tags: { header: 'Tags', fields: ['tags'], type: 'text' },
   themes: { header: "Thema's", fields: ['themes'], type: 'text' },
+  easyReading: { header: 'Makkelijk lezen?', fields: ['easyReading'], type: 'text' },
+  examMaterial: { header: 'Examenmateriaal', fields: ['examMaterial'], type: 'text' },
+  studentLoan: { header: 'naam leerling', fields: ['studentLoan'], type: 'text' },
+  classLoan: { header: 'Geleend door klas', fields: ['classLoan'], type: 'text' },
+  classes: { header: 'Klassen', fields: ['classes'], type: 'text' },
+  libraryPresence: { header: 'Aanwezig bieb', fields: ['libraryPresence'], type: 'text' },
 });
 const MAX_CORRECTIONS = 20000;
 const MAX_CORRECTION_TEXT = 4000;
@@ -150,13 +156,17 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
   const rows = analysis.rows.map((row) => {
     const matches = existingEditionMatch(row, existingBooks);
     const shouldSkip = row.status === 'skipped';
-    const blocking = row.status === 'conflict' || row.status === 'unresolved';
+    // PR5 creates real student/class checkouts. Never make an active loan
+    // appear available merely because the import was confirmed in PR3.
+    const hasActiveLoan = Boolean(row.context?.studentLoan || row.context?.classLoan);
+    const blocking = row.status === 'conflict' || row.status === 'unresolved' || hasActiveLoan;
     const requiresReview = matches.length > 0 || (row.status === 'warning' && !acceptWarnings);
     const canCreate = !shouldSkip && !blocking && !requiresReview;
     const reason = shouldSkip ? 'skipped'
-      : blocking ? 'source_conflict_or_missing_identity'
-        : matches.length ? 'existing_edition_requires_review'
-          : (requiresReview ? 'warnings_need_confirmation' : '');
+      : hasActiveLoan ? 'loan_context_requires_followup'
+        : (row.status === 'conflict' || row.status === 'unresolved') ? 'source_conflict_or_missing_identity'
+          : matches.length ? 'existing_edition_requires_review'
+            : (requiresReview ? 'warnings_need_confirmation' : '');
     return { index: row.index, worksheetRow: row.sourceRowNumber, status: row.status, canCreate, reason, existing: matches };
   });
   const blocked = rows.filter((row) => row.reason && row.reason !== 'skipped');
