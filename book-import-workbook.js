@@ -286,9 +286,10 @@ function worksheetRangeFromSheet(XLSX, sheet) {
 
 function worksheetRangeLimitError(rangeInfo, sheetName, { maxRows, maxColumns, maxWorksheetCells }) {
   if (!rangeInfo) return null;
-  // A sparse sheet starting at an enormous row index can make sheetRows-based
-  // rereads expensive even when its apparent rowCount is small.
-  if (rangeInfo.endRow > maxRows + 1) {
+  // Allow ordinary leading blank rows, but cap absolute row indices so
+  // sparse worksheets cannot force an unbounded sheetRows reread.
+  const maxAbsoluteRow = maxRows + 1 + 1024;
+  if (rangeInfo.rowCount > maxRows + 1 || rangeInfo.endRow > maxAbsoluteRow) {
     return { ok: false, error: 'too_many_rows', sheetName, worksheetRows: rangeInfo.endRow, maxRows };
   }
   if (rangeInfo.columnCount > maxColumns) {
