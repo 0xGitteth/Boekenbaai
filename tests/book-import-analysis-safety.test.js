@@ -87,6 +87,33 @@ module.exports = async function runSafetyTests() {
   assert.ok(codes(runtimeDuplicate.rows[0]).has('duplicate_physical_barcode'));
   assert.ok(codes(runtimeDuplicate.rows[1]).has('duplicate_physical_barcode'));
 
+  const blankLeadingRow = await analyzeBookImportRows([
+    { Titel: '', Auteur: '  ', 'ISBN-nummer': '', Aantal: '', Notitie: '' },
+    { Titel: 'Echt boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN },
+  ], { maxCopies: 1 });
+  assert.strictEqual(blankLeadingRow.rows[0].status, 'skipped');
+  assert.strictEqual(blankLeadingRow.rows[0].context.skipReason, 'empty');
+  assert.strictEqual(blankLeadingRow.rows[1].status, 'ready');
+  assert.strictEqual(blankLeadingRow.summary.physicalCopies, 1);
+  assert.strictEqual(blankLeadingRow.groups.length, 1);
+  assert.ok(!codes(blankLeadingRow.rows[1]).has('copy_limit_exceeded'));
+
+  const invalidNumberBarcodeRows = await analyzeBookImportRows(
+    [1e21, 123.5, -123].map((barcode) => ({
+      Titel: 'Gevaarlijke barcode', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: barcode,
+    })),
+  );
+  for (const numericRow of invalidNumberBarcodeRows.rows) {
+    assert.strictEqual(numericRow.status, 'conflict');
+    assert.strictEqual(numericRow.book.barcode, '');
+    assert.ok(codes(numericRow).has('invalid_physical_barcode'));
+  }
+  const safeNumberBarcode = await analyzeBookImportRows([{
+    Titel: 'Veilige barcode', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: 123456,
+  }]);
+  assert.strictEqual(safeNumberBarcode.rows[0].book.barcode, '123456');
+  assert.ok(!codes(safeNumberBarcode.rows[0]).has('invalid_physical_barcode'));
+
   const junk = await analyzeBookImportRows([{ Titel: 'hh' }]);
   assert.strictEqual(junk.rows[0].status, 'skipped');
   assert.strictEqual(junk.rows[0].context.skipReason, 'junk');
