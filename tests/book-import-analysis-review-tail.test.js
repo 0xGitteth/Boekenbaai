@@ -404,8 +404,9 @@ module.exports = async function runReviewTailTests() {
   Object.defineProperty(equivalentZeroQuantityColumns, 'Aantal', { value: 0, enumerable: true });
   Object.defineProperty(equivalentZeroQuantityColumns, 'Aantal_1', { value: '00', enumerable: true });
   const equivalentZeroQuantityResult = await analyzeBookImportRows([equivalentZeroQuantityColumns]);
-  assert.strictEqual(equivalentZeroQuantityResult.rows[0].book.quantity.value, 0);
-  assert.strictEqual(equivalentZeroQuantityResult.rows[0].book.quantity.valid, true);
+  assert.strictEqual(equivalentZeroQuantityResult.rows[0].book.quantity.value, 1);
+  assert.strictEqual(equivalentZeroQuantityResult.rows[0].book.quantity.valid, false);
+  assert.ok(issueCodes(equivalentZeroQuantityResult.rows[0]).has('invalid_quantity'));
   assert.ok(!issueCodes(equivalentZeroQuantityResult.rows[0]).has('conflicting_source_columns'));
   assert.strictEqual(equivalentZeroQuantityResult.summary.physicalCopies, 0);
 
