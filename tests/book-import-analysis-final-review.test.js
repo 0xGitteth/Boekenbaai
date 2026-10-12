@@ -3,7 +3,7 @@
 const assert = require('assert');
 const XLSX = require('xlsx');
 const { deflateRawSync } = require('node:zlib');
-const { analyzeBookImportRows } = require('../book-import-analysis');
+const { analyzeBookImportRows, analyzeBookImportWorkbook } = require('../book-import-analysis');
 const { readBookImportWorkbook } = require('../book-import-workbook');
 
 const ISBN = '9780306406157';
@@ -367,6 +367,28 @@ module.exports = async function runFinalReviewTests() {
   const validCompressedWorkbook = readBookImportWorkbook(XLSX, compressedBuffer, { maxRows: 200 });
   assert.strictEqual(validCompressedWorkbook.ok, true, 'Ordinary compressed XLSX files must remain accepted under default archive limits');
   assert.strictEqual(validCompressedWorkbook.rows.length, 100);
+
+  // Real date-formatted worksheet cells must keep their calendar year:
+  // an Excel serial for 1905-01-01 is approximately 1828, not year 1828.
+  const datedSheet = XLSX.utils.aoa_to_sheet([
+    ['Titel', 'Auteur', 'ISBN-nummer', 'Jaar'],
+    ['Datum 1905', 'A Auteur', ISBN, new Date(Date.UTC(1905, 0, 1))],
+    ['Datum 2020', 'A Auteur', ISBN_ALT, new Date(Date.UTC(2020, 6, 13))],
+    ['Letterlijk jaartal', 'A Auteur', ISBN, 1828],
+  ], { cellDates: true });
+  datedSheet.D2.z = 'yyyy-mm-dd';
+  datedSheet.D3.z = 'yyyy-mm-dd';
+  const datedWorkbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(datedWorkbook, datedSheet, 'Datums');
+  const datedBuffer = XLSX.write(datedWorkbook, { type: 'buffer', bookType: 'xlsx', compression: true });
+  const datedRead = readBookImportWorkbook(XLSX, datedBuffer);
+  assert.strictEqual(datedRead.ok, true);
+  assert.ok(datedRead.rows[0].Jaar instanceof Date);
+  assert.ok(datedRead.rows[1].Jaar instanceof Date);
+  assert.deepStrictEqual(datedRead.rows.map((row) => row.Jaar instanceof Date ? row.Jaar.getUTCFullYear() : row.Jaar), [1905, 2020, 1828]);
+  const datedAnalysis = await analyzeBookImportWorkbook(XLSX, datedBuffer);
+  assert.strictEqual(datedAnalysis.ok, true);
+  assert.deepStrictEqual(datedAnalysis.rows.map((row) => row.book.publishedYear), [1905, 2020, 1828]);
 
   for (const prefix of [Buffer.from([0]), Buffer.from('MZ'), Buffer.alloc(256, 65)]) {
     archiveReadCalled = false;

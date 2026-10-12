@@ -145,9 +145,15 @@ function mapImportRow(row) {
       unknown.push({ header, value: jsonSafeCellValue(value) });
       continue;
     }
+    // With cellDates enabled SheetJS exposes formatted date cells as Date.
+    // Keep ordinary numeric year cells intact, but derive the actual year
+    // from a date rather than treating its Excel serial as a publication year.
+    const mappedValue = field === 'publishedYear' && value instanceof Date
+      ? (Number.isFinite(value.getTime()) ? value.getUTCFullYear() : 'invalid_date')
+      : value;
     if (!sources[field]) sources[field] = [];
-    sources[field].push({ header, value: jsonSafeCellValue(value) });
-    if (!Object.prototype.hasOwnProperty.call(fields, field) || isBlankCellValue(fields[field])) fields[field] = value;
+    sources[field].push({ header, value: jsonSafeCellValue(mappedValue) });
+    if (!Object.prototype.hasOwnProperty.call(fields, field) || isBlankCellValue(fields[field])) fields[field] = mappedValue;
   }
 
   const collisions = [];
@@ -709,7 +715,7 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
 
   let workbook;
   try {
-    workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows: initialSheetRows });
+    workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows: initialSheetRows, cellDates: true });
   } catch {
     return { ok: false, error: 'invalid_workbook' };
   }
@@ -721,7 +727,7 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
 
   if (rangeInfo && rangeInfo.endRow > initialSheetRows && rangeInfo.rowCount <= maxRows + 1) {
     try {
-      workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows: rangeInfo.endRow });
+      workbook = XLSX.read(buffer, { type: 'buffer', sheets: 0, sheetRows: rangeInfo.endRow, cellDates: true });
     } catch {
       return { ok: false, error: 'invalid_workbook' };
     }

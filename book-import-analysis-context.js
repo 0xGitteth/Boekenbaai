@@ -1,6 +1,6 @@
 'use strict';
 
-const { getOwnDataValue, normalizeBookIdentityText } = require('./book-edition-core');
+const { getOwnDataValue, normalizeBookIdentityText, isPlaceholderAuthor } = require('./book-edition-core');
 const { isBlankCellValue } = require('./book-import-workbook');
 const { addIssue, comparableText, splitMultiValue, splitTagValue, valueText, jsonSafeIdentifier } = require('./book-import-analysis-values');
 
@@ -169,7 +169,8 @@ function matchEntityByName(value, entities) {
 function applyContext(mapped, row, options) {
   const f = getDataFields(mapped);
   const classTokens = splitMultiValue(f.classes);
-  const studentLoan = valueText(f.studentLoan);
+  const rawStudentLoan = valueText(f.studentLoan);
+  const studentLoan = isPlaceholderAuthor(rawStudentLoan) ? '' : rawStudentLoan;
   const classLoan = valueText(f.classLoan);
   const libraryPresence = valueText(f.libraryPresence);
   const markers = collectSemanticMarkers(mapped);
