@@ -3,6 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const { readBookImportWorkbook } = require('./book-import-workbook');
+const { analyzeReviewedImport } = require('./book-import-review');
+const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
+
+const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -1589,6 +1594,21 @@ function loadDb() {
 
 function saveDb(db) {
   fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
+}
+
+// The reviewed book import is one confirmed transaction. Write its complete
+// database snapshot to a sibling file first, then atomically replace the old
+// snapshot so a failed or interrupted write cannot leave half a JSON document.
+function saveReviewedBookImportDb(db) {
+  const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
+  try {
+    fs.writeFileSync(temporaryPath, JSON.stringify(db, null, 2), { flag: 'wx', mode: 0o600 });
+    fs.renameSync(temporaryPath, DATA_PATH);
+  } finally {
+    try { fs.unlinkSync(temporaryPath); } catch (error) {
+      if (error.code !== 'ENOENT') console.warn('Tijdelijke importdatabase opruimen mislukt:', error.message);
+    }
+  }
 }
 
 function hashPassword(password) {
@@ -3464,12 +3484,12 @@ function serveFile(res, filePath) {
   });
 }
 
-function parseBody(req) {
+function parseBody(req, maxLength = 1e6) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
-      if (body.length > 1e6) {
+      if (body.length > maxLength) {
         req.connection.destroy();
         reject(new Error('Payload te groot'));
       }
@@ -4402,6 +4422,207 @@ async function handleApi(req, res, requestUrl) {
         totalCopies,
         availableCopies,
       });
+    }
+
+    const bookImportReportMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-reports(?:\/([a-f0-9-]+))?$/);
+    if (bookImportReportMatch) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders mogen importverslagen bekijken.' });
+      }
+      if (req.method !== 'GET') return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+      const reports = Array.isArray(getDb().bookImportReports) ? getDb().bookImportReports : [];
+      if (bookImportReportMatch[1]) {
+        const report = reports.find((item) => item?.id === bookImportReportMatch[1]);
+        if (!report) return sendJson(res, 404, { message: 'Importverslag niet gevonden.' });
+        return sendJson(res, 200, report);
+      }
+      return sendJson(res, 200, { reports: reports.slice(-30).reverse().map((item) => ({
+        id: item.id, fileName: item.fileName, importedAt: item.importedAt,
+        createdBy: item.createdBy, count: item.count, sourceRows: item.sourceRows,
+      })) });
+    }
+
+    // PR3 staged book import is separate from the legacy direct upload route.
+    // The only authority for applying data is the server-owned, single-use
+    // staging record; clients may send corrections, never finished book rows.
+    const stageRoot = '/api/admin/book-import-stages';
+    const stagePath = requestUrl.pathname === stageRoot || requestUrl.pathname.startsWith(stageRoot + '/');
+    if (stagePath) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders mogen een boekimport voorbereiden.' });
+      }
+      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply))?$/);
+      if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
+        const XLSX = loadXlsx();
+        if (!XLSX) return sendJson(res, 503, { message: 'Excelverwerking is niet beschikbaar.' });
+        const body = await parseBody(req, 35 * 1024 * 1024);
+        if (typeof body.file !== 'string' || !body.file) {
+          return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
+        }
+        const workbook = readBookImportWorkbook(XLSX, body.file, { maxRows: 1500, maxCopies: 5000 });
+        if (!workbook.ok) {
+          return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
+        }
+        const database = getDb();
+        const enrichIsbn = body.enrichIsbn === true;
+        const lookupIsbn = enrichIsbn ? resolveLookupIsbnMetadata() : null;
+        const lookupTitleAuthor = enrichIsbn ? resolveLookupTitleAuthorMetadata() : null;
+        // The cache lives only for this stage and avoids additional network
+        // requests for identical ISBNs across corrections and reanalysis.
+        const exactCache = new Map();
+        const titleCache = new Map();
+        const options = {
+          maxRows: 1500, maxCopies: 5000,
+          ...(lookupIsbn ? { lookupIsbn: (isbn) => {
+            if (!exactCache.has(isbn)) exactCache.set(isbn, Promise.resolve().then(() => lookupIsbn(isbn)));
+            return exactCache.get(isbn);
+          } } : {}),
+          ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
+            const key = JSON.stringify([input.title, input.author, input.language]);
+            if (!titleCache.has(key)) titleCache.set(key, Promise.resolve().then(() => lookupTitleAuthor(input)));
+            return titleCache.get(key);
+          } } : {}),
+        };
+        const analysis = await analyzeReviewedImport(workbook.rows, [], {
+          ...options, existingBooks: database.books, acceptWarnings: false,
+        });
+        if (!analysis.ok) return sendJson(res, 400, { message: 'Importanalyse mislukt.', error: analysis.error });
+        const created = bookImportStageStore.create({
+          ownerId: user.id, sourceRows: workbook.rows, options,
+          workbook: { sheetName: workbook.sheetName, headers: workbook.headers },
+          fileName: typeof body.fileName === 'string' ? body.fileName.slice(0, 180) : '',
+          analysis,
+        });
+        if (!created.ok) return sendJson(res, 409, { message: 'Een andere importcontrole is nog actief.', error: created.error });
+        return sendJson(res, 201, importStageView(created.stage));
+      }
+      if (!stageMatch) return sendJson(res, 404, { message: 'Importcontrole niet gevonden.' });
+      const stage = bookImportStageStore.get(stageMatch[1], user.id);
+      if (!stage) return sendJson(res, 404, { message: 'Importcontrole ontbreekt of is verlopen.' });
+      if (req.method === 'GET' && !stageMatch[2]) {
+        return sendJson(res, 200, importStageView(stage));
+      }
+      if (req.method === 'POST' && stageMatch[2] === 'review') {
+        const body = await parseBody(req, 400000);
+        if (!Number.isSafeInteger(body.revision)) return sendJson(res, 400, { message: 'Versienummer ontbreekt.' });
+        const started = bookImportStageStore.beginReview(stage, body.revision);
+        if (!started.ok) return sendJson(res, 409, { message: 'Deze import is gewijzigd of wordt verwerkt.', error: started.error });
+        try {
+          if (typeof body.acceptWarnings !== 'boolean') {
+            return sendJson(res, 400, { message: 'Geef expliciet aan of waarschuwingen geaccepteerd worden.' });
+          }
+          const database = getDb();
+          const reviewed = await analyzeReviewedImport(stage.sourceRows, body.corrections, {
+            ...stage.options, existingBooks: database.books, acceptWarnings: body.acceptWarnings,
+          });
+          if (!reviewed.ok) {
+            return sendJson(res, 400, { message: 'Een correctie is ongeldig.', error: reviewed.error, field: reviewed.field, index: reviewed.index });
+          }
+          bookImportStageStore.finishReview(stage, reviewed, body.corrections, body.acceptWarnings);
+          return sendJson(res, 200, importStageView(stage));
+        } finally {
+          bookImportStageStore.abortReview(stage);
+        }
+      }
+      if (req.method === 'POST' && stageMatch[2] === 'apply') {
+        const body = await parseBody(req, 10000);
+        if (!Number.isSafeInteger(body.revision) || body.confirm !== true) {
+          return sendJson(res, 400, { message: 'Bevestig de gecontroleerde import met het actuele versienummer.' });
+        }
+        const started = bookImportStageStore.beginApply(stage, body.revision);
+        if (!started.ok) return sendJson(res, 409, { message: 'Deze import is al verwerkt of gewijzigd.', error: started.error });
+        try {
+          const database = getDb();
+          // Recheck the LIVE collection at commit time, not the snapshot used
+          // for preview, so newly added books cannot create duplicates.
+          const plan = buildStageApplyPlan(
+            { ...stage.analysis, acceptWarnings: stage.acceptWarnings },
+            database.books, { maxCopies: 5000 },
+          );
+          if (!plan.ok) {
+            // On conflict require a fresh staged review. This stage can never
+            // accidentally be applied after another simultaneous upload.
+            return sendJson(res, 409, {
+              message: 'De import is niet meer veilig toepasbaar. Controleer de collectie en upload opnieuw.',
+              error: plan.error, index: plan.index,
+            });
+          }
+          const now = new Date().toISOString();
+          const batchId = crypto.randomUUID();
+          const newCopies = [];
+          const sourceReports = [];
+          for (const entry of plan.created) {
+            const row = entry.row;
+            const sourceByField = Object.create(null);
+            for (const [field, provenance] of Object.entries(row.provenance || {})) {
+              const sourceType = ['excel', 'metadata', 'derived', 'existing'].includes(provenance?.source)
+                ? provenance.source : 'unknown';
+              sourceByField[field] = createFieldSource(sourceType, provenance?.detail || null);
+            }
+            const template = ensureBookShape({
+              title: row.book.title, author: row.book.author,
+              authors: row.book.authors, editionIsbn: entry.editionIsbn,
+              metadataIsbn: entry.editionIsbn, barcode: entry.barcode,
+              description: row.book.description, publisher: row.book.publisher,
+              publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
+              language: row.book.language, coverUrl: row.book.coverUrl,
+              easyReading: row.book.easyReading,
+              suitableForExamList: row.book.suitableForExamList,
+              tags: row.book.tags, manualThemes: row.book.manualThemes,
+              // Keep resolved classroom shelf information on every created
+              // copy as well as in the report; the future lending workflow
+              // can use it without recovering an old upload.
+              fixedLocation: row.context?.fixedLocation?.status === 'resolved'
+                ? row.context.fixedLocation.label : null,
+              importInfo: normalizeBookImportInfo({
+                importedAt: now, importedBy: user.id, importSource: 'excel_reviewed',
+                importJobId: batchId, importStatus: 'created',
+              }),
+              importProvenance: { fieldSources: sourceByField },
+            });
+            const newIds = [];
+            for (let i = 0; i < entry.quantity; i += 1) {
+              const copy = createBookCopyFromTemplate(template);
+              newCopies.push(copy);
+              newIds.push(copy.id);
+            }
+            sourceReports.push({
+              index: entry.index, worksheetRow: row.sourceRowNumber,
+              status: 'created', copies: entry.quantity, bookIds: newIds,
+              title: row.book.title, editionIsbn: entry.editionIsbn,
+              issues: row.issues.map((issue) => issue.code),
+              provenance: row.provenance, context: row.context,
+            });
+          }
+          for (const row of stage.analysis.rows.filter((entry) => entry.status === 'skipped')) {
+            sourceReports.push({
+              index: row.index, worksheetRow: row.sourceRowNumber, status: 'skipped', copies: 0,
+              issues: row.issues.map((issue) => issue.code),
+            });
+          }
+          const report = {
+            id: batchId, createdBy: user.id, importedAt: now,
+            fileName: stage.fileName, count: newCopies.length,
+            sourceRows: stage.analysis.summary.sourceRows,
+            rows: sourceReports.sort((a, b) => a.index - b.index),
+          };
+          if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
+          database.bookImportReports.push(report);
+          database.bookImportReports = database.bookImportReports.slice(-30);
+          database.books.push(...newCopies);
+          appendHistory(database, {
+            type: 'books_import_reviewed', performedBy: user.id,
+            message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd`,
+          });
+          saveReviewedBookImportDb(database);
+          const result = { batchId, created: newCopies.length, importedRows: plan.created.length, report };
+          bookImportStageStore.finishApply(stage, result);
+          return sendJson(res, 200, importStageView(stage));
+        } finally {
+          bookImportStageStore.abortApply(stage);
+        }
+      }
+      return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import-jobs') {
