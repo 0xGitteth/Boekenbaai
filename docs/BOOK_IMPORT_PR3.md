@@ -1,24 +1,32 @@
-# PR3: beheerpreview, corrigeerbare analyse en veilig toepassen
+# PR3: beheerpreview, correcties en gecontroleerd toepassen
 
-Status: **in ontwikkeling**. Deze PR mag niet worden gemerged voordat de stappen hieronder volledig zijn aangesloten en getest.
+Status: **concept / ontwikkelbranch**. Niet mergen vóór afrondende onafhankelijke review, brede tests en een laatste Codex-review.
 
-## Gereed in de eerste bouwstap
+## Wat nu gebouwd is
 
-- Correcties gebeuren op veilige kopieën van bronrijen. Originele Excelwaarden blijven beschikbaar.
-- Correcties van titel, auteur, ISBN, barcode, hoeveelheid en bibliografische velden wissen de conflicterende aliaskolommen voor dat veld en lopen opnieuw door dezelfde PR2 analyse.
-- Ongeldig ISBN, ongeldige hoeveelheid, dubbele of onbekende correcties worden afgewezen.
-- Uitsluiten gebeurt per rij en behoudt het oorspronkelijke rijnummer.
-- Een afzonderlijk beslisoverzicht maakt onderscheid tussen veilige rijen, overslaan, onopgeloste conflicten, waarschuwingen die bevestiging vragen en edities die mogelijk al bestaan.
-- Bestaande edities, waaronder uitgeleende boeken, worden **niet** stil overschreven of gedupliceerd.
+- Nieuwe, afzonderlijke beheerroute: `POST /api/admin/book-import-stages` voor een **read-only** Excelanalyse met PR2.
+- Beheerpreview in het tabblad Importeren, met aantallen, herkomst, conflicten, waarschuwingen en Excelrijnummers. De oude directe import zit voorlopig achter een uitklapbare legacy-optie; de oude API blijft intact.
+- Correcties per rij voor ISBN, titel, auteur, barcode, hoeveelheid, metadata en relevante klas-/leencontext; bronrijen blijven onveranderd. Vervolgens controleert PR2 de gecorrigeerde kopie opnieuw.
+- Expliciet overslaan en bevestigen van waarschuwingen. Onopgeloste en tegenstrijdige rijen blokkeren het definitief toepassen.
+- Staged data is alleen toegankelijk voor de ingelogde beheerder die de import startte. De server bewaart die tijdelijk in het geheugen, tot 30 minuten na de laatste heranalyse. Per eigenaar bestaan maximaal twee concepten; er is ook een globale capaciteitslimiet.
+- Eén definitieve bevestiging met revisienummer: `POST /api/admin/book-import-stages/:id/apply`. De server controleert de actuele bibliotheek opnieuw op ISBN en fysieke barcodes, voordat er **nieuwe** exemplaren worden aangemaakt. De client kan nooit rechtstreeks boekenlijsten naar de apply-route sturen.
+- Geactiveerde leerling-/klasleningen worden niet stil geïmporteerd als beschikbare boeken. Eerst corrigeren of overslaan; PR5 bouwt de eigenlijke uitleenovername.
+- Veilige single-use uitvoering, met tijdelijk bestand en atomische vervanging van de database bij bevestigde import.
+- Per-rij importverslag en veldherkomst blijven bewaard in `bookImportReports` (laatste dertig), en zijn alleen via een beheerroute opvraagbaar: `GET /api/admin/book-import-reports` en `GET /api/admin/book-import-reports/:id`. Na toepassen kan het verslag als JSON worden gedownload.
+- Unit- en HTTP-integratietests voor correcties, onbevoegde toegang, dubbele ISBN/barcodes, ongeldige bron, verouderde revisies, tweede beheerder en herhaalde apply.
 
-## Nog vereist voor een voltooide PR3
+## Grenzen en bewuste veiligheidskeuzes
 
-1. Beveiligde preview API voor beheerders, met server-side tijdelijk opgeslagen bronbestand/analyse en korte vervaltijd. Een client mag nooit zijn eigen staging-resultaat als autoriteit naar het opslageindpunt sturen.
-2. Formulier in het beheerdersportaal voor upload, statusoverzicht, per-rij correctie, bronherkomst, conflicten en expliciet overslaan.
-3. Reanalyse na correcties, plus bevestiging van waarschuwingen. Conflicten en onopgeloste rijen mogen niet stil doorglippen.
-4. Bevestigings- en apply-endpoint met server-side autorisatie, batch/token binding, eenmalige uitvoering, actuele databasecontrole en begrensde aantallen.
-5. Alleen expliciet bevestigde nieuwe fysieke exemplaren maken. Bestaande edities en de vraag wat er bij heruploads moet gebeuren veilig apart behandelen in PR4; geen stille overschrijvingen, synchronisatie of verwijderingen.
-6. Per-rij verslag en veldherkomst duurzaam vastleggen, ook voor overgeslagen/geblokkeerde rijen, zonder leerlinggegevens publiek te maken.
-7. API-integratietests: onbevoegd/ongeldig verzoek, replay, verlopen token, gelijktijdig toepassen, leenstatus, corrupt bestand, rollback/partiële schrijffout, aanwezige collectie en regressies op de bestaande import.
+- In deze eerste versie: maximaal **1.500 rijen** en **5.000 fysieke exemplaren** per bestand. Workbook-limieten en ZIP-beveiliging uit PR2 blijven actief. UI-uploadgrens 25 MB.
+- Ontbrekende metadata kan optioneel via ISBN worden opgezocht; standaard staat de externe lookup uit om onnodig lang wachten te voorkomen.
+- **Bestaande edities worden nooit blind aangepast**. De beheerder kan zulke regels overslaan. Veilige inventarissynchronisatie en het bijwerken van bestaande edities horen bij PR4.
+- Bij een serverherstart vervallen alle nog onbevestigde previewconcepten; er wordt niets uit die concepten opgeslagen. Bevestigde verslagen blijven in de database.
+- PR3 legt klascontext in het importverslag vast; fysiek beheer en het overnemen van leningen komen in PR5/PR6.
+- Verslaggegevens kunnen persoonsgegevens bevatten en worden daarom niet beschikbaar gesteld aan leerlingclients.
+- De bestaande directe importroute blijft technisch bestaan voor backwards compatibility; die is duidelijk als legacy gemarkeerd.
 
-De bestaande directe Excelimport blijft tijdens deze ontwikkelstap ongemoeid. Pas wanneer de nieuwe flow compleet en veilig is, wordt bepaald hoe de beheerinterface de oude import vervangt.
+## Nog af te ronden voordat PR3 samengevoegd mag worden
+
+- De volledige UI en backend zelfstandig adversarieel nalopen, inclusief 401/403, grote bestanden, mislukkende schrijfacties, simultane bevestigingen, metadata, legacy-gedrag en privacy.
+- Controleren of de precieze UI op mobiel en desktop bruikbaar is en de oude importer niet ongemerkt als standaard verschijnt.
+- Succesvolle brede CI op het **uiteindelijke** PR3-commit, met server/build/UI regressies, en daarna de afgesproken Codex-eindcontrole.
