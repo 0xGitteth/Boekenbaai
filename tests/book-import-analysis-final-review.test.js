@@ -383,7 +383,9 @@ module.exports = async function runFinalReviewTests() {
   const datedBuffer = XLSX.write(datedWorkbook, { type: 'buffer', bookType: 'xlsx', compression: true });
   const datedRead = readBookImportWorkbook(XLSX, datedBuffer);
   assert.strictEqual(datedRead.ok, true);
-  assert.deepStrictEqual(datedRead.rows.map((row) => row.Jaar), [1905, 2020, 1828]);
+  assert.ok(datedRead.rows[0].Jaar instanceof Date);
+  assert.ok(datedRead.rows[1].Jaar instanceof Date);
+  assert.deepStrictEqual(datedRead.rows.map((row) => row.Jaar instanceof Date ? row.Jaar.getUTCFullYear() : row.Jaar), [1905, 2020, 1828]);
   const datedAnalysis = await analyzeBookImportWorkbook(XLSX, datedBuffer);
   assert.strictEqual(datedAnalysis.ok, true);
   assert.deepStrictEqual(datedAnalysis.rows.map((row) => row.book.publishedYear), [1905, 2020, 1828]);
