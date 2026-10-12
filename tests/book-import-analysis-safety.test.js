@@ -189,6 +189,22 @@ module.exports = async function runSafetyTests() {
   assert.strictEqual(fallbackWideRange.error, 'too_many_columns');
   assert.strictEqual(materializedFallbackWideSheet, false, 'The !ref fallback must also enforce worksheet width');
 
+  let materializedMaskedWideSheet = false;
+  const maskedWideRange = readBookImportWorkbook({
+    read() {
+      return { SheetNames: ['B'], Sheets: { B: { '!fullref': 'not-a-range', '!ref': 'A1:XFD2' } } };
+    },
+    utils: {
+      decode_range(value) {
+        if (value === 'not-a-range') throw new Error('invalid fullref');
+        return { s: { r: 0, c: 0 }, e: { r: 1, c: 16383 } };
+      },
+      sheet_to_json() { materializedMaskedWideSheet = true; return []; },
+    },
+  }, Buffer.from('x'));
+  assert.strictEqual(maskedWideRange.error, 'too_many_columns');
+  assert.strictEqual(materializedMaskedWideSheet, false, 'Invalid !fullref must not mask a bounded !ref width check');
+
   let materializedLargeCellRange = false;
   const largeCellRange = readBookImportWorkbook({
     read() {
