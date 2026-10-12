@@ -4424,6 +4424,24 @@ async function handleApi(req, res, requestUrl) {
       });
     }
 
+    const bookImportReportMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-reports(?:\/([a-f0-9-]+))?$/);
+    if (bookImportReportMatch) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders mogen importverslagen bekijken.' });
+      }
+      if (req.method !== 'GET') return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+      const reports = Array.isArray(getDb().bookImportReports) ? getDb().bookImportReports : [];
+      if (bookImportReportMatch[1]) {
+        const report = reports.find((item) => item?.id === bookImportReportMatch[1]);
+        if (!report) return sendJson(res, 404, { message: 'Importverslag niet gevonden.' });
+        return sendJson(res, 200, report);
+      }
+      return sendJson(res, 200, { reports: reports.slice(-30).reverse().map((item) => ({
+        id: item.id, fileName: item.fileName, importedAt: item.importedAt,
+        createdBy: item.createdBy, count: item.count, sourceRows: item.sourceRows,
+      })) });
+    }
+
     // PR3 staged book import is separate from the legacy direct upload route.
     // The only authority for applying data is the server-owned, single-use
     // staging record; clients may send corrections, never finished book rows.
