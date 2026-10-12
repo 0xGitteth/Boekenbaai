@@ -167,6 +167,31 @@ async function run() {
     assert.strictEqual(malformed.status, 400);
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.length, 3);
 
+    // School inventory format: separate author columns and the confirmed
+    // Makkelijk Lezen + StructuurBB physical-location exception.
+    const schoolIsbn = '9780590353427';
+    const schoolStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{
+        Titel: 'Schoolvoorraad', 'Voornaam schrijver': 'Carry',
+        'Achternaam schrijver': 'Slee', 'ISBN-nummer': schoolIsbn,
+        'Makkelijk lezen?': 'x', 'Geleend door klas': 'StructuurBB',
+      }]),
+    });
+    assert.strictEqual(schoolStage.status, 201);
+    assert.strictEqual(schoolStage.body.rows[0].book.author, 'Carry Slee');
+    assert.deepStrictEqual(schoolStage.body.rows[0].context.fixedLocation, {
+      status: 'resolved', label: 'SK BB', source: 'ml_class_loan_rule',
+    });
+    assert.strictEqual(schoolStage.body.decisions.summary.readyToApply, true);
+    const schoolApplied = await call('/api/admin/book-import-stages/' + schoolStage.body.id + '/apply', token1, {
+      revision: 1, confirm: true,
+    });
+    assert.strictEqual(schoolApplied.status, 200);
+    const finalData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(finalData.books.filter((book) => book.metadataIsbn === schoolIsbn).length, 1);
+    assert.strictEqual(finalData.bookImportReports.length, 2);
+    assert.strictEqual(finalData.bookImportReports[1].rows[0].context.fixedLocation.label, 'SK BB');
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
