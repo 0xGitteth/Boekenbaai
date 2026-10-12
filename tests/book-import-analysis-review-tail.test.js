@@ -266,6 +266,36 @@ module.exports = async function runReviewTailTests() {
   assert.deepStrictEqual(equivalentTagResult.rows[0].book.tags, ['Fantasy', 'Magic']);
   assert.ok(!issueCodes(equivalentTagResult.rows[0]).has('conflicting_source_columns'));
 
+  const complementaryLists = await analyzeBookImportRows([{
+    Titel: 'Aanvullende lijsten',
+    Auteur: 'A Auteur',
+    'ISBN-nummer': ISBN,
+    Tags: 'fantasy; Magic',
+    Keywords: 'magic; geschiedenis',
+    'Thema\'s': 'Spanning',
+    Thema: 'Avontuur; spanning',
+  }]);
+  assert.deepStrictEqual(complementaryLists.rows[0].book.tags, ['fantasy', 'Magic', 'geschiedenis']);
+  assert.deepStrictEqual(complementaryLists.rows[0].book.manualThemes, ['Spanning', 'Avontuur']);
+  assert.ok(!issueCodes(complementaryLists.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(complementaryLists.groups.length, 1);
+
+  const sameSuggestionColumns = { Titel: 'Gelijke ISBN-suggesties', Auteur: 'A Auteur' };
+  Object.defineProperty(sameSuggestionColumns, 'ISBN-nummer', { value: '978030640615', enumerable: true });
+  Object.defineProperty(sameSuggestionColumns, 'ISBN-nummer_1', { value: '9780306406158', enumerable: true });
+  const sameSuggestionResult = await analyzeBookImportRows([sameSuggestionColumns]);
+  assert.strictEqual(sameSuggestionResult.rows[0].book.editionIsbn, '');
+  assert.strictEqual(sameSuggestionResult.rows[0].status, 'unresolved');
+  assert.ok(issueCodes(sameSuggestionResult.rows[0]).has('isbn_repair_suggested'));
+  assert.ok(!issueCodes(sameSuggestionResult.rows[0]).has('conflicting_source_columns'));
+  assert.strictEqual(sameSuggestionResult.groups.length, 0);
+
+  const divergentSuggestions = { Titel: 'Andere ISBN-suggesties', Auteur: 'A Auteur' };
+  Object.defineProperty(divergentSuggestions, 'ISBN-nummer', { value: '978030640615', enumerable: true });
+  Object.defineProperty(divergentSuggestions, 'ISBN-nummer_1', { value: '978043955493', enumerable: true });
+  const divergentSuggestionResult = await analyzeBookImportRows([divergentSuggestions]);
+  assert.ok(issueCodes(divergentSuggestionResult.rows[0]).has('conflicting_source_columns'));
+
   const equivalentClassColumns = { Titel: 'Klassen equivalent', Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(equivalentClassColumns, 'Klassen', { value: '2A; 3B', enumerable: true });
   Object.defineProperty(equivalentClassColumns, 'Klassen_1', { value: '3B; 2A', enumerable: true });
