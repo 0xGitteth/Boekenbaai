@@ -171,6 +171,8 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
 
 async function analyzeReviewedImport(sourceRows, corrections = [], options = {}) {
   if (!Array.isArray(sourceRows)) return { ok: false, error: 'invalid_source_rows' };
+  const maxRows = Number.isInteger(options.maxRows) && options.maxRows > 0 ? options.maxRows : 20000;
+  if (sourceRows.length > maxRows) return { ok: false, error: 'too_many_rows' };
   const normalized = normalizeCorrections(corrections, sourceRows.length);
   if (!normalized.ok) return normalized;
   const rows = applyCorrectionsToRows(sourceRows, normalized.corrections);
