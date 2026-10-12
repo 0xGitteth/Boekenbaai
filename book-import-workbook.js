@@ -284,6 +284,16 @@ function worksheetRangeFromSheet(XLSX, sheet) {
   return worksheetRangeInfo(XLSX, ownDataValue(sheet, '!ref'));
 }
 
+function worksheetRangeSafety(XLSX, sheet, sheetName, limits) {
+  const fullRange = worksheetRangeInfo(XLSX, ownDataValue(sheet, '!fullref'));
+  const visibleRange = worksheetRangeInfo(XLSX, ownDataValue(sheet, '!ref'));
+  // sheet_to_json consumes !ref, whereas a row-limited SheetJS read can
+  // preserve the original extent in !fullref. Never trust only one.
+  const rangeError = worksheetRangeLimitError(fullRange, sheetName, limits)
+    || worksheetRangeLimitError(visibleRange, sheetName, limits);
+  return { rangeInfo: fullRange || visibleRange, rangeError };
+}
+
 function worksheetRangeLimitError(rangeInfo, sheetName, { maxRows, maxColumns, maxWorksheetCells }) {
   if (!rangeInfo) return null;
   // Allow ordinary leading blank rows, but cap absolute row indices so
@@ -423,7 +433,12 @@ function inspectZipExpansion(buffer, options, maxBytes) {
   // header is not at byte zero. Never pass those bytes to SheetJS without
   // inspecting their compressed payloads.
   if (!isZipContainer(buffer)) {
-    if (findZipEndOfCentralDirectory(buffer) >= 0) {
+    // The end-directory may no longer be at EOF after junk is appended.
+    // Check for embedded ZIP signatures too so a prefixed ZIP cannot evade
+    // all archive limits simply by adding trailing bytes.
+    const embeddedLocalHeader = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]), 1);
+    const embeddedEndDirectory = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]), 0);
+    if (embeddedLocalHeader !== -1 || embeddedEndDirectory !== -1) {
       return invalidArchive('zip_leading_bytes_not_supported');
     }
     return { ok: true, isZip: false };
@@ -701,9 +716,8 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
   let resolvedSheet = firstSheet(workbook);
   if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
 
-  let rangeInfo = worksheetRangeFromSheet(XLSX, resolvedSheet.sheet);
-  const initialRangeError = worksheetRangeLimitError(rangeInfo, resolvedSheet.sheetName, worksheetLimits);
-  if (initialRangeError) return initialRangeError;
+  let { rangeInfo, rangeError } = worksheetRangeSafety(XLSX, resolvedSheet.sheet, resolvedSheet.sheetName, worksheetLimits);
+  if (rangeError) return rangeError;
 
   if (rangeInfo && rangeInfo.endRow > initialSheetRows && rangeInfo.rowCount <= maxRows + 1) {
     try {
@@ -713,9 +727,9 @@ function readBookImportWorkbook(XLSX, input, options = {}) {
     }
     resolvedSheet = firstSheet(workbook);
     if (!resolvedSheet) return { ok: false, error: 'missing_sheet' };
-    rangeInfo = worksheetRangeFromSheet(XLSX, resolvedSheet.sheet) || rangeInfo;
-    const rereadRangeError = worksheetRangeLimitError(rangeInfo, resolvedSheet.sheetName, worksheetLimits);
-    if (rereadRangeError) return rereadRangeError;
+    const rereadSafety = worksheetRangeSafety(XLSX, resolvedSheet.sheet, resolvedSheet.sheetName, worksheetLimits);
+    rangeInfo = rereadSafety.rangeInfo || rangeInfo;
+    if (rereadSafety.rangeError) return rereadSafety.rangeError;
   }
 
   let rows;

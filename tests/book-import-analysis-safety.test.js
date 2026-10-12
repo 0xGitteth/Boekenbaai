@@ -108,6 +108,18 @@ module.exports = async function runSafetyTests() {
     assert.strictEqual(numericRow.book.barcode, '');
     assert.ok(codes(numericRow).has('invalid_physical_barcode'));
   }
+  const unsafeCombinedBarcodeRows = await analyzeBookImportRows([
+    { Titel: 'Negatieve combinatie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': -123 },
+    { Titel: 'Kommagetal combinatie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': 12.5 },
+    { Titel: 'Groot getal combinatie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Barcode / ISBN': 1e21 },
+  ]);
+  for (const combinedRow of unsafeCombinedBarcodeRows.rows) {
+    assert.strictEqual(combinedRow.status, 'conflict');
+    assert.strictEqual(combinedRow.book.barcode, '');
+    assert.ok(codes(combinedRow).has('invalid_physical_barcode')
+      || codes(combinedRow).has('unsupported_identifier_type'));
+  }
+
   const safeNumberBarcode = await analyzeBookImportRows([{
     Titel: 'Veilige barcode', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: 123456,
   }]);
@@ -231,6 +243,30 @@ module.exports = async function runSafetyTests() {
   }, Buffer.from('x'));
   assert.strictEqual(maskedWideRange.error, 'too_many_columns');
   assert.strictEqual(materializedMaskedWideSheet, false, 'Invalid !fullref must not mask a bounded !ref width check');
+
+  let convertedContradictorySheet = false;
+  const contradictoryRange = readBookImportWorkbook({
+    read() {
+      return { SheetNames: ['B'], Sheets: { B: { '!fullref': 'A1:B2', '!ref': 'A1:XFD2' } } };
+    },
+    utils: {
+      sheet_to_json() { convertedContradictorySheet = true; return []; },
+    },
+  }, Buffer.from('x'));
+  assert.strictEqual(contradictoryRange.error, 'too_many_columns');
+  assert.strictEqual(convertedContradictorySheet, false, 'A narrow !fullref must not mask a dangerous !ref');
+
+  let convertedContradictoryFullSheet = false;
+  const contradictoryFullRange = readBookImportWorkbook({
+    read() {
+      return { SheetNames: ['B'], Sheets: { B: { '!fullref': 'A1:XFD2', '!ref': 'A1:B2' } } };
+    },
+    utils: {
+      sheet_to_json() { convertedContradictoryFullSheet = true; return []; },
+    },
+  }, Buffer.from('x'));
+  assert.strictEqual(contradictoryFullRange.error, 'too_many_columns');
+  assert.strictEqual(convertedContradictoryFullSheet, false, 'Both declared ranges must be independently bounded');
 
   let materializedLargeCellRange = false;
   const largeCellRange = readBookImportWorkbook({
