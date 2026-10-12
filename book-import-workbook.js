@@ -436,8 +436,8 @@ function inspectZipExpansion(buffer, options, maxBytes) {
     // The end-directory may no longer be at EOF after junk is appended.
     // Check for embedded ZIP signatures too so a prefixed ZIP cannot evade
     // all archive limits simply by adding trailing bytes.
-    const embeddedLocalHeader = buffer.indexOf('PK\\x03\\x04', 1, 'binary');
-    const embeddedEndDirectory = buffer.indexOf('PK\\x05\\x06', 0, 'binary');
+    const embeddedLocalHeader = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]), 1);
+    const embeddedEndDirectory = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]), 0);
     if (embeddedLocalHeader !== -1 || embeddedEndDirectory !== -1) {
       return invalidArchive('zip_leading_bytes_not_supported');
     }
