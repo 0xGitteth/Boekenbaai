@@ -4,7 +4,7 @@
 // worksheet rows and re-run through PR2; clients cannot supply analyzed results
 // or copy lists to the persistence layer.
 const { analyzeBookImportRows } = require('./book-import-analysis');
-const { mapImportRow, safeRowEntries, worksheetRowNumber } = require('./book-import-workbook');
+const { mapImportRow, safeRowEntries } = require('./book-import-workbook');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 
 const CORRECTION_COLUMNS = Object.freeze({
@@ -96,8 +96,10 @@ function cloneOriginalRow(source) {
     if (typeof header !== 'string' || header === '__proto__' || header === 'constructor' || header === 'prototype') continue;
     row[header] = value;
   }
-  const worksheetIndex = worksheetRowNumber(source);
-  if (worksheetIndex !== null) Object.defineProperty(row, '__rowNum__', { value: worksheetIndex, configurable: true });
+  const worksheetIndex = ownData(source, '__rowNum__');
+  if (Number.isInteger(worksheetIndex) && worksheetIndex >= 0) {
+    Object.defineProperty(row, '__rowNum__', { value: worksheetIndex, configurable: true });
+  }
   return row;
 }
 
