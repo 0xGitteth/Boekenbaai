@@ -108,6 +108,11 @@ async function run() {
     assert.ok(saved.books.every((book) => book.status === 'available'));
     assert.ok(saved.books.some((book) => book.metadataIsbn === ISBN1 && book.barcode === '23456'));
     assert.ok(saved.books.some((book) => book.metadataIsbn === ISBN2));
+    assert.strictEqual(saved.books.find((book) => book.metadataIsbn === ISBN2).barcode, ISBN2,
+      'An unlabelled physical copy needs a scan-friendly fallback barcode');
+    const isbnBarcodeLookup = await call('/api/books/barcode/' + ISBN2, token1);
+    assert.strictEqual(isbnBarcodeLookup.status, 200);
+    assert.strictEqual(isbnBarcodeLookup.body.groups[0].totalCopies, 1);
     assert.strictEqual(saved.bookImportReports.length, 1);
     assert.strictEqual(saved.bookImportReports[0].rows.length, 2);
     assert.strictEqual(saved.books[0].importInfo.importJobId, applied.body.result.batchId);
