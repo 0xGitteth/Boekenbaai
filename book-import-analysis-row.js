@@ -357,7 +357,9 @@ function normalizeIdentifierFields(mapped, row, book) {
   if (!isBlankCellValue(ambiguousValue) && !ambiguous.canonical && !blocked.has('ambiguousIdentifier')
     && !ambiguousLikelyIsbn && !ambiguous.suggestion && !ambiguous.unsupportedType) {
     const rawAmbiguousBarcode = valueText(ambiguousValue);
-    const normalizedAmbiguousBarcode = normalizeRuntimeBarcode(rawAmbiguousBarcode);
+    const invalidNumericBarcode = typeof ambiguousValue === 'number'
+      && (!Number.isSafeInteger(ambiguousValue) || ambiguousValue < 0);
+    const normalizedAmbiguousBarcode = invalidNumericBarcode ? '' : normalizeRuntimeBarcode(rawAmbiguousBarcode);
     if (normalizedAmbiguousBarcode) {
       ambiguousAsBarcode = true;
       addIssue(row, 'ambiguous_identifier_interpreted_as_barcode', 'warning');
