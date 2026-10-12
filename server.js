@@ -1596,6 +1596,21 @@ function saveDb(db) {
   fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
 }
 
+// The reviewed book import is one confirmed transaction. Write its complete
+// database snapshot to a sibling file first, then atomically replace the old
+// snapshot so a failed or interrupted write cannot leave half a JSON document.
+function saveReviewedBookImportDb(db) {
+  const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
+  try {
+    fs.writeFileSync(temporaryPath, JSON.stringify(db, null, 2), { flag: 'wx', mode: 0o600 });
+    fs.renameSync(temporaryPath, DATA_PATH);
+  } finally {
+    try { fs.unlinkSync(temporaryPath); } catch (error) {
+      if (error.code !== 'ENOENT') console.warn('Tijdelijke importdatabase opruimen mislukt:', error.message);
+    }
+  }
+}
+
 function hashPassword(password) {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
@@ -4576,7 +4591,7 @@ async function handleApi(req, res, requestUrl) {
             type: 'books_import_reviewed', performedBy: user.id,
             message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd`,
           });
-          saveDb(database);
+          saveReviewedBookImportDb(database);
           const result = { batchId, created: newCopies.length, importedRows: plan.created.length, report };
           bookImportStageStore.finishApply(stage, result);
           return sendJson(res, 200, importStageView(stage));
