@@ -11,6 +11,7 @@
     source_conflict_or_missing_identity: 'Corrigeer de brongegevens of sla deze rij over.',
     warnings_need_confirmation: 'Controleer de waarschuwingen en geef toestemming voordat je importeert.',
     loan_context_requires_followup: 'Volgens Excel is dit boek al uitgeleend. Corrigeer de leenstatus of sla de rij over; PR5 ondersteunt het overnemen van leningen.',
+    location_context_requires_followup: 'Er staat klas- of locatie-informatie in Excel die Boekenbaai nog niet veilig kan overnemen. Corrigeer die gegevens of sla deze rij over.',
     skipped: 'Wordt niet geïmporteerd.',
   };
   const issueNames = {

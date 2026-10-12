@@ -4569,6 +4569,11 @@ async function handleApi(req, res, requestUrl) {
               easyReading: row.book.easyReading,
               suitableForExamList: row.book.suitableForExamList,
               tags: row.book.tags, manualThemes: row.book.manualThemes,
+              // Keep resolved classroom shelf information on every created
+              // copy as well as in the report; the future lending workflow
+              // can use it without recovering an old upload.
+              fixedLocation: row.context?.fixedLocation?.status === 'resolved'
+                ? row.context.fixedLocation.label : null,
               importInfo: normalizeBookImportInfo({
                 importedAt: now, importedBy: user.id, importSource: 'excel_reviewed',
                 importJobId: batchId, importStatus: 'created',

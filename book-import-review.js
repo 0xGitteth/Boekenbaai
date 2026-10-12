@@ -138,10 +138,16 @@ function existingEditionMatch(row, existingBooks) {
   const found = [];
   for (const book of existingBooks) {
     if (!book || typeof book !== 'object') continue;
-    const evidence = canonicalizeBookIsbn13(book.editionIsbn)
-      || canonicalizeBookIsbn13(book.metadataIsbn)
-      || canonicalizeBookIsbn13(book.barcode);
-    if (evidence !== isbn) continue;
+    // A physical copy can carry both its current edition ISBN and an older
+    // metadata ISBN. A stale/mismatched first identifier must not hide a
+    // valid match in another identifier and create a duplicate edition.
+    const knownIsbns = [
+      canonicalizeBookIsbn13(book.editionIsbn),
+      canonicalizeBookIsbn13(book.metadataIsbn),
+      canonicalizeBookIsbn13(book.isbn13),
+      canonicalizeBookIsbn13(book.barcode),
+    ];
+    if (!knownIsbns.includes(isbn)) continue;
     found.push({
       id: book.id || '',
       title: typeof book.title === 'string' ? book.title : '',
@@ -159,12 +165,22 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
     // PR5 creates real student/class checkouts. Never make an active loan
     // appear available merely because the import was confirmed in PR3.
     const hasActiveLoan = Boolean(row.context?.studentLoan || row.context?.classLoan);
-    const blocking = row.status === 'conflict' || row.status === 'unresolved' || hasActiveLoan;
+    // Acknowledging a warning is not consent to silently discard a school's
+    // physical location, class assignment or "not in library" information.
+    // PR4/5 owns the eventual mapping into the real inventory/loan models.
+    const hasUnrepresentedContext = Boolean(
+      (Array.isArray(row.context?.classContext) && row.context.classContext.length)
+      || row.context?.libraryPresence
+      || (row.context?.fixedLocation && row.context.fixedLocation.status !== 'resolved')
+    );
+    const blocking = row.status === 'conflict' || row.status === 'unresolved'
+      || hasActiveLoan || hasUnrepresentedContext;
     const requiresReview = matches.length > 0 || (row.status === 'warning' && !acceptWarnings);
     const canCreate = !shouldSkip && !blocking && !requiresReview;
     const reason = shouldSkip ? 'skipped'
       : hasActiveLoan ? 'loan_context_requires_followup'
-        : (row.status === 'conflict' || row.status === 'unresolved') ? 'source_conflict_or_missing_identity'
+        : hasUnrepresentedContext ? 'location_context_requires_followup'
+          : (row.status === 'conflict' || row.status === 'unresolved') ? 'source_conflict_or_missing_identity'
           : matches.length ? 'existing_edition_requires_review'
             : (requiresReview ? 'warnings_need_confirmation' : '');
     return { index: row.index, worksheetRow: row.sourceRowNumber, status: row.status, canCreate, reason, existing: matches };

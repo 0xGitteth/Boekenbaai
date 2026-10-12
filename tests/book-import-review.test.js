@@ -61,6 +61,26 @@ const OTHER_ISBN = '9780439554930';
   assert.strictEqual(existing.decisions.summary.readyToApply, false);
   assert.strictEqual(existing.decisions.rows[1].canCreate, true);
 
+  // Existing copies can contain different ISBN identifiers from old/manual
+  // imports; ANY matching valid ISBN must block a new edition.
+  const multipleOldIdentifiers = await analyzeReviewedImport(original, [], {
+    existingBooks: [{ id: 'legacy-mixed', title: 'Ander boek',
+      editionIsbn: OTHER_ISBN, metadataIsbn: ISBN, barcode: '5501' }],
+  });
+  assert.strictEqual(multipleOldIdentifiers.decisions.rows[0].reason, 'existing_edition_requires_review');
+
+  // Do not silently import a workbook's class and library presence fields as
+  // plain available shelf stock, even when a user accepts generic warnings.
+  for (const source of [
+    { Titel: 'Klascontext', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Klassen: 'SK BB' },
+    { Titel: 'Niet aanwezig', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Aanwezig bieb': 'nee' },
+  ]) {
+    const contextReview = await analyzeReviewedImport([source], [], { acceptWarnings: true });
+    assert.strictEqual(contextReview.ok, true);
+    assert.strictEqual(contextReview.decisions.rows[0].reason, 'location_context_requires_followup');
+    assert.strictEqual(contextReview.decisions.summary.readyToApply, false);
+  }
+
   const warningRow = [{ Titel: 'Waarschuwing', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
   const unapproved = await analyzeReviewedImport(warningRow);
   assert.strictEqual(unapproved.rows[0].status, 'warning');
