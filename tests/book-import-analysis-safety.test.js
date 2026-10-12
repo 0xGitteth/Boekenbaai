@@ -219,6 +219,22 @@ module.exports = async function runSafetyTests() {
   assert.strictEqual(largeCellRange.worksheetCells, 200);
   assert.strictEqual(materializedLargeCellRange, false, 'Excessive worksheet cell ranges must be rejected before JSON materialization');
 
+  let sparseSheetReads = 0;
+  let materializedSparseSheet = false;
+  const sparseHighRow = readBookImportWorkbook({
+    read(_input, readOptions) {
+      sparseSheetReads += 1;
+      assert.strictEqual(readOptions.sheetRows, 4);
+      return { SheetNames: ['B'], Sheets: { B: { '!fullref': 'A999999:A1000000', '!ref': 'A1:A2' } } };
+    },
+    utils: {
+      sheet_to_json() { materializedSparseSheet = true; return []; },
+    },
+  }, Buffer.from('x'), { maxRows: 2 });
+  assert.strictEqual(sparseHighRow.error, 'too_many_rows');
+  assert.strictEqual(sparseSheetReads, 1, 'Sparse high row indices must not trigger an unbounded reread');
+  assert.strictEqual(materializedSparseSheet, false, 'Sparse high row indices must be rejected before JSON materialization');
+
   const tooMany = readBookImportWorkbook({
     read() { return { SheetNames: ['B'], Sheets: { B: {} } }; },
     utils: { sheet_to_json() { return new Array(3).fill({ Titel: 'x' }); } },
