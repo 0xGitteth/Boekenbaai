@@ -286,8 +286,10 @@ function worksheetRangeFromSheet(XLSX, sheet) {
 
 function worksheetRangeLimitError(rangeInfo, sheetName, { maxRows, maxColumns, maxWorksheetCells }) {
   if (!rangeInfo) return null;
-  if (rangeInfo.rowCount > maxRows + 1) {
-    return { ok: false, error: 'too_many_rows', sheetName, worksheetRows: rangeInfo.rowCount, maxRows };
+  // A sparse sheet starting at an enormous row index can make sheetRows-based
+  // rereads expensive even when its apparent rowCount is small.
+  if (rangeInfo.endRow > maxRows + 1) {
+    return { ok: false, error: 'too_many_rows', sheetName, worksheetRows: rangeInfo.endRow, maxRows };
   }
   if (rangeInfo.columnCount > maxColumns) {
     return {
