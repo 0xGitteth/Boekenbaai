@@ -131,7 +131,15 @@
     let busy = false;
     let openEditor = null;
     let warningsAccepted = false;
+    let currentApplyButton = null;
     const PAGE_SIZE = 15;
+    const hasUnreviewedChanges = () => {
+      if (!stage) return true;
+      const byIndex = (left, right) => left.index - right.index;
+      return warningsAccepted !== stage.acceptWarnings
+        || JSON.stringify(Array.from(corrections.values()).sort(byIndex))
+          !== JSON.stringify([...(stage.corrections || [])].sort(byIndex));
+    };
     const setNotice = (text) => { notice.textContent = text; };
     const setBusy = (value) => { busy = value; analyze.disabled = busy; };
 
@@ -174,6 +182,9 @@
         : { index, fields: {} };
       next.fields[field] = value;
       corrections.set(index, next);
+      // Prevent applying the PREVIOUS server review while the editor contains
+      // changes that have not yet been checked and saved.
+      if (currentApplyButton) currentApplyButton.disabled = true;
     }
 
     function editRow(row, host) {
@@ -216,7 +227,7 @@
             link.href = url;
             link.download = 'boekenbaai-import-' + done.batchId + '.json';
             link.click();
-            URL.revokeObjectURL(url);
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
           });
           results.append(download);
         }
@@ -242,7 +253,7 @@
       const warnCheck = make('input');
       warnCheck.type = 'checkbox';
       warnCheck.checked = warningsAccepted;
-      warnCheck.addEventListener('change', () => { warningsAccepted = warnCheck.checked; });
+      warnCheck.addEventListener('change', () => { warningsAccepted = warnCheck.checked; render(); });
       warnLabel.append(warnCheck, document.createTextNode(' Ik heb alle waarschuwingen gecontroleerd en accepteer deze.'));
       const checkButton = button('Correcties controleren', 'btn btn--secondary');
       checkButton.addEventListener('click', () => run(async () => {
@@ -254,7 +265,8 @@
         setNotice('Correcties en waarschuwingen zijn opnieuw gecontroleerd.');
       }, 'Wijzigingen worden opnieuw geanalyseerd…'));
       const applyButton = button('Definitief importeren', 'btn');
-      applyButton.disabled = !decisions.summary.readyToApply;
+      currentApplyButton = applyButton;
+      applyButton.disabled = !decisions.summary.readyToApply || hasUnreviewedChanges();
       applyButton.addEventListener('click', () => {
         const count = summary.physicalCopies || 0;
         if (!window.confirm('Je staat op het punt om ' + count + ' exemplaren toe te voegen. Weet je zeker dat alle gegevens kloppen?')) return;
