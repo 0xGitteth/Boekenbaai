@@ -111,6 +111,15 @@ async function run() {
     assert.strictEqual(saved.bookImportReports.length, 1);
     assert.strictEqual(saved.bookImportReports[0].rows.length, 2);
     assert.strictEqual(saved.books[0].importInfo.importJobId, applied.body.result.batchId);
+    const reportId = applied.body.result.batchId;
+    assert.strictEqual((await call('/api/admin/book-import-reports/' + reportId, null)).status, 403);
+    const storedReport = await call('/api/admin/book-import-reports/' + reportId, token1);
+    assert.strictEqual(storedReport.status, 200);
+    assert.strictEqual(storedReport.body.rows.length, 2);
+    const reportList = await call('/api/admin/book-import-reports', token2);
+    assert.strictEqual(reportList.status, 200);
+    assert.strictEqual(reportList.body.reports[0].id, reportId);
+    assert.strictEqual(reportList.body.reports[0].rows, undefined, 'Report lists must not disclose raw context');
 
     const duplicateStage = await call('/api/admin/book-import-stages', token1, {
       file: fileBase64([{ Titel: 'Kopie test', Auteur: 'Auteur', 'ISBN-nummer': ISBN1 }]),
