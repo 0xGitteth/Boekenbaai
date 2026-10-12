@@ -114,7 +114,10 @@ function buildStageApplyPlan(analysis, existingBooks, { maxCopies = 5000 } = {})
   const existingBarcodes = new Set((existingBooks || [])
     .map((item) => typeof item?.barcode === 'string' ? item.barcode.replace(/[^0-9X]/gi, '').toUpperCase() : '')
     .filter(Boolean));
-  const seen = new Set(existingBarcodes);
+  // Existing barcodes are always reserved. A generated ISBN barcode may
+  // legitimately be shared by several copies of the SAME new edition so the
+  // existing scanner can select an available copy from the barcode group.
+  const seen = new Map(Array.from(existingBarcodes, (barcode) => [barcode, { existing: true }]));
   const created = [];
   let total = 0;
   for (let index = 0; index < decisions.rows.length; index += 1) {
@@ -136,13 +139,19 @@ function buildStageApplyPlan(analysis, existingBooks, { maxCopies = 5000 } = {})
     }
     if (total + copies > maxCopies) return { ok: false, error: 'too_many_copies', index };
     total += copies;
-    const barcode = typeof book.barcode === 'string' ? book.barcode.toUpperCase().replace(/[^0-9X]/g, '') : '';
-    if (barcode) {
-      if (copies !== 1 || seen.has(barcode)) {
-        return { ok: false, error: 'duplicate_physical_barcode', index };
-      }
-      seen.add(barcode);
+    const suppliedBarcode = typeof book.barcode === 'string'
+      ? book.barcode.toUpperCase().replace(/[^0-9X]/g, '') : '';
+    // The running library exposes loaned books by barcode. Never create
+    // copies that exist in storage but cannot be discovered by its scanner.
+    const barcode = suppliedBarcode || editionIsbn;
+    const previous = seen.get(barcode);
+    if ((suppliedBarcode && copies !== 1) || (
+      previous && (previous.existing || suppliedBarcode
+        || !previous.automatic || previous.editionIsbn !== editionIsbn)
+    )) {
+      return { ok: false, error: 'duplicate_physical_barcode', index };
     }
+    if (!previous) seen.set(barcode, { automatic: !suppliedBarcode, editionIsbn });
     created.push({ index, row, editionIsbn, quantity: copies, barcode });
   }
   if (!created.length) return { ok: false, error: 'nothing_to_import' };
