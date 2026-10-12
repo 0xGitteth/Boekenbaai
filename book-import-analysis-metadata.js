@@ -27,7 +27,7 @@ function metadataPayloadFromResult(result) {
   const fields = ownObject(getOwnDataValue(object, 'fields'));
   if (metadata) {
     if (getOwnDataValue(metadata, 'found') !== false) return metadata;
-    if (fields && getOwnDataValue(fields, 'found') !== false) return fields;
+    if (fields && getOwnDataValue(fields, 'found') === true) return fields;
     return null;
   }
   if (fields) {
