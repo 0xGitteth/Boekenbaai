@@ -178,6 +178,42 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(matchingExactWithTitleless.conflict, null);
   assert.strictEqual(matchingExactWithTitleless.candidate.publisher, 'Rijke exacte bron');
 
+  let repeatedIsbnCalls = 0;
+  const repeatedExact = await analyzeBookImportRows(Array.from({ length: 25 }, () => ({
+    Titel: 'Zelfde boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  })), {
+    lookupIsbn: async () => {
+      repeatedIsbnCalls += 1;
+      return { title: 'Zelfde boek', author: 'A Auteur', isbn13: ISBN, publisher: 'Een uitgever', found: true };
+    },
+  });
+  assert.strictEqual(repeatedIsbnCalls, 1, 'Repeated exact ISBN lookups should be cached within the analysis');
+  assert.strictEqual(repeatedExact.rows.length, 25);
+  assert.ok(repeatedExact.rows.every((row) => row.book.publisher === 'Een uitgever'));
+  assert.strictEqual(repeatedExact.summary.physicalCopies, 25);
+
+  let repeatedTitleCalls = 0;
+  const titleRows = await analyzeBookImportRows(Array.from({ length: 3 }, () => ({
+    Titel: 'Nog zonder ISBN', Auteur: 'A Auteur',
+  })), {
+    lookupTitleAuthor: async () => {
+      repeatedTitleCalls += 1;
+      return { title: 'Nog zonder ISBN', author: 'A Auteur', isbn13: ISBN, found: true };
+    },
+  });
+  assert.strictEqual(repeatedTitleCalls, 1, 'Identical title/author lookups should be cached');
+  assert.ok(titleRows.rows.every((row) => row.book.editionIsbn === ISBN));
+
+  let isolatedCalls = 0;
+  const sharedLookup = { lookupIsbn: async () => {
+    isolatedCalls += 1;
+    return { title: 'Isolatie', author: 'A Auteur', isbn13: ISBN, found: true };
+  } };
+  const isolatedRow = [{ Titel: 'Isolatie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }];
+  await analyzeBookImportRows(isolatedRow, sharedLookup);
+  await analyzeBookImportRows(isolatedRow, sharedLookup);
+  assert.strictEqual(isolatedCalls, 2, 'Cache must not leak between separate workbook analyses');
+
   const resolved = await analyzeBookImportRows([{
     Titel: 'Metadata resolve', Auteur: 'A Auteur', 'ISBN-nummer': '978030640615',
   }], {
