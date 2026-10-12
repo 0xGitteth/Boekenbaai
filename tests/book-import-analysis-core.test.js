@@ -33,6 +33,31 @@ module.exports = async function runCoreTests() {
   assert.deepStrictEqual(row.context.fixedLocation, { status: 'resolved', label: 'SK BB', source: 'ml_class_loan_rule' });
   assert.strictEqual(row.provenance.editionIsbn.raw, ISBN);
 
+  // Student placeholders must not defeat the special Makkelijk Lezen
+  // fixed-location rule, while genuine student names must still conflict.
+  for (const placeholder of ['nvt', 'N.V.T.', 'niet van toepassing']) {
+    const withPlaceholder = await analyzeBookImportRows([{
+      Titel: 'Klasboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+      'Makkelijk lezen?': 'ja', 'Geleend door klas': 'StructuurBB',
+      'naam leerling': placeholder,
+    }]);
+    const locationRow = withPlaceholder.rows[0];
+    assert.deepStrictEqual(locationRow.context.fixedLocation, {
+      status: 'resolved', label: 'SK BB', source: 'ml_class_loan_rule',
+    });
+    assert.ok(!codes(locationRow).has('multiple_loan_contexts'));
+    assert.ok(!codes(locationRow).has('student_loan_unmatched'));
+    assert.ok(!codes(locationRow).has('class_loan_unmatched'));
+  }
+  const realStudentWithClassLoan = await analyzeBookImportRows([{
+    Titel: 'Geleend aan leerling', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+    'Makkelijk lezen?': 'ja', 'Geleend door klas': 'StructuurBB',
+    'naam leerling': 'Lisa Leerling',
+  }], { students: [{ id: 's1', name: 'Lisa Leerling' }] });
+  assert.ok(codes(realStudentWithClassLoan.rows[0]).has('multiple_loan_contexts'));
+  assert.strictEqual(realStudentWithClassLoan.rows[0].context.fixedLocation, undefined);
+
+
   const semantics = await analyzeBookImportRows([
     { Titel: 'Schoolboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'eigen boek' },
     { Titel: 'Eigen boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT },
