@@ -730,6 +730,21 @@ function attachDerivedThemeFields(book, options = {}) {
   };
 }
 
+// Align the staged Excel preview with the theme derivation that runs when a
+// book is actually saved. An explicit manual clear must still win.
+function includeDerivedThemesInImportPreview(analysis) {
+  if (!analysis?.ok) return;
+  for (const row of analysis.rows || []) {
+    if (row.status === 'skipped' || !row.book || !row.provenance) continue;
+    if (row.provenance.themes?.source === 'manual' || row.book.themes?.length) continue;
+    const themes = deriveThemesFromTags(row.book.tags).themes;
+    if (themes.length) {
+      row.book.themes = themes;
+      row.provenance.themes = { source: 'derived', detail: 'tags' };
+    }
+  }
+}
+
 const EMPTY_DB = {
   books: [],
   students: [],
@@ -4666,6 +4681,7 @@ async function handleApi(req, res, requestUrl) {
           acceptWarnings: false,
         });
         if (!analysis.ok) return sendJson(res, 400, { message: 'Importanalyse mislukt.', error: analysis.error });
+        includeDerivedThemesInImportPreview(analysis);
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
         analysis.decisions = buildReviewDecisions(analysis, loadDb().books);
@@ -4719,6 +4735,7 @@ async function handleApi(req, res, requestUrl) {
           if (!reviewed.ok) {
             return sendJson(res, 400, { message: 'Een correctie is ongeldig.', error: reviewed.error, field: reviewed.field, index: reviewed.index });
           }
+          includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
           reviewed.decisions = buildReviewDecisions(reviewed, loadDb().books, {
             acceptWarnings: body.acceptWarnings,
