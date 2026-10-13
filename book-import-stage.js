@@ -37,7 +37,7 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     const id = createId();
     const stage = {
       id, ownerId, sourceRows, workbook, fileName,
-      analysis, corrections: [], acceptWarnings: false,
+      analysis, initialAnalysis: analysis, corrections: [], acceptWarnings: false,
       options, revision: 1, status: 'open',
       createdAt: new Date(now()).toISOString(), expiresAt: now() + ttlMs,
       result: null,
@@ -75,6 +75,7 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     stage.result = result;
     stage.sourceRows = null;
     stage.analysis = null;
+    stage.initialAnalysis = null;
     stage.expiresAt = now() + ttlMs;
   }
   function abortApply(stage) {
