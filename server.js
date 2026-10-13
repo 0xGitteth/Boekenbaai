@@ -4992,6 +4992,10 @@ async function handleApi(req, res, requestUrl) {
               id: batchId, createdBy: user.id, importedAt: now,
               mode: 'inventory_sync', fileName: stage.fileName,
               restoredLoans: restoredLoanEvents.length,
+              loanChanges: restoredLoanEvents.map((event) => ({
+                bookId: event.bookId, borrowerType: event.classId ? 'class' : 'student',
+                borrowerId: event.classId || event.studentId,
+              })),
               count: createdCopies.length,
               sourceRows: stage.analysis.summary.sourceRows,
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
@@ -5003,7 +5007,14 @@ async function handleApi(req, res, requestUrl) {
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
             database.books.push(...createdCopies);
-            for (const event of restoredLoanEvents) appendHistory(database, event);
+            // A large historic loan migration must not consume the last 200
+            // activity events one per book. Retain every individual borrower
+            // and book ID in the admin-only durable import report instead.
+            if (restoredLoanEvents.length) appendHistory(database, {
+              type: 'loans_imported', performedBy: user.id, importBatchId: batchId,
+              count: restoredLoanEvents.length,
+              message: `${restoredLoanEvents.length} bestaande Excel-uitleningen overgenomen`,
+            });
             appendHistory(database, {
               type: 'books_inventory_sync', performedBy: user.id,
               message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
@@ -5126,6 +5137,10 @@ async function handleApi(req, res, requestUrl) {
             id: batchId, createdBy: user.id, importedAt: now,
             fileName: stage.fileName, count: newCopies.length,
             restoredLoans: importedLoanHistory.length,
+            loanChanges: importedLoanHistory.map((event) => ({
+              bookId: event.bookId, borrowerType: event.classId ? 'class' : 'student',
+              borrowerId: event.classId || event.studentId,
+            })),
             sourceRows: stage.analysis.summary.sourceRows,
             rows: sourceReports.sort((a, b) => a.index - b.index),
           };
@@ -5133,7 +5148,13 @@ async function handleApi(req, res, requestUrl) {
           database.bookImportReports.push(report);
           database.bookImportReports = database.bookImportReports.slice(-30);
           database.books.push(...newCopies);
-          for (const event of importedLoanHistory) appendHistory(database, event);
+          // Only one summary activity event. Per-book audit detail remains
+          // in the durable administrator report, not the capped history feed.
+          if (importedLoanHistory.length) appendHistory(database, {
+            type: 'loans_imported', performedBy: user.id, importBatchId: batchId,
+            count: importedLoanHistory.length,
+            message: `${importedLoanHistory.length} bestaande Excel-uitleningen overgenomen`,
+          });
           appendHistory(database, {
             type: 'books_import_reviewed', performedBy: user.id,
             message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd, ${importedLoanHistory.length} bestaande leningen overgenomen`,
