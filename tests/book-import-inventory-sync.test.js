@@ -68,6 +68,17 @@ assert.strictEqual(alreadyElsewhere.rows[0].reason, 'barcode_belongs_to_other_ed
 const duplicate = preview([row(0, 1, { barcode: '111222' }), row(1, 1, { barcode: '111222' })]);
 assert.strictEqual(duplicate.rows[0].reason, 'duplicate_printed_barcode');
 
+// A generated ISBN scan code may not be reused as another new edition's
+// printed physical barcode inside the same workbook.
+const crossEditionScanConflict = preview([
+  row(0, 1),
+  row(1, 1, { editionIsbn: OTHER, title: 'Andere titel', barcode: ISBN }),
+]);
+assert.strictEqual(crossEditionScanConflict.rows[0].reason, 'workbook_physical_barcode_conflict');
+assert.strictEqual(crossEditionScanConflict.rows[1].reason, 'workbook_physical_barcode_conflict');
+assert.strictEqual(crossEditionScanConflict.summary.readyToApply, false);
+assert.deepStrictEqual(crossEditionScanConflict.proposedAdds, []);
+
 const unknownLoan = preview([{ ...row(0, 1), context: { studentLoan: { id: 's1' } } }]);
 assert.strictEqual(unknownLoan.rows[0].reason, 'loan_context_requires_followup');
 
