@@ -53,6 +53,12 @@ const existing = inspectReviewedLoans([row(0)], {
   classes, books: alreadyBorrowed,
 });
 assert.strictEqual(existing.get(0).error, 'student_already_borrowed_edition');
+const legacyInvalidIsbnField = inspectReviewedLoans([row(0)], {
+  students: [{ ...students[0], borrowedBooks: [{ bookId: 'existing-book' }] }, students[1]],
+  classes, books: [{ id: 'existing-book', editionIsbn: 'bad-legacy-id', metadataIsbn: ISBN }],
+});
+assert.strictEqual(legacyInvalidIsbnField.get(0).error, 'student_already_borrowed_edition',
+  'An invalid legacy edition field must never conceal the valid metadata ISBN');
 const skipped = inspectReviewedLoans([{ ...row(0), status: 'skipped' }], {
   students, classes, books: alreadyBorrowed,
 });
