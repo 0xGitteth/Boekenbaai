@@ -285,12 +285,18 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
   const normalized = normalizeCorrections(corrections, sourceRows.length);
   if (!normalized.ok) return normalized;
   const rows = applyCorrectionsToRows(sourceRows, normalized.corrections);
-  const correctedThemeRowIndexes = new Set([...normalized.corrections.entries()]
-    .filter(([, entry]) => entry.skip !== true
-      && Object.prototype.hasOwnProperty.call(entry.fields, 'themes'))
-    .map(([index]) => index));
+  // An explicit edit is authoritative, including the empty string. A blank
+  // correction must not be mistaken for missing metadata during reanalysis.
+  const metadataFields = new Set([
+    'title', 'author', 'publisher', 'publishedYear', 'pageCount',
+    'language', 'description', 'coverUrl', 'tags', 'themes',
+  ]);
+  const correctedMetadataFieldsByRow = new Map([...normalized.corrections.entries()]
+    .filter(([, entry]) => !entry.skip)
+    .map(([index, entry]) => [index, new Set(Object.keys(entry.fields)
+      .filter((field) => metadataFields.has(field)))]));
   const analysis = await analyzeBookImportRows(rows, {
-    ...options, correctedThemeRowIndexes,
+    ...options, correctedMetadataFieldsByRow,
   });
   if (!analysis.ok) return analysis;
   const decisions = buildReviewDecisions(analysis, Array.isArray(options.existingBooks) ? options.existingBooks : [],
