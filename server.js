@@ -6541,6 +6541,9 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
+      if (user.role === 'teacher' && !mayManageStudent(db, user, student)) {
+        return sendJson(res, 403, { message: 'Je kunt alleen uitleengegevens van jouw leerlingen bekijken.' });
+      }
       const loans = getStudentLoanHistory(db, studentId);
       return sendJson(res, 200, loans);
     }
@@ -6556,6 +6559,10 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Alleen medewerkers kunnen leerlingstatistieken bekijken' });
       }
       const db = getDb();
+      const student = findStudentById(db, studentId);
+      if (user.role === 'teacher' && !mayManageStudent(db, user, student)) {
+        return sendJson(res, 403, { message: 'Je kunt alleen statistieken van jouw leerlingen bekijken.' });
+      }
       const stats = buildStudentStats(db, studentId);
       if (!stats) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
@@ -7627,10 +7634,12 @@ async function handleApi(req, res, requestUrl) {
       ].filter(Boolean));
 
       const classHistory = (Array.isArray(db.history) ? db.history : []).filter(
-        (entry) => entry && (
-          (entry.type === 'check_out' && studentIdsInClass.has(entry.studentId))
-          || (entry.type === 'check_out_class' && entry.classId === klass.id)
-        )
+        (entry) => entry && entry.type === 'check_out' && studentIdsInClass.has(entry.studentId)
+      );
+      // A class checkout has no student borrower. Keep it separate from
+      // reader rankings, and include it in the class-level aggregate.
+      const classCheckoutHistory = (Array.isArray(db.history) ? db.history : []).filter(
+        (entry) => entry && entry.type === 'check_out_class' && entry.classId === klass.id
       );
       const borrowCountPerStudent = new Map();
       for (const entry of classHistory) {
@@ -7760,6 +7769,9 @@ async function handleApi(req, res, requestUrl) {
         activeLoans: activeLoanCount,
         currentLoans: activeLoanCount,
         activeLoanCount: activeLoanCount,
+        classLoanCount: db.books.filter((book) =>
+          book.status === 'borrowed' && book.borrowedByClassId === klass.id).length,
+        classBorrowHistoryCount: classCheckoutHistory.length,
         activeStudents: activeReaders,
         activeReaders,
         readerCount: activeReaders,
