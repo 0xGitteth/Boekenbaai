@@ -4633,7 +4633,13 @@ async function handleApi(req, res, requestUrl) {
         if (typeof body.file !== 'string' || !body.file) {
           return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
         }
-        const workbook = readBookImportWorkbook(XLSX, body.file, { maxRows: 1500, maxCopies: 5000 });
+        // Inventory-sync rows describe desired TOTAL stock, not copies to
+        // create. An existing school library may exceed the create cap.
+        // The inventory planner independently caps NEW additions at 5,000.
+        const maxAnalyzedCopies = mode === 'inventory_sync' ? 1_500_000 : 5000;
+        const workbook = readBookImportWorkbook(XLSX, body.file, {
+          maxRows: 1500, maxCopies: maxAnalyzedCopies,
+        });
         if (!workbook.ok) {
           return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
         }
@@ -4666,7 +4672,7 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, maxRows: 1500, maxCopies: 5000,
+          mode, maxRows: 1500, maxCopies: maxAnalyzedCopies,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
