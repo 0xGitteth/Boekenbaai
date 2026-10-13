@@ -8,6 +8,8 @@ const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-r
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
+const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
+  normalizeDueDate, publicBook } = require('./book-loan-policy');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -1157,6 +1159,9 @@ function ensureBookShape(book) {
   safeBook.easyReading = Boolean(source.easyReading);
   safeBook.status = typeof source.status === 'string' ? source.status : 'available';
   safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
+  safeBook.borrowedByClassId = typeof source.borrowedByClassId === 'string'
+    && source.borrowedByClassId.trim() ? source.borrowedByClassId : null;
+  safeBook.borrowedAt = typeof source.borrowedAt === 'string' ? source.borrowedAt : null;
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
   safeBook.tags = parseMultiValueField(source.tags);
   safeBook.manualThemes = normalizeManualThemes(source.manualThemes);
@@ -1177,11 +1182,7 @@ function ensureBookShape(book) {
 }
 
 function sanitizeBookForResponse(book) {
-  if (!book || typeof book !== 'object') {
-    return book;
-  }
-  const { importInfo, ...sanitizedBook } = book;
-  return sanitizedBook;
+  return publicBook(book);
 }
 
 function createBookCopyFromTemplate(template) {
@@ -1191,6 +1192,8 @@ function createBookCopyFromTemplate(template) {
     id: crypto.randomUUID(),
     status: 'available',
     borrowedBy: null,
+    borrowedByClassId: null,
+    borrowedAt: null,
     dueDate: null,
   };
 }
@@ -6304,121 +6307,144 @@ async function handleApi(req, res, requestUrl) {
       });
     }
 
+    // PR5: explicit student or class borrower. Existing student self-checkout
+    // remains supported. Class loans are staff-only and never create fake
+    // student borrowedBooks or erase existing loan history.
     const checkoutMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-out$/);
     if (checkoutMatch && req.method === 'POST') {
-      if (!user) {
-        return sendJson(res, 401, { message: 'Log eerst in om boeken te lenen' });
-      }
-      const db = getDb();
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in om boeken te lenen' });
       const body = await parseBody(req);
+      const db = loadDb(); // After body upload: do not commit stale inventory.
+      const classId = typeof body.classId === 'string' ? body.classId.trim() : '';
+      if (body.classId !== undefined && (!classId || body.studentId)) {
+        return sendJson(res, 400, { message: 'Kies precies één uitleentype: leerling of klas.' });
+      }
       let student = null;
-      if (user.role === 'student') {
+      let klass = null;
+      if (classId) {
+        if (!ensureRole(user, ['teacher', 'admin'])) {
+          return sendJson(res, 403, { message: 'Alleen medewerkers lenen boeken uit aan klassen.' });
+        }
+        klass = db.classes.find((item) => item.id === classId);
+        if (!klass) return sendJson(res, 404, { message: 'Klas niet gevonden.' });
+        if (!mayManageClass(db, user, classId)) {
+          return sendJson(res, 403, { message: 'Je mag alleen boeken voor jouw eigen klassen lenen.' });
+        }
+      } else if (user.role === 'student') {
+        if (body.studentId && body.studentId !== user.id) {
+          return sendJson(res, 403, { message: 'Je kunt alleen voor jezelf lenen.' });
+        }
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
-        if (!body.studentId) {
-          return sendJson(res, 400, { message: 'Selecteer eerst een leerling' });
-        }
         student = findStudentById(db, body.studentId);
+        if (student && !mayManageStudent(db, user, student)) {
+          return sendJson(res, 403, { message: 'Je kunt alleen boeken aan leerlingen uit jouw klassen lenen.' });
+        }
       }
-      if (!student) {
-        return sendJson(res, 400, { message: 'Leerling niet gevonden' });
+      if (!klass && !student) return sendJson(res, 400, { message: 'Selecteer een bestaande leerling of klas.' });
+      if (student && (student.active === false || student.status === 'inactive')) {
+        return sendJson(res, 409, { message: 'Deze leerling is niet meer actief.' });
       }
+      const dueDate = normalizeDueDate(body.dueDate);
+      if (!dueDate.ok) return sendJson(res, 400, { message: 'Ongeldige inleverdatum.' });
       const selection = resolveBookSelection(db, checkoutMatch[1], {
-        body,
-        requireAvailable: true,
-        studentId: student.id,
+        body, requireAvailable: true, studentId: student?.id || null,
       });
-      if (selection.error) {
-        return sendJson(res, selection.statusCode || 400, { message: selection.error });
-      }
+      if (selection.error) return sendJson(res, selection.statusCode || 400, { message: selection.error });
       const { book, group } = selection;
-      if (student.borrowedBooks.some((item) => item.bookId === book.id)) {
-        return sendJson(res, 400, {
-          message: 'Dit boek staat al op jouw uitleenlijst. Lever het eerst in.',
-        });
+      if (book.status === 'borrowed' || book.borrowedBy || book.borrowedByClassId) {
+        return sendJson(res, 409, { message: 'Dit exemplaar is al uitgeleend.' });
       }
-      if (studentHasLoanInGroup(student, group)) {
-        return sendJson(res, 400, {
-          message: 'Je hebt al een exemplaar van deze titel geleend.',
-        });
+      if (student) {
+        if (!Array.isArray(student.borrowedBooks)) student.borrowedBooks = [];
+        if (student.borrowedBooks.some((entry) => entry.bookId === book.id) || studentHasLoanInGroup(student, group)) {
+          return sendJson(res, 409, { message: 'Deze leerling heeft al een exemplaar van deze titel.' });
+        }
       }
-
+      const now = new Date().toISOString();
       book.status = 'borrowed';
-      book.borrowedBy = student.id;
-      book.dueDate = typeof body.dueDate === 'string' && body.dueDate.trim()
-        ? body.dueDate
-        : null;
-      student.borrowedBooks.push({ bookId: book.id, borrowedAt: new Date().toISOString() });
-
-      appendHistory(db, {
-        type: 'check_out',
-        bookId: book.id,
-        studentId: student.id,
+      book.borrowedBy = student?.id || null;
+      book.borrowedByClassId = klass?.id || null;
+      book.borrowedAt = now;
+      book.dueDate = dueDate.value;
+      if (student) student.borrowedBooks.push({ bookId: book.id, borrowedAt: now, dueDate: dueDate.value });
+      appendHistory(db, student ? {
+        type: 'check_out', bookId: book.id, studentId: student.id, performedBy: user.id,
         message: `${student.name} heeft ${book.title} geleend`,
+      } : {
+        type: 'check_out_class', bookId: book.id, classId: klass.id, performedBy: user.id,
+        message: `Voor klas ${klass.name}: ${book.title} uitgeleend`,
       });
       saveDb(db);
-      const payload = { book: sanitizeBookForResponse(book), student };
-      if (group) {
-        payload.group = {
-          id: group.id,
-          title: group.title,
-          author: group.author,
-          metadataIsbn: group.metadataIsbn,
-          barcode: group.barcode,
-          totalCopies: group.totalCopies,
-          availableCopies: group.availableCopies,
-          borrowed: group.borrowed,
-        };
-      }
-      return sendJson(res, 200, payload);
+      return sendJson(res, 200, {
+        book: sanitizeBookForResponse(book), borrowerType: klass ? 'class' : 'student',
+        borrowerId: klass?.id || student?.id,
+      });
     }
 
     const checkinMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-in$/);
     if (checkinMatch && req.method === 'POST') {
-      if (!user) {
-        return sendJson(res, 401, { message: 'Log eerst in om boeken terug te brengen' });
-      }
-      const db = getDb();
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in om boeken terug te brengen' });
       const body = await parseBody(req);
+      const db = loadDb();
+      const classId = typeof body.classId === 'string' ? body.classId.trim() : '';
+      if (body.classId !== undefined && (!classId || body.studentId)) {
+        return sendJson(res, 400, { message: 'Kies precies één uitleentype: leerling of klas.' });
+      }
       let student = null;
-      if (user.role === 'student') {
+      let klass = null;
+      if (classId) {
+        if (!ensureRole(user, ['teacher', 'admin'])) {
+          return sendJson(res, 403, { message: 'Alleen medewerkers kunnen klasuitleningen innemen.' });
+        }
+        klass = db.classes.find((entry) => entry.id === classId);
+        if (!klass) return sendJson(res, 404, { message: 'Klas niet gevonden.' });
+        if (!mayManageClass(db, user, classId)) {
+          return sendJson(res, 403, { message: 'Je kunt alleen uitleningen voor jouw klassen innemen.' });
+        }
+      } else if (user.role === 'student') {
+        if (body.studentId && body.studentId !== user.id) {
+          return sendJson(res, 403, { message: 'Je kunt alleen jouw eigen boeken inleveren.' });
+        }
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
-        if (!body.studentId) {
-          return sendJson(res, 400, { message: 'Selecteer eerst een leerling' });
-        }
         student = findStudentById(db, body.studentId);
+        if (student && !mayManageStudent(db, user, student)) {
+          return sendJson(res, 403, { message: 'Je kunt alleen uitleningen van jouw leerlingen innemen.' });
+        }
       }
-      if (!student) {
-        return sendJson(res, 400, { message: 'Leerling niet gevonden' });
-      }
+      if (!klass && !student) return sendJson(res, 400, { message: 'Selecteer een bestaande leerling of klas.' });
       const selection = resolveBookSelection(db, checkinMatch[1], {
-        body,
-        mustBeBorrowed: true,
-        studentId: student.id,
+        body, mustBeBorrowed: true, studentId: student?.id || null,
       });
-      if (selection.error) {
-        return sendJson(res, selection.statusCode || 400, { message: selection.error });
-      }
+      if (selection.error) return sendJson(res, selection.statusCode || 400, { message: selection.error });
       const { book } = selection;
-      const hadBook = student.borrowedBooks.some((item) => item.bookId === book.id);
-      if (!hadBook) {
-        return sendJson(res, 400, { message: 'Dit boek stond niet op jouw uitleenlijst.' });
+      if (klass) {
+        if (book.borrowedByClassId !== klass.id || book.borrowedBy) {
+          return sendJson(res, 409, { message: 'Dit boek is niet aan deze klas uitgeleend.' });
+        }
+      } else {
+        if (book.borrowedBy !== student.id || book.borrowedByClassId ||
+          !Array.isArray(student.borrowedBooks) ||
+          !student.borrowedBooks.some((entry) => entry.bookId === book.id)) {
+          return sendJson(res, 409, { message: 'Dit boek staat niet op de uitleenlijst van deze leerling.' });
+        }
       }
-
       book.status = 'available';
       book.borrowedBy = null;
+      book.borrowedByClassId = null;
+      book.borrowedAt = null;
       book.dueDate = null;
-      student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== book.id);
-
-      appendHistory(db, {
-        type: 'check_in',
-        bookId: book.id,
-        studentId: student.id,
+      if (student) student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== book.id);
+      appendHistory(db, student ? {
+        type: 'check_in', bookId: book.id, studentId: student.id, performedBy: user.id,
         message: `${student.name} heeft ${book.title} teruggebracht`,
+      } : {
+        type: 'check_in_class', bookId: book.id, classId: klass.id, performedBy: user.id,
+        message: `Klas ${klass.name} heeft ${book.title} teruggebracht`,
       });
       saveDb(db);
-      return sendJson(res, 200, { book: sanitizeBookForResponse(book), student });
+      return sendJson(res, 200, { book: sanitizeBookForResponse(book) });
     }
 
     const barcodeMatch = requestUrl.pathname.match(/^\/api\/books\/barcode\/([\w-]+)$/);
