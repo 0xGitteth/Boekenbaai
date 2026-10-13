@@ -3846,9 +3846,12 @@ async function handleApi(req, res, requestUrl) {
         // legacy job from the same shared administrator account.
         return sendJson(res, 200, { jobId: lease.jobId, reused: true });
       } else if (lease || bookImportStageStore.active()) {
+        const currentStage = bookImportStageStore.active();
         return sendJson(res, 409, {
           message: 'Er is al een boekimport bezig. Bekijk of rond die eerst af.',
           error: 'stage_busy',
+          ...(importKind === 'reviewed' && currentStage
+            ? { active: importStageView(currentStage) } : {}),
         });
       } else {
         const reserved = { kind: importKind, userId: user.id, jobId: null,
