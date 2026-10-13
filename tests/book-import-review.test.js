@@ -165,6 +165,51 @@ const OTHER_ISBN = '9780439554930';
   ], [], { acceptWarnings: true });
   assert.strictEqual(distinctGeneratedCopies.decisions.summary.readyToApply, true);
 
+
+  // Excel wins over optional ISBN metadata. Deliberately clearing an enriched
+  // value is different from leaving a field missing in the original upload.
+  const enrichedSource = [{ Titel: 'Gegevens behouden', Auteur: 'A Auteur', 'ISBN-nummer': OTHER_ISBN }];
+  const lookupIsbn = async (isbn) => ({
+    found: true, isbn13: isbn, title: 'Gegevens behouden', author: 'A Auteur',
+    publisher: 'Metadata uitgever', publishedYear: 2011, pageCount: 320,
+    language: 'nl', description: 'Beschrijving uit metadata',
+    coverUrl: 'https://example.com/boek.jpg', tags: ['fantasie'], themes: ['Avontuur'],
+  });
+  const enriched = await analyzeReviewedImport(enrichedSource, [], { lookupIsbn, acceptWarnings: true });
+  assert.strictEqual(enriched.rows[0].book.publisher, 'Metadata uitgever');
+  assert.deepStrictEqual(enriched.rows[0].book.tags, ['fantasie']);
+  const blankFields = {
+    publisher: '  ', publishedYear: ' ', pageCount: ' ',
+    language: '', description: '', coverUrl: '', tags: ' ', themes: ' ',
+  };
+  const explicitlyCleared = await analyzeReviewedImport(enrichedSource,
+    [{ index: 0, fields: blankFields }], { lookupIsbn, acceptWarnings: true });
+  assert.strictEqual(explicitlyCleared.ok, true);
+  assert.strictEqual(explicitlyCleared.rows[0].book.publisher, '');
+  assert.strictEqual(explicitlyCleared.rows[0].book.publishedYear, null);
+  assert.strictEqual(explicitlyCleared.rows[0].book.pageCount, null);
+  assert.strictEqual(explicitlyCleared.rows[0].book.language, '');
+  assert.strictEqual(explicitlyCleared.rows[0].book.description, '');
+  assert.strictEqual(explicitlyCleared.rows[0].book.coverUrl, '');
+  assert.deepStrictEqual(explicitlyCleared.rows[0].book.tags, []);
+  assert.deepStrictEqual(explicitlyCleared.rows[0].book.themes, []);
+  assert.strictEqual(explicitlyCleared.decisions.summary.readyToApply, true);
+
+  // Explicit user agreement from September: ANY nonblank cell means ML,
+  // including literal 'nee' and 'false'. A warning preserves the original.
+  for (const raw of ['nee', 'false', 'x', 'onbekend']) {
+    const ml = await analyzeReviewedImport([{
+      Titel: 'ML invoer', Auteur: 'A Auteur',
+      'ISBN-nummer': ISBN, 'Makkelijk lezen?': raw,
+    }], [], { acceptWarnings: true });
+    assert.strictEqual(ml.rows[0].book.easyReading, true, 'Nonblank ML must stay true: ' + raw);
+    assert.strictEqual(ml.rows[0].provenance.easyReading.raw, raw);
+  }
+  const blankMl = await analyzeReviewedImport([{
+    Titel: 'ML leeg', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Makkelijk lezen?': '',
+  }], [], { acceptWarnings: true });
+  assert.strictEqual(blankMl.rows[0].book.easyReading, false);
+
   const warningRow = [{ Titel: 'Waarschuwing', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
   const unapproved = await analyzeReviewedImport(warningRow);
   assert.strictEqual(unapproved.rows[0].status, 'warning');
