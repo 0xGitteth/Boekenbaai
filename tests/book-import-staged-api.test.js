@@ -985,9 +985,13 @@ async function run() {
     assert.strictEqual(sameCount.body.decisions.rows[0].action, 'unchanged');
     assert.strictEqual(sameCount.body.decisions.rows[0].borrowedCopies, 1);
     assert.strictEqual(sameCount.body.decisions.summary.addCopies, 0);
-    assert.strictEqual(sameCount.body.decisions.summary.readyToApply, false);
-    assert.strictEqual((await call('/api/admin/book-import-stages/' + sameCount.body.id
-      + '/cancel', token1, { revision: 1 })).status, 200);
+    assert.strictEqual(sameCount.body.decisions.summary.readyToApply, true);
+    const noChangeSync = await call('/api/admin/book-import-stages/' + sameCount.body.id
+      + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(noChangeSync.status, 200, 'No-change reconciliations must be auditable');
+    assert.strictEqual(noChangeSync.body.result.created, 0);
+    assert.strictEqual(noChangeSync.body.result.removed, 0);
+    assert.strictEqual(noChangeSync.body.result.report.rows[0].status, 'unchanged');
 
     const addStock = await call('/api/admin/book-import-stages', token1, {
       mode: 'inventory_sync',
@@ -1034,6 +1038,50 @@ async function run() {
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
       .filter((item) => item.metadataIsbn === syncIsbn).length, 2,
     'A smaller Excel count must never silently remove a library copy');
+
+    // PR4: a lower Excel quantity can be explicitly acknowledged without
+    // deleting stock, losing borrower information or blocking all other work.
+    const retainStage = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Synchronisatieboek', Auteur: 'A Auteur',
+        'ISBN-nummer': syncIsbn, Aantal: 1 }]),
+    });
+    assert.strictEqual(retainStage.status, 201);
+    assert.strictEqual(retainStage.body.decisions.summary.readyToApply, false);
+    const invalidChoice = await call('/api/admin/book-import-stages/' + retainStage.body.id
+      + '/review', token1b, { revision: 1, acceptWarnings: true, corrections: [],
+        inventoryResolutions: [{ isbn: syncIsbn, action: 'remove_everything' }] });
+    assert.strictEqual(invalidChoice.status, 400);
+    assert.strictEqual(invalidChoice.body.error, 'invalid_sync_resolutions');
+    const unknownChoice = await call('/api/admin/book-import-stages/' + retainStage.body.id
+      + '/review', token1b, { revision: 1, acceptWarnings: true, corrections: [],
+        inventoryResolutions: [{ isbn: '9781234567118', action: 'keep_existing' }] });
+    assert.strictEqual(unknownChoice.status, 400);
+    assert.strictEqual(unknownChoice.body.error, 'unknown_sync_resolution');
+    const keepReview = await call('/api/admin/book-import-stages/' + retainStage.body.id
+      + '/review', token1b, { revision: 1, acceptWarnings: true, corrections: [],
+        inventoryResolutions: [{ isbn: syncIsbn, action: 'keep_existing' }] });
+    assert.strictEqual(keepReview.status, 200, JSON.stringify(keepReview.body).slice(0, 400));
+    assert.strictEqual(keepReview.body.revision, 2);
+    assert.strictEqual(keepReview.body.decisions.rows[0].action, 'kept_existing');
+    assert.strictEqual(keepReview.body.decisions.summary.readyToApply, true);
+    assert.deepStrictEqual((await call('/api/admin/book-import-stages/'
+      + retainStage.body.id, token1)).body.inventoryResolutions,
+    [{ isbn: syncIsbn, action: 'keep_existing' }]);
+    const retainedStockSync = await call('/api/admin/book-import-stages/' + retainStage.body.id
+      + '/apply', token1, { revision: 2, confirm: true });
+    assert.strictEqual(retainedStockSync.status, 200);
+    assert.strictEqual(retainedStockSync.body.result.created, 0);
+    assert.strictEqual(retainedStockSync.body.result.removed, 0);
+    assert.strictEqual(retainedStockSync.body.result.retainedEditions, 1);
+    assert.deepStrictEqual(retainedStockSync.body.result.report.inventoryResolutions,
+      [{ isbn: syncIsbn, action: 'keep_existing' }]);
+    assert.strictEqual(retainedStockSync.body.result.report.rows[0].status, 'kept_existing');
+    const safeDbAfterRetention = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(safeDbAfterRetention.books.filter((book) => book.metadataIsbn === syncIsbn).length, 2);
+    assert.strictEqual(safeDbAfterRetention.books.find((book) =>
+      book.id === firstPhysical.id).borrowedBy, 'student-match');
+    assert.ok(safeDbAfterRetention.history.some((event) => event.id === 'loan-sync-regression'));
 
     // Concurrent book creation after preview invalidates the checked plan.
     const syncRaceIsbn = '9781234567118';
