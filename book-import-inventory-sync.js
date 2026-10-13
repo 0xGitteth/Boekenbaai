@@ -243,19 +243,31 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     decisions[addition.index].rowAddCopies += addition.quantity;
   }
 
-  const received = new Set(groups.keys());
-  const absentIds = new Set();
-  const omittedEditions = [];
-  for (const [isbn, books] of inventory.editions) {
-    if (received.has(isbn)) continue;
-    for (const book of books) absentIds.add(book.id || book);
-    if (omittedEditions.length < 50) omittedEditions.push({
-      editionIsbn: isbn, title: books[0]?.title || '(geen titel)',
-      author: books[0]?.author || '', copies: books.length,
-      borrowedCopies: books.filter((book) =>
-        book.status === 'borrowed' || Boolean(book.borrowedBy)).length,
-    });
+  // Every physical copy is counted exactly once. Iterating only known ISBN
+  // groups used to HIDE old books without an ISBN, and could count an
+  // ambiguous multi-ISBN record as "omitted" even when it was present.
+  const presentCopies = new Set();
+  for (const isbn of groups.keys()) {
+    for (const book of inventory.editions.get(isbn) || []) presentCopies.add(book);
   }
+  const omittedGroups = new Map();
+  const absentIds = new Set();
+  for (const book of Array.isArray(existingBooks) ? existingBooks : []) {
+    if (!book || typeof book !== 'object' || presentCopies.has(book)) continue;
+    absentIds.add(book.id || book);
+    const isbn = editionKeys(book)[0] || '';
+    const groupKey = isbn || 'legacy:' + comparableIdentity(book);
+    if (!omittedGroups.has(groupKey)) {
+      omittedGroups.set(groupKey, {
+        editionIsbn: isbn, title: book.title || '(geen titel)',
+        author: book.author || '', copies: 0, borrowedCopies: 0,
+      });
+    }
+    const missing = omittedGroups.get(groupKey);
+    missing.copies += 1;
+    if (book.status === 'borrowed' || Boolean(book.borrowedBy)) missing.borrowedCopies += 1;
+  }
+  const omittedEditions = [...omittedGroups.values()].slice(0, 50);
   const blocked = decisions.filter((entry) => entry.action === 'blocked').length;
   const additionalCopies = safeAdds.reduce((sum, entry) => sum + entry.quantity, 0);
   if (additionalCopies > 5000) return { ok: false, error: 'too_many_copies' };
