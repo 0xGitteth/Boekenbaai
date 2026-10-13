@@ -7,6 +7,7 @@ const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
+const { buildInventorySyncPreview } = require('./book-import-inventory-sync');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -4625,6 +4626,10 @@ async function handleApi(req, res, requestUrl) {
         let activated = false;
         try {
         const body = await parseBody(req, 35 * 1024 * 1024);
+        if (body.mode !== undefined && !['create', 'inventory_sync'].includes(body.mode)) {
+          return sendJson(res, 400, { message: 'Ongeldige importmodus.' });
+        }
+        const mode = body.mode === 'inventory_sync' ? 'inventory_sync' : 'create';
         if (typeof body.file !== 'string' || !body.file) {
           return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
         }
@@ -4661,7 +4666,7 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          maxRows: 1500, maxCopies: 5000,
+          mode, maxRows: 1500, maxCopies: 5000,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
@@ -4684,7 +4689,14 @@ async function handleApi(req, res, requestUrl) {
         includeDerivedThemesInImportPreview(analysis);
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
-        analysis.decisions = buildReviewDecisions(analysis, loadDb().books);
+        const latestBooks = loadDb().books;
+        analysis.decisions = mode === 'inventory_sync'
+          ? buildInventorySyncPreview(analysis, latestBooks, { acceptWarnings: false })
+          : buildReviewDecisions(analysis, latestBooks);
+        if (!analysis.decisions.ok && mode === 'inventory_sync') {
+          return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
+            error: analysis.decisions.error });
+        }
         bookImportStageStore.activate(reservation.stage, {
           sourceRows: workbook.rows, options,
           workbook: { sheetName: workbook.sheetName, headers: workbook.headers },
@@ -4737,9 +4749,14 @@ async function handleApi(req, res, requestUrl) {
           }
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
-          reviewed.decisions = buildReviewDecisions(reviewed, loadDb().books, {
-            acceptWarnings: body.acceptWarnings,
-          });
+          const latestBooks = loadDb().books;
+          reviewed.decisions = stage.options.mode === 'inventory_sync'
+            ? buildInventorySyncPreview(reviewed, latestBooks, { acceptWarnings: body.acceptWarnings })
+            : buildReviewDecisions(reviewed, latestBooks, { acceptWarnings: body.acceptWarnings });
+          if (!reviewed.decisions.ok && stage.options.mode === 'inventory_sync') {
+            return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
+              error: reviewed.decisions.error });
+          }
           bookImportStageStore.finishReview(stage, reviewed, body.corrections, body.acceptWarnings);
           return sendJson(res, 200, importStageView(stage));
         } finally {
