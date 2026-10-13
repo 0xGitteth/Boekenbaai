@@ -108,20 +108,28 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     const fingerprint = comparableIdentity(rows[0].book);
     let reason = inventory.ambiguousEditions.has(isbn)
       ? 'ambiguous_existing_edition_isbn' : '';
+    // The first reason is useful for the UI, but a later safety blocker must
+    // NEVER disappear behind it. Especially important for an administrator's
+    // explicit "keep existing" choice on an Excel stock reduction.
+    const blockers = new Set(reason ? [reason] : []);
+    const block = (code) => {
+      blockers.add(code);
+      if (!reason) reason = code;
+    };
     if (rows.some((row) => comparableIdentity(row.book) !== fingerprint)
       || existing.some((book) => comparableIdentity(book) !== fingerprint)) {
-      reason ||= 'edition_identity_mismatch';
+      block('edition_identity_mismatch');
     }
     // Legacy copies with a physical barcode but no edition ISBN must not
     // become silent duplicates just because the new Excel supplies an ISBN.
     // An administrator can add the correct ISBN to the existing book first.
     if (!existing.length && inventory.unidentifiedTitles.has(fingerprint)) {
-      reason ||= 'possible_existing_book_without_isbn';
+      block('possible_existing_book_without_isbn');
     }
     // A brand-new edition must never create an empty title/author book, even
     // if ordinary Excel warnings were explicitly accepted.
     if (rows.some((row) => !row.book?.title || !row.book?.author)) {
-      reason ||= 'missing_title_or_author';
+      block('missing_title_or_author');
     }
     let target = 0;
     const seenPrinted = new Set();
@@ -129,29 +137,29 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     for (const row of rows) {
       const quantity = row.book?.quantity?.value;
       if (['conflict', 'unresolved'].includes(row.status)
-        || (row.status === 'warning' && !acceptWarnings)) reason ||= 'source_needs_review';
-      if (row.context?.studentLoan || row.context?.classLoan) reason ||= 'loan_context_requires_followup';
+        || (row.status === 'warning' && !acceptWarnings)) block('source_needs_review');
+      if (row.context?.studentLoan || row.context?.classLoan) block('loan_context_requires_followup');
       if ((row.context?.classContext || []).length || row.context?.libraryPresence
         || (row.context?.fixedLocation && row.context.fixedLocation.status !== 'resolved')) {
-        reason ||= 'location_context_requires_followup';
+        block('location_context_requires_followup');
       }
       if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000
-        || row.book?.quantity?.valid !== true) reason ||= 'invalid_quantity';
+        || row.book?.quantity?.valid !== true) block('invalid_quantity');
       else target += quantity;
       const printed = normalizeRuntimeBarcode(row.book?.barcode);
       if (printed) {
-        if (quantity !== 1) reason ||= 'printed_barcode_requires_one_copy';
-        if (seenPrinted.has(printed)) reason ||= 'duplicate_printed_barcode';
+        if (quantity !== 1) block('printed_barcode_requires_one_copy');
+        if (seenPrinted.has(printed)) block('duplicate_printed_barcode');
         seenPrinted.add(printed);
         const owners = inventory.barcodes.get(printed) || [];
-        if (owners.some((book) => !existing.includes(book))) reason ||= 'barcode_belongs_to_other_edition';
+        if (owners.some((book) => !existing.includes(book))) block('barcode_belongs_to_other_edition');
         if (!owners.length) newPrinted.push({ index: row.index, barcode: printed });
       }
     }
-    if (target > 5000) reason ||= 'quantity_limit_exceeded';
+    if (target > 5000) block('quantity_limit_exceeded');
     const additional = Math.max(0, target - existing.length);
-    if (target < existing.length) reason ||= 'reduction_requires_manual_review';
-    if (newPrinted.length > additional) reason ||= 'barcodes_exceed_new_copies';
+    if (target < existing.length) block('reduction_requires_manual_review');
+    if (newPrinted.length > additional) block('barcodes_exceed_new_copies');
     // With more than one unlabelled worksheet row containing different copy
     // metadata, an old ISBN-only book cannot be assigned to a specific row.
     // Arbitrarily choosing the first would silently put the wrong description
@@ -167,18 +175,27 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         row.context?.fixedLocation?.label,
       ]);
       if (unprintedRows.some((row) => metadataKey(row) !== metadataKey(unprintedRows[0]))) {
-        reason ||= 'ambiguous_unlabelled_copy_metadata';
+        block('ambiguous_unlabelled_copy_metadata');
       }
     }
     if (additional > newPrinted.length
       && (inventory.barcodes.get(isbn) || []).some((book) => !existing.includes(book))) {
-      reason ||= 'isbn_barcode_belongs_to_other_edition';
+      block('isbn_barcode_belongs_to_other_edition');
     }
     const first = rows[0].index;
+    const canKeepExisting = target < existing.length
+      && blockers.size === 1 && blockers.has('reduction_requires_manual_review');
     const keepExisting = retain.has(isbn);
+    // Retention is ONLY an explicit acknowledgement of a lower total in
+    // Excel. It must not override invalid ISBN identity, outstanding loans,
+    // uncertain locations, unapproved warnings or barcode/quantity conflicts.
+    if (keepExisting && !canKeepExisting) {
+      return { ok: false, error: 'invalid_sync_resolution_reason', index: first, reason };
+    }
     const totals = { existingCopies: existing.length, borrowedCopies: borrowed,
       targetCopies: target, addCopies: reason || keepExisting ? 0 : additional };
     decisions[first] = { ...decisions[first], ...totals, editionIsbn: isbn,
+      canKeepExisting,
       action: keepExisting ? 'kept_existing'
         : reason ? 'blocked' : additional ? 'add_copies' : 'unchanged',
       reason: keepExisting ? '' : reason,
