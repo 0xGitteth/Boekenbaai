@@ -139,6 +139,7 @@
     let busy = false;
     let openEditor = null;
     let warningsAccepted = false;
+    let mustRecheckWarnings = false;
     let currentApplyButton = null;
     let remotePending = null;
     let syncing = false;
@@ -186,6 +187,7 @@
       remotePending = null;
       liveAlert.replaceChildren();
       warningsAccepted = stage.acceptWarnings === true;
+      mustRecheckWarnings = false;
       corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
       if (!preservePosition || !sameStage) {
         page = 0;
@@ -292,8 +294,13 @@
       corrections.set(index, next);
       // New or changed diagnostics require a NEW explicit acknowledgment.
       warningsAccepted = false;
+      mustRecheckWarnings = true;
       const warningInput = results.querySelector('.bb-review__controls input[type="checkbox"]');
-      if (warningInput) warningInput.checked = false;
+      if (warningInput) {
+        warningInput.checked = false;
+        warningInput.disabled = true;
+        warningInput.title = 'Controleer eerst de aangepaste gegevens opnieuw.';
+      }
       // Prevent applying the PREVIOUS server review while the editor contains
       // changes that have not yet been checked and saved.
       if (currentApplyButton) currentApplyButton.disabled = true;
@@ -381,13 +388,15 @@
       const warnCheck = make('input');
       warnCheck.type = 'checkbox';
       warnCheck.checked = warningsAccepted;
+      warnCheck.disabled = mustRecheckWarnings;
+      if (mustRecheckWarnings) warnCheck.title = 'Controleer eerst de aangepaste gegevens opnieuw.';
       warnCheck.addEventListener('change', () => { warningsAccepted = warnCheck.checked; render(); });
       warnLabel.append(warnCheck, document.createTextNode(' Ik heb alle waarschuwingen gecontroleerd en accepteer deze.'));
       const checkButton = button('Correcties controleren', 'btn btn--secondary');
       checkButton.disabled = Boolean(remotePending || busy);
       checkButton.addEventListener('click', () => run(async () => {
         const payload = await request(rootPath + '/' + encodeURIComponent(stage.id) + '/review', {
-          revision: stage.revision, acceptWarnings: warningsAccepted,
+          revision: stage.revision, acceptWarnings: mustRecheckWarnings ? false : warningsAccepted,
           corrections: Array.from(corrections.values()),
         });
         rememberResponse(payload);
@@ -466,6 +475,7 @@
           if (skip.checked) corrections.set(row.index, { index: row.index, skip: true });
           else corrections.delete(row.index);
           warningsAccepted = false;
+          mustRecheckWarnings = true;
           if (openEditor === row.index && skip.checked) openEditor = null;
           render();
         });
