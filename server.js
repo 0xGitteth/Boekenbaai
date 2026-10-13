@@ -4476,7 +4476,12 @@ async function handleApi(req, res, requestUrl) {
       }
       if (req.method === 'GET' && requestUrl.pathname === stageRoot + '/active') {
         const activeStage = bookImportStageStore.active();
-        return sendJson(res, 200, { stage: activeStage ? importStageView(activeStage) : null });
+        return sendJson(res, 200, {
+          stage: activeStage ? {
+            id: activeStage.id, status: activeStage.status,
+            revision: activeStage.revision, fileName: activeStage.fileName,
+          } : null,
+        });
       }
       const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
