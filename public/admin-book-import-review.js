@@ -236,8 +236,12 @@
         const current = (await request(rootPath + '/active')).stage;
         if (busy) return;
         if (current) {
-          if (!stage || stage.id !== current.id || stage.revision !== current.revision
-            || stage.status !== current.status || remotePending) {
+          // While unsaved changes are waiting for confirmation, compare the
+          // remote revision with the cached full response, not the older local
+          // stage. Otherwise a 1,500-row workbook is fetched every 1.5 sec.
+          const known = remotePending?.id === current.id ? remotePending : stage;
+          if (!known || known.id !== current.id || known.revision !== current.revision
+            || known.status !== current.status) {
             const full = await request(rootPath + '/' + encodeURIComponent(current.id));
             if (!busy && (!remotePending || remotePending.id !== full.id
               || remotePending.revision !== full.revision || remotePending.status !== full.status)) {
@@ -273,9 +277,15 @@
     function fieldValue(row, field) {
       const book = row.book || {};
       if (field === 'quantity') return String(book.quantity?.value || 1);
-      if (field === 'editionIsbn') return book.editionIsbn || row.identifierAnalysis?.explicit?.raw || '';
+      if (field === 'editionIsbn') return book.editionIsbn
+        || row.identifierAnalysis?.explicit?.raw
+        || row.identifierAnalysis?.legacy?.raw
+        || row.identifierAnalysis?.ambiguous?.raw || '';
       if (field === 'tags') return (book.tags || []).join('; ');
-      if (field === 'themes') return (book.manualThemes || book.themes || []).join('; ');
+      if (field === 'themes') return (
+        Array.isArray(book.manualThemes) && book.manualThemes.length
+          ? book.manualThemes : book.themes || []
+      ).join('; ');
       if (field === 'easyReading') return book.easyReading ? 'ja' : '';
       if (field === 'examMaterial') return book.suitableForExamList ? 'Ja' : '';
       if (field === 'studentLoan') return row.context?.studentLoan?.name || '';
@@ -444,11 +454,20 @@
         first.append(make('strong', '', 'Rij ' + row.sourceRowNumber + ' · ' + (row.book?.title || '(geen titel)')));
         first.append(make('span', 'bb-review__state', statusNames[row.status] || row.status));
         card.append(first);
+        const originalIdentifier = row.book?.editionIsbn
+          || row.identifierAnalysis?.explicit?.raw
+          || row.identifierAnalysis?.legacy?.raw
+          || row.identifierAnalysis?.ambiguous?.raw;
         card.append(make('p', 'bb-review__detail', [
           row.book?.author || '(geen auteur)',
-          row.book?.editionIsbn || '(geen geldig ISBN)',
+          row.book?.editionIsbn || (originalIdentifier
+            ? 'Ongeldig ISBN: ' + originalIdentifier : '(geen geldig ISBN)'),
           String(row.book?.quantity?.value || 1) + ' exemplaar/exemplaren',
         ].join(' · ')));
+        const visibleThemes = Array.isArray(row.book?.manualThemes) && row.book.manualThemes.length
+          ? row.book.manualThemes : row.book?.themes || [];
+        if (visibleThemes.length) card.append(make('p', 'bb-review__detail',
+          'Thema’s: ' + visibleThemes.join(', ')));
         if (dec.reason && dec.reason !== 'skipped') {
           card.append(make('p', 'bb-review__reason', reasonNames[dec.reason] || dec.reason));
         }

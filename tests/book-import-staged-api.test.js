@@ -111,7 +111,8 @@ async function run() {
     globalThis.__BOEKENBAAI_MOCK_ISBN_LOOKUP = async (isbn) => ({
       found: true, title: 'Metadata thema boek', author: 'A Auteur',
       authors: ['A Auteur'], isbn13: isbn,
-      themes: ['Pesten', 'Nieuw vakgebied'], source: 'test-metadata'
+      themes: ['Pesten', 'Nieuw vakgebied'],
+      tags: ['bullying'], source: 'test-metadata'
     });
   `);
   const child = spawn(process.execPath, ['--require', metadataHookFile, 'server.js'], {
@@ -586,6 +587,40 @@ async function run() {
     const listedThemeBook = (rereadThemes.body.books || rereadThemes.body)
       .find((book) => book.metadataIsbn === themeIsbn);
     assert.deepStrictEqual(listedThemeBook.themes, ['Pesten', 'Nieuw vakgebied']);
+
+    // Deleting metadata-proposed themes in the review must be respected
+    // even with ISBN enrichment still enabled for other missing fields.
+    const clearedThemeIsbn = '9780140449136';
+    const clearedThemeStage = await call('/api/admin/book-import-stages', token1b, {
+      file: fileBase64([{ Titel: 'Metadata thema boek', Auteur: 'A Auteur',
+        'ISBN-nummer': clearedThemeIsbn }]),
+      enrichIsbn: true,
+    });
+    assert.strictEqual(clearedThemeStage.status, 201);
+    assert.deepStrictEqual(clearedThemeStage.body.rows[0].book.themes, ['Pesten', 'Nieuw vakgebied']);
+    const explicitClear = await call('/api/admin/book-import-stages/' + clearedThemeStage.body.id
+      + '/review', token1, {
+      revision: 1, acceptWarnings: false, corrections: [{ index: 0, fields: { themes: '' } }],
+    });
+    assert.strictEqual(explicitClear.status, 200, JSON.stringify(explicitClear.body).slice(0, 600));
+    assert.deepStrictEqual(explicitClear.body.rows[0].book.themes, [],
+      'Cleared review themes must not be immediately repopulated by metadata');
+    assert.strictEqual(explicitClear.body.rows[0].provenance.themes.source, 'unknown');
+    const clearedConfirmed = await call('/api/admin/book-import-stages/' + clearedThemeStage.body.id
+      + '/review', token1, {
+      revision: 2, acceptWarnings: true, corrections: [{ index: 0, fields: { themes: '' } }],
+    });
+    assert.strictEqual(clearedConfirmed.status, 200);
+    assert.strictEqual(clearedConfirmed.body.decisions.summary.readyToApply, true);
+    const appliedClear = await call('/api/admin/book-import-stages/' + clearedThemeStage.body.id
+      + '/apply', token1, { revision: 3, confirm: true });
+    assert.strictEqual(appliedClear.status, 200);
+    const persistCleared = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((book) => book.metadataIsbn === clearedThemeIsbn);
+    assert.deepStrictEqual(persistCleared.importedThemes, []);
+    assert.strictEqual(persistCleared.themesCleared, true);
+    assert.deepStrictEqual(persistCleared.themes, [],
+      'Explicitly cleared themes must remain absent despite derived metadata tags');
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {

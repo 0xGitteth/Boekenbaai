@@ -145,31 +145,48 @@ function applyCorrectionsToRows(sourceRows, normalized) {
   });
 }
 
-function existingEditionMatch(row, existingBooks) {
-  const isbn = row?.book?.editionIsbn;
-  if (!isbn) return [];
-  const title = normalizeBookIdentityComparable(row.book.title);
-  const found = [];
-  for (const book of existingBooks) {
+const MAX_EXISTING_EDITION_SAMPLES = 3;
+
+function buildExistingEditionIndex(existingBooks) {
+  // Index physical copies once. Never create N x M repeated match objects
+  // for N workbook rows sharing an ISBN and M existing physical copies.
+  const editions = new Map();
+  for (const book of Array.isArray(existingBooks) ? existingBooks : []) {
     if (!book || typeof book !== 'object') continue;
-    // A physical copy can carry both its current edition ISBN and an older
-    // metadata ISBN. A stale/mismatched first identifier must not hide a
-    // valid match in another identifier and create a duplicate edition.
-    const knownIsbns = [
+    const knownIsbns = new Set([
       canonicalizeBookIsbn13(book.editionIsbn),
       canonicalizeBookIsbn13(book.metadataIsbn),
       canonicalizeBookIsbn13(book.isbn13),
       canonicalizeBookIsbn13(book.barcode),
-    ];
-    if (!knownIsbns.includes(isbn)) continue;
-    found.push({
-      id: book.id || '',
-      title: typeof book.title === 'string' ? book.title : '',
-      sameTitle: normalizeBookIdentityComparable(book.title) === title,
-      borrowed: book.status === 'borrowed',
-    });
+    ].filter(Boolean));
+    for (const isbn of knownIsbns) {
+      const entry = editions.get(isbn) || { count: 0, samples: [] };
+      entry.count += 1;
+      if (entry.samples.length < MAX_EXISTING_EDITION_SAMPLES) {
+        entry.samples.push({
+          id: book.id || '',
+          title: typeof book.title === 'string' ? book.title : '',
+          borrowed: book.status === 'borrowed',
+        });
+      }
+      editions.set(isbn, entry);
+    }
   }
-  return found;
+  return editions;
+}
+
+function existingEditionMatch(row, editionIndex) {
+  const isbn = row?.book?.editionIsbn;
+  if (!isbn) return { count: 0, matches: [] };
+  const found = editionIndex.get(isbn);
+  if (!found) return { count: 0, matches: [] };
+  const title = normalizeBookIdentityComparable(row.book.title);
+  return {
+    count: found.count,
+    matches: found.samples.map((book) => ({
+      ...book, sameTitle: normalizeBookIdentityComparable(book.title) === title,
+    })),
+  };
 }
 
 function detectWorkbookBarcodeCollisions(rows) {
@@ -201,6 +218,7 @@ function detectWorkbookBarcodeCollisions(rows) {
 
 function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = false } = {}) {
   const workbookBarcodeConflicts = detectWorkbookBarcodeCollisions(analysis.rows);
+  const editionIndex = buildExistingEditionIndex(existingBooks);
   const usedBarcodes = new Map();
   for (const book of Array.isArray(existingBooks) ? existingBooks : []) {
     const barcode = normalizeRuntimeBarcode(book?.barcode);
@@ -209,7 +227,8 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
     }
   }
   const rows = analysis.rows.map((row) => {
-    const matches = existingEditionMatch(row, existingBooks);
+    const match = existingEditionMatch(row, editionIndex);
+    const matches = match.matches;
     const candidateBarcode = normalizeRuntimeBarcode(row.book?.barcode) || row.book?.editionIsbn || '';
     const existingBarcode = candidateBarcode ? usedBarcodes.get(candidateBarcode) : null;
     const workbookBarcodeConflict = workbookBarcodeConflicts.has(row.index);
@@ -228,7 +247,7 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
     );
     const blocking = row.status === 'conflict' || row.status === 'unresolved'
       || hasActiveLoan || hasUnrepresentedContext;
-    const requiresReview = matches.length > 0 || Boolean(existingBarcode)
+    const requiresReview = match.count > 0 || Boolean(existingBarcode)
       || workbookBarcodeConflict || printedBarcodeNeedsSingleCopy
       || (row.status === 'warning' && !acceptWarnings);
     const canCreate = !shouldSkip && !blocking && !requiresReview;
@@ -236,14 +255,15 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
       : hasActiveLoan ? 'loan_context_requires_followup'
         : hasUnrepresentedContext ? 'location_context_requires_followup'
           : (row.status === 'conflict' || row.status === 'unresolved') ? 'source_conflict_or_missing_identity'
-          : matches.length ? 'existing_edition_requires_review'
+          : match.count ? 'existing_edition_requires_review'
           : existingBarcode ? 'existing_physical_barcode_requires_correction'
             : workbookBarcodeConflict ? 'workbook_physical_barcode_conflict'
               : printedBarcodeNeedsSingleCopy ? 'printed_barcode_requires_one_copy'
                 : (requiresReview ? 'warnings_need_confirmation' : '');
     return {
       index: row.index, worksheetRow: row.sourceRowNumber, status: row.status, canCreate,
-      reason, existing: matches, existingBarcode: existingBarcode || null,
+      reason, existing: matches, existingCount: match.count,
+      existingBarcode: existingBarcode || null,
     };
   });
   const blocked = rows.filter((row) => row.reason && row.reason !== 'skipped');
@@ -265,7 +285,13 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
   const normalized = normalizeCorrections(corrections, sourceRows.length);
   if (!normalized.ok) return normalized;
   const rows = applyCorrectionsToRows(sourceRows, normalized.corrections);
-  const analysis = await analyzeBookImportRows(rows, options);
+  const correctedThemeRowIndexes = new Set([...normalized.corrections.entries()]
+    .filter(([, entry]) => entry.skip !== true
+      && Object.prototype.hasOwnProperty.call(entry.fields, 'themes'))
+    .map(([index]) => index));
+  const analysis = await analyzeBookImportRows(rows, {
+    ...options, correctedThemeRowIndexes,
+  });
   if (!analysis.ok) return analysis;
   const decisions = buildReviewDecisions(analysis, Array.isArray(options.existingBooks) ? options.existingBooks : [],
     { acceptWarnings: options.acceptWarnings === true });

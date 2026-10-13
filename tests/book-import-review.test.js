@@ -53,6 +53,23 @@ const OTHER_ISBN = '9780439554930';
   assert.ok(!correctedDuplicate.rows[0].issues.some((issue) => issue.code === 'conflicting_source_columns'));
   assert.strictEqual(correctedDuplicate.correctedRows[0]['ISBN-nummer_1'], undefined);
 
+  // 1,500 rows and thousands of existing physical copies must not multiply
+  // into millions of repeated response objects.
+  const manyCopies = Array.from({ length: 2500 }, (_, index) => ({
+    id: 'old-copy-' + index, title: 'Spijt!', metadataIsbn: ISBN,
+    status: index % 2 ? 'borrowed' : 'available',
+  }));
+  const manyRows = Array.from({ length: 150 }, () => ({
+    Titel: 'Spijt!', Auteur: 'Carry Slee', 'ISBN-nummer': ISBN,
+  }));
+  const bounded = await analyzeReviewedImport(manyRows, [], { existingBooks: manyCopies });
+  assert.strictEqual(bounded.decisions.rows.length, 150);
+  assert.strictEqual(bounded.decisions.rows[0].existingCount, 2500);
+  assert.ok(bounded.decisions.rows.every((row) => row.existing.length <= 3));
+  assert.ok(JSON.stringify(bounded.decisions).length < 115000,
+    'Many repeated ISBN matches must have a bounded preview size');
+  assert.strictEqual(bounded.decisions.summary.readyToApply, false);
+
   const existing = await analyzeReviewedImport(original, [], {
     existingBooks: [{ id: 'old-1', title: 'Spijt!', metadataIsbn: ISBN, status: 'borrowed' }],
   });

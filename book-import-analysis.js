@@ -268,7 +268,13 @@ async function analyzeBookImportRows(rows, options = {}) {
 
     const hasConflictingRepairSuggestions = flagConflictingRepairSuggestions(row);
     const hasIdentifierConflict = hasBlockingIdentifierConflict(row);
-    if (!hasConflictingRepairSuggestions && !hasIdentifierConflict) await resolveMetadata(row, metadataOptions);
+    if (!hasConflictingRepairSuggestions && !hasIdentifierConflict) {
+      await resolveMetadata(row, {
+        ...metadataOptions,
+        skipThemeEnrichment: options.correctedThemeRowIndexes instanceof Set
+          && options.correctedThemeRowIndexes.has(index),
+      });
+    }
 
     if (!row.book.title) addIssue(row, 'missing_title_after_metadata', 'warning');
     if (!row.book.author) addIssue(row, 'missing_author_after_metadata', 'warning');
