@@ -121,7 +121,9 @@ function createDbFixture(filePath) {
       },
     ],
     folders: [],
-    classes: [],
+    // PR5: staff checkouts now require that the borrower belongs to a
+    // currently assigned class, including in the legacy barcode tests.
+    classes: [{ id: 'c1', name: 'Testklas', teacherIds: ['t1'], studentIds: ['s1', 's2'] }],
     users: [
       {
         id: 't1',
