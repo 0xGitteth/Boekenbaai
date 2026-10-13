@@ -1486,10 +1486,10 @@ async function run() {
       + staleLoanStage.body.id + '/apply', token1, { revision: 1, confirm: true });
     assert.strictEqual(staleLoanApply.status, 409);
     assert.strictEqual(staleLoanApply.body.error, 'inventory_preview_stale');
-    const afterRace = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    assert.strictEqual(afterRace.books.find((book) => book.id === createdForRace.body.id)
+    const afterHistoricLoanRace = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(afterHistoricLoanRace.books.find((book) => book.id === createdForRace.body.id)
       .borrowedBy, 'student-match');
-    assert.ok(!afterRace.history.some((event) =>
+    assert.ok(!afterHistoricLoanRace.history.some((event) =>
       event.type === 'loan_imported' && event.bookId === createdForRace.body.id));
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
