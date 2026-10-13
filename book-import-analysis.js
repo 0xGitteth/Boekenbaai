@@ -292,7 +292,12 @@ async function analyzeBookImportRows(rows, options = {}) {
         totalCopies += requestedCopies;
         stagedPhysicalRowIndexes.add(index);
         if (row.book.editionIsbn && !hasConflictingRepairSuggestions && !hasBlockingIdentifierConflict(row)) {
-          for (let copyIndex = 0; copyIndex < requestedCopies; copyIndex += 1) {
+          // Inventory mode compares a potentially large TOTAL stock
+          // snapshot. One grouping representative per Excel row retains
+          // edition identity conflict detection without allocating thousands
+          // of duplicate objects for copies already in the library.
+          const groupingCopies = options.mode === 'inventory_sync' ? 1 : requestedCopies;
+          for (let copyIndex = 0; copyIndex < groupingCopies; copyIndex += 1) {
             editionCopies.push({
               title: row.book.title,
               author: row.book.author,

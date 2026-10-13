@@ -99,4 +99,57 @@ assert.ok(script.includes("button('Excel-titel behouden'"),
 assert.ok(script.includes('iedere ingevulde waarde Makkelijk lezen'),
   'Make the deliberately nonstandard every-nonblank ML rule explicit in the editor');
 
+// PR4 inventory review decisions must survive a shared session, but edits
+// to ISBN or skip state must discard any now-inapplicable approval.
+assert.ok(script.includes("inventoryResolutions: [...inventoryResolutions.values()]"),
+  'Submit the explicit inventory choices with correction-review requests');
+assert.ok(script.includes('inventoryResolutions.delete(oldIsbn)'),
+  'Changing the ISBN must discard stale retention decisions');
+assert.ok(script.includes('inventoryResolutions.delete(row.book.editionIsbn)'),
+  'Skipping an ISBN row must not leave an invisible unresolved choice');
+assert.ok(script.includes("stage.inventoryResolutions || []"),
+  'Reload retained choices from the server after remote review');
+assert.ok(script.includes('dec.canKeepExisting === true'),
+  'The retain option must be hidden unless the planner explicitly permits a clean stock reduction');
+
+// Execute the actual stock-resolution handler with warning state already
+// accepted. Only changing an Excel field may invalidate accepted warnings;
+// choosing to keep existing stock changes no book content.
+const resolutionStart = script.indexOf('    function updateInventoryResolution(');
+const resolutionEnd = script.indexOf('    function editRow(', resolutionStart);
+assert.ok(resolutionStart >= 0 && resolutionEnd > resolutionStart,
+  'Could not locate real inventory resolution handler');
+const runInventoryChoice = new Function('accepted', 'requiresRecheck', `
+  let warningsAccepted = accepted;
+  let mustRecheckWarnings = requiresRecheck;
+  const inventoryResolutions = new Map();
+  const currentApplyButton = { disabled: false };
+  ${script.slice(resolutionStart, resolutionEnd)}
+  updateInventoryResolution('9780306406157', true);
+  const afterSelect = {
+    accepted: warningsAccepted,
+    requiresRecheck: mustRecheckWarnings,
+    disabled: currentApplyButton.disabled,
+    action: inventoryResolutions.get('9780306406157')?.action,
+  };
+  updateInventoryResolution('9780306406157', false);
+  return { afterSelect, afterClear: {
+    accepted: warningsAccepted, requiresRecheck: mustRecheckWarnings,
+    disabled: currentApplyButton.disabled,
+    empty: inventoryResolutions.size === 0,
+  } };
+`);
+const acceptedChoice = runInventoryChoice(true, false);
+assert.deepStrictEqual(acceptedChoice.afterSelect, {
+  accepted: true, requiresRecheck: false,
+  disabled: true, action: 'keep_existing',
+});
+assert.deepStrictEqual(acceptedChoice.afterClear, {
+  accepted: true, requiresRecheck: false, disabled: true, empty: true,
+});
+const pendingFieldEdits = runInventoryChoice(false, true);
+assert.strictEqual(pendingFieldEdits.afterSelect.requiresRecheck, true,
+  'Changing a stock decision may never unlock pending Excel corrections');
+assert.strictEqual(pendingFieldEdits.afterSelect.accepted, false);
+
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');

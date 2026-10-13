@@ -7,6 +7,7 @@ const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
+const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -4625,10 +4626,20 @@ async function handleApi(req, res, requestUrl) {
         let activated = false;
         try {
         const body = await parseBody(req, 35 * 1024 * 1024);
+        if (body.mode !== undefined && !['create', 'inventory_sync'].includes(body.mode)) {
+          return sendJson(res, 400, { message: 'Ongeldige importmodus.' });
+        }
+        const mode = body.mode === 'inventory_sync' ? 'inventory_sync' : 'create';
         if (typeof body.file !== 'string' || !body.file) {
           return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
         }
-        const workbook = readBookImportWorkbook(XLSX, body.file, { maxRows: 1500, maxCopies: 5000 });
+        // Inventory-sync rows describe desired TOTAL stock, not copies to
+        // create. An existing school library may exceed the create cap.
+        // The inventory planner independently caps NEW additions at 5,000.
+        const maxAnalyzedCopies = mode === 'inventory_sync' ? 1_500_000 : 5000;
+        const workbook = readBookImportWorkbook(XLSX, body.file, {
+          maxRows: 1500, maxCopies: maxAnalyzedCopies,
+        });
         if (!workbook.ok) {
           return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
         }
@@ -4661,7 +4672,7 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          maxRows: 1500, maxCopies: 5000,
+          mode, maxRows: 1500, maxCopies: maxAnalyzedCopies,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
@@ -4684,7 +4695,14 @@ async function handleApi(req, res, requestUrl) {
         includeDerivedThemesInImportPreview(analysis);
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
-        analysis.decisions = buildReviewDecisions(analysis, loadDb().books);
+        const latestBooks = loadDb().books;
+        analysis.decisions = mode === 'inventory_sync'
+          ? buildInventorySyncPreview(analysis, latestBooks, { acceptWarnings: false })
+          : buildReviewDecisions(analysis, latestBooks);
+        if (!analysis.decisions.ok && mode === 'inventory_sync') {
+          return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
+            error: analysis.decisions.error });
+        }
         bookImportStageStore.activate(reservation.stage, {
           sourceRows: workbook.rows, options,
           workbook: { sheetName: workbook.sheetName, headers: workbook.headers },
@@ -4722,6 +4740,14 @@ async function handleApi(req, res, requestUrl) {
           if (typeof body.acceptWarnings !== 'boolean') {
             return sendJson(res, 400, { message: 'Geef expliciet aan of waarschuwingen geaccepteerd worden.' });
           }
+          const choices = stage.options.mode === 'inventory_sync'
+            ? normalizeInventoryResolutions(body.inventoryResolutions)
+            : { ok: true, values: [] };
+          if (!choices.ok || (stage.options.mode !== 'inventory_sync'
+            && body.inventoryResolutions !== undefined)) {
+            return sendJson(res, 400, { message: 'Ongeldige voorraadkeuzes.',
+              error: choices.error || 'invalid_sync_resolutions' });
+          }
           // A review is a fresh retry opportunity. Retain successful metadata.
           stage.options.releaseRetryableLookups?.();
           // Authentication may have loaded an older snapshot while a large
@@ -4737,10 +4763,18 @@ async function handleApi(req, res, requestUrl) {
           }
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
-          reviewed.decisions = buildReviewDecisions(reviewed, loadDb().books, {
-            acceptWarnings: body.acceptWarnings,
-          });
-          bookImportStageStore.finishReview(stage, reviewed, body.corrections, body.acceptWarnings);
+          const latestBooks = loadDb().books;
+          reviewed.decisions = stage.options.mode === 'inventory_sync'
+            ? buildInventorySyncPreview(reviewed, latestBooks, {
+              acceptWarnings: body.acceptWarnings, resolutions: choices.values,
+            })
+            : buildReviewDecisions(reviewed, latestBooks, { acceptWarnings: body.acceptWarnings });
+          if (!reviewed.decisions.ok && stage.options.mode === 'inventory_sync') {
+            return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
+              error: reviewed.decisions.error });
+          }
+          bookImportStageStore.finishReview(stage, reviewed, body.corrections,
+            body.acceptWarnings, choices.values);
           return sendJson(res, 200, importStageView(stage));
         } finally {
           bookImportStageStore.abortReview(stage);
@@ -4760,6 +4794,135 @@ async function handleApi(req, res, requestUrl) {
           // atomic save, so competing handlers in this process cannot
           // interleave their writes inside the checked transaction.
           const database = loadDb();
+          if (stage.options.mode === 'inventory_sync') {
+            // Re-evaluate the target using the live collection immediately
+            // before the atomic write. A concurrent admin's barcode, edition,
+            // count or active loan change invalidates the approved preview.
+            const fresh = buildInventorySyncPreview(stage.analysis, database.books, {
+              acceptWarnings: stage.acceptWarnings, resolutions: stage.inventoryResolutions,
+            });
+            if (!fresh.ok || !fresh.summary.readyToApply
+              || JSON.stringify(fresh.rows) !== JSON.stringify(stage.analysis.decisions?.rows)
+              || JSON.stringify(fresh.proposedAdds) !== JSON.stringify(stage.analysis.decisions?.proposedAdds)
+              || JSON.stringify(fresh.omittedEditions) !== JSON.stringify(stage.analysis.decisions?.omittedEditions)
+              || fresh.summary.omittedExistingCopies
+                !== stage.analysis.decisions?.summary?.omittedExistingCopies) {
+              return sendJson(res, 409, {
+                message: 'De voorraad is sinds de controle gewijzigd of er staan onopgeloste verschillen. Start een nieuwe vergelijking.',
+                error: 'inventory_preview_stale',
+              });
+            }
+            const now = new Date().toISOString();
+            const batchId = crypto.randomUUID();
+            const createdCopies = [];
+            const reportsByRow = new Map();
+            const clearedThemeRows = new Set((stage.corrections || [])
+              .filter((correction) => typeof correction?.fields?.themes === 'string'
+                && correction.fields.themes.trim() === '')
+              .map((correction) => correction.index));
+            for (const addition of fresh.proposedAdds) {
+              const row = stage.analysis.rows[addition.index];
+              // Existing edition fields and loan records are authoritative.
+              // Only NEW physical copies are created; old copies are untouched.
+              const existingTemplate = addition.templateBookId
+                ? database.books.find((book) => book.id === addition.templateBookId) : null;
+              if (addition.templateBookId && !existingTemplate) {
+                return sendJson(res, 409, { message: 'De editie is intussen gewijzigd.',
+                  error: 'inventory_template_missing' });
+              }
+              const curated = normalizeManualThemes(row.book.manualThemes);
+              const preserveAsImported = row.provenance?.themes?.source === 'metadata'
+                || curated.length !== row.book.manualThemes.length;
+              const sourceFields = {};
+              for (const [name, provenance] of Object.entries(row.provenance || {})) {
+                const kind = ['excel', 'metadata', 'derived', 'existing', 'manual'].includes(provenance?.source)
+                  ? provenance.source : 'unknown';
+                sourceFields[name] = createFieldSource(kind, provenance?.detail || null);
+              }
+              sourceFields.metadataIsbn = sourceFields.editionIsbn || createFieldSource('unknown');
+              const template = ensureBookShape({
+                // New copies use exactly the data shown and approved in the
+                // reviewed Excel preview. No live metadata is copied from an
+                // existing edition after the administrator confirms.
+                title: row.book.title, author: row.book.author, authors: row.book.authors,
+                description: row.book.description, publisher: row.book.publisher,
+                publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
+                language: row.book.language, coverUrl: row.book.coverUrl,
+                easyReading: row.book.easyReading,
+                suitableForExamList: row.book.suitableForExamList,
+                tags: row.book.tags,
+                manualThemes: preserveAsImported ? [] : row.book.manualThemes,
+                importedThemes: preserveAsImported ? row.book.themes : [],
+                themesCleared: clearedThemeRows.has(addition.index),
+                fixedLocation: row.context?.fixedLocation?.status === 'resolved'
+                  ? row.context.fixedLocation.label : null,
+                editionIsbn: addition.editionIsbn,
+                metadataIsbn: addition.editionIsbn,
+                barcode: addition.barcode,
+                importInfo: normalizeBookImportInfo({
+                  importedAt: now, importedBy: user.id,
+                  importSource: 'excel_inventory_sync',
+                  importJobId: batchId, importStatus: 'created',
+                }),
+                importProvenance: { fieldSources: sourceFields },
+              });
+              const ids = [];
+              for (let count = 0; count < addition.quantity; count += 1) {
+                const copy = createBookCopyFromTemplate(template);
+                createdCopies.push(copy);
+                ids.push(copy.id);
+              }
+              const reportEntry = reportsByRow.get(addition.index) || {
+                index: addition.index, worksheetRow: row.sourceRowNumber,
+                status: existingTemplate ? 'copies_added' : 'created',
+                editionIsbn: addition.editionIsbn, title: template.title,
+                copies: 0, bookIds: [],
+                issues: row.issues.map((issue) => issue.code),
+                provenance: row.provenance, context: row.context,
+              };
+              reportEntry.copies += addition.quantity;
+              reportEntry.bookIds.push(...ids);
+              reportsByRow.set(addition.index, reportEntry);
+            }
+            // Exactly one report entry per original worksheet row. A combined
+            // row can also contain a physical barcode that created a copy.
+            for (const decision of fresh.rows) {
+              if (reportsByRow.has(decision.index)) continue;
+              const row = stage.analysis.rows[decision.index];
+              reportsByRow.set(decision.index, {
+                index: decision.index, worksheetRow: row.sourceRowNumber,
+                status: decision.action === 'add_copies' ? 'reconciled' : decision.action,
+                copies: 0, bookIds: [],
+                title: row.book?.title || '', editionIsbn: row.book?.editionIsbn || '',
+                issues: (row.issues || []).map((issue) => issue.code),
+              });
+            }
+            const report = {
+              id: batchId, createdBy: user.id, importedAt: now,
+              mode: 'inventory_sync', fileName: stage.fileName,
+              count: createdCopies.length,
+              sourceRows: stage.analysis.summary.sourceRows,
+              omittedExistingCopies: fresh.summary.omittedExistingCopies,
+              omittedEditions: fresh.omittedEditions,
+              inventoryResolutions: stage.inventoryResolutions,
+              rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index),
+            };
+            if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
+            database.bookImportReports.push(report);
+            database.bookImportReports = database.bookImportReports.slice(-30);
+            database.books.push(...createdCopies);
+            appendHistory(database, {
+              type: 'books_inventory_sync', performedBy: user.id,
+              message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, geen bestaande exemplaren verwijderd`,
+            });
+            saveReviewedBookImportDb(database);
+            bookImportStageStore.finishApply(stage, {
+              batchId, created: createdCopies.length, removed: 0,
+              retainedEditions: fresh.summary.acknowledgedEditions,
+              report, omittedExistingCopies: fresh.summary.omittedExistingCopies,
+            });
+            return sendJson(res, 200, importStageView(stage));
+          }
           const plan = buildStageApplyPlan(
             { ...stage.analysis, acceptWarnings: stage.acceptWarnings },
             database.books, { maxCopies: 5000 },
