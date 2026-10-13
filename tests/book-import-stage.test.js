@@ -62,7 +62,8 @@ const ISBN2 = '9780439554930';
   const barcode = await analyzeReviewedImport(rows);
   assert.strictEqual(buildStageApplyPlan({ ...barcode, acceptWarnings: false }, [
     { title: 'Andere editie', metadataIsbn: ISBN2, barcode: '12345' },
-  ]).error, 'duplicate_physical_barcode');
+  ]).error, 'review_not_ready',
+  'Existing barcode collisions are now detected before the final apply step');
   const loanRow = await analyzeReviewedImport([{
     Titel: 'Boek bij leerling', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'Lisa Leerling',
   }], [], { students: [{ id: 'student-1', name: 'Lisa Leerling' }] });
