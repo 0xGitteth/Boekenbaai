@@ -46,6 +46,7 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     const stage = {
       id, ownerId, sourceRows: null, workbook: null, fileName: '',
       analysis: null, initialAnalysis: null, corrections: [],
+      inventoryResolutions: [],
       acceptWarnings: false, options: {}, revision: 0,
       status: 'preparing', createdAt: new Date(now()).toISOString(),
       expiresAt: now() + ttlMs, result: null,
@@ -82,10 +83,11 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     stage.status = 'reviewing';
     return { ok: true };
   }
-  function finishReview(stage, reviewed, corrections, acceptWarnings) {
+  function finishReview(stage, reviewed, corrections, acceptWarnings, inventoryResolutions = []) {
     if (entries.get(stage?.id) !== stage || stage.status !== 'reviewing') throw Error('invalid_stage_transition');
     stage.analysis = reviewed;
     stage.corrections = corrections;
+    stage.inventoryResolutions = inventoryResolutions;
     stage.acceptWarnings = acceptWarnings;
     stage.revision += 1;
     stage.expiresAt = now() + ttlMs;
@@ -153,6 +155,7 @@ function importStageView(stage) {
     fileName: stage.fileName, workbook: stage.workbook,
     expiresAt: new Date(stage.expiresAt).toISOString(),
     corrections: stage.corrections, acceptWarnings: stage.acceptWarnings,
+    inventoryResolutions: stage.options?.mode === 'inventory_sync' ? stage.inventoryResolutions : [],
     summary: analysis?.summary || null,
     rows: analysis?.rows || [],
     decisions: analysis?.decisions || null,
