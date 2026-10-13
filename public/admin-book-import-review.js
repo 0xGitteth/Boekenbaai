@@ -45,6 +45,23 @@
     ['libraryPresence', 'Aanwezig in bibliotheek'],
   ];
 
+  // A temporary skip must not erase edits the administrator already typed.
+  // Skipped rows are still sent to the server as skip-only corrections.
+  function toggleSkippedRow(corrections, skippedEdits, index, skipped) {
+    if (skipped) {
+      const existing = corrections.get(index);
+      if (existing && !existing.skip && Object.keys(existing.fields || {}).length) {
+        skippedEdits.set(index, existing);
+      }
+      corrections.set(index, { index, skip: true });
+    } else {
+      const previous = skippedEdits.get(index);
+      if (previous) corrections.set(index, previous);
+      else corrections.delete(index);
+      skippedEdits.delete(index);
+    }
+  }
+
   const make = (tag, cls = '', content = '') => {
     const element = document.createElement(tag);
     if (cls) element.className = cls;
@@ -135,6 +152,7 @@
     }
     let stage = null;
     let corrections = new Map();
+    const skippedEdits = new Map();
     let page = 0;
     let busy = false;
     let openEditor = null;
@@ -189,6 +207,7 @@
       warningsAccepted = stage.acceptWarnings === true;
       mustRecheckWarnings = false;
       corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
+      skippedEdits.clear();
       if (!preservePosition || !sameStage) {
         page = 0;
         openEditor = null;
@@ -261,6 +280,7 @@
               stage = null;
               remotePending = null;
               corrections.clear();
+              skippedEdits.clear();
               liveAlert.replaceChildren();
               render();
               setNotice('Deze import is verlopen of de server is herstart. Je kunt opnieuw uploaden.');
@@ -514,8 +534,7 @@
         skip.type = 'checkbox';
         skip.checked = corrections.get(row.index)?.skip === true;
         skip.addEventListener('change', () => {
-          if (skip.checked) corrections.set(row.index, { index: row.index, skip: true });
-          else corrections.delete(row.index);
+          toggleSkippedRow(corrections, skippedEdits, row.index, skip.checked);
           warningsAccepted = false;
           mustRecheckWarnings = true;
           if (openEditor === row.index && skip.checked) openEditor = null;
