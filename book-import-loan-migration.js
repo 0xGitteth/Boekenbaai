@@ -34,7 +34,9 @@ function resolveReviewedLoan(row, { students = [], classes = [] } = {}) {
   return { ok: true, borrower: { type: kind, id: desired.id, name: actual.matches[0].name } };
 }
 
-function inspectReviewedLoans(rows, { students = [], classes = [], books = [] } = {}) {
+function inspectReviewedLoans(rows, {
+  students = [], classes = [], books = [], allowExistingLoan = false,
+} = {}) {
   const decisions = new Map();
   const oncePerStudentEdition = new Map();
   const storedBooks = new Map(books.map((book) => [book.id, book]));
@@ -60,7 +62,7 @@ function inspectReviewedLoans(rows, { students = [], classes = [], books = [] } 
       const book = storedBooks.get(id);
       return book && canonicalizeBookIsbn13(book.editionIsbn || book.metadataIsbn) === isbn;
     });
-    if (alreadyOwnsEdition) decisions.set(row.index, {
+    if (alreadyOwnsEdition && !allowExistingLoan) decisions.set(row.index, {
       ok: false, error: 'student_already_borrowed_edition',
     });
   }
