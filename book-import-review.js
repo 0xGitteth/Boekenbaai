@@ -311,6 +311,28 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
         reviewed.provenance[name] = { source: 'manual', detail: 'review_correction' };
       }
     }
+    if (Object.prototype.hasOwnProperty.call(entry.fields, 'themes')) {
+      reviewed.provenance.manualThemes = { source: 'manual', detail: 'review_correction' };
+    }
+    if (Object.prototype.hasOwnProperty.call(entry.fields, 'examMaterial')) {
+      // Exam material can also supply a language hint, format hint and comic
+      // tag. These are derived from an administrator's edit, not the workbook.
+      for (const field of ['language', 'formatHint']) {
+        const origin = reviewed.provenance[field];
+        if (origin?.derived?.startsWith('exam_material_')) {
+          reviewed.provenance[field] = {
+            source: 'manual', detail: 'review_correction_exam_material',
+            derived: origin.derived,
+          };
+        }
+      }
+      const tagsOrigin = reviewed.provenance.tags;
+      if (tagsOrigin?.derived === 'exam_material_strip_tag') {
+        reviewed.provenance.tags = tagsOrigin.includesDerivedValues
+          ? { ...tagsOrigin, includesManualDerivedValues: true }
+          : { source: 'manual', detail: 'review_correction_exam_material', derived: tagsOrigin.derived };
+      }
+    }
   }
   const decisions = buildReviewDecisions(analysis, Array.isArray(options.existingBooks) ? options.existingBooks : [],
     { acceptWarnings: options.acceptWarnings === true });
