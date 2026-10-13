@@ -709,12 +709,19 @@ function attachDerivedThemeFields(book, options = {}) {
   const source = typeof book === 'object' && book ? book : {};
   const safeTags = parseMultiValueField(source.tags);
   const manualThemes = normalizeManualThemes(source.manualThemes);
+  // Metadata-enriched themes shown in the confirmed review must survive
+  // saving, loading and book-copy creation; unlike teacher-selected
+  // manualThemes, they may include as-yet uncategorized freeform values.
+  const importedThemes = parseMultiValueField(source.importedThemes)
+    .filter((theme) => typeof theme === 'string' && theme.trim())
+    .slice(0, 40);
   const derived = deriveThemesFromTags(safeTags, options);
   return {
     ...source,
     tags: safeTags,
     manualThemes,
-    themes: manualThemes.length ? manualThemes : derived.themes,
+    importedThemes,
+    themes: manualThemes.length ? manualThemes : importedThemes.length ? importedThemes : derived.themes,
     suggestedThemes: derived.suggestedThemes,
     unmappedTags: derived.unmappedTags,
   };
@@ -1136,6 +1143,8 @@ function ensureBookShape(book) {
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
   safeBook.tags = parseMultiValueField(source.tags);
   safeBook.manualThemes = normalizeManualThemes(source.manualThemes);
+  safeBook.importedThemes = parseMultiValueField(source.importedThemes)
+    .filter((theme) => typeof theme === 'string' && theme.trim()).slice(0, 40);
   safeBook.coverColor = typeof source.coverColor === 'string' ? source.coverColor : '#f9f9f9';
   safeBook.publisher = normalizePublisher(source.publisher);
   safeBook.publishedYear = normalizePublishedYear(
@@ -3509,26 +3518,53 @@ function serveFile(res, filePath) {
 
 function parseBody(req, maxLength = 1e6) {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk) => {
-      body += chunk.toString();
-      if (body.length > maxLength) {
-        req.connection.destroy();
-        reject(new Error('Payload te groot'));
-      }
-    });
-    req.on('end', () => {
-      if (!body) {
-        resolve({});
+    const chunks = [];
+    let length = 0;
+    let settled = false;
+    const cleanup = () => {
+      req.off('data', onData);
+      req.off('end', onEnd);
+      req.off('aborted', onAborted);
+      req.off('error', onError);
+      req.off('close', onClose);
+    };
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const onAborted = () => finish(new Error('Upload afgebroken'));
+    const onError = (error) => finish(error);
+    const onClose = () => {
+      if (!req.complete) onAborted();
+    };
+    const onData = (chunk) => {
+      length += chunk.length;
+      if (length > maxLength) {
+        finish(new Error('Payload te groot'));
+        req.destroy();
         return;
       }
+      chunks.push(chunk);
+    };
+    const onEnd = () => {
       try {
-        const parsed = JSON.parse(body);
-        resolve(parsed);
-      } catch (error) {
-        reject(new Error('Kon JSON niet lezen'));
+        const raw = Buffer.concat(chunks).toString('utf8');
+        finish(null, raw ? JSON.parse(raw) : {});
+      } catch {
+        finish(new Error('Kon JSON niet lezen'));
       }
-    });
+    };
+    req.on('data', onData);
+    req.once('end', onEnd);
+    req.once('aborted', onAborted);
+    req.once('error', onError);
+    req.once('close', onClose);
+    // If the client disconnected before handlers were registered, do not
+    // leave a held import reservation waiting for events that already fired.
+    if (req.aborted || req.destroyed && !req.complete) onAborted();
   });
 }
 
@@ -4575,7 +4611,9 @@ async function handleApi(req, res, requestUrl) {
           } } : {}),
         };
         const analysis = await analyzeReviewedImport(workbook.rows, [], {
-          ...options, existingBooks: database.books, acceptWarnings: false,
+          ...options, existingBooks: database.books,
+          students: database.students, classes: database.classes,
+          acceptWarnings: false,
         });
         if (!analysis.ok) return sendJson(res, 400, { message: 'Importanalyse mislukt.', error: analysis.error });
         bookImportStageStore.activate(reservation.stage, {
@@ -4617,7 +4655,9 @@ async function handleApi(req, res, requestUrl) {
           }
           const database = getDb();
           const reviewed = await analyzeReviewedImport(stage.sourceRows, body.corrections, {
-            ...stage.options, existingBooks: database.books, acceptWarnings: body.acceptWarnings,
+            ...stage.options, existingBooks: database.books,
+            students: database.students, classes: database.classes,
+            acceptWarnings: body.acceptWarnings,
           });
           if (!reviewed.ok) {
             return sendJson(res, 400, { message: 'Een correctie is ongeldig.', error: reviewed.error, field: reviewed.field, index: reviewed.index });
@@ -4681,6 +4721,8 @@ async function handleApi(req, res, requestUrl) {
               easyReading: row.book.easyReading,
               suitableForExamList: row.book.suitableForExamList,
               tags: row.book.tags, manualThemes: row.book.manualThemes,
+              importedThemes: row.provenance?.themes?.source === 'metadata'
+                ? row.book.themes : [],
               // Keep resolved classroom shelf information on every created
               // copy as well as in the report; the future lending workflow
               // can use it without recovering an old upload.
