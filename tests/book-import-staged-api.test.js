@@ -32,6 +32,20 @@ async function call(route, token, body, method = body === undefined ? 'GET' : 'P
 // Send only request headers and a small body prefix, then pause. This
 // reproduces the exact overlap where a second import request arrives while
 // parseBody() in the first handler is awaiting the rest of its JSON body.
+function abortPartialImport(route, token) {
+  const req = http.request({
+    hostname: '127.0.0.1', port: PORT, path: route, method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'Content-Type': 'application/json',
+      'Content-Length': 1000000,
+    },
+  });
+  req.on('error', () => {}); // Expected ECONNRESET after disconnect.
+  req.write('{"file":"');
+  return req;
+}
+
 function pausedImportPost(route, token, payload) {
   const body = JSON.stringify(payload);
   let finish;
@@ -80,14 +94,27 @@ async function run() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-pr3-'));
   const dbPath = path.join(tempDir, 'db.json');
   const db = {
-    books: [], students: [], classes: [], folders: [],
+    books: [],
+    students: [{ id: 'student-match', name: 'Lisa Leerling', username: 'lisa' }],
+    classes: [{ id: 'class-match', name: 'Groep A', studentIds: [], teacherIds: [] }],
+    folders: [],
     users: [
       { id: 'admin1', name: 'Admin One', username: 'admin1', passwordHash: hashPassword('pass1'), role: 'admin' },
       { id: 'admin2', name: 'Admin Two', username: 'admin2', passwordHash: hashPassword('pass2'), role: 'admin' },
     ], history: [],
   };
   fs.writeFileSync(dbPath, JSON.stringify(db));
-  const child = spawn(process.execPath, ['server.js'], {
+  // Supply deterministic metadata through the server's existing test-only
+  // lookup hook; no network or production changes are necessary.
+  const metadataHookFile = path.join(tempDir, 'metadata-hook.js');
+  fs.writeFileSync(metadataHookFile, `
+    globalThis.__BOEKENBAAI_MOCK_ISBN_LOOKUP = async (isbn) => ({
+      found: true, title: 'Metadata thema boek', author: 'A Auteur',
+      authors: ['A Auteur'], isbn13: isbn,
+      themes: ['Pesten', 'Nieuw vakgebied'], source: 'test-metadata'
+    });
+  `);
+  const child = spawn(process.execPath, ['--require', metadataHookFile, 'server.js'], {
     cwd: path.join(__dirname, '..'),
     env: { ...process.env, PORT: String(PORT), BOEKENBAAI_DATA_PATH: dbPath, BOEKENBAAI_STATIC_DIR: path.join(__dirname, '..', 'public') },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -474,6 +501,91 @@ async function run() {
     assert.strictEqual((await call('/api/admin/book-import-stages/' + largeStage.body.id + '/cancel', token1b, {
       revision: 2,
     })).status, 200);
+
+    // A terminated connection MUST release the stage and the shared import
+    // admission lock. It should never require a server restart.
+    for (const route of [
+      '/api/admin/book-import-stages',
+      '/api/books/import-jobs',
+      '/api/books/import',
+    ]) {
+      const abandoned = abortPartialImport(route, token1);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      if (route === '/api/admin/book-import-stages') {
+        const activeWhileUploading = await call('/api/admin/book-import-stages/active', token1b);
+        assert.strictEqual(activeWhileUploading.body.stage?.status, 'preparing');
+      }
+      abandoned.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const usable = await call('/api/admin/book-import-stages', token1b, {
+        file: fileBase64([{ Titel: 'Na verbroken upload', Auteur: 'A Auteur',
+          'ISBN-nummer': '9780140328721' }]),
+      });
+      assert.strictEqual(usable.status, 201,
+        'Disconnected upload must release the shared lease: ' + route + ': ' + JSON.stringify(usable.body));
+      assert.strictEqual((await call('/api/admin/book-import-stages/' + usable.body.id + '/cancel', token1, {
+        revision: 1,
+      })).status, 200);
+    }
+
+    // Students and classes are lookup context, not automatically importable
+    // loans. Both preview and re-review must attach the stable matched ID.
+    const loanStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([
+        { Titel: 'Veilig naast leningen', Auteur: 'A Auteur', 'ISBN-nummer': '9780451524935' },
+        { Titel: 'Al bij leerling', Auteur: 'A Auteur', 'ISBN-nummer': '9780747532699',
+          'naam leerling': 'Lisa Leerling' },
+        { Titel: 'Al bij klas', Auteur: 'A Auteur', 'ISBN-nummer': '9780385490818',
+          'Geleend door klas': 'Groep A' },
+      ]),
+    });
+    assert.strictEqual(loanStage.status, 201, JSON.stringify(loanStage.body).slice(0, 900));
+    assert.deepStrictEqual(loanStage.body.rows[1].context.studentLoan, {
+      status: 'matched', id: 'student-match', name: 'Lisa Leerling',
+    });
+    assert.deepStrictEqual(loanStage.body.rows[2].context.classLoan, {
+      status: 'matched', id: 'class-match', name: 'Groep A',
+    });
+    const loanReview = await call('/api/admin/book-import-stages/' + loanStage.body.id + '/review', token1b, {
+      revision: 1, acceptWarnings: true,
+      corrections: [{ index: 1, skip: true }, { index: 2, skip: true }],
+    });
+    assert.strictEqual(loanReview.status, 200);
+    const loanApplied = await call('/api/admin/book-import-stages/' + loanStage.body.id + '/apply', token1, {
+      revision: 2, confirm: true,
+    });
+    assert.strictEqual(loanApplied.status, 200);
+    assert.strictEqual(loanApplied.body.result.report.rows[1].context.studentLoan.id, 'student-match');
+    assert.strictEqual(loanApplied.body.result.report.rows[2].context.classLoan.id, 'class-match');
+
+    // Metadata-only themes must survive both the stored JSON and the normal
+    // /api/books listing, which re-runs ensureBookShape.
+    const themeIsbn = '9780679783268';
+    const themeStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Metadata thema boek', Auteur: 'A Auteur',
+        'ISBN-nummer': themeIsbn }]),
+      enrichIsbn: true,
+    });
+    assert.strictEqual(themeStage.status, 201, JSON.stringify(themeStage.body).slice(0, 950));
+    assert.deepStrictEqual(themeStage.body.rows[0].book.themes, ['Pesten', 'Nieuw vakgebied']);
+    const themeReview = await call('/api/admin/book-import-stages/' + themeStage.body.id + '/review', token1b, {
+      revision: 1, acceptWarnings: true, corrections: [],
+    });
+    assert.strictEqual(themeReview.status, 200, JSON.stringify(themeReview.body).slice(0, 400));
+    assert.strictEqual(themeReview.body.decisions.summary.readyToApply, true);
+    const themeApplied = await call('/api/admin/book-import-stages/' + themeStage.body.id + '/apply', token1, {
+      revision: 2, confirm: true,
+    });
+    assert.strictEqual(themeApplied.status, 200, JSON.stringify(themeApplied.body).slice(0, 400));
+    const storedThemeBook = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((book) => book.metadataIsbn === themeIsbn);
+    assert.deepStrictEqual(storedThemeBook.importedThemes, ['Pesten', 'Nieuw vakgebied']);
+    assert.deepStrictEqual(storedThemeBook.themes, ['Pesten', 'Nieuw vakgebied']);
+    const rereadThemes = await call('/api/books', token1);
+    assert.strictEqual(rereadThemes.status, 200);
+    const listedThemeBook = (rereadThemes.body.books || rereadThemes.body)
+      .find((book) => book.metadataIsbn === themeIsbn);
+    assert.deepStrictEqual(listedThemeBook.themes, ['Pesten', 'Nieuw vakgebied']);
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
