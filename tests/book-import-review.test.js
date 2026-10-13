@@ -81,6 +81,50 @@ const OTHER_ISBN = '9780439554930';
     assert.strictEqual(contextReview.decisions.summary.readyToApply, false);
   }
 
+  // A combined Barcode / ISBN column can carry an actual printed barcode.
+  // Editing ONLY the damaged ISBN must not replace that physical label by
+  // the automatic ISBN barcode fallback.
+  const combinedBarcode = [{
+    Titel: 'Gedrukt label', Auteur: 'A', 'ISBN-nummer': 'niet geldig',
+    'Barcode / ISBN': '432198',
+  }];
+  const barcodeAfterIsbnFix = await analyzeReviewedImport(combinedBarcode,
+    [{ index: 0, fields: { editionIsbn: ISBN } }], { acceptWarnings: true });
+  assert.strictEqual(barcodeAfterIsbnFix.ok, true);
+  assert.strictEqual(barcodeAfterIsbnFix.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(barcodeAfterIsbnFix.rows[0].book.barcode, '432198');
+  assert.strictEqual(barcodeAfterIsbnFix.decisions.summary.readyToApply, true);
+  assert.strictEqual(barcodeAfterIsbnFix.correctedRows[0]['Barcode / ISBN'], '432198');
+
+  // And in the opposite direction: correcting the physical barcode must
+  // preserve an edition ISBN that came from the same combined source.
+  const combinedIsbn = [{
+    Titel: 'ISBN in samenvoegkolom', Auteur: 'A', Barcode: 'niet geldig',
+    'Barcode / ISBN': ISBN,
+  }];
+  const isbnAfterBarcodeFix = await analyzeReviewedImport(combinedIsbn,
+    [{ index: 0, fields: { barcode: '998877' } }], { acceptWarnings: true });
+  assert.strictEqual(isbnAfterBarcodeFix.ok, true);
+  assert.strictEqual(isbnAfterBarcodeFix.rows[0].book.editionIsbn, ISBN);
+  assert.strictEqual(isbnAfterBarcodeFix.rows[0].book.barcode, '998877');
+  assert.strictEqual(isbnAfterBarcodeFix.decisions.summary.readyToApply, true);
+  assert.strictEqual(isbnAfterBarcodeFix.correctedRows[0]['Barcode / ISBN'], ISBN);
+
+  const existingBarcodeRow = [{
+    Titel: 'Nieuwe editie', Auteur: 'A', 'ISBN-nummer': ISBN, Barcode: '7654321',
+  }];
+  const existingBarcode = [{ id: 'existing-other', title: 'Ander boek',
+    metadataIsbn: OTHER_ISBN, barcode: '7654321' }];
+  const barcodeConflict = await analyzeReviewedImport(existingBarcodeRow, [],
+    { existingBooks: existingBarcode, acceptWarnings: true });
+  assert.strictEqual(barcodeConflict.ok, true);
+  assert.strictEqual(barcodeConflict.decisions.rows[0].reason, 'existing_physical_barcode_requires_correction');
+  assert.strictEqual(barcodeConflict.decisions.summary.readyToApply, false);
+  const noBarcodeConflict = await analyzeReviewedImport(existingBarcodeRow,
+    [{ index: 0, fields: { barcode: '4567890' } }],
+    { existingBooks: existingBarcode, acceptWarnings: true });
+  assert.strictEqual(noBarcodeConflict.decisions.summary.readyToApply, true);
+
   const warningRow = [{ Titel: 'Waarschuwing', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
   const unapproved = await analyzeReviewedImport(warningRow);
   assert.strictEqual(unapproved.rows[0].status, 'warning');
