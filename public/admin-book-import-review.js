@@ -358,6 +358,12 @@
     }
 
     function updateCorrection(index, field, value) {
+      if (field === 'editionIsbn' && stage?.mode === 'inventory_sync') {
+        // ISBN-based choices must not silently carry over after changing the
+        // edition identity. The old choice would be stale and uneditable.
+        const oldIsbn = stage.rows?.find((item) => item.index === index)?.book?.editionIsbn;
+        if (oldIsbn) inventoryResolutions.delete(oldIsbn);
+      }
       const existing = corrections.get(index);
       const next = existing && !existing.skip
         ? { ...existing, fields: { ...existing.fields } }
@@ -642,6 +648,11 @@
         skip.checked = corrections.get(row.index)?.skip === true;
         skip.addEventListener('change', () => {
           toggleSkippedRow(corrections, skippedEdits, row.index, skip.checked);
+          // Skipping the selected edition should not leave a hidden choice
+          // that prevents the next server-side review from completing.
+          if (inventorySync && skip.checked && row.book?.editionIsbn) {
+            inventoryResolutions.delete(row.book.editionIsbn);
+          }
           warningsAccepted = false;
           mustRecheckWarnings = true;
           if (openEditor === row.index && skip.checked) openEditor = null;
