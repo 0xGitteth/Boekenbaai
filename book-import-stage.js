@@ -141,6 +141,7 @@ function importStageView(stage) {
   if (TERMINAL_STATUSES.has(stage.status) || stage.status === 'preparing') {
     return {
       id: stage.id, status: stage.status, revision: stage.revision,
+      mode: stage.options?.mode === 'inventory_sync' ? 'inventory_sync' : 'create',
       fileName: stage.fileName, expiresAt: new Date(stage.expiresAt).toISOString(),
       result: stage.status === 'completed' ? stage.result : null,
     };
@@ -148,6 +149,7 @@ function importStageView(stage) {
   const analysis = stage.analysis;
   return {
     id: stage.id, status: stage.status, revision: stage.revision,
+    mode: stage.options?.mode === 'inventory_sync' ? 'inventory_sync' : 'create',
     fileName: stage.fileName, workbook: stage.workbook,
     expiresAt: new Date(stage.expiresAt).toISOString(),
     corrections: stage.corrections, acceptWarnings: stage.acceptWarnings,
