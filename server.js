@@ -8,8 +8,6 @@ const { analyzeReviewedImport } = require('./book-import-review');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 
 const bookImportStageStore = createImportStageStore();
-// Must be initialized before markInterruptedImportJobs() calls loadDb at startup.
-const dbSnapshotDigests = new WeakMap();
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -1576,16 +1574,21 @@ function readWorkbookRows(XLSX, base64) {
   return { ok: true, rows };
 }
 
-// All request-local database snapshots carry their original on-disk digest.
-// A handler that awaited request input or external metadata must never commit
-// an old snapshot after another handler already changed the database.
-function dbDigest(raw) {
-  return crypto.createHash('sha256').update(raw).digest('hex');
-}
-function assertCurrentDbSnapshot(db) {
-  const loadedDigest = dbSnapshotDigests.get(db);
-  if (!loadedDigest || loadedDigest !== dbDigest(fs.readFileSync(DATA_PATH, 'utf8'))) {
-    const error = new Error('Database changed while this request was being processed');
+// A previously confirmed reviewed import is a durable commit boundary.
+// Other legacy import jobs may legitimately update progress while processing;
+// rejecting ALL stale snapshots would break those jobs. However, any writer
+// whose snapshot predates the latest confirmed PR3 batch MUST fail instead of
+// overwriting the new books and the permanent import report.
+function assertReviewedImportNotLost(db) {
+  const current = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+  const latest = Array.isArray(current.bookImportReports)
+    ? current.bookImportReports[current.bookImportReports.length - 1]?.id
+    : null;
+  if (!latest) return;
+  const stillPresent = Array.isArray(db.bookImportReports)
+    && db.bookImportReports.some((report) => report?.id === latest);
+  if (!stillPresent) {
+    const error = new Error('A confirmed book import was committed after this request began');
     error.code = 'DATABASE_WRITE_CONFLICT';
     throw error;
   }
@@ -1606,28 +1609,24 @@ function loadDb() {
   data.classes = data.classes.map(ensureClassShape);
   data.folders = data.folders.map(ensureFolderShape);
   data.users = data.users.map(ensureTeacherShape);
-  dbSnapshotDigests.set(data, dbDigest(raw));
   return data;
 }
 
 function saveDb(db) {
-  assertCurrentDbSnapshot(db);
-  const raw = JSON.stringify(db, null, 2);
-  fs.writeFileSync(DATA_PATH, raw);
-  dbSnapshotDigests.set(db, dbDigest(raw));
+  assertReviewedImportNotLost(db);
+  fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
 }
 
 // The reviewed book import is one confirmed transaction. Write its complete
 // database snapshot to a sibling file first, then atomically replace the old
 // snapshot so a failed or interrupted write cannot leave half a JSON document.
 function saveReviewedBookImportDb(db) {
-  assertCurrentDbSnapshot(db);
+  assertReviewedImportNotLost(db);
   const raw = JSON.stringify(db, null, 2);
   const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
   try {
     fs.writeFileSync(temporaryPath, raw, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporaryPath, DATA_PATH);
-    dbSnapshotDigests.set(db, dbDigest(raw));
   } finally {
     try { fs.unlinkSync(temporaryPath); } catch (error) {
       if (error.code !== 'ENOENT') console.warn('Tijdelijke importdatabase opruimen mislukt:', error.message);
