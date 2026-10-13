@@ -4713,7 +4713,7 @@ async function handleApi(req, res, requestUrl) {
             const row = entry.row;
             const sourceByField = Object.create(null);
             for (const [field, provenance] of Object.entries(row.provenance || {})) {
-              const sourceType = ['excel', 'metadata', 'derived', 'existing'].includes(provenance?.source)
+              const sourceType = ['excel', 'metadata', 'derived', 'existing', 'manual'].includes(provenance?.source)
                 ? provenance.source : 'unknown';
               sourceByField[field] = createFieldSource(sourceType, provenance?.detail || null);
             }
