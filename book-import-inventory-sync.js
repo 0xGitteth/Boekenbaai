@@ -182,6 +182,11 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       && (inventory.barcodes.get(isbn) || []).some((book) => !existing.includes(book))) {
       block('isbn_barcode_belongs_to_other_edition');
     }
+    // If a later barcode check also failed, present THAT actionable reason,
+    // not the otherwise resolvable reduction that a manager cannot approve.
+    if (reason === 'reduction_requires_manual_review' && blockers.size > 1) {
+      reason = [...blockers].find((item) => item !== 'reduction_requires_manual_review');
+    }
     const first = rows[0].index;
     const canKeepExisting = target < existing.length
       && blockers.size === 1 && blockers.has('reduction_requires_manual_review');
@@ -224,7 +229,8 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       if (unprintedToAdd > 0) {
         // No guessing which physical row the remaining copies belong to.
         reason = 'unmatched_physical_copies';
-        proposedAdds.splice(proposedAdds.findIndex((item) => item.editionIsbn === isbn));
+        const firstAddition = proposedAdds.findIndex((item) => item.editionIsbn === isbn);
+        if (firstAddition >= 0) proposedAdds.splice(firstAddition);
         decisions[first] = { ...decisions[first], action: 'blocked', reason, addCopies: 0 };
       }
     }
