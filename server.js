@@ -4264,6 +4264,46 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, { unmappedTagStats });
     }
 
+    // PR5: one staff-only directory for choosing a physical copy and its
+    // borrower. Identity and loan details are filtered SERVER-SIDE using
+    // live teacher/class membership, including class-owned loans.
+    if (req.method === 'GET' && requestUrl.pathname === '/api/staff/loans') {
+      if (!ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen medewerkers kunnen uitleningen beheren.' });
+      }
+      const db = getDb();
+      const allowedIds = user.role === 'admin'
+        ? (db.classes || []).map((klass) => klass.id) : ownClassIds(db, user);
+      const allowedSet = new Set(allowedIds);
+      const classes = (db.classes || []).filter((klass) => allowedSet.has(klass.id))
+        .map((klass) => ({ id: klass.id, name: klass.name }));
+      const students = (db.students || []).filter((student) =>
+        user.role === 'admin' || studentClassIds(db, student).some((id) => allowedSet.has(id)))
+        .map((student) => ({ id: student.id, name: student.name,
+          classIds: studentClassIds(db, student).filter((id) => allowedSet.has(id)),
+          active: student.active !== false && student.status !== 'inactive' }));
+      const allowedStudents = new Map(students.map((student) => [student.id, student]));
+      const books = db.books.map((book) => ({
+        id: book.id, title: book.title, author: book.author, barcode: book.barcode,
+        status: book.status, fixedLocation: book.fixedLocation || null,
+      }));
+      const loans = db.books.filter((book) => book.status === 'borrowed')
+        .map((book) => {
+          const borrower = book.borrowedByClassId
+            ? classes.find((klass) => klass.id === book.borrowedByClassId)
+            : allowedStudents.get(book.borrowedBy);
+          if (!borrower) return null;
+          return {
+            bookId: book.id, title: book.title, author: book.author, barcode: book.barcode,
+            borrowerType: book.borrowedByClassId ? 'class' : 'student',
+            borrowerId: borrower.id, borrowerName: borrower.name,
+            dueDate: book.dueDate || null, borrowedAt: book.borrowedAt || null,
+            fixedLocation: book.fixedLocation || null,
+          };
+        }).filter(Boolean);
+      return sendJson(res, 200, { classes, students, books, loans });
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
       const borrowCounts = getBorrowCountsMap(db.history);
@@ -7526,7 +7566,10 @@ async function handleApi(req, res, requestUrl) {
         }
 
         historyEntries = historyEntries.filter(
-          (entry) => entry && typeof entry.studentId === 'string' && studentIds.has(entry.studentId)
+          (entry) => entry && (
+            (typeof entry.studentId === 'string' && studentIds.has(entry.studentId))
+            || (typeof entry.classId === 'string' && teacherClassIds.has(entry.classId))
+          )
         );
       }
 
@@ -7584,7 +7627,10 @@ async function handleApi(req, res, requestUrl) {
       ].filter(Boolean));
 
       const classHistory = (Array.isArray(db.history) ? db.history : []).filter(
-        (entry) => entry && entry.type === 'check_out' && studentIdsInClass.has(entry.studentId)
+        (entry) => entry && (
+          (entry.type === 'check_out' && studentIdsInClass.has(entry.studentId))
+          || (entry.type === 'check_out_class' && entry.classId === klass.id)
+        )
       );
       const borrowCountPerStudent = new Map();
       for (const entry of classHistory) {
@@ -7593,7 +7639,8 @@ async function handleApi(req, res, requestUrl) {
       }
 
       const activeLoanCount = db.books.filter(
-        (book) => book.status === 'borrowed' && studentIdsInClass.has(book.borrowedBy)
+        (book) => book.status === 'borrowed'
+          && (studentIdsInClass.has(book.borrowedBy) || book.borrowedByClassId === klass.id)
       ).length;
 
       for (const student of db.students) {
