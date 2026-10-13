@@ -286,7 +286,10 @@
         Array.isArray(book.manualThemes) && book.manualThemes.length
           ? book.manualThemes : book.themes || []
       ).join('; ');
-      if (field === 'easyReading') return book.easyReading ? 'ja' : '';
+      if (field === 'easyReading') {
+        const source = row.provenance?.easyReading;
+        return source?.source === 'excel' ? String(source.raw ?? '') : (book.easyReading ? 'ja' : '');
+      }
       if (field === 'examMaterial') return book.suitableForExamList ? 'Ja' : '';
       if (field === 'studentLoan') return row.context?.studentLoan?.name || '';
       if (field === 'classLoan') return row.context?.classLoan?.name || '';
