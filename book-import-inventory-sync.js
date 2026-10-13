@@ -101,6 +101,11 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       || existing.some((book) => identity(book) !== fingerprint)) {
       reason ||= 'edition_identity_mismatch';
     }
+    // A brand-new edition must never create an empty title/author book, even
+    // if ordinary Excel warnings were explicitly accepted.
+    if (rows.some((row) => !row.book?.title || !row.book?.author)) {
+      reason ||= 'missing_title_or_author';
+    }
     let target = 0;
     const seenPrinted = new Set();
     const newPrinted = [];
