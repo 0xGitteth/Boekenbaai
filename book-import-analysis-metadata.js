@@ -436,7 +436,17 @@ async function resolveMetadata(row, options) {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
       const candidates = metadataCandidatesFromResult(result);
       const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book, row.provenance);
-      if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
+      if (selection.conflict?.code === 'metadata_title_conflict'
+        && options.correctedMetadataFields?.has('title')) {
+        // A teacher has explicitly chosen the Excel title during review.
+        // Do not import ambiguous metadata, but allow the row to proceed
+        // with its own validated ISBN/title/author after warning consent.
+        addIssue(row, 'metadata_differs_from_excel', 'warning', {
+          field: 'title', excelValue: row.book.title,
+          metadataValue: selection.conflict.titles,
+          chosenByAdministrator: true,
+        });
+      } else if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       else if (selection.candidate) applyMetadataCandidate(row, selection.candidate, {
         skipThemeEnrichment: options.skipThemeEnrichment === true,
         correctedMetadataFields: options.correctedMetadataFields,
