@@ -1083,6 +1083,38 @@ async function run() {
       book.id === firstPhysical.id).borrowedBy, 'student-match');
     assert.ok(safeDbAfterRetention.history.some((event) => event.id === 'loan-sync-regression'));
 
+    // A forged keep-existing resolution MUST NOT override student/class loan
+    // contexts, even when the same workbook includes safely addable stock.
+    const loanBlockStage = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([
+        { Titel: 'Synchronisatieboek', Auteur: 'A Auteur',
+          'ISBN-nummer': syncIsbn, Aantal: 1, 'naam leerling': 'Lisa Leerling' },
+        { Titel: 'Andere nieuwe voorraad', Auteur: 'A Auteur',
+          'ISBN-nummer': '9781234567217', Aantal: 1 },
+      ]),
+    });
+    assert.strictEqual(loanBlockStage.status, 201, JSON.stringify(loanBlockStage.body).slice(0, 600));
+    assert.strictEqual(loanBlockStage.body.decisions.summary.addCopies, 1);
+    assert.strictEqual(loanBlockStage.body.decisions.rows[0].reason,
+      'loan_context_requires_followup');
+    assert.strictEqual(loanBlockStage.body.decisions.rows[0].canKeepExisting, false);
+    assert.strictEqual(loanBlockStage.body.decisions.summary.readyToApply, false);
+    const forgedRetention = await call('/api/admin/book-import-stages/' + loanBlockStage.body.id
+      + '/review', token1b, { revision: 1, acceptWarnings: true, corrections: [],
+        inventoryResolutions: [{ isbn: syncIsbn, action: 'keep_existing' }] });
+    assert.strictEqual(forgedRetention.status, 400,
+      'Inventory choice must never bypass an unresolved student loan');
+    assert.strictEqual(forgedRetention.body.error, 'invalid_sync_resolution_reason');
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + loanBlockStage.body.id
+      + '/apply', token1, { revision: 1, confirm: true })).status, 409);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.some((book) =>
+      book.metadataIsbn === '9781234567217'), false,
+    'Unresolved loan in another Excel row must block applying the whole reviewed batch');
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + loanBlockStage.body.id
+      + '/cancel', token1b, { revision: 1 })).status, 409,
+      'The rejected unsafe apply closes its single-use stage');
+
     // Concurrent book creation after preview invalidates the checked plan.
     const syncRaceIsbn = '9781234567118';
     const raceSync = await call('/api/admin/book-import-stages', token1b, {
