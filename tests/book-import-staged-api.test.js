@@ -161,9 +161,8 @@ async function run() {
       revision: 1, confirm: true,
     })).status, 409);
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.length, 2);
-    assert.strictEqual((await call('/api/admin/book-import-stages/' + duplicateStage.body.id + '/cancel', token1b, {
-      revision: 1,
-    })).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + duplicateStage.body.id, token1b)).body.status,
+      'failed', 'A rejected apply has already closed the shared stage');
     assert.strictEqual((await call('/api/admin/book-import-stages/active', token1)).body.stage, null);
 
     const stageWithRace = await call('/api/admin/book-import-stages', token1, {
