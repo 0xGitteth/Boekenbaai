@@ -271,8 +271,8 @@ async function analyzeBookImportRows(rows, options = {}) {
     if (!hasConflictingRepairSuggestions && !hasIdentifierConflict) {
       await resolveMetadata(row, {
         ...metadataOptions,
-        skipThemeEnrichment: options.correctedThemeRowIndexes instanceof Set
-          && options.correctedThemeRowIndexes.has(index),
+        correctedMetadataFields: options.correctedMetadataFieldsByRow instanceof Map
+          ? options.correctedMetadataFieldsByRow.get(index) : null,
       });
     }
 
