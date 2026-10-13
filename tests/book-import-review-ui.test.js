@@ -99,4 +99,14 @@ assert.ok(script.includes("button('Excel-titel behouden'"),
 assert.ok(script.includes('iedere ingevulde waarde Makkelijk lezen'),
   'Make the deliberately nonstandard every-nonblank ML rule explicit in the editor');
 
+// PR4 inventory review decisions must survive a shared session, but edits
+// to ISBN or skip state must discard any now-inapplicable approval.
+assert.ok(script.includes("inventoryResolutions: [...inventoryResolutions.values()]"),
+  'Submit the explicit inventory choices with correction-review requests');
+assert.ok(script.includes('inventoryResolutions.delete(oldIsbn)'),
+  'Changing the ISBN must discard stale retention decisions');
+assert.ok(script.includes('inventoryResolutions.delete(row.book.editionIsbn)'),
+  'Skipping an ISBN row must not leave an invisible unresolved choice');
+assert.ok(script.includes("stage.inventoryResolutions || []"),
+  'Reload retained choices from the server after remote review');
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
