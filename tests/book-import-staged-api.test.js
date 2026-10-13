@@ -1403,7 +1403,7 @@ async function run() {
       metadataIsbn: existingLoanEdition, barcode: '88992211',
     });
     assert.strictEqual(preexistingAvailable.status, 201, JSON.stringify(preexistingAvailable.body));
-    const physicalId = preexistingAvailable.body.id;
+    const physicalId = preexistingAvailable.body.book.id;
     const syncLoanExcel = fileBase64([{
       Titel: 'Bestaande fysieke editie', Auteur: 'A Auteur',
       'ISBN-nummer': existingLoanEdition, Barcode: '88992211',
@@ -1479,7 +1479,7 @@ async function run() {
     });
     assert.strictEqual(staleLoanStage.status, 201);
     assert.strictEqual(staleLoanStage.body.decisions.summary.restoreLoans, 1);
-    const actualCheckout = await call('/api/books/' + createdForRace.body.id + '/check-out',
+    const actualCheckout = await call('/api/books/' + createdForRace.body.book.id + '/check-out',
       token2, { studentId: 'student-match' });
     assert.strictEqual(actualCheckout.status, 200, JSON.stringify(actualCheckout.body).slice(0, 340));
     const staleLoanApply = await call('/api/admin/book-import-stages/'
@@ -1487,10 +1487,10 @@ async function run() {
     assert.strictEqual(staleLoanApply.status, 409);
     assert.strictEqual(staleLoanApply.body.error, 'inventory_preview_stale');
     const afterHistoricLoanRace = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    assert.strictEqual(afterHistoricLoanRace.books.find((book) => book.id === createdForRace.body.id)
+    assert.strictEqual(afterHistoricLoanRace.books.find((book) => book.id === createdForRace.body.book.id)
       .borrowedBy, 'student-match');
     assert.ok(!afterHistoricLoanRace.history.some((event) =>
-      event.type === 'loan_imported' && event.bookId === createdForRace.body.id));
+      event.type === 'loan_imported' && event.bookId === createdForRace.body.book.id));
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
