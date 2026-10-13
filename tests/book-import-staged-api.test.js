@@ -1028,17 +1028,17 @@ async function run() {
     'A smaller Excel count must never silently remove a library copy');
 
     // Concurrent book creation after preview invalidates the checked plan.
-    const raceIsbn = '9781234567118';
+    const syncRaceIsbn = '9781234567118';
     const raceSync = await call('/api/admin/book-import-stages', token1b, {
       mode: 'inventory_sync',
       file: fileBase64([{ Titel: 'Bijgewerkte voorraad', Auteur: 'A Auteur',
-        'ISBN-nummer': raceIsbn, Aantal: 2 }]),
+        'ISBN-nummer': syncRaceIsbn, Aantal: 2 }]),
     });
     assert.strictEqual(raceSync.status, 201);
     assert.strictEqual(raceSync.body.decisions.summary.addCopies, 2);
     const concurrentBook = await call('/api/books', token2, {
       title: 'Bijgewerkte voorraad', author: 'A Auteur',
-      barcode: '77661122', metadataIsbn: raceIsbn,
+      barcode: '77661122', metadataIsbn: syncRaceIsbn,
     });
     assert.strictEqual(concurrentBook.status, 201);
     const staleInventoryApply = await call('/api/admin/book-import-stages/' + raceSync.body.id
@@ -1046,7 +1046,7 @@ async function run() {
     assert.strictEqual(staleInventoryApply.status, 409);
     assert.strictEqual(staleInventoryApply.body.error, 'inventory_preview_stale');
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
-      .filter((item) => item.metadataIsbn === raceIsbn).length, 1);
+      .filter((item) => item.metadataIsbn === syncRaceIsbn).length, 1);
     assert.strictEqual((await call('/api/admin/book-import-stages/active', token1)).body.stage, null);
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
