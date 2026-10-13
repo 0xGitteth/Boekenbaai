@@ -285,7 +285,13 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
   const normalized = normalizeCorrections(corrections, sourceRows.length);
   if (!normalized.ok) return normalized;
   const rows = applyCorrectionsToRows(sourceRows, normalized.corrections);
-  const analysis = await analyzeBookImportRows(rows, options);
+  const correctedThemeRowIndexes = new Set([...normalized.corrections.entries()]
+    .filter(([, entry]) => entry.skip !== true
+      && Object.prototype.hasOwnProperty.call(entry.fields, 'themes'))
+    .map(([index]) => index));
+  const analysis = await analyzeBookImportRows(rows, {
+    ...options, correctedThemeRowIndexes,
+  });
   if (!analysis.ok) return analysis;
   const decisions = buildReviewDecisions(analysis, Array.isArray(options.existingBooks) ? options.existingBooks : [],
     { acceptWarnings: options.acceptWarnings === true });
