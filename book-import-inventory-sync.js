@@ -109,6 +109,30 @@ function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarning
       reason: '', combinedWith: first,
     };
   }
+  // An ISBN-based fallback may be shared only by copies of the same edition.
+  // A physical printed barcode must never collide with another new copy,
+  // including another row's generated ISBN barcode.
+  const additionsByBarcode = new Map();
+  for (const addition of proposedAdds) {
+    if (!additionsByBarcode.has(addition.barcode)) additionsByBarcode.set(addition.barcode, []);
+    additionsByBarcode.get(addition.barcode).push(addition);
+  }
+  const invalidEditions = new Set();
+  for (const matches of additionsByBarcode.values()) {
+    if (matches.length < 2) continue;
+    const sameEdition = matches.every((add) => add.editionIsbn === matches[0].editionIsbn);
+    const allAutomatic = matches.every((add) => !analysis.rows[add.index]?.book?.barcode);
+    if (!sameEdition || !allAutomatic) {
+      for (const addition of matches) invalidEditions.add(addition.editionIsbn);
+    }
+  }
+  for (const isbn of invalidEditions) {
+    const first = groups.get(isbn)[0].index;
+    decisions[first] = { ...decisions[first], action: 'blocked',
+      reason: 'workbook_physical_barcode_conflict', addCopies: 0 };
+  }
+  const safeAdds = proposedAdds.filter((addition) => !invalidEditions.has(addition.editionIsbn));
+
   const received = new Set(groups.keys());
   const absentIds = new Set();
   for (const [isbn, books] of inventory.editions) {
@@ -116,10 +140,10 @@ function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarning
     for (const book of books) absentIds.add(book.id || book);
   }
   const blocked = decisions.filter((entry) => entry.action === 'blocked').length;
-  const additionalCopies = proposedAdds.reduce((sum, entry) => sum + entry.quantity, 0);
+  const additionalCopies = safeAdds.reduce((sum, entry) => sum + entry.quantity, 0);
   if (additionalCopies > 5000) return { ok: false, error: 'too_many_copies' };
   return {
-    ok: true, rows: decisions, proposedAdds,
+    ok: true, rows: decisions, proposedAdds: safeAdds,
     summary: {
       addCopies: additionalCopies, blockedEditions: blocked,
       unchangedEditions: decisions.filter((entry) => entry.action === 'unchanged').length,
