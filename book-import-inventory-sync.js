@@ -14,13 +14,25 @@ function editionKeys(book) {
     .map(canonicalizeBookIsbn13).filter(Boolean))];
   return identified.length ? identified : [canonicalizeBookIsbn13(book?.barcode)].filter(Boolean);
 }
+function comparableIdentity(book) {
+  return [normalizeBookIdentityComparable(book?.title || ''),
+    normalizeBookIdentityComparable(book?.author || '')].join('|');
+}
 function inventoryIndex(books) {
   const editions = new Map();
   const barcodes = new Map();
+  const unidentifiedTitles = new Map();
   const ambiguousEditions = new Set();
   for (const book of Array.isArray(books) ? books : []) {
     if (!book || typeof book !== 'object') continue;
     const keys = editionKeys(book);
+    if (!keys.length) {
+      const identity = comparableIdentity(book);
+      if (identity !== '|') {
+        if (!unidentifiedTitles.has(identity)) unidentifiedTitles.set(identity, []);
+        unidentifiedTitles.get(identity).push(book);
+      }
+    }
     if (keys.length > 1) for (const isbn of keys) ambiguousEditions.add(isbn);
     for (const isbn of keys) {
       if (!editions.has(isbn)) editions.set(isbn, []);
@@ -32,7 +44,7 @@ function inventoryIndex(books) {
       barcodes.get(barcode).push(book);
     }
   }
-  return { editions, barcodes, ambiguousEditions };
+  return { editions, barcodes, ambiguousEditions, unidentifiedTitles };
 }
 function normalizeInventoryResolutions(input) {
   if (input === undefined) return { ok: true, values: [] };
@@ -68,6 +80,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     action: row.status === 'skipped' ? 'skipped' : 'pending',
     reason: row.status === 'skipped' ? 'skipped' : '',
     existingCopies: 0, borrowedCopies: 0, targetCopies: 0, addCopies: 0,
+    rowAddCopies: 0,
   }));
   for (const row of analysis.rows) {
     if (row.status === 'skipped') continue;
@@ -92,14 +105,18 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
   for (const [isbn, rows] of groups) {
     const existing = inventory.editions.get(isbn) || [];
     const borrowed = existing.filter((book) => book.status === 'borrowed' || Boolean(book.borrowedBy)).length;
-    const identity = (book) => [normalizeBookIdentityComparable(book?.title || ''),
-      normalizeBookIdentityComparable(book?.author || '')].join('|');
-    const fingerprint = identity(rows[0].book);
+    const fingerprint = comparableIdentity(rows[0].book);
     let reason = inventory.ambiguousEditions.has(isbn)
       ? 'ambiguous_existing_edition_isbn' : '';
-    if (rows.some((row) => identity(row.book) !== fingerprint)
-      || existing.some((book) => identity(book) !== fingerprint)) {
+    if (rows.some((row) => comparableIdentity(row.book) !== fingerprint)
+      || existing.some((book) => comparableIdentity(book) !== fingerprint)) {
       reason ||= 'edition_identity_mismatch';
+    }
+    // Legacy copies with a physical barcode but no edition ISBN must not
+    // become silent duplicates just because the new Excel supplies an ISBN.
+    // An administrator can add the correct ISBN to the existing book first.
+    if (!existing.length && inventory.unidentifiedTitles.has(fingerprint)) {
+      reason ||= 'possible_existing_book_without_isbn';
     }
     // A brand-new edition must never create an empty title/author book, even
     // if ordinary Excel warnings were explicitly accepted.
@@ -153,10 +170,28 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         editionIsbn: isbn, index: item.index, quantity: 1, barcode: item.barcode,
         templateBookId: existing[0]?.id || null,
       });
-      if (additional > newPrinted.length) proposedAdds.push({
-        editionIsbn: isbn, index: first, quantity: additional - newPrinted.length, barcode: isbn,
-        templateBookId: existing[0]?.id || null,
-      });
+      // Assign automatic-ISBN copies to their ACTUAL worksheet rows, not
+      // unconditionally to the first row in the group. Otherwise different
+      // description/tags/themes on another row could be silently discarded.
+      let unprintedToAdd = additional - newPrinted.length;
+      for (const row of rows) {
+        if (unprintedToAdd <= 0) break;
+        if (normalizeRuntimeBarcode(row.book?.barcode)) continue;
+        const count = Math.min(unprintedToAdd, row.book.quantity.value);
+        if (count > 0) {
+          proposedAdds.push({
+            editionIsbn: isbn, index: row.index, quantity: count, barcode: isbn,
+            templateBookId: existing[0]?.id || null,
+          });
+          unprintedToAdd -= count;
+        }
+      }
+      if (unprintedToAdd > 0) {
+        // No guessing which physical row the remaining copies belong to.
+        reason = 'unmatched_physical_copies';
+        proposedAdds.splice(proposedAdds.findIndex((item) => item.editionIsbn === isbn));
+        decisions[first] = { ...decisions[first], action: 'blocked', reason, addCopies: 0 };
+      }
     }
     for (const row of rows.slice(1)) decisions[row.index] = {
       ...decisions[row.index], ...totals, addCopies: 0, action: 'combined',
@@ -186,6 +221,9 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       reason: 'workbook_physical_barcode_conflict', addCopies: 0 };
   }
   const safeAdds = proposedAdds.filter((addition) => !invalidEditions.has(addition.editionIsbn));
+  for (const addition of safeAdds) {
+    decisions[addition.index].rowAddCopies += addition.quantity;
+  }
 
   const received = new Set(groups.keys());
   const absentIds = new Set();
