@@ -99,9 +99,11 @@ function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarning
     if (!reason) {
       for (const item of newPrinted) proposedAdds.push({
         editionIsbn: isbn, index: item.index, quantity: 1, barcode: item.barcode,
+        templateBookId: existing[0]?.id || null,
       });
       if (additional > newPrinted.length) proposedAdds.push({
         editionIsbn: isbn, index: first, quantity: additional - newPrinted.length, barcode: isbn,
+        templateBookId: existing[0]?.id || null,
       });
     }
     for (const row of rows.slice(1)) decisions[row.index] = {
