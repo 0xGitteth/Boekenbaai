@@ -1312,6 +1312,88 @@ async function run() {
     assert.ok(savedGuardedDb.history.some((event) => event.type === 'books_inventory_sync'));
     assert.ok(!savedGuardedDb.books.some((book) => book.barcode === '77441122'));
 
+    // PR5 completion: an already borrowed book in the Excel inventory must
+    // become a real active student/class loan, not an available physical copy.
+    // Missing original checkout dates remain UNKNOWN, and the migration must
+    // not inflate genuine historical check_out reading statistics.
+    const studentLoanIsbn = '9780131103627';
+    const studentLoanStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{
+        Titel: 'Bestaande leerlinglening', Auteur: 'A Auteur',
+        'ISBN-nummer': studentLoanIsbn, 'naam leerling': 'Lisa Leerling',
+      }]),
+    });
+    assert.strictEqual(studentLoanStage.status, 201, JSON.stringify(studentLoanStage.body).slice(0, 420));
+    assert.strictEqual(studentLoanStage.body.decisions.rows[0].loanBorrower?.id, 'student-match');
+    assert.strictEqual(studentLoanStage.body.decisions.summary.readyToApply, true);
+    const studentLoanApplied = await call('/api/admin/book-import-stages/'
+      + studentLoanStage.body.id + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(studentLoanApplied.status, 200, JSON.stringify(studentLoanApplied.body).slice(0, 420));
+    assert.strictEqual(studentLoanApplied.body.result.restoredLoans, 1);
+    const storedStudentLoanDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const importedStudentCopy = storedStudentLoanDb.books.find((copy) =>
+      copy.metadataIsbn === studentLoanIsbn);
+    assert.strictEqual(importedStudentCopy.status, 'borrowed');
+    assert.strictEqual(importedStudentCopy.borrowedBy, 'student-match');
+    assert.strictEqual(importedStudentCopy.borrowedAt, null);
+    assert.strictEqual(importedStudentCopy.dueDate, null);
+    const loanOwner = storedStudentLoanDb.students.find((student) => student.id === 'student-match');
+    assert.ok(loanOwner.borrowedBooks.some((loan) => loan.bookId === importedStudentCopy.id));
+    assert.ok(storedStudentLoanDb.history.some((event) => event.type === 'loan_imported'
+      && event.bookId === importedStudentCopy.id));
+    assert.ok(!storedStudentLoanDb.history.some((event) => event.type === 'check_out'
+      && event.bookId === importedStudentCopy.id),
+      'An old Excel loan must not claim a brand-new reading moment');
+    const publicBorrowerData = await call('/api/books/' + importedStudentCopy.id, null);
+    assert.strictEqual(publicBorrowerData.status, 200);
+    assert.strictEqual(publicBorrowerData.body.status, 'borrowed');
+    assert.ok(!JSON.stringify(publicBorrowerData.body).includes('student-match'));
+
+    const classLoanIsbn = '9780262033848';
+    const classLoanStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{
+        Titel: 'Bestaande klaslening', Auteur: 'A Auteur',
+        'ISBN-nummer': classLoanIsbn, 'Geleend door klas': 'Groep A',
+      }]),
+    });
+    assert.strictEqual(classLoanStage.status, 201);
+    assert.strictEqual(classLoanStage.body.decisions.rows[0].loanBorrower?.id, 'class-match');
+    const classLoanApplied = await call('/api/admin/book-import-stages/'
+      + classLoanStage.body.id + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(classLoanApplied.status, 200, JSON.stringify(classLoanApplied.body).slice(0, 420));
+    const classDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(classDb.books.find((copy) => copy.metadataIsbn === classLoanIsbn)
+      .borrowedByClassId, 'class-match');
+    assert.ok(classDb.history.some((event) => event.type === 'loan_imported'
+      && event.classId === 'class-match'));
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + classLoanStage.body.id
+      + '/apply', token1, { revision: 1, confirm: true })).status, 409,
+      'Replaying a completed import must not duplicate an old class loan');
+
+    const tooManyLoanCopies = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{
+        Titel: 'Onbekend geleend exemplaar', Auteur: 'A Auteur',
+        'ISBN-nummer': '9780201633610', Aantal: 2, 'naam leerling': 'Lisa Leerling',
+      }]),
+    });
+    assert.strictEqual(tooManyLoanCopies.status, 201);
+    assert.strictEqual(tooManyLoanCopies.body.decisions.rows[0].reason,
+      'loan_requires_single_copy');
+    assert.strictEqual(tooManyLoanCopies.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/'
+      + tooManyLoanCopies.body.id + '/cancel', token1, { revision: 1 })).status, 200);
+
+    const missingStudentLoan = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{
+        Titel: 'Onbekende leerling', Auteur: 'A Auteur',
+        'ISBN-nummer': '9780321146533', 'naam leerling': 'Onbekende leerlingnaam',
+      }]),
+    });
+    assert.strictEqual(missingStudentLoan.status, 201);
+    assert.strictEqual(missingStudentLoan.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/'
+      + missingStudentLoan.body.id + '/cancel', token1, { revision: 1 })).status, 200);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
