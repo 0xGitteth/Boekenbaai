@@ -310,7 +310,10 @@
         const source = row.provenance?.easyReading;
         return source?.source === 'excel' ? String(source.raw ?? '') : (book.easyReading ? 'ja' : '');
       }
-      if (field === 'examMaterial') return book.suitableForExamList ? 'Ja' : '';
+      if (field === 'examMaterial') {
+        const source = row.provenance?.suitableForExamList;
+        return source?.source === 'excel' ? String(source.raw ?? '') : (book.suitableForExamList ? 'Ja' : '');
+      }
       if (field === 'studentLoan') return row.context?.studentLoan?.name || '';
       if (field === 'classLoan') return row.context?.classLoan?.name || '';
       if (field === 'classes') return (row.context?.classContext || []).join('; ');
