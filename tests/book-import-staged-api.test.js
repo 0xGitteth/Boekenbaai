@@ -1105,6 +1105,104 @@ async function run() {
       .filter((item) => item.metadataIsbn === syncRaceIsbn).length, 1);
     assert.strictEqual((await call('/api/admin/book-import-stages/active', token1)).body.stage, null);
 
+    // Existing metadata is NEVER an implicit template for newly added copies.
+    // Approved Excel values must match storage; existing physical copies stay
+    // untouched even when someone updates spreadsheet descriptions or tags.
+    const reviewedMetadataIsbn = '9781234567125';
+    const metadataBase = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Metadata controle', Auteur: 'A Auteur',
+        'ISBN-nummer': reviewedMetadataIsbn, Aantal: 1,
+        Beschrijving: 'Oude beschrijving', Tags: 'adventure stories' }]),
+    });
+    assert.strictEqual(metadataBase.status, 201);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + metadataBase.body.id
+      + '/apply', token1, { revision: 1, confirm: true })).status, 200);
+    const metadataBefore = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((book) => book.metadataIsbn === reviewedMetadataIsbn);
+    assert.strictEqual(metadataBefore.description, 'Oude beschrijving');
+    const metadataIncrease = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Metadata controle', Auteur: 'A Auteur',
+        'ISBN-nummer': reviewedMetadataIsbn, Aantal: 2,
+        Beschrijving: 'Nieuwe goedgekeurde beschrijving', Tags: 'fantasy fiction' }]),
+    });
+    assert.strictEqual(metadataIncrease.status, 201);
+    assert.strictEqual(metadataIncrease.body.decisions.summary.addCopies, 1);
+    const previewedThemes = metadataIncrease.body.rows[0].book.themes;
+    const metadataIncreaseApplied = await call('/api/admin/book-import-stages/'
+      + metadataIncrease.body.id + '/apply', token1b, { revision: 1, confirm: true });
+    assert.strictEqual(metadataIncreaseApplied.status, 200);
+    const metadataAfter = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .filter((book) => book.metadataIsbn === reviewedMetadataIsbn);
+    assert.strictEqual(metadataAfter.length, 2);
+    assert.strictEqual(metadataAfter.find((book) => book.id === metadataBefore.id).description,
+      'Oude beschrijving', 'Existing copies are never silently overwritten');
+    const newMetadataCopy = metadataAfter.find((book) => book.id !== metadataBefore.id);
+    assert.strictEqual(newMetadataCopy.description, 'Nieuwe goedgekeurde beschrijving');
+    assert.deepStrictEqual(newMetadataCopy.themes, previewedThemes,
+      'New physical book must match its reviewed themes');
+    assert.deepStrictEqual(newMetadataCopy.tags, ['fantasy fiction']);
+
+    // Repeated ISBN rows may create distinct new copies; every worksheet row
+    // must be written to the report once, including combined barcode rows.
+    const distinctBarcodeIsbn = '9781234567132';
+    const multiRowStage = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([
+        { Titel: 'Dubbele ISBN rijen', Auteur: 'A Auteur',
+          'ISBN-nummer': distinctBarcodeIsbn, Aantal: 1 },
+        { Titel: 'Dubbele ISBN rijen', Auteur: 'A Auteur',
+          'ISBN-nummer': distinctBarcodeIsbn, Aantal: 1, Barcode: '79446655' },
+      ]),
+    });
+    assert.strictEqual(multiRowStage.status, 201);
+    assert.strictEqual(multiRowStage.body.decisions.summary.addCopies, 2);
+    const multiApplied = await call('/api/admin/book-import-stages/' + multiRowStage.body.id
+      + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(multiApplied.status, 200);
+    assert.strictEqual(multiApplied.body.result.created, 2);
+    assert.strictEqual(multiApplied.body.result.report.rows.length, 2);
+    assert.deepStrictEqual(multiApplied.body.result.report.rows.map((row) => row.index), [0, 1]);
+    assert.deepStrictEqual(multiApplied.body.result.report.rows.map((row) => row.copies), [1, 1]);
+
+    // While the preview is open, changed inventory OMITTED from Excel must
+    // invalidate its displayed count and its final approved audit summary.
+    const omissionTarget = '9781234567149';
+    const omittedPreview = await call('/api/admin/book-import-stages', token1b, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Andere nieuwe editie', Auteur: 'A Auteur',
+        'ISBN-nummer': omissionTarget, Aantal: 1 }]),
+    });
+    assert.strictEqual(omittedPreview.status, 201);
+    assert.ok(omittedPreview.body.decisions.summary.omittedExistingCopies > 0);
+    const omittedChanged = await call('/api/books', token2, {
+      title: 'Dubbele ISBN rijen', author: 'A Auteur',
+      barcode: '79446656', metadataIsbn: distinctBarcodeIsbn,
+    });
+    assert.strictEqual(omittedChanged.status, 201);
+    const omittedStaleApply = await call('/api/admin/book-import-stages/' + omittedPreview.body.id
+      + '/apply', token1b, { revision: 1, confirm: true });
+    assert.strictEqual(omittedStaleApply.status, 409);
+    assert.strictEqual(omittedStaleApply.body.error, 'inventory_preview_stale');
+
+    const unnamedIsbn = '9781234567156';
+    const unnamedStage = await call('/api/admin/book-import-stages', token1b, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Auteur: 'A Auteur', 'ISBN-nummer': unnamedIsbn, Aantal: 1 }]),
+    });
+    assert.strictEqual(unnamedStage.status, 201);
+    const acknowledgedMissingName = await call('/api/admin/book-import-stages/'
+      + unnamedStage.body.id + '/review', token1, {
+      revision: 1, acceptWarnings: true, corrections: [], inventoryResolutions: [],
+    });
+    assert.strictEqual(acknowledgedMissingName.status, 200);
+    assert.strictEqual(acknowledgedMissingName.body.decisions.rows[0].reason,
+      'missing_title_or_author');
+    assert.strictEqual(acknowledgedMissingName.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + unnamedStage.body.id
+      + '/cancel', token1, { revision: 2 })).status, 200);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
