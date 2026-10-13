@@ -193,7 +193,7 @@ async function run() {
       { classId: 'class-a' })).status, 200);
     // A class cannot claim the student's copy by matching only its barcode.
     assert.strictEqual((await call('/api/books/55220011/check-in', teacherB,
-      { classId: 'class-b' })).status, 400);
+      { classId: 'class-b' })).status, 404);
 
     // Revocation must take effect without a fresh login. A cached teacher
     // user.classIds entry is NOT proof of current membership or authority.
