@@ -1099,7 +1099,8 @@ async function run() {
     assert.strictEqual(loanBlockStage.status, 201, JSON.stringify(loanBlockStage.body).slice(0, 600));
     assert.strictEqual(loanBlockStage.body.decisions.summary.addCopies, 1);
     assert.strictEqual(loanBlockStage.body.decisions.rows[0].reason,
-      'loan_context_requires_followup');
+      'loan_requires_physical_copy_match',
+      'A borrowed ISBN with several indistinguishable copies must still be blocked');
     assert.strictEqual(loanBlockStage.body.decisions.rows[0].canKeepExisting, false);
     assert.strictEqual(loanBlockStage.body.decisions.summary.readyToApply, false);
     const forgedRetention = await call('/api/admin/book-import-stages/' + loanBlockStage.body.id
