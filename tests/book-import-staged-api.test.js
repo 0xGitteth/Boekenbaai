@@ -178,10 +178,10 @@ async function run() {
     assert.strictEqual(saved.bookImportReports[0].rows.length, 2);
     assert.strictEqual(saved.books[0].importInfo.importJobId, applied.body.result.batchId);
     const copiedMetadataIsbn = saved.books.find((book) => book.metadataIsbn === ISBN1);
-    assert.strictEqual(copiedMetadataIsbn.importProvenance?.fieldSources?.metadataIsbn?.source,
-      copiedMetadataIsbn.importProvenance?.fieldSources?.editionIsbn?.source,
+    assert.strictEqual(copiedMetadataIsbn.importProvenance?.fieldSources?.metadataIsbn?.sourceType,
+      copiedMetadataIsbn.importProvenance?.fieldSources?.editionIsbn?.sourceType,
       'A copied metadata ISBN must inherit the Excel ISBN source attribution');
-    assert.strictEqual(copiedMetadataIsbn.importProvenance?.fieldSources?.metadataIsbn?.source, 'excel');
+    assert.strictEqual(copiedMetadataIsbn.importProvenance?.fieldSources?.metadataIsbn?.sourceType, 'excel');
     const reportId = applied.body.result.batchId;
     assert.strictEqual((await call('/api/admin/book-import-reports/' + reportId, null)).status, 403);
     const storedReport = await call('/api/admin/book-import-reports/' + reportId, token1);
