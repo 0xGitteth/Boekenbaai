@@ -299,6 +299,19 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
     ...options, correctedMetadataFieldsByRow,
   });
   if (!analysis.ok) return analysis;
+  // Working rows contain synthetic Excel columns for editor changes. Correct
+  // their provenance AFTER analyzing the rows so the persisted report never
+  // mistakes an administrator decision for original workbook data.
+  for (const [index, entry] of normalized.corrections) {
+    if (entry.skip || !analysis.rows[index]?.provenance) continue;
+    const reviewed = analysis.rows[index];
+    for (const field of Object.keys(entry.fields)) {
+      const name = field === 'examMaterial' ? 'suitableForExamList' : field;
+      if (Object.prototype.hasOwnProperty.call(reviewed.provenance, name)) {
+        reviewed.provenance[name] = { source: 'manual', detail: 'review_correction' };
+      }
+    }
+  }
   const decisions = buildReviewDecisions(analysis, Array.isArray(options.existingBooks) ? options.existingBooks : [],
     { acceptWarnings: options.acceptWarnings === true });
   return { ...analysis, decisions, correctedRows: rows, appliedCorrectionCount: normalized.corrections.size };
