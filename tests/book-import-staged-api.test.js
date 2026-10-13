@@ -802,6 +802,62 @@ async function run() {
     assert.strictEqual(afterHandoff.books.filter((b) => b.barcode === '99663322').length, 1);
     assert.strictEqual(afterHandoff.books.filter((b) => b.barcode === '99991155').length, 0);
 
+
+    // The reviewed Excel preview is a contract. An approved freeform theme
+    // must survive actual persistence, book listings, and the next load.
+    const freeformIsbn = '9781234567002';
+    const freeformStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Vrije thema import', Auteur: 'A Auteur',
+        'ISBN-nummer': freeformIsbn, "Thema's": 'Pesten; Nieuw vakgebied' }]),
+    });
+    assert.strictEqual(freeformStage.status, 201, JSON.stringify(freeformStage.body).slice(0, 400));
+    assert.deepStrictEqual(freeformStage.body.rows[0].book.themes, ['Pesten', 'Nieuw vakgebied']);
+    const adjustedFreeform = await call('/api/admin/book-import-stages/' + freeformStage.body.id
+      + '/review', token1b, {
+      revision: 1, acceptWarnings: true,
+      corrections: [{ index: 0, fields: { themes: 'Pesten; Nieuw vakgebied; Extra onderwerp' } }],
+    });
+    assert.strictEqual(adjustedFreeform.status, 200);
+    assert.deepStrictEqual(adjustedFreeform.body.rows[0].book.themes,
+      ['Pesten', 'Nieuw vakgebied', 'Extra onderwerp']);
+    assert.strictEqual(adjustedFreeform.body.rows[0].provenance.manualThemes.source, 'manual');
+    assert.strictEqual(adjustedFreeform.body.rows[0].provenance.themes.source, 'manual');
+    const appliedFreeform = await call('/api/admin/book-import-stages/' + freeformStage.body.id
+      + '/apply', token1, { revision: 2, confirm: true });
+    assert.strictEqual(appliedFreeform.status, 200, JSON.stringify(appliedFreeform.body).slice(0, 300));
+    const storedFreeform = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((book) => book.metadataIsbn === freeformIsbn);
+    assert.ok(storedFreeform);
+    assert.deepStrictEqual(storedFreeform.themes, adjustedFreeform.body.rows[0].book.themes,
+      'The actual library must match the reviewed theme list');
+    assert.deepStrictEqual(storedFreeform.importedThemes, adjustedFreeform.body.rows[0].book.themes);
+    const loadedFreeform = await call('/api/books', token1);
+    assert.deepStrictEqual((loadedFreeform.body.books || loadedFreeform.body)
+      .find((book) => book.metadataIsbn === freeformIsbn).themes, adjustedFreeform.body.rows[0].book.themes);
+
+    // Changes to the library after preview must appear at the next review,
+    // rather than allowing a stale "ready" badge for an existing ISBN.
+    const afterPreviewIsbn = '9781234567019';
+    const beforeAddition = await call('/api/admin/book-import-stages', token1b, {
+      file: fileBase64([{ Titel: 'Reeds later toegevoegd', Auteur: 'A Auteur',
+        'ISBN-nummer': afterPreviewIsbn }]),
+    });
+    assert.strictEqual(beforeAddition.status, 201);
+    assert.strictEqual(beforeAddition.body.decisions.summary.readyToApply, true);
+    const addedDuringPreview = await call('/api/books', token2, {
+      title: 'Reeds later toegevoegd', author: 'A Auteur',
+      barcode: '88119922', metadataIsbn: afterPreviewIsbn,
+    });
+    assert.strictEqual(addedDuringPreview.status, 201);
+    const recheckedCollection = await call('/api/admin/book-import-stages/' + beforeAddition.body.id
+      + '/review', token1, { revision: 1, acceptWarnings: true, corrections: [] });
+    assert.strictEqual(recheckedCollection.status, 200);
+    assert.strictEqual(recheckedCollection.body.decisions.rows[0].reason,
+      'existing_edition_requires_review');
+    assert.strictEqual(recheckedCollection.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + beforeAddition.body.id
+      + '/cancel', token1, { revision: 2 })).status, 200);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
