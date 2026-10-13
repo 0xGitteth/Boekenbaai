@@ -4798,7 +4798,9 @@ async function handleApi(req, res, requestUrl) {
             if (!fresh.ok || !fresh.summary.readyToApply
               || JSON.stringify(fresh.rows) !== JSON.stringify(stage.analysis.decisions?.rows)
               || JSON.stringify(fresh.proposedAdds) !== JSON.stringify(stage.analysis.decisions?.proposedAdds)
-              || JSON.stringify(fresh.omittedEditions) !== JSON.stringify(stage.analysis.decisions?.omittedEditions)) {
+              || JSON.stringify(fresh.omittedEditions) !== JSON.stringify(stage.analysis.decisions?.omittedEditions)
+              || fresh.summary.omittedExistingCopies
+                !== stage.analysis.decisions?.summary?.omittedExistingCopies) {
               return sendJson(res, 409, {
                 message: 'De voorraad is sinds de controle gewijzigd of er staan onopgeloste verschillen. Start een nieuwe vergelijking.',
                 error: 'inventory_preview_stale',
@@ -4807,7 +4809,7 @@ async function handleApi(req, res, requestUrl) {
             const now = new Date().toISOString();
             const batchId = crypto.randomUUID();
             const createdCopies = [];
-            const sourceReports = [];
+            const reportsByRow = new Map();
             const clearedThemeRows = new Set((stage.corrections || [])
               .filter((correction) => typeof correction?.fields?.themes === 'string'
                 && correction.fields.themes.trim() === '')
@@ -4833,40 +4835,21 @@ async function handleApi(req, res, requestUrl) {
               }
               sourceFields.metadataIsbn = sourceFields.editionIsbn || createFieldSource('unknown');
               const template = ensureBookShape({
-                ...(existingTemplate ? {
-                  // Whitelist only edition metadata. Never clone borrow/loan
-                  // bookkeeping or unknown future fields from a borrowed copy.
-                  title: existingTemplate.title, author: existingTemplate.author,
-                  authors: existingTemplate.authors,
-                  description: existingTemplate.description,
-                  folderId: existingTemplate.folderId,
-                  publisher: existingTemplate.publisher,
-                  publishedYear: existingTemplate.publishedYear,
-                  pageCount: existingTemplate.pageCount,
-                  language: existingTemplate.language,
-                  coverUrl: existingTemplate.coverUrl,
-                  coverColor: existingTemplate.coverColor,
-                  easyReading: existingTemplate.easyReading,
-                  suitableForExamList: existingTemplate.suitableForExamList,
-                  tags: existingTemplate.tags,
-                  manualThemes: existingTemplate.manualThemes,
-                  importedThemes: existingTemplate.importedThemes,
-                  themesCleared: existingTemplate.themesCleared,
-                  fixedLocation: existingTemplate.fixedLocation,
-                } : {
-                  title: row.book.title, author: row.book.author, authors: row.book.authors,
-                  description: row.book.description, publisher: row.book.publisher,
-                  publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
-                  language: row.book.language, coverUrl: row.book.coverUrl,
-                  easyReading: row.book.easyReading,
-                  suitableForExamList: row.book.suitableForExamList,
-                  tags: row.book.tags,
-                  manualThemes: preserveAsImported ? [] : row.book.manualThemes,
-                  importedThemes: preserveAsImported ? row.book.themes : [],
-                  themesCleared: clearedThemeRows.has(addition.index),
-                  fixedLocation: row.context?.fixedLocation?.status === 'resolved'
-                    ? row.context.fixedLocation.label : null,
-                }),
+                // New copies use exactly the data shown and approved in the
+                // reviewed Excel preview. No live metadata is copied from an
+                // existing edition after the administrator confirms.
+                title: row.book.title, author: row.book.author, authors: row.book.authors,
+                description: row.book.description, publisher: row.book.publisher,
+                publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
+                language: row.book.language, coverUrl: row.book.coverUrl,
+                easyReading: row.book.easyReading,
+                suitableForExamList: row.book.suitableForExamList,
+                tags: row.book.tags,
+                manualThemes: preserveAsImported ? [] : row.book.manualThemes,
+                importedThemes: preserveAsImported ? row.book.themes : [],
+                themesCleared: clearedThemeRows.has(addition.index),
+                fixedLocation: row.context?.fixedLocation?.status === 'resolved'
+                  ? row.context.fixedLocation.label : null,
                 editionIsbn: addition.editionIsbn,
                 metadataIsbn: addition.editionIsbn,
                 barcode: addition.barcode,
@@ -4875,7 +4858,7 @@ async function handleApi(req, res, requestUrl) {
                   importSource: 'excel_inventory_sync',
                   importJobId: batchId, importStatus: 'created',
                 }),
-                importProvenance: existingTemplate?.importProvenance || { fieldSources: sourceFields },
+                importProvenance: { fieldSources: sourceFields },
               });
               const ids = [];
               for (let count = 0; count < addition.quantity; count += 1) {
@@ -4883,21 +4866,27 @@ async function handleApi(req, res, requestUrl) {
                 createdCopies.push(copy);
                 ids.push(copy.id);
               }
-              sourceReports.push({
+              const reportEntry = reportsByRow.get(addition.index) || {
                 index: addition.index, worksheetRow: row.sourceRowNumber,
                 status: existingTemplate ? 'copies_added' : 'created',
                 editionIsbn: addition.editionIsbn, title: template.title,
-                copies: addition.quantity, bookIds: ids,
+                copies: 0, bookIds: [],
                 issues: row.issues.map((issue) => issue.code),
                 provenance: row.provenance, context: row.context,
-              });
+              };
+              reportEntry.copies += addition.quantity;
+              reportEntry.bookIds.push(...ids);
+              reportsByRow.set(addition.index, reportEntry);
             }
-            for (const decision of fresh.rows.filter((item) =>
-              ['unchanged', 'skipped', 'combined', 'kept_existing'].includes(item.action))) {
+            // Exactly one report entry per original worksheet row. A combined
+            // row can also contain a physical barcode that created a copy.
+            for (const decision of fresh.rows) {
+              if (reportsByRow.has(decision.index)) continue;
               const row = stage.analysis.rows[decision.index];
-              sourceReports.push({
+              reportsByRow.set(decision.index, {
                 index: decision.index, worksheetRow: row.sourceRowNumber,
-                status: decision.action, copies: 0,
+                status: decision.action === 'add_copies' ? 'reconciled' : decision.action,
+                copies: 0, bookIds: [],
                 title: row.book?.title || '', editionIsbn: row.book?.editionIsbn || '',
                 issues: (row.issues || []).map((issue) => issue.code),
               });
@@ -4910,7 +4899,7 @@ async function handleApi(req, res, requestUrl) {
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
               omittedEditions: fresh.omittedEditions,
               inventoryResolutions: stage.inventoryResolutions,
-              rows: sourceReports.sort((a, b) => a.index - b.index),
+              rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index),
             };
             if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
             database.bookImportReports.push(report);
