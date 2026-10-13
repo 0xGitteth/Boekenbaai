@@ -4706,7 +4706,8 @@ async function handleApi(req, res, requestUrl) {
           const newCopies = [];
           const sourceReports = [];
           const clearedThemeRows = new Set((stage.corrections || [])
-            .filter((correction) => correction?.fields?.themes === '')
+            .filter((correction) => typeof correction?.fields?.themes === 'string'
+              && correction.fields.themes.trim() === '')
             .map((correction) => correction.index));
           for (const entry of plan.created) {
             const row = entry.row;
