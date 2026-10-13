@@ -35,4 +35,28 @@ assert.ok(script.includes('const known = remotePending?.id === current.id ? remo
   'Pending same-revision drafts must use their cached full response instead of refetching every poll');
 assert.ok(script.includes('Ongeldig ISBN: ') && script.includes('Thema’s: '),
   'The displayed review cards must include previously hidden identifiers and themes');
+// Execute the real existing-book theme submission guard: changing title,
+// barcode or description without touching the theme pills must not overwrite
+// metadata-imported (possibly freeform) themes.
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+const changedStart = appSource.indexOf('    const themeSelectionChanged = ');
+const changedEnd = appSource.indexOf('    if (bookId) {', changedStart);
+assert.ok(changedStart >= 0 && changedEnd > changedStart);
+const getSentManualThemes = new Function(
+  'bookId', 'adminBookInitialThemeKeys', 'adminSelectedThemeKeys', 'selectedThemes', 'payload',
+  appSource.slice(changedStart, changedEnd) + '\\nreturn payload.manualThemes;'
+);
+assert.strictEqual(getSentManualThemes(
+  'book-1', new Set(['pesten']), new Set(['pesten']), ['Pesten'], {}
+), undefined, 'An unrelated edit should preserve original imported metadata');
+assert.deepStrictEqual(getSentManualThemes(
+  'book-1', new Set(['pesten']), new Set(), [], {}
+), [], 'Explicitly clearing the last selected pill must send an empty theme override');
+assert.deepStrictEqual(getSentManualThemes(
+  'book-1', new Set(['pesten']), new Set(['mysterie']), ['Mysterie'], {}
+), ['Mysterie'], 'A changed theme selection should replace the imported themes');
+assert.deepStrictEqual(getSentManualThemes(
+  '', null, new Set(), [], {}
+), [], 'Creating a book should still send the selected theme values');
+
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
