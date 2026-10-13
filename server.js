@@ -8,6 +8,8 @@ const { analyzeReviewedImport } = require('./book-import-review');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 
 const bookImportStageStore = createImportStageStore();
+// Must be initialized before markInterruptedImportJobs() calls loadDb at startup.
+const dbSnapshotDigests = new WeakMap();
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -1577,7 +1579,6 @@ function readWorkbookRows(XLSX, base64) {
 // All request-local database snapshots carry their original on-disk digest.
 // A handler that awaited request input or external metadata must never commit
 // an old snapshot after another handler already changed the database.
-const dbSnapshotDigests = new WeakMap();
 function dbDigest(raw) {
   return crypto.createHash('sha256').update(raw).digest('hex');
 }
