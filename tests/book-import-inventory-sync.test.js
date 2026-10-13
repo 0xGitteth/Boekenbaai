@@ -368,6 +368,19 @@ const uniquelyBarcoded = preview([
 assert.strictEqual(uniquelyBarcoded.summary.readyToApply, true);
 assert.strictEqual(uniquelyBarcoded.loanAssignments[0].bookId, 'book-one');
 assert.strictEqual(uniquelyBarcoded.summary.restoreLoans, 1);
+// Even if a legacy student's own borrowedBooks array is inconsistent,
+// an existing physical copy already assigned to that student blocks a
+// second checkout of the same ISBN on another available copy.
+const inconsistentLegacyLoan = preview([
+  rowWithStudentLoan(0, { barcode: '668877' }), row(1),
+], [
+  book('free-copy', { barcode: '668877' }),
+  book('old-loan-not-in-student-list', { status: 'borrowed', borrowedBy: 's1' }),
+], directory);
+assert.strictEqual(inconsistentLegacyLoan.summary.readyToApply, false);
+assert.strictEqual(inconsistentLegacyLoan.rows[0].reason, 'student_already_borrowed_edition');
+assert.deepStrictEqual(inconsistentLegacyLoan.loanAssignments, []);
+
 const noCollectionYet = preview([
   rowWithStudentLoan(0), { ...rowWithStudentLoan(1), context: {
     studentLoan: { status: 'matched', id: 's2', name: 'Andere Leerling' },
