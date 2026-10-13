@@ -69,6 +69,20 @@ assert.strictEqual(preview([row(0, 1)], [book('a')], {
   resolutions: [{ isbn: OTHER, action: 'keep_existing' }],
 }).error, 'unknown_sync_resolution');
 
+// Resolving an excess in one edition must allow a different new ISBN to be
+// synchronized within the SAME confirmed workbook.
+const mixedReview = preview([
+  row(0, 1),
+  row(1, 2, { editionIsbn: OTHER, title: 'Tweede boek' }),
+], [book('a'), book('b')], {
+  resolutions: [{ isbn: ISBN, action: 'keep_existing' }],
+});
+assert.strictEqual(mixedReview.rows[0].action, 'kept_existing');
+assert.strictEqual(mixedReview.rows[1].action, 'add_copies');
+assert.strictEqual(mixedReview.summary.addCopies, 2);
+assert.strictEqual(mixedReview.summary.readyToApply, true);
+
+
 const missingEdition = preview([row(0, 1)], [
   book('a'),
   book('different-book', { metadataIsbn: OTHER, barcode: OTHER, title: 'Andere titel' }),
