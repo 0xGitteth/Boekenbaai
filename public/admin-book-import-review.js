@@ -613,7 +613,7 @@
         }).filter(Boolean);
         if (origin.length) card.append(make('p', 'hint', 'Bron: ' + origin.join(' · ')));
         const actions = make('div', 'bb-review__row-actions');
-        if (inventorySync && dec.editionIsbn && dec.existingCopies > 0
+        if (inventorySync && dec.editionIsbn && dec.canKeepExisting === true
           && dec.action !== 'combined' && dec.action !== 'skipped') {
           const actionLabel = make('label', 'bb-review__field');
           actionLabel.append(make('span', '', 'Keuze voor deze bestaande ISBN-editie'));
