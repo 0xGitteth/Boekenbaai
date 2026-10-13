@@ -906,6 +906,44 @@ async function run() {
     assert.strictEqual((listedMultilingual.body.books || listedMultilingual.body)
       .find((book) => book.metadataIsbn === multipleLanguagesIsbn).language, 'Nederlands / Engels');
 
+    // Tag-derived themes must be visible BEFORE confirmation and exactly
+    // match what is saved. An explicit administrator clear must still win.
+    const tagDerivedIsbn = '9781234567040';
+    const clearedDerivedIsbn = '9781234567057';
+    const taggedStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([
+        { Titel: 'Tag thema', Auteur: 'A Auteur', 'ISBN-nummer': tagDerivedIsbn,
+          Tags: 'fantasy fiction' },
+        { Titel: 'Tag thema verwijderen', Auteur: 'A Auteur', 'ISBN-nummer': clearedDerivedIsbn,
+          Tags: 'fantasy fiction' },
+      ]),
+    });
+    assert.strictEqual(taggedStage.status, 201, JSON.stringify(taggedStage.body).slice(0, 400));
+    assert.deepStrictEqual(taggedStage.body.rows[0].book.themes, ['Fantasy'],
+      'Tag-derived themes must be visible in the initial preview');
+    assert.strictEqual(taggedStage.body.rows[0].provenance.themes.source, 'derived');
+    const clearedTagReview = await call('/api/admin/book-import-stages/' + taggedStage.body.id
+      + '/review', token1b, {
+      revision: 1, acceptWarnings: true,
+      corrections: [{ index: 1, fields: { themes: '' } }],
+    });
+    assert.strictEqual(clearedTagReview.status, 200);
+    assert.deepStrictEqual(clearedTagReview.body.rows[0].book.themes, ['Fantasy']);
+    assert.deepStrictEqual(clearedTagReview.body.rows[1].book.themes, [],
+      'An explicit empty theme correction must suppress automatic tag derivation');
+    assert.strictEqual(clearedTagReview.body.decisions.summary.readyToApply, true);
+    const appliedTagThemes = await call('/api/admin/book-import-stages/' + taggedStage.body.id
+      + '/apply', token1, { revision: 2, confirm: true });
+    assert.strictEqual(appliedTagThemes.status, 200);
+    const tagDbBooks = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books;
+    assert.deepStrictEqual(tagDbBooks.find((book) => book.metadataIsbn === tagDerivedIsbn).themes,
+      taggedStage.body.rows[0].book.themes, 'Stored themes must equal the approved preview');
+    assert.deepStrictEqual(tagDbBooks.find((book) => book.metadataIsbn === clearedDerivedIsbn).themes,
+      clearedTagReview.body.rows[1].book.themes);
+    const tagsOnBooksEndpoint = await call('/api/books', token1);
+    assert.deepStrictEqual((tagsOnBooksEndpoint.body.books || tagsOnBooksEndpoint.body)
+      .find((book) => book.metadataIsbn === tagDerivedIsbn).themes, ['Fantasy']);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
