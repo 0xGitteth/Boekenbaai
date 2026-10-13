@@ -4663,6 +4663,11 @@ async function handleApi(req, res, requestUrl) {
                 ? provenance.source : 'unknown';
               sourceByField[field] = createFieldSource(sourceType, provenance?.detail || null);
             }
+            // The stored metadataIsbn is deliberately copied from the
+            // reviewed editionIsbn. Its source must therefore be identical
+            // to the reviewed ISBN source, not an unrelated "unknown".
+            sourceByField.metadataIsbn = sourceByField.editionIsbn
+              || createFieldSource('unknown', null);
             const template = ensureBookShape({
               title: row.book.title, author: row.book.author,
               authors: row.book.authors, editionIsbn: entry.editionIsbn,
