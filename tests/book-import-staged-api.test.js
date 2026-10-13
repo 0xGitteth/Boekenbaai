@@ -968,6 +968,8 @@ async function run() {
     // Simulate an active school loan with a durable history event.
     firstPhysical.status = 'borrowed';
     firstPhysical.borrowedBy = 'student-match';
+    firstPhysical.borrowedAt = '2026-10-10T10:00:00Z';
+    firstPhysical.loanId = 'active-loan-secret';
     firstPhysical.dueDate = '2026-11-30';
     firstInventoryDb.students[0].borrowedBooks = [firstPhysical.id];
     firstInventoryDb.history.unshift({ id: 'loan-sync-regression', type: 'check_out',
@@ -1008,6 +1010,12 @@ async function run() {
     assert.strictEqual(retainedLoan.borrowedBy, 'student-match');
     assert.strictEqual(retainedLoan.dueDate, '2026-11-30');
     assert.strictEqual(syncCopies.filter((item) => item.status === 'available').length, 1);
+    const addedAvailable = syncCopies.find((item) => item.id !== firstPhysical.id);
+    assert.strictEqual(addedAvailable.borrowedBy, null);
+    assert.strictEqual(addedAvailable.borrowedAt, undefined,
+      'New physical copies must not inherit loan metadata from borrowed templates');
+    assert.strictEqual(addedAvailable.loanId, undefined);
+    assert.strictEqual(addedAvailable.title, 'Synchronisatieboek');
     assert.ok(afterStock.history.some((item) => item.id === 'loan-sync-regression'),
       'Inventory reconciliation must retain the existing loan event');
     assert.ok(afterStock.students[0].borrowedBooks.includes(firstPhysical.id));
