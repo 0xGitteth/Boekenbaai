@@ -12,6 +12,24 @@ const end = script.indexOf('    function updateCorrection(', start);
 assert.ok(start >= 0 && end > start, 'Could not locate review field rendering');
 const fieldValue = new Function(script.slice(start, end) + '\nreturn fieldValue;')();
 
+// Toggle a row to skipped and back without erasing typed but not yet saved
+// corrections. The server receives skip-only entries while it is skipped.
+const toggleStart = script.indexOf('  function toggleSkippedRow(');
+const toggleEnd = script.indexOf('  const make = ', toggleStart);
+assert.ok(toggleStart >= 0 && toggleEnd > toggleStart, 'Skip state helper missing');
+const toggleSkippedRow = new Function(script.slice(toggleStart, toggleEnd)
+  + '\nreturn toggleSkippedRow;')();
+const changed = new Map([[2, { index: 2, fields: { title: 'Gecorrigeerd', author: 'Ander' } }]]);
+const pending = new Map();
+toggleSkippedRow(changed, pending, 2, true);
+assert.deepStrictEqual(changed.get(2), { index: 2, skip: true });
+toggleSkippedRow(changed, pending, 2, false);
+assert.deepStrictEqual(changed.get(2).fields, { title: 'Gecorrigeerd', author: 'Ander' });
+assert.strictEqual(pending.size, 0);
+toggleSkippedRow(changed, pending, 3, true);
+toggleSkippedRow(changed, pending, 3, false);
+assert.strictEqual(changed.has(3), false);
+
 const metadataOnly = {
   book: { editionIsbn: '9780306406157', manualThemes: [], themes: ['Pesten', 'Natuur'] },
   identifierAnalysis: {},
