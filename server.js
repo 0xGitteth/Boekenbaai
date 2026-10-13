@@ -4621,9 +4621,20 @@ async function handleApi(req, res, requestUrl) {
             });
           }
           for (const row of stage.analysis.rows.filter((entry) => entry.status === 'skipped')) {
+            const original = stage.initialAnalysis?.rows?.[row.index] || row;
             sourceReports.push({
               index: row.index, worksheetRow: row.sourceRowNumber, status: 'skipped', copies: 0,
-              issues: row.issues.map((issue) => issue.code),
+              title: original.book?.title || '',
+              editionIsbn: original.book?.editionIsbn || '',
+              barcode: original.book?.barcode || '',
+              originalIdentifiers: {
+                isbn: original.identifierAnalysis?.explicit?.raw || '',
+                legacyIsbn: original.identifierAnalysis?.legacy?.raw || '',
+                combinedBarcodeIsbn: original.identifierAnalysis?.ambiguous?.raw || '',
+              },
+              issues: (original.issues || []).map((issue) => issue.code),
+              provenance: original.provenance || {},
+              context: original.context || {},
             });
           }
           const report = {
