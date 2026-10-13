@@ -223,6 +223,9 @@ async function run() {
       copiedMetadataIsbn.importProvenance?.fieldSources?.editionIsbn?.sourceType,
       'A copied metadata ISBN must inherit the Excel ISBN source attribution');
     assert.strictEqual(copiedMetadataIsbn.importProvenance?.fieldSources?.metadataIsbn?.sourceType, 'excel');
+    const correctedIsbnBook = saved.books.find((book) => book.metadataIsbn === ISBN2);
+    assert.strictEqual(correctedIsbnBook.importProvenance?.fieldSources?.editionIsbn?.sourceType, 'manual');
+    assert.strictEqual(correctedIsbnBook.importProvenance?.fieldSources?.metadataIsbn?.sourceType, 'manual');
     const reportId = applied.body.result.batchId;
     assert.strictEqual((await call('/api/admin/book-import-reports/' + reportId, null)).status, 403);
     const storedReport = await call('/api/admin/book-import-reports/' + reportId, token1);
@@ -618,7 +621,7 @@ async function run() {
     assert.strictEqual(explicitClear.status, 200, JSON.stringify(explicitClear.body).slice(0, 600));
     assert.deepStrictEqual(explicitClear.body.rows[0].book.themes, [],
       'Cleared review themes must not be immediately repopulated by metadata');
-    assert.strictEqual(explicitClear.body.rows[0].provenance.themes.source, 'unknown');
+    assert.strictEqual(explicitClear.body.rows[0].provenance.themes.source, 'manual');
     const clearedConfirmed = await call('/api/admin/book-import-stages/' + clearedThemeStage.body.id
       + '/review', token1, {
       revision: 2, acceptWarnings: true, corrections: [{ index: 0, fields: { themes: '   ' } }],
@@ -680,6 +683,9 @@ async function run() {
       assert.strictEqual(reloadedMetadata[field], '', 'Reloaded field restored: ' + field);
     }
     assert.deepStrictEqual(persistedMetadata.tags, []);
+    assert.strictEqual(persistedMetadata.importProvenance.fieldSources.description.sourceType, 'manual');
+    assert.strictEqual(persistedMetadata.importProvenance.fieldSources.publisher.sourceType, 'manual');
+    assert.strictEqual(persistedMetadata.importProvenance.fieldSources.tags.sourceType, 'manual');
     assert.deepStrictEqual(reloadedMetadata.tags, []);
     assert.ok(!persistedMetadata.publishedYear && !reloadedMetadata.publishedYear);
     assert.ok(!persistedMetadata.pageCount && !reloadedMetadata.pageCount);
