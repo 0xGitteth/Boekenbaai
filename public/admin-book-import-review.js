@@ -486,7 +486,7 @@
           missing.append(make('summary', '', 'Bestaande boeken die ontbreken in dit Excelbestand (blijven behouden)'));
           for (const item of decisions.omittedEditions || []) {
             missing.append(make('p', 'bb-review__detail',
-              item.title + ' · ' + item.editionIsbn + ' · ' + item.copies
+              item.title + ' · ' + (item.editionIsbn || 'ISBN onbekend') + ' · ' + item.copies
               + ' exemplaren, waarvan ' + item.borrowedCopies + ' uitgeleend'));
           }
           if ((decisions.omittedEditions || []).length >= 50) {
