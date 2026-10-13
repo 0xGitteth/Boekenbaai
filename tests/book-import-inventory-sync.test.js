@@ -52,6 +52,11 @@ const missingEdition = preview([row(0, 1)], [
 assert.strictEqual(missingEdition.summary.omittedExistingCopies, 1);
 assert.deepStrictEqual(missingEdition.proposedAdds, [], 'Omitted editions remain untouched');
 
+const conflictingExistingIsbns = preview([row(0, 2)], [
+  book('ambiguous', { editionIsbn: OTHER }),
+]);
+assert.strictEqual(conflictingExistingIsbns.rows[0].reason, 'ambiguous_existing_edition_isbn');
+
 const mismatch = preview([row(0, 2)], [
   book('different-identity', { title: 'Een andere titel' }),
 ]);
