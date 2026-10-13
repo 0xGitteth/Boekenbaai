@@ -8,6 +8,7 @@ const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-r
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
+const { stageReviewedLoan } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 
@@ -4743,10 +4744,12 @@ async function handleApi(req, res, requestUrl) {
         includeDerivedThemesInImportPreview(analysis);
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
-        const latestBooks = loadDb().books;
+        const latestDatabase = loadDb();
         analysis.decisions = mode === 'inventory_sync'
-          ? buildInventorySyncPreview(analysis, latestBooks, { acceptWarnings: false })
-          : buildReviewDecisions(analysis, latestBooks);
+          ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false })
+          : buildReviewDecisions(analysis, latestDatabase.books, {
+            students: latestDatabase.students, classes: latestDatabase.classes,
+          });
         if (!analysis.decisions.ok && mode === 'inventory_sync') {
           return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
             error: analysis.decisions.error });
@@ -4811,12 +4814,15 @@ async function handleApi(req, res, requestUrl) {
           }
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
-          const latestBooks = loadDb().books;
+          const latestDatabase = loadDb();
           reviewed.decisions = stage.options.mode === 'inventory_sync'
-            ? buildInventorySyncPreview(reviewed, latestBooks, {
+            ? buildInventorySyncPreview(reviewed, latestDatabase.books, {
               acceptWarnings: body.acceptWarnings, resolutions: choices.values,
             })
-            : buildReviewDecisions(reviewed, latestBooks, { acceptWarnings: body.acceptWarnings });
+            : buildReviewDecisions(reviewed, latestDatabase.books, {
+              acceptWarnings: body.acceptWarnings,
+              students: latestDatabase.students, classes: latestDatabase.classes,
+            });
           if (!reviewed.decisions.ok && stage.options.mode === 'inventory_sync') {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
@@ -4973,7 +4979,8 @@ async function handleApi(req, res, requestUrl) {
           }
           const plan = buildStageApplyPlan(
             { ...stage.analysis, acceptWarnings: stage.acceptWarnings },
-            database.books, { maxCopies: 5000 },
+            database.books, { maxCopies: 5000,
+              students: database.students, classes: database.classes },
           );
           if (!plan.ok) {
             // On conflict require a fresh staged review. This stage can never
@@ -4987,6 +4994,7 @@ async function handleApi(req, res, requestUrl) {
           const batchId = crypto.randomUUID();
           const newCopies = [];
           const sourceReports = [];
+          const importedLoanHistory = [];
           const clearedThemeRows = new Set((stage.corrections || [])
             .filter((correction) => typeof correction?.fields?.themes === 'string'
               && correction.fields.themes.trim() === '')
@@ -5038,12 +5046,20 @@ async function handleApi(req, res, requestUrl) {
             const newIds = [];
             for (let i = 0; i < entry.quantity; i += 1) {
               const copy = createBookCopyFromTemplate(template);
+              if (entry.loanBorrower) {
+                // These are old Excel loans, not new checkouts. Do not
+                // invent a historical checkout date or reading event.
+                const event = stageReviewedLoan(copy, entry.loanBorrower, database);
+                importedLoanHistory.push({ ...event, performedBy: user.id,
+                  message: 'Bestaande Excel-uitlening overgenomen' });
+              }
               newCopies.push(copy);
               newIds.push(copy.id);
             }
             sourceReports.push({
               index: entry.index, worksheetRow: row.sourceRowNumber,
-              status: 'created', copies: entry.quantity, bookIds: newIds,
+              status: entry.loanBorrower ? 'created_borrowed' : 'created',
+              copies: entry.quantity, bookIds: newIds,
               title: row.book.title, editionIsbn: entry.editionIsbn,
               issues: row.issues.map((issue) => issue.code),
               provenance: row.provenance, context: row.context,
@@ -5069,6 +5085,7 @@ async function handleApi(req, res, requestUrl) {
           const report = {
             id: batchId, createdBy: user.id, importedAt: now,
             fileName: stage.fileName, count: newCopies.length,
+            restoredLoans: importedLoanHistory.length,
             sourceRows: stage.analysis.summary.sourceRows,
             rows: sourceReports.sort((a, b) => a.index - b.index),
           };
@@ -5076,12 +5093,14 @@ async function handleApi(req, res, requestUrl) {
           database.bookImportReports.push(report);
           database.bookImportReports = database.bookImportReports.slice(-30);
           database.books.push(...newCopies);
+          for (const event of importedLoanHistory) appendHistory(database, event);
           appendHistory(database, {
             type: 'books_import_reviewed', performedBy: user.id,
-            message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd`,
+            message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd, ${importedLoanHistory.length} bestaande leningen overgenomen`,
           });
           saveReviewedBookImportDb(database);
-          const result = { batchId, created: newCopies.length, importedRows: plan.created.length, report };
+          const result = { batchId, created: newCopies.length,
+            restoredLoans: importedLoanHistory.length, importedRows: plan.created.length, report };
           bookImportStageStore.finishApply(stage, result);
           return sendJson(res, 200, importStageView(stage));
         } finally {
