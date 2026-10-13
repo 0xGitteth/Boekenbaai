@@ -4485,6 +4485,9 @@ async function handleApi(req, res, requestUrl) {
       }
       const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
+        if (activeImportJobs.size > 0) {
+          return sendJson(res, 409, { message: 'De oude boekimport is nog bezig. Rond die eerst af.', error: 'legacy_import_busy' });
+        }
         const XLSX = loadXlsx();
         if (!XLSX) return sendJson(res, 503, { message: 'Excelverwerking is niet beschikbaar.' });
         const body = await parseBody(req, 35 * 1024 * 1024);
@@ -4699,6 +4702,9 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
       }
+      if (bookImportStageStore.active()) {
+        return sendJson(res, 409, { message: 'Er staat al een gecontroleerde boekimport open.', error: 'stage_busy' });
+      }
       const XLSX = loadXlsx();
       if (!XLSX) {
         return sendJson(res, 503, {
@@ -4911,6 +4917,9 @@ async function handleApi(req, res, requestUrl) {
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import') {
+      if (bookImportStageStore.active()) {
+        return sendJson(res, 409, { message: 'Er staat al een gecontroleerde boekimport open.', error: 'stage_busy' });
+      }
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
       }
