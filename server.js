@@ -7543,21 +7543,12 @@ async function handleApi(req, res, requestUrl) {
       let historyEntries = Array.isArray(db.history) ? db.history : [];
 
       if (user.role === 'teacher') {
-        const teacherClassIds = new Set(
-          (Array.isArray(user.classIds) ? user.classIds : []).filter(Boolean)
-        );
-
-        const classesForTeacher = (Array.isArray(db.classes) ? db.classes : []).filter((klass) => {
-          if (!klass || typeof klass.id !== 'string') {
-            return false;
-          }
-          const teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
-          if (teacherIds.includes(user.id)) {
-            teacherClassIds.add(klass.id);
-            return true;
-          }
-          return teacherClassIds.has(klass.id);
-        });
+        // Current class ownership is authoritative. A stale login account's
+        // classIds can outlive a teacher's removal from a class, so it must
+        // NEVER grant access to its student or class loan history.
+        const teacherClassIds = new Set(getTeacherClassIds(db, user.id));
+        const classesForTeacher = (Array.isArray(db.classes) ? db.classes : [])
+          .filter((klass) => klass && teacherClassIds.has(klass.id));
 
         const studentIds = new Set();
         for (const klass of classesForTeacher) {
