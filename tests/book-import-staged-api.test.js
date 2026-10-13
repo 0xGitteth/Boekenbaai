@@ -382,6 +382,28 @@ async function run() {
     assert.strictEqual(savedSkippedAudit.status, 200);
     assert.strictEqual(savedSkippedAudit.body.rows.find((row) => row.status === 'skipped').title, 'Bewust overgeslagen');
 
+    // A school workbook with many valid edited rows must not be rejected
+    // merely because the combined correction JSON exceeds the old 400 KB cap.
+    const largeSourceRows = Array.from({ length: 130 }, () => ({
+      Titel: 'Grote correctiebatch', Auteur: 'A Auteur', 'ISBN-nummer': '9780374533557',
+    }));
+    const largeStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64(largeSourceRows),
+    });
+    assert.strictEqual(largeStage.status, 201);
+    const largeCorrections = largeSourceRows.map((row, index) => ({
+      index, fields: { description: 'Correctietekst '.repeat(225) },
+    }));
+    assert.ok(JSON.stringify(largeCorrections).length > 400000);
+    const checkedLarge = await call('/api/admin/book-import-stages/' + largeStage.body.id + '/review', token1b, {
+      revision: 1, acceptWarnings: false, corrections: largeCorrections,
+    });
+    assert.strictEqual(checkedLarge.status, 200, JSON.stringify(checkedLarge.body).slice(0, 180));
+    assert.strictEqual(checkedLarge.body.revision, 2);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + largeStage.body.id + '/cancel', token1b, {
+      revision: 2,
+    })).status, 200);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
