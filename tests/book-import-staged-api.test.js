@@ -29,6 +29,35 @@ async function call(route, token, body, method = body === undefined ? 'GET' : 'P
   return { status: response.status, body: await response.json() };
 }
 
+// Send only request headers and a small body prefix, then pause. This
+// reproduces the exact overlap where a second import request arrives while
+// parseBody() in the first handler is awaiting the rest of its JSON body.
+function pausedImportPost(route, token, payload) {
+  const body = JSON.stringify(payload);
+  let finish;
+  const done = new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: '127.0.0.1', port: PORT, path: route, method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }); }
+        catch (error) { reject(error); }
+      });
+    });
+    req.on('error', reject);
+    req.write(body.slice(0, 13));
+    finish = () => req.end(body.slice(13));
+  });
+  return { done, finish };
+}
+
 async function waitForServer(child) {
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Server did not start')), 8000);
@@ -148,6 +177,11 @@ async function run() {
     assert.strictEqual(saved.bookImportReports.length, 1);
     assert.strictEqual(saved.bookImportReports[0].rows.length, 2);
     assert.strictEqual(saved.books[0].importInfo.importJobId, applied.body.result.batchId);
+    const copiedMetadataIsbn = saved.books.find((book) => book.metadataIsbn === ISBN1);
+    assert.strictEqual(copiedMetadataIsbn.importProvenance?.fieldSources?.metadataIsbn?.source,
+      copiedMetadataIsbn.importProvenance?.fieldSources?.editionIsbn?.source,
+      'A copied metadata ISBN must inherit the Excel ISBN source attribution');
+    assert.strictEqual(copiedMetadataIsbn.importProvenance?.fieldSources?.metadataIsbn?.source, 'excel');
     const reportId = applied.body.result.batchId;
     assert.strictEqual((await call('/api/admin/book-import-reports/' + reportId, null)).status, 403);
     const storedReport = await call('/api/admin/book-import-reports/' + reportId, token1);
@@ -381,6 +415,43 @@ async function run() {
     const savedSkippedAudit = await call('/api/admin/book-import-reports/' + skipApply.body.result.batchId, token1);
     assert.strictEqual(savedSkippedAudit.status, 200);
     assert.strictEqual(savedSkippedAudit.body.rows.find((row) => row.status === 'skipped').title, 'Bewust overgeslagen');
+
+    // Both directions of the import race: each handler must acquire the
+    // SINGLE global admission lock before awaiting the request body.
+    const pausedLegacy = pausedImportPost('/api/books/import', token1b, { file: 'invalid-workbook' });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const stagedDuringLegacy = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Geblokkeerd', Auteur: 'A', 'ISBN-nummer': '9780451524935' }]),
+    });
+    assert.strictEqual(stagedDuringLegacy.status, 409);
+    assert.strictEqual(stagedDuringLegacy.body.error, 'stage_busy');
+    pausedLegacy.finish();
+    assert.strictEqual((await pausedLegacy.done).status, 400);
+
+    const pausedLegacyJob = pausedImportPost('/api/books/import-jobs', token1b, { file: 'invalid-workbook' });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const stagedDuringJobUpload = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Geblokkeerd 2', Auteur: 'A', 'ISBN-nummer': '9780451524935' }]),
+    });
+    assert.strictEqual(stagedDuringJobUpload.status, 409);
+    pausedLegacyJob.finish();
+    assert.strictEqual((await pausedLegacyJob.done).status, 400);
+
+    const pausedStage = pausedImportPost('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Gedeelde start', Auteur: 'A', 'ISBN-nummer': '9780451524935' }]),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const seenWhileUploading = await call('/api/admin/book-import-stages/active', token1b);
+    assert.strictEqual(seenWhileUploading.status, 200);
+    assert.strictEqual(seenWhileUploading.body.stage.status, 'preparing');
+    assert.strictEqual((await call('/api/books/import', token1b, { file: 'invalid-workbook' })).status, 409);
+    assert.strictEqual((await call('/api/books/import-jobs', token1b, { file: 'invalid-workbook' })).status, 409);
+    pausedStage.finish();
+    const stagedAfterUpload = await pausedStage.done;
+    assert.strictEqual(stagedAfterUpload.status, 201, JSON.stringify(stagedAfterUpload.body).slice(0, 250));
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + stagedAfterUpload.body.id
+      + '/cancel', token1b, { revision: 1 })).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-stages/active', token1b)).body.stage, null);
 
     // A school workbook with many valid edited rows must not be rejected
     // merely because the combined correction JSON exceeds the old 400 KB cap.
