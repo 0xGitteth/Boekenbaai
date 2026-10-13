@@ -298,6 +298,7 @@ function clearAuth({ silent = false } = {}) {
   authToken = null;
   authUser = null;
   localStorage.removeItem('boekenbaai_token');
+  window.dispatchEvent(new Event('boekenbaai:staff-auth-cleared'));
   closeBookDetail();
   passwordChangeController?.handleAuthChange(null);
   if (!silent) {
@@ -6492,6 +6493,10 @@ function initStaffPage() {
       }
     }
   }
+
+  window.addEventListener('boekenbaai:loans-changed', () => {
+    refreshStaffData().catch((error) => console.error('Uitleenoverzicht bijwerken mislukt:', error));
+  });
 
   loginForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
