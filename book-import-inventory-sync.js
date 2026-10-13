@@ -152,6 +152,24 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     const additional = Math.max(0, target - existing.length);
     if (target < existing.length) reason ||= 'reduction_requires_manual_review';
     if (newPrinted.length > additional) reason ||= 'barcodes_exceed_new_copies';
+    // With more than one unlabelled worksheet row containing different copy
+    // metadata, an old ISBN-only book cannot be assigned to a specific row.
+    // Arbitrarily choosing the first would silently put the wrong description
+    // or themes on the added physical copy. Require a corrected worksheet or
+    // explicit keep-existing choice instead of guessing.
+    const unprintedRows = rows.filter((row) => !normalizeRuntimeBarcode(row.book?.barcode));
+    if (existing.length && additional > newPrinted.length && unprintedRows.length > 1) {
+      const metadataKey = (row) => JSON.stringify([
+        row.book.description, row.book.publisher, row.book.publishedYear,
+        row.book.pageCount, row.book.language, row.book.coverUrl,
+        row.book.easyReading, row.book.suitableForExamList,
+        row.book.tags, row.book.themes, row.book.manualThemes,
+        row.context?.fixedLocation?.label,
+      ]);
+      if (unprintedRows.some((row) => metadataKey(row) !== metadataKey(unprintedRows[0]))) {
+        reason ||= 'ambiguous_unlabelled_copy_metadata';
+      }
+    }
     if (additional > newPrinted.length
       && (inventory.barcodes.get(isbn) || []).some((book) => !existing.includes(book))) {
       reason ||= 'isbn_barcode_belongs_to_other_edition';
