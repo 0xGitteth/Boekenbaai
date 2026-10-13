@@ -2103,7 +2103,8 @@ function findBarcodeGroupById(db, groupId) {
   return grouping.groups.find((group) => group.id === groupId) || null;
 }
 
-function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false, studentId = null } = {}) {
+function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false,
+  studentId = null, classId = null } = {}) {
   if (!group) {
     return null;
   }
@@ -2112,13 +2113,14 @@ function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed =
     return books.find((book) => book.status !== 'borrowed') || null;
   }
   if (mustBeBorrowed) {
+    if (classId) {
+      return books.find((book) => book.status === 'borrowed'
+        && book.borrowedByClassId === classId && !book.borrowedBy) || null;
+    }
     if (studentId) {
-      const studentLoan = books.find(
-        (book) => book.status === 'borrowed' && book.borrowedBy === studentId
-      );
-      if (studentLoan) {
-        return studentLoan;
-      }
+      // Never fall back to a different person's borrowed book.
+      return books.find((book) => book.status === 'borrowed'
+        && book.borrowedBy === studentId && !book.borrowedByClassId) || null;
     }
     return books.find((book) => book.status === 'borrowed') || null;
   }
@@ -2156,6 +2158,7 @@ function resolveBookSelection(db, identifier, options = {}) {
     requireAvailable = false,
     mustBeBorrowed = false,
     studentId = null,
+    classId = null,
   } = options;
 
   const normalizedIdentifier = typeof identifier === 'string' ? identifier.trim() : '';
@@ -2183,7 +2186,7 @@ function resolveBookSelection(db, identifier, options = {}) {
     if (!group) {
       continue;
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId });
     if (!book) {
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
@@ -2234,7 +2237,7 @@ function resolveBookSelection(db, identifier, options = {}) {
         };
       }
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId });
     if (!book) {
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
@@ -6463,6 +6466,7 @@ async function handleApi(req, res, requestUrl) {
       if (!klass && !student) return sendJson(res, 400, { message: 'Selecteer een bestaande leerling of klas.' });
       const selection = resolveBookSelection(db, checkinMatch[1], {
         body, mustBeBorrowed: true, studentId: student?.id || null,
+        classId: klass?.id || null,
       });
       if (selection.error) return sendJson(res, selection.statusCode || 400, { message: selection.error });
       const { book } = selection;
@@ -7667,6 +7671,7 @@ async function handleApi(req, res, requestUrl) {
       })();
       const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+      const combinedClassHistory = [...classHistory, ...classCheckoutHistory];
       const classHistoryThisSchoolYear = classHistory.filter((entry) => {
         const date = new Date(entry.timestamp);
         return !Number.isNaN(date.getTime()) && date >= schoolYearStart;
@@ -7677,6 +7682,16 @@ async function handleApi(req, res, requestUrl) {
         return !Number.isNaN(date.getTime()) && date >= monthAgo;
       });
 
+      // Class-level totals include both student and direct class checkouts.
+      // Reader rankings and non-reader stats continue using student loans only.
+      const combinedThisSchoolYear = combinedClassHistory.filter((entry) => {
+        const date = new Date(entry.timestamp);
+        return !Number.isNaN(date.getTime()) && date >= schoolYearStart;
+      });
+      const combinedLastMonth = combinedClassHistory.filter((entry) => {
+        const date = new Date(entry.timestamp);
+        return !Number.isNaN(date.getTime()) && date >= monthAgo;
+      });
       const borrowCountThisSchoolYear = new Map();
       for (const entry of classHistoryThisSchoolYear) {
         borrowCountThisSchoolYear.set(
@@ -7734,7 +7749,7 @@ async function handleApi(req, res, requestUrl) {
 
       const genreCounts = new Map();
       const titleCounts = new Map();
-      for (const entry of classHistoryThisSchoolYear) {
+      for (const entry of combinedThisSchoolYear) {
         const book = findBookById(db, entry.bookId);
         if (book) {
           if (Array.isArray(book.tags)) {
@@ -7760,10 +7775,10 @@ async function handleApi(req, res, requestUrl) {
         .slice(0, 5);
 
       const stats = {
-        totalBorrowedBooks: classHistory.length,
-        totalBorrowed: classHistory.length,
-        borrowCount: classHistory.length,
-        borrowedCount: classHistory.length,
+        totalBorrowedBooks: combinedClassHistory.length,
+        totalBorrowed: combinedClassHistory.length,
+        borrowCount: combinedClassHistory.length,
+        borrowedCount: combinedClassHistory.length,
         activeLoans: activeLoanCount,
         currentLoans: activeLoanCount,
         activeLoanCount: activeLoanCount,
@@ -7774,9 +7789,9 @@ async function handleApi(req, res, requestUrl) {
         activeReaders,
         readerCount: activeReaders,
         topReaders,
-        borrowedThisSchoolYear: classHistoryThisSchoolYear.length,
-        totalBorrowedThisSchoolYear: classHistoryThisSchoolYear.length,
-        borrowedLastMonth: classHistoryLastMonth.length,
+        borrowedThisSchoolYear: combinedThisSchoolYear.length,
+        totalBorrowedThisSchoolYear: combinedThisSchoolYear.length,
+        borrowedLastMonth: combinedLastMonth.length,
         nonReaders,
         heavyReaders,
         topGenres,
@@ -7840,6 +7855,17 @@ async function handleApi(req, res, requestUrl) {
       const index = db.classes.findIndex((cls) => cls.id === classMatch[1]);
       if (index === -1) {
         return sendJson(res, 404, { message: 'Klas niet gevonden' });
+      }
+      // A live class checkout is owned by the class ID. Deleting that class
+      // before the physical copy is returned would orphan the checkout and
+      // make it impossible to resolve in the staff loan overview.
+      const activeClassLoans = db.books.filter((book) =>
+        book.borrowedByClassId === classMatch[1]);
+      if (activeClassLoans.length) {
+        return sendJson(res, 409, {
+          message: 'Deze klas heeft nog uitgeleende boeken. Neem deze eerst in.',
+          error: 'class_has_active_loans', borrowedCount: activeClassLoans.length,
+        });
       }
       const [removedClass] = db.classes.splice(index, 1);
       for (const student of db.students) {
