@@ -32,6 +32,34 @@ assert.strictEqual(repeat.summary.addCopies, 1);
 assert.deepStrictEqual(repeat.proposedAdds.map(({ barcode, quantity }) => [barcode, quantity]),
   [[ISBN, 1]], 'A repeat upload must increase the total, not double it');
 
+// Every newly created copy must retain the metadata of its ORIGINAL Excel
+// row, including when several rows share the same ISBN.
+const differentRowMetadata = preview([
+  row(0, 1, { description: 'First worksheet row', tags: ['history'] }),
+  row(1, 1, { description: 'Second worksheet row', tags: ['fantasy'] }),
+]);
+assert.deepStrictEqual(differentRowMetadata.proposedAdds.map((add) =>
+  [add.index, add.quantity, add.barcode]), [[0, 1, ISBN], [1, 1, ISBN]]);
+assert.deepStrictEqual(differentRowMetadata.rows.map((item) => item.rowAddCopies), [1, 1]);
+
+// A new printed barcode on the first row cannot become the source of the
+// AUTO-generated copy belonging to a different, unprinted second row.
+const printedThenUnprinted = preview([
+  row(0, 1, { barcode: '44221100', description: 'Printed copy' }),
+  row(1, 1, { description: 'Unprinted copy' }),
+]);
+assert.deepStrictEqual(printedThenUnprinted.proposedAdds.map((add) =>
+  [add.index, add.barcode, add.quantity]), [[0, '44221100', 1], [1, ISBN, 1]]);
+
+// Old physical books with no saved edition ISBN should not be duplicated
+// solely because the new Excel finally has a valid ISBN.
+const legacyWithoutIsbn = preview([row(0, 2)], [
+  book('old-copy', { metadataIsbn: null, editionIsbn: null, barcode: '44332211' }),
+]);
+assert.strictEqual(legacyWithoutIsbn.rows[0].reason, 'possible_existing_book_without_isbn');
+assert.strictEqual(legacyWithoutIsbn.summary.readyToApply, false);
+assert.deepStrictEqual(legacyWithoutIsbn.proposedAdds, []);
+
 const borrowed = preview([row(0, 2)], [book('loan-1', {
   status: 'borrowed', borrowedBy: 'student-1',
 })]);
