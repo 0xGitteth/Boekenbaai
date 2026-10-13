@@ -1247,6 +1247,37 @@ async function run() {
     assert.strictEqual((await call('/api/admin/book-import-stages/' + legacySync.body.id
       + '/cancel', token1, { revision: 1 })).status, 200);
 
+    // A stale ordinary book-create request holds a request-local DB snapshot
+    // while its JSON body is still uploading. Completing a PR4 sync must be
+    // durable; the older request MUST be rejected rather than overwrite the
+    // newly saved book, audit report or import history.
+    const guardedSyncIsbn = '9781234567187';
+    const guardedStage = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Beschermde synchronisatie', Auteur: 'A Auteur',
+        'ISBN-nummer': guardedSyncIsbn, Aantal: 1 }]),
+    });
+    assert.strictEqual(guardedStage.status, 201);
+    const olderOrdinaryCreate = pausedImportPost('/api/books', token2, {
+      title: 'Stale request must fail', author: 'A Auteur',
+      barcode: '77441122', metadataIsbn: '9781234567194',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const guardedApply = await call('/api/admin/book-import-stages/' + guardedStage.body.id
+      + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(guardedApply.status, 200, JSON.stringify(guardedApply.body).slice(0, 400));
+    olderOrdinaryCreate.finish();
+    const staleOrdinaryResult = await olderOrdinaryCreate.done;
+    assert.strictEqual(staleOrdinaryResult.status, 409,
+      'Ordinary writers must not overwrite a successful completed stock sync');
+    assert.strictEqual(staleOrdinaryResult.body.error, 'DATABASE_WRITE_CONFLICT');
+    const savedGuardedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.ok(savedGuardedDb.books.some((book) => book.metadataIsbn === guardedSyncIsbn));
+    assert.ok(savedGuardedDb.bookImportReports.some((report) =>
+      report.id === guardedApply.body.result.batchId));
+    assert.ok(savedGuardedDb.history.some((event) => event.type === 'books_inventory_sync'));
+    assert.ok(!savedGuardedDb.books.some((book) => book.barcode === '77441122'));
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
