@@ -4451,6 +4451,9 @@ async function handleApi(req, res, requestUrl) {
         easyReading: body.easyReading ?? book.easyReading,
         tags: nextTags,
         manualThemes: nextManualThemes,
+        // An explicit theme edit supersedes metadata imported earlier.
+        // An empty selection must not resurrect old metadata themes.
+        importedThemes: hasManualThemes ? [] : book.importedThemes,
         coverColor: body.coverColor ?? book.coverColor,
         publisher: nextPublisher,
         publishedYear: nextPublishedYear,
