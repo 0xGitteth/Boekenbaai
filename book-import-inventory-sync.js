@@ -7,8 +7,12 @@ const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./b
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 
 function editionKeys(book) {
-  return [...new Set([book?.editionIsbn, book?.metadataIsbn, book?.isbn13, book?.barcode]
+  // A physical barcode that merely LOOKS like another ISBN must not give a
+  // different edition the same physical book. Use barcode-as-ISBN only if no
+  // genuine edition identifier exists (legacy books).
+  const identified = [...new Set([book?.editionIsbn, book?.metadataIsbn, book?.isbn13]
     .map(canonicalizeBookIsbn13).filter(Boolean))];
+  return identified.length ? identified : [canonicalizeBookIsbn13(book?.barcode)].filter(Boolean);
 }
 function inventoryIndex(books) {
   const editions = new Map();
