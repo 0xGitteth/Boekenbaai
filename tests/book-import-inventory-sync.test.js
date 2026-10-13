@@ -133,6 +133,31 @@ assert.strictEqual(missingEdition.summary.omittedExistingCopies, 1);
 assert.strictEqual(missingEdition.omittedEditions[0].title, 'Andere titel');
 assert.deepStrictEqual(missingEdition.proposedAdds, [], 'Omitted editions remain untouched');
 
+// All omitted physical books count, even if old records lack ISBN. An old
+// book with two conflicting ISBN keys cannot be counted twice, and a record
+// present through one of its identifiers must not be listed as omitted.
+const omissionWithoutIsbn = preview([row(0, 1)], [
+  book('first-existing'),
+  book('legacy-unknown', { metadataIsbn: null, barcode: '55001122',
+    title: 'Older legacy copy' }),
+]);
+assert.strictEqual(omissionWithoutIsbn.summary.omittedExistingCopies, 1);
+assert.strictEqual(omissionWithoutIsbn.omittedEditions[0].editionIsbn, '');
+assert.strictEqual(omissionWithoutIsbn.omittedEditions[0].title, 'Older legacy copy');
+const aliasPresent = preview([row(0, 2)], [
+  book('conflicting-alias', { editionIsbn: OTHER }),
+]);
+assert.strictEqual(aliasPresent.summary.omittedExistingCopies, 0,
+  'An edition represented by its metadata ISBN must never be counted as omitted');
+
+// Duplicated ISBN identifiers on the same physical record must not inflate
+// the list of existing books absent from a DIFFERENT upload.
+const omitAmbiguous = preview([row(0, 1, { editionIsbn: '9781234567101',
+  title: 'Unrelated' })], [
+  book('conflicting-alias', { editionIsbn: OTHER }),
+]);
+assert.strictEqual(omitAmbiguous.summary.omittedExistingCopies, 1);
+
 const conflictingExistingIsbns = preview([row(0, 2)], [
   book('ambiguous', { editionIsbn: OTHER }),
 ]);
