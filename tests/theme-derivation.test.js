@@ -194,6 +194,18 @@ const manualThemesOverrideDerivedThemes = attachDerivedThemeFields({
 });
 assert.deepStrictEqual(manualThemesOverrideDerivedThemes.themes, ['Isolatie']);
 
+// Reviewed metadata themes must survive repeated book normalization.
+// A manual correction can still intentionally override imported metadata.
+const fromMetadata = attachDerivedThemeFields({
+  tags: ['unmapped metadata tag'],
+  importedThemes: ['Pesten', 'Nieuw vakgebied'],
+});
+assert.deepStrictEqual(fromMetadata.themes, ['Pesten', 'Nieuw vakgebied']);
+assert.deepStrictEqual(attachDerivedThemeFields(fromMetadata).themes, ['Pesten', 'Nieuw vakgebied']);
+assert.deepStrictEqual(attachDerivedThemeFields({
+  ...fromMetadata, manualThemes: ['Mysterie'],
+}).themes, ['Mysterie']);
+
 const availableThemes = collectUniqueThemes([
   { tags: ['juvenile fiction', 'Mysterie'], themes: ['Mysterie'] },
   { tags: ['easy reading'], themes: [] },
