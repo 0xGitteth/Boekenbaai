@@ -5,6 +5,7 @@ const { URL } = require('url');
 const crypto = require('crypto');
 const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport } = require('./book-import-review');
+const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 
 const bookImportStageStore = createImportStageStore();
@@ -3429,7 +3430,10 @@ async function lookupIsbnMetadata(isbn, options = {}) {
     const lookupEntry = {
       value: result,
       debug: debugPayload,
-      expiresAt: Date.now() + ISBN_CACHE_TTL_MS,
+      // Do not let a temporary failure suppress later ISBN retries for a
+      // long success-cache TTL.
+      expiresAt: Date.now() + (result?.found === true
+        ? ISBN_CACHE_TTL_MS : Math.min(ISBN_CACHE_TTL_MS, 10 * 1000)),
     };
     isbnMetadataCache.set(cacheKey, lookupEntry);
     return lookupEntry;
@@ -3832,7 +3836,7 @@ function getTeacherClassIds(db, teacherId) {
 // One synchronous admission point for every book-import entry route.
 // A legacy background job retains its lease until its internal direct import
 // and job finalization both finish; the authenticated internal request may
-// reuse ONLY its matching job id and login token.
+// reuse ONLY its matching job id, login token and server-only handoff secret.
 let activeBookImportLease = null;
 function releaseBookImportLease(lease) {
   if (activeBookImportLease === lease) activeBookImportLease = null;
@@ -3876,8 +3880,12 @@ async function handleApi(req, res, requestUrl) {
       const internalJobRequest = importKind === 'legacy-direct'
         && lease?.kind === 'legacy-job' && lease.jobId
         && lease.jobId === String(req.headers['x-import-job-id'] || '').trim()
-        && lease.loginToken === getTokenFromHeader(req);
+        && lease.loginToken === getTokenFromHeader(req)
+        && !lease.internalBorrowed
+        && typeof req.headers['x-import-internal-token'] === 'string'
+        && lease.handoffSecret === req.headers['x-import-internal-token'];
       if (internalJobRequest) {
+        lease.internalBorrowed = true;
         requestImportAdmission = { lease, borrowed: true };
       } else if (lease?.kind === 'legacy-job' && importKind === 'legacy-job'
         && lease.userId === user.id && lease.jobId) {
@@ -3894,7 +3902,8 @@ async function handleApi(req, res, requestUrl) {
         });
       } else {
         const reserved = { kind: importKind, userId: user.id, jobId: null,
-          loginToken: getTokenFromHeader(req), handedOff: false };
+          loginToken: getTokenFromHeader(req), handedOff: false,
+          handoffSecret: null, internalBorrowed: false };
         activeBookImportLease = reserved;
         requestImportAdmission = { lease: reserved, borrowed: false };
       }
@@ -4605,17 +4614,38 @@ async function handleApi(req, res, requestUrl) {
         // requests for identical ISBNs across corrections and reanalysis.
         const exactCache = new Map();
         const titleCache = new Map();
+        const retryableExact = new Set();
+        const retryableTitle = new Set();
+        // Share requests within an analysis, even on failure, to avoid
+        // thousands of repeated lookups in a large workbook. A subsequent
+        // explicit review can retry unsuccessful results.
+        const stageLookup = (cache, retryable, key, lookup) => {
+          if (!cache.has(key)) {
+            const pending = Promise.resolve().then(lookup);
+            cache.set(key, pending);
+            pending.then(
+              (result) => {
+                if (!metadataCandidatesFromResult(result).length) retryable.add(key);
+              },
+              () => retryable.add(key),
+            );
+          }
+          return cache.get(key);
+        };
         const options = {
           maxRows: 1500, maxCopies: 5000,
-          ...(lookupIsbn ? { lookupIsbn: (isbn) => {
-            if (!exactCache.has(isbn)) exactCache.set(isbn, Promise.resolve().then(() => lookupIsbn(isbn)));
-            return exactCache.get(isbn);
-          } } : {}),
+          ...(lookupIsbn ? { lookupIsbn: (isbn) =>
+            stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
             const key = JSON.stringify([input.title, input.author, input.language]);
-            if (!titleCache.has(key)) titleCache.set(key, Promise.resolve().then(() => lookupTitleAuthor(input)));
-            return titleCache.get(key);
+            return stageLookup(titleCache, retryableTitle, key, () => lookupTitleAuthor(input));
           } } : {}),
+          releaseRetryableLookups: () => {
+            for (const key of retryableExact) exactCache.delete(key);
+            for (const key of retryableTitle) titleCache.delete(key);
+            retryableExact.clear();
+            retryableTitle.clear();
+          },
         };
         const analysis = await analyzeReviewedImport(workbook.rows, [], {
           ...options, existingBooks: database.books,
@@ -4660,6 +4690,8 @@ async function handleApi(req, res, requestUrl) {
           if (typeof body.acceptWarnings !== 'boolean') {
             return sendJson(res, 400, { message: 'Geef expliciet aan of waarschuwingen geaccepteerd worden.' });
           }
+          // A review is a fresh retry opportunity. Retain successful metadata.
+          stage.options.releaseRetryableLookups?.();
           const database = getDb();
           const reviewed = await analyzeReviewedImport(stage.sourceRows, body.corrections, {
             ...stage.options, existingBooks: database.books,
@@ -4870,6 +4902,8 @@ async function handleApi(req, res, requestUrl) {
       // The response ends before the legacy worker does. Keep its admission
       // lease until the worker has also finalized the persistent job.
       requestImportAdmission.lease.jobId = jobId;
+      // Private to this running server and never persisted or returned to a client.
+      requestImportAdmission.lease.handoffSecret = crypto.randomBytes(32).toString('hex');
       requestImportAdmission.lease.handedOff = true;
 
       setImmediate(async () => {
@@ -4899,6 +4933,7 @@ async function handleApi(req, res, requestUrl) {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
               'X-Import-Job-Id': jobId,
+              'X-Import-Internal-Token': requestImportAdmission.lease.handoffSecret,
             },
             body: JSON.stringify({ file: body.file, enrichIsbn: body.enrichIsbn }),
           });
