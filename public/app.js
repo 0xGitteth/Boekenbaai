@@ -3621,6 +3621,7 @@ function initStaffPage() {
   const selectedThemeKeys = new Set();
   const adminCustomThemes = new Map();
   let adminSelectedThemeKeys = new Set();
+  let adminBookInitialThemeKeys = null;
   let adminBookRawTags = [];
   let onlyExamList = false;
   let onlyEasyReading = false;
@@ -4245,6 +4246,7 @@ function initStaffPage() {
       adminBookMetadataIsbn.value = '';
     }
     adminBookRawTags = [];
+    adminBookInitialThemeKeys = null;
     setSelectedAdminThemes([]);
     if (adminBookCover) {
       adminBookCover.value = '';
@@ -4299,6 +4301,9 @@ function initStaffPage() {
       ? book.manualThemes
       : book.themes || [];
     setSelectedAdminThemes(editableThemes);
+    // Saving another field must not accidentally convert auto-imported
+    // themes into manual selections or delete freeform metadata themes.
+    adminBookInitialThemeKeys = new Set(adminSelectedThemeKeys);
     if (adminBookCover) {
       adminBookCover.value = book.coverUrl || '';
     }
@@ -7410,7 +7415,10 @@ function initStaffPage() {
       language: languageValue ? languageValue.toLowerCase() : '',
       coverUrl: coverUrlValue,
     };
-    payload.manualThemes = selectedThemes;
+    const themeSelectionChanged = !bookId || !adminBookInitialThemeKeys
+      || adminSelectedThemeKeys.size !== adminBookInitialThemeKeys.size
+      || [...adminSelectedThemeKeys].some((key) => !adminBookInitialThemeKeys.has(key));
+    if (themeSelectionChanged) payload.manualThemes = selectedThemes;
     if (bookId) {
       payload.tags = Array.isArray(adminBookRawTags) ? [...adminBookRawTags] : [];
     } else {
