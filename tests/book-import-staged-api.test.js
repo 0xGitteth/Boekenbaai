@@ -111,7 +111,8 @@ async function run() {
     globalThis.__BOEKENBAAI_MOCK_ISBN_LOOKUP = async (isbn) => ({
       found: true, title: 'Metadata thema boek', author: 'A Auteur',
       authors: ['A Auteur'], isbn13: isbn,
-      themes: ['Pesten', 'Nieuw vakgebied'], source: 'test-metadata'
+      themes: ['Pesten', 'Nieuw vakgebied'],
+      tags: ['bullying'], source: 'test-metadata'
     });
   `);
   const child = spawn(process.execPath, ['--require', metadataHookFile, 'server.js'], {
@@ -617,7 +618,9 @@ async function run() {
     const persistCleared = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
       .find((book) => book.metadataIsbn === clearedThemeIsbn);
     assert.deepStrictEqual(persistCleared.importedThemes, []);
-    assert.deepStrictEqual(persistCleared.themes, []);
+    assert.strictEqual(persistCleared.themesCleared, true);
+    assert.deepStrictEqual(persistCleared.themes, [],
+      'Explicitly cleared themes must remain absent despite derived metadata tags');
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
