@@ -23,8 +23,8 @@ Bij meerdere bestaande, niet individueel herkenbare exemplaren wordt **niet gego
 - Het fysieke boek krijgt `status: borrowed` en uitsluitend `borrowedBy` of `borrowedByClassId`.
 - De leerling krijgt het fysieke boek-ID in `borrowedBooks`. Klasleningen krijgen geen fictieve leerlingregistratie.
 - `borrowedAt` en `dueDate` blijven leeg omdat Excel niet betrouwbaar vertelt **wanneer** de lening begon of eindigt.
-- Het gebeurtenislog bevat `loan_imported`, geen nieuwe `check_out`. Historische import wordt daardoor niet als nieuw leesmoment geteld.
-- Het beheerdersverslag vermeldt of uitleningen zijn overgenomen of al geregistreerd stonden.
+- Het gebeurtenislog krijgt per import **één** `loans_imported`-samenvatting en geen nieuwe `check_out`. Historische import wordt daardoor niet als nieuw leesmoment geteld. Een import van honderden leningen verdringt niet evenzoveel oudere logregels.
+- Het afgeschermde, blijvende beheerdersverslag legt per overgenomen lening boek-ID en leerling-/klas-ID vast, en vermeldt of uitleningen zijn overgenomen of al geregistreerd stonden.
 - Leerlingclients krijgen via openbare boeken- of barcoderesponses **nooit** de identiteit van de lener.
 
 ## Handmatige acceptatiecontrole
