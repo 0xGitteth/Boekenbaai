@@ -637,7 +637,7 @@ async function run() {
 
 
     // Explicit clears outrank optional metadata at preview, apply and reload.
-    const emptyMetadataIsbn = '9780061120084';
+    const emptyMetadataIsbn = '9781234567897';
     const emptyMetadataStage = await call('/api/admin/book-import-stages', token1, {
       file: fileBase64([{ Titel: 'Metadata thema boek', Auteur: 'A Auteur',
         'ISBN-nummer': emptyMetadataIsbn }]),
