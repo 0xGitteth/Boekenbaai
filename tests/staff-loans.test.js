@@ -9,9 +9,9 @@ const PORT = 4061;
 const BASE = 'http://127.0.0.1:' + PORT;
 const hash = (password) => crypto.createHash('sha256').update(password).digest('hex');
 
-async function call(route, token, payload) {
+async function call(route, token, payload, method) {
   const response = await fetch(BASE + route, {
-    method: payload === undefined ? 'GET' : 'POST',
+    method: method || (payload === undefined ? 'GET' : 'POST'),
     headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}),
       ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
@@ -45,7 +45,7 @@ async function run() {
   });
   const db = {
     books: [
-      makeBook('book-student', '55220011'),
+      makeBook('book-student', '55220011', { loanId: 'legacy-active-loan-secret' }),
       makeBook('book-class', '55220012', { fixedLocation: 'SK BB' }),
       makeBook('book-other', '55220013'),
     ],
@@ -139,7 +139,7 @@ async function run() {
       assert.strictEqual(response.status, 200, route);
       const text = JSON.stringify(response.body);
       for (const secret of ['borrowedBy', 'borrowedByClassId', 'stu-a', 'class-a',
-        '2027-01-15', 'borrowedAt']) {
+        '2027-01-15', 'borrowedAt', 'loanId', 'legacy-active-loan-secret']) {
         assert.ok(!text.includes(secret), 'Leaked ' + secret + ' in ' + route);
       }
     }
@@ -165,6 +165,35 @@ async function run() {
     assert.strictEqual(stats.status, 200);
     assert.strictEqual(stats.body.activeLoans, 2);
     assert.strictEqual(stats.body.classLoanCount, 1);
+    assert.strictEqual(stats.body.totalBorrowedBooks, 2,
+      'Class totals must include BOTH the student and the class checkout');
+    assert.strictEqual(stats.body.borrowedThisSchoolYear, 2);
+    assert.strictEqual(stats.body.borrowedLastMonth, 2);
+    assert.ok(stats.body.topReaders.every((entry) => entry.id !== 'class-a'),
+      'Class checkouts must never become a fictitious student reader');
+    assert.strictEqual((await call('/api/classes/class-a', admin, undefined, 'DELETE')).status, 409,
+      'Active class-owned copies must prevent class deletion');
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).classes.length, 2);
+
+    // Barcodes and group IDs may resolve several physical copies of the same
+    // edition. Returning a class checkout must pick the copy belonging to
+    // THAT CLASS, not an unrelated student's earlier loan.
+    const withSharedBarcode = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    withSharedBarcode.books.find((copy) => copy.id === 'book-class').barcode = '55220011';
+    fs.writeFileSync(dbPath, JSON.stringify(withSharedBarcode));
+    const classBarcodeReturn = await call('/api/books/55220011/check-in', teacherA,
+      { classId: 'class-a' });
+    assert.strictEqual(classBarcodeReturn.status, 200,
+      'A grouped return must find the class-owned copy');
+    assert.strictEqual(classBarcodeReturn.body.book.id, 'book-class');
+    const studentBarcodeStillOut = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((copy) => copy.id === 'book-student');
+    assert.strictEqual(studentBarcodeStillOut.borrowedBy, 'stu-a');
+    assert.strictEqual((await call('/api/books/book-class/check-out', teacherA,
+      { classId: 'class-a' })).status, 200);
+    // A class cannot claim the student's copy by matching only its barcode.
+    assert.strictEqual((await call('/api/books/55220011/check-in', teacherB,
+      { classId: 'class-b' })).status, 400);
 
     // Revocation must take effect without a fresh login. A cached teacher
     // user.classIds entry is NOT proof of current membership or authority.
@@ -200,6 +229,10 @@ async function run() {
     assert.strictEqual(after.books.find((item) => item.id === 'book-class').fixedLocation, 'SK BB');
     assert.ok(after.history.some((event) => event.type === 'check_in_class'));
     assert.strictEqual((await call('/api/staff/loans', admin)).status, 200);
+    const deletedClass = await call('/api/classes/class-a', admin, undefined, 'DELETE');
+    assert.strictEqual(deletedClass.status, 200,
+      'The admin can delete a class AFTER its active loans have been returned');
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).classes.length, 1);
     console.log('PR5 staff loans: role-scoped student and class actions and privacy passed');
   } finally {
     child.kill('SIGTERM');
