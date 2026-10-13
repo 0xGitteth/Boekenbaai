@@ -82,6 +82,15 @@ assert.strictEqual(fieldValue({ book: { easyReading: true }, provenance: {
   easyReading: { source: 'excel', raw: 'nee' },
 }}, 'easyReading'), 'nee', 'Show raw Excel ML input instead of disguising it as ja');
 assert.strictEqual(fieldValue({ book: { easyReading: true }, provenance: {} }, 'easyReading'), 'ja');
+assert.strictEqual(fieldValue({ book: { suitableForExamList: false }, provenance: {
+  suitableForExamList: { source: 'excel', header: 'Examenmateriaal', raw: 'Engels' },
+}}, 'examMaterial'), 'Engels', 'Derived English language must not hide the original Excel value');
+assert.strictEqual(fieldValue({ book: { suitableForExamList: false }, provenance: {
+  suitableForExamList: { source: 'excel', header: 'Examenmateriaal', raw: 'strip' },
+}}, 'examMaterial'), 'strip', 'Derived comic tags must not hide the original Excel value');
+assert.strictEqual(fieldValue({ book: { suitableForExamList: true }, provenance: {} },
+  'examMaterial'), 'Ja');
+
 assert.ok(script.includes("'Makkelijk lezen: ' + (row.book?.easyReading ? 'ja' : 'nee')"),
   'Show the effective ML value alongside its original Excel value');
 
