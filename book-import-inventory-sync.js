@@ -34,8 +34,33 @@ function inventoryIndex(books) {
   }
   return { editions, barcodes, ambiguousEditions };
 }
-function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarnings = false } = {}) {
+function normalizeInventoryResolutions(input) {
+  if (input === undefined) return { ok: true, values: [] };
+  if (!Array.isArray(input) || input.length > 1500) return { ok: false, error: 'invalid_sync_resolutions' };
+  const seen = new Set();
+  const values = [];
+  for (const item of input) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)
+      || typeof item.isbn !== 'string' || item.action !== 'keep_existing') {
+      return { ok: false, error: 'invalid_sync_resolutions' };
+    }
+    const isbn = canonicalizeBookIsbn13(item.isbn);
+    if (!isbn || isbn !== item.isbn || seen.has(isbn)) {
+      return { ok: false, error: 'invalid_sync_resolutions' };
+    }
+    seen.add(isbn);
+    values.push({ isbn, action: 'keep_existing' });
+  }
+  return { ok: true, values };
+}
+
+function buildInventorySyncPreview(analysis, existingBooks = [], {
+  acceptWarnings = false, resolutions = [],
+} = {}) {
   if (!analysis?.ok || !Array.isArray(analysis.rows)) return { ok: false, error: 'invalid_review' };
+  const normalizedResolutions = normalizeInventoryResolutions(resolutions);
+  if (!normalizedResolutions.ok) return normalizedResolutions;
+  const retain = new Set(normalizedResolutions.values.map((item) => item.isbn));
   const inventory = inventoryIndex(existingBooks);
   const groups = new Map();
   const decisions = analysis.rows.map((row) => ({
@@ -55,6 +80,14 @@ function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarning
     groups.get(isbn).push(row);
   }
 
+  // A resolution is meaningful only for a known edition in this workbook.
+  // Reject forged choices for unknown editions and prevent stale old choices
+  // from carrying over to a corrected ISBN.
+  for (const isbn of retain) {
+    if (!groups.has(isbn) || !(inventory.editions.get(isbn) || []).length) {
+      return { ok: false, error: 'unknown_sync_resolution' };
+    }
+  }
   const proposedAdds = [];
   for (const [isbn, rows] of groups) {
     const existing = inventory.editions.get(isbn) || [];
@@ -102,11 +135,15 @@ function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarning
       reason ||= 'isbn_barcode_belongs_to_other_edition';
     }
     const first = rows[0].index;
+    const keepExisting = retain.has(isbn);
     const totals = { existingCopies: existing.length, borrowedCopies: borrowed,
-      targetCopies: target, addCopies: reason ? 0 : additional };
-    decisions[first] = { ...decisions[first], ...totals,
-      action: reason ? 'blocked' : additional ? 'add_copies' : 'unchanged', reason };
-    if (!reason) {
+      targetCopies: target, addCopies: reason || keepExisting ? 0 : additional };
+    decisions[first] = { ...decisions[first], ...totals, editionIsbn: isbn,
+      action: keepExisting ? 'kept_existing'
+        : reason ? 'blocked' : additional ? 'add_copies' : 'unchanged',
+      reason: keepExisting ? '' : reason,
+      resolution: keepExisting ? 'keep_existing' : null };
+    if (!reason && !keepExisting) {
       for (const item of newPrinted) proposedAdds.push({
         editionIsbn: isbn, index: item.index, quantity: 1, barcode: item.barcode,
         templateBookId: existing[0]?.id || null,
@@ -147,22 +184,30 @@ function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarning
 
   const received = new Set(groups.keys());
   const absentIds = new Set();
+  const omittedEditions = [];
   for (const [isbn, books] of inventory.editions) {
     if (received.has(isbn)) continue;
     for (const book of books) absentIds.add(book.id || book);
+    if (omittedEditions.length < 50) omittedEditions.push({
+      editionIsbn: isbn, title: books[0]?.title || '(geen titel)',
+      author: books[0]?.author || '', copies: books.length,
+      borrowedCopies: books.filter((book) =>
+        book.status === 'borrowed' || Boolean(book.borrowedBy)).length,
+    });
   }
   const blocked = decisions.filter((entry) => entry.action === 'blocked').length;
   const additionalCopies = safeAdds.reduce((sum, entry) => sum + entry.quantity, 0);
   if (additionalCopies > 5000) return { ok: false, error: 'too_many_copies' };
   return {
-    ok: true, rows: decisions, proposedAdds: safeAdds,
+    ok: true, rows: decisions, proposedAdds: safeAdds, omittedEditions,
     summary: {
       addCopies: additionalCopies, blockedEditions: blocked,
       unchangedEditions: decisions.filter((entry) => entry.action === 'unchanged').length,
+      acknowledgedEditions: decisions.filter((entry) => entry.action === 'kept_existing').length,
       skippedRows: decisions.filter((entry) => entry.action === 'skipped').length,
       omittedExistingCopies: absentIds.size,
-      readyToApply: blocked === 0 && additionalCopies > 0,
+      readyToApply: blocked === 0 && groups.size > 0,
     },
   };
 }
-module.exports = { buildInventorySyncPreview };
+module.exports = { buildInventorySyncPreview, normalizeInventoryResolutions };
