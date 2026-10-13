@@ -7,7 +7,7 @@ const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
-const { buildInventorySyncPreview } = require('./book-import-inventory-sync');
+const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -4734,6 +4734,14 @@ async function handleApi(req, res, requestUrl) {
           if (typeof body.acceptWarnings !== 'boolean') {
             return sendJson(res, 400, { message: 'Geef expliciet aan of waarschuwingen geaccepteerd worden.' });
           }
+          const choices = stage.options.mode === 'inventory_sync'
+            ? normalizeInventoryResolutions(body.inventoryResolutions)
+            : { ok: true, values: [] };
+          if (!choices.ok || (stage.options.mode !== 'inventory_sync'
+            && body.inventoryResolutions !== undefined)) {
+            return sendJson(res, 400, { message: 'Ongeldige voorraadkeuzes.',
+              error: choices.error || 'invalid_sync_resolutions' });
+          }
           // A review is a fresh retry opportunity. Retain successful metadata.
           stage.options.releaseRetryableLookups?.();
           // Authentication may have loaded an older snapshot while a large
@@ -4751,13 +4759,16 @@ async function handleApi(req, res, requestUrl) {
           // Recheck after any asynchronous lookups, not just after body upload.
           const latestBooks = loadDb().books;
           reviewed.decisions = stage.options.mode === 'inventory_sync'
-            ? buildInventorySyncPreview(reviewed, latestBooks, { acceptWarnings: body.acceptWarnings })
+            ? buildInventorySyncPreview(reviewed, latestBooks, {
+              acceptWarnings: body.acceptWarnings, resolutions: choices.values,
+            })
             : buildReviewDecisions(reviewed, latestBooks, { acceptWarnings: body.acceptWarnings });
           if (!reviewed.decisions.ok && stage.options.mode === 'inventory_sync') {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
           }
-          bookImportStageStore.finishReview(stage, reviewed, body.corrections, body.acceptWarnings);
+          bookImportStageStore.finishReview(stage, reviewed, body.corrections,
+            body.acceptWarnings, choices.values);
           return sendJson(res, 200, importStageView(stage));
         } finally {
           bookImportStageStore.abortReview(stage);
@@ -4782,11 +4793,12 @@ async function handleApi(req, res, requestUrl) {
             // before the atomic write. A concurrent admin's barcode, edition,
             // count or active loan change invalidates the approved preview.
             const fresh = buildInventorySyncPreview(stage.analysis, database.books, {
-              acceptWarnings: stage.acceptWarnings,
+              acceptWarnings: stage.acceptWarnings, resolutions: stage.inventoryResolutions,
             });
             if (!fresh.ok || !fresh.summary.readyToApply
               || JSON.stringify(fresh.rows) !== JSON.stringify(stage.analysis.decisions?.rows)
-              || JSON.stringify(fresh.proposedAdds) !== JSON.stringify(stage.analysis.decisions?.proposedAdds)) {
+              || JSON.stringify(fresh.proposedAdds) !== JSON.stringify(stage.analysis.decisions?.proposedAdds)
+              || JSON.stringify(fresh.omittedEditions) !== JSON.stringify(stage.analysis.decisions?.omittedEditions)) {
               return sendJson(res, 409, {
                 message: 'De voorraad is sinds de controle gewijzigd of er staan onopgeloste verschillen. Start een nieuwe vergelijking.',
                 error: 'inventory_preview_stale',
@@ -4881,7 +4893,7 @@ async function handleApi(req, res, requestUrl) {
               });
             }
             for (const decision of fresh.rows.filter((item) =>
-              item.action === 'unchanged' || item.action === 'skipped' || item.action === 'combined')) {
+              ['unchanged', 'skipped', 'combined', 'kept_existing'].includes(item.action))) {
               const row = stage.analysis.rows[decision.index];
               sourceReports.push({
                 index: decision.index, worksheetRow: row.sourceRowNumber,
@@ -4896,6 +4908,8 @@ async function handleApi(req, res, requestUrl) {
               count: createdCopies.length,
               sourceRows: stage.analysis.summary.sourceRows,
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
+              omittedEditions: fresh.omittedEditions,
+              inventoryResolutions: stage.inventoryResolutions,
               rows: sourceReports.sort((a, b) => a.index - b.index),
             };
             if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
@@ -4909,6 +4923,7 @@ async function handleApi(req, res, requestUrl) {
             saveReviewedBookImportDb(database);
             bookImportStageStore.finishApply(stage, {
               batchId, created: createdCopies.length, removed: 0,
+              retainedEditions: fresh.summary.acknowledgedEditions,
               report, omittedExistingCopies: fresh.summary.omittedExistingCopies,
             });
             return sendJson(res, 200, importStageView(stage));
