@@ -108,8 +108,16 @@ const ISBN2 = '9780439554930';
   const loanRow = await analyzeReviewedImport([{
     Titel: 'Boek bij leerling', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'Lisa Leerling',
   }], [], { students: [{ id: 'student-1', name: 'Lisa Leerling' }] });
-  assert.strictEqual(loanRow.decisions.rows[0].reason, 'loan_context_requires_followup');
-  assert.strictEqual(buildStageApplyPlan({ ...loanRow, acceptWarnings: true }, []).error, 'review_not_ready');
+  assert.strictEqual(loanRow.decisions.rows[0].reason, '',
+    'The unique, exact existing pupil match makes this historic loan eligible');
+  assert.strictEqual(loanRow.decisions.rows[0].loanBorrower.id, 'student-1');
+  assert.strictEqual(buildStageApplyPlan({ ...loanRow, acceptWarnings: true }, []).error,
+    'review_not_ready', 'Final apply without a fresh student directory must never guess');
+  const checkedLoan = buildStageApplyPlan({ ...loanRow, acceptWarnings: true }, [], {
+    students: [{ id: 'student-1', name: 'Lisa Leerling', borrowedBooks: [] }],
+  });
+  assert.strictEqual(checkedLoan.ok, true);
+  assert.strictEqual(checkedLoan.created[0].loanBorrower.id, 'student-1');
 
   const mixed = await analyzeReviewedImport([
     { Titel: 'Klaar', Auteur: 'Auteur', 'ISBN-nummer': ISBN },
