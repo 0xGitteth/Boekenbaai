@@ -6398,7 +6398,7 @@ async function handleApi(req, res, requestUrl) {
       if (student) {
         if (!Array.isArray(student.borrowedBooks)) student.borrowedBooks = [];
         if (student.borrowedBooks.some((entry) => entry.bookId === book.id) || studentHasLoanInGroup(student, group)) {
-          return sendJson(res, 409, { message: 'Deze leerling heeft al een exemplaar van deze titel.' });
+          return sendJson(res, 400, { message: 'Deze leerling heeft al een exemplaar van deze titel.' });
         }
       }
       const now = new Date().toISOString();
@@ -6417,8 +6417,15 @@ async function handleApi(req, res, requestUrl) {
       });
       saveDb(db);
       return sendJson(res, 200, {
-        book: sanitizeBookForResponse(book), borrowerType: klass ? 'class' : 'student',
-        borrowerId: klass?.id || student?.id,
+        // Only the authenticated staff actor who performed this operation
+        // may receive a borrower ID. Anonymous/student catalogue GET routes
+        // and student self-checkout never expose borrower identity.
+        book: ensureRole(user, ['teacher', 'admin'])
+          ? { ...sanitizeBookForResponse(book), borrowedBy: student?.id || null,
+            borrowedByClassId: klass?.id || null }
+          : sanitizeBookForResponse(book),
+        borrowerType: klass ? 'class' : 'student',
+        ...(ensureRole(user, ['teacher', 'admin']) ? { borrowerId: klass?.id || student?.id } : {}),
       });
     }
 
