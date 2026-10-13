@@ -1340,8 +1340,10 @@ async function run() {
     assert.strictEqual(importedStudentCopy.dueDate, null);
     const loanOwner = storedStudentLoanDb.students.find((student) => student.id === 'student-match');
     assert.ok(loanOwner.borrowedBooks.some((loan) => loan.bookId === importedStudentCopy.id));
-    assert.ok(storedStudentLoanDb.history.some((event) => event.type === 'loan_imported'
-      && event.bookId === importedStudentCopy.id));
+    assert.ok(storedStudentLoanDb.history.some((event) => event.type === 'loans_imported'
+      && event.count === 1 && event.importBatchId === studentLoanApplied.body.result.batchId));
+    assert.ok(studentLoanApplied.body.result.report.loanChanges.some((event) =>
+      event.bookId === importedStudentCopy.id && event.borrowerId === 'student-match'));
     assert.ok(!storedStudentLoanDb.history.some((event) => event.type === 'check_out'
       && event.bookId === importedStudentCopy.id),
       'An old Excel loan must not claim a brand-new reading moment');
@@ -1365,8 +1367,10 @@ async function run() {
     const classDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(classDb.books.find((copy) => copy.metadataIsbn === classLoanIsbn)
       .borrowedByClassId, 'class-match');
-    assert.ok(classDb.history.some((event) => event.type === 'loan_imported'
-      && event.classId === 'class-match'));
+    assert.ok(classDb.history.some((event) => event.type === 'loans_imported'
+      && event.importBatchId === classLoanApplied.body.result.batchId && event.count === 1));
+    assert.ok(classLoanApplied.body.result.report.loanChanges.some((event) =>
+      event.borrowerId === 'class-match' && event.borrowerType === 'class'));
     assert.strictEqual((await call('/api/admin/book-import-stages/' + classLoanStage.body.id
       + '/apply', token1, { revision: 1, confirm: true })).status, 409,
       'Replaying a completed import must not duplicate an old class loan');
@@ -1430,7 +1434,9 @@ async function run() {
     assert.ok(syncedStudentDb.students.find((student) => student.id === 'student-match')
       .borrowedBooks.some((loan) => loan.bookId === physicalId));
     const recordedCount = syncedStudentDb.history.filter((event) =>
-      event.type === 'loan_imported' && event.bookId === physicalId).length;
+      event.type === 'loans_imported').length;
+    assert.ok(syncLoanApply.body.result.report.loanChanges.some((entry) =>
+      entry.bookId === physicalId && entry.borrowerId === 'student-match'));
 
     const repeatedSync = await call('/api/admin/book-import-stages', token1, {
       mode: 'inventory_sync', file: syncLoanExcel,
@@ -1442,7 +1448,7 @@ async function run() {
       + repeatedSync.body.id + '/apply', token1, { revision: 1, confirm: true })).status, 200);
     const repeatedLoanDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(repeatedLoanDb.history.filter((event) =>
-      event.type === 'loan_imported' && event.bookId === physicalId).length, recordedCount);
+      event.type === 'loans_imported').length, recordedCount);
     assert.strictEqual(repeatedLoanDb.books.filter((book) =>
       book.metadataIsbn === existingLoanEdition).length, 1);
 
@@ -1490,7 +1496,9 @@ async function run() {
     assert.strictEqual(afterHistoricLoanRace.books.find((book) => book.id === createdForRace.body.book.id)
       .borrowedBy, 'student-match');
     assert.ok(!afterHistoricLoanRace.history.some((event) =>
-      event.type === 'loan_imported' && event.bookId === createdForRace.body.book.id));
+      event.type === 'loans_imported' && event.importBatchId === staleLoanStage.body.id));
+    assert.ok(!afterHistoricLoanRace.bookImportReports.some((report) =>
+      report.loanChanges?.some((entry) => entry.bookId === createdForRace.body.book.id)));
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
