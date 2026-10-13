@@ -77,7 +77,7 @@ function createDbFixture(filePath) {
         author: 'Auteur Vier',
         barcode: '44444',
         status: 'available',
-        tags: ['onbekend onderwerp'],
+        tags: ['bullying', 'onbekend onderwerp'],
         manualThemes: [],
         importedThemes: ['Pesten', 'Nieuw thema uit metadata'],
       },
@@ -230,7 +230,8 @@ async function runTests() {
     assert.strictEqual(cleared.status, 200);
     assert.deepStrictEqual(cleared.body.book.importedThemes, []);
     assert.deepStrictEqual(cleared.body.book.themes, [],
-      'Explicitly clearing themes must not resurrect metadata values');
+      'Explicitly clearing themes must not resurrect metadata values or tag-derived themes');
+    assert.strictEqual(cleared.body.book.themesCleared, true);
     const afterClear = (await request('/api/books/book-4')).body;
     assert.deepStrictEqual(afterClear.themes, []);
     const chosen = await request('/api/books/book-4', {
@@ -241,12 +242,13 @@ async function runTests() {
     });
     assert.strictEqual(chosen.status, 200);
     assert.deepStrictEqual(chosen.body.book.themes, ['Mysterie']);
+    assert.strictEqual(chosen.body.book.themesCleared, false);
     assert.deepStrictEqual((await request('/api/books/book-4')).body.themes, ['Mysterie']);
 
     const postUpdateList = await request('/api/books');
     assert.strictEqual(postUpdateList.status, 200);
     const filtered = postUpdateList.body.filter((book) => (book.themes || []).includes('Mysterie'));
-    assert.strictEqual(filtered.length, 2);
+    assert.strictEqual(filtered.length, 3);
 
     console.log('Manual themes persistence tests passed');
   } finally {
