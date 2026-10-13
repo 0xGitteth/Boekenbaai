@@ -16,6 +16,25 @@
     loan_context_requires_followup: 'Volgens Excel is dit boek al uitgeleend. Corrigeer de leenstatus of sla de rij over; PR5 ondersteunt het overnemen van leningen.',
     location_context_requires_followup: 'Er staat klas- of locatie-informatie in Excel die Boekenbaai nog niet veilig kan overnemen. Corrigeer die gegevens of sla deze rij over.',
     skipped: 'Wordt niet geïmporteerd.',
+    missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
+    source_needs_review: 'Controleer de invoer en accepteer eventuele waarschuwingen.',
+    edition_identity_mismatch: 'Het ISBN is hetzelfde, maar titel of auteur komt niet overeen. Corrigeer dit eerst.',
+    invalid_quantity: 'Voer een geldig aantal exemplaren in.',
+    quantity_limit_exceeded: 'Er zijn te veel exemplaren voor één editie.',
+    reduction_requires_manual_review: 'Er zijn meer exemplaren in Boekenbaai dan in Excel. Bestaande boeken worden nooit automatisch verwijderd. Controleer dit verschil eerst.',
+    barcodes_exceed_new_copies: 'Excel bevat nieuwe fysieke barcodes terwijl er volgens de aantallen geen extra boeken bijkomen.',
+    isbn_barcode_belongs_to_other_edition: 'De ISBN-scanbarcode hoort bij een andere editie.',
+    barcode_belongs_to_other_edition: 'Deze fysieke barcode is al in gebruik bij een ander boek.',
+    duplicate_printed_barcode: 'Dezelfde fysieke barcode staat twee keer in Excel.',
+    workbook_physical_barcode_conflict: 'Nieuwe fysieke scanbarcodes komen met elkaar in conflict.',
+    printed_barcode_requires_one_copy: 'Bij een fysieke barcode hoort maar één exemplaar.',
+  };
+  const syncActions = {
+    add_copies: 'Ontbrekende exemplaren toevoegen',
+    unchanged: 'Aantal klopt, blijft onveranderd',
+    combined: 'Meegeteld bij dezelfde ISBN-editie',
+    blocked: 'Controle nodig',
+    skipped: 'Overgeslagen',
   };
   const issueNames = {
     conflicting_edition_isbns: 'Tegenstrijdige ISBN-waarden',
@@ -127,9 +146,17 @@
     const metadata = make('input');
     metadata.type = 'checkbox';
     metadataLabel.append(metadata, document.createTextNode(' Ontbrekende boekinformatie opzoeken via ISBN (kan langer duren)'));
+    const syncLabel = make('label', 'bb-review__check');
+    const syncMode = make('input');
+    syncMode.type = 'checkbox';
+    syncLabel.append(syncMode, document.createTextNode(
+      ' Voorraad synchroniseren bij herupload: bestaande ISBN-edities vergelijken en alleen ontbrekende exemplaren toevoegen'
+    ));
+    const syncHint = make('p', 'hint',
+      'Er worden nooit automatisch boeken verwijderd of uitleningen gewijzigd. Lagere aantallen en afwijkingen moeten eerst worden opgelost.');
     const analyze = button('Bestand controleren', 'btn');
     analyze.type = 'submit';
-    form.append(fileLabel, metadataLabel, analyze);
+    form.append(fileLabel, metadataLabel, syncLabel, syncHint, analyze);
     root.append(form);
     const notice = make('p', 'bb-review__notice hint');
     notice.setAttribute('role', 'status');
@@ -391,7 +418,8 @@
       }
       if (stage.status === 'completed') {
         const done = stage.result || {};
-        results.append(make('h4', '', 'Import voltooid'));
+        results.append(make('h4', '', stage.mode === 'inventory_sync'
+          ? 'Voorraadvergelijking voltooid' : 'Import voltooid'));
         results.append(make('p', '', done.created + ' fysieke exemplaren opgeslagen. Importverslag: ' + (done.batchId || 'onbekend')));
         if (done.report) {
           const download = button('Download importverslag (JSON)', 'btn btn--secondary');
@@ -411,9 +439,19 @@
       }
       const summary = stage.summary || {};
       const decisions = stage.decisions || { rows: [], summary: {} };
+      const inventorySync = stage.mode === 'inventory_sync';
       const heading = make('div', 'bb-review__totals');
-      heading.append(make('h4', '', 'Controleoverzicht'));
-      heading.append(make('p', '', [
+      heading.append(make('h4', '', inventorySync ? 'Voorraadvergelijking' : 'Controleoverzicht'));
+      if (inventorySync) {
+        heading.append(make('p', '', [
+          (decisions.summary.addCopies || 0) + ' nieuwe exemplaren',
+          (decisions.summary.unchangedEditions || 0) + ' edities ongewijzigd',
+          (decisions.summary.blockedEditions || 0) + ' edities met controle nodig',
+          (decisions.summary.omittedExistingCopies || 0) + ' bestaande exemplaren ontbreken in dit Excelbestand, blijven behouden',
+        ].join(' · ')));
+        heading.append(make('p', 'hint',
+          'Excel-aantallen gelden als gewenste totaalvoorraad per ISBN. Er worden geen bestaande boeken, uitleningen of leenregistraties verwijderd of overschreven.'));
+      } else heading.append(make('p', '', [
         (summary.ready || 0) + ' klaar',
         (summary.warning || 0) + ' waarschuwing',
         (summary.conflict || 0) + ' conflict',
@@ -442,13 +480,16 @@
         rememberResponse(payload);
         setNotice('Correcties en waarschuwingen zijn opnieuw gecontroleerd.');
       }, 'Wijzigingen worden opnieuw geanalyseerd…'));
-      const applyButton = button('Definitief importeren', 'btn');
+      const applyButton = button(inventorySync ? 'Voorraad aanvullen' : 'Definitief importeren', 'btn');
       currentApplyButton = applyButton;
       applyButton.disabled = !decisions.summary.readyToApply || hasUnreviewedChanges()
         || Boolean(remotePending) || busy;
       applyButton.addEventListener('click', () => {
-        const count = summary.physicalCopies || 0;
-        if (!window.confirm('Je staat op het punt om ' + count + ' exemplaren toe te voegen. Weet je zeker dat alle gegevens kloppen?')) return;
+        const count = inventorySync ? decisions.summary.addCopies || 0 : summary.physicalCopies || 0;
+        const message = inventorySync
+          ? 'Je voegt ' + count + ' ontbrekende exemplaren toe. Bestaande boeken worden niet gewijzigd of verwijderd. Bevestigen?'
+          : 'Je staat op het punt om ' + count + ' exemplaren toe te voegen. Weet je zeker dat alle gegevens kloppen?';
+        if (!window.confirm(message)) return;
         run(async () => {
           const payload = await request(rootPath + '/' + encodeURIComponent(stage.id) + '/apply', {
             revision: stage.revision, confirm: true,
@@ -505,6 +546,12 @@
           card.append(make('p', 'bb-review__detail',
             'Makkelijk lezen: ' + (row.book?.easyReading ? 'ja' : 'nee')
             + ' (Excel: ' + String(easyReadingSource.raw ?? '') + ')'));
+        }
+        if (inventorySync && dec.action) {
+          const count = dec.action === 'add_copies' ? ' · +' + dec.addCopies + ' exemplaren'
+            : dec.action === 'unchanged' ? ' · ' + dec.existingCopies + ' aanwezig'
+              : '';
+          card.append(make('p', 'bb-review__detail', (syncActions[dec.action] || dec.action) + count));
         }
         if (dec.reason && dec.reason !== 'skipped') {
           card.append(make('p', 'bb-review__reason', reasonNames[dec.reason] || dec.reason));
@@ -572,6 +619,7 @@
         try {
           payload = await request(rootPath, {
             file: encoded, fileName: selected.name, enrichIsbn: metadata.checked,
+            mode: syncMode.checked ? 'inventory_sync' : 'create',
           });
         } catch (error) {
           await syncStage();
