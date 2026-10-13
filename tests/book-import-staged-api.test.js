@@ -118,8 +118,8 @@ async function run() {
     const realFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
       if (String(url).startsWith('http://127.0.0.1:' + process.env.PORT + '/api/books/import')) {
-        testFs.writeFileSync(JSON.stringify(workerHeldMarker), 'held');
-        for (let i = 0; i < 200 && !testFs.existsSync(JSON.stringify(workerReleaseMarker)); i += 1) {
+        testFs.writeFileSync(process.env.TEST_WORKER_HELD, 'held');
+        for (let i = 0; i < 200 && !testFs.existsSync(process.env.TEST_WORKER_RELEASE); i += 1) {
           await new Promise((resolve) => setTimeout(resolve, 25));
         }
       }
@@ -159,7 +159,9 @@ async function run() {
   `);
   const child = spawn(process.execPath, ['--require', metadataHookFile, 'server.js'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, PORT: String(PORT), BOEKENBAAI_DATA_PATH: dbPath, BOEKENBAAI_STATIC_DIR: path.join(__dirname, '..', 'public') },
+    env: { ...process.env, PORT: String(PORT), BOEKENBAAI_DATA_PATH: dbPath,
+      BOEKENBAAI_STATIC_DIR: path.join(__dirname, '..', 'public'),
+      TEST_WORKER_HELD: workerHeldMarker, TEST_WORKER_RELEASE: workerReleaseMarker },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   try {
