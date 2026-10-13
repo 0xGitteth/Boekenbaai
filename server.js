@@ -3,6 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const { readBookImportWorkbook } = require('./book-import-workbook');
+const { analyzeReviewedImport } = require('./book-import-review');
+const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
+
+const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -1569,6 +1574,26 @@ function readWorkbookRows(XLSX, base64) {
   return { ok: true, rows };
 }
 
+// A previously confirmed reviewed import is a durable commit boundary.
+// Other legacy import jobs may legitimately update progress while processing;
+// rejecting ALL stale snapshots would break those jobs. However, any writer
+// whose snapshot predates the latest confirmed PR3 batch MUST fail instead of
+// overwriting the new books and the permanent import report.
+function assertReviewedImportNotLost(db) {
+  const current = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+  const latest = Array.isArray(current.bookImportReports)
+    ? current.bookImportReports[current.bookImportReports.length - 1]?.id
+    : null;
+  if (!latest) return;
+  const stillPresent = Array.isArray(db.bookImportReports)
+    && db.bookImportReports.some((report) => report?.id === latest);
+  if (!stillPresent) {
+    const error = new Error('A confirmed book import was committed after this request began');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
+  }
+}
+
 function loadDb() {
   const raw = fs.readFileSync(DATA_PATH, 'utf-8');
   const data = JSON.parse(raw);
@@ -1588,7 +1613,25 @@ function loadDb() {
 }
 
 function saveDb(db) {
+  assertReviewedImportNotLost(db);
   fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
+}
+
+// The reviewed book import is one confirmed transaction. Write its complete
+// database snapshot to a sibling file first, then atomically replace the old
+// snapshot so a failed or interrupted write cannot leave half a JSON document.
+function saveReviewedBookImportDb(db) {
+  assertReviewedImportNotLost(db);
+  const raw = JSON.stringify(db, null, 2);
+  const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
+  try {
+    fs.writeFileSync(temporaryPath, raw, { flag: 'wx', mode: 0o600 });
+    fs.renameSync(temporaryPath, DATA_PATH);
+  } finally {
+    try { fs.unlinkSync(temporaryPath); } catch (error) {
+      if (error.code !== 'ENOENT') console.warn('Tijdelijke importdatabase opruimen mislukt:', error.message);
+    }
+  }
 }
 
 function hashPassword(password) {
@@ -3464,12 +3507,12 @@ function serveFile(res, filePath) {
   });
 }
 
-function parseBody(req) {
+function parseBody(req, maxLength = 1e6) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk.toString();
-      if (body.length > 1e6) {
+      if (body.length > maxLength) {
         req.connection.destroy();
         reject(new Error('Payload te groot'));
       }
@@ -3747,6 +3790,15 @@ function getTeacherClassIds(db, teacherId) {
   return Array.from(ids);
 }
 
+// One synchronous admission point for every book-import entry route.
+// A legacy background job retains its lease until its internal direct import
+// and job finalization both finish; the authenticated internal request may
+// reuse ONLY its matching job id and login token.
+let activeBookImportLease = null;
+function releaseBookImportLease(lease) {
+  if (activeBookImportLease === lease) activeBookImportLease = null;
+}
+
 async function handleApi(req, res, requestUrl) {
   const originAllowed = isOriginAllowed(req.headers.origin, requestUrl);
   if (req.method === 'OPTIONS') {
@@ -3764,6 +3816,7 @@ async function handleApi(req, res, requestUrl) {
     applyCors(req, res, requestUrl);
   }
 
+  let requestImportAdmission = null;
   try {
     let db;
     const getDb = () => {
@@ -3773,6 +3826,40 @@ async function handleApi(req, res, requestUrl) {
       return db;
     };
     const user = getAuthenticatedUser(req, getDb);
+    // Acquire before parseBody() can yield, regardless of which UI initiated
+    // the upload. This closes both directions of the legacy/staged race.
+    const importKind = req.method !== 'POST' ? '' :
+      requestUrl.pathname === '/api/admin/book-import-stages' ? 'reviewed' :
+      requestUrl.pathname === '/api/books/import-jobs' ? 'legacy-job' :
+      requestUrl.pathname === '/api/books/import' ? 'legacy-direct' : '';
+    if (importKind && user?.role === 'admin') {
+      const lease = activeBookImportLease;
+      const internalJobRequest = importKind === 'legacy-direct'
+        && lease?.kind === 'legacy-job' && lease.jobId
+        && lease.jobId === String(req.headers['x-import-job-id'] || '').trim()
+        && lease.loginToken === getTokenFromHeader(req);
+      if (internalJobRequest) {
+        requestImportAdmission = { lease, borrowed: true };
+      } else if (lease?.kind === 'legacy-job' && importKind === 'legacy-job'
+        && lease.userId === user.id && lease.jobId) {
+        // Preserve existing idempotent behavior for refreshing a running
+        // legacy job from the same shared administrator account.
+        return sendJson(res, 200, { jobId: lease.jobId, reused: true });
+      } else if (lease || bookImportStageStore.active()) {
+        const currentStage = bookImportStageStore.active();
+        return sendJson(res, 409, {
+          message: 'Er is al een boekimport bezig. Bekijk of rond die eerst af.',
+          error: 'stage_busy',
+          ...(importKind === 'reviewed' && currentStage
+            ? { active: importStageView(currentStage) } : {}),
+        });
+      } else {
+        const reserved = { kind: importKind, userId: user.id, jobId: null,
+          loginToken: getTokenFromHeader(req), handedOff: false };
+        activeBookImportLease = reserved;
+        requestImportAdmission = { lease: reserved, borrowed: false };
+      }
+    }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/login') {
       const body = await parseBody(req);
@@ -4404,9 +4491,269 @@ async function handleApi(req, res, requestUrl) {
       });
     }
 
+    const bookImportReportMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-reports(?:\/([a-f0-9-]+))?$/);
+    if (bookImportReportMatch) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders mogen importverslagen bekijken.' });
+      }
+      if (req.method !== 'GET') return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+      const reports = Array.isArray(getDb().bookImportReports) ? getDb().bookImportReports : [];
+      if (bookImportReportMatch[1]) {
+        const report = reports.find((item) => item?.id === bookImportReportMatch[1]);
+        if (!report) return sendJson(res, 404, { message: 'Importverslag niet gevonden.' });
+        return sendJson(res, 200, report);
+      }
+      return sendJson(res, 200, { reports: reports.slice(-30).reverse().map((item) => ({
+        id: item.id, fileName: item.fileName, importedAt: item.importedAt,
+        createdBy: item.createdBy, count: item.count, sourceRows: item.sourceRows,
+      })) });
+    }
+
+    // PR3 staged book import is separate from the legacy direct upload route.
+    // The only authority for applying data is the server-owned, single-use
+    // staging record; clients may send corrections, never finished book rows.
+    const stageRoot = '/api/admin/book-import-stages';
+    const stagePath = requestUrl.pathname === stageRoot || requestUrl.pathname.startsWith(stageRoot + '/');
+    if (stagePath) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, 403, { message: 'Alleen beheerders mogen een boekimport voorbereiden.' });
+      }
+      if (req.method === 'GET' && requestUrl.pathname === stageRoot + '/active') {
+        const activeStage = bookImportStageStore.active({ refresh: true });
+        return sendJson(res, 200, {
+          stage: activeStage ? {
+            id: activeStage.id, status: activeStage.status,
+            revision: activeStage.revision, fileName: activeStage.fileName,
+          } : null,
+        });
+      }
+      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel))?$/);
+      if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
+        if (activeImportJobs.size > 0) {
+          return sendJson(res, 409, { message: 'De oude boekimport is nog bezig. Rond die eerst af.', error: 'legacy_import_busy' });
+        }
+        const XLSX = loadXlsx();
+        if (!XLSX) return sendJson(res, 503, { message: 'Excelverwerking is niet beschikbaar.' });
+        // The shared slot becomes visible even while the file body is still
+        // uploading, not just when metadata lookup starts.
+        const reservation = bookImportStageStore.reserve(user.id);
+        if (!reservation.ok) {
+          return sendJson(res, 409, {
+            message: 'Er staat al een boekimport open. Bekijk of hervat die import.',
+            error: reservation.error,
+            active: importStageView(reservation.stage),
+          });
+        }
+        let activated = false;
+        try {
+        const body = await parseBody(req, 35 * 1024 * 1024);
+        if (typeof body.file !== 'string' || !body.file) {
+          return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
+        }
+        const workbook = readBookImportWorkbook(XLSX, body.file, { maxRows: 1500, maxCopies: 5000 });
+        if (!workbook.ok) {
+          return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
+        }
+        const database = getDb();
+        const enrichIsbn = body.enrichIsbn === true;
+        const lookupIsbn = enrichIsbn ? resolveLookupIsbnMetadata() : null;
+        const lookupTitleAuthor = enrichIsbn ? resolveLookupTitleAuthorMetadata() : null;
+        // The cache lives only for this stage and avoids additional network
+        // requests for identical ISBNs across corrections and reanalysis.
+        const exactCache = new Map();
+        const titleCache = new Map();
+        const options = {
+          maxRows: 1500, maxCopies: 5000,
+          ...(lookupIsbn ? { lookupIsbn: (isbn) => {
+            if (!exactCache.has(isbn)) exactCache.set(isbn, Promise.resolve().then(() => lookupIsbn(isbn)));
+            return exactCache.get(isbn);
+          } } : {}),
+          ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
+            const key = JSON.stringify([input.title, input.author, input.language]);
+            if (!titleCache.has(key)) titleCache.set(key, Promise.resolve().then(() => lookupTitleAuthor(input)));
+            return titleCache.get(key);
+          } } : {}),
+        };
+        const analysis = await analyzeReviewedImport(workbook.rows, [], {
+          ...options, existingBooks: database.books, acceptWarnings: false,
+        });
+        if (!analysis.ok) return sendJson(res, 400, { message: 'Importanalyse mislukt.', error: analysis.error });
+        bookImportStageStore.activate(reservation.stage, {
+          sourceRows: workbook.rows, options,
+          workbook: { sheetName: workbook.sheetName, headers: workbook.headers },
+          fileName: typeof body.fileName === 'string' ? body.fileName.slice(0, 180) : '',
+          analysis,
+        });
+        activated = true;
+        return sendJson(res, 201, importStageView(reservation.stage));
+        } finally {
+          if (!activated) bookImportStageStore.abandon(reservation.stage);
+        }
+      }
+      if (!stageMatch) return sendJson(res, 404, { message: 'Importcontrole niet gevonden.' });
+      const stage = bookImportStageStore.get(stageMatch[1], user.id);
+      if (!stage) return sendJson(res, 404, { message: 'Importcontrole ontbreekt of is verlopen.' });
+      if (req.method === 'GET' && !stageMatch[2]) {
+        return sendJson(res, 200, importStageView(stage));
+      }
+      if (req.method === 'POST' && stageMatch[2] === 'cancel') {
+        const body = await parseBody(req, 10000);
+        const cancelled = bookImportStageStore.cancel(stage, body.revision);
+        if (!cancelled.ok) {
+          return sendJson(res, 409, { message: 'Deze import is inmiddels gewijzigd of wordt verwerkt.', error: cancelled.error });
+        }
+        return sendJson(res, 200, importStageView(stage));
+      }
+      if (req.method === 'POST' && stageMatch[2] === 'review') {
+        // Corrections for a large school spreadsheet can exceed 400 KB even
+        // when every individual field is within the accepted value bounds.
+        const body = await parseBody(req, 24 * 1024 * 1024);
+        if (!Number.isSafeInteger(body.revision)) return sendJson(res, 400, { message: 'Versienummer ontbreekt.' });
+        const started = bookImportStageStore.beginReview(stage, body.revision);
+        if (!started.ok) return sendJson(res, 409, { message: 'Deze import is gewijzigd of wordt verwerkt.', error: started.error });
+        try {
+          if (typeof body.acceptWarnings !== 'boolean') {
+            return sendJson(res, 400, { message: 'Geef expliciet aan of waarschuwingen geaccepteerd worden.' });
+          }
+          const database = getDb();
+          const reviewed = await analyzeReviewedImport(stage.sourceRows, body.corrections, {
+            ...stage.options, existingBooks: database.books, acceptWarnings: body.acceptWarnings,
+          });
+          if (!reviewed.ok) {
+            return sendJson(res, 400, { message: 'Een correctie is ongeldig.', error: reviewed.error, field: reviewed.field, index: reviewed.index });
+          }
+          bookImportStageStore.finishReview(stage, reviewed, body.corrections, body.acceptWarnings);
+          return sendJson(res, 200, importStageView(stage));
+        } finally {
+          bookImportStageStore.abortReview(stage);
+        }
+      }
+      if (req.method === 'POST' && stageMatch[2] === 'apply') {
+        const body = await parseBody(req, 10000);
+        if (!Number.isSafeInteger(body.revision) || body.confirm !== true) {
+          return sendJson(res, 400, { message: 'Bevestig de gecontroleerde import met het actuele versienummer.' });
+        }
+        const started = bookImportStageStore.beginApply(stage, body.revision);
+        if (!started.ok) return sendJson(res, 409, { message: 'Deze import is al verwerkt of gewijzigd.', error: started.error });
+        try {
+          // Authentication may have loaded getDb() before the request body
+          // finished arriving. Read a fresh snapshot at the synchronous
+          // commit boundary: no awaits occur between this read and the
+          // atomic save, so competing handlers in this process cannot
+          // interleave their writes inside the checked transaction.
+          const database = loadDb();
+          const plan = buildStageApplyPlan(
+            { ...stage.analysis, acceptWarnings: stage.acceptWarnings },
+            database.books, { maxCopies: 5000 },
+          );
+          if (!plan.ok) {
+            // On conflict require a fresh staged review. This stage can never
+            // accidentally be applied after another simultaneous upload.
+            return sendJson(res, 409, {
+              message: 'De import is niet meer veilig toepasbaar. Controleer de collectie en upload opnieuw.',
+              error: plan.error, index: plan.index,
+            });
+          }
+          const now = new Date().toISOString();
+          const batchId = crypto.randomUUID();
+          const newCopies = [];
+          const sourceReports = [];
+          for (const entry of plan.created) {
+            const row = entry.row;
+            const sourceByField = Object.create(null);
+            for (const [field, provenance] of Object.entries(row.provenance || {})) {
+              const sourceType = ['excel', 'metadata', 'derived', 'existing'].includes(provenance?.source)
+                ? provenance.source : 'unknown';
+              sourceByField[field] = createFieldSource(sourceType, provenance?.detail || null);
+            }
+            // The stored metadataIsbn is deliberately copied from the
+            // reviewed editionIsbn. Its source must therefore be identical
+            // to the reviewed ISBN source, not an unrelated "unknown".
+            sourceByField.metadataIsbn = sourceByField.editionIsbn
+              || createFieldSource('unknown', null);
+            const template = ensureBookShape({
+              title: row.book.title, author: row.book.author,
+              authors: row.book.authors, editionIsbn: entry.editionIsbn,
+              metadataIsbn: entry.editionIsbn, barcode: entry.barcode,
+              description: row.book.description, publisher: row.book.publisher,
+              publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
+              language: row.book.language, coverUrl: row.book.coverUrl,
+              easyReading: row.book.easyReading,
+              suitableForExamList: row.book.suitableForExamList,
+              tags: row.book.tags, manualThemes: row.book.manualThemes,
+              // Keep resolved classroom shelf information on every created
+              // copy as well as in the report; the future lending workflow
+              // can use it without recovering an old upload.
+              fixedLocation: row.context?.fixedLocation?.status === 'resolved'
+                ? row.context.fixedLocation.label : null,
+              importInfo: normalizeBookImportInfo({
+                importedAt: now, importedBy: user.id, importSource: 'excel_reviewed',
+                importJobId: batchId, importStatus: 'created',
+              }),
+              importProvenance: { fieldSources: sourceByField },
+            });
+            const newIds = [];
+            for (let i = 0; i < entry.quantity; i += 1) {
+              const copy = createBookCopyFromTemplate(template);
+              newCopies.push(copy);
+              newIds.push(copy.id);
+            }
+            sourceReports.push({
+              index: entry.index, worksheetRow: row.sourceRowNumber,
+              status: 'created', copies: entry.quantity, bookIds: newIds,
+              title: row.book.title, editionIsbn: entry.editionIsbn,
+              issues: row.issues.map((issue) => issue.code),
+              provenance: row.provenance, context: row.context,
+            });
+          }
+          for (const row of stage.analysis.rows.filter((entry) => entry.status === 'skipped')) {
+            const original = stage.initialAnalysis?.rows?.[row.index] || row;
+            sourceReports.push({
+              index: row.index, worksheetRow: row.sourceRowNumber, status: 'skipped', copies: 0,
+              title: original.book?.title || '',
+              editionIsbn: original.book?.editionIsbn || '',
+              barcode: original.book?.barcode || '',
+              originalIdentifiers: {
+                isbn: original.identifierAnalysis?.explicit?.raw || '',
+                legacyIsbn: original.identifierAnalysis?.legacy?.raw || '',
+                combinedBarcodeIsbn: original.identifierAnalysis?.ambiguous?.raw || '',
+              },
+              issues: (original.issues || []).map((issue) => issue.code),
+              provenance: original.provenance || {},
+              context: original.context || {},
+            });
+          }
+          const report = {
+            id: batchId, createdBy: user.id, importedAt: now,
+            fileName: stage.fileName, count: newCopies.length,
+            sourceRows: stage.analysis.summary.sourceRows,
+            rows: sourceReports.sort((a, b) => a.index - b.index),
+          };
+          if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
+          database.bookImportReports.push(report);
+          database.bookImportReports = database.bookImportReports.slice(-30);
+          database.books.push(...newCopies);
+          appendHistory(database, {
+            type: 'books_import_reviewed', performedBy: user.id,
+            message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd`,
+          });
+          saveReviewedBookImportDb(database);
+          const result = { batchId, created: newCopies.length, importedRows: plan.created.length, report };
+          bookImportStageStore.finishApply(stage, result);
+          return sendJson(res, 200, importStageView(stage));
+        } finally {
+          bookImportStageStore.abortApply(stage);
+        }
+      }
+      return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+    }
+
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import-jobs') {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
+      }
+      if (bookImportStageStore.active()) {
+        return sendJson(res, 409, { message: 'Er staat al een gecontroleerde boekimport open.', error: 'stage_busy' });
       }
       const XLSX = loadXlsx();
       if (!XLSX) {
@@ -4466,6 +4813,10 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       activeImportJobs.set(user.id, jobId);
       const token = getTokenFromHeader(req);
+      // The response ends before the legacy worker does. Keep its admission
+      // lease until the worker has also finalized the persistent job.
+      requestImportAdmission.lease.jobId = jobId;
+      requestImportAdmission.lease.handedOff = true;
 
       setImmediate(async () => {
         try {
@@ -4561,6 +4912,7 @@ async function handleApi(req, res, requestUrl) {
           saveDb(failedDb);
         } finally {
           activeImportJobs.delete(user.id);
+          releaseBookImportLease(requestImportAdmission.lease);
         }
       });
       return sendJson(res, 202, { jobId });
@@ -4620,6 +4972,9 @@ async function handleApi(req, res, requestUrl) {
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import') {
+      if (bookImportStageStore.active()) {
+        return sendJson(res, 409, { message: 'Er staat al een gecontroleerde boekimport open.', error: 'stage_busy' });
+      }
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
       }
@@ -7233,8 +7588,16 @@ async function handleApi(req, res, requestUrl) {
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
   } catch (error) {
+    if (error?.code === 'DATABASE_WRITE_CONFLICT') {
+      return sendJson(res, 409, { message: 'De gegevens zijn intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.', error: error.code });
+    }
     console.error(error);
     return sendJson(res, 500, { message: 'Interne serverfout' });
+  } finally {
+    if (requestImportAdmission && !requestImportAdmission.borrowed
+      && !requestImportAdmission.lease.handedOff) {
+      releaseBookImportLease(requestImportAdmission.lease);
+    }
   }
 }
 
