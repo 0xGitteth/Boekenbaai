@@ -4821,7 +4821,27 @@ async function handleApi(req, res, requestUrl) {
               }
               sourceFields.metadataIsbn = sourceFields.editionIsbn || createFieldSource('unknown');
               const template = ensureBookShape({
-                ...(existingTemplate || {
+                ...(existingTemplate ? {
+                  // Whitelist only edition metadata. Never clone borrow/loan
+                  // bookkeeping or unknown future fields from a borrowed copy.
+                  title: existingTemplate.title, author: existingTemplate.author,
+                  authors: existingTemplate.authors,
+                  description: existingTemplate.description,
+                  folderId: existingTemplate.folderId,
+                  publisher: existingTemplate.publisher,
+                  publishedYear: existingTemplate.publishedYear,
+                  pageCount: existingTemplate.pageCount,
+                  language: existingTemplate.language,
+                  coverUrl: existingTemplate.coverUrl,
+                  coverColor: existingTemplate.coverColor,
+                  easyReading: existingTemplate.easyReading,
+                  suitableForExamList: existingTemplate.suitableForExamList,
+                  tags: existingTemplate.tags,
+                  manualThemes: existingTemplate.manualThemes,
+                  importedThemes: existingTemplate.importedThemes,
+                  themesCleared: existingTemplate.themesCleared,
+                  fixedLocation: existingTemplate.fixedLocation,
+                } : {
                   title: row.book.title, author: row.book.author, authors: row.book.authors,
                   description: row.book.description, publisher: row.book.publisher,
                   publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
