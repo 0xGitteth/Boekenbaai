@@ -1395,6 +1395,103 @@ async function run() {
     assert.strictEqual((await call('/api/admin/book-import-stages/'
       + missingStudentLoan.body.id + '/cancel', token1, { revision: 1 })).status, 200);
 
+    // An already imported, AVAILABLE physical copy may be restored to the
+    // historical student's active loans, but must never be duplicated.
+    const existingLoanEdition = '9780596007126';
+    const preexistingAvailable = await call('/api/books', token2, {
+      title: 'Bestaande fysieke editie', author: 'A Auteur',
+      metadataIsbn: existingLoanEdition, barcode: '88992211',
+    });
+    assert.strictEqual(preexistingAvailable.status, 201, JSON.stringify(preexistingAvailable.body));
+    const physicalId = preexistingAvailable.body.id;
+    const syncLoanExcel = fileBase64([{
+      Titel: 'Bestaande fysieke editie', Auteur: 'A Auteur',
+      'ISBN-nummer': existingLoanEdition, Barcode: '88992211',
+      'naam leerling': 'Lisa Leerling', Aantal: 1,
+    }]);
+    const syncLoanPreview = await call('/api/admin/book-import-stages', token1b, {
+      mode: 'inventory_sync', file: syncLoanExcel,
+    });
+    assert.strictEqual(syncLoanPreview.status, 201, JSON.stringify(syncLoanPreview.body).slice(0, 500));
+    assert.strictEqual(syncLoanPreview.body.decisions.summary.addCopies, 0);
+    assert.strictEqual(syncLoanPreview.body.decisions.summary.restoreLoans, 1);
+    assert.strictEqual(syncLoanPreview.body.decisions.loanAssignments[0].target, 'existing');
+    assert.strictEqual(syncLoanPreview.body.decisions.loanAssignments[0].bookId, physicalId);
+    const syncLoanApply = await call('/api/admin/book-import-stages/'
+      + syncLoanPreview.body.id + '/apply', token1b, { revision: 1, confirm: true });
+    assert.strictEqual(syncLoanApply.status, 200, JSON.stringify(syncLoanApply.body).slice(0, 500));
+    assert.strictEqual(syncLoanApply.body.result.created, 0);
+    assert.strictEqual(syncLoanApply.body.result.restoredLoans, 1);
+    const syncedStudentDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(syncedStudentDb.books.find((book) => book.id === physicalId).borrowedBy,
+      'student-match');
+    assert.strictEqual(syncedStudentDb.books.filter((book) =>
+      book.metadataIsbn === existingLoanEdition).length, 1);
+    assert.ok(syncedStudentDb.students.find((student) => student.id === 'student-match')
+      .borrowedBooks.some((loan) => loan.bookId === physicalId));
+    const recordedCount = syncedStudentDb.history.filter((event) =>
+      event.type === 'loan_imported' && event.bookId === physicalId).length;
+
+    const repeatedSync = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync', file: syncLoanExcel,
+    });
+    assert.strictEqual(repeatedSync.status, 201);
+    assert.strictEqual(repeatedSync.body.decisions.summary.restoreLoans, 0);
+    assert.strictEqual(repeatedSync.body.decisions.summary.alreadyRecordedLoans, 1);
+    assert.strictEqual((await call('/api/admin/book-import-stages/'
+      + repeatedSync.body.id + '/apply', token1, { revision: 1, confirm: true })).status, 200);
+    const repeatedLoanDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(repeatedLoanDb.history.filter((event) =>
+      event.type === 'loan_imported' && event.bookId === physicalId).length, recordedCount);
+    assert.strictEqual(repeatedLoanDb.books.filter((book) =>
+      book.metadataIsbn === existingLoanEdition).length, 1);
+
+    const conflictingClassLoan = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{
+        Titel: 'Bestaande fysieke editie', Auteur: 'A Auteur',
+        'ISBN-nummer': existingLoanEdition, Barcode: '88992211',
+        'Geleend door klas': 'Groep A', Aantal: 1,
+      }]),
+    });
+    assert.strictEqual(conflictingClassLoan.status, 201);
+    assert.strictEqual(conflictingClassLoan.body.decisions.rows[0].reason,
+      'loan_copy_borrowed_by_other');
+    assert.strictEqual(conflictingClassLoan.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/'
+      + conflictingClassLoan.body.id + '/cancel', token1, { revision: 1 })).status, 200);
+
+    // If a live checkout occurs after preview, the stage may not overwrite
+    // it or append a second historic checkout on apply.
+    const staleLoanEdition = '9780132350884';
+    const createdForRace = await call('/api/books', token2, {
+      title: 'Racing checkout', author: 'A Auteur',
+      metadataIsbn: staleLoanEdition, barcode: '88993322',
+    });
+    assert.strictEqual(createdForRace.status, 201);
+    const staleLoanStage = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{
+        Titel: 'Racing checkout', Auteur: 'A Auteur',
+        'ISBN-nummer': staleLoanEdition, Barcode: '88993322',
+        'naam leerling': 'Lisa Leerling', Aantal: 1,
+      }]),
+    });
+    assert.strictEqual(staleLoanStage.status, 201);
+    assert.strictEqual(staleLoanStage.body.decisions.summary.restoreLoans, 1);
+    const actualCheckout = await call('/api/books/' + createdForRace.body.id + '/check-out',
+      token2, { studentId: 'student-match' });
+    assert.strictEqual(actualCheckout.status, 200, JSON.stringify(actualCheckout.body).slice(0, 340));
+    const staleLoanApply = await call('/api/admin/book-import-stages/'
+      + staleLoanStage.body.id + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(staleLoanApply.status, 409);
+    assert.strictEqual(staleLoanApply.body.error, 'inventory_preview_stale');
+    const afterRace = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(afterRace.books.find((book) => book.id === createdForRace.body.id)
+      .borrowedBy, 'student-match');
+    assert.ok(!afterRace.history.some((event) =>
+      event.type === 'loan_imported' && event.bookId === createdForRace.body.id));
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
