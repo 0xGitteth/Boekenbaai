@@ -13,7 +13,14 @@
     printed_barcode_requires_one_copy: 'Deze rij bevat meerdere exemplaren met één fysieke barcode. Gebruik voor elk exemplaar een afzonderlijke rij of verwijder de barcode om op ISBN te scannen.',
     source_conflict_or_missing_identity: 'Corrigeer de brongegevens of sla deze rij over.',
     warnings_need_confirmation: 'Controleer de waarschuwingen en geef toestemming voordat je importeert.',
-    loan_context_requires_followup: 'Volgens Excel is dit boek al uitgeleend. Corrigeer de leenstatus of sla de rij over; PR5 ondersteunt het overnemen van leningen.',
+    loan_context_requires_followup: 'Deze Excel-uitlening kan niet veilig automatisch worden overgenomen. Controleer de leerling/klas of sla de rij over.',
+    conflicting_loan_context: 'Deze rij bevat tegenstrijdige leerling- en klasuitleningen. Corrigeer eerst de bron.',
+    loan_requires_single_copy: 'Een bestaande uitlening moet aan precies één fysiek exemplaar zijn gekoppeld. Splits de Excelrij in afzonderlijke exemplaren.',
+    loan_borrower_needs_review: 'Leerling of klas kan niet eenduidig aan een bestaand account worden gekoppeld. Corrigeer de naam of sla de rij over.',
+    loan_borrower_changed: 'De leerling of klas is sinds de analyse gewijzigd. Controleer de import opnieuw.',
+    loan_borrower_inactive: 'Deze leerling is niet actief of bestaat niet meer. Controleer de koppeling.',
+    duplicate_student_loan_in_workbook: 'Dezelfde leerling heeft volgens Excel meerdere exemplaren van hetzelfde ISBN. Controleer de dubbele regels.',
+    student_already_borrowed_edition: 'Deze leerling heeft al een exemplaar van deze editie in Boekenbaai. Een tweede import zou de uitleenlijst vervuilen.',
     location_context_requires_followup: 'Er staat klas- of locatie-informatie in Excel die Boekenbaai nog niet veilig kan overnemen. Corrigeer die gegevens of sla deze rij over.',
     skipped: 'Wordt niet geïmporteerd.',
     missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
@@ -449,7 +456,9 @@
         const done = stage.result || {};
         results.append(make('h4', '', stage.mode === 'inventory_sync'
           ? 'Voorraadvergelijking voltooid' : 'Import voltooid'));
-        results.append(make('p', '', done.created + ' fysieke exemplaren opgeslagen. Importverslag: ' + (done.batchId || 'onbekend')));
+        results.append(make('p', '', done.created + ' fysieke exemplaren opgeslagen.'
+          + (done.restoredLoans ? ' ' + done.restoredLoans + ' bestaande uitleningen overgenomen.' : '')
+          + ' Importverslag: ' + (done.batchId || 'onbekend')));
         if (done.report) {
           const download = button('Download importverslag (JSON)', 'btn btn--secondary');
           download.addEventListener('click', () => {
@@ -505,6 +514,13 @@
         (summary.skipped || 0) + ' overgeslagen',
         (summary.physicalCopies || 0) + ' exemplaren',
       ].join(' · ')));
+      const importedLoanCount = (decisions.rows || []).filter((row) =>
+        row.canCreate && row.loanBorrower).length;
+      if (!inventorySync && importedLoanCount) {
+        heading.append(make('p', 'bb-review__detail',
+          importedLoanCount + ' bestaand(e) Excel-uitleenrecord(s) worden als uitgeleend aangemaakt. '
+          + 'De oorspronkelijke uitleendatum is onbekend en wordt niet verzonnen.'));
+      }
       if (stage.fileName) heading.append(make('p', 'hint', stage.fileName));
       results.append(heading);
       const controlBar = make('div', 'bb-review__controls');
@@ -535,7 +551,9 @@
         const count = inventorySync ? decisions.summary.addCopies || 0 : summary.physicalCopies || 0;
         const message = inventorySync
           ? 'Je voegt ' + count + ' ontbrekende exemplaren toe. Bestaande boeken worden niet gewijzigd of verwijderd. Bevestigen?'
-          : 'Je staat op het punt om ' + count + ' exemplaren toe te voegen. Weet je zeker dat alle gegevens kloppen?';
+          : 'Je staat op het punt om ' + count + ' exemplaren toe te voegen, waarvan '
+            + importedLoanCount + ' als al uitgeleend worden geregistreerd. '
+            + 'Controleer de leerling/klas en het juiste exemplaar zorgvuldig. Bevestigen?';
         if (!window.confirm(message)) return;
         run(async () => {
           const payload = await request(rootPath + '/' + encodeURIComponent(stage.id) + '/apply', {
@@ -602,6 +620,13 @@
               : dec.action === 'unchanged' ? ' · ' + dec.existingCopies + ' aanwezig'
                 : '';
           card.append(make('p', 'bb-review__detail', (syncActions[dec.action] || dec.action) + count));
+        }
+        if (dec.loanBorrower && dec.canCreate) {
+          card.append(make('p', 'bb-review__detail',
+            'Wordt als uitgeleend opgeslagen · '
+            + (dec.loanBorrower.type === 'student' ? 'Leerling: ' : 'Klas: ')
+            + dec.loanBorrower.name
+            + ' · Oorspronkelijke uitleendatum onbekend'));
         }
         if (dec.reason && dec.reason !== 'skipped') {
           card.append(make('p', 'bb-review__reason', reasonNames[dec.reason] || dec.reason));
