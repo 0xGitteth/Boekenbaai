@@ -59,4 +59,12 @@ assert.deepStrictEqual(getSentManualThemes(
   '', null, new Set(), [], {}
 ), [], 'Creating a book should still send the selected theme values');
 
+
+assert.strictEqual(fieldValue({ book: { easyReading: true }, provenance: {
+  easyReading: { source: 'excel', raw: 'nee' },
+}}, 'easyReading'), 'nee', 'Show raw Excel ML input instead of disguising it as ja');
+assert.strictEqual(fieldValue({ book: { easyReading: true }, provenance: {} }, 'easyReading'), 'ja');
+assert.ok(script.includes("'Makkelijk lezen: ' + (row.book?.easyReading ? 'ja' : 'nee')"),
+  'Show the effective ML value alongside its original Excel value');
+
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
