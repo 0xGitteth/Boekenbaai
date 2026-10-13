@@ -17,6 +17,7 @@
     location_context_requires_followup: 'Er staat klas- of locatie-informatie in Excel die Boekenbaai nog niet veilig kan overnemen. Corrigeer die gegevens of sla deze rij over.',
     skipped: 'Wordt niet geïmporteerd.',
     missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
+    missing_title_or_author: 'Titel en auteur zijn verplicht bij het toevoegen van boeken. Corrigeer deze gegevens of sla de rij over.',
     source_needs_review: 'Controleer de invoer en accepteer eventuele waarschuwingen.',
     edition_identity_mismatch: 'Het ISBN is hetzelfde, maar titel of auteur komt niet overeen. Corrigeer dit eerst.',
     ambiguous_existing_edition_isbn: 'Een bestaand boek heeft tegenstrijdige ISBN-gegevens. Corrigeer de bestaande editie eerst.',
