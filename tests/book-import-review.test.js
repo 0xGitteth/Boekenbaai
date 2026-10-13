@@ -195,6 +195,40 @@ const OTHER_ISBN = '9780439554930';
   assert.deepStrictEqual(explicitlyCleared.rows[0].book.themes, []);
   assert.strictEqual(explicitlyCleared.decisions.summary.readyToApply, true);
 
+
+  // A mismatch against exact-ISBN metadata requires an administrator choice.
+  // Editing the title is such a choice: keep Excel, warn, and do not borrow
+  // unrelated metadata values from the conflicting candidate.
+  const titleChoiceSource = [{
+    Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': OTHER_ISBN,
+  }];
+  const disagreeingLookup = async (isbn) => ({
+    found: true, isbn13: isbn, title: 'Andere titel',
+    author: 'A Auteur', publisher: 'Niet overnemen',
+  });
+  const unresolvedTitle = await analyzeReviewedImport(titleChoiceSource, [],
+    { lookupIsbn: disagreeingLookup, acceptWarnings: true });
+  assert.strictEqual(unresolvedTitle.rows[0].status, 'conflict');
+  assert.strictEqual(unresolvedTitle.decisions.summary.readyToApply, false);
+  const resolvedTitle = await analyzeReviewedImport(titleChoiceSource, [
+    { index: 0, fields: { title: 'Excel titel' } },
+  ], { lookupIsbn: disagreeingLookup, acceptWarnings: true });
+  assert.strictEqual(resolvedTitle.rows[0].book.title, 'Excel titel');
+  assert.strictEqual(resolvedTitle.rows[0].book.publisher, '');
+  assert.strictEqual(resolvedTitle.rows[0].status, 'warning');
+  assert.strictEqual(resolvedTitle.decisions.summary.readyToApply, true);
+  assert.ok(resolvedTitle.rows[0].issues.some((issue) =>
+    issue.code === 'metadata_differs_from_excel' && issue.chosenByAdministrator === true));
+  const unresolvedWithNoConsent = await analyzeReviewedImport(titleChoiceSource, [
+    { index: 0, fields: { title: 'Excel titel' } },
+  ], { lookupIsbn: disagreeingLookup, acceptWarnings: false });
+  assert.strictEqual(unresolvedWithNoConsent.decisions.summary.readyToApply, false);
+  // Correcting another field must never implicitly dismiss the title mismatch.
+  const stillConflicted = await analyzeReviewedImport(titleChoiceSource, [
+    { index: 0, fields: { publisher: 'Excel uitgever' } },
+  ], { lookupIsbn: disagreeingLookup, acceptWarnings: true });
+  assert.strictEqual(stillConflicted.rows[0].status, 'conflict');
+
   // Explicit user agreement from September: ANY nonblank cell means ML,
   // including literal 'nee' and 'false'. A warning preserves the original.
   for (const raw of ['nee', 'false', 'x', 'onbekend']) {
