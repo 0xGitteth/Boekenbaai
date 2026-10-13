@@ -390,8 +390,11 @@
     function updateInventoryResolution(isbn, keep) {
       if (keep) inventoryResolutions.set(isbn, { isbn, action: 'keep_existing' });
       else inventoryResolutions.delete(isbn);
-      warningsAccepted = false;
-      mustRecheckWarnings = true;
+      // Selecting a stock decision changes no Excel fields or diagnostics.
+      // Preserve an already explicit warning acknowledgement; resetting it
+      // makes a valid retain-existing decision impossible to submit.
+      // The unapplied resolution itself still disables Apply via
+      // hasUnreviewedChanges(), until a fresh server review is completed.
       if (currentApplyButton) currentApplyButton.disabled = true;
     }
 
