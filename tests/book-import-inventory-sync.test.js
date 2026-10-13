@@ -74,6 +74,21 @@ assert.strictEqual(legacyWithoutIsbn.rows[0].reason, 'possible_existing_book_wit
 assert.strictEqual(legacyWithoutIsbn.summary.readyToApply, false);
 assert.deepStrictEqual(legacyWithoutIsbn.proposedAdds, []);
 
+// A large snapshot remains reconcilable when it adds ZERO books. The 5,000
+// safety cap applies only to physical copies being CREATED, not stock shown.
+const largeInventoryRows = Array.from({ length: 6 }, (_, index) =>
+  row(index, index === 5 ? 1 : 1000));
+const largeStock = Array.from({ length: 5001 }, (_, index) => book('stock-' + index));
+const largeNoChange = preview(largeInventoryRows, largeStock);
+assert.strictEqual(largeNoChange.ok, true);
+assert.strictEqual(largeNoChange.summary.addCopies, 0);
+assert.strictEqual(largeNoChange.summary.readyToApply, true);
+assert.strictEqual(largeNoChange.rows[0].action, 'unchanged');
+const largeNewStock = preview(largeInventoryRows);
+assert.strictEqual(largeNewStock.summary.readyToApply, false,
+  'Creating more than 5000 physical copies is still prohibited');
+assert.strictEqual(largeNewStock.rows[0].reason, 'quantity_limit_exceeded');
+
 const borrowed = preview([row(0, 2)], [book('loan-1', {
   status: 'borrowed', borrowedBy: 'student-1',
 })]);
