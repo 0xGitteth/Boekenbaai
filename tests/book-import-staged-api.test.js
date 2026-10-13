@@ -532,7 +532,7 @@ async function run() {
     // loans. Both preview and re-review must attach the stable matched ID.
     const loanStage = await call('/api/admin/book-import-stages', token1, {
       file: fileBase64([
-        { Titel: 'Veilig naast leningen', Auteur: 'A Auteur', 'ISBN-nummer': '9780451524935' },
+        { Titel: 'Veilig naast leningen', Auteur: 'A Auteur', 'ISBN-nummer': '9780141439518' },
         { Titel: 'Al bij leerling', Auteur: 'A Auteur', 'ISBN-nummer': '9780747532699',
           'naam leerling': 'Lisa Leerling' },
         { Titel: 'Al bij klas', Auteur: 'A Auteur', 'ISBN-nummer': '9780385490818',
