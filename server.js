@@ -4562,7 +4562,9 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 200, importStageView(stage));
       }
       if (req.method === 'POST' && stageMatch[2] === 'review') {
-        const body = await parseBody(req, 400000);
+        // Corrections for a large school spreadsheet can exceed 400 KB even
+        // when every individual field is within the accepted value bounds.
+        const body = await parseBody(req, 24 * 1024 * 1024);
         if (!Number.isSafeInteger(body.revision)) return sendJson(res, 400, { message: 'Versienummer ontbreekt.' });
         const started = bookImportStageStore.beginReview(stage, body.revision);
         if (!started.ok) return sendJson(res, 409, { message: 'Deze import is gewijzigd of wordt verwerkt.', error: started.error });
