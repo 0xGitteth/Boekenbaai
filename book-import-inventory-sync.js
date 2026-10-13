@@ -17,9 +17,12 @@ function editionKeys(book) {
 function inventoryIndex(books) {
   const editions = new Map();
   const barcodes = new Map();
+  const ambiguousEditions = new Set();
   for (const book of Array.isArray(books) ? books : []) {
     if (!book || typeof book !== 'object') continue;
-    for (const isbn of editionKeys(book)) {
+    const keys = editionKeys(book);
+    if (keys.length > 1) for (const isbn of keys) ambiguousEditions.add(isbn);
+    for (const isbn of keys) {
       if (!editions.has(isbn)) editions.set(isbn, []);
       editions.get(isbn).push(book);
     }
@@ -29,7 +32,7 @@ function inventoryIndex(books) {
       barcodes.get(barcode).push(book);
     }
   }
-  return { editions, barcodes };
+  return { editions, barcodes, ambiguousEditions };
 }
 function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarnings = false } = {}) {
   if (!analysis?.ok || !Array.isArray(analysis.rows)) return { ok: false, error: 'invalid_review' };
@@ -59,9 +62,12 @@ function buildInventorySyncPreview(analysis, existingBooks = [], { acceptWarning
     const identity = (book) => [normalizeBookIdentityComparable(book?.title || ''),
       normalizeBookIdentityComparable(book?.author || '')].join('|');
     const fingerprint = identity(rows[0].book);
-    let reason = rows.some((row) => identity(row.book) !== fingerprint)
-      || existing.some((book) => identity(book) !== fingerprint)
-      ? 'edition_identity_mismatch' : '';
+    let reason = inventory.ambiguousEditions.has(isbn)
+      ? 'ambiguous_existing_edition_isbn' : '';
+    if (rows.some((row) => identity(row.book) !== fingerprint)
+      || existing.some((book) => identity(book) !== fingerprint)) {
+      reason ||= 'edition_identity_mismatch';
+    }
     let target = 0;
     const seenPrinted = new Set();
     const newPrinted = [];
