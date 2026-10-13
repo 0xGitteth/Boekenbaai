@@ -67,4 +67,9 @@ assert.strictEqual(fieldValue({ book: { easyReading: true }, provenance: {} }, '
 assert.ok(script.includes("'Makkelijk lezen: ' + (row.book?.easyReading ? 'ja' : 'nee')"),
   'Show the effective ML value alongside its original Excel value');
 
+assert.ok(script.includes("button('Excel-titel behouden'"),
+  'An administrator must have a clear action to choose the Excel title on a metadata conflict');
+assert.ok(script.includes('iedere ingevulde waarde Makkelijk lezen'),
+  'Make the deliberately nonstandard every-nonblank ML rule explicit in the editor');
+
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
