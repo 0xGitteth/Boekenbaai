@@ -156,8 +156,9 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         if (!owners.length) newPrinted.push({ index: row.index, barcode: printed });
       }
     }
-    if (target > 5000) block('quantity_limit_exceeded');
     const additional = Math.max(0, target - existing.length);
+    // Sync limits only new physical copies, never an existing inventory total.
+    if (additional > 5000) block('quantity_limit_exceeded');
     if (target < existing.length) block('reduction_requires_manual_review');
     if (newPrinted.length > additional) block('barcodes_exceed_new_copies');
     // With more than one unlabelled worksheet row containing different copy
