@@ -328,7 +328,7 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
       }
       const tagsOrigin = reviewed.provenance.tags;
       if (tagsOrigin?.derived === 'exam_material_strip_tag') {
-        reviewed.provenance.tags = tagsOrigin.includesDerivedValues
+        reviewed.provenance.tags = tagsOrigin.source === 'excel' && tagsOrigin.includesDerivedValues
           ? { ...tagsOrigin, includesManualDerivedValues: true }
           : { source: 'manual', detail: 'review_correction_exam_material', derived: tagsOrigin.derived };
       }
