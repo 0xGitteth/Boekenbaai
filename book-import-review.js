@@ -327,10 +327,12 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
         }
       }
       const tagsOrigin = reviewed.provenance.tags;
-      if (tagsOrigin?.derived === 'exam_material_strip_tag') {
+      if (tagsOrigin?.derived === 'exam_material_strip_tag'
+        || tagsOrigin?.detail === 'exam_material_strip_tag') {
         reviewed.provenance.tags = tagsOrigin.source === 'excel' && tagsOrigin.includesDerivedValues
           ? { ...tagsOrigin, includesManualDerivedValues: true }
-          : { source: 'manual', detail: 'review_correction_exam_material', derived: tagsOrigin.derived };
+          : { source: 'manual', detail: 'review_correction_exam_material',
+            derived: 'exam_material_strip_tag' };
       }
     }
   }
