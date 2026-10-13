@@ -120,4 +120,16 @@ assert.strictEqual(preview([{ ...row(0, 1), status: 'warning' }], [], {
 
 assert.strictEqual(buildInventorySyncPreview({ ok: false, rows: [] }).ok, false);
 
+// Ordinary warning acknowledgement never permits an unnamed new book.
+const missingIdentity = preview([
+  row(0, 1, { title: '' }),
+], [], { acceptWarnings: true });
+assert.strictEqual(missingIdentity.rows[0].action, 'blocked');
+assert.strictEqual(missingIdentity.rows[0].reason, 'missing_title_or_author');
+assert.strictEqual(missingIdentity.summary.readyToApply, false);
+const missingAuthor = preview([
+  row(0, 1, { author: '' }),
+], [], { acceptWarnings: true });
+assert.strictEqual(missingAuthor.rows[0].reason, 'missing_title_or_author');
+
 console.log('PR4 inventory reconciliation pure preview tests passed');
