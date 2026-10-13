@@ -118,6 +118,10 @@
     notice.setAttribute('role', 'status');
     notice.setAttribute('aria-live', 'polite');
     root.append(notice);
+    const liveAlert = make('div', 'bb-review__live-alert');
+    liveAlert.setAttribute('role', 'status');
+    liveAlert.setAttribute('aria-live', 'polite');
+    root.append(liveAlert);
     const results = make('div', 'bb-review__results');
     root.append(results);
     imports.insertBefore(root, imports.firstChild);
@@ -136,6 +140,8 @@
     let openEditor = null;
     let warningsAccepted = false;
     let currentApplyButton = null;
+    let remotePending = null;
+    let syncing = false;
     const PAGE_SIZE = 15;
     const hasUnreviewedChanges = () => {
       if (!stage) return true;
@@ -171,16 +177,92 @@
       setBusy(true);
       setNotice(label);
       try { await work(); } catch (error) { setNotice(error.message); }
-      finally { setBusy(false); }
+      finally { setBusy(false); render(); }
     }
 
-    function rememberResponse(payload) {
+    function rememberResponse(payload, preservePosition = false) {
+      const sameStage = stage?.id === payload.id;
       stage = payload;
+      remotePending = null;
+      liveAlert.replaceChildren();
       warningsAccepted = stage.acceptWarnings === true;
       corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
-      page = 0;
-      openEditor = null;
+      if (!preservePosition || !sameStage) {
+        page = 0;
+        openEditor = null;
+      }
       render();
+    }
+
+    function showRemoteUpdate(payload) {
+      remotePending = payload;
+      liveAlert.replaceChildren();
+      liveAlert.append(make('p', '', 'Een andere sessie heeft deze import bijgewerkt. Je niet-opgeslagen wijzigingen blijven hier staan, maar kunnen niet worden toegepast voordat je de nieuwste versie hebt geladen.'));
+      const refresh = button('Nieuwste versie laden', 'btn btn--secondary');
+      refresh.addEventListener('click', () => {
+        if (hasUnreviewedChanges()
+          && !window.confirm('Je hebt nog niet-opgeslagen wijzigingen. Deze verdwijnen bij het laden van de nieuwste versie. Doorgaan?')) return;
+        rememberResponse(remotePending, true);
+        setNotice('De meest recente importgegevens zijn geladen.');
+      });
+      liveAlert.append(refresh);
+      for (const element of results.querySelectorAll('input, button, textarea, select')) element.disabled = true;
+    }
+
+    function acceptRemote(payload) {
+      if (busy) return;
+      if (stage && hasUnreviewedChanges()) {
+        showRemoteUpdate(payload);
+        return;
+      }
+      const wasNew = !stage || stage.id !== payload.id;
+      rememberResponse(payload, true);
+      if (payload.status === 'preparing') setNotice('Er wordt een boekimport voorbereid op een andere sessie…');
+      else if (payload.status === 'completed') setNotice('De import is in een andere sessie afgerond.');
+      else if (payload.status === 'cancelled') setNotice('De import is in een andere sessie geannuleerd.');
+      else if (wasNew) setNotice('Er staat een boekimport open. Je ziet hier dezelfde gegevens als in de andere sessie.');
+      else setNotice('De gedeelde import is bijgewerkt.');
+    }
+
+    async function syncStage() {
+      if (busy || syncing || document.hidden) return;
+      syncing = true;
+      try {
+        const current = (await request(rootPath + '/active')).stage;
+        if (busy) return;
+        if (current) {
+          if (!stage || stage.id !== current.id || stage.revision !== current.revision
+            || stage.status !== current.status || remotePending) {
+            const full = await request(rootPath + '/' + encodeURIComponent(current.id));
+            if (!busy && (!remotePending || remotePending.id !== full.id
+              || remotePending.revision !== full.revision || remotePending.status !== full.status)) {
+              acceptRemote(full);
+            }
+          }
+        } else if (stage && ['open', 'reviewing', 'applying', 'preparing'].includes(stage.status)) {
+          try {
+            const finalState = await request(rootPath + '/' + encodeURIComponent(stage.id));
+            if (!busy && (finalState.status !== stage.status || finalState.revision !== stage.revision)) {
+              acceptRemote(finalState);
+            }
+          } catch {
+            if (!busy) {
+              // The inactivity lease expired or the server restarted.
+              // Draft data was never applied to the collection.
+              stage = null;
+              remotePending = null;
+              corrections.clear();
+              liveAlert.replaceChildren();
+              render();
+              setNotice('Deze import is verlopen of de server is herstart. Je kunt opnieuw uploaden.');
+            }
+          }
+        }
+      } catch {
+        // Transient connection failure: keep all local edits intact.
+      } finally {
+        syncing = false;
+      }
     }
 
     function fieldValue(row, field) {
@@ -205,6 +287,10 @@
         : { index, fields: {} };
       next.fields[field] = value;
       corrections.set(index, next);
+      // New or changed diagnostics require a NEW explicit acknowledgment.
+      warningsAccepted = false;
+      const warningInput = results.querySelector('.bb-review__controls input[type="checkbox"]');
+      if (warningInput) warningInput.checked = false;
       // Prevent applying the PREVIOUS server review while the editor contains
       // changes that have not yet been checked and saved.
       if (currentApplyButton) currentApplyButton.disabled = true;
@@ -236,7 +322,23 @@
 
     function render() {
       results.replaceChildren();
+      form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
       if (!stage) return;
+      if (stage.status === 'preparing' || stage.status === 'reviewing' || stage.status === 'applying') {
+        const messages = {
+          preparing: 'Een boekimport wordt voorbereid. Dit scherm wordt automatisch bijgewerkt zodra de preview klaar is.',
+          reviewing: 'De correcties worden opnieuw gecontroleerd. Beide sessies zien straks het resultaat.',
+          applying: 'De gecontroleerde boeken worden opgeslagen. Start geen tweede import.',
+        };
+        results.append(make('p', '', messages[stage.status]));
+        return;
+      }
+      if (stage.status === 'cancelled' || stage.status === 'failed') {
+        results.append(make('p', '', stage.status === 'cancelled'
+          ? 'Deze import is geannuleerd. Je kunt een nieuw Excelbestand kiezen.'
+          : 'De import is beëindigd vanwege een fout. Je kunt opnieuw beginnen.'));
+        return;
+      }
       if (stage.status === 'completed') {
         const done = stage.result || {};
         results.append(make('h4', '', 'Import voltooid'));
@@ -279,6 +381,7 @@
       warnCheck.addEventListener('change', () => { warningsAccepted = warnCheck.checked; render(); });
       warnLabel.append(warnCheck, document.createTextNode(' Ik heb alle waarschuwingen gecontroleerd en accepteer deze.'));
       const checkButton = button('Correcties controleren', 'btn btn--secondary');
+      checkButton.disabled = Boolean(remotePending || busy);
       checkButton.addEventListener('click', () => run(async () => {
         const payload = await request(rootPath + '/' + encodeURIComponent(stage.id) + '/review', {
           revision: stage.revision, acceptWarnings: warningsAccepted,
@@ -289,7 +392,8 @@
       }, 'Wijzigingen worden opnieuw geanalyseerd…'));
       const applyButton = button('Definitief importeren', 'btn');
       currentApplyButton = applyButton;
-      applyButton.disabled = !decisions.summary.readyToApply || hasUnreviewedChanges();
+      applyButton.disabled = !decisions.summary.readyToApply || hasUnreviewedChanges()
+        || Boolean(remotePending) || busy;
       applyButton.addEventListener('click', () => {
         const count = summary.physicalCopies || 0;
         if (!window.confirm('Je staat op het punt om ' + count + ' exemplaren toe te voegen. Weet je zeker dat alle gegevens kloppen?')) return;
@@ -300,7 +404,19 @@
           rememberResponse(payload);
         }, 'Bevestigde boeken worden opgeslagen…');
       });
-      controlBar.append(warnLabel, checkButton, applyButton);
+      const cancelButton = button('Import annuleren', 'btn btn--ghost');
+      cancelButton.disabled = Boolean(remotePending || busy);
+      cancelButton.addEventListener('click', () => {
+        if (!window.confirm('Deze boekimport annuleren? Niet-opgeslagen correcties gaan verloren.')) return;
+        run(async () => {
+          const response = await request(rootPath + '/' + encodeURIComponent(stage.id) + '/cancel', {
+            revision: stage.revision,
+          });
+          rememberResponse(response);
+          setNotice('De import is geannuleerd. In een andere sessie wordt dit automatisch zichtbaar.');
+        }, 'Import wordt geannuleerd…');
+      });
+      controlBar.append(warnLabel, checkButton, applyButton, cancelButton);
       if (!decisions.summary.readyToApply) {
         controlBar.append(make('p', 'hint', 'Importeren wordt pas mogelijk als alle conflicten zijn gecorrigeerd of overgeslagen en waarschuwingen zijn bevestigd.'));
       }
@@ -346,6 +462,7 @@
         skip.addEventListener('change', () => {
           if (skip.checked) corrections.set(row.index, { index: row.index, skip: true });
           else corrections.delete(row.index);
+          warningsAccepted = false;
           if (openEditor === row.index && skip.checked) openEditor = null;
           render();
         });
@@ -374,12 +491,24 @@
       if (selected.size > 25 * 1024 * 1024) return setNotice('Het Excelbestand is te groot (maximaal 25 MB).');
       run(async () => {
         const encoded = await encodeFile(selected);
-        const payload = await request(rootPath, {
-          file: encoded, fileName: selected.name, enrichIsbn: metadata.checked,
-        });
+        let payload;
+        try {
+          payload = await request(rootPath, {
+            file: encoded, fileName: selected.name, enrichIsbn: metadata.checked,
+          });
+        } catch (error) {
+          await syncStage();
+          throw error;
+        }
         rememberResponse(payload);
         setNotice('Preview gereed. De bibliotheek is nog niet gewijzigd.');
       }, 'Het Excelbestand wordt gecontroleerd…');
+    });
+    syncStage();
+    window.setInterval(syncStage, 1500);
+    window.addEventListener('focus', syncStage);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) syncStage();
     });
   }
 
