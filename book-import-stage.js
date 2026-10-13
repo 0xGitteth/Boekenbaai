@@ -5,54 +5,78 @@ const { buildReviewDecisions } = require('./book-import-review');
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
-const MAX_STAGES = 12;
-const MAX_PER_OWNER = 2;
+// One shared administrator account can be open in several browsers.
+// The app has only one active book import for ALL administrator sessions.
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+const BUSY_STATUSES = new Set(['preparing', 'reviewing', 'applying']);
+const MAX_FINISHED_STAGES = 8;
 
 function createImportStageStore({ now = Date.now, createId = () => crypto.randomUUID(), ttlMs = DEFAULT_TTL_MS } = {}) {
   const entries = new Map();
   function prune() {
     const current = now();
-    for (const [key, item] of entries) {
-      if (item.expiresAt <= current) entries.delete(key);
+    for (const [id, item] of entries) {
+      // A long metadata lookup or save can exceed the usual inactivity TTL.
+      // Never detach a still-running stage from the live session.
+      if (item.expiresAt <= current && !BUSY_STATUSES.has(item.status)) entries.delete(id);
     }
+    const terminal = [...entries.values()].filter((item) => TERMINAL_STATUSES.has(item.status));
+    for (const item of terminal.slice(0, Math.max(0, terminal.length - MAX_FINISHED_STAGES))) entries.delete(item.id);
   }
-  function get(id, ownerId) {
+  function active() {
     prune();
-    const entry = entries.get(id);
-    return entry && entry.ownerId === ownerId ? entry : null;
+    return [...entries.values()].find((entry) => !TERMINAL_STATUSES.has(entry.status)) || null;
   }
-  function create({ ownerId, sourceRows, workbook, analysis, fileName = '', options = {} }) {
-    if (!ownerId || !Array.isArray(sourceRows) || !analysis?.ok) throw Error('invalid_stage');
+  function get(id) {
     prune();
-    const mine = Array.from(entries.values()).filter((entry) => entry.ownerId === ownerId);
-    if (mine.some((entry) => entry.status === 'reviewing' || entry.status === 'applying')) {
-      return { ok: false, error: 'stage_busy' };
-    }
-    for (const entry of mine.slice(0, Math.max(0, mine.length - MAX_PER_OWNER + 1))) entries.delete(entry.id);
-    if (entries.size >= MAX_STAGES) {
-      const removable = [...entries.values()].find((entry) => !['reviewing', 'applying'].includes(entry.status));
-      if (!removable) return { ok: false, error: 'stage_capacity' };
-      entries.delete(removable.id);
-    }
+    return entries.get(id) || null;
+  }
+  function reserve(ownerId) {
+    if (!ownerId) throw Error('invalid_stage');
+    const current = active();
+    if (current) return { ok: false, error: 'stage_busy', stage: current };
     const id = createId();
     const stage = {
-      id, ownerId, sourceRows, workbook, fileName,
-      analysis, initialAnalysis: analysis, corrections: [], acceptWarnings: false,
-      options, revision: 1, status: 'open',
-      createdAt: new Date(now()).toISOString(), expiresAt: now() + ttlMs,
-      result: null,
+      id, ownerId, sourceRows: null, workbook: null, fileName: '',
+      analysis: null, initialAnalysis: null, corrections: [],
+      acceptWarnings: false, options: {}, revision: 0,
+      status: 'preparing', createdAt: new Date(now()).toISOString(),
+      expiresAt: now() + ttlMs, result: null,
     };
     entries.set(id, stage);
     return { ok: true, stage };
   }
+  function activate(stage, { sourceRows, workbook, analysis, fileName = '', options = {} }) {
+    if (entries.get(stage?.id) !== stage || stage.status !== 'preparing'
+      || !Array.isArray(sourceRows) || !analysis?.ok) throw Error('invalid_stage_transition');
+    Object.assign(stage, {
+      sourceRows, workbook, fileName, analysis, initialAnalysis: analysis,
+      options, status: 'open', revision: 1, expiresAt: now() + ttlMs,
+    });
+    return stage;
+  }
+  function abandon(stage) {
+    if (entries.get(stage?.id) === stage && stage.status === 'preparing') {
+      entries.delete(stage.id);
+    }
+  }
+  // Pure-store callers can create an already analyzed stage.
+  function create({ ownerId, sourceRows, workbook, analysis, fileName = '', options = {} }) {
+    if (!ownerId || !Array.isArray(sourceRows) || !analysis?.ok) throw Error('invalid_stage');
+    const reserved = reserve(ownerId);
+    if (!reserved.ok) return reserved;
+    return { ok: true, stage: activate(reserved.stage, { sourceRows, workbook, analysis, fileName, options }) };
+  }
   function beginReview(stage, expectedRevision) {
-    if (!stage || stage.status !== 'open') return { ok: false, error: 'stage_busy_or_closed' };
+    if (!stage || entries.get(stage.id) !== stage || stage.status !== 'open') {
+      return { ok: false, error: 'stage_busy_or_closed' };
+    }
     if (stage.revision !== expectedRevision) return { ok: false, error: 'stale_review' };
     stage.status = 'reviewing';
     return { ok: true };
   }
   function finishReview(stage, reviewed, corrections, acceptWarnings) {
-    if (stage.status !== 'reviewing') throw Error('invalid_stage_transition');
+    if (entries.get(stage?.id) !== stage || stage.status !== 'reviewing') throw Error('invalid_stage_transition');
     stage.analysis = reviewed;
     stage.corrections = corrections;
     stage.acceptWarnings = acceptWarnings;
@@ -64,13 +88,15 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     if (stage?.status === 'reviewing') stage.status = 'open';
   }
   function beginApply(stage, expectedRevision) {
-    if (!stage || stage.status !== 'open') return { ok: false, error: 'stage_busy_or_closed' };
+    if (!stage || entries.get(stage.id) !== stage || stage.status !== 'open') {
+      return { ok: false, error: 'stage_busy_or_closed' };
+    }
     if (stage.revision !== expectedRevision) return { ok: false, error: 'stale_review' };
     stage.status = 'applying';
     return { ok: true };
   }
   function finishApply(stage, result) {
-    if (stage.status !== 'applying') throw Error('invalid_stage_transition');
+    if (entries.get(stage?.id) !== stage || stage.status !== 'applying') throw Error('invalid_stage_transition');
     stage.status = 'completed';
     stage.result = result;
     stage.sourceRows = null;
@@ -80,17 +106,36 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
   }
   function abortApply(stage) {
     // A failed write must never allow an unguarded retry. Start a new review.
-    if (stage?.status === 'applying') stage.status = 'failed';
+    if (stage?.status === 'applying') {
+      stage.status = 'failed';
+      stage.expiresAt = now() + ttlMs;
+    }
   }
-  return { create, get, beginReview, finishReview, abortReview, beginApply, finishApply, abortApply };
+  function cancel(stage, expectedRevision) {
+    if (!stage || entries.get(stage.id) !== stage || stage.status !== 'open') {
+      return { ok: false, error: 'stage_busy_or_closed' };
+    }
+    if (stage.revision !== expectedRevision) return { ok: false, error: 'stale_review' };
+    stage.status = 'cancelled';
+    stage.revision += 1;
+    stage.sourceRows = null;
+    stage.analysis = null;
+    stage.initialAnalysis = null;
+    stage.expiresAt = now() + ttlMs;
+    return { ok: true };
+  }
+  return {
+    create, reserve, activate, abandon, get, active, cancel,
+    beginReview, finishReview, abortReview, beginApply, finishApply, abortApply,
+  };
 }
 
 function importStageView(stage) {
-  if (stage.status === 'completed') {
+  if (TERMINAL_STATUSES.has(stage.status) || stage.status === 'preparing') {
     return {
       id: stage.id, status: stage.status, revision: stage.revision,
       fileName: stage.fileName, expiresAt: new Date(stage.expiresAt).toISOString(),
-      result: stage.result,
+      result: stage.status === 'completed' ? stage.result : null,
     };
   }
   const analysis = stage.analysis;

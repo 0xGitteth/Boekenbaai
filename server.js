@@ -4474,14 +4474,39 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders mogen een boekimport voorbereiden.' });
       }
-      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply))?$/);
+      if (req.method === 'GET' && requestUrl.pathname === stageRoot + '/active') {
+        const activeStage = bookImportStageStore.active();
+        return sendJson(res, 200, {
+          stage: activeStage ? {
+            id: activeStage.id, status: activeStage.status,
+            revision: activeStage.revision, fileName: activeStage.fileName,
+          } : null,
+        });
+      }
+      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
+        if (activeImportJobs.size > 0) {
+          return sendJson(res, 409, { message: 'De oude boekimport is nog bezig. Rond die eerst af.', error: 'legacy_import_busy' });
+        }
         const XLSX = loadXlsx();
         if (!XLSX) return sendJson(res, 503, { message: 'Excelverwerking is niet beschikbaar.' });
         const body = await parseBody(req, 35 * 1024 * 1024);
         if (typeof body.file !== 'string' || !body.file) {
           return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
         }
+        // Reserve the single global slot BEFORE any asynchronous metadata
+        // enrichment. Other sessions immediately see "preparing" and cannot
+        // start a conflicting import, even on the same shared account.
+        const reservation = bookImportStageStore.reserve(user.id);
+        if (!reservation.ok) {
+          return sendJson(res, 409, {
+            message: 'Er staat al een boekimport open. Bekijk of hervat die import.',
+            error: reservation.error,
+            active: importStageView(reservation.stage),
+          });
+        }
+        let activated = false;
+        try {
         const workbook = readBookImportWorkbook(XLSX, body.file, { maxRows: 1500, maxCopies: 5000 });
         if (!workbook.ok) {
           return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
@@ -4510,14 +4535,17 @@ async function handleApi(req, res, requestUrl) {
           ...options, existingBooks: database.books, acceptWarnings: false,
         });
         if (!analysis.ok) return sendJson(res, 400, { message: 'Importanalyse mislukt.', error: analysis.error });
-        const created = bookImportStageStore.create({
-          ownerId: user.id, sourceRows: workbook.rows, options,
+        bookImportStageStore.activate(reservation.stage, {
+          sourceRows: workbook.rows, options,
           workbook: { sheetName: workbook.sheetName, headers: workbook.headers },
           fileName: typeof body.fileName === 'string' ? body.fileName.slice(0, 180) : '',
           analysis,
         });
-        if (!created.ok) return sendJson(res, 409, { message: 'Een andere importcontrole is nog actief.', error: created.error });
-        return sendJson(res, 201, importStageView(created.stage));
+        activated = true;
+        return sendJson(res, 201, importStageView(reservation.stage));
+        } finally {
+          if (!activated) bookImportStageStore.abandon(reservation.stage);
+        }
       }
       if (!stageMatch) return sendJson(res, 404, { message: 'Importcontrole niet gevonden.' });
       const stage = bookImportStageStore.get(stageMatch[1], user.id);
@@ -4525,8 +4553,18 @@ async function handleApi(req, res, requestUrl) {
       if (req.method === 'GET' && !stageMatch[2]) {
         return sendJson(res, 200, importStageView(stage));
       }
+      if (req.method === 'POST' && stageMatch[2] === 'cancel') {
+        const body = await parseBody(req, 10000);
+        const cancelled = bookImportStageStore.cancel(stage, body.revision);
+        if (!cancelled.ok) {
+          return sendJson(res, 409, { message: 'Deze import is inmiddels gewijzigd of wordt verwerkt.', error: cancelled.error });
+        }
+        return sendJson(res, 200, importStageView(stage));
+      }
       if (req.method === 'POST' && stageMatch[2] === 'review') {
-        const body = await parseBody(req, 400000);
+        // Corrections for a large school spreadsheet can exceed 400 KB even
+        // when every individual field is within the accepted value bounds.
+        const body = await parseBody(req, 24 * 1024 * 1024);
         if (!Number.isSafeInteger(body.revision)) return sendJson(res, 400, { message: 'Versienummer ontbreekt.' });
         const started = bookImportStageStore.beginReview(stage, body.revision);
         if (!started.ok) return sendJson(res, 409, { message: 'Deze import is gewijzigd of wordt verwerkt.', error: started.error });
@@ -4665,6 +4703,9 @@ async function handleApi(req, res, requestUrl) {
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import-jobs') {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
+      }
+      if (bookImportStageStore.active()) {
+        return sendJson(res, 409, { message: 'Er staat al een gecontroleerde boekimport open.', error: 'stage_busy' });
       }
       const XLSX = loadXlsx();
       if (!XLSX) {
@@ -4878,6 +4919,9 @@ async function handleApi(req, res, requestUrl) {
     }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/books/import') {
+      if (bookImportStageStore.active()) {
+        return sendJson(res, 409, { message: 'Er staat al een gecontroleerde boekimport open.', error: 'stage_busy' });
+      }
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen lijsten importeren' });
       }
