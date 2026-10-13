@@ -234,6 +234,23 @@ const OTHER_ISBN = '9780439554930';
   ], { lookupIsbn: disagreeingLookup, acceptWarnings: true });
   assert.strictEqual(stillConflicted.rows[0].status, 'conflict');
 
+  // Derived language and comic tags must be attributed to the administrator
+  // when the exam-material value came from a review correction.
+  const changedExam = await analyzeReviewedImport([{
+    Titel: 'Schoolboeken', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+    Examenmateriaal: 'nee',
+  }], [{ index: 0, fields: { examMaterial: 'Engels' } }], { acceptWarnings: true });
+  assert.strictEqual(changedExam.rows[0].book.language, 'en');
+  assert.strictEqual(changedExam.rows[0].provenance.language.source, 'manual');
+  assert.strictEqual(changedExam.rows[0].provenance.language.derived, 'exam_material_language_hint');
+  assert.strictEqual(changedExam.rows[0].provenance.suitableForExamList.source, 'manual');
+  const changedComic = await analyzeReviewedImport([{
+    Titel: 'Stripboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+  }], [{ index: 0, fields: { examMaterial: 'strip' } }], { acceptWarnings: true });
+  assert.ok(changedComic.rows[0].book.tags.includes('strip'));
+  assert.strictEqual(changedComic.rows[0].provenance.tags.source, 'manual');
+  assert.strictEqual(changedComic.rows[0].provenance.formatHint.source, 'manual');
+
   // Explicit user agreement from September: ANY nonblank cell means ML,
   // including literal 'nee' and 'false'. A warning preserves the original.
   for (const raw of ['nee', 'false', 'x', 'onbekend']) {
