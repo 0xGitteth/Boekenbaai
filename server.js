@@ -1574,6 +1574,22 @@ function readWorkbookRows(XLSX, base64) {
   return { ok: true, rows };
 }
 
+// All request-local database snapshots carry their original on-disk digest.
+// A handler that awaited request input or external metadata must never commit
+// an old snapshot after another handler already changed the database.
+const dbSnapshotDigests = new WeakMap();
+function dbDigest(raw) {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+function assertCurrentDbSnapshot(db) {
+  const loadedDigest = dbSnapshotDigests.get(db);
+  if (!loadedDigest || loadedDigest !== dbDigest(fs.readFileSync(DATA_PATH, 'utf8'))) {
+    const error = new Error('Database changed while this request was being processed');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
+  }
+}
+
 function loadDb() {
   const raw = fs.readFileSync(DATA_PATH, 'utf-8');
   const data = JSON.parse(raw);
@@ -1589,21 +1605,28 @@ function loadDb() {
   data.classes = data.classes.map(ensureClassShape);
   data.folders = data.folders.map(ensureFolderShape);
   data.users = data.users.map(ensureTeacherShape);
+  dbSnapshotDigests.set(data, dbDigest(raw));
   return data;
 }
 
 function saveDb(db) {
-  fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
+  assertCurrentDbSnapshot(db);
+  const raw = JSON.stringify(db, null, 2);
+  fs.writeFileSync(DATA_PATH, raw);
+  dbSnapshotDigests.set(db, dbDigest(raw));
 }
 
 // The reviewed book import is one confirmed transaction. Write its complete
 // database snapshot to a sibling file first, then atomically replace the old
 // snapshot so a failed or interrupted write cannot leave half a JSON document.
 function saveReviewedBookImportDb(db) {
+  assertCurrentDbSnapshot(db);
+  const raw = JSON.stringify(db, null, 2);
   const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
   try {
-    fs.writeFileSync(temporaryPath, JSON.stringify(db, null, 2), { flag: 'wx', mode: 0o600 });
+    fs.writeFileSync(temporaryPath, raw, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporaryPath, DATA_PATH);
+    dbSnapshotDigests.set(db, dbDigest(raw));
   } finally {
     try { fs.unlinkSync(temporaryPath); } catch (error) {
       if (error.code !== 'ENOENT') console.warn('Tijdelijke importdatabase opruimen mislukt:', error.message);
@@ -7457,6 +7480,9 @@ async function handleApi(req, res, requestUrl) {
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
   } catch (error) {
+    if (error?.code === 'DATABASE_WRITE_CONFLICT') {
+      return sendJson(res, 409, { message: 'De gegevens zijn intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.', error: error.code });
+    }
     console.error(error);
     return sendJson(res, 500, { message: 'Interne serverfout' });
   }
