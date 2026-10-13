@@ -4,7 +4,7 @@ const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
 const { readBookImportWorkbook } = require('./book-import-workbook');
-const { analyzeReviewedImport } = require('./book-import-review');
+const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 
@@ -978,11 +978,9 @@ function normalizeLanguageCode(value) {
   if (!text) {
     return '';
   }
-  const token = text.split(/[,;/\s]+/).find((part) => part.trim());
-  if (!token) {
-    return '';
-  }
-  return token.length <= 3 ? token.toLowerCase() : token;
+  // School books can legitimately contain more than one language. Do not
+  // silently discard a second language when saving reviewed Excel values.
+  return text.length <= 3 ? text.toLowerCase() : text;
 }
 
 function normalizeCoverUrl(value) {
@@ -4435,7 +4433,18 @@ async function handleApi(req, res, requestUrl) {
       const hasTags = Object.prototype.hasOwnProperty.call(body, 'tags');
       const hasManualThemes = Object.prototype.hasOwnProperty.call(body, 'manualThemes');
       const nextTags = hasTags ? parseMultiValueField(body.tags) : book.tags;
-      const nextManualThemes = hasManualThemes ? normalizeManualThemes(body.manualThemes) : book.manualThemes;
+      // The theme editor submits the full selected set. Preserve any
+      // noncanonical themes that the administrator intentionally left selected
+      // after an earlier Excel import, without broadening the curated list.
+      const selectedThemes = hasManualThemes ? parseMultiValueField(body.manualThemes)
+        .filter((theme) => {
+          const key = normalizeRawThemeTag(theme);
+          return key && !EASY_READING_TAGS.has(key) && key !== 'makkelijklezen' && key !== 'ml';
+        }).slice(0, 40) : [];
+      const selectedHasFreeform = selectedThemes.some((theme) => !normalizeManualTheme(theme));
+      const nextManualThemes = hasManualThemes
+        ? selectedHasFreeform ? [] : normalizeManualThemes(selectedThemes)
+        : book.manualThemes;
       const nextPublisher = hasPublisher ? normalizePublisher(body.publisher) : book.publisher;
       const nextPublishedYear = hasPublishedYear
         ? normalizePublishedYear(body.publishedYear ?? body.year ?? body.publishedAt)
@@ -4465,8 +4474,10 @@ async function handleApi(req, res, requestUrl) {
         manualThemes: nextManualThemes,
         // An explicit theme edit supersedes metadata imported earlier.
         // An empty selection must not resurrect old metadata themes.
-        importedThemes: hasManualThemes ? [] : book.importedThemes,
-        themesCleared: hasManualThemes ? nextManualThemes.length === 0 : book.themesCleared === true,
+        importedThemes: hasManualThemes
+          ? selectedHasFreeform ? selectedThemes : []
+          : book.importedThemes,
+        themesCleared: hasManualThemes ? selectedThemes.length === 0 : book.themesCleared === true,
         coverColor: body.coverColor ?? book.coverColor,
         publisher: nextPublisher,
         publishedYear: nextPublishedYear,
@@ -4606,7 +4617,9 @@ async function handleApi(req, res, requestUrl) {
         if (!workbook.ok) {
           return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
         }
-        const database = getDb();
+        // Authentication can read an older DB before the workbook upload
+        // finishes. Read the live collection for the initial preview.
+        const database = loadDb();
         const enrichIsbn = body.enrichIsbn === true;
         const lookupIsbn = enrichIsbn ? resolveLookupIsbnMetadata() : null;
         const lookupTitleAuthor = enrichIsbn ? resolveLookupTitleAuthorMetadata() : null;
@@ -4653,6 +4666,9 @@ async function handleApi(req, res, requestUrl) {
           acceptWarnings: false,
         });
         if (!analysis.ok) return sendJson(res, 400, { message: 'Importanalyse mislukt.', error: analysis.error });
+        // Metadata lookups may take time. Check for books added during that
+        // analysis just before publishing the ready/blocked decisions.
+        analysis.decisions = buildReviewDecisions(analysis, loadDb().books);
         bookImportStageStore.activate(reservation.stage, {
           sourceRows: workbook.rows, options,
           workbook: { sheetName: workbook.sheetName, headers: workbook.headers },
@@ -4703,6 +4719,10 @@ async function handleApi(req, res, requestUrl) {
           if (!reviewed.ok) {
             return sendJson(res, 400, { message: 'Een correctie is ongeldig.', error: reviewed.error, field: reviewed.field, index: reviewed.index });
           }
+          // Recheck after any asynchronous lookups, not just after body upload.
+          reviewed.decisions = buildReviewDecisions(reviewed, loadDb().books, {
+            acceptWarnings: body.acceptWarnings,
+          });
           bookImportStageStore.finishReview(stage, reviewed, body.corrections, body.acceptWarnings);
           return sendJson(res, 200, importStageView(stage));
         } finally {
