@@ -72,6 +72,16 @@ function createDbFixture(filePath) {
         manualThemes: ['Mysterie', 'Makkelijk Lezen'],
       },
       {
+        id: 'book-4',
+        title: 'Geïmporteerde thema’s',
+        author: 'Auteur Vier',
+        barcode: '44444',
+        status: 'available',
+        tags: ['bullying', 'onbekend onderwerp'],
+        manualThemes: [],
+        importedThemes: ['Pesten', 'Nieuw thema uit metadata'],
+      },
+      {
         id: 'book-3',
         title: 'Gemengde handmatige thema’s',
         author: 'Auteur Drie',
@@ -200,10 +210,45 @@ async function runTests() {
     assert.deepStrictEqual(updateMixedThemes.body.book.manualThemes, ['Psychische gezondheid', 'Overleven', 'Fantasy']);
     assert.deepStrictEqual(updateMixedThemes.body.book.themes, ['Psychische gezondheid', 'Overleven', 'Fantasy']);
 
+    const beforeMetadataEdit = (await request('/api/books/book-4')).body;
+    assert.deepStrictEqual(beforeMetadataEdit.themes, ['Pesten', 'Nieuw thema uit metadata']);
+    // Unrelated changes must not erase metadata-based themes.
+    const unaffected = await request('/api/books/book-4', {
+      method: 'PUT', headers: {
+        Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title: 'Geïmporteerd en bijgewerkt' }),
+    });
+    assert.strictEqual(unaffected.status, 200);
+    assert.deepStrictEqual(unaffected.body.book.themes, ['Pesten', 'Nieuw thema uit metadata']);
+    const cleared = await request('/api/books/book-4', {
+      method: 'PUT', headers: {
+        Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ manualThemes: [] }),
+    });
+    assert.strictEqual(cleared.status, 200);
+    assert.deepStrictEqual(cleared.body.book.importedThemes, []);
+    assert.deepStrictEqual(cleared.body.book.themes, [],
+      'Explicitly clearing themes must not resurrect metadata values or tag-derived themes');
+    assert.strictEqual(cleared.body.book.themesCleared, true);
+    const afterClear = (await request('/api/books/book-4')).body;
+    assert.deepStrictEqual(afterClear.themes, []);
+    const chosen = await request('/api/books/book-4', {
+      method: 'PUT', headers: {
+        Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ manualThemes: ['Mysterie'] }),
+    });
+    assert.strictEqual(chosen.status, 200);
+    assert.deepStrictEqual(chosen.body.book.themes, ['Mysterie']);
+    assert.strictEqual(chosen.body.book.themesCleared, false);
+    assert.deepStrictEqual((await request('/api/books/book-4')).body.themes, ['Mysterie']);
+
     const postUpdateList = await request('/api/books');
     assert.strictEqual(postUpdateList.status, 200);
     const filtered = postUpdateList.body.filter((book) => (book.themes || []).includes('Mysterie'));
-    assert.strictEqual(filtered.length, 2);
+    assert.strictEqual(filtered.length, 3);
 
     console.log('Manual themes persistence tests passed');
   } finally {

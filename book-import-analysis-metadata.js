@@ -315,7 +315,8 @@ function invalidSuppliedScalar(row, field) {
   return provenance;
 }
 
-function setMetadataField(row, field, value, candidate) {
+function setMetadataField(row, field, value, candidate, { skipThemeEnrichment = false } = {}) {
+  if (field === 'themes' && skipThemeEnrichment) return;
   if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return;
   const current = row.book[field];
   const currentProvenance = row.provenance?.[field];
@@ -369,7 +370,7 @@ function metadataAuthorExtendsIncompleteExcelAuthor(row, candidate) {
   return Boolean(currentTokens.length && currentTokens.every((token) => candidateTokens.has(token)));
 }
 
-function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } = {}) {
+function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false, skipThemeEnrichment = false } = {}) {
   if (!candidate) return;
   if (allowIsbnResolution && !row.book.editionIsbn && candidate.editionIsbn) {
     row.book.editionIsbn = candidate.editionIsbn;
@@ -408,7 +409,7 @@ function applyMetadataCandidate(row, candidate, { allowIsbnResolution = false } 
   setMetadataField(row, 'coverUrl', candidate.coverUrl, candidate);
   setMetadataField(row, 'description', candidate.description, candidate);
   setMetadataField(row, 'tags', candidate.tags, candidate);
-  setMetadataField(row, 'themes', candidate.themes, candidate);
+  setMetadataField(row, 'themes', candidate.themes, candidate, { skipThemeEnrichment });
 }
 
 async function resolveMetadata(row, options) {
@@ -427,7 +428,9 @@ async function resolveMetadata(row, options) {
       const candidates = metadataCandidatesFromResult(result);
       const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book, row.provenance);
       if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
-      else if (selection.candidate) applyMetadataCandidate(row, selection.candidate);
+      else if (selection.candidate) applyMetadataCandidate(row, selection.candidate, {
+        skipThemeEnrichment: options.skipThemeEnrichment === true,
+      });
       else if (candidates.length) addIssue(row, 'metadata_not_usable', 'warning');
     } catch {
       addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'isbn' });
@@ -463,7 +466,9 @@ async function resolveMetadata(row, options) {
     if (!selection.candidate.editionIsbn) {
       addIssue(row, 'title_author_metadata_missing_edition_isbn', 'warning', { source: selection.candidate.source || null });
     }
-    applyMetadataCandidate(row, selection.candidate, { allowIsbnResolution: true });
+    applyMetadataCandidate(row, selection.candidate, {
+      allowIsbnResolution: true, skipThemeEnrichment: options.skipThemeEnrichment === true,
+    });
     if (row.book.editionIsbn) await enrichExactIsbn({ force: true });
   } catch {
     addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'title_author' });
