@@ -70,6 +70,12 @@ async function run() {
     assert.strictEqual(login1.status, 200);
     assert.strictEqual(login2.status, 200);
     const token1 = login1.body.token, token2 = login2.body.token;
+    // Same administrator account signed in from a second device/session.
+    const loginSameAccountAgain = await call('/api/login', null, { username: 'admin1', password: 'pass1' });
+    assert.strictEqual(loginSameAccountAgain.status, 200);
+    const token1b = loginSameAccountAgain.body.token;
+    assert.notStrictEqual(token1, token1b);
+    assert.strictEqual((await call('/api/admin/book-import-stages/active', token1b)).body.stage, null);
     const file = fileBase64([
       { Titel: 'Kopie test', Auteur: 'Auteur', 'ISBN-nummer': ISBN1, Barcode: '23456' },
       { Titel: 'Correctie test', Auteur: 'Auteur', 'ISBN-nummer': 'not-an-isbn' },
@@ -84,8 +90,20 @@ async function run() {
     assert.strictEqual(created.body.revision, 1);
     assert.strictEqual(created.body.decisions.summary.readyToApply, false);
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.length, 0, 'Preview must never mutate database');
-    assert.strictEqual((await call('/api/admin/book-import-stages/' + id, token2)).status, 404);
-    assert.strictEqual((await call('/api/admin/book-import-stages/' + id, token1)).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + id, token2)).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + id, token1b)).status, 200);
+    const activeFromSecondSession = await call('/api/admin/book-import-stages/active', token1b);
+    assert.strictEqual(activeFromSecondSession.status, 200);
+    assert.strictEqual(activeFromSecondSession.body.stage.id, id);
+    assert.strictEqual(activeFromSecondSession.body.stage.revision, 1);
+    assert.strictEqual(activeFromSecondSession.body.stage.rows, undefined,
+      'The frequent status poll must not resend the full workbook');
+    const parallelAttempt = await call('/api/admin/book-import-stages', token1b, {
+      file: fileBase64([{ Titel: 'Ander upload', Auteur: 'B', 'ISBN-nummer': ISBN2 }]),
+    });
+    assert.strictEqual(parallelAttempt.status, 409);
+    assert.strictEqual(parallelAttempt.body.error, 'stage_busy');
+    assert.strictEqual(parallelAttempt.body.active.id, id);
 
     const invalid = await call('/api/admin/book-import-stages/' + id + '/review', token1, {
       revision: 1, acceptWarnings: false, corrections: [{ index: 1, fields: { editionIsbn: 'not-an-isbn' } }],
@@ -96,6 +114,11 @@ async function run() {
     });
     assert.strictEqual(corrected.status, 200, JSON.stringify(corrected.body));
     assert.strictEqual(corrected.body.revision, 2);
+    assert.strictEqual((await call('/api/admin/book-import-stages/active', token1b)).body.stage.revision, 2);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + id, token1b)).body.corrections[0].index, 1);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + id + '/review', token1b, {
+      revision: 1, acceptWarnings: false, corrections: [],
+    })).status, 409, 'An older browser cannot overwrite newer reviewed changes');
     assert.strictEqual(corrected.body.decisions.summary.readyToApply, true);
     assert.strictEqual((await call('/api/admin/book-import-stages/' + id + '/apply', token1, { revision: 1, confirm: true })).status, 409);
     assert.strictEqual((await call('/api/admin/book-import-stages/' + id + '/apply', token1, { revision: 2, confirm: false })).status, 400);
@@ -103,6 +126,8 @@ async function run() {
     const applied = await call('/api/admin/book-import-stages/' + id + '/apply', token1, { revision: 2, confirm: true });
     assert.strictEqual(applied.status, 200, JSON.stringify(applied.body));
     assert.strictEqual(applied.body.result.created, 2);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + id, token1b)).body.status, 'completed');
+    assert.strictEqual((await call('/api/admin/book-import-stages/active', token1b)).body.stage, null);
     assert.strictEqual((await call('/api/admin/book-import-stages/' + id + '/apply', token1, { revision: 2, confirm: true })).status, 409);
     const saved = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(saved.books.length, 2);
@@ -136,6 +161,10 @@ async function run() {
       revision: 1, confirm: true,
     })).status, 409);
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.length, 2);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + duplicateStage.body.id + '/cancel', token1b, {
+      revision: 1,
+    })).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-stages/active', token1)).body.stage, null);
 
     const stageWithRace = await call('/api/admin/book-import-stages', token1, {
       file: fileBase64([{ Titel: 'Uniek', Auteur: 'Auteur', 'ISBN-nummer': ISBN1, Barcode: '60001' }]),
@@ -143,6 +172,9 @@ async function run() {
     assert.strictEqual(stageWithRace.status, 201);
     // This edition already exists, so the stage cannot apply despite having a fresh barcode.
     assert.strictEqual(stageWithRace.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + stageWithRace.body.id + '/cancel', token1b, {
+      revision: 1,
+    })).status, 200);
 
     // A separate admin may create the same edition after preview. Applying
     // must re-check the latest database rather than trusting stale preview.
