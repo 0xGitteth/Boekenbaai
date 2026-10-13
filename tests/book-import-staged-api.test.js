@@ -844,13 +844,19 @@ async function run() {
     });
     assert.strictEqual(beforeAddition.status, 201);
     assert.strictEqual(beforeAddition.body.decisions.summary.readyToApply, true);
+    // Leave the review request waiting on its body while another admin adds
+    // the matching ISBN. The review handler must refresh its earlier auth DB.
+    const pausedReview = pausedImportPost(
+      '/api/admin/book-import-stages/' + beforeAddition.body.id + '/review',
+      token1, { revision: 1, acceptWarnings: true, corrections: [] });
+    await new Promise((resolve) => setTimeout(resolve, 60));
     const addedDuringPreview = await call('/api/books', token2, {
       title: 'Reeds later toegevoegd', author: 'A Auteur',
       barcode: '88119922', metadataIsbn: afterPreviewIsbn,
     });
     assert.strictEqual(addedDuringPreview.status, 201);
-    const recheckedCollection = await call('/api/admin/book-import-stages/' + beforeAddition.body.id
-      + '/review', token1, { revision: 1, acceptWarnings: true, corrections: [] });
+    pausedReview.finish();
+    const recheckedCollection = await pausedReview.done;
     assert.strictEqual(recheckedCollection.status, 200);
     assert.strictEqual(recheckedCollection.body.decisions.rows[0].reason,
       'existing_edition_requires_review');
