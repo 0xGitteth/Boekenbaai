@@ -60,7 +60,8 @@ function inspectReviewedLoans(rows, {
     const alreadyOwnsEdition = existing.some((loan) => {
       const id = typeof loan === 'string' ? loan : loan?.bookId;
       const book = storedBooks.get(id);
-      return book && canonicalizeBookIsbn13(book.editionIsbn || book.metadataIsbn) === isbn;
+      return book && (canonicalizeBookIsbn13(book.editionIsbn)
+        || canonicalizeBookIsbn13(book.metadataIsbn)) === isbn;
     });
     if (alreadyOwnsEdition && !allowExistingLoan) decisions.set(row.index, {
       ok: false, error: 'student_already_borrowed_edition',
