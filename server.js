@@ -8,6 +8,8 @@ const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-r
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
+const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
+  normalizeDueDate, publicBook } = require('./book-loan-policy');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -1157,6 +1159,9 @@ function ensureBookShape(book) {
   safeBook.easyReading = Boolean(source.easyReading);
   safeBook.status = typeof source.status === 'string' ? source.status : 'available';
   safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
+  safeBook.borrowedByClassId = typeof source.borrowedByClassId === 'string'
+    && source.borrowedByClassId.trim() ? source.borrowedByClassId : null;
+  safeBook.borrowedAt = typeof source.borrowedAt === 'string' ? source.borrowedAt : null;
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
   safeBook.tags = parseMultiValueField(source.tags);
   safeBook.manualThemes = normalizeManualThemes(source.manualThemes);
@@ -1177,11 +1182,7 @@ function ensureBookShape(book) {
 }
 
 function sanitizeBookForResponse(book) {
-  if (!book || typeof book !== 'object') {
-    return book;
-  }
-  const { importInfo, ...sanitizedBook } = book;
-  return sanitizedBook;
+  return publicBook(book);
 }
 
 function createBookCopyFromTemplate(template) {
@@ -1191,6 +1192,8 @@ function createBookCopyFromTemplate(template) {
     id: crypto.randomUUID(),
     status: 'available',
     borrowedBy: null,
+    borrowedByClassId: null,
+    borrowedAt: null,
     dueDate: null,
   };
 }
@@ -1336,7 +1339,7 @@ function getBorrowCountsMap(historyEntries) {
   const counts = new Map();
   const entries = Array.isArray(historyEntries) ? historyEntries : [];
   for (const entry of entries) {
-    if (!entry || entry.type !== 'check_out') {
+    if (!entry || !['check_out', 'check_out_class'].includes(entry.type)) {
       continue;
     }
     const rawId = entry.bookId;
@@ -2100,7 +2103,8 @@ function findBarcodeGroupById(db, groupId) {
   return grouping.groups.find((group) => group.id === groupId) || null;
 }
 
-function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false, studentId = null } = {}) {
+function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false,
+  studentId = null, classId = null } = {}) {
   if (!group) {
     return null;
   }
@@ -2109,13 +2113,14 @@ function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed =
     return books.find((book) => book.status !== 'borrowed') || null;
   }
   if (mustBeBorrowed) {
+    if (classId) {
+      return books.find((book) => book.status === 'borrowed'
+        && book.borrowedByClassId === classId && !book.borrowedBy) || null;
+    }
     if (studentId) {
-      const studentLoan = books.find(
-        (book) => book.status === 'borrowed' && book.borrowedBy === studentId
-      );
-      if (studentLoan) {
-        return studentLoan;
-      }
+      // Never fall back to a different person's borrowed book.
+      return books.find((book) => book.status === 'borrowed'
+        && book.borrowedBy === studentId && !book.borrowedByClassId) || null;
     }
     return books.find((book) => book.status === 'borrowed') || null;
   }
@@ -2153,6 +2158,7 @@ function resolveBookSelection(db, identifier, options = {}) {
     requireAvailable = false,
     mustBeBorrowed = false,
     studentId = null,
+    classId = null,
   } = options;
 
   const normalizedIdentifier = typeof identifier === 'string' ? identifier.trim() : '';
@@ -2180,7 +2186,7 @@ function resolveBookSelection(db, identifier, options = {}) {
     if (!group) {
       continue;
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId });
     if (!book) {
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
@@ -2231,7 +2237,7 @@ function resolveBookSelection(db, identifier, options = {}) {
         };
       }
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId });
     if (!book) {
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
@@ -3749,7 +3755,9 @@ function buildStudentStats(db, studentId) {
 
 function buildSchoolStats(db) {
   const history = Array.isArray(db.history) ? db.history : [];
-  const checkouts = history.filter((entry) => entry && entry.type === 'check_out');
+  // Both student and class checkouts are physical school library loans.
+  const checkouts = history.filter((entry) =>
+    entry && (entry.type === 'check_out' || entry.type === 'check_out_class'));
   const totalBorrowed = checkouts.length;
 
   const borrowCountByBookId = new Map();
@@ -4259,6 +4267,46 @@ async function handleApi(req, res, requestUrl) {
       const unmappedTagStats = Array.from(stats.values())
         .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'nl', { sensitivity: 'base' }));
       return sendJson(res, 200, { unmappedTagStats });
+    }
+
+    // PR5: one staff-only directory for choosing a physical copy and its
+    // borrower. Identity and loan details are filtered SERVER-SIDE using
+    // live teacher/class membership, including class-owned loans.
+    if (req.method === 'GET' && requestUrl.pathname === '/api/staff/loans') {
+      if (!ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen medewerkers kunnen uitleningen beheren.' });
+      }
+      const db = getDb();
+      const allowedIds = user.role === 'admin'
+        ? (db.classes || []).map((klass) => klass.id) : ownClassIds(db, user);
+      const allowedSet = new Set(allowedIds);
+      const classes = (db.classes || []).filter((klass) => allowedSet.has(klass.id))
+        .map((klass) => ({ id: klass.id, name: klass.name }));
+      const students = (db.students || []).filter((student) =>
+        user.role === 'admin' || studentClassIds(db, student).some((id) => allowedSet.has(id)))
+        .map((student) => ({ id: student.id, name: student.name,
+          classIds: studentClassIds(db, student).filter((id) => allowedSet.has(id)),
+          active: student.active !== false && student.status !== 'inactive' }));
+      const allowedStudents = new Map(students.map((student) => [student.id, student]));
+      const books = db.books.map((book) => ({
+        id: book.id, title: book.title, author: book.author, barcode: book.barcode,
+        status: book.status, fixedLocation: book.fixedLocation || null,
+      }));
+      const loans = db.books.filter((book) => book.status === 'borrowed')
+        .map((book) => {
+          const borrower = book.borrowedByClassId
+            ? classes.find((klass) => klass.id === book.borrowedByClassId)
+            : allowedStudents.get(book.borrowedBy);
+          if (!borrower) return null;
+          return {
+            bookId: book.id, title: book.title, author: book.author, barcode: book.barcode,
+            borrowerType: book.borrowedByClassId ? 'class' : 'student',
+            borrowerId: borrower.id, borrowerName: borrower.name,
+            dueDate: book.dueDate || null, borrowedAt: book.borrowedAt || null,
+            fixedLocation: book.fixedLocation || null,
+          };
+        }).filter(Boolean);
+      return sendJson(res, 200, { classes, students, books, loans });
     }
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
@@ -6304,121 +6352,152 @@ async function handleApi(req, res, requestUrl) {
       });
     }
 
+    // PR5: explicit student or class borrower. Existing student self-checkout
+    // remains supported. Class loans are staff-only and never create fake
+    // student borrowedBooks or erase existing loan history.
     const checkoutMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-out$/);
     if (checkoutMatch && req.method === 'POST') {
-      if (!user) {
-        return sendJson(res, 401, { message: 'Log eerst in om boeken te lenen' });
-      }
-      const db = getDb();
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in om boeken te lenen' });
       const body = await parseBody(req);
+      const db = loadDb(); // After body upload: do not commit stale inventory.
+      const classId = typeof body.classId === 'string' ? body.classId.trim() : '';
+      if (body.classId !== undefined && (!classId || body.studentId)) {
+        return sendJson(res, 400, { message: 'Kies precies één uitleentype: leerling of klas.' });
+      }
       let student = null;
-      if (user.role === 'student') {
+      let klass = null;
+      if (classId) {
+        if (!ensureRole(user, ['teacher', 'admin'])) {
+          return sendJson(res, 403, { message: 'Alleen medewerkers lenen boeken uit aan klassen.' });
+        }
+        klass = db.classes.find((item) => item.id === classId);
+        if (!klass) return sendJson(res, 404, { message: 'Klas niet gevonden.' });
+        if (!mayManageClass(db, user, classId)) {
+          return sendJson(res, 403, { message: 'Je mag alleen boeken voor jouw eigen klassen lenen.' });
+        }
+      } else if (user.role === 'student') {
+        if (body.studentId && body.studentId !== user.id) {
+          return sendJson(res, 403, { message: 'Je kunt alleen voor jezelf lenen.' });
+        }
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
-        if (!body.studentId) {
-          return sendJson(res, 400, { message: 'Selecteer eerst een leerling' });
-        }
         student = findStudentById(db, body.studentId);
+        if (student && !mayManageStudent(db, user, student)) {
+          return sendJson(res, 403, { message: 'Je kunt alleen boeken aan leerlingen uit jouw klassen lenen.' });
+        }
       }
-      if (!student) {
-        return sendJson(res, 400, { message: 'Leerling niet gevonden' });
+      if (!klass && !student) return sendJson(res, 400, { message: 'Selecteer een bestaande leerling of klas.' });
+      if (student && (student.active === false || student.status === 'inactive')) {
+        return sendJson(res, 409, { message: 'Deze leerling is niet meer actief.' });
       }
+      const dueDate = normalizeDueDate(body.dueDate);
+      if (!dueDate.ok) return sendJson(res, 400, { message: 'Ongeldige inleverdatum.' });
       const selection = resolveBookSelection(db, checkoutMatch[1], {
-        body,
-        requireAvailable: true,
-        studentId: student.id,
+        body, requireAvailable: true, studentId: student?.id || null,
       });
-      if (selection.error) {
-        return sendJson(res, selection.statusCode || 400, { message: selection.error });
-      }
+      if (selection.error) return sendJson(res, selection.statusCode || 400, { message: selection.error });
       const { book, group } = selection;
-      if (student.borrowedBooks.some((item) => item.bookId === book.id)) {
-        return sendJson(res, 400, {
-          message: 'Dit boek staat al op jouw uitleenlijst. Lever het eerst in.',
-        });
+      if (book.status === 'borrowed' || book.borrowedBy || book.borrowedByClassId) {
+        return sendJson(res, 409, { message: 'Dit exemplaar is al uitgeleend.' });
       }
-      if (studentHasLoanInGroup(student, group)) {
-        return sendJson(res, 400, {
-          message: 'Je hebt al een exemplaar van deze titel geleend.',
-        });
+      if (student) {
+        if (!Array.isArray(student.borrowedBooks)) student.borrowedBooks = [];
+        if (student.borrowedBooks.some((entry) => entry.bookId === book.id) || studentHasLoanInGroup(student, group)) {
+          return sendJson(res, 400, { message: 'Deze leerling heeft al een exemplaar van deze titel.' });
+        }
       }
-
+      const now = new Date().toISOString();
       book.status = 'borrowed';
-      book.borrowedBy = student.id;
-      book.dueDate = typeof body.dueDate === 'string' && body.dueDate.trim()
-        ? body.dueDate
-        : null;
-      student.borrowedBooks.push({ bookId: book.id, borrowedAt: new Date().toISOString() });
-
-      appendHistory(db, {
-        type: 'check_out',
-        bookId: book.id,
-        studentId: student.id,
+      book.borrowedBy = student?.id || null;
+      book.borrowedByClassId = klass?.id || null;
+      book.borrowedAt = now;
+      book.dueDate = dueDate.value;
+      if (student) student.borrowedBooks.push({ bookId: book.id, borrowedAt: now, dueDate: dueDate.value });
+      appendHistory(db, student ? {
+        type: 'check_out', bookId: book.id, studentId: student.id, performedBy: user.id,
         message: `${student.name} heeft ${book.title} geleend`,
+      } : {
+        type: 'check_out_class', bookId: book.id, classId: klass.id, performedBy: user.id,
+        message: `Voor klas ${klass.name}: ${book.title} uitgeleend`,
       });
       saveDb(db);
-      const payload = { book: sanitizeBookForResponse(book), student };
-      if (group) {
-        payload.group = {
-          id: group.id,
-          title: group.title,
-          author: group.author,
-          metadataIsbn: group.metadataIsbn,
-          barcode: group.barcode,
-          totalCopies: group.totalCopies,
-          availableCopies: group.availableCopies,
-          borrowed: group.borrowed,
-        };
-      }
-      return sendJson(res, 200, payload);
+      return sendJson(res, 200, {
+        // Only the authenticated staff actor who performed this operation
+        // may receive a borrower ID. Anonymous/student catalogue GET routes
+        // and student self-checkout never expose borrower identity.
+        book: ensureRole(user, ['teacher', 'admin'])
+          ? { ...sanitizeBookForResponse(book), borrowedBy: student?.id || null,
+            borrowedByClassId: klass?.id || null }
+          : sanitizeBookForResponse(book),
+        borrowerType: klass ? 'class' : 'student',
+        ...(ensureRole(user, ['teacher', 'admin']) ? { borrowerId: klass?.id || student?.id } : {}),
+      });
     }
 
     const checkinMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-in$/);
     if (checkinMatch && req.method === 'POST') {
-      if (!user) {
-        return sendJson(res, 401, { message: 'Log eerst in om boeken terug te brengen' });
-      }
-      const db = getDb();
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in om boeken terug te brengen' });
       const body = await parseBody(req);
+      const db = loadDb();
+      const classId = typeof body.classId === 'string' ? body.classId.trim() : '';
+      if (body.classId !== undefined && (!classId || body.studentId)) {
+        return sendJson(res, 400, { message: 'Kies precies één uitleentype: leerling of klas.' });
+      }
       let student = null;
-      if (user.role === 'student') {
+      let klass = null;
+      if (classId) {
+        if (!ensureRole(user, ['teacher', 'admin'])) {
+          return sendJson(res, 403, { message: 'Alleen medewerkers kunnen klasuitleningen innemen.' });
+        }
+        klass = db.classes.find((entry) => entry.id === classId);
+        if (!klass) return sendJson(res, 404, { message: 'Klas niet gevonden.' });
+        if (!mayManageClass(db, user, classId)) {
+          return sendJson(res, 403, { message: 'Je kunt alleen uitleningen voor jouw klassen innemen.' });
+        }
+      } else if (user.role === 'student') {
+        if (body.studentId && body.studentId !== user.id) {
+          return sendJson(res, 403, { message: 'Je kunt alleen jouw eigen boeken inleveren.' });
+        }
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
-        if (!body.studentId) {
-          return sendJson(res, 400, { message: 'Selecteer eerst een leerling' });
-        }
         student = findStudentById(db, body.studentId);
+        if (student && !mayManageStudent(db, user, student)) {
+          return sendJson(res, 403, { message: 'Je kunt alleen uitleningen van jouw leerlingen innemen.' });
+        }
       }
-      if (!student) {
-        return sendJson(res, 400, { message: 'Leerling niet gevonden' });
-      }
+      if (!klass && !student) return sendJson(res, 400, { message: 'Selecteer een bestaande leerling of klas.' });
       const selection = resolveBookSelection(db, checkinMatch[1], {
-        body,
-        mustBeBorrowed: true,
-        studentId: student.id,
+        body, mustBeBorrowed: true, studentId: student?.id || null,
+        classId: klass?.id || null,
       });
-      if (selection.error) {
-        return sendJson(res, selection.statusCode || 400, { message: selection.error });
-      }
+      if (selection.error) return sendJson(res, selection.statusCode || 400, { message: selection.error });
       const { book } = selection;
-      const hadBook = student.borrowedBooks.some((item) => item.bookId === book.id);
-      if (!hadBook) {
-        return sendJson(res, 400, { message: 'Dit boek stond niet op jouw uitleenlijst.' });
+      if (klass) {
+        if (book.borrowedByClassId !== klass.id || book.borrowedBy) {
+          return sendJson(res, 409, { message: 'Dit boek is niet aan deze klas uitgeleend.' });
+        }
+      } else {
+        if (book.borrowedBy !== student.id || book.borrowedByClassId ||
+          !Array.isArray(student.borrowedBooks) ||
+          !student.borrowedBooks.some((entry) => entry.bookId === book.id)) {
+          return sendJson(res, 409, { message: 'Dit boek staat niet op de uitleenlijst van deze leerling.' });
+        }
       }
-
       book.status = 'available';
       book.borrowedBy = null;
+      book.borrowedByClassId = null;
+      book.borrowedAt = null;
       book.dueDate = null;
-      student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== book.id);
-
-      appendHistory(db, {
-        type: 'check_in',
-        bookId: book.id,
-        studentId: student.id,
+      if (student) student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== book.id);
+      appendHistory(db, student ? {
+        type: 'check_in', bookId: book.id, studentId: student.id, performedBy: user.id,
         message: `${student.name} heeft ${book.title} teruggebracht`,
+      } : {
+        type: 'check_in_class', bookId: book.id, classId: klass.id, performedBy: user.id,
+        message: `Klas ${klass.name} heeft ${book.title} teruggebracht`,
       });
       saveDb(db);
-      return sendJson(res, 200, { book: sanitizeBookForResponse(book), student });
+      return sendJson(res, 200, { book: sanitizeBookForResponse(book) });
     }
 
     const barcodeMatch = requestUrl.pathname.match(/^\/api\/books\/barcode\/([\w-]+)$/);
@@ -6475,6 +6554,9 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
+      if (user.role === 'teacher' && !mayManageStudent(db, user, student)) {
+        return sendJson(res, 403, { message: 'Je kunt alleen uitleengegevens van jouw leerlingen bekijken.' });
+      }
       const loans = getStudentLoanHistory(db, studentId);
       return sendJson(res, 200, loans);
     }
@@ -6490,6 +6572,10 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Alleen medewerkers kunnen leerlingstatistieken bekijken' });
       }
       const db = getDb();
+      const student = findStudentById(db, studentId);
+      if (user.role === 'teacher' && !mayManageStudent(db, user, student)) {
+        return sendJson(res, 403, { message: 'Je kunt alleen statistieken van jouw leerlingen bekijken.' });
+      }
       const stats = buildStudentStats(db, studentId);
       if (!stats) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
@@ -7463,21 +7549,12 @@ async function handleApi(req, res, requestUrl) {
       let historyEntries = Array.isArray(db.history) ? db.history : [];
 
       if (user.role === 'teacher') {
-        const teacherClassIds = new Set(
-          (Array.isArray(user.classIds) ? user.classIds : []).filter(Boolean)
-        );
-
-        const classesForTeacher = (Array.isArray(db.classes) ? db.classes : []).filter((klass) => {
-          if (!klass || typeof klass.id !== 'string') {
-            return false;
-          }
-          const teacherIds = Array.isArray(klass.teacherIds) ? klass.teacherIds : [];
-          if (teacherIds.includes(user.id)) {
-            teacherClassIds.add(klass.id);
-            return true;
-          }
-          return teacherClassIds.has(klass.id);
-        });
+        // Current class ownership is authoritative. A stale login account's
+        // classIds can outlive a teacher's removal from a class, so it must
+        // NEVER grant access to its student or class loan history.
+        const teacherClassIds = new Set(getTeacherClassIds(db, user.id));
+        const classesForTeacher = (Array.isArray(db.classes) ? db.classes : [])
+          .filter((klass) => klass && teacherClassIds.has(klass.id));
 
         const studentIds = new Set();
         for (const klass of classesForTeacher) {
@@ -7500,7 +7577,10 @@ async function handleApi(req, res, requestUrl) {
         }
 
         historyEntries = historyEntries.filter(
-          (entry) => entry && typeof entry.studentId === 'string' && studentIds.has(entry.studentId)
+          (entry) => entry && (
+            (typeof entry.studentId === 'string' && studentIds.has(entry.studentId))
+            || (typeof entry.classId === 'string' && teacherClassIds.has(entry.classId))
+          )
         );
       }
 
@@ -7560,6 +7640,11 @@ async function handleApi(req, res, requestUrl) {
       const classHistory = (Array.isArray(db.history) ? db.history : []).filter(
         (entry) => entry && entry.type === 'check_out' && studentIdsInClass.has(entry.studentId)
       );
+      // A class checkout has no student borrower. Keep it separate from
+      // reader rankings, and include it in the class-level aggregate.
+      const classCheckoutHistory = (Array.isArray(db.history) ? db.history : []).filter(
+        (entry) => entry && entry.type === 'check_out_class' && entry.classId === klass.id
+      );
       const borrowCountPerStudent = new Map();
       for (const entry of classHistory) {
         const current = borrowCountPerStudent.get(entry.studentId) || 0;
@@ -7567,7 +7652,8 @@ async function handleApi(req, res, requestUrl) {
       }
 
       const activeLoanCount = db.books.filter(
-        (book) => book.status === 'borrowed' && studentIdsInClass.has(book.borrowedBy)
+        (book) => book.status === 'borrowed'
+          && (studentIdsInClass.has(book.borrowedBy) || book.borrowedByClassId === klass.id)
       ).length;
 
       for (const student of db.students) {
@@ -7587,6 +7673,7 @@ async function handleApi(req, res, requestUrl) {
       })();
       const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+      const combinedClassHistory = [...classHistory, ...classCheckoutHistory];
       const classHistoryThisSchoolYear = classHistory.filter((entry) => {
         const date = new Date(entry.timestamp);
         return !Number.isNaN(date.getTime()) && date >= schoolYearStart;
@@ -7597,6 +7684,16 @@ async function handleApi(req, res, requestUrl) {
         return !Number.isNaN(date.getTime()) && date >= monthAgo;
       });
 
+      // Class-level totals include both student and direct class checkouts.
+      // Reader rankings and non-reader stats continue using student loans only.
+      const combinedThisSchoolYear = combinedClassHistory.filter((entry) => {
+        const date = new Date(entry.timestamp);
+        return !Number.isNaN(date.getTime()) && date >= schoolYearStart;
+      });
+      const combinedLastMonth = combinedClassHistory.filter((entry) => {
+        const date = new Date(entry.timestamp);
+        return !Number.isNaN(date.getTime()) && date >= monthAgo;
+      });
       const borrowCountThisSchoolYear = new Map();
       for (const entry of classHistoryThisSchoolYear) {
         borrowCountThisSchoolYear.set(
@@ -7654,7 +7751,7 @@ async function handleApi(req, res, requestUrl) {
 
       const genreCounts = new Map();
       const titleCounts = new Map();
-      for (const entry of classHistoryThisSchoolYear) {
+      for (const entry of combinedThisSchoolYear) {
         const book = findBookById(db, entry.bookId);
         if (book) {
           if (Array.isArray(book.tags)) {
@@ -7680,20 +7777,23 @@ async function handleApi(req, res, requestUrl) {
         .slice(0, 5);
 
       const stats = {
-        totalBorrowedBooks: classHistory.length,
-        totalBorrowed: classHistory.length,
-        borrowCount: classHistory.length,
-        borrowedCount: classHistory.length,
+        totalBorrowedBooks: combinedClassHistory.length,
+        totalBorrowed: combinedClassHistory.length,
+        borrowCount: combinedClassHistory.length,
+        borrowedCount: combinedClassHistory.length,
         activeLoans: activeLoanCount,
         currentLoans: activeLoanCount,
         activeLoanCount: activeLoanCount,
+        classLoanCount: db.books.filter((book) =>
+          book.status === 'borrowed' && book.borrowedByClassId === klass.id).length,
+        classBorrowHistoryCount: classCheckoutHistory.length,
         activeStudents: activeReaders,
         activeReaders,
         readerCount: activeReaders,
         topReaders,
-        borrowedThisSchoolYear: classHistoryThisSchoolYear.length,
-        totalBorrowedThisSchoolYear: classHistoryThisSchoolYear.length,
-        borrowedLastMonth: classHistoryLastMonth.length,
+        borrowedThisSchoolYear: combinedThisSchoolYear.length,
+        totalBorrowedThisSchoolYear: combinedThisSchoolYear.length,
+        borrowedLastMonth: combinedLastMonth.length,
         nonReaders,
         heavyReaders,
         topGenres,
@@ -7757,6 +7857,17 @@ async function handleApi(req, res, requestUrl) {
       const index = db.classes.findIndex((cls) => cls.id === classMatch[1]);
       if (index === -1) {
         return sendJson(res, 404, { message: 'Klas niet gevonden' });
+      }
+      // A live class checkout is owned by the class ID. Deleting that class
+      // before the physical copy is returned would orphan the checkout and
+      // make it impossible to resolve in the staff loan overview.
+      const activeClassLoans = db.books.filter((book) =>
+        book.borrowedByClassId === classMatch[1]);
+      if (activeClassLoans.length) {
+        return sendJson(res, 409, {
+          message: 'Deze klas heeft nog uitgeleende boeken. Neem deze eerst in.',
+          error: 'class_has_active_loans', borrowedCount: activeClassLoans.length,
+        });
       }
       const [removedClass] = db.classes.splice(index, 1);
       for (const student of db.students) {

@@ -856,6 +856,44 @@
         </div>
         <ul class="history-list" id="history-list"></ul>
       </section>
+      <section class="panel panel--staff hidden" id="staff-loan-panel"
+        data-visible-for="teacher,admin" aria-labelledby="staff-loans-title">
+        <div class="panel__header">
+          <h2 id="staff-loans-title">Boeken uitlenen en innemen</h2>
+          <p class="hint">Kies een specifiek exemplaar en leen het aan een leerling of voor een klas uit.
+            Bestaande uitleningen en boeken op een vaste locatie blijven beschermd.</p>
+        </div>
+        <form id="staff-loan-form" class="form-grid form-grid--compact">
+          <div class="form-field">
+            <label for="staff-loan-type">Uitleentype</label>
+            <select id="staff-loan-type" required>
+              <option value="student">Aan leerling</option>
+              <option value="class">Voor klas</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="staff-loan-borrower">Leerling of klas</label>
+            <select id="staff-loan-borrower" required></select>
+          </div>
+          <div class="form-field">
+            <label for="staff-loan-book">Beschikbaar exemplaar</label>
+            <select id="staff-loan-book" required></select>
+          </div>
+          <div class="form-field">
+            <label for="staff-loan-due">Inleverdatum (optioneel)</label>
+            <input type="date" id="staff-loan-due" />
+          </div>
+          <div class="form-field">
+            <button type="submit" class="btn" id="staff-loan-submit">Boek uitlenen</button>
+          </div>
+        </form>
+        <p id="staff-loan-message" class="hint" role="status" aria-live="polite"></p>
+        <div class="form-field">
+          <label for="staff-loan-filter">Huidige uitleningen</label>
+          <select id="staff-loan-filter"><option value="">Alle toegestane klassen</option></select>
+        </div>
+        <div id="staff-loan-current" class="class-list" aria-live="polite"></div>
+      </section>
     </main>
 
     <footer class="footer">
@@ -1102,5 +1140,6 @@
 
     <script type="module" src="admin-book-import-review.js"></script>
     <script type="module" src="app.js"></script>
+    <script type="module" src="staff-loans.js"></script>
   </body>
 </html>

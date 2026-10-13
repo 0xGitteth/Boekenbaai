@@ -298,6 +298,7 @@ function clearAuth({ silent = false } = {}) {
   authToken = null;
   authUser = null;
   localStorage.removeItem('boekenbaai_token');
+  window.dispatchEvent(new Event('boekenbaai:staff-auth-cleared'));
   closeBookDetail();
   passwordChangeController?.handleAuthChange(null);
   if (!silent) {
@@ -2923,7 +2924,11 @@ function initStudentPage() {
     if (!group || !Array.isArray(group.books) || !authUser || authUser.role !== 'student') {
       return null;
     }
-    return group.books.find((book) => book.borrowedBy === authUser.id) || null;
+    // Borrower IDs are deliberately redacted from public book responses.
+    // Only the student's OWN /api/me borrowedBooks can identify their copy.
+    const mine = new Set((Array.isArray(authUser.borrowedBooks) ? authUser.borrowedBooks : [])
+      .map((entry) => typeof entry === 'string' ? entry : entry?.bookId));
+    return group.books.find((book) => mine.has(book.id)) || null;
   }
 
   function getGroupReferenceBook(group) {
@@ -6480,6 +6485,7 @@ function initStaffPage() {
     }
     await loadClasses();
     await loadHistory();
+    window.dispatchEvent(new Event('boekenbaai:staff-refresh'));
     if (authUser?.role === 'admin') {
       const storedJobId = localStorage.getItem(getBookImportStorageKey()) || currentBookImportJobId;
       if (storedJobId) {
@@ -6487,6 +6493,10 @@ function initStaffPage() {
       }
     }
   }
+
+  window.addEventListener('boekenbaai:loans-changed', () => {
+    refreshStaffData().catch((error) => console.error('Uitleenoverzicht bijwerken mislukt:', error));
+  });
 
   loginForm?.addEventListener('submit', async (event) => {
     event.preventDefault();

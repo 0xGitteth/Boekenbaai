@@ -1016,8 +1016,10 @@ async function run() {
     assert.strictEqual(syncCopies.filter((item) => item.status === 'available').length, 1);
     const addedAvailable = syncCopies.find((item) => item.id !== firstPhysical.id);
     assert.strictEqual(addedAvailable.borrowedBy, null);
-    assert.strictEqual(addedAvailable.borrowedAt, undefined,
-      'New physical copies must not inherit loan metadata from borrowed templates');
+    assert.strictEqual(addedAvailable.borrowedAt, null,
+      'New physical copies must have an empty normalized loan date, never inherit a prior loan');
+    assert.strictEqual(addedAvailable.borrowedByClassId, null,
+      'A new copy must not inherit a class borrower from an old physical edition');
     assert.strictEqual(addedAvailable.loanId, undefined);
     assert.strictEqual(addedAvailable.title, 'Synchronisatieboek');
     assert.ok(afterStock.history.some((item) => item.id === 'loan-sync-regression'),
