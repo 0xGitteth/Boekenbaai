@@ -165,6 +165,12 @@ async function run() {
     assert.strictEqual(stats.status, 200);
     assert.strictEqual(stats.body.activeLoans, 2);
     assert.strictEqual(stats.body.classLoanCount, 1);
+    const schoolTotals = await call('/api/stats/school', admin);
+    assert.strictEqual(schoolTotals.status, 200);
+    assert.strictEqual(schoolTotals.body.totalBorrowed, 2,
+      'School-wide totals must count class checkouts too');
+    assert.strictEqual((await call('/api/books/book-class', studentA)).body.borrowCount, 1,
+      'Class loans must count as physical use of a book without disclosing borrowers');
     assert.strictEqual(stats.body.totalBorrowedBooks, 2,
       'Class totals must include BOTH the student and the class checkout');
     assert.strictEqual(stats.body.borrowedThisSchoolYear, 2);
