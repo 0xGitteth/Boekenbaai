@@ -105,8 +105,13 @@ function normalizeLanguage(value) {
 function parseEasyReading(value) {
   const raw = comparableText(value);
   if (!raw) return { value: false, nonstandard: false };
-  const standard = new Set(['ja', 'yes', 'true', '1', 'x', 'ml', 'makkelijk lezen']);
-  return { value: true, nonstandard: !standard.has(raw) };
+  if (YES_VALUES.has(raw) || raw === 'ml' || raw === 'makkelijk lezen') {
+    return { value: true, nonstandard: false };
+  }
+  if (NO_VALUES.has(raw)) return { value: false, nonstandard: false };
+  // Unknown input is not consent to mark a book as easy reading. Show a
+  // warning and require an explicit correction if the teacher meant yes.
+  return { value: false, nonstandard: true };
 }
 
 function parseExamMaterial(value) {
