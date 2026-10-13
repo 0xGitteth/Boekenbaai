@@ -1339,7 +1339,7 @@ function getBorrowCountsMap(historyEntries) {
   const counts = new Map();
   const entries = Array.isArray(historyEntries) ? historyEntries : [];
   for (const entry of entries) {
-    if (!entry || entry.type !== 'check_out') {
+    if (!entry || !['check_out', 'check_out_class'].includes(entry.type)) {
       continue;
     }
     const rawId = entry.bookId;
@@ -3755,7 +3755,9 @@ function buildStudentStats(db, studentId) {
 
 function buildSchoolStats(db) {
   const history = Array.isArray(db.history) ? db.history : [];
-  const checkouts = history.filter((entry) => entry && entry.type === 'check_out');
+  // Both student and class checkouts are physical school library loans.
+  const checkouts = history.filter((entry) =>
+    entry && (entry.type === 'check_out' || entry.type === 'check_out_class'));
   const totalBorrowed = checkouts.length;
 
   const borrowCountByBookId = new Map();
