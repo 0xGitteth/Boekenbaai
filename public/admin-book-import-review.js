@@ -21,6 +21,9 @@
     loan_borrower_inactive: 'Deze leerling is niet actief of bestaat niet meer. Controleer de koppeling.',
     duplicate_student_loan_in_workbook: 'Dezelfde leerling heeft volgens Excel meerdere exemplaren van hetzelfde ISBN. Controleer de dubbele regels.',
     student_already_borrowed_edition: 'Deze leerling heeft al een exemplaar van deze editie in Boekenbaai. Een tweede import zou de uitleenlijst vervuilen.',
+    loan_requires_physical_copy_match: 'Er zijn meerdere exemplaren en Excel koppelt de uitlening niet aan één specifiek fysiek boek. Vul een unieke fysieke barcode in of controleer het boek handmatig.',
+    loan_copy_borrowed_by_other: 'Dit fysieke exemplaar staat al uitgeleend aan iemand anders of aan een andere klas. Het wordt nooit automatisch omgezet.',
+    loan_book_student_records_disagree: 'De bestaande uitlening en de uitleenlijst van de leerling komen niet overeen. Laat dit eerst handmatig corrigeren.',
     location_context_requires_followup: 'Er staat klas- of locatie-informatie in Excel die Boekenbaai nog niet veilig kan overnemen. Corrigeer die gegevens of sla deze rij over.',
     skipped: 'Wordt niet geïmporteerd.',
     missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
@@ -486,9 +489,11 @@
           (decisions.summary.unchangedEditions || 0) + ' edities ongewijzigd',
           (decisions.summary.blockedEditions || 0) + ' edities met controle nodig',
           (decisions.summary.omittedExistingCopies || 0) + ' bestaande exemplaren ontbreken in dit Excelbestand, blijven behouden',
+          (decisions.summary.restoreLoans || 0) + ' gecontroleerde bestaande uitleningen overnemen',
+          (decisions.summary.alreadyRecordedLoans || 0) + ' uitleningen al correct geregistreerd',
         ].join(' · ')));
         heading.append(make('p', 'hint',
-          'Excel-aantallen gelden als gewenste totaalvoorraad per ISBN. Er worden geen bestaande boeken, uitleningen of leenregistraties verwijderd of overschreven.'));
+          'Excel-aantallen gelden als gewenste totaalvoorraad per ISBN. Er worden geen boeken verwijderd en geen bestaande uitleningen overschreven. Alleen expliciet getoonde, gecontroleerde ontbrekende uitleningen worden toegevoegd.'));
         if (decisions.summary.acknowledgedEditions) {
           heading.append(make('p', 'hint', decisions.summary.acknowledgedEditions
             + ' bestaande edities blijven na jouw expliciete keuze ongewijzigd.'));
@@ -550,7 +555,10 @@
       applyButton.addEventListener('click', () => {
         const count = inventorySync ? decisions.summary.addCopies || 0 : summary.physicalCopies || 0;
         const message = inventorySync
-          ? 'Je voegt ' + count + ' ontbrekende exemplaren toe. Bestaande boeken worden niet gewijzigd of verwijderd. Bevestigen?'
+          ? 'Je voegt ' + count + ' ontbrekende exemplaren toe en registreert '
+            + (decisions.summary.restoreLoans || 0) + ' bestaande, gecontroleerde uitleningen. '
+            + 'De leenstatus van de geselecteerde fysieke boeken kan veranderen. '
+            + 'Bestaande leningen worden niet overschreven en boeken worden niet verwijderd. Bevestigen?'
           : 'Je staat op het punt om ' + count + ' exemplaren toe te voegen, waarvan '
             + importedLoanCount + ' als al uitgeleend worden geregistreerd. '
             + 'Controleer de leerling/klas en het juiste exemplaar zorgvuldig. Bevestigen?';
@@ -621,10 +629,13 @@
                 : '';
           card.append(make('p', 'bb-review__detail', (syncActions[dec.action] || dec.action) + count));
         }
-        if (dec.loanBorrower && dec.canCreate) {
+        if (dec.loanBorrower && (dec.canCreate || (inventorySync && dec.loanState))) {
+          const already = dec.loanState === 'already_recorded';
           card.append(make('p', 'bb-review__detail',
-            'Wordt als uitgeleend opgeslagen · '
-            + (dec.loanBorrower.type === 'student' ? 'Leerling: ' : 'Klas: ')
+            (already ? 'Uitlening staat al correct geregistreerd'
+              : dec.loanState === 'existing' ? 'Dit bestaande fysieke exemplaar wordt als uitgeleend geregistreerd'
+                : 'Dit nieuwe fysieke exemplaar wordt als uitgeleend geregistreerd')
+            + ' · ' + (dec.loanBorrower.type === 'student' ? 'Leerling: ' : 'Klas: ')
             + dec.loanBorrower.name
             + ' · Oorspronkelijke uitleendatum onbekend'));
         }
