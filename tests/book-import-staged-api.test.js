@@ -944,6 +944,111 @@ async function run() {
     assert.deepStrictEqual((tagsOnBooksEndpoint.body.books || tagsOnBooksEndpoint.body)
       .find((book) => book.metadataIsbn === tagDerivedIsbn).themes, ['Fantasy']);
 
+    // PR4 inventory sync uses desired TOTAL quantities, counts checked-out
+    // copies, and never overwrites/removes any existing physical book.
+    const syncIsbn = '9781234567101';
+    const initialInventory = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Synchronisatieboek', Auteur: 'A Auteur',
+        'ISBN-nummer': syncIsbn, Aantal: 1 }]),
+    });
+    assert.strictEqual(initialInventory.status, 201, JSON.stringify(initialInventory.body).slice(0, 350));
+    assert.strictEqual(initialInventory.body.mode, 'inventory_sync');
+    assert.strictEqual(initialInventory.body.decisions.summary.addCopies, 1);
+    assert.strictEqual(initialInventory.body.decisions.summary.readyToApply, true);
+    const firstSync = await call('/api/admin/book-import-stages/' + initialInventory.body.id
+      + '/apply', token1b, { revision: 1, confirm: true });
+    assert.strictEqual(firstSync.status, 200, JSON.stringify(firstSync.body).slice(0, 350));
+    assert.strictEqual(firstSync.body.result.created, 1);
+    assert.strictEqual(firstSync.body.result.removed, 0);
+    assert.strictEqual(firstSync.body.result.report.mode, 'inventory_sync');
+    const firstInventoryDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const firstPhysical = firstInventoryDb.books.find((item) => item.metadataIsbn === syncIsbn);
+    assert.ok(firstPhysical?.id);
+    // Simulate an active school loan with a durable history event.
+    firstPhysical.status = 'borrowed';
+    firstPhysical.borrowedBy = 'student-match';
+    firstPhysical.dueDate = '2026-11-30';
+    firstInventoryDb.students[0].borrowedBooks = [firstPhysical.id];
+    firstInventoryDb.history.unshift({ id: 'loan-sync-regression', type: 'check_out',
+      bookId: firstPhysical.id, studentId: 'student-match', timestamp: '2026-10-13T16:00:00Z' });
+    fs.writeFileSync(dbPath, JSON.stringify(firstInventoryDb));
+
+    const sameCount = await call('/api/admin/book-import-stages', token1b, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Synchronisatieboek', Auteur: 'A Auteur',
+        'ISBN-nummer': syncIsbn, Aantal: 1 }]),
+    });
+    assert.strictEqual(sameCount.status, 201);
+    assert.strictEqual(sameCount.body.decisions.rows[0].action, 'unchanged');
+    assert.strictEqual(sameCount.body.decisions.rows[0].borrowedCopies, 1);
+    assert.strictEqual(sameCount.body.decisions.summary.addCopies, 0);
+    assert.strictEqual(sameCount.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + sameCount.body.id
+      + '/cancel', token1, { revision: 1 })).status, 200);
+
+    const addStock = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Synchronisatieboek', Auteur: 'A Auteur',
+        'ISBN-nummer': syncIsbn, Aantal: 2 }]),
+    });
+    assert.strictEqual(addStock.status, 201);
+    assert.strictEqual(addStock.body.decisions.summary.addCopies, 1);
+    assert.strictEqual(addStock.body.decisions.rows[0].existingCopies, 1);
+    assert.strictEqual(addStock.body.decisions.rows[0].borrowedCopies, 1);
+    const secondSync = await call('/api/admin/book-import-stages/' + addStock.body.id
+      + '/apply', token1b, { revision: 1, confirm: true });
+    assert.strictEqual(secondSync.status, 200, JSON.stringify(secondSync.body).slice(0, 350));
+    assert.strictEqual(secondSync.body.result.created, 1);
+    const afterStock = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const syncCopies = afterStock.books.filter((item) => item.metadataIsbn === syncIsbn);
+    assert.strictEqual(syncCopies.length, 2, 'Reupload must reconcile total stock without duplicates');
+    const retainedLoan = syncCopies.find((item) => item.id === firstPhysical.id);
+    assert.strictEqual(retainedLoan.status, 'borrowed');
+    assert.strictEqual(retainedLoan.borrowedBy, 'student-match');
+    assert.strictEqual(retainedLoan.dueDate, '2026-11-30');
+    assert.strictEqual(syncCopies.filter((item) => item.status === 'available').length, 1);
+    assert.ok(afterStock.history.some((item) => item.id === 'loan-sync-regression'),
+      'Inventory reconciliation must retain the existing loan event');
+    assert.ok(afterStock.students[0].borrowedBooks.includes(firstPhysical.id));
+
+    const lessStock = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Synchronisatieboek', Auteur: 'A Auteur',
+        'ISBN-nummer': syncIsbn, Aantal: 1 }]),
+    });
+    assert.strictEqual(lessStock.status, 201);
+    assert.strictEqual(lessStock.body.decisions.rows[0].reason, 'reduction_requires_manual_review');
+    assert.strictEqual(lessStock.body.decisions.summary.readyToApply, false);
+    const refusedShrink = await call('/api/admin/book-import-stages/' + lessStock.body.id
+      + '/apply', token1b, { revision: 1, confirm: true });
+    assert.strictEqual(refusedShrink.status, 409);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .filter((item) => item.metadataIsbn === syncIsbn).length, 2,
+    'A smaller Excel count must never silently remove a library copy');
+
+    // Concurrent book creation after preview invalidates the checked plan.
+    const raceIsbn = '9781234567118';
+    const raceSync = await call('/api/admin/book-import-stages', token1b, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Bijgewerkte voorraad', Auteur: 'A Auteur',
+        'ISBN-nummer': raceIsbn, Aantal: 2 }]),
+    });
+    assert.strictEqual(raceSync.status, 201);
+    assert.strictEqual(raceSync.body.decisions.summary.addCopies, 2);
+    const concurrentBook = await call('/api/books', token2, {
+      title: 'Bijgewerkte voorraad', author: 'A Auteur',
+      barcode: '77661122', metadataIsbn: raceIsbn,
+    });
+    assert.strictEqual(concurrentBook.status, 201);
+    const staleInventoryApply = await call('/api/admin/book-import-stages/' + raceSync.body.id
+      + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(staleInventoryApply.status, 409);
+    assert.strictEqual(staleInventoryApply.body.error, 'inventory_preview_stale');
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .filter((item) => item.metadataIsbn === raceIsbn).length, 1);
+    assert.strictEqual((await call('/api/admin/book-import-stages/active', token1)).body.stage, null);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
