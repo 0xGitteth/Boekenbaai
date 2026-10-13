@@ -4692,7 +4692,9 @@ async function handleApi(req, res, requestUrl) {
           }
           // A review is a fresh retry opportunity. Retain successful metadata.
           stage.options.releaseRetryableLookups?.();
-          const database = getDb();
+          // Authentication may have loaded an older snapshot while a large
+          // review request was uploading. Review against the latest library.
+          const database = loadDb();
           const reviewed = await analyzeReviewedImport(stage.sourceRows, body.corrections, {
             ...stage.options, existingBooks: database.books,
             students: database.students, classes: database.classes,
@@ -4754,6 +4756,13 @@ async function handleApi(req, res, requestUrl) {
             // to the reviewed ISBN source, not an unrelated "unknown".
             sourceByField.metadataIsbn = sourceByField.editionIsbn
               || createFieldSource('unknown', null);
+            // The ordinary manual theme editor accepts only curated themes.
+            // In the Excel review, administrators may explicitly approve a
+            // freeform theme. Preserve the entire reviewed list via the
+            // imported theme storage when even one value is not curated.
+            const curatedThemes = normalizeManualThemes(row.book.manualThemes);
+            const hasFreeformThemes = curatedThemes.length !== row.book.manualThemes.length;
+            const preserveAsImported = row.provenance?.themes?.source === 'metadata' || hasFreeformThemes;
             const template = ensureBookShape({
               title: row.book.title, author: row.book.author,
               authors: row.book.authors, editionIsbn: entry.editionIsbn,
@@ -4763,9 +4772,9 @@ async function handleApi(req, res, requestUrl) {
               language: row.book.language, coverUrl: row.book.coverUrl,
               easyReading: row.book.easyReading,
               suitableForExamList: row.book.suitableForExamList,
-              tags: row.book.tags, manualThemes: row.book.manualThemes,
-              importedThemes: row.provenance?.themes?.source === 'metadata'
-                ? row.book.themes : [],
+              tags: row.book.tags,
+              manualThemes: preserveAsImported ? [] : row.book.manualThemes,
+              importedThemes: preserveAsImported ? row.book.themes : [],
               themesCleared: clearedThemeRows.has(entry.index),
               // Keep resolved classroom shelf information on every created
               // copy as well as in the report; the future lending workflow
