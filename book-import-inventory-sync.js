@@ -197,8 +197,15 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         const heldBooks = (Array.isArray(student?.borrowedBooks) ? student.borrowedBooks : [])
           .map((loan) => existingBooks.find((book) =>
             book.id === (typeof loan === 'string' ? loan : loan?.bookId))).filter(Boolean);
-        if (heldBooks.some((book) => editionKeys(book).includes(isbn)
-          && book.id !== destination.book?.id)) {
+        // Check BOTH sides of legacy lending state: old databases can
+        // disagree on book.borrowedBy versus student.borrowedBooks. Neither
+        // representation may be used to grant a second copy of the edition.
+        const alreadyBorrowedPhysical = existing.some((book) =>
+          book.id !== destination.book?.id
+          && book.borrowedBy === borrower.id
+          && (book.status === 'borrowed' || Boolean(book.borrowedBy)));
+        if (alreadyBorrowedPhysical || heldBooks.some((book) =>
+          editionKeys(book).includes(isbn) && book.id !== destination.book?.id)) {
           block('student_already_borrowed_edition');
           continue;
         }
