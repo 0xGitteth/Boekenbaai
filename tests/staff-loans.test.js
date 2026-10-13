@@ -166,6 +166,26 @@ async function run() {
     assert.strictEqual(stats.body.activeLoans, 2);
     assert.strictEqual(stats.body.classLoanCount, 1);
 
+    // Revocation must take effect without a fresh login. A cached teacher
+    // user.classIds entry is NOT proof of current membership or authority.
+    const beforeRevocation = await call('/api/history?limit=20', teacherA);
+    assert.strictEqual(beforeRevocation.status, 200);
+    assert.ok(beforeRevocation.body.some((event) => event.classId === 'class-a'));
+    const revokedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    revokedDb.classes.find((klass) => klass.id === 'class-a').teacherIds = [];
+    fs.writeFileSync(dbPath, JSON.stringify(revokedDb));
+    const revokedOverview = await call('/api/staff/loans', teacherA);
+    assert.deepStrictEqual(revokedOverview.body.classes, []);
+    assert.deepStrictEqual(revokedOverview.body.students, []);
+    assert.deepStrictEqual(revokedOverview.body.loans, []);
+    assert.deepStrictEqual((await call('/api/history?limit=20', teacherA)).body, []);
+    assert.strictEqual((await call('/api/students/stu-a/loans', teacherA)).status, 403);
+    assert.strictEqual((await call('/api/books/book-class/check-in', teacherA,
+      { classId: 'class-a' })).status, 403);
+    const reinstatedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    reinstatedDb.classes.find((klass) => klass.id === 'class-a').teacherIds = ['teacher-a'];
+    fs.writeFileSync(dbPath, JSON.stringify(reinstatedDb));
+
     const returnedClass = await call('/api/books/book-class/check-in', teacherA,
       { classId: 'class-a' });
     assert.strictEqual(returnedClass.status, 200);
