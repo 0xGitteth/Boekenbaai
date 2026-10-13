@@ -53,6 +53,20 @@ assert.deepStrictEqual(printedThenUnprinted.proposedAdds.map((add) =>
 
 // Old physical books with no saved edition ISBN should not be duplicated
 // solely because the new Excel finally has a valid ISBN.
+// A preexisting ISBN-only physical book cannot be arbitrarily matched to
+// multiple unlabelled Excel rows with DIFFERENT metadata. Block instead of
+// silently choosing the first row for a new physical copy.
+const ambiguousOldAndNew = preview([
+  row(0, 1, { description: 'History copy', tags: ['history'] }),
+  row(1, 1, { description: 'Fantasy copy', tags: ['fantasy'] }),
+], [book('old-isbn-copy')]);
+assert.strictEqual(ambiguousOldAndNew.rows[0].reason, 'ambiguous_unlabelled_copy_metadata');
+assert.strictEqual(ambiguousOldAndNew.summary.readyToApply, false);
+assert.deepStrictEqual(ambiguousOldAndNew.proposedAdds, []);
+// Identical metadata can still be distributed safely between copies.
+const matchingOldAndNew = preview([row(0, 1), row(1, 1)], [book('old-isbn-copy')]);
+assert.strictEqual(matchingOldAndNew.summary.addCopies, 1);
+
 const legacyWithoutIsbn = preview([row(0, 2)], [
   book('old-copy', { metadataIsbn: null, editionIsbn: null, barcode: '44332211' }),
 ]);
