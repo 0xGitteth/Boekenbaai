@@ -337,6 +337,10 @@
         }
         input.addEventListener('input', () => updateCorrection(row.index, field, input.value));
         fieldWrap.append(input);
+        if (field === 'easyReading') {
+          fieldWrap.append(make('span', 'hint',
+            'In deze Excelkolom betekent iedere ingevulde waarde Makkelijk lezen, ook “nee”. Maak de cel leeg voor nee.'));
+        }
         grid.append(fieldWrap);
       }
       editor.append(grid);
@@ -497,6 +501,14 @@
           openEditor = openEditor === row.index ? null : row.index;
           render();
         });
+        if (row.issues?.some((issue) => issue.code === 'metadata_title_conflict') && row.book?.title) {
+          const retainTitle = button('Excel-titel behouden', 'btn btn--secondary');
+          retainTitle.addEventListener('click', () => {
+            updateCorrection(row.index, 'title', row.book.title);
+            render();
+          });
+          actions.append(retainTitle);
+        }
         const skipLabel = make('label', 'bb-review__check');
         const skip = make('input');
         skip.type = 'checkbox';
