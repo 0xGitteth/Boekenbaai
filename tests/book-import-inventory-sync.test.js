@@ -22,7 +22,7 @@ const preview = (rows, existing = [], options = {}) =>
 const unchanged = preview([row(0, 2)], [book('a'), book('b')]);
 assert.strictEqual(unchanged.ok, true);
 assert.strictEqual(unchanged.summary.addCopies, 0);
-assert.strictEqual(unchanged.summary.readyToApply, false);
+assert.strictEqual(unchanged.summary.readyToApply, true, 'A no-change sync should be explicitly confirmable and auditable');
 assert.strictEqual(unchanged.rows[0].action, 'unchanged');
 
 const repeat = preview([row(0, 1), row(1, 1)], [book('a')]);
@@ -44,12 +44,37 @@ assert.strictEqual(lessThanActual.summary.readyToApply, false);
 assert.strictEqual(lessThanActual.rows[0].reason, 'reduction_requires_manual_review');
 assert.deepStrictEqual(lessThanActual.proposedAdds, [],
   'Never delete books or loans because a row was omitted from Excel');
+const acceptedLower = preview([row(0, 1)], [book('a'), book('b')], {
+  resolutions: [{ isbn: ISBN, action: 'keep_existing' }],
+});
+assert.strictEqual(acceptedLower.rows[0].action, 'kept_existing');
+assert.strictEqual(acceptedLower.summary.acknowledgedEditions, 1);
+assert.strictEqual(acceptedLower.summary.addCopies, 0);
+assert.strictEqual(acceptedLower.summary.readyToApply, true);
+assert.deepStrictEqual(acceptedLower.proposedAdds, [],
+  'Explicitly retaining stock must never remove available or borrowed books');
+const ignoredIncrease = preview([row(0, 3)], [book('a')], {
+  resolutions: [{ isbn: ISBN, action: 'keep_existing' }],
+});
+assert.strictEqual(ignoredIncrease.summary.addCopies, 0,
+  'A consciously retained existing edition cannot get extra copies');
+assert.strictEqual(ignoredIncrease.rows[0].action, 'kept_existing');
+assert.strictEqual(preview([row(0, 1)], [], {
+  resolutions: [{ isbn: ISBN, action: 'keep_existing' }],
+}).error, 'unknown_sync_resolution');
+assert.strictEqual(preview([row(0, 1)], [book('a')], {
+  resolutions: [{ isbn: ISBN, action: 'delete_all' }],
+}).error, 'invalid_sync_resolutions');
+assert.strictEqual(preview([row(0, 1)], [book('a')], {
+  resolutions: [{ isbn: OTHER, action: 'keep_existing' }],
+}).error, 'unknown_sync_resolution');
 
 const missingEdition = preview([row(0, 1)], [
   book('a'),
   book('different-book', { metadataIsbn: OTHER, barcode: OTHER, title: 'Andere titel' }),
 ]);
 assert.strictEqual(missingEdition.summary.omittedExistingCopies, 1);
+assert.strictEqual(missingEdition.omittedEditions[0].title, 'Andere titel');
 assert.deepStrictEqual(missingEdition.proposedAdds, [], 'Omitted editions remain untouched');
 
 const conflictingExistingIsbns = preview([row(0, 2)], [
