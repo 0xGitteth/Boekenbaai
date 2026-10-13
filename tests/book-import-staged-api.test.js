@@ -111,8 +111,42 @@ async function run() {
   // Supply deterministic metadata through the server's existing test-only
   // lookup hook; no network or production changes are necessary.
   const metadataHookFile = path.join(tempDir, 'metadata-hook.js');
+  const workerHeldMarker = path.join(tempDir, 'worker-held');
+  const workerReleaseMarker = path.join(tempDir, 'worker-released');
   fs.writeFileSync(metadataHookFile, `
-    globalThis.__BOEKENBAAI_MOCK_ISBN_LOOKUP = async (isbn) => ({
+    const testFs = require('fs');
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      if (String(url).startsWith('http://127.0.0.1:' + process.env.PORT + '/api/books/import')) {
+        testFs.writeFileSync(JSON.stringify(workerHeldMarker), 'held');
+        for (let i = 0; i < 200 && !testFs.existsSync(JSON.stringify(workerReleaseMarker)); i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      }
+      return realFetch(url, options);
+    };
+    let exactRetryCount = 0;
+    let titleRetryCount = 0;
+    globalThis.__BOEKENBAAI_MOCK_TITLE_AUTHOR_LOOKUP = async (input) => {
+      if (input.title !== 'Herstel via titel') return null;
+      titleRetryCount += 1;
+      if (titleRetryCount === 1) return null;
+      return { found: true, title: 'Herstel via titel', author: 'A Auteur',
+        isbn13: '9783333333335', publisher: 'Titel gevonden' };
+    };
+
+    globalThis.__BOEKENBAAI_MOCK_ISBN_LOOKUP = async (isbn) => {
+      if (isbn === '9782222222224') {
+        exactRetryCount += 1;
+        if (exactRetryCount === 1) return { found: false };
+        return { found: true, isbn13: isbn, title: 'Herstel via ISBN',
+          author: 'A Auteur', publisher: 'ISBN gevonden' };
+      }
+      if (isbn === '9783333333335') {
+        return { found: true, isbn13: isbn, title: 'Herstel via titel',
+          author: 'A Auteur', publisher: 'Titel gevonden' };
+      }
+      return {
       found: true, title: 'Metadata thema boek', author: 'A Auteur',
       authors: ['A Auteur'], isbn13: isbn,
       themes: ['Pesten', 'Nieuw vakgebied'],
@@ -120,7 +154,8 @@ async function run() {
       publishedYear: 2018, pageCount: 240, language: 'nl',
       description: 'Metadata beschrijving',
       coverUrl: 'https://example.com/boek.jpg', source: 'test-metadata'
-    });
+      };
+    };
   `);
   const child = spawn(process.execPath, ['--require', metadataHookFile, 'server.js'], {
     cwd: path.join(__dirname, '..'),
@@ -689,6 +724,81 @@ async function run() {
     assert.deepStrictEqual(reloadedMetadata.tags, []);
     assert.ok(!persistedMetadata.publishedYear && !reloadedMetadata.publishedYear);
     assert.ok(!persistedMetadata.pageCount && !reloadedMetadata.pageCount);
+
+
+    // One transient missing lookup should not persist through every re-review.
+    const retryIsbnStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Herstel via ISBN', Auteur: 'A Auteur',
+        'ISBN-nummer': '9782222222224' }]), enrichIsbn: true,
+    });
+    assert.strictEqual(retryIsbnStage.status, 201);
+    assert.strictEqual(retryIsbnStage.body.rows[0].book.publisher, '');
+    const recoveredExact = await call(
+      '/api/admin/book-import-stages/' + retryIsbnStage.body.id + '/review', token1, {
+        revision: 1, corrections: [], acceptWarnings: true,
+      });
+    assert.strictEqual(recoveredExact.status, 200);
+    assert.strictEqual(recoveredExact.body.rows[0].book.publisher, 'ISBN gevonden');
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + retryIsbnStage.body.id
+      + '/cancel', token1, { revision: 2 })).status, 200);
+
+    const retryTitleStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Herstel via titel', Auteur: 'A Auteur' }]), enrichIsbn: true,
+    });
+    assert.strictEqual(retryTitleStage.status, 201);
+    assert.strictEqual(retryTitleStage.body.decisions.summary.readyToApply, false);
+    const recoveredTitle = await call(
+      '/api/admin/book-import-stages/' + retryTitleStage.body.id + '/review', token1, {
+        revision: 1, corrections: [], acceptWarnings: true,
+      });
+    assert.strictEqual(recoveredTitle.status, 200);
+    assert.strictEqual(recoveredTitle.body.rows[0].book.editionIsbn, '9783333333335');
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + retryTitleStage.body.id
+      + '/cancel', token1, { revision: 2 })).status, 200);
+
+    // The browser knows the import job ID and bearer token, but must not
+    // impersonate the single trusted internal worker.
+    const heldWorkbook = fileBase64([{ Titel: 'Legacy worker', Auteur: 'A Auteur',
+      Barcode: '99663322' }]);
+    const heldJob = await call('/api/books/import-jobs', token1, {
+      file: heldWorkbook, fileName: 'legacy-worker-test.xlsx',
+    });
+    assert.strictEqual(heldJob.status, 202);
+    try {
+      let held = false;
+      for (let i = 0; i < 100; i += 1) {
+        if (fs.existsSync(workerHeldMarker)) { held = true; break; }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.strictEqual(held, true, 'Legacy worker must reach the held handoff');
+      const forged = await fetch(BASE + '/api/books/import', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token1,
+          'Content-Type': 'application/json',
+          'X-Import-Job-Id': heldJob.body.jobId,
+        },
+        body: JSON.stringify({ file: fileBase64([{
+          Titel: 'Forged import', Auteur: 'A Auteur', Barcode: '99991155',
+        }]) }),
+      });
+      assert.strictEqual(forged.status, 409, 'Browser cannot borrow internal job lease');
+      assert.strictEqual((await forged.json()).error, 'stage_busy');
+    } finally {
+      fs.writeFileSync(workerReleaseMarker, 'release');
+    }
+    let jobFinal = null;
+    for (let i = 0; i < 120; i += 1) {
+      const response = await call('/api/books/import-jobs/' + heldJob.body.jobId, token1);
+      if (['completed', 'failed'].includes(response.body.status)) {
+        jobFinal = response.body; break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    assert.strictEqual(jobFinal?.status, 'completed', 'Original worker must still finish');
+    const afterHandoff = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(afterHandoff.books.filter((b) => b.barcode === '99663322').length, 1);
+    assert.strictEqual(afterHandoff.books.filter((b) => b.barcode === '99991155').length, 0);
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
