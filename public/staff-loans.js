@@ -16,7 +16,9 @@ if (panel) {
   let state = { classes: [], students: [], books: [], loans: [] };
   let busy = false;
   let generation = 0;
-  const apiBase = (window.BOEKENBAAI_API_BASE
+  const configuredBase = (typeof import.meta !== 'undefined' && import.meta.env
+    && (import.meta.env.BOEKENBAAI_PUBLIC_API_BASE || import.meta.env.VITE_BOEKENBAAI_API_BASE)) || '';
+  const apiBase = (window.BOEKENBAAI_API_BASE || configuredBase
     || document.querySelector('meta[name="boekenbaai-api-base"]')?.content || '').trim();
   const address = (route) => apiBase ? apiBase.replace(/\/$/, '') + route : route;
   function option(select, value, label) {
