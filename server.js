@@ -4746,7 +4746,8 @@ async function handleApi(req, res, requestUrl) {
         // analysis just before publishing the ready/blocked decisions.
         const latestDatabase = loadDb();
         analysis.decisions = mode === 'inventory_sync'
-          ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false })
+          ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false,
+            students: latestDatabase.students, classes: latestDatabase.classes })
           : buildReviewDecisions(analysis, latestDatabase.books, {
             students: latestDatabase.students, classes: latestDatabase.classes,
           });
@@ -4818,6 +4819,7 @@ async function handleApi(req, res, requestUrl) {
           reviewed.decisions = stage.options.mode === 'inventory_sync'
             ? buildInventorySyncPreview(reviewed, latestDatabase.books, {
               acceptWarnings: body.acceptWarnings, resolutions: choices.values,
+              students: latestDatabase.students, classes: latestDatabase.classes,
             })
             : buildReviewDecisions(reviewed, latestDatabase.books, {
               acceptWarnings: body.acceptWarnings,
@@ -4854,10 +4856,12 @@ async function handleApi(req, res, requestUrl) {
             // count or active loan change invalidates the approved preview.
             const fresh = buildInventorySyncPreview(stage.analysis, database.books, {
               acceptWarnings: stage.acceptWarnings, resolutions: stage.inventoryResolutions,
+              students: database.students, classes: database.classes,
             });
             if (!fresh.ok || !fresh.summary.readyToApply
               || JSON.stringify(fresh.rows) !== JSON.stringify(stage.analysis.decisions?.rows)
               || JSON.stringify(fresh.proposedAdds) !== JSON.stringify(stage.analysis.decisions?.proposedAdds)
+              || JSON.stringify(fresh.loanAssignments) !== JSON.stringify(stage.analysis.decisions?.loanAssignments)
               || JSON.stringify(fresh.omittedEditions) !== JSON.stringify(stage.analysis.decisions?.omittedEditions)
               || fresh.summary.omittedExistingCopies
                 !== stage.analysis.decisions?.summary?.omittedExistingCopies) {
@@ -4869,6 +4873,8 @@ async function handleApi(req, res, requestUrl) {
             const now = new Date().toISOString();
             const batchId = crypto.randomUUID();
             const createdCopies = [];
+            const createdByRow = new Map();
+            const restoredLoanEvents = [];
             const reportsByRow = new Map();
             const clearedThemeRows = new Set((stage.corrections || [])
               .filter((correction) => typeof correction?.fields?.themes === 'string'
@@ -4925,6 +4931,8 @@ async function handleApi(req, res, requestUrl) {
                 const copy = createBookCopyFromTemplate(template);
                 createdCopies.push(copy);
                 ids.push(copy.id);
+                if (!createdByRow.has(addition.index)) createdByRow.set(addition.index, []);
+                createdByRow.get(addition.index).push(copy);
               }
               const reportEntry = reportsByRow.get(addition.index) || {
                 index: addition.index, worksheetRow: row.sourceRowNumber,
@@ -4951,9 +4959,39 @@ async function handleApi(req, res, requestUrl) {
                 issues: (row.issues || []).map((issue) => issue.code),
               });
             }
+            // Reconcile only explicitly identified physical loan owners.
+            // A loan already recorded for the same borrower is idempotent.
+            // No old book is deleted or assigned a fabricated loan date.
+            for (const assignment of fresh.loanAssignments) {
+              if (assignment.target === 'already_recorded') continue;
+              const copy = assignment.target === 'existing'
+                ? database.books.find((book) => book.id === assignment.bookId)
+                : (createdByRow.get(assignment.index) || [])[0];
+              if (!copy) {
+                return sendJson(res, 409, {
+                  message: 'Het fysieke boek voor de uitlening is gewijzigd.',
+                  error: 'loan_copy_missing',
+                });
+              }
+              const event = stageReviewedLoan(copy, assignment.borrower, database);
+              restoredLoanEvents.push({ ...event, performedBy: user.id,
+                message: 'Bestaande Excel-uitlening overgenomen' });
+              const existingReport = reportsByRow.get(assignment.index);
+              if (existingReport) {
+                existingReport.loanStatus = 'restored';
+                if (!existingReport.copies) existingReport.status = 'loan_restored';
+                existingReport.borrowerType = assignment.borrower.type;
+              }
+            }
+            for (const assignment of fresh.loanAssignments.filter((item) =>
+              item.target === 'already_recorded')) {
+              const existingReport = reportsByRow.get(assignment.index);
+              if (existingReport) existingReport.loanStatus = 'already_recorded';
+            }
             const report = {
               id: batchId, createdBy: user.id, importedAt: now,
               mode: 'inventory_sync', fileName: stage.fileName,
+              restoredLoans: restoredLoanEvents.length,
               count: createdCopies.length,
               sourceRows: stage.analysis.summary.sourceRows,
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
@@ -4965,13 +5003,15 @@ async function handleApi(req, res, requestUrl) {
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
             database.books.push(...createdCopies);
+            for (const event of restoredLoanEvents) appendHistory(database, event);
             appendHistory(database, {
               type: 'books_inventory_sync', performedBy: user.id,
-              message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, geen bestaande exemplaren verwijderd`,
+              message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
             });
             saveReviewedBookImportDb(database);
             bookImportStageStore.finishApply(stage, {
-              batchId, created: createdCopies.length, removed: 0,
+              batchId, created: createdCopies.length,
+              restoredLoans: restoredLoanEvents.length, removed: 0,
               retainedEditions: fresh.summary.acknowledgedEditions,
               report, omittedExistingCopies: fresh.summary.omittedExistingCopies,
             });
