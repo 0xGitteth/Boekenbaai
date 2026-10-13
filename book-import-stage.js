@@ -23,13 +23,20 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     const terminal = [...entries.values()].filter((item) => TERMINAL_STATUSES.has(item.status));
     for (const item of terminal.slice(0, Math.max(0, terminal.length - MAX_FINISHED_STAGES))) entries.delete(item.id);
   }
-  function active() {
+  function active({ refresh = false } = {}) {
     prune();
-    return [...entries.values()].find((entry) => !TERMINAL_STATUSES.has(entry.status)) || null;
+    const stage = [...entries.values()].find((entry) => !TERMINAL_STATUSES.has(entry.status)) || null;
+    // An authenticated, visible import page polls /active every 1.5s.
+    // That activity is a heartbeat, not an abandoned draft. Only the status
+    // endpoint opts into refresh so unrelated admissions cannot extend TTL.
+    if (refresh && stage?.status === 'open') stage.expiresAt = now() + ttlMs;
+    return stage;
   }
   function get(id) {
     prune();
-    return entries.get(id) || null;
+    const stage = entries.get(id) || null;
+    if (stage?.status === 'open') stage.expiresAt = now() + ttlMs;
+    return stage;
   }
   function reserve(ownerId) {
     if (!ownerId) throw Error('invalid_stage');

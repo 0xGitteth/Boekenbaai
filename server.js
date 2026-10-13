@@ -3790,6 +3790,15 @@ function getTeacherClassIds(db, teacherId) {
   return Array.from(ids);
 }
 
+// One synchronous admission point for every book-import entry route.
+// A legacy background job retains its lease until its internal direct import
+// and job finalization both finish; the authenticated internal request may
+// reuse ONLY its matching job id and login token.
+let activeBookImportLease = null;
+function releaseBookImportLease(lease) {
+  if (activeBookImportLease === lease) activeBookImportLease = null;
+}
+
 async function handleApi(req, res, requestUrl) {
   const originAllowed = isOriginAllowed(req.headers.origin, requestUrl);
   if (req.method === 'OPTIONS') {
@@ -3807,6 +3816,7 @@ async function handleApi(req, res, requestUrl) {
     applyCors(req, res, requestUrl);
   }
 
+  let requestImportAdmission = null;
   try {
     let db;
     const getDb = () => {
@@ -3816,6 +3826,40 @@ async function handleApi(req, res, requestUrl) {
       return db;
     };
     const user = getAuthenticatedUser(req, getDb);
+    // Acquire before parseBody() can yield, regardless of which UI initiated
+    // the upload. This closes both directions of the legacy/staged race.
+    const importKind = req.method !== 'POST' ? '' :
+      requestUrl.pathname === '/api/admin/book-import-stages' ? 'reviewed' :
+      requestUrl.pathname === '/api/books/import-jobs' ? 'legacy-job' :
+      requestUrl.pathname === '/api/books/import' ? 'legacy-direct' : '';
+    if (importKind && user?.role === 'admin') {
+      const lease = activeBookImportLease;
+      const internalJobRequest = importKind === 'legacy-direct'
+        && lease?.kind === 'legacy-job' && lease.jobId
+        && lease.jobId === String(req.headers['x-import-job-id'] || '').trim()
+        && lease.loginToken === getTokenFromHeader(req);
+      if (internalJobRequest) {
+        requestImportAdmission = { lease, borrowed: true };
+      } else if (lease?.kind === 'legacy-job' && importKind === 'legacy-job'
+        && lease.userId === user.id && lease.jobId) {
+        // Preserve existing idempotent behavior for refreshing a running
+        // legacy job from the same shared administrator account.
+        return sendJson(res, 200, { jobId: lease.jobId, reused: true });
+      } else if (lease || bookImportStageStore.active()) {
+        const currentStage = bookImportStageStore.active();
+        return sendJson(res, 409, {
+          message: 'Er is al een boekimport bezig. Bekijk of rond die eerst af.',
+          error: 'stage_busy',
+          ...(importKind === 'reviewed' && currentStage
+            ? { active: importStageView(currentStage) } : {}),
+        });
+      } else {
+        const reserved = { kind: importKind, userId: user.id, jobId: null,
+          loginToken: getTokenFromHeader(req), handedOff: false };
+        activeBookImportLease = reserved;
+        requestImportAdmission = { lease: reserved, borrowed: false };
+      }
+    }
 
     if (req.method === 'POST' && requestUrl.pathname === '/api/login') {
       const body = await parseBody(req);
@@ -4475,7 +4519,7 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Alleen beheerders mogen een boekimport voorbereiden.' });
       }
       if (req.method === 'GET' && requestUrl.pathname === stageRoot + '/active') {
-        const activeStage = bookImportStageStore.active();
+        const activeStage = bookImportStageStore.active({ refresh: true });
         return sendJson(res, 200, {
           stage: activeStage ? {
             id: activeStage.id, status: activeStage.status,
@@ -4490,13 +4534,8 @@ async function handleApi(req, res, requestUrl) {
         }
         const XLSX = loadXlsx();
         if (!XLSX) return sendJson(res, 503, { message: 'Excelverwerking is niet beschikbaar.' });
-        const body = await parseBody(req, 35 * 1024 * 1024);
-        if (typeof body.file !== 'string' || !body.file) {
-          return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
-        }
-        // Reserve the single global slot BEFORE any asynchronous metadata
-        // enrichment. Other sessions immediately see "preparing" and cannot
-        // start a conflicting import, even on the same shared account.
+        // The shared slot becomes visible even while the file body is still
+        // uploading, not just when metadata lookup starts.
         const reservation = bookImportStageStore.reserve(user.id);
         if (!reservation.ok) {
           return sendJson(res, 409, {
@@ -4507,6 +4546,10 @@ async function handleApi(req, res, requestUrl) {
         }
         let activated = false;
         try {
+        const body = await parseBody(req, 35 * 1024 * 1024);
+        if (typeof body.file !== 'string' || !body.file) {
+          return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
+        }
         const workbook = readBookImportWorkbook(XLSX, body.file, { maxRows: 1500, maxCopies: 5000 });
         if (!workbook.ok) {
           return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
@@ -4623,6 +4666,11 @@ async function handleApi(req, res, requestUrl) {
                 ? provenance.source : 'unknown';
               sourceByField[field] = createFieldSource(sourceType, provenance?.detail || null);
             }
+            // The stored metadataIsbn is deliberately copied from the
+            // reviewed editionIsbn. Its source must therefore be identical
+            // to the reviewed ISBN source, not an unrelated "unknown".
+            sourceByField.metadataIsbn = sourceByField.editionIsbn
+              || createFieldSource('unknown', null);
             const template = ensureBookShape({
               title: row.book.title, author: row.book.author,
               authors: row.book.authors, editionIsbn: entry.editionIsbn,
@@ -4765,6 +4813,10 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       activeImportJobs.set(user.id, jobId);
       const token = getTokenFromHeader(req);
+      // The response ends before the legacy worker does. Keep its admission
+      // lease until the worker has also finalized the persistent job.
+      requestImportAdmission.lease.jobId = jobId;
+      requestImportAdmission.lease.handedOff = true;
 
       setImmediate(async () => {
         try {
@@ -4860,6 +4912,7 @@ async function handleApi(req, res, requestUrl) {
           saveDb(failedDb);
         } finally {
           activeImportJobs.delete(user.id);
+          releaseBookImportLease(requestImportAdmission.lease);
         }
       });
       return sendJson(res, 202, { jobId });
@@ -7540,6 +7593,11 @@ async function handleApi(req, res, requestUrl) {
     }
     console.error(error);
     return sendJson(res, 500, { message: 'Interne serverfout' });
+  } finally {
+    if (requestImportAdmission && !requestImportAdmission.borrowed
+      && !requestImportAdmission.lease.handedOff) {
+      releaseBookImportLease(requestImportAdmission.lease);
+    }
   }
 }
 

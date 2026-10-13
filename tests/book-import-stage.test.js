@@ -62,6 +62,19 @@ const ISBN2 = '9780439554930';
   assert.strictEqual(store.get(slowReview.id), slowReview);
   assert.strictEqual(store.cancel(slowReview, 2).ok, true);
 
+  // A visible browser's /active heartbeat must keep its review alive while
+  // a genuinely abandoned draft should still expire after the idle TTL.
+  const reading = store.create({ ownerId: 'admin-1', sourceRows: rows, analysis: review }).stage;
+  const firstExpiry = reading.expiresAt;
+  clock += 900;
+  assert.strictEqual(store.active({ refresh: true }), reading);
+  assert.ok(reading.expiresAt > firstExpiry);
+  clock += 900;
+  assert.strictEqual(store.active(), reading, 'An active viewer should not lose its import after the original TTL');
+  assert.strictEqual(store.get(reading.id), reading, 'Opening the same import is user activity too');
+  clock += 1001;
+  assert.strictEqual(store.active(), null, 'An idle draft may still expire after all browser views stop');
+
   const empty = await analyzeReviewedImport([{ Titel: 'Nieuw', Auteur: 'Auteur', 'ISBN-nummer': ISBN }]);
   assert.strictEqual(buildStageApplyPlan({ ...empty, acceptWarnings: false }, []).totalCopies, 1);
   assert.strictEqual(buildStageApplyPlan({ ...empty, acceptWarnings: false }, [
