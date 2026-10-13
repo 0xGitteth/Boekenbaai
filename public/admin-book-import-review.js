@@ -471,6 +471,14 @@
           ? row.book.manualThemes : row.book?.themes || [];
         if (visibleThemes.length) card.append(make('p', 'bb-review__detail',
           'Thema’s: ' + visibleThemes.join(', ')));
+        const easyReadingSource = row.provenance?.easyReading;
+        if (easyReadingSource?.source === 'excel') {
+          // The agreed Excel rule is deliberately based on whether a cell is
+          // filled, even when its literal content is 'nee' or 'false'.
+          card.append(make('p', 'bb-review__detail',
+            'Makkelijk lezen: ' + (row.book?.easyReading ? 'ja' : 'nee')
+            + ' (Excel: ' + String(easyReadingSource.raw ?? '') + ')'));
+        }
         if (dec.reason && dec.reason !== 'skipped') {
           card.append(make('p', 'bb-review__reason', reasonNames[dec.reason] || dec.reason));
         }
