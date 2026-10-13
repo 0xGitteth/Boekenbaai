@@ -109,4 +109,7 @@ assert.ok(script.includes('inventoryResolutions.delete(row.book.editionIsbn)'),
   'Skipping an ISBN row must not leave an invisible unresolved choice');
 assert.ok(script.includes("stage.inventoryResolutions || []"),
   'Reload retained choices from the server after remote review');
+assert.ok(script.includes('dec.canKeepExisting === true'),
+  'The retain option must be hidden unless the planner explicitly permits a clean stock reduction');
+
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
