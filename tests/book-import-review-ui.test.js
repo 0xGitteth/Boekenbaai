@@ -44,7 +44,7 @@ const changedEnd = appSource.indexOf('    if (bookId) {', changedStart);
 assert.ok(changedStart >= 0 && changedEnd > changedStart);
 const getSentManualThemes = new Function(
   'bookId', 'adminBookInitialThemeKeys', 'adminSelectedThemeKeys', 'selectedThemes', 'payload',
-  appSource.slice(changedStart, changedEnd) + '\\nreturn payload.manualThemes;'
+  appSource.slice(changedStart, changedEnd) + '\nreturn payload.manualThemes;'
 );
 assert.strictEqual(getSentManualThemes(
   'book-1', new Set(['pesten']), new Set(['pesten']), ['Pesten'], {}
