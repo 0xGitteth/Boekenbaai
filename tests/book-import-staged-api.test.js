@@ -268,6 +268,83 @@ async function run() {
       token1, { revision: 2, confirm: true });
     assert.strictEqual(forbiddenLocationApply.status, 409);
 
+    // Reverse race: a normal /api/books mutation starts first, waits for a
+    // slow body, then PR3 commits. Finishing that old writer must NOT erase
+    // the new import or its audit report.
+    const reverseIsbn = '9780451524935';
+    const reverseStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Behouden import', Auteur: 'A', 'ISBN-nummer': reverseIsbn }]),
+    });
+    assert.strictEqual(reverseStage.status, 201);
+    assert.strictEqual(reverseStage.body.decisions.summary.readyToApply, true);
+    const lateNormalBody = JSON.stringify({
+      title: 'Oude schrijfactie', author: 'A',
+      barcode: '775522', metadataIsbn: '9780679783268',
+    });
+    let completeNormalBody;
+    const pendingNormalSave = new Promise((resolve, reject) => {
+      const request = http.request({
+        hostname: '127.0.0.1', port: PORT, path: '/api/books',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token2,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(lateNormalBody),
+        },
+      }, (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => {
+          try { resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }); }
+          catch (error) { reject(error); }
+        });
+      });
+      request.on('error', reject);
+      request.write(lateNormalBody.slice(0, 12));
+      completeNormalBody = () => request.end(lateNormalBody.slice(12));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    const reverseApply = await call('/api/admin/book-import-stages/' + reverseStage.body.id + '/apply', token1, {
+      revision: 1, confirm: true,
+    });
+    assert.strictEqual(reverseApply.status, 200);
+    completeNormalBody();
+    const rejectedNormalSave = await pendingNormalSave;
+    assert.strictEqual(rejectedNormalSave.status, 409);
+    assert.strictEqual(rejectedNormalSave.body.error, 'DATABASE_WRITE_CONFLICT');
+    const afterReverse = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.ok(afterReverse.books.some((book) => book.metadataIsbn === reverseIsbn),
+      'Import must not be overwritten by an older normal writer');
+    assert.ok(!afterReverse.books.some((book) => book.barcode === '775522'));
+    assert.strictEqual(afterReverse.bookImportReports.length, 3);
+
+    // Skipped rows must retain enough original identity and diagnostics to
+    // explain decisions after temporary staging is discarded.
+    const skippedStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([
+        { Titel: 'Veilig importeren', Auteur: 'A', 'ISBN-nummer': '9780385490818' },
+        { Titel: 'Bewust overgeslagen', Auteur: 'B', 'ISBN-nummer': 'foute-code' },
+      ]),
+    });
+    assert.strictEqual(skippedStage.status, 201);
+    const skipReview = await call('/api/admin/book-import-stages/' + skippedStage.body.id + '/review', token1, {
+      revision: 1, acceptWarnings: true, corrections: [{ index: 1, skip: true }],
+    });
+    assert.strictEqual(skipReview.status, 200);
+    assert.strictEqual(skipReview.body.decisions.summary.readyToApply, true);
+    const skipApply = await call('/api/admin/book-import-stages/' + skippedStage.body.id + '/apply', token1, {
+      revision: 2, confirm: true,
+    });
+    assert.strictEqual(skipApply.status, 200);
+    const auditSkipped = skipApply.body.result.report.rows.find((row) => row.status === 'skipped');
+    assert.strictEqual(auditSkipped.title, 'Bewust overgeslagen');
+    assert.strictEqual(auditSkipped.originalIdentifiers.isbn, 'foute-code');
+    assert.ok(auditSkipped.issues.length > 0);
+    assert.ok(auditSkipped.provenance && auditSkipped.context);
+    const savedSkippedAudit = await call('/api/admin/book-import-reports/' + skipApply.body.result.batchId, token1);
+    assert.strictEqual(savedSkippedAudit.status, 200);
+    assert.strictEqual(savedSkippedAudit.body.rows.find((row) => row.status === 'skipped').title, 'Bewust overgeslagen');
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');

@@ -1574,6 +1574,26 @@ function readWorkbookRows(XLSX, base64) {
   return { ok: true, rows };
 }
 
+// A previously confirmed reviewed import is a durable commit boundary.
+// Other legacy import jobs may legitimately update progress while processing;
+// rejecting ALL stale snapshots would break those jobs. However, any writer
+// whose snapshot predates the latest confirmed PR3 batch MUST fail instead of
+// overwriting the new books and the permanent import report.
+function assertReviewedImportNotLost(db) {
+  const current = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
+  const latest = Array.isArray(current.bookImportReports)
+    ? current.bookImportReports[current.bookImportReports.length - 1]?.id
+    : null;
+  if (!latest) return;
+  const stillPresent = Array.isArray(db.bookImportReports)
+    && db.bookImportReports.some((report) => report?.id === latest);
+  if (!stillPresent) {
+    const error = new Error('A confirmed book import was committed after this request began');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
+  }
+}
+
 function loadDb() {
   const raw = fs.readFileSync(DATA_PATH, 'utf-8');
   const data = JSON.parse(raw);
@@ -1593,6 +1613,7 @@ function loadDb() {
 }
 
 function saveDb(db) {
+  assertReviewedImportNotLost(db);
   fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
 }
 
@@ -1600,9 +1621,11 @@ function saveDb(db) {
 // database snapshot to a sibling file first, then atomically replace the old
 // snapshot so a failed or interrupted write cannot leave half a JSON document.
 function saveReviewedBookImportDb(db) {
+  assertReviewedImportNotLost(db);
+  const raw = JSON.stringify(db, null, 2);
   const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
   try {
-    fs.writeFileSync(temporaryPath, JSON.stringify(db, null, 2), { flag: 'wx', mode: 0o600 });
+    fs.writeFileSync(temporaryPath, raw, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporaryPath, DATA_PATH);
   } finally {
     try { fs.unlinkSync(temporaryPath); } catch (error) {
@@ -4598,9 +4621,20 @@ async function handleApi(req, res, requestUrl) {
             });
           }
           for (const row of stage.analysis.rows.filter((entry) => entry.status === 'skipped')) {
+            const original = stage.initialAnalysis?.rows?.[row.index] || row;
             sourceReports.push({
               index: row.index, worksheetRow: row.sourceRowNumber, status: 'skipped', copies: 0,
-              issues: row.issues.map((issue) => issue.code),
+              title: original.book?.title || '',
+              editionIsbn: original.book?.editionIsbn || '',
+              barcode: original.book?.barcode || '',
+              originalIdentifiers: {
+                isbn: original.identifierAnalysis?.explicit?.raw || '',
+                legacyIsbn: original.identifierAnalysis?.legacy?.raw || '',
+                combinedBarcodeIsbn: original.identifierAnalysis?.ambiguous?.raw || '',
+              },
+              issues: (original.issues || []).map((issue) => issue.code),
+              provenance: original.provenance || {},
+              context: original.context || {},
             });
           }
           const report = {
@@ -7457,6 +7491,9 @@ async function handleApi(req, res, requestUrl) {
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
   } catch (error) {
+    if (error?.code === 'DATABASE_WRITE_CONFLICT') {
+      return sendJson(res, 409, { message: 'De gegevens zijn intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.', error: error.code });
+    }
     console.error(error);
     return sendJson(res, 500, { message: 'Interne serverfout' });
   }

@@ -125,6 +125,29 @@ const OTHER_ISBN = '9780439554930';
     { existingBooks: existingBarcode, acceptWarnings: true });
   assert.strictEqual(noBarcodeConflict.decisions.summary.readyToApply, true);
 
+  // One row gets an ISBN fallback scanner code, another has that exact
+  // code printed on its label. Identify both BEFORE final confirmation.
+  const uploadBarcodeCollision = await analyzeReviewedImport([
+    { Titel: 'Fallback barcode', Auteur: 'A', 'ISBN-nummer': ISBN },
+    { Titel: 'Gedrukt op andere editie', Auteur: 'B',
+      'ISBN-nummer': OTHER_ISBN, Barcode: ISBN },
+  ], [], { acceptWarnings: true });
+  assert.strictEqual(uploadBarcodeCollision.ok, true);
+  assert.strictEqual(uploadBarcodeCollision.decisions.summary.readyToApply, false);
+  assert.ok(uploadBarcodeCollision.decisions.rows.every((row) =>
+    row.reason === 'workbook_physical_barcode_conflict'));
+  const skipConflictingLabel = await analyzeReviewedImport([
+    { Titel: 'Fallback barcode', Auteur: 'A', 'ISBN-nummer': ISBN },
+    { Titel: 'Gedrukt op andere editie', Auteur: 'B',
+      'ISBN-nummer': OTHER_ISBN, Barcode: ISBN },
+  ], [{ index: 1, skip: true }], { acceptWarnings: true });
+  assert.strictEqual(skipConflictingLabel.decisions.summary.readyToApply, true);
+  const distinctGeneratedCopies = await analyzeReviewedImport([
+    { Titel: 'Zelfde editie', Auteur: 'A', 'ISBN-nummer': ISBN },
+    { Titel: 'Zelfde editie', Auteur: 'A', 'ISBN-nummer': ISBN },
+  ], [], { acceptWarnings: true });
+  assert.strictEqual(distinctGeneratedCopies.decisions.summary.readyToApply, true);
+
   const warningRow = [{ Titel: 'Waarschuwing', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
   const unapproved = await analyzeReviewedImport(warningRow);
   assert.strictEqual(unapproved.rows[0].status, 'warning');
