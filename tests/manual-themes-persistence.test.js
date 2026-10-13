@@ -221,6 +221,24 @@ async function runTests() {
     });
     assert.strictEqual(unaffected.status, 200);
     assert.deepStrictEqual(unaffected.body.book.themes, ['Pesten', 'Nieuw thema uit metadata']);
+    // Changing one theme in the normal editor must not silently discard a
+    // freeform theme retained from a reviewed Excel import.
+    const changedThemeSelection = await request('/api/books/book-4', {
+      method: 'PUT', headers: {
+        Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        manualThemes: ['Pesten', 'Nieuw thema uit metadata', 'Mysterie'],
+      }),
+    });
+    assert.strictEqual(changedThemeSelection.status, 200);
+    assert.deepStrictEqual(changedThemeSelection.body.book.themes,
+      ['Pesten', 'Nieuw thema uit metadata', 'Mysterie']);
+    assert.deepStrictEqual(changedThemeSelection.body.book.importedThemes,
+      ['Pesten', 'Nieuw thema uit metadata', 'Mysterie']);
+    assert.deepStrictEqual((await request('/api/books/book-4')).body.themes,
+      ['Pesten', 'Nieuw thema uit metadata', 'Mysterie']);
+
     const cleared = await request('/api/books/book-4', {
       method: 'PUT', headers: {
         Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json',
