@@ -1375,6 +1375,30 @@ async function run() {
       + '/apply', token1, { revision: 1, confirm: true })).status, 409,
       'Replaying a completed import must not duplicate an old class loan');
 
+    // Several historic loans in the SAME import generate one summary, not
+    // one activity-history entry for every physical copy. Detailed audit data
+    // stays in the admin-only import report instead of the capped feed.
+    const manyClassLoanIsbn = '9780134685991';
+    const beforeBulkHistoryCount = classDb.history.length;
+    const bulkLoanStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64(Array.from({ length: 8 }, () => ({
+        Titel: 'Meerdere bestaande klasleningen', Auteur: 'A Auteur',
+        'ISBN-nummer': manyClassLoanIsbn, Aantal: 1, 'Geleend door klas': 'Groep A',
+      }))),
+    });
+    assert.strictEqual(bulkLoanStage.status, 201, JSON.stringify(bulkLoanStage.body).slice(0, 380));
+    assert.strictEqual(bulkLoanStage.body.decisions.summary.readyToApply, true);
+    const bulkLoanApplied = await call('/api/admin/book-import-stages/'
+      + bulkLoanStage.body.id + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(bulkLoanApplied.status, 200, JSON.stringify(bulkLoanApplied.body).slice(0, 380));
+    assert.strictEqual(bulkLoanApplied.body.result.restoredLoans, 8);
+    assert.strictEqual(bulkLoanApplied.body.result.report.loanChanges.length, 8);
+    const bulkHistory = JSON.parse(fs.readFileSync(dbPath, 'utf8')).history;
+    assert.strictEqual(bulkHistory.length, beforeBulkHistoryCount + 2,
+      '8 historical loans should produce only 1 loan summary and 1 import summary');
+    assert.strictEqual(bulkHistory.filter((entry) => entry.type === 'loans_imported'
+      && entry.importBatchId === bulkLoanApplied.body.result.batchId).length, 1);
+
     const tooManyLoanCopies = await call('/api/admin/book-import-stages', token1, {
       file: fileBase64([{
         Titel: 'Onbekend geleend exemplaar', Auteur: 'A Auteur',
