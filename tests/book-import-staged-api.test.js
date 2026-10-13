@@ -1203,6 +1203,50 @@ async function run() {
     assert.strictEqual((await call('/api/admin/book-import-stages/' + unnamedStage.body.id
       + '/cancel', token1, { revision: 2 })).status, 200);
 
+    // Independent row provenance check: two copies of the same new ISBN
+    // have DIFFERENT approved descriptions and no printed barcodes.
+    // Each created physical copy must retain its own worksheet row's data.
+    const splitMetadataIsbn = '9781234567163';
+    const splitStage = await call('/api/admin/book-import-stages', token1, {
+      mode: 'inventory_sync',
+      file: fileBase64([
+        { Titel: 'Eén ISBN twee varianten', Auteur: 'A Auteur',
+          'ISBN-nummer': splitMetadataIsbn, Aantal: 1, Beschrijving: 'Beschrijving eerste rij' },
+        { Titel: 'Eén ISBN twee varianten', Auteur: 'A Auteur',
+          'ISBN-nummer': splitMetadataIsbn, Aantal: 1, Beschrijving: 'Beschrijving tweede rij' },
+      ]),
+    });
+    assert.strictEqual(splitStage.status, 201, JSON.stringify(splitStage.body).slice(0, 450));
+    assert.deepStrictEqual(splitStage.body.decisions.proposedAdds.map((a) => a.index), [0, 1]);
+    assert.strictEqual(splitStage.body.decisions.rows[1].rowAddCopies, 1);
+    const splitApply = await call('/api/admin/book-import-stages/' + splitStage.body.id
+      + '/apply', token2, { revision: 1, confirm: true });
+    assert.strictEqual(splitApply.status, 200, JSON.stringify(splitApply.body).slice(0, 450));
+    const splitBooks = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.filter(
+      (book) => book.metadataIsbn === splitMetadataIsbn);
+    assert.strictEqual(splitBooks.length, 2);
+    assert.deepStrictEqual(splitBooks.map((book) => book.description),
+      ['Beschrijving eerste rij', 'Beschrijving tweede rij']);
+    assert.deepStrictEqual(splitApply.body.result.report.rows.map((r) => r.copies), [1, 1]);
+
+    // A legacy title/author with only a NON-ISBN physical barcode must
+    // not be silently duplicated when a new Excel supplies a proper ISBN.
+    const legacyWithoutIsbn = await call('/api/books', token1, {
+      title: 'Ouder boek zonder ISBN', author: 'A Auteur', barcode: '66554433',
+    });
+    assert.strictEqual(legacyWithoutIsbn.status, 201);
+    const legacySync = await call('/api/admin/book-import-stages', token1b, {
+      mode: 'inventory_sync',
+      file: fileBase64([{ Titel: 'Ouder boek zonder ISBN', Auteur: 'A Auteur',
+        'ISBN-nummer': '9781234567170', Aantal: 1 }]),
+    });
+    assert.strictEqual(legacySync.status, 201);
+    assert.strictEqual(legacySync.body.decisions.rows[0].reason,
+      'possible_existing_book_without_isbn');
+    assert.strictEqual(legacySync.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + legacySync.body.id
+      + '/cancel', token1, { revision: 1 })).status, 200);
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
