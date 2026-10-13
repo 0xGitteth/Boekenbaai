@@ -104,6 +104,12 @@ async function run() {
     assert.strictEqual(parallelAttempt.status, 409);
     assert.strictEqual(parallelAttempt.body.error, 'stage_busy');
     assert.strictEqual(parallelAttempt.body.active.id, id);
+    const legacyJobWhileShared = await call('/api/books/import-jobs', token1b, { file });
+    assert.strictEqual(legacyJobWhileShared.status, 409,
+      'Old importer must not start while a shared reviewed stage is active');
+    const legacyDirectWhileShared = await call('/api/books/import', token1b, { file });
+    assert.strictEqual(legacyDirectWhileShared.status, 409,
+      'Direct legacy import must not bypass the single-active-import rule');
 
     const invalid = await call('/api/admin/book-import-stages/' + id + '/review', token1, {
       revision: 1, acceptWarnings: false, corrections: [{ index: 1, fields: { editionIsbn: 'not-an-isbn' } }],
