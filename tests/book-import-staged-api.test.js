@@ -864,6 +864,48 @@ async function run() {
     assert.strictEqual((await call('/api/admin/book-import-stages/' + beforeAddition.body.id
       + '/cancel', token1, { revision: 2 })).status, 200);
 
+
+    // Initial upload may overlap an ordinary admin book creation.
+    // Preview decisions must use the collection AFTER receiving the upload.
+    const firstUploadIsbn = '9781234567026';
+    const delayedInitialUpload = pausedImportPost('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Tijdens upload', Auteur: 'A Auteur',
+        'ISBN-nummer': firstUploadIsbn }]),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const insertedDuringUpload = await call('/api/books', token2, {
+      title: 'Tijdens upload', author: 'A Auteur',
+      barcode: '84119002', metadataIsbn: firstUploadIsbn,
+    });
+    assert.strictEqual(insertedDuringUpload.status, 201);
+    delayedInitialUpload.finish();
+    const initialAfterInsert = await delayedInitialUpload.done;
+    assert.strictEqual(initialAfterInsert.status, 201);
+    assert.strictEqual(initialAfterInsert.body.decisions.rows[0].reason,
+      'existing_edition_requires_review');
+    assert.strictEqual(initialAfterInsert.body.decisions.summary.readyToApply, false);
+    assert.strictEqual((await call('/api/admin/book-import-stages/' + initialAfterInsert.body.id
+      + '/cancel', token1, { revision: 1 })).status, 200);
+
+    // An approved multilingual Excel value must remain identical after apply
+    // and after fetching the book again.
+    const multipleLanguagesIsbn = '9781234567033';
+    const languageStage = await call('/api/admin/book-import-stages', token1b, {
+      file: fileBase64([{ Titel: 'Meertalig boek', Auteur: 'A Auteur',
+        'ISBN-nummer': multipleLanguagesIsbn, Taal: 'Nederlands / Engels' }]),
+    });
+    assert.strictEqual(languageStage.status, 201);
+    assert.strictEqual(languageStage.body.rows[0].book.language, 'Nederlands / Engels');
+    const languageApplied = await call('/api/admin/book-import-stages/' + languageStage.body.id
+      + '/apply', token1, { revision: 1, confirm: true });
+    assert.strictEqual(languageApplied.status, 200, JSON.stringify(languageApplied.body).slice(0, 300));
+    const persistedMultilingual = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((book) => book.metadataIsbn === multipleLanguagesIsbn);
+    assert.strictEqual(persistedMultilingual.language, 'Nederlands / Engels');
+    const listedMultilingual = await call('/api/books', token1);
+    assert.strictEqual((listedMultilingual.body.books || listedMultilingual.body)
+      .find((book) => book.metadataIsbn === multipleLanguagesIsbn).language, 'Nederlands / Engels');
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');
