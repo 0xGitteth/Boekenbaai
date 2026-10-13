@@ -102,6 +102,10 @@ async function run() {
       { id: 'admin1', name: 'Admin One', username: 'admin1', passwordHash: hashPassword('pass1'), role: 'admin' },
       { id: 'admin2', name: 'Admin Two', username: 'admin2', passwordHash: hashPassword('pass2'), role: 'admin' },
     ], history: [],
+    importJobs: [
+      { id: 'old-queued', type: 'books_import', createdBy: 'admin1', status: 'queued' },
+      { id: 'old-running', type: 'books_import', createdBy: 'admin1', status: 'running' },
+    ],
   };
   fs.writeFileSync(dbPath, JSON.stringify(db));
   // Supply deterministic metadata through the server's existing test-only
@@ -112,7 +116,10 @@ async function run() {
       found: true, title: 'Metadata thema boek', author: 'A Auteur',
       authors: ['A Auteur'], isbn13: isbn,
       themes: ['Pesten', 'Nieuw vakgebied'],
-      tags: ['bullying'], source: 'test-metadata'
+      tags: ['bullying'], publisher: 'Metadata uitgever',
+      publishedYear: 2018, pageCount: 240, language: 'nl',
+      description: 'Metadata beschrijving',
+      coverUrl: 'https://example.com/boek.jpg', source: 'test-metadata'
     });
   `);
   const child = spawn(process.execPath, ['--require', metadataHookFile, 'server.js'], {
@@ -127,6 +134,12 @@ async function run() {
     assert.strictEqual(login1.status, 200);
     assert.strictEqual(login2.status, 200);
     const token1 = login1.body.token, token2 = login2.body.token;
+    for (const id of ['old-queued', 'old-running']) {
+      const interrupted = await call('/api/books/import-jobs/' + id, token1);
+      assert.strictEqual(interrupted.status, 200);
+      assert.strictEqual(interrupted.body.status, 'interrupted',
+        'A server restart must not leave an orphaned queued/running worker');
+    }
     // Same administrator account signed in from a second device/session.
     const loginSameAccountAgain = await call('/api/login', null, { username: 'admin1', password: 'pass1' });
     assert.strictEqual(loginSameAccountAgain.status, 200);
@@ -600,7 +613,7 @@ async function run() {
     assert.deepStrictEqual(clearedThemeStage.body.rows[0].book.themes, ['Pesten', 'Nieuw vakgebied']);
     const explicitClear = await call('/api/admin/book-import-stages/' + clearedThemeStage.body.id
       + '/review', token1, {
-      revision: 1, acceptWarnings: false, corrections: [{ index: 0, fields: { themes: '' } }],
+      revision: 1, acceptWarnings: false, corrections: [{ index: 0, fields: { themes: '   ' } }],
     });
     assert.strictEqual(explicitClear.status, 200, JSON.stringify(explicitClear.body).slice(0, 600));
     assert.deepStrictEqual(explicitClear.body.rows[0].book.themes, [],
@@ -608,7 +621,7 @@ async function run() {
     assert.strictEqual(explicitClear.body.rows[0].provenance.themes.source, 'unknown');
     const clearedConfirmed = await call('/api/admin/book-import-stages/' + clearedThemeStage.body.id
       + '/review', token1, {
-      revision: 2, acceptWarnings: true, corrections: [{ index: 0, fields: { themes: '' } }],
+      revision: 2, acceptWarnings: true, corrections: [{ index: 0, fields: { themes: '   ' } }],
     });
     assert.strictEqual(clearedConfirmed.status, 200);
     assert.strictEqual(clearedConfirmed.body.decisions.summary.readyToApply, true);
@@ -621,6 +634,55 @@ async function run() {
     assert.strictEqual(persistCleared.themesCleared, true);
     assert.deepStrictEqual(persistCleared.themes, [],
       'Explicitly cleared themes must remain absent despite derived metadata tags');
+
+
+    // Explicit clears outrank optional metadata at preview, apply and reload.
+    const emptyMetadataIsbn = '9780061120084';
+    const emptyMetadataStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Metadata thema boek', Auteur: 'A Auteur',
+        'ISBN-nummer': emptyMetadataIsbn }]),
+      enrichIsbn: true,
+    });
+    assert.strictEqual(emptyMetadataStage.status, 201);
+    assert.strictEqual(emptyMetadataStage.body.rows[0].book.description, 'Metadata beschrijving');
+    const emptyMetadataFields = {
+      tags: ' ', description: ' ', publisher: '', language: ' ',
+      coverUrl: ' ', publishedYear: ' ', pageCount: ' ',
+    };
+    const clearedMetadataReview = await call(
+      '/api/admin/book-import-stages/' + emptyMetadataStage.body.id + '/review', token1, {
+        revision: 1, acceptWarnings: true,
+        corrections: [{ index: 0, fields: emptyMetadataFields }],
+      });
+    assert.strictEqual(clearedMetadataReview.status, 200,
+      JSON.stringify(clearedMetadataReview.body).slice(0, 600));
+    const previewBook = clearedMetadataReview.body.rows[0].book;
+    for (const field of ['description', 'publisher', 'language', 'coverUrl']) {
+      assert.strictEqual(previewBook[field], '', 'Preview retained cleared ' + field);
+    }
+    assert.deepStrictEqual(previewBook.tags, []);
+    assert.strictEqual(previewBook.publishedYear, null);
+    assert.strictEqual(previewBook.pageCount, null);
+    const appliedMetadataClear = await call(
+      '/api/admin/book-import-stages/' + emptyMetadataStage.body.id + '/apply',
+      token1, { revision: 2, confirm: true });
+    assert.strictEqual(appliedMetadataClear.status, 200,
+      JSON.stringify(appliedMetadataClear.body).slice(0, 500));
+    const persistedMetadata = JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((book) => book.metadataIsbn === emptyMetadataIsbn);
+    assert.ok(persistedMetadata);
+    const rereadAfterClear = await call('/api/books', token1);
+    assert.strictEqual(rereadAfterClear.status, 200);
+    const reloadedMetadata = (rereadAfterClear.body.books || rereadAfterClear.body)
+      .find((book) => book.metadataIsbn === emptyMetadataIsbn);
+    for (const field of ['description', 'publisher', 'language', 'coverUrl']) {
+      assert.strictEqual(persistedMetadata[field], '', 'Persisted field restored: ' + field);
+      assert.strictEqual(reloadedMetadata[field], '', 'Reloaded field restored: ' + field);
+    }
+    assert.deepStrictEqual(persistedMetadata.tags, []);
+    assert.deepStrictEqual(reloadedMetadata.tags, []);
+    assert.ok(!persistedMetadata.publishedYear && !reloadedMetadata.publishedYear);
+    assert.ok(!persistedMetadata.pageCount && !reloadedMetadata.pageCount);
 
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
