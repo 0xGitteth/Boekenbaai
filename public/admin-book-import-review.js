@@ -225,7 +225,10 @@
     }
 
     async function syncStage() {
-      if (busy || syncing || document.hidden) return;
+      if (busy || syncing || document.hidden || !localStorage.getItem('boekenbaai_token')) return;
+      // Poll only while the import panel is on screen. Returning to it
+      // automatically catches up on every change made elsewhere.
+      if (!imports.getClientRects().length) return;
       syncing = true;
       try {
         const current = (await request(rootPath + '/active')).stage;
