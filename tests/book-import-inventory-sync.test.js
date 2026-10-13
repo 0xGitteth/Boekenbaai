@@ -98,9 +98,10 @@ assert.deepStrictEqual(acceptedLower.proposedAdds, [],
 const ignoredIncrease = preview([row(0, 3)], [book('a')], {
   resolutions: [{ isbn: ISBN, action: 'keep_existing' }],
 });
-assert.strictEqual(ignoredIncrease.summary.addCopies, 0,
-  'A consciously retained existing edition cannot get extra copies');
-assert.strictEqual(ignoredIncrease.rows[0].action, 'kept_existing');
+assert.strictEqual(ignoredIncrease.ok, false,
+  'Retain-existing cannot be used to bypass a requested stock increase');
+assert.strictEqual(ignoredIncrease.error, 'invalid_sync_resolution_reason');
+assert.strictEqual(acceptedLower.rows[0].canKeepExisting, true);
 assert.strictEqual(preview([row(0, 1)], [], {
   resolutions: [{ isbn: ISBN, action: 'keep_existing' }],
 }).error, 'unknown_sync_resolution');
@@ -110,6 +111,87 @@ assert.strictEqual(preview([row(0, 1)], [book('a')], {
 assert.strictEqual(preview([row(0, 1)], [book('a')], {
   resolutions: [{ isbn: OTHER, action: 'keep_existing' }],
 }).error, 'unknown_sync_resolution');
+
+// The keep-existing option must NEVER bypass unrelated unresolved problems.
+// Check each blocker separately, including when the smaller Excel quantity
+// would otherwise show "reduction requires review" as the primary reason.
+const retainedChoice = [{ isbn: ISBN, action: 'keep_existing' }];
+const withExcess = [book('a'), book('b'), book('c')];
+const invalidRetentionCases = [
+  {
+    label: 'student loan',
+    row: { ...row(0, 1), context: { studentLoan: { id: 'student-match' } } },
+    reason: 'loan_context_requires_followup',
+  },
+  {
+    label: 'class loan',
+    row: { ...row(0, 1), context: { classLoan: { id: 'class-match' } } },
+    reason: 'loan_context_requires_followup',
+  },
+  {
+    label: 'location or class context',
+    row: { ...row(0, 1), context: { classContext: [{ classId: 'class-match' }] } },
+    reason: 'location_context_requires_followup',
+  },
+  {
+    label: 'source warnings',
+    row: { ...row(0, 1), status: 'warning' },
+    reason: 'source_needs_review',
+  },
+  {
+    label: 'invalid title',
+    row: row(0, 1, { title: '' }),
+    reason: 'edition_identity_mismatch',
+  },
+  {
+    label: 'unresolved row status',
+    row: { ...row(0, 1), status: 'unresolved' },
+    reason: 'source_needs_review',
+  },
+  {
+    label: 'quantity zero',
+    row: row(0, 0, { quantity: { valid: false, value: 0 } }),
+    reason: 'invalid_quantity',
+  },
+  {
+    label: 'quantity with one printed barcode',
+    row: row(0, 2, { barcode: '995566' }),
+    reason: 'printed_barcode_requires_one_copy',
+  },
+  {
+    label: 'barcode belongs to different edition',
+    row: row(0, 1, { barcode: '123123' }),
+    reason: 'barcode_belongs_to_other_edition',
+    books: [
+      ...withExcess,
+      book('other-edition', { metadataIsbn: OTHER, barcode: '123123', title: 'Other' }),
+    ],
+  },
+];
+for (const scenario of invalidRetentionCases) {
+  const existing = scenario.books || withExcess;
+  const baseline = preview([scenario.row], existing);
+  assert.strictEqual(baseline.summary.readyToApply, false, scenario.label);
+  const attempted = preview([scenario.row], existing, { resolutions: retainedChoice });
+  assert.strictEqual(attempted.ok, false, 'Cannot waive blocker: ' + scenario.label);
+  assert.strictEqual(attempted.error, 'invalid_sync_resolution_reason',
+    'The reason needs to be checked, not silenced: ' + scenario.label);
+}
+const warningAcknowledged = preview([
+  { ...row(0, 1), status: 'warning' },
+], withExcess, { acceptWarnings: true, resolutions: retainedChoice });
+assert.strictEqual(warningAcknowledged.ok, true,
+  'A genuinely acknowledged Excel warning may allow a clean stock-reduction decision');
+assert.strictEqual(warningAcknowledged.rows[0].action, 'kept_existing');
+
+// An unrecognized conflicting physical barcode added after a clean reduction
+// must block retain-existing even if reduction was the earlier UI reason.
+const lowerWithNewPrintedCode = preview([
+  row(0, 1, { barcode: '99887766' }),
+], withExcess);
+assert.strictEqual(lowerWithNewPrintedCode.rows[0].canKeepExisting, false);
+assert.strictEqual(preview([row(0, 1, { barcode: '99887766' })], withExcess,
+  { resolutions: retainedChoice }).error, 'invalid_sync_resolution_reason');
 
 // Resolving an excess in one edition must allow a different new ISBN to be
 // synchronized within the SAME confirmed workbook.
