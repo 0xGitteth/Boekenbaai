@@ -8,6 +8,7 @@
   };
   const reasonNames = {
     existing_edition_requires_review: 'Dit ISBN bestaat al in de collectie. Sla deze rij over of beoordeel dit later bij synchroniseren.',
+    existing_physical_barcode_requires_correction: 'Deze fysieke barcode wordt al door een ander boek gebruikt. Corrigeer de barcode of sla deze rij over.',
     source_conflict_or_missing_identity: 'Corrigeer de brongegevens of sla deze rij over.',
     warnings_need_confirmation: 'Controleer de waarschuwingen en geef toestemming voordat je importeert.',
     loan_context_requires_followup: 'Volgens Excel is dit boek al uitgeleend. Corrigeer de leenstatus of sla de rij over; PR5 ondersteunt het overnemen van leningen.',
@@ -142,7 +143,26 @@
           !== JSON.stringify([...(stage.corrections || [])].sort(byIndex));
     };
     const setNotice = (text) => { notice.textContent = text; };
-    const setBusy = (value) => { busy = value; analyze.disabled = busy; };
+    const frozenControls = new Map();
+    function setBusy(value) {
+      busy = value;
+      root.setAttribute('aria-busy', String(value));
+      if (value) {
+        // The in-flight review is for the exact corrections on submission.
+        // Freeze ALL editor and warning inputs so a response cannot silently
+        // replace newer keystrokes or a newer warning decision.
+        frozenControls.clear();
+        for (const el of root.querySelectorAll('input, button, textarea, select')) {
+          frozenControls.set(el, el.disabled);
+          el.disabled = true;
+        }
+      } else {
+        for (const [el, wasDisabled] of frozenControls) {
+          if (el.isConnected) el.disabled = wasDisabled;
+        }
+        frozenControls.clear();
+      }
+    }
 
     async function run(work, label) {
       if (busy) return;

@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const http = require('http');
 const XLSX = require('xlsx');
 
 const PORT = 4047;
@@ -166,11 +167,60 @@ async function run() {
     assert.strictEqual(afterRace.bookImportReports.length, 1,
       'Rejected apply must not persist an import report');
 
+    // Regression: auth reads a request-scoped database snapshot as soon as
+    // headers arrive, but /apply can await the REST of a slow request body.
+    // Another admin must be allowed to add a book meanwhile, and completing
+    // the original /apply must NOT overwrite that newly saved copy.
+    const midBodyIsbn = '9780061120084';
+    const pendingStage = await call('/api/admin/book-import-stages', token1, {
+      file: fileBase64([{ Titel: 'Tijdens upload', Auteur: 'A Auteur', 'ISBN-nummer': midBodyIsbn }]),
+    });
+    assert.strictEqual(pendingStage.status, 201);
+    assert.strictEqual(pendingStage.body.decisions.summary.readyToApply, true);
+    const incompleteBody = JSON.stringify({ revision: 1, confirm: true });
+    let finishPendingBody;
+    const pendingApply = new Promise((resolve, reject) => {
+      const request = http.request({
+        hostname: '127.0.0.1', port: PORT,
+        path: '/api/admin/book-import-stages/' + pendingStage.body.id + '/apply',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token1,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(incompleteBody),
+        },
+      }, (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => {
+          try { resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }); }
+          catch (error) { reject(error); }
+        });
+      });
+      request.on('error', reject);
+      request.write(incompleteBody.slice(0, 12));
+      finishPendingBody = () => request.end(incompleteBody.slice(12));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    const simultaneousCreate = await call('/api/books', token2, {
+      title: 'Tijdens upload', author: 'A Auteur',
+      barcode: '626262', metadataIsbn: midBodyIsbn,
+    });
+    assert.strictEqual(simultaneousCreate.status, 201);
+    finishPendingBody();
+    const pendingConflict = await pendingApply;
+    assert.strictEqual(pendingConflict.status, 409, JSON.stringify(pendingConflict.body));
+    assert.strictEqual(pendingConflict.body.error, 'review_not_ready');
+    const afterPending = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(afterPending.books.filter((book) => book.metadataIsbn === midBodyIsbn).length, 1);
+    assert.strictEqual(afterPending.books.length, 4, 'Late apply must preserve concurrent new books');
+    assert.strictEqual(afterPending.bookImportReports.length, 1);
+
     const malformed = await call('/api/admin/book-import-stages', token1, {
       file: Buffer.from('definitely not a spreadsheet').toString('base64'),
     });
     assert.strictEqual(malformed.status, 400);
-    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.length, 3);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.length, 4);
 
     // School inventory format: separate author columns and the confirmed
     // Makkelijk Lezen + StructuurBB physical-location exception.

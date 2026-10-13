@@ -4532,9 +4532,12 @@ async function handleApi(req, res, requestUrl) {
         const started = bookImportStageStore.beginApply(stage, body.revision);
         if (!started.ok) return sendJson(res, 409, { message: 'Deze import is al verwerkt of gewijzigd.', error: started.error });
         try {
-          const database = getDb();
-          // Recheck the LIVE collection at commit time, not the snapshot used
-          // for preview, so newly added books cannot create duplicates.
+          // Authentication may have loaded getDb() before the request body
+          // finished arriving. Read a fresh snapshot at the synchronous
+          // commit boundary: no awaits occur between this read and the
+          // atomic save, so competing handlers in this process cannot
+          // interleave their writes inside the checked transaction.
+          const database = loadDb();
           const plan = buildStageApplyPlan(
             { ...stage.analysis, acceptWarnings: stage.acceptWarnings },
             database.books, { maxCopies: 5000 },
