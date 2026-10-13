@@ -4,7 +4,8 @@
 // worksheet rows and re-run through PR2; clients cannot supply analyzed results
 // or copy lists to the persistence layer.
 const { analyzeBookImportRows } = require('./book-import-analysis');
-const { mapImportRow, safeRowEntries } = require('./book-import-workbook');
+const { mapImportRow, safeRowEntries, isBlankCellValue } = require('./book-import-workbook');
+const { analyzeIdentifier, looksLikeIsbnCandidate, normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 
 const CORRECTION_COLUMNS = Object.freeze({
@@ -120,10 +121,23 @@ function applyCorrectionsToRows(sourceRows, normalized) {
       for (const key of Object.keys(row)) delete row[key];
       return row;
     }
-    const mapped = mapImportRow(row);
     for (const [field, value] of Object.entries(correction.fields)) {
+      const mapped = mapImportRow(row);
       for (const mappedField of CORRECTION_COLUMNS[field].fields) {
-        for (const entry of mapped.sources[mappedField] || []) delete row[entry.header];
+        for (const entry of mapped.sources[mappedField] || []) {
+          if (mappedField === 'ambiguousIdentifier' && !isBlankCellValue(entry.value)) {
+            const analysis = analyzeIdentifier(entry.value);
+            const representsIsbn = Boolean(analysis.canonical || analysis.repair
+              || analysis.suggestion || looksLikeIsbnCandidate(entry.value));
+            // Combined Barcode / ISBN columns can contain either a real
+            // physical barcode or an edition ISBN. Changing one must not
+            // erase the other, especially when a book already has a printed
+            // label that students need to scan.
+            if ((field === 'editionIsbn' && !representsIsbn)
+              || (field === 'barcode' && representsIsbn)) continue;
+          }
+          delete row[entry.header];
+        }
       }
       row[CORRECTION_COLUMNS[field].header] = value;
     }
@@ -159,8 +173,17 @@ function existingEditionMatch(row, existingBooks) {
 }
 
 function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = false } = {}) {
+  const usedBarcodes = new Map();
+  for (const book of Array.isArray(existingBooks) ? existingBooks : []) {
+    const barcode = normalizeRuntimeBarcode(book?.barcode);
+    if (barcode && !usedBarcodes.has(barcode)) {
+      usedBarcodes.set(barcode, { id: book.id || '', title: typeof book.title === 'string' ? book.title : '' });
+    }
+  }
   const rows = analysis.rows.map((row) => {
     const matches = existingEditionMatch(row, existingBooks);
+    const candidateBarcode = normalizeRuntimeBarcode(row.book?.barcode) || row.book?.editionIsbn || '';
+    const existingBarcode = candidateBarcode ? usedBarcodes.get(candidateBarcode) : null;
     const shouldSkip = row.status === 'skipped';
     // PR5 creates real student/class checkouts. Never make an active loan
     // appear available merely because the import was confirmed in PR3.
@@ -175,15 +198,20 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
     );
     const blocking = row.status === 'conflict' || row.status === 'unresolved'
       || hasActiveLoan || hasUnrepresentedContext;
-    const requiresReview = matches.length > 0 || (row.status === 'warning' && !acceptWarnings);
+    const requiresReview = matches.length > 0 || Boolean(existingBarcode)
+      || (row.status === 'warning' && !acceptWarnings);
     const canCreate = !shouldSkip && !blocking && !requiresReview;
     const reason = shouldSkip ? 'skipped'
       : hasActiveLoan ? 'loan_context_requires_followup'
         : hasUnrepresentedContext ? 'location_context_requires_followup'
           : (row.status === 'conflict' || row.status === 'unresolved') ? 'source_conflict_or_missing_identity'
           : matches.length ? 'existing_edition_requires_review'
+          : existingBarcode ? 'existing_physical_barcode_requires_correction'
             : (requiresReview ? 'warnings_need_confirmation' : '');
-    return { index: row.index, worksheetRow: row.sourceRowNumber, status: row.status, canCreate, reason, existing: matches };
+    return {
+      index: row.index, worksheetRow: row.sourceRowNumber, status: row.status, canCreate,
+      reason, existing: matches, existingBarcode: existingBarcode || null,
+    };
   });
   const blocked = rows.filter((row) => row.reason && row.reason !== 'skipped');
   return {
