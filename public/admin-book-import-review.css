@@ -39,3 +39,8 @@
  .bb-review__controls .btn { width: 100%; }
  .bb-review__rowlist { max-height: none; }
 }
+
+.bb-review__live-alert:not(:empty) { display: grid; gap: .6rem; padding: .85rem 1rem; border: 1px solid var(--accent-border); border-radius: 12px; }
+.bb-review__live-alert p { margin: 0; }
+.bb-review__live-alert .btn { justify-self: start; }
+.bb-review__upload[hidden] { display: none !important; }
