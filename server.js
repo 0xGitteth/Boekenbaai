@@ -721,7 +721,9 @@ function attachDerivedThemeFields(book, options = {}) {
     tags: safeTags,
     manualThemes,
     importedThemes,
-    themes: manualThemes.length ? manualThemes : importedThemes.length ? importedThemes : derived.themes,
+    themes: manualThemes.length ? manualThemes
+      : source.themesCleared === true ? []
+        : importedThemes.length ? importedThemes : derived.themes,
     suggestedThemes: derived.suggestedThemes,
     unmappedTags: derived.unmappedTags,
   };
@@ -1143,6 +1145,7 @@ function ensureBookShape(book) {
   safeBook.dueDate = typeof source.dueDate === 'string' && source.dueDate.trim() ? source.dueDate : null;
   safeBook.tags = parseMultiValueField(source.tags);
   safeBook.manualThemes = normalizeManualThemes(source.manualThemes);
+  safeBook.themesCleared = source.themesCleared === true;
   safeBook.importedThemes = parseMultiValueField(source.importedThemes)
     .filter((theme) => typeof theme === 'string' && theme.trim()).slice(0, 40);
   safeBook.coverColor = typeof source.coverColor === 'string' ? source.coverColor : '#f9f9f9';
@@ -4454,6 +4457,7 @@ async function handleApi(req, res, requestUrl) {
         // An explicit theme edit supersedes metadata imported earlier.
         // An empty selection must not resurrect old metadata themes.
         importedThemes: hasManualThemes ? [] : book.importedThemes,
+        themesCleared: hasManualThemes ? nextManualThemes.length === 0 : book.themesCleared === true,
         coverColor: body.coverColor ?? book.coverColor,
         publisher: nextPublisher,
         publishedYear: nextPublishedYear,
@@ -4701,6 +4705,9 @@ async function handleApi(req, res, requestUrl) {
           const batchId = crypto.randomUUID();
           const newCopies = [];
           const sourceReports = [];
+          const clearedThemeRows = new Set((stage.corrections || [])
+            .filter((correction) => correction?.fields?.themes === '')
+            .map((correction) => correction.index));
           for (const entry of plan.created) {
             const row = entry.row;
             const sourceByField = Object.create(null);
@@ -4726,6 +4733,7 @@ async function handleApi(req, res, requestUrl) {
               tags: row.book.tags, manualThemes: row.book.manualThemes,
               importedThemes: row.provenance?.themes?.source === 'metadata'
                 ? row.book.themes : [],
+              themesCleared: clearedThemeRows.has(entry.index),
               // Keep resolved classroom shelf information on every created
               // copy as well as in the report; the future lending workflow
               // can use it without recovering an old upload.
