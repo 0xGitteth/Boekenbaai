@@ -134,7 +134,8 @@ async function run() {
     // An anonymous or student client can see availability, but no identifiers,
     // borrower classes, loan timestamps or return dates, even by exact ID.
     for (const route of ['/api/books', '/api/books/book-class',
-      '/api/books/barcode/55220012']) {
+      '/api/books/book-student', '/api/books/barcode/55220012',
+      '/api/books/barcode/55220011']) {
       const response = await call(route, studentA);
       assert.strictEqual(response.status, 200, route);
       const text = JSON.stringify(response.body);
