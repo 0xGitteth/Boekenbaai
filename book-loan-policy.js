@@ -40,7 +40,8 @@ function publicBook(book) {
   // Status remains public; identity, class ownership, loan dates and source
   // fields are restricted to dedicated staff/own-student endpoints.
   for (const field of ['borrowedBy', 'borrowedByClassId', 'borrowedAt',
-    'dueDate', 'borrowerName', 'borrowerClass', 'studentId', 'importInfo']) delete safe[field];
+    'dueDate', 'borrowerName', 'borrowerClass', 'borrowerId',
+    'studentId', 'loanId', 'loanIds', 'importInfo']) delete safe[field];
   return safe;
 }
 module.exports = { ownClassIds, mayManageClass, studentClassIds, mayManageStudent,
