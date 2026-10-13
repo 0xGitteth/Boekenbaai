@@ -19,7 +19,7 @@
     missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
     source_needs_review: 'Controleer de invoer en accepteer eventuele waarschuwingen.',
     edition_identity_mismatch: 'Het ISBN is hetzelfde, maar titel of auteur komt niet overeen. Corrigeer dit eerst.',
-    ambiguous_existing_edition_isbn: 'Een bestaand boek heeft tegenstrijdige ISBN-gegevens. Corrigeer de bestaande editie eerst.'
+    ambiguous_existing_edition_isbn: 'Een bestaand boek heeft tegenstrijdige ISBN-gegevens. Corrigeer de bestaande editie eerst.',
     invalid_quantity: 'Voer een geldig aantal exemplaren in.',
     quantity_limit_exceeded: 'Er zijn te veel exemplaren voor één editie.',
     reduction_requires_manual_review: 'Er zijn meer exemplaren in Boekenbaai dan in Excel. Bestaande boeken worden nooit automatisch verwijderd. Controleer dit verschil eerst.',
