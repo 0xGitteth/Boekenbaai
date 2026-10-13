@@ -194,6 +194,10 @@ const OTHER_ISBN = '9780439554930';
   assert.deepStrictEqual(explicitlyCleared.rows[0].book.tags, []);
   assert.deepStrictEqual(explicitlyCleared.rows[0].book.themes, []);
   assert.strictEqual(explicitlyCleared.decisions.summary.readyToApply, true);
+  for (const field of Object.keys(blankFields)) {
+    assert.strictEqual(explicitlyCleared.rows[0].provenance[field].source, 'manual',
+      'An edited field must not be recorded as original Excel data: ' + field);
+  }
 
 
   // A mismatch against exact-ISBN metadata requires an administrator choice.
@@ -214,6 +218,7 @@ const OTHER_ISBN = '9780439554930';
     { index: 0, fields: { title: 'Excel titel' } },
   ], { lookupIsbn: disagreeingLookup, acceptWarnings: true });
   assert.strictEqual(resolvedTitle.rows[0].book.title, 'Excel titel');
+  assert.strictEqual(resolvedTitle.rows[0].provenance.title.source, 'manual');
   assert.strictEqual(resolvedTitle.rows[0].book.publisher, '');
   assert.strictEqual(resolvedTitle.rows[0].status, 'warning');
   assert.strictEqual(resolvedTitle.decisions.summary.readyToApply, true);
