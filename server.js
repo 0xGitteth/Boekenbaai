@@ -12,6 +12,11 @@ const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
+const { circulationRevision, noteLoanActivity,
+  settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
+  listTasks, updateReportCompletion, reportIsFullyReviewed,
+  cancelTasksForDeletedBooks, cancelMissingBookTask, escalateTasksForDeletedClass,
+  libraryOnlyTask, performDecision, assignTask } = require('./book-import-followups');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -1627,6 +1632,48 @@ function assertReviewedImportNotLost(db) {
     error.code = 'DATABASE_WRITE_CONFLICT';
     throw error;
   }
+  // A stale request may not revert a completed or reassigned follow-up.
+  // All task transitions are immutable except for the revisioned replacement.
+  // Circulation counters must survive stale requests and rotation of the
+  // short activity feed. Never permit an old Excel task to undo a real return.
+  const oldActivity = current.bookImportLoanActivityCounters || {};
+  const newActivity = db.bookImportLoanActivityCounters || {};
+  for (const [bookId, revision] of Object.entries(oldActivity)) {
+    const proposed = Object.prototype.hasOwnProperty.call(newActivity, bookId)
+      ? newActivity[bookId] : 0;
+    if (!Number.isSafeInteger(proposed) || proposed < revision) {
+      const error = new Error('A historic circulation revision was lost by a stale database write');
+      error.code = 'DATABASE_WRITE_CONFLICT';
+      throw error;
+    }
+  }
+  const storedTasks = new Map((Array.isArray(current.bookImportFollowups)
+    ? current.bookImportFollowups : []).map((task) => [task.id, task]));
+  const oldSettingsRevision = Number.isSafeInteger(current.bookImportFollowupSettings?.revision)
+    ? current.bookImportFollowupSettings.revision : 0;
+  const newSettingsRevision = Number.isSafeInteger(db.bookImportFollowupSettings?.revision)
+    ? db.bookImportFollowupSettings.revision : 0;
+  if (newSettingsRevision < oldSettingsRevision
+    || (newSettingsRevision === oldSettingsRevision
+      && JSON.stringify(current.bookImportFollowupSettings || null)
+        !== JSON.stringify(db.bookImportFollowupSettings || null))) {
+    const error = new Error('Follow-up configuration changed after this request began');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
+  }
+  const proposedTasks = new Map((Array.isArray(db.bookImportFollowups)
+    ? db.bookImportFollowups : []).map((task) => [task.id, task]));
+  for (const [id, task] of storedTasks) {
+    const proposed = proposedTasks.get(id);
+    if (!proposed || !Number.isSafeInteger(proposed.revision)
+      || proposed.revision < task.revision
+      || (proposed.revision === task.revision
+        && JSON.stringify(proposed) !== JSON.stringify(task))) {
+      const error = new Error('Historical book follow-up changed after this request began');
+      error.code = 'DATABASE_WRITE_CONFLICT';
+      throw error;
+    }
+  }
   if (!latest) return;
   const stillPresent = Array.isArray(db.bookImportReports)
     && db.bookImportReports.some((report) => report?.id === latest);
@@ -1635,6 +1682,33 @@ function assertReviewedImportNotLost(db) {
     error.code = 'DATABASE_WRITE_CONFLICT';
     throw error;
   }
+}
+
+function appendImportClassFollowups(db, report, entries, now) {
+  if (!Array.isArray(db.bookImportFollowups)) db.bookImportFollowups = [];
+  let created = 0;
+  for (const { row, book } of entries) {
+    if (!book?.id) throw Error('import_followup_book_missing');
+    const context = followupContext(row, db.classes);
+    if (!context) continue;
+    const previous = db.bookImportFollowups.find((old) => old.bookId === book.id
+      && contextMatchesTask(old, context));
+    if (previous) {
+      if (!Array.isArray(report.followupTaskIds)) report.followupTaskIds = [];
+      if (!report.followupTaskIds.includes(previous.id)) report.followupTaskIds.push(previous.id);
+      continue;
+    }
+    const task = makeTask({
+      id: crypto.randomUUID(), reportId: report.id, book, row, context, createdAt: now,
+      loanActivityRevision: circulationRevision(db, book.id),
+    });
+    db.bookImportFollowups.push(task);
+    if (!Array.isArray(report.followupTaskIds)) report.followupTaskIds = [];
+    report.followupTaskIds.push(task.id);
+    created++;
+  }
+  report.followupTasksCreated = created;
+  updateReportCompletion(db, report.id);
 }
 
 function loadDb() {
@@ -1647,6 +1721,7 @@ function loadDb() {
   if (!Array.isArray(data.folders)) data.folders = [];
   if (!Array.isArray(data.history)) data.history = [];
   if (!Array.isArray(data.importJobs)) data.importJobs = [];
+  if (!Array.isArray(data.bookImportFollowups)) data.bookImportFollowups = [];
   data.books = data.books.map(ensureBookShape);
   data.students = data.students.map(ensureStudentShape);
   data.classes = data.classes.map(ensureClassShape);
@@ -4362,7 +4437,11 @@ async function handleApi(req, res, requestUrl) {
         });
       }
       const removedCount = db.books.length;
+      const removedIds = db.books.map((book) => book.id);
       db.books = [];
+      cancelTasksForDeletedBooks(db, removedIds, {
+        actorId: user.id, reason: 'library_cleared',
+      });
       for (const student of db.students) {
         if (!Array.isArray(student.borrowedBooks)) continue;
         student.borrowedBooks = [];
@@ -4605,6 +4684,10 @@ async function handleApi(req, res, requestUrl) {
           }
         }
       }
+      if (removedCopies.length) cancelTasksForDeletedBooks(db,
+        removedCopies.map((entry) => entry.id), {
+          actorId: user.id, reason: 'physical_copy_reduced',
+        });
       Object.assign(book, attachDerivedThemeFields(book));
       const currentGroup = getGroupForBook(db, book);
       const totalCopies = currentGroup?.books?.length ?? null;
@@ -4641,12 +4724,127 @@ async function handleApi(req, res, requestUrl) {
       if (bookImportReportMatch[1]) {
         const report = reports.find((item) => item?.id === bookImportReportMatch[1]);
         if (!report) return sendJson(res, 404, { message: 'Importverslag niet gevonden.' });
-        return sendJson(res, 200, report);
+        return sendJson(res, 200, { ...report,
+          fullyReviewed: reportIsFullyReviewed(getDb(), report.id) });
       }
       return sendJson(res, 200, { reports: reports.slice(-30).reverse().map((item) => ({
         id: item.id, fileName: item.fileName, importedAt: item.importedAt,
         createdBy: item.createdBy, count: item.count, sourceRows: item.sourceRows,
+        fullyReviewed: reportIsFullyReviewed(getDb(), item.id),
       })) });
+    }
+
+    // PR6: all classrooms share one persistent task per physical book. The
+    // server scopes every task to current teacher assignments, never the
+    // client's cached class or student list.
+    const taskRoot = '/api/staff/book-import-followups';
+    if (requestUrl.pathname === taskRoot
+      || requestUrl.pathname.startsWith(taskRoot + '/')) {
+      if (!ensureRole(user, ['teacher', 'admin'])) {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen medewerkers mogen importtaken bekijken.' });
+      }
+      if (req.method === 'GET' && requestUrl.pathname === taskRoot) {
+        return sendJson(res, 200, listTasks(getDb(), user));
+      }
+      const decisionMatch = requestUrl.pathname.match(
+        /^\/api\/staff\/book-import-followups\/([a-z0-9-]+)\/decision$/);
+      if (req.method === 'POST' && decisionMatch) {
+        const body = await parseBody(req);
+        const database = loadDb();
+        const task = database.bookImportFollowups.find((item) => item.id === decisionMatch[1]);
+        if (!task) return sendJson(res, 404, { message: 'Importtaak niet gevonden.' });
+        const adminLibraryDecision = user.role === 'admin' && libraryOnlyTask(task)
+          && ['library_keep', 'library_remove'].includes(body?.choice);
+        if (!adminLibraryDecision && (!task.classId
+          || !mayManageClass(database, user, task.classId))) {
+          return sendJson(res, 403, { message: 'Deze klas hoort niet bij jouw taken.' });
+        }
+        if (task.status === 'completed') {
+          return sendJson(res, 409, { message: 'Deze taak is al door een collega afgehandeld.' });
+        }
+        const decision = performDecision(database, task, user, body);
+        if (!decision.ok) {
+          const errors = {
+            book_circulation_changed_since_import:
+              'Dit boek is sinds de import opnieuw uitgeleend of ingeleverd. '
+                + 'Een oude Excel-uitlening kan niet opnieuw worden geactiveerd. '
+                + 'Controleer de actuele situatie of leg de taak terug bij beheer.',
+            existing_fixed_location_conflict:
+              'Dit boek heeft al een andere vaste klaslocatie. Laat beheer dit verschil controleren.',
+            book_already_borrowed:
+              'Dit boek is op dit moment al uitgeleend. Een tweede uitleenactie is niet mogelijk.',
+            student_already_borrowed_edition:
+              'Deze leerling heeft al een exemplaar van dezelfde editie.',
+          };
+          return sendJson(res, 409, {
+            message: errors[decision.error]
+              || 'De taak of uitleenstatus is gewijzigd. Vernieuw het overzicht.',
+            error: decision.error,
+          });
+        }
+        appendHistory(database, { type: 'book_import_followup', performedBy: user.id,
+          bookId: task.bookId, classId: task.classId,
+          message: body.choice === 'library_remove'
+            ? 'Boek uit schoolcollectie verwijderd na importcontrole'
+            : 'Importtaak bijgewerkt' });
+        saveDb(database);
+        return sendJson(res, 200, { taskId: task.id, status: task.status, revision: task.revision });
+      }
+      return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+    }
+
+    const followupAdminRoot = '/api/admin/book-import-followups';
+    if (requestUrl.pathname === followupAdminRoot
+      || requestUrl.pathname.startsWith(followupAdminRoot + '/')) {
+      if (!ensureRole(user, ['admin'])) {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen beheer kan opvolgtaken toewijzen.' });
+      }
+      if (requestUrl.pathname === followupAdminRoot + '/settings') {
+        if (req.method === 'GET') return sendJson(res, 200, settingsFor(getDb()));
+        if (req.method === 'PUT') {
+          const body = await parseBody(req);
+          const settings = validateSettings(body);
+          if (!settings) return sendJson(res, 400, { message: 'Kies geldige herinnerings- en escalatiedagen.' });
+          const database = loadDb();
+          const oldRevision = Number.isSafeInteger(database.bookImportFollowupSettings?.revision)
+            ? database.bookImportFollowupSettings.revision : 0;
+          database.bookImportFollowupSettings = { ...settings, revision: oldRevision + 1 };
+          saveDb(database);
+          return sendJson(res, 200, settings);
+        }
+      }
+      const cancelFollowupMatch = requestUrl.pathname.match(
+        /^\/api\/admin\/book-import-followups\/([a-z0-9-]+)\/cancel$/);
+      if (req.method === 'POST' && cancelFollowupMatch) {
+        const body = await parseBody(req);
+        const database = loadDb();
+        const task = database.bookImportFollowups.find((entry) =>
+          entry.id === cancelFollowupMatch[1]);
+        if (!task) return sendJson(res, 404, { message: 'Importtaak niet gevonden.' });
+        const cancelled = cancelMissingBookTask(database, task, user, body.revision);
+        if (!cancelled.ok) return sendJson(res, 409, {
+          message: 'Deze taak kan niet worden geannuleerd. Vernieuw het overzicht.' });
+        appendHistory(database, { type: 'book_import_followup_cancelled',
+          performedBy: user.id, bookId: task.bookId,
+          message: 'Importtaak geannuleerd omdat het fysieke boek niet bestaat' });
+        saveDb(database);
+        return sendJson(res, 200, { taskId: task.id, status: task.status,
+          revision: task.revision });
+      }
+      const assignMatch = requestUrl.pathname.match(
+        /^\/api\/admin\/book-import-followups\/([a-z0-9-]+)\/assign$/);
+      if (req.method === 'POST' && assignMatch) {
+        const body = await parseBody(req);
+        const database = loadDb();
+        const task = database.bookImportFollowups.find((entry) => entry.id === assignMatch[1]);
+        if (!task) return sendJson(res, 404, { message: 'Importtaak niet gevonden.' });
+        const assigned = assignTask(database, task, body.classId, user, body.revision);
+        if (!assigned.ok) return sendJson(res, 409, {
+          message: 'De taak is gewijzigd of de klas bestaat niet. Vernieuw het overzicht.' });
+        saveDb(database);
+        return sendJson(res, 200, { taskId: task.id, classId: task.classId, revision: task.revision });
+      }
+      return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
     }
 
     // PR3 staged book import is separate from the legacy direct upload route.
@@ -4760,7 +4958,8 @@ async function handleApi(req, res, requestUrl) {
         analysis.decisions = mode === 'inventory_sync'
           ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false,
             students: latestDatabase.students, classes: latestDatabase.classes,
-            loanReceipts: historicalExcelLoanReceipts(latestDatabase) })
+            loanReceipts: historicalExcelLoanReceipts(latestDatabase),
+            existingFollowups: latestDatabase.bookImportFollowups })
           : buildReviewDecisions(analysis, latestDatabase.books, {
             students: latestDatabase.students, classes: latestDatabase.classes,
           });
@@ -4834,6 +5033,7 @@ async function handleApi(req, res, requestUrl) {
               acceptWarnings: body.acceptWarnings, resolutions: choices.values,
               students: latestDatabase.students, classes: latestDatabase.classes,
               loanReceipts: historicalExcelLoanReceipts(latestDatabase),
+              existingFollowups: latestDatabase.bookImportFollowups,
             })
             : buildReviewDecisions(reviewed, latestDatabase.books, {
               acceptWarnings: body.acceptWarnings,
@@ -4872,11 +5072,13 @@ async function handleApi(req, res, requestUrl) {
               acceptWarnings: stage.acceptWarnings, resolutions: stage.inventoryResolutions,
               students: database.students, classes: database.classes,
               loanReceipts: historicalExcelLoanReceipts(database),
+              existingFollowups: database.bookImportFollowups,
             });
             if (!fresh.ok || !fresh.summary.readyToApply
               || JSON.stringify(fresh.rows) !== JSON.stringify(stage.analysis.decisions?.rows)
               || JSON.stringify(fresh.proposedAdds) !== JSON.stringify(stage.analysis.decisions?.proposedAdds)
               || JSON.stringify(fresh.loanAssignments) !== JSON.stringify(stage.analysis.decisions?.loanAssignments)
+              || JSON.stringify(fresh.classFollowups) !== JSON.stringify(stage.analysis.decisions?.classFollowups)
               || JSON.stringify(fresh.omittedEditions) !== JSON.stringify(stage.analysis.decisions?.omittedEditions)
               || fresh.summary.omittedExistingCopies
                 !== stage.analysis.decisions?.summary?.omittedExistingCopies) {
@@ -5035,6 +5237,15 @@ async function handleApi(req, res, requestUrl) {
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
             database.books.push(...createdCopies);
+            const followupEntries = [];
+            for (const assignment of fresh.classFollowups) {
+              const row = stage.analysis.rows[assignment.index];
+              const books = assignment.target === 'existing'
+                ? database.books.filter((book) => book.id === assignment.bookId)
+                : (createdByRow.get(assignment.index) || []);
+              for (const book of books) followupEntries.push({ row, book });
+            }
+            appendImportClassFollowups(database, report, followupEntries, now);
             // A large historic loan migration must not consume the last 200
             // activity events one per book. Retain every individual borrower
             // and book ID in the admin-only durable import report instead.
@@ -5182,6 +5393,15 @@ async function handleApi(req, res, requestUrl) {
           database.bookImportReports.push(report);
           database.bookImportReports = database.bookImportReports.slice(-30);
           database.books.push(...newCopies);
+          const rowByIndex = new Map(stage.analysis.rows.map((row) => [row.index, row]));
+          const classFollowupEntries = sourceReports
+            .filter((entry) => entry.status === 'created' && entry.bookIds?.length
+              && plan.decisions.rows[entry.index]?.needsClassFollowup)
+            .flatMap((entry) => entry.bookIds.map((id) => ({
+              row: rowByIndex.get(entry.index),
+              book: database.books.find((book) => book.id === id),
+            })));
+          appendImportClassFollowups(database, report, classFollowupEntries, now);
           // Only one summary activity event. Per-book audit detail remains
           // in the durable administrator report, not the capped history feed.
           if (importedLoanHistory.length) appendHistory(database, {
@@ -6443,6 +6663,7 @@ async function handleApi(req, res, requestUrl) {
       }
       const groupId = getBookGroupId(target);
       const [removed] = db.books.splice(index, 1);
+      cancelTasksForDeletedBooks(db, [removed.id], { actorId: user.id });
       for (const student of db.students) {
         if (!Array.isArray(student.borrowedBooks)) continue;
         student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== removed.id);
@@ -6521,6 +6742,7 @@ async function handleApi(req, res, requestUrl) {
         }
       }
       const now = new Date().toISOString();
+      noteLoanActivity(db, book.id);
       book.status = 'borrowed';
       book.borrowedBy = student?.id || null;
       book.borrowedByClassId = klass?.id || null;
@@ -6597,6 +6819,7 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 409, { message: 'Dit boek staat niet op de uitleenlijst van deze leerling.' });
         }
       }
+      noteLoanActivity(db, book.id);
       book.status = 'available';
       book.borrowedBy = null;
       book.borrowedByClassId = null;
@@ -7196,6 +7419,7 @@ async function handleApi(req, res, requestUrl) {
       }
       for (const book of db.books) {
         if (book.borrowedBy === student.id) {
+          noteLoanActivity(db, book.id);
           book.borrowedBy = null;
           book.status = 'available';
           book.dueDate = null;
@@ -7984,6 +8208,7 @@ async function handleApi(req, res, requestUrl) {
         });
       }
       const [removedClass] = db.classes.splice(index, 1);
+      escalateTasksForDeletedClass(db, removedClass.id);
       for (const student of db.students) {
         student.classIds = (student.classIds || []).filter((id) => id !== removedClass.id);
       }

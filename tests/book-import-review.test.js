@@ -86,17 +86,29 @@ const OTHER_ISBN = '9780439554930';
   });
   assert.strictEqual(multipleOldIdentifiers.decisions.rows[0].reason, 'existing_edition_requires_review');
 
-  // Do not silently import a workbook's class and library presence fields as
-  // plain available shelf stock, even when a user accepts generic warnings.
+  // PR6: valid physical stock can be added while uncertain class information
+  // is kept as a persistent, shared follow-up rather than silently discarded.
+  // Warnings still require explicit acknowledgement at review time.
   for (const source of [
     { Titel: 'Klascontext', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Klassen: 'SK BB' },
     { Titel: 'Niet aanwezig', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'Aanwezig bieb': 'nee' },
   ]) {
+    const pendingReview = await analyzeReviewedImport([source]);
+    assert.strictEqual(pendingReview.ok, true);
+    assert.strictEqual(pendingReview.decisions.summary.readyToApply, false);
     const contextReview = await analyzeReviewedImport([source], [], { acceptWarnings: true });
     assert.strictEqual(contextReview.ok, true);
-    assert.strictEqual(contextReview.decisions.rows[0].reason, 'location_context_requires_followup');
-    assert.strictEqual(contextReview.decisions.summary.readyToApply, false);
+    assert.strictEqual(contextReview.decisions.rows[0].reason, '');
+    assert.strictEqual(contextReview.decisions.rows[0].canCreate, true);
+    assert.strictEqual(contextReview.decisions.rows[0].needsClassFollowup, true);
+    assert.strictEqual(contextReview.decisions.summary.readyToApply, true);
   }
+  const conflictingContext = await analyzeReviewedImport([{
+    Titel: 'Conflict blijft blokkerend', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
+    Klassen: 'SK BB', 'Geleend door klas': 'Onbekende klas',
+  }], [], { acceptWarnings: true });
+  assert.strictEqual(conflictingContext.decisions.rows[0].canCreate, false);
+  assert.strictEqual(conflictingContext.decisions.rows[0].needsClassFollowup, false);
 
   // A combined Barcode / ISBN column can carry an actual printed barcode.
   // Editing ONLY the damaged ISBN must not replace that physical label by
