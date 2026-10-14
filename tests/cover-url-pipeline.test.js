@@ -111,6 +111,15 @@ async function runIntegrationChecks() {
       localCoverUrl: '/api/covers/' + 'a'.repeat(64) + '.png',
       status: 'available',
     },
+    {
+      id: 'import-existing-cover-2',
+      title: 'Herbruikbaar',
+      author: 'Auteur',
+      barcode: '9781234567889',
+      coverUrl: 'https://oldcover.example.org/old.png',
+      localCoverUrl: '/api/covers/' + 'a'.repeat(64) + '.png',
+      status: 'available',
+    },
   ]);
   // The stale asset must be real on disk. Otherwise the old backfill would
   // retry it anyway and fail to reproduce the regression Codex identified.
@@ -196,6 +205,12 @@ async function runIntegrationChecks() {
     assert.strictEqual(changed.localCoverUrl, '', 'The still-existing previous local image must be invalidated');
     assert.strictEqual(changed.localCoverUrl, '',
       'A changed Excel cover URL must clear the old cached image reference');
+    const secondCopy = afterReplacement.body.find((entry) => entry.id === 'import-existing-cover-2');
+    assert.ok(secondCopy, 'The second physical copy must still exist');
+    assert.strictEqual(secondCopy.coverUrl, replacementUrl,
+      'Every copy sharing the original edition cover must use the new source');
+    assert.strictEqual(secondCopy.localCoverUrl, '',
+      'An old cover cache cannot remain on another copy of the same edition');
 
   } finally {
     serverProcess.kill('SIGINT');
