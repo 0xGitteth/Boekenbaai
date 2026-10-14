@@ -64,9 +64,9 @@ async function main() {
 
   const app = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
   const importUi = fs.readFileSync(path.join(__dirname, '../public/admin-book-import-review.js'), 'utf8');
-  assert.match(app, /state\\.coverImage\\.onerror = \\(\\) =>/);
-  assert.match(app, /coverImage\\.onerror = \\(\\) =>/);
-  assert.match(importUi, /metadata\\.type = 'checkbox';\\s*metadata\\.checked = true;/);
+  assert.match(app, /state\.coverImage\.onerror = \(\) =>/);
+  assert.match(app, /coverImage\.onerror = \(\) =>/);
+  assert.match(importUi, /metadata\.type = 'checkbox';\s*metadata\.checked = true;/);
   console.log('Book import concurrency and cover fallback checks passed');
 }
 
