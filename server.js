@@ -4859,7 +4859,10 @@ async function handleApi(req, res, requestUrl) {
         localCoverUrl: nextLocalCoverUrl,
         coverCrop: nextCoverCrop,
       });
-      if (hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop')) {
+      // If title/author/ISBN changed, this copy moved to another catalog
+      // edition. Do not overwrite artwork on the edition it just left.
+      if ((hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop'))
+        && getBookGroupKey(book) === editionKey) {
         for (const copy of editionCopies) {
           if (copy.id === book.id) continue;
           // Do not change an edition with a different manually selected cover.
