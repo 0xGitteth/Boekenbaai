@@ -4662,8 +4662,11 @@ async function handleApi(req, res, requestUrl) {
       let preparedLocalCoverUrl = null;
       if (requestedCoverUrl !== null) {
         if (!requestedCoverUrl) preparedLocalCoverUrl = '';
-        else if (requestedCoverUrl === previousBook.coverUrl && coverAssets.hasAsset(previousBook.localCoverUrl)) {
-          preparedLocalCoverUrl = previousBook.localCoverUrl;
+        else if (requestedCoverUrl === previousBook.coverUrl) {
+          // Saving an unrelated field must work even when a legacy cover URL
+          // has disappeared. Missing files are retried separately.
+          preparedLocalCoverUrl = coverAssets.hasAsset(previousBook.localCoverUrl)
+            ? previousBook.localCoverUrl : '';
         } else {
           try { preparedLocalCoverUrl = await coverAssets.saveSource(requestedCoverUrl); }
           catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
@@ -4825,6 +4828,7 @@ async function handleApi(req, res, requestUrl) {
         message: historyParts.join(' | '),
       });
       saveDb(db);
+      if (book.coverUrl && !book.localCoverUrl) scheduleCoverBackfill();
       return sendJson(res, 200, {
         book,
         createdCopies: createdCopies.map((entry) => entry.id),
