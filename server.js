@@ -4743,7 +4743,7 @@ async function handleApi(req, res, requestUrl) {
       let preparedLocalCoverUrl = null;
       if (requestedCoverUrl !== null) {
         if (!requestedCoverUrl) preparedLocalCoverUrl = '';
-        else if (requestedCoverUrl === previousBook.coverUrl) {
+        else if (requestedCoverUrl === resolveEffectiveCoverUrl(previousBook.coverUrl)) {
           // Saving an unrelated field must work even when a legacy cover URL
           // has disappeared. Missing files are retried separately.
           preparedLocalCoverUrl = coverAssets.hasAsset(previousBook.localCoverUrl)
@@ -4837,7 +4837,7 @@ async function handleApi(req, res, requestUrl) {
       const cachedEditionCover = editionCopies.find((copy) => coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || '';
       // Reuse a still-valid sibling asset when this specific copy has no local
       // cache yet. Never carry an image across a changed source URL.
-      const nextLocalCoverUrl = nextCoverUrl === previousCoverUrl
+      const nextLocalCoverUrl = nextCoverUrl === resolveEffectiveCoverUrl(previousCoverUrl)
         ? cachedEditionCover
         : (hasCoverUrl ? preparedLocalCoverUrl : '');
       Object.assign(book, {
