@@ -135,8 +135,14 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
             }
             if (changed) saveDb(latest);
           } catch (error) {
-            // Reattempt the database association on the next scheduled pass.
-            coverBackfillPending = true;
+            // A persistent write error must not trigger an immediate retry
+            // loop. Use the same bounded cooldown as network failures.
+            const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
+            coverBackfillFailures.set(source, {
+              attempts,
+              nextRetryAt: attempts <= coverRetryDelays.length
+                ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
+            });
             console.warn('Boekomslag lokaal opgeslagen maar boekkoppeling nog niet bijgewerkt:', error.message);
           }
         }
