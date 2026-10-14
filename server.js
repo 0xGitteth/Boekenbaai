@@ -6341,6 +6341,16 @@ async function handleApi(req, res, requestUrl) {
             updates.language = nextLanguage;
           }
           if (nextCoverUrl !== existingBook.coverUrl) {
+            // A single title can represent several physical copies. Keep
+            // copies using the same original cover consistent with the import.
+            const previousCoverUrl = existingBook.coverUrl;
+            const matchingEdition = getGroupForBook(db, existingBook);
+            for (const copy of matchingEdition?.books || []) {
+              if (copy.id === existingBook.id || copy.coverUrl !== previousCoverUrl) continue;
+              copy.coverUrl = nextCoverUrl;
+              copy.localCoverUrl = '';
+              copy.coverCrop = null;
+            }
             updates.coverUrl = nextCoverUrl;
             // Local files belong to a specific source. A new external URL
             // must be fetched instead of displaying the previous cached cover.
