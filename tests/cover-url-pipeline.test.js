@@ -115,7 +115,7 @@ async function runIntegrationChecks() {
       id: 'import-existing-cover-2',
       title: 'Herbruikbaar',
       author: 'Auteur',
-      barcode: '9781234567889',
+      barcode: '9781234567890',
       coverUrl: 'https://oldcover.example.org/old.png',
       localCoverUrl: '/api/covers/' + 'a'.repeat(64) + '.png',
       status: 'available',
@@ -208,7 +208,7 @@ async function runIntegrationChecks() {
     const secondCopy = afterReplacement.body.find((entry) => entry.id === 'import-existing-cover-2');
     assert.ok(secondCopy, 'The second physical copy must still exist');
     assert.strictEqual(secondCopy.coverUrl, replacementUrl,
-      'Every copy sharing the original edition cover must use the new source');
+      'Every copy sharing the original edition cover must use the new source across different barcodes');
     assert.strictEqual(secondCopy.localCoverUrl, '',
       'An old cover cache cannot remain on another copy of the same edition');
 
