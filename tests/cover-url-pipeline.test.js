@@ -136,11 +136,10 @@ async function runIntegrationChecks() {
         title: 'Nieuw boek',
         author: 'Auteur',
         barcode: '9781234567897',
-        coverUrl: LEGACY_ARCHIVE_URL,
       }),
     });
     assert.strictEqual(postResponse.status, 201);
-    assert.strictEqual(postResponse.body.book.coverUrl, LEGACY_ARCHIVE_URL, 'POST should preserve provided legacy cover URL');
+    assert.strictEqual(postResponse.body.book.coverUrl, '', 'POST with no image should not depend on an external source');
 
     const workbookBase64 = buildWorkbookBase64([
       {
