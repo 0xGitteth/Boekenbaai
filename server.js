@@ -50,6 +50,7 @@ const coverAssets = createCoverAssetStore({ directory: path.join(path.dirname(DA
 // Cover retrieval is deliberately separate from the reviewed import commit:
 // hundreds of third-party image fetches must never delay its HTTP response.
 // Missing local URLs in db.json are the durable retry queue after a restart.
+let shuttingDown = false;
 let coverBackfillRunning = false;
 let coverBackfillScheduled = false;
 const coverBackfillFailed = new Set();
@@ -8499,8 +8500,6 @@ server.listen(PORT, () => {
   const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
   restartBackfill.unref();
 });
-
-let shuttingDown = false;
 
 function gracefulShutdown(signal) {
   if (shuttingDown) {
