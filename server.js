@@ -4531,6 +4531,9 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken toevoegen' });
       }
+      // Retain the initial request DB snapshot. The write-conflict guard must
+      // reject an older writer if a staged import commits while it awaits.
+      const db = getDb();
       const body = await parseBody(req);
       if (!body.title || !body.author || !body.barcode) {
         return sendJson(res, 400, { message: 'Titel, auteur en barcode zijn verplicht' });
@@ -4552,8 +4555,6 @@ async function handleApi(req, res, requestUrl) {
         try { localCoverUrl = await coverAssets.saveSource(coverUrl); }
         catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
       }
-      // Reload after image I/O so another request cannot overwrite a stale DB.
-      const db = loadDb();
       const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
       const baseBook = {
         title: body.title,
@@ -4602,11 +4603,13 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken wijzigen' });
       }
+      const db = getDb();
+      const book = findBookById(db, bookIdMatch[1]);
+      if (!book) return sendJson(res, 404, { message: 'Boek niet gevonden' });
       const body = await parseBody(req);
       const requestedCoverUrl = Object.prototype.hasOwnProperty.call(body, 'coverUrl')
         ? resolveEffectiveCoverUrl(body.coverUrl) : null;
-      const previousBook = findBookById(getDb(), bookIdMatch[1]);
-      if (!previousBook) return sendJson(res, 404, { message: 'Boek niet gevonden' });
+      const previousBook = book;
       let preparedLocalCoverUrl = null;
       if (requestedCoverUrl !== null) {
         if (!requestedCoverUrl) preparedLocalCoverUrl = '';
@@ -4617,9 +4620,6 @@ async function handleApi(req, res, requestUrl) {
           catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
         }
       }
-      const db = loadDb();
-      const book = findBookById(db, bookIdMatch[1]);
-      if (!book) return sendJson(res, 404, { message: 'Boek niet gevonden' });
       const hasNewBarcode = Object.prototype.hasOwnProperty.call(body, 'barcode');
       const normalizedNewBarcode = hasNewBarcode
         ? normalizeBarcode(body.barcode)
