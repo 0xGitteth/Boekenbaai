@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('assert');
-const { resolveReviewedLoan, inspectReviewedLoans, stageReviewedLoan } =
+const { resolveReviewedLoan, inspectReviewedLoans, stageReviewedLoan,
+  excelLoanReceiptKey, historicalExcelLoanReceipts, persistExcelLoanReceipts } =
   require('../book-import-loan-migration');
 const ISBN = '9780131103627';
 const students = [
@@ -87,4 +88,33 @@ assert.strictEqual(db.students[0].borrowedBooks.length, 1,
   'Class loans must not create fictional student borrowing records');
 assert.throws(() => stageReviewedLoan({ id: 'x', status: 'available' },
   { type: 'class', id: 'unknown' }, db), /import_loan_borrower_changed/);
+// A receipt must remain valid even after its original loan is checked in
+// and its corresponding import report and activity log have been rotated away.
+const receipt = excelLoanReceiptKey('book-123', { type: 'student', id: 's1' });
+assert.match(receipt, /^[a-f0-9]{64}$/);
+assert.ok(!receipt.includes('s1') && !receipt.includes('book-123'));
+assert.notStrictEqual(receipt, excelLoanReceiptKey('book-123', { type: 'class', id: 's1' }));
+assert.strictEqual(excelLoanReceiptKey('', { type: 'student', id: 's1' }), null);
+const receiptsDb = {
+  bookImportReports: [{ loanChanges: [
+    { bookId: 'legacy-copy', borrowerType: 'class', borrowerId: 'c1' },
+  ] }],
+};
+assert.ok(historicalExcelLoanReceipts(receiptsDb).has(
+  excelLoanReceiptKey('legacy-copy', { type: 'class', id: 'c1' })));
+persistExcelLoanReceipts(receiptsDb, [
+  { bookId: 'book-123', borrower: { type: 'student', id: 's1' } },
+  { bookId: 'book-123', borrower: { type: 'student', id: 's1' } },
+]);
+assert.strictEqual(receiptsDb.bookImportLoanReceipts.length, 2,
+  'Duplicates collapse and old import reports are permanently backfilled');
+receiptsDb.bookImportReports = [];
+receiptsDb.history = [];
+assert.ok(historicalExcelLoanReceipts(receiptsDb).has(receipt));
+assert.ok(historicalExcelLoanReceipts(receiptsDb).has(
+  excelLoanReceiptKey('legacy-copy', { type: 'class', id: 'c1' })));
+assert.throws(() => persistExcelLoanReceipts(receiptsDb, [
+  { bookId: 'book-123', borrower: { type: 'invalid', id: 's1' } },
+]), /import_loan_invalid_receipt/);
+
 console.log('PR5 legacy Excel loan migration validation tests passed');

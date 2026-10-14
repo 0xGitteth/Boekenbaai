@@ -1524,6 +1524,84 @@ async function run() {
     assert.ok(!afterHistoricLoanRace.bookImportReports.some((report) =>
       report.loanChanges?.some((entry) => entry.bookId === createdForRace.body.book.id)));
 
+    // Re-uploading stale Excel AFTER an actual return must not reopen either
+    // historical student loans or class loans, even when the original audit
+    // report and activity history no longer exist.
+    const receiptDbBeforeReturn = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const historicStudentReceipt = require('../book-import-loan-migration').excelLoanReceiptKey(
+      importedStudentCopy.id, { type: 'student', id: 'student-match' });
+    const historicClassCopy = receiptDbBeforeReturn.books.find((copy) =>
+      copy.metadataIsbn === classLoanIsbn);
+    const historicClassReceipt = require('../book-import-loan-migration').excelLoanReceiptKey(
+      historicClassCopy.id, { type: 'class', id: 'class-match' });
+    assert.ok(receiptDbBeforeReturn.bookImportLoanReceipts.includes(historicStudentReceipt));
+    assert.ok(receiptDbBeforeReturn.bookImportLoanReceipts.includes(historicClassReceipt));
+    const returnedHistoricStudent = await call('/api/books/' + importedStudentCopy.id
+      + '/check-in', token2, { studentId: 'student-match' });
+    assert.strictEqual(returnedHistoricStudent.status, 200,
+      JSON.stringify(returnedHistoricStudent.body).slice(0, 400));
+    const returnedHistoricClass = await call('/api/books/' + historicClassCopy.id
+      + '/check-in', token2, { classId: 'class-match' });
+    assert.strictEqual(returnedHistoricClass.status, 200,
+      JSON.stringify(returnedHistoricClass.body).slice(0, 400));
+    const returnedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.ok(returnedDb.bookImportLoanReceipts.includes(historicStudentReceipt),
+      'Normal check-in must retain the durable historical loan receipt');
+    assert.ok(returnedDb.bookImportLoanReceipts.includes(historicClassReceipt));
+    assert.strictEqual(returnedDb.books.find((copy) =>
+      copy.id === importedStudentCopy.id).status, 'available');
+    assert.strictEqual(returnedDb.books.find((copy) =>
+      copy.id === historicClassCopy.id).status, 'available');
+    assert.ok(!returnedDb.students.find((student) => student.id === 'student-match')
+      .borrowedBooks.some((item) => item.bookId === importedStudentCopy.id));
+    // Simulate rotation of capped reports and history. The independent
+    // receipts, unlike those collections, must be preserved.
+    returnedDb.bookImportReports = [];
+    returnedDb.history = [];
+    fs.writeFileSync(dbPath, JSON.stringify(returnedDb, null, 2));
+    for (const scenario of [
+      { bookId: importedStudentCopy.id, isbn: studentLoanIsbn, type: 'student',
+        borrower: 'Lisa Leerling', field: 'naam leerling' },
+      { bookId: historicClassCopy.id, isbn: classLoanIsbn, type: 'class',
+        borrower: 'Groep A', field: 'Geleend door klas' },
+    ]) {
+      const staleExcel = fileBase64([{
+        Titel: scenario.type === 'student' ? 'Bestaande leerlinglening' : 'Bestaande klaslening',
+        Auteur: 'A Auteur', 'ISBN-nummer': scenario.isbn,
+        [scenario.field]: scenario.borrower,
+      }]);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const afterReturnStage = await call('/api/admin/book-import-stages', token1, {
+          mode: 'inventory_sync', file: staleExcel,
+        });
+        assert.strictEqual(afterReturnStage.status, 201,
+          JSON.stringify(afterReturnStage.body).slice(0, 400));
+        assert.strictEqual(afterReturnStage.body.decisions.summary.restoreLoans, 0);
+        assert.strictEqual(afterReturnStage.body.decisions.summary.previouslyImportedLoans, 1);
+        assert.strictEqual(afterReturnStage.body.decisions.loanAssignments[0].target,
+          'previously_imported');
+        const afterReturnApply = await call('/api/admin/book-import-stages/'
+          + afterReturnStage.body.id + '/apply', token1, { revision: 1, confirm: true });
+        assert.strictEqual(afterReturnApply.status, 200,
+          JSON.stringify(afterReturnApply.body).slice(0, 400));
+        assert.strictEqual(afterReturnApply.body.result.created, 0);
+        assert.strictEqual(afterReturnApply.body.result.restoredLoans, 0);
+        assert.strictEqual(afterReturnApply.body.result.report.loanChanges.length, 0);
+        const afterAttempt = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        const stillReturned = afterAttempt.books.find((copy) => copy.id === scenario.bookId);
+        assert.strictEqual(stillReturned.status, 'available');
+        assert.strictEqual(stillReturned.borrowedBy, null);
+        assert.strictEqual(stillReturned.borrowedByClassId, null);
+        assert.ok(!afterAttempt.history.some((entry) => entry.type === 'loans_imported'
+          && entry.importBatchId === afterReturnApply.body.result.batchId));
+      }
+    }
+    const afterBothReturns = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.ok(!afterBothReturns.students.find((student) => student.id === 'student-match')
+      .borrowedBooks.some((item) => item.bookId === importedStudentCopy.id));
+    assert.ok(afterBothReturns.bookImportLoanReceipts.includes(historicStudentReceipt));
+    assert.ok(afterBothReturns.bookImportLoanReceipts.includes(historicClassReceipt));
+
     console.log('PR3 staged HTTP preview and single-use apply integration tests passed');
   } finally {
     child.kill('SIGTERM');

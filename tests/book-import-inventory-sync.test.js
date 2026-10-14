@@ -1,4 +1,5 @@
 'use strict';
+const { excelLoanReceiptKey } = require('../book-import-loan-migration');
 const assert = require('assert');
 const { buildInventorySyncPreview } = require('../book-import-inventory-sync');
 
@@ -403,5 +404,32 @@ const renamedPupil = preview([rowWithStudentLoan(0)], [book('book-one')], {
 });
 assert.strictEqual(renamedPupil.summary.readyToApply, false);
 assert.strictEqual(renamedPupil.rows[0].reason, 'loan_borrower_changed');
+
+// A real check-in after historical import takes precedence over an old Excel
+// snapshot. Neither a class loan nor a student loan may be reopened.
+const returnedStudentReceipt = excelLoanReceiptKey('book-one',
+  { type: 'student', id: 's1' });
+const returnedStudent = preview([rowWithStudentLoan(0)], [book('book-one')], {
+  ...directory, loanReceipts: new Set([returnedStudentReceipt]),
+});
+assert.strictEqual(returnedStudent.summary.readyToApply, true);
+assert.strictEqual(returnedStudent.summary.restoreLoans, 0);
+assert.strictEqual(returnedStudent.summary.previouslyImportedLoans, 1);
+assert.strictEqual(returnedStudent.loanAssignments[0].target, 'previously_imported');
+assert.strictEqual(returnedStudent.loanAssignments[0].bookId, 'book-one');
+const returnedClass = preview([rowWithClassLoan(0)], [book('class-copy')], {
+  ...directory, loanReceipts: new Set([excelLoanReceiptKey('class-copy',
+    { type: 'class', id: 'c1' })]),
+});
+assert.strictEqual(returnedClass.summary.restoreLoans, 0);
+assert.strictEqual(returnedClass.summary.previouslyImportedLoans, 1);
+assert.strictEqual(returnedClass.loanAssignments[0].target, 'previously_imported');
+// A receipt never authorizes rewriting a currently different borrower.
+const receiptStillOccupied = preview([rowWithStudentLoan(0)],
+  [book('book-one', { status: 'borrowed', borrowedBy: 's2' })], {
+    ...directory, loanReceipts: new Set([returnedStudentReceipt]),
+  });
+assert.strictEqual(receiptStillOccupied.summary.readyToApply, false);
+assert.strictEqual(receiptStillOccupied.rows[0].reason, 'loan_copy_borrowed_by_other');
 
 console.log('PR4 inventory reconciliation pure preview tests passed');

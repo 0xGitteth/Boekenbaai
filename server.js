@@ -8,7 +8,8 @@ const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-r
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
-const { stageReviewedLoan } = require('./book-import-loan-migration');
+const { stageReviewedLoan, historicalExcelLoanReceipts,
+  persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 
@@ -1615,6 +1616,17 @@ function assertReviewedImportNotLost(db) {
   const latest = Array.isArray(current.bookImportReports)
     ? current.bookImportReports[current.bookImportReports.length - 1]?.id
     : null;
+  // Historic loan receipts must survive writes from other routes and stale
+  // request snapshots, even when their original reports have aged out.
+  const previousReceipts = Array.isArray(current.bookImportLoanReceipts)
+    ? current.bookImportLoanReceipts : [];
+  const proposedReceipts = new Set(Array.isArray(db.bookImportLoanReceipts)
+    ? db.bookImportLoanReceipts : []);
+  if (previousReceipts.some((key) => !proposedReceipts.has(key))) {
+    const error = new Error('A historical Excel loan receipt was lost by a stale database write');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
+  }
   if (!latest) return;
   const stillPresent = Array.isArray(db.bookImportReports)
     && db.bookImportReports.some((report) => report?.id === latest);
@@ -4747,7 +4759,8 @@ async function handleApi(req, res, requestUrl) {
         const latestDatabase = loadDb();
         analysis.decisions = mode === 'inventory_sync'
           ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false,
-            students: latestDatabase.students, classes: latestDatabase.classes })
+            students: latestDatabase.students, classes: latestDatabase.classes,
+            loanReceipts: historicalExcelLoanReceipts(latestDatabase) })
           : buildReviewDecisions(analysis, latestDatabase.books, {
             students: latestDatabase.students, classes: latestDatabase.classes,
           });
@@ -4820,6 +4833,7 @@ async function handleApi(req, res, requestUrl) {
             ? buildInventorySyncPreview(reviewed, latestDatabase.books, {
               acceptWarnings: body.acceptWarnings, resolutions: choices.values,
               students: latestDatabase.students, classes: latestDatabase.classes,
+              loanReceipts: historicalExcelLoanReceipts(latestDatabase),
             })
             : buildReviewDecisions(reviewed, latestDatabase.books, {
               acceptWarnings: body.acceptWarnings,
@@ -4857,6 +4871,7 @@ async function handleApi(req, res, requestUrl) {
             const fresh = buildInventorySyncPreview(stage.analysis, database.books, {
               acceptWarnings: stage.acceptWarnings, resolutions: stage.inventoryResolutions,
               students: database.students, classes: database.classes,
+              loanReceipts: historicalExcelLoanReceipts(database),
             });
             if (!fresh.ok || !fresh.summary.readyToApply
               || JSON.stringify(fresh.rows) !== JSON.stringify(stage.analysis.decisions?.rows)
@@ -4963,7 +4978,8 @@ async function handleApi(req, res, requestUrl) {
             // A loan already recorded for the same borrower is idempotent.
             // No old book is deleted or assigned a fabricated loan date.
             for (const assignment of fresh.loanAssignments) {
-              if (assignment.target === 'already_recorded') continue;
+              if (assignment.target === 'already_recorded'
+                || assignment.target === 'previously_imported') continue;
               const copy = assignment.target === 'existing'
                 ? database.books.find((book) => book.id === assignment.bookId)
                 : (createdByRow.get(assignment.index) || [])[0];
@@ -4988,6 +5004,18 @@ async function handleApi(req, res, requestUrl) {
               const existingReport = reportsByRow.get(assignment.index);
               if (existingReport) existingReport.loanStatus = 'already_recorded';
             }
+            for (const assignment of fresh.loanAssignments.filter((item) =>
+              item.target === 'previously_imported')) {
+              const existingReport = reportsByRow.get(assignment.index);
+              if (existingReport) existingReport.loanStatus = 'previously_imported';
+            }
+            // Persist acknowledgements even when the Excel loan was already
+            // active. A later check-in must not be reversed by the old Excel.
+            persistExcelLoanReceipts(database, fresh.loanAssignments.map((assignment) => ({
+              bookId: assignment.target === 'new'
+                ? (createdByRow.get(assignment.index) || [])[0]?.id : assignment.bookId,
+              borrower: assignment.borrower,
+            })));
             const report = {
               id: batchId, createdBy: user.id, importedAt: now,
               mode: 'inventory_sync', fileName: stage.fileName,
@@ -5133,6 +5161,12 @@ async function handleApi(req, res, requestUrl) {
               context: original.context || {},
             });
           }
+          persistExcelLoanReceipts(database, importedLoanHistory.map((event) => ({
+            bookId: event.bookId,
+            borrower: event.studentId
+              ? { type: 'student', id: event.studentId }
+              : { type: 'class', id: event.classId },
+          })));
           const report = {
             id: batchId, createdBy: user.id, importedAt: now,
             fileName: stage.fileName, count: newCopies.length,

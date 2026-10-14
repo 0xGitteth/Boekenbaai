@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('crypto');
 
 // A loan column in Excel represents a previously borrowed physical copy.
 // Accept only an exact, unique borrower match and one physical copy per row;
@@ -70,6 +71,43 @@ function inspectReviewedLoans(rows, {
   return decisions;
 }
 
+// Persistent receipts are independent of capped activity logs and import reports.
+// Hash the physical copy and verified borrower to avoid storing extra
+// identifying data in the receipt ledger. A later check-in never removes it.
+function excelLoanReceiptKey(bookId, borrower) {
+  if (typeof bookId !== 'string' || !bookId
+    || !borrower || !['student', 'class'].includes(borrower.type)
+    || typeof borrower.id !== 'string' || !borrower.id) return null;
+  return crypto.createHash('sha256')
+    .update(JSON.stringify([bookId, borrower.type, borrower.id])).digest('hex');
+}
+
+function historicalExcelLoanReceipts(db = {}) {
+  const keys = new Set((Array.isArray(db.bookImportLoanReceipts)
+    ? db.bookImportLoanReceipts : []).filter((key) =>
+    typeof key === 'string' && /^[a-f0-9]{64}$/.test(key)));
+  // Backfill for imports already processed before durable receipts existed.
+  for (const report of Array.isArray(db.bookImportReports) ? db.bookImportReports : []) {
+    for (const entry of Array.isArray(report?.loanChanges) ? report.loanChanges : []) {
+      const key = excelLoanReceiptKey(entry?.bookId, {
+        type: entry?.borrowerType, id: entry?.borrowerId,
+      });
+      if (key) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+function persistExcelLoanReceipts(db, loans = []) {
+  const keys = historicalExcelLoanReceipts(db);
+  for (const entry of loans) {
+    const key = excelLoanReceiptKey(entry?.bookId, entry?.borrower);
+    if (!key) throw Error('import_loan_invalid_receipt');
+    keys.add(key);
+  }
+  db.bookImportLoanReceipts = [...keys].sort();
+}
+
 function stageReviewedLoan(copy, borrower, db) {
   if (!borrower) return null;
   if (!copy?.id || copy.status === 'borrowed' || copy.borrowedBy || copy.borrowedByClassId) {
@@ -100,4 +138,5 @@ function stageReviewedLoan(copy, borrower, db) {
     ...(borrower.type === 'student' ? { studentId: borrower.id } : { classId: borrower.id }) };
 }
 
-module.exports = { resolveReviewedLoan, inspectReviewedLoans, stageReviewedLoan };
+module.exports = { resolveReviewedLoan, inspectReviewedLoans, stageReviewedLoan,
+  excelLoanReceiptKey, historicalExcelLoanReceipts, persistExcelLoanReceipts };

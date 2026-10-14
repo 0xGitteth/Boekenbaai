@@ -491,6 +491,7 @@
           (decisions.summary.omittedExistingCopies || 0) + ' bestaande exemplaren ontbreken in dit Excelbestand, blijven behouden',
           (decisions.summary.restoreLoans || 0) + ' gecontroleerde bestaande uitleningen overnemen',
           (decisions.summary.alreadyRecordedLoans || 0) + ' uitleningen al correct geregistreerd',
+          (decisions.summary.previouslyImportedLoans || 0) + ' eerder overgenomen uitleningen inmiddels ingeleverd',
         ].join(' · ')));
         heading.append(make('p', 'hint',
           'Excel-aantallen gelden als gewenste totaalvoorraad per ISBN. Er worden geen boeken verwijderd en geen bestaande uitleningen overschreven. Alleen expliciet getoonde, gecontroleerde ontbrekende uitleningen worden toegevoegd.'));
@@ -631,13 +632,15 @@
         }
         if (dec.loanBorrower && (dec.canCreate || (inventorySync && dec.loanState))) {
           const already = dec.loanState === 'already_recorded';
+          const returned = dec.loanState === 'previously_imported';
           card.append(make('p', 'bb-review__detail',
-            (already ? 'Uitlening staat al correct geregistreerd'
+            (returned ? 'Deze oude Excel-uitlening is eerder verwerkt en inmiddels ingeleverd. Het boek blijft beschikbaar.'
+              : already ? 'Uitlening staat al correct geregistreerd'
               : dec.loanState === 'existing' ? 'Dit bestaande fysieke exemplaar wordt als uitgeleend geregistreerd'
                 : 'Dit nieuwe fysieke exemplaar wordt als uitgeleend geregistreerd')
             + ' · ' + (dec.loanBorrower.type === 'student' ? 'Leerling: ' : 'Klas: ')
             + dec.loanBorrower.name
-            + ' · Oorspronkelijke uitleendatum onbekend'));
+            + (returned ? '' : ' · Oorspronkelijke uitleendatum onbekend')));
         }
         if (dec.reason && dec.reason !== 'skipped') {
           card.append(make('p', 'bb-review__reason', reasonNames[dec.reason] || dec.reason));

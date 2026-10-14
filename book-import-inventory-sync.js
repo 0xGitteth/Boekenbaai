@@ -5,7 +5,7 @@
 // An omitted ISBN or lower Excel quantity NEVER silently deletes stock.
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
-const { inspectReviewedLoans } = require('./book-import-loan-migration');
+const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
 
 function editionKeys(book) {
   // A physical barcode that merely LOOKS like another ISBN must not give a
@@ -68,7 +68,7 @@ function normalizeInventoryResolutions(input) {
 }
 
 function buildInventorySyncPreview(analysis, existingBooks = [], {
-  acceptWarnings = false, resolutions = [], students = [], classes = [],
+  acceptWarnings = false, resolutions = [], students = [], classes = [], loanReceipts = [],
 } = {}) {
   if (!analysis?.ok || !Array.isArray(analysis.rows)) return { ok: false, error: 'invalid_review' };
   const normalizedResolutions = normalizeInventoryResolutions(resolutions);
@@ -80,6 +80,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
   const loanChecks = inspectReviewedLoans(analysis.rows, {
     students, classes, books: existingBooks, allowExistingLoan: true,
   });
+  const previouslyProcessed = new Set(loanReceipts);
   const groups = new Map();
   const decisions = analysis.rows.map((row) => ({
     index: row.index, worksheetRow: row.sourceRowNumber,
@@ -236,6 +237,14 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
           plannedLoans.push({ editionIsbn: isbn, index: pending.index, target: 'already_recorded',
             bookId: book.id, borrower });
         } else {
+          // An old Excel snapshot is not proof that a returned book is
+          // currently on loan. A previously processed physical borrower pair
+          // must remain returned even after logs and reports are rotated.
+          if (previouslyProcessed.has(excelLoanReceiptKey(book.id, borrower))) {
+            plannedLoans.push({ editionIsbn: isbn, index: pending.index,
+              target: 'previously_imported', bookId: book.id, borrower });
+            continue;
+          }
           const student = borrower.type === 'student'
             ? students.find((item) => item.id === borrower.id) : null;
           if (student && Array.isArray(student.borrowedBooks)
@@ -419,8 +428,9 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     ok: true, rows: decisions, proposedAdds: safeAdds, loanAssignments: safeLoans, omittedEditions,
     summary: {
       addCopies: additionalCopies,
-      restoreLoans: safeLoans.filter((item) => item.target !== 'already_recorded').length,
+      restoreLoans: safeLoans.filter((item) => item.target === 'existing' || item.target === 'new').length,
       alreadyRecordedLoans: safeLoans.filter((item) => item.target === 'already_recorded').length,
+      previouslyImportedLoans: safeLoans.filter((item) => item.target === 'previously_imported').length,
       blockedEditions: blocked,
       unchangedEditions: decisions.filter((entry) => entry.action === 'unchanged').length,
       acknowledgedEditions: decisions.filter((entry) => entry.action === 'kept_existing').length,
