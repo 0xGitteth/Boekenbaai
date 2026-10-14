@@ -1343,6 +1343,21 @@ function normalizeRenderedCoverUrl(value) {
   return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg?default=false`;
 }
 
+// The original cover stays unchanged; only the display frame is adjusted.
+function normalizedDisplayCoverCrop(value) {
+  if (!value || value.enabled !== true) return null;
+  const { x, y, zoom } = value;
+  if (![x, y, zoom].every((number) => typeof number === 'number' && Number.isFinite(number))
+    || x < 0 || x > 100 || y < 0 || y > 100 || zoom < 1 || zoom > 2.5) return null;
+  return { enabled: true, x, y, zoom };
+}
+function applyDisplayCoverCrop(image, value) {
+  if (!image) return;
+  const crop = normalizedDisplayCoverCrop(value);
+  image.style.objectFit = crop ? 'cover' : 'contain';
+  image.style.objectPosition = crop ? `${crop.x}% ${crop.y}%` : 'center';
+  image.style.transform = crop ? `scale(${crop.zoom})` : '';
+}
 function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
@@ -1376,6 +1391,7 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
         state.coverImage.hidden = true;
         if (state.coverFallback) state.coverFallback.hidden = false;
       };
+      applyDisplayCoverCrop(state.coverImage, representative.coverCrop);
       state.coverImage.src = coverUrl;
       state.coverImage.alt = representative.title ? `Omslag van ${representative.title}` : 'Boekomslag';
       state.coverImage.hidden = false;
@@ -1833,6 +1849,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: normalizeRenderedCoverUrl(representative.coverUrl),
+      coverCrop: normalizedDisplayCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
       themes,
@@ -1903,6 +1920,7 @@ function createBookCard(template, book, folders, options = {}) {
           coverFallback.setAttribute('aria-label', 'Geen omslag beschikbaar');
         }
       };
+      applyDisplayCoverCrop(coverImage, book.coverCrop);
       coverImage.src = coverUrl;
       coverImage.alt = book.title ? `Omslag van ${book.title}` : 'Boekomslag';
       coverImage.loading = 'lazy';
@@ -3521,6 +3539,14 @@ function initStaffPage() {
   const adminBookLanguage = document.querySelector('#admin-book-language');
   const adminBookTagsContainer = document.querySelector('#admin-book-tags');
   const adminBookCover = document.querySelector('#admin-book-cover');
+  const adminCropEditor = document.querySelector('#admin-book-crop-editor');
+  const adminCropImage = document.querySelector('#admin-book-crop-image');
+  const adminCropEnabled = document.querySelector('#admin-book-crop-enabled');
+  const adminCropX = document.querySelector('#admin-book-crop-x');
+  const adminCropY = document.querySelector('#admin-book-crop-y');
+  const adminCropZoom = document.querySelector('#admin-book-crop-zoom');
+  const adminCropReset = document.querySelector('#admin-book-crop-reset');
+  let adminBookCrop = null;
   const adminBookMessage = document.querySelector('#admin-book-message');
   const bookImportForm = document.querySelector('#book-import-form');
   const bookImportFile = document.querySelector('#book-import-file');
@@ -4230,6 +4256,62 @@ function initStaffPage() {
     handleAdminBookSelection(selectedBook, { focus: true, scroll: true });
   });
 
+  function renderAdminCoverCrop() {
+    if (!adminCropEditor || !adminCropImage || !adminBookCover) return;
+    const url = normalizeRenderedCoverUrl(adminBookCover.value.trim());
+    const validUrl = /^https?:\/\//i.test(url) || /^\/api\/covers\/[a-f0-9]{64}\.(?:png|jpg|webp|gif)$/.test(url);
+    adminCropEditor.hidden = !validUrl;
+    if (!validUrl) { adminCropImage.removeAttribute('src'); return; }
+    if (adminCropImage.getAttribute('src') !== url) adminCropImage.src = url;
+    const crop = normalizedDisplayCoverCrop(adminBookCrop);
+    adminCropEnabled.checked = Boolean(crop);
+    adminCropX.value = crop ? String(crop.x) : '50';
+    adminCropY.value = crop ? String(crop.y) : '50';
+    adminCropZoom.value = crop ? String(crop.zoom) : '1';
+    for (const slider of [adminCropX, adminCropY, adminCropZoom]) slider.disabled = !crop;
+    applyDisplayCoverCrop(adminCropImage, crop);
+  }
+  adminBookCover?.addEventListener('change', () => {
+    adminBookCrop = null;
+    renderAdminCoverCrop();
+  });
+  adminCropEnabled?.addEventListener('change', () => {
+    adminBookCrop = adminCropEnabled.checked
+      ? { enabled: true, x: 50, y: 50, zoom: 1 } : null;
+    renderAdminCoverCrop();
+  });
+  for (const slider of [adminCropX, adminCropY, adminCropZoom]) {
+    slider?.addEventListener('input', () => {
+      if (!adminBookCrop) return;
+      adminBookCrop = { enabled: true, x: Number(adminCropX.value),
+        y: Number(adminCropY.value), zoom: Number(adminCropZoom.value) };
+      renderAdminCoverCrop();
+    });
+  }
+  adminCropReset?.addEventListener('click', () => {
+    adminBookCrop = null;
+    renderAdminCoverCrop();
+  });
+  let cropDrag = null;
+  adminCropImage?.addEventListener('pointerdown', (event) => {
+    if (!adminBookCrop || event.button !== 0) return;
+    event.preventDefault();
+    cropDrag = { id: event.pointerId, startX: event.clientX,
+      startY: event.clientY, x: adminBookCrop.x, y: adminBookCrop.y };
+    adminCropImage.setPointerCapture(event.pointerId);
+  });
+  adminCropImage?.addEventListener('pointermove', (event) => {
+    if (!cropDrag || cropDrag.id !== event.pointerId || !adminBookCrop) return;
+    const bounds = adminCropImage.getBoundingClientRect();
+    adminBookCrop = { ...adminBookCrop,
+      x: Math.max(0, Math.min(100, cropDrag.x - 100 * (event.clientX - cropDrag.startX) / Math.max(1, bounds.width))),
+      y: Math.max(0, Math.min(100, cropDrag.y - 100 * (event.clientY - cropDrag.startY) / Math.max(1, bounds.height))) };
+    renderAdminCoverCrop();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    adminCropImage?.addEventListener(type, () => { cropDrag = null; });
+  }
+
   function resetAdminBookForm() {
     if (!adminBookForm) return;
     adminBookForm.reset();
@@ -4272,6 +4354,8 @@ function initStaffPage() {
     if (adminBookCover) {
       adminBookCover.value = '';
     }
+    adminBookCrop = null;
+    renderAdminCoverCrop();
     selectedBookId = null;
     renderBooks();
   }
@@ -4328,6 +4412,8 @@ function initStaffPage() {
     if (adminBookCover) {
       adminBookCover.value = book.coverUrl || '';
     }
+    adminBookCrop = normalizedDisplayCoverCrop(book.coverCrop);
+    renderAdminCoverCrop();
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
     }
@@ -4448,6 +4534,8 @@ function initStaffPage() {
       const metadataCoverUrl = extractMetadataCoverUrl(metadata);
       if (metadataCoverUrl) {
         adminBookCover.value = metadataCoverUrl;
+      adminBookCrop = null;
+      renderAdminCoverCrop();
       }
     }
   }
@@ -7440,6 +7528,7 @@ function initStaffPage() {
       pageCount: pageCountValue || null,
       language: languageValue ? languageValue.toLowerCase() : '',
       coverUrl: coverUrlValue,
+      coverCrop: normalizedDisplayCoverCrop(adminBookCrop),
     };
     const themeSelectionChanged = !bookId || !adminBookInitialThemeKeys
       || adminSelectedThemeKeys.size !== adminBookInitialThemeKeys.size
