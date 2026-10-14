@@ -83,8 +83,12 @@ async function main() {
     const protectedSweep = store.cleanupUnreferenced(() => [first]);
     assert.equal(protectedSweep.removed, 0);
     assert.equal(store.hasAsset(first), true);
+    const abandonedTmp = path.join(root, 'covers', '.' + crypto.randomUUID() + '.tmp');
+    fs.writeFileSync(abandonedTmp, PNG);
+    fs.utimesSync(abandonedTmp, old, old);
     const sweep = store.cleanupUnreferenced(() => []);
-    assert.equal(sweep.removed, 1);
+    assert.equal(sweep.removed, 2);
+    assert.equal(fs.existsSync(abandonedTmp), false);
     assert.equal(store.hasAsset(first), false);
     // Deleting the last reference must not leave a cached resolved Promise
     // which returns an image path whose file no longer exists.
