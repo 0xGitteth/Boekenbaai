@@ -47,23 +47,62 @@ const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
 // Keep original image files next to db.json on the configured persistent volume.
 const coverAssets = createCoverAssetStore({ directory: path.join(path.dirname(DATA_PATH), 'covers') });
 
-async function cacheReviewedCovers(rows) {
-  const sources = [...new Set((rows || []).filter((row) => ['ready', 'warning'].includes(row.status))
-    .map((row) => row.book?.coverUrl).filter(Boolean))];
-  const cached = new Map();
-  let index = 0;
-  await Promise.all(Array.from({ length: Math.min(8, sources.length) }, async () => {
-    while (index < sources.length) {
-      const source = sources[index++];
-      try { cached.set(source, await coverAssets.saveSource(source)); }
-      catch (error) {
-        // A missing cover must not discard otherwise valid ISBN/book records.
-        console.warn('Boekomslag niet lokaal opgeslagen:', error.message);
-        cached.set(source, '');
-      }
+// Cover retrieval is deliberately separate from the reviewed import commit:
+// hundreds of third-party image fetches must never delay its HTTP response.
+// Missing local URLs in db.json are the durable retry queue after a restart.
+let coverBackfillRunning = false;
+let coverBackfillScheduled = false;
+const coverBackfillFailed = new Set();
+function scheduleCoverBackfill() {
+  if (coverBackfillRunning || coverBackfillScheduled || shuttingDown) return;
+  coverBackfillScheduled = true;
+  setImmediate(async () => {
+    coverBackfillScheduled = false;
+    coverBackfillRunning = true;
+    try {
+      const snapshot = loadDb();
+      const sources = [...new Set((snapshot.books || [])
+        .filter((book) => book.coverUrl && !book.localCoverUrl)
+        .map((book) => book.coverUrl))]
+        .filter((source) => !coverBackfillFailed.has(source));
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(sources.length, 4) }, async () => {
+        while (next < sources.length && !shuttingDown) {
+          const source = sources[next++];
+          let local;
+          try {
+            local = await coverAssets.saveSource(source);
+          } catch (error) {
+            coverBackfillFailed.add(source);
+            console.warn('Boekomslag overgeslagen:', error.message);
+            continue;
+          }
+          // Never race against the one-active-import staging transaction.
+          while (!shuttingDown && (bookImportStageStore.active() || activeBookImportLease)) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          if (shuttingDown) break;
+          try {
+            const latest = loadDb();
+            let changed = false;
+            for (const book of latest.books || []) {
+              if (book.coverUrl === source && !book.localCoverUrl) {
+                book.localCoverUrl = local;
+                changed = true;
+              }
+            }
+            if (changed) saveDb(latest);
+          } catch (error) {
+            console.warn('Boekomslag lokaal opgeslagen maar boekkoppeling nog niet bijgewerkt:', error.message);
+          }
+        }
+      }));
+    } catch (error) {
+      console.warn('Omslagverwerking afgebroken:', error.message);
+    } finally {
+      coverBackfillRunning = false;
     }
-  }));
-  return cached;
+  });
 }
 const DIST_DIR = path.join(__dirname, 'dist');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -5129,9 +5168,6 @@ async function handleApi(req, res, requestUrl) {
         const started = bookImportStageStore.beginApply(stage, body.revision);
         if (!started.ok) return sendJson(res, 409, { message: 'Deze import is al verwerkt of gewijzigd.', error: started.error });
         try {
-          // Download unique covers before obtaining the live DB snapshot.
-          // Failed images never invalidate otherwise approved book rows.
-          const localCovers = await cacheReviewedCovers(stage.analysis.rows);
           // Authentication may have loaded getDb() before the request body
           // finished arriving. Read a fresh snapshot at the synchronous
           // commit boundary: no awaits occur between this read and the
@@ -5199,7 +5235,7 @@ async function handleApi(req, res, requestUrl) {
                 description: row.book.description, publisher: row.book.publisher,
                 publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
                 language: row.book.language, coverUrl: row.book.coverUrl,
-                localCoverUrl: localCovers.get(row.book.coverUrl) || '',
+                localCoverUrl: '',
                 easyReading: row.book.easyReading,
                 suitableForExamList: row.book.suitableForExamList,
                 tags: row.book.tags,
@@ -5334,6 +5370,7 @@ async function handleApi(req, res, requestUrl) {
               message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
             });
             saveReviewedBookImportDb(database);
+            scheduleCoverBackfill();
             bookImportStageStore.finishApply(stage, {
               batchId, created: createdCopies.length,
               restoredLoans: restoredLoanEvents.length, removed: 0,
@@ -5391,7 +5428,7 @@ async function handleApi(req, res, requestUrl) {
               description: row.book.description, publisher: row.book.publisher,
               publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
               language: row.book.language, coverUrl: row.book.coverUrl,
-                localCoverUrl: localCovers.get(row.book.coverUrl) || '',
+                localCoverUrl: '',
               easyReading: row.book.easyReading,
               suitableForExamList: row.book.suitableForExamList,
               tags: row.book.tags,
@@ -5490,6 +5527,7 @@ async function handleApi(req, res, requestUrl) {
             message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd, ${importedLoanHistory.length} bestaande leningen overgenomen`,
           });
           saveReviewedBookImportDb(database);
+            scheduleCoverBackfill();
           const result = { batchId, created: newCopies.length,
             restoredLoans: importedLoanHistory.length, importedRows: plan.created.length, report };
           bookImportStageStore.finishApply(stage, result);
@@ -8457,6 +8495,9 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Boekenbaai server draait op http://localhost:${PORT}`);
+  // Resume interrupted cover caching without delaying startup or test setup.
+  const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
+  restartBackfill.unref();
 });
 
 let shuttingDown = false;
