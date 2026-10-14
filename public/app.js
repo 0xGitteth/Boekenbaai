@@ -3565,6 +3565,9 @@ function initStaffPage() {
   const adminCropZoom = document.querySelector('#admin-book-crop-zoom');
   const adminCropReset = document.querySelector('#admin-book-crop-reset');
   let adminBookCrop = null;
+  let adminCropSourceUrl = '';
+  let adminCropLocalUrl = '';
+  let adminCropLastInputUrl = '';
   const adminBookMessage = document.querySelector('#admin-book-message');
   const bookImportForm = document.querySelector('#book-import-form');
   const bookImportFile = document.querySelector('#book-import-file');
@@ -4276,11 +4279,28 @@ function initStaffPage() {
 
   function renderAdminCoverCrop() {
     if (!adminCropEditor || !adminCropImage || !adminBookCover) return;
-    const url = normalizeRenderedCoverUrl(adminBookCover.value.trim());
+    const sourceUrl = adminBookCover.value.trim();
+    const externalUrl = normalizeRenderedCoverUrl(sourceUrl);
+    const cachedUrl = sourceUrl === adminCropSourceUrl
+      ? normalizeRenderedCoverUrl(adminCropLocalUrl) : '';
+    const url = cachedUrl || externalUrl;
     const validUrl = /^https?:\/\//i.test(url) || /^\/api\/covers\/[a-f0-9]{64}\.(?:png|jpg|webp|gif)$/.test(url);
     adminCropEditor.hidden = !validUrl;
-    if (!validUrl) { adminCropImage.removeAttribute('src'); return; }
-    if (adminCropImage.getAttribute('src') !== url) adminCropImage.src = url;
+    if (!validUrl) {
+      adminCropImage.onerror = null;
+      adminCropImage.removeAttribute('src');
+      return;
+    }
+    adminCropImage.onerror = () => {
+      // A removed local file must not leave the crop editor blank when the
+      // original URL is still available.
+      if (cachedUrl && adminCropImage.getAttribute('src') === cachedUrl
+        && externalUrl && externalUrl !== cachedUrl) {
+        adminCropImage.src = externalUrl;
+      }
+    };
+    if (adminCropImage.getAttribute('src') !== url
+      && adminCropImage.getAttribute('src') !== externalUrl) adminCropImage.src = url;
     const crop = normalizedDisplayCoverCrop(adminBookCrop);
     adminCropEnabled.checked = Boolean(crop);
     adminCropX.value = crop ? String(crop.x) : '50';
@@ -4289,10 +4309,15 @@ function initStaffPage() {
     for (const slider of [adminCropX, adminCropY, adminCropZoom]) slider.disabled = !crop;
     applyDisplayCoverCrop(adminCropImage, crop);
   }
-  adminBookCover?.addEventListener('change', () => {
-    adminBookCrop = null;
+  adminBookCover?.addEventListener('input', () => {
+    const nextUrl = adminBookCover.value.trim();
+    if (nextUrl !== adminCropLastInputUrl) {
+      adminBookCrop = null;
+      adminCropLastInputUrl = nextUrl;
+    }
     renderAdminCoverCrop();
   });
+  adminBookCover?.addEventListener('change', renderAdminCoverCrop);
   adminCropEnabled?.addEventListener('change', () => {
     adminBookCrop = adminCropEnabled.checked
       ? { enabled: true, x: 50, y: 50, zoom: 1 } : null;
@@ -4373,6 +4398,9 @@ function initStaffPage() {
       adminBookCover.value = '';
     }
     adminBookCrop = null;
+    adminCropSourceUrl = '';
+    adminCropLocalUrl = '';
+    adminCropLastInputUrl = '';
     renderAdminCoverCrop();
     selectedBookId = null;
     renderBooks();
@@ -4431,6 +4459,9 @@ function initStaffPage() {
       adminBookCover.value = book.coverUrl || '';
     }
     adminBookCrop = normalizedDisplayCoverCrop(book.coverCrop);
+    adminCropSourceUrl = String(book.coverUrl || '').trim();
+    adminCropLocalUrl = book.localCoverUrl || '';
+    adminCropLastInputUrl = adminCropSourceUrl;
     renderAdminCoverCrop();
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
@@ -4552,8 +4583,11 @@ function initStaffPage() {
       const metadataCoverUrl = extractMetadataCoverUrl(metadata);
       if (metadataCoverUrl) {
         adminBookCover.value = metadataCoverUrl;
-      adminBookCrop = null;
-      renderAdminCoverCrop();
+        adminBookCrop = null;
+        adminCropSourceUrl = '';
+        adminCropLocalUrl = '';
+        adminCropLastInputUrl = metadataCoverUrl.trim();
+        renderAdminCoverCrop();
       }
     }
   }
