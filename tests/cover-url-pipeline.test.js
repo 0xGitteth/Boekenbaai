@@ -248,6 +248,7 @@ function runRepresentativeChecks() {
 
   const factory = new Function(
     [
+      'function resolveApiUrl(value) { return value; }',
       extractBetween('function normalizeGroupKeyPart(', 'function getBookGroupKey('),
       extractBetween('function getBookGroupKey(', 'function pickRepresentativeBook('),
       extractBetween('function normalizeRenderedCoverUrl(', 'function populateBookDetail('),
@@ -275,6 +276,15 @@ function runRepresentativeChecks() {
     CANONICAL_URL,
     'legacy-only cover should be normalized to canonical in representative output'
   );
+
+  const siblingCache = groupBooksByTitleAuthor([
+    { id: 'first', title: 'Cached edition', author: 'A', barcode: '9781234567889',
+      coverUrl: 'https://covers.example.org/edition.png', localCoverUrl: '' },
+    { id: 'second', title: 'Cached edition', author: 'A', barcode: '9781234567890',
+      coverUrl: 'https://covers.example.org/edition.png', localCoverUrl: '/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png' },
+  ]);
+  assert.strictEqual(siblingCache[0].localCoverUrl, '/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+    'A representative without a local cover must reuse the cached image of its sibling');
 }
 
 function runCleanupScriptChecks() {
