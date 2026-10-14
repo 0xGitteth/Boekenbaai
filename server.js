@@ -4756,7 +4756,12 @@ async function handleApi(req, res, requestUrl) {
         message: 'Dit boek is intussen verwijderd. Vernieuw de pagina.',
         error: 'DATABASE_WRITE_CONFLICT',
       });
-      if (JSON.stringify(book) !== JSON.stringify(originalBook)) {
+      // Background cover caching may update only localCoverUrl while an
+      // administrator is saving. That is not an editable-book conflict.
+      // Any real change to loan state, cover source, crop or metadata still is.
+      const currentComparable = { ...book, localCoverUrl: undefined };
+      const initialComparable = { ...originalBook, localCoverUrl: undefined };
+      if (JSON.stringify(currentComparable) !== JSON.stringify(initialComparable)) {
         return sendJson(res, 409, {
           message: 'Dit boek is intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.',
           error: 'DATABASE_WRITE_CONFLICT',
@@ -4816,10 +4821,19 @@ async function handleApi(req, res, requestUrl) {
         : addCopies - removeCopies;
       const createdCopies = [];
       const removedCopies = [];
-      // A title can have several physical copies. Retain the current edition
-      // membership before editing the representative book.
-      const coverGroup = getGroupForBook(db, book);
+      // Catalog editions are grouped by title, author and metadata ISBN,
+      // independently of scanned barcodes. Capture that exact membership
+      // before editing the representative, so all copies stay consistent.
+      const editionKey = getBookGroupKey(book);
       const previousCoverUrl = book.coverUrl;
+      const editionCopies = db.books.filter((copy) => getBookGroupKey(copy) === editionKey
+        && copy.coverUrl === previousCoverUrl);
+      const cachedEditionCover = editionCopies.find((copy) => coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || '';
+      // Reuse a still-valid sibling asset when this specific copy has no local
+      // cache yet. Never carry an image across a changed source URL.
+      const nextLocalCoverUrl = nextCoverUrl === previousCoverUrl
+        ? cachedEditionCover
+        : (hasCoverUrl ? preparedLocalCoverUrl : '');
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -4842,12 +4856,12 @@ async function handleApi(req, res, requestUrl) {
         pageCount: nextPageCount,
         language: nextLanguage,
         coverUrl: nextCoverUrl,
-        localCoverUrl: hasCoverUrl ? preparedLocalCoverUrl : (book.localCoverUrl || ''),
+        localCoverUrl: nextLocalCoverUrl,
         coverCrop: nextCoverCrop,
       });
       if (hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop')) {
-        for (const copy of coverGroup?.books || []) {
-          if (copy.id === book.id || copy.coverUrl !== previousCoverUrl) continue;
+        for (const copy of editionCopies) {
+          if (copy.id === book.id) continue;
           // Do not change an edition with a different manually selected cover.
           copy.coverUrl = nextCoverUrl;
           copy.localCoverUrl = book.localCoverUrl;
