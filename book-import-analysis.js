@@ -221,9 +221,10 @@ async function analyzeBookImportRows(rows, options = {}) {
   const analyzedRows = [];
   const editionCopies = [];
   const stagedPhysicalRowIndexes = new Set();
+  const skipEditionGrouping = new Set();
   let totalCopies = 0;
 
-  for (let index = 0; index < mappedRows.length; index += 1) {
+  async function analyzeRow(index) {
     const mapped = mappedRows[index];
     const row = {
       index,
@@ -239,15 +240,13 @@ async function analyzeBookImportRows(rows, options = {}) {
     if (isCompletelyEmptyRow(mapped)) {
       row.context.skipReason = 'empty';
       row.status = 'skipped';
-      analyzedRows.push(row);
-      continue;
+      return row;
     }
 
     if (isClearJunkRow(mapped)) {
       row.context.skipReason = 'junk';
       row.status = 'skipped';
-      analyzedRows.push(row);
-      continue;
+      return row;
     }
 
     applySourceCollisions(mapped, row);
@@ -258,8 +257,7 @@ async function analyzeBookImportRows(rows, options = {}) {
 
     if (row.context.excludeFromSchoolCollection) {
       row.status = finalizeRowStatus(row);
-      analyzedRows.push(row);
-      continue;
+      return row;
     }
 
     if (!row.book.title) addIssue(row, 'missing_title', 'warning');
@@ -268,6 +266,7 @@ async function analyzeBookImportRows(rows, options = {}) {
 
     const hasConflictingRepairSuggestions = flagConflictingRepairSuggestions(row);
     const hasIdentifierConflict = hasBlockingIdentifierConflict(row);
+    if (hasConflictingRepairSuggestions || hasIdentifierConflict) skipEditionGrouping.add(index);
     if (!hasConflictingRepairSuggestions && !hasIdentifierConflict) {
       await resolveMetadata(row, {
         ...metadataOptions,
@@ -283,6 +282,24 @@ async function analyzeBookImportRows(rows, options = {}) {
     }
 
     row.status = finalizeRowStatus(row);
+    return row;
+  }
+
+  // Limit concurrent metadata lookups without changing workbook ordering.
+  // Resolve stock limits, edition grouping and duplicate barcodes in row order.
+  const parallelism = Math.min(3, mappedRows.length);
+  let nextRowIndex = 0;
+  await Promise.all(Array.from({ length: parallelism }, async () => {
+    while (nextRowIndex < mappedRows.length) {
+      const index = nextRowIndex++;
+      analyzedRows[index] = await analyzeRow(index);
+    }
+  }));
+
+  for (let index = 0; index < analyzedRows.length; index += 1) {
+    const row = analyzedRows[index];
+    if (row.context.excludeFromSchoolCollection || row.context.skipReason === 'empty'
+      || row.context.skipReason === 'junk') continue;
     const requestedCopies = row.book.quantity.value;
     if (row.book.quantity.valid && requestedCopies > 0) {
       if (totalCopies + requestedCopies > maxCopies) {
@@ -291,7 +308,7 @@ async function analyzeBookImportRows(rows, options = {}) {
       } else {
         totalCopies += requestedCopies;
         stagedPhysicalRowIndexes.add(index);
-        if (row.book.editionIsbn && !hasConflictingRepairSuggestions && !hasBlockingIdentifierConflict(row)) {
+        if (row.book.editionIsbn && !skipEditionGrouping.has(index)) {
           // Inventory mode compares a potentially large TOTAL stock
           // snapshot. One grouping representative per Excel row retains
           // edition identity conflict detection without allocating thousands
@@ -312,7 +329,6 @@ async function analyzeBookImportRows(rows, options = {}) {
         }
       }
     }
-    analyzedRows.push(row);
   }
 
   markDuplicateBarcodes(analyzedRows, stagedPhysicalRowIndexes);
