@@ -1850,6 +1850,12 @@ function groupBooksByTitleAuthor(books = []) {
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const availableCopies = totalCopies - borrowedCopies;
     const representative = value.representativeBook || value.copies[0] || {};
+    // Prefer the local cover from a sibling with the same external source.
+    // This also makes a newly imported copy usable before backfill finishes.
+    const representativeCoverSource = normalizeRenderedCoverUrl(representative.coverUrl);
+    const cachedEditionCover = value.copies.find((copy) =>
+      normalizeRenderedCoverUrl(copy.coverUrl) === representativeCoverSource
+      && copy.localCoverUrl)?.localCoverUrl || representative.localCoverUrl || '';
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
     const themes = Array.from(value.themes);
@@ -1860,7 +1866,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: normalizeRenderedCoverUrl(representative.coverUrl),
-      localCoverUrl: normalizeRenderedCoverUrl(representative.localCoverUrl),
+      localCoverUrl: normalizeRenderedCoverUrl(cachedEditionCover),
       coverCrop: normalizedDisplayCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
