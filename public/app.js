@@ -1369,7 +1369,13 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const coverUrl = manualCoverUrl || metadataCoverUrl;
   const hasCover = Boolean(coverUrl);
   if (state.coverImage) {
+    state.coverImage.onerror = null;
     if (hasCover) {
+      state.coverImage.onerror = () => {
+        if (state.coverImage.getAttribute('src') !== coverUrl) return;
+        state.coverImage.hidden = true;
+        if (state.coverFallback) state.coverFallback.hidden = false;
+      };
       state.coverImage.src = coverUrl;
       state.coverImage.alt = representative.title ? `Omslag van ${representative.title}` : 'Boekomslag';
       state.coverImage.hidden = false;
@@ -1886,7 +1892,17 @@ function createBookCard(template, book, folders, options = {}) {
   }
 
   if (coverImage) {
+    coverImage.onerror = null;
     if (hasCover) {
+      coverImage.onerror = () => {
+        if (coverImage.getAttribute('src') !== coverUrl) return;
+        coverImage.hidden = true;
+        if (coverFallback) {
+          coverFallback.hidden = false;
+          coverFallback.setAttribute('role', 'img');
+          coverFallback.setAttribute('aria-label', 'Geen omslag beschikbaar');
+        }
+      };
       coverImage.src = coverUrl;
       coverImage.alt = book.title ? `Omslag van ${book.title}` : 'Boekomslag';
       coverImage.loading = 'lazy';

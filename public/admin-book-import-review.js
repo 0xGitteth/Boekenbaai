@@ -161,6 +161,7 @@
     const metadataLabel = make('label', 'bb-review__check');
     const metadata = make('input');
     metadata.type = 'checkbox';
+    metadata.checked = true;
     metadataLabel.append(metadata, document.createTextNode(' Ontbrekende boekinformatie opzoeken via ISBN (kan langer duren)'));
     const syncLabel = make('label', 'bb-review__check');
     const syncMode = make('input');
