@@ -6693,6 +6693,7 @@ async function handleApi(req, res, requestUrl) {
           message: `${createdBooks.length} boeken toegevoegd, ${updatedBooks.length} bijgewerkt via Excel-import`,
         });
         saveDb(db);
+        scheduleCoverBackfill();
       }
 
       if (!cancelled && importFinalizeDelayMs > 0) {
