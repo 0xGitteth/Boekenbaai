@@ -40,6 +40,8 @@ async function main() {
     const digest = crypto.createHash('sha256').update(PNG).digest('hex');
     assert.equal(first, '/api/covers/' + digest + '.png');
     assert.equal(repeated, first);
+    assert.equal(store.hasAsset(first), true);
+    assert.equal(store.hasAsset('/api/covers/' + '0'.repeat(64) + '.png'), false);
     assert.equal(calls, 1);
     assert.deepEqual(await fs.promises.readFile(path.join(root, 'covers', digest + '.png')), PNG);
     assert.equal(await store.saveSource('https://covers.example.org/two.png'), first);
