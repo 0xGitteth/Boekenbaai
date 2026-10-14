@@ -1432,6 +1432,12 @@ function groupBooksByTitleAuthor(books = []) {
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const availableCopies = totalCopies - borrowedCopies;
     const representative = value.representativeBook || value.copies[0] || {};
+    // A representative may have no local asset even when another physical
+    // copy with the same source has a valid cached image.
+    const representativeCoverSource = resolveEffectiveCoverUrl(representative.coverUrl);
+    const cachedEditionCover = value.copies.find((copy) =>
+      resolveEffectiveCoverUrl(copy.coverUrl) === representativeCoverSource
+      && coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || representative.localCoverUrl || '';
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
     const themes = sortThemesByCanonicalOrder(Array.from(value.themes));
@@ -1444,7 +1450,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: resolveEffectiveCoverUrl(representative.coverUrl),
-      localCoverUrl: representative.localCoverUrl || '',
+      localCoverUrl: cachedEditionCover,
       coverCrop: normalizeCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
@@ -4737,7 +4743,7 @@ async function handleApi(req, res, requestUrl) {
       let preparedLocalCoverUrl = null;
       if (requestedCoverUrl !== null) {
         if (!requestedCoverUrl) preparedLocalCoverUrl = '';
-        else if (requestedCoverUrl === previousBook.coverUrl) {
+        else if (requestedCoverUrl === resolveEffectiveCoverUrl(previousBook.coverUrl)) {
           // Saving an unrelated field must work even when a legacy cover URL
           // has disappeared. Missing files are retried separately.
           preparedLocalCoverUrl = coverAssets.hasAsset(previousBook.localCoverUrl)
@@ -4756,7 +4762,12 @@ async function handleApi(req, res, requestUrl) {
         message: 'Dit boek is intussen verwijderd. Vernieuw de pagina.',
         error: 'DATABASE_WRITE_CONFLICT',
       });
-      if (JSON.stringify(book) !== JSON.stringify(originalBook)) {
+      // Background cover caching may update only localCoverUrl while an
+      // administrator is saving. That is not an editable-book conflict.
+      // Any real change to loan state, cover source, crop or metadata still is.
+      const currentComparable = { ...book, localCoverUrl: undefined };
+      const initialComparable = { ...originalBook, localCoverUrl: undefined };
+      if (JSON.stringify(currentComparable) !== JSON.stringify(initialComparable)) {
         return sendJson(res, 409, {
           message: 'Dit boek is intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.',
           error: 'DATABASE_WRITE_CONFLICT',
@@ -4816,10 +4827,19 @@ async function handleApi(req, res, requestUrl) {
         : addCopies - removeCopies;
       const createdCopies = [];
       const removedCopies = [];
-      // A title can have several physical copies. Retain the current edition
-      // membership before editing the representative book.
-      const coverGroup = getGroupForBook(db, book);
+      // Catalog editions are grouped by title, author and metadata ISBN,
+      // independently of scanned barcodes. Capture that exact membership
+      // before editing the representative, so all copies stay consistent.
+      const editionKey = getBookGroupKey(book);
       const previousCoverUrl = book.coverUrl;
+      const editionCopies = db.books.filter((copy) => getBookGroupKey(copy) === editionKey
+        && copy.coverUrl === previousCoverUrl);
+      const cachedEditionCover = editionCopies.find((copy) => coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || '';
+      // Reuse a still-valid sibling asset when this specific copy has no local
+      // cache yet. Never carry an image across a changed source URL.
+      const nextLocalCoverUrl = nextCoverUrl === resolveEffectiveCoverUrl(previousCoverUrl)
+        ? cachedEditionCover
+        : (hasCoverUrl ? preparedLocalCoverUrl : '');
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -4842,12 +4862,15 @@ async function handleApi(req, res, requestUrl) {
         pageCount: nextPageCount,
         language: nextLanguage,
         coverUrl: nextCoverUrl,
-        localCoverUrl: hasCoverUrl ? preparedLocalCoverUrl : (book.localCoverUrl || ''),
+        localCoverUrl: nextLocalCoverUrl,
         coverCrop: nextCoverCrop,
       });
-      if (hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop')) {
-        for (const copy of coverGroup?.books || []) {
-          if (copy.id === book.id || copy.coverUrl !== previousCoverUrl) continue;
+      // If title/author/ISBN changed, this copy moved to another catalog
+      // edition. Do not overwrite artwork on the edition it just left.
+      if ((hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop'))
+        && getBookGroupKey(book) === editionKey) {
+        for (const copy of editionCopies) {
+          if (copy.id === book.id) continue;
           // Do not change an edition with a different manually selected cover.
           copy.coverUrl = nextCoverUrl;
           copy.localCoverUrl = book.localCoverUrl;
@@ -6400,12 +6423,18 @@ async function handleApi(req, res, requestUrl) {
             // A single title can represent several physical copies. Keep
             // copies using the same original cover consistent with the import.
             const previousCoverUrl = existingBook.coverUrl;
-            const matchingEdition = getGroupForBook(db, existingBook);
-            for (const copy of matchingEdition?.books || []) {
-              if (copy.id === existingBook.id || copy.coverUrl !== previousCoverUrl) continue;
-              copy.coverUrl = nextCoverUrl;
-              copy.localCoverUrl = '';
-              copy.coverCrop = null;
+            const previousEditionKey = getBookGroupKey(existingBook);
+            const nextEditionKey = getBookGroupKey({
+              ...existingBook, title: nextTitle, author: nextAuthor, metadataIsbn: nextMetadataIsbn,
+            });
+            if (nextEditionKey === previousEditionKey) {
+              for (const copy of db.books) {
+                if (copy.id === existingBook.id || copy.coverUrl !== previousCoverUrl
+                  || getBookGroupKey(copy) !== previousEditionKey) continue;
+                copy.coverUrl = nextCoverUrl;
+                copy.localCoverUrl = '';
+                copy.coverCrop = null;
+              }
             }
             updates.coverUrl = nextCoverUrl;
             // Local files belong to a specific source. A new external URL
