@@ -19,7 +19,7 @@ Docenten kunnen na controle aangeven:
 - **Staat vast in onze klas**: vaste fysieke locatie, zonder nieuwe uitlening.
 - **Hoort niet bij onze klas**: terug naar beheer voor een nieuwe klasindeling.
 
-Actieve uitleningen mogen nooit worden overschreven. Historische leningen krijgen ook het blijvende PR5-verwerkingskenmerk zodat een oude Excel-upload een later ingeleverd boek niet opnieuw uitleent.
+Actieve uitleningen mogen nooit worden overschreven. Historische leningen krijgen ook het blijvende PR5-verwerkingskenmerk zodat een oude Excel-upload een later ingeleverd boek niet opnieuw uitleent. Een taak bewaart de stand van de duurzame `bookImportLoanActivityCounters` op het moment van import. Iedere gewone uitleen- en innameactie (ook een geforceerde inname bij het verwijderen van een leerling) verhoogt die stand. Een historische klas- of leerlinglening mag alleen worden bevestigd als de teller sindsdien gelijk is gebleven. Dit voorkomt het opnieuw activeren van een oude Excel-lening na een echte uitleen- en innameactie, zelfs wanneer de gewone activiteitenhistorie al is afgekapt. Het bevestigen van een vaste klaslocatie blijft toegestaan zonder uitleenstatus te wijzigen.
 
 ## Autorisatie en gelijktijdige acties
 

@@ -6,7 +6,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const XLSX = require('xlsx');
-const { followupContext, eligibleForDeferredContext, makeTask, taskStage,
+const { circulationRevision, noteLoanActivity,
+  followupContext, eligibleForDeferredContext, makeTask, taskStage,
   listTasks, settingsFor, validateSettings, performDecision, assignTask,
   reportIsFullyReviewed } = require('../book-import-followups');
 const { excelLoanReceiptKey } = require('../book-import-loan-migration');
@@ -135,6 +136,32 @@ assert.strictEqual(performDecision(borrowedShelfDb, borrowedShelfDb.bookImportFo
 assert.strictEqual(borrowedShelfDb.books[4].fixedLocation, 'Groep B');
 assert.strictEqual(borrowedShelfDb.books[4].status, 'borrowed');
 assert.strictEqual(borrowedShelfDb.books[4].borrowedByClassId, 'class-b');
+// Even after an intervening genuine check-in, a historic task cannot
+// reactivate the old Excel loan. The durable counter survives history rotation.
+const afterRealCirculation = structuredClone(db);
+noteLoanActivity(afterRealCirculation, 'one'); // real checkout
+noteLoanActivity(afterRealCirculation, 'one'); // real check-in
+afterRealCirculation.history = []; // activity feed fully rotated
+assert.strictEqual(circulationRevision(afterRealCirculation, 'one'), 2);
+assert.strictEqual(performDecision(afterRealCirculation,
+  afterRealCirculation.bookImportFollowups[0], users[0],
+  { choice: 'student_loan', studentId: 'stu-a', revision: 1 }, now).error,
+  'book_circulation_changed_since_import');
+assert.strictEqual(afterRealCirculation.books[0].status, 'available');
+assert.strictEqual(performDecision(afterRealCirculation,
+  afterRealCirculation.bookImportFollowups[0], users[0],
+  { choice: 'fixed_location', revision: 1 }, now).ok, true);
+// New tasks capture the current baseline; activity that predates the import
+// must not prevent their legitimate, still-current classification.
+const afterActivityTask = makeTask({ id: 'baseline-test', reportId: 'baseline-report',
+  row: contextRow(0), book: afterRealCirculation.books[1],
+  context: followupContext(contextRow(0), classes), createdAt: now,
+  loanActivityRevision: circulationRevision(afterRealCirculation, 'one') });
+assert.strictEqual(afterActivityTask.loanActivityRevision, 2);
+const prototypeSafeDb = { bookImportLoanActivityCounters: {} };
+noteLoanActivity(prototypeSafeDb, '__proto__');
+assert.strictEqual(circulationRevision(prototypeSafeDb, '__proto__'), 1);
+assert.strictEqual(Object.getPrototypeOf(prototypeSafeDb.bookImportLoanActivityCounters), null);
 const inconsistentStudentDb = structuredClone(db);
 inconsistentStudentDb.students[0].borrowedBooks.push({ bookId: 'two' });
 assert.strictEqual(performDecision(inconsistentStudentDb,
@@ -384,6 +411,17 @@ async function run() {
     assert.deepStrictEqual(repeated.body.result.report.followupTaskIds, [importedTasks[0].id]);
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).bookImportFollowups
       .filter((t) => t.bookId === importedTasks[0].bookId).length, 1);
+    // A real loan was started and returned while the old import task was open.
+    // The teacher cannot revive that obsolete loan but may still confirm
+    // the permanent physical location of the same copy.
+    assert.strictEqual((await call('/api/books/' + importedTasks[0].bookId
+      + '/check-out', teacherB, { classId: 'class-b' })).status, 200);
+    assert.strictEqual((await call('/api/books/' + importedTasks[0].bookId
+      + '/check-in', teacherB, { classId: 'class-b' })).status, 200);
+    const obsoleteLoan = await call(root + '/' + importedTasks[0].id + '/decision',
+      teacherB, { choice: 'class_loan', revision: 1 });
+    assert.strictEqual(obsoleteLoan.status, 409);
+    assert.strictEqual(obsoleteLoan.body.error, 'book_circulation_changed_since_import');
     assert.strictEqual((await call(root + '/' + importedTasks[0].id + '/decision', teacherB,
       { choice: 'fixed_location', revision: 1 })).status, 200);
     assert.strictEqual((await call('/api/admin/book-import-reports/' + applied.body.result.batchId,

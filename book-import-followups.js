@@ -11,6 +11,26 @@ const DEFAULT_SETTINGS = Object.freeze({ reminderDays: 7, escalationDays: 14 });
 const CHOICES = new Set(['class_loan', 'student_loan', 'fixed_location', 'not_our_class']);
 const DAY_MS = 86400000;
 
+// Unlike the capped activity feed, this per-copy circulation ledger is
+// permanent. A historical Excel task cannot turn a genuine return back into
+// an active checkout, even after thousands of later book transactions.
+function circulationRevision(db, bookId) {
+  const ledger = db?.bookImportLoanActivityCounters;
+  const value = ledger && typeof ledger === 'object' && !Array.isArray(ledger)
+    && Object.prototype.hasOwnProperty.call(ledger, bookId) ? ledger[bookId] : 0;
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+function noteLoanActivity(db, bookId) {
+  if (!bookId || typeof bookId !== 'string') throw Error('invalid_circulation_book');
+  const current = circulationRevision(db, bookId);
+  if (current === Number.MAX_SAFE_INTEGER) throw Error('circulation_revision_overflow');
+  const ledger = Object.assign(Object.create(null),
+    db.bookImportLoanActivityCounters && !Array.isArray(db.bookImportLoanActivityCounters)
+      ? db.bookImportLoanActivityCounters : {});
+  ledger[bookId] = current + 1;
+  db.bookImportLoanActivityCounters = ledger;
+}
+
 function settingsFor(db) {
   const configured = db?.bookImportFollowupSettings || {};
   const reminderDays = Number.isSafeInteger(configured.reminderDays)
@@ -71,7 +91,8 @@ function eligibleForDeferredContext(row, classes = []) {
     && issue.severity !== 'error');
 }
 
-function makeTask({ id, reportId, row, book, context, createdAt }) {
+function makeTask({ id, reportId, row, book, context, createdAt,
+  loanActivityRevision = 0 }) {
   if (!id || !reportId || !book?.id || !context) throw Error('invalid_class_followup');
   return {
     id, reportId, bookId: book.id, barcode: book.barcode || '',
@@ -80,6 +101,7 @@ function makeTask({ id, reportId, row, book, context, createdAt }) {
     sourceLibraryPresence: context.sourceLibraryPresence,
     requestedFixedLocation: context.requestedFixedLocation,
     worksheetRow: row.sourceRowNumber, createdAt,
+    loanActivityRevision,
     status: 'open', revision: 1, completedAt: null, completedBy: null,
     resolution: null, studentId: null,
   };
@@ -168,9 +190,13 @@ function performDecision(db, task, user, body, now = new Date().toISOString()) {
     && user.role !== 'admin') return { ok: false, error: 'task_escalated' };
   // A confirmed fixed shelf location is independent of the lending state.
   // Updating that location must never check in or reassign an active loan.
-  if (['student_loan', 'class_loan'].includes(body.choice)
-    && (copy.status === 'borrowed' || copy.borrowedBy || copy.borrowedByClassId)) {
-    return { ok: false, error: 'book_already_borrowed' };
+  if (['student_loan', 'class_loan'].includes(body.choice)) {
+    if (circulationRevision(db, copy.id) !== task.loanActivityRevision) {
+      return { ok: false, error: 'book_circulation_changed_since_import' };
+    }
+    if (copy.status === 'borrowed' || copy.borrowedBy || copy.borrowedByClassId) {
+      return { ok: false, error: 'book_already_borrowed' };
+    }
   }
   if (body.choice === 'student_loan') {
     const student = (db.students || []).find((entry) => entry.id === body.studentId);
@@ -220,6 +246,7 @@ function performDecision(db, task, user, body, now = new Date().toISOString()) {
     return { ok: true, task };
   }
   if (['student_loan', 'class_loan'].includes(body.choice)) {
+    noteLoanActivity(db, copy.id);
     persistExcelLoanReceipts(db, [{
       bookId: copy.id,
       borrower: body.choice === 'student_loan'
@@ -244,6 +271,7 @@ function assignTask(db, task, classId, user, expectedRevision, now = new Date().
 }
 
 module.exports = {
+  circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask,
   eligibleForDeferredContext,
   makeTask, taskStage, taskView, listTasks, reportIsFullyReviewed, updateReportCompletion,

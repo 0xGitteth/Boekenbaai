@@ -12,7 +12,8 @@ const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
-const { settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
+const { circulationRevision, noteLoanActivity,
+  settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
   performDecision, assignTask } = require('./book-import-followups');
 
@@ -1632,6 +1633,19 @@ function assertReviewedImportNotLost(db) {
   }
   // A stale request may not revert a completed or reassigned follow-up.
   // All task transitions are immutable except for the revisioned replacement.
+  // Circulation counters must survive stale requests and rotation of the
+  // short activity feed. Never permit an old Excel task to undo a real return.
+  const oldActivity = current.bookImportLoanActivityCounters || {};
+  const newActivity = db.bookImportLoanActivityCounters || {};
+  for (const [bookId, revision] of Object.entries(oldActivity)) {
+    const proposed = Object.prototype.hasOwnProperty.call(newActivity, bookId)
+      ? newActivity[bookId] : 0;
+    if (!Number.isSafeInteger(proposed) || proposed < revision) {
+      const error = new Error('A historic circulation revision was lost by a stale database write');
+      error.code = 'DATABASE_WRITE_CONFLICT';
+      throw error;
+    }
+  }
   const storedTasks = new Map((Array.isArray(current.bookImportFollowups)
     ? current.bookImportFollowups : []).map((task) => [task.id, task]));
   const oldSettingsRevision = Number.isSafeInteger(current.bookImportFollowupSettings?.revision)
@@ -1685,6 +1699,7 @@ function appendImportClassFollowups(db, report, entries, now) {
     }
     const task = makeTask({
       id: crypto.randomUUID(), reportId: report.id, book, row, context, createdAt: now,
+      loanActivityRevision: circulationRevision(db, book.id),
     });
     db.bookImportFollowups.push(task);
     if (!Array.isArray(report.followupTaskIds)) report.followupTaskIds = [];
@@ -4737,8 +4752,23 @@ async function handleApi(req, res, requestUrl) {
         }
         const decision = performDecision(database, task, user, body);
         if (!decision.ok) {
-          return sendJson(res, 409, { message: 'De taak of uitleenstatus is gewijzigd. Vernieuw het overzicht.',
-            error: decision.error });
+          const errors = {
+            book_circulation_changed_since_import:
+              'Dit boek is sinds de import opnieuw uitgeleend of ingeleverd. '
+                + 'Een oude Excel-uitlening kan niet opnieuw worden geactiveerd. '
+                + 'Controleer de actuele situatie of leg de taak terug bij beheer.',
+            existing_fixed_location_conflict:
+              'Dit boek heeft al een andere vaste klaslocatie. Laat beheer dit verschil controleren.',
+            book_already_borrowed:
+              'Dit boek is op dit moment al uitgeleend. Een tweede uitleenactie is niet mogelijk.',
+            student_already_borrowed_edition:
+              'Deze leerling heeft al een exemplaar van dezelfde editie.',
+          };
+          return sendJson(res, 409, {
+            message: errors[decision.error]
+              || 'De taak of uitleenstatus is gewijzigd. Vernieuw het overzicht.',
+            error: decision.error,
+          });
         }
         appendHistory(database, { type: 'book_import_followup', performedBy: user.id,
           bookId: task.bookId, classId: task.classId, message: 'Importtaak bijgewerkt' });
@@ -6678,6 +6708,7 @@ async function handleApi(req, res, requestUrl) {
         }
       }
       const now = new Date().toISOString();
+      noteLoanActivity(db, book.id);
       book.status = 'borrowed';
       book.borrowedBy = student?.id || null;
       book.borrowedByClassId = klass?.id || null;
@@ -6754,6 +6785,7 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 409, { message: 'Dit boek staat niet op de uitleenlijst van deze leerling.' });
         }
       }
+      noteLoanActivity(db, book.id);
       book.status = 'available';
       book.borrowedBy = null;
       book.borrowedByClassId = null;
@@ -7353,6 +7385,7 @@ async function handleApi(req, res, requestUrl) {
       }
       for (const book of db.books) {
         if (book.borrowedBy === student.id) {
+          noteLoanActivity(db, book.id);
           book.borrowedBy = null;
           book.status = 'available';
           book.dueDate = null;
