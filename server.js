@@ -62,7 +62,7 @@ function scheduleCoverBackfill() {
     try {
       const snapshot = loadDb();
       const sources = [...new Set((snapshot.books || [])
-        .filter((book) => book.coverUrl && !book.localCoverUrl)
+        .filter((book) => book.coverUrl && !coverAssets.hasAsset(book.localCoverUrl))
         .map((book) => book.coverUrl))]
         .filter((source) => !coverBackfillFailed.has(source));
       let next = 0;
@@ -86,7 +86,7 @@ function scheduleCoverBackfill() {
             const latest = loadDb();
             let changed = false;
             for (const book of latest.books || []) {
-              if (book.coverUrl === source && !book.localCoverUrl) {
+              if (book.coverUrl === source && !coverAssets.hasAsset(book.localCoverUrl)) {
                 book.localCoverUrl = local;
                 changed = true;
               }
@@ -4652,7 +4652,7 @@ async function handleApi(req, res, requestUrl) {
       let preparedLocalCoverUrl = null;
       if (requestedCoverUrl !== null) {
         if (!requestedCoverUrl) preparedLocalCoverUrl = '';
-        else if (requestedCoverUrl === previousBook.coverUrl && previousBook.localCoverUrl) {
+        else if (requestedCoverUrl === previousBook.coverUrl && coverAssets.hasAsset(previousBook.localCoverUrl)) {
           preparedLocalCoverUrl = previousBook.localCoverUrl;
         } else {
           try { preparedLocalCoverUrl = await coverAssets.saveSource(requestedCoverUrl); }
