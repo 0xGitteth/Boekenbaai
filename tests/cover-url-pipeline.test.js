@@ -112,6 +112,12 @@ async function runIntegrationChecks() {
       status: 'available',
     },
   ]);
+  // The stale asset must be real on disk. Otherwise the old backfill would
+  // retry it anyway and fail to reproduce the regression Codex identified.
+  const storedCoverDir = path.join(tempDir, 'covers');
+  fs.mkdirSync(storedCoverDir, { recursive: true });
+  fs.writeFileSync(path.join(storedCoverDir, 'a'.repeat(64) + '.png'),
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvmkAAAAASUVORK5CYII=', 'base64'));
 
   const serverProcess = startServer({ BOEKENBAAI_DATA_PATH: dbPath });
   try {
@@ -187,6 +193,7 @@ async function runIntegrationChecks() {
     const changed = afterReplacement.body.find((entry) => entry.id === 'import-existing-cover');
     assert.ok(changed);
     assert.strictEqual(changed.coverUrl, replacementUrl);
+    assert.strictEqual(changed.localCoverUrl, '', 'The still-existing previous local image must be invalidated');
     assert.strictEqual(changed.localCoverUrl, '',
       'A changed Excel cover URL must clear the old cached image reference');
 
