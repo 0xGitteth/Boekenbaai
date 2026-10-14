@@ -95,6 +95,21 @@ async function main() {
     assert.equal(await store.saveSource('https://covers.example.org/one.png'), first);
     assert.equal(calls, 3);
     assert.equal(store.hasAsset(first), true);
+    // A transient upstream failure must not permanently poison the in-flight
+    // cache; retrying the same image source should start a new download.
+    let attempts = 0;
+    const flakyStore = createCoverAssetStore({
+      directory: path.join(root, 'flaky'),
+      downloader: async () => {
+        attempts++;
+        if (attempts === 1) throw Error('temporary_upstream_failure');
+        return PNG;
+      },
+    });
+    await assert.rejects(flakyStore.saveSource('https://covers.example.org/flaky.png'),
+      /temporary_upstream_failure/);
+    assert.equal(await flakyStore.saveSource('https://covers.example.org/flaky.png'), first);
+    assert.equal(attempts, 2);
     await assert.rejects(store.saveSource('/api/covers/' + '0'.repeat(64) + '.png'), /missing_local_cover/);
     server = http.createServer((req, res) => {
       if (!store.serve(req, res, new URL(req.url, 'http://localhost').pathname)) res.writeHead(404).end();
