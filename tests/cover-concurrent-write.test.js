@@ -13,7 +13,39 @@ const ROOT = path.join(__dirname, '..');
 function dbFixture() {
   const passwordHash = crypto.createHash('sha256').update('admin-pass').digest('hex');
   return {
-    books: [], users: [{ id: 'admin', username: 'admin', name: 'Admin', role: 'admin', passwordHash }],
+    books: [
+          {
+                "id": "edition-1",
+                "title": "Shared book",
+                "author": "Shared author",
+                "metadataIsbn": "9789029078733",
+                "barcode": "9789029078733",
+                "status": "available",
+                "coverUrl": "https://covers.example.org/old-edition.png",
+                "localCoverUrl": ""
+          },
+          {
+                "id": "edition-2",
+                "title": "Shared book",
+                "author": "Shared author",
+                "metadataIsbn": "9789029078733",
+                "barcode": "9789029078734",
+                "status": "available",
+                "coverUrl": "https://covers.example.org/old-edition.png",
+                "localCoverUrl": "/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+          },
+          {
+                "id": "edition-custom",
+                "title": "Shared book",
+                "author": "Shared author",
+                "metadataIsbn": "9789029078733",
+                "barcode": "9789029078735",
+                "status": "available",
+                "coverUrl": "https://covers.example.org/custom-edition.png",
+                "localCoverUrl": ""
+          }
+    ],
+    users: [{ id: 'admin', username: 'admin', name: 'Admin', role: 'admin', passwordHash }],
     students: [{ id: 'student-1', username: 'student', name: 'Student', active: true, borrowedBooks: [] }],
     classes: [], folders: [], history: [],
   };
@@ -139,6 +171,44 @@ async function main() {
     assert.equal(current.students[0].borrowedBooks.length, 2);
     assert.equal(current.books.find((b) => b.id === idB).coverUrl,
       'https://covers.example.org/slow-edit.png', 'Conflicting cover edit must not overwrite checkout');
+
+    // Editing a copy with a missing local image must keep a valid sibling's
+    // cache, even when the two copies have different barcodes.
+    const crop = { enabled: true, x: 35, y: 55, zoom: 1.45 };
+    const sharedEdit = await mutation('PUT', '/api/books/edition-1', token, {
+      coverUrl: 'https://covers.example.org/old-edition.png', coverCrop: crop,
+    });
+    assert.equal(sharedEdit.status, 200);
+    current = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    for (const id of ['edition-1', 'edition-2']) {
+      const copy = current.books.find((entry) => entry.id === id);
+      assert.equal(copy.localCoverUrl, '/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+        'A good local cover on a sibling must be kept across same-edition barcodes');
+      assert.deepEqual(copy.coverCrop, crop);
+    }
+    assert.equal(current.books.find((entry) => entry.id === 'edition-custom').coverUrl,
+      'https://covers.example.org/custom-edition.png',
+      'A separately selected cover must not be overwritten');
+
+    resetGate();
+    // A background localCoverUrl attachment is not a conflicting user edit.
+    const cacheOnlyEdit = mutation('PUT', '/api/books/' + idB, token, {
+      coverUrl: 'https://covers.example.org/slow-cacheonly.png',
+    });
+    await releaseOnce(async () => {
+      const latest = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      latest.books.find((entry) => entry.id === idB).localCoverUrl =
+        '/api/covers/' + 'b'.repeat(64) + '.png';
+      fs.writeFileSync(dbPath, JSON.stringify(latest));
+      return true;
+    }, 'PUT cache-only');
+    const cacheOnlyResult = await cacheOnlyEdit;
+    assert.equal(cacheOnlyResult.status, 200,
+      'An automatic local cache update must not trigger a false HTTP 409');
+    current = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.equal(current.books.find((entry) => entry.id === idB).coverUrl,
+      'https://covers.example.org/slow-cacheonly.png');
+
     console.log('Cover concurrent create/edit/checkout regressions passed');
   } finally {
     child.kill('SIGTERM');
