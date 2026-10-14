@@ -4674,6 +4674,10 @@ async function handleApi(req, res, requestUrl) {
         : addCopies - removeCopies;
       const createdCopies = [];
       const removedCopies = [];
+      // A title can have several physical copies. Retain the current edition
+      // membership before editing the representative book.
+      const coverGroup = getGroupForBook(db, book);
+      const previousCoverUrl = book.coverUrl;
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -4699,6 +4703,15 @@ async function handleApi(req, res, requestUrl) {
         localCoverUrl: hasCoverUrl ? preparedLocalCoverUrl : (book.localCoverUrl || ''),
         coverCrop: nextCoverCrop,
       });
+      if (hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop')) {
+        for (const copy of coverGroup?.books || []) {
+          if (copy.id === book.id || copy.coverUrl !== previousCoverUrl) continue;
+          // Do not change an edition with a different manually selected cover.
+          copy.coverUrl = nextCoverUrl;
+          copy.localCoverUrl = book.localCoverUrl;
+          copy.coverCrop = nextCoverCrop;
+        }
+      }
       if (quantityChange !== 0) {
         const groupId = getBookGroupId(book);
         const groupCopies = groupId ? db.books.filter((entry) => getBookGroupId(entry) === groupId) : [book];
