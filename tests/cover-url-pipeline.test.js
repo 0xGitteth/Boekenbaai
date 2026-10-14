@@ -102,6 +102,15 @@ async function runIntegrationChecks() {
       coverUrl: LEGACY_ARCHIVE_URL,
       status: 'available',
     },
+    {
+      id: 'import-existing-cover',
+      title: 'Herbruikbaar',
+      author: 'Auteur',
+      barcode: '9781234567889',
+      coverUrl: 'https://oldcover.example.org/old.png',
+      localCoverUrl: '/api/covers/' + 'a'.repeat(64) + '.png',
+      status: 'available',
+    },
   ]);
 
   const serverProcess = startServer({ BOEKENBAAI_DATA_PATH: dbPath });
@@ -162,6 +171,25 @@ async function runIntegrationChecks() {
     const imported = afterImport.body.find((entry) => entry.barcode === '9781234567898');
     assert.ok(imported, 'imported book should exist');
     assert.strictEqual(imported.coverUrl, LEGACY_ARCHIVE_URL, 'import should preserve provided legacy cover URL');
+
+    // A new source must never keep showing the old locally cached image.
+    const replacementUrl = 'https://replacement-cover.invalid/new.png';
+    const replacement = await request('/api/books/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ file: buildWorkbookBase64([{
+        Titel: 'Herbruikbaar', Auteur: 'Auteur', Barcode: '9781234567889',
+        Cover: replacementUrl,
+      }]) }),
+    });
+    assert.strictEqual(replacement.status, 200);
+    const afterReplacement = await request('/api/books');
+    const changed = afterReplacement.body.find((entry) => entry.id === 'import-existing-cover');
+    assert.ok(changed);
+    assert.strictEqual(changed.coverUrl, replacementUrl);
+    assert.strictEqual(changed.localCoverUrl, '',
+      'A changed Excel cover URL must clear the old cached image reference');
+
   } finally {
     serverProcess.kill('SIGINT');
     await new Promise((resolve) => serverProcess.once('exit', resolve));
