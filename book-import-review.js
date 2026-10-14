@@ -7,6 +7,7 @@ const { analyzeBookImportRows } = require('./book-import-analysis');
 const { mapImportRow, safeRowEntries, isBlankCellValue } = require('./book-import-workbook');
 const { analyzeIdentifier, looksLikeIsbnCandidate, normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
+const { inspectReviewedLoans } = require('./book-import-loan-migration');
 
 const CORRECTION_COLUMNS = Object.freeze({
   title: { header: 'Titel', fields: ['title'], type: 'text' },
@@ -216,7 +217,12 @@ function detectWorkbookBarcodeCollisions(rows) {
   return conflicted;
 }
 
-function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = false } = {}) {
+function buildReviewDecisions(analysis, existingBooks = [], {
+  acceptWarnings = false, students = [], classes = [],
+} = {}) {
+  const loanValidation = inspectReviewedLoans(analysis.rows, {
+    students, classes, books: existingBooks,
+  });
   const workbookBarcodeConflicts = detectWorkbookBarcodeCollisions(analysis.rows);
   const editionIndex = buildExistingEditionIndex(existingBooks);
   const usedBarcodes = new Map();
@@ -237,6 +243,8 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
     // PR5 creates real student/class checkouts. Never make an active loan
     // appear available merely because the import was confirmed in PR3.
     const hasActiveLoan = Boolean(row.context?.studentLoan || row.context?.classLoan);
+    const loanCheck = loanValidation.get(row.index);
+    const unsafeLoan = hasActiveLoan && loanCheck?.ok !== true;
     // Acknowledging a warning is not consent to silently discard a school's
     // physical location, class assignment or "not in library" information.
     // PR4/5 owns the eventual mapping into the real inventory/loan models.
@@ -246,13 +254,13 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
       || (row.context?.fixedLocation && row.context.fixedLocation.status !== 'resolved')
     );
     const blocking = row.status === 'conflict' || row.status === 'unresolved'
-      || hasActiveLoan || hasUnrepresentedContext;
+      || unsafeLoan || hasUnrepresentedContext;
     const requiresReview = match.count > 0 || Boolean(existingBarcode)
       || workbookBarcodeConflict || printedBarcodeNeedsSingleCopy
       || (row.status === 'warning' && !acceptWarnings);
     const canCreate = !shouldSkip && !blocking && !requiresReview;
     const reason = shouldSkip ? 'skipped'
-      : hasActiveLoan ? 'loan_context_requires_followup'
+      : unsafeLoan ? (loanCheck?.error || 'loan_context_requires_followup')
         : hasUnrepresentedContext ? 'location_context_requires_followup'
           : (row.status === 'conflict' || row.status === 'unresolved') ? 'source_conflict_or_missing_identity'
           : match.count ? 'existing_edition_requires_review'
@@ -264,6 +272,7 @@ function buildReviewDecisions(analysis, existingBooks = [], { acceptWarnings = f
       index: row.index, worksheetRow: row.sourceRowNumber, status: row.status, canCreate,
       reason, existing: matches, existingCount: match.count,
       existingBarcode: existingBarcode || null,
+      loanBorrower: canCreate ? loanCheck?.borrower || null : null,
     };
   });
   const blocked = rows.filter((row) => row.reason && row.reason !== 'skipped');
@@ -337,7 +346,8 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
     }
   }
   const decisions = buildReviewDecisions(analysis, Array.isArray(options.existingBooks) ? options.existingBooks : [],
-    { acceptWarnings: options.acceptWarnings === true });
+    { acceptWarnings: options.acceptWarnings === true,
+      students: options.students, classes: options.classes });
   return { ...analysis, decisions, correctedRows: rows, appliedCorrectionCount: normalized.corrections.size };
 }
 

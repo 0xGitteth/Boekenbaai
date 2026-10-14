@@ -1,4 +1,5 @@
 'use strict';
+const { excelLoanReceiptKey } = require('../book-import-loan-migration');
 const assert = require('assert');
 const { buildInventorySyncPreview } = require('../book-import-inventory-sync');
 
@@ -136,12 +137,12 @@ const invalidRetentionCases = [
   {
     label: 'student loan',
     row: { ...row(0, 1), context: { studentLoan: { id: 'student-match' } } },
-    reason: 'loan_context_requires_followup',
+    reason: 'loan_borrower_needs_review',
   },
   {
     label: 'class loan',
     row: { ...row(0, 1), context: { classLoan: { id: 'class-match' } } },
-    reason: 'loan_context_requires_followup',
+    reason: 'loan_borrower_needs_review',
   },
   {
     label: 'location or class context',
@@ -276,6 +277,47 @@ assert.strictEqual(alreadyElsewhere.rows[0].reason, 'barcode_belongs_to_other_ed
 const duplicate = preview([row(0, 1, { barcode: '111222' }), row(1, 1, { barcode: '111222' })]);
 assert.strictEqual(duplicate.rows[0].reason, 'duplicate_printed_barcode');
 
+// One blocked ISBN spread across eight worksheet rows remains ONE edition.
+// All individual rows must retain their actionable review status.
+const eightBlockedRows = preview(Array.from({ length: 8 }, (_, index) =>
+  row(index, 1, { barcode: '33114455' })));
+assert.strictEqual(eightBlockedRows.summary.blockedEditions, 1,
+  'Do not count eight worksheet rows as eight blocked editions');
+assert.strictEqual(eightBlockedRows.summary.readyToApply, false);
+assert.deepStrictEqual(eightBlockedRows.rows.map((entry) => entry.action),
+  Array(8).fill('blocked'), 'Combined rows must remain individually flagged');
+assert.deepStrictEqual(eightBlockedRows.rows.slice(1).map((entry) => entry.combinedWith),
+  Array(7).fill(0), 'The first-row reference is index zero, not an absent value');
+assert.deepStrictEqual(eightBlockedRows.proposedAdds, []);
+
+// Two different blocked editions and one invalid ISBN row are three separate
+// issues, regardless of the number of physical Excel rows per valid ISBN.
+const mixedBlockedRows = [
+  ...Array.from({ length: 5 }, (_, index) =>
+    row(index, 1, { barcode: '22446688' })),
+  ...Array.from({ length: 3 }, (_, index) =>
+    row(index + 5, 1, { editionIsbn: OTHER, title: 'Ander boek',
+      barcode: '99220011' })),
+  row(8, 1, { editionIsbn: 'invalid-isbn' }),
+  { ...row(9), status: 'skipped' },
+];
+const mixedBlocked = preview(mixedBlockedRows);
+assert.strictEqual(mixedBlocked.summary.blockedEditions, 3,
+  'Two blocked ISBN groups plus one ungroupable row, not nine blocked rows');
+assert.strictEqual(mixedBlocked.summary.readyToApply, false);
+assert.strictEqual(mixedBlocked.rows[8].reason, 'missing_valid_isbn');
+assert.strictEqual(mixedBlocked.rows[9].action, 'skipped');
+assert.deepStrictEqual(mixedBlocked.proposedAdds, []);
+const onlyUngroupable = preview([
+  row(0, 1, { editionIsbn: '' }),
+  row(1, 1, { editionIsbn: 'invalid-isbn' }),
+]);
+assert.strictEqual(onlyUngroupable.summary.blockedEditions, 2,
+  'Rows without a valid ISBN remain separate issues, not one phantom edition');
+assert.strictEqual(onlyUngroupable.summary.readyToApply, false);
+assert.strictEqual(preview([row(0), row(1)]).summary.blockedEditions, 0,
+  'Combining clean rows must not create a phantom blocked edition');
+
 // A generated ISBN scan code may not be reused as another new edition's
 // printed physical barcode inside the same workbook.
 const crossEditionScanConflict = preview([
@@ -285,10 +327,12 @@ const crossEditionScanConflict = preview([
 assert.strictEqual(crossEditionScanConflict.rows[0].reason, 'workbook_physical_barcode_conflict');
 assert.strictEqual(crossEditionScanConflict.rows[1].reason, 'workbook_physical_barcode_conflict');
 assert.strictEqual(crossEditionScanConflict.summary.readyToApply, false);
+assert.strictEqual(crossEditionScanConflict.summary.blockedEditions, 2,
+  'A barcode conflict between two different ISBNs affects two editions');
 assert.deepStrictEqual(crossEditionScanConflict.proposedAdds, []);
 
 const unknownLoan = preview([{ ...row(0, 1), context: { studentLoan: { id: 's1' } } }]);
-assert.strictEqual(unknownLoan.rows[0].reason, 'loan_context_requires_followup');
+assert.strictEqual(unknownLoan.rows[0].reason, 'loan_borrower_needs_review');
 
 const warning = preview([{ ...row(0, 1), status: 'warning' }]);
 assert.strictEqual(warning.rows[0].reason, 'source_needs_review');
@@ -309,5 +353,128 @@ const missingAuthor = preview([
   row(0, 1, { author: '' }),
 ], [], { acceptWarnings: true });
 assert.strictEqual(missingAuthor.rows[0].reason, 'missing_title_or_author');
+
+
+// PR5 completion: reconcile historic loans ONLY when the exact physical copy
+// and its borrower can be identified without guessing. The planner itself is
+// pure: a proposal may never mutate an active loan or collection.
+const pupils = [
+  { id: 's1', name: 'Lisa Leerling', borrowedBooks: [] },
+  { id: 's2', name: 'Andere Leerling', borrowedBooks: [] },
+];
+const schoolClasses = [{ id: 'c1', name: 'Groep A' }];
+const rowWithStudentLoan = (index, extra = {}) => ({
+  ...row(index, 1, extra), context: {
+    studentLoan: { status: 'matched', id: 's1', name: 'Lisa Leerling' },
+  },
+});
+const rowWithClassLoan = (index, extra = {}) => ({
+  ...row(index, 1, extra), context: {
+    classLoan: { status: 'matched', id: 'c1', name: 'Groep A' },
+  },
+});
+const directory = { students: pupils, classes: schoolClasses };
+const beforeSafeLoan = [book('book-one')];
+const beforeSafeLoanJson = JSON.stringify(beforeSafeLoan);
+const newExistingLoan = preview([rowWithStudentLoan(0)], beforeSafeLoan, directory);
+assert.strictEqual(newExistingLoan.summary.readyToApply, true);
+assert.strictEqual(newExistingLoan.summary.addCopies, 0);
+assert.strictEqual(newExistingLoan.summary.restoreLoans, 1);
+assert.strictEqual(newExistingLoan.loanAssignments[0].target, 'existing');
+assert.strictEqual(newExistingLoan.loanAssignments[0].bookId, 'book-one');
+assert.strictEqual(JSON.stringify(beforeSafeLoan), beforeSafeLoanJson,
+  'A preview may never mutate an old physical copy');
+
+const alreadyRecordedStudent = [{
+  ...pupils[0], borrowedBooks: [{ bookId: 'book-one', borrowedAt: null }],
+}, pupils[1]];
+const alreadyRecorded = preview([rowWithStudentLoan(0)], [
+  book('book-one', { status: 'borrowed', borrowedBy: 's1' }),
+], { students: alreadyRecordedStudent, classes: schoolClasses });
+assert.strictEqual(alreadyRecorded.summary.readyToApply, true);
+assert.strictEqual(alreadyRecorded.summary.restoreLoans, 0);
+assert.strictEqual(alreadyRecorded.summary.alreadyRecordedLoans, 1);
+assert.strictEqual(alreadyRecorded.loanAssignments[0].target, 'already_recorded');
+const mismatchedBorrower = preview([rowWithStudentLoan(0)], [
+  book('book-one', { status: 'borrowed', borrowedBy: 's2' }),
+], directory);
+assert.strictEqual(mismatchedBorrower.summary.readyToApply, false);
+assert.strictEqual(mismatchedBorrower.rows[0].reason, 'loan_copy_borrowed_by_other');
+assert.deepStrictEqual(mismatchedBorrower.loanAssignments, []);
+const physicallyAmbiguous = preview([
+  rowWithStudentLoan(0), row(1),
+], [book('book-one'), book('book-two')], directory);
+assert.strictEqual(physicallyAmbiguous.rows[0].reason, 'loan_requires_physical_copy_match');
+assert.strictEqual(physicallyAmbiguous.summary.readyToApply, false);
+const uniquelyBarcoded = preview([
+  rowWithStudentLoan(0, { barcode: '668877' }), row(1),
+], [book('book-one', { barcode: '668877' }), book('book-two')], directory);
+assert.strictEqual(uniquelyBarcoded.summary.readyToApply, true);
+assert.strictEqual(uniquelyBarcoded.loanAssignments[0].bookId, 'book-one');
+assert.strictEqual(uniquelyBarcoded.summary.restoreLoans, 1);
+// Even if a legacy student's own borrowedBooks array is inconsistent,
+// an existing physical copy already assigned to that student blocks a
+// second checkout of the same ISBN on another available copy.
+const inconsistentLegacyLoan = preview([
+  rowWithStudentLoan(0, { barcode: '668877' }), row(1),
+], [
+  book('free-copy', { barcode: '668877' }),
+  book('old-loan-not-in-student-list', { status: 'borrowed', borrowedBy: 's1' }),
+], directory);
+assert.strictEqual(inconsistentLegacyLoan.summary.readyToApply, false);
+assert.strictEqual(inconsistentLegacyLoan.rows[0].reason, 'student_already_borrowed_edition');
+assert.deepStrictEqual(inconsistentLegacyLoan.loanAssignments, []);
+
+const noCollectionYet = preview([
+  rowWithStudentLoan(0), { ...rowWithStudentLoan(1), context: {
+    studentLoan: { status: 'matched', id: 's2', name: 'Andere Leerling' },
+  } },
+], [], directory);
+assert.strictEqual(noCollectionYet.summary.readyToApply, true);
+assert.strictEqual(noCollectionYet.summary.addCopies, 2);
+assert.deepStrictEqual(noCollectionYet.loanAssignments.map((x) => x.target), ['new', 'new']);
+const duplicatedStudentEdition = preview([rowWithStudentLoan(0), rowWithStudentLoan(1)],
+  [], directory);
+assert.strictEqual(duplicatedStudentEdition.summary.readyToApply, false);
+assert.strictEqual(duplicatedStudentEdition.rows[0].reason, 'duplicate_student_loan_in_workbook');
+assert.strictEqual(duplicatedStudentEdition.summary.blockedEditions, 1,
+  'Two duplicate student-loan rows still represent a single blocked ISBN');
+assert.deepStrictEqual(duplicatedStudentEdition.loanAssignments, []);
+const classLoan = preview([rowWithClassLoan(0)], [book('existing-class-copy')], directory);
+assert.strictEqual(classLoan.summary.restoreLoans, 1);
+assert.strictEqual(classLoan.loanAssignments[0].borrower.type, 'class');
+const renamedPupil = preview([rowWithStudentLoan(0)], [book('book-one')], {
+  students: [{ ...pupils[0], name: 'Andere geregistreerde naam' }, pupils[1]],
+  classes: schoolClasses,
+});
+assert.strictEqual(renamedPupil.summary.readyToApply, false);
+assert.strictEqual(renamedPupil.rows[0].reason, 'loan_borrower_changed');
+
+// A real check-in after historical import takes precedence over an old Excel
+// snapshot. Neither a class loan nor a student loan may be reopened.
+const returnedStudentReceipt = excelLoanReceiptKey('book-one',
+  { type: 'student', id: 's1' });
+const returnedStudent = preview([rowWithStudentLoan(0)], [book('book-one')], {
+  ...directory, loanReceipts: new Set([returnedStudentReceipt]),
+});
+assert.strictEqual(returnedStudent.summary.readyToApply, true);
+assert.strictEqual(returnedStudent.summary.restoreLoans, 0);
+assert.strictEqual(returnedStudent.summary.previouslyImportedLoans, 1);
+assert.strictEqual(returnedStudent.loanAssignments[0].target, 'previously_imported');
+assert.strictEqual(returnedStudent.loanAssignments[0].bookId, 'book-one');
+const returnedClass = preview([rowWithClassLoan(0)], [book('class-copy')], {
+  ...directory, loanReceipts: new Set([excelLoanReceiptKey('class-copy',
+    { type: 'class', id: 'c1' })]),
+});
+assert.strictEqual(returnedClass.summary.restoreLoans, 0);
+assert.strictEqual(returnedClass.summary.previouslyImportedLoans, 1);
+assert.strictEqual(returnedClass.loanAssignments[0].target, 'previously_imported');
+// A receipt never authorizes rewriting a currently different borrower.
+const receiptStillOccupied = preview([rowWithStudentLoan(0)],
+  [book('book-one', { status: 'borrowed', borrowedBy: 's2' })], {
+    ...directory, loanReceipts: new Set([returnedStudentReceipt]),
+  });
+assert.strictEqual(receiptStillOccupied.summary.readyToApply, false);
+assert.strictEqual(receiptStillOccupied.rows[0].reason, 'loan_copy_borrowed_by_other');
 
 console.log('PR4 inventory reconciliation pure preview tests passed');

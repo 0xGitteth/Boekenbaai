@@ -5,6 +5,7 @@
 // An omitted ISBN or lower Excel quantity NEVER silently deletes stock.
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
+const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
 
 function editionKeys(book) {
   // A physical barcode that merely LOOKS like another ISBN must not give a
@@ -67,13 +68,19 @@ function normalizeInventoryResolutions(input) {
 }
 
 function buildInventorySyncPreview(analysis, existingBooks = [], {
-  acceptWarnings = false, resolutions = [],
+  acceptWarnings = false, resolutions = [], students = [], classes = [], loanReceipts = [],
 } = {}) {
   if (!analysis?.ok || !Array.isArray(analysis.rows)) return { ok: false, error: 'invalid_review' };
   const normalizedResolutions = normalizeInventoryResolutions(resolutions);
   if (!normalizedResolutions.ok) return normalizedResolutions;
   const retain = new Set(normalizedResolutions.values.map((item) => item.isbn));
   const inventory = inventoryIndex(existingBooks);
+  // Re-evaluated against the CURRENT student/class directory at preview,
+  // review and final apply. Existing loans may be acknowledged idempotently.
+  const loanChecks = inspectReviewedLoans(analysis.rows, {
+    students, classes, books: existingBooks, allowExistingLoan: true,
+  });
+  const previouslyProcessed = new Set(loanReceipts);
   const groups = new Map();
   const decisions = analysis.rows.map((row) => ({
     index: row.index, worksheetRow: row.sourceRowNumber,
@@ -102,6 +109,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     }
   }
   const proposedAdds = [];
+  const loanAssignments = [];
   for (const [isbn, rows] of groups) {
     const existing = inventory.editions.get(isbn) || [];
     const borrowed = existing.filter((book) => book.status === 'borrowed' || Boolean(book.borrowedBy)).length;
@@ -134,11 +142,19 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     let target = 0;
     const seenPrinted = new Set();
     const newPrinted = [];
+    const pendingLoans = [];
     for (const row of rows) {
       const quantity = row.book?.quantity?.value;
       if (['conflict', 'unresolved'].includes(row.status)
         || (row.status === 'warning' && !acceptWarnings)) block('source_needs_review');
-      if (row.context?.studentLoan || row.context?.classLoan) block('loan_context_requires_followup');
+      if (row.context?.studentLoan || row.context?.classLoan) {
+        const check = loanChecks.get(row.index);
+        if (!check?.ok || !check.borrower) {
+          block(check?.error || 'loan_context_requires_followup');
+        } else {
+          pendingLoans.push({ index: row.index, row, borrower: check.borrower });
+        }
+      }
       if ((row.context?.classContext || []).length || row.context?.libraryPresence
         || (row.context?.fixedLocation && row.context.fixedLocation.status !== 'resolved')) {
         block('location_context_requires_followup');
@@ -157,6 +173,94 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       }
     }
     const additional = Math.max(0, target - existing.length);
+    // No random assignment among copies of the same edition. A distinct
+    // physical barcode is decisive, otherwise there must be a uniquely
+    // identifiable existing copy or an entirely NEW edition.
+    const plannedLoans = [];
+    for (const pending of pendingLoans) {
+      const barcode = normalizeRuntimeBarcode(pending.row.book.barcode);
+      const matching = barcode ? existing.filter((book) =>
+        normalizeRuntimeBarcode(book.barcode) === barcode) : [];
+      let destination;
+      if (barcode && matching.length === 1) destination = { target: 'existing', book: matching[0] };
+      else if (barcode && matching.length === 0 && newPrinted.some((item) =>
+        item.index === pending.index)) destination = { target: 'new' };
+      else if (!barcode && existing.length === 0) destination = { target: 'new' };
+      else if (!barcode && existing.length === 1 && rows.length === 1
+        && additional === 0) destination = { target: 'existing', book: existing[0] };
+      else {
+        block('loan_requires_physical_copy_match');
+        continue;
+      }
+      const { borrower } = pending;
+      if (borrower.type === 'student') {
+        const student = students.find((item) => item.id === borrower.id);
+        const heldBooks = (Array.isArray(student?.borrowedBooks) ? student.borrowedBooks : [])
+          .map((loan) => existingBooks.find((book) =>
+            book.id === (typeof loan === 'string' ? loan : loan?.bookId))).filter(Boolean);
+        // Check BOTH sides of legacy lending state: old databases can
+        // disagree on book.borrowedBy versus student.borrowedBooks. Neither
+        // representation may be used to grant a second copy of the edition.
+        const alreadyBorrowedPhysical = existing.some((book) =>
+          book.id !== destination.book?.id
+          && book.borrowedBy === borrower.id
+          && (book.status === 'borrowed' || Boolean(book.borrowedBy)));
+        if (alreadyBorrowedPhysical || heldBooks.some((book) =>
+          editionKeys(book).includes(isbn) && book.id !== destination.book?.id)) {
+          block('student_already_borrowed_edition');
+          continue;
+        }
+      }
+      if (destination.target === 'existing') {
+        const book = destination.book;
+        const occupied = book.status === 'borrowed'
+          || Boolean(book.borrowedBy) || Boolean(book.borrowedByClassId);
+        if (occupied) {
+          const sameOwner = book.status === 'borrowed'
+            && (borrower.type === 'student'
+              ? book.borrowedBy === borrower.id && !book.borrowedByClassId
+              : book.borrowedByClassId === borrower.id && !book.borrowedBy);
+          if (!sameOwner) {
+            block('loan_copy_borrowed_by_other');
+            continue;
+          }
+          if (borrower.type === 'student') {
+            const student = students.find((item) => item.id === borrower.id);
+            const recorded = Array.isArray(student?.borrowedBooks)
+              && student.borrowedBooks.some((loan) =>
+                (typeof loan === 'string' ? loan : loan?.bookId) === book.id);
+            if (!recorded) {
+              block('loan_book_student_records_disagree');
+              continue;
+            }
+          }
+          plannedLoans.push({ editionIsbn: isbn, index: pending.index, target: 'already_recorded',
+            bookId: book.id, borrower });
+        } else {
+          // An old Excel snapshot is not proof that a returned book is
+          // currently on loan. A previously processed physical borrower pair
+          // must remain returned even after logs and reports are rotated.
+          if (previouslyProcessed.has(excelLoanReceiptKey(book.id, borrower))) {
+            plannedLoans.push({ editionIsbn: isbn, index: pending.index,
+              target: 'previously_imported', bookId: book.id, borrower });
+            continue;
+          }
+          const student = borrower.type === 'student'
+            ? students.find((item) => item.id === borrower.id) : null;
+          if (student && Array.isArray(student.borrowedBooks)
+            && student.borrowedBooks.some((loan) =>
+              (typeof loan === 'string' ? loan : loan?.bookId) === book.id)) {
+            block('loan_book_student_records_disagree');
+            continue;
+          }
+          plannedLoans.push({ editionIsbn: isbn, index: pending.index,
+            target: 'existing', bookId: book.id, borrower });
+        }
+      } else {
+        plannedLoans.push({ editionIsbn: isbn, index: pending.index,
+          target: 'new', borrower });
+      }
+    }
     // Sync limits only new physical copies, never an existing inventory total.
     if (additional > 5000) block('quantity_limit_exceeded');
     if (target < existing.length) block('reduction_requires_manual_review');
@@ -190,6 +294,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     }
     const first = rows[0].index;
     const canKeepExisting = target < existing.length
+      && pendingLoans.length === 0
       && blockers.size === 1 && blockers.has('reduction_requires_manual_review');
     const keepExisting = retain.has(isbn);
     // Retention is ONLY an explicit acknowledgement of a lower total in
@@ -234,10 +339,33 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         if (firstAddition >= 0) proposedAdds.splice(firstAddition);
         decisions[first] = { ...decisions[first], action: 'blocked', reason, addCopies: 0 };
       }
+      if (!reason) {
+        for (const item of plannedLoans) {
+          if (item.target === 'new' && !proposedAdds.some((addition) =>
+            addition.index === item.index && addition.editionIsbn === isbn
+            && addition.quantity === 1)) {
+            reason = 'loan_requires_physical_copy_match';
+            break;
+          }
+        }
+      }
+      if (reason) {
+        const firstAddition = proposedAdds.findIndex((item) => item.editionIsbn === isbn);
+        if (firstAddition >= 0) proposedAdds.splice(firstAddition);
+        decisions[first] = { ...decisions[first], action: 'blocked', reason, addCopies: 0 };
+      } else {
+        for (const item of plannedLoans) {
+          loanAssignments.push(item);
+          decisions[item.index] = { ...decisions[item.index], loanBorrower: item.borrower,
+            loanState: item.target };
+        }
+      }
     }
     for (const row of rows.slice(1)) decisions[row.index] = {
-      ...decisions[row.index], ...totals, addCopies: 0, action: 'combined',
-      reason: '', combinedWith: first,
+      ...decisions[row.index], ...totals, addCopies: 0,
+      action: decisions[first].action === 'blocked' ? 'blocked' : 'combined',
+      reason: decisions[first].action === 'blocked' ? decisions[first].reason : '',
+      combinedWith: first,
     };
   }
   // An ISBN-based fallback may be shared only by copies of the same edition.
@@ -263,6 +391,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       reason: 'workbook_physical_barcode_conflict', addCopies: 0 };
   }
   const safeAdds = proposedAdds.filter((addition) => !invalidEditions.has(addition.editionIsbn));
+  const safeLoans = loanAssignments.filter((item) => !invalidEditions.has(item.editionIsbn));
   for (const addition of safeAdds) {
     decisions[addition.index].rowAddCopies += addition.quantity;
   }
@@ -292,13 +421,21 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     if (book.status === 'borrowed' || Boolean(book.borrowedBy)) missing.borrowedCopies += 1;
   }
   const omittedEditions = [...omittedGroups.values()].slice(0, 50);
-  const blocked = decisions.filter((entry) => entry.action === 'blocked').length;
+  // Only the first decision represents an ISBN group. Its other worksheet
+  // rows remain blocked for review, but are not additional editions.
+  // Rows without a valid ISBN cannot be grouped, so count them individually.
+  const blocked = decisions.filter((entry) =>
+    entry.action === 'blocked' && entry.combinedWith === undefined).length;
   const additionalCopies = safeAdds.reduce((sum, entry) => sum + entry.quantity, 0);
   if (additionalCopies > 5000) return { ok: false, error: 'too_many_copies' };
   return {
-    ok: true, rows: decisions, proposedAdds: safeAdds, omittedEditions,
+    ok: true, rows: decisions, proposedAdds: safeAdds, loanAssignments: safeLoans, omittedEditions,
     summary: {
-      addCopies: additionalCopies, blockedEditions: blocked,
+      addCopies: additionalCopies,
+      restoreLoans: safeLoans.filter((item) => item.target === 'existing' || item.target === 'new').length,
+      alreadyRecordedLoans: safeLoans.filter((item) => item.target === 'already_recorded').length,
+      previouslyImportedLoans: safeLoans.filter((item) => item.target === 'previously_imported').length,
+      blockedEditions: blocked,
       unchangedEditions: decisions.filter((entry) => entry.action === 'unchanged').length,
       acknowledgedEditions: decisions.filter((entry) => entry.action === 'kept_existing').length,
       skippedRows: decisions.filter((entry) => entry.action === 'skipped').length,

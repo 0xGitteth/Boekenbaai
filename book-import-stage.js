@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { buildReviewDecisions } = require('./book-import-review');
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
+const { inspectReviewedLoans } = require('./book-import-loan-migration');
 
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 // One shared administrator account can be open in several browsers.
@@ -163,9 +164,16 @@ function importStageView(stage) {
   };
 }
 
-function buildStageApplyPlan(analysis, existingBooks, { maxCopies = 5000 } = {}) {
+function buildStageApplyPlan(analysis, existingBooks, {
+  maxCopies = 5000, students = [], classes = [],
+} = {}) {
   if (!analysis?.ok || !Array.isArray(analysis.rows)) return { ok: false, error: 'invalid_review' };
-  const decisions = buildReviewDecisions(analysis, existingBooks, { acceptWarnings: analysis.acceptWarnings === true });
+  const loanValidation = inspectReviewedLoans(analysis.rows, {
+    students, classes, books: existingBooks,
+  });
+  const decisions = buildReviewDecisions(analysis, existingBooks, {
+    acceptWarnings: analysis.acceptWarnings === true, students, classes,
+  });
   if (!decisions.summary.readyToApply) {
     return { ok: false, error: 'review_not_ready', decisions };
   }
@@ -190,10 +198,11 @@ function buildStageApplyPlan(analysis, existingBooks, { maxCopies = 5000 } = {})
       || !Number.isSafeInteger(copies) || copies < 1 || copies > 1000) {
       return { ok: false, error: 'unsafe_row', index };
     }
-    // Loan contexts are handled in PR5; importing them as available would
-    // silently erase their checkout state, so do not apply them here.
-    if (row.context?.studentLoan || row.context?.classLoan) {
-      return { ok: false, error: 'loan_context_requires_followup', index };
+    // Never import an Excel loan as "available". The loan identity must
+    // still be unique and valid against the fresh database at apply-time.
+    const loan = loanValidation.get(index);
+    if ((row.context?.studentLoan || row.context?.classLoan) && !loan?.ok) {
+      return { ok: false, error: loan?.error || 'loan_context_requires_followup', index };
     }
     if (total + copies > maxCopies) return { ok: false, error: 'too_many_copies', index };
     total += copies;
@@ -210,7 +219,8 @@ function buildStageApplyPlan(analysis, existingBooks, { maxCopies = 5000 } = {})
       return { ok: false, error: 'duplicate_physical_barcode', index };
     }
     if (!previous) seen.set(barcode, { automatic: !suppliedBarcode, editionIsbn });
-    created.push({ index, row, editionIsbn, quantity: copies, barcode });
+    created.push({ index, row, editionIsbn, quantity: copies, barcode,
+      loanBorrower: loan?.borrower || null });
   }
   if (!created.length) return { ok: false, error: 'nothing_to_import' };
   return { ok: true, created, totalCopies: total, decisions };
