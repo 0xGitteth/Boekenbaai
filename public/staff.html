@@ -12,6 +12,22 @@
     <title>Boekenbaai – Docentenportaal</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="admin-book-import-review.css" />
+    <style>
+      .bb-followup-badge {
+        display: inline-flex;
+        min-width: 1.65rem;
+        height: 1.65rem;
+        padding: 0 .45rem;
+        border-radius: 1rem;
+        align-items: center;
+        justify-content: center;
+        font: 600 .9rem/1 sans-serif;
+        background: #ad3847;
+        color: #fff;
+        vertical-align: middle;
+      }
+      .bb-followup-badge[hidden] { display: none; }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -894,6 +910,34 @@
         </div>
         <div id="staff-loan-current" class="class-list" aria-live="polite"></div>
       </section>
+      <section class="panel panel--staff hidden" id="book-import-followups-panel"
+        data-visible-for="teacher,admin" aria-labelledby="book-import-followups-title">
+        <div class="panel__header">
+          <h2 id="book-import-followups-title">Boekimport controleren
+            <span id="book-import-followups-badge" class="bb-followup-badge" hidden
+              aria-label="Openstaande controletaken"></span>
+          </h2>
+          <p class="hint">Taken worden gedeeld met je collega's van dezelfde klas.
+            Na de ingestelde termijn gaat de controle automatisch terug naar beheer.</p>
+          <button id="book-import-followups-refresh" class="btn btn--secondary"
+            type="button">Overzicht vernieuwen</button>
+        </div>
+        <p id="book-import-followups-message" class="hint"
+          role="status" aria-live="polite"></p>
+        <div id="book-import-followups-list" class="class-list"></div>
+        <section id="book-import-followups-settings" hidden>
+          <h3>Herinneringen en escalatie</h3>
+          <form id="book-import-followups-settings-form" class="form-grid form-grid--compact">
+            <label class="form-field">Herinnering na (dagen)
+              <input name="reminderDays" type="number" min="1" max="365" required>
+            </label>
+            <label class="form-field">Terug naar beheer na (dagen)
+              <input name="escalationDays" type="number" min="2" max="730" required>
+            </label>
+            <button class="btn btn--secondary" type="submit">Termijnen opslaan</button>
+          </form>
+        </section>
+      </section>
     </main>
 
     <footer class="footer">
@@ -1141,5 +1185,6 @@
     <script type="module" src="admin-book-import-review.js"></script>
     <script type="module" src="app.js"></script>
     <script type="module" src="staff-loans.js"></script>
+    <script type="module" src="book-import-followups.js"></script>
   </body>
 </html>

@@ -6,6 +6,8 @@
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
+const { eligibleForDeferredContext, followupContext, contextMatchesTask } =
+  require('./book-import-followups');
 
 function editionKeys(book) {
   // A physical barcode that merely LOOKS like another ISBN must not give a
@@ -68,7 +70,8 @@ function normalizeInventoryResolutions(input) {
 }
 
 function buildInventorySyncPreview(analysis, existingBooks = [], {
-  acceptWarnings = false, resolutions = [], students = [], classes = [], loanReceipts = [],
+  acceptWarnings = false, resolutions = [], students = [], classes = [],
+  loanReceipts = [], existingFollowups = [],
 } = {}) {
   if (!analysis?.ok || !Array.isArray(analysis.rows)) return { ok: false, error: 'invalid_review' };
   const normalizedResolutions = normalizeInventoryResolutions(resolutions);
@@ -110,6 +113,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
   }
   const proposedAdds = [];
   const loanAssignments = [];
+  const classFollowups = [];
   for (const [isbn, rows] of groups) {
     const existing = inventory.editions.get(isbn) || [];
     const borrowed = existing.filter((book) => book.status === 'borrowed' || Boolean(book.borrowedBy)).length;
@@ -143,6 +147,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     const seenPrinted = new Set();
     const newPrinted = [];
     const pendingLoans = [];
+    const pendingClassFollowups = [];
     for (const row of rows) {
       const quantity = row.book?.quantity?.value;
       if (['conflict', 'unresolved'].includes(row.status)
@@ -155,9 +160,12 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
           pendingLoans.push({ index: row.index, row, borrower: check.borrower });
         }
       }
-      if ((row.context?.classContext || []).length || row.context?.libraryPresence
-        || (row.context?.fixedLocation && row.context.fixedLocation.status !== 'resolved')) {
-        block('location_context_requires_followup');
+      const contextual = Boolean((row.context?.classContext || []).length
+        || row.context?.libraryPresence
+        || (row.context?.fixedLocation && row.context.fixedLocation.status !== 'resolved'));
+      if (contextual) {
+        if (eligibleForDeferredContext(row, classes)) pendingClassFollowups.push(row);
+        else block('location_context_requires_followup');
       }
       if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000
         || row.book?.quantity?.valid !== true) block('invalid_quantity');
@@ -261,6 +269,44 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
           target: 'new', borrower });
       }
     }
+    // Follow-ups can be attached only to identifiable physical copies. A
+    // multi-copy old edition without a printed physical barcode must not be
+    // assigned arbitrarily to a teacher. New copies are tracked by source row.
+    const plannedClassFollowups = [];
+    for (const row of pendingClassFollowups) {
+      const printed = normalizeRuntimeBarcode(row.book?.barcode);
+      const oldMatches = printed ? existing.filter((book) =>
+        normalizeRuntimeBarcode(book.barcode) === printed) : [];
+      if (printed && oldMatches.length === 1) {
+        const old = oldMatches[0];
+        const occupied = old.status === 'borrowed' || old.borrowedBy || old.borrowedByClassId;
+        const previouslyResolved = occupied && existingFollowups.some((task) =>
+          task.bookId === old.id && task.status === 'completed'
+            && contextMatchesTask(task, followupContext(row, classes)));
+        if (occupied && !previouslyResolved) block('class_followup_book_borrowed');
+        else plannedClassFollowups.push({ index: row.index,
+          target: previouslyResolved ? 'previously_resolved' : 'existing',
+          bookId: old.id, editionIsbn: isbn });
+      } else if (printed && !oldMatches.length
+        && newPrinted.some((item) => item.index === row.index)) {
+        plannedClassFollowups.push({ index: row.index, target: 'new', editionIsbn: isbn });
+      } else if (!printed && !existing.length) {
+        plannedClassFollowups.push({ index: row.index, target: 'new', editionIsbn: isbn });
+      } else if (!printed && existing.length === 1 && rows.length === 1
+        && target === 1) {
+        const old = existing[0];
+        const occupied = old.status === 'borrowed' || old.borrowedBy || old.borrowedByClassId;
+        const previouslyResolved = occupied && existingFollowups.some((task) =>
+          task.bookId === old.id && task.status === 'completed'
+            && contextMatchesTask(task, followupContext(row, classes)));
+        if (occupied && !previouslyResolved) block('class_followup_book_borrowed');
+        else plannedClassFollowups.push({ index: row.index,
+          target: previouslyResolved ? 'previously_resolved' : 'existing',
+          bookId: old.id, editionIsbn: isbn });
+      } else {
+        block('class_followup_requires_physical_copy_match');
+      }
+    }
     // Sync limits only new physical copies, never an existing inventory total.
     if (additional > 5000) block('quantity_limit_exceeded');
     if (target < existing.length) block('reduction_requires_manual_review');
@@ -294,7 +340,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     }
     const first = rows[0].index;
     const canKeepExisting = target < existing.length
-      && pendingLoans.length === 0
+      && pendingLoans.length === 0 && pendingClassFollowups.length === 0
       && blockers.size === 1 && blockers.has('reduction_requires_manual_review');
     const keepExisting = retain.has(isbn);
     // Retention is ONLY an explicit acknowledgement of a lower total in
@@ -354,6 +400,12 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         if (firstAddition >= 0) proposedAdds.splice(firstAddition);
         decisions[first] = { ...decisions[first], action: 'blocked', reason, addCopies: 0 };
       } else {
+        for (const item of plannedClassFollowups) {
+          classFollowups.push(item);
+          decisions[item.index] = { ...decisions[item.index],
+            needsClassFollowup: item.target !== 'previously_resolved',
+            previousClassFollowup: item.target === 'previously_resolved' };
+        }
         for (const item of plannedLoans) {
           loanAssignments.push(item);
           decisions[item.index] = { ...decisions[item.index], loanBorrower: item.borrower,
@@ -392,6 +444,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
   }
   const safeAdds = proposedAdds.filter((addition) => !invalidEditions.has(addition.editionIsbn));
   const safeLoans = loanAssignments.filter((item) => !invalidEditions.has(item.editionIsbn));
+  const safeClassFollowups = classFollowups.filter((item) => !invalidEditions.has(item.editionIsbn));
   for (const addition of safeAdds) {
     decisions[addition.index].rowAddCopies += addition.quantity;
   }
@@ -429,13 +482,18 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
   const additionalCopies = safeAdds.reduce((sum, entry) => sum + entry.quantity, 0);
   if (additionalCopies > 5000) return { ok: false, error: 'too_many_copies' };
   return {
-    ok: true, rows: decisions, proposedAdds: safeAdds, loanAssignments: safeLoans, omittedEditions,
+    ok: true, rows: decisions, proposedAdds: safeAdds, loanAssignments: safeLoans,
+    classFollowups: safeClassFollowups, omittedEditions,
     summary: {
       addCopies: additionalCopies,
       restoreLoans: safeLoans.filter((item) => item.target === 'existing' || item.target === 'new').length,
       alreadyRecordedLoans: safeLoans.filter((item) => item.target === 'already_recorded').length,
       previouslyImportedLoans: safeLoans.filter((item) => item.target === 'previously_imported').length,
       blockedEditions: blocked,
+      classFollowups: safeClassFollowups.filter((item) =>
+        item.target !== 'previously_resolved').length,
+      classContextsAlreadyReviewed: safeClassFollowups.filter((item) =>
+        item.target === 'previously_resolved').length,
       unchangedEditions: decisions.filter((entry) => entry.action === 'unchanged').length,
       acknowledgedEditions: decisions.filter((entry) => entry.action === 'kept_existing').length,
       skippedRows: decisions.filter((entry) => entry.action === 'skipped').length,

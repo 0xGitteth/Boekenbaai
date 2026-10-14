@@ -1,0 +1,364 @@
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+const XLSX = require('xlsx');
+const { followupContext, eligibleForDeferredContext, makeTask, taskStage,
+  listTasks, settingsFor, validateSettings, performDecision, assignTask,
+  reportIsFullyReviewed } = require('../book-import-followups');
+const { excelLoanReceiptKey } = require('../book-import-loan-migration');
+const { buildInventorySyncPreview } = require('../book-import-inventory-sync');
+
+const classes = [
+  { id: 'class-a', name: 'Groep A', teacherIds: ['teacher-a', 'teacher-a2'], studentIds: ['stu-a'] },
+  { id: 'class-b', name: 'Groep B', teacherIds: ['teacher-b'], studentIds: ['stu-b'] },
+];
+const users = [
+  { id: 'teacher-a', name: 'Docent A', username: 'docent-a', role: 'teacher', passwordHash: '' },
+  { id: 'teacher-a2', name: 'Collega A', username: 'collega-a', role: 'teacher', passwordHash: '' },
+  { id: 'teacher-b', name: 'Docent B', username: 'docent-b', role: 'teacher', passwordHash: '' },
+  { id: 'admin', name: 'Beheerder', username: 'beheerder', role: 'admin', passwordHash: '' },
+];
+const students = [
+  { id: 'stu-a', name: 'Leerling A', classIds: ['class-a'], borrowedBooks: [] },
+  { id: 'stu-b', name: 'Leerling B', classIds: ['class-b'], borrowedBooks: [] },
+];
+const now = new Date('2026-10-14T09:00:00Z').toISOString();
+const contextRow = (index, extraContext = {}) => ({
+  index, sourceRowNumber: index + 2, status: 'warning', issues: [
+    { code: 'class_context_needs_review', severity: 'warning' },
+  ], context: { classContext: ['Groep A'], ...extraContext },
+});
+const task = (id, bookId, classId, createdAt = now) => ({
+  ...makeTask({ id, reportId: 'a1111111-1111-4111-a111-111111111111', row: contextRow(0),
+    book: { id: bookId, title: 'Het boek', metadataIsbn: '9780306406157' },
+    context: { ...followupContext(contextRow(0), classes), classId }, createdAt }),
+});
+const db = {
+  books: [
+    { id: 'one', title: 'Het boek', metadataIsbn: '9780306406157',
+      barcode: '55440001', status: 'available' },
+    { id: 'two', title: 'Het boek', metadataIsbn: '9780306406157',
+      barcode: '55440002', status: 'available' },
+    { id: 'three', title: 'Het boek', metadataIsbn: '9780306406157',
+      barcode: '55440003', status: 'available' },
+    { id: 'four', title: 'Het boek', metadataIsbn: '9780306406157',
+      barcode: '55440004', status: 'available' },
+    { id: 'five', title: 'Het boek', metadataIsbn: '9780306406157',
+      barcode: '55440005', status: 'available' },
+  ],
+  classes, users, students, history: [], folders: [], importJobs: [],
+  bookImportReports: [{ id: 'a1111111-1111-4111-a111-111111111111', fullyReviewed: false }],
+  bookImportFollowups: [
+    task('task-one', 'one', 'class-a'),
+    task('task-two', 'two', 'class-a'),
+    task('task-three', 'three', 'class-b'),
+    task('task-four', 'four', 'class-a', '2026-09-01T09:00:00.000Z'),
+    task('task-five', 'five', null),
+  ],
+};
+
+assert.deepStrictEqual(settingsFor({}), { reminderDays: 7, escalationDays: 14 });
+assert.strictEqual(validateSettings({ reminderDays: 7, escalationDays: 7 }), null);
+assert.strictEqual(validateSettings({ reminderDays: '7', escalationDays: 14 }), null);
+assert.deepStrictEqual(validateSettings({ reminderDays: 3, escalationDays: 10 }),
+  { reminderDays: 3, escalationDays: 10 });
+assert.strictEqual(followupContext(contextRow(0), classes).classId, 'class-a');
+assert.strictEqual(followupContext(contextRow(0, { classContext: ['Geen bestaande klas'] }), classes).classId, null);
+assert.strictEqual(followupContext(contextRow(0, { classContext: ['Groep A', 'Groep B'] }), classes).classId, null);
+assert.strictEqual(followupContext({ context: {} }, classes), null);
+assert.strictEqual(eligibleForDeferredContext(contextRow(0), classes), true);
+assert.strictEqual(eligibleForDeferredContext({ ...contextRow(0),
+  issues: [{ code: 'fatal', severity: 'conflict' }] }, classes), false);
+assert.strictEqual(eligibleForDeferredContext({ ...contextRow(0), context: {
+  classContext: ['Groep A'], studentLoan: { id: 'stu-a' } } }, classes), false);
+assert.strictEqual(taskStage(db.bookImportFollowups[0], settingsFor(db), Date.parse(now)), 'open');
+assert.strictEqual(taskStage(task('reminder', 'one', 'class-a', '2026-10-06T09:00:00Z'),
+  settingsFor(db), Date.parse(now)), 'reminder');
+assert.strictEqual(taskStage(task('escalated', 'one', 'class-a', '2026-09-29T09:00:00Z'),
+  settingsFor(db), Date.parse(now)), 'admin_review');
+assert.strictEqual(followupContext({
+  context: { libraryPresence: { value: 'Aanwezig in klas?' } },
+}, classes).classId, null, 'Unknown class information must return to administration');
+assert.strictEqual(taskStage(db.bookImportFollowups[3], settingsFor(db), Date.parse(now)), 'admin_review');
+assert.strictEqual(taskStage(db.bookImportFollowups[4], settingsFor(db), Date.parse(now)), 'admin_review');
+assert.deepStrictEqual(listTasks(db, users[0], Date.parse(now)).tasks.map((t) => t.id), ['task-one', 'task-two']);
+assert.deepStrictEqual(listTasks(db, users[2], Date.parse(now)).tasks.map((t) => t.id), ['task-three']);
+assert.strictEqual(listTasks(db, users[3], Date.parse(now)).summary.escalated, 2);
+assert.strictEqual(reportIsFullyReviewed(db, 'a1111111-1111-4111-a111-111111111111'), false);
+const local = structuredClone(db);
+assert.deepStrictEqual(performDecision(local, local.bookImportFollowups[0], users[0],
+  { choice: 'student_loan', studentId: 'stu-b', revision: 1 }, now).error, 'student_not_in_class');
+assert.strictEqual(local.books[0].status, 'available');
+assert.strictEqual(performDecision(local, local.bookImportFollowups[0], users[0],
+  { choice: 'student_loan', studentId: 'stu-a', revision: 1 }, now).ok, true);
+assert.strictEqual(local.books[0].borrowedBy, 'stu-a');
+assert.strictEqual(local.books[0].borrowedAt, null);
+assert.strictEqual(local.students[0].borrowedBooks[0].bookId, 'one');
+assert.ok(local.bookImportLoanReceipts.includes(excelLoanReceiptKey('one', { type: 'student', id: 'stu-a' })));
+assert.strictEqual(performDecision(local, local.bookImportFollowups[0], users[1],
+  { choice: 'class_loan', revision: 1 }, now).error, 'stale_or_invalid_choice');
+assert.strictEqual(performDecision(local, local.bookImportFollowups[1], users[0],
+  { choice: 'class_loan', revision: 1 }, now).ok, true);
+assert.strictEqual(local.books[1].borrowedByClassId, 'class-a');
+assert.ok(local.bookImportLoanReceipts.includes(excelLoanReceiptKey('two', { type: 'class', id: 'class-a' })));
+assert.strictEqual(performDecision(local, local.bookImportFollowups[3], users[0],
+  { choice: 'not_our_class', revision: 1 }, now).error, 'task_escalated');
+assert.strictEqual(assignTask(local, local.bookImportFollowups[3], 'class-a', users[3], 1, now).ok, true);
+assert.strictEqual(performDecision(local, local.bookImportFollowups[3], users[0],
+  { choice: 'fixed_location', revision: 2 }, now).ok, true);
+assert.strictEqual(local.books[3].fixedLocation, 'Groep A');
+// A previously confirmed fixed classroom shelf is not overwritten by a task
+// assigned to another class, even by a second teacher.
+const fixedConflictDb = structuredClone(db);
+fixedConflictDb.books[3].fixedLocation = 'Groep B';
+assert.strictEqual(performDecision(fixedConflictDb, fixedConflictDb.bookImportFollowups[3],
+  users[0], { choice: 'fixed_location', revision: 1 }, now).error, 'task_escalated');
+assert.strictEqual(assignTask(fixedConflictDb, fixedConflictDb.bookImportFollowups[3],
+  'class-a', users[3], 1, now).ok, true);
+assert.strictEqual(performDecision(fixedConflictDb, fixedConflictDb.bookImportFollowups[3],
+  users[0], { choice: 'fixed_location', revision: 2 }, now).error,
+'existing_fixed_location_conflict');
+assert.strictEqual(fixedConflictDb.books[3].fixedLocation, 'Groep B');
+const inconsistentStudentDb = structuredClone(db);
+inconsistentStudentDb.students[0].borrowedBooks.push({ bookId: 'two' });
+assert.strictEqual(performDecision(inconsistentStudentDb,
+  inconsistentStudentDb.bookImportFollowups[0], users[0],
+  { choice: 'student_loan', studentId: 'stu-a', revision: 1 }, now).error,
+'student_already_borrowed_edition');
+assert.strictEqual(inconsistentStudentDb.books[0].status, 'available');
+assert.strictEqual(performDecision(local, local.bookImportFollowups[2], users[2],
+  { choice: 'not_our_class', revision: 1 }, now).ok, true);
+assert.strictEqual(local.bookImportFollowups[2].classId, null);
+assert.strictEqual(local.bookImportFollowups[2].status, 'admin_review');
+assert.strictEqual(reportIsFullyReviewed(local, 'a1111111-1111-4111-a111-111111111111'), false);
+assert.strictEqual(assignTask(local, local.bookImportFollowups[4], 'class-b', users[3], 1, now).ok, true);
+assert.strictEqual(performDecision(local, local.bookImportFollowups[4], users[2],
+  { choice: 'fixed_location', revision: 2 }, now).ok, true);
+assert.strictEqual(assignTask(local, local.bookImportFollowups[2], 'class-b', users[3], 2, now).ok, true);
+assert.strictEqual(performDecision(local, local.bookImportFollowups[2], users[2],
+  { choice: 'fixed_location', revision: 3 }, now).ok, true);
+assert.strictEqual(reportIsFullyReviewed(local, 'a1111111-1111-4111-a111-111111111111'), true);
+
+// PR6 inventory safety: new books and uniquely identified old copies may get
+// tasks, but unknown physical copies must remain blocked.
+const workbook = (rows, existing = [], options = {}) => buildInventorySyncPreview({
+  ok: true, rows,
+}, existing, { classes, students, ...options });
+const inventoryRow = (index, extra = {}) => ({
+  ...contextRow(index),
+  book: { editionIsbn: '9780140328721', title: 'Een nieuw klasboek',
+    author: 'Schrijver', barcode: '', quantity: { value: 1, valid: true }, ...extra },
+});
+const newWithTask = workbook([inventoryRow(0)], [], { acceptWarnings: true });
+assert.strictEqual(newWithTask.summary.readyToApply, true);
+assert.strictEqual(newWithTask.summary.classFollowups, 1);
+assert.strictEqual(newWithTask.classFollowups[0].target, 'new');
+assert.strictEqual(newWithTask.rows[0].needsClassFollowup, true);
+const existingClassCopy = { id: 'known-copy', metadataIsbn: '9780140328721',
+  title: 'Een nieuw klasboek', author: 'Schrijver', barcode: '11009922', status: 'available' };
+const existingWithTask = workbook([inventoryRow(0, { barcode: '11009922' })],
+  [existingClassCopy], { acceptWarnings: true });
+assert.strictEqual(existingWithTask.summary.readyToApply, true);
+assert.deepStrictEqual(existingWithTask.classFollowups.map((x) => x.bookId), ['known-copy']);
+const duplicateCopies = workbook([inventoryRow(0, {
+  quantity: { value: 2, valid: true },
+})], [existingClassCopy, { ...existingClassCopy, id: 'second-copy', barcode: '11009923' }],
+{ acceptWarnings: true });
+assert.strictEqual(duplicateCopies.summary.readyToApply, false);
+assert.strictEqual(duplicateCopies.rows[0].reason, 'class_followup_requires_physical_copy_match');
+assert.strictEqual(duplicateCopies.classFollowups.length, 0);
+const unsafeReduction = workbook([inventoryRow(0)],
+  [existingClassCopy, { ...existingClassCopy, id: 'second-copy', barcode: '11009923' }],
+  { acceptWarnings: true, resolutions: [{ isbn: '9780140328721', action: 'keep_existing' }] });
+assert.strictEqual(unsafeReduction.ok, false);
+assert.strictEqual(unsafeReduction.error, 'invalid_sync_resolution_reason');
+const warningNotAccepted = workbook([inventoryRow(0)], []);
+assert.strictEqual(warningNotAccepted.summary.readyToApply, false);
+assert.strictEqual(warningNotAccepted.classFollowups.length, 0);
+
+const PORT = 4076;
+const BASE = 'http://127.0.0.1:' + PORT;
+const hash = password => crypto.createHash('sha256').update(password).digest('hex');
+async function call(route, token, payload, method) {
+  const response = await fetch(BASE + route, {
+    method: method || (payload === undefined ? 'GET' : 'POST'),
+    headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+  });
+  return { status: response.status, body: await response.json() };
+}
+function fileBase64(rows) {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Bibliotheek');
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }).toString('base64');
+}
+function waitForServer(child) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(Error('PR6 server start timeout')), 12000);
+    function onData(chunk) {
+      if (!chunk.toString().includes('http://localhost:' + PORT)) return;
+      clearTimeout(timeout); child.stdout.off('data', onData); resolve();
+    }
+    child.stdout.on('data', onData);
+    child.once('exit', (code) => { clearTimeout(timeout); reject(Error('Server exited: ' + code)); });
+  });
+}
+async function run() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-pr6-'));
+  const dbPath = path.join(dir, 'db.json');
+  const initial = structuredClone(db);
+  initial.users.forEach((user) => { user.passwordHash = hash('pass'); });
+  initial.students.forEach((student) => { student.username = student.id; student.passwordHash = hash('pass'); });
+  fs.writeFileSync(dbPath, JSON.stringify(initial));
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, PORT: String(PORT), BOEKENBAAI_DATA_PATH: dbPath,
+      BOEKENBAAI_STATIC_DIR: path.resolve(__dirname, '..', 'public'),
+      BOEKENBAAI_IMPORT_ENRICH_ISBN: 'false' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  try {
+    await waitForServer(child);
+    const login = async (username) => {
+      const response = await call('/api/login', null, { username, password: 'pass' });
+      assert.strictEqual(response.status, 200, JSON.stringify(response.body));
+      return response.body.token;
+    };
+    const teacherA = await login('docent-a');
+    const teacherA2 = await login('collega-a');
+    const teacherB = await login('docent-b');
+    const admin = await login('beheerder');
+    const studentA = await login('stu-a');
+    const root = '/api/staff/book-import-followups';
+    assert.strictEqual((await call(root, null)).status, 401);
+    assert.strictEqual((await call(root, studentA)).status, 403);
+    const teacherTasks = await call(root, teacherA);
+    assert.strictEqual(teacherTasks.status, 200);
+    assert.deepStrictEqual(teacherTasks.body.tasks.map((t) => t.id), ['task-one', 'task-two']);
+    assert.deepStrictEqual((await call(root, teacherA2)).body.tasks.map((t) => t.id),
+      ['task-one', 'task-two'], 'Multiple teachers of one class must see the SAME tasks');
+    assert.deepStrictEqual((await call(root, teacherB)).body.tasks.map((t) => t.id),
+      ['task-three']);
+    assert.strictEqual((await call('/api/admin/book-import-followups/settings', teacherA)).status, 403);
+    assert.strictEqual((await call('/api/admin/book-import-followups/settings', admin,
+      { reminderDays: 7, escalationDays: 7 }, 'PUT')).status, 400);
+    assert.strictEqual((await call('/api/admin/book-import-followups/settings', admin,
+      { reminderDays: 3, escalationDays: 10 }, 'PUT')).status, 200);
+    assert.strictEqual((await call(root, teacherB)).body.tasks[0].status, 'open');
+    assert.strictEqual((await call(root + '/task-three/decision', teacherA,
+      { choice: 'fixed_location', revision: 1 })).status, 403,
+      'Cannot complete another teacher\'s class task');
+    assert.strictEqual((await call(root + '/task-one/decision', studentA,
+      { choice: 'class_loan', revision: 1 })).status, 403);
+    assert.strictEqual((await call(root + '/task-one/decision', teacherA,
+      { choice: 'student_loan', studentId: 'stu-b', revision: 1 })).status, 409);
+    assert.strictEqual((await call(root + '/task-one/decision', teacherA,
+      { choice: 'student_loan', studentId: 'stu-a', revision: 1 })).status, 200);
+    assert.strictEqual((await call(root + '/task-one/decision', teacherA2,
+      { choice: 'class_loan', revision: 1 })).status, 409,
+      'A colleague must not overwrite an already completed task');
+    const stored = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(stored.books.find((b) => b.id === 'one').borrowedBy, 'stu-a');
+    assert.strictEqual(stored.bookImportFollowups.find((t) => t.id === 'task-one').status, 'completed');
+    assert.strictEqual(stored.bookImportReports[0].fullyReviewed, false);
+    assert.strictEqual((await call('/api/admin/book-import-reports/a1111111-1111-4111-a111-111111111111', admin)).body.fullyReviewed, false);
+    // The same physical copy stays unavailable even when another teacher
+    // attempts an unrelated checkout during this workflow.
+    assert.strictEqual((await call(root + '/task-two/decision', teacherA2,
+      { choice: 'class_loan', revision: 1 })).status, 200);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((b) => b.id === 'two').borrowedByClassId, 'class-a');
+
+    // Escalated and unassigned work is visible only to administration.
+    assert.strictEqual((await call(root, teacherA)).body.tasks.length, 0);
+    const escalated = await call(root, admin);
+    assert.strictEqual(escalated.body.summary.escalated, 2);
+    assert.strictEqual((await call('/api/admin/book-import-followups/task-five/assign', teacherA,
+      { classId: 'class-a', revision: 1 })).status, 403);
+    assert.strictEqual((await call('/api/admin/book-import-followups/task-five/assign', admin,
+      { classId: 'not-a-class', revision: 1 })).status, 409);
+    assert.strictEqual((await call('/api/admin/book-import-followups/task-five/assign', admin,
+      { classId: 'class-a', revision: 1 })).status, 200);
+    assert.strictEqual((await call(root, teacherA)).body.tasks.some((t) => t.id === 'task-five'), true);
+    const revoked = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    revoked.classes.find((c) => c.id === 'class-a').teacherIds = ['teacher-a2'];
+    fs.writeFileSync(dbPath, JSON.stringify(revoked));
+    assert.strictEqual((await call(root, teacherA)).body.tasks.length, 0);
+    assert.strictEqual((await call(root + '/task-five/decision', teacherA,
+      { choice: 'fixed_location', revision: 2 })).status, 403);
+    assert.strictEqual((await call(root + '/task-five/decision', teacherA2,
+      { choice: 'fixed_location', revision: 2 })).status, 200);
+
+    // Create-mode import with an uncertain class annotation now creates an
+    // actionable pending task instead of silently discarding the Excel column.
+    const sample = fileBase64([{
+      Titel: 'Een nieuw klasboek', Auteur: 'Schrijver', 'ISBN-nummer': '9780140328721',
+      Klassen: 'Groep B', Aantal: 1,
+    }]);
+    const staged = await call('/api/admin/book-import-stages', admin,
+      { file: sample, fileName: 'pr6-klascontext.xlsx' });
+    assert.strictEqual(staged.status, 201, JSON.stringify(staged.body).slice(0, 650));
+    const id = staged.body.id;
+    const reviewed = await call('/api/admin/book-import-stages/' + id + '/review', admin,
+      { revision: staged.body.revision, acceptWarnings: true, corrections: [] });
+    assert.strictEqual(reviewed.status, 200, JSON.stringify(reviewed.body).slice(0, 650));
+    assert.strictEqual(reviewed.body.decisions.summary.readyToApply, true,
+      'Deferrable class context must not make valid book identity unimportable');
+    assert.strictEqual(reviewed.body.decisions.rows[0].needsClassFollowup, true);
+    const applied = await call('/api/admin/book-import-stages/' + id + '/apply', admin,
+      { revision: reviewed.body.revision, confirm: true });
+    assert.strictEqual(applied.status, 200, JSON.stringify(applied.body).slice(0, 600));
+    assert.strictEqual(applied.body.result.report.followupTasksCreated, 1);
+    assert.strictEqual(applied.body.result.report.fullyReviewed, false);
+    const afterImport = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const importedTasks = afterImport.bookImportFollowups.filter((t) =>
+      t.reportId === applied.body.result.batchId);
+    assert.strictEqual(importedTasks.length, 1);
+    assert.strictEqual(importedTasks[0].classId, 'class-b');
+    assert.strictEqual((await call(root, teacherB)).body.tasks.some((t) =>
+      t.id === importedTasks[0].id), true);
+    // Re-import while the first classroom task is still pending. Do not create
+    // a second task for the same physical copy or falsely mark the new report
+    // fully checked. The newly recorded report must share its predecessor's task.
+    const uploadedAgain = await call('/api/admin/book-import-stages', admin,
+      { mode: 'inventory_sync', file: sample, fileName: 'pr6-opnieuw.xlsx' });
+    assert.strictEqual(uploadedAgain.status, 201,
+      JSON.stringify(uploadedAgain.body).slice(0, 500));
+    const checkedAgain = await call('/api/admin/book-import-stages/' + uploadedAgain.body.id
+      + '/review', admin, { revision: uploadedAgain.body.revision, acceptWarnings: true,
+        corrections: [] });
+    assert.strictEqual(checkedAgain.status, 200, JSON.stringify(checkedAgain.body).slice(0, 550));
+    assert.strictEqual(checkedAgain.body.decisions.summary.classFollowups, 1);
+    const repeated = await call('/api/admin/book-import-stages/' + uploadedAgain.body.id
+      + '/apply', admin, { revision: checkedAgain.body.revision, confirm: true });
+    assert.strictEqual(repeated.status, 200, JSON.stringify(repeated.body).slice(0, 600));
+    assert.strictEqual(repeated.body.result.created, 0);
+    assert.strictEqual(repeated.body.result.report.followupTasksCreated, 0);
+    assert.strictEqual(repeated.body.result.report.fullyReviewed, false);
+    assert.deepStrictEqual(repeated.body.result.report.followupTaskIds, [importedTasks[0].id]);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).bookImportFollowups
+      .filter((t) => t.bookId === importedTasks[0].bookId).length, 1);
+    assert.strictEqual((await call(root + '/' + importedTasks[0].id + '/decision', teacherB,
+      { choice: 'fixed_location', revision: 1 })).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-reports/' + applied.body.result.batchId,
+      admin)).body.fullyReviewed, true);
+    assert.strictEqual((await call('/api/admin/book-import-reports/' + repeated.body.result.batchId,
+      admin)).body.fullyReviewed, true);
+    const publicBook = await call('/api/books/' + importedTasks[0].bookId, studentA);
+    assert.strictEqual(publicBook.status, 200);
+    assert.ok(!JSON.stringify(publicBook.body).includes('sourceClassNames'),
+      'Student clients must not see raw teacher task source values');
+    console.log('PR6 persistent follow-ups, role scoping, shared decisions and import API tests passed');
+  } finally {
+    child.kill('SIGTERM');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+run().catch(error => { console.error(error); process.exitCode = 1; });

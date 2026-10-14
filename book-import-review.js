@@ -8,6 +8,7 @@ const { mapImportRow, safeRowEntries, isBlankCellValue } = require('./book-impor
 const { analyzeIdentifier, looksLikeIsbnCandidate, normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { inspectReviewedLoans } = require('./book-import-loan-migration');
+const { eligibleForDeferredContext } = require('./book-import-followups');
 
 const CORRECTION_COLUMNS = Object.freeze({
   title: { header: 'Titel', fields: ['title'], type: 'text' },
@@ -248,7 +249,8 @@ function buildReviewDecisions(analysis, existingBooks = [], {
     // Acknowledging a warning is not consent to silently discard a school's
     // physical location, class assignment or "not in library" information.
     // PR4/5 owns the eventual mapping into the real inventory/loan models.
-    const hasUnrepresentedContext = Boolean(
+    const needsClassFollowup = eligibleForDeferredContext(row, classes);
+    const hasUnrepresentedContext = !needsClassFollowup && Boolean(
       (Array.isArray(row.context?.classContext) && row.context.classContext.length)
       || row.context?.libraryPresence
       || (row.context?.fixedLocation && row.context.fixedLocation.status !== 'resolved')
@@ -273,6 +275,7 @@ function buildReviewDecisions(analysis, existingBooks = [], {
       reason, existing: matches, existingCount: match.count,
       existingBarcode: existingBarcode || null,
       loanBorrower: canCreate ? loanCheck?.borrower || null : null,
+      needsClassFollowup: canCreate && needsClassFollowup,
     };
   });
   const blocked = rows.filter((row) => row.reason && row.reason !== 'skipped');

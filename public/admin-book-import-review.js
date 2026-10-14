@@ -24,7 +24,7 @@
     loan_requires_physical_copy_match: 'Er zijn meerdere exemplaren en Excel koppelt de uitlening niet aan één specifiek fysiek boek. Vul een unieke fysieke barcode in of controleer het boek handmatig.',
     loan_copy_borrowed_by_other: 'Dit fysieke exemplaar staat al uitgeleend aan iemand anders of aan een andere klas. Het wordt nooit automatisch omgezet.',
     loan_book_student_records_disagree: 'De bestaande uitlening en de uitleenlijst van de leerling komen niet overeen. Laat dit eerst handmatig corrigeren.',
-    location_context_requires_followup: 'Er staat klas- of locatie-informatie in Excel die Boekenbaai nog niet veilig kan overnemen. Corrigeer die gegevens of sla deze rij over.',
+    location_context_requires_followup: 'Dit boek kan niet veilig aan één fysiek exemplaar of klas worden gekoppeld. Corrigeer de brongegevens of de fysieke barcode.',
     skipped: 'Wordt niet geïmporteerd.',
     missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
     missing_title_or_author: 'Titel en auteur zijn verplicht bij het toevoegen van boeken. Corrigeer deze gegevens of sla de rij over.',
@@ -463,6 +463,16 @@
           + (done.restoredLoans ? ' ' + done.restoredLoans + ' bestaande uitleningen overgenomen.' : '')
           + ' Importverslag: ' + (done.batchId || 'onbekend')));
         if (done.report) {
+          if (done.report.fullyReviewed === false) {
+            results.append(make('p', 'bb-review__detail',
+              'De boekimport is opgeslagen, maar is nog niet volledig gecontroleerd.'
+              + ' Er staan klassentaken open in het docentenportaal.'
+              + (done.report.followupTasksCreated ? ' Nieuw: '
+                + done.report.followupTasksCreated + ' taak/taken.' : '')));
+          } else {
+            results.append(make('p', 'bb-review__detail',
+              'De import is volledig gecontroleerd; er zijn geen openstaande klassentaken.'));
+          }
           const download = button('Download importverslag (JSON)', 'btn btn--secondary');
           download.addEventListener('click', () => {
             const blob = new Blob([JSON.stringify(done.report, null, 2)], { type: 'application/json' });
@@ -475,7 +485,9 @@
           });
           results.append(download);
         }
-        setNotice('De gecontroleerde import is afgerond.');
+        setNotice(done.report?.fullyReviewed === false
+          ? 'De boeken zijn opgeslagen. De klascontext wordt door docenten of beheer gecontroleerd.'
+          : 'De gecontroleerde import is afgerond.');
         return;
       }
       const summary = stage.summary || {};
@@ -492,6 +504,9 @@
           (decisions.summary.restoreLoans || 0) + ' gecontroleerde bestaande uitleningen overnemen',
           (decisions.summary.alreadyRecordedLoans || 0) + ' uitleningen al correct geregistreerd',
           (decisions.summary.previouslyImportedLoans || 0) + ' eerder overgenomen uitleningen inmiddels ingeleverd',
+          (decisions.summary.classFollowups || 0) + ' Excelrijen krijgen een klascontroletaak',
+          (decisions.summary.classContextsAlreadyReviewed || 0)
+            + ' eerder gecontroleerde klascontexten blijven ongewijzigd',
         ].join(' · ')));
         heading.append(make('p', 'hint',
           'Excel-aantallen gelden als gewenste totaalvoorraad per ISBN. Er worden geen boeken verwijderd en geen bestaande uitleningen overschreven. Alleen expliciet getoonde, gecontroleerde ontbrekende uitleningen worden toegevoegd.'));
@@ -522,6 +537,13 @@
       ].join(' · ')));
       const importedLoanCount = (decisions.rows || []).filter((row) =>
         row.canCreate && row.loanBorrower).length;
+      const classTaskCount = (decisions.rows || []).filter((item) =>
+        item.needsClassFollowup).length;
+      if (!inventorySync && classTaskCount) {
+        heading.append(make('p', 'bb-review__detail',
+          classTaskCount + ' Excelrij(en) kunnen veilig worden geïmporteerd.'
+          + ' De onduidelijke klascontext krijgt na het opslaan een aparte controletaak.'));
+      }
       if (!inventorySync && importedLoanCount) {
         heading.append(make('p', 'bb-review__detail',
           importedLoanCount + ' bestaand(e) Excel-uitleenrecord(s) worden als uitgeleend aangemaakt. '
@@ -629,6 +651,17 @@
               : dec.action === 'unchanged' ? ' · ' + dec.existingCopies + ' aanwezig'
                 : '';
           card.append(make('p', 'bb-review__detail', (syncActions[dec.action] || dec.action) + count));
+        }
+        if (dec.previousClassFollowup) {
+          card.append(make('p', 'bb-review__detail',
+            'Deze klascontext is al door een medewerker gecontroleerd.'
+            + ' De bestaande uitlening en eventuele inname blijven ongewijzigd.'));
+        }
+        if (dec.needsClassFollowup) {
+          card.append(make('p', 'bb-review__detail',
+            'Klasinformatie nog onduidelijk. Er wordt na bevestiging een gedeelde '
+            + 'controletaak voor de betreffende klas of beheer aangemaakt.'
+            + ' De uitleenstatus wordt niet automatisch gewijzigd.'));
         }
         if (dec.loanBorrower && (dec.canCreate || (inventorySync && dec.loanState))) {
           const already = dec.loanState === 'already_recorded';
