@@ -277,6 +277,47 @@ assert.strictEqual(alreadyElsewhere.rows[0].reason, 'barcode_belongs_to_other_ed
 const duplicate = preview([row(0, 1, { barcode: '111222' }), row(1, 1, { barcode: '111222' })]);
 assert.strictEqual(duplicate.rows[0].reason, 'duplicate_printed_barcode');
 
+// One blocked ISBN spread across eight worksheet rows remains ONE edition.
+// All individual rows must retain their actionable review status.
+const eightBlockedRows = preview(Array.from({ length: 8 }, (_, index) =>
+  row(index, 1, { barcode: '33114455' })));
+assert.strictEqual(eightBlockedRows.summary.blockedEditions, 1,
+  'Do not count eight worksheet rows as eight blocked editions');
+assert.strictEqual(eightBlockedRows.summary.readyToApply, false);
+assert.deepStrictEqual(eightBlockedRows.rows.map((entry) => entry.action),
+  Array(8).fill('blocked'), 'Combined rows must remain individually flagged');
+assert.deepStrictEqual(eightBlockedRows.rows.slice(1).map((entry) => entry.combinedWith),
+  Array(7).fill(0), 'The first-row reference is index zero, not an absent value');
+assert.deepStrictEqual(eightBlockedRows.proposedAdds, []);
+
+// Two different blocked editions and one invalid ISBN row are three separate
+// issues, regardless of the number of physical Excel rows per valid ISBN.
+const mixedBlockedRows = [
+  ...Array.from({ length: 5 }, (_, index) =>
+    row(index, 1, { barcode: '22446688' })),
+  ...Array.from({ length: 3 }, (_, index) =>
+    row(index + 5, 1, { editionIsbn: OTHER, title: 'Ander boek',
+      barcode: '99220011' })),
+  row(8, 1, { editionIsbn: 'invalid-isbn' }),
+  { ...row(9), status: 'skipped' },
+];
+const mixedBlocked = preview(mixedBlockedRows);
+assert.strictEqual(mixedBlocked.summary.blockedEditions, 3,
+  'Two blocked ISBN groups plus one ungroupable row, not nine blocked rows');
+assert.strictEqual(mixedBlocked.summary.readyToApply, false);
+assert.strictEqual(mixedBlocked.rows[8].reason, 'missing_valid_isbn');
+assert.strictEqual(mixedBlocked.rows[9].action, 'skipped');
+assert.deepStrictEqual(mixedBlocked.proposedAdds, []);
+const onlyUngroupable = preview([
+  row(0, 1, { editionIsbn: '' }),
+  row(1, 1, { editionIsbn: 'invalid-isbn' }),
+]);
+assert.strictEqual(onlyUngroupable.summary.blockedEditions, 2,
+  'Rows without a valid ISBN remain separate issues, not one phantom edition');
+assert.strictEqual(onlyUngroupable.summary.readyToApply, false);
+assert.strictEqual(preview([row(0), row(1)]).summary.blockedEditions, 0,
+  'Combining clean rows must not create a phantom blocked edition');
+
 // A generated ISBN scan code may not be reused as another new edition's
 // printed physical barcode inside the same workbook.
 const crossEditionScanConflict = preview([
@@ -286,6 +327,8 @@ const crossEditionScanConflict = preview([
 assert.strictEqual(crossEditionScanConflict.rows[0].reason, 'workbook_physical_barcode_conflict');
 assert.strictEqual(crossEditionScanConflict.rows[1].reason, 'workbook_physical_barcode_conflict');
 assert.strictEqual(crossEditionScanConflict.summary.readyToApply, false);
+assert.strictEqual(crossEditionScanConflict.summary.blockedEditions, 2,
+  'A barcode conflict between two different ISBNs affects two editions');
 assert.deepStrictEqual(crossEditionScanConflict.proposedAdds, []);
 
 const unknownLoan = preview([{ ...row(0, 1), context: { studentLoan: { id: 's1' } } }]);
@@ -394,6 +437,8 @@ const duplicatedStudentEdition = preview([rowWithStudentLoan(0), rowWithStudentL
   [], directory);
 assert.strictEqual(duplicatedStudentEdition.summary.readyToApply, false);
 assert.strictEqual(duplicatedStudentEdition.rows[0].reason, 'duplicate_student_loan_in_workbook');
+assert.strictEqual(duplicatedStudentEdition.summary.blockedEditions, 1,
+  'Two duplicate student-loan rows still represent a single blocked ISBN');
 assert.deepStrictEqual(duplicatedStudentEdition.loanAssignments, []);
 const classLoan = preview([rowWithClassLoan(0)], [book('existing-class-copy')], directory);
 assert.strictEqual(classLoan.summary.restoreLoans, 1);

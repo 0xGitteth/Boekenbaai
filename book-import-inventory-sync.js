@@ -421,7 +421,11 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     if (book.status === 'borrowed' || Boolean(book.borrowedBy)) missing.borrowedCopies += 1;
   }
   const omittedEditions = [...omittedGroups.values()].slice(0, 50);
-  const blocked = decisions.filter((entry) => entry.action === 'blocked').length;
+  // Only the first decision represents an ISBN group. Its other worksheet
+  // rows remain blocked for review, but are not additional editions.
+  // Rows without a valid ISBN cannot be grouped, so count them individually.
+  const blocked = decisions.filter((entry) =>
+    entry.action === 'blocked' && entry.combinedWith === undefined).length;
   const additionalCopies = safeAdds.reduce((sum, entry) => sum + entry.quantity, 0);
   if (additionalCopies > 5000) return { ok: false, error: 'too_many_copies' };
   return {
