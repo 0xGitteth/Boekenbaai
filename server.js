@@ -4582,7 +4582,7 @@ async function handleApi(req, res, requestUrl) {
       }
       // Retain the initial request DB snapshot. The write-conflict guard must
       // reject an older writer if a staged import commits while it awaits.
-      const db = getDb();
+      const originalDb = getDb();
       const body = await parseBody(req);
       if (!body.title || !body.author || !body.barcode) {
         return sendJson(res, 400, { message: 'Titel, auteur en barcode zijn verplicht' });
@@ -4604,6 +4604,12 @@ async function handleApi(req, res, requestUrl) {
         try { localCoverUrl = await coverAssets.saveSource(coverUrl); }
         catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
       }
+      // An old request must still fail if a confirmed reviewed import happened
+      // while its body or cover image was being downloaded.
+      assertReviewedImportNotLost(originalDb);
+      // Other concurrent changes (loans, accounts, etc.) must be preserved.
+      // No more awaits occur between this reload and saveDb().
+      const db = loadDb();
       const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
       const baseBook = {
         title: body.title,
@@ -4652,13 +4658,13 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken wijzigen' });
       }
-      const db = getDb();
-      const book = findBookById(db, bookIdMatch[1]);
-      if (!book) return sendJson(res, 404, { message: 'Boek niet gevonden' });
+      const originalDb = getDb();
+      const originalBook = findBookById(originalDb, bookIdMatch[1]);
+      if (!originalBook) return sendJson(res, 404, { message: 'Boek niet gevonden' });
       const body = await parseBody(req);
       const requestedCoverUrl = Object.prototype.hasOwnProperty.call(body, 'coverUrl')
         ? resolveEffectiveCoverUrl(body.coverUrl) : null;
-      const previousBook = book;
+      const previousBook = originalBook;
       let preparedLocalCoverUrl = null;
       if (requestedCoverUrl !== null) {
         if (!requestedCoverUrl) preparedLocalCoverUrl = '';
@@ -4671,6 +4677,21 @@ async function handleApi(req, res, requestUrl) {
           try { preparedLocalCoverUrl = await coverAssets.saveSource(requestedCoverUrl); }
           catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
         }
+      }
+      assertReviewedImportNotLost(originalDb);
+      // If the same physical copy changed during the await, editing against
+      // its old cover/loan state would overwrite the other operation.
+      const db = loadDb();
+      const book = findBookById(db, bookIdMatch[1]);
+      if (!book) return sendJson(res, 409, {
+        message: 'Dit boek is intussen verwijderd. Vernieuw de pagina.',
+        error: 'DATABASE_WRITE_CONFLICT',
+      });
+      if (JSON.stringify(book) !== JSON.stringify(originalBook)) {
+        return sendJson(res, 409, {
+          message: 'Dit boek is intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.',
+          error: 'DATABASE_WRITE_CONFLICT',
+        });
       }
       const hasNewBarcode = Object.prototype.hasOwnProperty.call(body, 'barcode');
       const normalizedNewBarcode = hasNewBarcode
@@ -6308,6 +6329,10 @@ async function handleApi(req, res, requestUrl) {
           }
           if (nextCoverUrl !== existingBook.coverUrl) {
             updates.coverUrl = nextCoverUrl;
+            // Local files belong to a specific source. A new external URL
+            // must be fetched instead of displaying the previous cached cover.
+            updates.localCoverUrl = '';
+            updates.coverCrop = null;
           }
           if (hasMetadataInput && nextMetadataIsbn !== existingMetadataIsbn) {
             updates.metadataIsbn = nextMetadataIsbn;
