@@ -1356,7 +1356,9 @@ function applyDisplayCoverCrop(image, value) {
   const crop = normalizedDisplayCoverCrop(value);
   image.style.objectFit = crop ? 'cover' : 'contain';
   image.style.objectPosition = crop ? `${crop.x}% ${crop.y}%` : 'center';
-  image.style.transform = crop ? `scale(${crop.zoom})` : '';
+  image.style.transform = crop
+    ? `translate(${(50 - crop.x) * (crop.zoom - 1)}%, ${(50 - crop.y) * (crop.zoom - 1)}%) scale(${crop.zoom})`
+    : '';
 }
 function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
