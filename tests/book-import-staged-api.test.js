@@ -414,11 +414,18 @@ async function run() {
       { revision: 1, acceptWarnings: true, corrections: [] },
     );
     assert.strictEqual(acceptedLocationWarnings.status, 200);
-    assert.strictEqual(acceptedLocationWarnings.body.decisions.rows[0].reason, 'location_context_requires_followup');
-    assert.strictEqual(acceptedLocationWarnings.body.decisions.summary.readyToApply, false);
-    const forbiddenLocationApply = await call('/api/admin/book-import-stages/' + blockedLocation.body.id + '/apply',
-      token1, { revision: 2, confirm: true });
-    assert.strictEqual(forbiddenLocationApply.status, 409);
+    // PR6 defers ambiguous classroom information to a shared staff task.
+    // Existing book identity and physical safety checks still apply.
+    assert.strictEqual(acceptedLocationWarnings.body.decisions.rows[0].reason, '');
+    assert.strictEqual(acceptedLocationWarnings.body.decisions.rows[0].needsClassFollowup, true);
+    assert.strictEqual(acceptedLocationWarnings.body.decisions.summary.readyToApply, true);
+    // This test covers staging; dedicated PR6 tests verify persisting,
+    // completing and re-importing the task. Cancel here to keep the later
+    // PR3 import-history and stale-writer assertions unchanged.
+    const cancelledLocation = await call('/api/admin/book-import-stages/'
+      + blockedLocation.body.id + '/cancel', token1,
+    { revision: acceptedLocationWarnings.body.revision });
+    assert.strictEqual(cancelledLocation.status, 200);
 
     // Reverse race: a normal /api/books mutation starts first, waits for a
     // slow body, then PR3 commits. Finishing that old writer must NOT erase

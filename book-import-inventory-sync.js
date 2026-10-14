@@ -280,7 +280,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       if (printed && oldMatches.length === 1) {
         const old = oldMatches[0];
         const occupied = old.status === 'borrowed' || old.borrowedBy || old.borrowedByClassId;
-        const previouslyResolved = occupied && existingFollowups.some((task) =>
+        const previouslyResolved = existingFollowups.some((task) =>
           task.bookId === old.id && task.status === 'completed'
             && contextMatchesTask(task, followupContext(row, classes)));
         if (occupied && !previouslyResolved) block('class_followup_book_borrowed');
@@ -296,7 +296,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         && target === 1) {
         const old = existing[0];
         const occupied = old.status === 'borrowed' || old.borrowedBy || old.borrowedByClassId;
-        const previouslyResolved = occupied && existingFollowups.some((task) =>
+        const previouslyResolved = existingFollowups.some((task) =>
           task.bookId === old.id && task.status === 'completed'
             && contextMatchesTask(task, followupContext(row, classes)));
         if (occupied && !previouslyResolved) block('class_followup_book_borrowed');

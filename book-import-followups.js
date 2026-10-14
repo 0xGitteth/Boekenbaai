@@ -166,7 +166,9 @@ function performDecision(db, task, user, body, now = new Date().toISOString()) {
   if (!copy) return { ok: false, error: 'book_not_found' };
   if (taskStage(task, settingsFor(db), Date.parse(now)) === 'admin_review'
     && user.role !== 'admin') return { ok: false, error: 'task_escalated' };
-  if (body.choice !== 'not_our_class'
+  // A confirmed fixed shelf location is independent of the lending state.
+  // Updating that location must never check in or reassign an active loan.
+  if (['student_loan', 'class_loan'].includes(body.choice)
     && (copy.status === 'borrowed' || copy.borrowedBy || copy.borrowedByClassId)) {
     return { ok: false, error: 'book_already_borrowed' };
   }
@@ -206,8 +208,9 @@ function performDecision(db, task, user, body, now = new Date().toISOString()) {
     copy.borrowedByClassId = klass.id;
     copy.borrowedAt = null; copy.dueDate = null;
   } else if (body.choice === 'fixed_location') {
-    if (copy.fixedLocation && copy.fixedLocation.trim().toLocaleLowerCase('nl')
-      !== klass.name.trim().toLocaleLowerCase('nl')) {
+    if (copy.fixedLocation && (typeof copy.fixedLocation !== 'string'
+      || copy.fixedLocation.trim().toLocaleLowerCase('nl')
+        !== klass.name.trim().toLocaleLowerCase('nl'))) {
       return { ok: false, error: 'existing_fixed_location_conflict' };
     }
     copy.fixedLocation = klass.name;

@@ -123,6 +123,18 @@ assert.strictEqual(performDecision(fixedConflictDb, fixedConflictDb.bookImportFo
   users[0], { choice: 'fixed_location', revision: 2 }, now).error,
 'existing_fixed_location_conflict');
 assert.strictEqual(fixedConflictDb.books[3].fixedLocation, 'Groep B');
+// A physical shelf can be assigned while the book is already checked out;
+// the ongoing loan must not be changed as a side effect.
+const borrowedShelfDb = structuredClone(db);
+borrowedShelfDb.books[4].status = 'borrowed';
+borrowedShelfDb.books[4].borrowedByClassId = 'class-b';
+assert.strictEqual(assignTask(borrowedShelfDb, borrowedShelfDb.bookImportFollowups[4],
+  'class-b', users[3], 1, now).ok, true);
+assert.strictEqual(performDecision(borrowedShelfDb, borrowedShelfDb.bookImportFollowups[4],
+  users[2], { choice: 'fixed_location', revision: 2 }, now).ok, true);
+assert.strictEqual(borrowedShelfDb.books[4].fixedLocation, 'Groep B');
+assert.strictEqual(borrowedShelfDb.books[4].status, 'borrowed');
+assert.strictEqual(borrowedShelfDb.books[4].borrowedByClassId, 'class-b');
 const inconsistentStudentDb = structuredClone(db);
 inconsistentStudentDb.students[0].borrowedBooks.push({ bookId: 'two' });
 assert.strictEqual(performDecision(inconsistentStudentDb,
@@ -179,6 +191,33 @@ assert.strictEqual(unsafeReduction.error, 'invalid_sync_resolution_reason');
 const warningNotAccepted = workbook([inventoryRow(0)], []);
 assert.strictEqual(warningNotAccepted.summary.readyToApply, false);
 assert.strictEqual(warningNotAccepted.classFollowups.length, 0);
+// A completed class decision stays completed in later Excel uploads, even
+// after a genuine return. Reimporting must not generate another classroom
+// task, change borrowers or invent a historical checkout date.
+const completedTask = makeTask({ id: 'completed-task', reportId: 'old-report',
+  row: inventoryRow(0),
+  book: existingClassCopy, context: followupContext(inventoryRow(0), classes),
+  createdAt: now });
+completedTask.status = 'completed';
+completedTask.resolution = 'class_loan';
+for (const physical of [
+  existingClassCopy,
+  { ...existingClassCopy, status: 'borrowed', borrowedByClassId: 'class-a' },
+]) {
+  const repeat = workbook([inventoryRow(0, { barcode: '11009922' })], [physical], {
+    acceptWarnings: true, existingFollowups: [completedTask],
+  });
+  assert.strictEqual(repeat.summary.readyToApply, true);
+  assert.strictEqual(repeat.summary.classFollowups, 0);
+  assert.strictEqual(repeat.summary.classContextsAlreadyReviewed, 1);
+  assert.strictEqual(repeat.classFollowups[0].target, 'previously_resolved');
+  assert.strictEqual(repeat.rows[0].needsClassFollowup, false);
+}
+const neverResolvedLoan = workbook([inventoryRow(0, { barcode: '11009922' })],
+  [{ ...existingClassCopy, status: 'borrowed', borrowedByClassId: 'class-a' }],
+  { acceptWarnings: true });
+assert.strictEqual(neverResolvedLoan.summary.readyToApply, false);
+assert.strictEqual(neverResolvedLoan.rows[0].reason, 'class_followup_book_borrowed');
 
 const PORT = 4076;
 const BASE = 'http://127.0.0.1:' + PORT;
@@ -351,6 +390,33 @@ async function run() {
       admin)).body.fullyReviewed, true);
     assert.strictEqual((await call('/api/admin/book-import-reports/' + repeated.body.result.batchId,
       admin)).body.fullyReviewed, true);
+
+    // End-to-end: after completion, a stale Excel upload is not a NEW task.
+    // Neither a genuine checkout nor a genuine check-in is undone by reimport.
+    const checkout = await call('/api/books/' + importedTasks[0].bookId
+      + '/check-out', teacherB, { classId: 'class-b' });
+    assert.strictEqual(checkout.status, 200, JSON.stringify(checkout.body));
+    const checkin = await call('/api/books/' + importedTasks[0].bookId
+      + '/check-in', teacherB, { classId: 'class-b' });
+    assert.strictEqual(checkin.status, 200, JSON.stringify(checkin.body));
+    const oldExcelAgain = await call('/api/admin/book-import-stages', admin,
+      { mode: 'inventory_sync', file: sample, fileName: 'pr6-oud-na-inname.xlsx' });
+    assert.strictEqual(oldExcelAgain.status, 201, JSON.stringify(oldExcelAgain.body));
+    const oldExcelChecked = await call('/api/admin/book-import-stages/'
+      + oldExcelAgain.body.id + '/review', admin,
+      { revision: oldExcelAgain.body.revision, acceptWarnings: true, corrections: [] });
+    assert.strictEqual(oldExcelChecked.status, 200, JSON.stringify(oldExcelChecked.body));
+    assert.strictEqual(oldExcelChecked.body.decisions.summary.readyToApply, true);
+    assert.strictEqual(oldExcelChecked.body.decisions.summary.classFollowups, 0);
+    assert.strictEqual(oldExcelChecked.body.decisions.summary.classContextsAlreadyReviewed, 1);
+    const oldExcelApplied = await call('/api/admin/book-import-stages/'
+      + oldExcelAgain.body.id + '/apply', admin,
+      { revision: oldExcelChecked.body.revision, confirm: true });
+    assert.strictEqual(oldExcelApplied.status, 200, JSON.stringify(oldExcelApplied.body));
+    assert.strictEqual(oldExcelApplied.body.result.report.followupTasksCreated, 0);
+    assert.strictEqual(oldExcelApplied.body.result.report.fullyReviewed, true);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books
+      .find((b) => b.id === importedTasks[0].bookId).status, 'available');
     const publicBook = await call('/api/books/' + importedTasks[0].bookId, studentA);
     assert.strictEqual(publicBook.status, 200);
     assert.ok(!JSON.stringify(publicBook.body).includes('sourceClassNames'),
