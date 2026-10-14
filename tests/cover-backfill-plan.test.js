@@ -66,6 +66,17 @@ assert.deepEqual(planCoverBackfill(partiallyCached,
   { hasAsset: existing, failures: linkFailure, now: 5000 }), [],
 'Exhausted database-link retries must remain bounded');
 
+// Persisted-but-unlinked downloads should be reused during write retries,
+// even if the only previously linked physical copy is removed meanwhile.
+const unlinkedAsset = '/api/covers/' + 'b'.repeat(64) + '.png';
+const unlinkedFailure = new Map([[source, { attempts: 1, nextRetryAt: 2000,
+  phase: 'link', localAsset: unlinkedAsset }]]);
+assert.deepEqual(planCoverBackfill([
+  { coverUrl: source, localCoverUrl: '' },
+], { hasAsset: (asset) => asset === unlinkedAsset, failures: unlinkedFailure, now: 2000 }),
+[{ source, localAsset: unlinkedAsset }], 'A downloaded unlinked file must be reused');
+assert.equal(unlinkedFailure.get(source).attempts, 1);
+
 const gone = planCoverBackfill([
   { coverUrl: source, localCoverUrl: local },
 ], { hasAsset: () => false, failures: new Map(), now: 1000 });

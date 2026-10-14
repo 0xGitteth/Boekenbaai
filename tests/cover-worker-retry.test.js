@@ -64,7 +64,9 @@ async function run() {
     await finishPass(attempts);
     const error = ctx.coverBackfillFailures.get(source);
     assert.equal(error?.phase, 'link');
+    assert.equal(error?.localAsset, cached, 'Retain the unlinked asset for subsequent write attempts');
     assert.equal(error?.attempts, attempts, 'Retry count must persist across failed writes');
+    if (attempts === 1) books.splice(1, 1); // Cached sibling disappears after first failed write.
     assert.equal(books[0].localCoverUrl, '', 'Failed DB saves must not pretend to link a cover');
   }
   ctx.scheduleCoverBackfill();
@@ -74,6 +76,7 @@ async function run() {
   // A deliberate new scheduling request may reset an exhausted attempt set.
   // Once a write succeeds, the link and the failure entry must be committed.
   rejectWrites = false;
+  books.push({ id: 'sibling-restored', coverUrl: source, localCoverUrl: cached });
   ctx.scheduleCoverBackfill({ resetFailures: true });
   await finishPass(5);
   assert.equal(books[0].localCoverUrl, cached);

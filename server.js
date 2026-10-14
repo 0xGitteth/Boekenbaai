@@ -143,6 +143,9 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
             coverBackfillFailures.set(source, {
               attempts,
               phase: 'link',
+              // Keep the downloaded file available across write retries,
+              // even when no other book currently links to this asset.
+              localAsset: coverAssets.hasAsset(local) ? local : '',
               nextRetryAt: attempts <= coverRetryDelays.length
                 ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
             });
