@@ -5,6 +5,7 @@ const { URL } = require('url');
 const crypto = require('crypto');
 const { normalizeCoverCrop } = require('./lib/cover-crop');
 const { createCoverAssetStore } = require('./lib/cover-assets');
+const { planCoverBackfill } = require('./lib/cover-backfill-plan');
 const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
@@ -92,22 +93,20 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
     coverBackfillRunning = true;
     try {
       const snapshot = loadDb();
-      const now = Date.now();
-      const sources = [...new Set((snapshot.books || [])
-        .filter((book) => book.coverUrl && !coverAssets.hasAsset(book.localCoverUrl))
-        .map((book) => book.coverUrl))]
-        .filter((source) => {
-          const failure = coverBackfillFailures.get(source);
-          return !failure || (failure.attempts <= coverRetryDelays.length
-            && failure.nextRetryAt <= now);
-        });
+      const plan = planCoverBackfill(snapshot.books, {
+        hasAsset: (url) => coverAssets.hasAsset(url),
+        failures: coverBackfillFailures,
+      });
       let next = 0;
-      await Promise.all(Array.from({ length: Math.min(sources.length, 4) }, async () => {
-        while (next < sources.length && !shuttingDown) {
-          const source = sources[next++];
+      await Promise.all(Array.from({ length: Math.min(plan.length, 4) }, async () => {
+        while (next < plan.length && !shuttingDown) {
+          const { source, localAsset } = plan[next++];
           let local;
           try {
-            local = await coverAssets.saveSource(source);
+            // Reuse a valid asset from another copy of the same source before
+            // trying the upstream server. This also works when it is offline.
+            local = localAsset && coverAssets.hasAsset(localAsset)
+              ? localAsset : await coverAssets.saveSource(source);
             coverBackfillFailures.delete(source);
           } catch (error) {
             const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
