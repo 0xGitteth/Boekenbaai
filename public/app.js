@@ -1381,7 +1381,8 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (state.content) {
     state.content.hidden = false;
   }
-  const manualCoverUrl = normalizeRenderedCoverUrl(representative.coverUrl);
+  const manualCoverUrl = normalizeRenderedCoverUrl(representative.localCoverUrl || representative.coverUrl);
+  const externalCoverUrl = normalizeRenderedCoverUrl(representative.coverUrl);
   const metadataCoverUrl = normalizeRenderedCoverUrl(extractMetadataCoverUrl(metadata));
   const coverUrl = manualCoverUrl || metadataCoverUrl;
   const hasCover = Boolean(coverUrl);
@@ -1389,7 +1390,12 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.coverImage.onerror = null;
     if (hasCover) {
       state.coverImage.onerror = () => {
-        if (state.coverImage.getAttribute('src') !== coverUrl) return;
+        const attempted = state.coverImage.getAttribute('src');
+        if (attempted === coverUrl && externalCoverUrl && externalCoverUrl !== coverUrl) {
+          state.coverImage.src = externalCoverUrl;
+          return;
+        }
+        if (attempted !== coverUrl && attempted !== externalCoverUrl) return;
         state.coverImage.hidden = true;
         if (state.coverFallback) state.coverFallback.hidden = false;
       };
@@ -1851,6 +1857,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: normalizeRenderedCoverUrl(representative.coverUrl),
+      localCoverUrl: normalizeRenderedCoverUrl(representative.localCoverUrl),
       coverCrop: normalizedDisplayCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
@@ -1894,7 +1901,8 @@ function createBookCard(template, book, folders, options = {}) {
     card.classList.add('book-card--exam-list');
   }
 
-  const coverUrl = normalizeRenderedCoverUrl(book.coverUrl);
+  const coverUrl = normalizeRenderedCoverUrl(book.localCoverUrl || book.coverUrl);
+  const externalCoverUrl = normalizeRenderedCoverUrl(book.coverUrl);
   const hasCover = Boolean(coverUrl);
 
   if (coverFallback) {
@@ -1914,7 +1922,12 @@ function createBookCard(template, book, folders, options = {}) {
     coverImage.onerror = null;
     if (hasCover) {
       coverImage.onerror = () => {
-        if (coverImage.getAttribute('src') !== coverUrl) return;
+        const attempted = coverImage.getAttribute('src');
+        if (attempted === coverUrl && externalCoverUrl && externalCoverUrl !== coverUrl) {
+          coverImage.src = externalCoverUrl;
+          return;
+        }
+        if (attempted !== coverUrl && attempted !== externalCoverUrl) return;
         coverImage.hidden = true;
         if (coverFallback) {
           coverFallback.hidden = false;
