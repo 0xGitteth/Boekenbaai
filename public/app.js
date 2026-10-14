@@ -3568,6 +3568,7 @@ function initStaffPage() {
   let adminCropSourceUrl = '';
   let adminCropLocalUrl = '';
   let adminCropLastInputUrl = '';
+  let adminCropPreviewFallbackFor = '';
   const adminBookMessage = document.querySelector('#admin-book-message');
   const bookImportForm = document.querySelector('#book-import-form');
   const bookImportFile = document.querySelector('#book-import-file');
@@ -4283,7 +4284,8 @@ function initStaffPage() {
     const externalUrl = normalizeRenderedCoverUrl(sourceUrl);
     const cachedUrl = sourceUrl === adminCropSourceUrl
       ? normalizeRenderedCoverUrl(adminCropLocalUrl) : '';
-    const url = cachedUrl || externalUrl;
+    const url = cachedUrl && adminCropPreviewFallbackFor !== cachedUrl
+      ? cachedUrl : externalUrl;
     const validUrl = /^https?:\/\//i.test(url) || /^\/api\/covers\/[a-f0-9]{64}\.(?:png|jpg|webp|gif)$/.test(url);
     adminCropEditor.hidden = !validUrl;
     if (!validUrl) {
@@ -4296,11 +4298,16 @@ function initStaffPage() {
       // original URL is still available.
       if (cachedUrl && adminCropImage.getAttribute('src') === cachedUrl
         && externalUrl && externalUrl !== cachedUrl) {
+        adminCropPreviewFallbackFor = cachedUrl;
         adminCropImage.src = externalUrl;
+        return;
       }
+      adminCropImage.style.visibility = 'hidden';
     };
-    if (adminCropImage.getAttribute('src') !== url
-      && adminCropImage.getAttribute('src') !== externalUrl) adminCropImage.src = url;
+    if (adminCropImage.getAttribute('src') !== url) {
+      adminCropImage.style.visibility = 'visible';
+      adminCropImage.src = url;
+    }
     const crop = normalizedDisplayCoverCrop(adminBookCrop);
     adminCropEnabled.checked = Boolean(crop);
     adminCropX.value = crop ? String(crop.x) : '50';
@@ -4313,6 +4320,7 @@ function initStaffPage() {
     const nextUrl = adminBookCover.value.trim();
     if (nextUrl !== adminCropLastInputUrl) {
       adminBookCrop = null;
+      adminCropPreviewFallbackFor = '';
       adminCropLastInputUrl = nextUrl;
     }
     renderAdminCoverCrop();
@@ -4401,6 +4409,7 @@ function initStaffPage() {
     adminCropSourceUrl = '';
     adminCropLocalUrl = '';
     adminCropLastInputUrl = '';
+    adminCropPreviewFallbackFor = '';
     renderAdminCoverCrop();
     selectedBookId = null;
     renderBooks();
@@ -4462,6 +4471,7 @@ function initStaffPage() {
     adminCropSourceUrl = String(book.coverUrl || '').trim();
     adminCropLocalUrl = book.localCoverUrl || '';
     adminCropLastInputUrl = adminCropSourceUrl;
+    adminCropPreviewFallbackFor = '';
     renderAdminCoverCrop();
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
@@ -4587,6 +4597,7 @@ function initStaffPage() {
         adminCropSourceUrl = '';
         adminCropLocalUrl = '';
         adminCropLastInputUrl = metadataCoverUrl.trim();
+        adminCropPreviewFallbackFor = '';
         renderAdminCoverCrop();
       }
     }
