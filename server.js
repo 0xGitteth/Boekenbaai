@@ -4,6 +4,7 @@ const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
 const { normalizeCoverCrop } = require('./lib/cover-crop');
+const { createCoverAssetStore } = require('./lib/cover-assets');
 const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
@@ -43,6 +44,27 @@ const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
   ? path.resolve(__dirname, process.env.BOEKENBAAI_DATA_PATH)
   : DEFAULT_DATA_PATH;
+// Keep original image files next to db.json on the configured persistent volume.
+const coverAssets = createCoverAssetStore({ directory: path.join(path.dirname(DATA_PATH), 'covers') });
+
+async function cacheReviewedCovers(rows) {
+  const sources = [...new Set((rows || []).filter((row) => ['ready', 'warning'].includes(row.status))
+    .map((row) => row.book?.coverUrl).filter(Boolean))];
+  const cached = new Map();
+  let index = 0;
+  await Promise.all(Array.from({ length: Math.min(8, sources.length) }, async () => {
+    while (index < sources.length) {
+      const source = sources[index++];
+      try { cached.set(source, await coverAssets.saveSource(source)); }
+      catch (error) {
+        // A missing cover must not discard otherwise valid ISBN/book records.
+        console.warn('Boekomslag niet lokaal opgeslagen:', error.message);
+        cached.set(source, '');
+      }
+    }
+  }));
+  return cached;
+}
 const DIST_DIR = path.join(__dirname, 'dist');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -1184,6 +1206,9 @@ function ensureBookShape(book) {
   safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
   safeBook.language = normalizeLanguageCode(source.language);
   safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
+  safeBook.localCoverUrl = typeof source.localCoverUrl === 'string'
+    && /^\/api\/covers\/[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/.test(source.localCoverUrl)
+    ? source.localCoverUrl : '';
   safeBook.coverCrop = normalizeCoverCrop(source.coverCrop);
   safeBook.importInfo = normalizeBookImportInfo(source.importInfo);
   safeBook.importProvenance = normalizeBookImportProvenance(source.importProvenance);
@@ -1314,6 +1339,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: resolveEffectiveCoverUrl(representative.coverUrl),
+      localCoverUrl: representative.localCoverUrl || '',
       coverCrop: normalizeCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
@@ -3981,6 +4007,10 @@ async function handleApi(req, res, requestUrl) {
       }
       return db;
     };
+    if (req.method === 'GET' && requestUrl.pathname.startsWith('/api/covers/')) {
+      if (coverAssets.serve(req, res, requestUrl.pathname)) return;
+      return sendJson(res, 404, { message: 'Omslag niet gevonden' });
+    }
     const user = getAuthenticatedUser(req, getDb);
     // Acquire before parseBody() can yield, regardless of which UI initiated
     // the upload. This closes both directions of the legacy/staged race.
@@ -4501,7 +4531,6 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken toevoegen' });
       }
-      const db = getDb();
       const body = await parseBody(req);
       if (!body.title || !body.author || !body.barcode) {
         return sendJson(res, 400, { message: 'Titel, auteur en barcode zijn verplicht' });
@@ -4518,6 +4547,13 @@ async function handleApi(req, res, requestUrl) {
       const pageCount = normalizePageCountValue(body.pageCount ?? body.pages);
       const language = normalizeLanguageCode(body.language);
       const coverUrl = resolveEffectiveCoverUrl(body.coverUrl);
+      let localCoverUrl = '';
+      if (coverUrl) {
+        try { localCoverUrl = await coverAssets.saveSource(coverUrl); }
+        catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
+      }
+      // Reload after image I/O so another request cannot overwrite a stale DB.
+      const db = loadDb();
       const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
       const baseBook = {
         title: body.title,
@@ -4535,6 +4571,7 @@ async function handleApi(req, res, requestUrl) {
         pageCount,
         language,
         coverUrl,
+        localCoverUrl,
         coverCrop: normalizeCoverCrop(body.coverCrop),
       };
       const quantity = parseQuantityInput(body.quantity, { defaultValue: 1 });
@@ -4565,12 +4602,24 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken wijzigen' });
       }
-      const db = getDb();
-      const book = findBookById(db, bookIdMatch[1]);
-      if (!book) {
-        return sendJson(res, 404, { message: 'Boek niet gevonden' });
-      }
       const body = await parseBody(req);
+      const requestedCoverUrl = Object.prototype.hasOwnProperty.call(body, 'coverUrl')
+        ? resolveEffectiveCoverUrl(body.coverUrl) : null;
+      const previousBook = findBookById(getDb(), bookIdMatch[1]);
+      if (!previousBook) return sendJson(res, 404, { message: 'Boek niet gevonden' });
+      let preparedLocalCoverUrl = null;
+      if (requestedCoverUrl !== null) {
+        if (!requestedCoverUrl) preparedLocalCoverUrl = '';
+        else if (requestedCoverUrl === previousBook.coverUrl && previousBook.localCoverUrl) {
+          preparedLocalCoverUrl = previousBook.localCoverUrl;
+        } else {
+          try { preparedLocalCoverUrl = await coverAssets.saveSource(requestedCoverUrl); }
+          catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
+        }
+      }
+      const db = loadDb();
+      const book = findBookById(db, bookIdMatch[1]);
+      if (!book) return sendJson(res, 404, { message: 'Boek niet gevonden' });
       const hasNewBarcode = Object.prototype.hasOwnProperty.call(body, 'barcode');
       const normalizedNewBarcode = hasNewBarcode
         ? normalizeBarcode(body.barcode)
@@ -4647,6 +4696,7 @@ async function handleApi(req, res, requestUrl) {
         pageCount: nextPageCount,
         language: nextLanguage,
         coverUrl: nextCoverUrl,
+        localCoverUrl: hasCoverUrl ? preparedLocalCoverUrl : (book.localCoverUrl || ''),
         coverCrop: nextCoverCrop,
       });
       if (quantityChange !== 0) {
@@ -5066,6 +5116,9 @@ async function handleApi(req, res, requestUrl) {
         const started = bookImportStageStore.beginApply(stage, body.revision);
         if (!started.ok) return sendJson(res, 409, { message: 'Deze import is al verwerkt of gewijzigd.', error: started.error });
         try {
+          // Download unique covers before obtaining the live DB snapshot.
+          // Failed images never invalidate otherwise approved book rows.
+          const localCovers = await cacheReviewedCovers(stage.analysis.rows);
           // Authentication may have loaded getDb() before the request body
           // finished arriving. Read a fresh snapshot at the synchronous
           // commit boundary: no awaits occur between this read and the
@@ -5133,6 +5186,7 @@ async function handleApi(req, res, requestUrl) {
                 description: row.book.description, publisher: row.book.publisher,
                 publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
                 language: row.book.language, coverUrl: row.book.coverUrl,
+                localCoverUrl: localCovers.get(row.book.coverUrl) || '',
                 easyReading: row.book.easyReading,
                 suitableForExamList: row.book.suitableForExamList,
                 tags: row.book.tags,
@@ -5324,6 +5378,7 @@ async function handleApi(req, res, requestUrl) {
               description: row.book.description, publisher: row.book.publisher,
               publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
               language: row.book.language, coverUrl: row.book.coverUrl,
+                localCoverUrl: localCovers.get(row.book.coverUrl) || '',
               easyReading: row.book.easyReading,
               suitableForExamList: row.book.suitableForExamList,
               tags: row.book.tags,
