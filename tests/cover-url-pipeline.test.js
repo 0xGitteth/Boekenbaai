@@ -173,11 +173,11 @@ function runFrontendChecks() {
   const appPath = path.join(__dirname, '..', 'public', 'app.js');
   const source = fs.readFileSync(appPath, 'utf8');
   assert.ok(
-    source.includes('const coverUrl = normalizeRenderedCoverUrl(book.coverUrl);'),
+    source.includes('const coverUrl = normalizeRenderedCoverUrl(book.localCoverUrl || book.coverUrl);'),
     'createBookCard should normalize cover URL before image assignment'
   );
   assert.ok(
-    source.includes('const manualCoverUrl = normalizeRenderedCoverUrl(representative.coverUrl);'),
+    source.includes('const manualCoverUrl = normalizeRenderedCoverUrl(representative.localCoverUrl || representative.coverUrl);'),
     'populateBookDetail should normalize representative cover URL'
   );
   assert.ok(
