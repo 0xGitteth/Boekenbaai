@@ -39,7 +39,7 @@ assert.deepEqual(planCoverBackfill([
   { source, localAsset: '' },
 ]);
 
-const shared = new Map([[source, { attempts: 3, nextRetryAt: Infinity }]]);
+const shared = new Map([[source, { attempts: 3, nextRetryAt: Infinity, phase: 'download' }]]);
 const plan = planCoverBackfill([
   { coverUrl: source, localCoverUrl: '' },
   { coverUrl: source, localCoverUrl: local },
@@ -48,6 +48,23 @@ const plan = planCoverBackfill([
 assert.deepEqual(plan, [{ source, localAsset: local }],
   'A saved image from one physical copy should serve the others immediately');
 assert.equal(shared.size, 0, 'Existing shared cache must override a former failed download');
+
+// A database save error must not lose its retry counter when another copy
+// already has an image available. This is different from a download failure.
+const linkFailure = new Map([[source, { attempts: 2, nextRetryAt: 3000, phase: 'link' }]]);
+const partiallyCached = [
+  { coverUrl: source, localCoverUrl: '' },
+  { coverUrl: source, localCoverUrl: local },
+];
+assert.deepEqual(planCoverBackfill(partiallyCached,
+  { hasAsset: existing, failures: linkFailure, now: 1000 }), []);
+assert.equal(linkFailure.get(source).attempts, 2, 'A saved sibling must not reset failed database writes');
+assert.deepEqual(planCoverBackfill(partiallyCached,
+  { hasAsset: existing, failures: linkFailure, now: 3000 }), [{ source, localAsset: local }]);
+linkFailure.set(source, { attempts: 4, nextRetryAt: Infinity, phase: 'link' });
+assert.deepEqual(planCoverBackfill(partiallyCached,
+  { hasAsset: existing, failures: linkFailure, now: 5000 }), [],
+'Exhausted database-link retries must remain bounded');
 
 const gone = planCoverBackfill([
   { coverUrl: source, localCoverUrl: local },

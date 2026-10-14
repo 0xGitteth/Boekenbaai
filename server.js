@@ -107,11 +107,11 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
             // trying the upstream server. This also works when it is offline.
             local = localAsset && coverAssets.hasAsset(localAsset)
               ? localAsset : await coverAssets.saveSource(source);
-            coverBackfillFailures.delete(source);
           } catch (error) {
             const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
             coverBackfillFailures.set(source, {
               attempts,
+              phase: 'download',
               nextRetryAt: attempts <= coverRetryDelays.length
                 ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
             });
@@ -119,7 +119,7 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
             continue;
           }
           // Never race against the one-active-import staging transaction.
-          while (!shuttingDown && (bookImportStageStore.active() || activeBookImportLease)) {
+          while (!shuttingDown && (bookImportStageStore.active()?.status === 'applying' || activeBookImportLease)) {
             await new Promise((resolve) => setTimeout(resolve, 1000));
           }
           if (shuttingDown) break;
@@ -133,12 +133,16 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
               }
             }
             if (changed) saveDb(latest);
+            // Only a committed (or no-longer-needed) database link completes
+            // the retry. Failed writes must retain their attempt count.
+            coverBackfillFailures.delete(source);
           } catch (error) {
             // A persistent write error must not trigger an immediate retry
             // loop. Use the same bounded cooldown as network failures.
             const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
             coverBackfillFailures.set(source, {
               attempts,
+              phase: 'link',
               nextRetryAt: attempts <= coverRetryDelays.length
                 ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
             });
