@@ -1432,6 +1432,12 @@ function groupBooksByTitleAuthor(books = []) {
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const availableCopies = totalCopies - borrowedCopies;
     const representative = value.representativeBook || value.copies[0] || {};
+    // A representative may have no local asset even when another physical
+    // copy with the same source has a valid cached image.
+    const representativeCoverSource = resolveEffectiveCoverUrl(representative.coverUrl);
+    const cachedEditionCover = value.copies.find((copy) =>
+      resolveEffectiveCoverUrl(copy.coverUrl) === representativeCoverSource
+      && coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || representative.localCoverUrl || '';
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
     const themes = sortThemesByCanonicalOrder(Array.from(value.themes));
@@ -1444,7 +1450,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: resolveEffectiveCoverUrl(representative.coverUrl),
-      localCoverUrl: representative.localCoverUrl || '',
+      localCoverUrl: cachedEditionCover,
       coverCrop: normalizeCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
