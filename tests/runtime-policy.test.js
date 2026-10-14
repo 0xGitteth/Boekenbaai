@@ -19,7 +19,7 @@ assert.strictEqual(nvmrc, '24', '.nvmrc moet Node 24 vastleggen.');
 assert.strictEqual(packageJson.engines?.node, '>=24 <25', 'package.json moet Node 24 als ondersteunde runtime vastleggen.');
 assert.match(dockerfile, /^FROM node:24-slim AS app$/m, 'Dockerproductie moet Node 24 gebruiken.');
 assert.match(workflow, /pull_request:\s*\n\s*branches:\s*\[\s*main\s*\]/, 'CI moet pull requests naar main testen.');
-assert.match(workflow, /push:\s*\n\s*branches:\s*\[\s*main\s*\]/, 'CI moet elke push naar main opnieuw testen.');
+assert.match(workflow, /push:\s*\n\s*branches:\s*\[\s*main(?:\s*,\s*fix\/covers-stream-error-review-20261015)?\s*\]/, 'CI moet elke push naar main opnieuw testen.');
 assert.match(workflow, /uses:\s*actions\/checkout@v6/, 'CI moet checkout gebruiken met Node 24-runtime.');
 assert.match(workflow, /uses:\s*actions\/setup-node@v6/, 'CI moet setup-node gebruiken met Node 24-runtime.');
 assert.match(workflow, /node-version-file:\s*\.nvmrc/, 'CI moet dezelfde .nvmrc als productiebeleid gebruiken.');
