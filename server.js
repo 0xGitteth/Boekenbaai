@@ -6417,12 +6417,18 @@ async function handleApi(req, res, requestUrl) {
             // A single title can represent several physical copies. Keep
             // copies using the same original cover consistent with the import.
             const previousCoverUrl = existingBook.coverUrl;
-            const matchingEdition = getGroupForBook(db, existingBook);
-            for (const copy of matchingEdition?.books || []) {
-              if (copy.id === existingBook.id || copy.coverUrl !== previousCoverUrl) continue;
-              copy.coverUrl = nextCoverUrl;
-              copy.localCoverUrl = '';
-              copy.coverCrop = null;
+            const previousEditionKey = getBookGroupKey(existingBook);
+            const nextEditionKey = getBookGroupKey({
+              ...existingBook, title: nextTitle, author: nextAuthor, metadataIsbn: nextMetadataIsbn,
+            });
+            if (nextEditionKey === previousEditionKey) {
+              for (const copy of db.books) {
+                if (copy.id === existingBook.id || copy.coverUrl !== previousCoverUrl
+                  || getBookGroupKey(copy) !== previousEditionKey) continue;
+                copy.coverUrl = nextCoverUrl;
+                copy.localCoverUrl = '';
+                copy.coverCrop = null;
+              }
             }
             updates.coverUrl = nextCoverUrl;
             // Local files belong to a specific source. A new external URL
