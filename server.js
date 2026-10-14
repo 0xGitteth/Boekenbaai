@@ -53,9 +53,14 @@ const coverAssets = createCoverAssetStore({ directory: path.join(path.dirname(DA
 let shuttingDown = false;
 let coverBackfillRunning = false;
 let coverBackfillScheduled = false;
+let coverBackfillPending = false;
 const coverBackfillFailed = new Set();
 function scheduleCoverBackfill() {
-  if (coverBackfillRunning || coverBackfillScheduled || shuttingDown) return;
+  if (shuttingDown) return;
+  if (coverBackfillRunning || coverBackfillScheduled) {
+    coverBackfillPending = true;
+    return;
+  }
   coverBackfillScheduled = true;
   setImmediate(async () => {
     coverBackfillScheduled = false;
@@ -102,6 +107,10 @@ function scheduleCoverBackfill() {
       console.warn('Omslagverwerking afgebroken:', error.message);
     } finally {
       coverBackfillRunning = false;
+      if (coverBackfillPending && !shuttingDown) {
+        coverBackfillPending = false;
+        scheduleCoverBackfill();
+      }
     }
   });
 }
