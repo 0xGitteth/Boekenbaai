@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const { normalizeCoverCrop } = require('./lib/cover-crop');
 const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
@@ -1183,6 +1184,7 @@ function ensureBookShape(book) {
   safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
   safeBook.language = normalizeLanguageCode(source.language);
   safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
+  safeBook.coverCrop = normalizeCoverCrop(source.coverCrop);
   safeBook.importInfo = normalizeBookImportInfo(source.importInfo);
   safeBook.importProvenance = normalizeBookImportProvenance(source.importProvenance);
   return attachDerivedThemeFields(safeBook);
@@ -1312,6 +1314,7 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: resolveEffectiveCoverUrl(representative.coverUrl),
+      coverCrop: normalizeCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
       themes,
@@ -4532,6 +4535,7 @@ async function handleApi(req, res, requestUrl) {
         pageCount,
         language,
         coverUrl,
+        coverCrop: normalizeCoverCrop(body.coverCrop),
       };
       const quantity = parseQuantityInput(body.quantity, { defaultValue: 1 });
       const createdBooks = [];
@@ -4610,6 +4614,9 @@ async function handleApi(req, res, requestUrl) {
         : book.pageCount;
       const nextLanguage = hasLanguage ? normalizeLanguageCode(body.language) : book.language;
       const nextCoverUrl = hasCoverUrl ? resolveEffectiveCoverUrl(body.coverUrl) : resolveEffectiveCoverUrl(book.coverUrl);
+      const nextCoverCrop = Object.prototype.hasOwnProperty.call(body, 'coverCrop')
+        ? normalizeCoverCrop(body.coverCrop)
+        : (hasCoverUrl && nextCoverUrl !== book.coverUrl ? null : normalizeCoverCrop(book.coverCrop));
       const addCopies = parseQuantityInput(body.addCopies, { allowZero: true, defaultValue: 0 });
       const removeCopies = parseQuantityInput(body.removeCopies, { allowZero: true, defaultValue: 0 });
       const quantityChangeInput = Number(body.quantityChange);
@@ -4640,6 +4647,7 @@ async function handleApi(req, res, requestUrl) {
         pageCount: nextPageCount,
         language: nextLanguage,
         coverUrl: nextCoverUrl,
+        coverCrop: nextCoverCrop,
       });
       if (quantityChange !== 0) {
         const groupId = getBookGroupId(book);
