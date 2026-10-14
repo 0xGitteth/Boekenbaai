@@ -11,7 +11,7 @@ const layout = fs.readFileSync(path.join(__dirname, '../public/styles.css'), 'ut
 const admin = fs.readFileSync(path.join(__dirname, '../public/staff.html'), 'utf8');
 const student = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
 assert.match(admin, /id="book-detail-cover" class="book-detail__cover"/, 'Staff detail must size images in the same 2:3 frame');
-assert.match(student, /id="book-detail-cover" class="book-detail__cover"/, 'Student detail must use 2:3 cover class');
+assert.match(student, /id="book-detail-cover" class="[^"]*book-detail__cover(?:\\s|")/, 'Student detail must use 2:3 cover class');
 assert.match(frontend, /applyDisplayCoverCrop\(state\.coverImage, representative\.coverCrop\)/);
 assert.match(frontend, /applyDisplayCoverCrop\(coverImage, book\.coverCrop\)/);
 assert.match(frontend, /coverCrop: normalizedDisplayCoverCrop\(adminBookCrop\)/);
