@@ -8,7 +8,14 @@ const { persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 
 const DEFAULT_SETTINGS = Object.freeze({ reminderDays: 7, escalationDays: 14 });
-const CHOICES = new Set(['class_loan', 'student_loan', 'fixed_location', 'not_our_class']);
+const CHOICES = new Set(['class_loan', 'student_loan', 'fixed_location', 'not_our_class',
+  'library_keep', 'library_remove']);
+const LIBRARY_CHOICES = new Set(['library_keep', 'library_remove']);
+
+function libraryOnlyTask(task) {
+  return Boolean(task && !(task.sourceClassNames || []).length
+    && task.requestedFixedLocation !== true && task.sourceLibraryPresence);
+}
 const DAY_MS = 86400000;
 
 // Unlike the capped activity feed, this per-copy circulation ledger is
@@ -107,19 +114,22 @@ function makeTask({ id, reportId, row, book, context, createdAt,
   };
 }
 
-function taskStage(task, config, now = Date.now()) {
+function taskStage(task, config, now = Date.now(), classIds = null, bookIds = null) {
   if (task.status === 'completed') return 'completed';
   if (task.status === 'cancelled') return 'cancelled';
   const created = Date.parse(task.createdAt);
   const age = Number.isFinite(created) ? Math.max(0, now - created) : 0;
-  if (!task.classId || task.status === 'admin_review' || age >= config.escalationDays * DAY_MS) {
+  const missingClass = classIds instanceof Set && task.classId && !classIds.has(task.classId);
+  const missingBook = bookIds instanceof Set && !bookIds.has(task.bookId);
+  if (!task.classId || missingClass || missingBook
+    || task.status === 'admin_review' || age >= config.escalationDays * DAY_MS) {
     return 'admin_review';
   }
   if (age >= config.reminderDays * DAY_MS) return 'reminder';
   return 'open';
 }
 
-function taskView(task, config, now = Date.now()) {
+function taskView(task, config, now = Date.now(), classIds = null, bookIds = null) {
   return {
     id: task.id, reportId: task.reportId, bookId: task.bookId,
     barcode: task.barcode || '',
@@ -128,7 +138,9 @@ function taskView(task, config, now = Date.now()) {
     sourceLibraryPresence: task.sourceLibraryPresence,
     requestedFixedLocation: task.requestedFixedLocation,
     worksheetRow: task.worksheetRow, createdAt: task.createdAt,
-    status: taskStage(task, config, now),
+    status: taskStage(task, config, now, classIds, bookIds),
+    bookMissing: bookIds instanceof Set && !bookIds.has(task.bookId),
+    libraryOnly: libraryOnlyTask(task),
     revision: task.revision, completedAt: task.completedAt || null,
     resolution: task.resolution || null,
   };
@@ -136,17 +148,19 @@ function taskView(task, config, now = Date.now()) {
 
 function listTasks(db, user, now = Date.now()) {
   const config = settingsFor(db);
+  const classIds = new Set((db.classes || []).map((klass) => klass.id));
+  const bookIds = new Set((db.books || []).map((book) => book.id));
   const assigned = new Set((db.classes || [])
     .filter((c) => user.role === 'admin'
       || (Array.isArray(c.teacherIds) && c.teacherIds.includes(user.id)))
     .map((c) => c.id));
   const tasks = (Array.isArray(db.bookImportFollowups) ? db.bookImportFollowups : [])
     .filter((task) => {
-      const phase = taskStage(task, config, now);
+      const phase = taskStage(task, config, now, classIds, bookIds);
       if (phase === 'completed' || phase === 'cancelled') return false;
       return user.role === 'admin' || (assigned.has(task.classId)
         && (phase === 'open' || phase === 'reminder'));
-    }).map((task) => taskView(task, config, now));
+    }).map((task) => taskView(task, config, now, classIds, bookIds));
   const open = tasks.filter((task) => ['open', 'reminder', 'admin_review'].includes(task.status));
   const classes = (db.classes || []).filter((c) => assigned.has(c.id))
     .map((c) => ({ id: c.id, name: c.name }));
@@ -179,13 +193,92 @@ function updateReportCompletion(db, reportId) {
   }
 }
 
+// A permanent deletion must close every open task for the physical copy,
+// including pending tasks shared by more than one import report.
+function cancelTasksForDeletedBooks(db, bookIds, {
+  reason = 'physical_book_deleted', now = new Date().toISOString(), actorId = null,
+} = {}) {
+  const removed = new Set(bookIds);
+  const affected = new Set();
+  let cancelled = 0;
+  for (const task of (db.bookImportFollowups || [])) {
+    if (!removed.has(task.bookId) || ['completed', 'cancelled'].includes(task.status)) continue;
+    task.status = 'cancelled';
+    task.resolution = reason;
+    task.completedAt = now;
+    task.completedBy = actorId;
+    task.updatedAt = now;
+    task.revision += 1;
+    affected.add(task.reportId);
+    cancelled++;
+  }
+  for (const reportId of affected) updateReportCompletion(db, reportId);
+  return cancelled;
+}
+
+function escalateTasksForDeletedClass(db, classId, now = new Date().toISOString()) {
+  let escalated = 0;
+  for (const task of (db.bookImportFollowups || [])) {
+    if (task.classId !== classId || ['completed', 'cancelled'].includes(task.status)) continue;
+    task.classId = null;
+    task.status = 'admin_review';
+    task.revision += 1;
+    task.updatedAt = now;
+    escalated++;
+  }
+  return escalated;
+}
+
+function cancelMissingBookTask(db, task, user, expectedRevision,
+  now = new Date().toISOString()) {
+  if (user?.role !== 'admin' || !task || !Number.isSafeInteger(expectedRevision)
+    || task.revision !== expectedRevision
+    || ['completed', 'cancelled'].includes(task.status)
+    || (db.books || []).some((book) => book.id === task.bookId)) return { ok: false };
+  cancelTasksForDeletedBooks(db, [task.bookId], {
+    reason: 'physical_book_missing', now, actorId: user.id,
+  });
+  return { ok: true, task };
+}
+
 function performDecision(db, task, user, body, now = new Date().toISOString()) {
-  if (!task || task.status === 'completed' || !body || !CHOICES.has(body.choice)
+  if (!task || ['completed', 'cancelled'].includes(task.status)
+    || !body || !CHOICES.has(body.choice)
     || !Number.isSafeInteger(body.revision) || body.revision !== task.revision) return { ok: false, error: 'stale_or_invalid_choice' };
-  const klass = (db.classes || []).find((c) => c.id === task.classId);
-  if (!klass) return { ok: false, error: 'missing_assigned_class' };
   const copy = (db.books || []).find((book) => book.id === task.bookId);
   if (!copy) return { ok: false, error: 'book_not_found' };
+  if (LIBRARY_CHOICES.has(body.choice)) {
+    if (user?.role !== 'admin' || !libraryOnlyTask(task)) {
+      return { ok: false, error: 'library_choice_forbidden' };
+    }
+    if (body.choice === 'library_remove') {
+      if (body.confirmRemoval !== true) return { ok: false, error: 'confirm_removal_required' };
+      if (copy.status === 'borrowed' || copy.borrowedBy || copy.borrowedByClassId) {
+        return { ok: false, error: 'book_already_borrowed' };
+      }
+      db.books = db.books.filter((book) => book.id !== copy.id);
+      for (const student of (db.students || [])) {
+        if (!Array.isArray(student.borrowedBooks)) continue;
+        student.borrowedBooks = student.borrowedBooks.filter((item) =>
+          (typeof item === 'string' ? item : item?.bookId) !== copy.id);
+      }
+    }
+    task.status = 'completed';
+    task.resolution = body.choice;
+    task.completedAt = now;
+    task.completedBy = user.id;
+    task.updatedAt = now;
+    task.revision += 1;
+    if (body.choice === 'library_remove') {
+      cancelTasksForDeletedBooks(db, [copy.id], {
+        reason: 'library_book_removed', now, actorId: user.id,
+      });
+    }
+    updateReportCompletion(db, task.reportId);
+    return { ok: true, task };
+  }
+  const klass = (db.classes || []).find((c) => c.id === task.classId);
+  if (!klass) return { ok: false, error: 'missing_assigned_class' };
   if (taskStage(task, settingsFor(db), Date.parse(now)) === 'admin_review'
     && user.role !== 'admin') return { ok: false, error: 'task_escalated' };
   // A confirmed fixed shelf location is independent of the lending state.
@@ -264,7 +357,8 @@ function assignTask(db, task, classId, user, expectedRevision, now = new Date().
   if (user.role !== 'admin' || !Number.isSafeInteger(expectedRevision)
     || task.revision !== expectedRevision || !classId
     || !(db.classes || []).some((c) => c.id === classId)
-    || task.status === 'completed') return { ok: false };
+    || !(db.books || []).some((book) => book.id === task.bookId)
+    || ['completed', 'cancelled'].includes(task.status)) return { ok: false };
   task.classId = classId; task.status = 'open'; task.revision += 1;
   task.createdAt = now; task.updatedAt = now; task.completedAt = null;
   return { ok: true, task };
@@ -273,6 +367,8 @@ function assignTask(db, task, classId, user, expectedRevision, now = new Date().
 module.exports = {
   circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask,
+  libraryOnlyTask, cancelTasksForDeletedBooks, cancelMissingBookTask,
+  escalateTasksForDeletedClass,
   eligibleForDeferredContext,
   makeTask, taskStage, taskView, listTasks, reportIsFullyReviewed, updateReportCompletion,
   performDecision, assignTask,

@@ -48,6 +48,28 @@ if (panel) {
   function roleIsAdmin() {
     return Boolean(state.settings);
   }
+  function addLibraryChoices(article, task) {
+    const form = document.createElement('form');
+    form.className = 'form-grid form-grid--compact';
+    const choice = document.createElement('select');
+    choice.required = true;
+    option(choice, '', 'Controleer de bibliotheekstatus');
+    option(choice, 'library_keep', 'Hoort bij de schoolbibliotheek');
+    option(choice, 'library_remove', 'Hoort niet bij de schoolcollectie: exemplaar verwijderen');
+    const save = el('button', 'Bibliotheekstatus bevestigen', 'btn btn--secondary');
+    save.type = 'submit';
+    form.append(field('Controle van dit fysieke exemplaar', choice), save);
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const remove = choice.value === 'library_remove';
+      if (remove && !window.confirm('Dit fysieke exemplaar definitief verwijderen uit '
+        + 'de schoolcollectie? Dit kan niet ongedaan worden gemaakt.')) return;
+      await perform('/api/staff/book-import-followups/' + encodeURIComponent(task.id)
+        + '/decision', { choice: choice.value, revision: task.revision,
+        ...(remove ? { confirmRemoval: true } : {}) });
+    });
+    article.append(form);
+  }
   function render() {
     list.replaceChildren();
     const count = state.summary.open || 0;
@@ -74,6 +96,21 @@ if (panel) {
         : task.status === 'reminder' ? 'Herinnering: controle nog niet afgerond'
           : 'Nog te controleren';
       article.append(el('p', status, 'hint'));
+      if (task.bookMissing) {
+        if (roleIsAdmin()) {
+          const button = el('button', 'Taak annuleren: exemplaar bestaat niet meer',
+            'btn btn--secondary');
+          button.type = 'button';
+          button.addEventListener('click', async () => {
+            await perform('/api/admin/book-import-followups/' + encodeURIComponent(task.id)
+              + '/cancel', { revision: task.revision });
+          });
+          article.append(button);
+        }
+        list.append(article);
+        continue;
+      }
+      if (task.libraryOnly && roleIsAdmin()) addLibraryChoices(article, task);
       if (task.status === 'admin_review') {
         if (roleIsAdmin()) {
           const form = document.createElement('form');

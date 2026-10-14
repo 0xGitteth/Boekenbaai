@@ -15,7 +15,8 @@ const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
-  performDecision, assignTask } = require('./book-import-followups');
+  cancelTasksForDeletedBooks, cancelMissingBookTask, escalateTasksForDeletedClass,
+  libraryOnlyTask, performDecision, assignTask } = require('./book-import-followups');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -4436,7 +4437,11 @@ async function handleApi(req, res, requestUrl) {
         });
       }
       const removedCount = db.books.length;
+      const removedIds = db.books.map((book) => book.id);
       db.books = [];
+      cancelTasksForDeletedBooks(db, removedIds, {
+        actorId: user.id, reason: 'library_cleared',
+      });
       for (const student of db.students) {
         if (!Array.isArray(student.borrowedBooks)) continue;
         student.borrowedBooks = [];
@@ -4679,6 +4684,10 @@ async function handleApi(req, res, requestUrl) {
           }
         }
       }
+      if (removedCopies.length) cancelTasksForDeletedBooks(db,
+        removedCopies.map((entry) => entry.id), {
+          actorId: user.id, reason: 'physical_copy_reduced',
+        });
       Object.assign(book, attachDerivedThemeFields(book));
       const currentGroup = getGroupForBook(db, book);
       const totalCopies = currentGroup?.books?.length ?? null;
@@ -4744,7 +4753,10 @@ async function handleApi(req, res, requestUrl) {
         const database = loadDb();
         const task = database.bookImportFollowups.find((item) => item.id === decisionMatch[1]);
         if (!task) return sendJson(res, 404, { message: 'Importtaak niet gevonden.' });
-        if (!task.classId || !mayManageClass(database, user, task.classId)) {
+        const adminLibraryDecision = user.role === 'admin' && libraryOnlyTask(task)
+          && ['library_keep', 'library_remove'].includes(body?.choice);
+        if (!adminLibraryDecision && (!task.classId
+          || !mayManageClass(database, user, task.classId))) {
           return sendJson(res, 403, { message: 'Deze klas hoort niet bij jouw taken.' });
         }
         if (task.status === 'completed') {
@@ -4771,7 +4783,10 @@ async function handleApi(req, res, requestUrl) {
           });
         }
         appendHistory(database, { type: 'book_import_followup', performedBy: user.id,
-          bookId: task.bookId, classId: task.classId, message: 'Importtaak bijgewerkt' });
+          bookId: task.bookId, classId: task.classId,
+          message: body.choice === 'library_remove'
+            ? 'Boek uit schoolcollectie verwijderd na importcontrole'
+            : 'Importtaak bijgewerkt' });
         saveDb(database);
         return sendJson(res, 200, { taskId: task.id, status: task.status, revision: task.revision });
       }
@@ -4797,6 +4812,24 @@ async function handleApi(req, res, requestUrl) {
           saveDb(database);
           return sendJson(res, 200, settings);
         }
+      }
+      const cancelFollowupMatch = requestUrl.pathname.match(
+        /^\/api\/admin\/book-import-followups\/([a-z0-9-]+)\/cancel$/);
+      if (req.method === 'POST' && cancelFollowupMatch) {
+        const body = await parseBody(req);
+        const database = loadDb();
+        const task = database.bookImportFollowups.find((entry) =>
+          entry.id === cancelFollowupMatch[1]);
+        if (!task) return sendJson(res, 404, { message: 'Importtaak niet gevonden.' });
+        const cancelled = cancelMissingBookTask(database, task, user, body.revision);
+        if (!cancelled.ok) return sendJson(res, 409, {
+          message: 'Deze taak kan niet worden geannuleerd. Vernieuw het overzicht.' });
+        appendHistory(database, { type: 'book_import_followup_cancelled',
+          performedBy: user.id, bookId: task.bookId,
+          message: 'Importtaak geannuleerd omdat het fysieke boek niet bestaat' });
+        saveDb(database);
+        return sendJson(res, 200, { taskId: task.id, status: task.status,
+          revision: task.revision });
       }
       const assignMatch = requestUrl.pathname.match(
         /^\/api\/admin\/book-import-followups\/([a-z0-9-]+)\/assign$/);
@@ -6630,6 +6663,7 @@ async function handleApi(req, res, requestUrl) {
       }
       const groupId = getBookGroupId(target);
       const [removed] = db.books.splice(index, 1);
+      cancelTasksForDeletedBooks(db, [removed.id], { actorId: user.id });
       for (const student of db.students) {
         if (!Array.isArray(student.borrowedBooks)) continue;
         student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== removed.id);
@@ -8174,6 +8208,7 @@ async function handleApi(req, res, requestUrl) {
         });
       }
       const [removedClass] = db.classes.splice(index, 1);
+      escalateTasksForDeletedClass(db, removedClass.id);
       for (const student of db.students) {
         student.classIds = (student.classIds || []).filter((id) => id !== removedClass.id);
       }

@@ -9,7 +9,8 @@ const XLSX = require('xlsx');
 const { circulationRevision, noteLoanActivity,
   followupContext, eligibleForDeferredContext, makeTask, taskStage,
   listTasks, settingsFor, validateSettings, performDecision, assignTask,
-  reportIsFullyReviewed } = require('../book-import-followups');
+  libraryOnlyTask, cancelTasksForDeletedBooks, cancelMissingBookTask,
+  escalateTasksForDeletedClass, reportIsFullyReviewed } = require('../book-import-followups');
 const { excelLoanReceiptKey } = require('../book-import-loan-migration');
 const { buildInventorySyncPreview } = require('../book-import-inventory-sync');
 
@@ -162,6 +163,90 @@ const prototypeSafeDb = { bookImportLoanActivityCounters: {} };
 noteLoanActivity(prototypeSafeDb, '__proto__');
 assert.strictEqual(circulationRevision(prototypeSafeDb, '__proto__'), 1);
 assert.strictEqual(Object.getPrototypeOf(prototypeSafeDb.bookImportLoanActivityCounters), null);
+
+// PR6: a standalone library-presence question must be resolvable without
+// inventing a class assignment. Removing a copy is an explicit admin action
+// and closes all linked outstanding tasks and import reports.
+const libraryRow = { index: 90, sourceRowNumber: 91, status: 'warning',
+  issues: [{ code: 'library_presence_needs_review', severity: 'warning' }],
+  context: { libraryPresence: { status: 'needs_review', value: 'nee' } } };
+const standaloneTask = makeTask({
+  id: 'library-only', reportId: 'library-report', row: libraryRow,
+  book: db.books[4], context: followupContext(libraryRow, classes), createdAt: now,
+});
+assert.strictEqual(standaloneTask.classId, null);
+assert.strictEqual(libraryOnlyTask(standaloneTask), true);
+const libraryDb = structuredClone(db);
+libraryDb.bookImportFollowups = [structuredClone(standaloneTask)];
+libraryDb.bookImportReports = [{ id: 'library-report',
+  followupTaskIds: ['library-only'], fullyReviewed: false }];
+assert.strictEqual(listTasks(libraryDb, users[3], Date.parse(now)).tasks[0].libraryOnly, true);
+assert.strictEqual(listTasks(libraryDb, users[3], Date.parse(now)).tasks[0].status, 'admin_review');
+assert.strictEqual(performDecision(libraryDb, libraryDb.bookImportFollowups[0],
+  users[0], { choice: 'library_keep', revision: 1 }, now).error,
+'library_choice_forbidden');
+assert.strictEqual(performDecision(libraryDb, libraryDb.bookImportFollowups[0],
+  users[3], { choice: 'library_keep', revision: 1 }, now).ok, true);
+assert.strictEqual(libraryDb.books.some((book) => book.id === 'five'), true);
+assert.strictEqual(reportIsFullyReviewed(libraryDb, 'library-report'), true);
+const removedLibraryDb = structuredClone(db);
+removedLibraryDb.bookImportFollowups = [structuredClone(standaloneTask), {
+  ...task('second-task', 'five', 'class-a'), reportId: 'linked-report',
+}];
+removedLibraryDb.bookImportReports = [
+  { id: 'library-report', followupTaskIds: ['library-only'], fullyReviewed: false },
+  { id: 'linked-report', followupTaskIds: ['second-task'], fullyReviewed: false },
+];
+assert.strictEqual(performDecision(removedLibraryDb, removedLibraryDb.bookImportFollowups[0],
+  users[3], { choice: 'library_remove', revision: 1 }, now).error,
+  'confirm_removal_required');
+assert.strictEqual(removedLibraryDb.books.some((book) => book.id === 'five'), true);
+assert.strictEqual(performDecision(removedLibraryDb, removedLibraryDb.bookImportFollowups[0],
+  users[3], { choice: 'library_remove', confirmRemoval: true, revision: 1 }, now).ok, true);
+assert.strictEqual(removedLibraryDb.books.some((book) => book.id === 'five'), false);
+assert.strictEqual(removedLibraryDb.bookImportFollowups[0].status, 'completed');
+assert.strictEqual(removedLibraryDb.bookImportFollowups[1].status, 'cancelled');
+assert.strictEqual(removedLibraryDb.bookImportReports.every((report) => report.fullyReviewed), true);
+assert.strictEqual(performDecision(removedLibraryDb, removedLibraryDb.bookImportFollowups[1],
+  users[3], { choice: 'fixed_location', revision: 2 }, now).error,
+  'stale_or_invalid_choice');
+const borrowedLibraryDb = structuredClone(db);
+borrowedLibraryDb.bookImportFollowups = [structuredClone(standaloneTask)];
+borrowedLibraryDb.books[4].status = 'borrowed';
+borrowedLibraryDb.books[4].borrowedByClassId = 'class-a';
+assert.strictEqual(performDecision(borrowedLibraryDb, borrowedLibraryDb.bookImportFollowups[0],
+  users[3], { choice: 'library_remove', confirmRemoval: true, revision: 1 }, now).error,
+  'book_already_borrowed');
+assert.strictEqual(borrowedLibraryDb.books.some((book) => book.id === 'five'), true);
+
+// Missing physical copies and removed classes must go straight to admin.
+// The task remains revisioned and can be reassigned or safely cancelled.
+const orphanDb = structuredClone(db);
+orphanDb.books = orphanDb.books.filter((book) => book.id !== 'four');
+const orphanVisible = listTasks(orphanDb, users[3], Date.parse(now)).tasks.find((t) =>
+  t.id === 'task-four');
+assert.strictEqual(orphanVisible.status, 'admin_review');
+assert.strictEqual(orphanVisible.bookMissing, true);
+assert.strictEqual(cancelMissingBookTask(orphanDb, orphanDb.bookImportFollowups[3],
+  users[0], 1, now).ok, false);
+assert.strictEqual(cancelMissingBookTask(orphanDb, orphanDb.bookImportFollowups[3],
+  users[3], 1, now).ok, true);
+assert.strictEqual(orphanDb.bookImportFollowups[3].status, 'cancelled');
+assert.strictEqual(orphanDb.bookImportFollowups[3].revision, 2);
+const removedClassDb = structuredClone(db);
+removedClassDb.classes = removedClassDb.classes.filter((c) => c.id !== 'class-b');
+assert.strictEqual(listTasks(removedClassDb, users[3], Date.parse(now)).tasks.find((t) =>
+  t.id === 'task-three').status, 'admin_review');
+assert.strictEqual(listTasks(removedClassDb, users[2], Date.parse(now)).tasks.length, 0);
+assert.strictEqual(escalateTasksForDeletedClass(removedClassDb, 'class-b', now), 1);
+assert.strictEqual(removedClassDb.bookImportFollowups[2].classId, null);
+assert.strictEqual(removedClassDb.bookImportFollowups[2].revision, 2);
+assert.strictEqual(assignTask(removedClassDb, removedClassDb.bookImportFollowups[2],
+  'class-a', users[3], 2, now).ok, true);
+const libraryContextWithClass = task('not-library-only', 'four', 'class-a');
+assert.strictEqual(libraryOnlyTask(libraryContextWithClass), false);
+assert.strictEqual(performDecision(db, libraryContextWithClass, users[3],
+  { choice: 'library_keep', revision: 1 }, now).error, 'library_choice_forbidden');
 const inconsistentStudentDb = structuredClone(db);
 inconsistentStudentDb.students[0].borrowedBooks.push({ bookId: 'two' });
 assert.strictEqual(performDecision(inconsistentStudentDb,
@@ -459,6 +544,141 @@ async function run() {
     assert.strictEqual(publicBook.status, 200);
     assert.ok(!JSON.stringify(publicBook.body).includes('sourceClassNames'),
       'Student clients must not see raw teacher task source values');
+    // Codex PR6 regression: admin must be able to resolve a source row
+    // containing only the library-presence column, without selecting a fake
+    // classroom first. The two terminal decisions have different effects.
+    const librarySeed = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const libraryRow = { sourceRowNumber: 101, context: {
+      libraryPresence: { status: 'needs_review', value: 'nee' } } };
+    const buildLibraryRecord = (suffix, id, isbn) => {
+      const book = { id, title: 'Bibliotheekcontrole ' + suffix, author: 'Auteur',
+        barcode: suffix, metadataIsbn: isbn, status: 'available' };
+      const reportId = 'f0000000-0000-4000-a000-00000000000' + suffix.slice(-1);
+      const context = followupContext(libraryRow, librarySeed.classes);
+      const task = makeTask({ id: 'library-' + suffix, reportId, row: libraryRow,
+        book, context, createdAt: new Date().toISOString() });
+      librarySeed.books.push(book);
+      librarySeed.bookImportFollowups.push(task);
+      librarySeed.bookImportReports.push({ id: reportId, fullyReviewed: false,
+        followupTaskIds: [task.id] });
+      return { task, reportId };
+    };
+    const keepLibrary = buildLibraryRecord('1', 'library-physical-1', '9780306406157');
+    const removeLibrary = buildLibraryRecord('2', 'library-physical-2', '9780439554930');
+    fs.writeFileSync(dbPath, JSON.stringify(librarySeed));
+    const libraryOverview = await call(root, admin);
+    assert.strictEqual(libraryOverview.status, 200);
+    assert.strictEqual(libraryOverview.body.tasks.find((t) =>
+      t.id === keepLibrary.task.id).libraryOnly, true);
+    assert.strictEqual(libraryOverview.body.tasks.find((t) =>
+      t.id === keepLibrary.task.id).status, 'admin_review');
+    assert.strictEqual((await call(root + '/' + keepLibrary.task.id + '/decision', teacherB,
+      { choice: 'library_keep', revision: 1 })).status, 403);
+    const keepResponse = await call(root + '/' + keepLibrary.task.id + '/decision',
+      admin, { choice: 'library_keep', revision: 1 });
+    assert.strictEqual(keepResponse.status, 200, JSON.stringify(keepResponse.body));
+    assert.strictEqual((await call('/api/admin/book-import-reports/' + keepLibrary.reportId,
+      admin)).body.fullyReviewed, true);
+    assert.ok(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.some((b) =>
+      b.id === 'library-physical-1'));
+    assert.strictEqual((await call(root + '/' + removeLibrary.task.id + '/decision',
+      admin, { choice: 'library_remove', revision: 1 })).status, 409,
+    'Permanent removal always requires an explicit confirmation');
+    const removeResponse = await call(root + '/' + removeLibrary.task.id + '/decision',
+      admin, { choice: 'library_remove', revision: 1, confirmRemoval: true });
+    assert.strictEqual(removeResponse.status, 200, JSON.stringify(removeResponse.body));
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).books.some((b) =>
+      b.id === 'library-physical-2'), false);
+    assert.strictEqual((await call('/api/admin/book-import-reports/' + removeLibrary.reportId,
+      admin)).body.fullyReviewed, true);
+
+    // All deletion paths must cancel orphaned tasks immediately, and class
+    // deletion must return uncompleted assigned work directly to admin.
+    assert.strictEqual((await call('/api/books/four', admin, undefined, 'DELETE')).status, 200);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).bookImportFollowups
+      .find((t) => t.id === 'task-four').status, 'cancelled');
+    assert.strictEqual((await call('/api/classes/class-b', admin, undefined, 'DELETE')).status, 200);
+    const afterClassRemoval = await call(root, admin);
+    const formerlyClassB = afterClassRemoval.body.tasks.find((t) => t.id === 'task-three');
+    assert.strictEqual(formerlyClassB.status, 'admin_review');
+    assert.strictEqual(formerlyClassB.classId, null);
+    assert.strictEqual((await call('/api/admin/book-import-followups/task-three/assign',
+      admin, { classId: 'class-a', revision: formerlyClassB.revision })).status, 200);
+    const reassignedTask = (await call(root, teacherA2)).body.tasks.find((t) =>
+      t.id === 'task-three');
+    assert.strictEqual(reassignedTask.status, 'open');
+    assert.strictEqual((await call(root + '/task-three/decision', teacherA2,
+      { choice: 'fixed_location', revision: reassignedTask.revision })).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-reports/'
+      + 'a1111111-1111-4111-a111-111111111111', admin)).body.fullyReviewed, true);
+
+    const reductionDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const reductionBook = { id: 'reduction-book', title: 'Aantal verminderen',
+      author: 'Auteur', barcode: '77664411', metadataIsbn: '9780747532699',
+      status: 'available' };
+    const reductionReport = 'f0000000-0000-4000-a000-000000000003';
+    reductionDb.books.push(reductionBook);
+    const reductionTask = makeTask({ id: 'reduction-task', reportId: reductionReport,
+      row: libraryRow, book: reductionBook,
+      context: followupContext(libraryRow, reductionDb.classes),
+      createdAt: new Date().toISOString() });
+    reductionDb.bookImportFollowups.push(reductionTask);
+    reductionDb.bookImportReports.push({ id: reductionReport, fullyReviewed: false });
+    fs.writeFileSync(dbPath, JSON.stringify(reductionDb));
+    const reduced = await call('/api/books/reduction-book', admin, {
+      quantityChange: -1, removeCopyId: 'reduction-book',
+    }, 'PUT');
+    assert.strictEqual(reduced.status, 200, JSON.stringify(reduced.body));
+    const afterReduction = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(afterReduction.bookImportFollowups.find((t) =>
+      t.id === 'reduction-task').status, 'cancelled');
+    assert.strictEqual(afterReduction.bookImportReports.find((r) =>
+      r.id === reductionReport).fullyReviewed, true);
+
+    // A truly missing book from a historic/corrupt snapshot is still
+    // recoverable through an admin-only cancel action, with a stale guard.
+    const orphan = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const orphanReport = 'f0000000-0000-4000-a000-000000000004';
+    const orphanCopy = { id: 'already-deleted', title: 'Verwijderd', author: 'Auteur' };
+    const orphanTask = makeTask({ id: 'orphan-task', reportId: orphanReport,
+      row: libraryRow, book: orphanCopy,
+      context: followupContext(libraryRow, orphan.classes),
+      createdAt: new Date().toISOString() });
+    orphan.bookImportFollowups.push(orphanTask);
+    orphan.bookImportReports.push({ id: orphanReport, fullyReviewed: false });
+    fs.writeFileSync(dbPath, JSON.stringify(orphan));
+    assert.strictEqual((await call('/api/admin/book-import-followups/orphan-task/cancel',
+      teacherA2, { revision: 1 })).status, 403);
+    assert.strictEqual((await call('/api/admin/book-import-followups/orphan-task/cancel',
+      admin, { revision: 2 })).status, 409);
+    assert.strictEqual((await call('/api/admin/book-import-followups/orphan-task/cancel',
+      admin, { revision: 1 })).status, 200);
+    assert.strictEqual((await call('/api/admin/book-import-reports/' + orphanReport,
+      admin)).body.fullyReviewed, true);
+
+    // Bulk deletion is blocked while any physical books are borrowed; after
+    // actual returns, it closes remaining class tasks for removed copies.
+    assert.strictEqual((await call('/api/books', admin, undefined, 'DELETE')).status, 400);
+    assert.strictEqual((await call('/api/books/one/check-in', teacherA2,
+      { studentId: 'stu-a' })).status, 200);
+    assert.strictEqual((await call('/api/books/two/check-in', teacherA2,
+      { classId: 'class-a' })).status, 200);
+    const bulk = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const bulkReport = 'f0000000-0000-4000-a000-000000000005';
+    bulk.bookImportFollowups.push(makeTask({ id: 'bulk-pending',
+      reportId: bulkReport, row: libraryRow,
+      book: bulk.books.find((b) => b.id === 'library-physical-1'),
+      context: followupContext(libraryRow, bulk.classes),
+      createdAt: new Date().toISOString() }));
+    bulk.bookImportReports.push({ id: bulkReport, fullyReviewed: false });
+    fs.writeFileSync(dbPath, JSON.stringify(bulk));
+    assert.strictEqual((await call('/api/books', admin, undefined, 'DELETE')).status, 200);
+    const emptied = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.strictEqual(emptied.books.length, 0);
+    assert.strictEqual(emptied.bookImportFollowups.find((t) =>
+      t.id === 'bulk-pending').status, 'cancelled');
+    assert.strictEqual(emptied.bookImportReports.find((r) =>
+      r.id === bulkReport).fullyReviewed, true);
     console.log('PR6 persistent follow-ups, role scoping, shared decisions and import API tests passed');
   } finally {
     child.kill('SIGTERM');
