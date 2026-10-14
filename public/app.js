@@ -1326,6 +1326,9 @@ function normalizeRenderedCoverUrl(value) {
   if (!text) {
     return '';
   }
+  if (/^\/api\/covers\/[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/.test(text)) {
+    return resolveApiUrl(text);
+  }
   const match = text.match(
     /^(?:https?:\/\/)?(?:www\.)?archive\.org\/download\/[^?#]+\/(\d+)-([sml])\.jpg(?:\?[^#]*)?(?:#.*)?$/i,
   );
