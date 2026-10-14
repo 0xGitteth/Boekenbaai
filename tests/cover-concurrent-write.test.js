@@ -43,6 +43,15 @@ function dbFixture() {
                 "status": "available",
                 "coverUrl": "https://covers.example.org/custom-edition.png",
                 "localCoverUrl": ""
+          },
+          {
+                "id": "legacy-google",
+                "title": "Older cover",
+                "author": "Original",
+                "barcode": "9789029078736",
+                "status": "available",
+                "coverUrl": "http://books.google.com/older.jpg",
+                "localCoverUrl": "/api/covers/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png"
           }
     ],
     users: [{ id: 'admin', username: 'admin', name: 'Admin', role: 'admin', passwordHash }],
@@ -201,6 +210,18 @@ async function main() {
     assert.deepEqual(current.books.find((entry) => entry.id === 'edition-1').coverCrop, renamedCrop);
     assert.deepEqual(current.books.find((entry) => entry.id === 'edition-2').coverCrop, crop,
       'Renaming a copy must not modify artwork of its former edition');
+
+    // Equivalent Google Books source normalization must keep the existing
+    // offline image, not replace it with a new attempted download.
+    const legacyEdit = await mutation('PUT', '/api/books/legacy-google', token, {
+      coverUrl: 'http://books.google.com/older.jpg',
+      coverCrop: { enabled: true, x: 50, y: 60, zoom: 1.1 },
+    });
+    assert.equal(legacyEdit.status, 200);
+    current = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const legacy = current.books.find((entry) => entry.id === 'legacy-google');
+    assert.equal(legacy.coverUrl, 'https://books.google.com/older.jpg');
+    assert.equal(legacy.localCoverUrl, '/api/covers/' + 'b'.repeat(64) + '.png');
 
     resetGate();
     // A background localCoverUrl attachment is not a conflicting user edit.
