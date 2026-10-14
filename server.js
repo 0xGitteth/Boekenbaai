@@ -1694,6 +1694,19 @@ function readWorkbookRows(XLSX, base64) {
 // rejecting ALL stale snapshots would break those jobs. However, any writer
 // whose snapshot predates the latest confirmed PR3 batch MUST fail instead of
 // overwriting the new books and the permanent import report.
+// A confirmed reviewed import is a separate commit boundary. When a normal
+// request waits on body/image I/O we can rebase unrelated live changes, but
+// must still reject a request that started before a reviewed import committed.
+function assertReviewedImportBoundaryUnchanged(before, after) {
+  const lastId = (db) => Array.isArray(db.bookImportReports)
+    ? db.bookImportReports[db.bookImportReports.length - 1]?.id || null : null;
+  if (lastId(before) !== lastId(after)) {
+    const error = new Error('A reviewed import committed while a book edit was pending');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
+  }
+}
+
 function assertReviewedImportNotLost(db) {
   const current = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
   const latest = Array.isArray(current.bookImportReports)
@@ -4606,10 +4619,10 @@ async function handleApi(req, res, requestUrl) {
       }
       // An old request must still fail if a confirmed reviewed import happened
       // while its body or cover image was being downloaded.
-      assertReviewedImportNotLost(originalDb);
       // Other concurrent changes (loans, accounts, etc.) must be preserved.
       // No more awaits occur between this reload and saveDb().
       const db = loadDb();
+      assertReviewedImportBoundaryUnchanged(originalDb, db);
       const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
       const baseBook = {
         title: body.title,
@@ -4678,10 +4691,10 @@ async function handleApi(req, res, requestUrl) {
           catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
         }
       }
-      assertReviewedImportNotLost(originalDb);
       // If the same physical copy changed during the await, editing against
       // its old cover/loan state would overwrite the other operation.
       const db = loadDb();
+      assertReviewedImportBoundaryUnchanged(originalDb, db);
       const book = findBookById(db, bookIdMatch[1]);
       if (!book) return sendJson(res, 409, {
         message: 'Dit boek is intussen verwijderd. Vernieuw de pagina.',
