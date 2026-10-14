@@ -190,6 +190,18 @@ async function main() {
       'https://covers.example.org/custom-edition.png',
       'A separately selected cover must not be overwritten');
 
+    // Renaming a physical copy moves it to a new catalog edition. A cover
+    // edit in that same request must not affect the edition it leaves.
+    const renamedCrop = { enabled: true, x: 60, y: 40, zoom: 1.2 };
+    const movedEdit = await mutation('PUT', '/api/books/edition-1', token, {
+      title: 'Separate title', coverUrl: 'https://covers.example.org/old-edition.png', coverCrop: renamedCrop,
+    });
+    assert.equal(movedEdit.status, 200);
+    current = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    assert.deepEqual(current.books.find((entry) => entry.id === 'edition-1').coverCrop, renamedCrop);
+    assert.deepEqual(current.books.find((entry) => entry.id === 'edition-2').coverCrop, crop,
+      'Renaming a copy must not modify artwork of its former edition');
+
     resetGate();
     // A background localCoverUrl attachment is not a conflicting user edit.
     const cacheOnlyEdit = mutation('PUT', '/api/books/' + idB, token, {
