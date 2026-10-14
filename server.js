@@ -54,9 +54,34 @@ let shuttingDown = false;
 let coverBackfillRunning = false;
 let coverBackfillScheduled = false;
 let coverBackfillPending = false;
-const coverBackfillFailed = new Set();
-function scheduleCoverBackfill() {
+const coverBackfillFailures = new Map();
+const coverRetryDelays = [30_000, 120_000, 600_000];
+let coverBackfillRetryTimer = null;
+
+function scheduleBackfillRetry() {
+  if (shuttingDown || coverBackfillRetryTimer) return;
+  const future = [...coverBackfillFailures.values()]
+    .filter((entry) => entry.attempts <= coverRetryDelays.length
+      && Number.isFinite(entry.nextRetryAt))
+    .map((entry) => entry.nextRetryAt);
+  if (!future.length) return;
+  const delay = Math.max(1000, Math.min(...future) - Date.now());
+  coverBackfillRetryTimer = setTimeout(() => {
+    coverBackfillRetryTimer = null;
+    scheduleCoverBackfill();
+  }, delay);
+  if (typeof coverBackfillRetryTimer.unref === 'function') coverBackfillRetryTimer.unref();
+}
+
+function scheduleCoverBackfill({ resetFailures = false } = {}) {
   if (shuttingDown) return;
+  // An explicit import or edit is new work. Even a URL that previously
+  // exhausted retries must be eligible for another attempt.
+  if (resetFailures) coverBackfillFailures.clear();
+  if (coverBackfillRetryTimer) {
+    clearTimeout(coverBackfillRetryTimer);
+    coverBackfillRetryTimer = null;
+  }
   if (coverBackfillRunning || coverBackfillScheduled) {
     coverBackfillPending = true;
     return;
@@ -67,10 +92,15 @@ function scheduleCoverBackfill() {
     coverBackfillRunning = true;
     try {
       const snapshot = loadDb();
+      const now = Date.now();
       const sources = [...new Set((snapshot.books || [])
         .filter((book) => book.coverUrl && !coverAssets.hasAsset(book.localCoverUrl))
         .map((book) => book.coverUrl))]
-        .filter((source) => !coverBackfillFailed.has(source));
+        .filter((source) => {
+          const failure = coverBackfillFailures.get(source);
+          return !failure || (failure.attempts <= coverRetryDelays.length
+            && failure.nextRetryAt <= now);
+        });
       let next = 0;
       await Promise.all(Array.from({ length: Math.min(sources.length, 4) }, async () => {
         while (next < sources.length && !shuttingDown) {
@@ -78,9 +108,15 @@ function scheduleCoverBackfill() {
           let local;
           try {
             local = await coverAssets.saveSource(source);
+            coverBackfillFailures.delete(source);
           } catch (error) {
-            coverBackfillFailed.add(source);
-            console.warn('Boekomslag overgeslagen:', error.message);
+            const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
+            coverBackfillFailures.set(source, {
+              attempts,
+              nextRetryAt: attempts <= coverRetryDelays.length
+                ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
+            });
+            console.warn('Boekomslag tijdelijk niet beschikbaar:', error.message);
             continue;
           }
           // Never race against the one-active-import staging transaction.
@@ -99,6 +135,8 @@ function scheduleCoverBackfill() {
             }
             if (changed) saveDb(latest);
           } catch (error) {
+            // Reattempt the database association on the next scheduled pass.
+            coverBackfillPending = true;
             console.warn('Boekomslag lokaal opgeslagen maar boekkoppeling nog niet bijgewerkt:', error.message);
           }
         }
@@ -110,9 +148,22 @@ function scheduleCoverBackfill() {
       if (coverBackfillPending && !shuttingDown) {
         coverBackfillPending = false;
         scheduleCoverBackfill();
+      } else {
+        scheduleBackfillRetry();
       }
     }
   });
+}
+
+function runCoverGarbageCollection() {
+  if (shuttingDown) return;
+  try {
+    const result = coverAssets.cleanupUnreferenced(
+      () => loadDb().books.map((book) => book.localCoverUrl).filter(Boolean));
+    if (result.removed) console.info(`Ongebruikte boekomslagen opgeruimd: ${result.removed}`);
+  } catch (error) {
+    console.warn('Opruimen ongebruikte boekomslagen mislukt:', error.message);
+  }
 }
 const DIST_DIR = path.join(__dirname, 'dist');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -4862,7 +4913,7 @@ async function handleApi(req, res, requestUrl) {
         message: historyParts.join(' | '),
       });
       saveDb(db);
-      if (book.coverUrl && !book.localCoverUrl) scheduleCoverBackfill();
+      if (book.coverUrl && !book.localCoverUrl) scheduleCoverBackfill({ resetFailures: true });
       return sendJson(res, 200, {
         book,
         createdCopies: createdCopies.map((entry) => entry.id),
@@ -5418,7 +5469,7 @@ async function handleApi(req, res, requestUrl) {
               message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
             });
             saveReviewedBookImportDb(database);
-            scheduleCoverBackfill();
+            scheduleCoverBackfill({ resetFailures: true });
             bookImportStageStore.finishApply(stage, {
               batchId, created: createdCopies.length,
               restoredLoans: restoredLoanEvents.length, removed: 0,
@@ -5575,7 +5626,7 @@ async function handleApi(req, res, requestUrl) {
             message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd, ${importedLoanHistory.length} bestaande leningen overgenomen`,
           });
           saveReviewedBookImportDb(database);
-            scheduleCoverBackfill();
+            scheduleCoverBackfill({ resetFailures: true });
           const result = { batchId, created: newCopies.length,
             restoredLoans: importedLoanHistory.length, importedRows: plan.created.length, report };
           bookImportStageStore.finishApply(stage, result);
@@ -6754,7 +6805,7 @@ async function handleApi(req, res, requestUrl) {
           message: `${createdBooks.length} boeken toegevoegd, ${updatedBooks.length} bijgewerkt via Excel-import`,
         });
         saveDb(db);
-        scheduleCoverBackfill();
+        scheduleCoverBackfill({ resetFailures: true });
       }
 
       if (!cancelled && importFinalizeDelayMs > 0) {
@@ -8562,6 +8613,10 @@ server.listen(PORT, () => {
   if (typeof setImmediate === 'function') {
     const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
     if (typeof restartBackfill?.unref === 'function') restartBackfill.unref();
+    const firstCleanup = setTimeout(runCoverGarbageCollection, 60_000);
+    if (typeof firstCleanup?.unref === 'function') firstCleanup.unref();
+    const periodicCleanup = setInterval(runCoverGarbageCollection, 6 * 60 * 60 * 1000);
+    if (typeof periodicCleanup?.unref === 'function') periodicCleanup.unref();
   }
 });
 
