@@ -13,6 +13,14 @@ assert.match(frontend, /applyDisplayCoverCrop\(state\.coverImage, representative
 assert.match(frontend, /applyDisplayCoverCrop\(coverImage, book\.coverCrop\)/);
 assert.match(frontend, /coverCrop: normalizedDisplayCoverCrop\(adminBookCrop\)/);
 assert.match(frontend, /adminBookCrop = normalizedDisplayCoverCrop\(book\.coverCrop\)/);
+assert.match(frontend, /adminCropSourceUrl = String\(book\.coverUrl \|\| ''\)\.trim\(\)/);
+assert.match(frontend, /adminCropLocalUrl = book\.localCoverUrl \|\| ''/);
+assert.match(frontend, /const cachedUrl = sourceUrl === adminCropSourceUrl/);
+assert.match(frontend, /const url = cachedUrl && adminCropPreviewFallbackFor !== cachedUrl/);
+assert.match(frontend, /adminCropPreviewFallbackFor = cachedUrl/);
+assert.match(frontend, /adminCropImage\.src = externalUrl/);
+assert.match(frontend, /adminBookCover\?\.addEventListener\('input'/);
+
 assert.match(layout, /\.book-card__cover\s*\{[^}]*object-fit: contain;/);
 assert.match(layout, /\.book-detail__cover\s*\{[^}]*object-fit: contain;/);
 assert.match(admin, /id="admin-book-crop-enabled"/);
