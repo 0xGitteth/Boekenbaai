@@ -8497,8 +8497,10 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`Boekenbaai server draait op http://localhost:${PORT}`);
   // Resume interrupted cover caching without delaying startup or test setup.
-  const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
-  restartBackfill.unref();
+  if (typeof setImmediate === 'function') {
+    const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
+    if (typeof restartBackfill?.unref === 'function') restartBackfill.unref();
+  }
 });
 
 function gracefulShutdown(signal) {
