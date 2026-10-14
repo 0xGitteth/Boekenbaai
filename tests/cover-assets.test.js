@@ -56,6 +56,61 @@ async function main() {
     timeoutMs: 500,
   }), /cover_invalid_redirect/);
 
+
+  // Exercise all failure paths using real Node streams. None of these may
+  // emit an unhandled stream error, crash the server or silently save a
+  // truncated/oversized image.
+  async function mockedCoverResponse({ status = 200, headers = {}, body = null,
+    disconnect = false, errorAfterResponse = false }) {
+    const client = {
+      get(_url, _options, onResponse) {
+        const request = new EventEmitter();
+        process.nextTick(() => {
+          const response = new PassThrough();
+          response.statusCode = status;
+          response.headers = headers;
+          onResponse(response);
+          if (errorAfterResponse) {
+            response.destroy(Error('upstream_stream_error'));
+          } else if (disconnect) {
+            response.write(PNG.subarray(0, 10));
+            response.destroy();
+          } else if (body) {
+            response.end(body);
+          } else {
+            response.end();
+          }
+        });
+        return request;
+      },
+    };
+    return downloadCover('https://covers.example.org/test-cover.png', {
+      lookup: async () => [{ address: '8.8.8.8', family: 4 }],
+      httpsClient: client, timeoutMs: 500,
+    });
+  }
+  await assert.rejects(mockedCoverResponse({
+    headers: { 'content-length': String(4 * 1024 * 1024 + 1) },
+    errorAfterResponse: true,
+  }), /cover_too_large/, 'Oversized Content-Length must reject, not emit uncaught errors');
+  await assert.rejects(mockedCoverResponse({
+    headers: { 'content-type': 'image/png' },
+    body: Buffer.alloc(4 * 1024 * 1024 + 1),
+  }), /cover_too_large/, 'Oversized streamed response must reject');
+  await assert.rejects(mockedCoverResponse({
+    status: 503, errorAfterResponse: true,
+  }), /cover_http_error/, 'Invalid HTTP status must safely drain/error');
+  await assert.rejects(mockedCoverResponse({
+    headers: { 'content-type': 'text/html' }, errorAfterResponse: true,
+  }), /cover_wrong_content_type/, 'Unexpected content type must safely reject');
+  await assert.rejects(mockedCoverResponse({
+    headers: { 'content-type': 'image/png' }, disconnect: true,
+  }), /cover_incomplete/, 'Incomplete response must not become an image asset');
+  const mockedSuccess = await mockedCoverResponse({
+    headers: { 'content-type': 'image/png' }, body: PNG,
+  });
+  assert.deepEqual(mockedSuccess, PNG, 'Valid image bytes must remain unchanged');
+
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'boekenbaai-covers-'));
   let server;
   try {
