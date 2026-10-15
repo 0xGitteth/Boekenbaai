@@ -154,7 +154,7 @@ async function run() {
       .map(JSON.parse);
     assert.equal(pendingMail.length, 2);
     const code = pendingMail[1].payload.body.match(/\b\d{8}\b/)[0];
-    assert.equal(pendingMail[0].payload.to, 'teacher@koraal.nl');
+    assert.equal(pendingMail[1].payload.to, 'teacher@koraal.nl');
     assert.equal((await call(route, teacher, {
       action: 'confirm_alternative', code: '11111111',
     })).status, 400);
