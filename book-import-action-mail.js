@@ -159,7 +159,7 @@ async function dispatchActions({db,links,folder,env=process.env,now=Date.now(),f
           person.events.every(event => event.category === 'books')
             ? '/staff.html#book-import-followups-panel' : NOTIFICATION_PATH
         ),person.events),
-        now,fetchImpl,
+        now:Date.now(),fetchImpl,
       });
       result[accepted?'accepted':'failed']+=claimed.length;
     });
