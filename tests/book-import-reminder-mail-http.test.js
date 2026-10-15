@@ -155,9 +155,19 @@ async function run() {
     assert.equal(pendingMail.length, 2);
     const code = pendingMail[1].payload.body.match(/\b\d{8}\b/)[0];
     assert.equal(pendingMail[1].payload.to, 'teacher@koraal.nl');
-    assert.equal((await call(route, teacher, {
-      action: 'confirm_alternative', code: '11111111',
-    })).status, 400);
+    const wrongCode = code === '11111111' ? '22222222' : '11111111';
+    const beforeGuesses = JSON.parse(fs.readFileSync(dataPath, 'utf8'))
+      .bookImportEmailPreferences['teacher-a'].pending.attempts;
+    const parallel = await Promise.all([
+      call(route, teacher, { action: 'confirm_alternative', code: wrongCode }),
+      call(route, teacher, { action: 'confirm_alternative', code: wrongCode }),
+    ]);
+    assert.ok(parallel.every(item => [400, 409].includes(item.status)));
+    const afterGuesses = JSON.parse(fs.readFileSync(dataPath, 'utf8'))
+      .bookImportEmailPreferences['teacher-a'].pending.attempts;
+    assert.equal(afterGuesses - beforeGuesses,
+      parallel.filter(item => item.status === 400).length,
+      'Every processed wrong code consumes one attempt; competing requests return 409.');
     const verified = await call(route, teacher, {
       action: 'confirm_alternative', code,
     });

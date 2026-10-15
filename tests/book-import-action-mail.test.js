@@ -34,7 +34,9 @@ linkRequests:[{id:'g1',studentId:'student-a',status:'pending',
   createdAt:new Date(now-DAY).toISOString()},
 {id:'g2',accountType:'staff',staffId:'teacher-a',
   status:'pending',createdAt:new Date(now-DAY).toISOString()},
-{id:'unknown',status:'pending',createdAt:new Date(now-DAY).toISOString()}]};
+{id:'unknown',status:'pending',createdAt:new Date(now-DAY).toISOString()},
+{id:'expired',studentId:'student-a',status:'pending',
+  createdAt:new Date(now-31*DAY).toISOString()}]};
 const cfg={ BOEKENBAAI_MAIL_ENABLED:'true',
  BOEKENBAAI_MAIL_SCRIPT_SECRET:'x'.repeat(64),
  BOEKENBAAI_MAIL_SCRIPT_URL:'https://script.google.com/macros/s/TESTBRIDGE123/exec',
@@ -53,9 +55,20 @@ assert.equal(admin.requestAddress(data,'alt@koraal.nl',
   cfg.BOEKENBAAI_MAIL_SCRIPT_SECRET,now+1).error,'rate_limited');
 assert.equal(admin.updateCategories(data,{ transfers:true,google:true,books:true }),true);
 assert.equal(admin.updateCategories(data,{ google:'true', books:true,transfers:true }),false);
+const multipleAdmins = structuredClone(data);
+const secondAddress = admin.requestAddress(multipleAdmins, 'tweede@koraal.nl',
+  cfg.BOEKENBAAI_MAIL_SCRIPT_SECRET, now + 300001);
+assert.equal(secondAddress.ok, true);
+assert.equal(admin.confirmAddress(multipleAdmins,'tweede@koraal.nl',
+  secondAddress.code,cfg.BOEKENBAAI_MAIL_SCRIPT_SECRET,now + 300001).ok,true);
+assert.equal(actions.recipientGroups(multipleAdmins,links,now)
+  .filter(row => row.id.startsWith('admin:')).length,2,
+  'Each verified administrator has an independent delivery address.');
 const e=actions.collectEvents(data,links,now);
 assert.deepEqual(e.map(x=>x.type).sort(),
   ['book_escalation','staff_link','student_link','transfer_escalation','transfer_incoming'].sort());
+assert.equal(e.some(x => x.key.includes('expired')), false,
+  'Expired pending Google requests must not generate notifications.');
 const people=actions.recipientGroups(data,links,now);
 assert.deepEqual(people.map(x=>[x.id,x.events.length]).sort(),
   [['admin:beheerder@koraal.nl',3],['teacher:teacher-a',1],['teacher:teacher-b',1]].sort());

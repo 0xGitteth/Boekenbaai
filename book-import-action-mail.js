@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const mail = require('./book-import-reminder-mail');
 const admin = require('./book-import-admin-mail');
 const { taskStage, settingsFor } = require('./book-import-followups');
+const authCore = require('./google-auth-core');
 const DAY_MS = mail.DAY_MS;
 const REMINDER_DAYS = 7;
 const NOTIFICATION_PATH = '/staff.html#student-management-panel';
@@ -44,7 +45,10 @@ function collectEvents(db, links, now = Date.now()) {
     for (const klass of classMap.values()) if ((klass.studentIds||[]).includes(student.id))set.add(klass.id);
     return [...set];
   };
-  for (const request of links.linkRequests || []) {
+  // Pending Google identities expire; never notify mentors about a request
+  // that the authentication workflow already considers obsolete.
+  const activeAuth = authCore.pruneStore(links, now);
+  for (const request of activeAuth.linkRequests || []) {
     if (!request?.id || request.status !== 'pending') continue;
     const student = (db.students || []).find(s=>s.id===request.studentId && s.active!==false);
     if (!student) {
