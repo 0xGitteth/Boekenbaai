@@ -129,22 +129,82 @@ function claimOnce(folder, id) {
   }
 }
 
-// The filesystem guard serializes *all* inspections, stale reclamations,
-// acquisitions and releases of this lock. Unlike a read-then-unlink scheme,
-// a second process cannot delete a newly acquired successor. The tiny guard
-// itself is intentionally never automatically reaped: a crash inside this
-// critical section must fail closed until an operator confirms no workers are
-// active and removes that abandoned ".guard" file.
-function withLockGuard(filename, operation) {
-  const gate = filename + '.guard';
-  let fd;
-  try { fd = fs.openSync(gate, 'wx', 0o600); }
-  catch (error) {
-    if (error.code === 'EEXIST') return null;
+// The guard prevents two processes from reclaiming one another's locks.
+// Unlike mail locks, process-owned DATABASE guards also carry PID/host metadata
+// so a crashed guard owner cannot permanently block database recovery.
+function deadLocalOwner(record) {
+  if (!record || record.format !== 'boekenbaai-lock-guard-v1'
+    || record.host !== os.hostname()
+    || !Number.isSafeInteger(record.pid) || record.pid <= 0) return false;
+  try {
+    process.kill(record.pid, 0);
+    return false;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return true;
+    if (error?.code === 'EPERM') return false;
     throw error;
   }
-  try { return operation(); }
-  finally {
+}
+
+function reclaimDeadGuard(gate) {
+  // Serialise competing reclaimers independently of the abandoned guard.
+  // A second reclaimer must never delete the first one's new live guard.
+  const reclaim = gate + '.reaper';
+  let handle;
+  try { handle = fs.openSync(reclaim, 'wx', 0o600); }
+  catch (error) {
+    if (error?.code === 'EEXIST') return false;
+    throw error;
+  }
+  try {
+    let observed;
+    try { observed = fs.readFileSync(gate, 'utf8'); }
+    catch (error) {
+      if (error?.code === 'ENOENT') return true;
+      throw error;
+    }
+    let owner;
+    try { owner = JSON.parse(observed); }
+    catch { owner = null; }
+    if (!deadLocalOwner(owner)) {
+      // A crash in the tiny window before writing the guard metadata can
+      // leave an empty guard. Reclaim only if it has stayed empty long enough.
+      let age = 0;
+      try { age = Date.now() - fs.statSync(gate).mtimeMs; }
+      catch (error) { if (error?.code !== 'ENOENT') throw error; }
+      if (observed.trim() || age < 30000) return false;
+    }
+    fs.unlinkSync(gate);
+    return true;
+  } finally {
+    fs.closeSync(handle);
+    fs.unlinkSync(reclaim);
+  }
+}
+
+function withLockGuard(filename, operation, { processOwned = false } = {}) {
+  const gate = filename + '.guard';
+  let fd;
+  function openGuard() {
+    try { return fs.openSync(gate, 'wx', 0o600); }
+    catch (error) {
+      if (error?.code === 'EEXIST') return null;
+      throw error;
+    }
+  }
+  fd = openGuard();
+  if (!fd && processOwned && reclaimDeadGuard(gate)) fd = openGuard();
+  if (!fd) return null;
+  try {
+    if (processOwned) {
+      fs.writeFileSync(fd, JSON.stringify({
+        format: 'boekenbaai-lock-guard-v1',
+        pid: process.pid, host: os.hostname(),
+      }));
+      fs.fsyncSync(fd);
+    }
+    return operation();
+  } finally {
     fs.closeSync(fd);
     fs.unlinkSync(gate);
   }
@@ -175,7 +235,7 @@ function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = 
         }
         if (observed === contents) fs.unlinkSync(filename);
         return true;
-      });
+      }, { processOwned });
       if (success) released = true;
       else {
         // A guard is held only for synchronous filesystem operations.
@@ -193,7 +253,7 @@ function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = 
             }
             if (observed === contents) fs.unlinkSync(filename);
             return true;
-          });
+          }, { processOwned });
           if (retry) released = true;
         }
         if (!released) throw new Error('Lock guard bleef bezet tijdens vrijgave');
@@ -239,7 +299,7 @@ function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = 
     // decision is made on the current file, not a previous observation.
     fs.unlinkSync(filename);
     return createOwnedLock();
-  });
+  }, { processOwned });
 }
 function recipientLockPath(folder, recipientId) {
   const hash = crypto.createHash('sha256').update(String(recipientId)).digest('hex');
