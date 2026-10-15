@@ -8,6 +8,12 @@ const { spawn } = require('node:child_process');
 const XLSX = require('xlsx');
 const reminder = require('../book-import-reminder-mail');
 const authCore = require('../google-auth-core');
+// Both timers must use the promise-tracked starter: otherwise a periodic
+// dispatch can be interrupted by SIGTERM after claiming an unsent mail.
+const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+assert.match(serverSource, /setTimeout\(\(\) => \{ void startImportMailWorker\(\); \}, 30000\)/);
+assert.match(serverSource, /setInterval\(\(\) => \{ void startImportMailWorker\(\); \},/);
+assert.doesNotMatch(serverSource, /setInterval\(\(\) => \{ void tickImportReminders\(\); \},/);
 
 const PORT = 4087;
 const BASE = 'http://127.0.0.1:' + PORT;
