@@ -490,6 +490,11 @@ async function revokeMismatchedSession(req, res, selection, beforeStore) {
 
   const token = sessionTokenFromResponse(res);
   const expectedType = selection.type === 'staff' ? 'staff' : 'student';
+  // Ordinary successful logins do not need an extra lock acquisition. Only
+  // an actual mismatch enters the expensive durable cleanup path.
+  const initial = token ? core.resolveSession(loadAuthStore(), token) : null;
+  if (initial && initial.userId === selection.accountId
+    && initial.type === expectedType) return false;
   if (token) {
     // Do not let a stale in-memory auth snapshot overwrite a later Google
     // login. Re-read inside the lock, retry short contention asynchronously,
