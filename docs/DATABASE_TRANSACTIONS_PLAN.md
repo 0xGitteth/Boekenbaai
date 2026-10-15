@@ -1,7 +1,19 @@
 # Database writes: inventory and migration design (issue #290)
 
-Status: **inventory / design in progress**, started 2026-10-15 after PR #289 was merged.
-This file records observed architecture and the intended migration order. It is **not** an implementation of concurrent-write protection.
+Status: **implementation on draft PR #292**, started 2026-10-15 after PR #289 was merged.
+This document tracks the completed implementation and remaining production review.
+
+## Implementation status (working branch, October 2026)
+
+- Implemented `database-write-coordinator.js`: versioned JSON snapshots, shared interprocess file lock, conflict rejection and atomic replace. `server.js` and relevant staff/student/password database writers use it.
+- Legacy import progress is rebased only after verifying no non-job data changed; other changes result in 409 rather than rollback.
+- Auth-store writers (Google OAuth, student handoff, school finalization, account sessions, Google link cleanup, student administration) use the **same** database lock to avoid paired/standalone lost updates.
+- `paired-store-commit.js`: both versions verified before committing, journal creation and recovery run with the shared lock, and other writers reject pending journals.
+- Added deterministic two-process stale snapshot regression, busy-lock regression, stale paired DB/auth regression and unfinished-journal regression. Existing full test/build suites are executed in CI.
+- Sliplane screenshots: single app, single server, single service, persistent volume `Boekenbaai Data` mounted at `/app/data`. **Actual environment overrides and multiple runtime processes have not been independently verified.**
+- **Still required:** final complete code review, CI on last commit, Codex review of current head, complete audit of any uncoordinated production writers, production backup/rollback preflight. PR must remain draft until those checks are complete.
+
+Implementation prioritizes preventing lost writes over automatic retries. A 409 is expected if the same records change during a request; UI must not silently replay non-idempotent operations.
 
 ## Confirmed from the current source
 
@@ -73,4 +85,4 @@ Migrate in reviewable chunks, retaining one delivery PR if feasible:
 - No external infrastructure purchase without authorization.
 - No promise of multiple-instance safety until the real deployment has been confirmed.
 
-Next, finish the write map with precise call sites and add the first concurrency reproducer. The follow-on UI/UX review is issue #291.
+Next, complete an exhaustive source audit and independent review for PR #292; verify production configuration and backups before merge. The follow-on UI/UX review is issue #291.
