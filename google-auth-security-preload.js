@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const crypto = require('crypto');
+const { mutateJsonLocked } = require('./database-write-coordinator');
 const { AsyncLocalStorage } = require('async_hooks');
 const core = require('./google-auth-core');
 const {
@@ -43,9 +43,6 @@ const GOOGLE_LINK_MUTATION_PATHS = new Set([
   '/api/auth/google/staff-email',
 ]);
 
-function ensureParentDirectory(filePath) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-}
 
 function readMainDb() {
   const db = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
@@ -86,13 +83,21 @@ function readAuthStoreStrict() {
   return core.normalizeStore(parsed);
 }
 
-function saveAuthStoreStrict(store) {
-  const normalized = core.pruneStore(core.normalizeStore(store));
-  ensureParentDirectory(AUTH_DATA_PATH);
-  const tmp = `${AUTH_DATA_PATH}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(normalized, null, 2));
-  fs.renameSync(tmp, AUTH_DATA_PATH);
-  return normalized;
+function updateAuthStoreSafely(mutate) {
+  return mutateJsonLocked({
+    lockPath: DATA_PATH, filePath: AUTH_DATA_PATH, read: readAuthStoreStrict,
+    mutate: store => {
+      const result = mutate(store);
+      return result === false ? false : core.pruneStore(core.normalizeStore(result));
+    },
+  });
+}
+function revokeSessionToken(tokenHash) {
+  revokedTokenHashes.add(tokenHash);
+  return updateAuthStoreSafely(store => {
+    if (!(store.sessions || []).some(entry => entry?.tokenHash === tokenHash)) return false;
+    return removePersistedToken(store, tokenHash);
+  });
 }
 
 function parseCookies(req) {
@@ -171,9 +176,9 @@ function installGoogleLinkSessionRevocation(res, beforeStore) {
     if (!processed) {
       processed = true;
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        const latestStore = readAuthStoreStrict();
-        const changedAccounts = findChangedExistingGoogleAccounts(beforeSnapshot, latestStore);
-        if (changedAccounts.length) {
+        updateAuthStoreSafely(latestStore => {
+          const changedAccounts = findChangedExistingGoogleAccounts(beforeSnapshot, latestStore);
+          if (!changedAccounts.length) return false;
           const beforeRevocation = revokePersistedSessionsForAccounts(beforeStore, changedAccounts);
           const latestRevocation = revokePersistedSessionsForAccounts(latestStore, changedAccounts);
           const hashes = new Set([
@@ -181,10 +186,8 @@ function installGoogleLinkSessionRevocation(res, beforeStore) {
             ...latestRevocation.revokedTokenHashes,
           ]);
           for (const hash of hashes) revokedTokenHashes.add(hash);
-          if (latestRevocation.revokedTokenHashes.length) {
-            saveAuthStoreStrict(latestRevocation.store);
-          }
-        }
+          return latestRevocation.revokedTokenHashes.length ? latestRevocation.store : false;
+        });
       }
     }
     return originalEnd(chunk, encoding, callback);
@@ -274,8 +277,7 @@ function wrapRequestListener(listener) {
         );
         if (!validation.valid) {
           if (authStore) {
-            removePersistedToken(authStore, validation.tokenHash);
-            saveAuthStoreStrict(authStore);
+            revokeSessionToken(validation.tokenHash);
           }
           clearAuthCookies(res, secure);
           return pathname.startsWith('/api/')
@@ -294,8 +296,7 @@ function wrapRequestListener(listener) {
         if (persistent) {
           const validation = validatePersistedSession(authStore, bearer, db);
           if (!validation.valid) {
-            removePersistedToken(authStore, validation.tokenHash);
-            saveAuthStoreStrict(authStore);
+            revokeSessionToken(validation.tokenHash);
             clearAuthCookies(res, secure);
             return sendJson(res, 401, { message: 'Sessie is verlopen' });
           }

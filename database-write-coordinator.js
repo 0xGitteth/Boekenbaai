@@ -106,5 +106,21 @@ function commitJsonSnapshot({ dataPath, value, beforeWrite, lockPath = dataPath 
   });
 }
 
+function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
+  if (typeof read !== 'function' || typeof mutate !== 'function') {
+    throw new TypeError('Read and mutate callbacks are required.');
+  }
+  return withDatabaseWriteLock(lockPath, () => {
+    const latest = read();
+    const next = mutate(latest);
+    if (next === false) return false;
+    if (!next || typeof next !== 'object' || Array.isArray(next)) {
+      throw conflict('DATABASE_INVALID', 'Ongeldig resultaat van databasewijziging.');
+    }
+    atomicWrite(path.resolve(filePath), JSON.stringify(next, null, 2));
+    return true;
+  });
+}
+
 module.exports = { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
-  assertSnapshotCurrent, withDatabaseWriteLock };
+  assertSnapshotCurrent, withDatabaseWriteLock, mutateJsonLocked };
