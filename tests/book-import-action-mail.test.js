@@ -72,6 +72,18 @@ assert.equal(firstEscalation.period, 'initial',
   'Admin first gets a fresh notification when the teacher deadline expires.');
 assert.equal(firstEscalation.at, now - DAY,
   'Admin escalation starts at task creation plus the configured 14-day threshold.');
+const changedThreshold = structuredClone(data);
+changedThreshold.bookImportFollowupSettings.escalationDays = 13;
+const sameTaskDifferentThreshold = actions.collectEvents(changedThreshold,links,now)
+  .find(x=>x.type==='book_escalation');
+assert.equal(sameTaskDifferentThreshold.key,firstEscalation.key,
+  'Changing escalationDays must not create a second claim for the same escalation period.');
+const statusInactiveStudent = structuredClone(data);
+delete statusInactiveStudent.students[0].active;
+statusInactiveStudent.students[0].status='inactive';
+assert.equal(actions.collectEvents(statusInactiveStudent,links,now)
+  .filter(x=>['transfer_incoming','transfer_escalation','student_link'].includes(x.type)).length,0,
+  'Status-inactive students cannot trigger transfer or Google-link notifications.');
 const laterEscalation = actions.collectEvents(data,links,now+6*DAY)
   .find(x=>x.type==='book_escalation');
 assert.equal(laterEscalation.period, 'reminder',
