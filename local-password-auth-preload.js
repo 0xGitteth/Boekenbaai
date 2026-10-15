@@ -8,6 +8,7 @@ const { URL } = require('url');
 const core = require('./google-auth-core');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
+const { commitPairedJson } = require('./paired-store-commit');
 const {
   hashPassword,
   verifyPassword,
@@ -417,6 +418,9 @@ async function changeAdminPassword(req, res) {
   const nextHash = await withPasswordWork(res, () => hashPassword(validation.password));
   if (nextHash.handled) return undefined;
 
+  // Read the current DB and auth snapshots after expensive password
+  // hashing, then commit BOTH files with the same checked versions.
+  // A lock conflict must leave neither the password nor session changed.
   const freshDb = readMainDb();
   const freshAdmin = ensureUnchangedAccount(freshDb, context.admin.id, originalHash);
   if (!freshAdmin) {
@@ -424,24 +428,28 @@ async function changeAdminPassword(req, res) {
       message: 'Het account is ondertussen gewijzigd. Log opnieuw in.',
     });
   }
-  freshAdmin.passwordHash = nextHash.value;
-  freshAdmin.mustChangePassword = false;
-  saveMainDb(freshDb);
-
-  // Andere sessies behouden bewust hun oude fingerprint. De buitenste
-  // securitylaag trekt die bij het eerstvolgende request in. Alleen de actieve
-  // sessie waarmee dit wachtwoord is gewijzigd wordt naar de nieuwe fingerprint gezet.
   const latestStore = loadAuthStore();
   const currentHash = core.tokenHash(context.token);
-  const currentSession = latestStore.sessions.find((entry) => entry?.tokenHash === currentHash);
+  const currentSession = latestStore.sessions.find((entry) =>
+    entry?.tokenHash === currentHash && entry?.userId === freshAdmin.id &&
+    entry?.type === 'staff' && Number(entry?.expiresAt) > Date.now());
   if (!currentSession) {
     return sendJson(res, 409, {
-      message: 'Je sessie is gewijzigd. Log opnieuw in met je nieuwe wachtwoord.',
+      message: 'Je sessie is gewijzigd. Log opnieuw in.',
     });
   }
+
+  freshAdmin.passwordHash = nextHash.value;
+  freshAdmin.mustChangePassword = false;
+  // Other sessions retain their original fingerprint and expire naturally
+  // under the outer security guard. Only this session stays logged in.
   currentSession.accountFingerprint = accountCredentialFingerprint(freshAdmin);
   currentSession.authMethod = 'password';
-  saveAuthStore(latestStore);
+  commitPairedJson({
+    dataPath: DATA_PATH, authPath: AUTH_DATA_PATH,
+    data: freshDb, auth: latestStore,
+    expectedData: freshDb, expectedAuth: latestStore,
+  });
 
   return sendJson(res, 200, {
     message: 'Wachtwoord gewijzigd.',

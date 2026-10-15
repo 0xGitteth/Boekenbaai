@@ -23,7 +23,7 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
-  withDatabaseWriteLock } = require('./database-write-coordinator');
+  withDatabaseWriteLock, mutateJsonLocked } = require('./database-write-coordinator');
 const { finishLegacyImportJob: persistLegacyImportStatus } =
   require('./book-import-job-finalization');
 const { circulationRevision, noteLoanActivity,
@@ -970,21 +970,26 @@ let googleBooksFallbackCooldownReason = '';
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
 
 function markInterruptedImportJobs() {
-  const db = loadDb();
-  let changed = false;
-  for (const job of db.importJobs || []) {
-    if (job && (job.status === 'queued' || job.status === 'running')) {
-      const now = new Date().toISOString();
-      job.status = 'interrupted';
-      job.updatedAt = now;
-      job.finishedAt = now;
-      job.error = job.error || 'Import onderbroken door serverherstart';
-      changed = true;
-    }
-  }
-  if (changed) {
-    saveDb(db);
-  }
+  // Startup may overlap another instance's final import write. Always read
+  // the latest state inside the shared lock, then wait a bounded interval.
+  mutateJsonLocked({
+    lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 10000,
+    read: () => loadDb(),
+    mutate: db => {
+      let changed = false;
+      for (const job of db.importJobs || []) {
+        if (job && (job.status === 'queued' || job.status === 'running')) {
+          const now = new Date().toISOString();
+          job.status = 'interrupted';
+          job.updatedAt = now;
+          job.finishedAt = now;
+          job.error = job.error || 'Import onderbroken door serverherstart';
+          changed = true;
+        }
+      }
+      return changed ? db : false;
+    },
+  });
 }
 
 markInterruptedImportJobs();
