@@ -251,22 +251,23 @@ function findAccount(db, type, id) {
 
 function getSessionContextByToken(token) {
   if (!token || token === SESSION_SENTINEL) return null;
-  // A cached session is never authoritative. Google-link changes now revoke
-  // sessions atomically in the persisted auth store; immediately reject any
-  // formerly cached token that is no longer present on disk.
+  let session = sessionsMap.get(token) || null;
+  // The shared session bridge also holds intentionally non-persisted legacy
+  // local-login sessions. Keep those working, but never trust a session which
+  // WAS persisted after the shared auth store has revoked it.
   const persistent = core.resolveSession(loadAuthStore(), token);
-  if (!persistent) {
+  if (persistent) {
+    if (!session || session.userId !== persistent.userId || session.type !== persistent.type
+      || session.persistedAuth !== true) {
+      session = {
+        userId: persistent.userId, type: persistent.type,
+        createdAt: persistent.createdAt, persistedAuth: true,
+      };
+      sessionsMap.set(token, session);
+    }
+  } else if (!session || session.persistedAuth === true) {
     sessionsMap.delete(token);
     return null;
-  }
-  let session = sessionsMap.get(token);
-  if (!session || session.userId !== persistent.userId || session.type !== persistent.type) {
-    session = {
-      userId: persistent.userId,
-      type: persistent.type,
-      createdAt: persistent.createdAt,
-    };
-    sessionsMap.set(token, session);
   }
   const db = readMainDb();
   const user = findAccount(db, session.type === 'student' ? 'student' : 'staff', session.userId);
@@ -296,7 +297,6 @@ function hydrateDelegatedRequest(req) {
 function createLoginSession(req, res, userId, type, remember) {
   const token = crypto.randomBytes(32).toString('base64url');
   const createdAt = Date.now();
-  sessionsMap.set(token, { userId, type, createdAt });
   const previousStore = loadAuthStore();
   const result = core.upsertSession(previousStore, token, {
     userId,
@@ -305,6 +305,7 @@ function createLoginSession(req, res, userId, type, remember) {
     now: createdAt,
   });
   saveAuthStore(inheritSnapshot(result.store, previousStore));
+  sessionsMap.set(token, { userId, type, createdAt, persistedAuth: true });
   setSessionCookies(req, res, token, remember);
   return token;
 }
