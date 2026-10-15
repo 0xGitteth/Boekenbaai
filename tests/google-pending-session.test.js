@@ -83,5 +83,18 @@ try {
     assert.throws(() => complete(type, mode), { code: 'DATABASE_WRITE_CONFLICT' },
       'A pending identity cannot be consumed twice');
   }
+  reset('student', 'student-approved');
+  const newer = readAuth();
+  newer.linkRequests.push({
+    studentId: 'student1', email: 'student@koraaledu.nl', sub: 'student-sub',
+    status: 'pending', createdAt: new Date(now + 1000).toISOString(),
+    updatedAt: new Date(now + 1000).toISOString(),
+  });
+  fs.writeFileSync(authPath, JSON.stringify(newer));
+  assert.throws(() => complete('student', 'student-approved'),
+    { code: 'DATABASE_WRITE_CONFLICT' },
+    'An older approval cannot override a newer pending link request');
+  assert.equal(readAuth().pendingIdentities.length, 1);
+
   console.log('Google pending identities and sessions commit atomically');
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }

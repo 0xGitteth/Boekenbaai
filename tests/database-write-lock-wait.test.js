@@ -61,10 +61,15 @@ async function run() {
     // Import finalization must FORWARD waitMs to the central coordinator.
     const importHolder = await holdInChild(dataPath);
     const start2 = Date.now();
+    let eventLoopResponsive = false;
+    const heartbeat = setTimeout(() => { eventLoopResponsive = true; }, 25);
     assert.equal(await finishLegacyImportJob({
       dataPath, jobId: 'waiting-job', succeeded: true,
       payload: { created: 1 }, totalRows: 1, waitMs: 2500,
     }), true);
+    clearTimeout(heartbeat);
+    assert.ok(eventLoopResponsive,
+      'The HTTP event loop must remain responsive while awaiting a busy lock');
     assert.ok(Date.now() - start2 >= 60,
       'Import finalization must wait rather than fail immediately');
     assert.equal(JSON.parse(fs.readFileSync(dataPath, 'utf8')).importJobs[0].status,

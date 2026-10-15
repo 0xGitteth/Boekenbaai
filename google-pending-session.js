@@ -45,16 +45,15 @@ function completePendingGoogleSession({ dataPath, authPath, pendingHash, account
           sub: pending.sub, email: pending.email, linkedBy: 'prelinked-email',
         }).store;
       } else {
-        const approved = (current.linkRequests || []).filter(request =>
-          request?.status === 'approved'
-          && core.normalizeEmail(request.email) === core.normalizeEmail(pending.email)
+        const newest = (current.linkRequests || []).filter(request =>
+          core.normalizeEmail(request.email) === core.normalizeEmail(pending.email)
           && String(request.sub || '') === String(pending.sub || '')
           && (type === 'staff'
             ? request.accountType === 'staff' && request.staffId === accountId
             : request.studentId === accountId))
           .sort((a, b) => (Date.parse(b.updatedAt || b.createdAt || '') || 0)
             - (Date.parse(a.updatedAt || a.createdAt || '') || 0))[0];
-        if (!approved || !existing || existing.sub !== pending.sub
+        if (newest?.status !== 'approved' || !existing || existing.sub !== pending.sub
           || core.normalizeEmail(existing.email) !== core.normalizeEmail(pending.email)) throw conflict();
       }
       next.pendingIdentities = next.pendingIdentities.filter(x => x?.tokenHash !== pendingHash);

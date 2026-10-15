@@ -96,6 +96,24 @@ try {
   assert.ok(Date.now() - reclaimedAt < 1800, 'Dead database owner must not block recovery for five minutes');
   assert.strictEqual(fs.existsSync(dataPath + '.database-write.lock'), false);
 
+  // A crash in the middle of a paired DB/auth swap must recover the journal
+  // even when the dead process left its own process-owned write lock behind.
+  __test.atomicWriteJson(journalPath, {
+    version: 1, data: { version: 'after-crash-db' },
+    auth: { version: 'after-crash-auth' },
+  });
+  __test.atomicWriteJson(dataPath, { version: 'after-crash-db' });
+  const deadWriter = spawnSync(process.execPath, ['-e', [
+    "const { acquireFileLock } = require(process.argv[1]);",
+    "const lock = acquireFileLock(process.argv[2] + '.database-write.lock', { processOwned: true });",
+    "if (!lock) process.exit(2);",
+    "process.exit(0);",
+  ].join('\\n'), path.join(__dirname, '..', 'book-import-reminder-mail.js'), dataPath]);
+  assert.strictEqual(deadWriter.status, 0);
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), true);
+  assert.strictEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')).version, 'after-crash-auth');
+  assert.strictEqual(fs.existsSync(journalPath), false);
+
   // A healthy other process may temporarily hold the shared writer lock.
   // Startup recovery must retry boundedly rather than abort immediately.
   const { acquireFileLock } = require('../book-import-reminder-mail');
