@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
-const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot, mutateJsonLockedAsync } = require('./database-write-coordinator');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -484,32 +484,41 @@ function rollbackUnexpectedLink(store, beforeStore, accountType, accountId) {
   return store;
 }
 
-function revokeMismatchedSession(req, res, selection, beforeStore) {
+async function revokeMismatchedSession(req, res, selection, beforeStore) {
   const location = String(res.getHeader('Location') || '');
   if (!selection || !location.includes('googleAuth=success')) return false;
 
   const token = sessionTokenFromResponse(res);
-  if (!token) {
-    removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
-    clearCookie(req, res, SESSION_COOKIE, true);
-    clearCookie(req, res, SESSION_HINT_COOKIE, false);
-    res.setHeader('Location', mismatchRedirect(selection));
-    return true;
+  const expectedType = selection.type === 'staff' ? 'staff' : 'student';
+  if (token) {
+    // Do not let a stale in-memory auth snapshot overwrite a later Google
+    // login. Re-read inside the lock, retry short contention asynchronously,
+    // and remove the wrong session/link as one atomic auth-store mutation.
+    await mutateJsonLockedAsync({
+      lockPath: DATA_PATH, filePath: AUTH_DATA_PATH, waitMs: 12000,
+      read: () => core.pruneStore(core.normalizeStore(
+        readJsonStrict(AUTH_DATA_PATH, {
+          missingValue: core.emptyAuthStore(), label: 'Auth-opslag',
+        }))),
+      mutate: store => {
+        const session = core.resolveSession(store, token);
+        if (!session || (session.userId === selection.accountId
+          && session.type === expectedType)) return false;
+        if (session.userId) {
+          store = rollbackUnexpectedLink(store, beforeStore,
+            expectedType, session.userId);
+        }
+        return core.removeSession(store, token);
+      },
+    });
   }
 
-  let store = loadAuthStore();
-  const session = core.resolveSession(store, token);
-  const expectedType = selection.type === 'staff' ? 'staff' : 'student';
-  if (session && session.userId === selection.accountId && session.type === expectedType) {
+  const latest = token ? core.resolveSession(loadAuthStore(), token) : null;
+  // The account selection is authoritative. A missing or different session
+  // must never be returned to the browser as a successful login.
+  if (latest && latest.userId === selection.accountId && latest.type === expectedType) {
     return false;
   }
-
-  if (session?.userId) {
-    store = inheritSnapshot(rollbackUnexpectedLink(store, beforeStore, expectedType, session.userId), store);
-  }
-  store = inheritSnapshot(core.removeSession(store, token), store);
-  saveAuthStore(store);
-
   removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
   clearCookie(req, res, SESSION_COOKIE, true);
   clearCookie(req, res, SESSION_HINT_COOKIE, false);
@@ -525,23 +534,28 @@ function guardCallbackResponse(req, res, requestUrl) {
   let ending = false;
 
   res.end = function guardedEnd(...args) {
-    if (ending) return originalEnd(...args);
+    if (ending) return res;
     ending = true;
-    try {
-      revokeMismatchedSession(req, res, selection, beforeStore);
-    } catch (error) {
-      console.error('[Student Google handoff] Sessiecontrole mislukt:', error?.message || error);
-      removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
-      clearCookie(req, res, SESSION_COOKIE, true);
-      clearCookie(req, res, SESSION_HINT_COOKIE, false);
-      if (selection) res.setHeader('Location', mismatchRedirect(selection));
-    }
-
-    const location = String(res.getHeader('Location') || '');
-    if (!location.includes('googleAuth=link-required')) {
-      clearSelectedAccountCookie(req, res);
-    }
-    return originalEnd(...args);
+    // Delay the redirect until account-mismatch cleanup is durably saved.
+    // A waiting auth lock must never block unrelated HTTP requests.
+    void (async () => {
+      try {
+        await revokeMismatchedSession(req, res, selection, beforeStore);
+      } catch (error) {
+        console.error('[Student Google handoff] Sessiecontrole mislukt:',
+          error?.message || error);
+        removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);
+        clearCookie(req, res, SESSION_COOKIE, true);
+        clearCookie(req, res, SESSION_HINT_COOKIE, false);
+        if (selection) res.setHeader('Location', mismatchRedirect(selection));
+      }
+      const location = String(res.getHeader('Location') || '');
+      if (!location.includes('googleAuth=link-required')) {
+        clearSelectedAccountCookie(req, res);
+      }
+      originalEnd(...args);
+    })();
+    return res;
   };
 }
 

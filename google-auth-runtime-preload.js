@@ -585,6 +585,19 @@ async function handleGoogleCallback(req, res, requestUrl) {
     store = inheritSnapshot(resolved.store, store);
 
     if (resolved.account) {
+      // The selected school account is a signed, browser-bound login intent.
+      // Reject a Google identity resolving to ANOTHER account before writing
+      // its verified link or a persistent login session. Post-response
+      // rollback is too late under concurrent auth-store writers.
+      const selectedCookie = parseCookies(req).boekenbaai_google_selected_account;
+      if (selectedCookie) {
+        const selected = core.verifySignedState(selectedCookie, AUTH_SECRET,
+          { maxAgeMs: 15 * 60 * 1000 });
+        if (!selected || selected.type !== type
+          || String(selected.accountId || '') !== String(resolved.account.id || '')) {
+          return redirect(res, makeOauthErrorRedirect(type, 'account-mismatch'));
+        }
+      }
       saveAuthStore(store);
       createLoginSession(req, res, resolved.account.id, type, Boolean(state.remember));
       clearCookie(req, res, PENDING_COOKIE, true);
