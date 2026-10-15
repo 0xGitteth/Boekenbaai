@@ -61,7 +61,7 @@ Naast de boekimportherinnering zijn er automatische e-mails voor de bestaande le
 
 Berichten bevatten **geen namen van leerlingen, docenten, klassen, boeken, uitleengegevens of Google-identiteiten**. De berichtinhoud bevat alleen het aantal openstaande acties en de HTTPS-link naar het ingelogde portaal. In de portaalweergave geldt de bestaande serverautorisatie.
 
-Actiemeldingen worden bij de eerstvolgende automatische controle verwerkt (na opstarten circa 30 seconden, daarna om de twee minuten). De eerste melding wordt één keer verstuurd; voor langer dan zeven dagen openstaande verzoeken kan één aparte herinnering volgen. Opgeloste of ingetrokken verzoeken komen niet meer in de verzendlijst. Als de eerste scan plaatsvindt nadat de herinneringsgrens is verstreken, wordt alleen de actuele herinneringsfase verwerkt. Een fout in de externe maildienst verhindert nooit goedkeuren of afronden van een taak.
+Actiemeldingen worden bij de eerstvolgende automatische controle verwerkt (na opstarten circa 30 seconden, daarna om de twee minuten). De eerste melding wordt één keer verstuurd; voor langer dan zeven dagen openstaande verzoeken kan één aparte herinnering volgen. Voor boekcontroles die door het verstrijken van de docenttermijn naar Beheer escaleren, begint de zeven dagen pas op de **ingestelde escalatiedatum**, niet bij de oorspronkelijke importdatum. Opgeloste of ingetrokken verzoeken komen niet meer in de verzendlijst. Als de eerste scan plaatsvindt nadat de herinneringsgrens is verstreken, wordt alleen de actuele herinneringsfase verwerkt. Een fout in de externe maildienst verhindert nooit goedkeuren of afronden van een taak.
 
 ### Centrale beheerdersontvangers
 
@@ -74,5 +74,7 @@ Voor docenten geldt de persoonlijke accountinstelling (standaard gekoppeld `@kor
 ### Veiligheid bij meerdere instances
 
 De hele combinatie van verzendclaims en batch wordt onder één ontvangersvergrendeling uitgevoerd. Het blijvende gedeelde volume met `db.json` is vereist; alle Sliplane-instanties moeten hetzelfde bestandssysteem voor de claimmap gebruiken. Gelijklopende verificatie- en instellingenrequests gebruiken een exclusief bestandsslot rond lezen/wijzigen/opslaan. Wanneer een andere instance bezig is, meldt de API een 409 zodat de gebruiker opnieuw kan proberen; elke foutieve codepoging telt afzonderlijk.
+
+Het herstellen van een verouderd lockbestand gebeurt uitsluitend onder een apart exclusief `.guard`-bestand. Zowel het claimen, herstellen als vrijgeven gebruikt deze guard en een per-eigenaar willekeurige token. Een oude eigenaar kan daardoor geen nieuw verworven lock verwijderen. Een `.guard`-bestand wordt om veiligheidsredenen **niet automatisch verwijderd**: bij een servercrash tijdens het zeer korte guardmoment kan het achterblijven en latere verwerking blokkeren. Alleen nadat is gecontroleerd dat alle betrokken serverprocessen zijn gestopt, mag een beheerder dat achtergebleven guardbestand handmatig verwijderen. Verwijder nooit een actief lock- of guardbestand.
 
 *Let op:* de bestaande JSON-database heeft buiten deze endpoints nog enkele onafhankelijke schrijvers. De revisiecontroles beschermen tegen veel verouderde snapshots, maar zijn geen volledige databasebrede transacties voor alle bestaande schrijfprocessen. Gebruik bij voorkeur één actieve schrijvende instantie totdat algemene transacties centraal zijn geregeld.

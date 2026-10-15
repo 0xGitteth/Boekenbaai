@@ -5052,6 +5052,17 @@ async function handleApi(req, res, requestUrl) {
         message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.' });
       try {
       const database = loadDb();
+      // Authentication happened before the request body was read. The
+      // account might have been deleted in the meantime, so revalidate
+      // against the latest on-disk state INSIDE the shared preferences lock.
+      if (!database.users.some((entry) => entry.id === user.id
+        && entry.role === 'teacher' && entry.active !== false
+        && entry.isActive !== false && entry.disabled !== true
+        && entry.status !== 'inactive')) {
+        return sendJson(res, 403, {
+          message: 'Dit docentaccount is niet meer actief.',
+        });
+      }
       if (body?.action === 'use_school' || body?.action === 'disable'
         || body?.action === 'use_alternate') {
         const mode = body.action === 'use_school' ? 'school'
@@ -7600,7 +7611,15 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen docenten verwijderen' });
       }
-      const db = getDb();
+      // Coordinate teacher deletion with the same lock used to update
+      // notification preferences. This prevents a delayed POST from
+      // recreating a preference after deletion.
+      const releasePreferences = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+      if (!releasePreferences) return sendJson(res, 409, {
+        message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.',
+      });
+      try {
+      const db = loadDb();
       const index = db.users.findIndex(
         (account) => account.id === teacherMatch[1] && account.role === 'teacher'
       );
@@ -7632,6 +7651,9 @@ async function handleApi(req, res, requestUrl) {
       });
       saveDb(db, { deletedTeacherPreferenceId: removedTeacher.id });
       return sendJson(res, 200, { teacher: sanitizeTeacher(removedTeacher) });
+      } finally {
+        releasePreferences();
+      }
     }
 
     const teacherResetMatch = requestUrl.pathname.match(/^\/api\/teachers\/([\w-]+)\/reset-password$/);

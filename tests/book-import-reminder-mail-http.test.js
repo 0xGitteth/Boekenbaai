@@ -269,6 +269,17 @@ async function run() {
     saved = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
     assert.equal(saved.books[0].fixedLocation, 'Klas A');
     assert.ok(saved.bookImportEmailPreferences['teacher-a'].alternateEmail);
+    // Teacher deletion must coordinate with a notification-preference
+    // update. A competing writer receives 409 rather than resurrecting the
+    // teacher or silently overwriting a pending verification.
+    const busyLock = reminder.acquireFileLock(dataPath + '.mail-preferences.lock');
+    assert.equal(typeof busyLock, 'function');
+    try {
+      assert.equal((await call('/api/teachers/teacher-a',
+        admin, undefined, 'DELETE')).status, 409);
+      assert.equal((await call(route, teacher, { action: 'disable' })).status, 409);
+    } finally { busyLock(); }
+    assert.equal((await call(route, teacher)).body.mode, 'alternate');
     // Removing a staff account must also forget the verified address,
     // pending codes and rate-limit metadata, without dropping other data.
     assert.equal((await call('/api/teachers/teacher-a',
@@ -278,7 +289,13 @@ async function run() {
       saved.bookImportEmailPreferences, 'teacher-a'), false);
     assert.equal(saved.bookImportReports.some(r => r.id === applied.body.result.batchId), true);
     assert.equal((await call(route, teacher)).status, 401);
-    console.log('PR7: real staff HTTP preferences, deletion cleanup and complete import flow passed');
+    const deletedResponse = await call(route, teacher, { action: 'disable' });
+    assert.ok([401, 403].includes(deletedResponse.status),
+      'A revoked staff session cannot recreate notification preferences.');
+    assert.equal(Object.prototype.hasOwnProperty.call(
+      JSON.parse(fs.readFileSync(dataPath, 'utf8')).bookImportEmailPreferences,
+      'teacher-a'), false);
+    console.log('PR7: real staff HTTP preferences, deletion cleanup, lock contention and complete import flow passed');
   } catch (error) {
     console.error(stderr.slice(-1800));
     throw error;

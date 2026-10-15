@@ -67,6 +67,25 @@ assert.equal(actions.recipientGroups(multipleAdmins,links,now)
 const e=actions.collectEvents(data,links,now);
 assert.deepEqual(e.map(x=>x.type).sort(),
   ['book_escalation','staff_link','student_link','transfer_escalation','transfer_incoming'].sort());
+const firstEscalation = e.find(x => x.type === 'book_escalation');
+assert.equal(firstEscalation.period, 'initial',
+  'Admin first gets a fresh notification when the teacher deadline expires.');
+assert.equal(firstEscalation.at, now - DAY,
+  'Admin escalation starts at task creation plus the configured 14-day threshold.');
+const laterEscalation = actions.collectEvents(data,links,now+6*DAY)
+  .find(x=>x.type==='book_escalation');
+assert.equal(laterEscalation.period, 'reminder',
+  'The admin reminder is due only seven days after escalation.');
+assert.equal(laterEscalation.at, firstEscalation.at);
+const explicitlyEscalated = structuredClone(data);
+explicitlyEscalated.bookImportFollowups[0].status = 'admin_review';
+explicitlyEscalated.bookImportFollowups[0].updatedAt =
+  new Date(now-2*DAY).toISOString();
+const manualEscalation = actions.collectEvents(explicitlyEscalated,links,now)
+  .find(x=>x.type==='book_escalation');
+assert.equal(manualEscalation.period, 'initial');
+assert.equal(manualEscalation.at, now-2*DAY,
+  'Explicit escalation uses the time it became an admin task.');
 assert.equal(e.some(x => x.key.includes('expired')), false,
   'Expired pending Google requests must not generate notifications.');
 const inactiveStudent = structuredClone(data);

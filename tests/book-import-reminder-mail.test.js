@@ -138,6 +138,38 @@ async function run() {
   assert.equal(files.length, 2);
   assert.ok(fs.existsSync(path.join(folder, 'locks')));
   assert.equal(mail.claimOnce(folder, files[0].replace('.claim', '')), false);
+  // Regression: two processes observing a stale lock cannot both
+  // reclaim it, and an old holder cannot unlink a newer owner's lock.
+  const staleLock = path.join(tmp, 'stale-owner.lock');
+  const staleOwner = mail.acquireFileLock(staleLock, { staleMs: 0 });
+  assert.equal(typeof staleOwner, 'function');
+  // Force the existing lock to become stale before the next claimant.
+  const oldTime = new Date(Date.now() - 60000);
+  fs.utimesSync(staleLock, oldTime, oldTime);
+  const successor = mail.acquireFileLock(staleLock, { staleMs: 1000 });
+  assert.equal(typeof successor, 'function');
+  const successorToken = fs.readFileSync(staleLock, 'utf8');
+  staleOwner();
+  assert.equal(fs.readFileSync(staleLock, 'utf8'), successorToken,
+    'The displaced owner must never unlink the new lock.');
+  assert.equal(mail.acquireFileLock(staleLock, { staleMs: 1000 }), null,
+    'A newly acquired successor must not be reaped by another contender.');
+  successor();
+  assert.equal(fs.existsSync(staleLock), false);
+  const orphanLock = path.join(tmp, 'orphan.lock');
+  fs.writeFileSync(orphanLock, 'abandoned');
+  fs.utimesSync(orphanLock, oldTime, oldTime);
+  // The recovery guard is an unreaped fail-closed mutex. A process crash
+  // inside this tiny critical section requires explicit operational cleanup.
+  fs.writeFileSync(orphanLock + '.guard', 'orphan gate');
+  assert.equal(mail.acquireFileLock(orphanLock, { staleMs: 1000 }), null,
+    'A stale gate must not be unsafely removed while another process may be using it.');
+  assert.equal(fs.readFileSync(orphanLock, 'utf8'), 'abandoned');
+  fs.unlinkSync(orphanLock + '.guard');
+  const recovered = mail.acquireFileLock(orphanLock, { staleMs: 1000 });
+  assert.equal(typeof recovered, 'function');
+  recovered();
+
   // Competing workers may not split the same teacher's book reminders.
   const concurrentFolder = path.join(tmp, 'concurrent-claims');
   const concurrentMessages = [];

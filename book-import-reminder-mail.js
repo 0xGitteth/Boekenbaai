@@ -128,41 +128,70 @@ function claimOnce(folder, id) {
   }
 }
 
+// The filesystem guard serializes *all* inspections, stale reclamations,
+// acquisitions and releases of this lock. Unlike a read-then-unlink scheme,
+// a second process cannot delete a newly acquired successor. The tiny guard
+// itself is intentionally never automatically reaped: a crash inside this
+// critical section must fail closed until an operator confirms no workers are
+// active and removes that abandoned ".guard" file.
+function withLockGuard(filename, operation) {
+  const gate = filename + '.guard';
+  let fd;
+  try { fd = fs.openSync(gate, 'wx', 0o600); }
+  catch (error) {
+    if (error.code === 'EEXIST') return null;
+    throw error;
+  }
+  try { return operation(); }
+  finally {
+    fs.closeSync(fd);
+    fs.unlinkSync(gate);
+  }
+}
 function acquireFileLock(filename, { staleMs = 300000 } = {}) {
   fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
-  const open = () => {
+  const owner = crypto.randomBytes(24).toString('hex');
+  function createOwnedLock() {
+    const fd = fs.openSync(filename, 'wx', 0o600);
     try {
-      const fd = fs.openSync(filename, 'wx', 0o600);
-      try { fs.writeSync(fd, String(Date.now())); }
-      catch (err) { fs.closeSync(fd); try { fs.unlinkSync(filename); } catch (_) {} throw err; }
-      let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        fs.closeSync(fd);
-        try { fs.unlinkSync(filename); } catch (err) {
-          if (err.code !== 'ENOENT') throw err;
+      fs.writeFileSync(fd, owner);
+      fs.fsyncSync(fd);
+    } finally { fs.closeSync(fd); }
+    let released = false;
+    return () => {
+      if (released) return;
+      // Retain ownership if the guard is briefly unavailable. The lock
+      // expires and can be reaped safely under the same guard if necessary.
+      const success = withLockGuard(filename, () => {
+        let observed;
+        try { observed = fs.readFileSync(filename, 'utf8'); }
+        catch (error) {
+          if (error.code === 'ENOENT') return true;
+          throw error;
         }
-      };
-    } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
-      return null;
-    }
-  };
-  let release = open();
-  if (release) return release;
-  // A crashed process can abandon the lock. Never reclaim a live, recent
-  // lock, especially during the maximum 12s Google Apps Script request.
-  try {
-    const stat = fs.statSync(filename);
-    if (Date.now() - stat.mtimeMs > staleMs) {
-      fs.unlinkSync(filename);
-      release = open();
-    }
-  } catch (err) {
-    if (!['ENOENT', 'EEXIST'].includes(err.code)) throw err;
+        if (observed === owner) fs.unlinkSync(filename);
+        return true;
+      });
+      if (success) released = true;
+    };
   }
-  return release;
+  return withLockGuard(filename, () => {
+    try { return createOwnedLock(); }
+    catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+    let stat;
+    try { stat = fs.statSync(filename); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      return createOwnedLock();
+    }
+    if (Date.now() - stat.mtimeMs <= staleMs) return null;
+    // Protected by the guard. Re-inspect before unlinking so the reclaim
+    // decision is made on the current file, not a previous observation.
+    fs.unlinkSync(filename);
+    return createOwnedLock();
+  });
 }
 function recipientLockPath(folder, recipientId) {
   const hash = crypto.createHash('sha256').update(String(recipientId)).digest('hex');

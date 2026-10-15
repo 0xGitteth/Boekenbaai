@@ -73,8 +73,18 @@ function collectEvents(db, links, now = Date.now()) {
   for (const task of db.bookImportFollowups || []) {
     if (!task?.id) continue;
     if (taskStage(task,config,now,classes,books)==='admin_review') {
-      push('book_escalation',task.id,task.updatedAt||task.createdAt,
-        'books',['admin'],'/staff.html#book-import-followups-panel');
+      const created = validTime(task.createdAt, now);
+      const ageBasedEscalation = created !== null
+        && task.status !== 'admin_review'
+        && Boolean(task.classId && classes.has(task.classId) && books.has(task.bookId));
+      // For automatic age-based escalation, the admin task begins at the
+      // configured threshold, not at the original teacher-task creation.
+      // Explicit reassignment or missing entities use the action timestamp.
+      const escalatedAt = ageBasedEscalation
+        ? new Date(created + config.escalationDays * DAY_MS).toISOString()
+        : task.escalatedAt || task.updatedAt || task.createdAt;
+      push('book_escalation', task.id, escalatedAt,
+        'books', ['admin'], '/staff.html#book-import-followups-panel');
     }
   }
   return events;
