@@ -37,8 +37,12 @@ function collectEvents(db, links, now = Date.now()) {
       push('transfer_escalation', request.id, request.updatedAt || request.createdAt,
         'transfers', ['admin']);
     } else if (request.status === 'pending') {
+      const receivingTeachers = teacherIdsForClass(request.toClassId);
+      // A deleted or inactive destination mentor cannot handle the request.
+      // Keep the pending transfer visible to administration instead.
       push('transfer_incoming', request.id, request.createdAt,
-        'transfers', teacherIdsForClass(request.toClassId).map(id=>'teacher:'+id));
+        'transfers', receivingTeachers.length
+          ? receivingTeachers.map(id=>'teacher:'+id) : ['admin']);
     }
   }
   const studentClassIds = student => {
