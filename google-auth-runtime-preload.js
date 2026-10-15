@@ -9,6 +9,7 @@ const core = require('./google-auth-core');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { verifyGoogleIdToken } = require('./google-id-token');
 const { installSessionBridge } = require('./google-session-bridge');
+const { completePendingGoogleSession } = require('./google-pending-session');
 
 const sessionsMap = new Map();
 const sessionBridge = installSessionBridge({ sessions: sessionsMap });
@@ -712,16 +713,15 @@ async function handleCustomApi(req, res, requestUrl) {
     }
 
     if (existing && !existing.sub && core.normalizeEmail(existing.email) === pending.email) {
-      const linked = core.upsertLink(store, {
-        accountType: 'student',
-        accountId: studentId,
-        email: pending.email,
-        sub: pending.sub,
-        linkedBy: 'prelinked-email',
+      const session = completePendingGoogleSession({
+        dataPath: DATA_PATH, authPath: AUTH_DATA_PATH,
+        pendingHash: pending.tokenHash, accountId: studentId, mode: 'student-prelinked',
       });
-      store = removePendingIdentity(inheritSnapshot(linked.store, store), pending);
-      saveAuthStore(store);
-      createLoginSession(req, res, studentId, 'student', false);
+      sessionsMap.set(session.token, {
+        userId: studentId, type: 'student',
+        createdAt: session.createdAt, persistedAuth: true,
+      });
+      setSessionCookies(req, res, session.token, false);
       clearCookie(req, res, PENDING_COOKIE, true);
       return sendJson(res, 200, { approved: true, loggedIn: true });
     }
@@ -771,9 +771,16 @@ async function handleCustomApi(req, res, requestUrl) {
         message: 'De goedgekeurde koppeling komt niet overeen met dit Google-account',
       });
     }
-    store = removePendingIdentity(store, pending);
-    saveAuthStore(store);
-    createLoginSession(req, res, request.studentId, 'student', false);
+    const session = completePendingGoogleSession({
+      dataPath: DATA_PATH, authPath: AUTH_DATA_PATH,
+      pendingHash: pending.tokenHash, accountId: request.studentId,
+      mode: 'student-approved',
+    });
+    sessionsMap.set(session.token, {
+      userId: request.studentId, type: 'student',
+      createdAt: session.createdAt, persistedAuth: true,
+    });
+    setSessionCookies(req, res, session.token, false);
     clearCookie(req, res, PENDING_COOKIE, true);
     return sendJson(res, 200, { loggedIn: true });
   }

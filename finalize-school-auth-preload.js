@@ -12,6 +12,7 @@ const { verifyGoogleIdToken } = require('./google-id-token');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const { runSchoolSync } = require('./school-sync-core');
 const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
+const { completePendingGoogleSession } = require('./google-pending-session');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { acquireFileLock } = require('./book-import-reminder-mail');
 
@@ -407,21 +408,13 @@ function staffPendingStatus(req, res) {
   });
 }
 
-function createStaffSession(req, res, teacher, remember) {
-  const token = crypto.randomBytes(32).toString('base64url');
-  const previousStore = loadAuthStore();
-  const result = core.upsertSession(previousStore, token, {
-    userId: teacher.id,
-    type: 'staff',
-    remember: Boolean(remember),
-    now: Date.now(),
+function createStaffSession(req, res, teacher, remember, pendingHash) {
+  // Pending consumption and Google session creation share a single auth
+  // transaction. Losing the writer lock cannot strand a pending identity.
+  const { token } = completePendingGoogleSession({
+    dataPath: DATA_PATH, authPath: AUTH_DATA_PATH, pendingHash,
+    accountId: teacher.id, mode: 'staff-approved', remember,
   });
-  const session = result.store.sessions.find((entry) => entry?.tokenHash === core.tokenHash(token));
-  if (session) {
-    session.accountFingerprint = accountCredentialFingerprint(teacher);
-    session.authMethod = 'google';
-  }
-  saveAuthStore(inheritSnapshot(result.store, previousStore));
   const maxAge = remember ? 30 * 24 * 60 * 60 : undefined;
   const secure = useSecureCookies(req);
   appendSetCookie(res, serializeCookie(SESSION_COOKIE, token, { httpOnly: true, secure, maxAge }));
@@ -446,9 +439,7 @@ function completeStaffPending(req, res) {
   );
   if (!teacher) return sendJson(res, 404, { message: 'Docentaccount niet gevonden.' });
 
-  store.pendingIdentities = store.pendingIdentities.filter((entry) => entry?.tokenHash !== pending.tokenHash);
-  saveAuthStore(store);
-  createStaffSession(req, res, teacher, pending.remember);
+  createStaffSession(req, res, teacher, pending.remember, pending.tokenHash);
   clearCookie(req, res, PENDING_COOKIE, true);
   return sendJson(res, 200, { loggedIn: true, role: 'teacher' });
 }
