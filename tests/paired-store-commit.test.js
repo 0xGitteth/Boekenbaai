@@ -108,7 +108,7 @@ try {
     "const lock = acquireFileLock(process.argv[2] + '.database-write.lock', { processOwned: true });",
     "if (!lock) process.exit(2);",
     "process.exit(0);",
-  ].join('\\n'), path.join(__dirname, '..', 'book-import-reminder-mail.js'), dataPath]);
+  ].join('\n'), path.join(__dirname, '..', 'book-import-reminder-mail.js'), dataPath]);
   assert.strictEqual(deadWriter.status, 0);
   assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), true);
   assert.strictEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')).version, 'after-crash-auth');
