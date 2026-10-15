@@ -108,7 +108,12 @@ function commitJsonSnapshot({ dataPath, value, beforeWrite, lockPath = dataPath 
   return withDatabaseWriteLock(lockPath, () => {
     assertNoPendingPairedJournal(lockPath);
     assertSnapshotCurrent(absolute, value);
-    if (beforeWrite) beforeWrite();
+    if (beforeWrite) {
+      const validation = beforeWrite();
+      if (validation && typeof validation.then === 'function') {
+        throw conflict('DATABASE_ASYNC_WRITE', 'Opslagvalidatie moet synchroon plaatsvinden.');
+      }
+    }
     const raw = JSON.stringify(value, null, 2);
     atomicWrite(absolute, raw);
     versions.set(value, { path: absolute, hash: fingerprint(raw) });

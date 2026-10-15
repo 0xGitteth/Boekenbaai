@@ -104,6 +104,21 @@ async function run() {
       beforeWrite: () => { throw Error('validation-failure'); },
     }), /validation-failure/);
     assert.equal(JSON.parse(fs.readFileSync(dataPath, 'utf8')).books.length, 1);
+    const asyncSnapshot = storage.readJsonSnapshot(dataPath);
+    asyncSnapshot.books.push({ id: 'async-validation' });
+    assert.throws(() => storage.commitJsonSnapshot({
+      dataPath, value: asyncSnapshot, beforeWrite: () => Promise.resolve(),
+    }), { code: 'DATABASE_ASYNC_WRITE' });
+    assert.equal(JSON.parse(fs.readFileSync(dataPath, 'utf8')).books.length, 1,
+      'Asynchronous validation must not write before it finishes.');
+    assert.throws(() => storage.mutateJsonLocked({
+      lockPath: dataPath, filePath: authPath,
+      read: () => JSON.parse(fs.readFileSync(authPath, 'utf8')),
+      mutate: async store => store,
+    }), { code: 'DATABASE_ASYNC_WRITE' });
+    assert.equal(JSON.parse(fs.readFileSync(authPath, 'utf8')).sessions.length, 2,
+      'An async mutation must never serialize a Promise as the auth store.');
+
     const final = storage.readJsonSnapshot(dataPath);
     final.books.push({ id: 'after-error' });
     storage.commitJsonSnapshot({ dataPath, value: final });
