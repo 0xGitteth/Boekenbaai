@@ -67,6 +67,20 @@ assert.equal(actions.recipientGroups(multipleAdmins,links,now)
 const e=actions.collectEvents(data,links,now);
 assert.deepEqual(e.map(x=>x.type).sort(),
   ['book_escalation','staff_link','student_link','transfer_escalation','transfer_incoming'].sort());
+const missingDestinationMentor = structuredClone(data);
+missingDestinationMentor.classes[1].teacherIds = [];
+assert.deepEqual(actions.collectEvents(missingDestinationMentor,links,now)
+  .find(x=>x.type==='transfer_incoming').targets,['admin'],
+  'Pending transfers without a destination mentor must be routed to administration.');
+const inactiveDestinationMentor = structuredClone(data);
+inactiveDestinationMentor.users.find(x=>x.id==='teacher-b').status='inactive';
+assert.deepEqual(actions.collectEvents(inactiveDestinationMentor,links,now)
+  .find(x=>x.type==='transfer_incoming').targets,['admin'],
+  'Inactive destination mentors must not receive transfer notifications.');
+assert.equal(actions.recipientGroups(missingDestinationMentor,links,now)
+  .find(x=>x.id==='admin:beheerder@koraal.nl').events
+  .some(x=>x.type==='transfer_incoming'),true,
+  'The verified admin receives the orphaned transfer as an actionable email.');
 const firstEscalation = e.find(x => x.type === 'book_escalation');
 assert.equal(firstEscalation.period, 'initial',
   'Admin first gets a fresh notification when the teacher deadline expires.');
