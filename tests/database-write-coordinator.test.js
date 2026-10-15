@@ -55,6 +55,48 @@ async function run() {
     assert.equal(JSON.parse(fs.readFileSync(dataPath, 'utf8')).books.length, 1);
     fs.unlinkSync(dataPath + '.paired-store-journal.json');
 
+    // The auth file must share the DB transaction lock. A stale Google
+    // session writer cannot undo a newer login or paired-store update.
+    const authPath = path.join(dir, 'auth.json');
+    fs.writeFileSync(authPath, JSON.stringify({ sessions: [{ id: 'initial' }] }));
+    const authCurrent = storage.readJsonSnapshot(authPath);
+    const authStale = storage.readJsonSnapshot(authPath);
+    authCurrent.sessions.push({ id: 'new-login' });
+    storage.commitJsonSnapshot({
+      dataPath: authPath, value: authCurrent, lockPath: dataPath,
+    });
+    authStale.sessions = [];
+    assert.throws(() => storage.commitJsonSnapshot({
+      dataPath: authPath, value: authStale, lockPath: dataPath,
+    }), { code: 'DATABASE_WRITE_CONFLICT' });
+    const busyAuth = acquireFileLock(dataPath + '.database-write.lock');
+    assert.equal(typeof busyAuth, 'function');
+    try {
+      const authSnapshot = storage.readJsonSnapshot(authPath);
+      assert.throws(() => storage.commitJsonSnapshot({
+        dataPath: authPath, value: authSnapshot, lockPath: dataPath,
+      }), { code: 'DATABASE_WRITE_BUSY' });
+    } finally { busyAuth(); }
+    storage.mutateJsonLocked({
+      lockPath: dataPath, filePath: authPath,
+      read: () => JSON.parse(fs.readFileSync(authPath, 'utf8')),
+      mutate: store => {
+        store.sessions.push({ id: 'locked-cleanup' });
+        return store;
+      },
+    });
+    assert.deepEqual(JSON.parse(fs.readFileSync(authPath, 'utf8'))
+      .sessions.map(session => session.id),
+    ['initial', 'new-login', 'locked-cleanup']);
+    fs.writeFileSync(dataPath + '.paired-store-journal.json',
+      JSON.stringify({ version: 1, data: {}, auth: {} }));
+    assert.throws(() => storage.mutateJsonLocked({
+      lockPath: dataPath, filePath: authPath,
+      read: () => JSON.parse(fs.readFileSync(authPath, 'utf8')),
+      mutate: store => store,
+    }), { code: 'DATABASE_RECOVERY_REQUIRED' });
+    fs.unlinkSync(dataPath + '.paired-store-journal.json');
+
     const errorSnapshot = storage.readJsonSnapshot(dataPath);
     errorSnapshot.books.push({ id: 'reject' });
     assert.throws(() => storage.commitJsonSnapshot({

@@ -594,6 +594,13 @@ function wrapRequestListener(listener) {
       guardCallbackResponse(req, res, requestUrl);
       return listener(req, res);
     } catch (error) {
+      if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY',
+        'DATABASE_RECOVERY_REQUIRED'].includes(error?.code)
+        && !res.headersSent && !res.writableEnded) {
+        return sendJson(res, 409, {
+          message: 'De Google-koppeling is intussen gewijzigd. Probeer opnieuw.',
+        });
+      }
       console.error('[Student Google handoff] Interne fout:', error?.message || error);
       if (!res.headersSent && !res.writableEnded) {
         return sendJson(res, 500, { message: 'De Google-koppeling kon niet worden voorbereid.' });

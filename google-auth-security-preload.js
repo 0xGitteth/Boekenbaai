@@ -93,7 +93,8 @@ function updateAuthStoreSafely(mutate) {
   });
 }
 function revokeSessionToken(tokenHash) {
-  revokedTokenHashes.add(tokenHash);
+  // Only mark as revoked while applying the locked mutation. A busy lock
+  // must not falsely record an unpersisted change as completed.
   return updateAuthStoreSafely(store => {
     if (!(store.sessions || []).some(entry => entry?.tokenHash === tokenHash)) return false;
     return removePersistedToken(store, tokenHash);
