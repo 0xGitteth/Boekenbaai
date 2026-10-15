@@ -149,6 +149,8 @@ async function run(){
   const [a,b]=await Promise.all([first,second]);
   assert.equal(a.recipients+b.recipients,3);
   assert.equal(captures.length,3);
+  assert.ok(captures.every(x=>Math.abs(Date.now()-x.timestamp)<30000),
+    'Each action email must be signed with a fresh delivery timestamp.');
   assert.ok(captures.every(x=>!x.body.includes('student-a')
     && !x.body.includes('studentName') && !x.body.includes('class-a')));
   assert.ok(captures.every(x=>x.body.includes('https://boekenbaai.example/staff.html')));
