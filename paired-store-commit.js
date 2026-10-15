@@ -3,7 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { withDatabaseWriteLock, assertSnapshotCurrent } = require('./database-write-coordinator');
+const { withDatabaseWriteLock, assertSnapshotCurrent,
+  assertNoPendingPairedJournal } = require('./database-write-coordinator');
 
 function ensureObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -91,6 +92,7 @@ function commitPairedJson({ dataPath, authPath, data, auth, expectedData, expect
   // Both file versions are mandatory. Never commit a pair built from a
   // snapshot that may predate another writer or recovered journal.
   return withDatabaseWriteLock(dataPath, () => {
+    assertNoPendingPairedJournal(dataPath);
     assertSnapshotCurrent(dataPath, expectedData);
     assertSnapshotCurrent(authPath, expectedAuth);
     const journalPath = journalPathFor(dataPath);

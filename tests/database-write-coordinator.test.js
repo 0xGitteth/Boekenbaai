@@ -43,6 +43,18 @@ async function run() {
     } finally { busy(); }
     assert.equal(JSON.parse(fs.readFileSync(dataPath, 'utf8')).books.length, 1);
 
+    // A crashed paired commit leaves a journal. An unrelated DB write must
+    // not pass it and later be silently rolled back by startup recovery.
+    fs.writeFileSync(dataPath + '.paired-store-journal.json', JSON.stringify({
+      version: 1, data: { books: [] }, auth: { sessions: [] },
+    }));
+    const pending = storage.readJsonSnapshot(dataPath);
+    pending.books.push({ id: 'never-written-over-journal' });
+    assert.throws(() => storage.commitJsonSnapshot({ dataPath, value: pending }),
+      { code: 'DATABASE_RECOVERY_REQUIRED' });
+    assert.equal(JSON.parse(fs.readFileSync(dataPath, 'utf8')).books.length, 1);
+    fs.unlinkSync(dataPath + '.paired-store-journal.json');
+
     const errorSnapshot = storage.readJsonSnapshot(dataPath);
     errorSnapshot.books.push({ id: 'reject' });
     assert.throws(() => storage.commitJsonSnapshot({

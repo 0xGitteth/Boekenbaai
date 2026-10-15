@@ -22,7 +22,8 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   acquireFileLock } = require('./book-import-reminder-mail');
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
-const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
+  withDatabaseWriteLock } = require('./database-write-coordinator');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -928,16 +929,21 @@ function parseQuantityInput(value, { allowZero = false, defaultValue = 1 } = {})
 }
 
 function ensureDbFile() {
-  try {
-    fs.accessSync(DATA_PATH, fs.constants.F_OK);
-  } catch (error) {
-    ensureParentDirectory(DATA_PATH);
-    if (DATA_PATH !== DEFAULT_DATA_PATH && fs.existsSync(DEFAULT_DATA_PATH)) {
-      fs.copyFileSync(DEFAULT_DATA_PATH, DATA_PATH);
-    } else {
-      fs.writeFileSync(DATA_PATH, JSON.stringify(EMPTY_DB, null, 2));
+  // The first-start seed also has to respect the same lock if two Node
+  // processes start against an initially empty persistent volume.
+  withDatabaseWriteLock(DATA_PATH, () => {
+    try {
+      fs.accessSync(DATA_PATH, fs.constants.F_OK);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      ensureParentDirectory(DATA_PATH);
+      if (DATA_PATH !== DEFAULT_DATA_PATH && fs.existsSync(DEFAULT_DATA_PATH)) {
+        fs.copyFileSync(DEFAULT_DATA_PATH, DATA_PATH);
+      } else {
+        fs.writeFileSync(DATA_PATH, JSON.stringify(EMPTY_DB, null, 2));
+      }
     }
-  }
+  });
 }
 
 ensureDbFile();
@@ -8859,7 +8865,7 @@ async function handleApi(req, res, requestUrl) {
     return sendJson(res, 404, { message: 'Niet gevonden' });
   } catch (error) {
     if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY',
-      'DATABASE_SNAPSHOT_UNTRACKED'].includes(error?.code)) {
+      'DATABASE_SNAPSHOT_UNTRACKED', 'DATABASE_RECOVERY_REQUIRED'].includes(error?.code)) {
       return sendJson(res, 409, { message: 'De gegevens zijn intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.', error: error.code });
     }
     console.error(error);

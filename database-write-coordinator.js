@@ -79,6 +79,14 @@ function withDatabaseWriteLock(dataPath, work) {
   }
 }
 
+function assertNoPendingPairedJournal(dataPath) {
+  const journalPath = path.resolve(dataPath) + '.paired-store-journal.json';
+  if (fs.existsSync(journalPath)) {
+    throw conflict('DATABASE_RECOVERY_REQUIRED',
+      'Er staat nog een onvoltooide gecombineerde opslag klaar voor herstel.');
+  }
+}
+
 function assertSnapshotCurrent(filePath, snapshot) {
   const absolute = path.resolve(filePath);
   const expected = versions.get(snapshot);
@@ -98,6 +106,7 @@ function assertSnapshotCurrent(filePath, snapshot) {
 function commitJsonSnapshot({ dataPath, value, beforeWrite, lockPath = dataPath }) {
   const absolute = path.resolve(dataPath);
   return withDatabaseWriteLock(lockPath, () => {
+    assertNoPendingPairedJournal(lockPath);
     assertSnapshotCurrent(absolute, value);
     if (beforeWrite) beforeWrite();
     const raw = JSON.stringify(value, null, 2);
@@ -111,6 +120,7 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
     throw new TypeError('Read and mutate callbacks are required.');
   }
   return withDatabaseWriteLock(lockPath, () => {
+    assertNoPendingPairedJournal(lockPath);
     const latest = read();
     const next = mutate(latest);
     if (next === false) return false;
@@ -123,4 +133,5 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
 }
 
 module.exports = { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
-  assertSnapshotCurrent, withDatabaseWriteLock, mutateJsonLocked };
+  assertSnapshotCurrent, assertNoPendingPairedJournal,
+  withDatabaseWriteLock, mutateJsonLocked };
