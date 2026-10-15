@@ -119,6 +119,15 @@ const fake = async (url, opts) => {
       && JSON.parse(JSON.parse(called[called.length - 2].opts.body).payload).id }) };
 };
 async function run() {
+  const turnedOff = structuredClone(data);
+  turnedOff.bookImportEmailPreferences.t1.mode = 'off';
+  const stopped = await mail.dispatchReminders({
+    db: data, links, folder: path.join(tmp, 'turned-off'), env, now,
+    currentState: () => ({ db: turnedOff, links }),
+    fetchImpl: fake,
+  });
+  assert.equal(stopped.claimed, 0,
+    'A teacher disabling mail during a scan must not be claimed or sent.');
   const first = await mail.dispatchReminders({ db: data, links, folder, env, now,
     fetchImpl: fake });
   assert.equal(first.claimed, 2);
