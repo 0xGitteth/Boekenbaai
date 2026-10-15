@@ -22,7 +22,7 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   acquireFileLock } = require('./book-import-reminder-mail');
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
-const { readJsonSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -6142,6 +6142,10 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: workbookResult.error });
       }
       const db = getDb();
+      // Progress callbacks persist only importJobs while this operation
+      // prepares book mutations. Remember the non-job baseline so we can
+      // rebase those progress changes, but never erase unrelated writes.
+      const originalImportState = JSON.stringify({ ...db, importJobs: null });
       const importJobId = String(req.headers['x-import-job-id'] || '').trim();
       const updateImportProgress = (updates) => {
         if (!importJobId) return;
@@ -7066,6 +7070,18 @@ async function handleApi(req, res, requestUrl) {
           type: 'books_imported',
           message: `${createdBooks.length} boeken toegevoegd, ${updatedBooks.length} bijgewerkt via Excel-import`,
         });
+        // Import progress writes update importJobs on newer snapshots while
+        // this worker processes the workbook. Rebase ONLY those updates.
+        // An unrelated DB edit or reviewed import must still produce a 409.
+        const latestForImport = loadDb();
+        if (JSON.stringify({ ...latestForImport, importJobs: null })
+          !== originalImportState) {
+          const conflict = new Error('De bibliotheek is tijdens de import gewijzigd.');
+          conflict.code = 'DATABASE_WRITE_CONFLICT';
+          throw conflict;
+        }
+        db.importJobs = latestForImport.importJobs;
+        inheritSnapshot(db, latestForImport);
         saveDb(db);
         scheduleCoverBackfill({ resetFailures: true });
       }
