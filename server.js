@@ -3,6 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const { normalizeCoverCrop } = require('./lib/cover-crop');
+const { createCoverAssetStore } = require('./lib/cover-assets');
+const { planCoverBackfill } = require('./lib/cover-backfill-plan');
 const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
@@ -42,6 +45,138 @@ const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
   ? path.resolve(__dirname, process.env.BOEKENBAAI_DATA_PATH)
   : DEFAULT_DATA_PATH;
+// Keep original image files next to db.json on the configured persistent volume.
+const coverAssets = createCoverAssetStore({ directory: path.join(path.dirname(DATA_PATH), 'covers') });
+
+// Cover retrieval is deliberately separate from the reviewed import commit:
+// hundreds of third-party image fetches must never delay its HTTP response.
+// Missing local URLs in db.json are the durable retry queue after a restart.
+let shuttingDown = false;
+let coverBackfillRunning = false;
+let coverBackfillScheduled = false;
+let coverBackfillPending = false;
+const coverBackfillFailures = new Map();
+const coverRetryDelays = [30_000, 120_000, 600_000];
+let coverBackfillRetryTimer = null;
+
+function scheduleBackfillRetry() {
+  if (shuttingDown || coverBackfillRetryTimer) return;
+  const future = [...coverBackfillFailures.values()]
+    .filter((entry) => entry.attempts <= coverRetryDelays.length
+      && Number.isFinite(entry.nextRetryAt))
+    .map((entry) => entry.nextRetryAt);
+  if (!future.length) return;
+  const delay = Math.max(1000, Math.min(...future) - Date.now());
+  coverBackfillRetryTimer = setTimeout(() => {
+    coverBackfillRetryTimer = null;
+    scheduleCoverBackfill();
+  }, delay);
+  if (typeof coverBackfillRetryTimer.unref === 'function') coverBackfillRetryTimer.unref();
+}
+
+function scheduleCoverBackfill({ resetFailures = false } = {}) {
+  if (shuttingDown) return;
+  // An explicit import or edit is new work. Even a URL that previously
+  // exhausted retries must be eligible for another attempt.
+  if (resetFailures) coverBackfillFailures.clear();
+  if (coverBackfillRetryTimer) {
+    clearTimeout(coverBackfillRetryTimer);
+    coverBackfillRetryTimer = null;
+  }
+  if (coverBackfillRunning || coverBackfillScheduled) {
+    coverBackfillPending = true;
+    return;
+  }
+  coverBackfillScheduled = true;
+  setImmediate(async () => {
+    coverBackfillScheduled = false;
+    coverBackfillRunning = true;
+    try {
+      const snapshot = loadDb();
+      const plan = planCoverBackfill(snapshot.books, {
+        hasAsset: (url) => coverAssets.hasAsset(url),
+        failures: coverBackfillFailures,
+      });
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(plan.length, 4) }, async () => {
+        while (next < plan.length && !shuttingDown) {
+          const { source, localAsset } = plan[next++];
+          let local;
+          try {
+            // Reuse a valid asset from another copy of the same source before
+            // trying the upstream server. This also works when it is offline.
+            local = localAsset && coverAssets.hasAsset(localAsset)
+              ? localAsset : await coverAssets.saveSource(source);
+          } catch (error) {
+            const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
+            coverBackfillFailures.set(source, {
+              attempts,
+              phase: 'download',
+              nextRetryAt: attempts <= coverRetryDelays.length
+                ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
+            });
+            console.warn('Boekomslag tijdelijk niet beschikbaar:', error.message);
+            continue;
+          }
+          // Never race against the one-active-import staging transaction.
+          while (!shuttingDown && (bookImportStageStore.active()?.status === 'applying' || activeBookImportLease)) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+          if (shuttingDown) break;
+          try {
+            const latest = loadDb();
+            let changed = false;
+            for (const book of latest.books || []) {
+              if (book.coverUrl === source && !coverAssets.hasAsset(book.localCoverUrl)) {
+                book.localCoverUrl = local;
+                changed = true;
+              }
+            }
+            if (changed) saveDb(latest);
+            // Only a committed (or no-longer-needed) database link completes
+            // the retry. Failed writes must retain their attempt count.
+            coverBackfillFailures.delete(source);
+          } catch (error) {
+            // A persistent write error must not trigger an immediate retry
+            // loop. Use the same bounded cooldown as network failures.
+            const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
+            coverBackfillFailures.set(source, {
+              attempts,
+              phase: 'link',
+              // Keep the downloaded file available across write retries,
+              // even when no other book currently links to this asset.
+              localAsset: coverAssets.hasAsset(local) ? local : '',
+              nextRetryAt: attempts <= coverRetryDelays.length
+                ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
+            });
+            console.warn('Boekomslag lokaal opgeslagen maar boekkoppeling nog niet bijgewerkt:', error.message);
+          }
+        }
+      }));
+    } catch (error) {
+      console.warn('Omslagverwerking afgebroken:', error.message);
+    } finally {
+      coverBackfillRunning = false;
+      if (coverBackfillPending && !shuttingDown) {
+        coverBackfillPending = false;
+        scheduleCoverBackfill();
+      } else {
+        scheduleBackfillRetry();
+      }
+    }
+  });
+}
+
+function runCoverGarbageCollection() {
+  if (shuttingDown) return;
+  try {
+    const result = coverAssets.cleanupUnreferenced(
+      () => loadDb().books.map((book) => book.localCoverUrl).filter(Boolean));
+    if (result.removed) console.info(`Ongebruikte boekomslagen opgeruimd: ${result.removed}`);
+  } catch (error) {
+    console.warn('Opruimen ongebruikte boekomslagen mislukt:', error.message);
+  }
+}
 const DIST_DIR = path.join(__dirname, 'dist');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -1183,6 +1318,10 @@ function ensureBookShape(book) {
   safeBook.pageCount = normalizePageCountValue(source.pageCount ?? source.pages);
   safeBook.language = normalizeLanguageCode(source.language);
   safeBook.coverUrl = normalizeCoverUrl(source.coverUrl || source.cover || '');
+  safeBook.localCoverUrl = typeof source.localCoverUrl === 'string'
+    && /^\/api\/covers\/[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/.test(source.localCoverUrl)
+    ? source.localCoverUrl : '';
+  safeBook.coverCrop = normalizeCoverCrop(source.coverCrop);
   safeBook.importInfo = normalizeBookImportInfo(source.importInfo);
   safeBook.importProvenance = normalizeBookImportProvenance(source.importProvenance);
   return attachDerivedThemeFields(safeBook);
@@ -1300,6 +1439,12 @@ function groupBooksByTitleAuthor(books = []) {
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const availableCopies = totalCopies - borrowedCopies;
     const representative = value.representativeBook || value.copies[0] || {};
+    // A representative may have no local asset even when another physical
+    // copy with the same source has a valid cached image.
+    const representativeCoverSource = resolveEffectiveCoverUrl(representative.coverUrl);
+    const cachedEditionCover = value.copies.find((copy) =>
+      resolveEffectiveCoverUrl(copy.coverUrl) === representativeCoverSource
+      && coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || representative.localCoverUrl || '';
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
     const themes = sortThemesByCanonicalOrder(Array.from(value.themes));
@@ -1312,6 +1457,8 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: resolveEffectiveCoverUrl(representative.coverUrl),
+      localCoverUrl: cachedEditionCover,
+      coverCrop: normalizeCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
       themes,
@@ -1616,6 +1763,19 @@ function readWorkbookRows(XLSX, base64) {
 // rejecting ALL stale snapshots would break those jobs. However, any writer
 // whose snapshot predates the latest confirmed PR3 batch MUST fail instead of
 // overwriting the new books and the permanent import report.
+// A confirmed reviewed import is a separate commit boundary. When a normal
+// request waits on body/image I/O we can rebase unrelated live changes, but
+// must still reject a request that started before a reviewed import committed.
+function assertReviewedImportBoundaryUnchanged(before, after) {
+  const lastId = (db) => Array.isArray(db.bookImportReports)
+    ? db.bookImportReports[db.bookImportReports.length - 1]?.id || null : null;
+  if (lastId(before) !== lastId(after)) {
+    const error = new Error('A reviewed import committed while a book edit was pending');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
+  }
+}
+
 function assertReviewedImportNotLost(db) {
   const current = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
   const latest = Array.isArray(current.bookImportReports)
@@ -3978,6 +4138,10 @@ async function handleApi(req, res, requestUrl) {
       }
       return db;
     };
+    if (req.method === 'GET' && requestUrl.pathname.startsWith('/api/covers/')) {
+      if (coverAssets.serve(req, res, requestUrl.pathname)) return;
+      return sendJson(res, 404, { message: 'Omslag niet gevonden' });
+    }
     const user = getAuthenticatedUser(req, getDb);
     // Acquire before parseBody() can yield, regardless of which UI initiated
     // the upload. This closes both directions of the legacy/staged race.
@@ -4498,7 +4662,9 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken toevoegen' });
       }
-      const db = getDb();
+      // Retain the initial request DB snapshot. The write-conflict guard must
+      // reject an older writer if a staged import commits while it awaits.
+      const originalDb = getDb();
       const body = await parseBody(req);
       if (!body.title || !body.author || !body.barcode) {
         return sendJson(res, 400, { message: 'Titel, auteur en barcode zijn verplicht' });
@@ -4515,6 +4681,17 @@ async function handleApi(req, res, requestUrl) {
       const pageCount = normalizePageCountValue(body.pageCount ?? body.pages);
       const language = normalizeLanguageCode(body.language);
       const coverUrl = resolveEffectiveCoverUrl(body.coverUrl);
+      let localCoverUrl = '';
+      if (coverUrl) {
+        try { localCoverUrl = await coverAssets.saveSource(coverUrl); }
+        catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
+      }
+      // An old request must still fail if a confirmed reviewed import happened
+      // while its body or cover image was being downloaded.
+      // Other concurrent changes (loans, accounts, etc.) must be preserved.
+      // No more awaits occur between this reload and saveDb().
+      const db = loadDb();
+      assertReviewedImportBoundaryUnchanged(originalDb, db);
       const coverColor = typeof body.coverColor === 'string' ? body.coverColor : '#f9f9f9';
       const baseBook = {
         title: body.title,
@@ -4532,6 +4709,8 @@ async function handleApi(req, res, requestUrl) {
         pageCount,
         language,
         coverUrl,
+        localCoverUrl,
+        coverCrop: normalizeCoverCrop(body.coverCrop),
       };
       const quantity = parseQuantityInput(body.quantity, { defaultValue: 1 });
       const createdBooks = [];
@@ -4561,12 +4740,46 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken wijzigen' });
       }
-      const db = getDb();
-      const book = findBookById(db, bookIdMatch[1]);
-      if (!book) {
-        return sendJson(res, 404, { message: 'Boek niet gevonden' });
-      }
+      const originalDb = getDb();
+      const originalBook = findBookById(originalDb, bookIdMatch[1]);
+      if (!originalBook) return sendJson(res, 404, { message: 'Boek niet gevonden' });
       const body = await parseBody(req);
+      const requestedCoverUrl = Object.prototype.hasOwnProperty.call(body, 'coverUrl')
+        ? resolveEffectiveCoverUrl(body.coverUrl) : null;
+      const previousBook = originalBook;
+      let preparedLocalCoverUrl = null;
+      if (requestedCoverUrl !== null) {
+        if (!requestedCoverUrl) preparedLocalCoverUrl = '';
+        else if (requestedCoverUrl === resolveEffectiveCoverUrl(previousBook.coverUrl)) {
+          // Saving an unrelated field must work even when a legacy cover URL
+          // has disappeared. Missing files are retried separately.
+          preparedLocalCoverUrl = coverAssets.hasAsset(previousBook.localCoverUrl)
+            ? previousBook.localCoverUrl : '';
+        } else {
+          try { preparedLocalCoverUrl = await coverAssets.saveSource(requestedCoverUrl); }
+          catch { return sendJson(res, 422, { message: 'Omslag kon niet veilig worden opgeslagen. Controleer de afbeeldingslink.' }); }
+        }
+      }
+      // If the same physical copy changed during the await, editing against
+      // its old cover/loan state would overwrite the other operation.
+      const db = loadDb();
+      assertReviewedImportBoundaryUnchanged(originalDb, db);
+      const book = findBookById(db, bookIdMatch[1]);
+      if (!book) return sendJson(res, 409, {
+        message: 'Dit boek is intussen verwijderd. Vernieuw de pagina.',
+        error: 'DATABASE_WRITE_CONFLICT',
+      });
+      // Background cover caching may update only localCoverUrl while an
+      // administrator is saving. That is not an editable-book conflict.
+      // Any real change to loan state, cover source, crop or metadata still is.
+      const currentComparable = { ...book, localCoverUrl: undefined };
+      const initialComparable = { ...originalBook, localCoverUrl: undefined };
+      if (JSON.stringify(currentComparable) !== JSON.stringify(initialComparable)) {
+        return sendJson(res, 409, {
+          message: 'Dit boek is intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.',
+          error: 'DATABASE_WRITE_CONFLICT',
+        });
+      }
       const hasNewBarcode = Object.prototype.hasOwnProperty.call(body, 'barcode');
       const normalizedNewBarcode = hasNewBarcode
         ? normalizeBarcode(body.barcode)
@@ -4610,6 +4823,9 @@ async function handleApi(req, res, requestUrl) {
         : book.pageCount;
       const nextLanguage = hasLanguage ? normalizeLanguageCode(body.language) : book.language;
       const nextCoverUrl = hasCoverUrl ? resolveEffectiveCoverUrl(body.coverUrl) : resolveEffectiveCoverUrl(book.coverUrl);
+      const nextCoverCrop = Object.prototype.hasOwnProperty.call(body, 'coverCrop')
+        ? normalizeCoverCrop(body.coverCrop)
+        : (hasCoverUrl && nextCoverUrl !== book.coverUrl ? null : normalizeCoverCrop(book.coverCrop));
       const addCopies = parseQuantityInput(body.addCopies, { allowZero: true, defaultValue: 0 });
       const removeCopies = parseQuantityInput(body.removeCopies, { allowZero: true, defaultValue: 0 });
       const quantityChangeInput = Number(body.quantityChange);
@@ -4618,6 +4834,19 @@ async function handleApi(req, res, requestUrl) {
         : addCopies - removeCopies;
       const createdCopies = [];
       const removedCopies = [];
+      // Catalog editions are grouped by title, author and metadata ISBN,
+      // independently of scanned barcodes. Capture that exact membership
+      // before editing the representative, so all copies stay consistent.
+      const editionKey = getBookGroupKey(book);
+      const previousCoverUrl = book.coverUrl;
+      const editionCopies = db.books.filter((copy) => getBookGroupKey(copy) === editionKey
+        && copy.coverUrl === previousCoverUrl);
+      const cachedEditionCover = editionCopies.find((copy) => coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || '';
+      // Reuse a still-valid sibling asset when this specific copy has no local
+      // cache yet. Never carry an image across a changed source URL.
+      const nextLocalCoverUrl = nextCoverUrl === resolveEffectiveCoverUrl(previousCoverUrl)
+        ? cachedEditionCover
+        : (hasCoverUrl ? preparedLocalCoverUrl : '');
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -4640,7 +4869,21 @@ async function handleApi(req, res, requestUrl) {
         pageCount: nextPageCount,
         language: nextLanguage,
         coverUrl: nextCoverUrl,
+        localCoverUrl: nextLocalCoverUrl,
+        coverCrop: nextCoverCrop,
       });
+      // If title/author/ISBN changed, this copy moved to another catalog
+      // edition. Do not overwrite artwork on the edition it just left.
+      if ((hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop'))
+        && getBookGroupKey(book) === editionKey) {
+        for (const copy of editionCopies) {
+          if (copy.id === book.id) continue;
+          // Do not change an edition with a different manually selected cover.
+          copy.coverUrl = nextCoverUrl;
+          copy.localCoverUrl = book.localCoverUrl;
+          copy.coverCrop = nextCoverCrop;
+        }
+      }
       if (quantityChange !== 0) {
         const groupId = getBookGroupId(book);
         const groupCopies = groupId ? db.books.filter((entry) => getBookGroupId(entry) === groupId) : [book];
@@ -4705,6 +4948,7 @@ async function handleApi(req, res, requestUrl) {
         message: historyParts.join(' | '),
       });
       saveDb(db);
+      if (book.coverUrl && !book.localCoverUrl) scheduleCoverBackfill({ resetFailures: true });
       return sendJson(res, 200, {
         book,
         createdCopies: createdCopies.map((entry) => entry.id),
@@ -5125,6 +5369,7 @@ async function handleApi(req, res, requestUrl) {
                 description: row.book.description, publisher: row.book.publisher,
                 publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
                 language: row.book.language, coverUrl: row.book.coverUrl,
+                localCoverUrl: '',
                 easyReading: row.book.easyReading,
                 suitableForExamList: row.book.suitableForExamList,
                 tags: row.book.tags,
@@ -5259,6 +5504,7 @@ async function handleApi(req, res, requestUrl) {
               message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
             });
             saveReviewedBookImportDb(database);
+            scheduleCoverBackfill({ resetFailures: true });
             bookImportStageStore.finishApply(stage, {
               batchId, created: createdCopies.length,
               restoredLoans: restoredLoanEvents.length, removed: 0,
@@ -5316,6 +5562,7 @@ async function handleApi(req, res, requestUrl) {
               description: row.book.description, publisher: row.book.publisher,
               publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
               language: row.book.language, coverUrl: row.book.coverUrl,
+                localCoverUrl: '',
               easyReading: row.book.easyReading,
               suitableForExamList: row.book.suitableForExamList,
               tags: row.book.tags,
@@ -5414,6 +5661,7 @@ async function handleApi(req, res, requestUrl) {
             message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd, ${importedLoanHistory.length} bestaande leningen overgenomen`,
           });
           saveReviewedBookImportDb(database);
+            scheduleCoverBackfill({ resetFailures: true });
           const result = { batchId, created: newCopies.length,
             restoredLoans: importedLoanHistory.length, importedRows: plan.created.length, report };
           bookImportStageStore.finishApply(stage, result);
@@ -6179,7 +6427,27 @@ async function handleApi(req, res, requestUrl) {
             updates.language = nextLanguage;
           }
           if (nextCoverUrl !== existingBook.coverUrl) {
+            // A single title can represent several physical copies. Keep
+            // copies using the same original cover consistent with the import.
+            const previousCoverUrl = existingBook.coverUrl;
+            const previousEditionKey = getBookGroupKey(existingBook);
+            const nextEditionKey = getBookGroupKey({
+              ...existingBook, title: nextTitle, author: nextAuthor, metadataIsbn: nextMetadataIsbn,
+            });
+            if (nextEditionKey === previousEditionKey) {
+              for (const copy of db.books) {
+                if (copy.id === existingBook.id || copy.coverUrl !== previousCoverUrl
+                  || getBookGroupKey(copy) !== previousEditionKey) continue;
+                copy.coverUrl = nextCoverUrl;
+                copy.localCoverUrl = '';
+                copy.coverCrop = null;
+              }
+            }
             updates.coverUrl = nextCoverUrl;
+            // Local files belong to a specific source. A new external URL
+            // must be fetched instead of displaying the previous cached cover.
+            updates.localCoverUrl = '';
+            updates.coverCrop = null;
           }
           if (hasMetadataInput && nextMetadataIsbn !== existingMetadataIsbn) {
             updates.metadataIsbn = nextMetadataIsbn;
@@ -6578,6 +6846,7 @@ async function handleApi(req, res, requestUrl) {
           message: `${createdBooks.length} boeken toegevoegd, ${updatedBooks.length} bijgewerkt via Excel-import`,
         });
         saveDb(db);
+        scheduleCoverBackfill({ resetFailures: true });
       }
 
       if (!cancelled && importFinalizeDelayMs > 0) {
@@ -8381,9 +8650,16 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Boekenbaai server draait op http://localhost:${PORT}`);
+  // Resume interrupted cover caching without delaying startup or test setup.
+  if (typeof setImmediate === 'function') {
+    const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
+    if (typeof restartBackfill?.unref === 'function') restartBackfill.unref();
+    const firstCleanup = setTimeout(runCoverGarbageCollection, 60_000);
+    if (typeof firstCleanup?.unref === 'function') firstCleanup.unref();
+    const periodicCleanup = setInterval(runCoverGarbageCollection, 6 * 60 * 60 * 1000);
+    if (typeof periodicCleanup?.unref === 'function') periodicCleanup.unref();
+  }
 });
-
-let shuttingDown = false;
 
 function gracefulShutdown(signal) {
   if (shuttingDown) {

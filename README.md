@@ -31,6 +31,16 @@ De server kiest automatisch de map `dist/` zodra je een build hebt gedraaid. Zon
 5. Configureer de Google OAuth-variabelen en redirect zoals beschreven in [`GOOGLE_AUTH_SETUP.md`](./GOOGLE_AUTH_SETUP.md).
 6. Gebruik `BOEKENBAAI_ALLOWED_ORIGINS` alleen als een aparte frontend-origin echt nodig is en zet dit niet breed op `*` voor productie.
 
+### Boekomslagen en back-ups
+
+Gevonden omslagen en door beheerders ingevoerde externe afbeeldingslinks worden, waar bereikbaar en toegestaan, als origineel bestand opgeslagen in de map `covers/` naast `BOEKENBAAI_DATA_PATH` (bijvoorbeeld `/data/covers/`). Neem **zowel `db.json` als de volledige map `covers/`** mee in back-ups en bij migraties. De oorspronkelijke externe URL blijft bewaard als terugvaloptie.
+
+Een gecontroleerde Excelimport hoeft niet op alle downloads te wachten: de server bewaart de boekrecords eerst en slaat ontbrekende omslagen daarna met maximaal vier parallelle opzoekacties op. Na een herstart worden nog ontbrekende afbeeldingen opnieuw geprobeerd. Een losse beheerlink moet juist tijdens het opslaan bereikbaar en veilig zijn; bij een ongeldige of onbereikbare link wordt de boekwijziging geweigerd.
+
+Tijdelijke downloadstoringen worden met oplopende wachttijden opnieuw geprobeerd. De server ruimt periodiek omslagen op die niet meer in gebruik zijn en minstens 24 uur niet zijn gewijzigd. Gedeelde bestanden blijven bestaan zolang minimaal één boek ernaar verwijst.
+
+De 2:3-omslagweergave toont standaard de volledige afbeelding zonder bijsnijden. Beheerders kunnen optioneel verschuiven en zoomen; die uitsnede wordt als herroepbare weergave-instelling opgeslagen. Externe beeldrechten en eventuele bronvoorwaarden blijven van toepassing op lokaal opgeslagen afbeeldingen.
+
 ### Belangrijke omgevingsvariabelen
 
 | Variabele | Voorbeeldwaarde | Omschrijving |

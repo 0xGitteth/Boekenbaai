@@ -1326,6 +1326,9 @@ function normalizeRenderedCoverUrl(value) {
   if (!text) {
     return '';
   }
+  if (/^\/api\/covers\/[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/.test(text)) {
+    return resolveApiUrl(text);
+  }
   const match = text.match(
     /^(?:https?:\/\/)?(?:www\.)?archive\.org\/download\/[^?#]+\/(\d+)-([sml])\.jpg(?:\?[^#]*)?(?:#.*)?$/i,
   );
@@ -1343,6 +1346,23 @@ function normalizeRenderedCoverUrl(value) {
   return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg?default=false`;
 }
 
+// The original cover stays unchanged; only the display frame is adjusted.
+function normalizedDisplayCoverCrop(value) {
+  if (!value || value.enabled !== true) return null;
+  const { x, y, zoom } = value;
+  if (![x, y, zoom].every((number) => typeof number === 'number' && Number.isFinite(number))
+    || x < 0 || x > 100 || y < 0 || y > 100 || zoom < 1 || zoom > 2.5) return null;
+  return { enabled: true, x, y, zoom };
+}
+function applyDisplayCoverCrop(image, value) {
+  if (!image) return;
+  const crop = normalizedDisplayCoverCrop(value);
+  image.style.objectFit = crop ? 'cover' : 'contain';
+  image.style.objectPosition = crop ? `${crop.x}% ${crop.y}%` : 'center';
+  image.style.transform = crop
+    ? `translate(${(50 - crop.x) * (crop.zoom - 1)}%, ${(50 - crop.y) * (crop.zoom - 1)}%) scale(${crop.zoom})`
+    : '';
+}
 function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
@@ -1364,7 +1384,8 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (state.content) {
     state.content.hidden = false;
   }
-  const manualCoverUrl = normalizeRenderedCoverUrl(representative.coverUrl);
+  const manualCoverUrl = normalizeRenderedCoverUrl(representative.localCoverUrl || representative.coverUrl);
+  const externalCoverUrl = normalizeRenderedCoverUrl(representative.coverUrl);
   const metadataCoverUrl = normalizeRenderedCoverUrl(extractMetadataCoverUrl(metadata));
   const coverUrl = manualCoverUrl || metadataCoverUrl;
   const hasCover = Boolean(coverUrl);
@@ -1372,10 +1393,16 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.coverImage.onerror = null;
     if (hasCover) {
       state.coverImage.onerror = () => {
-        if (state.coverImage.getAttribute('src') !== coverUrl) return;
+        const attempted = state.coverImage.getAttribute('src');
+        if (attempted === coverUrl && externalCoverUrl && externalCoverUrl !== coverUrl) {
+          state.coverImage.src = externalCoverUrl;
+          return;
+        }
+        if (attempted !== coverUrl && attempted !== externalCoverUrl) return;
         state.coverImage.hidden = true;
         if (state.coverFallback) state.coverFallback.hidden = false;
       };
+      applyDisplayCoverCrop(state.coverImage, representative.coverCrop);
       state.coverImage.src = coverUrl;
       state.coverImage.alt = representative.title ? `Omslag van ${representative.title}` : 'Boekomslag';
       state.coverImage.hidden = false;
@@ -1823,6 +1850,12 @@ function groupBooksByTitleAuthor(books = []) {
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const availableCopies = totalCopies - borrowedCopies;
     const representative = value.representativeBook || value.copies[0] || {};
+    // Prefer the local cover from a sibling with the same external source.
+    // This also makes a newly imported copy usable before backfill finishes.
+    const representativeCoverSource = normalizeRenderedCoverUrl(representative.coverUrl);
+    const cachedEditionCover = value.copies.find((copy) =>
+      normalizeRenderedCoverUrl(copy.coverUrl) === representativeCoverSource
+      && copy.localCoverUrl)?.localCoverUrl || representative.localCoverUrl || '';
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
     const themes = Array.from(value.themes);
@@ -1833,6 +1866,8 @@ function groupBooksByTitleAuthor(books = []) {
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
       description: representative.description || '',
       coverUrl: normalizeRenderedCoverUrl(representative.coverUrl),
+      localCoverUrl: normalizeRenderedCoverUrl(cachedEditionCover),
+      coverCrop: normalizedDisplayCoverCrop(representative.coverCrop),
       coverColor: representative.coverColor || '#f9f9f9',
       tags,
       themes,
@@ -1875,7 +1910,8 @@ function createBookCard(template, book, folders, options = {}) {
     card.classList.add('book-card--exam-list');
   }
 
-  const coverUrl = normalizeRenderedCoverUrl(book.coverUrl);
+  const coverUrl = normalizeRenderedCoverUrl(book.localCoverUrl || book.coverUrl);
+  const externalCoverUrl = normalizeRenderedCoverUrl(book.coverUrl);
   const hasCover = Boolean(coverUrl);
 
   if (coverFallback) {
@@ -1895,7 +1931,12 @@ function createBookCard(template, book, folders, options = {}) {
     coverImage.onerror = null;
     if (hasCover) {
       coverImage.onerror = () => {
-        if (coverImage.getAttribute('src') !== coverUrl) return;
+        const attempted = coverImage.getAttribute('src');
+        if (attempted === coverUrl && externalCoverUrl && externalCoverUrl !== coverUrl) {
+          coverImage.src = externalCoverUrl;
+          return;
+        }
+        if (attempted !== coverUrl && attempted !== externalCoverUrl) return;
         coverImage.hidden = true;
         if (coverFallback) {
           coverFallback.hidden = false;
@@ -1903,6 +1944,7 @@ function createBookCard(template, book, folders, options = {}) {
           coverFallback.setAttribute('aria-label', 'Geen omslag beschikbaar');
         }
       };
+      applyDisplayCoverCrop(coverImage, book.coverCrop);
       coverImage.src = coverUrl;
       coverImage.alt = book.title ? `Omslag van ${book.title}` : 'Boekomslag';
       coverImage.loading = 'lazy';
@@ -3521,6 +3563,18 @@ function initStaffPage() {
   const adminBookLanguage = document.querySelector('#admin-book-language');
   const adminBookTagsContainer = document.querySelector('#admin-book-tags');
   const adminBookCover = document.querySelector('#admin-book-cover');
+  const adminCropEditor = document.querySelector('#admin-book-crop-editor');
+  const adminCropImage = document.querySelector('#admin-book-crop-image');
+  const adminCropEnabled = document.querySelector('#admin-book-crop-enabled');
+  const adminCropX = document.querySelector('#admin-book-crop-x');
+  const adminCropY = document.querySelector('#admin-book-crop-y');
+  const adminCropZoom = document.querySelector('#admin-book-crop-zoom');
+  const adminCropReset = document.querySelector('#admin-book-crop-reset');
+  let adminBookCrop = null;
+  let adminCropSourceUrl = '';
+  let adminCropLocalUrl = '';
+  let adminCropLastInputUrl = '';
+  let adminCropPreviewFallbackFor = '';
   const adminBookMessage = document.querySelector('#admin-book-message');
   const bookImportForm = document.querySelector('#book-import-form');
   const bookImportFile = document.querySelector('#book-import-file');
@@ -4230,6 +4284,91 @@ function initStaffPage() {
     handleAdminBookSelection(selectedBook, { focus: true, scroll: true });
   });
 
+  function renderAdminCoverCrop() {
+    if (!adminCropEditor || !adminCropImage || !adminBookCover) return;
+    const sourceUrl = adminBookCover.value.trim();
+    const externalUrl = normalizeRenderedCoverUrl(sourceUrl);
+    const cachedUrl = sourceUrl === adminCropSourceUrl
+      ? normalizeRenderedCoverUrl(adminCropLocalUrl) : '';
+    const url = cachedUrl && adminCropPreviewFallbackFor !== cachedUrl
+      ? cachedUrl : externalUrl;
+    const validUrl = /^https?:\/\//i.test(url) || /^\/api\/covers\/[a-f0-9]{64}\.(?:png|jpg|webp|gif)$/.test(url);
+    adminCropEditor.hidden = !validUrl;
+    if (!validUrl) {
+      adminCropImage.onerror = null;
+      adminCropImage.removeAttribute('src');
+      return;
+    }
+    adminCropImage.onerror = () => {
+      // A removed local file must not leave the crop editor blank when the
+      // original URL is still available.
+      if (cachedUrl && adminCropImage.getAttribute('src') === cachedUrl
+        && externalUrl && externalUrl !== cachedUrl) {
+        adminCropPreviewFallbackFor = cachedUrl;
+        adminCropImage.src = externalUrl;
+        return;
+      }
+      adminCropImage.style.visibility = 'hidden';
+    };
+    if (adminCropImage.getAttribute('src') !== url) {
+      adminCropImage.style.visibility = 'visible';
+      adminCropImage.src = url;
+    }
+    const crop = normalizedDisplayCoverCrop(adminBookCrop);
+    adminCropEnabled.checked = Boolean(crop);
+    adminCropX.value = crop ? String(crop.x) : '50';
+    adminCropY.value = crop ? String(crop.y) : '50';
+    adminCropZoom.value = crop ? String(crop.zoom) : '1';
+    for (const slider of [adminCropX, adminCropY, adminCropZoom]) slider.disabled = !crop;
+    applyDisplayCoverCrop(adminCropImage, crop);
+  }
+  adminBookCover?.addEventListener('input', () => {
+    const nextUrl = adminBookCover.value.trim();
+    if (nextUrl !== adminCropLastInputUrl) {
+      adminBookCrop = null;
+      adminCropPreviewFallbackFor = '';
+      adminCropLastInputUrl = nextUrl;
+    }
+    renderAdminCoverCrop();
+  });
+  adminBookCover?.addEventListener('change', renderAdminCoverCrop);
+  adminCropEnabled?.addEventListener('change', () => {
+    adminBookCrop = adminCropEnabled.checked
+      ? { enabled: true, x: 50, y: 50, zoom: 1 } : null;
+    renderAdminCoverCrop();
+  });
+  for (const slider of [adminCropX, adminCropY, adminCropZoom]) {
+    slider?.addEventListener('input', () => {
+      if (!adminBookCrop) return;
+      adminBookCrop = { enabled: true, x: Number(adminCropX.value),
+        y: Number(adminCropY.value), zoom: Number(adminCropZoom.value) };
+      renderAdminCoverCrop();
+    });
+  }
+  adminCropReset?.addEventListener('click', () => {
+    adminBookCrop = null;
+    renderAdminCoverCrop();
+  });
+  let cropDrag = null;
+  adminCropImage?.addEventListener('pointerdown', (event) => {
+    if (!adminBookCrop || event.button !== 0) return;
+    event.preventDefault();
+    cropDrag = { id: event.pointerId, startX: event.clientX,
+      startY: event.clientY, x: adminBookCrop.x, y: adminBookCrop.y };
+    adminCropImage.setPointerCapture(event.pointerId);
+  });
+  adminCropImage?.addEventListener('pointermove', (event) => {
+    if (!cropDrag || cropDrag.id !== event.pointerId || !adminBookCrop) return;
+    const bounds = adminCropImage.getBoundingClientRect();
+    adminBookCrop = { ...adminBookCrop,
+      x: Math.max(0, Math.min(100, cropDrag.x - 100 * (event.clientX - cropDrag.startX) / Math.max(1, bounds.width))),
+      y: Math.max(0, Math.min(100, cropDrag.y - 100 * (event.clientY - cropDrag.startY) / Math.max(1, bounds.height))) };
+    renderAdminCoverCrop();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    adminCropImage?.addEventListener(type, () => { cropDrag = null; });
+  }
+
   function resetAdminBookForm() {
     if (!adminBookForm) return;
     adminBookForm.reset();
@@ -4272,6 +4411,12 @@ function initStaffPage() {
     if (adminBookCover) {
       adminBookCover.value = '';
     }
+    adminBookCrop = null;
+    adminCropSourceUrl = '';
+    adminCropLocalUrl = '';
+    adminCropLastInputUrl = '';
+    adminCropPreviewFallbackFor = '';
+    renderAdminCoverCrop();
     selectedBookId = null;
     renderBooks();
   }
@@ -4328,6 +4473,12 @@ function initStaffPage() {
     if (adminBookCover) {
       adminBookCover.value = book.coverUrl || '';
     }
+    adminBookCrop = normalizedDisplayCoverCrop(book.coverCrop);
+    adminCropSourceUrl = String(book.coverUrl || '').trim();
+    adminCropLocalUrl = book.localCoverUrl || '';
+    adminCropLastInputUrl = adminCropSourceUrl;
+    adminCropPreviewFallbackFor = '';
+    renderAdminCoverCrop();
     if (adminBookExam) {
       adminBookExam.checked = Boolean(book.suitableForExamList);
     }
@@ -4448,6 +4599,12 @@ function initStaffPage() {
       const metadataCoverUrl = extractMetadataCoverUrl(metadata);
       if (metadataCoverUrl) {
         adminBookCover.value = metadataCoverUrl;
+        adminBookCrop = null;
+        adminCropSourceUrl = '';
+        adminCropLocalUrl = '';
+        adminCropLastInputUrl = metadataCoverUrl.trim();
+        adminCropPreviewFallbackFor = '';
+        renderAdminCoverCrop();
       }
     }
   }
@@ -7440,6 +7597,7 @@ function initStaffPage() {
       pageCount: pageCountValue || null,
       language: languageValue ? languageValue.toLowerCase() : '',
       coverUrl: coverUrlValue,
+      coverCrop: normalizedDisplayCoverCrop(adminBookCrop),
     };
     const themeSelectionChanged = !bookId || !adminBookInitialThemeKeys
       || adminSelectedThemeKeys.size !== adminBookInitialThemeKeys.size

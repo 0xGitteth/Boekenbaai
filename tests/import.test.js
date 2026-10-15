@@ -259,82 +259,47 @@ async function runManualCoverNormalizationTest() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-manual-cover-'));
   const dbPath = path.join(tempDir, 'db.json');
   createDbFixture(dbPath);
-
-  const serverProcess = startServer({
-    BOEKENBAAI_DATA_PATH: dbPath,
-  });
-
+  const serverProcess = startServer({ BOEKENBAAI_DATA_PATH: dbPath });
   try {
     await waitForServer(serverProcess);
     const token = await loginAdmin();
-
-    const createResponse = await request('/api/books', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        title: 'Handmatig boek',
-        author: 'Auteur',
-        barcode: '9782222222222',
-        coverUrl: 'http://books.google.com/manual-cover.jpg',
-      }),
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    const created = await request('/api/books', {
+      method: 'POST', headers,
+      body: JSON.stringify({ title: 'Handmatig boek', author: 'Auteur', barcode: '9782222222222' }),
     });
-    assert.strictEqual(createResponse.status, 201);
-    assert.strictEqual(
-      createResponse.body.book.coverUrl,
-      'https://books.google.com/manual-cover.jpg',
-    );
+    assert.strictEqual(created.status, 201);
+    assert.strictEqual(created.body.book.coverUrl, '');
+    assert.strictEqual(created.body.book.localCoverUrl, '');
 
-    const updateResponse = await request(`/api/books/${createResponse.body.book.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        coverUrl: 'http://books.google.com/updated-cover.jpg',
-      }),
+    // The old flow kept any URL. An unresolvable URL must now be rejected
+    // without overwriting a previously saved physical book.
+    const brokenCover = await request(`/api/books/${created.body.book.id}`, {
+      method: 'PUT', headers,
+      body: JSON.stringify({ coverUrl: 'http://books.google.com/updated-cover.jpg' }),
     });
-    assert.strictEqual(updateResponse.status, 200);
-    assert.strictEqual(
-      updateResponse.body.book.coverUrl,
-      'https://books.google.com/updated-cover.jpg',
-    );
+    assert.strictEqual(brokenCover.status, 422);
+    const afterUpdate = await readBookCollection(token);
+    const original = afterUpdate.find((book) => book.id === created.body.book.id);
+    assert.ok(original);
+    assert.strictEqual(original.coverUrl, '');
+    assert.strictEqual(original.localCoverUrl, '');
 
-    const storedBooks = await readBookCollection(token);
-    const stored = storedBooks.find((book) => book.id === createResponse.body.book.id);
-    assert.ok(stored);
-    assert.strictEqual(stored.coverUrl, 'https://books.google.com/updated-cover.jpg');
-
-    const nonGoogleCreateResponse = await request('/api/books', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+    // SSRF protection: intranet targets may no longer be stored through
+    // the administrator's image downloader.
+    const intranet = await request('/api/books', {
+      method: 'POST', headers,
       body: JSON.stringify({
-        title: 'Intranet boek',
-        author: 'Auteur',
-        barcode: '9782222222223',
+        title: 'Intranet boek', author: 'Auteur', barcode: '9782222222223',
         coverUrl: 'http://intranet.local/manual-cover.jpg',
       }),
     });
-    assert.strictEqual(nonGoogleCreateResponse.status, 201);
-    assert.strictEqual(
-      nonGoogleCreateResponse.body.book.coverUrl,
-      'http://intranet.local/manual-cover.jpg',
-    );
-
-    const storedAfterNonGoogleCreate = await readBookCollection(token);
-    const nonGoogleStored = storedAfterNonGoogleCreate.find(
-      (book) => book.id === nonGoogleCreateResponse.body.book.id,
-    );
-    assert.ok(nonGoogleStored);
-    assert.strictEqual(nonGoogleStored.coverUrl, 'http://intranet.local/manual-cover.jpg');
+    assert.strictEqual(intranet.status, 422);
+    const afterRejectedCreate = await readBookCollection(token);
+    assert.ok(!afterRejectedCreate.some((book) => book.barcode === '9782222222223'));
   } finally {
     serverProcess.kill('SIGINT');
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 

@@ -102,7 +102,31 @@ async function runIntegrationChecks() {
       coverUrl: LEGACY_ARCHIVE_URL,
       status: 'available',
     },
+    {
+      id: 'import-existing-cover',
+      title: 'Herbruikbaar',
+      author: 'Auteur',
+      barcode: '9781234567889',
+      coverUrl: 'https://oldcover.example.org/old.png',
+      localCoverUrl: '/api/covers/' + 'a'.repeat(64) + '.png',
+      status: 'available',
+    },
+    {
+      id: 'import-existing-cover-2',
+      title: 'Herbruikbaar',
+      author: 'Auteur',
+      barcode: '9781234567890',
+      coverUrl: 'https://oldcover.example.org/old.png',
+      localCoverUrl: '/api/covers/' + 'a'.repeat(64) + '.png',
+      status: 'available',
+    },
   ]);
+  // The stale asset must be real on disk. Otherwise the old backfill would
+  // retry it anyway and fail to reproduce the regression Codex identified.
+  const storedCoverDir = path.join(tempDir, 'covers');
+  fs.mkdirSync(storedCoverDir, { recursive: true });
+  fs.writeFileSync(path.join(storedCoverDir, 'a'.repeat(64) + '.png'),
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvmkAAAAASUVORK5CYII=', 'base64'));
 
   const serverProcess = startServer({ BOEKENBAAI_DATA_PATH: dbPath });
   try {
@@ -136,11 +160,10 @@ async function runIntegrationChecks() {
         title: 'Nieuw boek',
         author: 'Auteur',
         barcode: '9781234567897',
-        coverUrl: LEGACY_ARCHIVE_URL,
       }),
     });
     assert.strictEqual(postResponse.status, 201);
-    assert.strictEqual(postResponse.body.book.coverUrl, LEGACY_ARCHIVE_URL, 'POST should preserve provided legacy cover URL');
+    assert.strictEqual(postResponse.body.book.coverUrl, '', 'POST with no image should not depend on an external source');
 
     const workbookBase64 = buildWorkbookBase64([
       {
@@ -163,6 +186,32 @@ async function runIntegrationChecks() {
     const imported = afterImport.body.find((entry) => entry.barcode === '9781234567898');
     assert.ok(imported, 'imported book should exist');
     assert.strictEqual(imported.coverUrl, LEGACY_ARCHIVE_URL, 'import should preserve provided legacy cover URL');
+
+    // A new source must never keep showing the old locally cached image.
+    const replacementUrl = 'https://replacement-cover.invalid/new.png';
+    const replacement = await request('/api/books/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ file: buildWorkbookBase64([{
+        Titel: 'Herbruikbaar', Auteur: 'Auteur', Barcode: '9781234567889',
+        Cover: replacementUrl,
+      }]) }),
+    });
+    assert.strictEqual(replacement.status, 200);
+    const afterReplacement = await request('/api/books');
+    const changed = afterReplacement.body.find((entry) => entry.id === 'import-existing-cover');
+    assert.ok(changed);
+    assert.strictEqual(changed.coverUrl, replacementUrl);
+    assert.strictEqual(changed.localCoverUrl, '', 'The still-existing previous local image must be invalidated');
+    assert.strictEqual(changed.localCoverUrl, '',
+      'A changed Excel cover URL must clear the old cached image reference');
+    const secondCopy = afterReplacement.body.find((entry) => entry.id === 'import-existing-cover-2');
+    assert.ok(secondCopy, 'The second physical copy must still exist');
+    assert.strictEqual(secondCopy.coverUrl, replacementUrl,
+      'Every copy sharing the original edition cover must use the new source across different barcodes');
+    assert.strictEqual(secondCopy.localCoverUrl, '',
+      'An old cover cache cannot remain on another copy of the same edition');
+
   } finally {
     serverProcess.kill('SIGINT');
     await new Promise((resolve) => serverProcess.once('exit', resolve));
@@ -173,11 +222,11 @@ function runFrontendChecks() {
   const appPath = path.join(__dirname, '..', 'public', 'app.js');
   const source = fs.readFileSync(appPath, 'utf8');
   assert.ok(
-    source.includes('const coverUrl = normalizeRenderedCoverUrl(book.coverUrl);'),
+    source.includes('const coverUrl = normalizeRenderedCoverUrl(book.localCoverUrl || book.coverUrl);'),
     'createBookCard should normalize cover URL before image assignment'
   );
   assert.ok(
-    source.includes('const manualCoverUrl = normalizeRenderedCoverUrl(representative.coverUrl);'),
+    source.includes('const manualCoverUrl = normalizeRenderedCoverUrl(representative.localCoverUrl || representative.coverUrl);'),
     'populateBookDetail should normalize representative cover URL'
   );
   assert.ok(
@@ -199,6 +248,7 @@ function runRepresentativeChecks() {
 
   const factory = new Function(
     [
+      'function resolveApiUrl(value) { return value; }',
       extractBetween('function normalizeGroupKeyPart(', 'function getBookGroupKey('),
       extractBetween('function getBookGroupKey(', 'function pickRepresentativeBook('),
       extractBetween('function normalizeRenderedCoverUrl(', 'function populateBookDetail('),
@@ -226,6 +276,15 @@ function runRepresentativeChecks() {
     CANONICAL_URL,
     'legacy-only cover should be normalized to canonical in representative output'
   );
+
+  const siblingCache = groupBooksByTitleAuthor([
+    { id: 'first', title: 'Cached edition', author: 'A', barcode: '9781234567889',
+      coverUrl: 'https://covers.example.org/edition.png', localCoverUrl: '' },
+    { id: 'second', title: 'Cached edition', author: 'A', barcode: '9781234567890',
+      coverUrl: 'https://covers.example.org/edition.png', localCoverUrl: '/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png' },
+  ]);
+  assert.strictEqual(siblingCache[0].localCoverUrl, '/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+    'A representative without a local cover must reuse the cached image of its sibling');
 }
 
 function runCleanupScriptChecks() {
