@@ -29,14 +29,14 @@ De officiële Google-limiet voor particuliere Apps Script/MailApp-accounts is mo
 
 In het docentenportaal, onder **Mijn account: e-mailherinneringen**, kan de ingelogde medewerker kiezen:
 - **Schoolaccount (standaard)**: het gekoppelde `@koraaledu.nl`-adres. Als er nog geen gekoppeld adres is, wordt geen mail verstuurd.
-- **Bevestigd alternatief**: een ander zakelijk adres na verificatie met een code in die mailbox. Een nog niet bevestigd adres kan geen herinneringsmail ontvangen. De code verloopt na 24 uur, opnieuw aanvragen kan na vijf minuten en na vijf foute pogingen wordt de code geblokkeerd.
+- **Bevestigd alternatief**: een ander zakelijk adres na verificatie met een code in die mailbox. Een nog niet bevestigd adres kan geen herinneringsmail ontvangen. De code verloopt na 24 uur, opnieuw aanvragen kan na vijf minuten en na vijf foute pogingen wordt de code geblokkeerd. De vijfminutentermijn geldt ook na een succesvolle verificatie of het veranderen/uitschakelen van de voorkeur; de wachttijd wordt apart van de pending code bewaard. Bij het verwijderen van een docentaccount verwijdert Boekenbaai ook de gekoppelde herinneringsvoorkeur, het bevestigde alternatieve adres, oude codes en tellergegevens.
 - **Uit**: geen e-mail. De gedeelde taken en in-app herinneringen blijven beschikbaar.
 
 De instelling wijzigt nooit het Google-inlogaccount. Een bericht bevat uitsluitend een aantal nog openstaande controles en een HTTPS-link naar het beveiligde docentenportaal. Geen leerlingnaam, klasnaam, boektitel, leenstatus of bron-Exceldata.
 
 ## Deduplicatie, foutafhandeling en opslag
 
-- Eén melding per medewerker voor nieuwe herinnerbare taken in de controle. Meerdere klassen/taken worden samengevat.
+- Eén melding per medewerker voor nieuwe herinnerbare taken in de controle. Meerdere klassen/taken worden samengevat. De e-mail noemt het **totale huidige aantal** openstaande herinnerbare taken van die docent, ook als sommige al in een eerdere mail genoemd zijn. Verzendreceipts registreren alleen de nieuw te melden taken.
 - Voor iedere combinatie docent + taak + taakcyclus wordt vóór verzending een afzonderlijk claimbestand met exclusieve bestandcreatie (`wx`) opgeslagen in `<BOEKENBAAI_DATA_PATH>.import-mail-receipts/`. Dit pad **moet op hetzelfde blijvende volume als db.json** staan en in back-ups worden opgenomen.
 - De server probeert diezelfde herinnering **niet automatisch opnieuw**, ook niet bij een time-out of onduidelijk leveringsresultaat. Dit is bewust *at-most-once*, om dubbele mails na netwerkfouten te voorkomen. Een mailfout heeft geen effect op een open taak of het importverslag.
 - Apps Script controleert de SHA-256-HMAC, kloktijd (maximaal vijf minuten verschil), berichtgrootte, adres en uniek verzend-ID. Het gebruikt een lock en een tweede receipt in Script Properties vóór `MailApp.sendEmail`. Er zijn geen betaalde diensten vereist.

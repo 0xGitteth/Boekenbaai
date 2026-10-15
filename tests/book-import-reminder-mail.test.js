@@ -75,7 +75,13 @@ assert.equal(mail.confirmVerification(data, 't1', '00000000', conf.key, now).err
 assert.equal(mail.confirmVerification(data, 't1', verification.code, conf.key, now).ok, true);
 assert.equal(mail.prefsFor(data, 't1').alternateEmail, 'another@koraal.nl');
 assert.equal(mail.prefsFor(data, 't1').mode, 'alternate');
+assert.equal(mail.beginVerification(data, 't1', 'bypass@koraal.nl',
+  conf.key, now + 1).error, 'rate_limited',
+'Confirming the previous code cannot bypass the five-minute request limit.');
 assert.equal(mail.changePreference(data, 't1', 'off'), true);
+assert.equal(mail.beginVerification(data, 't1', 'bypass@koraal.nl',
+  conf.key, now + 2).error, 'rate_limited',
+'Disabling email may cancel a code but cannot reset the cooldown.');
 assert.equal(mail.collectRecipients(data, links, now).length, 0);
 assert.equal(mail.changePreference(data, 't1', 'school'), true);
 // A staff account cannot exhaust the free Gmail quota via verification spam.
@@ -139,6 +145,21 @@ async function run() {
   assert.equal(unknown.failed, 2);
   assert.equal((await mail.dispatchReminders({ db: data, links,
     folder: otherFolder, env, now, fetchImpl: fake })).claimed, 0);
+  // A new reminder arrives later. The message must accurately state ALL
+  // currently open tasks, even though only one task is newly claimed.
+  data.books.push({ id: 'b4' });
+  data.bookImportFollowups.push({
+    id: 'c4', classId: 'a', bookId: 'b4', status: 'open',
+    createdAt: new Date(now - 8 * mail.DAY_MS).toISOString(),
+  });
+  const incremental = await mail.dispatchReminders({ db: data, links, folder,
+    env, now, fetchImpl: fake });
+  assert.equal(incremental.claimed, 1);
+  const incrementalBody = JSON.parse(JSON.parse(called[2].opts.body).payload).body;
+  assert.ok(incrementalBody.includes('3 openstaande controles'),
+    'Mail must count all visible reminder tasks, not only new receipts.');
+  assert.equal((await mail.dispatchReminders({ db: data, links, folder,
+    env, now, fetchImpl: fake })).claimed, 0);
   // Never follow a malicious redirect with an authenticated POST.
   assert.equal(await mail.bridgeSend({ config: conf, id: 'a'.repeat(64),
     to: 't1@koraaledu.nl', subject: 'Safe', body: 'Safe',

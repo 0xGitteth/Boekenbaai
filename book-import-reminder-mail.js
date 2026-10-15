@@ -56,7 +56,8 @@ function prefsFor(db, id) {
   const table = db.bookImportEmailPreferences;
   const row = table && Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null;
   if (!row || typeof row !== 'object') return { mode: 'school', alternateEmail: '',
-    revision: 0, verificationWindowStart: 0, verificationCount: 0 };
+    revision: 0, verificationWindowStart: 0, verificationCount: 0,
+    lastVerificationRequestedAt: 0 };
   return { mode: ['school', 'alternate', 'off'].includes(row.mode) ? row.mode : 'school',
     alternateEmail: validEmail(row.alternateEmail) || '',
     revision: Number.isSafeInteger(row.revision) ? row.revision : 0,
@@ -64,6 +65,8 @@ function prefsFor(db, id) {
       ? row.verificationWindowStart : 0,
     verificationCount: Number.isSafeInteger(row.verificationCount)
       ? row.verificationCount : 0,
+    lastVerificationRequestedAt: Number.isSafeInteger(row.lastVerificationRequestedAt)
+      ? row.lastVerificationRequestedAt : 0,
     pending: row.pending || null };
 }
 function schoolEmailFor(links, id, schoolDomain) {
@@ -185,7 +188,7 @@ async function dispatchReminders({ db, links, folder, env = process.env,
     const accepted = await bridgeSend({ config, to: person.to,
       id: crypto.createHash('sha256').update(ids.join('|')).digest('hex'),
       subject: 'Boekenbaai: openstaande boekimportcontroles',
-      body: mailText(ids.length, config.base + MAIL_PATH),
+      body: mailText(person.tasks.length, config.base + MAIL_PATH),
       now, fetchImpl });
     result[accepted ? 'accepted' : 'failed'] += ids.length;
   }
@@ -199,7 +202,10 @@ function beginVerification(db, teacherId, email, secret, now = Date.now()) {
   const normalized = validEmail(email);
   if (!normalized) return { ok: false, error: 'invalid_email' };
   const prev = prefsFor(db, teacherId);
-  if (prev.pending && now - prev.pending.requestedAt < VERIFY_COOLDOWN_MS) {
+  // Pending verification can be cancelled or confirmed without resetting
+  // the five-minute request limit.
+  if (prev.lastVerificationRequestedAt
+    && now - prev.lastVerificationRequestedAt < VERIFY_COOLDOWN_MS) {
     return { ok: false, error: 'rate_limited' };
   }
   const withinDay = now >= prev.verificationWindowStart
@@ -211,6 +217,7 @@ function beginVerification(db, teacherId, email, secret, now = Date.now()) {
   const next = { ...prev, revision: prev.revision + 1,
     verificationWindowStart: withinDay ? prev.verificationWindowStart : now,
     verificationCount: withinDay ? prev.verificationCount + 1 : 1,
+    lastVerificationRequestedAt: now,
     pending: { email: normalized, hash: verificationHash(teacherId, normalized, code, secret),
       requestedAt: now, expiresAt: now + VERIFY_LIFETIME_MS, attempts: 0 } };
   db.bookImportEmailPreferences = Object.assign(

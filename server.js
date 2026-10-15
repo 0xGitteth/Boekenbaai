@@ -1780,7 +1780,7 @@ function assertReviewedImportBoundaryUnchanged(before, after) {
   }
 }
 
-function assertReviewedImportNotLost(db) {
+function assertReviewedImportNotLost(db, { deletedTeacherPreferenceId = null } = {}) {
   const current = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
   const latest = Array.isArray(current.bookImportReports)
     ? current.bookImportReports[current.bookImportReports.length - 1]?.id
@@ -1816,7 +1816,13 @@ function assertReviewedImportNotLost(db) {
   const storedMailPreferences = current.bookImportEmailPreferences || {};
   const nextMailPreferences = db.bookImportEmailPreferences || {};
   for (const [id, row] of Object.entries(storedMailPreferences)) {
-    const proposed = nextMailPreferences[id];
+    const proposed = Object.prototype.hasOwnProperty.call(nextMailPreferences, id)
+      ? nextMailPreferences[id] : null;
+    // Only the explicit teacher deletion endpoint may intentionally remove
+    // a preference. Every other stale database snapshot is still rejected.
+    if (!proposed && id === deletedTeacherPreferenceId
+      && current.users?.some((u) => u.id === id && u.role === 'teacher')
+      && !db.users?.some((u) => u.id === id)) continue;
     if (!proposed || !Number.isSafeInteger(proposed.revision)
       || proposed.revision < (row.revision || 0)
       || (proposed.revision === (row.revision || 0)
@@ -1911,8 +1917,8 @@ function loadDb() {
   return data;
 }
 
-function saveDb(db) {
-  assertReviewedImportNotLost(db);
+function saveDb(db, options) {
+  assertReviewedImportNotLost(db, options);
   fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
 }
 
@@ -7497,6 +7503,11 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 404, { message: 'Docent niet gevonden' });
       }
       const [removedTeacher] = db.users.splice(index, 1);
+      if (db.bookImportEmailPreferences
+        && Object.prototype.hasOwnProperty.call(
+          db.bookImportEmailPreferences, removedTeacher.id)) {
+        delete db.bookImportEmailPreferences[removedTeacher.id];
+      }
       for (const klass of db.classes) {
         if (!Array.isArray(klass.teacherIds)) {
           continue;
@@ -7514,7 +7525,7 @@ async function handleApi(req, res, requestUrl) {
         performedBy: user?.id || null,
         message: `Docent ${removedTeacher.name} is verwijderd`,
       });
-      saveDb(db);
+      saveDb(db, { deletedTeacherPreferenceId: removedTeacher.id });
       return sendJson(res, 200, { teacher: sanitizeTeacher(removedTeacher) });
     }
 

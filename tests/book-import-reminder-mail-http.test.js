@@ -225,7 +225,17 @@ async function run() {
       + initial.bookImportReports[0].id, admin)).body.fullyReviewed, true);
     saved = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
     assert.equal(saved.books[0].fixedLocation, 'Klas A');
-    console.log('PR7: real staff HTTP preferences, verification and import task completion passed');
+    assert.ok(saved.bookImportEmailPreferences['teacher-a'].alternateEmail);
+    // Removing a staff account must also forget the verified address,
+    // pending codes and rate-limit metadata, without dropping other data.
+    assert.equal((await call('/api/teachers/teacher-a',
+      admin, undefined, 'DELETE')).status, 200);
+    saved = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+    assert.equal(Object.prototype.hasOwnProperty.call(
+      saved.bookImportEmailPreferences, 'teacher-a'), false);
+    assert.equal(saved.bookImportReports.some(r => r.id === applied.body.result.batchId), true);
+    assert.equal((await call(route, teacher)).status, 401);
+    console.log('PR7: real staff HTTP preferences, deletion cleanup and complete import flow passed');
   } catch (error) {
     console.error(stderr.slice(-1800));
     throw error;
