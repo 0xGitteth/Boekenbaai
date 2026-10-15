@@ -128,6 +128,9 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
     assertNoPendingPairedJournal(lockPath);
     const latest = read();
     const next = mutate(latest);
+    if (next && typeof next.then === 'function') {
+      throw conflict('DATABASE_ASYNC_WRITE', 'Mutaties moeten synchroon plaatsvinden.');
+    }
     if (next === false) return false;
     if (!next || typeof next !== 'object' || Array.isArray(next)) {
       throw conflict('DATABASE_INVALID', 'Ongeldig resultaat van databasewijziging.');
