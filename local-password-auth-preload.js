@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
-const { readJsonSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const {
   hashPassword,
@@ -88,7 +88,7 @@ function saveMainDb(db) {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
     label: 'Auth-opslag',
   });
@@ -100,12 +100,12 @@ function loadAuthStore() {
       throw new Error(`Auth-opslagveld ${field} is ongeldig.`);
     }
   }
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
-  const normalized = core.pruneStore(core.normalizeStore(store));
-  writeJsonAtomic(AUTH_DATA_PATH, normalized);
+  const normalized = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: normalized, lockPath: DATA_PATH });
   return normalized;
 }
 
@@ -283,13 +283,14 @@ function ensureUnchangedAccount(db, accountId, expectedHash) {
 
 function createAdminSession(req, res, admin) {
   const token = crypto.randomBytes(32).toString('base64url');
-  const result = core.upsertSession(loadAuthStore(), token, {
+  const previousStore = loadAuthStore();
+  const result = core.upsertSession(previousStore, token, {
     userId: admin.id,
     type: 'staff',
     remember: false,
     now: Date.now(),
   });
-  saveAuthStore(result.store);
+  saveAuthStore(inheritSnapshot(result.store, previousStore));
   setLocalSessionCookies(req, res, token);
   return token;
 }

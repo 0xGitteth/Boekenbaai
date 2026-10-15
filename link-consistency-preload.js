@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const core = require('./google-auth-core');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -20,20 +21,13 @@ const WATCH_PATHS = new Set([
 const originalCreateServer = http.createServer.bind(http);
 
 function loadStore() {
-  try {
-    return core.pruneStore(core.normalizeStore(JSON.parse(fs.readFileSync(AUTH_DATA_PATH, 'utf8'))));
-  } catch (error) {
-    if (error?.code === 'ENOENT') return core.emptyAuthStore();
-    throw error;
-  }
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, { missingValue: core.emptyAuthStore() });
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveStore(store) {
-  const safe = core.pruneStore(core.normalizeStore(store));
-  fs.mkdirSync(path.dirname(AUTH_DATA_PATH), { recursive: true });
-  const tmp = `${AUTH_DATA_PATH}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(safe, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, AUTH_DATA_PATH);
+  const safe = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: safe, lockPath: DATA_PATH });
 }
 
 function emailMap(store) {

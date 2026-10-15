@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -57,7 +58,7 @@ function readMainDb() {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
     label: 'Auth-opslag',
   });
@@ -69,15 +70,12 @@ function loadAuthStore() {
       throw new Error(`Auth-opslagveld ${field} is ongeldig.`);
     }
   }
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
-  const normalized = core.pruneStore(core.normalizeStore(store));
-  fs.mkdirSync(path.dirname(AUTH_DATA_PATH), { recursive: true });
-  const tmp = `${AUTH_DATA_PATH}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(normalized, null, 2));
-  fs.renameSync(tmp, AUTH_DATA_PATH);
+  const normalized = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: normalized, lockPath: DATA_PATH });
   return normalized;
 }
 
@@ -507,9 +505,9 @@ function revokeMismatchedSession(req, res, selection, beforeStore) {
   }
 
   if (session?.userId) {
-    store = rollbackUnexpectedLink(store, beforeStore, expectedType, session.userId);
+    store = inheritSnapshot(rollbackUnexpectedLink(store, beforeStore, expectedType, session.userId), store);
   }
-  store = core.removeSession(store, token);
+  store = inheritSnapshot(core.removeSession(store, token), store);
   saveAuthStore(store);
 
   removeCookiesFromResponse(res, [SESSION_COOKIE, SESSION_HINT_COOKIE]);

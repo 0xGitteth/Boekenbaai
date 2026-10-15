@@ -95,9 +95,9 @@ function assertSnapshotCurrent(filePath, snapshot) {
   }
 }
 
-function commitJsonSnapshot({ dataPath, value, beforeWrite }) {
+function commitJsonSnapshot({ dataPath, value, beforeWrite, lockPath = dataPath }) {
   const absolute = path.resolve(dataPath);
-  return withDatabaseWriteLock(absolute, () => {
+  return withDatabaseWriteLock(lockPath, () => {
     assertSnapshotCurrent(absolute, value);
     if (beforeWrite) beforeWrite();
     const raw = JSON.stringify(value, null, 2);
