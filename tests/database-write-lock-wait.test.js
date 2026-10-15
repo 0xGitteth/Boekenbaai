@@ -61,7 +61,7 @@ async function run() {
     // Import finalization must FORWARD waitMs to the central coordinator.
     const importHolder = await holdInChild(dataPath);
     const start2 = Date.now();
-    assert.equal(finishLegacyImportJob({
+    assert.equal(await finishLegacyImportJob({
       dataPath, jobId: 'waiting-job', succeeded: true,
       payload: { created: 1 }, totalRows: 1, waitMs: 2500,
     }), true);

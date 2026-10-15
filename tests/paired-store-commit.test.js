@@ -88,7 +88,7 @@ try {
     "const release = acquireFileLock(process.argv[2] + '.database-write.lock', { processOwned: true });",
     "if (!release) process.exit(2);",
     "process.exit(0);",
-  ].join('\\n'), path.join(__dirname, '..', 'book-import-reminder-mail.js'), dataPath]);
+  ].join('\n'), path.join(__dirname, '..', 'book-import-reminder-mail.js'), dataPath]);
   assert.strictEqual(child.status, 0);
   assert.strictEqual(fs.existsSync(dataPath + '.database-write.lock'), true);
   const reclaimedAt = Date.now();
