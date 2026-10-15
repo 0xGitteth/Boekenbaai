@@ -135,14 +135,22 @@ function emailForActions(count, link, events = []) {
     + 'Deze e-mail bevat geen leerlingnamen of andere persoonsgegevens.\n'
     + 'Als de acties inmiddels zijn afgehandeld hoef je niets te doen.\n\nBoekenbaai';
 }
-async function dispatchActions({db,links,folder,env=process.env,now=Date.now(),fetchImpl}) {
+async function dispatchActions({db,links,folder,env=process.env,now=Date.now(),fetchImpl,currentState,shouldStop=()=>false}) {
   const cfg=mail.configuration(env);
   const result={ready:cfg.ready,claimed:0,accepted:0,failed:0,recipients:0};
   if (!cfg.ready)return result;
   for (const person of recipientGroups(db,links,now,cfg.schoolDomain)) {
+    if(shouldStop())break;
     await mail.withRecipientLock(folder,person.id,async()=>{
+      const latest=currentState?currentState():{db,links};
+      const current=recipientGroups(latest.db,latest.links,now,cfg.schoolDomain)
+        .find(row=>row.id===person.id && row.to===person.to);
+      if(!current || shouldStop())return;
+      const allowed=new Set(current.events.map(event=>event.key));
+      const validEvents=person.events.filter(event=>allowed.has(event.key));
+      if(!validEvents.length)return;
       const claimed=[];
-      for(const event of person.events) {
+      for(const event of validEvents) {
         const key=crypto.createHash('sha256').update(JSON.stringify([
           'boekenbaai-action-v1',person.id,event.key,
         ])).digest('hex');
@@ -155,10 +163,10 @@ async function dispatchActions({db,links,folder,env=process.env,now=Date.now(),f
         config:cfg,to:person.to,
         id:crypto.createHash('sha256').update(claimed.join('|')).digest('hex'),
         subject:'Boekenbaai: acties die jouw aandacht nodig hebben',
-        body:emailForActions(person.events.length,cfg.base + (
-          person.events.every(event => event.category === 'books')
+        body:emailForActions(validEvents.length,cfg.base + (
+          validEvents.every(event => event.category === 'books')
             ? '/staff.html#book-import-followups-panel' : NOTIFICATION_PATH
-        ),person.events),
+        ),validEvents),
         now:Date.now(),fetchImpl,
       });
       result[accepted?'accepted':'failed']+=claimed.length;
