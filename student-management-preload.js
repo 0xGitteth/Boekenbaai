@@ -86,8 +86,8 @@ function loadAuthStore() {
 }
 
 function saveAuthStore(store) {
-  const safe = core.pruneStore(core.normalizeStore(store));
-  writeJsonAtomic(AUTH_DATA_PATH, safe);
+  const safe = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: safe, lockPath: DATA_PATH });
   return safe;
 }
 
