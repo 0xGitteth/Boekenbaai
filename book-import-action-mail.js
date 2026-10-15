@@ -31,7 +31,8 @@ function collectEvents(db, links, now = Date.now()) {
       at, period, targets: unique, link });
   };
   for (const request of db.studentTransferRequests || []) {
-    if (!request?.id) continue;
+    if (!request?.id || !(db.students || []).some(student =>
+      student.id === request.studentId && student.active !== false)) continue;
     if (request.escalatedToAdmin && ['rejected', 'pending'].includes(request.status)) {
       push('transfer_escalation', request.id, request.updatedAt || request.createdAt,
         'transfers', ['admin']);

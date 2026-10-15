@@ -69,6 +69,11 @@ assert.deepEqual(e.map(x=>x.type).sort(),
   ['book_escalation','staff_link','student_link','transfer_escalation','transfer_incoming'].sort());
 assert.equal(e.some(x => x.key.includes('expired')), false,
   'Expired pending Google requests must not generate notifications.');
+const inactiveStudent = structuredClone(data);
+inactiveStudent.students[0].active = false;
+assert.equal(actions.collectEvents(inactiveStudent, links, now)
+  .filter(x => x.type.startsWith('transfer_')).length,0,
+  'No transfer notification may be sent for a former pupil.');
 const people=actions.recipientGroups(data,links,now);
 assert.deepEqual(people.map(x=>[x.id,x.events.length]).sort(),
   [['admin:beheerder@koraal.nl',3],['teacher:teacher-a',1],['teacher:teacher-b',1]].sort());
