@@ -32,7 +32,9 @@ const links={links:[{accountType:'staff',accountId:'teacher-a',email:'a@koraaled
   {accountType:'staff',accountId:'teacher-b',email:'b@koraaledu.nl'}],
 linkRequests:[{id:'g1',studentId:'student-a',status:'pending',
   createdAt:new Date(now-DAY).toISOString()},
-{id:'g2',status:'pending',createdAt:new Date(now-DAY).toISOString()}]};
+{id:'g2',accountType:'staff',staffId:'teacher-a',
+  status:'pending',createdAt:new Date(now-DAY).toISOString()},
+{id:'unknown',status:'pending',createdAt:new Date(now-DAY).toISOString()}]};
 const cfg={ BOEKENBAAI_MAIL_ENABLED:'true',
  BOEKENBAAI_MAIL_SCRIPT_SECRET:'x'.repeat(64),
  BOEKENBAAI_MAIL_SCRIPT_URL:'https://script.google.com/macros/s/TESTBRIDGE123/exec',

@@ -56,7 +56,7 @@ Naast de boekimportherinnering zijn er automatische e-mails voor de bestaande le
 - **Nieuwe klaswissel**: de mentor(en) van de ontvangende klas ontvangen een melding zodra een overplaatsingsverzoek openstaat.
 - **Afgewezen klaswissel**: na weigering en escalatie ontvangen de geverifieerde beheerdersadressen een melding.
 - **Google-koppelverzoek leerling**: de mentor(en) van de betreffende klas ontvangen een melding. Zonder beschikbare mentor gaat deze naar de geverifieerde beheerdersadressen.
-- **Koppelverzoek zonder leerlingcontext**: voor zover de authenticatieopslag een dergelijk open verzoek bevat, gaat dit naar Beheer.
+- **Google-koppelverzoek medewerker**: een bestaand, openstaand `accountType: 'staff'`-verzoek voor een herkenbare docent gaat naar de geverifieerde beheerdersontvangers.
 - **Boekcontrole naar Beheer**: geëscaleerde, niet-voltooide controles gaan naar geverifieerde beheerdersadressen.
 
 Berichten bevatten **geen namen van leerlingen, docenten, klassen, boeken, uitleengegevens of Google-identiteiten**. De berichtinhoud bevat alleen het aantal openstaande acties en de HTTPS-link naar het ingelogde portaal. In de portaalweergave geldt de bestaande serverautorisatie.

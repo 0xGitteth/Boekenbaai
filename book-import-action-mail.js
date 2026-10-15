@@ -48,8 +48,13 @@ function collectEvents(db, links, now = Date.now()) {
     if (!request?.id || request.status !== 'pending') continue;
     const student = (db.students || []).find(s=>s.id===request.studentId && s.active!==false);
     if (!student) {
-      // A pending non-student link request needs central administration.
-      if (!request.studentId) push('staff_link',request.id,request.createdAt,'google',['admin']);
+      // Only real, pending staff-link requests from the existing OAuth
+      // workflow are routed to central administration.
+      if (request.accountType === 'staff' && request.staffId
+        && (db.users || []).some(user => user.id === request.staffId
+          && user.role === 'teacher')) {
+        push('staff_link', request.id, request.createdAt, 'google', ['admin']);
+      }
       continue;
     }
     const ids = studentClassIds(student)
