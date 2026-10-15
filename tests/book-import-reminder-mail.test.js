@@ -124,6 +124,9 @@ async function run() {
   assert.equal(first.claimed, 2);
   assert.equal(first.accepted, 2);
   assert.equal(called.length, 2);
+  assert.ok(called.every(({opts}) => Math.abs(Date.now() -
+    JSON.parse(JSON.parse(opts.body).payload).timestamp) < 30000),
+    'Every recipient needs a fresh timestamp even when task discovery uses a fixed clock.');
   assert.equal(called[0].opts.redirect, 'manual');
   const json = JSON.parse(called[0].opts.body);
   assert.equal(mail.signature(json.payload, conf.key), json.signature);
@@ -156,6 +159,16 @@ async function run() {
     'A newly acquired successor must not be reaped by another contender.');
   successor();
   assert.equal(fs.existsSync(staleLock), false);
+  // A briefly held guard cannot silently abandon the main lock.
+  const busyLock = path.join(tmp, 'busy-guard.lock');
+  const busyRelease = mail.acquireFileLock(busyLock);
+  fs.writeFileSync(busyLock + '.guard', 'other process');
+  assert.throws(() => busyRelease(), /guard bleef bezet/,
+    'A blocked release must report failure instead of silently leaking the lock.');
+  assert.equal(fs.existsSync(busyLock), true);
+  fs.unlinkSync(busyLock + '.guard');
+  busyRelease();
+  assert.equal(fs.existsSync(busyLock), false);
   const orphanLock = path.join(tmp, 'orphan.lock');
   fs.writeFileSync(orphanLock, 'abandoned');
   fs.utimesSync(orphanLock, oldTime, oldTime);
