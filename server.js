@@ -8941,7 +8941,7 @@ server.listen(PORT, () => {
     // Avoid sending on test startup synchronously; the timer is nonblocking.
     const firstMailRun = setTimeout(() => { void startImportMailWorker(); }, 30000);
     if (typeof firstMailRun.unref === 'function') firstMailRun.unref();
-    const mailInterval = setInterval(() => { void tickImportReminders(); },
+    const mailInterval = setInterval(() => { void startImportMailWorker(); },
       Math.min(IMPORT_MAIL_HOUR_MS, 120_000));
     if (typeof mailInterval.unref === 'function') mailInterval.unref();
   }
