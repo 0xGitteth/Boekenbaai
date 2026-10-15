@@ -950,6 +950,46 @@
           </form>
         </section>
       </section>
+      <section class="panel panel--staff hidden" id="book-import-mail-preferences-panel"
+        data-visible-for="teacher,admin" aria-labelledby="book-import-mail-title">
+        <div class="panel__header">
+          <h2 id="book-import-mail-title">Mijn account: e-mailherinneringen</h2>
+          <p class="hint">Kies waar je herinneringen voor openstaande boekimporttaken wilt ontvangen.
+            Deze instelling verandert je Google-inlogaccount niet.</p>
+        </div>
+        <p id="book-import-mail-config" class="hint"></p>
+        <form id="book-import-mail-mode-form" class="form-grid form-grid--compact">
+          <label class="form-field">E-mailherinneringen
+            <select id="book-import-mail-mode" required>
+              <option value="school">Naar mijn Boekenbaai-schoolaccount (standaard)</option>
+              <option value="alternate">Naar mijn bevestigde alternatieve e-mailadres</option>
+              <option value="off">Geen e-mailherinneringen</option>
+            </select>
+          </label>
+          <p class="hint">Schoolaccount: <span id="book-import-mail-school"></span></p>
+          <p class="hint">Alternatief adres: <span id="book-import-mail-alternate"></span></p>
+          <button type="submit" class="btn btn--secondary">Voorkeur opslaan</button>
+        </form>
+        <form id="book-import-mail-request-form" class="form-grid form-grid--compact" hidden>
+          <label class="form-field">Ander zakelijk e-mailadres
+            <input id="book-import-mail-request-address" type="email" autocomplete="email"
+              maxlength="254" placeholder="naam@werkorganisatie.nl" required />
+          </label>
+          <button type="submit" class="btn btn--secondary">Verificatiecode versturen</button>
+        </form>
+        <p id="book-import-mail-pending" class="hint"></p>
+        <form id="book-import-mail-code-form" class="form-grid form-grid--compact" hidden>
+          <label class="form-field">Verificatiecode uit de e-mail
+            <input id="book-import-mail-code" type="text" inputmode="numeric"
+              pattern="[0-9]{8}" maxlength="8" autocomplete="one-time-code"
+              placeholder="8 cijfers" required />
+          </label>
+          <button type="submit" class="btn btn--secondary">Adres bevestigen</button>
+        </form>
+        <p id="book-import-mail-status" class="hint" role="status" aria-live="polite"></p>
+        <p class="hint">Je blijft openstaande taken in Boekenbaai zien, ook als
+          je e-mailherinneringen uitschakelt.</p>
+      </section>
     </main>
 
     <footer class="footer">
@@ -1198,5 +1238,6 @@
     <script type="module" src="app.js"></script>
     <script type="module" src="staff-loans.js"></script>
     <script type="module" src="book-import-followups.js"></script>
+    <script type="module" src="book-import-mail-settings.js"></script>
   </body>
 </html>
