@@ -62,9 +62,17 @@ function atomicWrite(filePath, raw) {
   }
 }
 
-function withDatabaseWriteLock(dataPath, work) {
+function withDatabaseWriteLock(dataPath, work, { waitMs = 0 } = {}) {
   const absolute = path.resolve(dataPath);
-  const release = acquireFileLock(absolute + '.database-write.lock');
+  const lockFile = absolute + '.database-write.lock';
+  const maxWait = Number.isFinite(waitMs) ? Math.min(Math.max(0, waitMs), 15000) : 0;
+  const deadline = Date.now() + maxWait;
+  const pause = maxWait ? new Int32Array(new SharedArrayBuffer(4)) : null;
+  let release = acquireFileLock(lockFile);
+  while (!release && Date.now() < deadline) {
+    Atomics.wait(pause, 0, 0, Math.min(20, Math.max(1, deadline - Date.now())));
+    release = acquireFileLock(lockFile);
+  }
   if (!release) {
     throw conflict('DATABASE_WRITE_BUSY', 'Andere databasewijziging is nog bezig.');
   }

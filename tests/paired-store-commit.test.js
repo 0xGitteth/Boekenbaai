@@ -81,6 +81,20 @@ try {
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')), recoveredAuth);
   assert.strictEqual(fs.existsSync(journalPath), false, 'Herstel moet het journal pas na beide writes verwijderen');
   assert.strictEqual(recoverPairedJson({ dataPath, authPath }), false, 'Zonder journal is herstel een no-op');
+  // A healthy other process may temporarily hold the shared writer lock.
+  // Startup recovery must retry boundedly rather than abort immediately.
+  const { acquireFileLock } = require('../book-import-reminder-mail');
+  const occupied = acquireFileLock(dataPath + '.database-write.lock');
+  assert.equal(typeof occupied, 'function');
+  try {
+    const started = Date.now();
+    assert.throws(() => recoverPairedJson({ dataPath, authPath, waitMs: 70 }),
+      { code: 'DATABASE_WRITE_BUSY' });
+    assert.ok(Date.now() - started >= 50, 'Recovery must wait before giving up');
+  } finally { occupied(); }
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath }), false,
+    'Startup recovers normally once a competing writer has released its lock');
+
 
   const managementSource = fs.readFileSync(path.join(__dirname, '..', 'student-management-preload.js'), 'utf8');
   const deactivateMatch = managementSource.match(/function deactivateStudent[\s\S]*?function stripCookie/);

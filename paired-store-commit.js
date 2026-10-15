@@ -73,7 +73,7 @@ function removeJournal(journalPath) {
   }
 }
 
-function recoverPairedJson({ dataPath, authPath }) {
+function recoverPairedJson({ dataPath, authPath, waitMs = 10000 }) {
   if (!dataPath || !authPath) throw new Error('Database- en auth-pad zijn verplicht voor herstel.');
   return withDatabaseWriteLock(dataPath, () => {
     const journalPath = journalPathFor(dataPath);
@@ -83,7 +83,7 @@ function recoverPairedJson({ dataPath, authPath }) {
     atomicWriteJson(authPath, journal.auth);
     removeJournal(journalPath);
     return true;
-  });
+  }, { waitMs });
 }
 
 function commitPairedJson({ dataPath, authPath, data, auth, expectedData, expectedAuth }) {
