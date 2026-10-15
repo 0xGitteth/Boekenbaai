@@ -107,6 +107,10 @@ async function run(){
   assert.ok(captures.every(x=>!x.body.includes('student-a')
     && !x.body.includes('studentName') && !x.body.includes('class-a')));
   assert.ok(captures.every(x=>x.body.includes('https://boekenbaai.example/staff.html')));
+  assert.ok(captures.some(x=>x.body.includes('Onderwerpen: klaswissels')));
+  assert.ok(captures.some(x=>x.body.includes('Google-koppelingen')));
+  assert.ok(captures.every(x=>!x.body.includes('https://boekenbaai.example/staff.html#student-management-panel')),
+    'The link should point to an element present before client-side rendering.');
   assert.equal((await actions.dispatchActions({
     db:data,links,folder:tmp,env:cfg,now,fetchImpl})).claimed,0);
   // A real new request triggers one additional email; the previous tasks

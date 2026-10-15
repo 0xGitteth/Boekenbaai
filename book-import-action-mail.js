@@ -8,7 +8,7 @@ const { taskStage, settingsFor } = require('./book-import-followups');
 const authCore = require('./google-auth-core');
 const DAY_MS = mail.DAY_MS;
 const REMINDER_DAYS = 7;
-const NOTIFICATION_PATH = '/staff.html#student-management-panel';
+const NOTIFICATION_PATH = '/staff.html#teacher-dashboard';
 function validTime(input, now) {
   const value = Date.parse(String(input || ''));
   return Number.isFinite(value) && value <= now + 300000 && value > 0 ? value : null;
@@ -107,9 +107,14 @@ function recipientGroups(db, links, now = Date.now(), domain = 'koraaledu.nl') {
   }
   return [...result.values()];
 }
-function emailForActions(count, link) {
+function emailForActions(count, link, events = []) {
+  const categories = [...new Set(events.map(event => event.category))];
+  const labels = { transfers: 'klaswissels', google: 'Google-koppelingen',
+    books: 'boekcontroles' };
+  const summary = categories.map(key => labels[key]).filter(Boolean);
   return 'Er ' + (count === 1 ? 'staat 1 actie' : 'staan '+count+' acties')
-    + ' klaar in Boekenbaai waarvoor je aandacht nodig is.\n\n'
+    + ' klaar in Boekenbaai waarvoor je aandacht nodig is.\n'
+    + (summary.length ? 'Onderwerpen: ' + summary.join(', ') + '.\n' : '') + '\n'
     + 'Bekijk en behandel de openstaande verzoeken in het beveiligde portaal:\n'
     + link + '\n\n'
     + 'Deze e-mail bevat geen leerlingnamen of andere persoonsgegevens.\n'
@@ -135,7 +140,10 @@ async function dispatchActions({db,links,folder,env=process.env,now=Date.now(),f
         config:cfg,to:person.to,
         id:crypto.createHash('sha256').update(claimed.join('|')).digest('hex'),
         subject:'Boekenbaai: acties die jouw aandacht nodig hebben',
-        body:emailForActions(person.events.length,cfg.base+NOTIFICATION_PATH),
+        body:emailForActions(person.events.length,cfg.base + (
+          person.events.every(event => event.category === 'books')
+            ? '/staff.html#book-import-followups-panel' : NOTIFICATION_PATH
+        ),person.events),
         now,fetchImpl,
       });
       result[accepted?'accepted':'failed']+=claimed.length;
