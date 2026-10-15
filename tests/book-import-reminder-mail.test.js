@@ -119,8 +119,8 @@ async function run() {
   assert.equal(repeated.claimed, 0);
   assert.equal(called.length, 2);
   const files = fs.readdirSync(folder);
-  assert.equal(files.length, 1);
-  assert.ok(files[0].endsWith('.claim'));
+  assert.equal(files.length, 2);
+  assert.ok(files.every(file => file.endsWith('.claim')));
   assert.equal(mail.claimOnce(folder, files[0].replace('.claim', '')), false);
   // An ambiguous provider failure is never blindly retried after restart.
   const otherFolder = path.join(tmp, 'uncertain');
