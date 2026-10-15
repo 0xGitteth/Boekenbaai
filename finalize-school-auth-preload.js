@@ -12,7 +12,7 @@ const { verifyGoogleIdToken } = require('./google-id-token');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const { runSchoolSync } = require('./school-sync-core');
 const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
-const { readJsonSnapshot, inheritSnapshot } = require('./database-write-coordinator');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { acquireFileLock } = require('./book-import-reminder-mail');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
@@ -78,8 +78,8 @@ function loadAuthStore() {
 }
 
 function saveAuthStore(store) {
-  const safe = core.pruneStore(core.normalizeStore(store));
-  writeJsonAtomic(AUTH_DATA_PATH, safe);
+  const safe = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: safe, lockPath: DATA_PATH });
   return safe;
 }
 
@@ -409,7 +409,8 @@ function staffPendingStatus(req, res) {
 
 function createStaffSession(req, res, teacher, remember) {
   const token = crypto.randomBytes(32).toString('base64url');
-  const result = core.upsertSession(loadAuthStore(), token, {
+  const previousStore = loadAuthStore();
+  const result = core.upsertSession(previousStore, token, {
     userId: teacher.id,
     type: 'staff',
     remember: Boolean(remember),
@@ -420,7 +421,7 @@ function createStaffSession(req, res, teacher, remember) {
     session.accountFingerprint = accountCredentialFingerprint(teacher);
     session.authMethod = 'google';
   }
-  saveAuthStore(result.store);
+  saveAuthStore(inheritSnapshot(result.store, previousStore));
   const maxAge = remember ? 30 * 24 * 60 * 60 : undefined;
   const secure = useSecureCookies(req);
   appendSetCookie(res, serializeCookie(SESSION_COOKIE, token, { httpOnly: true, secure, maxAge }));
@@ -500,7 +501,7 @@ function reviewStaffLinkRequest(req, res, requestId, action) {
       sub: request.sub,
       linkedBy: context.user.id,
     });
-    store = linked.store;
+    store = inheritSnapshot(linked.store, store);
     store.sessions = store.sessions.filter((entry) => !(entry?.type === 'staff' && entry?.userId === teacher.id));
     const updated = store.linkRequests.find((entry) => entry?.id === request.id);
     updated.status = 'approved';

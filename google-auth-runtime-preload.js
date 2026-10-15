@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { verifyGoogleIdToken } = require('./google-id-token');
 const { installSessionBridge } = require('./google-session-bridge');
 
@@ -67,7 +68,7 @@ function readMainDb() {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
     label: 'Auth-opslag',
   });
@@ -79,15 +80,12 @@ function loadAuthStore() {
       throw new Error(`Auth-opslagveld ${field} is ongeldig.`);
     }
   }
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
-  const normalized = core.pruneStore(core.normalizeStore(store));
-  ensureParentDirectory(AUTH_DATA_PATH);
-  const tmp = `${AUTH_DATA_PATH}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(normalized, null, 2));
-  fs.renameSync(tmp, AUTH_DATA_PATH);
+  const normalized = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: normalized, lockPath: DATA_PATH });
   return normalized;
 }
 
@@ -295,13 +293,14 @@ function createLoginSession(req, res, userId, type, remember) {
   const token = crypto.randomBytes(32).toString('base64url');
   const createdAt = Date.now();
   sessionsMap.set(token, { userId, type, createdAt });
-  const result = core.upsertSession(loadAuthStore(), token, {
+  const previousStore = loadAuthStore();
+  const result = core.upsertSession(previousStore, token, {
     userId,
     type,
     remember,
     now: createdAt,
   });
-  saveAuthStore(result.store);
+  saveAuthStore(inheritSnapshot(result.store, previousStore));
   setSessionCookies(req, res, token, remember);
   return token;
 }
@@ -315,7 +314,7 @@ function removeLoginSession(req, res) {
   let store = loadAuthStore();
   for (const token of candidates) {
     sessionsMap.delete(token);
-    store = core.removeSession(store, token);
+    store = inheritSnapshot(core.removeSession(store, token), store);
   }
   saveAuthStore(store);
   clearAuthCookies(req, res);
@@ -577,7 +576,7 @@ async function handleGoogleCallback(req, res, requestUrl) {
     const db = readMainDb();
     let store = loadAuthStore();
     const resolved = resolveLinkedAccount(db, store, type, identity);
-    store = resolved.store;
+    store = inheritSnapshot(resolved.store, store);
 
     if (resolved.account) {
       saveAuthStore(store);
@@ -624,12 +623,13 @@ async function handleCustomApi(req, res, requestUrl) {
     if (!context || !['teacher', 'admin'].includes(context.user.role)) {
       return sendJson(res, 401, { message: 'Niet ingelogd als medewerker' });
     }
-    const result = core.upsertSession(loadAuthStore(), context.token, {
+    const previousRememberStore = loadAuthStore();
+    const result = core.upsertSession(previousRememberStore, context.token, {
       userId: context.session.userId,
       type: 'staff',
       remember: true,
     });
-    saveAuthStore(result.store);
+    saveAuthStore(inheritSnapshot(result.store, previousRememberStore));
     setSessionCookies(req, res, context.token, true);
     return sendJson(res, 200, { remembered: true, days: 30 });
   }
@@ -714,7 +714,7 @@ async function handleCustomApi(req, res, requestUrl) {
         sub: pending.sub,
         linkedBy: 'prelinked-email',
       });
-      store = removePendingIdentity(linked.store, pending);
+      store = removePendingIdentity(inheritSnapshot(linked.store, store), pending);
       saveAuthStore(store);
       createLoginSession(req, res, studentId, 'student', false);
       clearCookie(req, res, PENDING_COOKIE, true);
@@ -844,7 +844,7 @@ async function handleCustomApi(req, res, requestUrl) {
         sub: current && core.normalizeEmail(current.email) === email ? current.sub : '',
         linkedBy: context.user.id,
       });
-      saveAuthStore(linked.store);
+      saveAuthStore(inheritSnapshot(linked.store, store));
       return sendJson(res, 200, {
         studentId,
         googleEmail: linked.link.email,
@@ -881,7 +881,7 @@ async function handleCustomApi(req, res, requestUrl) {
         sub: current && core.normalizeEmail(current.email) === email ? current.sub : '',
         linkedBy: context.user.id,
       });
-      saveAuthStore(linked.store);
+      saveAuthStore(inheritSnapshot(linked.store, store));
       return sendJson(res, 200, {
         staffId,
         googleEmail: linked.link.email,
@@ -934,7 +934,7 @@ async function handleCustomApi(req, res, requestUrl) {
         sub: request.sub,
         linkedBy: context.user.id,
       });
-      store = linked.store;
+      store = inheritSnapshot(linked.store, store);
       const updated = store.linkRequests.find((entry) => entry?.id === request.id);
       updated.status = 'approved';
       updated.updatedAt = nowIso;
@@ -1020,6 +1020,9 @@ function wrapRequestListener(listener) {
       }
       return listener(req, res);
     } catch (error) {
+      if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)) {
+        return sendJson(res, 409, { message: 'Google-koppelingen zijn gewijzigd. Probeer opnieuw.' });
+      }
       console.error('[Google Auth] Interne fout:', error?.message || error);
       if (!res.headersSent && !res.writableEnded) {
         return sendJson(res, 500, { message: 'Google-inlog kon niet worden verwerkt' });
