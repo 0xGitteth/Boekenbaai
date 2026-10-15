@@ -2,10 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const http = require('http');
 const core = require('./google-auth-core');
-const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
+const { readJsonSnapshot, mutateJsonLocked } = require('./database-write-coordinator');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -20,14 +19,9 @@ const WATCH_PATHS = new Set([
 ]);
 const originalCreateServer = http.createServer.bind(http);
 
-function loadStore() {
-  const raw = readJsonSnapshot(AUTH_DATA_PATH, { missingValue: core.emptyAuthStore() });
-  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
-}
-
-function saveStore(store) {
-  const safe = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
-  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: safe, lockPath: DATA_PATH });
+function loadStore(authPath = AUTH_DATA_PATH) {
+  const raw = readJsonSnapshot(authPath, { missingValue: core.emptyAuthStore() });
+  return core.pruneStore(core.normalizeStore(raw));
 }
 
 function emailMap(store) {
@@ -64,6 +58,21 @@ function supersedeChangedAccountRequests(beforeStore, afterStore) {
   return mutated;
 }
 
+// The change of a Google address is already committed by the handler.
+// Re-read current pending requests under the shared lock so another session
+// update cannot make this mandatory supersession silently fail as stale.
+function reconcileLinkRequests(beforeStore, { dataPath = DATA_PATH,
+  authPath = AUTH_DATA_PATH } = {}) {
+  return mutateJsonLocked({
+    lockPath: dataPath, filePath: authPath,
+    read: () => loadStore(authPath),
+    mutate: latest => {
+      if (!supersedeChangedAccountRequests(beforeStore, latest)) return false;
+      return core.pruneStore(core.normalizeStore(latest));
+    },
+  });
+}
+
 function watchResponse(res, beforeStore) {
   const originalEnd = res.end.bind(res);
   let processed = false;
@@ -72,8 +81,7 @@ function watchResponse(res, beforeStore) {
       processed = true;
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {
-          const latest = loadStore();
-          if (supersedeChangedAccountRequests(beforeStore, latest)) saveStore(latest);
+          reconcileLinkRequests(beforeStore);
         } catch (error) {
           console.error('[Google link consistency]', error?.message || error);
         }
@@ -108,5 +116,5 @@ http.createServer = function patchedCreateServer(...args) {
 };
 
 module.exports = {
-  __test: { supersedeChangedAccountRequests },
+  __test: { supersedeChangedAccountRequests, reconcileLinkRequests },
 };
