@@ -138,6 +138,26 @@ async function run() {
   assert.equal(files.length, 2);
   assert.ok(fs.existsSync(path.join(folder, 'locks')));
   assert.equal(mail.claimOnce(folder, files[0].replace('.claim', '')), false);
+  // Competing workers may not split the same teacher's book reminders.
+  const concurrentFolder = path.join(tmp, 'concurrent-claims');
+  const concurrentMessages = [];
+  const concurrentFetch = async (url, options) => {
+    await Promise.resolve();
+    const payload = JSON.parse(JSON.parse(options.body).payload);
+    concurrentMessages.push(payload);
+    return { ok: true, status: 200, json: async () => ({ ok: true, id: payload.id }) };
+  };
+  const concurrentResults = await Promise.all([
+    mail.dispatchReminders({ db: data, links, folder: concurrentFolder, env, now,
+      fetchImpl: concurrentFetch }),
+    mail.dispatchReminders({ db: data, links, folder: concurrentFolder, env, now,
+      fetchImpl: concurrentFetch }),
+  ]);
+  assert.equal(concurrentResults.reduce((sum, item) => sum + item.recipients, 0), 1);
+  assert.equal(concurrentMessages.length, 1);
+  assert.ok(concurrentMessages[0].body.includes('2 openstaande controles'));
+  assert.equal(fs.readdirSync(concurrentFolder).filter(f => f.endsWith('.claim')).length, 2);
+
   // An ambiguous provider failure is never blindly retried after restart.
   const otherFolder = path.join(tmp, 'uncertain');
   const unknown = await mail.dispatchReminders({ db: data, links, folder: otherFolder,

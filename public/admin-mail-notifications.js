@@ -100,14 +100,16 @@ if (panel) {
   }
   async function submit(body, message) {
     if (busy) return;
+    const current = serial;
     busy = true;
     status.textContent = '';
     try {
       const data = await api(body);
+      if (current !== serial) return;
       render(data);
       status.textContent = message;
     } catch (error) {
-      status.textContent = error.message;
+      if (current === serial) status.textContent = error.message;
     } finally { busy = false; }
   }
   form.addEventListener('submit', e => {
@@ -123,6 +125,15 @@ if (panel) {
     submit({ action: 'update_categories', categories }, 'Meldingscategorieën opgeslagen.');
   });
   window.addEventListener('boekenbaai:staff-refresh', load);
+  window.addEventListener('boekenbaai:staff-auth-cleared', () => {
+    // A shared browser can switch between admin and teacher sessions. Do
+    // not retain administrators' addresses, even in a hidden dashboard.
+    ++serial;
+    list.replaceChildren();
+    delivery.textContent = '';
+    status.textContent = '';
+    newEmail.value = '';
+  });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) load();
   });
