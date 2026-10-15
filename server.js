@@ -6016,6 +6016,7 @@ async function handleApi(req, res, requestUrl) {
       requestImportAdmission.lease.handedOff = true;
 
       setImmediate(async () => {
+        let importAccepted = false;
         let successfulPayload = null;
         const deferConfirmedCompletion = () => {
           let attempts = 0;
@@ -6069,12 +6070,15 @@ async function handleApi(req, res, requestUrl) {
             body: JSON.stringify({ file: body.file, enrichIsbn: body.enrichIsbn }),
           });
           const payload = await response.json().catch(() => ({}));
-          if (response.ok) successfulPayload = payload;
+          if (response.ok) {
+            importAccepted = true;
+            successfulPayload = payload;
+          }
           finishLegacyImportJob(jobId, {
             succeeded: response.ok, payload, totalRows: workbookResult.rows.length,
           });
         } catch (error) {
-          if (successfulPayload !== null) {
+          if (importAccepted) {
             // The actual book import has already committed. Never overwrite
             // that known success with 'failed' just because a status write
             // collided with another DB writer.
