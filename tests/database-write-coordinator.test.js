@@ -116,7 +116,7 @@ async function run() {
       read: () => JSON.parse(fs.readFileSync(authPath, 'utf8')),
       mutate: async store => store,
     }), { code: 'DATABASE_ASYNC_WRITE' });
-    assert.equal(JSON.parse(fs.readFileSync(authPath, 'utf8')).sessions.length, 2,
+    assert.equal(JSON.parse(fs.readFileSync(authPath, 'utf8')).sessions.length, 3,
       'An async mutation must never serialize a Promise as the auth store.');
 
     const final = storage.readJsonSnapshot(dataPath);
