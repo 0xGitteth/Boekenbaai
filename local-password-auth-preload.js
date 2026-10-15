@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
+const { readJsonSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const {
   hashPassword,
@@ -52,7 +53,7 @@ function readJsonStrict(filePath, { missingValue, label }) {
 }
 
 function readMainDb() {
-  const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
+  const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) {
     throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   }
@@ -83,7 +84,7 @@ function writeJsonAtomic(filePath, value) {
 }
 
 function saveMainDb(db) {
-  writeJsonAtomic(DATA_PATH, db);
+  commitJsonSnapshot({ dataPath: DATA_PATH, value: db });
 }
 
 function loadAuthStore() {
@@ -512,6 +513,9 @@ function wrapRequestListener(listener) {
       if (handled !== false || res.writableEnded) return handled;
       return listener(req, res);
     } catch (error) {
+      if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)) {
+        return sendJson(res, 409, { message: 'Accountgegevens zijn gewijzigd. Probeer opnieuw.' });
+      }
       console.error('[Local Password Auth] Interne fout:', error?.message || error);
       if (!res.headersSent && !res.writableEnded) {
         return sendJson(res, 503, { message: 'Lokale inlog is tijdelijk niet beschikbaar.' });

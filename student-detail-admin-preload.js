@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
+const { readJsonSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const {
   getParnassysStudentNumber,
   setParnassysStudentNumber,
@@ -41,6 +42,7 @@ function readJsonStrict(filePath, { missingValue, label }) {
 }
 
 function writeJsonAtomic(filePath, value) {
+  if (filePath === DATA_PATH) return commitJsonSnapshot({ dataPath: DATA_PATH, value });
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   let mode = 0o600;
@@ -62,7 +64,7 @@ function writeJsonAtomic(filePath, value) {
 }
 
 function readMainDb() {
-  const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
+  const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) {
     throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   }
@@ -433,7 +435,8 @@ function wrapRequestListener(listener) {
         const result = updateStudentAsAdmin(fresh, decodeURIComponent(adminStudentMatch[1]), body);
         return sendJson(res, result.status, result.payload);
       } catch (error) {
-        const status = error?.code === 'BODY_TOO_LARGE' ? 413 : error?.code === 'INVALID_JSON' ? 400 : 500;
+        const status = ['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)
+          ? 409 : error?.code === 'BODY_TOO_LARGE' ? 413 : error?.code === 'INVALID_JSON' ? 400 : 500;
         return sendJson(res, status, { message: error.message || 'Leerling wijzigen is mislukt.' });
       }
     }
@@ -458,7 +461,8 @@ function wrapRequestListener(listener) {
           const result = unlinkStudentGoogle(fresh, String(body.studentId || '').trim());
           return sendJson(res, result.status, result.payload);
         } catch (error) {
-          const status = error?.code === 'BODY_TOO_LARGE' ? 413 : error?.code === 'INVALID_JSON' ? 400 : 500;
+          const status = ['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)
+          ? 409 : error?.code === 'BODY_TOO_LARGE' ? 413 : error?.code === 'INVALID_JSON' ? 400 : 500;
           return sendJson(res, status, { message: error.message || 'Google-koppeling verwijderen is mislukt.' });
         }
       }
