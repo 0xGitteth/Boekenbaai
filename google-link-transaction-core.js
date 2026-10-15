@@ -8,7 +8,7 @@ const { snapshotGoogleLinks, findChangedExistingGoogleAccounts,
 function enforceGoogleLinkInvariants(previous, proposed, now = Date.now()) {
   const updated = core.normalizeStore(proposed);
   const changed = findChangedExistingGoogleAccounts(snapshotGoogleLinks(previous), updated);
-  if (!changed.length) return updated;
+  if (!changed.length) return proposed;
   const result = revokePersistedSessionsForAccounts(updated, changed);
   const affected = new Set(changed.map(x => x.accountType + ':' + x.accountId));
   const timestamp = new Date(now).toISOString();
