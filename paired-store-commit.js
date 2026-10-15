@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { withDatabaseWriteLock, assertSnapshotCurrent } = require('./database-write-coordinator');
 
 function ensureObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -72,34 +73,38 @@ function removeJournal(journalPath) {
 
 function recoverPairedJson({ dataPath, authPath }) {
   if (!dataPath || !authPath) throw new Error('Database- en auth-pad zijn verplicht voor herstel.');
-  const journalPath = journalPathFor(dataPath);
-  const journal = readJournal(journalPath);
-  if (!journal) return false;
-
-  atomicWriteJson(dataPath, journal.data);
-  atomicWriteJson(authPath, journal.auth);
-  removeJournal(journalPath);
-  return true;
+  return withDatabaseWriteLock(dataPath, () => {
+    const journalPath = journalPathFor(dataPath);
+    const journal = readJournal(journalPath);
+    if (!journal) return false;
+    atomicWriteJson(dataPath, journal.data);
+    atomicWriteJson(authPath, journal.auth);
+    removeJournal(journalPath);
+    return true;
+  });
 }
 
-function commitPairedJson({ dataPath, authPath, data, auth }) {
+function commitPairedJson({ dataPath, authPath, data, auth, expectedData, expectedAuth }) {
   if (!dataPath || !authPath) throw new Error('Database- en auth-pad zijn verplicht voor opslag.');
   ensureObject(data, 'Database');
   ensureObject(auth, 'Auth-opslag');
-
-  const journalPath = journalPathFor(dataPath);
-  atomicWriteJson(journalPath, {
-    version: 1,
-    createdAt: new Date().toISOString(),
-    data,
-    auth,
+  // Both file versions are mandatory. Never commit a pair built from a
+  // snapshot that may predate another writer or recovered journal.
+  return withDatabaseWriteLock(dataPath, () => {
+    assertSnapshotCurrent(dataPath, expectedData);
+    assertSnapshotCurrent(authPath, expectedAuth);
+    const journalPath = journalPathFor(dataPath);
+    atomicWriteJson(journalPath, {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      data,
+      auth,
+    });
+    // Recovery after a crash between the two swaps replays exactly this pair.
+    atomicWriteJson(dataPath, data);
+    atomicWriteJson(authPath, auth);
+    removeJournal(journalPath);
   });
-
-  // Als het proces tussen deze twee atomische replaces stopt, blijft het journal
-  // staan en wordt bij de volgende start exact hetzelfde paar alsnog afgerond.
-  atomicWriteJson(dataPath, data);
-  atomicWriteJson(authPath, auth);
-  removeJournal(journalPath);
 }
 
 module.exports = {

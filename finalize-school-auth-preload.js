@@ -12,6 +12,7 @@ const { verifyGoogleIdToken } = require('./google-id-token');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const { runSchoolSync } = require('./school-sync-core');
 const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
+const { readJsonSnapshot, inheritSnapshot } = require('./database-write-coordinator');
 const { acquireFileLock } = require('./book-import-reminder-mail');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
@@ -59,7 +60,7 @@ function writeJsonAtomic(filePath, value) {
 }
 
 function readMainDb() {
-  const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
+  const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   if (!Array.isArray(db.users)) db.users = [];
   if (!Array.isArray(db.students)) db.students = [];
@@ -70,11 +71,10 @@ function readMainDb() {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
-    label: 'Auth-opslag',
   });
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
@@ -568,6 +568,8 @@ function schoolSyncPreview(context, body, apply) {
       authPath: AUTH_DATA_PATH,
       data: result.db,
       auth: core.pruneStore(result.store),
+      expectedData: context.db,
+      expectedAuth: context.store,
     });
   }
   return {
@@ -687,7 +689,8 @@ async function handleCustomRoute(req, res, requestUrl) {
           summary: error.summary,
         });
       } else {
-        sendJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 400, { message: error.message });
+        sendJson(res, ['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)
+          ? 409 : error?.code === 'BODY_TOO_LARGE' ? 413 : 400, { message: error.message });
       }
     }
     return true;

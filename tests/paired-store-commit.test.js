@@ -10,6 +10,7 @@ const {
   journalPathFor,
   __test,
 } = require('../paired-store-commit');
+const { readJsonSnapshot } = require('../database-write-coordinator');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-paired-store-'));
 const dataPath = path.join(tmp, 'db.json');
@@ -22,11 +23,44 @@ try {
 
   const committedData = { version: 'new-db', students: [{ id: 'student-1' }] };
   const committedAuth = { version: 'new-auth', sessions: [], links: [] };
-  commitPairedJson({ dataPath, authPath, data: committedData, auth: committedAuth });
+  const firstData = readJsonSnapshot(dataPath);
+  const firstAuth = readJsonSnapshot(authPath);
+  commitPairedJson({ dataPath, authPath, data: committedData, auth: committedAuth,
+    expectedData: firstData, expectedAuth: firstAuth });
 
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(dataPath, 'utf8')), committedData);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')), committedAuth);
   assert.strictEqual(fs.existsSync(journalPath), false, 'Na een volledige paired commit mag geen journal achterblijven');
+
+  // A stale paired commit must never roll back a completed DB or auth write.
+  const staleData = readJsonSnapshot(dataPath);
+  const staleAuth = readJsonSnapshot(authPath);
+  const changedDb = readJsonSnapshot(dataPath);
+  changedDb.version = 'concurrent-db';
+  const { commitJsonSnapshot } = require('../database-write-coordinator');
+  commitJsonSnapshot({ dataPath, value: changedDb });
+  assert.throws(() => commitPairedJson({ dataPath, authPath,
+    data: committedData, auth: committedAuth,
+    expectedData: staleData, expectedAuth: staleAuth,
+  }), { code: 'DATABASE_WRITE_CONFLICT' });
+  assert.strictEqual(JSON.parse(fs.readFileSync(dataPath, 'utf8')).version, 'concurrent-db');
+  assert.strictEqual(fs.existsSync(journalPath), false);
+
+  const currentData = readJsonSnapshot(dataPath);
+  const currentAuth = readJsonSnapshot(authPath);
+  const updatedAuth = readJsonSnapshot(authPath);
+  updatedAuth.version = 'concurrent-auth';
+  // Writes from other auth modules will eventually share this same DB lock.
+  const { withDatabaseWriteLock } = require('../database-write-coordinator');
+  withDatabaseWriteLock(dataPath, () => {
+    __test.atomicWriteJson(authPath, updatedAuth);
+  });
+  assert.throws(() => commitPairedJson({ dataPath, authPath,
+    data: committedData, auth: committedAuth,
+    expectedData: currentData, expectedAuth: currentAuth,
+  }), { code: 'DATABASE_WRITE_CONFLICT' });
+  assert.strictEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')).version, 'concurrent-auth');
+  assert.strictEqual(fs.existsSync(journalPath), false);
 
   const recoveredData = { version: 'recovered-db', students: [{ id: 'student-2' }] };
   const recoveredAuth = { version: 'recovered-auth', sessions: [{ userId: 'student-2' }], links: [] };

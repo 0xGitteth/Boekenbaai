@@ -8,6 +8,7 @@ const XLSX = require('xlsx');
 const core = require('./google-auth-core');
 const { applyPeopleImport } = require('./google-first-people-import');
 const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
+const { readJsonSnapshot, inheritSnapshot } = require('./database-write-coordinator');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -41,7 +42,7 @@ function readJsonStrict(filePath, { missingValue, label }) {
 }
 
 function readMainDb() {
-  const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
+  const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) {
     throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   }
@@ -54,11 +55,10 @@ function readMainDb() {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
-    label: 'Auth-opslag',
   });
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function parseCookies(req) {
@@ -166,6 +166,8 @@ function importPeople(context, kind, file, preview) {
       authPath: AUTH_DATA_PATH,
       data: result.db,
       auth: core.pruneStore(result.store),
+      expectedData: context.db,
+      expectedAuth: context.store,
     });
   }
   return {
@@ -233,7 +235,8 @@ function wrapRequestListener(listener) {
     } catch (error) {
       console.error('[Google-first beheer]', error?.message || error);
       if (!res.headersSent && !res.writableEnded) {
-        return sendJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 400, {
+        return sendJson(res, ['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)
+          ? 409 : error?.code === 'BODY_TOO_LARGE' ? 413 : 400, {
           message: error?.message || 'Beheeractie mislukt.',
         });
       }

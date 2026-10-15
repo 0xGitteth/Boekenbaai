@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
-const { readJsonSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { setParnassysStudentNumber, getParnassysStudentNumber } = require('./google-first-people-import');
 const { commitPairedJson } = require('./paired-store-commit');
 const { acquireFileLock } = require('./book-import-reminder-mail');
@@ -79,11 +79,10 @@ function readMainDb() {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
-    label: 'Auth-opslag',
   });
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
@@ -696,6 +695,8 @@ function deactivateStudent(context, studentId) {
     authPath: AUTH_DATA_PATH,
     data: context.db,
     auth: core.pruneStore(context.store),
+    expectedData: context.db,
+    expectedAuth: context.store,
   });
   return { status: 200, payload: { studentId: student.id, inactive: true } };
 }

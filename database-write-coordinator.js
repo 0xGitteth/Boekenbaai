@@ -20,14 +20,18 @@ function conflict(code, message) {
   return error;
 }
 
-function readJsonSnapshot(filePath) {
+function readJsonSnapshot(filePath, { missingValue } = {}) {
   const absolute = path.resolve(filePath);
-  const raw = fs.readFileSync(absolute, 'utf8');
-  const value = JSON.parse(raw);
+  let raw = null;
+  try { raw = fs.readFileSync(absolute, 'utf8'); }
+  catch (error) {
+    if (error?.code !== 'ENOENT' || missingValue === undefined) throw error;
+  }
+  const value = raw === null ? structuredClone(missingValue) : JSON.parse(raw);
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw conflict('DATABASE_INVALID', 'Database heeft een ongeldig formaat.');
   }
-  versions.set(value, { path: absolute, hash: fingerprint(raw) });
+  versions.set(value, { path: absolute, hash: raw === null ? null : fingerprint(raw) });
   return value;
 }
 
@@ -57,29 +61,50 @@ function atomicWrite(filePath, raw) {
   }
 }
 
-function commitJsonSnapshot({ dataPath, value, beforeWrite }) {
+function withDatabaseWriteLock(dataPath, work) {
   const absolute = path.resolve(dataPath);
-  const previous = versions.get(value);
-  if (!previous || previous.path !== absolute) {
-    throw conflict('DATABASE_SNAPSHOT_UNTRACKED', 'Databasewijziging zonder geldige versie geweigerd.');
-  }
   const release = acquireFileLock(absolute + '.database-write.lock');
   if (!release) {
     throw conflict('DATABASE_WRITE_BUSY', 'Andere databasewijziging is nog bezig.');
   }
   try {
-    const actual = fs.readFileSync(absolute, 'utf8');
-    if (fingerprint(actual) !== previous.hash) {
-      throw conflict('DATABASE_WRITE_CONFLICT',
-        'Database is veranderd sinds het inlezen; de wijziging is niet opgeslagen.');
+    const result = work();
+    if (result && typeof result.then === 'function') {
+      throw conflict('DATABASE_ASYNC_WRITE',
+        'Een database-transactie mag geen asynchrone operatie bevatten.');
     }
-    if (beforeWrite) beforeWrite();
-    const raw = JSON.stringify(value, null, 2);
-    atomicWrite(absolute, raw);
-    versions.set(value, { path: absolute, hash: fingerprint(raw) });
+    return result;
   } finally {
     release();
   }
 }
 
-module.exports = { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot };
+function assertSnapshotCurrent(filePath, snapshot) {
+  const absolute = path.resolve(filePath);
+  const expected = versions.get(snapshot);
+  if (!expected || expected.path !== absolute) {
+    throw conflict('DATABASE_SNAPSHOT_UNTRACKED', 'Databasewijziging zonder geldige versie geweigerd.');
+  }
+  let raw = null;
+  try { raw = fs.readFileSync(absolute, 'utf8'); }
+  catch (error) { if (error?.code !== 'ENOENT') throw error; }
+  const actual = raw === null ? null : fingerprint(raw);
+  if (actual !== expected.hash) {
+    throw conflict('DATABASE_WRITE_CONFLICT',
+      'Database is veranderd sinds het inlezen; de wijziging is niet opgeslagen.');
+  }
+}
+
+function commitJsonSnapshot({ dataPath, value, beforeWrite }) {
+  const absolute = path.resolve(dataPath);
+  return withDatabaseWriteLock(absolute, () => {
+    assertSnapshotCurrent(absolute, value);
+    if (beforeWrite) beforeWrite();
+    const raw = JSON.stringify(value, null, 2);
+    atomicWrite(absolute, raw);
+    versions.set(value, { path: absolute, hash: fingerprint(raw) });
+  });
+}
+
+module.exports = { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
+  assertSnapshotCurrent, withDatabaseWriteLock };
