@@ -23,7 +23,7 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
-  withDatabaseWriteLock } = require('./database-write-coordinator');
+  withDatabaseWriteLock, mutateJsonLocked } = require('./database-write-coordinator');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -2000,6 +2000,49 @@ function ensureRole(user, roles) {
   if (!user) return false;
   if (!roles || roles.length === 0) return true;
   return roles.includes(user.role);
+}
+
+// Final status is persisted independently from the full DB snapshot used
+// during the actual import. Read the latest DB UNDER the shared lock, so
+// finishing a successful job never overwrites unrelated book changes.
+function finishLegacyImportJob(jobId, { succeeded, payload, totalRows, errorMessage } = {}) {
+  return mutateJsonLocked({
+    lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 6000,
+    read: loadDb,
+    mutate: latest => {
+      const job = (latest.importJobs || []).find(item => item?.id === jobId);
+      if (!job || ['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status)) {
+        return false;
+      }
+      const finishedAt = new Date().toISOString();
+      if (!succeeded) {
+        updateImportJob(latest, jobId, {
+          status: 'failed', finishedAt, error: errorMessage || payload?.message
+            || 'Importjob mislukt', failed: 1,
+        });
+        return latest;
+      }
+      const count = Number(payload?.failed || 0);
+      const summary = {
+        created: Number(payload?.created || 0),
+        updated: Number(payload?.updated || 0),
+        skipped: Array.isArray(payload?.skipped) ? payload.skipped.length : 0,
+        failed: count,
+      };
+      const cancelled = Boolean(payload?.cancelled || job.cancelRequested
+        || job.status === 'cancelled');
+      updateImportJob(latest, jobId, cancelled ? {
+        status: 'cancelled', finishedAt, cancelledAt: finishedAt,
+        currentStage: 'Geannuleerd', summary, result: payload, error: '',
+      } : {
+        status: 'completed', finishedAt, processed: totalRows,
+        created: summary.created, updated: summary.updated,
+        skipped: summary.skipped, summary, currentStage: 'Voltooid',
+        result: payload, error: '',
+      });
+      return latest;
+    },
+  });
 }
 
 function updateImportJob(db, jobId, updates = {}) {
@@ -5973,6 +6016,28 @@ async function handleApi(req, res, requestUrl) {
       requestImportAdmission.lease.handedOff = true;
 
       setImmediate(async () => {
+        let successfulPayload = null;
+        const deferConfirmedCompletion = () => {
+          let attempts = 0;
+          const retry = () => {
+            if (shuttingDown) return;
+            try {
+              finishLegacyImportJob(jobId, {
+                succeeded: true, payload: successfulPayload, totalRows: workbookResult.rows.length,
+              });
+            } catch (error) {
+              if (['DATABASE_WRITE_BUSY', 'DATABASE_WRITE_CONFLICT'].includes(error?.code)
+                && attempts++ < 30) {
+                const timer = setTimeout(retry, 1000);
+                if (typeof timer.unref === 'function') timer.unref();
+              } else {
+                console.error('Geslaagde import kon niet als voltooid worden geregistreerd:', error);
+              }
+            }
+          };
+          const timer = setTimeout(retry, 1000);
+          if (typeof timer.unref === 'function') timer.unref();
+        };
         try {
           const runtimeDb = loadDb();
           const runtimeJob = (runtimeDb.importJobs || []).find((entry) => entry?.id === jobId);
@@ -6004,67 +6069,27 @@ async function handleApi(req, res, requestUrl) {
             body: JSON.stringify({ file: body.file, enrichIsbn: body.enrichIsbn }),
           });
           const payload = await response.json().catch(() => ({}));
-          const jobDb = loadDb();
-          if (!response.ok) {
-            updateImportJob(jobDb, jobId, {
-              status: 'failed',
-              finishedAt: new Date().toISOString(),
-              error: payload?.message || 'Importjob mislukt',
-              failed: 1,
-            });
+          if (response.ok) successfulPayload = payload;
+          finishLegacyImportJob(jobId, {
+            succeeded: response.ok, payload, totalRows: workbookResult.rows.length,
+          });
+        } catch (error) {
+          if (successfulPayload !== null) {
+            // The actual book import has already committed. Never overwrite
+            // that known success with 'failed' just because a status write
+            // collided with another DB writer.
+            console.error('Geslaagde import: statusopslag wordt opnieuw geprobeerd:',
+              error?.code || error?.message || error);
+            deferConfirmedCompletion();
           } else {
-            const latestJob = (jobDb.importJobs || []).find((entry) => entry?.id === jobId);
-            const shouldCancelAtFinalize = Boolean(
-              payload?.cancelled
-              || latestJob?.cancelRequested
-              || latestJob?.status === 'cancelled'
-            );
-            if (shouldCancelAtFinalize) {
-            updateImportJob(jobDb, jobId, {
-              status: 'cancelled',
-              finishedAt: new Date().toISOString(),
-              cancelledAt: new Date().toISOString(),
-              currentStage: 'Geannuleerd',
-              summary: {
-                created: Number(payload.created || 0),
-                updated: Number(payload.updated || 0),
-                skipped: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
-                failed: Number(payload.failed || 0),
-              },
-              result: payload,
-              error: '',
-            });
-            } else {
-              const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
-              updateImportJob(jobDb, jobId, {
-                status: 'completed',
-                finishedAt: new Date().toISOString(),
-                processed: workbookResult.rows.length,
-                created: Number(payload.created || 0),
-                updated: Number(payload.updated || 0),
-                skipped: skippedCount,
-                summary: {
-                  created: Number(payload.created || 0),
-                  updated: Number(payload.updated || 0),
-                  skipped: skippedCount,
-                  failed: 0,
-                },
-                currentStage: 'Voltooid',
-                result: payload,
-                error: '',
-              });
+            try {
+              finishLegacyImportJob(jobId, { succeeded: false,
+                errorMessage: error?.message || 'Importjob mislukt' });
+            } catch (statusError) {
+              console.error('Mislukte importstatus kon niet worden opgeslagen:',
+                statusError?.code || statusError?.message || statusError);
             }
           }
-          saveDb(jobDb);
-        } catch (error) {
-          const failedDb = loadDb();
-          updateImportJob(failedDb, jobId, {
-            status: 'failed',
-            finishedAt: new Date().toISOString(),
-            error: error?.message || 'Importjob mislukt',
-            failed: 1,
-          });
-          saveDb(failedDb);
         } finally {
           activeImportJobs.delete(user.id);
           releaseBookImportLease(requestImportAdmission.lease);
