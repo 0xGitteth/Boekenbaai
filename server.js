@@ -5986,10 +5986,10 @@ async function handleApi(req, res, requestUrl) {
         let successfulPayload = null;
         const deferConfirmedCompletion = () => {
           let attempts = 0;
-          const retry = () => {
+          const retry = async () => {
             if (shuttingDown) return;
             try {
-              finishLegacyImportJob(jobId, {
+              await finishLegacyImportJob(jobId, {
                 succeeded: true, payload: successfulPayload, totalRows: workbookResult.rows.length,
               });
             } catch (error) {
@@ -6040,7 +6040,7 @@ async function handleApi(req, res, requestUrl) {
             importAccepted = true;
             successfulPayload = payload;
           }
-          finishLegacyImportJob(jobId, {
+          await finishLegacyImportJob(jobId, {
             succeeded: response.ok, payload, totalRows: workbookResult.rows.length,
           });
         } catch (error) {
@@ -6053,7 +6053,7 @@ async function handleApi(req, res, requestUrl) {
             deferConfirmedCompletion();
           } else {
             try {
-              finishLegacyImportJob(jobId, { succeeded: false,
+              await finishLegacyImportJob(jobId, { succeeded: false,
                 errorMessage: error?.message || 'Importjob mislukt' });
             } catch (statusError) {
               console.error('Mislukte importstatus kon niet worden opgeslagen:',

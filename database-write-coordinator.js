@@ -68,10 +68,10 @@ function withDatabaseWriteLock(dataPath, work, { waitMs = 0 } = {}) {
   const maxWait = Number.isFinite(waitMs) ? Math.min(Math.max(0, waitMs), 15000) : 0;
   const deadline = Date.now() + maxWait;
   const pause = maxWait ? new Int32Array(new SharedArrayBuffer(4)) : null;
-  let release = acquireFileLock(lockFile);
+  let release = acquireFileLock(lockFile, { processOwned: true });
   while (!release && Date.now() < deadline) {
     Atomics.wait(pause, 0, 0, Math.min(20, Math.max(1, deadline - Date.now())));
-    release = acquireFileLock(lockFile);
+    release = acquireFileLock(lockFile, { processOwned: true });
   }
   if (!release) {
     throw conflict('DATABASE_WRITE_BUSY', 'Andere databasewijziging is nog bezig.');
@@ -163,6 +163,21 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate, waitMs = 0 }) {
   }, { waitMs });
 }
 
+// Retry runtime writes without blocking HTTP requests/health checks.
+async function mutateJsonLockedAsync({ waitMs = 0, ...options }) {
+  const duration = Number.isFinite(waitMs) ? Math.max(0, Math.min(15000, waitMs)) : 0;
+  const deadline = Date.now() + duration;
+  while (true) {
+    try {
+      return mutateJsonLocked({ ...options, waitMs: 0 });
+    } catch (error) {
+      if (error?.code !== 'DATABASE_WRITE_BUSY' || Date.now() >= deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve,
+        Math.min(40, Math.max(1, deadline - Date.now()))));
+    }
+  }
+}
+
 module.exports = { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
   assertSnapshotCurrent, assertNoPendingPairedJournal,
-  withDatabaseWriteLock, mutateJsonLocked };
+  withDatabaseWriteLock, mutateJsonLocked, mutateJsonLockedAsync };

@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const authCore = require('./google-auth-core');
 const { taskStage, settingsFor } = require('./book-import-followups');
 
@@ -148,13 +149,16 @@ function withLockGuard(filename, operation) {
     fs.unlinkSync(gate);
   }
 }
-function acquireFileLock(filename, { staleMs = 300000 } = {}) {
+function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = {}) {
   fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
   const owner = crypto.randomBytes(24).toString('hex');
+  const contents = processOwned ? JSON.stringify({
+    format: 'boekenbaai-process-lock-v1', owner, pid: process.pid, host: os.hostname(),
+  }) : owner;
   function createOwnedLock() {
     const fd = fs.openSync(filename, 'wx', 0o600);
     try {
-      fs.writeFileSync(fd, owner);
+      fs.writeFileSync(fd, contents);
       fs.fsyncSync(fd);
     } finally { fs.closeSync(fd); }
     let released = false;
@@ -169,7 +173,7 @@ function acquireFileLock(filename, { staleMs = 300000 } = {}) {
           if (error.code === 'ENOENT') return true;
           throw error;
         }
-        if (observed === owner) fs.unlinkSync(filename);
+        if (observed === contents) fs.unlinkSync(filename);
         return true;
       });
       if (success) released = true;
@@ -187,7 +191,7 @@ function acquireFileLock(filename, { staleMs = 300000 } = {}) {
               if (error.code === 'ENOENT') return true;
               throw error;
             }
-            if (observed === owner) fs.unlinkSync(filename);
+            if (observed === contents) fs.unlinkSync(filename);
             return true;
           });
           if (retry) released = true;
@@ -206,6 +210,29 @@ function acquireFileLock(filename, { staleMs = 300000 } = {}) {
     catch (error) {
       if (error.code !== 'ENOENT') throw error;
       return createOwnedLock();
+    }
+    // If a known local DB writer crashed, safely reclaim its lock under
+    // the guard. Unknown and remote owners remain protected by staleMs.
+    if (processOwned) {
+      let previous = null;
+      try { previous = JSON.parse(fs.readFileSync(filename, 'utf8')); }
+      catch (error) {
+        if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+      }
+      if (previous?.format === 'boekenbaai-process-lock-v1'
+        && previous.host === os.hostname()
+        && Number.isSafeInteger(previous.pid) && previous.pid > 0) {
+        let dead = false;
+        try { process.kill(previous.pid, 0); }
+        catch (error) {
+          if (error?.code === 'ESRCH') dead = true;
+          else if (error?.code !== 'EPERM') throw error;
+        }
+        if (dead) {
+          fs.unlinkSync(filename);
+          return createOwnedLock();
+        }
+      }
     }
     if (Date.now() - stat.mtimeMs <= staleMs) return null;
     // Protected by the guard. Re-inspect before unlinking so the reclaim

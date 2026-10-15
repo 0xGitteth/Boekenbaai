@@ -81,6 +81,21 @@ try {
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')), recoveredAuth);
   assert.strictEqual(fs.existsSync(journalPath), false, 'Herstel moet het journal pas na beide writes verwijderen');
   assert.strictEqual(recoverPairedJson({ dataPath, authPath }), false, 'Zonder journal is herstel een no-op');
+  // Reclaim a dead writer's lock before its 5-minute stale deadline.
+  const { spawnSync } = require('node:child_process');
+  const child = spawnSync(process.execPath, ['-e', [
+    "const { acquireFileLock } = require(process.argv[1]);",
+    "const release = acquireFileLock(process.argv[2] + '.database-write.lock', { processOwned: true });",
+    "if (!release) process.exit(2);",
+    "process.exit(0);",
+  ].join('\\n'), path.join(__dirname, '..', 'book-import-reminder-mail.js'), dataPath]);
+  assert.strictEqual(child.status, 0);
+  assert.strictEqual(fs.existsSync(dataPath + '.database-write.lock'), true);
+  const reclaimedAt = Date.now();
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false);
+  assert.ok(Date.now() - reclaimedAt < 1800, 'Dead database owner must not block recovery for five minutes');
+  assert.strictEqual(fs.existsSync(dataPath + '.database-write.lock'), false);
+
   // A healthy other process may temporarily hold the shared writer lock.
   // Startup recovery must retry boundedly rather than abort immediately.
   const { acquireFileLock } = require('../book-import-reminder-mail');

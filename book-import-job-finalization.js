@@ -1,12 +1,12 @@
 'use strict';
 // Terminal status is a short, independent transaction. A completed import
 // cannot be reported as failed because a concurrent DB update changed.
-const { mutateJsonLocked, readJsonSnapshot } = require('./database-write-coordinator');
+const { mutateJsonLockedAsync, readJsonSnapshot } = require('./database-write-coordinator');
 
-function finishLegacyImportJob({ dataPath, jobId, succeeded, payload,
+async function finishLegacyImportJob({ dataPath, jobId, succeeded, payload,
   totalRows, errorMessage, waitMs = 6000 } = {}) {
   if (!dataPath || !jobId) throw new Error('Databasepad en importjob zijn verplicht.');
-  return mutateJsonLocked({
+  return mutateJsonLockedAsync({
     lockPath: dataPath, filePath: dataPath, waitMs,
     read: () => readJsonSnapshot(dataPath),
     mutate: db => {
