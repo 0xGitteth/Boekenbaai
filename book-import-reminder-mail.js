@@ -267,18 +267,23 @@ async function bridgeSend({ config, id, to, subject, body, fetchImpl = fetch,
   finally { clearTimeout(timeout); }
 }
 async function dispatchReminders({ db, links, folder, env = process.env,
-  now = Date.now(), fetchImpl }) {
+  now = Date.now(), fetchImpl, currentState, shouldStop = () => false }) {
   const config = configuration(env);
   const result = { enabled: config.enabled, ready: config.ready,
     recipients: 0, claimed: 0, accepted: 0, failed: 0 };
   if (!config.ready) return result;
   const people = collectRecipients(db, links, now, config.schoolDomain);
   for (const person of people) {
+    if (shouldStop()) break;
     await withRecipientLock(folder, 'teacher:' + person.teacherId, async () => {
+      const latest = currentState ? currentState() : { db, links };
+      const current = collectRecipients(latest.db, latest.links, now, config.schoolDomain)
+        .find(row => row.teacherId === person.teacherId && row.to === person.to);
+      if (!current || shouldStop()) return;
       // The recipient lock encloses ALL task claims and the delivery attempt;
       // overlapping workers cannot split one teacher's batch across mails.
       const ids = [];
-      for (const task of person.tasks) {
+      for (const task of current.tasks) {
         const id = claimId(person.teacherId, task);
         if (claimOnce(folder, id)) ids.push(id);
       }
@@ -288,7 +293,7 @@ async function dispatchReminders({ db, links, folder, env = process.env,
       const accepted = await bridgeSend({ config, to: person.to,
         id: crypto.createHash('sha256').update(ids.join('|')).digest('hex'),
         subject: 'Boekenbaai: openstaande boekcontroles voor jouw klas',
-        body: mailText(person.tasks.length, config.base + MAIL_PATH),
+        body: mailText(current.tasks.length, config.base + MAIL_PATH),
         now: Date.now(), fetchImpl });
       result[accepted ? 'accepted' : 'failed'] += ids.length;
     });
