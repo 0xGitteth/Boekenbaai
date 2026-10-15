@@ -8898,6 +8898,7 @@ const server = http.createServer((req, res) => {
 // PR7: no email is sent unless the dedicated Gmail bridge is configured.
 // Receipt claims are persisted beside db.json on the same Sliplane volume.
 let importMailWorkerActive = false;
+let importMailPromise = null;
 async function tickImportReminders() {
   const mailConfig = importMailConfiguration(process.env);
   if (shuttingDown || importMailWorkerActive || !mailConfig.ready) return;
@@ -8909,8 +8910,13 @@ async function tickImportReminders() {
     const snapshot = loadDb();
     const links = readSchoolLinks(authPath);
     const folder = DATA_PATH + '.import-mail-receipts';
-    const stats = await dispatchReminders({ db: snapshot, links, folder });
-    const actions = await dispatchActions({ db: snapshot, links, folder });
+    const currentState = () => ({ db: loadDb(), links: readSchoolLinks(authPath) });
+    const shouldStop = () => shuttingDown;
+    const stats = await dispatchReminders({ db: snapshot, links, folder,
+      currentState, shouldStop });
+    const actions = shuttingDown ? { claimed: 0, accepted: 0, failed: 0 }
+      : await dispatchActions({ db: snapshot, links, folder,
+        currentState, shouldStop });
     if (stats.claimed || actions.claimed) console.log('Boekenbaai-mailmeldingen verwerkt:', {
       accepted: stats.accepted + actions.accepted,
       failed: stats.failed + actions.failed,
@@ -8922,12 +8928,18 @@ async function tickImportReminders() {
     importMailWorkerActive = false;
   }
 }
+function startImportMailWorker() {
+  if (!importMailPromise && !shuttingDown) {
+    importMailPromise = tickImportReminders().finally(() => { importMailPromise = null; });
+  }
+  return importMailPromise;
+}
 
 server.listen(PORT, () => {
   console.log(`Boekenbaai server draait op http://localhost:${PORT}`);
   if (importMailConfiguration(process.env).ready) {
     // Avoid sending on test startup synchronously; the timer is nonblocking.
-    const firstMailRun = setTimeout(() => { void tickImportReminders(); }, 30000);
+    const firstMailRun = setTimeout(() => { void startImportMailWorker(); }, 30000);
     if (typeof firstMailRun.unref === 'function') firstMailRun.unref();
     const mailInterval = setInterval(() => { void tickImportReminders(); },
       Math.min(IMPORT_MAIL_HOUR_MS, 120_000));
@@ -8950,14 +8962,20 @@ function gracefulShutdown(signal) {
   }
   shuttingDown = true;
   console.log(`Ontvangen signaal ${signal}, server wordt afgesloten...`);
+  // Stop starting new recipients; finish an in-flight bridge request before
+  // exiting. Outbound fetch is not covered by server.close().
+  const mailDone = importMailPromise || Promise.resolve();
+  let httpDone;
+  const closed = new Promise(resolve => { httpDone = resolve; });
   server.close(() => {
     console.log('HTTP-server netjes afgesloten.');
-    process.exit(0);
+    httpDone();
   });
+  void Promise.allSettled([closed, mailDone]).then(() => process.exit(0));
   setTimeout(() => {
     console.warn('Geforceerde afsluiting na timeout.');
     process.exit(0);
-  }, 5000).unref();
+  }, 25000).unref();
 }
 
 process.on('SIGTERM', gracefulShutdown);
