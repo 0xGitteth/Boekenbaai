@@ -15,6 +15,13 @@ const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
+const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
+  configuration: importMailConfiguration, readSchoolLinks, prefsFor,
+  schoolEmailFor, validEmail, beginVerification, confirmVerification,
+  changePreference, bridgeSend, dispatchReminders,
+  acquireFileLock } = require('./book-import-reminder-mail');
+const adminMail = require('./book-import-admin-mail');
+const { dispatchActions } = require('./book-import-action-mail');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -1776,7 +1783,7 @@ function assertReviewedImportBoundaryUnchanged(before, after) {
   }
 }
 
-function assertReviewedImportNotLost(db) {
+function assertReviewedImportNotLost(db, { deletedTeacherPreferenceId = null } = {}) {
   const current = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
   const latest = Array.isArray(current.bookImportReports)
     ? current.bookImportReports[current.bookImportReports.length - 1]?.id
@@ -1806,6 +1813,39 @@ function assertReviewedImportNotLost(db) {
       error.code = 'DATABASE_WRITE_CONFLICT';
       throw error;
     }
+  }
+  // Reminder preferences must survive delayed image downloads and other
+  // writes using a previously loaded database snapshot.
+  const storedMailPreferences = current.bookImportEmailPreferences || {};
+  const nextMailPreferences = db.bookImportEmailPreferences || {};
+  for (const [id, row] of Object.entries(storedMailPreferences)) {
+    const proposed = Object.prototype.hasOwnProperty.call(nextMailPreferences, id)
+      ? nextMailPreferences[id] : null;
+    // Only the explicit teacher deletion endpoint may intentionally remove
+    // a preference. Every other stale database snapshot is still rejected.
+    if (!proposed && id === deletedTeacherPreferenceId
+      && current.users?.some((u) => u.id === id && u.role === 'teacher')
+      && !db.users?.some((u) => u.id === id)) continue;
+    if (!proposed || !Number.isSafeInteger(proposed.revision)
+      || proposed.revision < (row.revision || 0)
+      || (proposed.revision === (row.revision || 0)
+        && JSON.stringify(proposed) !== JSON.stringify(row))) {
+      const error = new Error('An email preference was lost by a stale database write');
+      error.code = 'DATABASE_WRITE_CONFLICT';
+      throw error;
+    }
+  }
+  const previousAdminMail = current.bookImportAdminMail || null;
+  const proposedAdminMail = db.bookImportAdminMail || null;
+  if (previousAdminMail && (
+    !proposedAdminMail ||
+    !Number.isSafeInteger(proposedAdminMail.revision) ||
+    proposedAdminMail.revision < previousAdminMail.revision ||
+    (proposedAdminMail.revision === previousAdminMail.revision
+      && JSON.stringify(previousAdminMail) !== JSON.stringify(proposedAdminMail)))) {
+    const error = new Error('Admin mail recipients were lost by a stale database write');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
   }
   const storedTasks = new Map((Array.isArray(current.bookImportFollowups)
     ? current.bookImportFollowups : []).map((task) => [task.id, task]));
@@ -1882,6 +1922,8 @@ function loadDb() {
   if (!Array.isArray(data.history)) data.history = [];
   if (!Array.isArray(data.importJobs)) data.importJobs = [];
   if (!Array.isArray(data.bookImportFollowups)) data.bookImportFollowups = [];
+  if (!data.bookImportEmailPreferences || typeof data.bookImportEmailPreferences !== 'object'
+    || Array.isArray(data.bookImportEmailPreferences)) data.bookImportEmailPreferences = {};
   data.books = data.books.map(ensureBookShape);
   data.students = data.students.map(ensureStudentShape);
   data.classes = data.classes.map(ensureClassShape);
@@ -1890,8 +1932,8 @@ function loadDb() {
   return data;
 }
 
-function saveDb(db) {
-  assertReviewedImportNotLost(db);
+function saveDb(db, options) {
+  assertReviewedImportNotLost(db, options);
   fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
 }
 
@@ -4978,6 +5020,195 @@ async function handleApi(req, res, requestUrl) {
       })) });
     }
 
+    // PR7: personal reminder settings for the authenticated staff account.
+    // These actions never change login identity or other staff accounts.
+    const mailRoute = '/api/staff/book-import-mail-preferences';
+    if (requestUrl.pathname === mailRoute) {
+      if (!ensureRole(user, ['teacher'])) {
+        return sendJson(res, user ? 403 : 401,
+          { message: 'Deze persoonlijke e-mailinstellingen zijn voor docenten.' });
+      }
+      const mailConfig = importMailConfiguration(process.env);
+      const authPath = process.env.BOEKENBAAI_AUTH_DATA_PATH
+        ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
+        : DATA_PATH + '.auth.json';
+      if (req.method === 'GET') {
+        const own = prefsFor(getDb(), user.id);
+        const links = readSchoolLinks(authPath);
+        return sendJson(res, 200, {
+          mode: own.mode, alternateEmail: own.alternateEmail,
+          pendingEmail: own.pending && own.pending.expiresAt > Date.now()
+            ? own.pending.email : '',
+          schoolEmail: schoolEmailFor(links, user.id, mailConfig.schoolDomain),
+          deliveryConfigured: mailConfig.ready,
+        });
+      }
+      if (req.method !== 'POST') {
+        return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+      }
+      const body = await parseBody(req);
+      const releasePreferences = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+      if (!releasePreferences) return sendJson(res, 409, {
+        message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.' });
+      try {
+      const database = loadDb();
+      // Authentication happened before the request body was read. The
+      // account might have been deleted in the meantime, so revalidate
+      // against the latest on-disk state INSIDE the shared preferences lock.
+      if (!database.users.some((entry) => entry.id === user.id
+        && entry.role === 'teacher' && entry.active !== false
+        && entry.isActive !== false && entry.disabled !== true
+        && entry.status !== 'inactive')) {
+        return sendJson(res, 403, {
+          message: 'Dit docentaccount is niet meer actief.',
+        });
+      }
+      if (body?.action === 'use_school' || body?.action === 'disable'
+        || body?.action === 'use_alternate') {
+        const mode = body.action === 'use_school' ? 'school'
+          : body.action === 'disable' ? 'off' : 'alternate';
+        if (mode === 'alternate' && !prefsFor(database, user.id).alternateEmail) {
+          return sendJson(res, 409, {
+            message: 'Bevestig eerst je alternatieve e-mailadres.' });
+        }
+        changePreference(database, user.id, mode);
+        saveDb(database);
+        return sendJson(res, 200, { mode });
+      }
+      if (body?.action === 'request_alternative') {
+        if (!mailConfig.ready) return sendJson(res, 503, {
+          message: 'E-mailverzending is nog niet ingesteld door beheer.' });
+        const wanted = validEmail(body.email);
+        if (!wanted) return sendJson(res, 400, {
+          message: 'Voer een geldig zakelijk e-mailadres in.' });
+        const attempt = beginVerification(database, user.id,
+          wanted, mailConfig.key);
+        if (!attempt.ok) return sendJson(res,
+          ['rate_limited', 'daily_limit'].includes(attempt.error) ? 429 : 400, {
+            message: attempt.error === 'rate_limited'
+              ? 'Vraag na vijf minuten opnieuw een verificatiecode aan.'
+              : attempt.error === 'daily_limit'
+                ? 'Maximaal drie verificatiemails per 24 uur. Probeer het morgen opnieuw.'
+                : 'Het e-mailadres is ongeldig.' });
+        saveDb(database);
+        const mailId = crypto.createHash('sha256')
+          .update(JSON.stringify(['boekenbaai-verify-v1', user.id,
+            attempt.next.pending.hash])).digest('hex');
+        const sent = await bridgeSend({
+          config: mailConfig, id: mailId, to: wanted,
+          subject: 'Boekenbaai: verifieer je herinneringsadres',
+          body: 'Je hebt in Boekenbaai dit e-mailadres gekozen voor herinneringen.\n'
+            + 'Voer de volgende code in bij je accountinstellingen:\n\n'
+            + attempt.code + '\n\n'
+            + 'De code blijft 24 uur geldig. Heb je dit niet aangevraagd? '
+            + 'Dan hoef je niets te doen.\n\nBoekenbaai',
+        });
+        if (!sent) return sendJson(res, 502, {
+          message: 'Het versturen van de verificatiemail is niet bevestigd. '
+            + 'Probeer het later opnieuw.' });
+        return sendJson(res, 200, { pendingEmail: wanted });
+      }
+      if (body?.action === 'confirm_alternative') {
+        const attempt = confirmVerification(database, user.id,
+          String(body.code || ''), mailConfig.key);
+        if (!attempt.ok) {
+          if (attempt.persist) saveDb(database);
+          return sendJson(res, 400, { message: 'Ongeldige of verlopen verificatiecode.' });
+        }
+        saveDb(database);
+        return sendJson(res, 200, {
+          mode: 'alternate', alternateEmail: prefsFor(database, user.id).alternateEmail,
+        });
+      }
+      return sendJson(res, 400, { message: 'Onbekende instelling.' });
+      } finally {
+        releasePreferences();
+      }
+    }
+
+    // PR7: separate verified recipients for one shared admin login.
+    const adminMailRoute = '/api/admin/mail-notifications';
+    if (requestUrl.pathname === adminMailRoute) {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, user ? 403 : 401, {
+        message: 'Alleen Beheer kan deze ontvangers beheren.',
+      });
+      const cfg = importMailConfiguration(process.env);
+      if (req.method === 'GET') {
+        return sendJson(res, 200, adminMail.publicSettings(getDb(), cfg.ready));
+      }
+      if (req.method !== 'POST') return sendJson(res, 405, {
+        message: 'Methode niet toegestaan.',
+      });
+      const body = await parseBody(req);
+      const releaseSettings = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+      if (!releaseSettings) return sendJson(res, 409, {
+        message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.',
+      });
+      try {
+        const database = loadDb();
+        if (body?.action === 'update_categories') {
+          if (!adminMail.updateCategories(database, body.categories))
+            return sendJson(res, 400, { message: 'Ongeldige meldingsinstellingen.' });
+          saveDb(database);
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        if (body?.action === 'remove_address') {
+          if (!adminMail.removeAddress(database, body.email))
+            return sendJson(res, 404, { message: 'Dit adres is niet gevonden.' });
+          saveDb(database);
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        if (body?.action === 'request_address') {
+          if (!cfg.ready) return sendJson(res, 503, {
+            message: 'Stel eerst de Boekenbaai-Gmail-koppeling in.',
+          });
+          const attempt = adminMail.requestAddress(database, body.email, cfg.key);
+          if (!attempt.ok) return sendJson(res,
+            ['rate_limited', 'daily_limit'].includes(attempt.error) ? 429 : 400, {
+              message: attempt.error === 'rate_limited'
+                ? 'Vraag na vijf minuten een nieuwe code aan.'
+                : attempt.error === 'daily_limit'
+                  ? 'Maximaal drie verificatiemails per 24 uur.'
+                  : attempt.error === 'too_many_recipients'
+                    ? 'Maximaal tien beheerdersadressen toegestaan.'
+                    : attempt.error === 'already_verified'
+                      ? 'Dit adres is al bevestigd.'
+                      : 'Dit e-mailadres is ongeldig.',
+            });
+          saveDb(database);
+          const id = crypto.createHash('sha256').update(JSON.stringify([
+            'boekenbaai-admin-verify', attempt.email, attempt.hash,
+          ])).digest('hex');
+          const sent = await bridgeSend({
+            config: cfg, id, to: attempt.email,
+            subject: 'Boekenbaai: bevestig beheerdersmeldingen',
+            body: 'Bevestig dit adres voor beheerdersmeldingen van Boekenbaai.\n\n'
+              + 'Verificatiecode: ' + attempt.code + '\n\n'
+              + 'Geldig gedurende 24 uur. Niet aangevraagd? Negeer dit bericht.',
+          });
+          if (!sent) return sendJson(res, 502, {
+            message: 'Verificatiemail niet bevestigd. Probeer het later opnieuw.',
+          });
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        if (body?.action === 'confirm_address') {
+          const attempt = adminMail.confirmAddress(database, body.email,
+            String(body.code || ''), cfg.key);
+          if (!attempt.ok) {
+            if (attempt.persist) saveDb(database);
+            return sendJson(res, 400, {
+              message: 'De verificatiecode is ongeldig of verlopen.',
+            });
+          }
+          saveDb(database);
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        return sendJson(res, 400, { message: 'Onbekende beheerinstelling.' });
+      } finally {
+        releaseSettings();
+      }
+    }
+
     // PR6: all classrooms share one persistent task per physical book. The
     // server scopes every task to current teacher assignments, never the
     // client's cached class or student list.
@@ -7380,7 +7611,15 @@ async function handleApi(req, res, requestUrl) {
       if (!ensureRole(user, ['admin'])) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen docenten verwijderen' });
       }
-      const db = getDb();
+      // Coordinate teacher deletion with the same lock used to update
+      // notification preferences. This prevents a delayed POST from
+      // recreating a preference after deletion.
+      const releasePreferences = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+      if (!releasePreferences) return sendJson(res, 409, {
+        message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.',
+      });
+      try {
+      const db = loadDb();
       const index = db.users.findIndex(
         (account) => account.id === teacherMatch[1] && account.role === 'teacher'
       );
@@ -7388,6 +7627,11 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 404, { message: 'Docent niet gevonden' });
       }
       const [removedTeacher] = db.users.splice(index, 1);
+      if (db.bookImportEmailPreferences
+        && Object.prototype.hasOwnProperty.call(
+          db.bookImportEmailPreferences, removedTeacher.id)) {
+        delete db.bookImportEmailPreferences[removedTeacher.id];
+      }
       for (const klass of db.classes) {
         if (!Array.isArray(klass.teacherIds)) {
           continue;
@@ -7405,8 +7649,11 @@ async function handleApi(req, res, requestUrl) {
         performedBy: user?.id || null,
         message: `Docent ${removedTeacher.name} is verwijderd`,
       });
-      saveDb(db);
+      saveDb(db, { deletedTeacherPreferenceId: removedTeacher.id });
       return sendJson(res, 200, { teacher: sanitizeTeacher(removedTeacher) });
+      } finally {
+        releasePreferences();
+      }
     }
 
     const teacherResetMatch = requestUrl.pathname.match(/^\/api\/teachers\/([\w-]+)\/reset-password$/);
@@ -8648,8 +8895,56 @@ const server = http.createServer((req, res) => {
   });
 });
 
+// PR7: no email is sent unless the dedicated Gmail bridge is configured.
+// Receipt claims are persisted beside db.json on the same Sliplane volume.
+let importMailWorkerActive = false;
+let importMailPromise = null;
+async function tickImportReminders() {
+  const mailConfig = importMailConfiguration(process.env);
+  if (shuttingDown || importMailWorkerActive || !mailConfig.ready) return;
+  importMailWorkerActive = true;
+  try {
+    const authPath = process.env.BOEKENBAAI_AUTH_DATA_PATH
+      ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
+      : DATA_PATH + '.auth.json';
+    const snapshot = loadDb();
+    const links = readSchoolLinks(authPath);
+    const folder = DATA_PATH + '.import-mail-receipts';
+    const currentState = () => ({ db: loadDb(), links: readSchoolLinks(authPath) });
+    const shouldStop = () => shuttingDown;
+    const stats = await dispatchReminders({ db: snapshot, links, folder,
+      currentState, shouldStop });
+    const actions = shuttingDown ? { claimed: 0, accepted: 0, failed: 0 }
+      : await dispatchActions({ db: snapshot, links, folder,
+        currentState, shouldStop });
+    if (stats.claimed || actions.claimed) console.log('Boekenbaai-mailmeldingen verwerkt:', {
+      accepted: stats.accepted + actions.accepted,
+      failed: stats.failed + actions.failed,
+    });
+  } catch (error) {
+    console.error('Importherinneringen controleren mislukt:',
+      error.code || 'worker_error');
+  } finally {
+    importMailWorkerActive = false;
+  }
+}
+function startImportMailWorker() {
+  if (!importMailPromise && !shuttingDown) {
+    importMailPromise = tickImportReminders().finally(() => { importMailPromise = null; });
+  }
+  return importMailPromise;
+}
+
 server.listen(PORT, () => {
   console.log(`Boekenbaai server draait op http://localhost:${PORT}`);
+  if (importMailConfiguration(process.env).ready) {
+    // Avoid sending on test startup synchronously; the timer is nonblocking.
+    const firstMailRun = setTimeout(() => { void startImportMailWorker(); }, 30000);
+    if (typeof firstMailRun.unref === 'function') firstMailRun.unref();
+    const mailInterval = setInterval(() => { void startImportMailWorker(); },
+      Math.min(IMPORT_MAIL_HOUR_MS, 120_000));
+    if (typeof mailInterval.unref === 'function') mailInterval.unref();
+  }
   // Resume interrupted cover caching without delaying startup or test setup.
   if (typeof setImmediate === 'function') {
     const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
@@ -8667,14 +8962,20 @@ function gracefulShutdown(signal) {
   }
   shuttingDown = true;
   console.log(`Ontvangen signaal ${signal}, server wordt afgesloten...`);
+  // Stop starting new recipients; finish an in-flight bridge request before
+  // exiting. Outbound fetch is not covered by server.close().
+  const mailDone = importMailPromise || Promise.resolve();
+  let httpDone;
+  const closed = new Promise(resolve => { httpDone = resolve; });
   server.close(() => {
     console.log('HTTP-server netjes afgesloten.');
-    process.exit(0);
+    httpDone();
   });
+  void Promise.allSettled([closed, mailDone]).then(() => process.exit(0));
   setTimeout(() => {
     console.warn('Geforceerde afsluiting na timeout.');
     process.exit(0);
-  }, 5000).unref();
+  }, 25000).unref();
 }
 
 process.on('SIGTERM', gracefulShutdown);

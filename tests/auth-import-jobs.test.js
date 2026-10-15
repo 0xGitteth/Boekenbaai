@@ -76,9 +76,11 @@ async function waitForServer(proc) {
         resolve();
       }
     });
+    let stderr = '';
+    proc.stderr.on('data', chunk => { stderr += chunk.toString(); });
     proc.once('exit', (code) => {
       clearTimeout(timer);
-      reject(new Error(`Server exited early with code ${code}`));
+      reject(new Error(`Server exited early with code ${code}: ${stderr.slice(-1500)}`));
     });
   });
 }

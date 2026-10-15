@@ -12,6 +12,7 @@ const { verifyGoogleIdToken } = require('./google-id-token');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const { runSchoolSync } = require('./school-sync-core');
 const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
+const { acquireFileLock } = require('./book-import-reminder-mail');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -657,8 +658,27 @@ async function handleCustomRoute(req, res, requestUrl) {
         sendJson(res, 403, { message: 'Je beheerderssessie is niet meer geldig. Log opnieuw in.' });
         return true;
       }
-      const payload = schoolSyncPreview(context, body, pathname.endsWith('/apply'));
-      sendJson(res, 200, payload);
+      if (pathname.endsWith('/apply')) {
+        const release = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+        if (!release) {
+          sendJson(res, 409, { message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.' });
+          return true;
+        }
+        try {
+          // Read the newest database and auth snapshot inside the shared lock.
+          // A context built before the lock can overwrite newly saved settings.
+          const freshContext = resolveAdmin(req);
+          if (!freshContext) {
+            sendJson(res, 403, { message: 'Je beheerderssessie is niet meer geldig.' });
+            return true;
+          }
+          const payload = schoolSyncPreview(freshContext, body, true);
+          sendJson(res, 200, payload);
+        } finally { release(); }
+      } else {
+        const payload = schoolSyncPreview(context, body, false);
+        sendJson(res, 200, payload);
+      }
     } catch (error) {
       if (error?.code === 'LARGE_REMOVAL_CONFIRMATION') {
         sendJson(res, 409, {

@@ -213,6 +213,26 @@ function sameOriginHeaders(cookie, extra = {}) {
   try {
     await waitForServer();
 
+    // The school-sync commit must participate in the shared DB lock.
+    // Even with a valid admin session it may not proceed during a pending
+    // preference, teacher deletion or student-management write.
+    const dbLockPath = dbPath + '.mail-preferences.lock';
+    fs.writeFileSync(dbLockPath, 'another-active-worker');
+    try {
+      const blockedSync = await fetch(`${baseUrl}/api/admin/school-sync/apply`, {
+        method: 'POST',
+        headers: sameOriginHeaders(
+          cookieHeader({ boekenbaai_session: adminToken }),
+          { 'Content-Type': 'application/json' }
+        ),
+        body: JSON.stringify({ kind: 'teacher', file: '' }),
+      });
+      assert.strictEqual(blockedSync.status, 409,
+        'School sync must refuse to write while the shared DB lock is held.');
+    } finally {
+      fs.unlinkSync(dbLockPath);
+    }
+
     const staffPage = await fetch(`${baseUrl}/staff.html`);
     assert.strictEqual(staffPage.status, 200);
     const html = await staffPage.text();
