@@ -22,6 +22,7 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   acquireFileLock } = require('./book-import-reminder-mail');
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
+const { readJsonSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -1912,8 +1913,7 @@ function appendImportClassFollowups(db, report, entries, now) {
 }
 
 function loadDb() {
-  const raw = fs.readFileSync(DATA_PATH, 'utf-8');
-  const data = JSON.parse(raw);
+  const data = readJsonSnapshot(DATA_PATH);
   if (!Array.isArray(data.books)) data.books = [];
   if (!Array.isArray(data.users)) data.users = [];
   if (!Array.isArray(data.classes)) data.classes = [];
@@ -1933,25 +1933,15 @@ function loadDb() {
 }
 
 function saveDb(db, options) {
-  assertReviewedImportNotLost(db, options);
-  fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
+  commitJsonSnapshot({ dataPath: DATA_PATH, value: db,
+    beforeWrite: () => assertReviewedImportNotLost(db, options) });
 }
 
-// The reviewed book import is one confirmed transaction. Write its complete
-// database snapshot to a sibling file first, then atomically replace the old
-// snapshot so a failed or interrupted write cannot leave half a JSON document.
+// The reviewed import must obey the same optimistic snapshot/atomic commit
+// discipline as other database writers, including crash-safe file replacement.
 function saveReviewedBookImportDb(db) {
-  assertReviewedImportNotLost(db);
-  const raw = JSON.stringify(db, null, 2);
-  const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
-  try {
-    fs.writeFileSync(temporaryPath, raw, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(temporaryPath, DATA_PATH);
-  } finally {
-    try { fs.unlinkSync(temporaryPath); } catch (error) {
-      if (error.code !== 'ENOENT') console.warn('Tijdelijke importdatabase opruimen mislukt:', error.message);
-    }
-  }
+  commitJsonSnapshot({ dataPath: DATA_PATH, value: db,
+    beforeWrite: () => assertReviewedImportNotLost(db) });
 }
 
 function hashPassword(password) {
@@ -8852,7 +8842,8 @@ async function handleApi(req, res, requestUrl) {
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
   } catch (error) {
-    if (error?.code === 'DATABASE_WRITE_CONFLICT') {
+    if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY',
+      'DATABASE_SNAPSHOT_UNTRACKED'].includes(error?.code)) {
       return sendJson(res, 409, { message: 'De gegevens zijn intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.', error: error.code });
     }
     console.error(error);
