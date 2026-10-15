@@ -251,19 +251,23 @@ function findAccount(db, type, id) {
 
 function getSessionContextByToken(token) {
   if (!token || token === SESSION_SENTINEL) return null;
-  let session = sessionsMap.get(token) || null;
-  if (!session) {
-    const persistent = core.resolveSession(loadAuthStore(), token);
-    if (persistent) {
-      session = {
-        userId: persistent.userId,
-        type: persistent.type,
-        createdAt: persistent.createdAt,
-      };
-      sessionsMap.set(token, session);
-    }
+  // A cached session is never authoritative. Google-link changes now revoke
+  // sessions atomically in the persisted auth store; immediately reject any
+  // formerly cached token that is no longer present on disk.
+  const persistent = core.resolveSession(loadAuthStore(), token);
+  if (!persistent) {
+    sessionsMap.delete(token);
+    return null;
   }
-  if (!session) return null;
+  let session = sessionsMap.get(token);
+  if (!session || session.userId !== persistent.userId || session.type !== persistent.type) {
+    session = {
+      userId: persistent.userId,
+      type: persistent.type,
+      createdAt: persistent.createdAt,
+    };
+    sessionsMap.set(token, session);
+  }
   const db = readMainDb();
   const user = findAccount(db, session.type === 'student' ? 'student' : 'staff', session.userId);
   return user ? { token, session, user, db } : null;
