@@ -256,6 +256,33 @@ async function loginByUsername(username, password, forwardedFor) {
     });
     assert.strictEqual(tooShort.status, 400, 'Nieuwe beheerderswachtwoorden moeten minimaal 12 tekens zijn');
 
+    // Lock contention cannot commit a password while leaving the active
+    // session fingerprint behind. Both files must stay unchanged.
+    const { acquireFileLock } = require('../book-import-reminder-mail');
+    const releaseBusy = acquireFileLock(dbPath + '.database-write.lock',
+      { processOwned: true });
+    assert.equal(typeof releaseBusy, 'function');
+    const authBeforeConflict = fs.readFileSync(authPath, 'utf8');
+    try {
+      const rejected = await fetch(`${baseUrl}/api/account/password`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json', Origin: baseUrl,
+          'Sec-Fetch-Site': 'same-origin',
+          Cookie: `boekenbaai_session=${encodeURIComponent(sessionA)}`,
+          Authorization: 'Bearer cookie',
+        },
+        body: JSON.stringify({
+          currentPassword: 'legacy-admin-password',
+          newPassword: 'absoluut niet opslaan als lock bezet is',
+        }),
+      });
+      assert.strictEqual(rejected.status, 409);
+      assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).users
+        .find(user => user.id === 'admin-1').passwordHash, migratedHashBeforeSecond);
+      assert.strictEqual(fs.readFileSync(authPath, 'utf8'), authBeforeConflict);
+    } finally { releaseBusy(); }
+
     const change = await fetch(`${baseUrl}/api/account/password`, {
       method: 'PATCH',
       headers: {

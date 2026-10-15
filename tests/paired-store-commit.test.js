@@ -114,6 +114,29 @@ try {
   assert.strictEqual(JSON.parse(fs.readFileSync(authPath, 'utf8')).version, 'after-crash-auth');
   assert.strictEqual(fs.existsSync(journalPath), false);
 
+  // Simulate a crashed process leaving only the tiny acquisition guard.
+  // A live guard must not be stolen, but a dead local owner is recoverable.
+  const guardFile = dataPath + '.database-write.lock.guard';
+  const { hostname } = require('node:os');
+  const guardOwner = spawnSync(process.execPath, ['-e', [
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "fs.writeFileSync(process.argv[1], JSON.stringify({",
+    "format: 'boekenbaai-lock-guard-v1', pid: process.pid, host: os.hostname() }));",
+  ].join('\n'), guardFile]);
+  assert.strictEqual(guardOwner.status, 0, guardOwner.stderr?.toString());
+  assert.strictEqual(fs.existsSync(guardFile), true);
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false);
+  assert.strictEqual(fs.existsSync(guardFile), false);
+  assert.strictEqual(fs.existsSync(guardFile + '.reaper'), false);
+  // An actual live guard owner must remain protected.
+  fs.writeFileSync(guardFile, JSON.stringify({
+    format: 'boekenbaai-lock-guard-v1', pid: process.pid, host: hostname(),
+  }));
+  assert.throws(() => recoverPairedJson({ dataPath, authPath, waitMs: 40 }),
+    { code: 'DATABASE_WRITE_BUSY' });
+  fs.unlinkSync(guardFile);
+
   // A healthy other process may temporarily hold the shared writer lock.
   // Startup recovery must retry boundedly rather than abort immediately.
   const { acquireFileLock } = require('../book-import-reminder-mail');

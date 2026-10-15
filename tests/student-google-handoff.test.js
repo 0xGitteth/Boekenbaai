@@ -271,7 +271,7 @@ function cookiesForSelection(selectedCookie) {
     fs.writeFileSync(authPath, JSON.stringify(store, null, 2));
 
     const mismatch = await fetch(
-      `${baseUrl}/api/auth/google/callback?state=${encodeURIComponent(selected.payload.state)}`,
+      `${baseUrl}/api/auth/google/callback?simulateConcurrentLock=1&state=${encodeURIComponent(selected.payload.state)}`,
       {
         redirect: 'manual',
         headers: {
