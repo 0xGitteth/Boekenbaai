@@ -173,6 +173,27 @@ function acquireFileLock(filename, { staleMs = 300000 } = {}) {
         return true;
       });
       if (success) released = true;
+      else {
+        // A guard is held only for synchronous filesystem operations.
+        // Do not abandon the lock on a transient EEXIST: callers otherwise
+        // cannot release the owned lock until stale recovery.
+        const pause = new Int32Array(new SharedArrayBuffer(4));
+        for (let attempt = 0; attempt < 50 && !released; attempt++) {
+          Atomics.wait(pause, 0, 0, 2);
+          const retry = withLockGuard(filename, () => {
+            let observed;
+            try { observed = fs.readFileSync(filename, 'utf8'); }
+            catch (error) {
+              if (error.code === 'ENOENT') return true;
+              throw error;
+            }
+            if (observed === owner) fs.unlinkSync(filename);
+            return true;
+          });
+          if (retry) released = true;
+        }
+        if (!released) throw new Error('Lock guard bleef bezet tijdens vrijgave');
+      }
     };
   }
   return withLockGuard(filename, () => {
@@ -268,7 +289,7 @@ async function dispatchReminders({ db, links, folder, env = process.env,
         id: crypto.createHash('sha256').update(ids.join('|')).digest('hex'),
         subject: 'Boekenbaai: openstaande boekcontroles voor jouw klas',
         body: mailText(person.tasks.length, config.base + MAIL_PATH),
-        now, fetchImpl });
+        now: Date.now(), fetchImpl });
       result[accepted ? 'accepted' : 'failed'] += ids.length;
     });
   }
