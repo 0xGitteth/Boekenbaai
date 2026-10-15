@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { enforceGoogleLinkInvariants } = require('./google-link-transaction-core');
 const { withDatabaseWriteLock, assertSnapshotCurrent,
   assertNoPendingPairedJournal } = require('./database-write-coordinator');
 
@@ -100,11 +101,12 @@ function commitPairedJson({ dataPath, authPath, data, auth, expectedData, expect
       version: 1,
       createdAt: new Date().toISOString(),
       data,
-      auth,
+      auth: enforceGoogleLinkInvariants(expectedAuth, auth),
     });
-    // Recovery after a crash between the two swaps replays exactly this pair.
+    // Replay exactly the security-validated pair recorded in the journal.
+    const journal = readJournal(journalPath);
     atomicWriteJson(dataPath, data);
-    atomicWriteJson(authPath, auth);
+    atomicWriteJson(authPath, journal.auth);
     removeJournal(journalPath);
   });
 }

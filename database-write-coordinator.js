@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { acquireFileLock } = require('./book-import-reminder-mail');
+const { enforceGoogleLinkInvariants } = require('./google-link-transaction-core');
 
 const versions = new WeakMap();
 
@@ -114,8 +115,16 @@ function commitJsonSnapshot({ dataPath, value, beforeWrite, lockPath = dataPath 
         throw conflict('DATABASE_ASYNC_WRITE', 'Opslagvalidatie moet synchroon plaatsvinden.');
       }
     }
-    const raw = JSON.stringify(value, null, 2);
+    let committed = value;
+    if (absolute !== path.resolve(lockPath)) {
+      let oldAuth = {};
+      try { oldAuth = JSON.parse(fs.readFileSync(absolute, 'utf8')); }
+      catch (error) { if (error?.code !== 'ENOENT') throw error; }
+      committed = enforceGoogleLinkInvariants(oldAuth, value);
+    }
+    const raw = JSON.stringify(committed, null, 2);
     atomicWrite(absolute, raw);
+    if (committed !== value) Object.assign(value, committed);
     versions.set(value, { path: absolute, hash: fingerprint(raw) });
   });
 }
@@ -135,7 +144,9 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
     if (!next || typeof next !== 'object' || Array.isArray(next)) {
       throw conflict('DATABASE_INVALID', 'Ongeldig resultaat van databasewijziging.');
     }
-    atomicWrite(path.resolve(filePath), JSON.stringify(next, null, 2));
+    const committed = path.resolve(filePath) === path.resolve(lockPath)
+      ? next : enforceGoogleLinkInvariants(latest, next);
+    atomicWrite(path.resolve(filePath), JSON.stringify(committed, null, 2));
     return true;
   });
 }

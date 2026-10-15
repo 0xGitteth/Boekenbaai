@@ -13,11 +13,6 @@ const {
   validatePersistedSession,
   decorateSessionResult,
 } = require('./google-auth-security-core');
-const {
-  snapshotGoogleLinks,
-  findChangedExistingGoogleAccounts,
-  revokePersistedSessionsForAccounts,
-} = require('./google-link-session-revocation-core');
 
 const originalCreateServer = http.createServer.bind(http);
 const originalUpsertSession = core.upsertSession;
@@ -168,32 +163,6 @@ function shouldWatchGoogleLinkMutation(req, pathname) {
   );
 }
 
-function installGoogleLinkSessionRevocation(res, beforeStore) {
-  const beforeSnapshot = snapshotGoogleLinks(beforeStore);
-  const originalEnd = res.end.bind(res);
-  let processed = false;
-
-  res.end = function patchedGoogleLinkMutationEnd(chunk, encoding, callback) {
-    if (!processed) {
-      processed = true;
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        updateAuthStoreSafely(latestStore => {
-          const changedAccounts = findChangedExistingGoogleAccounts(beforeSnapshot, latestStore);
-          if (!changedAccounts.length) return false;
-          const beforeRevocation = revokePersistedSessionsForAccounts(beforeStore, changedAccounts);
-          const latestRevocation = revokePersistedSessionsForAccounts(latestStore, changedAccounts);
-          const hashes = new Set([
-            ...beforeRevocation.revokedTokenHashes,
-            ...latestRevocation.revokedTokenHashes,
-          ]);
-          for (const hash of hashes) revokedTokenHashes.add(hash);
-          return latestRevocation.revokedTokenHashes.length ? latestRevocation.store : false;
-        });
-      }
-    }
-    return originalEnd(chunk, encoding, callback);
-  };
-}
 
 function wrapMeResponse(res, activeSession) {
   if (activeSession?.authMethod !== 'google') return;
@@ -308,9 +277,7 @@ function wrapRequestListener(listener) {
       if (pathname === '/api/me' && activeSession) {
         wrapMeResponse(res, activeSession);
       }
-      if (authStore && shouldWatchGoogleLinkMutation(req, pathname)) {
-        installGoogleLinkSessionRevocation(res, authStore);
-      }
+      // Link-change security cleanup is part of the atomic auth commit.
 
       return requestContext.run({ pathname }, () => listener(req, res));
     } catch (error) {

@@ -73,23 +73,6 @@ function reconcileLinkRequests(beforeStore, { dataPath = DATA_PATH,
   });
 }
 
-function watchResponse(res, beforeStore) {
-  const originalEnd = res.end.bind(res);
-  let processed = false;
-  res.end = function linkConsistencyEnd(chunk, encoding, callback) {
-    if (!processed) {
-      processed = true;
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        try {
-          reconcileLinkRequests(beforeStore);
-        } catch (error) {
-          console.error('[Google link consistency]', error?.message || error);
-        }
-      }
-    }
-    return originalEnd(chunk, encoding, callback);
-  };
-}
 
 function wrapRequestListener(listener) {
   return function linkConsistencyListener(req, res) {
@@ -99,9 +82,7 @@ function wrapRequestListener(listener) {
     } catch (error) {
       return listener(req, res);
     }
-    if (String(req.method || '').toUpperCase() === 'POST' && WATCH_PATHS.has(pathname)) {
-      watchResponse(res, loadStore());
-    }
+    // Pending requests are now superseded within the link-update commit.
     return listener(req, res);
   };
 }
