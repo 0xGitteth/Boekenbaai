@@ -142,6 +142,24 @@ const fetchImpl=async(url,options)=>{
   return {ok:true,status:200,json:async()=>({ok:true,id:payload.id})};
 };
 async function run(){
+  const revoked = structuredClone(data);
+  const wasSent = [];
+  const suppressed = await actions.dispatchActions({
+    db: data, links, folder: path.join(tmp, 'revoked-admin'), env: cfg, now,
+    currentState: () => ({ db: revoked, links }),
+    fetchImpl: async (...args) => { wasSent.push(args); return fetchImpl(...args); },
+  });
+  assert.equal(suppressed.accepted, 3);
+  // Only the teacher recipients remain after administration removes its address.
+  const currentAdmin = admin.adminSettings(revoked).recipients[0].email;
+  assert.equal(admin.removeAddress(revoked, currentAdmin), true);
+  const cancelled = await actions.dispatchActions({
+    db: data, links, folder: path.join(tmp, 'revoked-all'), env: cfg, now,
+    currentState: () => ({ db: revoked, links }),
+    fetchImpl,
+  });
+  assert.equal(cancelled.recipients, 2,
+    'A removed administrator must not be mailed from a stale scan.');
   // Two processes compete for one recipient. The second is skipped until
   // the first finishes, and may not send a second fragment of that batch.
   const first=actions.dispatchActions({db:data,links,folder:tmp,env:cfg,now,fetchImpl});
