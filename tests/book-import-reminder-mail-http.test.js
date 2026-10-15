@@ -100,6 +100,39 @@ async function run() {
     const admin = await login('admin');
     const student = await login('student-a');
     const route = '/api/staff/book-import-mail-preferences';
+    const adminRoute = '/api/admin/mail-notifications';
+    assert.equal((await call(adminRoute, student)).status, 403);
+    assert.equal((await call(adminRoute, teacher)).status, 403);
+    assert.equal((await call(route, admin)).status, 403,
+      'Shared admin login must use its own address list, not teacher preferences.');
+    assert.equal((await call(adminRoute, null)).status, 401);
+    assert.deepEqual((await call(adminRoute, admin)).body.recipients, []);
+    assert.equal((await call(adminRoute, admin, {
+      action: 'request_address', email: 'central@koraal.nl',
+    })).status, 200);
+    assert.equal((await call(adminRoute, admin)).body.recipients[0].verified, false);
+    const adminCode = fs.readFileSync(messages, 'utf8').trim().split('\n')
+      .map(JSON.parse)[0].payload.body.match(/\b\d{8}\b/)[0];
+    assert.equal((await call(adminRoute, admin, {
+      action: 'confirm_address', email: 'central@koraal.nl', code: adminCode,
+    })).status, 200);
+    assert.equal((await call(adminRoute, admin)).body.recipients[0].verified, true);
+    assert.equal((await call(adminRoute, teacher, {
+      action: 'remove_address', email: 'central@koraal.nl',
+    })).status, 403);
+    assert.equal((await call(adminRoute, admin, {
+      action: 'update_categories',
+      categories: {transfers:false, google:true, books:true},
+    })).status, 200);
+    assert.equal((await call(adminRoute, admin)).body.categories.transfers, false);
+    assert.equal((await call(adminRoute, admin, {
+      action: 'update_categories',
+      categories: {transfers:true, google:true, books:true},
+    })).status, 200);
+    assert.equal((await call(adminRoute, admin, {
+      action: 'remove_address', email: 'central@koraal.nl',
+    })).status, 200);
+    assert.deepEqual((await call(adminRoute, admin)).body.recipients, []);
     assert.equal((await call(route, null)).status, 401);
     assert.equal((await call(route, student)).status, 403);
     assert.equal((await call(route, teacher)).body.mode, 'school');
@@ -119,8 +152,8 @@ async function run() {
       code: '00000000' })).status, 403);
     const pendingMail = fs.readFileSync(messages, 'utf8').trim().split('\n')
       .map(JSON.parse);
-    assert.equal(pendingMail.length, 1);
-    const code = pendingMail[0].payload.body.match(/\b\d{8}\b/)[0];
+    assert.equal(pendingMail.length, 2);
+    const code = pendingMail[1].payload.body.match(/\b\d{8}\b/)[0];
     assert.equal(pendingMail[0].payload.to, 'teacher@koraal.nl');
     assert.equal((await call(route, teacher, {
       action: 'confirm_alternative', code: '11111111',

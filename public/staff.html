@@ -951,10 +951,11 @@
         </section>
       </section>
       <section class="panel panel--staff hidden" id="book-import-mail-preferences-panel"
-        data-visible-for="teacher,admin" aria-labelledby="book-import-mail-title">
+        data-visible-for="teacher" aria-labelledby="book-import-mail-title">
         <div class="panel__header">
           <h2 id="book-import-mail-title">Mijn account: e-mailherinneringen</h2>
-          <p class="hint">Kies waar je herinneringen voor openstaande boekimporttaken wilt ontvangen.
+          <p class="hint">Kies waar je e-mails over openstaande acties ontvangt, zoals
+            klaswissels, Google-koppelverzoeken en controles van klasboeken.
             Deze instelling verandert je Google-inlogaccount niet.</p>
         </div>
         <p id="book-import-mail-config" class="hint"></p>
@@ -989,6 +990,35 @@
         <p id="book-import-mail-status" class="hint" role="status" aria-live="polite"></p>
         <p class="hint">Je blijft openstaande taken in Boekenbaai zien, ook als
           je e-mailherinneringen uitschakelt.</p>
+      </section>
+      <section class="panel panel--staff hidden" id="admin-mail-notifications-panel"
+        data-visible-for="admin" aria-labelledby="admin-mail-notifications-title">
+        <div class="panel__header">
+          <h2 id="admin-mail-notifications-title">Beheer: e-mailmeldingen</h2>
+          <p class="hint">Ontvangstadressen zijn onafhankelijk van het gedeelde beheerdersaccount.
+            Alleen geverifieerde adressen ontvangen meldingen, zonder leerlinggegevens.</p>
+        </div>
+        <p id="admin-mail-delivery" class="hint"></p>
+        <div id="admin-mail-notifications-list" class="form-grid"></div>
+        <form id="admin-mail-add-form" class="form-grid form-grid--compact">
+          <label class="form-field">Nieuw beheerdersadres
+            <input id="admin-mail-new-address" type="email" maxlength="254"
+              autocomplete="email" placeholder="naam@koraal.nl" required />
+          </label>
+          <button class="btn btn--secondary" type="submit">Verificatiecode versturen</button>
+        </form>
+        <form id="admin-mail-categories" class="form-grid form-grid--compact">
+          <h3>Welke beheerdersmeldingen wil je ontvangen?</h3>
+          <label><input id="admin-mail-category-transfers" type="checkbox" />
+            Afgewezen klaswissels</label>
+          <label><input id="admin-mail-category-google" type="checkbox" />
+            Google-koppelverzoeken</label>
+          <label><input id="admin-mail-category-books" type="checkbox" />
+            Boekcontroles die naar beheer zijn geëscaleerd</label>
+          <button type="submit" class="btn btn--secondary">Categorieën opslaan</button>
+        </form>
+        <p class="hint" id="admin-mail-notifications-status" role="status"
+          aria-live="polite"></p>
       </section>
     </main>
 
@@ -1239,5 +1269,6 @@
     <script type="module" src="staff-loans.js"></script>
     <script type="module" src="book-import-followups.js"></script>
     <script type="module" src="book-import-mail-settings.js"></script>
+    <script type="module" src="admin-mail-notifications.js"></script>
   </body>
 </html>

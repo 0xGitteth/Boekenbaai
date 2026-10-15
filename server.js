@@ -18,7 +18,10 @@ const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   configuration: importMailConfiguration, readSchoolLinks, prefsFor,
   schoolEmailFor, validEmail, beginVerification, confirmVerification,
-  changePreference, bridgeSend, dispatchReminders } = require('./book-import-reminder-mail');
+  changePreference, bridgeSend, dispatchReminders,
+  acquireFileLock } = require('./book-import-reminder-mail');
+const adminMail = require('./book-import-admin-mail');
+const { dispatchActions } = require('./book-import-action-mail');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -1831,6 +1834,18 @@ function assertReviewedImportNotLost(db, { deletedTeacherPreferenceId = null } =
       error.code = 'DATABASE_WRITE_CONFLICT';
       throw error;
     }
+  }
+  const previousAdminMail = current.bookImportAdminMail || null;
+  const proposedAdminMail = db.bookImportAdminMail || null;
+  if (previousAdminMail && (
+    !proposedAdminMail ||
+    !Number.isSafeInteger(proposedAdminMail.revision) ||
+    proposedAdminMail.revision < previousAdminMail.revision ||
+    (proposedAdminMail.revision === previousAdminMail.revision
+      && JSON.stringify(previousAdminMail) !== JSON.stringify(proposedAdminMail)))) {
+    const error = new Error('Admin mail recipients were lost by a stale database write');
+    error.code = 'DATABASE_WRITE_CONFLICT';
+    throw error;
   }
   const storedTasks = new Map((Array.isArray(current.bookImportFollowups)
     ? current.bookImportFollowups : []).map((task) => [task.id, task]));
@@ -5009,9 +5024,9 @@ async function handleApi(req, res, requestUrl) {
     // These actions never change login identity or other staff accounts.
     const mailRoute = '/api/staff/book-import-mail-preferences';
     if (requestUrl.pathname === mailRoute) {
-      if (!ensureRole(user, ['teacher', 'admin'])) {
+      if (!ensureRole(user, ['teacher'])) {
         return sendJson(res, user ? 403 : 401,
-          { message: 'Log in als medewerker om e-mailmeldingen in te stellen.' });
+          { message: 'Deze persoonlijke e-mailinstellingen zijn voor docenten.' });
       }
       const mailConfig = importMailConfiguration(process.env);
       const authPath = process.env.BOEKENBAAI_AUTH_DATA_PATH
@@ -5032,6 +5047,10 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
       }
       const body = await parseBody(req);
+      const releasePreferences = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+      if (!releasePreferences) return sendJson(res, 409, {
+        message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.' });
+      try {
       const database = loadDb();
       if (body?.action === 'use_school' || body?.action === 'disable'
         || body?.action === 'use_alternate') {
@@ -5091,6 +5110,92 @@ async function handleApi(req, res, requestUrl) {
         });
       }
       return sendJson(res, 400, { message: 'Onbekende instelling.' });
+      } finally {
+        releasePreferences();
+      }
+    }
+
+    // PR7: separate verified recipients for one shared admin login.
+    const adminMailRoute = '/api/admin/mail-notifications';
+    if (requestUrl.pathname === adminMailRoute) {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, user ? 403 : 401, {
+        message: 'Alleen Beheer kan deze ontvangers beheren.',
+      });
+      const cfg = importMailConfiguration(process.env);
+      if (req.method === 'GET') {
+        return sendJson(res, 200, adminMail.publicSettings(getDb(), cfg.ready));
+      }
+      if (req.method !== 'POST') return sendJson(res, 405, {
+        message: 'Methode niet toegestaan.',
+      });
+      const body = await parseBody(req);
+      const releaseSettings = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+      if (!releaseSettings) return sendJson(res, 409, {
+        message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.',
+      });
+      try {
+        const database = loadDb();
+        if (body?.action === 'update_categories') {
+          if (!adminMail.updateCategories(database, body.categories))
+            return sendJson(res, 400, { message: 'Ongeldige meldingsinstellingen.' });
+          saveDb(database);
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        if (body?.action === 'remove_address') {
+          if (!adminMail.removeAddress(database, body.email))
+            return sendJson(res, 404, { message: 'Dit adres is niet gevonden.' });
+          saveDb(database);
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        if (body?.action === 'request_address') {
+          if (!cfg.ready) return sendJson(res, 503, {
+            message: 'Stel eerst de Boekenbaai-Gmail-koppeling in.',
+          });
+          const attempt = adminMail.requestAddress(database, body.email, cfg.key);
+          if (!attempt.ok) return sendJson(res,
+            ['rate_limited', 'daily_limit'].includes(attempt.error) ? 429 : 400, {
+              message: attempt.error === 'rate_limited'
+                ? 'Vraag na vijf minuten een nieuwe code aan.'
+                : attempt.error === 'daily_limit'
+                  ? 'Maximaal drie verificatiemails per 24 uur.'
+                  : attempt.error === 'too_many_recipients'
+                    ? 'Maximaal tien beheerdersadressen toegestaan.'
+                    : attempt.error === 'already_verified'
+                      ? 'Dit adres is al bevestigd.'
+                      : 'Dit e-mailadres is ongeldig.',
+            });
+          saveDb(database);
+          const id = crypto.createHash('sha256').update(JSON.stringify([
+            'boekenbaai-admin-verify', attempt.email, attempt.hash,
+          ])).digest('hex');
+          const sent = await bridgeSend({
+            config: cfg, id, to: attempt.email,
+            subject: 'Boekenbaai: bevestig beheerdersmeldingen',
+            body: 'Bevestig dit adres voor beheerdersmeldingen van Boekenbaai.\n\n'
+              + 'Verificatiecode: ' + attempt.code + '\n\n'
+              + 'Geldig gedurende 24 uur. Niet aangevraagd? Negeer dit bericht.',
+          });
+          if (!sent) return sendJson(res, 502, {
+            message: 'Verificatiemail niet bevestigd. Probeer het later opnieuw.',
+          });
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        if (body?.action === 'confirm_address') {
+          const attempt = adminMail.confirmAddress(database, body.email,
+            String(body.code || ''), cfg.key);
+          if (!attempt.ok) {
+            if (attempt.persist) saveDb(database);
+            return sendJson(res, 400, {
+              message: 'De verificatiecode is ongeldig of verlopen.',
+            });
+          }
+          saveDb(database);
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
+        return sendJson(res, 400, { message: 'Onbekende beheerinstelling.' });
+      } finally {
+        releaseSettings();
+      }
     }
 
     // PR6: all classrooms share one persistent task per physical book. The
@@ -8779,12 +8884,14 @@ async function tickImportReminders() {
     const authPath = process.env.BOEKENBAAI_AUTH_DATA_PATH
       ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
       : DATA_PATH + '.auth.json';
-    const stats = await dispatchReminders({
-      db: loadDb(), links: readSchoolLinks(authPath),
-      folder: DATA_PATH + '.import-mail-receipts',
-    });
-    if (stats.claimed) console.log('Importherinneringen verwerkt:', {
-      accepted: stats.accepted, failed: stats.failed,
+    const snapshot = loadDb();
+    const links = readSchoolLinks(authPath);
+    const folder = DATA_PATH + '.import-mail-receipts';
+    const stats = await dispatchReminders({ db: snapshot, links, folder });
+    const actions = await dispatchActions({ db: snapshot, links, folder });
+    if (stats.claimed || actions.claimed) console.log('Boekenbaai-mailmeldingen verwerkt:', {
+      accepted: stats.accepted + actions.accepted,
+      failed: stats.failed + actions.failed,
     });
   } catch (error) {
     console.error('Importherinneringen controleren mislukt:',
@@ -8801,7 +8908,7 @@ server.listen(PORT, () => {
     const firstMailRun = setTimeout(() => { void tickImportReminders(); }, 30000);
     if (typeof firstMailRun.unref === 'function') firstMailRun.unref();
     const mailInterval = setInterval(() => { void tickImportReminders(); },
-      IMPORT_MAIL_HOUR_MS);
+      Math.min(IMPORT_MAIL_HOUR_MS, 120_000));
     if (typeof mailInterval.unref === 'function') mailInterval.unref();
   }
   // Resume interrupted cover caching without delaying startup or test setup.

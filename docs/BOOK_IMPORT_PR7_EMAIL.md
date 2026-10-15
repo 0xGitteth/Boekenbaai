@@ -22,7 +22,7 @@ De officiële Google-limiet voor particuliere Apps Script/MailApp-accounts is mo
    - `BOEKENBAAI_MAIL_SCRIPT_SECRET=<dezelfde geheime waarde>`
    - `BOEKENBAAI_PUBLIC_URL=https://<publieke Boekenbaai-host>` (zonder extra pad)
    - `BOEKENBAAI_GOOGLE_DOMAIN=koraaledu.nl` (meestal al aanwezig)
-6. Herstart de applicatie. De server controleert bij de start en vervolgens ieder uur of er e-mailherinneringen nodig zijn. Na de start vindt de eerste controle na 30 seconden plaats. De server verstuurt niets totdat de configuratie compleet is.
+6. Herstart de applicatie. De server controleert bij de start en vervolgens iedere twee minuten of er e-mailherinneringen nodig zijn. Na de start vindt de eerste controle na 30 seconden plaats. De server verstuurt niets totdat de configuratie compleet is.
 7. Laat één medewerker een **alternatief** werkmailadres verifiëren met de achtcijferige code. Test verzending, ontvangst, het bevestigen van de code en uitzetten van meldingen. Doe dit liefst eerst in een testomgeving zonder echte leerlingdata.
 
 ## Persoonlijke instellingen
@@ -48,3 +48,31 @@ De instelling wijzigt nooit het Google-inlogaccount. Een bericht bevat uitsluite
 `npm test` draait gerichte tests voor: herinneringsdag vs escalatiedag, leerlingenprivacy, klasrechten, gewijzigde of inactieve docenten, meerdere klassen, eigen alternatief adres, uit/aan, codebevestiging, herhaalde verzending, netwerkfouten, HMAC en GAS replaybeveiliging, plus echte API-integratietests. De bestaande PR6-import- en heruploadtests blijven onderdeel van dezelfde volledige testreeks.
 
 De verzenddienst kan pas echt worden geactiveerd nadat de gebruiker het Gmail-account en Google Apps Script onder dat account heeft ingericht. Er worden door het toevoegen van deze code geen werkelijke e-mails verstuurd.
+
+## Brede actiegerichte meldingen (PR7-uitbreiding)
+
+Naast de boekimportherinnering zijn er automatische e-mails voor de bestaande leerlingbeheeracties:
+
+- **Nieuwe klaswissel**: de mentor(en) van de ontvangende klas ontvangen een melding zodra een overplaatsingsverzoek openstaat.
+- **Afgewezen klaswissel**: na weigering en escalatie ontvangen de geverifieerde beheerdersadressen een melding.
+- **Google-koppelverzoek leerling**: de mentor(en) van de betreffende klas ontvangen een melding. Zonder beschikbare mentor gaat deze naar de geverifieerde beheerdersadressen.
+- **Koppelverzoek zonder leerlingcontext**: voor zover de authenticatieopslag een dergelijk open verzoek bevat, gaat dit naar Beheer.
+- **Boekcontrole naar Beheer**: geëscaleerde, niet-voltooide controles gaan naar geverifieerde beheerdersadressen.
+
+Berichten bevatten **geen namen van leerlingen, docenten, klassen, boeken, uitleengegevens of Google-identiteiten**. De berichtinhoud bevat alleen het aantal openstaande acties en de HTTPS-link naar het ingelogde portaal. In de portaalweergave geldt de bestaande serverautorisatie.
+
+Actiemeldingen worden bij de eerstvolgende automatische controle verwerkt (na opstarten circa 30 seconden, daarna om de twee minuten). De eerste melding wordt één keer verstuurd; voor langer dan zeven dagen openstaande verzoeken kan één aparte herinnering volgen. Opgeloste of ingetrokken verzoeken komen niet meer in de verzendlijst. Als de eerste scan plaatsvindt nadat de herinneringsgrens is verstreken, wordt alleen de actuele herinneringsfase verwerkt. Een fout in de externe maildienst verhindert nooit goedkeuren of afronden van een taak.
+
+### Centrale beheerdersontvangers
+
+Beheerders hebben een gedeeld inlogaccount zonder Google-mailkoppeling. Daarom staat in het beheerdersportaal **Beheer: e-mailmeldingen**, met een aparte lijst van maximaal tien ontvangstadressen. Ieder adres ontvangt pas e-mail na invoeren van de achtcijferige verificatiecode uit zijn eigen mailbox. Het gedeelde account kan ontvangers toevoegen, verwijderen of de categorieën `transfers`, `google` en `books` aan- en uitzetten.
+
+De configuratie staat onder `bookImportAdminMail` in de bestaande database. De admin-verificatielimiet is drie verzoeken per *rollende* 24 uur, met minimaal vijf minuten tussentijd. Per code gelden maximaal vijf pogingen. De installatie vereist geen nieuwe Google-beheerdersaccounts. `boekenbaai@gmail.com` blijft het verzendaccount, niet automatisch een ontvangstadres.
+
+Voor docenten geldt de persoonlijke accountinstelling (standaard gekoppeld `@koraaledu.nl`, geverifieerd alternatief, of uit). Voor beheerders geldt **alleen** de centrale ontvangerslijst; een beheerder kan niet onbedoeld een persoonlijke mailvoorkeur instellen die geen berichten kan ontvangen.
+
+### Veiligheid bij meerdere instances
+
+De hele combinatie van verzendclaims en batch wordt onder één ontvangersvergrendeling uitgevoerd. Het blijvende gedeelde volume met `db.json` is vereist; alle Sliplane-instanties moeten hetzelfde bestandssysteem voor de claimmap gebruiken. Gelijklopende verificatie- en instellingenrequests gebruiken een exclusief bestandsslot rond lezen/wijzigen/opslaan. Wanneer een andere instance bezig is, meldt de API een 409 zodat de gebruiker opnieuw kan proberen; elke foutieve codepoging telt afzonderlijk.
+
+*Let op:* de bestaande JSON-database heeft buiten deze endpoints nog enkele onafhankelijke schrijvers. De revisiecontroles beschermen tegen veel verouderde snapshots, maar zijn geen volledige databasebrede transacties voor alle bestaande schrijfprocessen. Gebruik bij voorkeur één actieve schrijvende instantie totdat algemene transacties centraal zijn geregeld.

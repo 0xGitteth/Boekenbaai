@@ -57,7 +57,7 @@ function prefsFor(db, id) {
   const row = table && Object.prototype.hasOwnProperty.call(table, id) ? table[id] : null;
   if (!row || typeof row !== 'object') return { mode: 'school', alternateEmail: '',
     revision: 0, verificationWindowStart: 0, verificationCount: 0,
-    lastVerificationRequestedAt: 0 };
+    lastVerificationRequestedAt: 0, verificationRequests: [] };
   return { mode: ['school', 'alternate', 'off'].includes(row.mode) ? row.mode : 'school',
     alternateEmail: validEmail(row.alternateEmail) || '',
     revision: Number.isSafeInteger(row.revision) ? row.revision : 0,
@@ -67,6 +67,8 @@ function prefsFor(db, id) {
       ? row.verificationCount : 0,
     lastVerificationRequestedAt: Number.isSafeInteger(row.lastVerificationRequestedAt)
       ? row.lastVerificationRequestedAt : 0,
+    verificationRequests: Array.isArray(row.verificationRequests)
+      ? row.verificationRequests.filter(Number.isSafeInteger).slice(-3) : [],
     pending: row.pending || null };
 }
 function schoolEmailFor(links, id, schoolDomain) {
@@ -125,6 +127,52 @@ function claimOnce(folder, id) {
     throw err;
   }
 }
+
+function acquireFileLock(filename, { staleMs = 300000 } = {}) {
+  fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
+  const open = () => {
+    try {
+      const fd = fs.openSync(filename, 'wx', 0o600);
+      try { fs.writeSync(fd, String(Date.now())); }
+      catch (err) { fs.closeSync(fd); try { fs.unlinkSync(filename); } catch (_) {} throw err; }
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        fs.closeSync(fd);
+        try { fs.unlinkSync(filename); } catch (err) {
+          if (err.code !== 'ENOENT') throw err;
+        }
+      };
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      return null;
+    }
+  };
+  let release = open();
+  if (release) return release;
+  // A crashed process can abandon the lock. Never reclaim a live, recent
+  // lock, especially during the maximum 12s Google Apps Script request.
+  try {
+    const stat = fs.statSync(filename);
+    if (Date.now() - stat.mtimeMs > staleMs) {
+      fs.unlinkSync(filename);
+      release = open();
+    }
+  } catch (err) {
+    if (!['ENOENT', 'EEXIST'].includes(err.code)) throw err;
+  }
+  return release;
+}
+function recipientLockPath(folder, recipientId) {
+  const hash = crypto.createHash('sha256').update(String(recipientId)).digest('hex');
+  return path.join(folder, 'locks', hash + '.lock');
+}
+async function withRecipientLock(folder, recipientId, job) {
+  const release = acquireFileLock(recipientLockPath(folder, recipientId));
+  if (!release) return false;
+  try { await job(); return true; } finally { release(); }
+}
 function mailText(count, link) {
   return 'Er ' + (count === 1 ? 'staat 1 openstaande controle' : 'staan '
     + count + ' openstaande controles') + ' van een boekimport klaar voor jouw klas(sen).\n\n'
@@ -176,21 +224,24 @@ async function dispatchReminders({ db, links, folder, env = process.env,
   if (!config.ready) return result;
   const people = collectRecipients(db, links, now, config.schoolDomain);
   for (const person of people) {
-    const ids = [];
-    for (const task of person.tasks) {
-      const id = claimId(person.teacherId, task);
-      if (claimOnce(folder, id)) ids.push(id);
-    }
-    if (!ids.length) continue;
-    result.recipients++;
-    result.claimed += ids.length;
-    // Batch task reminders into one message per recipient, not one per book.
-    const accepted = await bridgeSend({ config, to: person.to,
-      id: crypto.createHash('sha256').update(ids.join('|')).digest('hex'),
-      subject: 'Boekenbaai: openstaande boekimportcontroles',
-      body: mailText(person.tasks.length, config.base + MAIL_PATH),
-      now, fetchImpl });
-    result[accepted ? 'accepted' : 'failed'] += ids.length;
+    await withRecipientLock(folder, 'teacher:' + person.teacherId, async () => {
+      // The recipient lock encloses ALL task claims and the delivery attempt;
+      // overlapping workers cannot split one teacher's batch across mails.
+      const ids = [];
+      for (const task of person.tasks) {
+        const id = claimId(person.teacherId, task);
+        if (claimOnce(folder, id)) ids.push(id);
+      }
+      if (!ids.length) return;
+      result.recipients++;
+      result.claimed += ids.length;
+      const accepted = await bridgeSend({ config, to: person.to,
+        id: crypto.createHash('sha256').update(ids.join('|')).digest('hex'),
+        subject: 'Boekenbaai: openstaande boekcontroles voor jouw klas',
+        body: mailText(person.tasks.length, config.base + MAIL_PATH),
+        now, fetchImpl });
+      result[accepted ? 'accepted' : 'failed'] += ids.length;
+    });
   }
   return result;
 }
@@ -208,15 +259,20 @@ function beginVerification(db, teacherId, email, secret, now = Date.now()) {
     && now - prev.lastVerificationRequestedAt < VERIFY_COOLDOWN_MS) {
     return { ok: false, error: 'rate_limited' };
   }
-  const withinDay = now >= prev.verificationWindowStart
-    && now - prev.verificationWindowStart < DAY_MS;
-  if (withinDay && prev.verificationCount >= 3) {
-    return { ok: false, error: 'daily_limit' };
+  // Rolling 24h quota, with conservative fallback for old fixed-window
+  // preferences created by earlier PR7 versions.
+  const recent = prev.verificationRequests.filter(t => t <= now && t > now - DAY_MS);
+  if (!prev.verificationRequests.length && prev.verificationCount > 0
+    && now - prev.verificationWindowStart < DAY_MS
+    && now >= prev.verificationWindowStart) {
+    while (recent.length < prev.verificationCount) recent.push(prev.verificationWindowStart);
   }
+  if (recent.length >= 3) return { ok: false, error: 'daily_limit' };
   const code = String(crypto.randomInt(0, 100000000)).padStart(8, '0');
   const next = { ...prev, revision: prev.revision + 1,
-    verificationWindowStart: withinDay ? prev.verificationWindowStart : now,
-    verificationCount: withinDay ? prev.verificationCount + 1 : 1,
+    verificationWindowStart: recent.length ? Math.min(...recent) : now,
+    verificationCount: recent.length + 1,
+    verificationRequests: [...recent, now],
     lastVerificationRequestedAt: now,
     pending: { email: normalized, hash: verificationHash(teacherId, normalized, code, secret),
       requestedAt: now, expiresAt: now + VERIFY_LIFETIME_MS, attempts: 0 } };
@@ -258,4 +314,5 @@ function changePreference(db, teacherId, mode) {
 module.exports = { HOUR_MS, MAIL_PATH, DAY_MS, configuration, validEmail,
   readSchoolLinks, prefsFor, schoolEmailFor, collectRecipients, claimId, claimOnce,
   mailText, signature, bridgeSend, dispatchReminders, beginVerification,
-  confirmVerification, changePreference, verificationHash };
+  confirmVerification, changePreference, verificationHash, acquireFileLock,
+  recipientLockPath, withRecipientLock };
