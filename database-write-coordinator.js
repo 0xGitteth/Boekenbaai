@@ -144,6 +144,10 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
   return withDatabaseWriteLock(lockPath, () => {
     assertNoPendingPairedJournal(lockPath);
     const latest = read();
+    // The mutator may change its input in place. Keep the original auth
+    // links to detect changes even when old and new share the same object.
+    const beforeMutation = path.resolve(filePath) === path.resolve(lockPath)
+      ? null : structuredClone(latest);
     const next = mutate(latest);
     if (next && typeof next.then === 'function') {
       throw conflict('DATABASE_ASYNC_WRITE', 'Mutaties moeten synchroon plaatsvinden.');
@@ -153,7 +157,7 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
       throw conflict('DATABASE_INVALID', 'Ongeldig resultaat van databasewijziging.');
     }
     const committed = path.resolve(filePath) === path.resolve(lockPath)
-      ? next : enforceGoogleLinkInvariants(latest, next);
+      ? next : enforceGoogleLinkInvariants(beforeMutation, next);
     atomicWrite(path.resolve(filePath), JSON.stringify(committed, null, 2));
     return true;
   });
