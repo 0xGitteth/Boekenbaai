@@ -245,7 +245,7 @@ function changePreference(db, teacherId, mode) {
   db.bookImportEmailPreferences = Object.assign(
     Object.create(null), db.bookImportEmailPreferences || {});
   db.bookImportEmailPreferences[teacherId] = { ...previous, mode,
-    revision: previous.revision + 1 };
+    pending: null, revision: previous.revision + 1 };
   return true;
 }
 module.exports = { HOUR_MS, MAIL_PATH, DAY_MS, configuration, validEmail,

@@ -85,8 +85,18 @@ assert.equal(mail.beginVerification(data, 't1', '3@koraal.nl',
   conf.key, now + 600002).ok, true);
 assert.equal(mail.beginVerification(data, 't1', '4@koraal.nl',
   conf.key, now + 900003).error, 'daily_limit');
-const corrupted = structuredClone(data);
-corrupted.bookImportEmailPreferences.t1.pending.hash = 'not-a-hash';
+const obsoleteCode = '12345678';
+assert.equal(mail.changePreference(data, 't1', 'off'), true);
+assert.equal(mail.prefsFor(data, 't1').pending, null);
+assert.equal(mail.confirmVerification(data, 't1', obsoleteCode,
+  conf.key, now + 610000).ok, false,
+'Disabling notifications must invalidate all pending verification codes.');
+assert.equal(mail.changePreference(data, 't1', 'school'), true);
+// Corrupted historical data also must not crash verification.
+const probe = structuredClone(data);
+probe.bookImportEmailPreferences.t1.pending = { email: 'other@koraal.nl',
+  hash: 'corrupt', requestedAt: now, expiresAt: now + mail.DAY_MS, attempts: 0 };
+const corrupted = probe;
 assert.equal(mail.confirmVerification(corrupted, 't1', '12345678',
   conf.key, now + 610000).ok, false);
 
