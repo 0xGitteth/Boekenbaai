@@ -137,7 +137,7 @@ function commitJsonSnapshot({ dataPath, value, beforeWrite, lockPath = dataPath 
   });
 }
 
-function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
+function mutateJsonLocked({ lockPath, filePath, read, mutate, waitMs = 0 }) {
   if (typeof read !== 'function' || typeof mutate !== 'function') {
     throw new TypeError('Read and mutate callbacks are required.');
   }
@@ -160,7 +160,7 @@ function mutateJsonLocked({ lockPath, filePath, read, mutate }) {
       ? next : enforceGoogleLinkInvariants(beforeMutation, next);
     atomicWrite(path.resolve(filePath), JSON.stringify(committed, null, 2));
     return true;
-  });
+  }, { waitMs });
 }
 
 module.exports = { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,

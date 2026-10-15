@@ -945,7 +945,7 @@ function ensureDbFile() {
         fs.writeFileSync(DATA_PATH, JSON.stringify(EMPTY_DB, null, 2));
       }
     }
-  });
+  }, { waitMs: 10000 });
 }
 
 ensureDbFile();
