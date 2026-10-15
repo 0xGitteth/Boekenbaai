@@ -8,6 +8,7 @@ const { URL } = require('url');
 const core = require('./google-auth-core');
 const { setParnassysStudentNumber, getParnassysStudentNumber } = require('./google-first-people-import');
 const { commitPairedJson } = require('./paired-store-commit');
+const { acquireFileLock } = require('./book-import-reminder-mail');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -783,6 +784,28 @@ function injectManagementAssets(req, res, listener) {
   return listener(req, res);
 }
 
+// Share the same lock as email preference updates and teacher deletion.
+// The context must be loaded after taking the lock, not before, because a
+// pending request may otherwise replace another instance's committed changes.
+function withLockedManagementWrite(req, res, operation) {
+  const release = acquireFileLock(DATA_PATH + '.mail-preferences.lock');
+  if (!release) {
+    return sendJson(res, 409, {
+      message: 'Een andere wijziging wordt verwerkt. Probeer het opnieuw.',
+    });
+  }
+  try {
+    const freshContext = resolveStaff(req);
+    if (!freshContext) return sendJson(res, 401, {
+      message: 'Je sessie is niet meer geldig. Log opnieuw in.',
+    });
+    const result = operation(freshContext);
+    return sendJson(res, result.status, result.payload);
+  } finally {
+    release();
+  }
+}
+
 function handleManagementApi(req, res, requestUrl) {
   if (!requestUrl.pathname.startsWith('/api/mentor/') && !requestUrl.pathname.startsWith('/api/admin/student-transfers/')) {
     return false;
@@ -800,10 +823,7 @@ function handleManagementApi(req, res, requestUrl) {
 
   if (req.method === 'POST' && requestUrl.pathname === '/api/mentor/students') {
     parseBody(req).then((body) => {
-      const freshContext = resolveStaff(req);
-      if (!freshContext) return sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
-      const result = addStudent(freshContext, body);
-      return sendJson(res, result.status, result.payload);
+      return withLockedManagementWrite(req, res, context => addStudent(context, body));
     }).catch((error) => sendJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 400, { message: error.message }));
     return true;
   }
@@ -811,47 +831,30 @@ function handleManagementApi(req, res, requestUrl) {
   const transferStart = requestUrl.pathname.match(/^\/api\/mentor\/students\/([\w-]+)\/transfer$/);
   if (req.method === 'POST' && transferStart) {
     parseBody(req).then((body) => {
-      const freshContext = resolveStaff(req);
-      if (!freshContext) return sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
-      const result = createTransfer(freshContext, transferStart[1], body);
-      return sendJson(res, result.status, result.payload);
+      return withLockedManagementWrite(req, res,
+        context => createTransfer(context, transferStart[1], body));
     }).catch((error) => sendJson(res, 400, { message: error.message }));
     return true;
   }
 
   const review = requestUrl.pathname.match(/^\/api\/mentor\/student-transfers\/([\w-]+)\/(accept|reject)$/);
   if (req.method === 'POST' && review) {
-    const freshContext = resolveStaff(req);
-    if (!freshContext) {
-      sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
-      return true;
-    }
-    const result = reviewTransfer(freshContext, review[1], review[2]);
-    sendJson(res, result.status, result.payload);
+    withLockedManagementWrite(req, res,
+      context => reviewTransfer(context, review[1], review[2]));
     return true;
   }
 
   const resolve = requestUrl.pathname.match(/^\/api\/admin\/student-transfers\/([\w-]+)\/(accept|cancel)$/);
   if (req.method === 'POST' && resolve) {
-    const freshContext = resolveStaff(req);
-    if (!freshContext) {
-      sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
-      return true;
-    }
-    const result = resolveEscalatedTransfer(freshContext, resolve[1], resolve[2]);
-    sendJson(res, result.status, result.payload);
+    withLockedManagementWrite(req, res,
+      context => resolveEscalatedTransfer(context, resolve[1], resolve[2]));
     return true;
   }
 
   const deactivate = requestUrl.pathname.match(/^\/api\/mentor\/students\/([\w-]+)\/deactivate$/);
   if (req.method === 'POST' && deactivate) {
-    const freshContext = resolveStaff(req);
-    if (!freshContext) {
-      sendJson(res, 401, { message: 'Je sessie is niet meer geldig. Log opnieuw in.' });
-      return true;
-    }
-    const result = deactivateStudent(freshContext, deactivate[1]);
-    sendJson(res, result.status, result.payload);
+    withLockedManagementWrite(req, res,
+      context => deactivateStudent(context, deactivate[1]));
     return true;
   }
 
