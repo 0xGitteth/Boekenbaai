@@ -23,7 +23,9 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
-  withDatabaseWriteLock, mutateJsonLocked } = require('./database-write-coordinator');
+  withDatabaseWriteLock } = require('./database-write-coordinator');
+const { finishLegacyImportJob: persistLegacyImportStatus } =
+  require('./book-import-job-finalization');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -2005,44 +2007,8 @@ function ensureRole(user, roles) {
 // Final status is persisted independently from the full DB snapshot used
 // during the actual import. Read the latest DB UNDER the shared lock, so
 // finishing a successful job never overwrites unrelated book changes.
-function finishLegacyImportJob(jobId, { succeeded, payload, totalRows, errorMessage } = {}) {
-  return mutateJsonLocked({
-    lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 6000,
-    read: loadDb,
-    mutate: latest => {
-      const job = (latest.importJobs || []).find(item => item?.id === jobId);
-      if (!job || ['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status)) {
-        return false;
-      }
-      const finishedAt = new Date().toISOString();
-      if (!succeeded) {
-        updateImportJob(latest, jobId, {
-          status: 'failed', finishedAt, error: errorMessage || payload?.message
-            || 'Importjob mislukt', failed: 1,
-        });
-        return latest;
-      }
-      const count = Number(payload?.failed || 0);
-      const summary = {
-        created: Number(payload?.created || 0),
-        updated: Number(payload?.updated || 0),
-        skipped: Array.isArray(payload?.skipped) ? payload.skipped.length : 0,
-        failed: count,
-      };
-      const cancelled = Boolean(payload?.cancelled || job.cancelRequested
-        || job.status === 'cancelled');
-      updateImportJob(latest, jobId, cancelled ? {
-        status: 'cancelled', finishedAt, cancelledAt: finishedAt,
-        currentStage: 'Geannuleerd', summary, result: payload, error: '',
-      } : {
-        status: 'completed', finishedAt, processed: totalRows,
-        created: summary.created, updated: summary.updated,
-        skipped: summary.skipped, summary, currentStage: 'Voltooid',
-        result: payload, error: '',
-      });
-      return latest;
-    },
-  });
+function finishLegacyImportJob(jobId, options = {}) {
+  return persistLegacyImportStatus({ dataPath: DATA_PATH, jobId, ...options });
 }
 
 function updateImportJob(db, jobId, updates = {}) {
