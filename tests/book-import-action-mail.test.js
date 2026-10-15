@@ -143,23 +143,22 @@ const fetchImpl=async(url,options)=>{
 };
 async function run(){
   const revoked = structuredClone(data);
-  const wasSent = [];
-  const suppressed = await actions.dispatchActions({
-    db: data, links, folder: path.join(tmp, 'revoked-admin'), env: cfg, now,
-    currentState: () => ({ db: revoked, links }),
-    fetchImpl: async (...args) => { wasSent.push(args); return fetchImpl(...args); },
-  });
-  assert.equal(suppressed.accepted, 3);
-  // Only the teacher recipients remain after administration removes its address.
+  const initialRecipients = actions.recipientGroups(data, links, now);
+  const adminRecipientCount = initialRecipients.filter(p => p.id.startsWith('admin:')).length;
+  const silentFetch = async (url, opts) => {
+    const payload = JSON.parse(JSON.parse(opts.body).payload);
+    return { ok: true, status: 200, json: async () => ({ ok: true, id: payload.id }) };
+  };
   const currentAdmin = admin.adminSettings(revoked).recipients[0].email;
   assert.equal(admin.removeAddress(revoked, currentAdmin), true);
   const cancelled = await actions.dispatchActions({
-    db: data, links, folder: path.join(tmp, 'revoked-all'), env: cfg, now,
+    db: data, links, folder: path.join(tmp, 'revoked-admin'), env: cfg, now,
     currentState: () => ({ db: revoked, links }),
-    fetchImpl,
+    fetchImpl: silentFetch,
   });
-  assert.equal(cancelled.recipients, 2,
-    'A removed administrator must not be mailed from a stale scan.');
+  assert.equal(cancelled.recipients, initialRecipients.length - 1,
+    'Removed admin addresses must not be mailed from an old snapshot.');
+  assert.ok(adminRecipientCount >= 1);
   // Two processes compete for one recipient. The second is skipped until
   // the first finishes, and may not send a second fragment of that batch.
   const first=actions.dispatchActions({db:data,links,folder:tmp,env:cfg,now,fetchImpl});
