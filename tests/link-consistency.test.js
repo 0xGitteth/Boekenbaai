@@ -47,9 +47,11 @@ const { supersedeChangedAccountRequests, reconcileLinkRequests } = require('../l
     };
     const latest = {
       links: [{ accountType: 'student', accountId: 's1', email: 'new@koraaledu.nl' }],
-      sessions: [{ tokenHash: 'newer-login', userId: 's1', type: 'student' }],
+      sessions: [{ tokenHash: 'newer-login', userId: 's1', type: 'student',
+        expiresAt: Date.now() + 60_000 }],
       pendingIdentities: [],
-      linkRequests: [{ id: 'pending', studentId: 's1', status: 'pending' }],
+      linkRequests: [{ id: 'pending', studentId: 's1', status: 'pending',
+        createdAt: new Date().toISOString() }],
     };
     fs.writeFileSync(authPath, JSON.stringify(latest));
     const lock = acquireFileLock(dataPath + '.database-write.lock');
