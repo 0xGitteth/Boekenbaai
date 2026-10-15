@@ -21,18 +21,18 @@ function collectEvents(db, links, now = Date.now()) {
     .map(x=>[x.id,x]));
   const teacherIdsForClass = id => (classMap.get(id)?.teacherIds || [])
     .filter(id=>teachers.has(id));
-  const push = (type, id, date, category, targets, link = NOTIFICATION_PATH) => {
+  const push = (type, id, date, category, targets, link = NOTIFICATION_PATH, cycle = null) => {
     const at = validTime(date, now);
     if (!id || !at) return;
     const period = now - at >= REMINDER_DAYS * DAY_MS ? 'reminder' : 'initial';
     const unique = [...new Set(targets)].filter(Boolean);
     if (!unique.length) return;
-    events.push({ key: [type,id,at,period].join(':'), type, category,
+    events.push({ key: [type,id,cycle || at,period].join(':'), type, category,
       at, period, targets: unique, link });
   };
   for (const request of db.studentTransferRequests || []) {
     if (!request?.id || !(db.students || []).some(student =>
-      student.id === request.studentId && student.active !== false)) continue;
+      student.id === request.studentId && student.active !== false && student.status !== 'inactive')) continue;
     if (request.escalatedToAdmin && ['rejected', 'pending'].includes(request.status)) {
       push('transfer_escalation', request.id, request.updatedAt || request.createdAt,
         'transfers', ['admin']);
@@ -51,7 +51,7 @@ function collectEvents(db, links, now = Date.now()) {
   const activeAuth = authCore.pruneStore(links, now);
   for (const request of activeAuth.linkRequests || []) {
     if (!request?.id || request.status !== 'pending') continue;
-    const student = (db.students || []).find(s=>s.id===request.studentId && s.active!==false);
+    const student = (db.students || []).find(s=>s.id===request.studentId && s.active!==false && s.status !== 'inactive');
     if (!student) {
       // Only real, pending staff-link requests from the existing OAuth
       // workflow are routed to central administration.
@@ -84,7 +84,8 @@ function collectEvents(db, links, now = Date.now()) {
         ? new Date(created + config.escalationDays * DAY_MS).toISOString()
         : task.escalatedAt || task.updatedAt || task.createdAt;
       push('book_escalation', task.id, escalatedAt,
-        'books', ['admin'], '/staff.html#book-import-followups-panel');
+        'books', ['admin'], '/staff.html#book-import-followups-panel',
+        ageBasedEscalation ? task.createdAt : null);
     }
   }
   return events;
