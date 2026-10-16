@@ -132,18 +132,42 @@ function claimOnce(folder, id) {
 // The guard prevents two processes from reclaiming one another's locks.
 // Unlike mail locks, process-owned DATABASE guards also carry PID/host metadata
 // so a crashed guard owner cannot permanently block database recovery.
+// PID 1 can be reused after a container restart. Linux /proc start ticks
+// distinguish the process generation without a third orphanable lock file.
+function processStartTicks(pid) {
+  try {
+    const raw = fs.readFileSync('/proc/' + pid + '/stat', 'utf8');
+    const end = raw.lastIndexOf(') ');
+    if (end < 0) return '';
+    const start = raw.slice(end + 2).trim().split(/\s+/)[19];
+    return /^\d+$/.test(start || '') ? start : '';
+  } catch (error) {
+    if (['ENOENT', 'EACCES', 'EPERM', 'ENOTDIR'].includes(error?.code)) return '';
+    throw error;
+  }
+}
+const SELF_PROCESS_START_TICKS = processStartTicks(process.pid);
+function guardOwnerMetadata() {
+  return {
+    format: 'boekenbaai-lock-guard-v1',
+    pid: process.pid, host: os.hostname(),
+    ...(SELF_PROCESS_START_TICKS ? { pidStartTicks: SELF_PROCESS_START_TICKS } : {}),
+  };
+}
 function deadLocalOwner(record) {
   if (!record || record.format !== 'boekenbaai-lock-guard-v1'
     || record.host !== os.hostname()
     || !Number.isSafeInteger(record.pid) || record.pid <= 0) return false;
   try {
     process.kill(record.pid, 0);
-    return false;
   } catch (error) {
     if (error?.code === 'ESRCH') return true;
     if (error?.code === 'EPERM') return false;
     throw error;
   }
+  const currentStart = processStartTicks(record.pid);
+  return Boolean(record.pidStartTicks && currentStart
+    && String(record.pidStartTicks) !== currentStart);
 }
 
 // Guards/reapers contain no asynchronous work. When a deployment changes
@@ -156,7 +180,10 @@ function reclaimableGuardArtifact(owner, contents, stat) {
   const localOwner = owner?.format === 'boekenbaai-lock-guard-v1'
     && owner.host === os.hostname()
     && Number.isSafeInteger(owner.pid) && owner.pid > 0;
-  if (localOwner) return false;
+  // A matching kernel start signature proves the SAME process still owns
+  // this file. Old PID-only records are recoverable after the stale period.
+  if (localOwner && owner.pidStartTicks
+    && processStartTicks(owner.pid) === String(owner.pidStartTicks)) return false;
   const age = Date.now() - stat.mtimeMs;
   return age > (contents.trim() ? ORPHAN_GUARD_STALE_MS : 30000);
 }
@@ -171,10 +198,7 @@ function acquireGuardReaper(gate) {
       throw error;
     }
     try {
-      fs.writeFileSync(fd, JSON.stringify({
-        format: 'boekenbaai-lock-guard-v1',
-        pid: process.pid, host: os.hostname(),
-      }));
+      fs.writeFileSync(fd, JSON.stringify(guardOwnerMetadata()));
       fs.fsyncSync(fd);
     } catch (error) {
       fs.closeSync(fd);
@@ -263,10 +287,7 @@ function withLockGuard(filename, operation, { processOwned = false } = {}) {
   if (!fd) return null;
   try {
     if (processOwned) {
-      fs.writeFileSync(fd, JSON.stringify({
-        format: 'boekenbaai-lock-guard-v1',
-        pid: process.pid, host: os.hostname(),
-      }));
+      fs.writeFileSync(fd, JSON.stringify(guardOwnerMetadata()));
       fs.fsyncSync(fd);
     }
     return operation();
