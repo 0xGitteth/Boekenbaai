@@ -96,6 +96,39 @@ try {
   assert.ok(Date.now() - reclaimedAt < 1800, 'Dead database owner must not block recovery for five minutes');
   assert.strictEqual(fs.existsSync(dataPath + '.database-write.lock'), false);
 
+  // A restarted container may reuse the database writer's own PID 1.
+  // A different /proc start tick proves the writer is gone immediately;
+  // the SAME live process generation must never be stolen, even when old.
+  const mainLock = dataPath + '.database-write.lock';
+  const mainOwner = (pidStartTicks) => JSON.stringify({
+    format: 'boekenbaai-process-lock-v1', owner: 'old-session',
+    pid: process.pid, host: require('node:os').hostname(),
+    ...(pidStartTicks === undefined ? {} : { pidStartTicks }),
+  });
+  if (fs.existsSync('/proc/self/stat')) {
+    const procStat = fs.readFileSync('/proc/self/stat', 'utf8');
+    const currentTick = procStat.slice(procStat.lastIndexOf(') ') + 2)
+      .trim().split(/\s+/)[19];
+    assert.match(currentTick, /^\d+$/);
+    fs.writeFileSync(mainLock, mainOwner('0'));
+    assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false,
+      'Recycled PID must not strand a crashed main database lock');
+    assert.strictEqual(fs.existsSync(mainLock), false);
+    fs.writeFileSync(mainLock, mainOwner(currentTick));
+    const oldTime = new Date(Date.now() - 6 * 60 * 1000);
+    fs.utimesSync(mainLock, oldTime, oldTime);
+    assert.throws(() => recoverPairedJson({ dataPath, authPath, waitMs: 60 }),
+      { code: 'DATABASE_WRITE_BUSY' },
+      'Verified live database writer must not be stolen at stale timeout');
+    fs.unlinkSync(mainLock);
+  }
+  // Legacy database locks without start ticks have bounded stale recovery.
+  fs.writeFileSync(mainLock, mainOwner());
+  const legacyTime = new Date(Date.now() - 6 * 60 * 1000);
+  fs.utimesSync(mainLock, legacyTime, legacyTime);
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false);
+  assert.strictEqual(fs.existsSync(mainLock), false);
+
   // A crash in the middle of a paired DB/auth swap must recover the journal
   // even when the dead process left its own process-owned write lock behind.
   __test.atomicWriteJson(journalPath, {
