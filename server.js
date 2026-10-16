@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const { currentImportOwner, isImportOwnerConfirmedDead } = require('./book-import-owner');
 const { normalizeCoverCrop } = require('./lib/cover-crop');
 const { createCoverAssetStore } = require('./lib/cover-assets');
 const { planCoverBackfill } = require('./lib/cover-backfill-plan');
@@ -969,6 +970,14 @@ let googleBooksFallbackCooldownUntil = 0;
 let googleBooksFallbackCooldownReason = '';
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
 
+function revokeLegacySessionsForAccount(type, accountId) {
+  // Run only AFTER the database commit succeeds. Failed optimistic writes
+  // must not log out users when their password/account remains unchanged.
+  for (const [token, session] of sessions.entries()) {
+    if (session.type === type && session.userId === accountId) sessions.delete(token);
+  }
+}
+
 function markInterruptedImportJobs() {
   // Startup may overlap another instance's final import write. Always read
   // the latest state inside the shared lock, then wait a bounded interval.
@@ -978,7 +987,8 @@ function markInterruptedImportJobs() {
     mutate: db => {
       let changed = false;
       for (const job of db.importJobs || []) {
-        if (job && (job.status === 'queued' || job.status === 'running')) {
+        if (job && (job.status === 'queued' || job.status === 'running')
+          && isImportOwnerConfirmedDead(job.owner)) {
           const now = new Date().toISOString();
           job.status = 'interrupted';
           job.updatedAt = now;
@@ -5954,6 +5964,7 @@ async function handleApi(req, res, requestUrl) {
       db.importJobs.push({
         id: jobId,
         type: 'books_import',
+        owner: currentImportOwner(),
         createdBy: user.id,
         createdAt: now,
         updatedAt: now,
@@ -7596,11 +7607,6 @@ async function handleApi(req, res, requestUrl) {
         teacher.mustChangePassword = true;
         passwordChanged = true;
         changed = true;
-        for (const [token, session] of sessions.entries()) {
-          if (session.type === 'staff' && session.userId === teacher.id) {
-            sessions.delete(token);
-          }
-        }
         appendHistory(db, {
           type: 'teacher_password_set',
           teacherId: teacher.id,
@@ -7612,6 +7618,7 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 200, { teacher: sanitizeTeacher(teacher) });
       }
       saveDb(db);
+      if (passwordChanged) revokeLegacySessionsForAccount('staff', teacher.id);
       const response = { teacher: sanitizeTeacher(teacher) };
       if (passwordChanged && providedPassword) {
         response.temporaryPassword = providedPassword;
@@ -7650,11 +7657,6 @@ async function handleApi(req, res, requestUrl) {
         }
         klass.teacherIds = klass.teacherIds.filter((id) => id !== removedTeacher.id);
       }
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'staff' && session.userId === removedTeacher.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'teacher_deleted',
         teacherId: removedTeacher.id,
@@ -7662,6 +7664,7 @@ async function handleApi(req, res, requestUrl) {
         message: `Docent ${removedTeacher.name} is verwijderd`,
       });
       saveDb(db, { deletedTeacherPreferenceId: removedTeacher.id });
+      revokeLegacySessionsForAccount('staff', removedTeacher.id);
       return sendJson(res, 200, { teacher: sanitizeTeacher(removedTeacher) });
       } finally {
         releasePreferences();
@@ -7681,11 +7684,6 @@ async function handleApi(req, res, requestUrl) {
       const temporaryPassword = generatePassword(10);
       teacher.passwordHash = hashPassword(temporaryPassword);
       teacher.mustChangePassword = true;
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'staff' && session.userId === teacher.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'teacher_password_reset',
         teacherId: teacher.id,
@@ -7693,6 +7691,7 @@ async function handleApi(req, res, requestUrl) {
         message: `Wachtwoord opnieuw ingesteld voor docent ${teacher.name}`,
       });
       saveDb(db);
+      revokeLegacySessionsForAccount('staff', teacher.id);
       return sendJson(res, 200, {
         teacher: { id: teacher.id, name: teacher.name, username: teacher.username },
         temporaryPassword,
@@ -7776,11 +7775,6 @@ async function handleApi(req, res, requestUrl) {
       const temporaryPassword = generatePassword(10);
       student.passwordHash = hashPassword(temporaryPassword);
       student.mustChangePassword = true;
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'student' && session.userId === student.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'student_password_reset',
         studentId: student.id,
@@ -7788,6 +7782,7 @@ async function handleApi(req, res, requestUrl) {
         message: `Wachtwoord opnieuw ingesteld voor ${student.name}`,
       });
       saveDb(db);
+      revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
         student: sanitizeStudent(student, { includeUsername: true }),
         temporaryPassword,
@@ -7855,11 +7850,6 @@ async function handleApi(req, res, requestUrl) {
         student.passwordHash = hashPassword(temporaryPassword);
         student.mustChangePassword = true;
         passwordChanged = true;
-        for (const [token, session] of sessions.entries()) {
-          if (session.type === 'student' && session.userId === student.id) {
-            sessions.delete(token);
-          }
-        }
       }
 
       if (addedClassIds.length || removedClassIds.length) {
@@ -7919,6 +7909,7 @@ async function handleApi(req, res, requestUrl) {
       }
 
       saveDb(db);
+      if (passwordChanged) revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
         student: sanitizeStudent(student, { includeUsername: true }),
         ...(temporaryPassword ? { temporaryPassword } : {}),
@@ -7953,17 +7944,13 @@ async function handleApi(req, res, requestUrl) {
           book.dueDate = null;
         }
       }
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'student' && session.userId === student.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'student_deleted',
         studentId: student.id,
         message: `Leerlingaccount van ${student.name} is verwijderd`,
       });
       saveDb(db);
+      revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, { message: 'Leerlingaccount verwijderd' });
     }
 
