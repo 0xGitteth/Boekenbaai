@@ -146,16 +146,67 @@ function deadLocalOwner(record) {
   }
 }
 
-function reclaimDeadGuard(gate) {
-  // Serialise competing reclaimers independently of the abandoned guard.
-  // A second reclaimer must never delete the first one's new live guard.
-  const reclaim = gate + '.reaper';
-  let handle;
-  try { handle = fs.openSync(reclaim, 'wx', 0o600); }
-  catch (error) {
-    if (error?.code === 'EEXIST') return false;
+function acquireGuardReaper(gate) {
+  const filename = gate + '.reaper';
+  function create() {
+    let fd;
+    try { fd = fs.openSync(filename, 'wx', 0o600); }
+    catch (error) {
+      if (error?.code === 'EEXIST') return null;
+      throw error;
+    }
+    try {
+      fs.writeFileSync(fd, JSON.stringify({
+        format: 'boekenbaai-lock-guard-v1',
+        pid: process.pid, host: os.hostname(),
+      }));
+      fs.fsyncSync(fd);
+    } catch (error) {
+      fs.closeSync(fd);
+      try { fs.unlinkSync(filename); }
+      catch (cleanup) { if (cleanup?.code !== 'ENOENT') throw cleanup; }
+      throw error;
+    }
+    return () => {
+      fs.closeSync(fd);
+      fs.unlinkSync(filename);
+    };
+  }
+
+  let release = create();
+  if (release) return release;
+  // The recovery lock itself is also process-owned. It has no third-tier
+  // lock: first check the owner's liveness and *recheck* the same inode and
+  // content immediately before removing a provably dead owner's file.
+  let previous;
+  let stat;
+  try {
+    stat = fs.statSync(filename);
+    previous = fs.readFileSync(filename, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return create();
     throw error;
   }
+  let owner;
+  try { owner = JSON.parse(previous); } catch { owner = null; }
+  const emptyAbandoned = !previous.trim() && Date.now() - stat.mtimeMs > 30000;
+  if (!deadLocalOwner(owner) && !emptyAbandoned) return null;
+  try {
+    const freshStat = fs.statSync(filename);
+    if (freshStat.ino !== stat.ino || freshStat.dev !== stat.dev
+      || fs.readFileSync(filename, 'utf8') !== previous) return null;
+    fs.unlinkSync(filename);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  return create();
+}
+
+function reclaimDeadGuard(gate) {
+  // The reaper is owned by a live process or can be reclaimed after its
+  // process exits; a second crash cannot permanently wedge the write lock.
+  const release = acquireGuardReaper(gate);
+  if (!release) return false;
   try {
     let observed;
     try { observed = fs.readFileSync(gate, 'utf8'); }
@@ -167,8 +218,8 @@ function reclaimDeadGuard(gate) {
     try { owner = JSON.parse(observed); }
     catch { owner = null; }
     if (!deadLocalOwner(owner)) {
-      // A crash in the tiny window before writing the guard metadata can
-      // leave an empty guard. Reclaim only if it has stayed empty long enough.
+      // An orphaned guard without metadata cannot be distinguished from
+      // an owner currently initializing it until an appropriate grace period.
       let age = 0;
       try { age = Date.now() - fs.statSync(gate).mtimeMs; }
       catch (error) { if (error?.code !== 'ENOENT') throw error; }
@@ -177,11 +228,9 @@ function reclaimDeadGuard(gate) {
     fs.unlinkSync(gate);
     return true;
   } finally {
-    fs.closeSync(handle);
-    fs.unlinkSync(reclaim);
+    release();
   }
 }
-
 function withLockGuard(filename, operation, { processOwned = false } = {}) {
   const gate = filename + '.guard';
   let fd;
