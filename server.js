@@ -4214,6 +4214,25 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 404, { message: 'Omslag niet gevonden' });
     }
     const user = getAuthenticatedUser(req, getDb);
+    // Expiry can occur AFTER startup (e.g. a rolling replacement begins
+    // while an old remote lease still has a few minutes left). Recover a
+    // provably orphaned job when an administrator polls or starts an import;
+    // otherwise the reused queued/running job would block imports forever.
+    if (user?.role === 'admin' && (
+      (req.method === 'POST' && requestUrl.pathname === '/api/books/import-jobs')
+      || (req.method === 'GET'
+        && /^\\/api\\/books\\/import-jobs\\/[\\w-]+$/.test(requestUrl.pathname))
+    )) {
+      const pending = (getDb().importJobs || []).some(job =>
+        ['queued', 'running'].includes(job?.status)
+        && isImportOwnerConfirmedDead(job.owner, {
+          lastSeenAt: job.lastProgressAt || job.updatedAt || job.startedAt || job.createdAt,
+        }));
+      if (pending) {
+        markInterruptedImportJobs();
+        db = loadDb();
+      }
+    }
     // Acquire before parseBody() can yield, regardless of which UI initiated
     // the upload. This closes both directions of the legacy/staged race.
     const importKind = req.method !== 'POST' ? '' :
