@@ -170,6 +170,52 @@ try {
     { code: 'DATABASE_WRITE_BUSY' });
   fs.unlinkSync(guardFile);
 
+  // A container can restart with precisely the same hostname and PID 1.
+  // An older kernel start tick proves the owner is NOT the live process,
+  // even though process.kill(pid, 0) reports a running PID.
+  if (fs.existsSync('/proc/self/stat')) {
+    const kernelStat = fs.readFileSync('/proc/self/stat', 'utf8');
+    const myTick = kernelStat.slice(kernelStat.lastIndexOf(') ') + 2)
+      .trim().split(/\s+/)[19];
+    assert.match(myTick, /^\d+$/);
+    const recycled = JSON.stringify({
+      format: 'boekenbaai-lock-guard-v1',
+      pid: process.pid, host: hostname(), pidStartTicks: '0',
+    });
+    fs.writeFileSync(guardFile, recycled);
+    fs.writeFileSync(guardReaper, recycled);
+    assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false,
+      'Same PID but different kernel process generation must reclaim both artifacts');
+    assert.strictEqual(fs.existsSync(guardFile), false);
+    assert.strictEqual(fs.existsSync(guardReaper), false);
+
+    // A genuinely LIVE local process must still be protected even when its
+    // lock file looks old. Age alone may not steal verified live ownership.
+    fs.writeFileSync(guardFile, JSON.stringify({
+      format: 'boekenbaai-lock-guard-v1',
+      pid: process.pid, host: hostname(), pidStartTicks: myTick,
+    }));
+    const ancient = new Date(Date.now() - 6 * 60 * 1000);
+    fs.utimesSync(guardFile, ancient, ancient);
+    assert.throws(() => recoverPairedJson({ dataPath, authPath, waitMs: 60 }),
+      { code: 'DATABASE_WRITE_BUSY' });
+    fs.unlinkSync(guardFile);
+  }
+  // Prior deployments wrote only hostname/PID (no kernel generation).
+  // Those old files still have a bounded recovery even if PID was reused.
+  const legacyOwner = JSON.stringify({
+    format: 'boekenbaai-lock-guard-v1', pid: process.pid, host: hostname(),
+  });
+  fs.writeFileSync(guardFile, legacyOwner);
+  fs.writeFileSync(guardReaper, legacyOwner);
+  const legacyOld = new Date(Date.now() - 6 * 60 * 1000);
+  fs.utimesSync(guardFile, legacyOld, legacyOld);
+  fs.utimesSync(guardReaper, legacyOld, legacyOld);
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false,
+    'Legacy PID-only guards must not remain blocked forever after PID reuse');
+  assert.strictEqual(fs.existsSync(guardFile), false);
+  assert.strictEqual(fs.existsSync(guardReaper), false);
+
   // Rolling deployment may change container hostname. Unknown remote
   // guard+reaper owners are protected while fresh, but old synchronous
   // artifacts must not wedge all future database writes forever.
