@@ -7160,6 +7160,7 @@ async function handleApi(req, res, requestUrl) {
         }
       }
 
+      let booksDurablyCommitted = false;
       if (changed) {
         appendHistory(db, {
           type: 'books_imported',
@@ -7179,9 +7180,16 @@ async function handleApi(req, res, requestUrl) {
           entry => entry?.id === importJobId);
         if (importJobId) validateImportOwner(currentJob);
         db.importJobs = latestForImport.importJobs;
-        if (currentJob) currentJob.booksCommittedAt = new Date().toISOString();
+        if (currentJob) {
+          currentJob.booksCommittedAt = new Date().toISOString();
+          currentJob.committedSummary = {
+            processed: processedRows, created: createdBooks.length,
+            updated: updatedBooks.length, skipped: skipped.length, failed: 0,
+          };
+        }
         inheritSnapshot(db, latestForImport);
         saveDb(db);
+        booksDurablyCommitted = true;
         scheduleCoverBackfill({ resetFailures: true });
       }
 
@@ -7228,7 +7236,12 @@ async function handleApi(req, res, requestUrl) {
         books: createdBooks.concat(updatedBooks),
       };
 
-      updateImportProgress({
+      // Terminal status writes may briefly conflict with another instance.
+      // The durable book transaction above contains a commit marker and
+      // summary. A failed STATUS write must never make a successful BOOK
+      // write look like a failed import to the outer worker.
+      try {
+        updateImportProgress({
         status: 'completed',
         currentStage: 'Voltooid',
         finishedAt: new Date().toISOString(),
@@ -7246,7 +7259,25 @@ async function handleApi(req, res, requestUrl) {
         },
         result: successPayload,
         error: '',
-      });
+        });
+      } catch (error) {
+        if (!booksDurablyCommitted || !importJobId
+          || !['DATABASE_WRITE_BUSY', 'DATABASE_WRITE_CONFLICT'].includes(error?.code)) {
+          throw error;
+        }
+        console.warn('Boeken zijn opgeslagen; importstatus wordt apart voltooid:',
+          error?.code || error?.message || error);
+        // Retry without blocking the response. The outer background worker
+        // will also receive HTTP 200 and call finishLegacyImportJob. That
+        // helper is idempotent and honors booksCommittedAt on failure.
+        void finishLegacyImportJob(importJobId, {
+          succeeded: true, payload: successPayload,
+          totalRows: workbookResult.rows.length, waitMs: 12000,
+        }).catch(retryError => {
+          console.error('Uitgestelde importstatus kon niet worden opgeslagen:',
+            retryError?.code || retryError?.message || retryError);
+        });
+      }
 
       return sendJson(res, 200, successPayload);
     }
