@@ -121,6 +121,16 @@ async function run() {
         status: 'running' },
       { id: 'remote-running', type: 'books_import', createdBy: 'admin1',
         status: 'running', owner: { version: 1, host: 'other-instance-host', pid: 99999 } },
+      { id: 'remote-expired', type: 'books_import', createdBy: 'admin1',
+        status: 'running', owner: { version: 1, host: 'previous-host', pid: 99998,
+          instanceId: 'remote-expired-token', leaseExpiresAt: Date.now() - 1000 } },
+      { id: 'reused-pid-expired', type: 'books_import', createdBy: 'admin1',
+        status: 'running', owner: { version: 1, host: osHost, pid: process.pid,
+          instanceId: 'another-process', leaseExpiresAt: Date.now() - 1000 } },
+      { id: 'committed-expired', type: 'books_import', createdBy: 'admin1',
+        status: 'running', booksCommittedAt: new Date().toISOString(),
+        owner: { version: 1, host: 'previous-host', pid: 99997,
+          instanceId: 'committed-token', leaseExpiresAt: Date.now() - 1000 } },
     ],
   };
   fs.writeFileSync(dbPath, JSON.stringify(db));
@@ -199,6 +209,16 @@ async function run() {
       assert.strictEqual(live.body.status, 'running',
         'Rolling startup must not interrupt an import with a live/unknown owner');
     }
+    for (const id of ['remote-expired', 'reused-pid-expired']) {
+      const expired = await call('/api/books/import-jobs/' + id, token1);
+      assert.strictEqual(expired.status, 200);
+      assert.strictEqual(expired.body.status, 'interrupted',
+        'A stale lease must expire even across new hosts or PID reuse');
+    }
+    const committedOrphan = await call('/api/books/import-jobs/committed-expired', token1);
+    assert.strictEqual(committedOrphan.status, 200);
+    assert.strictEqual(committedOrphan.body.status, 'completed',
+      'Crash after book commit must not invite a duplicate import');
     // Remove fixture-only live imports before testing normal admission.
     // They were deliberately left running to prove rolling-start safety,
     // but would otherwise correctly prevent new imports in this test.
