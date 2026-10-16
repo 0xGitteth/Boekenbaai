@@ -146,6 +146,21 @@ function deadLocalOwner(record) {
   }
 }
 
+// Guards/reapers contain no asynchronous work. When a deployment changes
+// hostname there is no portable way to probe the old PID. Keep fail-closed
+// for five minutes, then permit recovering the abandoned synchronous guard.
+// A known LIVE local PID is never reclaimed merely for being old.
+const ORPHAN_GUARD_STALE_MS = 5 * 60 * 1000;
+function reclaimableGuardArtifact(owner, contents, stat) {
+  if (deadLocalOwner(owner)) return true;
+  const localOwner = owner?.format === 'boekenbaai-lock-guard-v1'
+    && owner.host === os.hostname()
+    && Number.isSafeInteger(owner.pid) && owner.pid > 0;
+  if (localOwner) return false;
+  const age = Date.now() - stat.mtimeMs;
+  return age > (contents.trim() ? ORPHAN_GUARD_STALE_MS : 30000);
+}
+
 function acquireGuardReaper(gate) {
   const filename = gate + '.reaper';
   function create() {
@@ -189,8 +204,7 @@ function acquireGuardReaper(gate) {
   }
   let owner;
   try { owner = JSON.parse(previous); } catch { owner = null; }
-  const emptyAbandoned = !previous.trim() && Date.now() - stat.mtimeMs > 30000;
-  if (!deadLocalOwner(owner) && !emptyAbandoned) return null;
+  if (!reclaimableGuardArtifact(owner, previous, stat)) return null;
   try {
     const freshStat = fs.statSync(filename);
     if (freshStat.ino !== stat.ino || freshStat.dev !== stat.dev
@@ -217,14 +231,17 @@ function reclaimDeadGuard(gate) {
     let owner;
     try { owner = JSON.parse(observed); }
     catch { owner = null; }
-    if (!deadLocalOwner(owner)) {
-      // An orphaned guard without metadata cannot be distinguished from
-      // an owner currently initializing it until an appropriate grace period.
-      let age = 0;
-      try { age = Date.now() - fs.statSync(gate).mtimeMs; }
-      catch (error) { if (error?.code !== 'ENOENT') throw error; }
-      if (observed.trim() || age < 30000) return false;
+    let stat;
+    try { stat = fs.statSync(gate); }
+    catch (error) {
+      if (error?.code === 'ENOENT') return true;
+      throw error;
     }
+    if (!reclaimableGuardArtifact(owner, observed, stat)) return false;
+    // Do not remove a replaced guard after a concurrent owner acquired it.
+    const current = fs.statSync(gate);
+    if (current.ino !== stat.ino || current.dev !== stat.dev
+      || fs.readFileSync(gate, 'utf8') !== observed) return false;
     fs.unlinkSync(gate);
     return true;
   } finally {
