@@ -199,6 +199,14 @@ async function run() {
       assert.strictEqual(live.body.status, 'running',
         'Rolling startup must not interrupt an import with a live/unknown owner');
     }
+    // Remove fixture-only live imports before testing normal admission.
+    // They were deliberately left running to prove rolling-start safety,
+    // but would otherwise correctly prevent new imports in this test.
+    const afterOwnerCheck = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    afterOwnerCheck.importJobs = afterOwnerCheck.importJobs.filter(job =>
+      !['live-running', 'unknown-running', 'remote-running'].includes(job.id));
+    fs.writeFileSync(dbPath, JSON.stringify(afterOwnerCheck));
+
     // Same administrator account signed in from a second device/session.
     const loginSameAccountAgain = await call('/api/login', null, { username: 'admin1', password: 'pass1' });
     assert.strictEqual(loginSameAccountAgain.status, 200);
