@@ -347,6 +347,11 @@ async function testImmediateCancelBeforeStart() {
 }
 
 async function testInterruptedJobsOnRestart() {
+  const { spawnSync } = require('node:child_process');
+  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+  assert.strictEqual(dead.status, 0);
+  assert.ok(dead.pid > 0);
+  const orphanOwner = { version: 1, pid: dead.pid, host: os.hostname() };
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-job-restart-'));
   const dbPath = path.join(tempDir, 'db.json');
   createDbFixture(dbPath, {
@@ -358,6 +363,7 @@ async function testInterruptedJobsOnRestart() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         status: 'running',
+        owner: orphanOwner,
       },
     ],
   });
