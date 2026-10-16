@@ -219,6 +219,23 @@ async function run() {
     assert.strictEqual(committedOrphan.status, 200);
     assert.strictEqual(committedOrphan.body.status, 'completed',
       'Crash after book commit must not invite a duplicate import');
+    // An owner can become unreachable after this server has already
+    // started. Polling must reap the expired remote lease, otherwise the
+    // administrator keeps reusing a job with no remaining worker.
+    const later = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    later.importJobs.push({
+      id: 'expired-after-start', type: 'books_import', createdBy: 'admin1',
+      status: 'running', lastProgressAt: new Date().toISOString(),
+      owner: { version: 1, host: 'departed-host', pid: 99991,
+        instanceId: 'expired-after-start-owner',
+        leaseExpiresAt: Date.now() - 1000 },
+    });
+    fs.writeFileSync(dbPath, JSON.stringify(later));
+    const reapedLater = await call('/api/books/import-jobs/expired-after-start', token1);
+    assert.strictEqual(reapedLater.status, 200);
+    assert.strictEqual(reapedLater.body.status, 'interrupted',
+      'Polling must clean up a remote lease expiring after server startup');
+
     // Remove fixture-only live imports before testing normal admission.
     // They were deliberately left running to prove rolling-start safety,
     // but would otherwise correctly prevent new imports in this test.
