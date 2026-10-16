@@ -3,7 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
-const { currentImportOwner, isImportOwnerConfirmedDead } = require('./book-import-owner');
+const {
+  currentImportOwner, isImportOwnerConfirmedDead, sameImportOwner,
+  isImportLeaseActive, IMPORT_HEARTBEAT_MS, IMPORT_LEASE_MS,
+} = require('./book-import-owner');
 const { normalizeCoverCrop } = require('./lib/cover-crop');
 const { createCoverAssetStore } = require('./lib/cover-assets');
 const { planCoverBackfill } = require('./lib/cover-backfill-plan');
@@ -24,7 +27,7 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
-  withDatabaseWriteLock, mutateJsonLocked } = require('./database-write-coordinator');
+  withDatabaseWriteLock, mutateJsonLocked, mutateJsonLockedAsync } = require('./database-write-coordinator');
 const { finishLegacyImportJob: persistLegacyImportStatus } =
   require('./book-import-job-finalization');
 const { circulationRevision, noteLoanActivity,
@@ -988,12 +991,18 @@ function markInterruptedImportJobs() {
       let changed = false;
       for (const job of db.importJobs || []) {
         if (job && (job.status === 'queued' || job.status === 'running')
-          && isImportOwnerConfirmedDead(job.owner)) {
+          && isImportOwnerConfirmedDead(job.owner, {
+            lastSeenAt: job.lastProgressAt || job.updatedAt || job.startedAt || job.createdAt,
+          })) {
           const now = new Date().toISOString();
-          job.status = 'interrupted';
+          // Book data and this marker are saved by the same atomic JSON
+          // replacement. If the worker crashes during final status delivery,
+          // never invite a retry of books that already committed.
+          job.status = job.booksCommittedAt ? 'completed' : 'interrupted';
           job.updatedAt = now;
           job.finishedAt = now;
-          job.error = job.error || 'Import onderbroken door serverherstart';
+          job.error = job.booksCommittedAt ? ''
+            : (job.error || 'Import onderbroken door serverherstart');
           changed = true;
         }
       }
@@ -5961,10 +5970,11 @@ async function handleApi(req, res, requestUrl) {
       const db = getDb();
       const now = new Date().toISOString();
       const jobId = crypto.randomUUID();
+      const importOwner = currentImportOwner();
       db.importJobs.push({
         id: jobId,
         type: 'books_import',
-        owner: currentImportOwner(),
+        owner: importOwner,
         createdBy: user.id,
         createdAt: now,
         updatedAt: now,
@@ -5998,6 +6008,34 @@ async function handleApi(req, res, requestUrl) {
       requestImportAdmission.lease.handedOff = true;
 
       setImmediate(async () => {
+        // The lease is refreshed while this process owns a legacy job. A
+        // replacement instance can recover orphans on another hostname.
+        // A second worker must not renew someone else's instance token.
+        let heartbeatBusy = false;
+        const heartbeat = setInterval(async () => {
+          if (shuttingDown || heartbeatBusy) return;
+          heartbeatBusy = true;
+          try {
+            await mutateJsonLockedAsync({
+              lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 2000,
+              read: () => loadDb(),
+              mutate: latest => {
+                const job = (latest.importJobs || []).find(entry => entry?.id === jobId);
+                if (!job || !['queued', 'running'].includes(job.status)
+                  || !sameImportOwner(job.owner, importOwner)
+                  || !isImportLeaseActive(job.owner)) return false;
+                const now = Date.now();
+                job.owner.heartbeatAt = now;
+                job.owner.leaseExpiresAt = now + IMPORT_LEASE_MS;
+                return latest;
+              },
+            });
+          } catch (error) {
+            console.warn('Importlease kon tijdelijk niet worden vernieuwd:',
+              error?.code || error?.message || error);
+          } finally { heartbeatBusy = false; }
+        }, IMPORT_HEARTBEAT_MS);
+        if (typeof heartbeat.unref === 'function') heartbeat.unref();
         let importAccepted = false;
         let successfulPayload = null;
         const deferConfirmedCompletion = () => {
@@ -6077,6 +6115,7 @@ async function handleApi(req, res, requestUrl) {
             }
           }
         } finally {
+          clearInterval(heartbeat);
           activeImportJobs.delete(user.id);
           releaseBookImportLease(requestImportAdmission.lease);
         }
@@ -6164,11 +6203,22 @@ async function handleApi(req, res, requestUrl) {
       // rebase those progress changes, but never erase unrelated writes.
       const originalImportState = JSON.stringify({ ...db, importJobs: null });
       const importJobId = String(req.headers['x-import-job-id'] || '').trim();
+      const importWorkerOwner = importJobId
+        ? (db.importJobs || []).find(entry => entry?.id === importJobId)?.owner : null;
+      const validateImportOwner = job => {
+        if (importWorkerOwner && (!sameImportOwner(job?.owner, importWorkerOwner)
+          || !isImportLeaseActive(job?.owner) || !['queued', 'running'].includes(job.status))) {
+          const error = new Error('Deze importlease is verlopen of overgenomen.');
+          error.code = 'DATABASE_WRITE_CONFLICT';
+          throw error;
+        }
+      };
       const updateImportProgress = (updates) => {
         if (!importJobId) return;
         const jobDb = loadDb();
         const existingJob = (jobDb.importJobs || []).find((entry) => entry?.id === importJobId);
         if (!existingJob || existingJob.status === 'cancelled') return;
+        validateImportOwner(existingJob);
         updateImportJob(jobDb, importJobId, {
           ...updates,
           lastProgressAt: new Date().toISOString(),
@@ -6179,6 +6229,7 @@ async function handleApi(req, res, requestUrl) {
         if (!importJobId) return false;
         const jobDb = loadDb();
         const existingJob = (jobDb.importJobs || []).find((entry) => entry?.id === importJobId);
+        validateImportOwner(existingJob);
         return Boolean(existingJob?.cancelRequested);
       };
       const createdBooks = [];
@@ -7097,7 +7148,11 @@ async function handleApi(req, res, requestUrl) {
           conflict.code = 'DATABASE_WRITE_CONFLICT';
           throw conflict;
         }
+        const currentJob = (latestForImport.importJobs || []).find(
+          entry => entry?.id === importJobId);
+        if (importJobId) validateImportOwner(currentJob);
         db.importJobs = latestForImport.importJobs;
+        if (currentJob) currentJob.booksCommittedAt = new Date().toISOString();
         inheritSnapshot(db, latestForImport);
         saveDb(db);
         scheduleCoverBackfill({ resetFailures: true });
