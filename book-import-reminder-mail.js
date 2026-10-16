@@ -301,6 +301,7 @@ function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = 
   const owner = crypto.randomBytes(24).toString('hex');
   const contents = processOwned ? JSON.stringify({
     format: 'boekenbaai-process-lock-v1', owner, pid: process.pid, host: os.hostname(),
+    ...(SELF_PROCESS_START_TICKS ? { pidStartTicks: SELF_PROCESS_START_TICKS } : {}),
   }) : owner;
   function createOwnedLock() {
     const fd = fs.openSync(filename, 'wx', 0o600);
@@ -358,8 +359,10 @@ function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = 
       if (error.code !== 'ENOENT') throw error;
       return createOwnedLock();
     }
-    // If a known local DB writer crashed, safely reclaim its lock under
-    // the guard. Unknown and remote owners remain protected by staleMs.
+    // This is a PROCESS-owned main database lock, not an arbitrary stale
+    // mail lock. A recycled PID must not mask the death of the old writer,
+    // and a VERIFIED live writer must never be stolen merely because a
+    // long-running database operation exceeded the stale timeout.
     if (processOwned) {
       let previous = null;
       try { previous = JSON.parse(fs.readFileSync(filename, 'utf8')); }
@@ -370,8 +373,15 @@ function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = 
         && previous.host === os.hostname()
         && Number.isSafeInteger(previous.pid) && previous.pid > 0) {
         let dead = false;
-        try { process.kill(previous.pid, 0); }
-        catch (error) {
+        let knownLive = false;
+        try {
+          process.kill(previous.pid, 0);
+          const nowTicks = processStartTicks(previous.pid);
+          if (previous.pidStartTicks && nowTicks) {
+            dead = String(previous.pidStartTicks) !== nowTicks;
+            knownLive = !dead;
+          }
+        } catch (error) {
           if (error?.code === 'ESRCH') dead = true;
           else if (error?.code !== 'EPERM') throw error;
         }
@@ -379,6 +389,9 @@ function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = 
           fs.unlinkSync(filename);
           return createOwnedLock();
         }
+        if (knownLive) return null;
+        // Older PID-only records cannot distinguish a restarted container.
+        // Allow only their bounded, age-based recovery below.
       }
     }
     if (Date.now() - stat.mtimeMs <= staleMs) return null;
