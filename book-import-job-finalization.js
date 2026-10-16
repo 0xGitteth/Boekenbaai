@@ -17,7 +17,26 @@ async function finishLegacyImportJob({ dataPath, jobId, succeeded, payload,
       const job = jobs[index];
       const finishedAt = new Date().toISOString();
       let changes;
-      if (!succeeded) {
+      if (!succeeded && job.booksCommittedAt) {
+        // The internal HTTP import may have returned 409/500 *after* its
+        // book transaction succeeded. Never turn durable books into a
+        // reported failure and invite a duplicate import.
+        const persisted = job.committedSummary || {};
+        changes = {
+          status: 'completed', finishedAt,
+          currentStage: 'Voltooid', error: '', failed: 0,
+          processed: Number(persisted.processed ?? job.processed ?? totalRows ?? 0),
+          created: Number(persisted.created ?? job.created ?? 0),
+          updated: Number(persisted.updated ?? job.updated ?? 0),
+          skipped: Number(persisted.skipped ?? job.skipped ?? 0),
+          summary: {
+            created: Number(persisted.created ?? job.created ?? 0),
+            updated: Number(persisted.updated ?? job.updated ?? 0),
+            skipped: Number(persisted.skipped ?? job.skipped ?? 0),
+            failed: 0,
+          },
+        };
+      } else if (!succeeded) {
         changes = {
           status: 'failed', finishedAt,
           error: errorMessage || payload?.message || 'Importjob mislukt',
