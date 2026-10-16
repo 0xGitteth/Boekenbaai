@@ -93,6 +93,14 @@ async function waitForServer(child) {
 async function run() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-pr3-'));
   const dbPath = path.join(tempDir, 'db.json');
+  // A terminated prior server may own interrupted jobs; an overlapping
+  // live server or unknown/remote owner must NOT be interrupted.
+  const { spawnSync } = require('node:child_process');
+  const osHost = require('node:os').hostname();
+  const departed = spawnSync(process.execPath, ['-e', 'process.exit(0)']);
+  assert.ok(departed.pid > 0);
+  const deadOwner = { version: 1, host: osHost, pid: departed.pid };
+  const activeOwner = { version: 1, host: osHost, pid: process.pid };
   const db = {
     books: [],
     students: [{ id: 'student-match', name: 'Lisa Leerling', username: 'lisa' }],
@@ -103,8 +111,16 @@ async function run() {
       { id: 'admin2', name: 'Admin Two', username: 'admin2', passwordHash: hashPassword('pass2'), role: 'admin' },
     ], history: [],
     importJobs: [
-      { id: 'old-queued', type: 'books_import', createdBy: 'admin1', status: 'queued' },
-      { id: 'old-running', type: 'books_import', createdBy: 'admin1', status: 'running' },
+      { id: 'old-queued', type: 'books_import', createdBy: 'admin1',
+        status: 'queued', owner: deadOwner },
+      { id: 'old-running', type: 'books_import', createdBy: 'admin1',
+        status: 'running', owner: deadOwner },
+      { id: 'live-running', type: 'books_import', createdBy: 'admin1',
+        status: 'running', owner: activeOwner },
+      { id: 'unknown-running', type: 'books_import', createdBy: 'admin1',
+        status: 'running' },
+      { id: 'remote-running', type: 'books_import', createdBy: 'admin1',
+        status: 'running', owner: { version: 1, host: 'other-instance-host', pid: 99999 } },
     ],
   };
   fs.writeFileSync(dbPath, JSON.stringify(db));
@@ -176,6 +192,12 @@ async function run() {
       assert.strictEqual(interrupted.status, 200);
       assert.strictEqual(interrupted.body.status, 'interrupted',
         'A server restart must not leave an orphaned queued/running worker');
+    }
+    for (const id of ['live-running', 'unknown-running', 'remote-running']) {
+      const live = await call('/api/books/import-jobs/' + id, token1);
+      assert.strictEqual(live.status, 200);
+      assert.strictEqual(live.body.status, 'running',
+        'Rolling startup must not interrupt an import with a live/unknown owner');
     }
     // Same administrator account signed in from a second device/session.
     const loginSameAccountAgain = await call('/api/login', null, { username: 'admin1', password: 'pass1' });
