@@ -170,6 +170,24 @@ try {
     { code: 'DATABASE_WRITE_BUSY' });
   fs.unlinkSync(guardFile);
 
+  // Rolling deployment may change container hostname. Unknown remote
+  // guard+reaper owners are protected while fresh, but old synchronous
+  // artifacts must not wedge all future database writes forever.
+  const otherHostOwner = JSON.stringify({
+    format: 'boekenbaai-lock-guard-v1', pid: 1234,
+    host: 'previous-container-host',
+  });
+  fs.writeFileSync(guardFile, otherHostOwner);
+  fs.writeFileSync(guardReaper, otherHostOwner);
+  assert.throws(() => recoverPairedJson({ dataPath, authPath, waitMs: 40 }),
+    { code: 'DATABASE_WRITE_BUSY' }, 'Fresh remote owner must be protected');
+  const oldTimestamp = new Date(Date.now() - 6 * 60 * 1000);
+  fs.utimesSync(guardFile, oldTimestamp, oldTimestamp);
+  fs.utimesSync(guardReaper, oldTimestamp, oldTimestamp);
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false);
+  assert.strictEqual(fs.existsSync(guardFile), false);
+  assert.strictEqual(fs.existsSync(guardReaper), false);
+
   // A healthy other process may temporarily hold the shared writer lock.
   // Startup recovery must retry boundedly rather than abort immediately.
   const { acquireFileLock } = require('../book-import-reminder-mail');
