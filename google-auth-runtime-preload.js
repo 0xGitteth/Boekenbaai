@@ -10,6 +10,7 @@ const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./dat
 const { verifyGoogleIdToken } = require('./google-id-token');
 const { installSessionBridge } = require('./google-session-bridge');
 const { completePendingGoogleSession } = require('./google-pending-session');
+const { completeVerifiedGoogleSession } = require('./google-verified-callback-commit');
 
 const sessionsMap = new Map();
 const sessionBridge = installSessionBridge({ sessions: sessionsMap });
@@ -598,8 +599,19 @@ async function handleGoogleCallback(req, res, requestUrl) {
           return redirect(res, makeOauthErrorRedirect(type, 'account-mismatch'));
         }
       }
-      saveAuthStore(store);
-      createLoginSession(req, res, resolved.account.id, type, Boolean(state.remember));
+      // Commit the verified Google identity and new session together.
+      // The linked account is REVALIDATED against current auth state under
+      // the same lock, preventing a concurrent unlink from granting access.
+      const completed = completeVerifiedGoogleSession({
+        dataPath: DATA_PATH, authPath: AUTH_DATA_PATH,
+        type, identity, expectedAccountId: resolved.account.id,
+        remember: Boolean(state.remember),
+      });
+      sessionsMap.set(completed.token, {
+        userId: completed.userId, type, createdAt: completed.createdAt,
+        persistedAuth: true,
+      });
+      setSessionCookies(req, res, completed.token, Boolean(state.remember));
       clearCookie(req, res, PENDING_COOKIE, true);
       return redirect(
         res,
