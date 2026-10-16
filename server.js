@@ -4221,7 +4221,7 @@ async function handleApi(req, res, requestUrl) {
     if (user?.role === 'admin' && (
       (req.method === 'POST' && requestUrl.pathname === '/api/books/import-jobs')
       || (req.method === 'GET'
-        && /^\\/api\\/books\\/import-jobs\\/[\\w-]+$/.test(requestUrl.pathname))
+        && requestUrl.pathname.startsWith('/api/books/import-jobs/'))
     )) {
       const pending = (getDb().importJobs || []).some(job =>
         ['queued', 'running'].includes(job?.status)
