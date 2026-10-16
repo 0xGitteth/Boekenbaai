@@ -981,33 +981,41 @@ function revokeLegacySessionsForAccount(type, accountId) {
   }
 }
 
+// Shared mutation for startup reconciliation and live administrator polling.
+// The mutator reads the latest state only after acquiring the DB lock.
+function reconcileInterruptedImports(db) {
+  let changed = false;
+  for (const job of db.importJobs || []) {
+    if (job && (job.status === 'queued' || job.status === 'running')
+      && isImportOwnerConfirmedDead(job.owner, {
+        lastSeenAt: job.lastProgressAt || job.updatedAt || job.startedAt || job.createdAt,
+      })) {
+      const now = new Date().toISOString();
+      // Never invite a repeat import after its books already committed.
+      job.status = job.booksCommittedAt ? 'completed' : 'interrupted';
+      job.updatedAt = now;
+      job.finishedAt = now;
+      job.error = job.booksCommittedAt ? ''
+        : (job.error || 'Import onderbroken door serverherstart');
+      changed = true;
+    }
+  }
+  return changed ? db : false;
+}
+
 function markInterruptedImportJobs() {
-  // Startup may overlap another instance's final import write. Always read
-  // the latest state inside the shared lock, then wait a bounded interval.
+  // Synchronous waiting is acceptable during server initialization ONLY.
   mutateJsonLocked({
     lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 10000,
-    read: () => loadDb(),
-    mutate: db => {
-      let changed = false;
-      for (const job of db.importJobs || []) {
-        if (job && (job.status === 'queued' || job.status === 'running')
-          && isImportOwnerConfirmedDead(job.owner, {
-            lastSeenAt: job.lastProgressAt || job.updatedAt || job.startedAt || job.createdAt,
-          })) {
-          const now = new Date().toISOString();
-          // Book data and this marker are saved by the same atomic JSON
-          // replacement. If the worker crashes during final status delivery,
-          // never invite a retry of books that already committed.
-          job.status = job.booksCommittedAt ? 'completed' : 'interrupted';
-          job.updatedAt = now;
-          job.finishedAt = now;
-          job.error = job.booksCommittedAt ? ''
-            : (job.error || 'Import onderbroken door serverherstart');
-          changed = true;
-        }
-      }
-      return changed ? db : false;
-    },
+    read: () => loadDb(), mutate: reconcileInterruptedImports,
+  });
+}
+
+async function markInterruptedImportJobsAsync() {
+  // Never block HTTP requests and health checks waiting for another writer.
+  return mutateJsonLockedAsync({
+    lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 10000,
+    read: () => loadDb(), mutate: reconcileInterruptedImports,
   });
 }
 
@@ -4229,7 +4237,7 @@ async function handleApi(req, res, requestUrl) {
           lastSeenAt: job.lastProgressAt || job.updatedAt || job.startedAt || job.createdAt,
         }));
       if (pending) {
-        markInterruptedImportJobs();
+        await markInterruptedImportJobsAsync();
         db = loadDb();
       }
     }
