@@ -129,6 +129,39 @@ try {
   assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false);
   assert.strictEqual(fs.existsSync(guardFile), false);
   assert.strictEqual(fs.existsSync(guardFile + '.reaper'), false);
+  // Two successive crashes: first a guard owner, then the reaper that
+  // tried to remove it. Startup must recover both orphan files.
+  const guardReaper = guardFile + '.reaper';
+  const doubleCrash = spawnSync(process.execPath, ['-e', [
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "for (const file of process.argv.slice(1)) fs.writeFileSync(file,",
+    "JSON.stringify({ format: 'boekenbaai-lock-guard-v1',",
+    "pid: process.pid, host: os.hostname() }));",
+  ].join('\n'), guardFile, guardReaper]);
+  assert.strictEqual(doubleCrash.status, 0, doubleCrash.stderr?.toString());
+  assert.strictEqual(recoverPairedJson({ dataPath, authPath, waitMs: 2000 }), false,
+    'Orphaned guard and orphaned reaper must both be reclaimed');
+  assert.strictEqual(fs.existsSync(guardFile), false);
+  assert.strictEqual(fs.existsSync(guardReaper), false);
+
+  // A live reaper must not be stolen, even while its target guard is dead.
+  const liveReaperGuard = spawnSync(process.execPath, ['-e', [
+    "const fs = require('fs');",
+    "const os = require('os');",
+    "fs.writeFileSync(process.argv[1], JSON.stringify({",
+    "format: 'boekenbaai-lock-guard-v1', pid: process.pid, host: os.hostname() }));",
+  ].join('\n'), guardFile]);
+  assert.strictEqual(liveReaperGuard.status, 0);
+  fs.writeFileSync(guardReaper, JSON.stringify({
+    format: 'boekenbaai-lock-guard-v1', pid: process.pid, host: hostname(),
+  }));
+  assert.throws(() => recoverPairedJson({ dataPath, authPath, waitMs: 40 }),
+    { code: 'DATABASE_WRITE_BUSY' });
+  assert.strictEqual(fs.existsSync(guardReaper), true);
+  fs.unlinkSync(guardReaper);
+  fs.unlinkSync(guardFile);
+
   // An actual live guard owner must remain protected.
   fs.writeFileSync(guardFile, JSON.stringify({
     format: 'boekenbaai-lock-guard-v1', pid: process.pid, host: hostname(),
