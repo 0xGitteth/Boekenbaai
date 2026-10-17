@@ -12,6 +12,8 @@ const { verifyGoogleIdToken } = require('./google-id-token');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const { runSchoolSync } = require('./school-sync-core');
 const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
+const { completePendingGoogleSession } = require('./google-pending-session');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { acquireFileLock } = require('./book-import-reminder-mail');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
@@ -59,7 +61,7 @@ function writeJsonAtomic(filePath, value) {
 }
 
 function readMainDb() {
-  const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
+  const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   if (!Array.isArray(db.users)) db.users = [];
   if (!Array.isArray(db.students)) db.students = [];
@@ -70,16 +72,15 @@ function readMainDb() {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
-    label: 'Auth-opslag',
   });
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
-  const safe = core.pruneStore(core.normalizeStore(store));
-  writeJsonAtomic(AUTH_DATA_PATH, safe);
+  const safe = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: safe, lockPath: DATA_PATH });
   return safe;
 }
 
@@ -407,20 +408,13 @@ function staffPendingStatus(req, res) {
   });
 }
 
-function createStaffSession(req, res, teacher, remember) {
-  const token = crypto.randomBytes(32).toString('base64url');
-  const result = core.upsertSession(loadAuthStore(), token, {
-    userId: teacher.id,
-    type: 'staff',
-    remember: Boolean(remember),
-    now: Date.now(),
+function createStaffSession(req, res, teacher, remember, pendingHash) {
+  // Pending consumption and Google session creation share a single auth
+  // transaction. Losing the writer lock cannot strand a pending identity.
+  const { token } = completePendingGoogleSession({
+    dataPath: DATA_PATH, authPath: AUTH_DATA_PATH, pendingHash,
+    accountId: teacher.id, mode: 'staff-approved', remember,
   });
-  const session = result.store.sessions.find((entry) => entry?.tokenHash === core.tokenHash(token));
-  if (session) {
-    session.accountFingerprint = accountCredentialFingerprint(teacher);
-    session.authMethod = 'google';
-  }
-  saveAuthStore(result.store);
   const maxAge = remember ? 30 * 24 * 60 * 60 : undefined;
   const secure = useSecureCookies(req);
   appendSetCookie(res, serializeCookie(SESSION_COOKIE, token, { httpOnly: true, secure, maxAge }));
@@ -445,9 +439,7 @@ function completeStaffPending(req, res) {
   );
   if (!teacher) return sendJson(res, 404, { message: 'Docentaccount niet gevonden.' });
 
-  store.pendingIdentities = store.pendingIdentities.filter((entry) => entry?.tokenHash !== pending.tokenHash);
-  saveAuthStore(store);
-  createStaffSession(req, res, teacher, pending.remember);
+  createStaffSession(req, res, teacher, pending.remember, pending.tokenHash);
   clearCookie(req, res, PENDING_COOKIE, true);
   return sendJson(res, 200, { loggedIn: true, role: 'teacher' });
 }
@@ -500,7 +492,7 @@ function reviewStaffLinkRequest(req, res, requestId, action) {
       sub: request.sub,
       linkedBy: context.user.id,
     });
-    store = linked.store;
+    store = inheritSnapshot(linked.store, store);
     store.sessions = store.sessions.filter((entry) => !(entry?.type === 'staff' && entry?.userId === teacher.id));
     const updated = store.linkRequests.find((entry) => entry?.id === request.id);
     updated.status = 'approved';
@@ -568,6 +560,8 @@ function schoolSyncPreview(context, body, apply) {
       authPath: AUTH_DATA_PATH,
       data: result.db,
       auth: core.pruneStore(result.store),
+      expectedData: context.db,
+      expectedAuth: context.store,
     });
   }
   return {
@@ -687,7 +681,8 @@ async function handleCustomRoute(req, res, requestUrl) {
           summary: error.summary,
         });
       } else {
-        sendJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 400, { message: error.message });
+        sendJson(res, ['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)
+          ? 409 : error?.code === 'BODY_TOO_LARGE' ? 413 : 400, { message: error.message });
       }
     }
     return true;

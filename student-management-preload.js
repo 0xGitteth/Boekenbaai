@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { setParnassysStudentNumber, getParnassysStudentNumber } = require('./google-first-people-import');
 const { commitPairedJson } = require('./paired-store-commit');
 const { acquireFileLock } = require('./book-import-reminder-mail');
@@ -41,6 +42,7 @@ function readJsonStrict(filePath, { missingValue, label }) {
 }
 
 function writeJsonAtomic(filePath, value) {
+  if (filePath === DATA_PATH) return commitJsonSnapshot({ dataPath: DATA_PATH, value });
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   let mode = 0o600;
@@ -62,7 +64,7 @@ function writeJsonAtomic(filePath, value) {
 }
 
 function readMainDb() {
-  const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
+  const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) {
     throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   }
@@ -77,16 +79,15 @@ function readMainDb() {
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
-    label: 'Auth-opslag',
   });
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
-  const safe = core.pruneStore(core.normalizeStore(store));
-  writeJsonAtomic(AUTH_DATA_PATH, safe);
+  const safe = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: safe, lockPath: DATA_PATH });
   return safe;
 }
 
@@ -694,6 +695,8 @@ function deactivateStudent(context, studentId) {
     authPath: AUTH_DATA_PATH,
     data: context.db,
     auth: core.pruneStore(context.store),
+    expectedData: context.db,
+    expectedAuth: context.store,
   });
   return { status: 200, payload: { studentId: student.id, inactive: true } };
 }
@@ -801,6 +804,11 @@ function withLockedManagementWrite(req, res, operation) {
     });
     const result = operation(freshContext);
     return sendJson(res, result.status, result.payload);
+  } catch (error) {
+    if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)) {
+      return sendJson(res, 409, { message: 'De gegevens zijn intussen gewijzigd. Probeer opnieuw.' });
+    }
+    throw error;
   } finally {
     release();
   }

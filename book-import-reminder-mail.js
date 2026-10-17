@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const authCore = require('./google-auth-core');
 const { taskStage, settingsFor } = require('./book-import-followups');
 
@@ -128,33 +129,184 @@ function claimOnce(folder, id) {
   }
 }
 
-// The filesystem guard serializes *all* inspections, stale reclamations,
-// acquisitions and releases of this lock. Unlike a read-then-unlink scheme,
-// a second process cannot delete a newly acquired successor. The tiny guard
-// itself is intentionally never automatically reaped: a crash inside this
-// critical section must fail closed until an operator confirms no workers are
-// active and removes that abandoned ".guard" file.
-function withLockGuard(filename, operation) {
-  const gate = filename + '.guard';
-  let fd;
-  try { fd = fs.openSync(gate, 'wx', 0o600); }
-  catch (error) {
-    if (error.code === 'EEXIST') return null;
+// The guard prevents two processes from reclaiming one another's locks.
+// Unlike mail locks, process-owned DATABASE guards also carry PID/host metadata
+// so a crashed guard owner cannot permanently block database recovery.
+// PID 1 can be reused after a container restart. Linux /proc start ticks
+// distinguish the process generation without a third orphanable lock file.
+function processStartTicks(pid) {
+  try {
+    const raw = fs.readFileSync('/proc/' + pid + '/stat', 'utf8');
+    const end = raw.lastIndexOf(') ');
+    if (end < 0) return '';
+    const start = raw.slice(end + 2).trim().split(/\s+/)[19];
+    return /^\d+$/.test(start || '') ? start : '';
+  } catch (error) {
+    if (['ENOENT', 'EACCES', 'EPERM', 'ENOTDIR'].includes(error?.code)) return '';
     throw error;
   }
-  try { return operation(); }
-  finally {
+}
+const SELF_PROCESS_START_TICKS = processStartTicks(process.pid);
+function guardOwnerMetadata() {
+  return {
+    format: 'boekenbaai-lock-guard-v1',
+    pid: process.pid, host: os.hostname(),
+    ...(SELF_PROCESS_START_TICKS ? { pidStartTicks: SELF_PROCESS_START_TICKS } : {}),
+  };
+}
+function deadLocalOwner(record) {
+  if (!record || record.format !== 'boekenbaai-lock-guard-v1'
+    || record.host !== os.hostname()
+    || !Number.isSafeInteger(record.pid) || record.pid <= 0) return false;
+  try {
+    process.kill(record.pid, 0);
+  } catch (error) {
+    if (error?.code === 'ESRCH') return true;
+    if (error?.code === 'EPERM') return false;
+    throw error;
+  }
+  const currentStart = processStartTicks(record.pid);
+  return Boolean(record.pidStartTicks && currentStart
+    && String(record.pidStartTicks) !== currentStart);
+}
+
+// Guards/reapers contain no asynchronous work. When a deployment changes
+// hostname there is no portable way to probe the old PID. Keep fail-closed
+// for five minutes, then permit recovering the abandoned synchronous guard.
+// A known LIVE local PID is never reclaimed merely for being old.
+const ORPHAN_GUARD_STALE_MS = 5 * 60 * 1000;
+function reclaimableGuardArtifact(owner, contents, stat) {
+  if (deadLocalOwner(owner)) return true;
+  const localOwner = owner?.format === 'boekenbaai-lock-guard-v1'
+    && owner.host === os.hostname()
+    && Number.isSafeInteger(owner.pid) && owner.pid > 0;
+  // A matching kernel start signature proves the SAME process still owns
+  // this file. Old PID-only records are recoverable after the stale period.
+  if (localOwner && owner.pidStartTicks
+    && processStartTicks(owner.pid) === String(owner.pidStartTicks)) return false;
+  const age = Date.now() - stat.mtimeMs;
+  return age > (contents.trim() ? ORPHAN_GUARD_STALE_MS : 30000);
+}
+
+function acquireGuardReaper(gate) {
+  const filename = gate + '.reaper';
+  function create() {
+    let fd;
+    try { fd = fs.openSync(filename, 'wx', 0o600); }
+    catch (error) {
+      if (error?.code === 'EEXIST') return null;
+      throw error;
+    }
+    try {
+      fs.writeFileSync(fd, JSON.stringify(guardOwnerMetadata()));
+      fs.fsyncSync(fd);
+    } catch (error) {
+      fs.closeSync(fd);
+      try { fs.unlinkSync(filename); }
+      catch (cleanup) { if (cleanup?.code !== 'ENOENT') throw cleanup; }
+      throw error;
+    }
+    return () => {
+      fs.closeSync(fd);
+      fs.unlinkSync(filename);
+    };
+  }
+
+  let release = create();
+  if (release) return release;
+  // The recovery lock itself is also process-owned. It has no third-tier
+  // lock: first check the owner's liveness and *recheck* the same inode and
+  // content immediately before removing a provably dead owner's file.
+  let previous;
+  let stat;
+  try {
+    stat = fs.statSync(filename);
+    previous = fs.readFileSync(filename, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return create();
+    throw error;
+  }
+  let owner;
+  try { owner = JSON.parse(previous); } catch { owner = null; }
+  if (!reclaimableGuardArtifact(owner, previous, stat)) return null;
+  try {
+    const freshStat = fs.statSync(filename);
+    if (freshStat.ino !== stat.ino || freshStat.dev !== stat.dev
+      || fs.readFileSync(filename, 'utf8') !== previous) return null;
+    fs.unlinkSync(filename);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  return create();
+}
+
+function reclaimDeadGuard(gate) {
+  // The reaper is owned by a live process or can be reclaimed after its
+  // process exits; a second crash cannot permanently wedge the write lock.
+  const release = acquireGuardReaper(gate);
+  if (!release) return false;
+  try {
+    let observed;
+    try { observed = fs.readFileSync(gate, 'utf8'); }
+    catch (error) {
+      if (error?.code === 'ENOENT') return true;
+      throw error;
+    }
+    let owner;
+    try { owner = JSON.parse(observed); }
+    catch { owner = null; }
+    let stat;
+    try { stat = fs.statSync(gate); }
+    catch (error) {
+      if (error?.code === 'ENOENT') return true;
+      throw error;
+    }
+    if (!reclaimableGuardArtifact(owner, observed, stat)) return false;
+    // Do not remove a replaced guard after a concurrent owner acquired it.
+    const current = fs.statSync(gate);
+    if (current.ino !== stat.ino || current.dev !== stat.dev
+      || fs.readFileSync(gate, 'utf8') !== observed) return false;
+    fs.unlinkSync(gate);
+    return true;
+  } finally {
+    release();
+  }
+}
+function withLockGuard(filename, operation, { processOwned = false } = {}) {
+  const gate = filename + '.guard';
+  let fd;
+  function openGuard() {
+    try { return fs.openSync(gate, 'wx', 0o600); }
+    catch (error) {
+      if (error?.code === 'EEXIST') return null;
+      throw error;
+    }
+  }
+  fd = openGuard();
+  if (!fd && processOwned && reclaimDeadGuard(gate)) fd = openGuard();
+  if (!fd) return null;
+  try {
+    if (processOwned) {
+      fs.writeFileSync(fd, JSON.stringify(guardOwnerMetadata()));
+      fs.fsyncSync(fd);
+    }
+    return operation();
+  } finally {
     fs.closeSync(fd);
     fs.unlinkSync(gate);
   }
 }
-function acquireFileLock(filename, { staleMs = 300000 } = {}) {
+function acquireFileLock(filename, { staleMs = 300000, processOwned = false } = {}) {
   fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
   const owner = crypto.randomBytes(24).toString('hex');
+  const contents = processOwned ? JSON.stringify({
+    format: 'boekenbaai-process-lock-v1', owner, pid: process.pid, host: os.hostname(),
+    ...(SELF_PROCESS_START_TICKS ? { pidStartTicks: SELF_PROCESS_START_TICKS } : {}),
+  }) : owner;
   function createOwnedLock() {
     const fd = fs.openSync(filename, 'wx', 0o600);
     try {
-      fs.writeFileSync(fd, owner);
+      fs.writeFileSync(fd, contents);
       fs.fsyncSync(fd);
     } finally { fs.closeSync(fd); }
     let released = false;
@@ -169,9 +321,9 @@ function acquireFileLock(filename, { staleMs = 300000 } = {}) {
           if (error.code === 'ENOENT') return true;
           throw error;
         }
-        if (observed === owner) fs.unlinkSync(filename);
+        if (observed === contents) fs.unlinkSync(filename);
         return true;
-      });
+      }, { processOwned });
       if (success) released = true;
       else {
         // A guard is held only for synchronous filesystem operations.
@@ -187,9 +339,9 @@ function acquireFileLock(filename, { staleMs = 300000 } = {}) {
               if (error.code === 'ENOENT') return true;
               throw error;
             }
-            if (observed === owner) fs.unlinkSync(filename);
+            if (observed === contents) fs.unlinkSync(filename);
             return true;
-          });
+          }, { processOwned });
           if (retry) released = true;
         }
         if (!released) throw new Error('Lock guard bleef bezet tijdens vrijgave');
@@ -207,12 +359,47 @@ function acquireFileLock(filename, { staleMs = 300000 } = {}) {
       if (error.code !== 'ENOENT') throw error;
       return createOwnedLock();
     }
+    // This is a PROCESS-owned main database lock, not an arbitrary stale
+    // mail lock. A recycled PID must not mask the death of the old writer,
+    // and a VERIFIED live writer must never be stolen merely because a
+    // long-running database operation exceeded the stale timeout.
+    if (processOwned) {
+      let previous = null;
+      try { previous = JSON.parse(fs.readFileSync(filename, 'utf8')); }
+      catch (error) {
+        if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+      }
+      if (previous?.format === 'boekenbaai-process-lock-v1'
+        && previous.host === os.hostname()
+        && Number.isSafeInteger(previous.pid) && previous.pid > 0) {
+        let dead = false;
+        let knownLive = false;
+        try {
+          process.kill(previous.pid, 0);
+          const nowTicks = processStartTicks(previous.pid);
+          if (previous.pidStartTicks && nowTicks) {
+            dead = String(previous.pidStartTicks) !== nowTicks;
+            knownLive = !dead;
+          }
+        } catch (error) {
+          if (error?.code === 'ESRCH') dead = true;
+          else if (error?.code !== 'EPERM') throw error;
+        }
+        if (dead) {
+          fs.unlinkSync(filename);
+          return createOwnedLock();
+        }
+        if (knownLive) return null;
+        // Older PID-only records cannot distinguish a restarted container.
+        // Allow only their bounded, age-based recovery below.
+      }
+    }
     if (Date.now() - stat.mtimeMs <= staleMs) return null;
     // Protected by the guard. Re-inspect before unlinking so the reclaim
     // decision is made on the current file, not a previous observation.
     fs.unlinkSync(filename);
     return createOwnedLock();
-  });
+  }, { processOwned });
 }
 function recipientLockPath(folder, recipientId) {
   const hash = crypto.createHash('sha256').update(String(recipientId)).digest('hex');

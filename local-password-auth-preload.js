@@ -6,7 +6,9 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
+const { commitPairedJson } = require('./paired-store-commit');
 const {
   hashPassword,
   verifyPassword,
@@ -52,7 +54,7 @@ function readJsonStrict(filePath, { missingValue, label }) {
 }
 
 function readMainDb() {
-  const db = readJsonStrict(DATA_PATH, { label: 'Boekenbaai database' });
+  const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) {
     throw new Error('Boekenbaai database heeft een ongeldig formaat.');
   }
@@ -83,11 +85,11 @@ function writeJsonAtomic(filePath, value) {
 }
 
 function saveMainDb(db) {
-  writeJsonAtomic(DATA_PATH, db);
+  commitJsonSnapshot({ dataPath: DATA_PATH, value: db });
 }
 
 function loadAuthStore() {
-  const raw = readJsonStrict(AUTH_DATA_PATH, {
+  const raw = readJsonSnapshot(AUTH_DATA_PATH, {
     missingValue: core.emptyAuthStore(),
     label: 'Auth-opslag',
   });
@@ -99,12 +101,12 @@ function loadAuthStore() {
       throw new Error(`Auth-opslagveld ${field} is ongeldig.`);
     }
   }
-  return core.pruneStore(core.normalizeStore(raw));
+  return inheritSnapshot(core.pruneStore(core.normalizeStore(raw)), raw);
 }
 
 function saveAuthStore(store) {
-  const normalized = core.pruneStore(core.normalizeStore(store));
-  writeJsonAtomic(AUTH_DATA_PATH, normalized);
+  const normalized = inheritSnapshot(core.pruneStore(core.normalizeStore(store)), store);
+  commitJsonSnapshot({ dataPath: AUTH_DATA_PATH, value: normalized, lockPath: DATA_PATH });
   return normalized;
 }
 
@@ -282,13 +284,14 @@ function ensureUnchangedAccount(db, accountId, expectedHash) {
 
 function createAdminSession(req, res, admin) {
   const token = crypto.randomBytes(32).toString('base64url');
-  const result = core.upsertSession(loadAuthStore(), token, {
+  const previousStore = loadAuthStore();
+  const result = core.upsertSession(previousStore, token, {
     userId: admin.id,
     type: 'staff',
     remember: false,
     now: Date.now(),
   });
-  saveAuthStore(result.store);
+  saveAuthStore(inheritSnapshot(result.store, previousStore));
   setLocalSessionCookies(req, res, token);
   return token;
 }
@@ -415,6 +418,9 @@ async function changeAdminPassword(req, res) {
   const nextHash = await withPasswordWork(res, () => hashPassword(validation.password));
   if (nextHash.handled) return undefined;
 
+  // Read the current DB and auth snapshots after expensive password
+  // hashing, then commit BOTH files with the same checked versions.
+  // A lock conflict must leave neither the password nor session changed.
   const freshDb = readMainDb();
   const freshAdmin = ensureUnchangedAccount(freshDb, context.admin.id, originalHash);
   if (!freshAdmin) {
@@ -422,24 +428,28 @@ async function changeAdminPassword(req, res) {
       message: 'Het account is ondertussen gewijzigd. Log opnieuw in.',
     });
   }
-  freshAdmin.passwordHash = nextHash.value;
-  freshAdmin.mustChangePassword = false;
-  saveMainDb(freshDb);
-
-  // Andere sessies behouden bewust hun oude fingerprint. De buitenste
-  // securitylaag trekt die bij het eerstvolgende request in. Alleen de actieve
-  // sessie waarmee dit wachtwoord is gewijzigd wordt naar de nieuwe fingerprint gezet.
   const latestStore = loadAuthStore();
   const currentHash = core.tokenHash(context.token);
-  const currentSession = latestStore.sessions.find((entry) => entry?.tokenHash === currentHash);
+  const currentSession = latestStore.sessions.find((entry) =>
+    entry?.tokenHash === currentHash && entry?.userId === freshAdmin.id &&
+    entry?.type === 'staff' && Number(entry?.expiresAt) > Date.now());
   if (!currentSession) {
     return sendJson(res, 409, {
-      message: 'Je sessie is gewijzigd. Log opnieuw in met je nieuwe wachtwoord.',
+      message: 'Je sessie is gewijzigd. Log opnieuw in.',
     });
   }
+
+  freshAdmin.passwordHash = nextHash.value;
+  freshAdmin.mustChangePassword = false;
+  // Other sessions retain their original fingerprint and expire naturally
+  // under the outer security guard. Only this session stays logged in.
   currentSession.accountFingerprint = accountCredentialFingerprint(freshAdmin);
   currentSession.authMethod = 'password';
-  saveAuthStore(latestStore);
+  commitPairedJson({
+    dataPath: DATA_PATH, authPath: AUTH_DATA_PATH,
+    data: freshDb, auth: latestStore,
+    expectedData: freshDb, expectedAuth: latestStore,
+  });
 
   return sendJson(res, 200, {
     message: 'Wachtwoord gewijzigd.',
@@ -512,6 +522,9 @@ function wrapRequestListener(listener) {
       if (handled !== false || res.writableEnded) return handled;
       return listener(req, res);
     } catch (error) {
+      if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY'].includes(error?.code)) {
+        return sendJson(res, 409, { message: 'Accountgegevens zijn gewijzigd. Probeer opnieuw.' });
+      }
       console.error('[Local Password Auth] Interne fout:', error?.message || error);
       if (!res.headersSent && !res.writableEnded) {
         return sendJson(res, 503, { message: 'Lokale inlog is tijdelijk niet beschikbaar.' });

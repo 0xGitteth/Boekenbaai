@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const crypto = require('crypto');
+const { mutateJsonLocked } = require('./database-write-coordinator');
 const { AsyncLocalStorage } = require('async_hooks');
 const core = require('./google-auth-core');
 const {
@@ -13,11 +13,6 @@ const {
   validatePersistedSession,
   decorateSessionResult,
 } = require('./google-auth-security-core');
-const {
-  snapshotGoogleLinks,
-  findChangedExistingGoogleAccounts,
-  revokePersistedSessionsForAccounts,
-} = require('./google-link-session-revocation-core');
 
 const originalCreateServer = http.createServer.bind(http);
 const originalUpsertSession = core.upsertSession;
@@ -43,9 +38,6 @@ const GOOGLE_LINK_MUTATION_PATHS = new Set([
   '/api/auth/google/staff-email',
 ]);
 
-function ensureParentDirectory(filePath) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-}
 
 function readMainDb() {
   const db = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
@@ -86,13 +78,22 @@ function readAuthStoreStrict() {
   return core.normalizeStore(parsed);
 }
 
-function saveAuthStoreStrict(store) {
-  const normalized = core.pruneStore(core.normalizeStore(store));
-  ensureParentDirectory(AUTH_DATA_PATH);
-  const tmp = `${AUTH_DATA_PATH}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(normalized, null, 2));
-  fs.renameSync(tmp, AUTH_DATA_PATH);
-  return normalized;
+function updateAuthStoreSafely(mutate) {
+  return mutateJsonLocked({
+    lockPath: DATA_PATH, filePath: AUTH_DATA_PATH, read: readAuthStoreStrict,
+    mutate: store => {
+      const result = mutate(store);
+      return result === false ? false : core.pruneStore(core.normalizeStore(result));
+    },
+  });
+}
+function revokeSessionToken(tokenHash) {
+  // Only mark as revoked while applying the locked mutation. A busy lock
+  // must not falsely record an unpersisted change as completed.
+  return updateAuthStoreSafely(store => {
+    if (!(store.sessions || []).some(entry => entry?.tokenHash === tokenHash)) return false;
+    return removePersistedToken(store, tokenHash);
+  });
 }
 
 function parseCookies(req) {
@@ -162,34 +163,6 @@ function shouldWatchGoogleLinkMutation(req, pathname) {
   );
 }
 
-function installGoogleLinkSessionRevocation(res, beforeStore) {
-  const beforeSnapshot = snapshotGoogleLinks(beforeStore);
-  const originalEnd = res.end.bind(res);
-  let processed = false;
-
-  res.end = function patchedGoogleLinkMutationEnd(chunk, encoding, callback) {
-    if (!processed) {
-      processed = true;
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        const latestStore = readAuthStoreStrict();
-        const changedAccounts = findChangedExistingGoogleAccounts(beforeSnapshot, latestStore);
-        if (changedAccounts.length) {
-          const beforeRevocation = revokePersistedSessionsForAccounts(beforeStore, changedAccounts);
-          const latestRevocation = revokePersistedSessionsForAccounts(latestStore, changedAccounts);
-          const hashes = new Set([
-            ...beforeRevocation.revokedTokenHashes,
-            ...latestRevocation.revokedTokenHashes,
-          ]);
-          for (const hash of hashes) revokedTokenHashes.add(hash);
-          if (latestRevocation.revokedTokenHashes.length) {
-            saveAuthStoreStrict(latestRevocation.store);
-          }
-        }
-      }
-    }
-    return originalEnd(chunk, encoding, callback);
-  };
-}
 
 function wrapMeResponse(res, activeSession) {
   if (activeSession?.authMethod !== 'google') return;
@@ -274,8 +247,7 @@ function wrapRequestListener(listener) {
         );
         if (!validation.valid) {
           if (authStore) {
-            removePersistedToken(authStore, validation.tokenHash);
-            saveAuthStoreStrict(authStore);
+            revokeSessionToken(validation.tokenHash);
           }
           clearAuthCookies(res, secure);
           return pathname.startsWith('/api/')
@@ -294,8 +266,7 @@ function wrapRequestListener(listener) {
         if (persistent) {
           const validation = validatePersistedSession(authStore, bearer, db);
           if (!validation.valid) {
-            removePersistedToken(authStore, validation.tokenHash);
-            saveAuthStoreStrict(authStore);
+            revokeSessionToken(validation.tokenHash);
             clearAuthCookies(res, secure);
             return sendJson(res, 401, { message: 'Sessie is verlopen' });
           }
@@ -306,9 +277,7 @@ function wrapRequestListener(listener) {
       if (pathname === '/api/me' && activeSession) {
         wrapMeResponse(res, activeSession);
       }
-      if (authStore && shouldWatchGoogleLinkMutation(req, pathname)) {
-        installGoogleLinkSessionRevocation(res, authStore);
-      }
+      // Link-change security cleanup is part of the atomic auth commit.
 
       return requestContext.run({ pathname }, () => listener(req, res));
     } catch (error) {

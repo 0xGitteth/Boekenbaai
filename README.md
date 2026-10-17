@@ -41,6 +41,14 @@ Tijdelijke downloadstoringen worden met oplopende wachttijden opnieuw geprobeerd
 
 De 2:3-omslagweergave toont standaard de volledige afbeelding zonder bijsnijden. Beheerders kunnen optioneel verschuiven en zoomen; die uitsnede wordt als herroepbare weergave-instelling opgeslagen. Externe beeldrechten en eventuele bronvoorwaarden blijven van toepassing op lokaal opgeslagen afbeeldingen.
 
+### Betrouwbare database- en Google-opslag
+
+Boekenbaai bewaart `db.json` en de Google-authopslag als JSON-bestanden op het persistente volume. Mutaties gebruiken een gedeelde bestandslock en weigeren een verouderde momentopname (HTTP 409), zodat een gelijktijdige wijziging niet ongemerkt wordt overschreven. Beheerders kunnen het verzoek in dat geval opnieuw proberen **na controleren van de nieuwste gegevens**; herhaal nooit automatisch onzekere uitleen-, import- of mailacties.
+
+De gedeelde lock en hersteljournal worden naast `db.json` opgeslagen. Verwijder `.database-write.lock`, de `.guard`-bestanden of `.paired-store-journal.json` **niet handmatig**: na een onderbroken dubbele write gebruikt de server het journal voor herstel bij de volgende start. Maak vóór ingrijpende deployments een back-up van het complete persistente volume, inclusief het databestand, de authopslag, de eventuele hersteljournalen en de map `covers/`.
+
+Deze bestandstransacties vereisen dat alle schrijvende serverprocessen **hetzelfde gedeelde, vergrendelbare volume** gebruiken. Meerdere services met gescheiden volumes zijn hiermee niet veilig als één gezamenlijke database in te zetten.
+
 ### Belangrijke omgevingsvariabelen
 
 | Variabele | Voorbeeldwaarde | Omschrijving |

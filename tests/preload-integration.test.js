@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { accountCredentialFingerprint } = require('../google-auth-security-core');
+const googleCore = require('../google-auth-core');
 
 const root = path.resolve(__dirname, '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-auth-'));
@@ -189,6 +190,36 @@ function cookieValue(setCookieHeader, name) {
     const callbackMePayload = await callbackMe.json();
     assert.strictEqual(callbackMePayload.id, 'teacher-1');
     assert.strictEqual(callbackMePayload.mustChangePassword, false);
+
+    // A valid selection cookie must prevent a different linked account
+    // from acquiring a new session, BEFORE the callback writes auth.json.
+    const mismatchStart = await fetch(
+      `${baseUrl}/api/auth/google/start?type=staff&name=Docent`,
+      { redirect: 'manual' }
+    );
+    const mismatchAuthorize = new URL(mismatchStart.headers.get('location'));
+    const mismatchNonce = cookieValue(mismatchStart.headers.get('set-cookie'),
+      'boekenbaai_oauth_nonce');
+    const selectedWrongTeacher = googleCore.createSignedState({
+      type: 'staff', accountId: 'another-teacher', iat: Date.now(),
+    }, 'test-auth-secret');
+    const beforeMismatchedAuth = fs.readFileSync(authPath, 'utf8');
+    const mismatchCallback = await fetch(
+      `${baseUrl}/api/auth/google/callback?code=fixture-code&state=${encodeURIComponent(mismatchAuthorize.searchParams.get('state'))}`,
+      {
+        redirect: 'manual',
+        headers: {
+          Cookie: `boekenbaai_oauth_nonce=${encodeURIComponent(mismatchNonce)}; boekenbaai_google_selected_account=${encodeURIComponent(selectedWrongTeacher)}`,
+        },
+      }
+    );
+    assert.strictEqual(mismatchCallback.status, 302);
+    assert.strictEqual(mismatchCallback.headers.get('location'),
+      '/staff.html?googleAuth=account-mismatch');
+    assert.strictEqual(fs.readFileSync(authPath, 'utf8'), beforeMismatchedAuth,
+      'Mismatched selected-account callback must not persist any auth writes');
+    assert.equal(cookieValue(mismatchCallback.headers.get('set-cookie'),
+      'boekenbaai_session'), '', 'No session cookie on rejected account selection');
 
     const unknownStart = await fetch(
       `${baseUrl}/api/auth/google/start?type=staff&name=Onbekend`,

@@ -63,6 +63,14 @@ http.createServer((req, res) => {
       now: Date.now(),
     });
     writeStore(result.store);
+    if (requestUrl.searchParams.get('simulateConcurrentLock') === '1') {
+      const { acquireFileLock } = require('../book-import-reminder-mail');
+      const dbPath = process.env.BOEKENBAAI_DATA_PATH;
+      const release = acquireFileLock(dbPath + '.database-write.lock',
+        { processOwned: true });
+      if (!release) throw Error('Cannot simulate writer contention');
+      setTimeout(release, 250);
+    }
     res.statusCode = 302;
     res.setHeader('Set-Cookie', [
       `boekenbaai_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`,

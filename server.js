@@ -3,6 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const {
+  currentImportOwner, isImportOwnerConfirmedDead, sameImportOwner,
+  isImportLeaseActive, IMPORT_HEARTBEAT_MS, IMPORT_LEASE_MS,
+} = require('./book-import-owner');
 const { normalizeCoverCrop } = require('./lib/cover-crop');
 const { createCoverAssetStore } = require('./lib/cover-assets');
 const { planCoverBackfill } = require('./lib/cover-backfill-plan');
@@ -22,6 +26,10 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   acquireFileLock } = require('./book-import-reminder-mail');
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
+const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
+  withDatabaseWriteLock, mutateJsonLocked, mutateJsonLockedAsync } = require('./database-write-coordinator');
+const { finishLegacyImportJob: persistLegacyImportStatus } =
+  require('./book-import-job-finalization');
 const { circulationRevision, noteLoanActivity,
   settingsFor, validateSettings, followupContext, contextMatchesTask, makeTask, taskStage,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
@@ -927,16 +935,21 @@ function parseQuantityInput(value, { allowZero = false, defaultValue = 1 } = {})
 }
 
 function ensureDbFile() {
-  try {
-    fs.accessSync(DATA_PATH, fs.constants.F_OK);
-  } catch (error) {
-    ensureParentDirectory(DATA_PATH);
-    if (DATA_PATH !== DEFAULT_DATA_PATH && fs.existsSync(DEFAULT_DATA_PATH)) {
-      fs.copyFileSync(DEFAULT_DATA_PATH, DATA_PATH);
-    } else {
-      fs.writeFileSync(DATA_PATH, JSON.stringify(EMPTY_DB, null, 2));
+  // The first-start seed also has to respect the same lock if two Node
+  // processes start against an initially empty persistent volume.
+  withDatabaseWriteLock(DATA_PATH, () => {
+    try {
+      fs.accessSync(DATA_PATH, fs.constants.F_OK);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      ensureParentDirectory(DATA_PATH);
+      if (DATA_PATH !== DEFAULT_DATA_PATH && fs.existsSync(DEFAULT_DATA_PATH)) {
+        fs.copyFileSync(DEFAULT_DATA_PATH, DATA_PATH);
+      } else {
+        fs.writeFileSync(DATA_PATH, JSON.stringify(EMPTY_DB, null, 2));
+      }
     }
-  }
+  }, { waitMs: 10000 });
 }
 
 ensureDbFile();
@@ -960,22 +973,50 @@ let googleBooksFallbackCooldownUntil = 0;
 let googleBooksFallbackCooldownReason = '';
 const globalFetch = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
 
-function markInterruptedImportJobs() {
-  const db = loadDb();
+function revokeLegacySessionsForAccount(type, accountId) {
+  // Run only AFTER the database commit succeeds. Failed optimistic writes
+  // must not log out users when their password/account remains unchanged.
+  for (const [token, session] of sessions.entries()) {
+    if (session.type === type && session.userId === accountId) sessions.delete(token);
+  }
+}
+
+// Shared mutation for startup reconciliation and live administrator polling.
+// The mutator reads the latest state only after acquiring the DB lock.
+function reconcileInterruptedImports(db) {
   let changed = false;
   for (const job of db.importJobs || []) {
-    if (job && (job.status === 'queued' || job.status === 'running')) {
+    if (job && (job.status === 'queued' || job.status === 'running')
+      && isImportOwnerConfirmedDead(job.owner, {
+        lastSeenAt: job.lastProgressAt || job.updatedAt || job.startedAt || job.createdAt,
+      })) {
       const now = new Date().toISOString();
-      job.status = 'interrupted';
+      // Never invite a repeat import after its books already committed.
+      job.status = job.booksCommittedAt ? 'completed' : 'interrupted';
       job.updatedAt = now;
       job.finishedAt = now;
-      job.error = job.error || 'Import onderbroken door serverherstart';
+      job.error = job.booksCommittedAt ? ''
+        : (job.error || 'Import onderbroken door serverherstart');
       changed = true;
     }
   }
-  if (changed) {
-    saveDb(db);
-  }
+  return changed ? db : false;
+}
+
+function markInterruptedImportJobs() {
+  // Synchronous waiting is acceptable during server initialization ONLY.
+  mutateJsonLocked({
+    lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 10000,
+    read: () => loadDb(), mutate: reconcileInterruptedImports,
+  });
+}
+
+async function markInterruptedImportJobsAsync() {
+  // Never block HTTP requests and health checks waiting for another writer.
+  return mutateJsonLockedAsync({
+    lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 10000,
+    read: () => loadDb(), mutate: reconcileInterruptedImports,
+  });
 }
 
 markInterruptedImportJobs();
@@ -1912,8 +1953,7 @@ function appendImportClassFollowups(db, report, entries, now) {
 }
 
 function loadDb() {
-  const raw = fs.readFileSync(DATA_PATH, 'utf-8');
-  const data = JSON.parse(raw);
+  const data = readJsonSnapshot(DATA_PATH);
   if (!Array.isArray(data.books)) data.books = [];
   if (!Array.isArray(data.users)) data.users = [];
   if (!Array.isArray(data.classes)) data.classes = [];
@@ -1933,25 +1973,15 @@ function loadDb() {
 }
 
 function saveDb(db, options) {
-  assertReviewedImportNotLost(db, options);
-  fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
+  commitJsonSnapshot({ dataPath: DATA_PATH, value: db,
+    beforeWrite: () => assertReviewedImportNotLost(db, options) });
 }
 
-// The reviewed book import is one confirmed transaction. Write its complete
-// database snapshot to a sibling file first, then atomically replace the old
-// snapshot so a failed or interrupted write cannot leave half a JSON document.
+// The reviewed import must obey the same optimistic snapshot/atomic commit
+// discipline as other database writers, including crash-safe file replacement.
 function saveReviewedBookImportDb(db) {
-  assertReviewedImportNotLost(db);
-  const raw = JSON.stringify(db, null, 2);
-  const temporaryPath = DATA_PATH + '.reviewed-' + crypto.randomUUID() + '.tmp';
-  try {
-    fs.writeFileSync(temporaryPath, raw, { flag: 'wx', mode: 0o600 });
-    fs.renameSync(temporaryPath, DATA_PATH);
-  } finally {
-    try { fs.unlinkSync(temporaryPath); } catch (error) {
-      if (error.code !== 'ENOENT') console.warn('Tijdelijke importdatabase opruimen mislukt:', error.message);
-    }
-  }
+  commitJsonSnapshot({ dataPath: DATA_PATH, value: db,
+    beforeWrite: () => assertReviewedImportNotLost(db) });
 }
 
 function hashPassword(password) {
@@ -2004,6 +2034,13 @@ function ensureRole(user, roles) {
   if (!user) return false;
   if (!roles || roles.length === 0) return true;
   return roles.includes(user.role);
+}
+
+// Final status is persisted independently from the full DB snapshot used
+// during the actual import. Read the latest DB UNDER the shared lock, so
+// finishing a successful job never overwrites unrelated book changes.
+function finishLegacyImportJob(jobId, options = {}) {
+  return persistLegacyImportStatus({ dataPath: DATA_PATH, jobId, ...options });
 }
 
 function updateImportJob(db, jobId, updates = {}) {
@@ -4185,6 +4222,25 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 404, { message: 'Omslag niet gevonden' });
     }
     const user = getAuthenticatedUser(req, getDb);
+    // Expiry can occur AFTER startup (e.g. a rolling replacement begins
+    // while an old remote lease still has a few minutes left). Recover a
+    // provably orphaned job when an administrator polls or starts an import;
+    // otherwise the reused queued/running job would block imports forever.
+    if (user?.role === 'admin' && (
+      (req.method === 'POST' && requestUrl.pathname === '/api/books/import-jobs')
+      || (req.method === 'GET'
+        && requestUrl.pathname.startsWith('/api/books/import-jobs/'))
+    )) {
+      const pending = (getDb().importJobs || []).some(job =>
+        ['queued', 'running'].includes(job?.status)
+        && isImportOwnerConfirmedDead(job.owner, {
+          lastSeenAt: job.lastProgressAt || job.updatedAt || job.startedAt || job.createdAt,
+        }));
+      if (pending) {
+        await markInterruptedImportJobsAsync();
+        db = loadDb();
+      }
+    }
     // Acquire before parseBody() can yield, regardless of which UI initiated
     // the upload. This closes both directions of the legacy/staged race.
     const importKind = req.method !== 'POST' ? '' :
@@ -5941,9 +5997,11 @@ async function handleApi(req, res, requestUrl) {
       const db = getDb();
       const now = new Date().toISOString();
       const jobId = crypto.randomUUID();
+      const importOwner = currentImportOwner();
       db.importJobs.push({
         id: jobId,
         type: 'books_import',
+        owner: importOwner,
         createdBy: user.id,
         createdAt: now,
         updatedAt: now,
@@ -5977,6 +6035,57 @@ async function handleApi(req, res, requestUrl) {
       requestImportAdmission.lease.handedOff = true;
 
       setImmediate(async () => {
+        // The lease is refreshed while this process owns a legacy job. A
+        // replacement instance can recover orphans on another hostname.
+        // A second worker must not renew someone else's instance token.
+        let heartbeatBusy = false;
+        const heartbeat = setInterval(async () => {
+          if (shuttingDown || heartbeatBusy) return;
+          heartbeatBusy = true;
+          try {
+            await mutateJsonLockedAsync({
+              lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 2000,
+              read: () => loadDb(),
+              mutate: latest => {
+                const job = (latest.importJobs || []).find(entry => entry?.id === jobId);
+                if (!job || !['queued', 'running'].includes(job.status)
+                  || !sameImportOwner(job.owner, importOwner)
+                  || !isImportLeaseActive(job.owner)) return false;
+                const now = Date.now();
+                job.owner.heartbeatAt = now;
+                job.owner.leaseExpiresAt = now + IMPORT_LEASE_MS;
+                return latest;
+              },
+            });
+          } catch (error) {
+            console.warn('Importlease kon tijdelijk niet worden vernieuwd:',
+              error?.code || error?.message || error);
+          } finally { heartbeatBusy = false; }
+        }, IMPORT_HEARTBEAT_MS);
+        if (typeof heartbeat.unref === 'function') heartbeat.unref();
+        let importAccepted = false;
+        let successfulPayload = null;
+        const deferConfirmedCompletion = () => {
+          let attempts = 0;
+          const retry = async () => {
+            if (shuttingDown) return;
+            try {
+              await finishLegacyImportJob(jobId, {
+                succeeded: true, payload: successfulPayload, totalRows: workbookResult.rows.length,
+              });
+            } catch (error) {
+              if (['DATABASE_WRITE_BUSY', 'DATABASE_WRITE_CONFLICT'].includes(error?.code)
+                && attempts++ < 30) {
+                const timer = setTimeout(retry, 1000);
+                if (typeof timer.unref === 'function') timer.unref();
+              } else {
+                console.error('Geslaagde import kon niet als voltooid worden geregistreerd:', error);
+              }
+            }
+          };
+          const timer = setTimeout(retry, 1000);
+          if (typeof timer.unref === 'function') timer.unref();
+        };
         try {
           const runtimeDb = loadDb();
           const runtimeJob = (runtimeDb.importJobs || []).find((entry) => entry?.id === jobId);
@@ -6008,68 +6117,32 @@ async function handleApi(req, res, requestUrl) {
             body: JSON.stringify({ file: body.file, enrichIsbn: body.enrichIsbn }),
           });
           const payload = await response.json().catch(() => ({}));
-          const jobDb = loadDb();
-          if (!response.ok) {
-            updateImportJob(jobDb, jobId, {
-              status: 'failed',
-              finishedAt: new Date().toISOString(),
-              error: payload?.message || 'Importjob mislukt',
-              failed: 1,
-            });
+          if (response.ok) {
+            importAccepted = true;
+            successfulPayload = payload;
+          }
+          await finishLegacyImportJob(jobId, {
+            succeeded: response.ok, payload, totalRows: workbookResult.rows.length,
+          });
+        } catch (error) {
+          if (importAccepted) {
+            // The actual book import has already committed. Never overwrite
+            // that known success with 'failed' just because a status write
+            // collided with another DB writer.
+            console.error('Geslaagde import: statusopslag wordt opnieuw geprobeerd:',
+              error?.code || error?.message || error);
+            deferConfirmedCompletion();
           } else {
-            const latestJob = (jobDb.importJobs || []).find((entry) => entry?.id === jobId);
-            const shouldCancelAtFinalize = Boolean(
-              payload?.cancelled
-              || latestJob?.cancelRequested
-              || latestJob?.status === 'cancelled'
-            );
-            if (shouldCancelAtFinalize) {
-            updateImportJob(jobDb, jobId, {
-              status: 'cancelled',
-              finishedAt: new Date().toISOString(),
-              cancelledAt: new Date().toISOString(),
-              currentStage: 'Geannuleerd',
-              summary: {
-                created: Number(payload.created || 0),
-                updated: Number(payload.updated || 0),
-                skipped: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
-                failed: Number(payload.failed || 0),
-              },
-              result: payload,
-              error: '',
-            });
-            } else {
-              const skippedCount = Array.isArray(payload.skipped) ? payload.skipped.length : 0;
-              updateImportJob(jobDb, jobId, {
-                status: 'completed',
-                finishedAt: new Date().toISOString(),
-                processed: workbookResult.rows.length,
-                created: Number(payload.created || 0),
-                updated: Number(payload.updated || 0),
-                skipped: skippedCount,
-                summary: {
-                  created: Number(payload.created || 0),
-                  updated: Number(payload.updated || 0),
-                  skipped: skippedCount,
-                  failed: 0,
-                },
-                currentStage: 'Voltooid',
-                result: payload,
-                error: '',
-              });
+            try {
+              await finishLegacyImportJob(jobId, { succeeded: false,
+                errorMessage: error?.message || 'Importjob mislukt' });
+            } catch (statusError) {
+              console.error('Mislukte importstatus kon niet worden opgeslagen:',
+                statusError?.code || statusError?.message || statusError);
             }
           }
-          saveDb(jobDb);
-        } catch (error) {
-          const failedDb = loadDb();
-          updateImportJob(failedDb, jobId, {
-            status: 'failed',
-            finishedAt: new Date().toISOString(),
-            error: error?.message || 'Importjob mislukt',
-            failed: 1,
-          });
-          saveDb(failedDb);
         } finally {
+          clearInterval(heartbeat);
           activeImportJobs.delete(user.id);
           releaseBookImportLease(requestImportAdmission.lease);
         }
@@ -6152,12 +6225,27 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: workbookResult.error });
       }
       const db = getDb();
+      // Progress callbacks persist only importJobs while this operation
+      // prepares book mutations. Remember the non-job baseline so we can
+      // rebase those progress changes, but never erase unrelated writes.
+      const originalImportState = JSON.stringify({ ...db, importJobs: null });
       const importJobId = String(req.headers['x-import-job-id'] || '').trim();
+      const importWorkerOwner = importJobId
+        ? (db.importJobs || []).find(entry => entry?.id === importJobId)?.owner : null;
+      const validateImportOwner = job => {
+        if (importWorkerOwner && (!sameImportOwner(job?.owner, importWorkerOwner)
+          || !isImportLeaseActive(job?.owner) || !['queued', 'running'].includes(job.status))) {
+          const error = new Error('Deze importlease is verlopen of overgenomen.');
+          error.code = 'DATABASE_WRITE_CONFLICT';
+          throw error;
+        }
+      };
       const updateImportProgress = (updates) => {
         if (!importJobId) return;
         const jobDb = loadDb();
         const existingJob = (jobDb.importJobs || []).find((entry) => entry?.id === importJobId);
         if (!existingJob || existingJob.status === 'cancelled') return;
+        validateImportOwner(existingJob);
         updateImportJob(jobDb, importJobId, {
           ...updates,
           lastProgressAt: new Date().toISOString(),
@@ -6168,6 +6256,7 @@ async function handleApi(req, res, requestUrl) {
         if (!importJobId) return false;
         const jobDb = loadDb();
         const existingJob = (jobDb.importJobs || []).find((entry) => entry?.id === importJobId);
+        validateImportOwner(existingJob);
         return Boolean(existingJob?.cancelRequested);
       };
       const createdBooks = [];
@@ -7071,12 +7160,36 @@ async function handleApi(req, res, requestUrl) {
         }
       }
 
+      let booksDurablyCommitted = false;
       if (changed) {
         appendHistory(db, {
           type: 'books_imported',
           message: `${createdBooks.length} boeken toegevoegd, ${updatedBooks.length} bijgewerkt via Excel-import`,
         });
+        // Import progress writes update importJobs on newer snapshots while
+        // this worker processes the workbook. Rebase ONLY those updates.
+        // An unrelated DB edit or reviewed import must still produce a 409.
+        const latestForImport = loadDb();
+        if (JSON.stringify({ ...latestForImport, importJobs: null })
+          !== originalImportState) {
+          const conflict = new Error('De bibliotheek is tijdens de import gewijzigd.');
+          conflict.code = 'DATABASE_WRITE_CONFLICT';
+          throw conflict;
+        }
+        const currentJob = (latestForImport.importJobs || []).find(
+          entry => entry?.id === importJobId);
+        if (importJobId) validateImportOwner(currentJob);
+        db.importJobs = latestForImport.importJobs;
+        if (currentJob) {
+          currentJob.booksCommittedAt = new Date().toISOString();
+          currentJob.committedSummary = {
+            processed: processedRows, created: createdBooks.length,
+            updated: updatedBooks.length, skipped: skipped.length, failed: 0,
+          };
+        }
+        inheritSnapshot(db, latestForImport);
         saveDb(db);
+        booksDurablyCommitted = true;
         scheduleCoverBackfill({ resetFailures: true });
       }
 
@@ -7123,7 +7236,12 @@ async function handleApi(req, res, requestUrl) {
         books: createdBooks.concat(updatedBooks),
       };
 
-      updateImportProgress({
+      // Terminal status writes may briefly conflict with another instance.
+      // The durable book transaction above contains a commit marker and
+      // summary. A failed STATUS write must never make a successful BOOK
+      // write look like a failed import to the outer worker.
+      try {
+        updateImportProgress({
         status: 'completed',
         currentStage: 'Voltooid',
         finishedAt: new Date().toISOString(),
@@ -7141,7 +7259,25 @@ async function handleApi(req, res, requestUrl) {
         },
         result: successPayload,
         error: '',
-      });
+        });
+      } catch (error) {
+        if (!booksDurablyCommitted || !importJobId
+          || !['DATABASE_WRITE_BUSY', 'DATABASE_WRITE_CONFLICT'].includes(error?.code)) {
+          throw error;
+        }
+        console.warn('Boeken zijn opgeslagen; importstatus wordt apart voltooid:',
+          error?.code || error?.message || error);
+        // Retry without blocking the response. The outer background worker
+        // will also receive HTTP 200 and call finishLegacyImportJob. That
+        // helper is idempotent and honors booksCommittedAt on failure.
+        void finishLegacyImportJob(importJobId, {
+          succeeded: true, payload: successPayload,
+          totalRows: workbookResult.rows.length, waitMs: 12000,
+        }).catch(retryError => {
+          console.error('Uitgestelde importstatus kon niet worden opgeslagen:',
+            retryError?.code || retryError?.message || retryError);
+        });
+      }
 
       return sendJson(res, 200, successPayload);
     }
@@ -7584,11 +7720,6 @@ async function handleApi(req, res, requestUrl) {
         teacher.mustChangePassword = true;
         passwordChanged = true;
         changed = true;
-        for (const [token, session] of sessions.entries()) {
-          if (session.type === 'staff' && session.userId === teacher.id) {
-            sessions.delete(token);
-          }
-        }
         appendHistory(db, {
           type: 'teacher_password_set',
           teacherId: teacher.id,
@@ -7600,6 +7731,7 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 200, { teacher: sanitizeTeacher(teacher) });
       }
       saveDb(db);
+      if (passwordChanged) revokeLegacySessionsForAccount('staff', teacher.id);
       const response = { teacher: sanitizeTeacher(teacher) };
       if (passwordChanged && providedPassword) {
         response.temporaryPassword = providedPassword;
@@ -7638,11 +7770,6 @@ async function handleApi(req, res, requestUrl) {
         }
         klass.teacherIds = klass.teacherIds.filter((id) => id !== removedTeacher.id);
       }
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'staff' && session.userId === removedTeacher.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'teacher_deleted',
         teacherId: removedTeacher.id,
@@ -7650,6 +7777,7 @@ async function handleApi(req, res, requestUrl) {
         message: `Docent ${removedTeacher.name} is verwijderd`,
       });
       saveDb(db, { deletedTeacherPreferenceId: removedTeacher.id });
+      revokeLegacySessionsForAccount('staff', removedTeacher.id);
       return sendJson(res, 200, { teacher: sanitizeTeacher(removedTeacher) });
       } finally {
         releasePreferences();
@@ -7669,11 +7797,6 @@ async function handleApi(req, res, requestUrl) {
       const temporaryPassword = generatePassword(10);
       teacher.passwordHash = hashPassword(temporaryPassword);
       teacher.mustChangePassword = true;
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'staff' && session.userId === teacher.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'teacher_password_reset',
         teacherId: teacher.id,
@@ -7681,6 +7804,7 @@ async function handleApi(req, res, requestUrl) {
         message: `Wachtwoord opnieuw ingesteld voor docent ${teacher.name}`,
       });
       saveDb(db);
+      revokeLegacySessionsForAccount('staff', teacher.id);
       return sendJson(res, 200, {
         teacher: { id: teacher.id, name: teacher.name, username: teacher.username },
         temporaryPassword,
@@ -7764,11 +7888,6 @@ async function handleApi(req, res, requestUrl) {
       const temporaryPassword = generatePassword(10);
       student.passwordHash = hashPassword(temporaryPassword);
       student.mustChangePassword = true;
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'student' && session.userId === student.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'student_password_reset',
         studentId: student.id,
@@ -7776,6 +7895,7 @@ async function handleApi(req, res, requestUrl) {
         message: `Wachtwoord opnieuw ingesteld voor ${student.name}`,
       });
       saveDb(db);
+      revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
         student: sanitizeStudent(student, { includeUsername: true }),
         temporaryPassword,
@@ -7843,11 +7963,6 @@ async function handleApi(req, res, requestUrl) {
         student.passwordHash = hashPassword(temporaryPassword);
         student.mustChangePassword = true;
         passwordChanged = true;
-        for (const [token, session] of sessions.entries()) {
-          if (session.type === 'student' && session.userId === student.id) {
-            sessions.delete(token);
-          }
-        }
       }
 
       if (addedClassIds.length || removedClassIds.length) {
@@ -7907,6 +8022,7 @@ async function handleApi(req, res, requestUrl) {
       }
 
       saveDb(db);
+      if (passwordChanged) revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
         student: sanitizeStudent(student, { includeUsername: true }),
         ...(temporaryPassword ? { temporaryPassword } : {}),
@@ -7941,17 +8057,13 @@ async function handleApi(req, res, requestUrl) {
           book.dueDate = null;
         }
       }
-      for (const [token, session] of sessions.entries()) {
-        if (session.type === 'student' && session.userId === student.id) {
-          sessions.delete(token);
-        }
-      }
       appendHistory(db, {
         type: 'student_deleted',
         studentId: student.id,
         message: `Leerlingaccount van ${student.name} is verwijderd`,
       });
       saveDb(db);
+      revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, { message: 'Leerlingaccount verwijderd' });
     }
 
@@ -8852,7 +8964,8 @@ async function handleApi(req, res, requestUrl) {
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
   } catch (error) {
-    if (error?.code === 'DATABASE_WRITE_CONFLICT') {
+    if (['DATABASE_WRITE_CONFLICT', 'DATABASE_WRITE_BUSY',
+      'DATABASE_SNAPSHOT_UNTRACKED', 'DATABASE_RECOVERY_REQUIRED'].includes(error?.code)) {
       return sendJson(res, 409, { message: 'De gegevens zijn intussen gewijzigd. Vernieuw de pagina en probeer opnieuw.', error: error.code });
     }
     console.error(error);
