@@ -102,7 +102,15 @@
         if (active) classes.setAttribute('aria-current', 'page');
         else classes.removeAttribute('aria-current');
       };
+      if (people) people.addEventListener('click', () => {
+        // "Personen" must select people even when Klassen was opened before.
+        document.querySelector('#admin-dashboard [data-admin-people-tab="students"]')?.click();
+      });
       sidebar.addEventListener('click', () => queueMicrotask(updateClasses));
+      const subtabs = document.querySelector('.admin-modern__subtabs');
+      if (subtabs) new MutationObserver(updateClasses).observe(subtabs, {
+        subtree: true, attributes: true, attributeFilter: ['aria-selected'],
+      });
     } else {
       sidebar.querySelector('.bb-teacher-v31-sidebar-label')?.remove();
       sidebar.querySelector('.bb-teacher-v31-sidebar-footer')?.remove();
@@ -155,14 +163,14 @@
     const shortcuts = make('section', 'bb-admin-v31-card bb-v32-quick-panel');
     shortcuts.append(make('h3', '', 'Snel naar'));
     shortcuts.append(
-      button('Boek toevoegen', '📖', () => {
+      button('Boek toevoegen', '▤', () => {
         chooseAdmin('books');
         document.getElementById('bb-admin-v31-open-editor')?.click();
       }),
-      button('Leerlingen beheren', '👥', () => chooseAdmin('people','students')),
-      button('Docenten beheren', '🧑', () => chooseAdmin('people','teachers')),
-      button('Klassen beheren', '🏫', () => chooseAdmin('people','classes')),
-      button('Uitlenen registreren', '📚', () => chooseAdmin('loans'))
+      button('Leerlingen beheren', '♙', () => chooseAdmin('people','students')),
+      button('Docenten beheren', '◉', () => chooseAdmin('people','teachers')),
+      button('Klassen beheren', '▦', () => chooseAdmin('people','classes')),
+      button('Uitlenen registreren', '⇄', () => chooseAdmin('loans'))
     );
     const activityTitle = activity.querySelector('h3');
     if (activityTitle) activityTitle.textContent = 'Laatste activiteit';
@@ -269,8 +277,24 @@
     loans.append(make('h3', '', 'Recente uitleningen'));
     loans.append(make('p', 'bb-teacher-v31-hint',
       'Bekijk wie een boek leent of lever een boek in via Uitlenen.'));
-    const openLoans = button('Bekijk uitleningen', '📘', () => chooseTeacher('lending'));
+    const openLoans = button('Bekijk uitleningen', '▤', () => chooseTeacher('lending'));
     loans.append(openLoans);
+    const loanCount = make('p', 'bb-v32-live-loan-count');
+    loanCount.setAttribute('aria-live', 'polite');
+    loans.insertBefore(loanCount, openLoans);
+    const metrics = start.querySelector('#bb-teacher-v31-metrics');
+    if (metrics) {
+      const updateLoanCount = () => {
+        const value = metrics.children[2]?.querySelector('strong')?.textContent?.trim() || '…';
+        if (loanCount.textContent !== value + ' lopende uitleningen') {
+          loanCount.textContent = value + ' lopende uitleningen';
+        }
+      };
+      updateLoanCount();
+      new MutationObserver(updateLoanCount).observe(metrics, {
+        childList: true, characterData: true, subtree: true,
+      });
+    }
     left.querySelector('#bb-teacher-v31-activity')?.classList.add('bb-v32-recent');
     const recent = left.querySelector('#bb-teacher-v31-activity');
     if (recent) lower.append(loans, recent, task);
@@ -279,6 +303,9 @@
     installTeacherBooks();
   }
   function sync() {
+    const teacherNav = document.getElementById('bb-teacher-v31-sidebar');
+    if (teacherNav && document.body.classList.contains('bb-teacher-v31')
+      && window.matchMedia('(min-width:761px)').matches) teacherNav.inert = false;
     if (document.body.classList.contains('bb-admin-v31')) {
       installHeader(document.getElementById('bb-admin-v31-sidebar'), 'admin');
       enhanceAdminDashboard();
@@ -292,5 +319,6 @@
   const observer = new MutationObserver(sync);
   observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   observer.observe(hero, { childList: true });
+  window.addEventListener('resize', sync);
   sync();
 })();
