@@ -122,7 +122,7 @@ assert.doesNotMatch(
 );
 assert.match(
   adminModern,
-  /\['imports', 'Importeren'\]/,
+  /\['imports', 'Importeren'(?:, '[^']+')?\]/,
   'De primaire beheer-navigatie moet Importeren blijven noemen'
 );
 
