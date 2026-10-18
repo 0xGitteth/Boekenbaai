@@ -17,6 +17,7 @@ new vm.Script(admin);
 assert.match(admin, /function moveDangerousBookAction\(/);
 assert.match(admin, /deleteAll\.classList\.add\('bb-admin-v31-delete-library'\)/);
 assert.match(admin, /heading\.append\(actions\)/);
+assert.match(admin, /if \(newBook\) actions\.append\(newBook\)/);
 assert.doesNotMatch(admin, /id: 'bb-admin-v31-toggle-catalog'/);
 assert.match(admin, /const newBook = make\('button'/);
 assert.match(admin, /moveDangerousBookAction\(booksView\)/);
@@ -51,6 +52,9 @@ assert.match(css, /\.bb-admin-v31-column--activity \{[\s\S]*?height: 0;[\s\S]*?m
 assert.match(css, /\.bb-admin-v31-card--activity \{[\s\S]*?flex: 1 1 auto;[\s\S]*?min-height: 0;[\s\S]*?overflow: hidden;/);
 assert.match(css, /#bb-admin-v31-activity #history-list \{[\s\S]*?overflow-y: auto;/);
 assert.match(css, /max-height: 300px;/);
+assert.match(admin, /historyList\?\.setAttribute\('tabindex', '0'\)/);
+assert.match(admin, /historyList\?\.removeAttribute\('tabindex'\)/);
+assert.match(css, /#history-list:focus-visible/);
 assert.match(html, /id="history-clear-button"/);
 
 // Exercise the real copied hint logic, not just a string search.
