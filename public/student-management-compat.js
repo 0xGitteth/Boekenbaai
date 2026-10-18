@@ -54,10 +54,23 @@
     if (adminDashboard && !adminDashboard.classList.contains('hidden')) return;
     const teacherDashboard = document.querySelector('#teacher-dashboard');
     const panel = document.querySelector('#student-management-panel');
-    const bookLayout = teacherDashboard?.querySelector('.teacher-layout');
-    if (!teacherDashboard || !panel || !bookLayout) return;
-    if (panel.parentElement !== teacherDashboard || panel.nextElementSibling !== bookLayout) {
-      teacherDashboard.insertBefore(panel, bookLayout);
+    if (!teacherDashboard || !panel) return;
+    const classView = document.querySelector('[data-teacher-view="classes"]');
+    if (document.body.classList.contains('bb-teacher-v31') && classView) {
+      // New panel instances arrive on every student-management refresh.
+      // Keep them within Mijn klassen so page switching actually hides them.
+      if (panel.parentElement !== classView) classView.append(panel);
+      return;
+    }
+    const bookLayout = teacherDashboard.querySelector('.teacher-layout');
+    // insertBefore requires a *direct* child, not an element nested in
+    // the v3.1 catalogue. Preserve the old placement whenever possible.
+    if (bookLayout?.parentElement === teacherDashboard) {
+      if (panel.parentElement !== teacherDashboard || panel.nextElementSibling !== bookLayout) {
+        teacherDashboard.insertBefore(panel, bookLayout);
+      }
+    } else if (panel.parentElement !== teacherDashboard) {
+      teacherDashboard.append(panel);
     }
   }
 
