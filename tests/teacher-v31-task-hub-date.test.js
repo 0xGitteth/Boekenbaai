@@ -168,7 +168,7 @@ const adminRenderDoc={
   },
 };
 const adminRender=vm.createContext({state:{role:'admin'},document:adminRenderDoc,
-  make(tag,options){return element(tag,options.className,options.text);},
+  make(tag,options={}){return element(tag,options.className,options.text);},
   renderClassContext(){},renderRequests(){},renderStudents(){},renderOutgoing(){},
 });
 new vm.Script(students.slice(renderStart,renderEnd)+'\nthis.runRender=render;')
