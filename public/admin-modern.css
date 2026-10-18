@@ -283,19 +283,30 @@ body.bb-admin-v31 .hero--staff .hero__content h1 {
   color: #fff;
   font: 800 1.22rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-body.bb-admin-v31 .hero--staff .hero__content p {
-  margin: 2px 0 0;
-  color: #d7e4f7;
-  font: 400 .82rem/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+body.bb-admin-v31 .hero--staff .hero__content p { display: none; }
+body.bb-admin-v31 .hero--staff .hero__content h1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+body.bb-admin-v31 .hero--staff .hero__content h1::before {
+  content: '';
+  display: inline-block;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 9px;
+  background: #ffffff19 url('logo/boekenbaai-book-mark-v31.svg') no-repeat center / 25px;
 }
 body.bb-admin-v31 .hero--staff .hero__illustration {
   display: flex;
-  order: -1;
+  order: 0;
   align-items: center;
   flex: 0 0 auto;
-  width: 74px;
-  height: 44px;
-  padding: 2px 5px;
+  width: 150px;
+  height: 48px;
+  padding: 3px 8px;
   margin: 0;
   border-radius: 8px;
   background: #fff;
@@ -313,15 +324,15 @@ body.bb-admin-v31 .hero--staff .hero__logo {
 body.bb-admin-v31 .hero--staff .hero__actions {
   display: flex;
   align-items: center;
-  flex-flow: row wrap;
+  flex-flow: row nowrap;
   gap: 10px;
   margin-left: auto;
+  min-width: 0;
 }
-body.bb-admin-v31 .hero--staff .hero__link {
-  color: #fff;
-  border: 1px solid #748eaf;
-  background: transparent;
-  border-radius: 9px;
+/* Logged-in staff use their own navigation and Uitloggen, not the student-back link. */
+body.bb-admin-v31 .hero--staff .hero__link,
+body[data-page='staff']:has(#staff-meta:not(.hidden)) .hero--staff .hero__link {
+  display: none !important;
 }
 body.bb-admin-v31 .hero--staff .staff-meta--hero {
   margin: 0;
@@ -329,15 +340,24 @@ body.bb-admin-v31 .hero--staff .staff-meta--hero {
 }
 body.bb-admin-v31 .hero--staff .staff-meta__name,
 body.bb-admin-v31 .hero--staff .staff-meta__role { color: #fff; }
-body.bb-admin-v31 .hero--staff .staff-meta #logout-button { border-color: #7189a6; }
+body.bb-admin-v31 .hero--staff .staff-meta #logout-button {
+  min-height: 40px;
+  padding: 9px 16px;
+  margin: 0;
+  border: 1px solid #2b4c7c;
+  border-radius: 9px;
+  background: #0b2855;
+  color: #fff;
+  font: 700 .91rem/1.2 system-ui, sans-serif;
+}
 body.bb-admin-v31 > main {
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
+  grid-template-columns: 216px minmax(0, 1fr);
   gap: 0;
-  width: min(100%, 1610px);
-  max-width: 1610px;
+  width: 100%;
+  max-width: none;
   min-height: calc(100dvh - 68px);
-  margin: 0 auto;
+  margin: 0;
   padding: 0;
 }
 body.bb-admin-v31 > main > :not(#bb-admin-v31-sidebar):not(#admin-dashboard) { display: none !important; }
@@ -421,7 +441,7 @@ body.bb-admin-v31 #admin-dashboard {
   max-width: none;
   min-height: calc(100dvh - 68px);
   margin: 0;
-  padding: 30px clamp(18px, 2.9vw, 45px) 80px;
+  padding: 29px clamp(20px, 3vw, 40px) 70px;
   background: var(--bb-canvas);
   border: 0;
   border-radius: 0;
@@ -430,7 +450,7 @@ body.bb-admin-v31 #admin-dashboard {
 body.bb-admin-v31 #admin-dashboard > .panel__header { display: none; }
 body.bb-admin-v31 #admin-dashboard .admin-dashboard {
   display: block;
-  max-width: 1190px;
+  max-width: 1170px;
   margin: 0 auto;
   padding: 0;
   background: transparent;
@@ -526,21 +546,36 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__metric span {
 body.bb-admin-v31 .bb-admin-v31-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: stretch;
+  align-items: start;
+  gap: 15px;
+}
+body.bb-admin-v31 .bb-admin-v31-column {
+  display: grid;
+  align-content: start;
+  gap: 15px;
+  min-width: 0;
 }
 body.bb-admin-v31 .bb-admin-v31-card {
   min-width: 0;
-  min-height: 290px;
-  padding: 21px 23px;
+  min-height: 0;
+  padding: 20px 22px;
   border: 1px solid var(--bb-line);
   border-radius: 14px;
   background: white;
 }
 body.bb-admin-v31 .bb-admin-v31-card h3 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.04rem;
   color: var(--bb-ink);
+}
+body.bb-admin-v31 .bb-admin-v31-card--empty-actions {
+  padding-bottom: 17px;
+}
+body.bb-admin-v31 .bb-admin-v31-empty-actions {
+  margin: 0;
+  padding-top: 2px;
+  font-size: .86rem;
+  color: var(--bb-muted);
 }
 body.bb-admin-v31 .bb-admin-v31-card > p {
   margin-top: 10px;
@@ -573,15 +608,44 @@ body.bb-admin-v31 .admin-modern__action-row {
 }
 body.bb-admin-v31 .bb-admin-v31-quick { display: grid; }
 body.bb-admin-v31 .bb-admin-v31-quick-row {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  padding: 13px 4px 13px 49px;
+  min-height: 64px;
+  padding: 12px 0;
   border: 0;
   border-top: 1px solid #edf1f5;
   background: white;
   color: var(--bb-ink);
   text-align: left;
+}
+body.bb-admin-v31 .bb-admin-v31-quick-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--bb-navy);
+  background: var(--bb-soft);
+  font-size: 1rem;
+}
+body.bb-admin-v31 .bb-admin-v31-quick-copy {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+body.bb-admin-v31 .bb-admin-v31-quick-open {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid #d3deec;
+  border-radius: 9px;
+  background: #e9f0fb;
+  color: var(--bb-navy);
+  font-size: .79rem;
+  font-weight: 750;
 }
 body.bb-admin-v31 .bb-admin-v31-quick-row:hover,
 body.bb-admin-v31 .admin-modern__action-row:hover { background: #f4f8fe; }
@@ -617,7 +681,29 @@ body.bb-admin-v31 #bb-admin-v31-activity #history-actions:not(.hidden) {
 body.bb-admin-v31 #bb-admin-v31-activity #history-actions.hidden {
   display: none !important;
 }
-body.bb-admin-v31 #bb-admin-v31-activity #history-list { padding: 0; margin: 0; }
+body.bb-admin-v31 #bb-admin-v31-activity #history-list {
+  padding: 0;
+  margin: 0;
+  gap: 0;
+}
+body.bb-admin-v31 #bb-admin-v31-activity .history-item {
+  display: grid;
+  gap: 2px;
+  padding: 11px 0;
+  border: 0;
+  border-top: 1px solid #edf1f5;
+  border-radius: 0;
+  background: transparent;
+}
+body.bb-admin-v31 #bb-admin-v31-activity .history-item__time {
+  font-size: .78rem;
+  color: var(--bb-muted);
+}
+body.bb-admin-v31 #bb-admin-v31-activity #history-clear-button {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: .8rem;
+}
 body.bb-admin-v31 #bb-admin-v31-stats { margin-top: 20px; }
 body.bb-admin-v31 #bb-admin-v31-stats .panel__header-actions {
   display: flex;
@@ -714,10 +800,16 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
   body.bb-admin-v31 > main { display: block; width: 100%; }
   body.bb-admin-v31 #admin-dashboard { padding: 20px 14px 64px; width: 100%; }
   body.bb-admin-v31 .hero.hero--staff { height: 63px; min-height: 63px; padding: 0 12px; gap: 9px; }
-  body.bb-admin-v31 .hero--staff .hero__illustration { width: 55px; height: 35px; }
-  body.bb-admin-v31 .hero--staff .hero__content h1 { font-size: 1rem; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { width: 107px; height: 37px; padding: 2px 4px; }
+  body.bb-admin-v31 .hero--staff .hero__content h1 { font-size: 1rem; gap: 7px; }
+  body.bb-admin-v31 .hero--staff .hero__content h1::before {
+    width: 28px; height: 28px; flex-basis: 28px; background-size: 21px;
+  }
   body.bb-admin-v31 .hero--staff .hero__content p { display: none; }
   body.bb-admin-v31 .hero--staff .hero__link { display: none; }
+  body.bb-admin-v31 .hero--staff .staff-meta__name,
+  body.bb-admin-v31 .hero--staff .staff-meta__role { display: none; }
+  body.bb-admin-v31 .hero--staff .hero__actions { gap: 4px; }
   body.bb-admin-v31 .hero--staff .staff-meta--hero { flex-direction: row; width: auto; }
   body.bb-admin-v31 #bb-admin-v31-menu {
     display: inline-flex;
@@ -755,7 +847,8 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
     background: #12223b80;
     z-index: 44;
   }
-  body.bb-admin-v31 .bb-admin-v31-grid { gap: 13px; }
+  body.bb-admin-v31 .bb-admin-v31-grid,
+  body.bb-admin-v31 .bb-admin-v31-column { gap: 13px; }
   body.bb-admin-v31 .bb-admin-v31-card { padding: 17px 16px; }
   body.bb-admin-v31 #bb-admin-v31-catalog .teacher-layout__overview { padding: 17px 15px; }
   body.bb-admin-v31 #admin-dashboard .admin-modern__subtabs { width: 100%; }
@@ -768,6 +861,17 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
   body.bb-admin-v31 .bb-admin-v31-heading .btn { width: 100%; }
   body.bb-admin-v31 .hero--staff .staff-meta__role { display: none; }
   body.bb-admin-v31 .hero--staff #logout-button { padding: 7px; min-height: 35px; }
+}
+@media (max-width: 480px) {
+  body.bb-admin-v31 .hero.hero--staff { gap: 6px; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { width: 86px; height: 33px; }
+  body.bb-admin-v31 .hero--staff .staff-meta #logout-button {
+    padding: 8px 9px;
+    min-height: 35px;
+    font-size: .8rem;
+  }
+  body.bb-admin-v31 .bb-admin-v31-quick-row { gap: 9px; }
+  body.bb-admin-v31 .bb-admin-v31-quick-open { padding: 6px 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   body.bb-admin-v31 #bb-admin-v31-sidebar { transition: none; }
