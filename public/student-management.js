@@ -634,11 +634,22 @@
       activeClassId = '';
     });
     refresh();
-    const observer = new MutationObserver(() => {
-      const host = document.querySelector('#teacher-dashboard');
-      if (host && !host.classList.contains('hidden') && !document.querySelector('#student-management-panel')) refresh();
-    });
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    // Watch only actual role visibility changes. A body-wide DOM observer
+    // used to retry whenever the panel was absent; if the API was offline,
+    // rendering the resulting error card itself retriggered another request
+    // forever. Explicit refresh events handle retries after login.
+    const host = document.querySelector('#teacher-dashboard');
+    if (host) {
+      let wasVisible = !host.classList.contains('hidden');
+      const observer = new MutationObserver(() => {
+        const visible = !host.classList.contains('hidden');
+        if (visible && !wasVisible && !document.querySelector('#student-management-panel')) {
+          void refresh();
+        }
+        wasVisible = visible;
+      });
+      observer.observe(host, { attributes: true, attributeFilter: ['class'] });
+    }
   }
 
   document.addEventListener('DOMContentLoaded', install);
