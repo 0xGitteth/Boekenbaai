@@ -1,0 +1,595 @@
+/*
+ * Boekenbaai v3.2 – Approved overview board (Beheer + Docent only).
+ * Layout and color reflect the original design overview. No student-page CSS.
+ * Existing v3.1 role-views are preserved; this stylesheet only affects their
+ * navigation and landing dashboards. Catalogue remains otherwise unchanged.
+ */
+body.bb-admin-v31, body.bb-teacher-v31 {
+  --bb-v32-blue: #122f5e;
+  --bb-v32-blue-light: #0d62c9;
+  --bb-v32-canvas: #f3f6fb;
+  --bb-v32-border: #e0e9f3;
+  --bb-v32-text: #102a53;
+  --bb-v32-muted: #61758e;
+  background: var(--bb-v32-canvas);
+}
+/* Shared horizontal primary navigation, reusing the actual v3.1 tab buttons
+   so all previously wired views, role gates and event handlers stay intact. */
+body.bb-admin-v31 > main,
+body.bb-teacher-v31 > main {
+  display: block;
+  grid-template-columns: none;
+  width: 100%;
+  min-height: calc(100dvh - 64px);
+  background: var(--bb-v32-canvas);
+}
+body.bb-admin-v31 #admin-dashboard,
+body.bb-teacher-v31 #teacher-dashboard {
+  display: block;
+  grid-column: auto;
+  grid-row: auto;
+  width: 100%;
+  min-height: calc(100dvh - 64px);
+  padding: 25px clamp(16px, 3.25vw, 58px) 65px;
+  background: var(--bb-v32-canvas);
+}
+body.bb-admin-v31 #admin-dashboard .admin-dashboard,
+body.bb-teacher-v31 #bb-teacher-v31-shell {
+  max-width: 1440px;
+  margin-inline: auto;
+}
+body.bb-admin-v31 .hero.hero--staff,
+body.bb-teacher-v31 .hero.hero--staff {
+  height: 65px;
+  min-height: 65px;
+  padding: 0 22px;
+  gap: 12px;
+  background: linear-gradient(112deg, #143260 0%, #103263 55%, #10305c 100%);
+}
+body.bb-admin-v31 .hero--staff .hero__illustration,
+body.bb-teacher-v31 .hero--staff .hero__illustration {
+  margin-left: 12px;
+}
+body.bb-admin-v31 #bb-admin-v31-sidebar.bb-v32-top-nav,
+body.bb-teacher-v31 #bb-teacher-v31-sidebar.bb-v32-top-nav {
+  display: flex;
+  position: static;
+  flex: 1 1 0;
+  align-self: stretch;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  max-width: none;
+  margin: 0 0 0 clamp(12px, 1.7vw, 32px);
+  padding: 0;
+  transform: none;
+  transition: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  z-index: auto;
+}
+body.bb-admin-v31 #bb-admin-v31-sidebar.bb-v32-top-nav::-webkit-scrollbar,
+body.bb-teacher-v31 #bb-teacher-v31-sidebar.bb-v32-top-nav::-webkit-scrollbar { display: none; }
+body.bb-admin-v31 #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tabs {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 3px;
+  width: max-content;
+  min-width: max-content;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+body.bb-admin-v31 #bb-admin-v31-sidebar .admin-modern__tab,
+body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-nav {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px;
+  color: #f4f8ff;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-size: .83rem;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+}
+body.bb-admin-v31 #bb-admin-v31-sidebar .admin-modern__tab:hover,
+body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-nav:hover {
+  background: #ffffff20;
+  color: #fff;
+}
+body.bb-admin-v31 #bb-admin-v31-sidebar .admin-modern__tab--active,
+body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-nav--active,
+body.bb-admin-v31 #bb-admin-v31-sidebar .admin-modern__tab--active:hover,
+body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-nav--active:hover {
+  background: #2a5d9a;
+  color: #fff;
+}
+body.bb-admin-v31 #bb-admin-v31-sidebar .bb-admin-v31-nav-icon,
+body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-icon {
+  display: none;
+}
+body.bb-teacher-v31 #bb-teacher-v31-sidebar.bb-v32-top-nav {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+body.bb-admin-v31 .hero--staff .hero__actions,
+body.bb-teacher-v31 .hero--staff .hero__actions { margin-left: auto; }
+body.bb-admin-v31 .hero--staff #logout-button,
+body.bb-teacher-v31 .hero--staff #logout-button {
+  background: #173f75;
+  border: 1px solid #42618c;
+}
+body.bb-admin-v31 .hero--staff .hero__content h1,
+body.bb-teacher-v31 .hero--staff .hero__content h1 {
+  transform: none;
+  font-size: 1.05rem;
+}
+
+/* Colorful but restrained dashboard icon surfaces from the approved board. */
+body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-heading,
+body.bb-teacher-v31 .bb-v32-dashboard .bb-teacher-v31-view-heading {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin: 0;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-heading h2,
+body.bb-teacher-v31 .bb-v32-dashboard .bb-teacher-v31-view-heading h2 {
+  margin-top: 0;
+  font-size: clamp(1.5rem, 2.3vw, 2rem);
+  color: var(--bb-v32-text);
+}
+.bb-v32-site-search {
+  display: flex;
+  flex: 0 1 410px;
+  align-items: stretch;
+  min-width: 240px;
+  height: 42px;
+  margin: 0;
+  border: 1px solid #d1deed;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.bb-v32-site-search input[type="search"] {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 12px;
+  margin: 0;
+  border: 0;
+  background: #fff;
+  color: #102a53;
+  font: 500 .88rem/1.3 system-ui, sans-serif;
+}
+.bb-v32-site-search button {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 0;
+  background: #1262c6;
+  color: white;
+  font: 750 .83rem/1.3 system-ui,sans-serif;
+  cursor: pointer;
+}
+.bb-v32-site-search button:hover { background: #084eab; }
+.bb-v32-site-search input:focus-visible {
+  outline: 3px solid #8aaff0;
+  outline-offset: -3px;
+}
+.bb-v32-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+}
+body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metrics {
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metric {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 12px;
+  align-items: center;
+  min-height: 118px;
+  padding: 18px;
+  border: 1px solid var(--bb-v32-border);
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 4px 18px #17406c06;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-metric-icon {
+  color: #155bd6;
+  background: #e5f0ff;
+}
+body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metric:nth-child(2) .bb-admin-v31-metric-icon {
+  color: #0c9c81; background: #e0f9f0;
+}
+body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metric:nth-child(3) .bb-admin-v31-metric-icon {
+  color: #8b50c3; background: #f3ebff;
+}
+body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metric:nth-child(4) .bb-admin-v31-metric-icon {
+  color: #cc8123; background: #fff2df;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-v32-metric-link {
+  flex-basis: 100%;
+  display: block;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 1px 0;
+  color: #1260bb;
+  font: 750 .76rem/1.3 system-ui,sans-serif;
+  cursor: pointer;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-grid.bb-v32-admin-grid {
+  display: grid;
+  grid-template-columns: 1.06fr 1.14fr 1fr;
+  align-items: start;
+  gap: 14px;
+}
+body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card {
+  min-height: 275px;
+  padding: 19px;
+  border: 1px solid var(--bb-v32-border);
+  border-radius: 11px;
+  background: #fff;
+}
+body.bb-admin-v31 .bb-v32-admin-grid > .bb-v32-quick-panel {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+body.bb-admin-v31 .bb-v32-admin-grid > .bb-v32-quick-panel h3 {
+  margin: 0 0 8px;
+}
+.bb-v32-quick-link {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 39px;
+  gap: 10px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: #f1f5fb;
+  color: #173455;
+  text-align: left;
+  font: 650 .83rem/1.3 system-ui,sans-serif;
+  cursor: pointer;
+}
+.bb-v32-quick-link:hover { background: #e1edff; }
+.bb-v32-quick-icon {
+  display: grid;
+  flex: 0 0 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 7px;
+  color: #125bb0;
+  background: #dfebfd;
+  font-size: .95rem;
+}
+.bb-v32-quick-link:nth-of-type(3n+2) .bb-v32-quick-icon {
+  color: #0e956f; background: #dff6e9;
+}
+.bb-v32-quick-link:nth-of-type(3n+3) .bb-v32-quick-icon {
+  color: #9050bd; background: #f0e6ff;
+}
+.bb-v32-chevron { margin-left: auto; color: #6e819b; font-size: 1.3rem; }
+body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card--activity {
+  display: flex;
+  height: 380px;
+  max-height: 380px;
+  min-height: 275px;
+  overflow: hidden;
+}
+body.bb-admin-v31 .bb-v32-admin-grid .bb-admin-v31-card--stats {
+  grid-column: 1 / -1;
+  min-height: auto;
+}
+body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card--actions {
+  display: block;
+}
+body.bb-admin-v31 .bb-v32-admin-grid .admin-modern__action-row {
+  background: #f1f5fb;
+  border: 1px solid #e4edf7;
+  margin: 4px 0;
+}
+body.bb-admin-v31 .bb-v32-admin-grid .bb-admin-v31-card--activity #history-list {
+  max-height: none;
+}
+
+/* Teacher overview: original layout, class column next to visual book search,
+   with book-first 2:3 covers and genuinely useful lower summaries. */
+body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-teacher-v31-metrics {
+  display: none;
+}
+body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-teacher-v31-grid {
+  display: grid;
+  grid-template-columns: minmax(215px, 1fr) minmax(0, 2.12fr);
+  align-items: stretch;
+  gap: 15px;
+}
+body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-teacher-v31-dashboard-column {
+  display: grid;
+  align-content: stretch;
+  gap: 15px;
+}
+body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-teacher-v31-dashboard-column > .bb-teacher-v31-card {
+  min-height: 0;
+}
+body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-search {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 19px;
+  gap: 12px;
+  min-height: 300px;
+}
+body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-search .bb-v32-site-search {
+  flex: none;
+  width: 100%;
+  height: 39px;
+  min-width: 0;
+}
+body.bb-teacher-v31 .bb-v32-teacher-search .bb-v32-site-search input { width: 100%; }
+body.bb-teacher-v31 .bb-v32-teacher-books {
+  display: grid;
+  grid-template-columns: repeat(5,minmax(0,1fr));
+  gap: 12px;
+  min-width: 0;
+  margin-top: 4px;
+}
+body.bb-teacher-v31 .bb-v32-book-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  color: var(--bb-v32-text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+body.bb-teacher-v31 .bb-v32-book-preview:hover .bb-v32-book-cover {
+  box-shadow: 0 5px 13px #102c5c32;
+  transform: translateY(-2px);
+}
+body.bb-teacher-v31 .bb-v32-book-cover {
+  display: block;
+  position: relative;
+  width: min(100%, 132px);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #e4edfa;
+  box-shadow: 0 2px 7px #15346415;
+  transition: box-shadow .18s, transform .18s;
+}
+body.bb-teacher-v31 .bb-v32-book-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+body.bb-teacher-v31 .bb-v32-cover-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #5a7494;
+  background: linear-gradient(160deg,#e6effc,#f3e7dd);
+  font-size: 1.5rem;
+  font-weight: 850;
+}
+body.bb-teacher-v31 .bb-v32-book-preview strong {
+  font-size: .78rem;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+body.bb-teacher-v31 .bb-v32-book-preview small {
+  display: block;
+  color: #667b92;
+  font-size: .72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.bb-teacher-v31 .bb-v32-book-preview--easy .bb-v32-book-cover {
+  outline: 3px solid #1aa4ad;
+  outline-offset: -2px;
+}
+body.bb-teacher-v31 .bb-v32-book-preview--reading .bb-v32-book-cover::after {
+  content: '▮';
+  position: absolute;
+  top: 0;
+  right: 10px;
+  width: 17px;
+  height: 26px;
+  line-height: 1.5;
+  text-align: center;
+  color: white;
+  background: #d28b32;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+}
+body.bb-teacher-v31 .bb-v32-teacher-lower {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  align-items: start;
+  gap: 15px;
+}
+body.bb-teacher-v31 .bb-v32-teacher-lower > .bb-teacher-v31-card {
+  min-height: 195px;
+  margin: 0;
+  border: 1px solid var(--bb-v32-border);
+  border-radius: 11px;
+  background: white;
+}
+body.bb-teacher-v31 .bb-v32-teacher-lower .bb-v32-recent {
+  grid-column: auto;
+}
+body.bb-teacher-v31 .bb-v32-teacher-lower .bb-v32-loan-summary {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+body.bb-teacher-v31 .bb-v32-teacher-lower .bb-v32-loan-summary h3 { margin: 0; }
+body.bb-teacher-v31 .bb-v32-teacher-lower .bb-v32-loan-summary .bb-v32-quick-link {
+  margin-top: auto;
+}
+body.bb-teacher-v31 .bb-v32-teacher-lower #bb-teacher-v31-activity #history-list {
+  max-height: 210px;
+}
+body.bb-teacher-v31 #bb-teacher-v31-classes-summary .bb-teacher-v31-row::before {
+  content: '♧';
+  display: grid;
+  flex: 0 0 27px;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  color: #e28a12;
+  background: #fff1db;
+  border-radius: 8px;
+  font-size: .98rem;
+}
+body.bb-teacher-v31 #bb-teacher-v31-classes-summary .bb-teacher-v31-row:nth-of-type(3n+2)::before {
+  background: #f0e5ff;
+  color: #8450c2;
+}
+body.bb-teacher-v31 #bb-teacher-v31-classes-summary .bb-teacher-v31-row:nth-of-type(3n)::before {
+  background: #dff8eb;
+  color: #119a65;
+}
+body.bb-teacher-v31 .bb-v32-dashboard .bb-teacher-v31-card,
+body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-card {
+  box-shadow: 0 3px 14px #183e7907;
+}
+
+/* Fluid desktop: keep navigation scrollable, and avoid making bookcovers
+   wider than their approved 2:3 ratio even when the viewport changes. */
+@media (max-width: 1180px) {
+  body.bb-admin-v31 #bb-admin-v31-sidebar.bb-v32-top-nav,
+  body.bb-teacher-v31 #bb-teacher-v31-sidebar.bb-v32-top-nav {
+    margin-left: 6px;
+  }
+  body.bb-admin-v31 #bb-admin-v31-sidebar .admin-modern__tab,
+  body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-nav {
+    font-size: .78rem;
+    padding: 8px 9px;
+  }
+  body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card--activity { height: 340px; }
+  body.bb-admin-v31 .bb-v32-admin-grid.bb-admin-v31-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body.bb-admin-v31 .bb-v32-admin-grid > .bb-v32-quick-panel { grid-column: 1; }
+  body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card--activity { grid-column: 2; }
+  body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card--actions { grid-column: 1 / -1; }
+  body.bb-teacher-v31 .bb-v32-teacher-books { grid-template-columns: repeat(5,minmax(0,1fr)); }
+}
+@media (max-width: 850px) {
+  body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-teacher-v31-grid { grid-template-columns: 1fr; }
+  body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-search { min-height: auto; }
+  body.bb-teacher-v31 .bb-v32-teacher-lower { grid-template-columns: 1fr 1fr; }
+  body.bb-admin-v31 .bb-v32-admin-grid.bb-admin-v31-grid { grid-template-columns: 1fr; }
+  body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card { grid-column: 1 !important; }
+  body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card--activity { height: 260px; }
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31 .hero.hero--staff,
+  body.bb-teacher-v31 .hero.hero--staff { padding: 0 12px; gap: 7px; }
+  body.bb-admin-v31 #admin-dashboard,
+  body.bb-teacher-v31 #teacher-dashboard { padding: 20px 13px 58px; }
+  body.bb-admin-v31 #bb-admin-v31-sidebar.bb-v32-top-nav,
+  body.bb-teacher-v31 #bb-teacher-v31-sidebar.bb-v32-top-nav {
+    position: fixed;
+    top: 63px;
+    left: 0;
+    right: auto;
+    bottom: 0;
+    width: min(320px, 88vw);
+    height: calc(100dvh - 63px);
+    min-height: 0;
+    max-height: none;
+    margin: 0;
+    padding: 20px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    transform: translateX(-110%);
+    background: white;
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 65;
+    box-shadow: 8px 0 24px #15376338;
+  }
+  body.bb-admin-v31 #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tabs {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+    gap: 6px;
+  }
+  body.bb-admin-v31 #bb-admin-v31-sidebar .admin-modern__tab,
+  body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-nav {
+    display: flex;
+    justify-content: flex-start;
+    min-height: 42px;
+    width: 100%;
+    padding: 10px 13px;
+    font-size: .9rem;
+    color: var(--bb-v32-text);
+    white-space: normal;
+  }
+  body.bb-admin-v31 #bb-admin-v31-sidebar .admin-modern__tab--active,
+  body.bb-teacher-v31 #bb-teacher-v31-sidebar .bb-teacher-v31-nav--active {
+    color: white;
+    background: #173769;
+  }
+  body.bb-admin-v31.bb-admin-v31--open #bb-admin-v31-sidebar.bb-v32-top-nav,
+  body.bb-teacher-v31.bb-teacher-v31--open #bb-teacher-v31-sidebar.bb-v32-top-nav {
+    transform: translateX(0);
+  }
+  body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body.bb-teacher-v31 .bb-v32-teacher-lower { grid-template-columns: 1fr; }
+  body.bb-teacher-v31 .bb-v32-teacher-books { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .bb-v32-site-search { flex: 1 1 100%; min-width: 0; }
+  body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-heading,
+  body.bb-teacher-v31 .bb-v32-dashboard .bb-teacher-v31-view-heading { align-items: stretch; }
+}
+@media (max-width: 420px) {
+  body.bb-teacher-v31 .bb-v32-teacher-books { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metrics { grid-template-columns: 1fr 1fr; }
+  body.bb-admin-v31 .bb-v32-dashboard .admin-modern__metric { padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.bb-teacher-v31 .bb-v32-book-cover { transition: none; }
+}
