@@ -4421,6 +4421,15 @@ function initStaffPage() {
     renderBooks();
   }
 
+
+  // De annulering is een zuivere clientactie: geen boekwijziging of servercall.
+  // Reset ook de interne selectie, cover-uitsnede en validatiestatus.
+  adminBookCancelButton?.addEventListener('click', (event) => {
+    event.preventDefault();
+    resetAdminBookForm();
+    if (adminBookMessage) adminBookMessage.textContent = 'Bewerken geannuleerd. Er is niets opgeslagen.';
+  });
+
   function populateAdminBookForm(book, options = {}) {
     if (!adminBookForm || !book) return;
     if (adminBookIdInput) {
