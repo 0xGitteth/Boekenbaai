@@ -1011,7 +1011,9 @@
           </label>
           <button class="btn btn--secondary" type="submit">Verificatiecode versturen</button>
         </form>
-        <form id="admin-mail-categories" class="form-grid form-grid--compact">
+        <!-- Legacy shared controls are retained for compatibility only;
+             recipient-specific settings render inside each verified address card. -->
+        <form id="admin-mail-categories" class="form-grid form-grid--compact" hidden>
           <h3>Welke beheerdersmeldingen wil je ontvangen?</h3>
           <label><input id="admin-mail-category-transfers" type="checkbox" />
             Afgewezen klaswissels</label>
