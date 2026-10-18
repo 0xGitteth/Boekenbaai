@@ -368,7 +368,7 @@ async function run() {
   for (const pending of initial.bookImportFollowups) {
     if (pending.createdAt === now) pending.createdAt = new Date().toISOString();
   }
-  initial.users.forEach;(user) => { user.passwordHash = hash('pass'); });
+  initial.users.forEach((user) => { user.passwordHash = hash('pass'); });
   initial.students.forEach((student) => { student.username = student.id; student.passwordHash = hash('pass'); });
   fs.writeFileSync(dbPath, JSON.stringify(initial));
   const child = spawn(process.execPath, ['server.js'], {
