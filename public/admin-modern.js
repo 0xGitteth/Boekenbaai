@@ -314,6 +314,8 @@
     // Keep the destructive action distinct from primary "Nieuw boek".
     deleteAll.classList.add('bb-admin-v31-delete-library');
     const actions = make('div', { className: 'bb-admin-v31-books-actions' });
+    const newBook = document.getElementById('bb-admin-v31-open-editor');
+    if (newBook) actions.append(newBook);
     actions.append(deleteAll);
     heading.append(actions);
   }
@@ -603,6 +605,9 @@
     if (!active) {
       closeMobileNavigation();
       state.catalogOpened = false;
+      const historyList = document.getElementById('history-list');
+      historyList?.removeAttribute('tabindex');
+      historyList?.removeAttribute('aria-label');
       restoreSharedPanels();
       const title = document.querySelector('.hero--staff h1');
       const intro = document.querySelector('.hero--staff .hero__content p');
@@ -625,6 +630,9 @@
     // Keep the original privileged logbook button and live status near
     // the activity title; the original header slot is restored on logout.
     mountSharedPanel('history-actions', 'bb-admin-v31-activity-actions');
+    const historyList = document.getElementById('history-list');
+    historyList?.setAttribute('tabindex', '0');
+    historyList?.setAttribute('aria-label', 'Recente activiteit');
     mountSharedPanel('admin-mail-notifications-panel', 'bb-admin-v31-settings');
     const legacyList = document.getElementById('admin-book-list');
     const legacySection = legacyList?.closest('.admin-card__section');
