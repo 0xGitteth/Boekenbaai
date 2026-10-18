@@ -403,10 +403,18 @@
 
   function summaryMetric(label, value) {
     const card = make('div', { className: 'admin-modern__metric' });
-    card.append(
+    const icons = { Boekexemplaren: '▤', Leerlingen: '♙', Docenten: '◉', Klassen: '▦' };
+    if (icons[label]) {
+      const icon = make('span', { className: 'bb-admin-v31-metric-icon', text: icons[label] });
+      icon.setAttribute('aria-hidden', 'true');
+      card.append(icon);
+    }
+    const figures = make('div', { className: 'bb-admin-v31-metric-figures' });
+    figures.append(
       make('strong', { text: String(value ?? 0) }),
       make('span', { text: label })
     );
+    card.append(figures);
     return card;
   }
 
@@ -487,7 +495,7 @@
       const data = await api('/api/admin/google-first/summary');
       metrics.innerHTML = '';
       metrics.append(
-        summaryMetric('Boeken', data.books),
+        summaryMetric('Boekexemplaren', data.books),
         summaryMetric('Leerlingen', data.students),
         summaryMetric('Docenten', data.teachers),
         summaryMetric('Klassen', data.classes)
@@ -696,6 +704,15 @@
     loansView.append(make('div', { id: 'bb-admin-v31-loans' }));
     const tasksView = viewHeading('tasks', 'Taken', 'Controleer openstaande verzoeken en boekimportcontroles.');
     tasksView.append(make('div', { id: 'bb-admin-v31-tasks' }));
+    const accountTaskLinks = make('section', { className: 'bb-admin-v31-card' });
+    accountTaskLinks.append(make('h3', { text: 'Andere beheertaken' }));
+    accountTaskLinks.append(make('p', { text: 'Behandel klaswissels en Google-koppelverzoeken via Personen en klassen.' }));
+    for (const [label, kind] of [['Leerling- en klasverzoeken openen', 'students'], ['Docent- en Google-koppelingen openen', 'teachers']]) {
+      const link = make('button', { className: 'bb-admin-v31-quick-row', text: label, type: 'button' });
+      link.addEventListener('click', () => { setActiveView('people'); setPeopleView(kind); });
+      accountTaskLinks.append(link);
+    }
+    tasksView.append(accountTaskLinks);
     const importsView = viewHeading('imports', 'Importeren', 'Boeken en personen veilig importeren met voorcontrole.');
     importsView.append(importsCard);
     const settingsView = viewHeading('settings', 'Instellingen', 'Beheerdersmeldingen en geverifieerde e-mailadressen.');
