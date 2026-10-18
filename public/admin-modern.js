@@ -7,6 +7,7 @@
     activePeopleView: 'students',
     relocatedPanels: [],
     catalogOpened: false,
+    loanLayout: null,
   };
 
   function make(tag, options = {}) {
@@ -598,12 +599,63 @@
     }
   }
 
+  // The staff-loans module owns all event listeners, requests and form state.
+  // For Beheer, only rearrange the same live nodes into two clear tasks.
+  // Restore their exact original DOM positions on logout/role changes.
+  function arrangeAdminLoans(active) {
+    const panel = document.getElementById('staff-loan-panel');
+    if (!panel) return;
+    if (!active) {
+      if (!state.loanLayout) return;
+      const { children, heading, originalTitle, intro, originalIntro, filterLabel, originalFilterLabel } = state.loanLayout;
+      panel.replaceChildren(...children);
+      heading.textContent = originalTitle;
+      if (intro) intro.textContent = originalIntro;
+      if (filterLabel) filterLabel.textContent = originalFilterLabel;
+      state.loanLayout = null;
+      return;
+    }
+    if (state.loanLayout) return;
+    const header = panel.querySelector('.panel__header');
+    const heading = header?.querySelector('#staff-loans-title');
+    const intro = header?.querySelector('.hint');
+    const form = panel.querySelector('#staff-loan-form');
+    const status = panel.querySelector('#staff-loan-message');
+    const list = panel.querySelector('#staff-loan-current');
+    const filterLabel = panel.querySelector('label[for="staff-loan-filter"]');
+    const filterField = filterLabel?.closest('.form-field');
+    if (!header || !heading || !form || !status || !list || !filterField) return;
+    state.loanLayout = {
+      children: Array.from(panel.children),
+      heading, originalTitle: heading.textContent,
+      intro, originalIntro: intro?.textContent || '',
+      filterLabel, originalFilterLabel: filterLabel?.textContent || '',
+    };
+    heading.textContent = 'Nieuwe uitlening';
+    if (intro) intro.textContent = 'Kies wie het boek leent en selecteer het juiste fysieke exemplaar.';
+    filterLabel.textContent = 'Filter op klas';
+
+    const create = make('section', { className: 'bb-admin-v31-loan-card bb-admin-v31-loan-create' });
+    create.append(header, form, status);
+    const current = make('section', { className: 'bb-admin-v31-loan-card bb-admin-v31-loan-current' });
+    const currentHead = make('div', { className: 'bb-admin-v31-loan-current-header' });
+    const currentIntro = make('div');
+    currentIntro.append(
+      make('h3', { text: 'Huidige uitleningen' }),
+      make('p', { text: 'Bekijk lopende uitleningen of registreer een inname.' })
+    );
+    currentHead.append(currentIntro, filterField);
+    current.append(currentHead, list);
+    panel.replaceChildren(create, current);
+  }
+
   function activateAdminLayout(active) {
     if (!state.upgraded) return;
     document.body.classList.toggle('bb-admin-v31', active);
     if (!active) {
       closeMobileNavigation();
       state.catalogOpened = false;
+      arrangeAdminLoans(false);
       const historyList = document.getElementById('history-list');
       historyList?.removeAttribute('tabindex');
       historyList?.removeAttribute('aria-label');
@@ -624,6 +676,7 @@
     }
     mountSharedPanel('.teacher-layout__overview', 'bb-admin-v31-catalog');
     mountSharedPanel('staff-loan-panel', 'bb-admin-v31-loans');
+    arrangeAdminLoans(true);
     mountSharedPanel('book-import-followups-panel', 'bb-admin-v31-tasks');
     mountSharedPanel('history-panel', 'bb-admin-v31-activity');
     // Keep the original privileged logbook button and live status near
