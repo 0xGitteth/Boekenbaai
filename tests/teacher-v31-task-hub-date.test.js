@@ -20,7 +20,10 @@ assert.match(teacher,/place\(document\.getElementById\('book-import-followups-pa
 assert.match(teacher,/boekenbaai:mentor-tasks-refresh/);
 assert.match(students,/boekenbaai:mentor-tasks-refresh/);
 assert.match(students,/boekenbaai:mentor-select-class/);
-assert.match(students,/observer\.observe\(host, \{ attributes: true, attributeFilter: \['class'\] \}\)/);
+assert.match(students,/observer\.observe\(teacherHost, \{ attributes: true, attributeFilter: \['class'\] \}\)/);
+assert.match(students,/observer\.observe\(adminHost, \{ attributes: true, attributeFilter: \['class'\] \}\)/);
+assert.match(students,/document\.getElementById\('student-management-panel'\)\?\.remove\(\)/);
+assert.match(students,/window\.addEventListener\('boekenbaai:staff-refresh', refresh\)/);
 assert.doesNotMatch(students,/observer\.observe\(document\.body/);
 assert.match(students,/if \(visible && !wasVisible && !document\.querySelector\('#student-management-panel'\)\)/);
 
@@ -139,4 +142,42 @@ dateCtx.CSS.supports=()=>false;
 dateCtx.install();
 assert.equal(due.parent.children[1].hidden,true,'Firefox must not see a duplicate date');
 assert.match(css,/bb-teacher-v31-date-wrap--overlay #staff-loan-due::-webkit-datetime-edit/);
+
+// Codex P2: after switching from a teacher to Beheer, student management
+// must render a new role-specific panel even while teacher-dashboard is hidden.
+const renderStart=students.indexOf('  function render() {');
+const renderEnd=students.indexOf('  function publishTeacherTasks(',renderStart);
+assert.ok(renderStart>0&&renderEnd>renderStart);
+const adminNode=element('section');
+const teacherNode=element('section');
+const adminView=element('div');
+let removed=false;
+const existingPanel={remove(){removed=true;}};
+const adminRenderDoc={
+  body:{classList:{contains(){return false;}}},
+  querySelector(selector){
+    const refs={
+      '#teacher-dashboard':{classList:{contains(cls){return cls==='hidden';}}},
+      '#admin-dashboard':{classList:{contains(){return false;}}},
+      '[data-teacher-view="classes"]':teacherNode,
+      '[data-admin-people-view="students"]':adminView,
+      '#student-management-panel':removed?null:existingPanel,
+    };
+    return refs[selector]??null;
+  },
+};
+const adminRender=vm.createContext({state:{role:'admin'},document:adminRenderDoc,
+  make(tag,options){return element(tag,options.className,options.text);},
+  renderClassContext(){},renderRequests(){},renderStudents(){},renderOutgoing(){},
+});
+new vm.Script(students.slice(renderStart,renderEnd)+'\nthis.runRender=render;')
+  .runInContext(adminRender);
+adminRender.runRender();
+assert.equal(removed,true);
+assert.equal(adminView.children.length,1,'Administrator panel must mount in Beheer');
+assert.equal(adminView.children[0].tag,'section','Administrator gets live management section');
+// The new element mock does not map options.id by default; ensure new view was
+// actually appended into the administrator slot instead of the hidden teacher.
+assert.equal(teacherNode.children.length,0);
+
 console.log('Teacher tasks, class transfer counts, date overlay, button alignment and email placeholder regressions OK');
