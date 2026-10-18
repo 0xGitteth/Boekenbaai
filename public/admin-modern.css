@@ -312,8 +312,8 @@ body.bb-admin-v31 .hero--staff .hero__illustration {
   order: 0;
   align-items: center;
   flex: 0 0 auto;
-  width: 150px;
-  height: 48px;
+  width: 132px;
+  height: 42px;
   min-height: 0;
   padding: 0;
   margin: 0 0 0 8px;
@@ -558,7 +558,7 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__metric span {
 body.bb-admin-v31 .bb-admin-v31-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: 15px;
 }
 body.bb-admin-v31 .bb-admin-v31-column {
@@ -566,6 +566,37 @@ body.bb-admin-v31 .bb-admin-v31-column {
   align-content: start;
   gap: 15px;
   min-width: 0;
+}
+/* The left column determines the row height; the activity column cannot
+   make the entire page longer when the history contains many items. */
+body.bb-admin-v31 .bb-admin-v31-column--activity {
+  display: flex;
+  flex-direction: column;
+  height: 0;
+  min-height: 100%;
+}
+body.bb-admin-v31 .bb-admin-v31-card--activity {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+body.bb-admin-v31 #bb-admin-v31-activity,
+body.bb-admin-v31 #bb-admin-v31-activity #history-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+body.bb-admin-v31 #bb-admin-v31-activity #history-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 5px;
 }
 body.bb-admin-v31 .bb-admin-v31-card {
   min-width: 0;
@@ -767,13 +798,17 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
 @media (max-width: 1120px) {
   body.bb-admin-v31 #admin-dashboard .admin-modern__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   body.bb-admin-v31 .bb-admin-v31-grid { grid-template-columns: 1fr; }
+  body.bb-admin-v31 .bb-admin-v31-column--activity { height: auto; min-height: 0; }
+  body.bb-admin-v31 .bb-admin-v31-card--activity { height: auto; max-height: 410px; }
+  body.bb-admin-v31 #bb-admin-v31-activity #history-list { max-height: 300px; }
   body.bb-admin-v31 .bb-admin-v31-card { min-height: 0; }
+  body.bb-admin-v31 .bb-admin-v31-settings-layout { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   body.bb-admin-v31 > main { display: block; width: 100%; }
   body.bb-admin-v31 #admin-dashboard { padding: 20px 14px 64px; width: 100%; }
   body.bb-admin-v31 .hero.hero--staff { height: 63px; min-height: 63px; padding: 0 12px; gap: 9px; }
-  body.bb-admin-v31 .hero--staff .hero__illustration { width: 107px; height: 37px; padding: 0; margin-left: 3px; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { width: 96px; height: 34px; padding: 0; margin-left: 3px; }
   body.bb-admin-v31 .hero--staff .hero__content h1 { font-size: 1rem; gap: 7px; }
   body.bb-admin-v31 .hero--staff .hero__content h1::before {
     width: 28px; height: 28px; flex-basis: 28px; background-size: 21px;
@@ -839,9 +874,9 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
   body.bb-admin-v31 .hero.hero--staff { gap: 6px; }
   body.bb-admin-v31 .hero--staff .hero__content { min-width: 0; flex: 0 1 auto; }
   body.bb-admin-v31 .hero--staff .hero__content h1 { font-size: .94rem; }
-  body.bb-admin-v31 .hero--staff .hero__illustration { flex: 0 1 86px; min-width: 57px; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { flex: 0 1 75px; min-width: 57px; }
   body.bb-admin-v31 .hero--staff .hero__actions { flex: 0 0 auto; width: auto; margin-left: auto; }
-  body.bb-admin-v31 .hero--staff .hero__illustration { width: 86px; height: 33px; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { width: 75px; height: 30px; }
   body.bb-admin-v31 .hero--staff .staff-meta #logout-button {
     padding: 8px 9px;
     min-height: 35px;
@@ -943,3 +978,122 @@ body.bb-admin-v31 #admin-student-search-results .student-management__student-row
 body.bb-admin-v31 #admin-student-search-results .student-management__class[hidden] {
   display: none !important;
 }
+
+/* Book catalog: primary creation and explicitly destructive reset actions. */
+body.bb-admin-v31 .bb-admin-v31-books-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+body.bb-admin-v31 #admin-dashboard #admin-books-delete-all.bb-admin-v31-delete-library {
+  min-height: 44px;
+  padding: 10px 14px;
+  color: #a11e1e;
+  border: 1px solid #d88989;
+  background: #fff7f7;
+  font-weight: 700;
+}
+body.bb-admin-v31 #admin-dashboard #admin-books-delete-all.bb-admin-v31-delete-library:hover:not(:disabled) {
+  color: white;
+  background: #aa2020;
+}
+body.bb-admin-v31 #admin-dashboard #admin-books-delete-all.bb-admin-v31-delete-library:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+body.bb-admin-v31 .bb-admin-v31-task-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
+body.bb-admin-v31 .bb-admin-v31-task-actions .btn {
+  width: auto;
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid #d3deec;
+  border-radius: 9px;
+  padding: 9px 13px;
+  color: var(--bb-navy);
+  background: #e9f0fb;
+  font-weight: 700;
+  white-space: normal;
+}
+body.bb-admin-v31 .bb-admin-v31-task-actions .btn:hover { background: #dce7f8; }
+
+/* Settings: clear separate groups instead of a single dense form. */
+body.bb-admin-v31 .bb-admin-v31-settings-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+  margin-top: 22px;
+}
+body.bb-admin-v31 .bb-admin-v31-settings-section {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #dce4f0;
+  border-radius: 12px;
+  background: #f8fafd;
+}
+body.bb-admin-v31 .bb-admin-v31-settings-section h3,
+body.bb-admin-v31 .bb-admin-v31-settings-section h4 {
+  margin: 0 0 12px;
+  color: var(--bb-ink);
+  font-size: 1rem;
+}
+body.bb-admin-v31 .bb-admin-v31-settings-section h4 {
+  margin: 22px 0 10px;
+  font-size: .92rem;
+}
+body.bb-admin-v31 #admin-dashboard #admin-mail-notifications-list {
+  display: grid;
+  gap: 10px;
+}
+body.bb-admin-v31 #admin-dashboard #admin-mail-notifications-list > .form-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 13px;
+  border: 1px solid var(--bb-line);
+  border-radius: 10px;
+  background: white;
+  overflow-wrap: anywhere;
+}
+body.bb-admin-v31 #admin-mail-notifications-list > .form-field > strong { grid-column: 1; }
+body.bb-admin-v31 #admin-mail-notifications-list > .form-field > span { grid-column: 1; }
+body.bb-admin-v31 #admin-mail-notifications-list > .form-field > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  margin: 0;
+  width: auto;
+}
+body.bb-admin-v31 #admin-mail-notifications-list > .form-field > form { grid-column: 1 / -1; }
+body.bb-admin-v31 #admin-dashboard #admin-mail-add-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 11px;
+  align-items: start;
+}
+body.bb-admin-v31 #admin-dashboard #admin-mail-add-form .btn,
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories .btn {
+  width: auto;
+  justify-self: start;
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 10px 14px;
+}
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 15px;
+}
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories h3 { margin: 0 0 6px; }
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories label {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  line-height: 1.5;
+}
+body.bb-admin-v31 #admin-mail-notifications-status { margin: 14px 0 0; }
+body.bb-admin-v31 #staff-loan-copy-hint[hidden] { display: none !important; }
+@media (max-width: 1120px) {
+  body.bb-admin-v31 .bb-admin-v31-settings-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31 .bb-admin-v31-settings-section { padding: 16px; }
+  body.bb-admin-v31 .bb-admin-v31-task-actions .btn { width: 100%; }
+}
+
