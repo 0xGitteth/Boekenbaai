@@ -1377,3 +1377,16 @@ body.bb-admin-v31 .admin-mail-recipient__preferences button {
     justify-self: start;
   }
 }
+
+
+/* Shared v3.1 header refinement: align wordmark's visual baseline with the
+   Het Dok logo, and leave a little more breathing room between brands. */
+body.bb-admin-v31 .hero--staff .hero__illustration {
+  margin-left: 18px;
+}
+body.bb-admin-v31 .hero--staff .hero__content h1 {
+  transform: translateY(3px);
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31 .hero--staff .hero__illustration { margin-left: 10px; }
+}
