@@ -661,3 +661,107 @@ body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-submit {
     padding-inline: 9px;
   }
 }
+
+
+/* Final loan-action bar: no button floating opposite the date field. */
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field:last-child {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding-top: 14px;
+  margin-top: 1px;
+  border-top: 1px solid #e6edf5;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-submit {
+  width: min(100%, 210px);
+  min-height: 42px;
+  border-radius: 9px;
+  text-align: center;
+  font: 750 .9rem/1.3 system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+
+/* A real native date input remains keyboard accessible and keeps its calendar
+   picker. Outside focus we overlay a plain, consistently aligned text label
+   so Chromium's internal segmented date font never spoils the page. */
+body.bb-teacher-v31 [data-teacher-view="lending"] .bb-teacher-v31-date-wrap {
+  display: block;
+  position: relative;
+  min-width: 0;
+  width: 100%;
+  height: 42px;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  margin: 0;
+  padding: 0 12px;
+  font: 500 14px/1.4 system-ui,-apple-system,'Segoe UI',sans-serif;
+  color: #102c57;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due::-webkit-datetime-edit {
+  color: transparent;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due:focus::-webkit-datetime-edit,
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due:focus-visible::-webkit-datetime-edit {
+  color: #102c57;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] .bb-teacher-v31-date-preview {
+  pointer-events: none;
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font: 500 14px/1.4 system-ui,-apple-system,'Segoe UI',sans-serif;
+  letter-spacing: normal;
+  color: #102c57;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] .bb-teacher-v31-date-preview--empty {
+  color: #6b819e;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] .bb-teacher-v31-date-wrap:focus-within
+.bb-teacher-v31-date-preview {
+  display: none;
+}
+
+/* One task hub: every assigned class's incoming transfers, outgoing followups,
+   Google approval requests and real book-import forms. */
+body.bb-teacher-v31 [data-teacher-view="tasks"] .bb-teacher-v31-task-summary {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  padding: 22px 25px;
+  border: 1px solid #d9e4f2;
+  border-radius: 13px;
+  background: #fff;
+}
+body.bb-teacher-v31 [data-teacher-view="tasks"] .bb-teacher-v31-task-summary h3 {
+  color: #0d2853;
+  margin: 0 0 15px;
+  font: 800 1.14rem/1.3 system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+body.bb-teacher-v31 [data-teacher-view="tasks"] .bb-teacher-v31-task-row {
+  min-height: 60px;
+  width: 100%;
+  padding: 11px 2px;
+  border-bottom: 1px solid #e7eef6;
+}
+body.bb-teacher-v31 [data-teacher-view="tasks"] .bb-teacher-v31-task-row:last-child {
+  border-bottom: none;
+}
+body.bb-teacher-v31 [data-teacher-view="tasks"] .bb-teacher-v31-task-summary > .bb-teacher-v31-hint {
+  margin: 6px 0 0;
+}
+@media (max-width: 760px) {
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field:last-child {
+    justify-content: stretch;
+  }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-submit { width: 100%; }
+  body.bb-teacher-v31 [data-teacher-view="tasks"] .bb-teacher-v31-task-summary {
+    padding: 18px 16px;
+  }
+}
