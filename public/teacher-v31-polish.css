@@ -702,7 +702,8 @@ body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due {
   font: 500 14px/1.4 system-ui,-apple-system,'Segoe UI',sans-serif;
   color: #102c57;
 }
-body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due::-webkit-datetime-edit {
+body.bb-teacher-v31 [data-teacher-view="lending"]
+.bb-teacher-v31-date-wrap--overlay #staff-loan-due::-webkit-datetime-edit {
   color: transparent;
 }
 body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due:focus::-webkit-datetime-edit,
@@ -710,6 +711,7 @@ body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due:focus-visible:
   color: #102c57;
 }
 body.bb-teacher-v31 [data-teacher-view="lending"] .bb-teacher-v31-date-preview {
+  display: none;
   pointer-events: none;
   position: absolute;
   left: 13px;
@@ -719,6 +721,10 @@ body.bb-teacher-v31 [data-teacher-view="lending"] .bb-teacher-v31-date-preview {
   font: 500 14px/1.4 system-ui,-apple-system,'Segoe UI',sans-serif;
   letter-spacing: normal;
   color: #102c57;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"]
+.bb-teacher-v31-date-wrap--overlay .bb-teacher-v31-date-preview:not([hidden]) {
+  display: block;
 }
 body.bb-teacher-v31 [data-teacher-view="lending"] .bb-teacher-v31-date-preview--empty {
   color: #6b819e;
