@@ -32,7 +32,7 @@
     if (!entry) {
       const marker = document.createComment('Docentenportaal v3.1 oorspronkelijke plek');
       node.before(marker);
-      entry = { node, marker };
+      entry = { node, marker, destination };
       placements.push(entry);
     }
     destination.append(node);
@@ -40,6 +40,11 @@
   function restore() {
     for (const { node, marker } of placements) {
       if (marker.isConnected) marker.after(node);
+    }
+  }
+  function remount() {
+    for (const { node, destination } of placements) {
+      if (destination.isConnected && node.parentElement !== destination) destination.append(node);
     }
   }
   function teacherVisible() {
@@ -152,6 +157,8 @@
     });
     document.querySelector('.hero--staff .hero__content')?.before(menu);
 
+    dashboard.removeAttribute('aria-labelledby');
+    dashboard.setAttribute('aria-label', 'Docentenportaal');
     const container = el('div', 'bb-teacher-v31-shell');
     container.id = 'bb-teacher-v31-shell';
     container.hidden = true;
@@ -267,6 +274,9 @@
     menu.hidden = !active;
     document.getElementById('bb-teacher-v31-shell').hidden = !active;
     if (active) {
+      remount();
+      dashboard.removeAttribute('aria-labelledby');
+      dashboard.setAttribute('aria-label', 'Docentenportaal');
       // Pages outside teacher-dashboard still receive original visibility
       // from app.js: never bypass the role-restricted .hidden state.
       setIdentity(true);
@@ -275,6 +285,8 @@
       ++requestId;
       closeMenu();
       restore();
+      dashboard.removeAttribute('aria-label');
+      dashboard.setAttribute('aria-labelledby', 'teacher-panel-title');
       setIdentity(false);
     }
   }
