@@ -79,7 +79,7 @@ for (const id of [
 assert.match(css, /body\.bb-admin-v31/);
 assert.match(css, /--bb-navy: #102f64/);
 assert.match(css, /--bb-canvas: #f0f4fa/);
-assert.match(css, /grid-template-columns: 230px minmax\(0, 1fr\)/);
+assert.match(css, /grid-template-columns: 216px minmax\(0, 1fr\)/);
 assert.match(css, /@media \(max-width: 760px\)/);
 assert.match(css, /prefers-reduced-motion/);
 
