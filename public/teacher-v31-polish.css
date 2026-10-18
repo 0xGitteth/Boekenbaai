@@ -546,3 +546,115 @@ body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code-form[hi
   body.bb-teacher-v31 .student-detail__actions--danger { flex-direction: column; align-items: stretch; }
   body.bb-teacher-v31 .student-detail__actions--danger > .btn { align-self: stretch; }
 }
+
+
+/* v3.1 final alignment: each dashboard column has its own vertical flow.
+   Recent activity immediately follows the classes card at ANY card height. */
+body.bb-teacher-v31 .bb-teacher-v31-grid {
+  align-items: start;
+}
+body.bb-teacher-v31 .bb-teacher-v31-dashboard-column {
+  display: grid;
+  align-content: start;
+  gap: 15px;
+  min-width: 0;
+}
+body.bb-teacher-v31 .bb-teacher-v31-grid #bb-teacher-v31-activity {
+  grid-column: auto;
+  margin: 0;
+}
+body.bb-teacher-v31 .bb-teacher-v31-all-classes {
+  display: inline-flex;
+  justify-self: start;
+  margin-top: 13px;
+  padding: 9px 0;
+}
+body.bb-teacher-v31 .hero--staff .hero__illustration {
+  margin-left: 18px;
+}
+body.bb-teacher-v31 .hero--staff .hero__content h1 {
+  transform: translateY(3px);
+}
+
+/* Make the browser's built-in date editor use the same typography as fields. */
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: .93rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--bbt-ink);
+  color-scheme: light;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due::-webkit-datetime-edit {
+  font: inherit;
+  color: inherit;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-due::-webkit-calendar-picker-indicator {
+  opacity: .72;
+  cursor: pointer;
+}
+
+/* Alternative work email: type only the personal part, display the domain. */
+body.bb-teacher-v31 [data-teacher-view="account"] .bb-teacher-v31-email-composite {
+  display: flex;
+  align-items: stretch;
+  width: min(100%, 570px);
+  min-height: 43px;
+  overflow: hidden;
+  border: 1px solid #c0d0e5;
+  border-radius: 9px;
+  background: #fff;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-localpart {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  padding: 9px 12px;
+  font: 500 .94rem/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--bbt-ink);
+  background: transparent;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-localpart:focus-visible {
+  outline: 3px solid #a9c6ef;
+  outline-offset: -3px;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] .bb-teacher-v31-email-domain {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 13px;
+  background: #e8f0fb;
+  border-left: 1px solid #c0d0e5;
+  color: #123466;
+  font: 750 .9rem/1.3 system-ui, sans-serif;
+  white-space: nowrap;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form .form-field {
+  gap: 8px;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-domain-help {
+  color: var(--bbt-muted);
+  font-weight: 450;
+  font-size: .82rem;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] .bb-teacher-v31-mail-mode-note {
+  grid-column: 1 / -1;
+  font-size: .87rem;
+  color: var(--bbt-muted);
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form > .form-field {
+  align-self: stretch;
+}
+
+/* As with all original staff forms, the single borrowing primary action has
+   one predictable place. It is not duplicated as an extra Start shortcut. */
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-submit {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (max-width: 760px) {
+  body.bb-teacher-v31 .hero--staff .hero__illustration { margin-left: 10px; }
+  body.bb-teacher-v31 [data-teacher-view="account"] .bb-teacher-v31-email-domain {
+    padding-inline: 9px;
+  }
+}
