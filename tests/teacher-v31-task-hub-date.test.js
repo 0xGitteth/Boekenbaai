@@ -25,7 +25,8 @@ assert.match(students,/observer\.observe\(adminHost, \{ attributes: true, attrib
 assert.match(students,/document\.getElementById\('student-management-panel'\)\?\.remove\(\)/);
 assert.match(students,/window\.addEventListener\('boekenbaai:staff-refresh', refresh\)/);
 assert.doesNotMatch(students,/observer\.observe\(document\.body/);
-assert.match(students,/if \(visible && !wasVisible && !document\.querySelector\('#student-management-panel'\)\)/);
+assert.match(students,/if \(\(teacherNow && !teacherWasVisible\) \|\| \(adminNow && !adminWasVisible\)\)/);
+assert.match(students,/document\.getElementById\('student-management-panel'\)\?\.remove\(\)/);
 
 assert.match(teacher,/importTaskCount \+ mentorTaskCount/);
 assert.match(teacher,/\/api\/staff\/book-import-followups/);
