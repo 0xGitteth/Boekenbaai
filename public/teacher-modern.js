@@ -39,6 +39,9 @@
   }
   function restore() {
     for (const { node, marker } of placements) {
+      // Beheer may already have mounted a shared node during the same role
+      // transition. Never pull its active panels back out of the admin UI.
+      if (admin.contains(node)) continue;
       if (marker.isConnected) marker.after(node);
     }
   }
