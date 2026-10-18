@@ -107,7 +107,7 @@
     dashboard?.querySelectorAll('[data-admin-modern-view]').forEach((view) => {
       view.hidden = view.dataset.adminModernView !== name;
     });
-    dashboard?.querySelectorAll('[data-admin-modern-tab]').forEach((button) => {
+    document.querySelectorAll('#bb-admin-v31-sidebar [data-admin-modern-tab]').forEach((button) => {
       const active = button.dataset.adminModernTab === name;
       button.classList.toggle('admin-modern__tab--active', active);
       if (active) button.setAttribute('aria-current', 'page');
@@ -119,6 +119,7 @@
       const content = document.getElementById('staff-book-overview-content');
       if (content?.hidden) document.getElementById('staff-book-overview-toggle')?.click();
     }
+    updateCatalogToggle();
     closeMobileNavigation();
     if (document.body.classList.contains('bb-admin-v31')) {
       dashboard?.querySelector('[data-admin-modern-view="' + name + '"] h2')?.focus({ preventScroll: true });
@@ -499,7 +500,7 @@
   }
 
   function mountSharedPanel(id, hostId) {
-    const element = document.getElementById(id);
+    const element = id.startsWith('.') ? document.querySelector(id) : document.getElementById(id);
     const host = document.getElementById(hostId);
     if (!element || !host) return;
     let slot = state.relocatedPanels.find((entry) => entry.element === element);
@@ -524,9 +525,13 @@
     if (!active) {
       closeMobileNavigation();
       restoreSharedPanels();
+      const title = document.querySelector('.hero--staff h1');
+      const intro = document.querySelector('.hero--staff .hero__content p');
+      if (title) title.textContent = 'Docentenportaal Boekenbaai';
+      if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
       return;
     }
-    mountSharedPanel('staff-book-overview', 'bb-admin-v31-catalog');
+    mountSharedPanel('.teacher-layout__overview', 'bb-admin-v31-catalog');
     mountSharedPanel('staff-loan-panel', 'bb-admin-v31-loans');
     mountSharedPanel('book-import-followups-panel', 'bb-admin-v31-tasks');
     mountSharedPanel('history-panel', 'bb-admin-v31-activity');
@@ -538,6 +543,15 @@
     const intro = document.querySelector('.hero--staff .hero__content p');
     if (name) name.textContent = 'Boekenbaai';
     if (intro) intro.textContent = 'Boekenbaai Beheer';
+  }
+
+  function updateCatalogToggle() {
+    const button = document.getElementById('bb-admin-v31-toggle-catalog');
+    const content = document.getElementById('staff-book-overview-content');
+    if (!button || !content) return;
+    const expanded = !content.hidden;
+    button.textContent = expanded ? 'Catalogus inklappen' : 'Catalogus uitklappen';
+    button.setAttribute('aria-expanded', String(expanded));
   }
 
   function viewHeading(name, title, description) {
@@ -610,6 +624,14 @@
     const booksView = viewHeading('books', 'Boeken', 'Zoek, bekijk en beheer de catalogus en fysieke exemplaren.');
     const catalogHost = make('div', { id: 'bb-admin-v31-catalog' });
     booksView.append(catalogHost);
+    const catalogToggle = make('button', { className: 'btn btn--ghost', text: 'Catalogus inklappen', type: 'button', id: 'bb-admin-v31-toggle-catalog' });
+    catalogToggle.setAttribute('aria-controls', 'staff-book-overview-content');
+    catalogToggle.setAttribute('aria-expanded', 'true');
+    catalogToggle.addEventListener('click', () => {
+      document.getElementById('staff-book-overview-toggle')?.click();
+      updateCatalogToggle();
+    });
+    booksView.querySelector('.bb-admin-v31-heading').append(catalogToggle);
     const newBook = make('button', { className: 'btn', type: 'button', text: '+ Nieuw boek', id: 'bb-admin-v31-open-editor' });
     newBook.addEventListener('click', () => showBookEditor(true));
     booksView.querySelector('.bb-admin-v31-heading').append(newBook);
@@ -636,6 +658,7 @@
     setPeopleView('students');
     moveGooglePanel();
     activateAdminLayout(true);
+    updateCatalogToggle();
 
     const observer = new MutationObserver(() => {
       hideLegacyPasswordUi();
