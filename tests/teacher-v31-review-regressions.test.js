@@ -51,6 +51,9 @@ async function check() {
   card.append(element('button', 'bb-teacher-v31-row', 'Vorige docent, klas A'));
   const calls = [];
   let rejectFirst = true;
+  let deferFollowups = false;
+  let heldFollowupReject = null;
+  let signalHeldFollowup = null;
   const ctx = vm.createContext({
     requestId: 0, active: true,
     window: { BOEKENBAAI_API_BASE: 'https://api.example.test/' },
@@ -80,14 +83,19 @@ async function check() {
             students:[{id:'s1',active:true,classIds:['B']}],loans:[]};
         },
       };
-      if (url.endsWith('/api/staff/book-import-followups')) return {
-        ok:true, async json() { return { summary: {open:3} }; },
-      };
+      if (url.endsWith('/api/staff/book-import-followups')) {
+        if (deferFollowups) return new Promise((_resolve, reject) => {
+          heldFollowupReject = reject;
+          signalHeldFollowup?.();
+        });
+        return { ok:true, async json() { return { summary: {open:3} }; } };
+      }
       throw Error('Onverwacht endpoint: '+url);
     },
     Date, Set, Error, String,
   });
-  new vm.Script(configSource + '\n' + logic + '\nthis.run = updateStart;')
+  new vm.Script(configSource + '\n' + logic +
+    '\nthis.run = updateStart; this.clearClasses = clearClassSummary;')
     .runInContext(ctx);
 
   const failed = ctx.run();
@@ -111,6 +119,39 @@ async function check() {
   assert.equal(metrics.children.length, 4);
   assert.equal(metrics.children[0].querySelector('strong').textContent, '1');
   assert.equal(metrics.children[3].querySelector('strong').children[0].textContent, '3');
+
+  // Codex P2 reproduction: request A has fetched classes but still awaits
+  // book-follow-up tasks. Logout must invalidate it even when tasks reject.
+  deferFollowups = true;
+  const waitForTask = new Promise(resolve => { signalHeldFollowup = resolve; });
+  const stale = ctx.run();
+  await waitForTask;
+  assert.equal(typeof heldFollowupReject, 'function', 'Task request is held in-flight');
+  ++ctx.requestId;
+  ctx.active = false;
+  ctx.clearClasses();
+  assert.equal(card.querySelectorAll('.bb-teacher-v31-row').length, 0);
+  heldFollowupReject(new Error('Follow-ups server offline'));
+  await stale;
+  assert.equal(card.querySelectorAll('.bb-teacher-v31-row').length, 0,
+    'An invalidated request must not restore previous teacher classes');
+  assert.equal(card.querySelectorAll('.bb-teacher-v31-classes-state').length, 0);
+
+  // A newer dashboard refresh must also win over an older task failure,
+  // even if the role stays active throughout.
+  ctx.active = true;
+  deferFollowups = true;
+  const waitForOldTask = new Promise(resolve => { signalHeldFollowup = resolve; });
+  const outdated = ctx.run();
+  await waitForOldTask;
+  const rejectOutdated = heldFollowupReject;
+  deferFollowups = false;
+  await ctx.run();
+  assert.equal(card.querySelectorAll('.bb-teacher-v31-row').length, 1);
+  rejectOutdated(new Error('Old tasks failed late'));
+  await outdated;
+  assert.equal(card.querySelectorAll('.bb-teacher-v31-row').length, 1,
+    'An outdated rejected follow-up must not remove fresh classes');
 
   // Logout always clears the class list and invalidates in-flight responses.
   assert.match(js, /\+\+requestId;\s*clearClassSummary\(\);\s*closeMenu\(\);/);
