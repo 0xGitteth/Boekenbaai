@@ -160,8 +160,9 @@
       wrapper.append(control);
       return wrapper;
     }
-    // Teachers cannot edit school-managed fields. Show actual readable
-    // details rather than inaccessible grey disabled input controls.
+    // Teachers cannot edit school-managed fields. The original control
+    // stays disabled even though the UI now displays accessible read-only text.
+    control.disabled = true;
     const staticField = make('div', { className: 'student-detail__field student-detail__read-only' });
     staticField.append(
       make('span', { text: label }),
