@@ -5202,6 +5202,14 @@ async function handleApi(req, res, requestUrl) {
       });
       try {
         const database = loadDb();
+        if (body?.action === 'update_recipient_categories') {
+          if (!adminMail.updateRecipientCategories(database, body.email, body.categories))
+            return sendJson(res, 400, {
+              message: 'Ongeldige voorkeuren of het adres is nog niet geverifieerd.',
+            });
+          saveDb(database);
+          return sendJson(res, 200, adminMail.publicSettings(database, cfg.ready));
+        }
         if (body?.action === 'update_categories') {
           if (!adminMail.updateCategories(database, body.categories))
             return sendJson(res, 400, { message: 'Ongeldige meldingsinstellingen.' });
