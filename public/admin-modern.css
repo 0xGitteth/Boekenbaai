@@ -1390,3 +1390,19 @@ body.bb-admin-v31 .hero--staff .hero__content h1 {
 @media (max-width: 760px) {
   body.bb-admin-v31 .hero--staff .hero__illustration { margin-left: 10px; }
 }
+
+/* The teacher's date-preview wrapper stays attached to the shared real
+   input when switching accounts. Keep Beheer's existing date field full-width,
+   with its unmodified native calendar, outside the teacher-only preview. */
+body.bb-admin-v31 #staff-loan-form .bb-teacher-v31-date-wrap {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+body.bb-admin-v31 #staff-loan-form .bb-teacher-v31-date-wrap #staff-loan-due {
+  width: 100%;
+  min-width: 0;
+}
+body.bb-admin-v31 #staff-loan-form .bb-teacher-v31-date-preview {
+  display: none;
+}

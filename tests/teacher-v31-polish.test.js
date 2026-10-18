@@ -64,8 +64,11 @@ const doc={getElementById(id){return {
   'staff-book-overview-content':content,
   'staff-book-overview-toggle':toggle,
 }[id];}};
-const sandbox={active:true,panels,nav,document:doc,window:{scrollTo(){},dispatchEvent(){}},
-  Event:class {constructor(name){this.type=name;}}, updateStart(){},closeMenu(){},page:'',};
+const pageEvents=[];
+const sandbox={active:true,panels,nav,document:doc,
+  window:{scrollTo(){},dispatchEvent(event){pageEvents.push(event.type);}},
+  Event:class {constructor(name){this.type=name;}}, updateStart(){},closeMenu(){},
+  taskSummary:{status:'ready'},renderMentorTasks(){},page:'',};
 new vm.Script(teacher.slice(start,end)+'\nthis.run=setPage;').runInNewContext(sandbox);
 sandbox.run('catalog',false);
 assert.equal(content.hidden,false);
@@ -75,6 +78,10 @@ assert.equal(panels.start.hidden,true);
 sandbox.run('classes',false);
 assert.equal(panels.catalog.hidden,true);
 assert.equal(panels.classes.hidden,false);
+sandbox.run('tasks',false);
+assert.equal(sandbox.taskSummary.status,'loading');
+assert.ok(pageEvents.includes('boekenbaai:mentor-tasks-refresh'),
+  'Reopening the task hub must fetch newly arriving transfers/Google requests');
 
 // Teachers have static labelled details, admins retain editable fields.
 const fieldStart=student.indexOf('  function field(label, control,');

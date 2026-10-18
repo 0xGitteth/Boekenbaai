@@ -88,7 +88,8 @@ ctx.moveStudentPanel();
 assert.strictEqual(panel.parentElement,admin,'The active Beheer panel belongs to Beheer');
 
 assert.match(renderer, /const classView = document\.querySelector\('\[data-teacher-view="classes"\]'\)/);
-assert.match(renderer, /document\.body\.classList\.contains\('bb-teacher-v31'\) && classView/);
+assert.match(renderer, /document\.body\.classList\.contains\('bb-teacher-v31'\) && teacherVisible && classView/);
+assert.match(renderer, /state\.role === 'admin' && adminVisible && adminView/);
 assert.match(renderer, /host\.append\(panel\)/);
 assert.match(teacher, /place\(dashboard\.querySelector\('\.teacher-layout__classes'\), classes\)/);
 assert.match(css, /body\.bb-teacher-v31 \.bb-teacher-v31-view\[hidden\] \{ display: none !important;/);

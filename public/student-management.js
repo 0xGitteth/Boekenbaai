@@ -4,6 +4,7 @@
   const SESSION_CLASS_KEY = 'boekenbaai_active_mentor_class';
   let state = null;
   let installed = false;
+  let refreshSerial = 0;
   let activeClassId = '';
 
   function make(tag, options = {}) {
@@ -399,7 +400,7 @@
     for (const klass of classes) {
       const count = studentsForClass(klass.id).length;
       const actions = actionCountForClass(klass);
-      const label = `${klass.name} · ${count} leerling${count === 1 ? '' : 'en'}${actions ? ` · ${actions} actie${actions === 1 ? '' : 's'}` : ''}`;
+      const label = `${klass.name} · ${count} leerling${count === 1 ? '' : 'en'}${actions ? ` · ${actions} ${actions === 1 ? 'taak' : 'taken'}` : ''}`;
       select.append(new Option(label, klass.id));
     }
     select.value = activeClass()?.id || classes[0].id;
@@ -417,7 +418,7 @@
     if (!google.length && !incoming.length && !escalated.length) return;
 
     const section = make('section', { className: 'student-management__section student-management__attention' });
-    section.append(make('h4', { text: 'Acties voor jou' }));
+    section.append(make('h4', { text: 'Taken voor jou' }));
 
     if (google.length) {
       const head = make('div', { className: 'student-management__section-head' });
@@ -565,14 +566,20 @@
   }
 
   function render() {
+    if (!state) return;
     const dashboard = document.querySelector('#teacher-dashboard');
-    if (!dashboard || dashboard.classList.contains('hidden') || !state) return;
-    // The live panel is recreated on each refresh. When v3.1 teacher
-    // navigation is active, render directly in the role-specific class view,
-    // never as an unscoped sibling visible on all navigation pages.
+    const adminDashboard = document.querySelector('#admin-dashboard');
+    const teacherVisible = dashboard && !dashboard.classList.contains('hidden');
+    const adminVisible = adminDashboard && !adminDashboard.classList.contains('hidden');
+    // Admin needs the same live controls after a staff role switch. Do not
+    // require the teacher dashboard to be visible for administrator rendering.
+    if (!teacherVisible && !adminVisible) return;
     const classView = document.querySelector('[data-teacher-view="classes"]');
-    const host = document.body.classList.contains('bb-teacher-v31') && classView
-      ? classView : dashboard;
+    const adminView = document.querySelector('[data-admin-people-view="students"]');
+    const host = state.role === 'admin' && adminVisible && adminView
+      ? adminView
+      : document.body.classList.contains('bb-teacher-v31') && teacherVisible && classView
+        ? classView : dashboard;
     let panel = document.querySelector('#student-management-panel');
     if (panel) panel.remove();
     panel = make('section', { className: 'panel student-management', id: 'student-management-panel' });
@@ -591,25 +598,72 @@
     host.append(panel);
   }
 
+  function publishTeacherTasks(status) {
+    if (!document.body.classList.contains('bb-teacher-v31')
+      || (status === 'ready' && state?.role !== 'teacher')) return;
+    const classes = status === 'ready' ? ownClasses().map(klass => ({
+      id: klass.id, name: klass.name,
+      incoming: incomingForClass(klass).length,
+      google: googleRequestsForClass(klass).length,
+      outgoing: outgoingForClass(klass).length,
+    })) : [];
+    window.dispatchEvent(new CustomEvent('boekenbaai:mentor-tasks-updated', {
+      detail: { status, classes },
+    }));
+  }
   async function refresh() {
+    const request = ++refreshSerial;
     try {
-      state = await api('/api/mentor/student-management');
+      const data = await api('/api/mentor/student-management');
+      if (request !== refreshSerial) return;
+      state = data;
       activeClass();
       render();
+      publishTeacherTasks('ready');
     } catch (error) {
-      // Niet ingelogd als medewerker of pagina nog niet klaar.
+      if (request === refreshSerial) publishTeacherTasks('error');
     }
   }
 
   function install() {
     if (installed) return;
-    installed = true;
-    refresh();
-    const observer = new MutationObserver(() => {
-      const host = document.querySelector('#teacher-dashboard');
-      if (host && !host.classList.contains('hidden') && !document.querySelector('#student-management-panel')) refresh();
+    window.addEventListener('boekenbaai:mentor-select-class', event => {
+      if (state?.role !== 'teacher' || !document.body.classList.contains('bb-teacher-v31')) return;
+      const id = event.detail?.classId;
+      if (id && ownClasses().some(klass => klass.id === id)) setActiveClass(id);
     });
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    installed = true;
+    window.addEventListener('boekenbaai:mentor-tasks-refresh', refresh);
+    window.addEventListener('boekenbaai:staff-refresh', refresh);
+    window.addEventListener('boekenbaai:staff-auth-cleared', () => {
+      ++refreshSerial;
+      state = null;
+      activeClassId = '';
+      // A stale button must never be clickable with a null backing state.
+      document.getElementById('student-management-panel')?.remove();
+    });
+    refresh();
+    // Watch only actual role visibility changes. A body-wide DOM observer
+    // used to retry whenever the panel was absent; if the API was offline,
+    // rendering the resulting error card itself retriggered another request
+    // forever. Explicit refresh events handle retries after login.
+    const teacherHost = document.querySelector('#teacher-dashboard');
+    const adminHost = document.querySelector('#admin-dashboard');
+    if (teacherHost || adminHost) {
+      let teacherWasVisible = Boolean(teacherHost && !teacherHost.classList.contains('hidden'));
+      let adminWasVisible = Boolean(adminHost && !adminHost.classList.contains('hidden'));
+      const observer = new MutationObserver(() => {
+        const teacherNow = Boolean(teacherHost && !teacherHost.classList.contains('hidden'));
+        const adminNow = Boolean(adminHost && !adminHost.classList.contains('hidden'));
+        if ((teacherNow && !teacherWasVisible) || (adminNow && !adminWasVisible)) {
+          void refresh();
+        }
+        teacherWasVisible = teacherNow;
+        adminWasVisible = adminNow;
+      });
+      if (teacherHost) observer.observe(teacherHost, { attributes: true, attributeFilter: ['class'] });
+      if (adminHost) observer.observe(adminHost, { attributes: true, attributeFilter: ['class'] });
+    }
   }
 
   document.addEventListener('DOMContentLoaded', install);

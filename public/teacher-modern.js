@@ -19,7 +19,10 @@
   let active = false;
   let page = 'start';
   let requestId = 0;
+  let importTaskCount = null;
+  let mentorTaskCount = null;
   let nav, scrim, menu;
+  const taskSummary = { classes: [], status: 'loading' };
   // Mirror staff-loans.js: all staff endpoints may live on a separate API host.
   const configuredBase = (typeof import.meta !== 'undefined' && import.meta.env
     && (import.meta.env.BOEKENBAAI_PUBLIC_API_BASE || import.meta.env.VITE_BOEKENBAAI_API_BASE)) || '';
@@ -90,6 +93,13 @@
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
     if (next === 'start') void updateStart();
+    // Newly arriving transfers and Google-link requests must be discoverable
+    // whenever the task hub is reopened, not only after login.
+    if (next === 'tasks') {
+      taskSummary.status = 'loading';
+      renderMentorTasks();
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+    }
     if (next === 'catalog') {
       // The old layout defaults to a folded overview on login. In the
       // dedicated Catalogus page that would leave an empty white card.
@@ -188,8 +198,8 @@
     const rightColumn = el('div', 'bb-teacher-v31-dashboard-column');
     const classesCard = card('Mijn klassen', 'classes');
     classesCard.id = 'bb-teacher-v31-classes-summary';
-    const taskCard = card('Acties voor mij', 'tasks');
-    addAction(taskCard, 'Klaswissels en koppelingen', 'Bekijk je leerlingen en verzoeken', 'classes');
+    const taskCard = card('Taken voor mij', 'tasks');
+    addAction(taskCard, 'Klaswissels en koppelingen', 'Bekijk openstaande verzoeken per klas', 'tasks');
     addAction(taskCard, 'Boekimportcontroles', 'Gedeelde controletaken per klas', 'tasks');
     const recent = card('Recente activiteit');
     recent.id = 'bb-teacher-v31-activity';
@@ -200,7 +210,7 @@
     const classes = makeView('classes', 'Mijn klassen', 'Bekijk leerlingen, klaswissels en de klassen waarvoor je bevoegd bent.');
     const catalog = makeView('catalog', 'Catalogus', 'Zoek, filter en bekijk de beschikbaarheid van de schoolbibliotheek.');
     const lending = makeView('lending', 'Uitlenen en innemen', 'Kies het juiste exemplaar en registreer uitleningen en innames.');
-    const tasks = makeView('tasks', 'Taken', 'Controleer boekimports en verzoeken die jouw aandacht nodig hebben.');
+    const tasks = makeView('tasks', 'Taken', 'Bekijk boekimportcontroles, klaswissels en Google-koppelverzoeken.');
     const account = makeView('account', 'Mijn account', 'Beheer jouw e-mailherinneringen en gekoppelde schoolgegevens.');
     container.append(start, classes, catalog, lending, tasks, account);
     dashboard.append(container);
@@ -214,7 +224,13 @@
       toggle.hidden = true;
     }
     place(document.getElementById('staff-loan-panel'), lending);
+    const transferPanel = el('section', 'bb-teacher-v31-task-summary');
+    transferPanel.id = 'bb-teacher-v31-mentor-tasks';
+    transferPanel.setAttribute('aria-label', 'Klaswissels en Google-koppelingen');
+    tasks.append(transferPanel);
     place(document.getElementById('book-import-followups-panel'), tasks);
+    renderMentorTasks();
+    installLoanDuePreview();
     place(document.getElementById('book-import-mail-preferences-panel'), account);
     place(document.getElementById('history-panel'), recent);
   }
@@ -239,6 +255,76 @@
       }
     }
   }
+  function refreshTaskMetric() {
+    const node = document.querySelector('#bb-teacher-v31-metrics > :nth-child(4) strong');
+    if (!node) return;
+    node.textContent = importTaskCount === null || mentorTaskCount === null
+      ? '—' : String(importTaskCount + mentorTaskCount);
+  }
+  function renderMentorTasks() {
+    const host = document.getElementById('bb-teacher-v31-mentor-tasks');
+    if (!host) return;
+    host.replaceChildren();
+    host.append(el('h3', '', 'Klaswissels en Google-koppelingen'));
+    if (taskSummary.status === 'loading') {
+      host.append(el('p', 'bb-teacher-v31-hint', 'Taken laden…'));
+      return;
+    }
+    if (taskSummary.status === 'error') {
+      host.append(el('p', 'bb-teacher-v31-hint', 'Klasverzoeken zijn tijdelijk niet beschikbaar.'));
+      return;
+    }
+    const entries = taskSummary.classes.flatMap(klass => [
+      { title: 'Binnenkomende klaswissels', count: klass.incoming, classId: klass.id, className: klass.name },
+      { title: 'Google-koppelverzoeken', count: klass.google, classId: klass.id, className: klass.name },
+      { title: 'Uitgaande klaswissels opvolgen', count: klass.outgoing, classId: klass.id, className: klass.name },
+    ]).filter(entry => entry.count > 0);
+    if (!entries.length) {
+      host.append(el('p', 'bb-teacher-v31-hint', 'Geen openstaande klaswissels of Google-koppelverzoeken.'));
+      return;
+    }
+    for (const entry of entries) {
+      const button = el('button', 'bb-teacher-v31-row bb-teacher-v31-task-row');
+      button.type = 'button';
+      const details = el('span', 'bb-teacher-v31-row-copy');
+      details.append(el('strong', '', entry.title),
+        el('small', '', entry.className + ' · ' + entry.count +
+          (entry.count === 1 ? ' verzoek' : ' verzoeken')));
+      button.append(details, el('span', 'bb-teacher-v31-row-open', 'Behandelen'));
+      button.addEventListener('click', () => {
+        setPage('classes');
+        window.dispatchEvent(new CustomEvent('boekenbaai:mentor-select-class',
+          { detail: { classId: entry.classId } }));
+      });
+      host.append(button);
+    }
+  }
+  function installLoanDuePreview() {
+    const due = document.getElementById('staff-loan-due');
+    if (!due || due.dataset.teacherPreviewInstalled) return;
+    due.dataset.teacherPreviewInstalled = 'true';
+    const container = el('span', 'bb-teacher-v31-date-wrap');
+    const preview = el('span', 'bb-teacher-v31-date-preview');
+    preview.setAttribute('aria-hidden', 'true');
+    due.before(container);
+    container.append(due, preview);
+    // Firefox does not support Chromium's date edit pseudo-element. Only show
+    // the overlay when the native date text can be hidden reliably.
+    const canHideNativeText = typeof CSS !== 'undefined'
+      && typeof CSS.supports === 'function'
+      && CSS.supports('selector(input::-webkit-datetime-edit)');
+    container.classList.toggle('bb-teacher-v31-date-wrap--overlay', canHideNativeText);
+    preview.hidden = !canHideNativeText;
+    const update = () => {
+      const match = due.value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      preview.textContent = match
+        ? match[3] + '-' + match[2] + '-' + match[1] : 'dd-mm-jjjj';
+      preview.classList.toggle('bb-teacher-v31-date-preview--empty', !match);
+    };
+    due.addEventListener('input', update);
+    due.addEventListener('change', update);
+    update();
+  }
   function clearClassSummary() {
     const card = document.getElementById('bb-teacher-v31-classes-summary');
     if (!card) return;
@@ -253,6 +339,8 @@
     // Drop previous account-specific class names before starting any requests.
     // In particular, an API error must never leave an earlier teacher's data.
     clearClassSummary();
+    importTaskCount = null;
+    refreshTaskMetric();
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
     // Keep the full identity in the header, but greet the teacher by first name.
@@ -293,12 +381,13 @@
         if (!taskResponse.ok) throw Error('Taken niet beschikbaar');
         const taskData = await taskResponse.json();
         if (current !== requestId || !active) return;
-        metrics.children[3]?.querySelector('strong')?.replaceChildren(
-          document.createTextNode(String(taskData.summary?.open ?? '—')));
+        importTaskCount = Number.isSafeInteger(taskData.summary?.open)
+          ? taskData.summary.open : null;
+        refreshTaskMetric();
       } catch {
         if (current === requestId && active) {
-          metrics.children[3]?.querySelector('strong')?.replaceChildren(
-            document.createTextNode('—'));
+          importTaskCount = null;
+          refreshTaskMetric();
         }
       }
       // A rejected follow-up request may complete after logout or after
@@ -340,6 +429,10 @@
     document.getElementById('bb-teacher-v31-shell').hidden = !active;
     if (active) {
       remount();
+      // Reuse the class-management refresh lifecycle so the unified task
+      // summary is populated even if student-management initialized before
+      // the role-specific dashboard appeared.
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
       const toggle = document.getElementById('staff-book-overview-toggle');
       if (toggle) toggle.hidden = true;
       dashboard.removeAttribute('aria-labelledby');
@@ -349,6 +442,11 @@
       setIdentity(true);
       setPage(page, false);
     } else {
+      mentorTaskCount = null;
+      importTaskCount = null;
+      taskSummary.classes = [];
+      taskSummary.status = 'loading';
+      renderMentorTasks();
       const toggle = document.getElementById('staff-book-overview-toggle');
       if (toggle && toggle.dataset.teacherOldHidden !== undefined) {
         toggle.hidden = toggle.dataset.teacherOldHidden === 'true';
@@ -369,6 +467,31 @@
   watcher.observe(admin, { attributes: true, attributeFilter: ['class'] });
   const login = document.getElementById('staff-login-panel');
   if (login) watcher.observe(login, { attributes: true, attributeFilter: ['class'] });
+  window.addEventListener('boekenbaai:mentor-tasks-updated', event => {
+    if (!active) return;
+    const detail = event.detail || {};
+    taskSummary.status = detail.status === 'ready' ? 'ready' : 'error';
+    taskSummary.classes = taskSummary.status === 'ready' && Array.isArray(detail.classes)
+      ? detail.classes : [];
+    mentorTaskCount = taskSummary.status === 'ready'
+      ? taskSummary.classes.reduce((sum, row) =>
+        sum + (row.incoming || 0) + (row.google || 0) + (row.outgoing || 0), 0)
+      : null;
+    renderMentorTasks();
+    refreshTaskMetric();
+  });
+  document.getElementById('book-import-followups-refresh')?.addEventListener('click', () => {
+    if (active && page === 'tasks') {
+      taskSummary.status = 'loading';
+      renderMentorTasks();
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && active && (page === 'tasks' || page === 'start')) {
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+    }
+  });
   window.addEventListener('boekenbaai:staff-refresh', () => {
     if (active && page === 'start') void updateStart();
   });
