@@ -19,7 +19,9 @@ new vm.Script(loans.replaceAll('import.meta', '({ env: {} })'));
 new vm.Script(hardening);
 
 assert.doesNotMatch(teacher,/card\('Snel naar'\)/);
-assert.match(teacher,/grid\.append\(classesCard, taskCard, recent\)/);
+assert.match(teacher,/leftColumn\.append\(classesCard, recent\)/);
+assert.match(teacher,/rightColumn\.append\(taskCard\)/);
+assert.match(teacher,/grid\.append\(leftColumn, rightColumn\)/);
 assert.match(css,/#bb-teacher-v31-activity \{\s*grid-column: 1/);
 assert.match(teacher,/\.textContent\?\.trim\(\)\.split\(\/\\s\+\/\)\[0\]/);
 assert.match(teacher,/const content = document\.getElementById\('staff-book-overview-content'\)/);

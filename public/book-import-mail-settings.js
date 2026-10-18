@@ -10,6 +10,9 @@ if (mailPanel) {
   const alternate = document.getElementById('book-import-mail-alternate');
   const requestForm = document.getElementById('book-import-mail-request-form');
   const addressInput = document.getElementById('book-import-mail-request-address');
+  const localpartInput = document.getElementById('book-import-mail-localpart');
+  const alternateOption = mode?.querySelector('option[value="alternate"]');
+  const mailDomain = '@koraal.nl';
   const codeForm = document.getElementById('book-import-mail-code-form');
   const codeInput = document.getElementById('book-import-mail-code');
   const pending = document.getElementById('book-import-mail-pending');
@@ -49,6 +52,19 @@ if (mailPanel) {
         || 'Nog geen gekoppeld @koraaledu.nl-adres';
       alternate.textContent = data.alternateEmail || 'Nog geen bevestigd adres';
       hasVerifiedAlternative = Boolean(data.alternateEmail);
+      if (alternateOption) {
+        // Preserve legacy verified addresses without mislabelling them
+        // @koraal.nl. Newly requested addresses always use that domain.
+        alternateOption.textContent = data.alternateEmail &&
+          !data.alternateEmail.endsWith(mailDomain)
+          ? 'Naar mijn reeds bevestigde alternatieve e-mailadres'
+          : 'Naar mijn bevestigde @koraal.nl-adres';
+        alternateOption.hidden = !hasVerifiedAlternative;
+        alternateOption.disabled = !hasVerifiedAlternative;
+        // Retain a previous valid legacy choice, but do not advertise
+        // an unavailable destination before an address is verified.
+        if (!hasVerifiedAlternative && mode.value === 'alternate') mode.value = 'school';
+      }
       pending.textContent = data.pendingEmail
         ? 'Verificatiecode aangevraagd voor: ' + data.pendingEmail : '';
       codeForm.hidden = !data.pendingEmail;
@@ -86,8 +102,17 @@ if (mailPanel) {
   });
   requestForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    submit({ action: 'request_alternative', email: addressInput.value.trim() },
-      'Verificatiecode verzonden. Controleer je mailbox.');
+    const name = (localpartInput?.value || '').trim();
+    if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(name)
+      || name.startsWith('.') || name.endsWith('.') || name.includes('..')) {
+      status.textContent = 'Vul het gedeelte vóór @koraal.nl in, zonder spaties.';
+      localpartInput?.focus();
+      return;
+    }
+    const fullAddress = name.toLowerCase() + mailDomain;
+    addressInput.value = fullAddress;
+    submit({ action: 'request_alternative', email: fullAddress },
+      'Verificatiecode verzonden naar ' + fullAddress + '.');
   });
   codeForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -100,7 +125,9 @@ if (mailPanel) {
     ++serial; status.textContent = ''; school.textContent = '';
     alternate.textContent = ''; pending.textContent = '';
     requestForm.hidden = true; codeForm.hidden = true;
-    addressInput.value = ''; codeInput.value = '';
+    addressInput.value = ''; if (localpartInput) localpartInput.value = '';
+    if (alternateOption) { alternateOption.hidden = true; alternateOption.disabled = true; }
+    hasVerifiedAlternative = false; codeInput.value = '';
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) load();

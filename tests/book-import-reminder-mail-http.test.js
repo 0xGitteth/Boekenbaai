@@ -166,6 +166,14 @@ async function run() {
     assert.equal((await call(route, teacher)).body.deliveryConfigured, true);
     assert.equal((await call(route, teacher, { action: 'request_alternative',
       email: 'bad\nbcc@koraal.nl' })).status, 400);
+    assert.equal((await call(route, teacher, { action: 'request_alternative',
+      email: 'docent@example.com' })).status, 400,
+      'Only @koraal.nl alternative work email addresses are accepted');
+    assert.equal((await call(route, teacher, { action: 'request_alternative',
+      email: 'docent@notkoraal.nl' })).status, 400,
+      'A visually similar domain must not pass suffix validation');
+    assert.equal((await call(route, teacher, { action: 'request_alternative',
+      email: 'docent@koraal.nl.example' })).status, 400);
     assert.equal((await call(route, teacher, { action: 'use_alternate' })).status, 409);
     assert.equal((await call(route, teacher, { action: 'request_alternative',
       email: 'teacher@koraal.nl' })).status, 200);

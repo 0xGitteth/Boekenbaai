@@ -965,26 +965,20 @@
             Deze instelling verandert je Google-inlogaccount niet.</p>
         </div>
         <p id="book-import-mail-config" class="hint"></p>
-        <form id="book-import-mail-mode-form" class="form-grid form-grid--compact">
-          <h3>Waar wil je herinneringen ontvangen?</h3>
-          <label class="form-field">E-mailherinneringen
-            <select id="book-import-mail-mode" required>
-              <option value="school">Naar mijn Boekenbaai-schoolaccount (standaard)</option>
-              <option value="alternate">Naar mijn bevestigde alternatieve e-mailadres</option>
-              <option value="off">Geen e-mailherinneringen</option>
-            </select>
-          </label>
-          <p class="hint">Schoolaccount: <span id="book-import-mail-school"></span></p>
-          <p class="hint">Alternatief adres: <span id="book-import-mail-alternate"></span></p>
-          <button type="submit" class="btn btn--secondary">Voorkeur opslaan</button>
-        </form>
         <form id="book-import-mail-request-form" class="form-grid form-grid--compact" hidden>
           <h3>Alternatief e-mailadres</h3>
-          <p class="hint">Gebruik je liever een ander werkadres? Verifieer het hier éénmalig.</p>
-          <label class="form-field">Ander zakelijk e-mailadres
-            <input id="book-import-mail-request-address" type="email" autocomplete="email"
-              maxlength="254" placeholder="naam@werkorganisatie.nl" required />
+          <p class="hint">Iedere docent kan hier uitsluitend een alternatief @koraal.nl-adres koppelen. Je naam vóór de @ mag afwijken van je schoolaccount.</p>
+          <label class="form-field" for="book-import-mail-localpart">Jouw @koraal.nl-adres
+            <span class="bb-teacher-v31-email-composite">
+              <input id="book-import-mail-localpart" type="text" autocapitalize="none"
+                spellcheck="false" autocomplete="off" inputmode="email"
+                maxlength="64" pattern="[A-Za-z0-9.!#$%&amp;'*+/=?^_`{|}~-]+"
+                placeholder="voornaam.achternaam" aria-describedby="book-import-mail-domain-help" />
+              <span class="bb-teacher-v31-email-domain" aria-hidden="true">@koraal.nl</span>
+            </span>
+            <span id="book-import-mail-domain-help" class="hint">Alleen adressen die eindigen op @koraal.nl zijn toegestaan.</span>
           </label>
+          <input id="book-import-mail-request-address" type="hidden" />
           <button type="submit" class="btn btn--secondary">Verificatiecode versturen</button>
         </form>
         <p id="book-import-mail-pending" class="hint"></p>
@@ -995,6 +989,20 @@
               placeholder="8 cijfers" required />
           </label>
           <button type="submit" class="btn btn--secondary">Adres bevestigen</button>
+        </form>
+        <form id="book-import-mail-mode-form" class="form-grid form-grid--compact">
+          <h3>Waar wil je herinneringen ontvangen?</h3>
+          <p class="hint bb-teacher-v31-mail-mode-note">Een alternatief adres verschijnt hier pas nadat je het hierboven hebt bevestigd.</p>
+          <label class="form-field">E-mailherinneringen
+            <select id="book-import-mail-mode" required>
+              <option value="school">Naar mijn Boekenbaai-schoolaccount (standaard)</option>
+              <option value="alternate" hidden disabled>Naar mijn bevestigde @koraal.nl-adres</option>
+              <option value="off">Geen e-mailherinneringen</option>
+            </select>
+          </label>
+          <p class="hint">Schoolaccount: <span id="book-import-mail-school"></span></p>
+          <p class="hint">Alternatief adres: <span id="book-import-mail-alternate"></span></p>
+          <button type="submit" class="btn btn--secondary">Voorkeur opslaan</button>
         </form>
         <p id="book-import-mail-status" class="hint" role="status" aria-live="polite"></p>
         <p class="hint">Je blijft openstaande taken in Boekenbaai zien, ook als
