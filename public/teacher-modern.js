@@ -228,8 +228,14 @@
     const metrics = document.getElementById('bb-teacher-v31-metrics');
     const classesCard = document.getElementById('bb-teacher-v31-classes-summary');
     if (!active || !metrics || !classesCard) return;
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
+    const teacherName = document.getElementById('staff-name')?.textContent?.trim();
+    const title = panels.start?.querySelector('h2');
+    if (title) title.textContent = teacherName ? greeting + ', ' + teacherName : 'Welkom terug';
     metrics.replaceChildren();
-    for (const [value, label] of [['…','Mijn klassen'],['…','Leerlingen'],['…','Lopende leningen']]) {
+    for (const [value, label] of [['…','Mijn klassen'],['…','Leerlingen'],
+      ['…','Lopende leningen'],['…','Openstaande taken']]) {
       const box = el('div', 'bb-teacher-v31-metric');
       box.append(el('strong', '', value), el('small', '', label));
       metrics.append(box);
@@ -247,10 +253,27 @@
       const uniqueStudents = new Set((Array.isArray(data.students)?data.students:[])
         .filter(student => student.active !== false).map(student=>student.id));
       const activeLoans = Array.isArray(data.loans) ? data.loans.length : 0;
-      for (const [node, value] of [...metrics.children].map((n,i)=>
+      for (const [node, value] of [...metrics.children].slice(0,3).map((n,i)=>
         [n,[ownClasses.length,uniqueStudents.size,activeLoans][i]])) {
         const valueEl = node.querySelector('strong');
         if (valueEl) valueEl.textContent = String(value);
+      }
+      // The task count is independently scoped by the backend to the
+      // teacher's current class assignments. Never invent task totals.
+      try {
+        const taskResponse = await fetch('/api/staff/book-import-followups', {
+          headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
+        });
+        if (!taskResponse.ok) throw Error('Taken niet beschikbaar');
+        const taskData = await taskResponse.json();
+        if (current !== requestId || !active) return;
+        metrics.children[3]?.querySelector('strong')?.replaceChildren(
+          document.createTextNode(String(taskData.summary?.open ?? '—')));
+      } catch {
+        if (current === requestId && active) {
+          metrics.children[3]?.querySelector('strong')?.replaceChildren(
+            document.createTextNode('—'));
+        }
       }
       classesCard.querySelectorAll('.bb-teacher-v31-row').forEach(row => row.remove());
       if (!ownClasses.length) classesCard.append(el('p', 'bb-teacher-v31-hint', 'Er zijn geen klassen aan jou gekoppeld.'));
