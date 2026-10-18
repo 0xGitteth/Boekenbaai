@@ -501,16 +501,55 @@
       return;
     }
 
+    const searchLabel = make('label', { className: 'student-management__search' });
+    searchLabel.append(make('span', { text: 'Zoek een leerling' }));
+    const search = make('input', { type: 'search' });
+    search.id = 'admin-student-quick-search';
+    search.placeholder = 'Zoek op naam, ook buiten de eigen klas';
+    search.setAttribute('autocomplete', 'off');
+    search.setAttribute('aria-controls', 'admin-student-search-results');
+    searchLabel.setAttribute('for', search.id);
+    searchLabel.append(search);
+    section.append(searchLabel);
+    const searchResults = make('div', { id: 'admin-student-search-results' });
+    section.append(searchResults);
+    const groups = [];
     for (const adminClass of state.classes || []) {
       const students = studentsForClass(adminClass.id);
       const details = document.createElement('details');
       details.className = 'student-management__class';
       if ((state.classes || []).length <= 3) details.open = true;
-      details.append(make('summary', { text: `${adminClass.name} · ${students.length} leerling${students.length === 1 ? '' : 'en'}` }));
+      const summary = make('summary', { text: `${adminClass.name} · ${students.length} leerling${students.length === 1 ? '' : 'en'}` });
+      details.append(summary);
       if (!students.length) details.append(make('p', { className: 'hint', text: 'Nog geen leerlingen in deze klas.' }));
-      students.forEach((student) => details.append(studentRow(student, adminClass.id)));
-      section.append(details);
+      const rows = students.map((student) => ({ student, row: studentRow(student, adminClass.id) }));
+      rows.forEach(({ row }) => details.append(row));
+      searchResults.append(details);
+      groups.push({ details, summary, rows, klass: adminClass });
     }
+    const empty = make('p', { className: 'hint', text: 'Geen leerlingen gevonden.' });
+    empty.hidden = true;
+    searchResults.append(empty);
+    const filter = () => {
+      const query = search.value.trim().toLocaleLowerCase('nl-NL');
+      let matchingCount = 0;
+      for (const group of groups) {
+        let matches = 0;
+        for (const { student, row } of group.rows) {
+          const visible = !query || String(student.name || '').toLocaleLowerCase('nl-NL').includes(query);
+          row.hidden = !visible;
+          if (visible) matches += 1;
+        }
+        group.details.hidden = Boolean(query) && matches === 0;
+        group.summary.textContent = group.klass.name + ' · ' + matches +
+          (matches === 1 ? ' leerling' : ' leerlingen');
+        if (query && matches) group.details.open = true;
+        matchingCount += matches;
+      }
+      empty.hidden = !query || matchingCount > 0;
+    };
+    search.addEventListener('input', filter);
+    filter();
     panel.append(section);
   }
 

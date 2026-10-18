@@ -76,8 +76,10 @@ async function run() {
       const db = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
       return db.importJobs.find(job => job.id === jobId)?.booksCommittedAt;
     });
-    release = acquireFileLock(dataPath + '.database-write.lock',
-      { processOwned: true });
+    // The short commit lock can still be held when booksCommittedAt first
+    // appears. Retry acquisition, without stealing the server's live lock.
+    release = await until(() => acquireFileLock(dataPath + '.database-write.lock',
+      { processOwned: true }) || false, 2500);
     assert.equal(typeof release, 'function');
     // Hold another writer's lock when the terminal progress update runs.
     // The endpoint must emit a warning and RETURN SUCCESS instead of

@@ -5,6 +5,8 @@
     upgraded: false,
     activeView: 'overview',
     activePeopleView: 'students',
+    relocatedPanels: [],
+    catalogOpened: false,
   };
 
   function make(tag, options = {}) {
@@ -97,104 +99,216 @@
     if (toggle) toggle.hidden = true;
   }
 
+
   function setActiveView(name) {
+    if (!['overview', 'books', 'people', 'loans', 'tasks', 'imports', 'settings'].includes(name)) return;
     state.activeView = name;
-    document.querySelectorAll('[data-admin-modern-view]').forEach((view) => {
+    const dashboard = document.getElementById('admin-dashboard');
+    dashboard?.querySelectorAll('[data-admin-modern-view]').forEach((view) => {
       view.hidden = view.dataset.adminModernView !== name;
     });
-    document.querySelectorAll('[data-admin-modern-tab]').forEach((button) => {
+    document.querySelectorAll('#bb-admin-v31-sidebar [data-admin-modern-tab]').forEach((button) => {
       const active = button.dataset.adminModernTab === name;
       button.classList.toggle('admin-modern__tab--active', active);
-      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
     });
     if (name === 'overview') refreshOverview();
+    if (name === 'books' && !state.catalogOpened) {
+      state.catalogOpened = true;
+      const content = document.getElementById('staff-book-overview-content');
+      if (content?.hidden) document.getElementById('staff-book-overview-toggle')?.click();
+    }
+    updateCatalogToggle();
+    closeMobileNavigation();
+    if (document.body.classList.contains('bb-admin-v31')) {
+      dashboard?.querySelector('[data-admin-modern-view="' + name + '"] h2')?.focus({ preventScroll: true });
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
   }
 
+
+
   function setPeopleView(name) {
+    if (!['students', 'teachers', 'classes'].includes(name)) return;
     state.activePeopleView = name;
-    document.querySelectorAll('[data-admin-people-view]').forEach((view) => {
+    const dashboard = document.getElementById('admin-dashboard');
+    dashboard?.querySelectorAll('[data-admin-people-view]').forEach((view) => {
       view.hidden = view.dataset.adminPeopleView !== name;
     });
-    document.querySelectorAll('[data-admin-people-tab]').forEach((button) => {
+    dashboard?.querySelectorAll('[data-admin-people-tab]').forEach((button) => {
       const active = button.dataset.adminPeopleTab === name;
       button.classList.toggle('admin-modern__subtab--active', active);
-      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
     });
+  }
+
+
+
+  function syncMobileNavigation() {
+    const sidebar = document.getElementById('bb-admin-v31-sidebar');
+    if (!sidebar) return;
+    const mobile = window.matchMedia('(max-width: 760px)').matches;
+    const closed = mobile && !document.body.classList.contains('bb-admin-v31--open');
+    sidebar.inert = closed || !document.body.classList.contains('bb-admin-v31');
+    sidebar.setAttribute('aria-hidden', String(closed || !document.body.classList.contains('bb-admin-v31')));
+  }
+
+  function closeMobileNavigation() {
+    document.body.classList.remove('bb-admin-v31--open');
+    const menu = document.getElementById('bb-admin-v31-menu');
+    menu?.setAttribute('aria-expanded', 'false');
+    menu?.setAttribute('aria-label', 'Navigatie openen');
+    syncMobileNavigation();
   }
 
   function createTabs(dashboard) {
-    const tabs = make('div', { className: 'admin-modern__tabs' });
-    tabs.setAttribute('role', 'tablist');
+    const main = dashboard.closest('main');
+    if (!main || document.getElementById('bb-admin-v31-sidebar')) return;
+    const sidebar = make('aside', { className: 'bb-admin-v31-sidebar', id: 'bb-admin-v31-sidebar' });
+    const subtitle = make('div', { className: 'bb-admin-v31-sidebar-label', text: 'BEHEER' });
+    const tabs = make('nav', { className: 'admin-modern__tabs' });
+    tabs.setAttribute('aria-label', 'Beheernavigatie');
     const items = [
-      ['overview', 'Overzicht'],
-      ['books', 'Boeken'],
-      ['people', 'Personen'],
-      ['classes', 'Klassen'],
-      ['imports', 'Importeren'],
+      ['overview', 'Start', '▦'],
+      ['books', 'Boeken', '▤'],
+      ['people', 'Personen en klassen', '♙'],
+      ['loans', 'Uitlenen en innemen', '⇄'],
+      ['tasks', 'Taken', '☑'],
+      ['imports', 'Importeren', '⇧'],
+      ['settings', 'Instellingen', '⚙'],
     ];
-    for (const [key, label] of items) {
-      const button = make('button', { className: 'admin-modern__tab', text: label, type: 'button' });
+    for (const [key, label, symbol] of items) {
+      const button = make('button', { className: 'admin-modern__tab', type: 'button' });
       button.dataset.adminModernTab = key;
-      button.setAttribute('role', 'tab');
+      const icon = make('span', { className: 'bb-admin-v31-nav-icon', text: symbol });
+      icon.setAttribute('aria-hidden', 'true');
+      button.append(icon, make('span', { text: label }));
       button.addEventListener('click', () => setActiveView(key));
       tabs.append(button);
     }
-    dashboard.insertBefore(tabs, dashboard.querySelector('.admin-dashboard'));
+    sidebar.append(subtitle, tabs);
+    sidebar.append(make('div', { className: 'bb-admin-v31-sidebar-footer', text: 'Boekenbaai · VSO Het Dok' }));
+    main.prepend(sidebar);
+
+    const hero = document.querySelector('.hero--staff');
+    if (hero) {
+      const toggle = make('button', { className: 'bb-admin-v31-menu', id: 'bb-admin-v31-menu', type: 'button', text: '☰' });
+      toggle.setAttribute('aria-label', 'Navigatie openen');
+      toggle.setAttribute('aria-controls', sidebar.id);
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.addEventListener('click', () => {
+        const open = !document.body.classList.contains('bb-admin-v31--open');
+        document.body.classList.toggle('bb-admin-v31--open', open);
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.setAttribute('aria-label', open ? 'Navigatie sluiten' : 'Navigatie openen');
+        syncMobileNavigation();
+        if (open) sidebar.querySelector('button')?.focus();
+      });
+      hero.prepend(toggle);
+    }
+    const scrim = make('button', { className: 'bb-admin-v31-scrim', id: 'bb-admin-v31-scrim', type: 'button' });
+    scrim.setAttribute('aria-label', 'Navigatie sluiten');
+    scrim.addEventListener('click', () => {
+      closeMobileNavigation();
+      document.getElementById('bb-admin-v31-menu')?.focus();
+    });
+    document.body.append(scrim);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && document.body.classList.contains('bb-admin-v31--open')) {
+        closeMobileNavigation();
+        document.getElementById('bb-admin-v31-menu')?.focus();
+      }
+    });
+    window.matchMedia('(max-width: 760px)').addEventListener('change', syncMobileNavigation);
   }
+
+
 
   function createOverviewView() {
     const view = make('section', { className: 'admin-modern__view admin-modern__overview' });
     view.dataset.adminModernView = 'overview';
-    view.innerHTML = `
-      <div class="admin-modern__overview-header">
-        <div>
-          <h3>Beheeroverzicht</h3>
-          <p class="hint">Acties die aandacht nodig hebben en de belangrijkste aantallen.</p>
-        </div>
-      </div>
-      <div class="admin-modern__metrics" id="admin-modern-metrics"></div>
-      <div class="admin-modern__actions-panel">
-        <h4>Openstaande acties</h4>
-        <div id="admin-modern-actions" class="admin-modern__actions-list"></div>
-      </div>
-    `;
+    view.innerHTML = [
+      '<div class="bb-admin-v31-heading"><div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p>',
+      '<h2 tabindex="-1">Start</h2><p>De belangrijkste cijfers, taken en handelingen op één vaste plek.</p></div>',
+      '<button class="btn bb-admin-v31-add-book" type="button" data-v31-add-book>+ Nieuw boek</button></div>',
+      '<div class="admin-modern__metrics" id="admin-modern-metrics" aria-live="polite"></div>',
+      '<div class="bb-admin-v31-grid">',
+      '<section class="bb-admin-v31-card"><div class="bb-admin-v31-card-head"><h3>Acties die aandacht vragen</h3>',
+      '<button type="button" class="bb-admin-v31-link" data-v31-go="tasks">Alle taken →</button></div>',
+      '<div id="admin-modern-actions" class="admin-modern__actions-list" aria-live="polite"></div></section>',
+      '<section class="bb-admin-v31-card"><h3>Snel naar</h3><div id="bb-admin-v31-quick" class="bb-admin-v31-quick"></div></section>',
+      '<section class="bb-admin-v31-card"><div class="bb-admin-v31-card-head"><h3>Recente activiteit</h3></div>',
+      '<div id="bb-admin-v31-activity"></div></section>',
+      '<section class="bb-admin-v31-card"><h3>Schoolstatistieken</h3><p>Bekijk uitleen- en leesstatistieken van de school.</p>',
+      '<div id="bb-admin-v31-stats"></div></section></div>',
+    ].join('');
+    const quick = view.querySelector('#bb-admin-v31-quick');
+    for (const [label, target, description] of [
+      ['Boeken beheren', 'books', 'De echte catalogus opent direct'],
+      ['Personen en klassen', 'people', 'Leerlingen, docenten en koppelingen'],
+      ['Uitlenen en innemen', 'loans', 'Kies een specifiek fysiek exemplaar'],
+      ['Importeren', 'imports', 'Stapsgewijze voorcontrole'],
+    ]) {
+      const button = make('button', { className: 'bb-admin-v31-quick-row', type: 'button' });
+      button.append(make('strong', { text: label }), make('small', { text: description }));
+      button.addEventListener('click', () => setActiveView(target));
+      quick.append(button);
+    }
+    view.querySelector('[data-v31-add-book]').addEventListener('click', () => showBookEditor(true));
+    view.querySelector('[data-v31-go="tasks"]').addEventListener('click', () => setActiveView('tasks'));
     return view;
   }
 
-  function createPeopleView(teacherCard, studentCard) {
+
+
+  function createPeopleView(teacherCard, studentCard, classesCard) {
     const view = make('section', { className: 'admin-modern__view admin-modern__people' });
     view.dataset.adminModernView = 'people';
-
-    const header = make('div', { className: 'admin-modern__people-header' });
-    const intro = make('div');
-    intro.append(
-      make('h3', { text: 'Personen' }),
-      make('p', { className: 'hint', text: 'Beheer leerlingen, docenten, klasindelingen en Google-schoolaccounts op één plek.' })
-    );
+    const intro = make('div', { className: 'bb-admin-v31-heading' });
+    intro.innerHTML = '<div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p><h2 tabindex="-1">Personen en klassen</h2>' +
+      '<p>Beheer leerlingen, docenten, klasindelingen en schoolaccounts op één plek.</p></div>';
+    view.append(intro);
     const tabs = make('div', { className: 'admin-modern__subtabs' });
     tabs.setAttribute('role', 'tablist');
-    [['students', 'Leerlingen'], ['teachers', 'Docenten']].forEach(([key, label]) => {
+    tabs.setAttribute('aria-label', 'Personen en klassen');
+    [['students', 'Leerlingen'], ['teachers', 'Docenten'], ['classes', 'Klassen']].forEach(([key, label]) => {
       const button = make('button', { className: 'admin-modern__subtab', text: label, type: 'button' });
       button.dataset.adminPeopleTab = key;
       button.setAttribute('role', 'tab');
+      button.id = 'bb-people-tab-' + key;
+      button.setAttribute('aria-controls', 'bb-people-panel-' + key);
       button.addEventListener('click', () => setPeopleView(key));
+      button.addEventListener('keydown', (event) => {
+        const order = ['students', 'teachers', 'classes'];
+        const index = order.indexOf(key);
+        const next = event.key === 'ArrowRight' ? (index + 1) % order.length
+          : event.key === 'ArrowLeft' ? (index + order.length - 1) % order.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? order.length - 1 : -1;
+        if (next < 0) return;
+        event.preventDefault();
+        const destination = order[next];
+        setPeopleView(destination);
+        view.querySelector('[data-admin-people-tab="' + destination + '"]')?.focus();
+      });
       tabs.append(button);
     });
-    header.append(intro, tabs);
-    view.append(header);
-
+    view.append(tabs);
     const googleHost = make('div', { className: 'admin-modern__google-host', id: 'admin-modern-google-host' });
-    view.append(googleHost);
-
-    const studentView = make('div', { className: 'admin-modern__people-view' });
-    studentView.dataset.adminPeopleView = 'students';
-    if (studentCard) studentView.append(studentCard);
-    const teacherView = make('div', { className: 'admin-modern__people-view' });
-    teacherView.dataset.adminPeopleView = 'teachers';
-    if (teacherCard) teacherView.append(teacherCard);
-    view.append(studentView, teacherView);
+    for (const [name, card] of [['students', studentCard], ['teachers', teacherCard], ['classes', classesCard]]) {
+      const panel = make('section', { className: 'admin-modern__people-view' });
+      panel.dataset.adminPeopleView = name;
+      panel.id = 'bb-people-panel-' + name;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', 'bb-people-tab-' + name);
+      if (name === 'teachers') panel.append(googleHost);
+      if (card) panel.append(card);
+      view.append(panel);
+    }
     return view;
   }
+
 
   function createSimpleView(name, card) {
     const view = make('section', { className: 'admin-modern__view' });
@@ -289,10 +403,18 @@
 
   function summaryMetric(label, value) {
     const card = make('div', { className: 'admin-modern__metric' });
-    card.append(
+    const icons = { Boekexemplaren: '▤', Leerlingen: '♙', Docenten: '◉', Klassen: '▦' };
+    if (icons[label]) {
+      const icon = make('span', { className: 'bb-admin-v31-metric-icon', text: icons[label] });
+      icon.setAttribute('aria-hidden', 'true');
+      card.append(icon);
+    }
+    const figures = make('div', { className: 'bb-admin-v31-metric-figures' });
+    figures.append(
       make('strong', { text: String(value ?? 0) }),
       make('span', { text: label })
     );
+    card.append(figures);
     return card;
   }
 
@@ -373,7 +495,7 @@
       const data = await api('/api/admin/google-first/summary');
       metrics.innerHTML = '';
       metrics.append(
-        summaryMetric('Boeken', data.books),
+        summaryMetric('Boekexemplaren', data.books),
         summaryMetric('Leerlingen', data.students),
         summaryMetric('Docenten', data.teachers),
         summaryMetric('Klassen', data.classes)
@@ -397,6 +519,40 @@
     }
   }
 
+
+  // Audit A07: keep keyboard focus inside an active book-details modal.
+  // app.js continues to own open/close, Escape and focus restoration.
+  function installAdminBookModalFocusTrap() {
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Tab' || !document.body.classList.contains('bb-admin-v31')) return;
+      const modal = document.getElementById('book-detail');
+      if (!modal || modal.classList.contains('hidden') || modal.getAttribute('aria-hidden') === 'true') return;
+      const dialog = modal.querySelector('.book-detail__dialog');
+      if (!dialog) return;
+      const focusables = Array.from(dialog.querySelectorAll(
+        'a[href], button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), ' +
+        'select:not([disabled]):not([hidden]), textarea:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])'
+      )).filter((el) => el.getClientRects().length > 0);
+      if (!focusables.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (!dialog.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
   function moveGooglePanel() {
     const host = document.getElementById('admin-modern-google-host');
     const panel = document.querySelector('#teacher-dashboard .google-manage');
@@ -405,12 +561,123 @@
     host.append(panel);
   }
 
+  function mountSharedPanel(id, hostId) {
+    const element = id.startsWith('.') ? document.querySelector(id) : document.getElementById(id);
+    const host = document.getElementById(hostId);
+    if (!element || !host) return;
+    let slot = state.relocatedPanels.find((entry) => entry.element === element);
+    if (!slot) {
+      const marker = document.createComment('Boekenbaai: oorspronkelijke positie ' + id);
+      element.before(marker);
+      slot = { element, marker, host };
+      state.relocatedPanels.push(slot);
+    }
+    if (element.parentElement !== host) host.append(element);
+  }
+
+  function restoreSharedPanels() {
+    for (const { element, marker } of state.relocatedPanels) {
+      if (marker.isConnected && element.previousSibling !== marker) marker.after(element);
+    }
+  }
+
+  function activateAdminLayout(active) {
+    if (!state.upgraded) return;
+    document.body.classList.toggle('bb-admin-v31', active);
+    if (!active) {
+      closeMobileNavigation();
+      state.catalogOpened = false;
+      restoreSharedPanels();
+      const title = document.querySelector('.hero--staff h1');
+      const intro = document.querySelector('.hero--staff .hero__content p');
+      if (title) title.textContent = 'Docentenportaal Boekenbaai';
+      if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
+      return;
+    }
+    mountSharedPanel('.teacher-layout__overview', 'bb-admin-v31-catalog');
+    mountSharedPanel('staff-loan-panel', 'bb-admin-v31-loans');
+    mountSharedPanel('book-import-followups-panel', 'bb-admin-v31-tasks');
+    mountSharedPanel('history-panel', 'bb-admin-v31-activity');
+    mountSharedPanel('admin-mail-notifications-panel', 'bb-admin-v31-settings');
+    const legacyList = document.getElementById('admin-book-list');
+    const legacySection = legacyList?.closest('.admin-card__section');
+    if (legacySection) legacySection.hidden = true;
+    syncMobileNavigation();
+    const name = document.querySelector('.hero--staff h1');
+    const intro = document.querySelector('.hero--staff .hero__content p');
+    if (name) name.textContent = 'Boekenbaai';
+    if (intro) intro.textContent = 'Boekenbaai Beheer';
+  }
+
+  function updateCatalogToggle() {
+    const button = document.getElementById('bb-admin-v31-toggle-catalog');
+    const content = document.getElementById('staff-book-overview-content');
+    if (!button || !content) return;
+    const expanded = !content.hidden;
+    button.textContent = expanded ? 'Catalogus inklappen' : 'Catalogus uitklappen';
+    button.setAttribute('aria-expanded', String(expanded));
+  }
+
+  function viewHeading(name, title, description) {
+    const view = make('section', { className: 'admin-modern__view' });
+    view.dataset.adminModernView = name;
+    const heading = make('div', { className: 'bb-admin-v31-heading' });
+    heading.innerHTML = '<div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p><h2 tabindex="-1">' + title + '</h2>' +
+      '<p>' + description + '</p></div>';
+    view.append(heading);
+    return view;
+  }
+
+  function showBookEditor(newBook) {
+    setActiveView('books');
+    const card = document.querySelector('#admin-dashboard .admin-card--books');
+    if (!card) return;
+    if (newBook) {
+      // This existing application handler clears book ID, themes, crop and
+      // selection state even if its button is hidden in create mode.
+      const cancel = document.getElementById('admin-book-cancel');
+      if (!cancel) return;
+      cancel.click();
+    }
+    // The cancel event closes the previous editor, so reveal it afterwards.
+    card.hidden = false;
+    document.getElementById('admin-book-title')?.focus({ preventScroll: true });
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function installBookEditorControls(booksCard) {
+    if (!booksCard || booksCard.dataset.v31EditorInstalled) return;
+    booksCard.dataset.v31EditorInstalled = 'true';
+    booksCard.hidden = true;
+    const heading = make('div', { className: 'bb-admin-v31-editor-heading' });
+    heading.append(make('h3', { text: 'Boek toevoegen of bewerken' }));
+    const close = make('button', { className: 'btn btn--ghost', text: 'Annuleren', type: 'button' });
+    close.addEventListener('click', () => {
+      // Invoke the full app.js reset for *both* edit and create modes.
+      const cancel = document.getElementById('admin-book-cancel');
+      if (!cancel) return;
+      cancel.click();
+      booksCard.hidden = true;
+      document.getElementById('bb-admin-v31-open-editor')?.focus();
+    });
+    heading.append(close);
+    booksCard.prepend(heading);
+    document.getElementById('admin-book-cancel')?.addEventListener('click', () => {
+      booksCard.hidden = true;
+    });
+    // The existing book-detail handler in app.js runs after this capture listener.
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('[data-book-detail-edit]')) showBookEditor(false);
+    }, true);
+  }
+
+
+
   function upgradeAdmin() {
-    const dashboard = document.querySelector('#admin-dashboard');
+    const dashboard = document.getElementById('admin-dashboard');
     const container = dashboard?.querySelector('.admin-dashboard');
     if (!dashboard || !container || state.upgraded) return;
     state.upgraded = true;
-
     hideLegacyPasswordUi();
     createTabs(dashboard);
 
@@ -422,18 +689,55 @@
     [booksCard, teacherCard, classesCard, studentCard, importsCard].forEach(expandCard);
 
     const overviewView = createOverviewView();
-    const booksView = createSimpleView('books', booksCard);
-    const peopleView = createPeopleView(teacherCard, studentCard);
-    const classesView = createSimpleView('classes', classesCard);
-    const importsView = createSimpleView('imports', importsCard);
+    const booksView = viewHeading('books', 'Boeken', 'Zoek, bekijk en beheer de catalogus en fysieke exemplaren.');
+    const catalogHost = make('div', { id: 'bb-admin-v31-catalog' });
+    booksView.append(catalogHost);
+    const catalogToggle = make('button', { className: 'btn btn--ghost', text: 'Catalogus inklappen', type: 'button', id: 'bb-admin-v31-toggle-catalog' });
+    catalogToggle.setAttribute('aria-controls', 'staff-book-overview-content');
+    catalogToggle.setAttribute('aria-expanded', 'true');
+    catalogToggle.addEventListener('click', () => {
+      document.getElementById('staff-book-overview-toggle')?.click();
+      updateCatalogToggle();
+    });
+    booksView.querySelector('.bb-admin-v31-heading').append(catalogToggle);
+    const newBook = make('button', { className: 'btn', type: 'button', text: '+ Nieuw boek', id: 'bb-admin-v31-open-editor' });
+    newBook.addEventListener('click', () => showBookEditor(true));
+    booksView.querySelector('.bb-admin-v31-heading').append(newBook);
+    booksView.append(booksCard);
+    const peopleView = createPeopleView(teacherCard, studentCard, classesCard);
+    const loansView = viewHeading('loans', 'Uitlenen en innemen', 'Leen specifieke exemplaren uit en registreer innames.');
+    loansView.append(make('div', { id: 'bb-admin-v31-loans' }));
+    const tasksView = viewHeading('tasks', 'Taken', 'Controleer openstaande verzoeken en boekimportcontroles.');
+    tasksView.append(make('div', { id: 'bb-admin-v31-tasks' }));
+    const accountTaskLinks = make('section', { className: 'bb-admin-v31-card' });
+    accountTaskLinks.append(make('h3', { text: 'Andere beheertaken' }));
+    accountTaskLinks.append(make('p', { text: 'Behandel klaswissels en Google-koppelverzoeken via Personen en klassen.' }));
+    for (const [label, kind] of [['Leerling- en klasverzoeken openen', 'students'], ['Docent- en Google-koppelingen openen', 'teachers']]) {
+      const link = make('button', { className: 'bb-admin-v31-quick-row', text: label, type: 'button' });
+      link.addEventListener('click', () => { setActiveView('people'); setPeopleView(kind); });
+      accountTaskLinks.append(link);
+    }
+    tasksView.append(accountTaskLinks);
+    const importsView = viewHeading('imports', 'Importeren', 'Boeken en personen veilig importeren met voorcontrole.');
+    importsView.append(importsCard);
+    const settingsView = viewHeading('settings', 'Instellingen', 'Beheerdersmeldingen en geverifieerde e-mailadressen.');
+    settingsView.append(make('div', { id: 'bb-admin-v31-settings' }));
 
-    container.append(overviewView, booksView, peopleView, classesView, importsView);
+    container.append(overviewView, booksView, peopleView, loansView, tasksView, importsView, settingsView);
     moveDangerousBookAction(booksView);
+    installBookEditorControls(booksCard);
+    installAdminBookModalFocusTrap();
     modernizeImports();
+
+    const schoolStats = document.querySelector('.panel__header-actions--admin');
+    if (schoolStats) overviewView.querySelector('#bb-admin-v31-stats')?.append(schoolStats);
+    overviewView.querySelector('#bb-admin-v31-stats')?.querySelector('#admin-stats-button')?.classList.add('bb-admin-v31-stats-button');
     setActiveView('overview');
     setPeopleView('students');
-
     moveGooglePanel();
+    activateAdminLayout(true);
+    updateCatalogToggle();
+
     const observer = new MutationObserver(() => {
       hideLegacyPasswordUi();
       moveGooglePanel();
@@ -441,15 +745,21 @@
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
+
+
   function watchForAdmin() {
-    const dashboard = document.querySelector('#admin-dashboard');
+    const dashboard = document.getElementById('admin-dashboard');
     if (!dashboard) return;
-    if (!dashboard.classList.contains('hidden')) upgradeAdmin();
-    const observer = new MutationObserver(() => {
-      if (!dashboard.classList.contains('hidden')) upgradeAdmin();
-    });
+    const refresh = () => {
+      const visible = !dashboard.classList.contains('hidden');
+      if (visible && !state.upgraded) upgradeAdmin();
+      if (state.upgraded) activateAdminLayout(visible);
+    };
+    refresh();
+    const observer = new MutationObserver(refresh);
     observer.observe(dashboard, { attributes: true, attributeFilter: ['class'] });
   }
+
 
   document.addEventListener('DOMContentLoaded', watchForAdmin);
 })();
