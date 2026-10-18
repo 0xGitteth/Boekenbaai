@@ -20,6 +20,12 @@
   let page = 'start';
   let requestId = 0;
   let nav, scrim, menu;
+  // Mirror staff-loans.js: all staff endpoints may live on a separate API host.
+  const configuredBase = (typeof import.meta !== 'undefined' && import.meta.env
+    && (import.meta.env.BOEKENBAAI_PUBLIC_API_BASE || import.meta.env.VITE_BOEKENBAAI_API_BASE)) || '';
+  const apiBase = (window.BOEKENBAAI_API_BASE || configuredBase
+    || document.querySelector('meta[name="boekenbaai-api-base"]')?.content || '').trim();
+  const apiAddress = route => apiBase ? apiBase.replace(/\/$/, '') + route : route;
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -223,11 +229,20 @@
       }
     }
   }
+  function clearClassSummary() {
+    const card = document.getElementById('bb-teacher-v31-classes-summary');
+    if (!card) return;
+    card.querySelectorAll('.bb-teacher-v31-row, .bb-teacher-v31-classes-state')
+      .forEach(node => node.remove());
+  }
   async function updateStart() {
     const current = ++requestId;
     const metrics = document.getElementById('bb-teacher-v31-metrics');
     const classesCard = document.getElementById('bb-teacher-v31-classes-summary');
     if (!active || !metrics || !classesCard) return;
+    // Drop previous account-specific class names before starting any requests.
+    // In particular, an API error must never leave an earlier teacher's data.
+    clearClassSummary();
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
     const teacherName = document.getElementById('staff-name')?.textContent?.trim();
@@ -243,7 +258,7 @@
     const token = localStorage.getItem('boekenbaai_token');
     if (!token) return;
     try {
-      const response = await fetch('/api/staff/loans', {
+      const response = await fetch(apiAddress('/api/staff/loans'), {
         headers: {Authorization: 'Bearer ' + token, Accept: 'application/json'},
       });
       if (!response.ok) throw Error('Gegevens tijdelijk niet beschikbaar.');
@@ -261,7 +276,7 @@
       // The task count is independently scoped by the backend to the
       // teacher's current class assignments. Never invent task totals.
       try {
-        const taskResponse = await fetch('/api/staff/book-import-followups', {
+        const taskResponse = await fetch(apiAddress('/api/staff/book-import-followups'), {
           headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
         });
         if (!taskResponse.ok) throw Error('Taken niet beschikbaar');
@@ -275,8 +290,8 @@
             document.createTextNode('—'));
         }
       }
-      classesCard.querySelectorAll('.bb-teacher-v31-row').forEach(row => row.remove());
-      if (!ownClasses.length) classesCard.append(el('p', 'bb-teacher-v31-hint', 'Er zijn geen klassen aan jou gekoppeld.'));
+      clearClassSummary();
+      if (!ownClasses.length) classesCard.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-classes-state', 'Er zijn geen klassen aan jou gekoppeld.'));
       else for (const klass of ownClasses.slice(0,5)) {
         const count = (Array.isArray(data.students) ? data.students : [])
           .filter(student => student.active !== false &&
@@ -286,6 +301,9 @@
     } catch (error) {
       if (current === requestId && active) {
         metrics.replaceChildren(el('p','bb-teacher-v31-hint',error.message));
+        clearClassSummary();
+        classesCard.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-classes-state',
+          'Klassengegevens zijn tijdelijk niet beschikbaar.'));
       }
     }
   }
@@ -309,6 +327,7 @@
       setPage(page, false);
     } else {
       ++requestId;
+      clearClassSummary();
       closeMenu();
       restore();
       dashboard.removeAttribute('aria-label');
