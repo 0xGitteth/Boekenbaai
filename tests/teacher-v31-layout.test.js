@@ -10,7 +10,10 @@ const js = read('public/teacher-modern.js');
 const css = read('public/teacher-modern.css');
 const html = read('public/staff.html');
 const admin = read('public/admin-modern.js');
-new vm.Script(js, { filename: 'public/teacher-modern.js' });
+// vm.Script treats source as a classic script; substitute the module-only
+// import.meta expression solely for this static syntax verification.
+new vm.Script(js.replaceAll('import.meta', '({ env: {} })'),
+  { filename: 'public/teacher-modern.js' });
 
 // The approved v3.1 teacher structure, not a replacement of the login flow.
 for (const [id, label] of [
@@ -50,10 +53,13 @@ assert.match(js, /place\(dashboard\.querySelector\('\.teacher-layout'\), catalog
 assert.match(js, /place\(document\.getElementById\('staff-loan-panel'\), lending\)/);
 assert.match(js, /place\(document\.getElementById\('book-import-mail-preferences-panel'\), account\)/);
 assert.match(js, /place\(document\.getElementById\('history-panel'\), recent\)/);
-assert.match(js, /fetch\('\/api\/staff\/loans'/);
-assert.match(js, /fetch\('\/api\/staff\/book-import-followups'/);
+assert.match(js, /fetch\(apiAddress\('\/api\/staff\/loans'\)/);
+assert.match(js, /fetch\(apiAddress\('\/api\/staff\/book-import-followups'\)/);
 assert.match(css, /grid-template-columns: repeat\(4,minmax\(0,1fr\)\)/);
 assert.match(js, /Goedemorgen/);
+assert.match(js, /function clearClassSummary\(/);
+assert.match(js, /clearClassSummary\(\)/);
+assert.match(js, /Klassengegevens zijn tijdelijk niet beschikbaar/);
 assert.match(js, /Openstaande taken/);
 assert.match(js, /localStorage\.getItem\('boekenbaai_token'\)/);
 assert.match(js, /window\.dispatchEvent\(new Event\('boekenbaai:staff-refresh'\)\)/);
