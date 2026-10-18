@@ -586,6 +586,7 @@
     document.body.classList.toggle('bb-admin-v31', active);
     if (!active) {
       closeMobileNavigation();
+      state.catalogOpened = false;
       restoreSharedPanels();
       const title = document.querySelector('.hero--staff h1');
       const intro = document.querySelector('.hero--staff .hero__content p');
