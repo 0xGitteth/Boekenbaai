@@ -180,14 +180,12 @@
     container.id = 'bb-teacher-v31-shell';
     container.hidden = true;
     const start = makeView('start', 'Start', 'Je klassen, taken en boeken op één overzichtelijke werkplek.');
-    const shortcut = el('button', 'btn bb-teacher-v31-start-loan', 'Boek uitlenen');
-    shortcut.type = 'button';
-    shortcut.addEventListener('click', () => setPage('lending'));
-    start.querySelector('.bb-teacher-v31-view-heading').append(shortcut);
     const metrics = el('div', 'bb-teacher-v31-metrics');
     metrics.id = 'bb-teacher-v31-metrics';
     start.append(metrics);
     const grid = el('div', 'bb-teacher-v31-grid');
+    const leftColumn = el('div', 'bb-teacher-v31-dashboard-column');
+    const rightColumn = el('div', 'bb-teacher-v31-dashboard-column');
     const classesCard = card('Mijn klassen', 'classes');
     classesCard.id = 'bb-teacher-v31-classes-summary';
     const taskCard = card('Acties voor mij', 'tasks');
@@ -195,7 +193,9 @@
     addAction(taskCard, 'Boekimportcontroles', 'Gedeelde controletaken per klas', 'tasks');
     const recent = card('Recente activiteit');
     recent.id = 'bb-teacher-v31-activity';
-    grid.append(classesCard, taskCard, recent);
+    leftColumn.append(classesCard, recent);
+    rightColumn.append(taskCard);
+    grid.append(leftColumn, rightColumn);
     start.append(grid);
     const classes = makeView('classes', 'Mijn klassen', 'Bekijk leerlingen, klaswissels en de klassen waarvoor je bevoegd bent.');
     const catalog = makeView('catalog', 'Catalogus', 'Zoek, filter en bekijk de beschikbaarheid van de schoolbibliotheek.');
@@ -242,7 +242,7 @@
   function clearClassSummary() {
     const card = document.getElementById('bb-teacher-v31-classes-summary');
     if (!card) return;
-    card.querySelectorAll('.bb-teacher-v31-row, .bb-teacher-v31-classes-state')
+    card.querySelectorAll('.bb-teacher-v31-row, .bb-teacher-v31-classes-state, .bb-teacher-v31-all-classes')
       .forEach(node => node.remove());
   }
   async function updateStart() {
@@ -311,6 +311,13 @@
           .filter(student => student.active !== false &&
             (student.classIds || []).includes(klass.id)).length;
         addAction(classesCard, klass.name, count + ' leerlingen', 'classes');
+      }
+      if (ownClasses.length > 5) {
+        const more = el('button', 'bb-teacher-v31-link bb-teacher-v31-all-classes',
+          'Bekijk alle ' + ownClasses.length + ' klassen →');
+        more.type = 'button';
+        more.addEventListener('click', () => setPage('classes'));
+        classesCard.append(more);
       }
     } catch (error) {
       if (current === requestId && active) {
