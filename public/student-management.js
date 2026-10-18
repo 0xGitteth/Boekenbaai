@@ -399,7 +399,7 @@
     for (const klass of classes) {
       const count = studentsForClass(klass.id).length;
       const actions = actionCountForClass(klass);
-      const label = `${klass.name} · ${count} leerling${count === 1 ? '' : 'en'}${actions ? ` · ${actions} actie${actions === 1 ? '' : 's'}` : ''}`;
+      const label = `${klass.name} · ${count} leerling${count === 1 ? '' : 'en'}${actions ? ` · ${actions} ${actions === 1 ? 'taak' : 'taken'}` : ''}`;
       select.append(new Option(label, klass.id));
     }
     select.value = activeClass()?.id || classes[0].id;
@@ -417,7 +417,7 @@
     if (!google.length && !incoming.length && !escalated.length) return;
 
     const section = make('section', { className: 'student-management__section student-management__attention' });
-    section.append(make('h4', { text: 'Acties voor jou' }));
+    section.append(make('h4', { text: 'Taken voor jou' }));
 
     if (google.length) {
       const head = make('div', { className: 'student-management__section-head' });
@@ -591,18 +591,36 @@
     host.append(panel);
   }
 
+  function publishTeacherTasks(status) {
+    if (state?.role !== 'teacher' || !document.body.classList.contains('bb-teacher-v31')) return;
+    const classes = status === 'ready' ? ownClasses().map(klass => ({
+      id: klass.id, name: klass.name,
+      incoming: incomingForClass(klass).length,
+      google: googleRequestsForClass(klass).length,
+      outgoing: outgoingForClass(klass).length,
+    })) : [];
+    window.dispatchEvent(new CustomEvent('boekenbaai:mentor-tasks-updated', {
+      detail: { status, classes },
+    }));
+  }
   async function refresh() {
     try {
       state = await api('/api/mentor/student-management');
       activeClass();
       render();
+      publishTeacherTasks('ready');
     } catch (error) {
-      // Niet ingelogd als medewerker of pagina nog niet klaar.
+      publishTeacherTasks('error');
     }
   }
 
   function install() {
     if (installed) return;
+    window.addEventListener('boekenbaai:mentor-select-class', event => {
+      if (state?.role !== 'teacher' || !document.body.classList.contains('bb-teacher-v31')) return;
+      const id = event.detail?.classId;
+      if (id && ownClasses().some(klass => klass.id === id)) setActiveClass(id);
+    });
     installed = true;
     refresh();
     const observer = new MutationObserver(() => {
