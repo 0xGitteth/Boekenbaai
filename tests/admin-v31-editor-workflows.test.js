@@ -27,9 +27,9 @@ for (const field of [
 }
 assert.match(html, /id="history-clear-button"/);
 assert.match(html, /id="history-actions"[^>]*data-role-only="admin"/);
-assert.match(css, /#bb-admin-v31-activity #history-panel > \.panel__header \{\s*display: flex/);
-assert.match(css, /#bb-admin-v31-activity #history-panel > \.panel__header > div:not\(#history-actions\)/);
-assert.doesNotMatch(css, /#bb-admin-v31-activity \.panel__header \{ display: none; \}/);
+assert.match(css, /#bb-admin-v31-activity #history-panel > \.panel__header \{\s*display: none !important/);
+assert.match(css, /#bb-admin-v31-activity-actions #history-actions:not\(\.hidden\)/);
+assert.match(admin, /mountSharedPanel\('history-actions', 'bb-admin-v31-activity-actions'\)/);
 
 const instrumented = admin.replace(
   "  document.addEventListener('DOMContentLoaded', watchForAdmin);",
