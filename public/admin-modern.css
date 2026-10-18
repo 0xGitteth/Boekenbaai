@@ -505,8 +505,11 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__metrics {
   margin: 0 0 1px;
 }
 body.bb-admin-v31 #admin-dashboard .admin-modern__metric {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-height: 86px;
-  padding: 18px 17px 17px 67px;
+  padding: 18px 17px;
   border: 1px solid var(--bb-line);
   border-radius: 13px;
   background: white;
@@ -800,4 +803,26 @@ body.bb-admin-v31 #admin-dashboard #staff-loan-copy-hint:not(:empty) {
   margin: 8px 0 0;
   color: #71571b;
   font-size: .85rem;
+}
+
+body.bb-admin-v31 .bb-admin-v31-metric-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  color: var(--bb-navy);
+  background: var(--bb-soft);
+  font-size: 1.2rem;
+}
+body.bb-admin-v31 .bb-admin-v31-metric-figures { display: grid; gap: 2px; }
+body.bb-admin-v31 #bb-admin-v31-catalog .book-card__cover-fallback:empty::before {
+  content: '▤';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  color: #466489;
+  font-size: 2.4rem;
 }
