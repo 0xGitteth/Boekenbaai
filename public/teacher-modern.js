@@ -290,6 +290,9 @@
             document.createTextNode('—'));
         }
       }
+      // A rejected follow-up request may complete after logout or after
+      // another teacher refresh has started. Never render stale class data.
+      if (current !== requestId || !active) return;
       clearClassSummary();
       if (!ownClasses.length) classesCard.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-classes-state', 'Er zijn geen klassen aan jou gekoppeld.'));
       else for (const klass of ownClasses.slice(0,5)) {
