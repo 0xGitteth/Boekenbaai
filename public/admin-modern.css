@@ -239,3 +239,512 @@
     flex: 1;
   }
 }
+
+
+/*
+ * Boekenbaai Beheer v3.1.
+ * Scope is active only for authenticated administrators. The teacher and
+ * student interfaces retain their existing styles and event handlers.
+ */
+body.bb-admin-v31 {
+  --bb-navy: #102f64;
+  --bb-canvas: #f0f4fa;
+  --bb-line: #dce4ef;
+  --bb-ink: #16263e;
+  --bb-muted: #61728a;
+  --bb-soft: #e7effb;
+  background: var(--bb-canvas);
+  color: var(--bb-ink);
+  font: 15px/1.48 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body.bb-admin-v31 .hero.hero--staff {
+  position: sticky;
+  top: 0;
+  z-index: 42;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: none;
+  height: 68px;
+  min-height: 68px;
+  margin: 0;
+  padding: 0 26px;
+  gap: 15px;
+  background: var(--bb-navy);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: #fff;
+}
+body.bb-admin-v31 .hero--staff .hero__content { flex: 0 1 auto; min-width: 0; padding: 0; }
+body.bb-admin-v31 .hero--staff .hero__content h1 {
+  margin: 0;
+  color: #fff;
+  font: 800 1.22rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+body.bb-admin-v31 .hero--staff .hero__content p {
+  margin: 2px 0 0;
+  color: #d7e4f7;
+  font: 400 .82rem/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+body.bb-admin-v31 .hero--staff .hero__illustration {
+  display: flex;
+  order: -1;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 74px;
+  height: 44px;
+  padding: 2px 5px;
+  margin: 0;
+  border-radius: 8px;
+  background: #fff;
+}
+body.bb-admin-v31 .hero--staff .hero__logo {
+  position: static;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  opacity: 1;
+  transform: none;
+}
+body.bb-admin-v31 .hero--staff .hero__actions {
+  display: flex;
+  align-items: center;
+  flex-flow: row wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+body.bb-admin-v31 .hero--staff .hero__link {
+  color: #fff;
+  border: 1px solid #748eaf;
+  background: transparent;
+  border-radius: 9px;
+}
+body.bb-admin-v31 .hero--staff .staff-meta--hero {
+  margin: 0;
+  color: #fff;
+}
+body.bb-admin-v31 .hero--staff .staff-meta__name,
+body.bb-admin-v31 .hero--staff .staff-meta__role { color: #fff; }
+body.bb-admin-v31 .hero--staff .staff-meta #logout-button { border-color: #7189a6; }
+body.bb-admin-v31 > main {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 0;
+  width: min(100%, 1610px);
+  max-width: 1610px;
+  min-height: calc(100dvh - 68px);
+  margin: 0 auto;
+  padding: 0;
+}
+body.bb-admin-v31 > main > :not(#bb-admin-v31-sidebar):not(#admin-dashboard) { display: none !important; }
+body.bb-admin-v31 .footer { display: none; }
+#bb-admin-v31-sidebar, #bb-admin-v31-menu, #bb-admin-v31-scrim { display: none; }
+body.bb-admin-v31 #bb-admin-v31-sidebar {
+  display: flex;
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: column;
+  position: sticky;
+  top: 68px;
+  height: calc(100dvh - 68px);
+  min-height: 400px;
+  padding: 29px 16px 26px;
+  overflow-y: auto;
+  background: white;
+  border-right: 1px solid var(--bb-line);
+  z-index: 11;
+}
+body.bb-admin-v31 .bb-admin-v31-sidebar-label {
+  margin: 0 0 11px;
+  padding: 0 12px;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .07em;
+  color: #78869a;
+}
+body.bb-admin-v31 .admin-modern__tabs {
+  display: grid;
+  flex-wrap: initial;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+body.bb-admin-v31 .admin-modern__tab {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  min-height: 47px;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 10px;
+  text-align: left;
+  white-space: normal;
+  color: #31435e;
+  background: transparent;
+  font-size: .93rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+body.bb-admin-v31 .admin-modern__tab:hover { background: #eef3fa; color: var(--bb-navy); }
+body.bb-admin-v31 .admin-modern__tab--active,
+body.bb-admin-v31 .admin-modern__tab--active:hover {
+  background: var(--bb-navy);
+  color: #fff;
+}
+body.bb-admin-v31 .bb-admin-v31-nav-icon {
+  flex: 0 0 20px;
+  text-align: center;
+  font-size: 1.12rem;
+}
+body.bb-admin-v31 .bb-admin-v31-sidebar-footer {
+  margin-top: auto;
+  padding: 18px 12px 0;
+  border-top: 1px solid var(--bb-line);
+  font-size: .78rem;
+  color: #7b8ba0;
+}
+body.bb-admin-v31 #admin-dashboard {
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: calc(100dvh - 68px);
+  margin: 0;
+  padding: 30px clamp(18px, 2.9vw, 45px) 80px;
+  background: var(--bb-canvas);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+body.bb-admin-v31 #admin-dashboard > .panel__header { display: none; }
+body.bb-admin-v31 #admin-dashboard .admin-dashboard {
+  display: block;
+  max-width: 1190px;
+  margin: 0 auto;
+  padding: 0;
+  background: transparent;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__view {
+  display: grid;
+  gap: 17px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__view[hidden],
+body.bb-admin-v31 #admin-dashboard .admin-modern__people-view[hidden],
+body.bb-admin-v31 #admin-dashboard .admin-card--books[hidden],
+body.bb-admin-v31 #admin-dashboard #admin-book-list,
+body.bb-admin-v31 #admin-dashboard .admin-card__section[hidden] { display: none !important; }
+body.bb-admin-v31 .bb-admin-v31-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 18px;
+  margin: 0 0 6px;
+}
+body.bb-admin-v31 .bb-admin-v31-eyebrow {
+  margin: 0 0 7px;
+  color: #48739a;
+  font-size: .7rem;
+  font-weight: 850;
+  letter-spacing: .105em;
+  text-transform: uppercase;
+}
+body.bb-admin-v31 .bb-admin-v31-heading h2 {
+  margin: 0;
+  color: #16263e;
+  font: 800 clamp(1.55rem, 2.5vw, 2.1rem)/1.17 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: -.025em;
+}
+body.bb-admin-v31 .bb-admin-v31-heading p:not(.bb-admin-v31-eyebrow) {
+  max-width: 720px;
+  margin: 7px 0 0;
+  color: var(--bb-muted);
+  font-size: .93rem;
+}
+body.bb-admin-v31 #admin-dashboard .btn,
+body.bb-admin-v31 #admin-dashboard button { cursor: pointer; }
+body.bb-admin-v31 #admin-dashboard button:focus-visible,
+body.bb-admin-v31 #bb-admin-v31-sidebar button:focus-visible {
+  outline: 3px solid #80aef2;
+  outline-offset: 2px;
+}
+body.bb-admin-v31 #admin-dashboard .btn {
+  min-height: 40px;
+  border-radius: 9px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-admin-v31-add-book,
+body.bb-admin-v31 #admin-dashboard #bb-admin-v31-open-editor {
+  min-height: 44px;
+  padding: 10px 16px;
+  color: white;
+  background: var(--bb-navy);
+  border-color: var(--bb-navy);
+  font-weight: 700;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 13px;
+  margin: 0 0 1px;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__metric {
+  min-height: 86px;
+  padding: 18px 17px 17px 67px;
+  border: 1px solid var(--bb-line);
+  border-radius: 13px;
+  background: white;
+  box-shadow: 0 2px 8px #102f6405;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__metric strong {
+  color: var(--bb-navy);
+  font: 800 1.62rem/1.1 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__metric span {
+  font-size: .78rem;
+  color: var(--bb-muted);
+}
+body.bb-admin-v31 .bb-admin-v31-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+body.bb-admin-v31 .bb-admin-v31-card {
+  min-width: 0;
+  min-height: 290px;
+  padding: 21px 23px;
+  border: 1px solid var(--bb-line);
+  border-radius: 14px;
+  background: white;
+}
+body.bb-admin-v31 .bb-admin-v31-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--bb-ink);
+}
+body.bb-admin-v31 .bb-admin-v31-card > p {
+  margin-top: 10px;
+  font-size: .88rem;
+  color: var(--bb-muted);
+}
+body.bb-admin-v31 .bb-admin-v31-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+body.bb-admin-v31 .bb-admin-v31-link {
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: #20539a;
+  font: 700 .83rem/1.3 system-ui, sans-serif;
+}
+body.bb-admin-v31 .admin-modern__actions-list { display: grid; gap: 0; }
+body.bb-admin-v31 .admin-modern__action-row {
+  min-height: 50px;
+  padding: 13px 5px;
+  border: 0;
+  border-top: 1px solid #edf1f5;
+  border-radius: 0;
+  background: #fff;
+  font-weight: 700;
+}
+body.bb-admin-v31 .bb-admin-v31-quick { display: grid; }
+body.bb-admin-v31 .bb-admin-v31-quick-row {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 13px 4px 13px 49px;
+  border: 0;
+  border-top: 1px solid #edf1f5;
+  background: white;
+  color: var(--bb-ink);
+  text-align: left;
+}
+body.bb-admin-v31 .bb-admin-v31-quick-row:hover,
+body.bb-admin-v31 .admin-modern__action-row:hover { background: #f4f8fe; }
+body.bb-admin-v31 .bb-admin-v31-quick-row strong { font-size: .92rem; }
+body.bb-admin-v31 .bb-admin-v31-quick-row small { color: var(--bb-muted); font-size: .79rem; }
+body.bb-admin-v31 #bb-admin-v31-activity .panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+body.bb-admin-v31 #bb-admin-v31-activity .panel__header { display: none; }
+body.bb-admin-v31 #bb-admin-v31-activity #history-list { padding: 0; margin: 0; }
+body.bb-admin-v31 #bb-admin-v31-stats { margin-top: 20px; }
+body.bb-admin-v31 #bb-admin-v31-stats .panel__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 8px;
+  margin: 0;
+}
+body.bb-admin-v31 #bb-admin-v31-stats #admin-stats-button {
+  min-height: 40px;
+  color: var(--bb-navy);
+  border: 1px solid #d3e0ef;
+  background: #e9f0fb;
+}
+body.bb-admin-v31 #bb-admin-v31-catalog,
+body.bb-admin-v31 #bb-admin-v31-loans,
+body.bb-admin-v31 #bb-admin-v31-tasks,
+body.bb-admin-v31 #bb-admin-v31-settings { min-width: 0; }
+body.bb-admin-v31 #bb-admin-v31-catalog .teacher-layout__overview {
+  width: 100%;
+  margin: 0;
+  padding: 21px 23px;
+  border: 1px solid var(--bb-line);
+  border-radius: 14px;
+  background: white;
+}
+body.bb-admin-v31 #bb-admin-v31-catalog #staff-book-overview-content[hidden] { display: none !important; }
+body.bb-admin-v31 #bb-admin-v31-catalog .book-grid { gap: 14px; }
+body.bb-admin-v31 #bb-admin-v31-catalog .book-card { border-radius: 13px; }
+body.bb-admin-v31 #bb-admin-v31-loans > .panel,
+body.bb-admin-v31 #bb-admin-v31-tasks > .panel,
+body.bb-admin-v31 #bb-admin-v31-settings > .panel {
+  margin: 0;
+  padding: 22px 24px;
+  border: 1px solid var(--bb-line);
+  border-radius: 14px;
+  background: white;
+  box-shadow: none;
+}
+body.bb-admin-v31 #admin-dashboard .admin-card {
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  border: 1px solid var(--bb-line);
+  border-radius: 14px;
+  background: white;
+}
+body.bb-admin-v31 #admin-dashboard .admin-card--books {
+  padding: 22px 24px;
+  scroll-margin-top: 86px;
+}
+body.bb-admin-v31 .bb-admin-v31-editor-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+body.bb-admin-v31 .bb-admin-v31-editor-heading h3 {
+  margin: 0;
+  color: var(--bb-ink);
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__danger {
+  margin-top: 20px;
+  border-radius: 14px;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__subtabs {
+  display: flex;
+  gap: 6px;
+  align-self: start;
+  justify-self: start;
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 4px;
+  border: 1px solid var(--bb-line);
+  border-radius: 10px;
+  background: #e8effa;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__subtab {
+  padding: 10px 17px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+body.bb-admin-v31 #admin-dashboard .admin-modern__subtab--active { background: var(--bb-navy); color: white; }
+body.bb-admin-v31 #admin-dashboard .admin-modern__people-view { display: block; min-width: 0; }
+body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: none; }
+@media (max-width: 1120px) {
+  body.bb-admin-v31 #admin-dashboard .admin-modern__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.bb-admin-v31 .bb-admin-v31-grid { grid-template-columns: 1fr; }
+  body.bb-admin-v31 .bb-admin-v31-card { min-height: 0; }
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31 > main { display: block; width: 100%; }
+  body.bb-admin-v31 #admin-dashboard { padding: 20px 14px 64px; width: 100%; }
+  body.bb-admin-v31 .hero.hero--staff { height: 63px; min-height: 63px; padding: 0 12px; gap: 9px; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { width: 55px; height: 35px; }
+  body.bb-admin-v31 .hero--staff .hero__content h1 { font-size: 1rem; }
+  body.bb-admin-v31 .hero--staff .hero__content p { display: none; }
+  body.bb-admin-v31 .hero--staff .hero__link { display: none; }
+  body.bb-admin-v31 .hero--staff .staff-meta--hero { flex-direction: row; width: auto; }
+  body.bb-admin-v31 #bb-admin-v31-menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 41px;
+    width: 41px;
+    height: 41px;
+    color: white;
+    background: transparent;
+    border: 1px solid #5e79a1;
+    border-radius: 8px;
+  }
+  body.bb-admin-v31 #bb-admin-v31-sidebar {
+    display: flex;
+    position: fixed;
+    top: 63px;
+    left: 0;
+    bottom: 0;
+    width: min(285px, 86vw);
+    height: calc(100dvh - 63px);
+    min-height: 0;
+    transform: translateX(-105%);
+    transition: transform .18s ease;
+    z-index: 45;
+    box-shadow: 7px 0 24px #102f641f;
+  }
+  body.bb-admin-v31.bb-admin-v31--open #bb-admin-v31-sidebar { transform: translateX(0); }
+  body.bb-admin-v31.bb-admin-v31--open #bb-admin-v31-scrim {
+    display: block;
+    position: fixed;
+    inset: 63px 0 0;
+    width: 100%;
+    border: 0;
+    background: #12223b80;
+    z-index: 44;
+  }
+  body.bb-admin-v31 .bb-admin-v31-grid { gap: 13px; }
+  body.bb-admin-v31 .bb-admin-v31-card { padding: 17px 16px; }
+  body.bb-admin-v31 #bb-admin-v31-catalog .teacher-layout__overview { padding: 17px 15px; }
+  body.bb-admin-v31 #admin-dashboard .admin-modern__subtabs { width: 100%; }
+  body.bb-admin-v31 #admin-dashboard .admin-modern__subtab { flex: 1; padding: 9px 8px; }
+  body.bb-admin-v31 #admin-dashboard .admin-modern__metric { padding-left: 17px; }
+}
+@media (max-width: 420px) {
+  body.bb-admin-v31 #admin-dashboard .admin-modern__metrics { gap: 9px; }
+  body.bb-admin-v31 .bb-admin-v31-heading { gap: 10px; }
+  body.bb-admin-v31 .bb-admin-v31-heading .btn { width: 100%; }
+  body.bb-admin-v31 .hero--staff .staff-meta__role { display: none; }
+  body.bb-admin-v31 .hero--staff #logout-button { padding: 7px; min-height: 35px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.bb-admin-v31 #bb-admin-v31-sidebar { transition: none; }
+}
