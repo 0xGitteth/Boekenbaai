@@ -287,7 +287,8 @@
       restore();
       dashboard.removeAttribute('aria-label');
       dashboard.setAttribute('aria-labelledby', 'teacher-panel-title');
-      setIdentity(false);
+      // Do not overwrite the administrator's branding during role switches.
+      if (admin.classList.contains('hidden')) setIdentity(false);
     }
   }
   const watcher = new MutationObserver(sync);
