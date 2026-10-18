@@ -612,6 +612,8 @@
       heading.textContent = originalTitle;
       if (intro) intro.textContent = originalIntro;
       if (filterLabel) filterLabel.textContent = originalFilterLabel;
+      panel.querySelector('#staff-loan-current')?.removeAttribute('tabindex');
+      panel.querySelector('#staff-loan-current')?.removeAttribute('aria-label');
       state.loanLayout = null;
       return;
     }
@@ -645,6 +647,8 @@
       make('p', { text: 'Bekijk lopende uitleningen of registreer een inname.' })
     );
     currentHead.append(currentIntro, filterField);
+    list.setAttribute('tabindex', '0');
+    list.setAttribute('aria-label', 'Overzicht van huidige uitleningen');
     current.append(currentHead, list);
     panel.replaceChildren(create, current);
   }
