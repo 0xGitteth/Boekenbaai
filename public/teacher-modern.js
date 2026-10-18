@@ -302,7 +302,7 @@
     due.before(container);
     container.append(due, preview);
     const update = () => {
-      const match = due.value.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+      const match = due.value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       preview.textContent = match
         ? match[3] + '-' + match[2] + '-' + match[1] : 'dd-mm-jjjj';
       preview.classList.toggle('bb-teacher-v31-date-preview--empty', !match);
@@ -415,6 +415,10 @@
     document.getElementById('bb-teacher-v31-shell').hidden = !active;
     if (active) {
       remount();
+      // Reuse the class-management refresh lifecycle so the unified task
+      // summary is populated even if student-management initialized before
+      // the role-specific dashboard appeared.
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
       const toggle = document.getElementById('staff-book-overview-toggle');
       if (toggle) toggle.hidden = true;
       dashboard.removeAttribute('aria-labelledby');
