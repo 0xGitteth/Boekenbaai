@@ -18,6 +18,10 @@ const runtimeAuthAssets = [
   'student-management-compat.js',
   'schoolmail-domain-helper.js',
 ];
+const headerBrandAssets = [
+  'logo/het-dok-header-v31.svg',
+  'logo/boekenbaai-book-mark-v31.svg',
+];
 
 const deployTarget = process.env.DEPLOY_TARGET;
 const configuredBase = process.env.BOEKENBAAI_BASE_PATH || process.env.BOEKENBAAI_BASE || null;
@@ -39,6 +43,12 @@ function copyRuntimeAuthAssets() {
     closeBundle() {
       mkdirSync(outputRoot, { recursive: true });
       for (const filename of runtimeAuthAssets) {
+        copyFileSync(resolve(publicRoot, filename), resolve(outputRoot, filename));
+      }
+      // admin-modern.js/css are copied unchanged, so their logo URLs cannot
+      // be discovered by Vite's asset graph. Copy both assets to dist/logo.
+      mkdirSync(resolve(outputRoot, 'logo'), { recursive: true });
+      for (const filename of headerBrandAssets) {
         copyFileSync(resolve(publicRoot, filename), resolve(outputRoot, filename));
       }
     },
