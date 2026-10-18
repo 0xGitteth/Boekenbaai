@@ -86,7 +86,7 @@ const readOnly=ctx.createField('Klas',control,{locked:true});
 assert.equal(readOnly.tag,'div');
 assert.equal(readOnly.children[1].tag,'p');
 assert.equal(readOnly.children[1].opts.text,'Klas X');
-assert.equal(control.disabled,false,'Read-only view must not modify an input');
+assert.equal(control.disabled,true,'Admin-only fields must remain disabled for teachers');
 const adminField=ctx.createField('Klas',control,{locked:false});
 assert.equal(adminField.tag,'label');
 assert.equal(adminField.children[1],control);
