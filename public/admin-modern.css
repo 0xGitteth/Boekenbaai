@@ -752,6 +752,209 @@ body.bb-admin-v31 #bb-admin-v31-settings > .panel {
   background: white;
   box-shadow: none;
 }
+
+/* Beheer loans: use the original interactive form and current-loans list,
+   but give them separate, purposeful cards rather than one sprawling panel. */
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-panel:not(.hidden) {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-card {
+  min-width: 0;
+  padding: 24px 26px;
+  border: 1px solid var(--bb-line);
+  border-radius: 14px;
+  background: #fff;
+}
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-create > .panel__header {
+  display: block;
+  margin: 0 0 23px;
+  padding: 0 0 17px;
+  border-bottom: 1px solid #e5ebf4;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loans-title {
+  margin: 0 0 5px;
+  font-family: inherit;
+  font-size: 1.32rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--bb-ink);
+}
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-create > .panel__header .hint {
+  margin: 0;
+  max-width: 640px;
+  font-size: .9rem;
+  color: var(--bb-muted);
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 19px 20px;
+  align-items: end;
+  margin: 0;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form > .form-field {
+  min-width: 0;
+  align-content: start;
+  gap: 7px;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form label,
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-current-header label {
+  color: var(--bb-ink);
+  font-size: .85rem;
+  font-weight: 750;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form > .form-field:nth-child(3) {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 20px;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form label[for="staff-loan-book-search"] {
+  grid-area: 1 / 1;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-book-search {
+  grid-area: 2 / 1;
+  margin: 0;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form label[for="staff-loan-book"] {
+  grid-area: 1 / 2;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-book {
+  grid-area: 2 / 2;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-copy-hint:not([hidden]) {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form > .form-field:last-child {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  align-self: end;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-submit {
+  width: min(100%, 220px);
+  min-height: 42px;
+  margin: 0;
+  border-radius: 9px;
+  font-weight: 750;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-message {
+  margin: 14px 0 0;
+  font-weight: 650;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-message:empty { display: none; }
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-current-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-current-header h3 {
+  margin: 0 0 5px;
+  font-size: 1.24rem;
+  font-weight: 800;
+  color: var(--bb-ink);
+}
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-current-header p {
+  margin: 0;
+  font-size: .88rem;
+  color: var(--bb-muted);
+}
+body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-current-header .form-field {
+  flex: 0 1 265px;
+  min-width: 215px;
+  gap: 6px;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current {
+  display: grid;
+  gap: 10px;
+  max-height: 430px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current > .hint {
+  margin: 0;
+  padding: 24px 16px;
+  border: 1px dashed #d7e2ee;
+  border-radius: 10px;
+  background: #f7f9fd;
+  color: var(--bb-muted);
+  text-align: center;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current .class-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  margin: 0;
+  padding: 13px 15px;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current .class-card > strong {
+  grid-column: 1;
+  align-self: end;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current .class-card > p {
+  grid-column: 1;
+  margin: 4px 0 0;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current .class-card > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
+  white-space: nowrap;
+  min-height: 38px;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current:focus-visible {
+  outline: 3px solid #80aef2;
+  outline-offset: 2px;
+  border-radius: 9px;
+}
+@media (max-width: 940px) {
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form > .form-field:nth-child(3) {
+    grid-column: 1;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form label[for="staff-loan-book-search"],
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-book-search,
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form label[for="staff-loan-book"],
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-book { grid-area: auto; }
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-form > .form-field:last-child { justify-content: start; }
+  body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-current-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-current-header .form-field {
+    flex-basis: auto;
+    min-width: 0;
+  }
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31 #bb-admin-v31-loans .bb-admin-v31-loan-card { padding: 18px 16px; }
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-submit { width: 100%; }
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current .class-card {
+    grid-template-columns: 1fr;
+  }
+  body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-current .class-card > button {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+    margin-top: 10px;
+  }
+}
+
 body.bb-admin-v31 #admin-dashboard .admin-card {
   min-width: 0;
   max-width: none;
