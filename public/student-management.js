@@ -565,8 +565,14 @@
   }
 
   function render() {
-    const host = document.querySelector('#teacher-dashboard');
-    if (!host || host.classList.contains('hidden') || !state) return;
+    const dashboard = document.querySelector('#teacher-dashboard');
+    if (!dashboard || dashboard.classList.contains('hidden') || !state) return;
+    // The live panel is recreated on each refresh. When v3.1 teacher
+    // navigation is active, render directly in the role-specific class view,
+    // never as an unscoped sibling visible on all navigation pages.
+    const classView = document.querySelector('[data-teacher-view="classes"]');
+    const host = document.body.classList.contains('bb-teacher-v31') && classView
+      ? classView : dashboard;
     let panel = document.querySelector('#student-management-panel');
     if (panel) panel.remove();
     panel = make('section', { className: 'panel student-management', id: 'student-management-panel' });
