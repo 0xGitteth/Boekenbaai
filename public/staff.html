@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="admin-book-import-review.css" />
     <link rel="stylesheet" href="teacher-modern.css" />
+    <link rel="stylesheet" href="teacher-v31-polish.css" />
     <style>
       .bb-followup-badge {
         display: inline-flex;
@@ -923,7 +924,7 @@
         <p id="staff-loan-message" class="hint" role="status" aria-live="polite"></p>
         <div class="form-field">
           <label for="staff-loan-filter">Huidige uitleningen</label>
-          <select id="staff-loan-filter"><option value="">Alle toegestane klassen</option></select>
+          <select id="staff-loan-filter"><option value="">Al mijn klassen</option></select>
         </div>
         <div id="staff-loan-current" class="class-list" aria-live="polite"></div>
       </section>
@@ -965,6 +966,7 @@
         </div>
         <p id="book-import-mail-config" class="hint"></p>
         <form id="book-import-mail-mode-form" class="form-grid form-grid--compact">
+          <h3>Waar wil je herinneringen ontvangen?</h3>
           <label class="form-field">E-mailherinneringen
             <select id="book-import-mail-mode" required>
               <option value="school">Naar mijn Boekenbaai-schoolaccount (standaard)</option>
@@ -977,6 +979,8 @@
           <button type="submit" class="btn btn--secondary">Voorkeur opslaan</button>
         </form>
         <form id="book-import-mail-request-form" class="form-grid form-grid--compact" hidden>
+          <h3>Alternatief e-mailadres</h3>
+          <p class="hint">Gebruik je liever een ander werkadres? Verifieer het hier éénmalig.</p>
           <label class="form-field">Ander zakelijk e-mailadres
             <input id="book-import-mail-request-address" type="email" autocomplete="email"
               maxlength="254" placeholder="naam@werkorganisatie.nl" required />
