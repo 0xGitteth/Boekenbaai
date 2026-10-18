@@ -5135,8 +5135,8 @@ async function handleApi(req, res, requestUrl) {
         if (!mailConfig.ready) return sendJson(res, 503, {
           message: 'E-mailverzending is nog niet ingesteld door beheer.' });
         const wanted = validEmail(body.email);
-        if (!wanted) return sendJson(res, 400, {
-          message: 'Voer een geldig zakelijk e-mailadres in.' });
+        if (!wanted || !wanted.endsWith('@koraal.nl')) return sendJson(res, 400, {
+          message: 'Gebruik een geldig alternatief e-mailadres dat eindigt op @koraal.nl.' });
         const attempt = beginVerification(database, user.id,
           wanted, mailConfig.key);
         if (!attempt.ok) return sendJson(res,
