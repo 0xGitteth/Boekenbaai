@@ -11,6 +11,7 @@ const css = fs.readFileSync(path.join(root, 'public/admin-modern.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'public/staff.html'), 'utf8');
 const staffLoans = fs.readFileSync(path.join(root, 'public/staff-loans.js'), 'utf8');
+const studentManagement = fs.readFileSync(path.join(root, 'public/student-management.js'), 'utf8');
 
 new vm.Script(js, { filename: 'public/admin-modern.js' });
 
@@ -93,5 +94,13 @@ assert.match(staffLoans, /'Exemplaar-ID: ' \+ copy\.id/,
 assert.match(staffLoans, /barcode gedeeld/,
   'De UI moet informeren dat de barcode niet uniek is.');
 assert.match(staffLoans, /bookSearch\?\.addEventListener\('input', showBooks\)/);
+
+assert.match(studentManagement, /id = 'admin-student-quick-search'/,
+  'Beheer moet een eigen leerlingzoekveld over alle klassen hebben.');
+assert.match(studentManagement, /toLocaleLowerCase\('nl-NL'\)\.includes\(query\)/,
+  'Leerlingzoekveld moet zonder hoofdlettergevoeligheid zoeken.');
+assert.match(studentManagement, /group\.details\.hidden = Boolean\(query\) && matches === 0/,
+  'Niet-relevante klassen mogen bij zoeken niet zichtbaar blijven.');
+assert.match(js, /installAdminBookModalFocusTrap\(\)/);
 
 console.log('Beheer v3.1 functiebehoud- en navigatietests geslaagd.');
