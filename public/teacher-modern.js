@@ -90,6 +90,14 @@
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
     if (next === 'start') void updateStart();
+    if (next === 'catalog') {
+      // The old layout defaults to a folded overview on login. In the
+      // dedicated Catalogus page that would leave an empty white card.
+      const content = document.getElementById('staff-book-overview-content');
+      const toggle = document.getElementById('staff-book-overview-toggle');
+      if (content) content.hidden = false;
+      if (toggle) toggle.setAttribute('aria-expanded', 'true');
+    }
     if (next === 'lending') window.dispatchEvent(new Event('boekenbaai:staff-refresh'));
   }
   function card(title, destination, description) {
@@ -185,12 +193,9 @@
     const taskCard = card('Acties voor mij', 'tasks');
     addAction(taskCard, 'Klaswissels en koppelingen', 'Bekijk je leerlingen en verzoeken', 'classes');
     addAction(taskCard, 'Boekimportcontroles', 'Gedeelde controletaken per klas', 'tasks');
-    const quick = card('Snel naar');
-    addAction(quick, 'Boeken zoeken', 'Catalogus en beschikbaarheid', 'catalog');
-    addAction(quick, 'Uitlenen en innemen', 'Een leerling of klas en een fysiek exemplaar', 'lending');
     const recent = card('Recente activiteit');
     recent.id = 'bb-teacher-v31-activity';
-    grid.append(classesCard, taskCard, quick, recent);
+    grid.append(classesCard, taskCard, recent);
     start.append(grid);
     const classes = makeView('classes', 'Mijn klassen', 'Bekijk leerlingen, klaswissels en de klassen waarvoor je bevoegd bent.');
     const catalog = makeView('catalog', 'Catalogus', 'Zoek, filter en bekijk de beschikbaarheid van de schoolbibliotheek.');
@@ -203,6 +208,11 @@
     place(dashboard.querySelector('.teacher-layout__classes'), classes);
     place(dashboard.querySelector('.panel__header--staff'), catalog);
     place(dashboard.querySelector('.teacher-layout'), catalog);
+    const toggle = document.getElementById('staff-book-overview-toggle');
+    if (toggle) {
+      toggle.dataset.teacherOldHidden = String(toggle.hidden);
+      toggle.hidden = true;
+    }
     place(document.getElementById('staff-loan-panel'), lending);
     place(document.getElementById('book-import-followups-panel'), tasks);
     place(document.getElementById('book-import-mail-preferences-panel'), account);
@@ -245,7 +255,8 @@
     clearClassSummary();
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
-    const teacherName = document.getElementById('staff-name')?.textContent?.trim();
+    // Keep the full identity in the header, but greet the teacher by first name.
+    const teacherName = document.getElementById('staff-name')?.textContent?.trim().split(/\s+/)[0];
     const title = panels.start?.querySelector('h2');
     if (title) title.textContent = teacherName ? greeting + ', ' + teacherName : 'Welkom terug';
     metrics.replaceChildren();
@@ -322,6 +333,8 @@
     document.getElementById('bb-teacher-v31-shell').hidden = !active;
     if (active) {
       remount();
+      const toggle = document.getElementById('staff-book-overview-toggle');
+      if (toggle) toggle.hidden = true;
       dashboard.removeAttribute('aria-labelledby');
       dashboard.setAttribute('aria-label', 'Docentenportaal');
       // Pages outside teacher-dashboard still receive original visibility
@@ -329,6 +342,11 @@
       setIdentity(true);
       setPage(page, false);
     } else {
+      const toggle = document.getElementById('staff-book-overview-toggle');
+      if (toggle && toggle.dataset.teacherOldHidden !== undefined) {
+        toggle.hidden = toggle.dataset.teacherOldHidden === 'true';
+        delete toggle.dataset.teacherOldHidden;
+      }
       ++requestId;
       clearClassSummary();
       closeMenu();
