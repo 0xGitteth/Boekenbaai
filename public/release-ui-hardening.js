@@ -145,7 +145,9 @@
 
   function keepImportLabelSimple() {
     document.querySelectorAll('[data-admin-modern-tab="imports"]').forEach((button) => {
-      setTextIfChanged(button, 'Importeren');
+      const label = button.querySelector('.bb-admin-v31-nav-icon + span');
+      if (label) setTextIfChanged(label, 'Importeren');
+      else setTextIfChanged(button, 'Importeren');
     });
   }
 
