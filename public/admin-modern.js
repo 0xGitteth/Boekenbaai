@@ -241,7 +241,7 @@
       '<section class="bb-admin-v31-card bb-admin-v31-card--stats"><h3>Schoolstatistieken</h3>',
       '<p>Bekijk uitleen- en leesstatistieken van de school.</p>',
       '<div id="bb-admin-v31-stats"></div></section></div>',
-      '<div class="bb-admin-v31-column">',
+      '<div class="bb-admin-v31-column bb-admin-v31-column--activity">',
       '<section class="bb-admin-v31-card bb-admin-v31-card--activity"><div class="bb-admin-v31-card-head">',
       '<h3>Recente activiteit</h3><div id="bb-admin-v31-activity-actions"></div></div>',
       '<div id="bb-admin-v31-activity"></div></section></div></div>',
@@ -307,12 +307,35 @@
   }
 
   function moveDangerousBookAction(booksView) {
-    const deleteAll = document.querySelector('#admin-books-delete-all');
-    if (!deleteAll || !booksView) return;
-    const danger = make('section', { className: 'admin-modern__danger' });
-    danger.innerHTML = '<div><h4>Geavanceerd</h4><p class="hint">Acties die de volledige collectie beïnvloeden.</p></div>';
-    danger.append(deleteAll);
-    booksView.append(danger);
+    const deleteAll = document.getElementById('admin-books-delete-all');
+    const heading = booksView?.querySelector('.bb-admin-v31-heading');
+    if (!deleteAll || !heading) return;
+    // Reuse the exact admin-only button and existing confirmation handler.
+    // Keep the destructive action distinct from primary "Nieuw boek".
+    deleteAll.classList.add('bb-admin-v31-delete-library');
+    const actions = make('div', { className: 'bb-admin-v31-books-actions' });
+    actions.append(deleteAll);
+    heading.append(actions);
+  }
+
+  function organizeMailSettings() {
+    const panel = document.getElementById('admin-mail-notifications-panel');
+    if (!panel || panel.dataset.v31SettingsOrganized) return;
+    const recipientList = panel.querySelector('#admin-mail-notifications-list');
+    const addForm = panel.querySelector('#admin-mail-add-form');
+    const categories = panel.querySelector('#admin-mail-categories');
+    const delivery = panel.querySelector('#admin-mail-delivery');
+    const status = panel.querySelector('#admin-mail-notifications-status');
+    if (!recipientList || !addForm || !categories || !delivery || !status) return;
+    panel.dataset.v31SettingsOrganized = 'true';
+    const layout = make('div', { className: 'bb-admin-v31-settings-layout' });
+    const addresses = make('section', { className: 'bb-admin-v31-settings-section' });
+    addresses.append(make('h3', { text: 'Ontvangstadressen' }), delivery, recipientList);
+    addresses.append(make('h4', { text: 'Beheerdersadres toevoegen' }), addForm);
+    const preferences = make('section', { className: 'bb-admin-v31-settings-section' });
+    preferences.append(categories, status);
+    layout.append(addresses, preferences);
+    panel.append(layout);
   }
 
   function modernizeImports() {
@@ -704,14 +727,6 @@
     const booksView = viewHeading('books', 'Boeken', 'Zoek, bekijk en beheer de catalogus en fysieke exemplaren.');
     const catalogHost = make('div', { id: 'bb-admin-v31-catalog' });
     booksView.append(catalogHost);
-    const catalogToggle = make('button', { className: 'btn btn--ghost', text: 'Catalogus inklappen', type: 'button', id: 'bb-admin-v31-toggle-catalog' });
-    catalogToggle.setAttribute('aria-controls', 'staff-book-overview-content');
-    catalogToggle.setAttribute('aria-expanded', 'true');
-    catalogToggle.addEventListener('click', () => {
-      document.getElementById('staff-book-overview-toggle')?.click();
-      updateCatalogToggle();
-    });
-    booksView.querySelector('.bb-admin-v31-heading').append(catalogToggle);
     const newBook = make('button', { className: 'btn', type: 'button', text: '+ Nieuw boek', id: 'bb-admin-v31-open-editor' });
     newBook.addEventListener('click', () => showBookEditor(true));
     booksView.querySelector('.bb-admin-v31-heading').append(newBook);
@@ -724,11 +739,13 @@
     const accountTaskLinks = make('section', { className: 'bb-admin-v31-card' });
     accountTaskLinks.append(make('h3', { text: 'Andere beheertaken' }));
     accountTaskLinks.append(make('p', { text: 'Behandel klaswissels en Google-koppelverzoeken via Personen en klassen.' }));
+    const taskActions = make('div', { className: 'bb-admin-v31-task-actions' });
     for (const [label, kind] of [['Leerling- en klasverzoeken openen', 'students'], ['Docent- en Google-koppelingen openen', 'teachers']]) {
-      const link = make('button', { className: 'bb-admin-v31-quick-row', text: label, type: 'button' });
+      const link = make('button', { className: 'btn btn--secondary', text: label, type: 'button' });
       link.addEventListener('click', () => { setActiveView('people'); setPeopleView(kind); });
-      accountTaskLinks.append(link);
+      taskActions.append(link);
     }
+    accountTaskLinks.append(taskActions);
     tasksView.append(accountTaskLinks);
     const importsView = viewHeading('imports', 'Importeren', 'Boeken en personen veilig importeren met voorcontrole.');
     importsView.append(importsCard);
@@ -737,6 +754,7 @@
 
     container.append(overviewView, booksView, peopleView, loansView, tasksView, importsView, settingsView);
     moveDangerousBookAction(booksView);
+    organizeMailSettings();
     installBookEditorControls(booksCard);
     installAdminBookModalFocusTrap();
     modernizeImports();
