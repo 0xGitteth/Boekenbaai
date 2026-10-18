@@ -51,6 +51,10 @@ assert.match(js, /place\(document\.getElementById\('staff-loan-panel'\), lending
 assert.match(js, /place\(document\.getElementById\('book-import-mail-preferences-panel'\), account\)/);
 assert.match(js, /place\(document\.getElementById\('history-panel'\), recent\)/);
 assert.match(js, /fetch\('\/api\/staff\/loans'/);
+assert.match(js, /fetch\('\/api\/staff\/book-import-followups'/);
+assert.match(css, /grid-template-columns: repeat\(4,minmax\(0,1fr\)\)/);
+assert.match(js, /Goedemorgen/);
+assert.match(js, /Openstaande taken/);
 assert.match(js, /localStorage\.getItem\('boekenbaai_token'\)/);
 assert.match(js, /window\.dispatchEvent\(new Event\('boekenbaai:staff-refresh'\)\)/);
 assert.match(admin, /body\.classList\.toggle\('bb-admin-v31', active\)/);
