@@ -146,9 +146,21 @@
 
 
 
+  function syncMobileNavigation() {
+    const sidebar = document.getElementById('bb-admin-v31-sidebar');
+    if (!sidebar) return;
+    const mobile = window.matchMedia('(max-width: 760px)').matches;
+    const closed = mobile && !document.body.classList.contains('bb-admin-v31--open');
+    sidebar.inert = closed || !document.body.classList.contains('bb-admin-v31');
+    sidebar.setAttribute('aria-hidden', String(closed || !document.body.classList.contains('bb-admin-v31')));
+  }
+
   function closeMobileNavigation() {
     document.body.classList.remove('bb-admin-v31--open');
-    document.getElementById('bb-admin-v31-menu')?.setAttribute('aria-expanded', 'false');
+    const menu = document.getElementById('bb-admin-v31-menu');
+    menu?.setAttribute('aria-expanded', 'false');
+    menu?.setAttribute('aria-label', 'Navigatie openen');
+    syncMobileNavigation();
   }
 
   function createTabs(dashboard) {
@@ -191,16 +203,25 @@
         document.body.classList.toggle('bb-admin-v31--open', open);
         toggle.setAttribute('aria-expanded', String(open));
         toggle.setAttribute('aria-label', open ? 'Navigatie sluiten' : 'Navigatie openen');
+        syncMobileNavigation();
+        if (open) sidebar.querySelector('button')?.focus();
       });
       hero.prepend(toggle);
     }
     const scrim = make('button', { className: 'bb-admin-v31-scrim', id: 'bb-admin-v31-scrim', type: 'button' });
     scrim.setAttribute('aria-label', 'Navigatie sluiten');
-    scrim.addEventListener('click', closeMobileNavigation);
+    scrim.addEventListener('click', () => {
+      closeMobileNavigation();
+      document.getElementById('bb-admin-v31-menu')?.focus();
+    });
     document.body.append(scrim);
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') closeMobileNavigation();
+      if (event.key === 'Escape' && document.body.classList.contains('bb-admin-v31--open')) {
+        closeMobileNavigation();
+        document.getElementById('bb-admin-v31-menu')?.focus();
+      }
     });
+    window.matchMedia('(max-width: 760px)').addEventListener('change', syncMobileNavigation);
   }
 
 
@@ -539,6 +560,7 @@
     const legacyList = document.getElementById('admin-book-list');
     const legacySection = legacyList?.closest('.admin-card__section');
     if (legacySection) legacySection.hidden = true;
+    syncMobileNavigation();
     const name = document.querySelector('.hero--staff h1');
     const intro = document.querySelector('.hero--staff .hero__content p');
     if (name) name.textContent = 'Boekenbaai';
