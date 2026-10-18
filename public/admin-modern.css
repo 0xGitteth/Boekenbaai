@@ -277,7 +277,15 @@ body.bb-admin-v31 .hero.hero--staff {
   box-shadow: none;
   color: #fff;
 }
-body.bb-admin-v31 .hero--staff .hero__content { flex: 0 1 auto; min-width: 0; padding: 0; }
+/* The legacy staff hero is a grid. In the admin flex header its original
+   width constraints must not shrink the wordmark underneath the logo. */
+body.bb-admin-v31 .hero--staff .hero__content {
+  flex: 0 0 auto;
+  min-width: max-content;
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
 body.bb-admin-v31 .hero--staff .hero__content h1 {
   margin: 0;
   color: #fff;
@@ -307,10 +315,11 @@ body.bb-admin-v31 .hero--staff .hero__illustration {
   width: 150px;
   height: 48px;
   min-height: 0;
-  padding: 3px 8px;
-  margin: 0;
-  border-radius: 8px;
-  background: #fff;
+  padding: 0;
+  margin: 0 0 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 body.bb-admin-v31 .hero--staff .hero__logo {
   position: static;
@@ -328,7 +337,10 @@ body.bb-admin-v31 .hero--staff .hero__actions {
   flex-flow: row nowrap;
   gap: 10px;
   margin: 0 0 0 auto;
+  width: auto; /* override legacy .hero--staff .hero__actions { width: 100%; } */
+  flex: 0 0 auto;
   min-width: 0;
+  justify-content: flex-end;
 }
 /* Logged-in staff use their own navigation and Uitloggen, not the student-back link. */
 body.bb-admin-v31 .hero--staff .hero__link,
@@ -660,27 +672,33 @@ body.bb-admin-v31 #bb-admin-v31-activity .panel {
   box-shadow: none;
   background: transparent;
 }
-/* Preserve the existing administrator-only history-clear control and its status. */
+/* Move the *same* privileged controls beside Recente activiteit; the empty
+   legacy panel header must not reserve a second row of whitespace. */
 body.bb-admin-v31 #bb-admin-v31-activity #history-panel > .panel__header {
+  display: none !important;
+}
+body.bb-admin-v31 #bb-admin-v31-activity-actions {
   display: flex;
-  justify-content: flex-end;
   align-items: center;
-  padding: 0 0 10px;
-  margin: 0;
-  background: transparent;
-  border: 0;
+  min-width: 0;
 }
-body.bb-admin-v31 #bb-admin-v31-activity #history-panel > .panel__header > div:not(#history-actions) {
-  display: none;
-}
-body.bb-admin-v31 #bb-admin-v31-activity #history-actions:not(.hidden) {
+body.bb-admin-v31 #bb-admin-v31-activity-actions #history-actions:not(.hidden) {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  margin: 0;
 }
-body.bb-admin-v31 #bb-admin-v31-activity #history-actions.hidden {
+body.bb-admin-v31 #bb-admin-v31-activity-actions #history-actions.hidden {
   display: none !important;
+}
+body.bb-admin-v31 #bb-admin-v31-activity-actions #history-message:not(:empty) {
+  flex-basis: 100%;
+  margin: 0;
+}
+body.bb-admin-v31 .bb-admin-v31-card--activity > .bb-admin-v31-card-head {
+  align-items: center;
+  margin-bottom: 5px;
 }
 body.bb-admin-v31 #bb-admin-v31-activity #history-list {
   padding: 0;
@@ -801,7 +819,7 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
   body.bb-admin-v31 > main { display: block; width: 100%; }
   body.bb-admin-v31 #admin-dashboard { padding: 20px 14px 64px; width: 100%; }
   body.bb-admin-v31 .hero.hero--staff { height: 63px; min-height: 63px; padding: 0 12px; gap: 9px; }
-  body.bb-admin-v31 .hero--staff .hero__illustration { width: 107px; height: 37px; padding: 2px 4px; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { width: 107px; height: 37px; padding: 0; margin-left: 3px; }
   body.bb-admin-v31 .hero--staff .hero__content h1 { font-size: 1rem; gap: 7px; }
   body.bb-admin-v31 .hero--staff .hero__content h1::before {
     width: 28px; height: 28px; flex-basis: 28px; background-size: 21px;
@@ -865,14 +883,20 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
 }
 @media (max-width: 480px) {
   body.bb-admin-v31 .hero.hero--staff { gap: 6px; }
+  body.bb-admin-v31 .hero--staff .hero__content { min-width: 0; flex: 0 1 auto; }
+  body.bb-admin-v31 .hero--staff .hero__content h1 { font-size: .94rem; }
+  body.bb-admin-v31 .hero--staff .hero__illustration { flex: 0 1 86px; min-width: 57px; }
+  body.bb-admin-v31 .hero--staff .hero__actions { flex: 0 0 auto; width: auto; margin-left: auto; }
   body.bb-admin-v31 .hero--staff .hero__illustration { width: 86px; height: 33px; }
   body.bb-admin-v31 .hero--staff .staff-meta #logout-button {
     padding: 8px 9px;
     min-height: 35px;
     font-size: .8rem;
   }
-  body.bb-admin-v31 .bb-admin-v31-quick-row { gap: 9px; }
-  body.bb-admin-v31 .bb-admin-v31-quick-open { padding: 6px 8px; }
+  body.bb-admin-v31 .bb-admin-v31-card--activity > .bb-admin-v31-card-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   body.bb-admin-v31 #bb-admin-v31-sidebar { transition: none; }
