@@ -306,6 +306,7 @@ body.bb-admin-v31 .hero--staff .hero__illustration {
   flex: 0 0 auto;
   width: 150px;
   height: 48px;
+  min-height: 0;
   padding: 3px 8px;
   margin: 0;
   border-radius: 8px;
@@ -326,7 +327,7 @@ body.bb-admin-v31 .hero--staff .hero__actions {
   align-items: center;
   flex-flow: row nowrap;
   gap: 10px;
-  margin-left: auto;
+  margin: 0 0 0 auto;
   min-width: 0;
 }
 /* Logged-in staff use their own navigation and Uitloggen, not the student-back link. */
