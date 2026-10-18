@@ -649,6 +649,9 @@ body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form
 
 /* As with all original staff forms, the single borrowing primary action has
    one predictable place. It is not duplicated as an extra Start shortcut. */
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field:last-child {
+  justify-content: flex-start;
+}
 body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-submit {
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
