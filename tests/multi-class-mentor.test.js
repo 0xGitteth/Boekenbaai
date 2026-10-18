@@ -96,7 +96,7 @@ function baseDb() {
   );
   assert.match(
     source,
-    /students\.forEach\(\(student\) => details\.append\(studentRow\(student, adminClass\.id\)\)\)/,
+    /(?:students\.forEach\(\(student\) => details\.append\(studentRow\(student, adminClass\.id\)\)\)|students\.map\(\(student\) => \(\{ student, row: studentRow\(student, adminClass\.id\) \}\)\))/,
     'Beheer moet de bronklas van het zichtbare klasblok expliciet meegeven'
   );
 })();
