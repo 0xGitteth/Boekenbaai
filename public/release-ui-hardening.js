@@ -126,6 +126,9 @@
   }
 
   function collapseBookOverviewOnLogin() {
+    // A dedicated Catalogus page must never be auto-collapsed by the
+    // historical one-page teacher layout hardening.
+    if (document.body.classList.contains('bb-teacher-v31')) return;
     const dashboard = document.querySelector('#teacher-dashboard');
     const content = document.querySelector('#staff-book-overview-content');
     const toggle = document.querySelector('#staff-book-overview-toggle');

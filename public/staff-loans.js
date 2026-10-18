@@ -116,7 +116,8 @@ if (panel) {
   function showFilters() {
     const old = filter.value;
     filter.replaceChildren();
-    option(filter, '', 'Alle toegestane klassen');
+    option(filter, '', document.body.classList.contains('bb-teacher-v31')
+      ? 'Al mijn klassen' : 'Alle toegestane klassen');
     for (const klass of state.classes) option(filter, klass.id, klass.name);
     filter.value = state.classes.some((klass) => klass.id === old) ? old : '';
   }

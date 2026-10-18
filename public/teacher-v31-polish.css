@@ -1,0 +1,548 @@
+/* Boekenbaai v3.1 – teacher polish. Keep everything scoped to the
+   authenticated teacher role; Beheer, students and login remain unchanged. */
+
+/* The sidebar already duplicates "Snel naar"; recent activity belongs in
+   the left column of the second dashboard row. */
+body.bb-teacher-v31 .bb-teacher-v31-grid #bb-teacher-v31-activity {
+  grid-column: 1;
+  align-self: start;
+}
+body.bb-teacher-v31 #bb-teacher-v31-activity #history-list {
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The catalog is a full page, not a collapsible section nested in a page. */
+body.bb-teacher-v31 [data-teacher-view="catalog"] > .panel__header--staff {
+  display: none !important;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] > .teacher-layout {
+  padding: 24px 26px;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] .teacher-overview__header {
+  margin: 0 0 15px;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] #staff-catalog-title {
+  margin: 0;
+  font-size: 1.14rem;
+  font-weight: 800;
+  color: var(--bbt-ink);
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] #staff-book-overview-content {
+  display: block;
+  min-width: 0;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] #staff-book-overview-content .filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 11px;
+  margin-bottom: 15px;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] .filters__themes,
+body.bb-teacher-v31 [data-teacher-view="catalog"] .filters__pills {
+  min-width: 0;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] .filters__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] #search-input,
+body.bb-teacher-v31 [data-teacher-view="catalog"] #staff-book-sort-select {
+  width: 100%;
+  max-width: none;
+  min-height: 42px;
+  border-radius: 9px;
+  border: 1px solid #bfcfe3;
+  background: #fff;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] #book-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+body.bb-teacher-v31 [data-teacher-view="catalog"] .book-card {
+  min-width: 0;
+  border-radius: 12px;
+  border: 1px solid #e1e7f1;
+}
+
+/* My classes: tighter cards, clearer individual student rows. */
+body.bb-teacher-v31 [data-teacher-view="classes"] > .teacher-layout__classes,
+body.bb-teacher-v31 [data-teacher-view="classes"] > #student-management-panel {
+  margin: 0;
+  padding: 24px 26px;
+  border: 1px solid var(--bbt-line);
+  border-radius: 14px;
+  background: white;
+  box-shadow: none;
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] #student-management-panel {
+  display: grid;
+  gap: 17px;
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__header {
+  padding-bottom: 13px;
+  border-bottom: 1px solid #e6edf5;
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__header h3 {
+  color: var(--bbt-ink);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__section {
+  padding: 19px 20px;
+  border: 1px solid #e1e9f4;
+  background: #fff;
+  border-radius: 12px;
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__section h4 {
+  font-size: 1.05rem;
+  color: var(--bbt-ink);
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__student-row {
+  min-height: 59px;
+  padding: 12px 8px;
+  border-color: #e8eef6;
+  border-radius: 8px;
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__student-info strong {
+  color: var(--bbt-ink);
+}
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__student-row[data-student-detail-ready="true"]:hover,
+body.bb-teacher-v31 [data-teacher-view="classes"] .student-management__student-row[data-student-detail-ready="true"]:focus-visible {
+  background: #edf4ff;
+  box-shadow: inset 0 0 0 1px #d5e3f5;
+}
+
+/* Student details: read-only data should look like information, not a locked
+   technical form. Keep admin edit controls and all teacher actions intact. */
+body.bb-teacher-v31 .student-detail__dialog {
+  width: min(720px, calc(100vw - 28px));
+  max-height: min(90dvh, 900px);
+  overflow-y: auto;
+  border: 1px solid #dce6f2;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 25px 75px #10284942;
+}
+body.bb-teacher-v31 .student-detail__dialog::backdrop {
+  background: rgba(16, 36, 68, .48);
+}
+body.bb-teacher-v31 .student-detail__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 22px 24px;
+}
+body.bb-teacher-v31 .student-detail__header {
+  grid-column: 1 / -1;
+  align-items: center;
+  padding: 0 0 15px;
+  border-bottom: 1px solid #e5edf5;
+}
+body.bb-teacher-v31 .student-detail__header h3 {
+  color: var(--bbt-ink);
+  font-size: 1.5rem;
+  line-height: 1.2;
+  font-weight: 800;
+}
+body.bb-teacher-v31 .student-detail__header .hint { margin: 5px 0 0; }
+body.bb-teacher-v31 .student-detail__header .btn {
+  margin: 0;
+  min-height: 38px;
+  border-radius: 9px;
+}
+body.bb-teacher-v31 .student-detail__section {
+  align-content: start;
+  min-width: 0;
+  gap: 12px;
+  padding: 17px 18px;
+  background: #f8faff;
+  border: 1px solid #e1e9f4;
+  border-radius: 12px;
+}
+body.bb-teacher-v31 .student-detail__section h4 {
+  color: var(--bbt-ink);
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+body.bb-teacher-v31 .student-detail__advanced,
+body.bb-teacher-v31 .student-detail__message,
+body.bb-teacher-v31 .student-detail__section:last-of-type {
+  grid-column: 1 / -1;
+}
+body.bb-teacher-v31 .student-detail__read-only {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+body.bb-teacher-v31 .student-detail__read-only > span:first-child {
+  color: var(--bbt-muted);
+  font-size: .78rem;
+  font-weight: 750;
+}
+body.bb-teacher-v31 .student-detail__read-only-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--bbt-ink);
+  font-size: .94rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+body.bb-teacher-v31 .student-detail__read-only-note {
+  margin: 4px 0 0;
+  font-size: .79rem;
+  line-height: 1.45;
+  color: var(--bbt-muted);
+}
+body.bb-teacher-v31 .student-detail__advanced {
+  padding: 14px 18px;
+}
+body.bb-teacher-v31 .student-detail__advanced summary {
+  font-size: .89rem;
+  color: var(--bbt-ink);
+  font-weight: 750;
+}
+body.bb-teacher-v31 .student-detail__actions--danger {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+}
+body.bb-teacher-v31 .student-detail__actions .btn {
+  min-height: 39px;
+  border-radius: 9px;
+}
+body.bb-teacher-v31 .student-detail__danger,
+body.bb-teacher-v31 .student-management__danger-button {
+  background: #b42337 !important;
+  border: 1px solid #a61e32 !important;
+  color: #fff !important;
+  font-weight: 750 !important;
+  box-shadow: none;
+}
+body.bb-teacher-v31 .student-detail__danger:hover,
+body.bb-teacher-v31 .student-management__danger-button:hover {
+  background: #941c30 !important;
+  border-color: #861428 !important;
+}
+body.bb-teacher-v31 .student-detail__danger:focus-visible,
+body.bb-teacher-v31 .student-management__danger-button:focus-visible {
+  outline: 3px solid #f69aaa;
+  outline-offset: 3px;
+}
+
+/* Borrowing: match the compact, aligned form treatment from Beheer instead of
+   four uneven, widely separated fields. All existing controls stay live. */
+body.bb-teacher-v31 [data-teacher-view="lending"] > #staff-loan-panel {
+  display: block;
+  padding: 23px 26px;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-panel > .panel__header {
+  display: block;
+  margin: 0 0 20px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid #e6edf5;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loans-title {
+  margin: 0 0 6px;
+  font-size: 1.3rem;
+  line-height: 1.2;
+  font-weight: 800;
+  color: var(--bbt-ink);
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-panel > .panel__header .hint {
+  margin: 0;
+  font-size: .9rem;
+  max-width: 700px;
+  color: var(--bbt-muted);
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 17px 19px;
+  align-items: end;
+  margin: 0;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  margin: 0;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form label {
+  font-size: .85rem;
+  font-weight: 750;
+  color: var(--bbt-ink);
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form select,
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form input,
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-filter {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid #bfd0e6;
+  border-radius: 9px;
+  background: #fff;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field:nth-child(3) {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 19px;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form label[for="staff-loan-book-search"] { grid-area: 1 / 1; }
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-book-search { grid-area: 2 / 1; }
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form label[for="staff-loan-book"] { grid-area: 1 / 2; }
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-book { grid-area: 2 / 2; }
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-copy-hint:not([hidden]) {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field:last-child {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-submit {
+  min-height: 42px;
+  margin: 0;
+  padding: 10px 20px;
+  border-radius: 9px;
+  width: min(100%, 215px);
+  font-weight: 750;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-message:empty { display: none; }
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-panel > .form-field {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0 12px;
+  padding-top: 17px;
+  border-top: 1px solid #e6edf5;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-panel > .form-field label {
+  font-size: 1.04rem;
+  color: var(--bbt-ink);
+  font-weight: 800;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-filter {
+  width: min(100%, 330px);
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current {
+  display: grid;
+  gap: 10px;
+  max-height: 410px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current > .hint {
+  margin: 0;
+  padding: 18px;
+  background: #f6f9fe;
+  border: 1px dashed #d8e4f1;
+  border-radius: 10px;
+  text-align: center;
+  color: var(--bbt-muted);
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current > .class-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  margin: 0;
+  padding: 13px 15px;
+}
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current > .class-card > strong { grid-column: 1; }
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current > .class-card > p { grid-column: 1; margin: 3px 0; }
+body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current > .class-card > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
+  white-space: nowrap;
+  min-height: 38px;
+}
+
+/* My account: two calm sections, with actionable fields at sensible widths. */
+body.bb-teacher-v31 [data-teacher-view="account"] > #book-import-mail-preferences-panel {
+  display: grid;
+  gap: 15px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-preferences-panel > .panel__header,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form:not([hidden]),
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code-form:not([hidden]) {
+  padding: 22px 25px;
+  margin: 0;
+  background: #fff;
+  border: 1px solid var(--bbt-line);
+  border-radius: 14px;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-preferences-panel > .panel__header {
+  display: grid;
+  gap: 7px;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-title {
+  margin: 0;
+  color: var(--bbt-ink);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] .panel__header .hint {
+  margin: 0;
+  max-width: 790px;
+  line-height: 1.5;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  align-items: center;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 2px;
+  color: var(--bbt-ink);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form .form-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  max-width: 550px;
+  color: var(--bbt-ink);
+  font-weight: 750;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-address,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code {
+  width: 100%;
+  max-width: 100%;
+  min-height: 43px;
+  border-radius: 9px;
+  border: 1px solid #c0d0e5;
+  background: #fff;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form > .hint {
+  padding: 11px 13px;
+  background: #f7faff;
+  border: 1px solid #e1e9f4;
+  border-radius: 9px;
+  margin: 0;
+  line-height: 1.5;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-width: 180px;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 18px;
+  align-items: end;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form h3,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form > .hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form h3 {
+  font-size: 1.1rem;
+  color: var(--bbt-ink);
+  font-weight: 800;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form .form-field,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code-form .form-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  color: var(--bbt-ink);
+  font-weight: 750;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-preferences-panel button {
+  min-height: 41px;
+  margin: 0;
+  padding: 10px 17px;
+  border-radius: 9px;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-status,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-pending,
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-config {
+  margin: 0;
+  line-height: 1.5;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-preferences-panel > .hint:last-child {
+  margin: 0 2px;
+  color: var(--bbt-muted);
+  font-size: .86rem;
+}
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form[hidden],
+body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code-form[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 1120px) {
+  body.bb-teacher-v31 [data-teacher-view="catalog"] #book-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  body.bb-teacher-v31 .student-detail__form { grid-template-columns: 1fr; }
+  body.bb-teacher-v31 .student-detail__header,
+  body.bb-teacher-v31 .student-detail__advanced,
+  body.bb-teacher-v31 .student-detail__message,
+  body.bb-teacher-v31 .student-detail__section:last-of-type { grid-column: 1; }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field:nth-child(3) {
+    grid-column: 1;
+    grid-template-columns: 1fr;
+  }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form label[for="staff-loan-book-search"],
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-book-search,
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form label[for="staff-loan-book"],
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-book { grid-area: auto; }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-form > .form-field:last-child { justify-content: flex-start; }
+}
+@media (max-width: 760px) {
+  body.bb-teacher-v31 .bb-teacher-v31-grid #bb-teacher-v31-activity { grid-column: 1; }
+  body.bb-teacher-v31 [data-teacher-view="catalog"] > .teacher-layout,
+  body.bb-teacher-v31 [data-teacher-view="classes"] > .teacher-layout__classes,
+  body.bb-teacher-v31 [data-teacher-view="classes"] > #student-management-panel,
+  body.bb-teacher-v31 [data-teacher-view="lending"] > #staff-loan-panel {
+    padding: 19px 16px;
+  }
+  body.bb-teacher-v31 [data-teacher-view="catalog"] #book-grid { grid-template-columns: 1fr; }
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form { grid-template-columns: 1fr; }
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form > .hint { grid-column: 1; }
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form,
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code-form {
+    grid-template-columns: 1fr;
+  }
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-preferences-panel > .panel__header,
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-mode-form,
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-request-form:not([hidden]),
+  body.bb-teacher-v31 [data-teacher-view="account"] #book-import-mail-code-form:not([hidden]) {
+    padding: 18px 16px;
+  }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-submit { width: 100%; }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current > .class-card { grid-template-columns: 1fr; }
+  body.bb-teacher-v31 [data-teacher-view="lending"] #staff-loan-current > .class-card > button {
+    grid-column: 1; grid-row: auto; justify-self: start;
+  }
+  body.bb-teacher-v31 .student-detail__form { padding: 17px 15px; gap: 12px; }
+  body.bb-teacher-v31 .student-detail__actions--danger { flex-direction: column; align-items: stretch; }
+  body.bb-teacher-v31 .student-detail__actions--danger > .btn { align-self: stretch; }
+}
