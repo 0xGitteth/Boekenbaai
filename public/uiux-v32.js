@@ -101,6 +101,14 @@
         classes.classList.toggle('admin-modern__tab--active', Boolean(active));
         if (active) classes.setAttribute('aria-current', 'page');
         else classes.removeAttribute('aria-current');
+        // A classes subview is a distinct top-level destination in v3.2;
+        // never leave both "Personen" and "Klassen" visually selected.
+        if (people?.dataset.adminModernTab === 'people') {
+          const persons = people.classList.contains('admin-modern__tab--active') || active;
+          people.classList.toggle('admin-modern__tab--active', persons && !active);
+          if (persons && !active) people.setAttribute('aria-current', 'page');
+          else people.removeAttribute('aria-current');
+        }
       };
       if (people) people.addEventListener('click', () => {
         // "Personen" must select people even when Klassen was opened before.
