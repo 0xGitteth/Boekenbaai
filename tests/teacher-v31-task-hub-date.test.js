@@ -74,6 +74,14 @@ assert.deepEqual(JSON.parse(JSON.stringify(emitted[0].detail.classes)),[
 ]);
 assert.ok(!JSON.stringify(emitted[0].detail).includes('Verborgen leerling'),
   'Teacher dashboard must only receive class-level counts, not student identity');
+// The initial protected API request might fail before any state exists.
+ctx.state = null;
+ctx.publish('error');
+assert.equal(emitted.length, 2, 'Initial failures must reach the teacher task hub');
+assert.equal(emitted[1].detail.status,'error');
+assert.equal(emitted[1].detail.classes.length,0);
+ctx.publish('ready');
+assert.equal(emitted.length,2,'A successful update cannot be published without role data');
 
 const taskStart=teacher.indexOf('  function renderMentorTasks() {');
 const taskEnd=teacher.indexOf('  function installLoanDuePreview()',taskStart);
@@ -108,14 +116,23 @@ const due={dataset:{},value:'2026-10-17',handlers:{},before(node){this.parent=no
 const dateCtx=vm.createContext({
  document:{getElementById(id){return id==='staff-loan-due'?due:null;}},
  el:element,
+ CSS:{supports(q){assert.equal(q,'selector(input::-webkit-datetime-edit)');return true;}},
 });
 new vm.Script(teacher.slice(dateStart,dateEnd)+'\nthis.install=installLoanDuePreview;').runInContext(dateCtx);
 dateCtx.install();
 assert.equal(due.parent.children[0],due);
+assert.equal(due.parent.children[1].hidden,false,'Chromium can hide the native editor');
 const datePreview=due.parent.children[1];
 assert.equal(datePreview.textContent,'17-10-2026');
 due.value='';due.handlers.change();
 assert.equal(datePreview.textContent,'dd-mm-jjjj');
 due.value='2026-12-03';due.handlers.input();
 assert.equal(datePreview.textContent,'03-12-2026');
+// Firefox lacks the CSS pseudo-element: leave the native date fully visible,
+// and do not display a second overlapping date label.
+due.dataset.teacherPreviewInstalled = '';
+dateCtx.CSS.supports=()=>false;
+dateCtx.install();
+assert.equal(due.parent.children[1].hidden,true,'Firefox must not see a duplicate date');
+assert.match(css,/bb-teacher-v31-date-wrap--overlay #staff-loan-due::-webkit-datetime-edit/);
 console.log('Teacher tasks, class transfer counts, date overlay, button alignment and email placeholder regressions OK');
