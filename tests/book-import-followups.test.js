@@ -363,7 +363,12 @@ async function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-pr6-'));
   const dbPath = path.join(dir, 'db.json');
   const initial = structuredClone(db);
-  initial.users.forEach((user) => { user.passwordHash = hash('pass'); });
+  // End-to-end requests use the real clock, unlike deterministic unit fixtures.
+  // Otherwise a task dated 14 October changes from open to reminder as days pass.
+  for (const pending of initial.bookImportFollowups) {
+    if (pending.createdAt === now) pending.createdAt = new Date().toISOString();
+  }
+  initial.users.forEach;(user) => { user.passwordHash = hash('pass'); });
   initial.students.forEach((student) => { student.username = student.id; student.passwordHash = hash('pass'); });
   fs.writeFileSync(dbPath, JSON.stringify(initial));
   const child = spawn(process.execPath, ['server.js'], {
