@@ -29,6 +29,7 @@ assert.match(js, /dashboard\.classList\.contains\('hidden'\)/);
 assert.match(js, /admin\.classList\.contains\('hidden'\)/);
 assert.match(js, /function remount\(/);
 assert.match(js, /function restore\(/);
+assert.match(js, /if \(admin\.contains\(node\)\) continue;/);
 assert.match(js, /remount\(\)/);
 assert.match(js, /restore\(\)/);
 assert.match(js, /if \(admin\.classList\.contains\('hidden'\)\) setIdentity\(false\)/);
@@ -64,4 +65,23 @@ for (const selector of ruleBlocks) {
   assert.ok(selector.includes('bb-teacher-v31'),
     'Teacher style must remain scoped to logged-in teacher: '+selector);
 }
+
+// A role switch can cause the admin's MutationObserver to move shared
+// panels before the teacher's observer restores its own nodes. Do not steal
+// them out of Beheer when unwinding the former teacher layout.
+const restoreStart = js.indexOf('  function restore() {');
+const restoreEnd = js.indexOf('  function remount() {', restoreStart);
+assert.ok(restoreStart > 0 && restoreEnd > restoreStart);
+const adminPanel = { id: 'loan', parentElement: { id: 'admin' } };
+const teacherPanel = { id: 'teacher', parentElement: { id: 'teacher' } };
+const moved = [];
+const adminRole = { contains(node) { return node === adminPanel; } };
+const placements = [
+  { node: adminPanel, marker: { isConnected: true, after(node) { moved.push(node); } } },
+  { node: teacherPanel, marker: { isConnected: true, after(node) { moved.push(node); } } },
+];
+const context = vm.createContext({ placements, admin: adminRole });
+new vm.Script(js.slice(restoreStart, restoreEnd) + '\\nthis.runRestore = restore;').runInContext(context);
+context.runRestore();
+assert.deepEqual(moved, [teacherPanel], 'Beheer-owned panel must stay inside Beheer');
 console.log('Docentenportaal v3.1 navigatie, rechten- en responsive regressies geslaagd.');
