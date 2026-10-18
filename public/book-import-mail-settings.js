@@ -53,6 +53,12 @@ if (mailPanel) {
       alternate.textContent = data.alternateEmail || 'Nog geen bevestigd adres';
       hasVerifiedAlternative = Boolean(data.alternateEmail);
       if (alternateOption) {
+        // Preserve legacy verified addresses without mislabelling them
+        // @koraal.nl. Newly requested addresses always use that domain.
+        alternateOption.textContent = data.alternateEmail &&
+          !data.alternateEmail.endsWith(mailDomain)
+          ? 'Naar mijn reeds bevestigde alternatieve e-mailadres'
+          : 'Naar mijn bevestigde @koraal.nl-adres';
         alternateOption.hidden = !hasVerifiedAlternative;
         alternateOption.disabled = !hasVerifiedAlternative;
         // Retain a previous valid legacy choice, but do not advertise
