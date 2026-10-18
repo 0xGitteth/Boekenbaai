@@ -522,7 +522,6 @@ body.bb-admin-v31 #admin-dashboard .btn {
   min-height: 40px;
   border-radius: 9px;
 }
-body.bb-admin-v31 #admin-dashboard .bb-admin-v31-add-book,
 body.bb-admin-v31 #admin-dashboard #bb-admin-v31-open-editor {
   min-height: 44px;
   padding: 10px 16px;
@@ -619,51 +618,6 @@ body.bb-admin-v31 .admin-modern__action-row {
   background: #fff;
   font-weight: 700;
 }
-body.bb-admin-v31 .bb-admin-v31-quick { display: grid; }
-body.bb-admin-v31 .bb-admin-v31-quick-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 64px;
-  padding: 12px 0;
-  border: 0;
-  border-top: 1px solid #edf1f5;
-  background: white;
-  color: var(--bb-ink);
-  text-align: left;
-}
-body.bb-admin-v31 .bb-admin-v31-quick-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 34px;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  color: var(--bb-navy);
-  background: var(--bb-soft);
-  font-size: 1rem;
-}
-body.bb-admin-v31 .bb-admin-v31-quick-copy {
-  display: grid;
-  flex: 1 1 auto;
-  min-width: 0;
-  gap: 2px;
-}
-body.bb-admin-v31 .bb-admin-v31-quick-open {
-  flex: 0 0 auto;
-  padding: 7px 10px;
-  border: 1px solid #d3deec;
-  border-radius: 9px;
-  background: #e9f0fb;
-  color: var(--bb-navy);
-  font-size: .79rem;
-  font-weight: 750;
-}
-body.bb-admin-v31 .bb-admin-v31-quick-row:hover,
-body.bb-admin-v31 .admin-modern__action-row:hover { background: #f4f8fe; }
-body.bb-admin-v31 .bb-admin-v31-quick-row strong { font-size: .92rem; }
-body.bb-admin-v31 .bb-admin-v31-quick-row small { color: var(--bb-muted); font-size: .79rem; }
 body.bb-admin-v31 #bb-admin-v31-activity .panel {
   margin: 0;
   padding: 0;
