@@ -78,14 +78,40 @@ if (panel) {
         .filter(Boolean).join(' · '));
     }
     if (copies.some((item) => item.id === selected)) book.value = selected;
-    if (copyHint) {
-      const duplicated = copies.filter((item) =>
-        barcodeCounts.get(String(item.barcode || '').trim()) > 1).length;
-      copyHint.textContent = duplicated
-        ? duplicated + ' exemplaren delen een barcode. Controleer de unieke exemplaar-ID ' +
-          'en de fysieke markering op het boek voordat je uitleent.'
-        : copies.length + ' beschikbare exemplaren in deze selectie.';
+    // Warning only when relevant to the actual choice, never as a
+    // school-wide count displayed before searching or selecting.
+    updateCopyHint(available, copies, barcodeCounts);
+  }
+
+  function updateCopyHint(available, visibleCopies, barcodeCounts) {
+    if (!copyHint) return;
+    const chosen = available.find((copy) => copy.id === book.value);
+    const code = String(chosen?.barcode || '').trim();
+    const shared = code && (barcodeCounts.get(code) || 0) > 1;
+    const query = String(bookSearch?.value || '').trim();
+    if (shared) {
+      copyHint.textContent = 'Deze barcode komt bij meerdere exemplaren voor. ' +
+        'Controleer de exemplaar-ID en het fysieke boek voordat je uitleent.';
+    } else if (query && visibleCopies.length > 1) {
+      copyHint.textContent = visibleCopies.length +
+        ' exemplaren gevonden. Kies het juiste fysieke exemplaar.';
+    } else {
+      copyHint.textContent = '';
     }
+    copyHint.hidden = !copyHint.textContent;
+  }
+  function showCopyHint() {
+    const available = state.books.filter((item) => item.status !== 'borrowed');
+    const barcodeCounts = new Map();
+    for (const copy of available) {
+      const code = String(copy.barcode || '').trim();
+      if (code) barcodeCounts.set(code, (barcodeCounts.get(code) || 0) + 1);
+    }
+    const query = String(bookSearch?.value || '').trim().toLocaleLowerCase('nl-NL');
+    const visible = query ? available.filter((copy) => [
+      copy.title, copy.author, copy.barcode, copy.id, copy.fixedLocation
+    ].some((value) => String(value || '').toLocaleLowerCase('nl-NL').includes(query))) : available;
+    updateCopyHint(available, visible, barcodeCounts);
   }
   function showFilters() {
     const old = filter.value;
@@ -176,6 +202,7 @@ if (panel) {
   }
   type.addEventListener('change', showBorrowers);
   bookSearch?.addEventListener('input', showBooks);
+  book.addEventListener('change', showCopyHint);
   filter.addEventListener('change', showLoans);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -207,7 +234,10 @@ if (panel) {
     filter.replaceChildren();
     message.textContent = '';
     if (bookSearch) bookSearch.value = '';
-    if (copyHint) copyHint.textContent = '';
+    if (copyHint) {
+      copyHint.textContent = '';
+      copyHint.hidden = true;
+    }
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refresh();
