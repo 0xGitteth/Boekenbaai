@@ -93,6 +93,13 @@
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
     if (next === 'start') void updateStart();
+    // Newly arriving transfers and Google-link requests must be discoverable
+    // whenever the task hub is reopened, not only after login.
+    if (next === 'tasks') {
+      taskSummary.status = 'loading';
+      renderMentorTasks();
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+    }
     if (next === 'catalog') {
       // The old layout defaults to a folded overview on login. In the
       // dedicated Catalogus page that would leave an empty white card.
@@ -301,6 +308,13 @@
     preview.setAttribute('aria-hidden', 'true');
     due.before(container);
     container.append(due, preview);
+    // Firefox does not support Chromium's date edit pseudo-element. Only show
+    // the overlay when the native date text can be hidden reliably.
+    const canHideNativeText = typeof CSS !== 'undefined'
+      && typeof CSS.supports === 'function'
+      && CSS.supports('selector(input::-webkit-datetime-edit)');
+    container.classList.toggle('bb-teacher-v31-date-wrap--overlay', canHideNativeText);
+    preview.hidden = !canHideNativeText;
     const update = () => {
       const match = due.value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       preview.textContent = match
@@ -465,6 +479,18 @@
       : null;
     renderMentorTasks();
     refreshTaskMetric();
+  });
+  document.getElementById('book-import-followups-refresh')?.addEventListener('click', () => {
+    if (active && page === 'tasks') {
+      taskSummary.status = 'loading';
+      renderMentorTasks();
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && active && (page === 'tasks' || page === 'start')) {
+      window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+    }
   });
   window.addEventListener('boekenbaai:staff-refresh', () => {
     if (active && page === 'start') void updateStart();
