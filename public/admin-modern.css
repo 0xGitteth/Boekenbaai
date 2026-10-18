@@ -826,3 +826,16 @@ body.bb-admin-v31 #bb-admin-v31-catalog .book-card__cover-fallback:empty::before
   color: #466489;
   font-size: 2.4rem;
 }
+
+
+body.bb-admin-v31 #admin-dashboard .student-management__search {
+  display: grid;
+  gap: 7px;
+  margin: 7px 0 17px;
+  font-weight: 700;
+  color: var(--bb-ink);
+}
+body.bb-admin-v31 #admin-student-search-results .student-management__student-row[hidden],
+body.bb-admin-v31 #admin-student-search-results .student-management__class[hidden] {
+  display: none !important;
+}
