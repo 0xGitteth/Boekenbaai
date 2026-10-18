@@ -606,7 +606,9 @@
       if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
       const logo = document.querySelector('.hero--staff .hero__logo');
       if (logo) {
-        logo.src = 'logo/het-dok-logo.svg';
+        // Restore Vite's original (possibly fingerprinted) URL rather than
+        // constructing a source URL that may not exist in production dist.
+        if (logo.dataset.v31OriginalSrc) logo.setAttribute('src', logo.dataset.v31OriginalSrc);
         logo.alt = '';
         logo.closest('.hero__illustration')?.setAttribute('aria-hidden', 'true');
       }
@@ -628,6 +630,7 @@
     if (intro) intro.textContent = '';
     const logo = document.querySelector('.hero--staff .hero__logo');
     if (logo) {
+      logo.dataset.v31OriginalSrc ||= logo.getAttribute('src') || '';
       logo.src = 'logo/het-dok-header-v31.svg';
       logo.alt = 'Het Dok';
       logo.closest('.hero__illustration')?.removeAttribute('aria-hidden');
