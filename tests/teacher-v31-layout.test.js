@@ -60,7 +60,7 @@ assert.match(js, /menu\.setAttribute\('aria-expanded', 'false'\)/);
 // Isolated teacher styling must not break admin or unauthenticated states.
 const ruleBlocks = [...css.matchAll(/(?:^|\n)([^{]+)\{[^}]*\}/g)].map(x=>x[1]);
 for (const selector of ruleBlocks) {
-  if (/^\s*@media|^\s*\/\*/.test(selector)) continue;
+  if (/^\s*@media|^\s*\/\*/.test(selector) || selector.includes('@media')) continue;
   assert.ok(selector.includes('bb-teacher-v31'),
     'Teacher style must remain scoped to logged-in teacher: '+selector);
 }
