@@ -593,7 +593,8 @@
   }
 
   function publishTeacherTasks(status) {
-    if (state?.role !== 'teacher' || !document.body.classList.contains('bb-teacher-v31')) return;
+    if (!document.body.classList.contains('bb-teacher-v31')
+      || (status === 'ready' && state?.role !== 'teacher')) return;
     const classes = status === 'ready' ? ownClasses().map(klass => ({
       id: klass.id, name: klass.name,
       incoming: incomingForClass(klass).length,
