@@ -96,7 +96,7 @@ assert.ok(start>0&&end>start);
 new vm.Script(js.slice(start,end)+'\nthis.run=installTeacherBooks;').runInContext(ctx);
 ctx.run();
 assert.equal(preview.children.length,2);
-assert.equal(preview.children[0].children[0].children[0].attrs.src,'/covers/one.jpg');
+assert.equal(preview.children[0].children[0].children[0].src,'/covers/one.jpg');
 assert.equal(preview.children[0].children[1].textContent,'Boek één');
 assert.ok(preview.children[0].classList.contains('bb-v32-book-preview--easy'));
 assert.ok(preview.children[1].classList.contains('bb-v32-book-preview--reading'));
