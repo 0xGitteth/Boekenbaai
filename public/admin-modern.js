@@ -604,6 +604,12 @@
       const intro = document.querySelector('.hero--staff .hero__content p');
       if (title) title.textContent = 'Docentenportaal Boekenbaai';
       if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
+      const logo = document.querySelector('.hero--staff .hero__logo');
+      if (logo) {
+        logo.src = 'logo/het-dok-logo.svg';
+        logo.alt = '';
+        logo.closest('.hero__illustration')?.setAttribute('aria-hidden', 'true');
+      }
       return;
     }
     mountSharedPanel('.teacher-layout__overview', 'bb-admin-v31-catalog');
@@ -620,6 +626,12 @@
     if (name) name.textContent = 'Boekenbaai';
     // The right-hand account identity already identifies Boekenbaai Beheer.
     if (intro) intro.textContent = '';
+    const logo = document.querySelector('.hero--staff .hero__logo');
+    if (logo) {
+      logo.src = 'logo/het-dok-header-v31.svg';
+      logo.alt = 'Het Dok';
+      logo.closest('.hero__illustration')?.removeAttribute('aria-hidden');
+    }
   }
 
   function updateCatalogToggle() {
