@@ -595,7 +595,28 @@ body.bb-admin-v31 #bb-admin-v31-activity .panel {
   box-shadow: none;
   background: transparent;
 }
-body.bb-admin-v31 #bb-admin-v31-activity .panel__header { display: none; }
+/* Preserve the existing administrator-only history-clear control and its status. */
+body.bb-admin-v31 #bb-admin-v31-activity #history-panel > .panel__header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 0 10px;
+  margin: 0;
+  background: transparent;
+  border: 0;
+}
+body.bb-admin-v31 #bb-admin-v31-activity #history-panel > .panel__header > div:not(#history-actions) {
+  display: none;
+}
+body.bb-admin-v31 #bb-admin-v31-activity #history-actions:not(.hidden) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body.bb-admin-v31 #bb-admin-v31-activity #history-actions.hidden {
+  display: none !important;
+}
 body.bb-admin-v31 #bb-admin-v31-activity #history-list { padding: 0; margin: 0; }
 body.bb-admin-v31 #bb-admin-v31-stats { margin-top: 20px; }
 body.bb-admin-v31 #bb-admin-v31-stats .panel__header-actions {
