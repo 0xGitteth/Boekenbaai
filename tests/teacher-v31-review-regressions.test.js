@@ -55,7 +55,13 @@ async function check() {
   let heldFollowupReject = null;
   let signalHeldFollowup = null;
   const ctx = vm.createContext({
-    requestId: 0, active: true,
+    requestId: 0, active: true, importTaskCount: null,
+    refreshTaskMetric() {
+      const strong = metrics.children[3]?.querySelector('strong');
+      if (strong) strong.replaceChildren({
+        textContent: String(ctx.importTaskCount ?? '—'),
+      });
+    },
     window: { BOEKENBAAI_API_BASE: 'https://api.example.test/' },
     document: {
       querySelector() { return { content: '' }; },
