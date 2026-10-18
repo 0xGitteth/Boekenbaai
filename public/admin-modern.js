@@ -631,12 +631,15 @@
     setActiveView('books');
     const card = document.querySelector('#admin-dashboard .admin-card--books');
     if (!card) return;
-    card.hidden = false;
     if (newBook) {
+      // This existing application handler clears book ID, themes, crop and
+      // selection state even if its button is hidden in create mode.
       const cancel = document.getElementById('admin-book-cancel');
-      if (cancel && !cancel.classList.contains('hidden')) cancel.click();
-      else document.getElementById('admin-book-form')?.reset();
+      if (!cancel) return;
+      cancel.click();
     }
+    // The cancel event closes the previous editor, so reveal it afterwards.
+    card.hidden = false;
     document.getElementById('admin-book-title')?.focus({ preventScroll: true });
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -649,9 +652,10 @@
     heading.append(make('h3', { text: 'Boek toevoegen of bewerken' }));
     const close = make('button', { className: 'btn btn--ghost', text: 'Annuleren', type: 'button' });
     close.addEventListener('click', () => {
+      // Invoke the full app.js reset for *both* edit and create modes.
       const cancel = document.getElementById('admin-book-cancel');
-      if (cancel && !cancel.classList.contains('hidden')) cancel.click();
-      else document.getElementById('admin-book-form')?.reset();
+      if (!cancel) return;
+      cancel.click();
       booksCard.hidden = true;
       document.getElementById('bb-admin-v31-open-editor')?.focus();
     });
