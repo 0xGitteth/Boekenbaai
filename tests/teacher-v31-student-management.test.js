@@ -38,6 +38,8 @@ function node(name) {
 
 const dashboard = node('teacher-dashboard');
 const admin = node('admin-dashboard');
+// The mock admin starts hidden, as it does while a teacher is logged in.
+admin.classList.contains = className => className === 'hidden';
 const classView = node('teacher-v31-classes');
 const catalogue = node('teacher-v31-catalog');
 const bookLayout = node('teacher-layout');
