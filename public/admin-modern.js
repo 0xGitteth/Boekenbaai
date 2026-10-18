@@ -119,7 +119,6 @@
       const content = document.getElementById('staff-book-overview-content');
       if (content?.hidden) document.getElementById('staff-book-overview-toggle')?.click();
     }
-    updateCatalogToggle();
     closeMobileNavigation();
     if (document.body.classList.contains('bb-admin-v31')) {
       dashboard?.querySelector('[data-admin-modern-view="' + name + '"] h2')?.focus({ preventScroll: true });
@@ -652,15 +651,6 @@
     }
   }
 
-  function updateCatalogToggle() {
-    const button = document.getElementById('bb-admin-v31-toggle-catalog');
-    const content = document.getElementById('staff-book-overview-content');
-    if (!button || !content) return;
-    const expanded = !content.hidden;
-    button.textContent = expanded ? 'Catalogus inklappen' : 'Catalogus uitklappen';
-    button.setAttribute('aria-expanded', String(expanded));
-  }
-
   function viewHeading(name, title, description) {
     const view = make('section', { className: 'admin-modern__view' });
     view.dataset.adminModernView = name;
@@ -774,7 +764,6 @@
     setPeopleView('students');
     moveGooglePanel();
     activateAdminLayout(true);
-    updateCatalogToggle();
 
     const observer = new MutationObserver(() => {
       hideLegacyPasswordUi();
