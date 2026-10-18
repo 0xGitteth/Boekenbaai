@@ -10,6 +10,7 @@ const js = fs.readFileSync(path.join(root, 'public/admin-modern.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/admin-modern.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'public/staff.html'), 'utf8');
+const staffLoans = fs.readFileSync(path.join(root, 'public/staff-loans.js'), 'utf8');
 
 new vm.Script(js, { filename: 'public/admin-modern.js' });
 
@@ -80,5 +81,17 @@ assert.match(css, /--bb-canvas: #f0f4fa/);
 assert.match(css, /grid-template-columns: 230px minmax\(0, 1fr\)/);
 assert.match(css, /@media \(max-width: 760px\)/);
 assert.match(css, /prefers-reduced-motion/);
+
+
+assert.match(html, /id="staff-loan-book-search"/,
+  'Uitleen moet eerst op titel, barcode of exemplaarcode kunnen zoeken.');
+assert.match(html, /id="staff-loan-copy-hint"/);
+assert.match(staffLoans, /copy\.id, copy\.fixedLocation/,
+  'De zoekterm moet fysieke exemplaar-ID en locatie omvatten.');
+assert.match(staffLoans, /'Exemplaar-ID: ' \+ copy\.id/,
+  'Dubbele barcodes moeten herkenbaar zijn aan de unieke exemplaar-ID.');
+assert.match(staffLoans, /barcode gedeeld/,
+  'De UI moet informeren dat de barcode niet uniek is.');
+assert.match(staffLoans, /bookSearch\?\.addEventListener\('input', showBooks\)/);
 
 console.log('Beheer v3.1 functiebehoud- en navigatietests geslaagd.');
