@@ -96,14 +96,16 @@ function collectEvents(db, links, now = Date.now()) {
 }
 function recipientGroups(db, links, now = Date.now(), domain = 'koraaledu.nl') {
   const settings = admin.adminSettings(db);
-  const adminAddresses = settings.recipients.filter(x=>x.verifiedAt).map(x=>x.email);
+  const adminAddresses = settings.recipients.filter(x => x.verifiedAt);
   const users = new Map((db.users||[]).filter(x=>x?.role==='teacher').map(x=>[x.id,x]));
   const result = new Map();
   for (const event of collectEvents(db,links,now)) {
     for (const target of event.targets) {
       if (target === 'admin') {
-        if (!settings.categories[event.category]) continue;
-        for (const addr of adminAddresses) add('admin:'+addr,addr,event);
+        for (const recipient of adminAddresses) {
+          if (recipient.categories?.[event.category] !== true) continue;
+          add('admin:' + recipient.email, recipient.email, event);
+        }
       } else if (target.startsWith('teacher:')) {
         const userId = target.slice(8);
         if (!users.has(userId)) continue;
