@@ -20,6 +20,10 @@ assert.match(teacher,/place\(document\.getElementById\('book-import-followups-pa
 assert.match(teacher,/boekenbaai:mentor-tasks-refresh/);
 assert.match(students,/boekenbaai:mentor-tasks-refresh/);
 assert.match(students,/boekenbaai:mentor-select-class/);
+assert.match(students,/observer\.observe\(host, \{ attributes: true, attributeFilter: \['class'\] \}\)/);
+assert.doesNotMatch(students,/observer\.observe\(document\.body/);
+assert.match(students,/if \(visible && !wasVisible && !document\.querySelector\('#student-management-panel'\)\)/);
+
 assert.match(teacher,/importTaskCount \+ mentorTaskCount/);
 assert.match(teacher,/\/api\/staff\/book-import-followups/);
 assert.match(css,/#staff-loan-form > \.form-field:last-child\s*\{\s*grid-column: 1 \/ -1/);
