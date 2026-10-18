@@ -566,14 +566,20 @@
   }
 
   function render() {
+    if (!state) return;
     const dashboard = document.querySelector('#teacher-dashboard');
-    if (!dashboard || dashboard.classList.contains('hidden') || !state) return;
-    // The live panel is recreated on each refresh. When v3.1 teacher
-    // navigation is active, render directly in the role-specific class view,
-    // never as an unscoped sibling visible on all navigation pages.
+    const adminDashboard = document.querySelector('#admin-dashboard');
+    const teacherVisible = dashboard && !dashboard.classList.contains('hidden');
+    const adminVisible = adminDashboard && !adminDashboard.classList.contains('hidden');
+    // Admin needs the same live controls after a staff role switch. Do not
+    // require the teacher dashboard to be visible for administrator rendering.
+    if (!teacherVisible && !adminVisible) return;
     const classView = document.querySelector('[data-teacher-view="classes"]');
-    const host = document.body.classList.contains('bb-teacher-v31') && classView
-      ? classView : dashboard;
+    const adminView = document.querySelector('[data-admin-people-view="students"]');
+    const host = state.role === 'admin' && adminVisible && adminView
+      ? adminView
+      : document.body.classList.contains('bb-teacher-v31') && teacherVisible && classView
+        ? classView : dashboard;
     let panel = document.querySelector('#student-management-panel');
     if (panel) panel.remove();
     panel = make('section', { className: 'panel student-management', id: 'student-management-panel' });
@@ -628,27 +634,35 @@
     });
     installed = true;
     window.addEventListener('boekenbaai:mentor-tasks-refresh', refresh);
+    window.addEventListener('boekenbaai:staff-refresh', refresh);
     window.addEventListener('boekenbaai:staff-auth-cleared', () => {
       ++refreshSerial;
       state = null;
       activeClassId = '';
+      // A stale button must never be clickable with a null backing state.
+      document.getElementById('student-management-panel')?.remove();
     });
     refresh();
     // Watch only actual role visibility changes. A body-wide DOM observer
     // used to retry whenever the panel was absent; if the API was offline,
     // rendering the resulting error card itself retriggered another request
     // forever. Explicit refresh events handle retries after login.
-    const host = document.querySelector('#teacher-dashboard');
-    if (host) {
-      let wasVisible = !host.classList.contains('hidden');
+    const teacherHost = document.querySelector('#teacher-dashboard');
+    const adminHost = document.querySelector('#admin-dashboard');
+    if (teacherHost || adminHost) {
+      let teacherWasVisible = Boolean(teacherHost && !teacherHost.classList.contains('hidden'));
+      let adminWasVisible = Boolean(adminHost && !adminHost.classList.contains('hidden'));
       const observer = new MutationObserver(() => {
-        const visible = !host.classList.contains('hidden');
-        if (visible && !wasVisible && !document.querySelector('#student-management-panel')) {
+        const teacherNow = Boolean(teacherHost && !teacherHost.classList.contains('hidden'));
+        const adminNow = Boolean(adminHost && !adminHost.classList.contains('hidden'));
+        if ((teacherNow && !teacherWasVisible) || (adminNow && !adminWasVisible)) {
           void refresh();
         }
-        wasVisible = visible;
+        teacherWasVisible = teacherNow;
+        adminWasVisible = adminNow;
       });
-      observer.observe(host, { attributes: true, attributeFilter: ['class'] });
+      if (teacherHost) observer.observe(teacherHost, { attributes: true, attributeFilter: ['class'] });
+      if (adminHost) observer.observe(adminHost, { attributes: true, attributeFilter: ['class'] });
     }
   }
 
