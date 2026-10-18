@@ -512,6 +512,39 @@
   }
 
 
+  // Audit A07: keep keyboard focus inside an active book-details modal.
+  // app.js continues to own open/close, Escape and focus restoration.
+  function installAdminBookModalFocusTrap() {
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Tab' || !document.body.classList.contains('bb-admin-v31')) return;
+      const modal = document.getElementById('book-detail');
+      if (!modal || modal.classList.contains('hidden') || modal.getAttribute('aria-hidden') === 'true') return;
+      const dialog = modal.querySelector('.book-detail__dialog');
+      if (!dialog) return;
+      const focusables = Array.from(dialog.querySelectorAll(
+        'a[href], button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), ' +
+        'select:not([disabled]):not([hidden]), textarea:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])'
+      )).filter((el) => el.getClientRects().length > 0);
+      if (!focusables.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (!dialog.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
   function moveGooglePanel() {
     const host = document.getElementById('admin-modern-google-host');
     const panel = document.querySelector('#teacher-dashboard .google-manage');
@@ -671,6 +704,7 @@
     container.append(overviewView, booksView, peopleView, loansView, tasksView, importsView, settingsView);
     moveDangerousBookAction(booksView);
     installBookEditorControls(booksCard);
+    installAdminBookModalFocusTrap();
     modernizeImports();
 
     const schoolStats = document.querySelector('.panel__header-actions--admin');
