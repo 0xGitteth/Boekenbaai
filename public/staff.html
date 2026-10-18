@@ -904,8 +904,12 @@
             <select id="staff-loan-borrower" required></select>
           </div>
           <div class="form-field">
+            <label for="staff-loan-book-search">Boek zoeken of barcode scannen</label>
+            <input id="staff-loan-book-search" type="search" autocomplete="off"
+              placeholder="Titel, auteur, barcode of exemplaarcode" />
             <label for="staff-loan-book">Beschikbaar exemplaar</label>
             <select id="staff-loan-book" required></select>
+            <p id="staff-loan-copy-hint" class="hint" role="status" aria-live="polite"></p>
           </div>
           <div class="form-field">
             <label for="staff-loan-due">Inleverdatum (optioneel)</label>
