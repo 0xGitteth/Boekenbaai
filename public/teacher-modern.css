@@ -192,7 +192,7 @@ body.bb-teacher-v31 .bb-teacher-v31-start-loan {
 }
 body.bb-teacher-v31 .bb-teacher-v31-metrics {
   display: grid;
-  grid-template-columns: repeat(3,minmax(0,1fr));
+  grid-template-columns: repeat(4,minmax(0,1fr));
   gap: 13px;
 }
 body.bb-teacher-v31 .bb-teacher-v31-metric,
