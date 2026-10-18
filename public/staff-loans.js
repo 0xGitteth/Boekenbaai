@@ -8,6 +8,8 @@ if (panel) {
   const type = document.getElementById('staff-loan-type');
   const borrower = document.getElementById('staff-loan-borrower');
   const book = document.getElementById('staff-loan-book');
+  const bookSearch = document.getElementById('staff-loan-book-search');
+  const copyHint = document.getElementById('staff-loan-copy-hint');
   const due = document.getElementById('staff-loan-due');
   const filter = document.getElementById('staff-loan-filter');
   const output = document.getElementById('staff-loan-current');
@@ -51,15 +53,38 @@ if (panel) {
   }
   function showBooks() {
     const selected = book.value;
+    const available = state.books.filter((item) => item.status !== 'borrowed');
+    const query = String(bookSearch?.value || '').trim().toLocaleLowerCase('nl-NL');
+    const copies = query ? available.filter((copy) => [
+      copy.title, copy.author, copy.barcode, copy.id, copy.fixedLocation
+    ].some((value) => String(value || '').toLocaleLowerCase('nl-NL').includes(query))) : available;
+    const barcodeCounts = new Map();
+    for (const copy of available) {
+      const code = String(copy.barcode || '').trim();
+      if (code) barcodeCounts.set(code, (barcodeCounts.get(code) || 0) + 1);
+    }
     book.replaceChildren();
-    option(book, '', 'Kies een beschikbaar exemplaar');
-    for (const copy of state.books.filter((item) => item.status !== 'borrowed')) {
+    option(book, '', copies.length
+      ? 'Kies een beschikbaar exemplaar' : 'Geen beschikbare exemplaren gevonden');
+    for (const copy of copies) {
+      // A barcode is not necessarily unique; the internal physical ID is.
+      // Show the complete ID, never infer a new barcode or a physical label.
+      const ambiguous = barcodeCounts.get(String(copy.barcode || '').trim()) > 1;
       option(book, copy.id, [copy.title || '(geen titel)', copy.author || '',
-        copy.barcode || '', copy.fixedLocation ? 'vaste locatie: ' + copy.fixedLocation : '']
+        copy.barcode ? 'Barcode: ' + copy.barcode : '',
+        'Exemplaar-ID: ' + copy.id,
+        ambiguous ? 'barcode gedeeld' : '',
+        copy.fixedLocation ? 'vaste locatie: ' + copy.fixedLocation : '']
         .filter(Boolean).join(' · '));
     }
-    if (state.books.some((item) => item.id === selected && item.status !== 'borrowed')) {
-      book.value = selected;
+    if (copies.some((item) => item.id === selected)) book.value = selected;
+    if (copyHint) {
+      const duplicated = copies.filter((item) =>
+        barcodeCounts.get(String(item.barcode || '').trim()) > 1).length;
+      copyHint.textContent = duplicated
+        ? duplicated + ' exemplaren delen een barcode. Controleer de unieke exemplaar-ID ' +
+          'en de fysieke markering op het boek voordat je uitleent.'
+        : copies.length + ' beschikbare exemplaren in deze selectie.';
     }
   }
   function showFilters() {
@@ -150,6 +175,7 @@ if (panel) {
     }
   }
   type.addEventListener('change', showBorrowers);
+  bookSearch?.addEventListener('input', showBooks);
   filter.addEventListener('change', showLoans);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -180,6 +206,8 @@ if (panel) {
     book.replaceChildren();
     filter.replaceChildren();
     message.textContent = '';
+    if (bookSearch) bookSearch.value = '';
+    if (copyHint) copyHint.textContent = '';
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refresh();
