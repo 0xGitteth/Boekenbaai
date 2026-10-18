@@ -748,3 +748,56 @@ body.bb-admin-v31 #admin-dashboard .admin-modern__google-host:empty { display: n
 @media (prefers-reduced-motion: reduce) {
   body.bb-admin-v31 #bb-admin-v31-sidebar { transition: none; }
 }
+
+
+/* Audit #291: consistent control sizes, action hierarchy and mail preferences. */
+body.bb-admin-v31 #admin-dashboard input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='hidden']),
+body.bb-admin-v31 #admin-dashboard select,
+body.bb-admin-v31 #admin-dashboard textarea {
+  width: 100%;
+  max-width: 100%;
+  min-height: 42px;
+  border: 1px solid #bac9db;
+  border-radius: 9px;
+  padding: 9px 11px;
+  font: inherit;
+  color: var(--bb-ink);
+  background: #fff;
+}
+body.bb-admin-v31 #admin-dashboard input:focus-visible,
+body.bb-admin-v31 #admin-dashboard select:focus-visible,
+body.bb-admin-v31 #admin-dashboard textarea:focus-visible {
+  outline: 3px solid #80aef2;
+  outline-offset: 1px;
+}
+body.bb-admin-v31 #admin-dashboard .btn--danger {
+  color: #fff;
+  border-color: #b42318;
+  background: #b42318;
+}
+body.bb-admin-v31 #admin-dashboard .btn--ghost,
+body.bb-admin-v31 #admin-dashboard #admin-book-cancel {
+  background: #eef3fa;
+  border: 1px solid #d3deec;
+  color: var(--bb-navy);
+}
+body.bb-admin-v31 #admin-dashboard .btn--danger:hover { background: #8e1b15; }
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories { display: grid; grid-template-columns: 1fr; gap: 13px; }
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories h3 { grid-column: 1/-1; margin: 5px 0; }
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+body.bb-admin-v31 #admin-dashboard #admin-mail-categories input[type=checkbox] {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+body.bb-admin-v31 #admin-dashboard #staff-loan-book-search { margin-bottom: 12px; }
+body.bb-admin-v31 #admin-dashboard #staff-loan-copy-hint:not(:empty) {
+  margin: 8px 0 0;
+  color: #71571b;
+  font-size: .85rem;
+}
