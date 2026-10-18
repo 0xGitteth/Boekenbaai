@@ -231,40 +231,21 @@
     view.dataset.adminModernView = 'overview';
     view.innerHTML = [
       '<div class="bb-admin-v31-heading"><div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p>',
-      '<h2 tabindex="-1">Start</h2><p>De belangrijkste cijfers, taken en handelingen op één vaste plek.</p></div>',
-      '<button class="btn bb-admin-v31-add-book" type="button" data-v31-add-book>+ Nieuw boek</button></div>',
+      '<h2 tabindex="-1">Start</h2><p>De belangrijkste cijfers en taken op één vaste plek.</p></div></div>',
       '<div class="admin-modern__metrics" id="admin-modern-metrics" aria-live="polite"></div>',
       '<div class="bb-admin-v31-grid">',
       '<div class="bb-admin-v31-column">',
       '<section class="bb-admin-v31-card bb-admin-v31-card--actions"><div class="bb-admin-v31-card-head"><h3>Acties die aandacht vragen</h3>',
       '<button type="button" class="bb-admin-v31-link" data-v31-go="tasks">Alle taken →</button></div>',
       '<div id="admin-modern-actions" class="admin-modern__actions-list" aria-live="polite"></div></section>',
-      '<section class="bb-admin-v31-card bb-admin-v31-card--activity"><div class="bb-admin-v31-card-head"><h3>Recente activiteit</h3></div>',
-      '<div id="bb-admin-v31-activity"></div></section></div>',
+      '<section class="bb-admin-v31-card bb-admin-v31-card--stats"><h3>Schoolstatistieken</h3>',
+      '<p>Bekijk uitleen- en leesstatistieken van de school.</p>',
+      '<div id="bb-admin-v31-stats"></div></section></div>',
       '<div class="bb-admin-v31-column">',
-      '<section class="bb-admin-v31-card bb-admin-v31-card--quick"><h3>Snel naar</h3><div id="bb-admin-v31-quick" class="bb-admin-v31-quick"></div></section>',
-      '<section class="bb-admin-v31-card bb-admin-v31-card--stats"><h3>Schoolstatistieken</h3><p>Bekijk uitleen- en leesstatistieken van de school.</p>',
-      '<div id="bb-admin-v31-stats"></div></section></div></div>',
+      '<section class="bb-admin-v31-card bb-admin-v31-card--activity"><div class="bb-admin-v31-card-head">',
+      '<h3>Recente activiteit</h3><div id="bb-admin-v31-activity-actions"></div></div>',
+      '<div id="bb-admin-v31-activity"></div></section></div></div>',
     ].join('');
-    const quick = view.querySelector('#bb-admin-v31-quick');
-    for (const [label, target, description, symbol] of [
-      ['Boeken beheren', 'books', 'De echte catalogus opent direct', '▤'],
-      ['Personen en klassen', 'people', 'Leerlingen, docenten en koppelingen', '♙'],
-      ['Uitlenen en innemen', 'loans', 'Kies een specifiek fysiek exemplaar', '⇄'],
-      ['Importeren', 'imports', 'Stapsgewijze voorcontrole', '⇧'],
-    ]) {
-      const button = make('button', { className: 'bb-admin-v31-quick-row', type: 'button' });
-      const icon = make('span', { className: 'bb-admin-v31-quick-icon', text: symbol });
-      icon.setAttribute('aria-hidden', 'true');
-      const copy = make('span', { className: 'bb-admin-v31-quick-copy' });
-      copy.append(make('strong', { text: label }), make('small', { text: description }));
-      const affordance = make('span', { className: 'bb-admin-v31-quick-open', text: 'Open' });
-      affordance.setAttribute('aria-hidden', 'true');
-      button.append(icon, copy, affordance);
-      button.addEventListener('click', () => setActiveView(target));
-      quick.append(button);
-    }
-    view.querySelector('[data-v31-add-book]').addEventListener('click', () => showBookEditor(true));
     view.querySelector('[data-v31-go="tasks"]').addEventListener('click', () => setActiveView('tasks'));
     return view;
   }
@@ -618,6 +599,9 @@
     mountSharedPanel('staff-loan-panel', 'bb-admin-v31-loans');
     mountSharedPanel('book-import-followups-panel', 'bb-admin-v31-tasks');
     mountSharedPanel('history-panel', 'bb-admin-v31-activity');
+    // Keep the original privileged logbook button and live status near
+    // the activity title; the original header slot is restored on logout.
+    mountSharedPanel('history-actions', 'bb-admin-v31-activity-actions');
     mountSharedPanel('admin-mail-notifications-panel', 'bb-admin-v31-settings');
     const legacyList = document.getElementById('admin-book-list');
     const legacySection = legacyList?.closest('.admin-card__section');
