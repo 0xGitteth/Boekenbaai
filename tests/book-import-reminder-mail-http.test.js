@@ -123,6 +123,26 @@ async function run() {
       action: 'confirm_address', email: 'central@koraal.nl', code: adminCode,
     })).status, 200);
     assert.equal((await call(adminRoute, admin)).body.recipients[0].verified, true);
+    assert.deepEqual((await call(adminRoute, admin)).body.recipients[0].categories,
+      {transfers:true,google:true,books:true});
+    assert.equal((await call(adminRoute, admin, {
+      action: 'update_recipient_categories', email: 'central@koraal.nl',
+      categories: {transfers:false,google:true,books:false},
+    })).status, 200);
+    assert.deepEqual((await call(adminRoute, admin)).body.recipients[0].categories,
+      {transfers:false,google:true,books:false});
+    assert.equal((await call(adminRoute, teacher, {
+      action: 'update_recipient_categories', email: 'central@koraal.nl',
+      categories: {transfers:true,google:true,books:true},
+    })).status, 403);
+    assert.equal((await call(adminRoute, admin, {
+      action: 'update_recipient_categories', email: 'unknown@koraal.nl',
+      categories: {transfers:true,google:true,books:true},
+    })).status, 400);
+    assert.equal((await call(adminRoute, admin, {
+      action: 'update_recipient_categories', email: 'central@koraal.nl',
+      categories: {transfers:'false',google:true,books:true},
+    })).status, 400);
     assert.equal((await call(adminRoute, teacher, {
       action: 'remove_address', email: 'central@koraal.nl',
     })).status, 403);

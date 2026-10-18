@@ -5,13 +5,22 @@ const crypto = require('node:crypto');
 const { validEmail, verificationHash, DAY_MS } = require('./book-import-reminder-mail');
 const DEFAULT_CATEGORIES = Object.freeze({ transfers: true, google: true, books: true });
 const MAX_ADDRESSES = 10;
+const CATEGORY_KEYS = Object.keys(DEFAULT_CATEGORIES);
+function normalizedCategories(value, fallback = DEFAULT_CATEGORIES) {
+  return Object.fromEntries(CATEGORY_KEYS.map(key => [key,
+    value && typeof value[key] === 'boolean' ? value[key] : fallback[key] !== false]));
+}
+function validCategoryUpdate(candidate) {
+  return candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+    && Object.keys(candidate).sort().join(',') === 'books,google,transfers'
+    && Object.values(candidate).every(x => typeof x === 'boolean');
+}
 function adminSettings(db) {
   const source = db.bookImportAdminMail || {};
   const sourceCategories = source.categories || {};
   return {
     revision: Number.isSafeInteger(source.revision) ? source.revision : 0,
-    categories: Object.fromEntries(Object.keys(DEFAULT_CATEGORIES)
-      .map(key => [key, sourceCategories[key] !== false])),
+    categories: normalizedCategories(sourceCategories),
     recipients: (Array.isArray(source.recipients) ? source.recipients : [])
       .filter(row => row && validEmail(row.email))
       .slice(0, MAX_ADDRESSES)
@@ -19,6 +28,9 @@ function adminSettings(db) {
         email: validEmail(row.email),
         verifiedAt: typeof row.verifiedAt === 'string' ? row.verifiedAt : '',
         pending: row.pending || null,
+        // Legacy shared preferences are inherited for *each* existing address,
+        // so migration never changes who receives an existing category.
+        categories: normalizedCategories(row.categories, normalizedCategories(sourceCategories)),
       })),
     verificationRequests: Array.isArray(source.verificationRequests)
       ? source.verificationRequests.filter(Number.isSafeInteger).slice(-3) : [],
@@ -46,7 +58,8 @@ function requestAddress(db, email, secret, now = Date.now()) {
   const pending = { hash: verificationHash('admin', normalized, code, secret),
     requestedAt: now, expiresAt: now + DAY_MS, attempts: 0 };
   if (existing) existing.pending = pending;
-  else settings.recipients.push({ email: normalized, verifiedAt: '', pending });
+  else settings.recipients.push({ email: normalized, verifiedAt: '', pending,
+    categories: { ...settings.categories } });
   settings.verificationRequests = [...recent, now];
   settings.lastRequestAt = now;
   saveSettings(db, settings);
@@ -79,12 +92,27 @@ function removeAddress(db, email) {
   saveSettings(db, settings);
   return true;
 }
+// Kept for older clients and existing tests, but now updates the inherited
+// defaults for all recipients, preserving backward compatibility. The v3.1
+// interface uses updateRecipientCategories and never invokes this action.
 function updateCategories(db, candidate) {
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)
-    || Object.keys(candidate).sort().join(',') !== 'books,google,transfers'
-    || Object.values(candidate).some(x => typeof x !== 'boolean')) return false;
+  if (!validCategoryUpdate(candidate)) return false;
   const settings = adminSettings(db);
   settings.categories = { ...candidate };
+  settings.recipients = settings.recipients.map(row => ({
+    ...row, categories: { ...candidate },
+  }));
+  saveSettings(db, settings);
+  return true;
+}
+function updateRecipientCategories(db, email, candidate) {
+  if (!validCategoryUpdate(candidate)) return false;
+  const normalized = validEmail(email);
+  if (!normalized) return false;
+  const settings = adminSettings(db);
+  const recipient = settings.recipients.find(row => row.email === normalized && row.verifiedAt);
+  if (!recipient) return false;
+  recipient.categories = { ...candidate };
   saveSettings(db, settings);
   return true;
 }
@@ -94,7 +122,8 @@ function publicSettings(db, ready) {
     recipients: settings.recipients.map(row => ({
       email: row.email, verified: Boolean(row.verifiedAt),
       pending: Boolean(row.pending),
+      categories: { ...row.categories },
     })) };
 }
 module.exports = { adminSettings, requestAddress, confirmAddress, removeAddress,
-  updateCategories, publicSettings, MAX_ADDRESSES };
+  updateCategories, updateRecipientCategories, publicSettings, MAX_ADDRESSES };

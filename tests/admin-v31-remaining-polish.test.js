@@ -33,8 +33,8 @@ assert.match(css, /\.bb-admin-v31-task-actions \.btn/);
 
 assert.match(admin, /function organizeMailSettings\(/);
 assert.match(admin, /panel\.dataset\.v31SettingsOrganized/);
-assert.match(admin, /addresses\.append\(make\('h3', \{ text: 'Ontvangstadressen' \}\), delivery, recipientList\)/);
-assert.match(admin, /preferences\.append\(categories, status\)/);
+assert.match(admin, /addresses\.append\([\s\S]*?recipientList/);
+assert.match(admin, /preferences\.append\(make\('h3', \{ text: 'Beheerdersadres toevoegen' \}\), addForm, categories, status\)/);
 assert.match(admin, /organizeMailSettings\(\)/);
 for (const id of [
   'admin-mail-notifications-panel', 'admin-mail-notifications-list',

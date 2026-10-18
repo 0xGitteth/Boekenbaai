@@ -332,10 +332,13 @@
     panel.dataset.v31SettingsOrganized = 'true';
     const layout = make('div', { className: 'bb-admin-v31-settings-layout' });
     const addresses = make('section', { className: 'bb-admin-v31-settings-section' });
-    addresses.append(make('h3', { text: 'Ontvangstadressen' }), delivery, recipientList);
-    addresses.append(make('h4', { text: 'Beheerdersadres toevoegen' }), addForm);
+    addresses.append(
+      make('h3', { text: 'Ontvangstadressen en meldingsvoorkeuren' }),
+      make('p', { text: 'Stel voor ieder geverifieerd adres apart in welke meldingen het ontvangt.' }),
+      delivery, recipientList
+    );
     const preferences = make('section', { className: 'bb-admin-v31-settings-section' });
-    preferences.append(categories, status);
+    preferences.append(make('h3', { text: 'Beheerdersadres toevoegen' }), addForm, categories, status);
     layout.append(addresses, preferences);
     panel.append(layout);
   }
