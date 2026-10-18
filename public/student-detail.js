@@ -160,14 +160,15 @@
       wrapper.append(control);
       return wrapper;
     }
-    control.disabled = true;
-    const lock = make('div', { className: 'student-detail__locked' });
-    lock.tabIndex = 0;
-    lock.dataset.adminHelp = help;
-    lock.setAttribute('aria-label', `${label}. ${help}`);
-    lock.append(control);
-    wrapper.append(lock);
-    return wrapper;
+    // Teachers cannot edit school-managed fields. Show actual readable
+    // details rather than inaccessible grey disabled input controls.
+    const staticField = make('div', { className: 'student-detail__field student-detail__read-only' });
+    staticField.append(
+      make('span', { text: label }),
+      make('p', { className: 'student-detail__read-only-value',
+        text: String(control.value || 'Niet ingesteld') })
+    );
+    return staticField;
   }
 
   function findUnderlyingAction(row, label) {
@@ -229,6 +230,10 @@
         text: 'Naam en klas kunnen bij een volgende ParnasSys-sync opnieuw worden bijgewerkt vanuit de schooladministratie.',
       }));
     }
+    if (!isAdmin) basics.append(make('p', {
+      className: 'student-detail__read-only-note',
+      text: 'De beheerder kan deze schoolgegevens aanpassen.',
+    }));
     form.append(basics);
 
     const google = make('section', { className: 'student-detail__section' });
