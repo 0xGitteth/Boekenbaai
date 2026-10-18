@@ -47,4 +47,19 @@ for (const filename of runtimeAuthAssets) {
   );
 }
 
-console.log('Runtime Google-auth en beheer-assets build test geslaagd.');
+// The copied admin JS/CSS refer to these SVGs at runtime, without Vite URL rewriting.
+for (const filename of [
+  'logo/het-dok-header-v31.svg',
+  'logo/boekenbaai-book-mark-v31.svg',
+]) {
+  const builtPath = path.join(distDir, filename);
+  const sourcePath = path.join(publicDir, filename);
+  assert.ok(fs.existsSync(builtPath), filename + ' ontbreekt in productie-dist');
+  assert.strictEqual(
+    fs.readFileSync(builtPath, 'utf8'),
+    fs.readFileSync(sourcePath, 'utf8'),
+    filename + ' in dist moet overeenkomen met de bron'
+  );
+}
+
+console.log('Runtime Google-auth, beheer- en logo-assets build test geslaagd.');

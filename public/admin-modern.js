@@ -235,24 +235,32 @@
       '<button class="btn bb-admin-v31-add-book" type="button" data-v31-add-book>+ Nieuw boek</button></div>',
       '<div class="admin-modern__metrics" id="admin-modern-metrics" aria-live="polite"></div>',
       '<div class="bb-admin-v31-grid">',
-      '<section class="bb-admin-v31-card"><div class="bb-admin-v31-card-head"><h3>Acties die aandacht vragen</h3>',
+      '<div class="bb-admin-v31-column">',
+      '<section class="bb-admin-v31-card bb-admin-v31-card--actions"><div class="bb-admin-v31-card-head"><h3>Acties die aandacht vragen</h3>',
       '<button type="button" class="bb-admin-v31-link" data-v31-go="tasks">Alle taken →</button></div>',
       '<div id="admin-modern-actions" class="admin-modern__actions-list" aria-live="polite"></div></section>',
-      '<section class="bb-admin-v31-card"><h3>Snel naar</h3><div id="bb-admin-v31-quick" class="bb-admin-v31-quick"></div></section>',
-      '<section class="bb-admin-v31-card"><div class="bb-admin-v31-card-head"><h3>Recente activiteit</h3></div>',
-      '<div id="bb-admin-v31-activity"></div></section>',
-      '<section class="bb-admin-v31-card"><h3>Schoolstatistieken</h3><p>Bekijk uitleen- en leesstatistieken van de school.</p>',
-      '<div id="bb-admin-v31-stats"></div></section></div>',
+      '<section class="bb-admin-v31-card bb-admin-v31-card--activity"><div class="bb-admin-v31-card-head"><h3>Recente activiteit</h3></div>',
+      '<div id="bb-admin-v31-activity"></div></section></div>',
+      '<div class="bb-admin-v31-column">',
+      '<section class="bb-admin-v31-card bb-admin-v31-card--quick"><h3>Snel naar</h3><div id="bb-admin-v31-quick" class="bb-admin-v31-quick"></div></section>',
+      '<section class="bb-admin-v31-card bb-admin-v31-card--stats"><h3>Schoolstatistieken</h3><p>Bekijk uitleen- en leesstatistieken van de school.</p>',
+      '<div id="bb-admin-v31-stats"></div></section></div></div>',
     ].join('');
     const quick = view.querySelector('#bb-admin-v31-quick');
-    for (const [label, target, description] of [
-      ['Boeken beheren', 'books', 'De echte catalogus opent direct'],
-      ['Personen en klassen', 'people', 'Leerlingen, docenten en koppelingen'],
-      ['Uitlenen en innemen', 'loans', 'Kies een specifiek fysiek exemplaar'],
-      ['Importeren', 'imports', 'Stapsgewijze voorcontrole'],
+    for (const [label, target, description, symbol] of [
+      ['Boeken beheren', 'books', 'De echte catalogus opent direct', '▤'],
+      ['Personen en klassen', 'people', 'Leerlingen, docenten en koppelingen', '♙'],
+      ['Uitlenen en innemen', 'loans', 'Kies een specifiek fysiek exemplaar', '⇄'],
+      ['Importeren', 'imports', 'Stapsgewijze voorcontrole', '⇧'],
     ]) {
       const button = make('button', { className: 'bb-admin-v31-quick-row', type: 'button' });
-      button.append(make('strong', { text: label }), make('small', { text: description }));
+      const icon = make('span', { className: 'bb-admin-v31-quick-icon', text: symbol });
+      icon.setAttribute('aria-hidden', 'true');
+      const copy = make('span', { className: 'bb-admin-v31-quick-copy' });
+      copy.append(make('strong', { text: label }), make('small', { text: description }));
+      const affordance = make('span', { className: 'bb-admin-v31-quick-open', text: 'Open' });
+      affordance.setAttribute('aria-hidden', 'true');
+      button.append(icon, copy, affordance);
       button.addEventListener('click', () => setActiveView(target));
       quick.append(button);
     }
@@ -504,8 +512,10 @@
       if (data.pendingRequests) pending.push([`${data.pendingRequests} openstaande Google-koppelverzoeken`, 'people']);
       if (data.teachersUnlinked) pending.push([`${data.teachersUnlinked} docenten zonder schoolaccount`, 'people']);
       if (data.studentsUnlinked) pending.push([`${data.studentsUnlinked} leerlingen zonder schoolaccount`, 'people']);
+      const actionCard = actions.closest('.bb-admin-v31-card--actions');
+      actionCard?.classList.toggle('bb-admin-v31-card--empty-actions', !pending.length);
       if (!pending.length) {
-        actions.append(make('p', { className: 'hint', text: 'Geen openstaande accountacties.' }));
+        actions.append(make('p', { className: 'bb-admin-v31-empty-actions', text: 'Geen openstaande accountacties.' }));
       } else {
         for (const [label, target] of pending) {
           const row = make('button', { className: 'admin-modern__action-row', text: label, type: 'button' });
@@ -515,6 +525,8 @@
       }
     } catch (error) {
       metrics.innerHTML = '';
+      actions.closest('.bb-admin-v31-card--actions')?.classList.remove('bb-admin-v31-card--empty-actions');
+      actions.append(make('p', { className: 'hint', text: 'Accountacties konden niet worden geladen.' }));
       metrics.append(make('p', { className: 'hint', text: error.message }));
     }
   }
@@ -592,6 +604,14 @@
       const intro = document.querySelector('.hero--staff .hero__content p');
       if (title) title.textContent = 'Docentenportaal Boekenbaai';
       if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
+      const logo = document.querySelector('.hero--staff .hero__logo');
+      if (logo) {
+        // Restore Vite's original (possibly fingerprinted) URL rather than
+        // constructing a source URL that may not exist in production dist.
+        if (logo.dataset.v31OriginalSrc) logo.setAttribute('src', logo.dataset.v31OriginalSrc);
+        logo.alt = '';
+        logo.closest('.hero__illustration')?.setAttribute('aria-hidden', 'true');
+      }
       return;
     }
     mountSharedPanel('.teacher-layout__overview', 'bb-admin-v31-catalog');
@@ -606,7 +626,15 @@
     const name = document.querySelector('.hero--staff h1');
     const intro = document.querySelector('.hero--staff .hero__content p');
     if (name) name.textContent = 'Boekenbaai';
-    if (intro) intro.textContent = 'Boekenbaai Beheer';
+    // The right-hand account identity already identifies Boekenbaai Beheer.
+    if (intro) intro.textContent = '';
+    const logo = document.querySelector('.hero--staff .hero__logo');
+    if (logo) {
+      logo.dataset.v31OriginalSrc ||= logo.getAttribute('src') || '';
+      logo.src = 'logo/het-dok-header-v31.svg';
+      logo.alt = 'Het Dok';
+      logo.closest('.hero__illustration')?.removeAttribute('aria-hidden');
+    }
   }
 
   function updateCatalogToggle() {
