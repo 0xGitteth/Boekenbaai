@@ -4,6 +4,7 @@
   const SESSION_CLASS_KEY = 'boekenbaai_active_mentor_class';
   let state = null;
   let installed = false;
+  let refreshSerial = 0;
   let activeClassId = '';
 
   function make(tag, options = {}) {
@@ -604,13 +605,16 @@
     }));
   }
   async function refresh() {
+    const request = ++refreshSerial;
     try {
-      state = await api('/api/mentor/student-management');
+      const data = await api('/api/mentor/student-management');
+      if (request !== refreshSerial) return;
+      state = data;
       activeClass();
       render();
       publishTeacherTasks('ready');
     } catch (error) {
-      publishTeacherTasks('error');
+      if (request === refreshSerial) publishTeacherTasks('error');
     }
   }
 
@@ -622,6 +626,12 @@
       if (id && ownClasses().some(klass => klass.id === id)) setActiveClass(id);
     });
     installed = true;
+    window.addEventListener('boekenbaai:mentor-tasks-refresh', refresh);
+    window.addEventListener('boekenbaai:staff-auth-cleared', () => {
+      ++refreshSerial;
+      state = null;
+      activeClassId = '';
+    });
     refresh();
     const observer = new MutationObserver(() => {
       const host = document.querySelector('#teacher-dashboard');
