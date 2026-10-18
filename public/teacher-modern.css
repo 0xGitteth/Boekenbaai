@@ -312,6 +312,7 @@ body.bb-teacher-v31 .bb-teacher-v31-menu,
 body.bb-teacher-v31 #bb-teacher-v31-scrim { display: none; }
 @media (max-width: 1120px) {
   body.bb-teacher-v31 .bb-teacher-v31-grid { grid-template-columns: 1fr; }
+  body.bb-teacher-v31 .bb-teacher-v31-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 760px) {
   body.bb-teacher-v31 > main { display: block; }
