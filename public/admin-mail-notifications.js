@@ -7,9 +7,13 @@ if (panel) {
   const status = document.getElementById('admin-mail-notifications-status');
   const form = document.getElementById('admin-mail-add-form');
   const newEmail = document.getElementById('admin-mail-new-address');
-  const categoriesForm = document.getElementById('admin-mail-categories');
   const delivery = document.getElementById('admin-mail-delivery');
   const categoryKeys = ['transfers', 'google', 'books'];
+  const categoryLabels = {
+    transfers: 'Afgewezen klaswissels',
+    google: 'Google-koppelverzoeken',
+    books: 'Boekcontroles die naar beheer zijn geëscaleerd',
+  };
   const configuredBase = (typeof import.meta !== 'undefined' && import.meta.env
     && (import.meta.env.BOEKENBAAI_PUBLIC_API_BASE
       || import.meta.env.VITE_BOEKENBAAI_API_BASE)) || '';
@@ -80,11 +84,36 @@ if (panel) {
           'Adres is verwijderd.');
       });
       row.append(remove);
+      if (item.verified) {
+        const preferences = element('form');
+        preferences.className = 'admin-mail-recipient__preferences';
+        const title = element('h4', 'Meldingen voor dit e-mailadres');
+        const options = element('div');
+        options.className = 'admin-mail-recipient__options';
+        const checkboxes = new Map();
+        for (const key of categoryKeys) {
+          const label = element('label');
+          const checkbox = element('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = Boolean(item.categories?.[key]);
+          checkboxes.set(key, checkbox);
+          label.append(checkbox, document.createTextNode(categoryLabels[key]));
+          options.append(label);
+        }
+        const save = element('button', 'Voorkeuren opslaan');
+        save.type = 'submit';
+        save.className = 'btn btn--secondary';
+        preferences.append(title, options, save);
+        preferences.addEventListener('submit', event => {
+          event.preventDefault();
+          const categories = Object.fromEntries(categoryKeys.map(key =>
+            [key, checkboxes.get(key).checked]));
+          submit({ action: 'update_recipient_categories', email: item.email, categories },
+            'Voorkeuren voor ' + item.email + ' opgeslagen.');
+        });
+        row.append(preferences);
+      }
       list.append(row);
-    }
-    for (const key of categoryKeys) {
-      const input = document.getElementById('admin-mail-category-' + key);
-      if (input) input.checked = Boolean(data.categories?.[key]);
     }
   }
   async function load() {
@@ -116,13 +145,6 @@ if (panel) {
     e.preventDefault();
     submit({ action: 'request_address', email: newEmail.value.trim() },
       'Een verificatiecode is verzonden.');
-  });
-  categoriesForm.addEventListener('submit', e => {
-    e.preventDefault();
-    const categories = Object.fromEntries(categoryKeys.map(key => [
-      key, Boolean(document.getElementById('admin-mail-category-' + key)?.checked),
-    ]));
-    submit({ action: 'update_categories', categories }, 'Meldingscategorieën opgeslagen.');
   });
   window.addEventListener('boekenbaai:staff-refresh', load);
   window.addEventListener('boekenbaai:staff-auth-cleared', () => {
