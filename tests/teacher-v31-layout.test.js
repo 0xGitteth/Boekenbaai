@@ -81,7 +81,7 @@ const placements = [
   { node: teacherPanel, marker: { isConnected: true, after(node) { moved.push(node); } } },
 ];
 const context = vm.createContext({ placements, admin: adminRole });
-new vm.Script(js.slice(restoreStart, restoreEnd) + '\\nthis.runRestore = restore;').runInContext(context);
+new vm.Script(js.slice(restoreStart, restoreEnd) + '\nthis.runRestore = restore;').runInContext(context);
 context.runRestore();
 assert.deepEqual(moved, [teacherPanel], 'Beheer-owned panel must stay inside Beheer');
 console.log('Docentenportaal v3.1 navigatie, rechten- en responsive regressies geslaagd.');
