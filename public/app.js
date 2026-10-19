@@ -751,6 +751,43 @@ function resolveThemeColors(theme) {
   return { background, hoverBackground, activeBackground, border, activeBorder, ring, text };
 }
 
+// Approved preview palette. One shared source for the filters and book tags.
+const CATALOG_THEME_PALETTE = Object.freeze({
+'vriendschap':['#cee1f4','#c4d6e9','#214663','#2078cb'],
+'avontuur':['#f1cdd5','#ddc8d4','#214663','#c11a40'],
+'fantasy':['#cff4d2','#c5e4d1','#214663','#26cf31'],
+'humor':['#daccf4','#cdc8e9','#214663','#5919cc'],
+'identiteit':['#efe4ce','#dbd9cf','#214663','#b8821e'],
+'school & opgroeien':['#cef4f1','#c4e4e7','#214663','#20cbc1'],
+'diversiteit':['#f1cde9','#ddc8e2','#214663','#c11a9a'],
+'geschiedenis':['#e1f4cf','#d2e4cf','#214663','#76cf26'],
+'mysterie':['#ccd4f4','#c3cde9','#214663','#193acc'],
+'overleven':['#efd1ce','#dbcbcf','#214663','#b82f1e'],
+'spanning':['#cef4dd','#c4e4d9','#214663','#20cb64'],
+'adoptie & afkomst':['#e6cdf1','#d5c8e7','#214663','#8e1ac1'],
+'familie':['#f4f4cf','#dfe4cf','#214663','#cfcc26'],
+'isolatie':['#cce9f4','#c3dce9','#214663','#199bcc'],
+'maatschappij':['#efcedc','#dbc9d8','#214663','#b81e61'],
+'macht & hiërarchie':['#d3f4ce','#c8e4cf','#214663','#38cb20'],
+'media & invloed':['#d2cdf1','#c7c8e7','#214663','#341ac1'],
+'mythologie':['#f4e0cf','#dfd6cf','#214663','#cf7126'],
+'natuur':['#ccf4e9','#c3e4e2','#214663','#19cc9d'],
+'pesten':['#efceef','#dbc9e6','#214663','#b81eb4'],
+'poëzie':['#e7f4ce','#d6e4cf','#214663','#94cb20'],
+'psychische gezondheid':['#cddbf1','#c4d2e7','#214663','#1a5bc1'],
+'romantiek':['#f4cfd3','#dfcad2','#214663','#cf2636'],
+'sport':['#ccf4d4','#c3e4d3','#214663','#19cc3c'],
+'verslaving':['#deceef','#d0c9e6','#214663','#691eb8'],
+'wetenschap':['#f4ebce','#dfdecf','#214663','#cba520'],
+'ziekte & verlies':['#cdeff1','#c4e0e7','#214663','#1ab5c1'],
+});
+function resolveCatalogThemeColors(label) {
+  const entry = CATALOG_THEME_PALETTE[normalizeThemeKey(label)];
+  if (entry) return {background:entry[0],border:entry[1],text:entry[2],dot:entry[3]};
+  const colors = resolveThemeColors(label); // Custom DB themes also get stable colors.
+  return {background:colors.background,border:colors.border,text:colors.text,dot:getThemeColor(label)};
+}
+
 const bookDetailState = {
   root: null,
   backdrop: null,
@@ -1653,11 +1690,11 @@ function renderThemePills(container, config = {}) {
       if (!button) return;
       button.setAttribute('aria-pressed', String(active));
       if (theme) {
-        const colors = resolveThemeColors(theme.label);
+        const colors = resolveCatalogThemeColors(theme.label);
         button.style.setProperty('--theme-pill-bg', colors.background);
         button.style.setProperty('--theme-pill-text', colors.text);
         button.style.setProperty('--theme-pill-border', colors.border);
-        button.style.setProperty('--bb-pill-dot', getThemeColor(theme.label));
+        button.style.setProperty('--bb-pill-dot', colors.dot);
       }
       button.addEventListener('click', callback);
     };
@@ -2056,7 +2093,8 @@ function createBookCard(template, book, folders, options = {}) {
       const li = appendTextElement(tagsList, 'li', tag, {
         className: 'book-card__tag',
       });
-      const { background, text, border } = resolveThemeColors(tag);
+      const { background, text, border } = options.catalogLayout
+        ? resolveCatalogThemeColors(tag) : resolveThemeColors(tag);
       li.style.setProperty('--theme-pill-bg', background);
       li.style.setProperty('--theme-pill-text', text);
       li.style.setProperty('--theme-pill-border', border);
