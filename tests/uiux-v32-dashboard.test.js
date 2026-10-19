@@ -175,6 +175,23 @@ assert.match(css,/body\.bb-admin-v31\.bb-v32-active #admin-dashboard \.admin-das
 // P1: mobile header must be a HIGHER stacking context than both body scrims.
 assert.match(css,/@media \(max-width: 760px\)\s*\{[\s\S]*?body\.bb-admin-v31\.bb-v32-active \.hero\.hero--staff,[\s\S]*?z-index: 70/);
 
+// Codex P1 regression: DOMTokenList.add throws InvalidCharacterError for
+// "class1 class2" passed as one token. Execute the actual call using a strict
+// DOMTokenList-compatible mock so the dashboard can finish initialization.
+const teacherTokens=js.match(/start\\.classList\\.add\\([^;]+\\);/);
+assert.ok(teacherTokens, 'Teacher dashboard must apply the new design classes');
+const applied=new Set();
+new vm.Script(teacherTokens[0]).runInNewContext({
+  start:{classList:{add(...tokens){
+    for (const token of tokens) {
+      assert.equal(/\\s/.test(token),false,'Every class must be a separate DOM token');
+      applied.add(token);
+    }
+  }}},
+});
+assert.ok(applied.has('bb-v32-dashboard'));
+assert.ok(applied.has('bb-v32-teacher-dashboard'));
+
 // Hero branding and UI scopes remain unchanged for logged-out staff.
 assert.doesNotMatch(js,/student-dashboard/);
 assert.match(js,/if \(document\.body\.classList\.contains\('bb-admin-v31'\)\)/);
