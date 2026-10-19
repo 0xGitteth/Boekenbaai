@@ -2424,9 +2424,9 @@ function sortBooks(books, sortBy) {
     return sorted;
   }
 
-  if (sortBy === 'popular' || sortBy === 'popularity') {
+  if (sortBy === 'popular' || sortBy === 'popularity' || sortBy === 'popular-pure') {
     sorted.sort((a, b) => {
-      const availabilityDiff = compareAvailability(a, b);
+      const availabilityDiff = sortBy === 'popular-pure' ? 0 : compareAvailability(a, b);
       if (availabilityDiff !== 0) {
         return availabilityDiff;
       }
@@ -4344,6 +4344,7 @@ function initStaffPage() {
       if(catalogLanguage) catalogLanguage.value='';
       if(catalogEasy) catalogEasy.checked=false;
       if(catalogExam) catalogExam.checked=false;
+      if(catalogAdvanced) catalogAdvanced.open=false;
       if(searchInput) searchInput.value='';
       filters.query = '';
       filters.sortBy = sortSelect?.value || 'author';
@@ -4351,6 +4352,7 @@ function initStaffPage() {
         baseLabel: 'Sorteer de boeken',
         gridId: 'book-grid',
       });
+      themeFilterRenderer.collapse();
       themeFilterRenderer.render();
       renderAdminThemeOptions({ preserveSelection: false });
       renderBooks();
@@ -4396,7 +4398,8 @@ function initStaffPage() {
       folders,
       filters: {
         sortBy: filters.sortBy === 'author' ? 'author-alphabetical'
-          : filters.sortBy === 'title' ? 'title-alphabetical' : filters.sortBy,
+          : filters.sortBy === 'title' ? 'title-alphabetical'
+          : filters.sortBy === 'popular' ? 'popular-pure' : filters.sortBy,
       },
       cardOptions: (book) => ({
         catalogLayout:true,
