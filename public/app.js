@@ -2089,11 +2089,12 @@ function createBookCard(template, book, folders, options = {}) {
   }
   if (tagsList) {
     tagsList.innerHTML = '';
-    for (const tag of book.themes || []) {
-      // Characteristics have their own cover markers and must not appear as themes.
-      if (options.catalogLayout && ['makkelijk lezen','examenleeslijst'].includes(normalizeThemeKey(tag))) {
-        continue;
-      }
+    // The approved card shows at most two content themes; the detail view
+    // still provides the complete set and the filters consider every theme.
+    const contentThemes = (book.themes || []).filter(tag =>
+      !options.catalogLayout ||
+      !['makkelijk lezen','examenleeslijst'].includes(normalizeThemeKey(tag)));
+    for (const tag of (options.catalogLayout ? contentThemes.slice(0, 2) : contentThemes)) {
       const li = appendTextElement(tagsList, 'li', tag, {
         className: 'book-card__tag',
       });
