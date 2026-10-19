@@ -13,6 +13,42 @@ body.bb-admin-v31, body.bb-teacher-v31 {
   --bb-v32-muted: #61758e;
   background: var(--bb-v32-canvas);
 }
+/* Production injects admin-modern.css after this bundle. Extra selector
+   specificity keeps the single-column main and dashboard intact regardless
+   of CSS ordering, including a relogin from teacher to administrator. */
+body.bb-admin-v31.bb-v32-active > main {
+  display: block;
+  grid-template-columns: none;
+  width: 100%;
+  max-width: none;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard {
+  display: block;
+  grid-column: auto;
+  grid-row: auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  padding: 25px clamp(16px, 3.25vw, 58px) 65px;
+  background: var(--bb-v32-canvas);
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .admin-dashboard {
+  max-width: 1440px;
+}
+/* The old admin metric/grid selectors also load later in production. */
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metrics {
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+body.bb-admin-v31.bb-v32-active .bb-v32-dashboard .bb-v32-admin-grid.bb-admin-v31-grid {
+  grid-template-columns: 1.06fr 1.14fr 1fr;
+  align-items: start;
+}
+body.bb-admin-v31.bb-v32-active .bb-v32-dashboard .bb-v32-admin-grid > .bb-admin-v31-card--activity {
+  height: 380px;
+  max-height: 380px;
+  min-height: 275px;
+}
 /* Shared horizontal primary navigation, reusing the actual v3.1 tab buttons
    so all previously wired views, role gates and event handlers stay intact. */
 body.bb-admin-v31 > main,
@@ -498,6 +534,12 @@ body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-card {
 /* Fluid desktop: keep navigation scrollable, and avoid making bookcovers
    wider than their approved 2:3 ratio even when the viewport changes. */
 @media (max-width: 1180px) {
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metrics {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+  body.bb-admin-v31.bb-v32-active .bb-v32-dashboard .bb-v32-admin-grid.bb-admin-v31-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
   body.bb-admin-v31 #bb-admin-v31-sidebar.bb-v32-top-nav,
   body.bb-teacher-v31 #bb-teacher-v31-sidebar.bb-v32-top-nav {
     margin-left: 6px;
@@ -516,6 +558,9 @@ body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-card {
   body.bb-teacher-v31 .bb-v32-teacher-books { grid-template-columns: repeat(5,minmax(0,1fr)); }
 }
 @media (max-width: 850px) {
+  body.bb-admin-v31.bb-v32-active .bb-v32-dashboard .bb-v32-admin-grid.bb-admin-v31-grid {
+    grid-template-columns: 1fr;
+  }
   body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-teacher-v31-grid { grid-template-columns: 1fr; }
   body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-search { min-height: auto; }
   body.bb-teacher-v31 .bb-v32-teacher-lower { grid-template-columns: 1fr 1fr; }
@@ -524,6 +569,22 @@ body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-card {
   body.bb-admin-v31 .bb-v32-admin-grid > .bb-admin-v31-card--activity { height: 260px; }
 }
 @media (max-width: 760px) {
+  /* The nav is now inside the sticky header. Put its stacking context
+     above the body-attached scrim (admin z44, teacher z59), or the scrim
+     intercepts every mobile navigation tap. */
+  body.bb-admin-v31.bb-v32-active .hero.hero--staff,
+  body.bb-teacher-v31.bb-v32-active .hero.hero--staff {
+    z-index: 70;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard {
+    padding: 20px 13px 58px;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metrics {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+  body.bb-admin-v31.bb-v32-active .bb-v32-dashboard .bb-v32-admin-grid.bb-admin-v31-grid {
+    grid-template-columns: 1fr;
+  }
   body.bb-admin-v31 .hero.hero--staff,
   body.bb-teacher-v31 .hero.hero--staff { padding: 0 12px; gap: 7px; }
   body.bb-admin-v31 #admin-dashboard,
