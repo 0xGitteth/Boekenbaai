@@ -87,7 +87,7 @@ if (panel) {
       if (item.verified) {
         const preferences = element('form');
         preferences.className = 'admin-mail-recipient__preferences';
-        const title = element('h4', 'Meldingen voor dit e-mailadres');
+        const title = element('h4', 'Meldingen voor ' + item.email);
         const options = element('div');
         options.className = 'admin-mail-recipient__options';
         const checkboxes = new Map();
@@ -103,6 +103,7 @@ if (panel) {
         const save = element('button', 'Voorkeuren opslaan');
         save.type = 'submit';
         save.className = 'btn btn--secondary';
+        save.setAttribute('aria-label', 'Voorkeuren voor ' + item.email + ' opslaan');
         preferences.append(title, options, save);
         preferences.addEventListener('submit', event => {
           event.preventDefault();
