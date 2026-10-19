@@ -21,6 +21,9 @@
     teacher: '<circle cx="9" cy="7" r="3"/><path d="M2 21v-2a7 7 0 0 1 12-4.9M16 8h6m-3-3v6m-4 10v-5h7v5"/>',
     classes: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M13 15h4"/>',
     lending: '<path d="M3 7h17m-4-4 4 4-4 4M21 17H4m4-4-4 4 4 4"/>',
+    return: '<path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-2"/>',
+    import: '<path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/>',
+    activity: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   };
   function makeIcon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -162,6 +165,7 @@
     const taskTitle = tasks.querySelector('h3');
     if (taskTitle) taskTitle.textContent = 'Openstaande taken';
     grid.replaceChildren(shortcuts, activity, tasks);
+    // Keep school statistics a content-height row and original stats button.
     stats.classList.add('bb-v33-stats-bar');
     grid.after(stats);
 
@@ -176,8 +180,8 @@
         for (const [index, item] of [...metrics.querySelectorAll('.admin-modern__metric')].entries()) {
           if (item.dataset.v32Metric) continue;
           item.dataset.v32Metric = String(index);
-           const metricIcon = item.querySelector('.bb-admin-v31-metric-icon');
-           if (metricIcon) metricIcon.replaceChildren(makeIcon(['book','student','teacher','classes'][index]));
+          const metricIcon = item.querySelector('.bb-admin-v31-metric-icon');
+          if (metricIcon) metricIcon.replaceChildren(makeIcon(['book','student','teacher','classes'][index]));
           const link = make('button', 'bb-v32-metric-link', labels[index] + ' →');
           link.type = 'button';
           link.addEventListener('click', clickers[index]);
@@ -249,6 +253,57 @@
       attributeFilter: ['src', 'hidden'],
     });
   }
+  // The existing class rows keep their own event handlers and role-scoped data.
+  function installTeacherClassIcons() {
+    const card = document.getElementById('bb-teacher-v31-classes-summary');
+    if (!card || card.dataset.v34ClassIcons) return;
+    card.dataset.v34ClassIcons = 'true';
+    const decorate = () => {
+      for (const row of card.querySelectorAll('.bb-teacher-v31-row')) {
+        if (row.querySelector('.bb-v34-class-icon')) continue;
+        const icon = make('span', 'bb-v34-class-icon');
+        icon.setAttribute('aria-hidden', 'true');
+        icon.append(makeIcon('classes'));
+        row.prepend(icon);
+      }
+    };
+    decorate();
+    // Direct child changes only, decorating inside a row cannot loop.
+    new MutationObserver(decorate).observe(card, { childList: true });
+  }
+
+  // History exposes localized messages but no machine-readable action type.
+  // Recognize known phrases, use a neutral clock for unknown actions.
+  function classifyHistoryAction(message) {
+    const value = String(message || '').toLocaleLowerCase('nl-NL');
+    if (/ingeleverd|teruggebracht|teruggegeven|inname|ingenomen/.test(value)) return 'return';
+    if (/uitgeleend|uitlening|geleend|leent|lening/.test(value)) return 'lending';
+    if (/import|excel|parnassys/.test(value)) return 'import';
+    if (/docent|leerkracht|mentor/.test(value)) return 'teacher';
+    if (/klas|leerling|student|account|koppel|overgezet/.test(value)) return 'student';
+    if (/boek|bibliotheek|isbn|titel|exemplaar/.test(value)) return 'book';
+    return 'activity';
+  }
+  function installActivityIcons() {
+    const list = document.getElementById('history-list');
+    if (!list || list.dataset.v34ActivityIcons) return;
+    list.dataset.v34ActivityIcons = 'true';
+    const decorate = () => {
+      for (const entry of list.querySelectorAll(':scope > .history-item')) {
+        if (entry.querySelector('.bb-v34-activity-icon')) continue;
+        const time = entry.querySelector('.history-item__time');
+        if (!time) continue; // No icon on empty state, loading, or error.
+        const kind = classifyHistoryAction(time.nextElementSibling?.textContent || '');
+        const icon = make('span', 'bb-v34-activity-icon');
+        icon.dataset.kind = kind;
+        icon.setAttribute('aria-hidden', 'true');
+        icon.append(makeIcon(kind));
+        entry.prepend(icon);
+      }
+    };
+    decorate();
+    new MutationObserver(decorate).observe(list, { childList: true });
+  }
   function enhanceTeacherDashboard() {
     if (teacherLayoutDone) return;
     const start = document.querySelector('[data-teacher-view="start"]');
@@ -306,6 +361,7 @@
     else lower.append(loans, task);
     start.append(lower);
     installTeacherBooks();
+    installTeacherClassIcons();
   }
   function sync() {
     const teacherNav = document.getElementById('bb-teacher-v31-sidebar');
@@ -314,11 +370,14 @@
     if (document.body.classList.contains('bb-admin-v31')) {
       installHeader(document.getElementById('bb-admin-v31-sidebar'), 'admin');
       enhanceAdminDashboard();
+      installActivityIcons();
     }
     if (document.body.classList.contains('bb-teacher-v31')) {
       installHeader(document.getElementById('bb-teacher-v31-sidebar'), 'teacher');
       enhanceTeacherDashboard();
       installTeacherBooks();
+      installTeacherClassIcons();
+      installActivityIcons();
     }
   }
   const observer = new MutationObserver(sync);
