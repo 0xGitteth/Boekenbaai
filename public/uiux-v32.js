@@ -298,6 +298,7 @@
         icon.dataset.kind = kind;
         icon.setAttribute('aria-hidden', 'true');
         icon.append(makeIcon(kind));
+        entry.classList.add('bb-v34-history-entry');
         entry.prepend(icon);
       }
     };
