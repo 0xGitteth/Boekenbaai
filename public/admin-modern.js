@@ -102,7 +102,7 @@
 
 
   function setActiveView(name) {
-    if (!['overview', 'books', 'people', 'loans', 'tasks', 'imports', 'settings'].includes(name)) return;
+    if (!['overview', 'books', 'people', 'classes', 'loans', 'tasks', 'imports', 'settings'].includes(name)) return;
     state.activeView = name;
     const dashboard = document.getElementById('admin-dashboard');
     dashboard?.querySelectorAll('[data-admin-modern-view]').forEach((view) => {
@@ -130,7 +130,7 @@
 
 
   function setPeopleView(name) {
-    if (!['students', 'teachers', 'classes'].includes(name)) return;
+    if (!['students', 'teachers'].includes(name)) return;
     state.activePeopleView = name;
     const dashboard = document.getElementById('admin-dashboard');
     dashboard?.querySelectorAll('[data-admin-people-view]').forEach((view) => {
@@ -173,7 +173,8 @@
     const items = [
       ['overview', 'Start', '▦'],
       ['books', 'Boeken', '▤'],
-      ['people', 'Personen en klassen', '♙'],
+      ['people', 'Personen', '♙'],
+      ['classes', 'Klassen', '▦'],
       ['loans', 'Uitlenen en innemen', '⇄'],
       ['tasks', 'Taken', '☑'],
       ['imports', 'Importeren', '⇧'],
@@ -252,17 +253,17 @@
 
 
 
-  function createPeopleView(teacherCard, studentCard, classesCard) {
+  function createPeopleView(teacherCard, studentCard) {
     const view = make('section', { className: 'admin-modern__view admin-modern__people' });
     view.dataset.adminModernView = 'people';
     const intro = make('div', { className: 'bb-admin-v31-heading' });
-    intro.innerHTML = '<div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p><h2 tabindex="-1">Personen en klassen</h2>' +
-      '<p>Beheer leerlingen, docenten, klasindelingen en schoolaccounts op één plek.</p></div>';
+    intro.innerHTML = '<div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p><h2 tabindex="-1">Personen</h2>' +
+      '<p>Beheer leerlingen, docenten en hun schoolaccounts.</p></div>';
     view.append(intro);
     const tabs = make('div', { className: 'admin-modern__subtabs' });
     tabs.setAttribute('role', 'tablist');
-    tabs.setAttribute('aria-label', 'Personen en klassen');
-    [['students', 'Leerlingen'], ['teachers', 'Docenten'], ['classes', 'Klassen']].forEach(([key, label]) => {
+    tabs.setAttribute('aria-label', 'Personen');
+    [['students', 'Leerlingen'], ['teachers', 'Docenten']].forEach(([key, label]) => {
       const button = make('button', { className: 'admin-modern__subtab', text: label, type: 'button' });
       button.dataset.adminPeopleTab = key;
       button.setAttribute('role', 'tab');
@@ -270,7 +271,7 @@
       button.setAttribute('aria-controls', 'bb-people-panel-' + key);
       button.addEventListener('click', () => setPeopleView(key));
       button.addEventListener('keydown', (event) => {
-        const order = ['students', 'teachers', 'classes'];
+        const order = ['students', 'teachers'];
         const index = order.indexOf(key);
         const next = event.key === 'ArrowRight' ? (index + 1) % order.length
           : event.key === 'ArrowLeft' ? (index + order.length - 1) % order.length
@@ -285,7 +286,7 @@
     });
     view.append(tabs);
     const googleHost = make('div', { className: 'admin-modern__google-host', id: 'admin-modern-google-host' });
-    for (const [name, card] of [['students', studentCard], ['teachers', teacherCard], ['classes', classesCard]]) {
+    for (const [name, card] of [['students', studentCard], ['teachers', teacherCard]]) {
       const panel = make('section', { className: 'admin-modern__people-view' });
       panel.dataset.adminPeopleView = name;
       panel.id = 'bb-people-panel-' + name;
@@ -789,14 +790,17 @@
     newBook.addEventListener('click', () => showBookEditor(true));
     booksView.querySelector('.bb-admin-v31-heading').append(newBook);
     booksView.append(booksCard);
-    const peopleView = createPeopleView(teacherCard, studentCard, classesCard);
+    const peopleView = createPeopleView(teacherCard, studentCard);
+    const classesView = viewHeading('classes', 'Klassen',
+      'Maak en bewerk klassen, koppel docenten en beheer klasindelingen.');
+    classesView.append(classesCard);
     const loansView = viewHeading('loans', 'Uitlenen en innemen', 'Leen specifieke exemplaren uit en registreer innames.');
     loansView.append(make('div', { id: 'bb-admin-v31-loans' }));
     const tasksView = viewHeading('tasks', 'Taken', 'Controleer openstaande verzoeken en boekimportcontroles.');
     tasksView.append(make('div', { id: 'bb-admin-v31-tasks' }));
     const accountTaskLinks = make('section', { className: 'bb-admin-v31-card' });
     accountTaskLinks.append(make('h3', { text: 'Andere beheertaken' }));
-    accountTaskLinks.append(make('p', { text: 'Behandel klaswissels en Google-koppelverzoeken via Personen en klassen.' }));
+    accountTaskLinks.append(make('p', { text: 'Behandel klaswissels en Google-koppelverzoeken via Personen of Klassen.' }));
     const taskActions = make('div', { className: 'bb-admin-v31-task-actions' });
     for (const [label, kind] of [['Leerling- en klasverzoeken openen', 'students'], ['Docent- en Google-koppelingen openen', 'teachers']]) {
       const link = make('button', { className: 'btn btn--secondary', text: label, type: 'button' });
@@ -810,7 +814,7 @@
     const settingsView = viewHeading('settings', 'Instellingen', 'Beheerdersmeldingen en geverifieerde e-mailadressen.');
     settingsView.append(make('div', { id: 'bb-admin-v31-settings' }));
 
-    container.append(overviewView, booksView, peopleView, loansView, tasksView, importsView, settingsView);
+    container.append(overviewView, booksView, peopleView, classesView, loansView, tasksView, importsView, settingsView);
     moveDangerousBookAction(booksView);
     organizeMailSettings();
     installBookEditorControls(booksCard);
