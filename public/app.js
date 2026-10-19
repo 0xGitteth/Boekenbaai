@@ -4358,7 +4358,13 @@ function initStaffPage() {
       cardOptions: (book) => ({
         catalogLayout:true,
         ...(authUser?.role === 'admin' ? {
-          onEdit: (chosenBook) => handleAdminBookSelection(chosenBook),
+          onEdit: (chosenBook) => {
+            const selectedCopy = chosenBook.representativeBook || chosenBook.copies?.[0];
+            if (!selectedCopy) return;
+            const editor = document.querySelector('#admin-dashboard .admin-card--books');
+            if (editor) editor.hidden = false;
+            handleAdminBookSelection(selectedCopy);
+          },
           selectable:false,
           selected:false,
         }:{}),
