@@ -780,7 +780,13 @@ body.bb-admin-v31 .bb-v32-dashboard .bb-v33-stats-bar .panel__header-actions {
 @media (max-width: 760px) {
   body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav,
   body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav {
+    top: 65px;
+    height: calc(100dvh - 65px);
     align-items: stretch;
+  }
+  body.bb-admin-v31.bb-v32-active.bb-admin-v31--open #bb-admin-v31-scrim,
+  body.bb-teacher-v31.bb-v32-active.bb-teacher-v31--open #bb-teacher-v31-scrim {
+    inset: 65px 0 0;
   }
   body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tabs {
     height: auto;
