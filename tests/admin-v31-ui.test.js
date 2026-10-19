@@ -18,7 +18,8 @@ new vm.Script(js, { filename: 'public/admin-modern.js' });
 const nav = [
   ['overview', 'Start'],
   ['books', 'Boeken'],
-  ['people', 'Personen en klassen'],
+  ['people', 'Personen'],
+  ['classes', 'Klassen'],
   ['loans', 'Uitlenen en innemen'],
   ['tasks', 'Taken'],
   ['imports', 'Importeren'],
@@ -26,14 +27,18 @@ const nav = [
 ];
 for (const [key, label] of nav) {
   assert.match(js, new RegExp('\\[\\x27' + key + '\\x27, \\x27' + label + '\\x27,'),
-    'De zeven goedgekeurde navigatieonderdelen moeten aanwezig zijn: ' + label);
+    'De hoofdweergave moet aanwezig zijn: ' + label);
 }
 assert.match(js, /bb-admin-v31-sidebar/);
 assert.match(js, /aria-current', 'page'/);
 assert.match(js, /closeMobileNavigation/);
 assert.match(js, /sidebar\.inert = closed/);
 assert.match(js, /addEventListener\('change', syncMobileNavigation\)/);
-assert.match(js, /\['students', 'Leerlingen'\], \['teachers', 'Docenten'\], \['classes', 'Klassen'\]/);
+assert.match(js, /\['students', 'Leerlingen'\], \['teachers', 'Docenten'\]/);
+assert.doesNotMatch(js, /\['classes', 'Klassen'\]\].forEach/,
+  'Klassen mag geen derde Personen-subtab zijn.');
+assert.match(js, /classesView\.append\(classesCard\)/,
+  'The exact existing class form and teacher links must be moved into Klassen.');
 assert.match(js, /ArrowRight/);
 assert.match(js, /aria-labelledby', 'bb-people-tab-/);
 

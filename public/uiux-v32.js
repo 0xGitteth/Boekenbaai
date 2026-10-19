@@ -13,10 +13,32 @@
     if (content !== undefined) node.textContent = content;
     return node;
   };
+  // The same stroke icons and optical size serve quick actions and metrics.
+  // Shapes are fixed UI assets, never injected from catalogue or user data.
+  const iconPaths = {
+    book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 1 4 17.5Zm0 12A2.5 2.5 0 0 1 6.5 15H20"/>',
+    student: '<circle cx="12" cy="7" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>',
+    teacher: '<circle cx="9" cy="7" r="3"/><path d="M2 21v-2a7 7 0 0 1 12-4.9M16 8h6m-3-3v6m-4 10v-5h7v5"/>',
+    classes: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10M13 15h4"/>',
+    lending: '<path d="M3 7h17m-4-4 4 4-4 4M21 17H4m4-4-4 4 4 4"/>',
+  };
+  function makeIcon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.9');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = iconPaths[name] || iconPaths.book;
+    return svg;
+  }
   const button = (label, icon, run) => {
     const node = make('button', 'bb-v32-quick-link');
     node.type = 'button';
-    const image = make('span', 'bb-v32-quick-icon', icon);
+    const image = make('span', 'bb-v32-quick-icon');
+    image.append(makeIcon(icon));
     image.setAttribute('aria-hidden', 'true');
     node.append(image, make('span', '', label), make('span', 'bb-v32-chevron', '›'));
     node.addEventListener('click', run);
@@ -77,56 +99,16 @@
         const label = tab.querySelector('span:last-child');
         if (!label) continue;
         const title = {
-          overview:'Overzicht',books:'Boeken',people:'Personen',loans:'Uitlenen',
+          overview:'Overzicht',books:'Boeken',people:'Personen',classes:'Klassen',loans:'Uitlenen',
           tasks:'Taken',imports:'Importeren',settings:'Instellingen',
         }[tab.dataset.adminModernTab];
         if (title) label.textContent = title;
       }
-      const tabset = sidebar.querySelector('.admin-modern__tabs');
-      const classes = make('button', 'admin-modern__tab bb-v32-added-tab', 'Klassen');
-      classes.type = 'button';
-      classes.dataset.v32Destination = 'classes';
-      classes.addEventListener('click', () => chooseAdmin('people', 'classes'));
-      const people = tabset?.querySelector('[data-admin-modern-tab="people"]');
-      if (people) people.after(classes);
-      const activity = make('button', 'admin-modern__tab bb-v32-added-tab', 'Activiteit');
-      activity.type = 'button';
-      activity.dataset.v32Destination = 'activity';
-      activity.addEventListener('click', () => {
-        chooseAdmin('overview');
-        document.querySelector('#bb-admin-v31-activity')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      });
-      const imports = tabset?.querySelector('[data-admin-modern-tab="imports"]');
-      if (imports) imports.after(activity);
-      const updateClasses = () => {
-        // Read the role view, not the tab class which this handler itself
-        // changes. The callback may run twice (subtab mutation + nav click).
-        const peopleView = document.querySelector(
-          '#admin-dashboard [data-admin-modern-view="people"]');
-        const onPeople = Boolean(peopleView && !peopleView.hidden);
-        const classesSelected = document.querySelector(
-          '#admin-dashboard [data-admin-people-tab="classes"]')
-          ?.getAttribute('aria-selected') === 'true';
-        const onClasses = onPeople && classesSelected;
-        classes.classList.toggle('admin-modern__tab--active', onClasses);
-        if (onClasses) classes.setAttribute('aria-current', 'page');
-        else classes.removeAttribute('aria-current');
-        if (people) {
-          people.classList.toggle('admin-modern__tab--active', onPeople && !onClasses);
-          if (onPeople && !onClasses) people.setAttribute('aria-current', 'page');
-          else people.removeAttribute('aria-current');
-        }
-      };
-      if (people) people.addEventListener('click', () => {
-        // "Personen" must select people even when Klassen was opened before.
+      // Klassen is a real admin-modern view, not a Personen subtab.
+      const people = sidebar.querySelector('[data-admin-modern-tab="people"]');
+      people?.addEventListener('click', () => {
         document.querySelector('#admin-dashboard [data-admin-people-tab="students"]')?.click();
       });
-      sidebar.addEventListener('click', () => queueMicrotask(updateClasses));
-      const subtabs = document.querySelector('.admin-modern__subtabs');
-      if (subtabs) new MutationObserver(updateClasses).observe(subtabs, {
-        subtree: true, attributes: true, attributeFilter: ['aria-selected'],
-      });
-      updateClasses();
     } else {
       sidebar.querySelector('.bb-teacher-v31-sidebar-label')?.remove();
       sidebar.querySelector('.bb-teacher-v31-sidebar-footer')?.remove();
@@ -138,21 +120,8 @@
         const label = [...tab.childNodes].find(n => n.nodeType === Node.TEXT_NODE);
         if (label) label.textContent = nameMap[tab.dataset.teacherPage] || label.textContent;
       }
-      const activity = make('button', 'bb-teacher-v31-nav bb-v32-added-tab', 'Activiteit');
-      activity.type = 'button';
-      activity.addEventListener('click', () => {
-        chooseTeacher('start');
-        document.getElementById('bb-teacher-v31-activity')?.scrollIntoView({ block:'start', behavior:'smooth' });
-      });
-      const tasks = sidebar.querySelector('[data-teacher-page="tasks"]');
-      if (tasks) tasks.before(activity);
-      const students = make('button', 'bb-teacher-v31-nav bb-v32-added-tab', 'Leerlingen');
-      students.type = 'button';
-      students.addEventListener('click', () => {
-        chooseTeacher('classes');
-        document.getElementById('student-management-panel')?.scrollIntoView({ block:'start', behavior:'smooth' });
-      });
-      sidebar.querySelector('[data-teacher-page="catalog"]')?.after(students);
+      // Mijn klassen contains the real student actions; there is no second
+      // top-level Leerlingen page or separate teacher activity destination.
     }
   }
 
@@ -179,32 +148,36 @@
     const shortcuts = make('section', 'bb-admin-v31-card bb-v32-quick-panel');
     shortcuts.append(make('h3', '', 'Snel naar'));
     shortcuts.append(
-      button('Boek toevoegen', '▤', () => {
+      button('Boek toevoegen', 'book', () => {
         chooseAdmin('books');
         document.getElementById('bb-admin-v31-open-editor')?.click();
       }),
-      button('Leerlingen beheren', '♙', () => chooseAdmin('people','students')),
-      button('Docenten beheren', '◉', () => chooseAdmin('people','teachers')),
-      button('Klassen beheren', '▦', () => chooseAdmin('people','classes')),
-      button('Uitlenen registreren', '⇄', () => chooseAdmin('loans'))
+      button('Leerlingen beheren', 'student', () => chooseAdmin('people','students')),
+      button('Docenten beheren', 'teacher', () => chooseAdmin('people','teachers')),
+      button('Klassen beheren', 'classes', () => chooseAdmin('classes')),
+      button('Uitlenen registreren', 'lending', () => chooseAdmin('loans'))
     );
     const activityTitle = activity.querySelector('h3');
     if (activityTitle) activityTitle.textContent = 'Laatste activiteit';
     const taskTitle = tasks.querySelector('h3');
     if (taskTitle) taskTitle.textContent = 'Openstaande taken';
-    grid.replaceChildren(shortcuts, activity, tasks, stats);
+    grid.replaceChildren(shortcuts, activity, tasks);
+    stats.classList.add('bb-v33-stats-bar');
+    grid.after(stats);
 
     const metrics = overview.querySelector('#admin-modern-metrics');
     if (metrics) {
       const labels = ['Naar boeken', 'Naar personen', 'Naar docenten', 'Naar klassen'];
       const clickers = [
         () => chooseAdmin('books'), () => chooseAdmin('people','students'),
-        () => chooseAdmin('people','teachers'), () => chooseAdmin('people','classes'),
+        () => chooseAdmin('people','teachers'), () => chooseAdmin('classes'),
       ];
       const decorate = () => {
         for (const [index, item] of [...metrics.querySelectorAll('.admin-modern__metric')].entries()) {
           if (item.dataset.v32Metric) continue;
           item.dataset.v32Metric = String(index);
+           const metricIcon = item.querySelector('.bb-admin-v31-metric-icon');
+           if (metricIcon) metricIcon.replaceChildren(makeIcon(['book','student','teacher','classes'][index]));
           const link = make('button', 'bb-v32-metric-link', labels[index] + ' →');
           link.type = 'button';
           link.addEventListener('click', clickers[index]);

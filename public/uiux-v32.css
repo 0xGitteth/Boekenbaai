@@ -654,3 +654,166 @@ body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-card {
 @media (prefers-reduced-motion: reduce) {
   body.bb-teacher-v31 .bb-v32-book-cover { transition: none; }
 }
+
+/* v3.3: the very same measured header for Beheer and Docent. */
+body.bb-admin-v31.bb-v32-active .hero.hero--staff,
+body.bb-teacher-v31.bb-v32-active .hero.hero--staff {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  height: 65px;
+  min-height: 65px;
+  padding: 0 22px;
+  gap: 12px;
+}
+body.bb-admin-v31.bb-v32-active .hero--staff .hero__content,
+body.bb-teacher-v31.bb-v32-active .hero--staff .hero__content {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: max-content;
+  margin: 0;
+  padding: 0;
+}
+body.bb-admin-v31.bb-v32-active .hero--staff .hero__content h1,
+body.bb-teacher-v31.bb-v32-active .hero--staff .hero__content h1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: white;
+  font: 800 1.22rem/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  white-space: nowrap;
+}
+body.bb-admin-v31.bb-v32-active .hero--staff .hero__content h1::before,
+body.bb-teacher-v31.bb-v32-active .hero--staff .hero__content h1::before {
+  display: inline-block;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #ffffff19 url('logo/boekenbaai-book-mark-v31.svg') center / 25px no-repeat;
+}
+body.bb-admin-v31.bb-v32-active .hero--staff .hero__illustration,
+body.bb-teacher-v31.bb-v32-active .hero--staff .hero__illustration {
+  display: flex;
+  flex: 0 0 132px;
+  align-items: center;
+  width: 132px;
+  height: 42px;
+  margin: 0 0 0 8px;
+  padding: 0;
+}
+body.bb-admin-v31.bb-v32-active .hero--staff .hero__logo,
+body.bb-teacher-v31.bb-v32-active .hero--staff .hero__logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: none;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav {
+  align-items: center;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tabs {
+  height: 100%;
+  align-items: center;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav {
+  box-sizing: border-box;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 11px;
+  align-items: center;
+  line-height: 1;
+  vertical-align: middle;
+}
+/* Optical icon proportions: 24px stroke symbols in metric tiles and
+   19px of the same family in 27px shortcut accents. */
+body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-metric-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-admin-v31-metric-icon svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+}
+.bb-v32-quick-icon svg {
+  display: block;
+  width: 19px;
+  height: 19px;
+  stroke: currentColor;
+}
+/* Keep the genuine school-statistics control without an oversized empty card. */
+body.bb-admin-v31 .bb-v32-dashboard .bb-v33-stats-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 17px;
+  min-height: 0;
+  margin-top: 14px;
+  padding: 13px 18px;
+  border: 1px solid var(--bb-v32-border);
+  border-radius: 11px;
+  background: white;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-v33-stats-bar h3 { margin: 0; }
+body.bb-admin-v31 .bb-v32-dashboard .bb-v33-stats-bar p {
+  flex: 1 1 240px;
+  margin: 0;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-v33-stats-bar #bb-admin-v31-stats {
+  flex: 0 0 auto;
+  margin: 0;
+}
+body.bb-admin-v31 .bb-v32-dashboard .bb-v33-stats-bar .panel__header-actions {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav {
+    top: 65px;
+    height: calc(100dvh - 65px);
+    align-items: stretch;
+  }
+  body.bb-admin-v31.bb-v32-active.bb-admin-v31--open #bb-admin-v31-scrim,
+  body.bb-teacher-v31.bb-v32-active.bb-teacher-v31--open #bb-teacher-v31-scrim {
+    inset: 65px 0 0;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tabs {
+    height: auto;
+    align-items: stretch;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav {
+    height: auto;
+    min-height: 44px;
+    justify-content: flex-start;
+    padding: 10px 13px;
+    line-height: 1.25;
+  }
+}
+@media (max-width: 480px) {
+  body.bb-admin-v31.bb-v32-active .hero.hero--staff,
+  body.bb-teacher-v31.bb-v32-active .hero.hero--staff { padding: 0 10px; gap: 6px; }
+  body.bb-admin-v31.bb-v32-active .hero--staff .hero__content,
+  body.bb-teacher-v31.bb-v32-active .hero--staff .hero__content { min-width: 0; }
+  body.bb-admin-v31.bb-v32-active .hero--staff .hero__content h1,
+  body.bb-teacher-v31.bb-v32-active .hero--staff .hero__content h1 { font-size: .94rem; gap: 7px; }
+  body.bb-admin-v31.bb-v32-active .hero--staff .hero__content h1::before,
+  body.bb-teacher-v31.bb-v32-active .hero--staff .hero__content h1::before {
+    flex-basis: 30px; width: 30px; height: 30px; background-size: 22px;
+  }
+  body.bb-admin-v31.bb-v32-active .hero--staff .hero__illustration,
+  body.bb-teacher-v31.bb-v32-active .hero--staff .hero__illustration {
+    flex: 0 1 75px; width: 75px; height: 30px; min-width: 57px; margin-left: 2px;
+  }
+}

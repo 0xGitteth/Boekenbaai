@@ -22,10 +22,13 @@ assert.match(css,/body\.bb-admin-v31 > main,\s*body\.bb-teacher-v31 > main\s*\{\
 assert.match(css,/#bb-admin-v31-sidebar\.bb-v32-top-nav/);
 assert.match(css,/#bb-teacher-v31-sidebar\.bb-v32-top-nav/);
 assert.match(css,/@media \(max-width: 760px\)/);
-assert.match(js,/classes\.addEventListener\('click', \(\) => chooseAdmin\('people', 'classes'\)\)/);
+assert.match(admin,/\['classes', 'Klassen', '▦'\]/);
+assert.match(js,/chooseAdmin\('classes'\)/);
+assert.doesNotMatch(js,/data\.v32Destination/);
 assert.match(js,/const nameMap = \{[\s\S]*?start:'Overzicht'/);
 assert.match(js,/overview\.classList\.add\('bb-v32-dashboard'\)/);
-assert.match(js,/grid\.replaceChildren\(shortcuts, activity, tasks, stats\)/);
+assert.match(js,/grid\.replaceChildren\(shortcuts, activity, tasks\)/);
+assert.match(js,/grid\.after\(stats\)/);
 assert.match(js,/const search = make\('section', 'bb-teacher-v31-card bb-v32-teacher-search'\)/);
 assert.match(js,/const lower = make\('div', 'bb-v32-teacher-lower'\)/);
 assert.match(js,/new MutationObserver\(render\)\.observe\(grid, \{[\s\S]*?subtree: true,[\s\S]*?attributeFilter: \['src', 'hidden'\]/);
@@ -133,39 +136,18 @@ assert.equal(preview.children[0].children[1].textContent,'Nieuw boek');
 ctx.run();
 assert.equal(preview.children.length,1,'Avoid installing duplicate preview observers');
 
-// Codex review regression: classes selection must be idempotent across both
-// subtab mutation and nav click callbacks, and correctly restore Personen.
-const updateStart=js.indexOf('      const updateClasses = () => {');
-const updateEnd=js.indexOf('      if (people) people.addEventListener',updateStart);
-assert.ok(updateStart>0&&updateEnd>updateStart);
-const adminPeopleTab=el('button','admin-modern__tab admin-modern__tab--active');
-const classesTab=el('button','admin-modern__tab bb-v32-added-tab');
-const peopleView={hidden:false};
-let selected='classes';
-const classesState=vm.createContext({
-  people: adminPeopleTab,
-  classes: classesTab,
-  document:{querySelector(selector){
-    if(selector==='#admin-dashboard [data-admin-modern-view="people"]')return peopleView;
-    if(selector==='#admin-dashboard [data-admin-people-tab="classes"]')
-      return {getAttribute(){return selected==='classes'?'true':'false';}};
-    return null;
-  }},
-});
-new vm.Script(js.slice(updateStart,updateEnd)+'\nthis.update=updateClasses;').runInContext(classesState);
-classesState.update();classesState.update();
-assert.ok(classesTab.classList.contains('admin-modern__tab--active'));
-assert.ok(!adminPeopleTab.classList.contains('admin-modern__tab--active'));
-assert.equal(classesTab.attrs['aria-current'],'page');
-selected='students';
-classesState.update();classesState.update();
-assert.ok(adminPeopleTab.classList.contains('admin-modern__tab--active'));
-assert.ok(!classesTab.classList.contains('admin-modern__tab--active'));
-assert.equal(adminPeopleTab.attrs['aria-current'],'page');
-peopleView.hidden=true;
-classesState.update();classesState.update();
-assert.ok(!adminPeopleTab.classList.contains('admin-modern__tab--active'));
-assert.ok(!classesTab.classList.contains('admin-modern__tab--active'));
+// Klassen is a real top-level admin view; existing class handlers remain attached.
+assert.match(admin, /classesView = viewHeading\('classes', 'Klassen'/);
+assert.match(admin, /classesView\.append\(classesCard\)/);
+assert.match(admin, /container\.append\(overviewView, booksView, peopleView, classesView/);
+assert.doesNotMatch(admin, /\['students', 'Leerlingen'\], \['teachers', 'Docenten'\], \['classes', 'Klassen'\]/);
+assert.doesNotMatch(js, /bb-v32-added-tab/);
+assert.match(js, /function makeIcon\(name\)/);
+assert.match(js, /metricIcon\.replaceChildren\(makeIcon/);
+assert.match(css, /body\.bb-admin-v31\.bb-v32-active \.hero--staff \.hero__content h1,/);
+assert.match(css, /body\.bb-teacher-v31\.bb-v32-active \.hero--staff \.hero__content h1/);
+assert.match(css, /\.bb-v32-quick-icon svg/);
+assert.match(css, /\.bb-v33-stats-bar/);
 // CSS regression: injected admin-modern.css is loaded *after* uiux-v32.css in
 // production, so added body state + selector specificity is mandatory.
 assert.match(js,/document\.body\.classList\.add\('bb-v32-active'\)/);
