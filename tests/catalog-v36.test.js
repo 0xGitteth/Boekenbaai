@@ -29,6 +29,8 @@ assert.match(app,/options\.catalogLayout\s*\? resolveCatalogThemeColors\(tag\)/,
   'Book tags and theme filters must share the exact approved theme palette');
 assert.match(css,/\.book-card--easy-reading \.book-card__cover-wrapper/,
   'Makkelijk Lezen outline belongs to the cover, not the whole card');
+assert.match(css,/\.book-card__cover-wrapper\{[^}]*overflow:hidden/,
+  'Zoomed or translated cover crops must be clipped by their cover wrapper');
 assert.match(css,/\.book-card--exam-list \.book-card__cover-wrapper::after/,
   'Exam list ribbon belongs on the cover');
 assert.match(app,/chosenBook\.representativeBook \|\| chosenBook\.copies\?\.\[0\]/,
