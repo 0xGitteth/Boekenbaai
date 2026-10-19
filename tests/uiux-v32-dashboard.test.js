@@ -178,13 +178,13 @@ assert.match(css,/@media \(max-width: 760px\)\s*\{[\s\S]*?body\.bb-admin-v31\.bb
 // Codex P1 regression: DOMTokenList.add throws InvalidCharacterError for
 // "class1 class2" passed as one token. Execute the actual call using a strict
 // DOMTokenList-compatible mock so the dashboard can finish initialization.
-const teacherTokens=js.match(/start\\.classList\\.add\\([^;]+\\);/);
+const teacherTokens=js.match(/start\.classList\.add\([^;]+\);/);
 assert.ok(teacherTokens, 'Teacher dashboard must apply the new design classes');
 const applied=new Set();
 new vm.Script(teacherTokens[0]).runInNewContext({
   start:{classList:{add(...tokens){
     for (const token of tokens) {
-      assert.equal(/\\s/.test(token),false,'Every class must be a separate DOM token');
+      assert.equal(/\s/.test(token),false,'Every class must be a separate DOM token');
       applied.add(token);
     }
   }}},
