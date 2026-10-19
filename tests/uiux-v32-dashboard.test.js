@@ -28,7 +28,7 @@ assert.match(js,/overview\.classList\.add\('bb-v32-dashboard'\)/);
 assert.match(js,/grid\.replaceChildren\(shortcuts, activity, tasks, stats\)/);
 assert.match(js,/const search = make\('section', 'bb-teacher-v31-card bb-v32-teacher-search'\)/);
 assert.match(js,/const lower = make\('div', 'bb-v32-teacher-lower'\)/);
-assert.match(js,/new MutationObserver\(render\)\.observe\(grid, \{ childList: true \}\)/);
+assert.match(js,/new MutationObserver\(render\)\.observe\(grid, \{[\s\S]*?subtree: true,[\s\S]*?attributeFilter: \['src', 'hidden'\]/);
 assert.match(css,/\.bb-v32-book-cover\s*\{[^}]*aspect-ratio: 2 \/ 3/);
 assert.match(js,/source\.classList\.contains\('book-card--easy-reading'\)/);
 assert.match(js,/source\.classList\.contains\('book-card--exam-list'\)/);
@@ -55,6 +55,10 @@ function el(tag,cls='',txt='') {
     addEventListener(type,fn){this.events[type]=fn;},
     setAttribute(key,val){this.attrs[key]=val;},
     getAttribute(key){return this.attrs[key];},
+    querySelector(selector){
+      const cl=selector.startsWith('.')?selector.slice(1):'';
+      return this.children.find(n=>n.classList?.contains(cl))||null;
+    },
   };
   return node;
 }
@@ -88,7 +92,10 @@ const ctx=vm.createContext({
   chooseTeacher(name){view=name;},
   MutationObserver:class{constructor(callback){observerCallback=callback;}
     observe(target,options){assert.equal(target,bookGrid);
-      assert.equal(options.childList,true);assert.equal(options.subtree,undefined);}},
+      assert.equal(options.childList,true);
+      assert.equal(options.subtree,true);
+      assert.equal(options.attributes,true);
+      assert.deepEqual(Array.from(options.attributeFilter),['src','hidden']);}},
 });
 const start=js.indexOf('  function installTeacherBooks() {');
 const end=js.indexOf('  function enhanceTeacherDashboard() {',start);
@@ -103,12 +110,69 @@ assert.ok(preview.children[1].classList.contains('bb-v32-book-preview--reading')
 preview.children[0].events.click();
 assert.equal(view,'catalog');
 assert.equal(chosen,'one','Existing book card must handle book-detail display');
+// A failed preview image must show its placeholder without waiting for
+// the catalog's own asynchronous retry.
+const firstFrame=preview.children[0].children[0];
+const failingPreview=firstFrame.children[0];
+failingPreview.events.error();
+assert.equal(failingPreview.hidden,true);
+assert.equal(firstFrame.children.length,2,'Broken URL displays a fallback, not a broken image');
+// The real catalog recovers local URLs via external URL and ultimately
+// toggles hidden when both sources fail. Both mutations update the preview.
+catalogue[0].querySelector('.book-card__cover').attrs.src='/external/one.jpg';
+observerCallback();
+assert.equal(preview.children[0].children[0].children[0].src,'/external/one.jpg');
+catalogue[0].querySelector('.book-card__cover').hidden=true;
+observerCallback();
+assert.equal(preview.children[0].children[0].children[0].className,'bb-v32-cover-placeholder');
 catalogue=[book('three','Nieuw boek','Schrijver C','')];
 observerCallback();
 assert.equal(preview.children.length,1);
 assert.equal(preview.children[0].children[1].textContent,'Nieuw boek');
 ctx.run();
 assert.equal(preview.children.length,1,'Avoid installing duplicate preview observers');
+
+// Codex review regression: classes selection must be idempotent across both
+// subtab mutation and nav click callbacks, and correctly restore Personen.
+const updateStart=js.indexOf('      const updateClasses = () => {');
+const updateEnd=js.indexOf('      if (people) people.addEventListener',updateStart);
+assert.ok(updateStart>0&&updateEnd>updateStart);
+const adminPeopleTab=el('button','admin-modern__tab admin-modern__tab--active');
+const classesTab=el('button','admin-modern__tab bb-v32-added-tab');
+const peopleView={hidden:false};
+let selected='classes';
+const classesState=vm.createContext({
+  people: adminPeopleTab,
+  classes: classesTab,
+  document:{querySelector(selector){
+    if(selector==='#admin-dashboard [data-admin-modern-view="people"]')return peopleView;
+    if(selector==='#admin-dashboard [data-admin-people-tab="classes"]')
+      return {getAttribute(){return selected==='classes'?'true':'false';}};
+    return null;
+  }},
+});
+new vm.Script(js.slice(updateStart,updateEnd)+'\nthis.update=updateClasses;').runInContext(classesState);
+classesState.update();classesState.update();
+assert.ok(classesTab.classList.contains('admin-modern__tab--active'));
+assert.ok(!adminPeopleTab.classList.contains('admin-modern__tab--active'));
+assert.equal(classesTab.attrs['aria-current'],'page');
+selected='students';
+classesState.update();classesState.update();
+assert.ok(adminPeopleTab.classList.contains('admin-modern__tab--active'));
+assert.ok(!classesTab.classList.contains('admin-modern__tab--active'));
+assert.equal(adminPeopleTab.attrs['aria-current'],'page');
+peopleView.hidden=true;
+classesState.update();classesState.update();
+assert.ok(!adminPeopleTab.classList.contains('admin-modern__tab--active'));
+assert.ok(!classesTab.classList.contains('admin-modern__tab--active'));
+// CSS regression: injected admin-modern.css is loaded *after* uiux-v32.css in
+// production, so added body state + selector specificity is mandatory.
+assert.match(js,/document\.body\.classList\.add\('bb-v32-active'\)/);
+assert.match(css,/body\.bb-admin-v31\.bb-v32-active > main\s*\{[^}]*display: block/);
+assert.match(css,/body\.bb-admin-v31\.bb-v32-active #admin-dashboard\s*\{[^}]*grid-column: auto/);
+assert.match(css,/body\.bb-admin-v31\.bb-v32-active #admin-dashboard \.admin-dashboard\s*\{[^}]*max-width: 1440px/);
+// P1: mobile header must be a HIGHER stacking context than both body scrims.
+assert.match(css,/@media \(max-width: 760px\)\s*\{[\s\S]*?body\.bb-admin-v31\.bb-v32-active \.hero\.hero--staff,[\s\S]*?z-index: 70/);
 
 // Hero branding and UI scopes remain unchanged for logged-out staff.
 assert.doesNotMatch(js,/student-dashboard/);
