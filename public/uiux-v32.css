@@ -1059,3 +1059,92 @@ body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-activity-icon
     padding: 13px 15px;
   }
 }
+
+/* v3.5: compact bottom panels. The original statistics card has been removed
+   at the DOM level. Keep only the actual live statistics button in this
+   independent, content-sized toolbar. */
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard > .bb-v35-stats-toolbar {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  align-content: center;
+  justify-content: space-between;
+  justify-self: stretch;
+  align-self: start;
+  gap: 12px 24px;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 15px 20px;
+  background: #fff;
+  border: 1px solid var(--bb-v32-border);
+  border-radius: 11px;
+  box-shadow: 0 3px 14px #183e7907;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v35-stats-copy {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: baseline;
+  flex: 1 1 350px;
+  min-width: 0;
+  gap: 6px 16px;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v35-stats-copy h3 {
+  margin: 0;
+  color: var(--bb-v32-text);
+  font-size: 1.04rem;
+  line-height: 1.35;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v35-stats-copy p {
+  margin: 0;
+  color: var(--bb-v32-muted);
+  font-size: .88rem;
+  line-height: 1.4;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v35-stats-toolbar #bb-admin-v31-stats {
+  display: block;
+  flex: 0 0 auto;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v35-stats-toolbar #bb-admin-v31-stats .panel__header-actions {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  gap: 8px;
+}
+/* Empty account-action panels are no longer forced to the same height as
+   recent activity. A populated panel may still grow with its real actions. */
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-admin-grid.bb-admin-v31-grid > .bb-admin-v31-card--actions {
+  align-self: start;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 19px 20px;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-admin-grid.bb-admin-v31-grid > .bb-admin-v31-card--actions.bb-admin-v31-card--empty-actions {
+  height: fit-content;
+  min-height: 0;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-admin-grid .bb-admin-v31-card--actions .bb-admin-v31-card-head {
+  margin-bottom: 12px;
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard > .bb-v35-stats-toolbar {
+    padding: 14px 16px;
+    gap: 12px;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v35-stats-copy {
+    flex-basis: 100%;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-admin-grid.bb-admin-v31-grid > .bb-admin-v31-card--actions {
+    padding: 16px;
+  }
+}
