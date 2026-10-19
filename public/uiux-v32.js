@@ -64,6 +64,9 @@
     if (!sidebar || sidebar.dataset.v32Header) return;
     sidebar.dataset.v32Header = owner;
     sidebar.classList.add('bb-v32-top-nav');
+    // Extra body scope makes v3.2 layout rules outrank the admin stylesheet,
+    // which the production server appends after the original HTML CSS links.
+    document.body.classList.add('bb-v32-active');
     const actions = hero.querySelector('.hero__actions');
     if (actions) hero.insertBefore(sidebar, actions);
     else hero.append(sidebar);
@@ -96,17 +99,21 @@
       const imports = tabset?.querySelector('[data-admin-modern-tab="imports"]');
       if (imports) imports.after(activity);
       const updateClasses = () => {
-        const active = people?.classList.contains('admin-modern__tab--active') &&
-          document.querySelector('[data-admin-people-tab="classes"]')?.getAttribute('aria-selected') === 'true';
-        classes.classList.toggle('admin-modern__tab--active', Boolean(active));
-        if (active) classes.setAttribute('aria-current', 'page');
+        // Read the role view, not the tab class which this handler itself
+        // changes. The callback may run twice (subtab mutation + nav click).
+        const peopleView = document.querySelector(
+          '#admin-dashboard [data-admin-modern-view="people"]');
+        const onPeople = Boolean(peopleView && !peopleView.hidden);
+        const classesSelected = document.querySelector(
+          '#admin-dashboard [data-admin-people-tab="classes"]')
+          ?.getAttribute('aria-selected') === 'true';
+        const onClasses = onPeople && classesSelected;
+        classes.classList.toggle('admin-modern__tab--active', onClasses);
+        if (onClasses) classes.setAttribute('aria-current', 'page');
         else classes.removeAttribute('aria-current');
-        // A classes subview is a distinct top-level destination in v3.2;
-        // never leave both "Personen" and "Klassen" visually selected.
-        if (people?.dataset.adminModernTab === 'people') {
-          const persons = people.classList.contains('admin-modern__tab--active') || active;
-          people.classList.toggle('admin-modern__tab--active', persons && !active);
-          if (persons && !active) people.setAttribute('aria-current', 'page');
+        if (people) {
+          people.classList.toggle('admin-modern__tab--active', onPeople && !onClasses);
+          if (onPeople && !onClasses) people.setAttribute('aria-current', 'page');
           else people.removeAttribute('aria-current');
         }
       };
@@ -119,6 +126,7 @@
       if (subtabs) new MutationObserver(updateClasses).observe(subtabs, {
         subtree: true, attributes: true, attributeFilter: ['aria-selected'],
       });
+      updateClasses();
     } else {
       sidebar.querySelector('.bb-teacher-v31-sidebar-label')?.remove();
       sidebar.querySelector('.bb-teacher-v31-sidebar-footer')?.remove();
@@ -233,6 +241,15 @@
           image.src = sourceImage.getAttribute('src');
           image.alt = '';
           image.loading = 'lazy';
+          image.addEventListener('error', () => {
+            // Never leave a broken image in the start page while the live
+            // catalog retries its original remote cover URL.
+            image.hidden = true;
+            if (!frame.querySelector('.bb-v32-cover-placeholder')) {
+              frame.append(make('span', 'bb-v32-cover-placeholder',
+                sourceFallback?.textContent?.trim() || '📚'));
+            }
+          });
           frame.append(image);
         } else {
           frame.append(make('span', 'bb-v32-cover-placeholder', sourceFallback?.textContent?.trim() || '📚'));
@@ -249,8 +266,15 @@
       }
     };
     render();
-    // Only listen to changes of the live catalog's card collection.
-    new MutationObserver(render).observe(grid, { childList: true });
+    // The live catalog performs cover recovery asynchronously: local URL ->
+    // external URL -> fallback. Observe those exact source-image mutations as
+    // well as book-card replacement; the preview is outside the observed grid.
+    new MutationObserver(render).observe(grid, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'hidden'],
+    });
   }
   function enhanceTeacherDashboard() {
     if (teacherLayoutDone) return;
