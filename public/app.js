@@ -1696,7 +1696,15 @@ function renderThemePills(container, config = {}) {
         button.style.setProperty('--theme-pill-border', colors.border);
         button.style.setProperty('--bb-pill-dot', colors.dot);
       }
-      button.addEventListener('click', callback);
+      button.addEventListener('click', () => {
+        const restoreFocus = document.activeElement === button;
+        callback();
+        if (restoreFocus) {
+          const replacement = Array.from(container.querySelectorAll('.filters__pill'))
+            .find(candidate => candidate.textContent === label);
+          replacement?.focus({preventScroll:true});
+        }
+      });
     };
     makePill('Alle thema’s', !selectedThemes.size, () => config.onClearThemes?.());
     ranked.forEach((theme, index) => {
@@ -1712,7 +1720,11 @@ function renderThemePills(container, config = {}) {
             (hiddenSelected?' ('+hiddenSelected+' geselecteerd)':'')+' ⌄',
         {type:'button',className:'bb-cat-more'});
       more?.setAttribute('aria-expanded',String(isExpanded));
-      more?.addEventListener('click',()=>onToggleExpanded?.(!isExpanded));
+      more?.addEventListener('click',()=>{
+        const restoreFocus = document.activeElement === more;
+        onToggleExpanded?.(!isExpanded);
+        if (restoreFocus) container.querySelector('.bb-cat-more')?.focus({preventScroll:true});
+      });
     }
     container.replaceChildren(fragment);
     return;
