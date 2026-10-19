@@ -284,7 +284,7 @@
     const task = right?.querySelector('.bb-teacher-v31-card');
     if (!start || !left || !right || !task) return;
     teacherLayoutDone = true;
-    start.classList.add('bb-v32-dashboard bb-v32-teacher-dashboard');
+    start.classList.add('bb-v32-dashboard', 'bb-v32-teacher-dashboard');
     const heading = start.querySelector('.bb-teacher-v31-view-heading h2');
     if (heading) heading.textContent = 'Welkom';
     const subtitle = start.querySelector('.bb-teacher-v31-view-heading .bb-teacher-v31-hint');
