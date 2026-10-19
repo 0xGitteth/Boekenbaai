@@ -817,3 +817,245 @@ body.bb-admin-v31 .bb-v32-dashboard .bb-v33-stats-bar .panel__header-actions {
     flex: 0 1 75px; width: 75px; height: 30px; min-width: 57px; margin-left: 2px;
   }
 }
+
+/* v3.4: use the available desktop width, while keeping comfortable gutters. */
+body.bb-admin-v31.bb-v32-active #admin-dashboard,
+body.bb-teacher-v31.bb-v32-active #teacher-dashboard {
+  padding-inline: clamp(16px, 2.35vw, 44px);
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .admin-dashboard,
+body.bb-teacher-v31.bb-v32-active #teacher-dashboard #bb-teacher-v31-shell {
+  width: 100%;
+  max-width: none;
+  margin-inline: auto;
+}
+/* The admin overview is a grid; its last row was absorbing all leftover height
+   after moving the statistics card below the main cards. All four dashboard
+   rows must use their intrinsic content height. */
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard.admin-modern__view {
+  align-content: start;
+  grid-auto-rows: max-content;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard > .bb-v33-stats-bar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  align-content: center;
+  justify-content: flex-start;
+  align-self: start;
+  justify-self: stretch;
+  flex-wrap: wrap;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 12px 20px;
+  gap: 10px 18px;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v33-stats-bar h3 {
+  flex: 0 0 auto;
+  margin: 0;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v33-stats-bar p {
+  flex: 1 1 290px;
+  margin: 0;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v33-stats-bar #bb-admin-v31-stats {
+  flex: 0 0 auto;
+  margin: 0;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v33-stats-bar .panel__header-actions {
+  align-items: center;
+  margin: 0;
+}
+/* Reuse exactly the stronger pastel + saturated icon scheme of Snel naar.
+   An old #admin-dashboard .admin-modern__metric span rule otherwise turns
+   metric glyphs grey, even though their own background colors are correct. */
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric {
+  gap: 12px 16px;
+  min-height: 126px;
+  padding: 20px;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric .bb-admin-v31-metric-icon {
+  flex: 0 0 50px;
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  background: #dfebfd;
+  color: #125bb0;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric:nth-child(2) .bb-admin-v31-metric-icon {
+  background: #dff6e9;
+  color: #0e956f;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric:nth-child(3) .bb-admin-v31-metric-icon {
+  background: #f0e6ff;
+  color: #9050bd;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric:nth-child(4) .bb-admin-v31-metric-icon {
+  background: #fff1db;
+  color: #b87916;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric .bb-admin-v31-metric-icon svg {
+  width: 30px;
+  height: 30px;
+  stroke: currentColor;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric strong {
+  font-size: clamp(1.65rem, 2vw, 2rem);
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .bb-v32-quick-panel {
+  gap: 8px;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .bb-v32-quick-link {
+  min-height: 47px;
+  padding: 7px 11px;
+  gap: 12px;
+  font-size: .91rem;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .bb-v32-quick-icon,
+body.bb-teacher-v31.bb-v32-active #teacher-dashboard .bb-v32-quick-icon {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .bb-v32-quick-icon svg,
+body.bb-teacher-v31.bb-v32-active #teacher-dashboard .bb-v32-quick-icon svg {
+  width: 24px;
+  height: 24px;
+}
+body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-quick-link:nth-of-type(4) .bb-v32-quick-icon {
+  background: #fff1db;
+  color: #b87916;
+}
+/* Teacher class card should have its own natural height instead of being as
+   tall as the book panel. Both dashboards share the same icon family/scale. */
+body.bb-teacher-v31.bb-v32-active .bb-v32-teacher-dashboard .bb-teacher-v31-grid {
+  grid-template-columns: minmax(275px, 1fr) minmax(0, 2fr);
+  align-items: start;
+}
+body.bb-teacher-v31.bb-v32-active .bb-v32-teacher-dashboard .bb-teacher-v31-dashboard-column {
+  align-content: start;
+  grid-auto-rows: max-content;
+}
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-classes-summary {
+  display: block;
+  align-self: start;
+  height: fit-content;
+  min-height: 0;
+  padding: 20px 22px;
+}
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-classes-summary .bb-teacher-v31-row {
+  justify-content: flex-start;
+  min-height: 62px;
+  padding: 10px 0;
+  gap: 13px;
+}
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-classes-summary .bb-teacher-v31-row::before {
+  content: none;
+  display: none;
+}
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-classes-summary .bb-teacher-v31-row-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-classes-summary .bb-v34-class-icon {
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #dfebfd;
+  color: #125bb0;
+}
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-classes-summary .bb-v34-class-icon svg {
+  display: block;
+  width: 27px;
+  height: 27px;
+}
+body.bb-teacher-v31.bb-v32-active .bb-v32-book-cover {
+  width: min(100%, 172px);
+  aspect-ratio: 2 / 3;
+}
+body.bb-teacher-v31.bb-v32-active .bb-v32-book-preview strong { font-size: .85rem; }
+body.bb-teacher-v31.bb-v32-active .bb-v32-book-preview small { font-size: .78rem; }
+/* Contextual event icons on both role dashboards. Never decorate empty/error
+   history rows, which have no timestamp. */
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .history-item.bb-v34-history-entry,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .history-item.bb-v34-history-entry {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 3px;
+  text-align: left;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-activity-icon,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-activity-icon {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  border-radius: 10px;
+  background: #dfebfd;
+  color: #125bb0;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-activity-icon svg,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-activity-icon svg {
+  width: 23px;
+  height: 23px;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-history-entry > .history-item__time,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-history-entry > .history-item__time {
+  grid-column: 2;
+  grid-row: 1;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-history-entry > span:last-child,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-history-entry > span:last-child {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-activity-icon[data-kind="student"],
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-activity-icon[data-kind="student"],
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-activity-icon[data-kind="return"],
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-activity-icon[data-kind="return"] {
+  background: #dff6e9; color: #0e956f;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-activity-icon[data-kind="teacher"],
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-activity-icon[data-kind="teacher"] {
+  background: #f0e6ff; color: #9050bd;
+}
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-activity .bb-v34-activity-icon[data-kind="import"],
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-activity .bb-v34-activity-icon[data-kind="import"] {
+  background: #fff1db; color: #b87916;
+}
+@media (max-width: 850px) {
+  body.bb-teacher-v31.bb-v32-active .bb-v32-teacher-dashboard .bb-teacher-v31-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  body.bb-admin-v31.bb-v32-active #admin-dashboard,
+  body.bb-teacher-v31.bb-v32-active #teacher-dashboard {
+    padding-inline: 14px;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric {
+    min-height: 112px;
+    padding: 13px;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric .bb-admin-v31-metric-icon {
+    width: 42px; height: 42px; flex-basis: 42px;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard .admin-modern__metric .bb-admin-v31-metric-icon svg {
+    width: 25px; height: 25px;
+  }
+  body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-dashboard > .bb-v33-stats-bar {
+    padding: 13px 15px;
+  }
+}
