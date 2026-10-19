@@ -2090,6 +2090,10 @@ function createBookCard(template, book, folders, options = {}) {
   if (tagsList) {
     tagsList.innerHTML = '';
     for (const tag of book.themes || []) {
+      // Characteristics have their own cover markers and must not appear as themes.
+      if (options.catalogLayout && ['makkelijk lezen','examenleeslijst'].includes(normalizeThemeKey(tag))) {
+        continue;
+      }
       const li = appendTextElement(tagsList, 'li', tag, {
         className: 'book-card__tag',
       });
@@ -6920,6 +6924,8 @@ function initStaffPage() {
     const isUnlimited = Number(catalogPageRange?.value) >= 650;
     if(catalogPageOutput) catalogPageOutput.textContent = isUnlimited
       ? 'Alle lengtes' : 'Tot '+catalogPageRange.value+' pagina’s';
+    catalogPageRange?.setAttribute('aria-valuetext',isUnlimited
+      ? 'Alle lengtes' : 'Maximaal '+catalogPageRange.value+' pagina’s');
     if(catalogUnknown) catalogUnknown.disabled = isUnlimited;
     renderBooks();
   };
