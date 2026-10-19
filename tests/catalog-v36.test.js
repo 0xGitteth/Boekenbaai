@@ -34,6 +34,16 @@ assert.match(css,/\.book-card--exam-list \.book-card__cover-wrapper::after/,
 assert.match(app,/chosenBook\.representativeBook \|\| chosenBook\.copies\?\.\[0\]/,
   'Admin edits must use a real copy, not a synthesized grouping key');
 
+// The original styles set height:100% on card media and min-height:100% on
+// card content. Both must be neutralized when stacked below the cover.
+assert.match(css,/\.book-card__media\{[^}]*height:auto/);
+assert.match(css,/\.book-card__content\{[^}]*min-height:0/);
+assert.match(css,/\.book-card\{[^}]*max-width:none/);
+assert.match(app,/contentThemes\.slice\(0, 2\)/,
+  'Only two content theme pills should appear on each approved card');
+assert.match(app,/const filtered = filterBooks\(groupedBooks/,
+  'Staff catalogue must filter the actual grouped collection');
+
 // Exercise the actual shared filtering source rather than reimplementing it.
 const start = app.indexOf('function resolveBookLanguages(');
 const end = app.indexOf('\nfunction sortBooks(',start);
