@@ -54,6 +54,7 @@ function el(tag,cls='',txt='') {
     replaceChildren(...items){this.children=[...items];},
     addEventListener(type,fn){this.events[type]=fn;},
     setAttribute(key,val){this.attrs[key]=val;},
+    removeAttribute(key){delete this.attrs[key];},
     getAttribute(key){return this.attrs[key];},
     querySelector(selector){
       const cl=selector.startsWith('.')?selector.slice(1):'';
