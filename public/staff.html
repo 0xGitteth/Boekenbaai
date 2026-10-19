@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="teacher-modern.css" />
     <link rel="stylesheet" href="teacher-v31-polish.css" />
     <link rel="stylesheet" href="uiux-v32.css" />
+    <link rel="stylesheet" href="catalog-v36.css" />
     <style>
       .bb-followup-badge {
         display: inline-flex;
@@ -124,27 +125,73 @@
               <h3 id="staff-catalog-title">Boekenoverzicht</h3>
             </div>
             <div id="staff-book-overview-content">
-            <div class="filters">
-              <div class="filters__themes">
-                <span class="filters__label" id="theme-filter-label">Filter op thema:</span>
-                <div
-                  class="filters__pills"
-                  id="theme-filter-pills"
-                  role="group"
-                  aria-labelledby="theme-filter-label"
-                ></div>
+
+            <div class="bb-catalog-v36" aria-label="Boekenoverzicht">
+              <p class="bb-catalog-intro">Eén catalogus, met alle titels en hun bijbehorende exemplaren.</p>
+              <section class="bb-catalog-filter-panel" aria-labelledby="bb-cat-filter-heading">
+                <header class="bb-cat-panel-header">
+                  <span class="bb-cat-panel-icon" aria-hidden="true">☷</span>
+                  <div class="bb-cat-panel-heading"><h4 id="bb-cat-filter-heading">Zoek en filter</h4>
+                    <p>Vind je boek direct, of verfijn de resultaten met filters.</p></div>
+                  <button type="button" class="bb-cat-reset" id="bb-cat-reset">↶&nbsp; Alles wissen</button>
+                </header>
+                <div class="bb-cat-search-row">
+                  <label class="bb-cat-search-field" for="search-input">
+                    <span aria-hidden="true">⌕</span>
+                    <input id="search-input" type="search" aria-label="Zoek op titel, auteur of trefwoord" autocomplete="off" placeholder="Zoek op titel, auteur of trefwoord…" />
+                  </label>
+                  <label class="bb-cat-sort" for="staff-book-sort-select"><span>Sorteer op</span>
+                    <select id="staff-book-sort-select" aria-controls="book-grid">
+                      <option value="title">Titel (A–Z)</option>
+                      <option value="author" selected>Auteur (A–Z)</option>
+                      <option value="popular">Meest populair</option>
+                    </select>
+                  </label>
+                </div>
+                <details class="bb-cat-advanced" id="bb-cat-advanced">
+                  <summary class="bb-cat-advanced-toggle">
+                    <span class="bb-cat-toggle-icon" aria-hidden="true">☷</span>
+                    <span class="bb-cat-toggle-copy"><strong>Filters tonen</strong>
+                      <small id="bb-cat-filter-caption">Thema’s, pagina’s, beschikbaarheid, taal en kenmerken</small></span>
+                    <span class="bb-cat-chevron" aria-hidden="true">⌄</span>
+                  </summary>
+                  <div class="bb-cat-advanced-content">
+                    <div class="bb-cat-themes">
+                      <h5>Thema’s <span>Meest voorkomende eerst · meerdere mogelijk</span></h5>
+                      <div class="filters__pills" id="theme-filter-pills" role="group" aria-label="Filter op thema"></div>
+                    </div>
+                    <div class="bb-cat-other-filters">
+                      <fieldset class="bb-cat-pages">
+                        <legend>Aantal pagina’s</legend>
+                        <div class="bb-cat-page-top"><span>Maximaal aantal pagina’s</span>
+                          <output id="bb-cat-page-output" for="bb-cat-page-range">Alle lengtes</output></div>
+                        <input type="range" id="bb-cat-page-range" min="50" max="650" step="25" value="650" aria-label="Maximaal aantal pagina’s" />
+                        <div class="bb-cat-page-scale"><span>50</span><span>350</span><span>650+</span></div>
+                        <label class="bb-cat-unknown"><input id="bb-cat-unknown" type="checkbox" disabled /> Ook boeken zonder bekend aantal pagina’s</label>
+                      </fieldset>
+                      <label class="bb-cat-field">Beschikbaarheid
+                        <select id="bb-cat-availability"><option value="">Alle boeken</option><option value="available">Beschikbaar</option><option value="borrowed">Uitgeleend (minstens één exemplaar)</option></select>
+                      </label>
+                      <label class="bb-cat-field">Taal
+                        <select id="bb-cat-language"><option value="">Alle talen</option></select>
+                      </label>
+                      <div class="bb-cat-feature-filters" role="group" aria-label="Bijzondere kenmerken">
+                        <label><input id="bb-cat-easy" type="checkbox" /> Makkelijk Lezen</label>
+                        <label><input id="bb-cat-exam" type="checkbox" /> Examenleeslijst</label>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              </section>
+              <div class="bb-cat-results">
+                <div class="summary" id="summary" role="status" aria-live="polite"></div>
+                <div class="bb-cat-legend" aria-label="Betekenis van omslagmarkeringen">
+                  <span><i class="bb-cat-easy-key" aria-hidden="true"></i> Makkelijk Lezen</span>
+                  <span><i class="bb-cat-exam-key" aria-hidden="true"></i> Examenleeslijst</span>
+                </div>
               </div>
-              <label class="filters__label" for="search-input">Zoek:</label>
-              <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
-              <label class="filters__label" for="staff-book-sort-select">Sorteer op:</label>
-              <select id="staff-book-sort-select" aria-controls="book-grid">
-                <option value="title">Titel (A-Z)</option>
-                <option value="author" selected>Auteur (achternaam A-Z)</option>
-                <option value="popular">Meest populair</option>
-              </select>
+              <div class="book-grid" id="book-grid"></div>
             </div>
-            <div class="summary" id="summary"></div>
-            <div class="book-grid" id="book-grid"></div>
             </div>
           </section>
         </div>
