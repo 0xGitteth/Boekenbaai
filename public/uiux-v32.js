@@ -165,9 +165,21 @@
     const taskTitle = tasks.querySelector('h3');
     if (taskTitle) taskTitle.textContent = 'Openstaande taken';
     grid.replaceChildren(shortcuts, activity, tasks);
-    // Keep school statistics a content-height row and original stats button.
-    stats.classList.add('bb-v33-stats-bar');
-    grid.after(stats);
+    // Rebuild the visual container, not the live statistics control. The
+    // original v3.1 card inherits grid sizing that stretches on narrower
+    // layouts, even when later CSS asks for content height.
+    const statsToolbar = make('section', 'bb-v35-stats-toolbar');
+    statsToolbar.setAttribute('aria-label', 'Schoolstatistieken');
+    const statsCopy = make('div', 'bb-v35-stats-copy');
+    const statsTitle = stats.querySelector('h3');
+    const statsDescription = stats.querySelector('p');
+    const statsControls = stats.querySelector('#bb-admin-v31-stats');
+    if (statsTitle) statsCopy.append(statsTitle);
+    if (statsDescription) statsCopy.append(statsDescription);
+    statsToolbar.append(statsCopy);
+    if (statsControls) statsToolbar.append(statsControls);
+    grid.after(statsToolbar);
+    stats.remove();
 
     const metrics = overview.querySelector('#admin-modern-metrics');
     if (metrics) {
