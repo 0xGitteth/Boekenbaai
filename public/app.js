@@ -1641,6 +1641,46 @@ function renderThemePills(container, config = {}) {
 
   const fragment = document.createDocumentFragment();
 
+  // The approved compact catalog is staff-only. Student filters retain
+  // their original controls until the separately scoped student redesign.
+  if (config.catalogMode) {
+    const ranked = [...themes].sort((a,b) => b.count - a.count ||
+      a.label.localeCompare(b.label, 'nl', { sensitivity: 'base' }));
+    const makePill = (label, active, callback, theme = null) => {
+      const button = appendTextElement(fragment, 'button', label, {
+        type: 'button', className: 'filters__pill' + (theme ? '' : ' bb-cat-all'),
+      });
+      if (!button) return;
+      button.setAttribute('aria-pressed', String(active));
+      if (theme) {
+        const colors = resolveThemeColors(theme.label);
+        button.style.setProperty('--theme-pill-bg', colors.background);
+        button.style.setProperty('--theme-pill-text', colors.text);
+        button.style.setProperty('--theme-pill-border', colors.border);
+        button.style.setProperty('--bb-pill-dot', getThemeColor(theme.label));
+      }
+      button.addEventListener('click', callback);
+    };
+    makePill('Alle thema’s', !selectedThemes.size, () => config.onClearThemes?.());
+    ranked.forEach((theme, index) => {
+      if (index >= 8 && !isExpanded) return;
+      makePill(theme.label, selectedThemes.has(theme.key),
+        () => onToggleTheme?.({key:theme.key, active:!selectedThemes.has(theme.key)}),theme);
+    });
+    if (ranked.length > 8) {
+      const hiddenSelected = ranked.slice(8).filter(t=>selectedThemes.has(t.key)).length;
+      const more = appendTextElement(fragment,'button',
+        isExpanded ? 'Toon minder thema’s ⌃' :
+          'Toon '+(ranked.length-8)+' overige thema’s'+
+            (hiddenSelected?' ('+hiddenSelected+' geselecteerd)':'')+' ⌄',
+        {type:'button',className:'bb-cat-more'});
+      more?.setAttribute('aria-expanded',String(isExpanded));
+      more?.addEventListener('click',()=>onToggleExpanded?.(!isExpanded));
+    }
+    container.replaceChildren(fragment);
+    return;
+  }
+
   const examButton = appendTextElement(fragment, 'button', 'Examenleeslijst', {
     className: 'filters__pill filters__pill--exam',
     type: 'button',
@@ -1993,6 +2033,23 @@ function createBookCard(template, book, folders, options = {}) {
 
   title.textContent = book.title;
   author.textContent = book.author;
+  if (options.catalogLayout) {
+    // Staff card gets actual title metadata; never fabricated preview books.
+    const body = card.querySelector('.book-card__content');
+    const pages = resolveBookPageCount(book);
+    appendTextElement(body, 'small',
+      pages ? pages + ' pagina’s' : 'Aantal pagina’s onbekend',
+      {className:'bb-cat-card-pages'});
+    if (statusBadge) {
+      const copies = Number.isFinite(book.totalCopies) ? book.totalCopies
+        : (book.copies?.length || 0);
+      const available = Number.isFinite(book.availableCopies) ? book.availableCopies
+        : Math.max(copies - (book.borrowedCopies || 0),0);
+      statusBadge.textContent = available + ' van ' + copies +
+        ' exemplaren beschikbaar';
+      statusBadge.setAttribute('aria-label',statusBadge.textContent);
+    }
+  }
   if (tagsList) {
     tagsList.innerHTML = '';
     for (const tag of book.themes || []) {
@@ -2030,8 +2087,32 @@ function createBookCard(template, book, folders, options = {}) {
       options.onSelect(book, event);
     }
   };
-  card.addEventListener('click', handleActivate);
+  if (options.catalogLayout) {
+    const body = card.querySelector('.book-card__content');
+    const actions = appendElement(body,'div',{className:'bb-cat-card-actions'});
+    const view = appendTextElement(actions,'button','Bekijken',{
+      type:'button',className:'bb-cat-card-view'
+    });
+    view?.addEventListener('click',(event)=>{
+      event.stopPropagation();openBookDetail(book);
+    });
+    if (typeof options.onEdit === 'function') {
+      const edit = appendTextElement(actions,'button','Bewerken',{
+        type:'button',className:'bb-cat-card-edit'
+      });
+      edit?.addEventListener('click',(event)=>{
+        event.stopPropagation();options.onEdit(book);
+      });
+    }
+    card.setAttribute('role','group');
+    card.setAttribute('aria-label',book.title || 'Boek');
+  }
+  card.addEventListener('click', (event)=>{
+    if (event.target.closest('button')) return;
+    handleActivate(event);
+  });
   card.addEventListener('keydown', (event) => {
+    if (event.target.closest('button')) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       handleActivate(event);
@@ -2142,6 +2223,10 @@ function resolveBookFilterCandidates(book) {
 }
 
 function matchesAvailabilityFilter(book, availability) {
+  if (availability === 'borrowed') {
+    if (Number.isFinite(book?.borrowedCopies)) return book.borrowedCopies > 0;
+    return String(book?.status || '').toLowerCase() === 'borrowed';
+  }
   if (availability !== 'available') {
     return true;
   }
@@ -2151,7 +2236,7 @@ function matchesAvailabilityFilter(book, availability) {
   return String(book?.status || '').toLowerCase() !== 'borrowed';
 }
 
-function matchesCopyFilters(book, { language, pageRange, availability } = {}) {
+function matchesCopyFilters(book, { language, pageRange, availability, includeUnknownPages = false } = {}) {
   const normalizedLanguage = language ? String(language).trim().toLowerCase() : '';
   const candidates = resolveBookFilterCandidates(book);
   if (!candidates.length) {
@@ -2164,8 +2249,11 @@ function matchesCopyFilters(book, { language, pageRange, availability } = {}) {
         return false;
       }
     }
-    if (pageRange && !matchesPageRange(resolveBookPageCount(candidate), pageRange)) {
-      return false;
+    if (pageRange) {
+      const pages = resolveBookPageCount(candidate);
+      if (!(includeUnknownPages && pages <= 0) && !matchesPageRange(pages, pageRange)) {
+        return false;
+      }
     }
     if (!matchesAvailabilityFilter(candidate, availability)) {
       return false;
@@ -2184,6 +2272,7 @@ function filterBooks(allBooks, {
   pageRange,
   pageLimit,
   availability,
+  includeUnknownPages = false,
 } = {}) {
   let list = Array.isArray(allBooks) ? [...allBooks] : [];
   if (folder) {
@@ -2204,8 +2293,10 @@ function filterBooks(allBooks, {
     list = list.filter((book) => book.easyReading);
   }
   const effectivePageRange = pageRange ?? pageLimit;
-  if (language || effectivePageRange || availability === 'available') {
-    list = list.filter((book) => matchesCopyFilters(book, { language, pageRange: effectivePageRange, availability }));
+  if (language || effectivePageRange || availability) {
+    list = list.filter((book) => matchesCopyFilters(book, {
+      language, pageRange: effectivePageRange, availability, includeUnknownPages,
+    }));
   }
   const themes = selectedThemes ? Array.from(selectedThemes) : [];
   const normalizedThemes = themes.map(normalizeThemeKey).filter(Boolean);
@@ -2419,6 +2510,7 @@ function createThemeFilterRenderer({
   getOnlyEasyReading,
   setOnlyEasyReading,
   onChange,
+  catalogMode = false,
 } = {}) {
   const notifyChange = () => {
     if (typeof onChange === 'function') {
@@ -2453,6 +2545,12 @@ function createThemeFilterRenderer({
       onlyExamList: typeof getOnlyExamList === 'function' ? getOnlyExamList() : false,
       onlyEasyReading: typeof getOnlyEasyReading === 'function' ? getOnlyEasyReading() : false,
       isExpanded,
+      catalogMode,
+      onClearThemes: () => {
+        selectedThemeKeys?.clear();
+        render();
+        notifyChange();
+      },
       onToggleTheme: ({ key, active }) => {
         if (!key) return;
         if (active) {
@@ -3535,6 +3633,16 @@ function initStaffPage() {
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
   const themeFilterPills = document.querySelector('#theme-filter-pills');
+  const catalogPageRange = document.querySelector('#bb-cat-page-range');
+  const catalogPageOutput = document.querySelector('#bb-cat-page-output');
+  const catalogUnknown = document.querySelector('#bb-cat-unknown');
+  const catalogAvailability = document.querySelector('#bb-cat-availability');
+  const catalogLanguage = document.querySelector('#bb-cat-language');
+  const catalogEasy = document.querySelector('#bb-cat-easy');
+  const catalogExam = document.querySelector('#bb-cat-exam');
+  const catalogReset = document.querySelector('#bb-cat-reset');
+  const catalogAdvanced = document.querySelector('#bb-cat-advanced');
+  const catalogFilterCaption = document.querySelector('#bb-cat-filter-caption');
   const historyList = document.querySelector('#history-list');
   const historyActions = document.querySelector('#history-actions');
   const historyClearButton = document.querySelector('#history-clear-button');
@@ -4188,6 +4296,13 @@ function initStaffPage() {
       adminSelectedThemeKeys = new Set();
       onlyExamList = false;
       onlyEasyReading = false;
+      if(catalogPageRange) catalogPageRange.value='650';
+      if(catalogUnknown){catalogUnknown.checked=false;catalogUnknown.disabled=true;}
+      if(catalogAvailability) catalogAvailability.value='';
+      if(catalogLanguage) catalogLanguage.value='';
+      if(catalogEasy) catalogEasy.checked=false;
+      if(catalogExam) catalogExam.checked=false;
+      if(searchInput) searchInput.value='';
       filters.query = '';
       filters.sortBy = sortSelect?.value || 'author';
       updateSortControlAccessibility(sortSelect, filters.sortBy, {
@@ -4205,35 +4320,55 @@ function initStaffPage() {
   updateAuthUi = renderStaffState;
 
   function renderBooks() {
+    const limited = Number(catalogPageRange?.value) < 650;
+    const filtered = filterBooks(groupedBooks,{
+      query:filters.query, selectedThemes:selectedThemeKeys,
+      onlyExamList:onlyExamList || Boolean(catalogExam?.checked),
+      onlyEasyReading:onlyEasyReading || Boolean(catalogEasy?.checked),
+      language:catalogLanguage?.value || '',
+      pageLimit:limited ? Number(catalogPageRange?.value) : 0,
+      includeUnknownPages:limited && Boolean(catalogUnknown?.checked),
+      availability:catalogAvailability?.value || '',
+    });
+    if (summary) {
+      summary.replaceChildren();
+      const counter = appendTextElement(summary,'strong',String(filtered.length));
+      summary.append(document.createTextNode(' van '+groupedBooks.length+
+        ' titels · beschikbaarheid per exemplaar'));
+    }
+    const activeCount = selectedThemeKeys.size + Number(Boolean(filters.query)) +
+      Number(Boolean(catalogExam?.checked)) + Number(Boolean(catalogEasy?.checked)) +
+      Number(Boolean(catalogLanguage?.value)) + Number(Boolean(catalogAvailability?.value))+
+      Number(limited) + Number(limited && Boolean(catalogUnknown?.checked));
+    if (catalogFilterCaption) catalogFilterCaption.textContent = activeCount
+      ? activeCount + ' filter'+(activeCount===1?'':'s')+' actief'
+      : 'Thema’s, pagina’s, beschikbaarheid, taal en kenmerken';
+    if (catalogAdvanced) {
+      const title = catalogAdvanced.querySelector('.bb-cat-toggle-copy strong');
+      if (title) title.textContent = catalogAdvanced.open?'Filters verbergen':'Filters tonen';
+    }
     renderBookGrid({
       grid: bookGrid,
-      books: groupedBooks,
+      books: filtered,
       template: bookCardTemplate,
       folders,
       filters: {
-        folder: '',
-        query: filters.query,
-        selectedThemes: selectedThemeKeys,
-        onlyExamList,
-        onlyEasyReading,
         sortBy: filters.sortBy,
       },
-      cardOptions: (book) => {
-        if (authUser?.role !== 'admin') {
-          return undefined;
-        }
-        return {
-          selectable: Boolean(selectedBookId),
-          selected: Array.isArray(book.copies)
-            ? book.copies.some((copy) => copy.id === selectedBookId)
-            : false,
-        };
-      },
+      cardOptions: (book) => ({
+        catalogLayout:true,
+        ...(authUser?.role === 'admin' ? {
+          onEdit: (chosenBook) => handleAdminBookSelection(chosenBook),
+          selectable:false,
+          selected:false,
+        }:{}),
+      }),
     });
   }
 
   const themeFilterRenderer = createThemeFilterRenderer({
     pillsContainer: themeFilterPills,
+    catalogMode:true,
     selectedThemeKeys,
     getThemes: () => availableThemes,
     getOnlyExamList: () => onlyExamList,
@@ -4258,6 +4393,14 @@ function initStaffPage() {
       }
     }
     themeFilterRenderer.render();
+    if (catalogLanguage) {
+      const current = catalogLanguage.value;
+      const langs = [...new Set(groupedBooks.flatMap(resolveBookLanguages))].sort((a,b)=>a.localeCompare(b,'nl'));
+      catalogLanguage.replaceChildren();
+      const any = appendTextElement(catalogLanguage,'option','Alle talen');any.value='';
+      langs.forEach(lang=>{const option=appendTextElement(catalogLanguage,'option',lang);option.value=lang;});
+      catalogLanguage.value = langs.includes(current)?current:'';
+    }
     renderAdminThemeOptions();
   }
 
@@ -6052,7 +6195,7 @@ function initStaffPage() {
   }
 
   async function loadSummary() {
-    if (!summary) return;
+    if (!summary || summary.closest('.bb-catalog-v36')) return;
     const data = await fetchJson('/api/status');
     summary.replaceChildren();
     const items = [
@@ -6727,6 +6870,32 @@ function initStaffPage() {
   searchInput?.addEventListener('input', () => {
     filters.query = searchInput.value;
     renderBooks();
+  });
+  const updateCatalogSlider = () => {
+    const isUnlimited = Number(catalogPageRange?.value) >= 650;
+    if(catalogPageOutput) catalogPageOutput.textContent = isUnlimited
+      ? 'Alle lengtes' : 'Tot '+catalogPageRange.value+' pagina’s';
+    if(catalogUnknown) catalogUnknown.disabled = isUnlimited;
+    renderBooks();
+  };
+  catalogPageRange?.addEventListener('input',updateCatalogSlider);
+  for(const control of [catalogUnknown,catalogAvailability,catalogLanguage,catalogEasy,catalogExam]){
+    control?.addEventListener('change',renderBooks);
+  }
+  catalogAdvanced?.addEventListener('toggle',renderBooks);
+  catalogReset?.addEventListener('click',()=>{
+    selectedThemeKeys.clear();
+    onlyExamList=false;onlyEasyReading=false;
+    if(searchInput) searchInput.value='';
+    if(catalogPageRange) catalogPageRange.value='650';
+    if(catalogUnknown){catalogUnknown.checked=false;catalogUnknown.disabled=true;}
+    if(catalogAvailability) catalogAvailability.value='';
+    if(catalogLanguage) catalogLanguage.value='';
+    if(catalogEasy) catalogEasy.checked=false;
+    if(catalogExam) catalogExam.checked=false;
+    filters.query='';
+    themeFilterRenderer.render();
+    updateCatalogSlider();
   });
 
   adminStudentSearchInput?.addEventListener('input', () => {
