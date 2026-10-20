@@ -525,3 +525,27 @@ body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__label {
     top:25px;font-size:7px;
   }
 }
+
+/*
+ * User visual acceptance (20 October): five LARGE cards, not six small ones,
+ * even in a maximised desktop browser. The physical monitor and the browser's
+ * CSS viewport do not always have identical pixel dimensions.
+ *
+ * Keep the previously approved compact filters, colours and mobile
+ * breakpoints. Restore the visual prominence of book covers at large widths.
+ */
+@media (min-width:1261px) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  }
+  body[data-page="staff"] .bb-catalog-v36 .book-card__cover-wrapper {
+    width:min(100%,245px);
+    max-width:245px;
+  }
+}
+/* The earlier >1740px six-column rule must never shrink cards on wide PCs. */
+@media (min-width:1740px) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  }
+}
