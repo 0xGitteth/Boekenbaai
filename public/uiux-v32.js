@@ -225,26 +225,41 @@
         const frame = make('span', 'bb-v32-book-cover');
         const sourceImage = source.querySelector('.book-card__cover');
         const sourceFallback = source.querySelector('.book-card__cover-fallback');
+        const title = source.querySelector('.book-card__title')?.textContent?.trim() || 'Onbekende titel';
+        const author = source.querySelector('.book-card__author')?.textContent?.trim() || '';
+        // Explicitly represent unavailable artwork; never show empty white
+        // covers or pretend a generated placeholder is the original cover.
+        const appendFallback = () => {
+          if (frame.querySelector('.bb-v32-cover-placeholder')) return;
+          const fallback = make('span','bb-v32-cover-placeholder');
+          fallback.append(
+            make('small','bb-v32-cover-note','OMSLAG NIET BESCHIKBAAR'),
+            make('strong','bb-v32-cover-title',title),
+            make('small','bb-v32-cover-author',author)
+          );
+          frame.append(fallback);
+        };
         if (sourceImage && !sourceImage.hidden && sourceImage.getAttribute('src')) {
           const image = make('img');
           image.src = sourceImage.getAttribute('src');
           image.alt = '';
           image.loading = 'lazy';
           image.addEventListener('error', () => {
-            // Never leave a broken image in the start page while the live
-            // catalog retries its original remote cover URL.
+            // The actual source card retries external covers as needed. This
+            // miniature must not keep displaying a broken or blank bitmap.
             image.hidden = true;
-            if (!frame.querySelector('.bb-v32-cover-placeholder')) {
-              frame.append(make('span', 'bb-v32-cover-placeholder',
-                sourceFallback?.textContent?.trim() || '📚'));
+            appendFallback();
+          });
+          image.addEventListener('load', () => {
+            if (image.naturalWidth < 8 || image.naturalHeight < 8) {
+              image.hidden = true;
+              appendFallback();
             }
           });
           frame.append(image);
         } else {
-          frame.append(make('span', 'bb-v32-cover-placeholder', sourceFallback?.textContent?.trim() || '📚'));
+          appendFallback();
         }
-        const title = source.querySelector('.book-card__title')?.textContent?.trim() || 'Onbekende titel';
-        const author = source.querySelector('.book-card__author')?.textContent?.trim() || '';
         item.append(frame, make('strong', '', title), make('small', '', author));
         item.setAttribute('aria-label', 'Bekijk ' + title + (author ? ' van ' + author : ''));
         item.addEventListener('click', () => {
