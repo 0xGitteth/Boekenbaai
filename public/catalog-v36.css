@@ -425,3 +425,13 @@ body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__label {
     width:37px;height:37px;flex-basis:37px;
   }
 }
+
+/* Approved title/subtitle share a single compact heading group. In the real
+   application they belong to adjacent legacy wrappers, so close that gap. */
+body[data-page="staff"] .teacher-overview__header:has(+ #staff-book-overview-content) {
+  margin-bottom:3px!important;
+}
+body[data-page="staff"] .teacher-overview__header:has(+ #staff-book-overview-content) #staff-catalog-title {
+  margin:0;font:800 17.28px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:#193e6b;
+}
