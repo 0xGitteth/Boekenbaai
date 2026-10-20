@@ -2005,14 +2005,32 @@ function createBookCard(template, book, folders, options = {}) {
 
   if (coverFallback) {
     const fallbackInitial = (book.title || '').trim().charAt(0).toUpperCase();
-    coverFallback.textContent = fallbackInitial || '📚';
+    if (options.catalogLayout) {
+      // A missing cover is not a blank rectangle or a fictitious cover image.
+      // Use genuine title/author metadata for a clearly labelled placeholder.
+      coverFallback.classList.add('bb-cat-cover-placeholder');
+      coverFallback.replaceChildren();
+      appendTextElement(coverFallback, 'span', 'OMSLAG NIET BESCHIKBAAR',
+        { className: 'bb-cat-cover-placeholder__label' });
+      appendTextElement(coverFallback, 'strong', book.title || 'Titel onbekend',
+        { className: 'bb-cat-cover-placeholder__title' });
+      appendTextElement(coverFallback, 'span', book.author || 'Auteur onbekend',
+        { className: 'bb-cat-cover-placeholder__author' });
+      const theme = (book.themes || [])[0] || book.title || '';
+      const colors = resolveCatalogThemeColors(theme);
+      coverFallback.style.setProperty('--bb-cover-tint', colors.background);
+      coverFallback.style.setProperty('--bb-cover-accent', colors.dot);
+    } else {
+      coverFallback.textContent = fallbackInitial || '📚';
+    }
     coverFallback.hidden = hasCover;
     if (hasCover) {
       coverFallback.removeAttribute('role');
       coverFallback.removeAttribute('aria-label');
     } else {
       coverFallback.setAttribute('role', 'img');
-      coverFallback.setAttribute('aria-label', 'Geen omslag beschikbaar');
+      coverFallback.setAttribute('aria-label',
+        book.title ? 'Geen omslag beschikbaar voor ' + book.title : 'Geen omslag beschikbaar');
     }
   }
 
@@ -2030,9 +2048,18 @@ function createBookCard(template, book, folders, options = {}) {
         if (coverFallback) {
           coverFallback.hidden = false;
           coverFallback.setAttribute('role', 'img');
-          coverFallback.setAttribute('aria-label', 'Geen omslag beschikbaar');
+          coverFallback.setAttribute('aria-label', book.title ? 'Geen omslag beschikbaar voor ' + book.title : 'Geen omslag beschikbaar');
         }
       };
+      if (options.catalogLayout) {
+        coverImage.onload = () => {
+          if (coverImage.naturalWidth < 8 || coverImage.naturalHeight < 8) {
+            coverImage.onerror?.();
+          }
+        };
+      } else {
+        coverImage.onload = null;
+      }
       applyDisplayCoverCrop(coverImage, book.coverCrop);
       coverImage.src = coverUrl;
       coverImage.alt = book.title ? `Omslag van ${book.title}` : 'Boekomslag';

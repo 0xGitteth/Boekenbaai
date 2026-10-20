@@ -124,6 +124,13 @@ const failingPreview=firstFrame.children[0];
 failingPreview.events.error();
 assert.equal(failingPreview.hidden,true);
 assert.equal(firstFrame.children.length,2,'Broken URL displays a fallback, not a broken image');
+assert.equal(firstFrame.children[1].className,'bb-v32-cover-placeholder');
+assert.equal(firstFrame.children[1].children[0].textContent,'OMSLAG NIET BESCHIKBAAR');
+assert.equal(firstFrame.children[1].children[1].textContent,'Boek één',
+  'The teacher home placeholder must use the actual book title');
+assert.equal(firstFrame.children[1].children[2].textContent,'Schrijver A',
+  'The placeholder must use the actual author');
+
 // The real catalog recovers local URLs via external URL and ultimately
 // toggles hidden when both sources fail. Both mutations update the preview.
 catalogue[0].querySelector('.book-card__cover').attrs.src='/external/one.jpg';

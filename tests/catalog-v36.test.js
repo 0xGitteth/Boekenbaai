@@ -7,6 +7,25 @@ const file = name => fs.readFileSync(path.join(__dirname,'../public',name),'utf8
 const html = file('staff.html');
 const app = file('app.js');
 const css = file('catalog-v36.css');
+const teacherCss = file('uiux-v32.css');
+const dashboardJs = file('uiux-v32.js');
+assert.match(css,/bb-cat-search-field input#search-input[^}]*border:0!important/,
+  'The search control must never show both outer and inner borders');
+assert.match(css,/\.bb-cat-cover-placeholder\s*\{/,
+  'Book cards without real covers need a designed metadata fallback');
+assert.match(css,/\.bb-cat-cover-placeholder\[hidden\]/,
+  'The fallback must remain hidden while the real cover is loading or present');
+assert.match(app,/OMSLAG NIET BESCHIKBAAR/,
+  'The cover fallback must be explicit about the missing image');
+assert.match(app,/coverFallback\.replaceChildren\(\)/,
+  'The catalog fallback must use genuine title and author metadata');
+assert.match(teacherCss,/bb-v32-book-cover img\[hidden\][^{]*\{[^}]*display:none!important/,
+  'Broken teacher preview image must never mask the fallback');
+assert.match(teacherCss,/bb-v32-dashboard\[data-teacher-view="start"\] \.bb-teacher-v31-view-heading[^}]*display:grid/,
+  'Teacher welcome should align to the left, not flex to the middle');
+assert.match(dashboardJs,/const appendFallback = \(\) =>/,
+  'Teacher home requires the same explicit missing-artwork treatment');
+
 
 for (const id of [
   'search-input','staff-book-sort-select','theme-filter-pills',
