@@ -15,7 +15,7 @@ const defaultZoomCss = file('catalog-v39.css');
 assert.ok(html.includes('href="catalog-v39.css"') &&
   html.indexOf('catalog-v39.css') > html.indexOf('catalog-v38.css'),
   'Default-zoom styles must load after the previous catalogue controls');
-assert.doesNotMatch(defaultZoomCss,/\bzoom\s*:|transform\s*:\s*scale\s*\(/,
+assert.doesNotMatch(defaultZoomCss.replace(/\/\*[\s\S]*?\*\//g,''),/\bzoom\s*:|transform\s*:\s*scale\s*\(/,
   'Never require a browser zoom setting or a CSS scaling hack');
 assert.match(defaultZoomCss,/\.hero\.hero--staff\s*\{[^}]*height:59px;[^}]*min-height:59px;/,
   'The header uses the measured comfortable 90%-like density at 100%');
