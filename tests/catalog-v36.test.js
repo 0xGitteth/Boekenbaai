@@ -88,7 +88,16 @@ for (const [maxWidth,count] of [[1260,4],[980,3],[760,2]]) {
 assert.match(css,/min-width:0;max-width:none;min-height:545px/,
   'Cards use the approved desktop height, not stretched four-column tiles');
 assert.match(css,/width:min\(100%,215px\)/,
-  'Covers remain 2:3 and max 215px, like the approved desktop design');
+  'Smaller catalogue breakpoints retain their existing cover width');
+const lastWideRules = css.slice(css.indexOf('User visual acceptance (20 October)'));
+assert.match(lastWideRules,/@media \(min-width:1261px\)[\s\S]*?repeat\(5,minmax\(0,1fr\)\)!important/,
+  'Desktop must show no more than five book cards at a time');
+assert.match(lastWideRules,/\.book-card__cover-wrapper\s*\{[^}]*width:min\(100%,245px\);[^}]*max-width:245px/,
+  'Five-column layout must actually enlarge covers instead of adding blank card margins');
+assert.match(lastWideRules,/@media \(min-width:1740px\)[\s\S]*?repeat\(5,minmax\(0,1fr\)\)!important/,
+  'Wide monitor CSS must override the historical six-column rule');
+assert.doesNotMatch(lastWideRules,/repeat\(6,minmax\(0,1fr\)\)/,
+  'No wide-screen six-column rule is allowed after the user accepted five larger cards');
 assert.match(css,/\.bb-catalog-filter-panel\s*\{[^}]*padding:22px/,
   'Desktop filter padding comes from approved 22px measurement');
 assert.match(css,/\.bb-cat-advanced-toggle\s*\{[^}]*min-height:48px/,
