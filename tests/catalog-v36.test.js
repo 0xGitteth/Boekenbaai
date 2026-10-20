@@ -9,6 +9,31 @@ const app = file('app.js');
 const css = file('catalog-v36.css');
 
 const approvedControlsCss = file('catalog-v38.css');
+
+const defaultZoomCss = file('catalog-v39.css');
+// Comfortable real CSS dimensions at 100% browser zoom; no CSS scaling tricks.
+assert.ok(html.includes('href="catalog-v39.css"') &&
+  html.indexOf('catalog-v39.css') > html.indexOf('catalog-v38.css'),
+  'Default-zoom styles must load after the previous catalogue controls');
+assert.doesNotMatch(defaultZoomCss,/\bzoom\s*:|transform\s*:\s*scale\s*\(/,
+  'Never require a browser zoom setting or a CSS scaling hack');
+assert.match(defaultZoomCss,/\.hero\.hero--staff\s*\{[^}]*height:59px;[^}]*min-height:59px;/,
+  'The header uses the measured comfortable 90%-like density at 100%');
+assert.match(defaultZoomCss,/\.bb-cat-search-field\s*\{[^}]*height:41px;min-height:41px;/,
+  'Search field must be compact at default browser zoom');
+assert.match(defaultZoomCss,/\.bb-cat-feature-filters label\s*\{[^}]*min-height:42px;/,
+  'Feature controls retain usable touch target dimensions');
+assert.match(defaultZoomCss,/\.bb-cat-pages\s*\{[^}]*grid-column:1;grid-row:1 \/ span 2;/,
+  'The page filter must span both rows');
+assert.match(defaultZoomCss,/\.bb-cat-feature-filters\s*\{[^}]*grid-column:2 \/ -1;[^}]*grid-row:2;/,
+  'Switches must be under availability/language, as in the reference');
+assert.match(defaultZoomCss,/@media \(max-width:1350px\)\s*\{/,
+  'Smaller screens must clear desktop grid row positions');
+assert.match(defaultZoomCss,/@media \(max-width:760px\)\s*\{/,
+  'Mobile retains its own 2-up book and touch layouts');
+assert.match(defaultZoomCss,/\.book-card__title\s*\{[^}]*font-size:15\.5px;/,
+  'Book titles at default zoom are readable but not oversized');
+
 // Contract for the EXACT approved, runnable HTML file rather than another
 // approximate modernization of the old staff catalogue.
 assert.ok(html.includes('href="catalog-v38.css"'),
