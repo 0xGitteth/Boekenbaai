@@ -1277,3 +1277,10 @@ body.bb-teacher-v31 .bb-v32-cover-placeholder .bb-v32-cover-title{
   font:850 clamp(10px,.87vw,13px)/1.16 system-ui,sans-serif;
   text-shadow:0 1px 4px #0003;white-space:normal;color:#fff;
 }
+
+/* Keep the miniature teacher book illustrations in sync with the approved
+   catalogue: no dark opaque disclaimer badge on the artwork. */
+body.bb-teacher-v31 .bb-v32-cover-placeholder .bb-v32-cover-note {
+  top:27px;padding:0 3px;border-radius:0;background:transparent;
+  opacity:.84;color:#fff;text-shadow:0 1px 3px #0006;
+}

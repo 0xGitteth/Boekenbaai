@@ -2015,13 +2015,18 @@ function createBookCard(template, book, folders, options = {}) {
         ['#7da8d8','#426c9a'],['#3885b8','#16346b'],
         ['#616fa8','#222c55'],['#8f97ac','#313e59'],
       ];
-      const placeholderSymbols = ['✦','✿','✧','✺','❖','✳','✷','◆'];
+      const placeholderSymbols = ['✦','♛','☺','✺','♥','✿','☾','❄'];
       const identifier = String(book.id || book.title || '');
       let hash = 0;
       for (let n = 0; n < identifier.length; n += 1) {
         hash = ((hash << 5) - hash + identifier.charCodeAt(n)) | 0;
       }
-      const paletteIndex = (hash >>> 0) % placeholderPalette.length;
+      // Placeholder art is decorative, never metadata. Following the approved
+      // HTML, neighbouring covers use a deliberately varied palette. Keep
+      // the same title/image/crop/flags and only change illustration colours.
+      const paletteIndex = Number.isInteger(options.catalogVisualIndex)
+        ? options.catalogVisualIndex % placeholderPalette.length
+        : (hash >>> 0) % placeholderPalette.length;
       coverFallback.classList.add('bb-cat-cover-placeholder');
       coverFallback.replaceChildren();
       appendTextElement(coverFallback, 'span', book.author || 'Auteur onbekend',
@@ -2554,20 +2559,25 @@ function renderBookGrid({
 
   const usedCardIds = new Set();
 
-  for (const book of sorted) {
+  for (const [visualIndex, book] of sorted.entries()) {
     const bookId = book.id || '';
     const isVisible = visibleIds.has(bookId);
     let card = existingCards.get(bookId);
     const options =
-      typeof cardOptions === 'function' ? cardOptions(book) : cardOptions;
+      typeof cardOptions === 'function'
+        ? cardOptions(book, visualIndex)
+        : cardOptions;
+    const catalogOptions = options?.catalogLayout
+      ? { ...options, catalogVisualIndex: visualIndex }
+      : options;
     if (!card && !isVisible) {
       continue;
     }
 
     if (!card) {
-      card = createBookCard(template, book, folders, options || {});
+      card = createBookCard(template, book, folders, catalogOptions || {});
     } else if (card) {
-      const rebuiltCard = createBookCard(template, book, folders, options || {});
+      const rebuiltCard = createBookCard(template, book, folders, catalogOptions || {});
       if (rebuiltCard && rebuiltCard !== card) {
         card.replaceWith(rebuiltCard);
         card = rebuiltCard;

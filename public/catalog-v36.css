@@ -490,3 +490,38 @@ body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__title{
   body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__symbol{font-size:34px}
   body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__title{font-size:12px}
 }
+
+/* Last approved HTML visual parity: do not replace the approved geometry.
+   Remove inherited legacy font styling and soften the placeholder disclosure. */
+body[data-page="staff"] .bb-catalog-v36 .book-card__title,
+body[data-page="staff"] .bb-catalog-v36 .book-card__author,
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-card-pages,
+body[data-page="staff"] .bb-catalog-v36 .book-card__tags,
+body[data-page="staff"] .bb-catalog-v36 .book-card__status,
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-card-actions button {
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__title {
+  font-weight:810;letter-spacing:0;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__author {
+  font-weight:400;letter-spacing:0;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__status {
+  font-weight:400;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__label {
+  /* Clearly disclose illustrative artwork without the distracting dark badge.
+     The approved prototype places just typography over the cover surface. */
+  top:32px;left:50%;transform:translateX(-50%);
+  padding:0 3px;border-radius:0;
+  background:transparent;
+  color:#fff;opacity:.84;
+  font:700 8px/1.25 system-ui,-apple-system,"Segoe UI",sans-serif;
+  text-shadow:0 1px 3px #0006;
+}
+@media(max-width:520px) {
+  body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__label {
+    top:25px;font-size:7px;
+  }
+}
