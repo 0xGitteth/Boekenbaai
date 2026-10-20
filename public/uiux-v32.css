@@ -1148,3 +1148,88 @@ body.bb-admin-v31.bb-v32-active #admin-dashboard .bb-v32-admin-grid .bb-admin-v3
     padding: 16px;
   }
 }
+
+
+/* Correct the teacher welcome alignment inherited from the older flex header.
+   The eyebrow and greeting share the left edge; the supporting text stays
+   right aligned on desktop and flows below them on small screens. */
+body.bb-teacher-v31 .bb-v32-dashboard[data-teacher-view="start"] .bb-teacher-v31-view-heading {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,auto);
+  align-items:start;
+  justify-content:stretch;
+  gap:4px 18px;
+}
+body.bb-teacher-v31 .bb-v32-dashboard[data-teacher-view="start"] .bb-teacher-v31-view-heading > .bb-teacher-v31-eyebrow {
+  grid-column:1;
+  grid-row:1;
+  justify-self:start;
+}
+body.bb-teacher-v31 .bb-v32-dashboard[data-teacher-view="start"] .bb-teacher-v31-view-heading > h2 {
+  grid-column:1;
+  grid-row:2;
+  justify-self:start;
+  text-align:left;
+  margin:0;
+}
+body.bb-teacher-v31 .bb-v32-dashboard[data-teacher-view="start"] .bb-teacher-v31-view-heading > .bb-teacher-v31-hint {
+  grid-column:2;
+  grid-row:2;
+  justify-self:end;
+  text-align:right;
+  margin:0;
+}
+@media (max-width:760px) {
+  body.bb-teacher-v31 .bb-v32-dashboard[data-teacher-view="start"] .bb-teacher-v31-view-heading {
+    grid-template-columns:minmax(0,1fr);
+  }
+  body.bb-teacher-v31 .bb-v32-dashboard[data-teacher-view="start"] .bb-teacher-v31-view-heading > .bb-teacher-v31-hint {
+    grid-column:1;grid-row:3;justify-self:start;text-align:left;
+  }
+}
+/* Inherited generic img {display:block} must never override [hidden].
+   Otherwise the failed image masks its placeholder completely. */
+body.bb-teacher-v31 .bb-v32-book-cover img[hidden] {
+  display:none!important;
+}
+body.bb-teacher-v31 .bb-v32-cover-placeholder {
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  align-items:center;
+  gap:6px;
+  box-sizing:border-box;
+  width:100%;
+  height:100%;
+  padding:10px 7px 12px;
+  overflow:hidden;
+  background:radial-gradient(circle at 50% 40%,#f9fbff,#dceaf8 82%);
+  border:1px solid #d5e3f2;
+  color:#284b74;
+  text-align:center;
+}
+body.bb-teacher-v31 .bb-v32-cover-placeholder .bb-v32-cover-note {
+  max-width:100%;
+  font:750 .53rem/1.28 system-ui,sans-serif;
+  letter-spacing:.04em;
+  color:#657d98;
+}
+body.bb-teacher-v31 .bb-v32-cover-placeholder .bb-v32-cover-title {
+  font:820 .76rem/1.25 system-ui,sans-serif;
+  overflow:hidden;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:4;
+  overflow-wrap:anywhere;
+  max-width:100%;
+}
+body.bb-teacher-v31 .bb-v32-cover-placeholder .bb-v32-cover-author {
+  max-width:100%;
+  color:#657d98;
+  font:650 .6rem/1.25 system-ui,sans-serif;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+  overflow-wrap:anywhere;
+}
