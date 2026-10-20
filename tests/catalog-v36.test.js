@@ -102,6 +102,21 @@ assert.match(css,/#book-grid[^}]*repeat\(2,minmax\(0,1fr\)\)/,
 assert.match(css,/\.book-card__cover-wrapper\s*\{[^}]*width:100%;max-width:none/,
   'Narrow covers fill their true available frame with a correct 2:3 ratio');
 
+// Cover visual parity: the approved demo alternates artwork palettes/motifs
+// across adjacent cards. Stable book metadata and original images are unchanged.
+assert.match(app,/const placeholderSymbols = \['✦','♛','☺','✺','♥','✿','☾','❄'\]/,
+  'Use the visual motif order from the approved library prototype');
+assert.match(app,/catalogVisualIndex % placeholderPalette\.length/,
+  'Illustrated placeholders should not repeat the same palette side by side');
+assert.match(app,/sorted\.entries\(\)/,
+  'The real sorted/filter result order determines decorative placeholder rhythm');
+assert.match(app,/catalogOptions \|\| \{\}/,
+  'The catalogue card constructor receives the decorative visual index');
+assert.match(css,/bb-cat-cover-placeholder__label[^}]*background:transparent/,
+  'Keep a readable disclosure but no solid dark badge across the cover');
+assert.match(css,/bb-catalog-v36 \.book-card__title[^}]*font-weight:810/,
+  'Text weight follows the approved demo rather than legacy headline styles');
+
 // Exercise the actual shared filtering source rather than reimplementing it.
 const start = app.indexOf('function resolveBookLanguages(');
 const end = app.indexOf('\nfunction sortBooks(',start);
