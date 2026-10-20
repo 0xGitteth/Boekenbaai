@@ -8,6 +8,45 @@ const html = file('staff.html');
 const app = file('app.js');
 const css = file('catalog-v36.css');
 
+const approvedControlsCss = file('catalog-v38.css');
+// Contract for the EXACT approved, runnable HTML file rather than another
+// approximate modernization of the old staff catalogue.
+assert.ok(html.includes('href="catalog-v38.css"'),
+  'The approved controls must be loaded by the actual staff document');
+assert.ok(html.indexOf('catalog-v38.css') > html.indexOf('catalog-v37.css'),
+  'Approved-control layer must take priority over the old card styling');
+for (const id of ['bb-cat-easy','bb-cat-exam']) {
+  assert.match(html,new RegExp('<input id="'+id+'" type="checkbox" role="switch"\\s*/><span class="bb-cat-switch-track"'),
+    id + ' must be a real keyboard-accessible sliding toggle');
+}
+assert.match(approvedControlsCss,/\.bb-cat-switch-track::after/,
+  'The switch must have a movable thumb');
+assert.match(approvedControlsCss,/input:checked \+ \.bb-cat-switch-track::after[^}]*translateX\(13px\)/,
+  'Checked and unchecked switch states must be visually distinct');
+assert.match(approvedControlsCss,/input:focus-visible \+ \.bb-cat-switch-track/,
+  'Keyboard focus on the hidden checkbox must remain visible');
+assert.match(approvedControlsCss,/\.bb-catalog-filter-panel\s*\{[^}]*gap:14px;[^}]*padding:22px;/,
+  'Filter spacing must match the approved HTML, not legacy rem overrides');
+assert.match(approvedControlsCss,/\.bb-cat-search-row\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) 276px;[^}]*gap:13px;/,
+  'Search and sort share the approved exact column width and spacing');
+assert.match(approvedControlsCss,/\.bb-cat-advanced-toggle\s*\{[^}]*min-height:48px;/,
+  'Collapsed filters use the approved 48px control');
+assert.match(approvedControlsCss,/\.bb-cat-other-filters\s*\{[^}]*grid-template-columns:minmax\(0,1\.75fr\) repeat\(2,minmax\(0,1fr\)\)/,
+  'Expanded page slider and selects use the same reference grid');
+assert.match(approvedControlsCss,/\.bb-cat-feature-filters\s*\{[^}]*grid-column:2\/-1;/,
+  'Feature switches occupy their own aligned row underneath selects');
+assert.match(approvedControlsCss,/\.bb-cat-page-top output\s*\{[^}]*position:absolute;/,
+  'Slider output must sit beside the heading just like the approved source');
+assert.match(app,/breakRow\.className = 'bb-cat-theme-linebreak'/,
+  'Expand/collapse theme controls must be on their own row');
+assert.match(approvedControlsCss,/\.bb-cat-theme-linebreak\s*\{[^}]*flex:0 0 100%/,
+  'Extra theme controls must not leave gaps between coloured pills');
+assert.match(approvedControlsCss,/\.hero\.hero--staff[^}]*height:65px/,
+  'Staff masthead should match the approved actual 65px height');
+assert.match(approvedControlsCss,/@media\(max-width:520px\)/,
+  'Small mobile layout must remain responsive');
+
+
 const coverFirstCss = file('catalog-v37.css');
 assert.ok(html.includes('href="catalog-v37.css"') &&
   html.indexOf('catalog-v37.css') > html.indexOf('catalog-v36.css'),

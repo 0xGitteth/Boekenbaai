@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="uiux-v32.css" />
     <link rel="stylesheet" href="catalog-v36.css" />
     <link rel="stylesheet" href="catalog-v37.css" />
+    <link rel="stylesheet" href="catalog-v38.css" />
     <style>
       .bb-followup-badge {
         display: inline-flex;
@@ -177,8 +178,8 @@
                         <select id="bb-cat-language"><option value="">Alle talen</option></select>
                       </label>
                       <div class="bb-cat-feature-filters" role="group" aria-label="Bijzondere kenmerken">
-                        <label><input id="bb-cat-easy" type="checkbox" /> Makkelijk Lezen</label>
-                        <label><input id="bb-cat-exam" type="checkbox" /> Examenleeslijst</label>
+                        <label><input id="bb-cat-easy" type="checkbox" role="switch" /><span class="bb-cat-switch-track" aria-hidden="true"></span> Makkelijk Lezen</label>
+                        <label><input id="bb-cat-exam" type="checkbox" role="switch" /><span class="bb-cat-switch-track" aria-hidden="true"></span> Examenleeslijst</label>
                       </div>
                     </div>
                   </div>

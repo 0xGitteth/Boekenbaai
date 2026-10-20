@@ -1713,6 +1713,12 @@ function renderThemePills(container, config = {}) {
         () => onToggleTheme?.({key:theme.key, active:!selectedThemes.has(theme.key)}),theme);
     });
     if (ranked.length > 8) {
+      // As in the approved HTML, the expand/collapse button always starts a
+      // fresh row rather than occupying leftover space after theme pills.
+      const breakRow = document.createElement('span');
+      breakRow.className = 'bb-cat-theme-linebreak';
+      breakRow.setAttribute('aria-hidden', 'true');
+      fragment.append(breakRow);
       const hiddenSelected = ranked.slice(8).filter(t=>selectedThemes.has(t.key)).length;
       const more = appendTextElement(fragment,'button',
         isExpanded ? 'Toon minder thema’s ⌃' :
