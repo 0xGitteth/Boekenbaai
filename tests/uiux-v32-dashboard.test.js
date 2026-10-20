@@ -125,7 +125,9 @@ failingPreview.events.error();
 assert.equal(failingPreview.hidden,true);
 assert.equal(firstFrame.children.length,2,'Broken URL displays a fallback, not a broken image');
 assert.equal(firstFrame.children[1].className,'bb-v32-cover-placeholder');
-assert.equal(firstFrame.children[1].children[0].textContent,'OMSLAG NIET BESCHIKBAAR');
+assert.equal(firstFrame.children[1].children[0].textContent,'GEEN ORIGINELE OMSLAG');
+assert.equal(firstFrame.children[1].children[3].textContent,'✦',
+  'Missing book art must have the central decorative fallback motif');
 assert.equal(firstFrame.children[1].children[1].textContent,'Boek één',
   'The teacher home placeholder must use the actual book title');
 assert.equal(firstFrame.children[1].children[2].textContent,'Schrijver A',
