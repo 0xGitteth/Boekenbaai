@@ -224,7 +224,6 @@
         item.classList.toggle('bb-v32-book-preview--reading', source.classList.contains('book-card--exam-list'));
         const frame = make('span', 'bb-v32-book-cover');
         const sourceImage = source.querySelector('.book-card__cover');
-        const sourceFallback = source.querySelector('.book-card__cover-fallback');
         const title = source.querySelector('.book-card__title')?.textContent?.trim() || 'Onbekende titel';
         const author = source.querySelector('.book-card__author')?.textContent?.trim() || '';
         // Explicitly represent unavailable artwork; never show empty white
