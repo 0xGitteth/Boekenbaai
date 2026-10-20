@@ -178,3 +178,260 @@ body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__author {
   body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__title {font-size:.8rem}
   body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__author {font-size:.58rem}
 }
+
+/*
+ * Approved-catalogue parity: measured directly against
+ * boekenbaai_bibliotheek_preview_compacte_zoekfilters.html.
+ * Critical properties use px deliberately: the approved prototype had a
+ * 15px root while the live website uses a different rem baseline.
+ */
+body[data-page="staff"] .bb-catalog-v36 {
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px;line-height:1.5;color:#11284c;
+}
+body[data-page="staff"] .bb-catalog-v36 input,
+body[data-page="staff"] .bb-catalog-v36 select,
+body[data-page="staff"] .bb-catalog-v36 button {font-family:inherit;}
+body[data-page="staff"] .bb-catalog-intro {
+  margin:0 0 16px;color:#617995;font-size:13.3px;
+}
+body[data-page="staff"] .bb-catalog-filter-panel {
+  padding:22px;
+  background:#f8fbff;
+  border:1px solid #d6e4f3;
+  border-radius:16px;
+  box-shadow:0 3px 15px #17406c05;
+}
+body[data-page="staff"] .bb-cat-panel-header {
+  align-items:center;gap:13px;margin-bottom:14px;
+}
+body[data-page="staff"] .bb-cat-panel-icon {
+  width:44px;height:44px;flex-basis:44px;
+  font-size:0;border-radius:11px;color:#1c63ab;background:#e2eefc;
+}
+body[data-page="staff"] .bb-cat-panel-heading h4 {
+  font-size:17.6px;line-height:1.28;font-weight:810;
+  color:#193e6b;
+}
+body[data-page="staff"] .bb-cat-panel-heading p {
+  margin:2px 0 0;font-size:13.28px;line-height:1.5;color:#6983a0;
+}
+body[data-page="staff"] .bb-cat-reset {
+  min-height:39px;padding:8px 12px;gap:8px;
+  border:1px solid #d1e0ef;border-radius:9px;
+  font-size:12.96px;font-weight:740;color:#1c5b9f;
+}
+body[data-page="staff"] .bb-cat-search-row {
+  grid-template-columns:minmax(0,1fr) 276px;
+  gap:13px;margin-bottom:14px;
+}
+body[data-page="staff"] .bb-cat-search-field {
+  height:44px;min-height:44px;padding:0 12px;
+  gap:10px;border:1px solid #c9d9ea;border-radius:9px;
+}
+body[data-page="staff"] .bb-cat-search-field > span {
+  display:grid;place-items:center;color:#6a86a5;
+  flex:0 0 19px;width:19px;height:19px;font-size:0;
+}
+body[data-page="staff"] .bb-cat-search-field input#search-input {
+  height:42px;min-height:0!important;
+  font-size:14.08px;line-height:1.5;font-weight:400;
+}
+body[data-page="staff"] .bb-cat-sort {
+  gap:10px;font-size:12.96px;font-weight:400;line-height:1.5;
+  color:#61758e;
+}
+body[data-page="staff"] .bb-cat-sort select {
+  min-height:44px!important;height:44px;
+  padding:7px 11px;border:1px solid #d1deed;
+  border-radius:9px;font-size:13.12px;
+}
+body[data-page="staff"] .bb-cat-advanced {
+  border:1px solid #d9e6f5;border-radius:12px;
+  background:#fff;
+}
+body[data-page="staff"] .bb-cat-advanced-toggle {
+  min-height:48px;padding:7px 12px;gap:10px;
+  border-radius:12px;
+}
+body[data-page="staff"] .bb-cat-toggle-icon {
+  flex:0 0 30px;width:30px;height:30px;
+  border-radius:8px;font-size:0;color:#2166ad;background:#e9f2fd;
+}
+body[data-page="staff"] .bb-cat-toggle-copy strong {
+  font-size:12.96px;line-height:1.35;font-weight:760;
+  color:#1b4e86;
+}
+body[data-page="staff"] .bb-cat-toggle-copy small {
+  font-size:11.52px;line-height:1.4;color:#6e85a0;
+}
+body[data-page="staff"] .bb-cat-chevron {
+  font-size:0;width:18px;height:18px;
+  display:grid;place-items:center;
+  margin-left:auto;color:#2166ad;
+}
+body[data-page="staff"] .bb-cat-chevron svg,
+body[data-page="staff"] .bb-cat-panel-icon svg,
+body[data-page="staff"] .bb-cat-toggle-icon svg {
+  display:block;width:21px;height:21px;
+}
+body[data-page="staff"] .bb-cat-toggle-icon svg {width:19px;height:19px}
+body[data-page="staff"] .bb-cat-chevron svg {width:18px;height:18px}
+body[data-page="staff"] .bb-cat-advanced[open] .bb-cat-chevron {
+  transform:rotate(180deg);
+}
+body[data-page="staff"] .bb-cat-results {
+  margin-top:20px;padding:17px 2px 14px;
+  border-top:1px solid #e5edf6;
+  gap:12px;
+}
+body[data-page="staff"] .bb-cat-results #summary {
+  font-size:12.8px;line-height:1.5;color:#657b96;
+}
+body[data-page="staff"] .bb-cat-legend {
+  gap:16px;font-size:12.8px;line-height:1.5;color:#657b96;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid {
+  display:grid!important;
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  gap:15px!important;
+  width:100%;max-width:none;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card {
+  display:flex;flex-direction:column;
+  min-width:0;max-width:none;min-height:545px;
+  gap:9px;padding:13px;border-radius:12px;
+  border:1px solid #dce6f0;
+  background:#fff;box-shadow:0 2px 12px #0c366406;
+  font-size:15px;line-height:1.5;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__media {
+  align-self:stretch;display:flex;flex:0 0 auto;
+  justify-content:center;align-items:center;
+  min-width:0;width:100%;height:auto;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__cover-wrapper {
+  box-sizing:border-box;
+  width:min(100%,215px);
+  min-height:0;max-height:none;
+  margin:0 auto;aspect-ratio:2/3;
+  border-radius:5px;overflow:hidden;
+  box-shadow:0 3px 12px #142f5c22;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__content {
+  display:flex;flex:1;flex-direction:column;
+  align-items:stretch;gap:6px;
+  min-height:0;padding:0;
+  margin:0;background:transparent;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__title {
+  font-size:14.56px;line-height:1.35;min-height:2.3em;
+  font-weight:810;color:#112b51;margin:0;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__author {
+  font-size:12.96px;line-height:1.5;font-weight:400;
+  color:#6a7e97;margin:-3px 0 0;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-card-pages {
+  font-size:12px;line-height:1.5;color:#70829a;
+  margin:-3px 0 0;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__tags {
+  margin:0 0 10px;gap:5px;min-height:24px;
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__tag {
+  padding:4px 9px;border:1px solid var(--theme-pill-border);
+  border-radius:10px;font-size:11.2px;line-height:1.5;
+  font-weight:760;background:var(--theme-pill-bg);
+  color:var(--theme-pill-text);
+}
+body[data-page="staff"] .bb-catalog-v36 .book-card__status {
+  gap:7px;font-size:12.48px;line-height:1.5;
+  color:#536c87;margin-top:auto;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-card-actions {
+  gap:7px;margin-top:7px;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-card-actions button {
+  min-height:37px;font-size:12.48px;line-height:1.5;
+  font-weight:770;border-radius:9px;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-card-view {
+  background:#e7f0fb;border-color:#d4e1f0;color:#1c4b84;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-card-edit {
+  padding:8px 4px;color:#1b58a5;font-weight:740;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__title {
+  font-size:clamp(12px,1vw,16px);
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__label {
+  font-size:9px;
+}
+@media (min-width:1740px) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  }
+}
+@media (max-width:1260px) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  }
+}
+@media (max-width:980px) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  body[data-page="staff"] .bb-cat-search-row {
+    grid-template-columns:minmax(0,1fr);
+  }
+  body[data-page="staff"] .bb-cat-sort {
+    justify-content:space-between;
+  }
+  body[data-page="staff"] .bb-cat-sort select {
+    width:min(65%,290px);flex:0 1 auto;
+  }
+}
+@media (max-width:760px) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:10px!important;
+  }
+  body[data-page="staff"] .bb-catalog-v36 .book-card {
+    min-height:0;
+  }
+  body[data-page="staff"] .bb-catalog-v36 .book-card__cover-wrapper {
+    width:100%;max-width:none;
+  }
+  body[data-page="staff"] .bb-catalog-filter-panel {
+    padding:17px;
+  }
+}
+@media (max-width:520px) {
+  body[data-page="staff"] .bb-catalog-filter-panel {
+    padding:15px 14px;
+  }
+  body[data-page="staff"] .bb-catalog-v36 .book-card {
+    padding:9px;gap:7px;
+  }
+  body[data-page="staff"] .bb-catalog-v36 .book-card__title {
+    font-size:13.28px;line-height:1.35;
+  }
+  body[data-page="staff"] .bb-catalog-v36 .book-card__author {
+    font-size:12px;
+  }
+  body[data-page="staff"] .bb-cat-panel-header {gap:10px}
+  body[data-page="staff"] .bb-cat-panel-icon {
+    width:37px;height:37px;flex-basis:37px;
+  }
+}
+
+/* Approved title/subtitle share a single compact heading group. In the real
+   application they belong to adjacent legacy wrappers, so close that gap. */
+body[data-page="staff"] .teacher-overview__header:has(+ #staff-book-overview-content) {
+  margin-bottom:3px!important;
+}
+body[data-page="staff"] .teacher-overview__header:has(+ #staff-book-overview-content) #staff-catalog-title {
+  margin:0;font:800 17.28px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:#193e6b;
+}

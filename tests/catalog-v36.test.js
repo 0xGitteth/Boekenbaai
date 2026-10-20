@@ -65,6 +65,35 @@ assert.match(app,/contentThemes\.slice\(0, 2\)/,
 assert.match(app,/const filtered = filterBooks\(groupedBooks/,
   'Staff catalogue must filter the actual grouped collection');
 
+// Design acceptance contract based on the *last approved HTML*, not a new
+// interpretation of the design. Geometry is measured at browser widths
+// 1717/1440/1200/980/760/390 in the original interactive preview.
+const approvedCssMarker = 'Approved-catalogue parity: measured directly';
+assert.ok(css.includes(approvedCssMarker));
+assert.match(css,/\.bb-catalog-v36 #book-grid\s*\{[^}]*repeat\(5,minmax\(0,1fr\)\)/,
+  'At 1440 and 1717, the approved catalogue shows five books in a row');
+for (const [maxWidth,count] of [[1260,4],[980,3],[760,2]]) {
+  assert.ok(css.includes('@media (max-width:'+maxWidth+'px)') &&
+    css.includes('repeat('+count+',minmax(0,1fr))'),
+    maxWidth+' breakpoint preserves approved catalogue column count');
+}
+assert.match(css,/min-width:0;max-width:none;min-height:545px/,
+  'Cards use the approved desktop height, not stretched four-column tiles');
+assert.match(css,/width:min\(100%,215px\)/,
+  'Covers remain 2:3 and max 215px, like the approved desktop design');
+assert.match(css,/\.bb-catalog-filter-panel\s*\{[^}]*padding:22px/,
+  'Desktop filter padding comes from approved 22px measurement');
+assert.match(css,/\.bb-cat-advanced-toggle\s*\{[^}]*min-height:48px/,
+  'Closed filter switch must match the compact approved control');
+for (const label of ['bb-cat-panel-icon','bb-cat-toggle-icon','bb-cat-chevron']) {
+  assert.match(html,new RegExp('class="'+label+'"[^>]*>\\s*<svg'),
+    label+' uses the actual approved SVG icon instead of arbitrary glyphs');
+}
+assert.match(css,/#book-grid[^}]*repeat\(2,minmax\(0,1fr\)\)/,
+  'Mobile keeps two columns as in the approved HTML');
+assert.match(css,/\.book-card__cover-wrapper\s*\{[^}]*width:100%;max-width:none/,
+  'Narrow covers fill their true available frame with a correct 2:3 ratio');
+
 // Exercise the actual shared filtering source rather than reimplementing it.
 const start = app.indexOf('function resolveBookLanguages(');
 const end = app.indexOf('\nfunction sortBooks(',start);
