@@ -11,7 +11,7 @@ const css = file('catalog-v36.css');
 const approvedControlsCss = file('catalog-v38.css');
 // Contract for the EXACT approved, runnable HTML file rather than another
 // approximate modernization of the old staff catalogue.
-assert.match(html,/href="catalog-v38\\.css"/,
+assert.ok(html.includes('href="catalog-v38.css"'),
   'The approved controls must be loaded by the actual staff document');
 assert.ok(html.indexOf('catalog-v38.css') > html.indexOf('catalog-v37.css'),
   'Approved-control layer must take priority over the old card styling');
