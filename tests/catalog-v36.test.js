@@ -15,8 +15,16 @@ assert.match(css,/\.bb-cat-cover-placeholder\s*\{/,
   'Book cards without real covers need a designed metadata fallback');
 assert.match(css,/\.bb-cat-cover-placeholder\[hidden\]/,
   'The fallback must remain hidden while the real cover is loading or present');
-assert.match(app,/OMSLAG NIET BESCHIKBAAR/,
-  'The cover fallback must be explicit about the missing image');
+assert.match(app,/Geen originele omslag/,
+  'The cover fallback must be explicit that it is not the original cover');
+assert.match(app,/placeholderPalette = \[/,
+  'The palette should reproduce the approved visual prototype');
+assert.match(css,/\.bb-cat-cover-placeholder::before/,
+  'Fallback retains the approved cover curves');
+assert.match(css,/\.bb-cat-cover-placeholder__symbol/,
+  'Fallback uses a central decorative motif');
+assert.match(css,/linear-gradient\(165deg,var\(--bb-cover-top/,
+  'Full-colour placeholder preserves the approved cover visual density');
 assert.match(app,/coverFallback\.replaceChildren\(\)/,
   'The catalog fallback must use genuine title and author metadata');
 assert.match(teacherCss,/bb-v32-book-cover img\[hidden\][^{]*\{[^}]*display:none!important/,

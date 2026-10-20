@@ -231,10 +231,17 @@
         const appendFallback = () => {
           if (frame.querySelector('.bb-v32-cover-placeholder')) return;
           const fallback = make('span','bb-v32-cover-placeholder');
+          const sourceFallback = source.querySelector('.bb-cat-cover-placeholder');
+          for (const variable of ['--bb-cover-top','--bb-cover-bottom']) {
+            const color = sourceFallback?.style?.getPropertyValue(variable);
+            if (color) fallback.style?.setProperty?.(variable,color);
+          }
           fallback.append(
-            make('small','bb-v32-cover-note','OMSLAG NIET BESCHIKBAAR'),
+            make('small','bb-v32-cover-note','GEEN ORIGINELE OMSLAG'),
             make('strong','bb-v32-cover-title',title),
-            make('small','bb-v32-cover-author',author)
+            make('small','bb-v32-cover-author',author),
+            make('span','bb-v32-cover-symbol',
+              sourceFallback?.querySelector('.bb-cat-cover-placeholder__symbol')?.textContent || '✦')
           );
           frame.append(fallback);
         };

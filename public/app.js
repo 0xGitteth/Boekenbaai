@@ -2006,20 +2006,34 @@ function createBookCard(template, book, folders, options = {}) {
   if (coverFallback) {
     const fallbackInitial = (book.title || '').trim().charAt(0).toUpperCase();
     if (options.catalogLayout) {
-      // A missing cover is not a blank rectangle or a fictitious cover image.
-      // Use genuine title/author metadata for a clearly labelled placeholder.
+      // Copy the approved preview's visual placeholder language: rich
+      // two-tone cover, soft graphic curves, book metadata and a decorative
+      // symbol. This is explicitly marked as NOT the original book cover.
+      const placeholderPalette = [
+        ['#af83c8','#694a92'],['#258c75','#124753'],
+        ['#e4a771','#ae4c4d'],['#2c9197','#0b435d'],
+        ['#7da8d8','#426c9a'],['#3885b8','#16346b'],
+        ['#616fa8','#222c55'],['#8f97ac','#313e59'],
+      ];
+      const placeholderSymbols = ['✦','✿','✧','✺','❖','✳','✷','◆'];
+      const identifier = String(book.id || book.title || '');
+      let hash = 0;
+      for (let n = 0; n < identifier.length; n += 1) {
+        hash = ((hash << 5) - hash + identifier.charCodeAt(n)) | 0;
+      }
+      const paletteIndex = (hash >>> 0) % placeholderPalette.length;
       coverFallback.classList.add('bb-cat-cover-placeholder');
       coverFallback.replaceChildren();
-      appendTextElement(coverFallback, 'span', 'OMSLAG NIET BESCHIKBAAR',
-        { className: 'bb-cat-cover-placeholder__label' });
-      appendTextElement(coverFallback, 'strong', book.title || 'Titel onbekend',
-        { className: 'bb-cat-cover-placeholder__title' });
       appendTextElement(coverFallback, 'span', book.author || 'Auteur onbekend',
         { className: 'bb-cat-cover-placeholder__author' });
-      const theme = (book.themes || [])[0] || book.title || '';
-      const colors = resolveCatalogThemeColors(theme);
-      coverFallback.style.setProperty('--bb-cover-tint', colors.background);
-      coverFallback.style.setProperty('--bb-cover-accent', colors.dot);
+      appendTextElement(coverFallback, 'span', 'Geen originele omslag',
+        { className: 'bb-cat-cover-placeholder__label' });
+      appendTextElement(coverFallback, 'span', placeholderSymbols[paletteIndex],
+        { className: 'bb-cat-cover-placeholder__symbol', 'aria-hidden': 'true' });
+      appendTextElement(coverFallback, 'strong', book.title || 'Titel onbekend',
+        { className: 'bb-cat-cover-placeholder__title' });
+      coverFallback.style.setProperty('--bb-cover-top', placeholderPalette[paletteIndex][0]);
+      coverFallback.style.setProperty('--bb-cover-bottom', placeholderPalette[paletteIndex][1]);
     } else {
       coverFallback.textContent = fallbackInitial || '📚';
     }
