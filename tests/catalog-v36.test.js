@@ -7,6 +7,32 @@ const file = name => fs.readFileSync(path.join(__dirname,'../public',name),'utf8
 const html = file('staff.html');
 const app = file('app.js');
 const css = file('catalog-v36.css');
+
+const coverFirstCss = file('catalog-v37.css');
+assert.ok(html.includes('href="catalog-v37.css"') &&
+  html.indexOf('catalog-v37.css') > html.indexOf('catalog-v36.css'),
+  'The cover-first style sheet must load after all previous catalogue geometry');
+assert.match(coverFirstCss,/\.bb-catalog-v36 \.book-card\s*\{[^}]*padding:0;[^}]*background:transparent;[^}]*border:0;/,
+  'Book artwork must no longer be enclosed in an inset white card');
+assert.match(coverFirstCss,/\.bb-catalog-v36 \.book-card__cover-wrapper\s*\{[^}]*width:100%!important;[^}]*max-width:none!important;/,
+  'Book cover fills its entire grid column and stays 2:3');
+assert.match(coverFirstCss,/aspect-ratio:2 \/ 3;/,
+  'Real and illustrated covers retain the agreed 2:3 ratio');
+assert.match(coverFirstCss,/\.book-card__content\s*\{[^}]*padding:15px 0 0;/,
+  'Book metadata aligns directly below the cover with no inset white strip');
+assert.match(coverFirstCss,/\.book-card__title\s*\{[^}]*font-size:17px;/,
+  'Titles are restored to the more legible approved scale');
+assert.match(coverFirstCss,/\.bb-cat-card-actions button\s*\{[^}]*min-height:44px;[^}]*font-size:14px;/,
+  'Book actions must be visibly larger without changing their handlers');
+assert.match(coverFirstCss,/body\.bb-admin-v31\.bb-v32-active \.hero\.hero--staff[^}]*height: 75px;/,
+  'Beheer and Docent mastheads must share the larger desktop height');
+assert.match(coverFirstCss,/\.admin-modern__tab[^}]*font-size: 14\.5px;/,
+  'Top navigation tab labels must be larger and readable');
+assert.match(coverFirstCss,/@media \(max-width: 760px\)/,
+  'Mobile keeps its own card and touch-target rules');
+assert.doesNotMatch(coverFirstCss,/repeat\(6,minmax\(0,1fr\)\)/,
+  'Do not accidentally reintroduce the disapproved six-column layout');
+
 const teacherCss = file('uiux-v32.css');
 const dashboardJs = file('uiux-v32.js');
 assert.match(css,/bb-cat-search-field input#search-input[^}]*border:0!important/,
