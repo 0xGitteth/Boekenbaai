@@ -435,3 +435,58 @@ body[data-page="staff"] .teacher-overview__header:has(+ #staff-book-overview-con
   margin:0;font:800 17.28px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
   color:#193e6b;
 }
+
+/* The approved prototype's cover construction, for titles without real cover
+   artwork. This is a designed, plainly labelled placeholder, not a fake scan.
+   The genuine image always takes precedence when present. */
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder{
+  position:absolute;inset:0;
+  isolation:isolate;
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  padding:14px 12px 15px;gap:0;
+  border:0;border-radius:5px;
+  background:linear-gradient(165deg,var(--bb-cover-top,#7da8d8),var(--bb-cover-bottom,#426c9a));
+  color:#fff;text-align:center;box-shadow:none;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder::before{
+  content:"";pointer-events:none;position:absolute;z-index:-1;
+  inset:14% -20% auto;aspect-ratio:1;
+  background:#ffffff1d;transform:rotate(-18deg);border-radius:30% 60% 20% 45%;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder::after{
+  content:"";pointer-events:none;position:absolute;z-index:-1;
+  inset:auto -40% -28% 15%;height:60%;border-radius:50%;background:#ffffff0d;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__author{
+  display:-webkit-box;max-width:100%;overflow:hidden;-webkit-box-orient:vertical;
+  -webkit-line-clamp:2;overflow-wrap:anywhere;
+  font:780 clamp(10px,.79vw,12px)/1.28 system-ui,sans-serif;
+  text-transform:uppercase;letter-spacing:.06em;color:#fff;
+  text-shadow:0 1px 3px #0003;opacity:.96;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__label{
+  position:absolute;top:31px;left:50%;transform:translateX(-50%);
+  display:block;max-width:92%;padding:3px 6px;border-radius:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  text-transform:uppercase;letter-spacing:.04em;
+  font:730 8px/1.25 system-ui,sans-serif;
+  color:#fff;background:#0004;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__symbol{
+  display:grid;place-items:center;flex:1;min-height:0;width:100%;
+  font:750 clamp(40px,4.3vw,68px)/1 system-ui,sans-serif;
+  color:#fff;text-shadow:0 3px 10px #0002;
+}
+body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__title{
+  display:-webkit-box;max-width:100%;overflow:hidden;
+  -webkit-box-orient:vertical;-webkit-line-clamp:4;overflow-wrap:anywhere;
+  font:850 clamp(14px,1.14vw,18px)/1.18 system-ui,sans-serif;
+  color:#fff;text-shadow:0 1px 4px #0004;
+}
+@media(max-width:520px) {
+  body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder{padding:10px 7px 10px}
+  body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__author{font-size:9px}
+  body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__label{top:24px;font-size:7px}
+  body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__symbol{font-size:34px}
+  body[data-page="staff"] .bb-catalog-v36 .bb-cat-cover-placeholder__title{font-size:12px}
+}
