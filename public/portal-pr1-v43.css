@@ -137,6 +137,9 @@ body[data-page="student"] .bb-student-nav-symbol {
   line-height:1;
   color:inherit;
 }
+body[data-page="student"] .bb-student-nav-symbol svg {display:block;width:17px;height:17px}
+body[data-page="student"] .bb-student-login-person svg {display:block;width:27px;height:27px}
+body[data-page="student"] .bb-student-preview-icon svg {display:block;width:24px;height:24px}
 body[data-page="student"] .bb-student-nav-button.is-active,
 body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab--active,
 body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav--active {
