@@ -56,7 +56,7 @@
                     <input id="search-input" type="search" aria-label="Zoek op titel, auteur of trefwoord" autocomplete="off" placeholder="Zoek op titel, auteur of trefwoord…" />
                   </label>
                   <button type="button" id="student-filter-toggle" class="bb-student-filter-button" aria-expanded="false" aria-controls="bb-cat-advanced">
-                    <span aria-hidden="true">☷</span> Filters tonen
+                    <span aria-hidden="true">☷</span> <span id="student-filter-label">Filters tonen</span>
                     <span id="bb-cat-filter-caption" class="bb-student-filter-count" aria-live="polite"></span>
                   </button>
                   <button type="button" id="student-help-choose" class="bb-student-choose-button" disabled aria-describedby="student-help-choose-note">
@@ -67,6 +67,7 @@
                 </div>
                 <details class="bb-cat-advanced" id="bb-cat-advanced">
                   <summary class="bb-cat-advanced-toggle" hidden>Filters tonen</summary>
+                  <div class="bb-student-filter-actions"><button type="button" class="bb-cat-reset" id="bb-cat-reset">Alles wissen</button></div>
                   <div class="bb-cat-advanced-content">
                     <div class="bb-cat-themes">
                       <h5>Thema’s <span>Meest voorkomende eerst · meerdere mogelijk</span></h5>
