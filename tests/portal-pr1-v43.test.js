@@ -75,4 +75,22 @@ assert.match(css, /@media\(forced-colors:active\)/);
 assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
 assert.match(studentCss, /SOURCE portal-unified-v41\.css: final green border/);
 assert.match(src, /Makkelijk Lezen/);
+
+// Codex P2 regressions: the staff mobile header and drawer are DIFFERENT
+// environments from the desktop header; the student name dropdown must not clip.
+assert.match(css, /#bb-admin-v31-sidebar\.bb-v32-top-nav \.admin-modern__tab:not\(\.admin-modern__tab--active\)/);
+assert.match(css, /#bb-teacher-v31-sidebar\.bb-v32-top-nav \.bb-teacher-v31-nav:not\(\.bb-teacher-v31-nav--active\)/);
+assert.match(css, /color:#263e62!important;/,
+  'Mobile staff drawer retains readable dark inactive text');
+assert.match(css, /min-height:44px!important;\s*height:auto!important;\s*padding:10px 13px!important;/,
+  'Mobile drawer navigation keeps readable, tappable button sizes');
+assert.match(css, /@media \(max-width:480px\) \{[\s\S]*?body\[data-page="staff"\]\.bb-v32-active \.hero\.hero--staff \{[\s\S]*?padding:0 8px!important;/,
+  'Small staff header must shrink its horizontal padding');
+assert.match(css, /flex:0 1 72px!important;[\s\S]*?width:72px!important;/,
+  'School logo shrinks for phones instead of forcing controls offscreen');
+assert.match(css, /body\[data-page="student"\] #student-login-panel\.bb-student-login-card \{\s*overflow:visible;/,
+  'Login autocomplete must not clip at the card edge');
+assert.match(css, /body\[data-page="student"\] \.bb-student-login-art \{\s*overflow:hidden;/,
+  'Only the decorative illustration is clipped');
+
 console.log('PR1: shared header, compact student controls, safe auth, double hover & larger exam bookmark OK.');
