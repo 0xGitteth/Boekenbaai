@@ -3448,8 +3448,7 @@ function initStudentPage() {
     if (summary) {
       summary.replaceChildren();
       appendTextElement(summary, 'strong', String(filtered.length));
-      summary.append(document.createTextNode(' van ' + groupedBooks.length +
-        ' titels · beschikbaarheid per exemplaar'));
+      summary.append(document.createTextNode(' van ' + groupedBooks.length + ' titels'));
     }
     const activeCount = selectedThemeKeys.size + Number(Boolean(query.trim())) +
       Number(onlyExamList) + Number(onlyEasyReading) + Number(Boolean(selectedLanguage)) +
