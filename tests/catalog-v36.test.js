@@ -11,6 +11,42 @@ const css = file('catalog-v36.css');
 const approvedControlsCss = file('catalog-v38.css');
 
 const defaultZoomCss = file('catalog-v39.css');
+
+// Final book-cover spacing and subtle hover/focus pass (post-PR #316).
+const finalCoverCss = file('catalog-v40.css');
+assert.ok(html.includes('href="catalog-v40.css"') &&
+  html.indexOf('catalog-v40.css') > html.indexOf('catalog-v39.css'),
+  'Final cover adjustments must load after the existing 100%-zoom layer');
+assert.match(finalCoverCss,/#book-grid > \.book-card\s*\{[^}]*justify-self:center;/,
+  'Cover and metadata must stay centered together, without a white card');
+assert.match(finalCoverCss,/@media \(min-width:761px\)[\s\S]*?column-gap:24px!important;[\s\S]*?width:94%;/,
+  'Desktop cards become slightly narrower, with wider real grid gaps');
+assert.match(finalCoverCss,/@media \(max-width:760px\)[\s\S]*?column-gap:13px!important;[\s\S]*?width:96%;/,
+  'Mobile still keeps its two-column layout and comfortable touch targets');
+assert.match(finalCoverCss,/@media \(max-width:410px\)/,
+  'Narrow mobile screens have their own gap');
+assert.match(finalCoverCss,/\(hover:hover\) and \(pointer:fine\)[\s\S]*?\.book-card:hover \.book-card__cover-wrapper/,
+  'Only the cover receives subtle hover feedback on hover-capable devices');
+assert.match(finalCoverCss,/\.book-card:focus-visible \.book-card__cover-wrapper/,
+  'Card keyboard focus must remain clearly visible on its cover');
+assert.match(finalCoverCss,/\.book-card:focus-within:not\(:focus-visible\) \.book-card__cover-wrapper/,
+  'Keyboard focus on an inner action must also have a visual cue');
+assert.match(finalCoverCss,/@media \(prefers-reduced-motion:reduce\)/,
+  'Animation must respect reduced-motion preferences');
+assert.match(finalCoverCss,
+  /@media \(forced-colors:active\)\s*\{[\s\S]*?\.book-card:focus-visible\s*\{[^}]*outline:3px solid Highlight;[^}]*outline-offset:5px;/,
+  'High-contrast modes need a real system-color keyboard focus outline');
+assert.match(finalCoverCss,
+  /@media \(forced-colors:active\)[\s\S]*?\.book-card:focus-within:not\(:focus-visible\) \.book-card__cover-wrapper\s*\{[^}]*outline:2px solid Highlight;/,
+  'Focused action buttons need a high-contrast visible outline too');
+assert.doesNotMatch(finalCoverCss.replace(/\/\*[\s\S]*?\*\//g,''),/\bzoom\s*:|transform\s*:\s*scale\s*\(/,
+  'The final adjustment must never scale the page or the art');
+assert.match(app,/card\.tabIndex = 0;/,'Existing cards remain keyboard focusable');
+assert.match(app,/event\.key === 'Enter' \|\| event\.key === ' '/,
+  'Existing Enter/Space activation remains unchanged');
+assert.match(file('catalog-v37.css'),/\.bb-catalog-v36 \.book-card\s*\{[^}]*padding:0;[^}]*background:transparent;[^}]*border:0;/,
+  'The existing card remains borderless and transparent, without white panels');
+
 // Comfortable real CSS dimensions at 100% browser zoom; no CSS scaling tricks.
 assert.ok(html.includes('href="catalog-v39.css"') &&
   html.indexOf('catalog-v39.css') > html.indexOf('catalog-v38.css'),
