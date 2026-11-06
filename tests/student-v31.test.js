@@ -61,6 +61,13 @@ assert.match(css,/@media \(forced-colors:active\)/);
 assert.match(css,/@media \(prefers-reduced-motion:reduce\)/);
 
 assert.match(app,/function showStudentPage\(page, \{ focus = false \} = \{\}\)/);
+assert.match(app,/showStudentPage\(studentRedirectState \|\| window\.location\.hash === '#mijn-profiel'/,
+  'All Google redirect states, including link pending and login errors, reopen the profile');
+assert.match(app,/studentSidebar\.inert = window\.innerWidth <= 760;/,
+  'Offscreen mobile navigation must not be focusable');
+assert.match(app,/studentSidebar\.inert = !open && window\.innerWidth <= 760;/,
+  'Opened mobile navigation must regain keyboard access');
+
 assert.match(app,/activitySection\?\.classList\.toggle\('hidden', !loggedIn\)/);
 assert.match(app,/studentProfileAccount\?\.classList\.toggle\('hidden', !loggedIn\)/);
 assert.match(app,/const endpoint = \x60\/api\/students\/\$\{authUser\.id\}\/loans\x60;/,
