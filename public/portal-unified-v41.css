@@ -25,7 +25,7 @@ body[data-page="staff"] .bb-login-school-emblem {
   height:45px;
   background-image:url("logo/het-dok-logo.svg");
   background-repeat:no-repeat;
-  background-size:140px 45px;
+  background-size:132px 43px;
   background-position:left center;
 }
 body[data-page="student"] .bb-student-context {
@@ -398,7 +398,7 @@ body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-edit:hover {
 }
 @media (max-width:760px) {
   body[data-page="student"] .bb-student-school-brand {gap:4px;font-size:16px}
-  body[data-page="student"] .bb-student-school-emblem {flex-basis:31px;width:31px;height:36px;background-size:112px 36px}
+  body[data-page="student"] .bb-student-school-emblem {flex-basis:31px;width:31px;height:36px;background-size:105px 34px}
   body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {
     height:63px;min-height:63px;flex-basis:63px;padding:0 14px;
   }
@@ -415,12 +415,12 @@ body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-edit:hover {
 }
 @media (max-width:470px) {
   body[data-page="student"] .bb-student-school-brand {font-size:13px;gap:2px}
-  body[data-page="student"] .bb-student-school-emblem {flex-basis:25px;width:25px;height:29px;background-size:90px 29px}
+  body[data-page="student"] .bb-student-school-emblem {flex-basis:25px;width:25px;height:29px;background-size:83px 27px}
   body[data-page="staff"] .bb-login-site-brand {gap:11px}
   body[data-page="staff"] .bb-login-wordmark {font-size:15px;gap:6px}
   body[data-page="staff"] .bb-login-book-symbol {flex-basis:32px;width:32px;height:32px;background-size:23px}
   body[data-page="staff"] .bb-login-school-brand {gap:4px;font-size:14px}
-  body[data-page="staff"] .bb-login-school-emblem {flex-basis:30px;width:30px;height:34px;background-size:105px 34px}
+  body[data-page="staff"] .bb-login-school-emblem {flex-basis:30px;width:30px;height:34px;background-size:99px 33px}
 }
 @media (prefers-reduced-motion:reduce) {
   body[data-page="student"] #book-grid > .book-card,
