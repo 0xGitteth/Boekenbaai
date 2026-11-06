@@ -34,10 +34,10 @@ assert.match(finalCoverCss,/\.book-card:focus-within:not\(:focus-visible\) \.boo
 assert.match(finalCoverCss,/@media \(prefers-reduced-motion:reduce\)/,
   'Animation must respect reduced-motion preferences');
 assert.match(finalCoverCss,
-  /@media \\(forced-colors:active\\)\\s*\\{[\\s\\S]*?\\.book-card:focus-visible\\s*\\{[^}]*outline:3px solid Highlight;[^}]*outline-offset:5px;/,
+  /@media \(forced-colors:active\)\s*\{[\s\S]*?\.book-card:focus-visible\s*\{[^}]*outline:3px solid Highlight;[^}]*outline-offset:5px;/,
   'High-contrast modes need a real system-color keyboard focus outline');
 assert.match(finalCoverCss,
-  /@media \\(forced-colors:active\\)[\\s\\S]*?\\.book-card:focus-within:not\\(:focus-visible\\) \\.book-card__cover-wrapper\\s*\\{[^}]*outline:2px solid Highlight;/,
+  /@media \(forced-colors:active\)[\s\S]*?\.book-card:focus-within:not\(:focus-visible\) \.book-card__cover-wrapper\s*\{[^}]*outline:2px solid Highlight;/,
   'Focused action buttons need a high-contrast visible outline too');
 assert.doesNotMatch(finalCoverCss.replace(/\/\*[\s\S]*?\*\//g,''),/\bzoom\s*:|transform\s*:\s*scale\s*\(/,
   'The final adjustment must never scale the page or the art');
