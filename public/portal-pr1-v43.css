@@ -632,3 +632,117 @@ body[data-page="student"] .bb-student-preview-item > span:last-child {font-size:
   body[data-page="student"] #student-collection #book-grid > .book-card:focus-visible,
   body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card:focus-visible {outline:3px solid Highlight!important}
 }
+
+
+/* Codex P2: the genuine staff navigation becomes a WHITE sliding drawer on
+   mobile. Keep dark inactive text and full-size, keyboard-usable row buttons.
+   Desktop header pills retain their light labels. */
+@media (max-width:760px) {
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav {
+    box-sizing:border-box;
+    width:100%;
+    min-height:44px!important;
+    height:auto!important;
+    padding:10px 13px!important;
+    justify-content:flex-start;
+    white-space:normal;
+    text-align:left;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab:not(.admin-modern__tab--active),
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav:not(.bb-teacher-v31-nav--active) {
+    color:#263e62!important;
+    background:transparent!important;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab:not(.admin-modern__tab--active):hover,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav:not(.bb-teacher-v31-nav--active):hover {
+    color:#174477!important;
+    background:#eaf1fb!important;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab--active,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav--active {
+    background:#23599f!important;
+    color:#fff!important;
+  }
+
+  /* Do not let the 132px desktop schoolmark and 28px page padding force
+     the logged-in staff menu, account and logout off narrow screens. */
+  body[data-page="staff"].bb-v32-active .hero.hero--staff {
+    height:64px!important;
+    min-height:64px!important;
+    padding:0 12px!important;
+    gap:7px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content {min-width:0;}
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1 {
+    font-size:15px!important;
+    gap:7px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before {
+    flex-basis:29px!important;width:29px!important;height:29px!important;
+    background-size:21px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__illustration {
+    flex:0 1 98px!important;
+    width:98px!important;
+    min-width:58px;
+    height:34px!important;
+    margin:0 0 0 2px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__logo {
+    display:block;
+    width:100%!important;height:100%!important;max-height:100%!important;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {
+    padding:0 12px!important;
+  }
+}
+@media (max-width:480px) {
+  body[data-page="staff"].bb-v32-active .hero.hero--staff {
+    padding:0 8px!important;
+    gap:5px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1 {
+    font-size:13px!important;gap:6px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before {
+    flex-basis:26px!important;width:26px!important;height:26px!important;
+    background-size:19px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__illustration {
+    flex:0 1 72px!important;
+    width:72px!important;
+    min-width:0;
+    height:27px!important;
+    margin-left:0!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff #logout-button {
+    min-height:34px!important;
+    padding:6px 8px!important;
+    font-size:11px!important;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {padding:0 10px!important}
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-site-brand {gap:11px!important}
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-wordmark {font-size:15px!important;gap:7px!important}
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-book-symbol {
+    width:30px!important;height:30px!important;flex-basis:30px!important;background-size:21px!important;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-school-brand,
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-school-brand img {
+    width:98px!important;height:34px!important;flex:0 0 98px!important;
+  }
+}
+
+/* Codex P2: existing name autocomplete is absolutely positioned, often
+   below a password field hidden by Google auth. It must not be clipped. */
+body[data-page="student"] #student-login-panel.bb-student-login-card {
+  overflow:visible;
+}
+body[data-page="student"] #student-login-panel .bb-student-login-primary {
+  position:relative;
+  z-index:2;
+}
+body[data-page="student"] .bb-student-login-art {
+  overflow:hidden;
+  border-radius:0 20px 20px 0;
+}
