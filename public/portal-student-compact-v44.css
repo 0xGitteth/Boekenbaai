@@ -1,0 +1,361 @@
+/*
+ * PR #323: bring the real student catalogue toolbar in line with the
+ * approved compact two-row example; fix header nav unexpectedly reverting
+ * to the legacy grid. These overrides deliberately outscore student-v31.css
+ * and later-injected production styles. Staff catalog and loan logic unchanged.
+ */
+
+/* Header: the old .bb-student-nav was grid + 100%-wide sidebar buttons.
+   That is why the live desktop header stacked both destinations vertically. */
+body[data-page="student"] header.bb-student-sitebar.bb-shared-sitebar {
+  display:flex!important;
+  flex-flow:row nowrap!important;
+  align-items:center!important;
+  min-height:64px!important;
+  height:64px!important;
+  gap:13px!important;
+  overflow:visible!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav {
+  display:flex!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
+  grid-template-columns:none!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:7px!important;
+  flex:1 1 auto!important;
+  width:auto!important;
+  min-width:0!important;
+  height:100%!important;
+  min-height:0!important;
+  align-self:center!important;
+  padding:0!important;
+  margin:0 clamp(12px,2.5vw,42px)!important;
+  background:transparent!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav .bb-student-nav-button {
+  display:inline-flex!important;
+  flex:0 0 auto!important;
+  align-items:center!important;
+  justify-content:center!important;
+  width:auto!important;
+  height:38px!important;
+  min-height:38px!important;
+  margin:0!important;
+  padding:0 13px!important;
+  color:#f4f8ff!important;
+  background:transparent!important;
+  border:1px solid transparent!important;
+  border-radius:9px!important;
+  font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  white-space:nowrap!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav .bb-student-nav-button.is-active,
+body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav .bb-student-nav-button.is-active:hover {
+  background:#23599f!important;
+  border-color:#2a65aa!important;
+  color:#fff!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav .bb-student-nav-button:not(.is-active):hover {
+  color:#fff!important;
+  background:#ffffff24!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav .bb-student-nav-button:focus-visible {
+  outline:3px solid #a9d0ff!important;
+  outline-offset:2px;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-sitebar-spacer {
+  display:none!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-brand-text {
+  position:relative;
+  top:3px!important;
+  line-height:1!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-shared-school-logo {
+  display:block!important;
+  width:132px!important;
+  height:43px!important;
+  flex:0 0 132px!important;
+  align-self:center!important;
+  object-fit:contain!important;
+  margin:0 0 0 8px!important;
+}
+body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark {
+  display:inline-flex!important;
+  align-items:center!important;
+  flex:0 0 auto!important;
+  margin:0!important;
+  font:800 19px/1 system-ui,-apple-system,"Segoe UI",sans-serif!important;
+}
+
+/* The search, filter toggle, choose button, count and legend belong in
+   ONE quiet bordered surface. The scan action is its own adjacent button. */
+body[data-page="student"] #student-collection > h2.visually-hidden {
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  overflow:hidden!important;
+  clip:rect(0,0,0,0)!important;
+  white-space:nowrap!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout {
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  gap:12px!important;
+  align-items:start!important;
+  margin:0 0 16px!important;
+  width:100%;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout > .bb-student-compact-filters {
+  display:block!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:14px 16px 12px!important;
+  border:1px solid #d6e2f0!important;
+  border-radius:14px!important;
+  background:#fff!important;
+  box-shadow:none!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-search-row {
+  display:grid!important;
+  grid-template-columns:minmax(190px,1fr) auto auto!important;
+  gap:9px!important;
+  align-items:center!important;
+  width:100%!important;
+  margin:0!important;
+  padding:0!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-search-field {
+  display:flex!important;
+  min-width:0!important;
+  height:44px!important;
+  border:1px solid #cfdef0!important;
+  border-radius:24px!important;
+  background:#fff!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #search-input {
+  min-width:0!important;
+  min-height:40px!important;
+  border:0!important;
+  outline-offset:3px;
+  border-radius:22px!important;
+  font-size:14px!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-filter-button {
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:7px!important;
+  height:44px!important;
+  min-height:44px!important;
+  margin:0!important;
+  padding:0 10px!important;
+  border:1px solid transparent!important;
+  border-radius:10px!important;
+  background:transparent!important;
+  color:#23476f!important;
+  box-shadow:none!important;
+  white-space:nowrap!important;
+  cursor:pointer!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-filter-button:hover {
+  background:#edf4fc!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-choose-button {
+  height:44px!important;
+  min-height:44px!important;
+  padding:0 13px!important;
+  border-radius:11px!important;
+  color:#184a83!important;
+  background:#e9f3ff!important;
+  border:1px solid #c7dcf7!important;
+  box-shadow:0 2px 7px #22457412!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-results {
+  display:flex!important;
+  justify-content:space-between!important;
+  align-items:center!important;
+  flex-wrap:wrap!important;
+  gap:7px 16px!important;
+  margin:12px 0 0!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-results #summary {
+  display:block!important;
+  flex:0 1 auto!important;
+  width:auto!important;
+  max-width:100%!important;
+  min-width:0!important;
+  padding:0!important;
+  margin:0!important;
+  color:#647b98!important;
+  font-size:12px!important;
+  line-height:1.4!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-results .bb-cat-legend {
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  gap:14px!important;
+  margin:0!important;
+  font-size:12px!important;
+  color:#536b89!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout > #student-scan-open {
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  align-self:start!important;
+  width:auto!important;
+  min-width:132px!important;
+  min-height:44px!important;
+  height:44px!important;
+  margin:14px 0 0!important;
+  padding:0 14px!important;
+  border:1px solid #102f64!important;
+  border-radius:11px!important;
+  background:#102f64!important;
+  color:#fff!important;
+  font:750 12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  white-space:nowrap!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout > #student-scan-open:hover {
+  background:#214a85!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced[open] {
+  margin-top:13px!important;
+  padding-top:11px!important;
+  border-top:1px solid #d9e5f2!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-sort-row {
+  display:none!important;
+  justify-content:flex-end;
+  align-items:center;
+  width:100%;
+  padding:10px 0 0;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced[open] + .bb-student-sort-row {
+  display:flex!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-sort-row .bb-cat-sort {
+  display:flex!important;
+  align-items:center!important;
+  gap:9px!important;
+  min-width:0;
+  color:#365a80;
+  font-size:12px;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-sort-row select {
+  min-height:39px!important;
+  max-width:240px;
+  border:1px solid #ceddf0;
+  border-radius:8px;
+  color:#173b67;
+  background:#fff;
+}
+body[data-page="student"] #student-collection .bb-student-scan-panel {
+  width:100%;
+  box-sizing:border-box;
+  margin:0 0 14px!important;
+}
+body[data-page="student"] #student-collection #book-grid {
+  margin-top:0!important;
+}
+
+/* Keep the controls in a single horizontal row on desktop, and let the
+   separate scan button move down before any field becomes cramped. */
+@media(max-width:1100px) {
+  body[data-page="student"] #student-collection .bb-student-discovery-layout {
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout > #student-scan-open {
+    justify-self:end!important;
+    margin:0!important;
+  }
+}
+@media(max-width:1040px) {
+  body[data-page="student"] header.bb-student-sitebar.bb-shared-sitebar {
+    flex-wrap:wrap!important;
+    height:auto!important;
+    min-height:64px!important;
+    row-gap:0!important;
+    padding-top:8px!important;
+    padding-bottom:7px!important;
+  }
+  body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav {
+    order:10!important;
+    flex:0 0 100%!important;
+    height:41px!important;
+    margin:6px 0 0!important;
+    justify-content:center!important;
+  }
+}
+@media(max-width:760px) {
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-search-row {
+    grid-template-columns:minmax(0,1fr) auto!important;
+    gap:8px!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-search-field {
+    grid-column:1/-1!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-filter-button {
+    grid-column:1!important;
+    justify-self:start!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-choose-button {
+    grid-column:2!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-results .bb-cat-legend {
+    justify-content:flex-start!important;
+  }
+}
+@media(max-width:650px) {
+  body[data-page="student"] header.bb-student-sitebar.bb-shared-sitebar {
+    padding:8px 12px 6px!important;
+    gap:8px!important;
+  }
+  body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark {
+    font-size:16px!important;
+    gap:7px!important;
+  }
+  body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark-icon {
+    width:30px!important;height:30px!important;flex-basis:30px!important;
+    background-size:21px!important;
+  }
+  body[data-page="student"] header.bb-student-sitebar .bb-shared-school-logo {
+    flex-basis:96px!important;width:96px!important;height:33px!important;margin:0!important;
+  }
+  body[data-page="student"] header.bb-student-sitebar .bb-student-brand-text {top:2px!important}
+  body[data-page="student"] #student-collection .bb-student-discovery-layout > .bb-student-compact-filters {
+    padding:12px!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-results {
+    align-items:flex-start!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-cat-results #summary {
+    flex:1 1 100%!important;
+  }
+}
+@media(max-width:400px) {
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-choose-button {
+    padding:0 8px!important;
+    font-size:11px!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-choose-button small {
+    padding:2px 4px!important;
+    font-size:9px!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-filter-button {
+    padding:0 7px!important;
+    font-size:11px!important;
+  }
+}
+@media(prefers-reduced-motion:reduce) {
+  body[data-page="student"] header.bb-student-sitebar .bb-student-nav-button {
+    transition:none!important;
+  }
+}
