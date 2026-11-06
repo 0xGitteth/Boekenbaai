@@ -3070,7 +3070,11 @@ function initStudentPage() {
     scanOpen?.focus();
   });
   const studentRedirectState = new URLSearchParams(window.location.search).get('googleAuth');
-  showStudentPage(studentRedirectState === 'success' || window.location.hash === '#mijn-profiel'
+  // Google callbacks can return success, a pending school-account link, or
+  // an error requiring the learner to choose their account again. Keep ALL
+  // of those states visible inside Mijn profiel rather than hiding the
+  // Google-generated explanation behind the public catalogue.
+  showStudentPage(studentRedirectState || window.location.hash === '#mijn-profiel'
     ? 'profile' : 'library');
 
   let folders = [];
