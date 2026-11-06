@@ -2991,15 +2991,21 @@ function initStudentPage() {
   const activitySubtitle = document.querySelector('#student-activity-subtitle');
   const logoutButton = document.querySelector('#student-logout');
   const searchInput = document.querySelector('#search-input');
-  const sortSelect = document.querySelector('#book-sort-select');
-  const languageSelect = document.querySelector('#book-language-select');
-  const pageRangeInput = document.querySelector('#book-page-range');
-  const pageRangeLabel = document.querySelector('#book-page-range-label');
-  const pageRangeReset = document.querySelector('#book-page-range-reset');
-  const availabilitySelect = document.querySelector('#book-availability-select');
+  const sortSelect = document.querySelector('#staff-book-sort-select');
+  const languageSelect = document.querySelector('#bb-cat-language');
+  const pageRangeInput = document.querySelector('#bb-cat-page-range');
+  const pageRangeLabel = document.querySelector('#bb-cat-page-output');
+  const pageRangeReset = document.querySelector('#bb-cat-page-reset');
+  const availabilitySelect = document.querySelector('#bb-cat-availability');
   const summary = document.querySelector('#summary');
   const bookGrid = document.querySelector('#book-grid');
   const themeFilterPills = document.querySelector('#theme-filter-pills');
+  const catalogAdvanced = document.querySelector('#bb-cat-advanced');
+  const catalogFilterCaption = document.querySelector('#bb-cat-filter-caption');
+  const catalogReset = document.querySelector('#bb-cat-reset');
+  const catalogUnknown = document.querySelector('#bb-cat-unknown');
+  const catalogEasy = document.querySelector('#bb-cat-easy');
+  const catalogExam = document.querySelector('#bb-cat-exam');
   const barcodeInput = document.querySelector('#barcode-input');
   const lookupButton = document.querySelector('#lookup-button');
   const bookResult = document.querySelector('#book-result');
@@ -3401,18 +3407,22 @@ function initStudentPage() {
       pageRangeLabel.textContent = formatPageFilterLabel(selectedPageLimit, max);
     }
     pageRangeReset?.classList.toggle('hidden', !hasActiveLimit);
+    if (catalogUnknown) {
+      catalogUnknown.disabled = !hasActiveLimit;
+      if (!hasActiveLimit) catalogUnknown.checked = false;
+    }
+    if (catalogExam) catalogExam.checked = Boolean(onlyExamList);
+    if (catalogEasy) catalogEasy.checked = Boolean(onlyEasyReading);
   }
 
   function updatePageFilterRange() {
     if (!pageRangeInput) return;
-    const nextMax = computePageFilterMax(groupedBooks);
-    currentPageFilterMax = nextMax;
-    pageRangeInput.max = String(nextMax);
-    pageRangeInput.min = '0';
-    pageRangeInput.step = nextMax <= 300 ? '5' : '10';
-    if (!Number.isFinite(selectedPageLimit) || selectedPageLimit <= 0 || selectedPageLimit >= nextMax) {
-      selectedPageLimit = 0;
-    }
+    // Exact staff catalogue page slider: the rightmost 650 means no limit.
+    currentPageFilterMax = 650;
+    pageRangeInput.max = '650';
+    pageRangeInput.min = '50';
+    pageRangeInput.step = '25';
+    if (!Number.isFinite(selectedPageLimit) || selectedPageLimit < 50 || selectedPageLimit >= 650) selectedPageLimit = 0;
     syncPageFilterUi();
   }
   async function loadStudentActivity() {
@@ -3443,21 +3453,39 @@ function initStudentPage() {
   }
 
   function renderBooks() {
+    // Use the exact staff catalogue filtering and count; student actions
+    // remain bound to the student's authenticated book copy.
+    const limited = selectedPageLimit > 0 && selectedPageLimit < 650;
+    const query = searchInput?.value || '';
+    const filtered = filterBooks(groupedBooks, {
+      query, selectedThemes: selectedThemeKeys,
+      onlyExamList, onlyEasyReading, language: selectedLanguage,
+      pageLimit: limited ? selectedPageLimit : 0,
+      includeUnknownPages: limited && Boolean(catalogUnknown?.checked),
+      availability: selectedAvailability,
+    });
+    if (summary) {
+      summary.replaceChildren();
+      appendTextElement(summary, 'strong', String(filtered.length));
+      summary.append(document.createTextNode(' van ' + groupedBooks.length +
+        ' titels · beschikbaarheid per exemplaar'));
+    }
+    const activeCount = selectedThemeKeys.size + Number(Boolean(query.trim())) +
+      Number(onlyExamList) + Number(onlyEasyReading) + Number(Boolean(selectedLanguage)) +
+      Number(Boolean(selectedAvailability)) + Number(limited) +
+      Number(limited && Boolean(catalogUnknown?.checked));
+    if (catalogFilterCaption) catalogFilterCaption.textContent = activeCount
+      ? activeCount + ' filter' + (activeCount === 1 ? '' : 's') + ' actief'
+      : 'Thema’s, pagina’s, beschikbaarheid, taal en kenmerken';
+    if (catalogExam) catalogExam.checked = Boolean(onlyExamList);
+    if (catalogEasy) catalogEasy.checked = Boolean(onlyEasyReading);
     renderBookGrid({
-      grid: bookGrid,
-      books: groupedBooks,
-      template: bookCardTemplate,
-      folders,
+      grid: bookGrid, books: filtered,
+      template: bookCardTemplate, folders,
       filters: {
-        folder: '',
-        query: searchInput?.value || '',
-        selectedThemes: selectedThemeKeys,
-        onlyExamList,
-        onlyEasyReading,
-        language: selectedLanguage,
-        pageLimit: selectedPageLimit,
-        availability: selectedAvailability,
-        sortBy,
+        sortBy: sortBy === 'author' ? 'author-alphabetical'
+          : sortBy === 'title' ? 'title-alphabetical'
+          : sortBy === 'popular' ? 'popular-pure' : sortBy,
       },
       cardOptions: book => {
         const action = resolveStudentBookAction(book, authUser);
@@ -3472,6 +3500,7 @@ function initStudentPage() {
 
   const themeFilterRenderer = createThemeFilterRenderer({
     pillsContainer: themeFilterPills,
+    catalogMode: true,
     selectedThemeKeys,
     getThemes: () => availableThemes,
     getOnlyExamList: () => onlyExamList,
@@ -3535,21 +3564,9 @@ function initStudentPage() {
   }
 
   async function loadSummary() {
-    if (!summary) return;
-    const data = await fetchJson('/api/status');
-    summary.replaceChildren();
-    const items = [
-      { label: 'Totaal', value: data.totalBooks },
-      { label: 'Beschikbaar', value: data.availableBooks },
-      { label: 'Uitgeleend', value: data.borrowedBooks },
-      { label: 'Leeslijst', value: data.examListBooks },
-    ];
-    for (const item of items) {
-      const div = appendElement(summary, 'div', { className: 'summary__item' });
-      if (!div) continue;
-      div.append(document.createTextNode(String(item.value ?? '')));
-      appendTextElement(div, 'span', item.label);
-    }
+    // Counters are computed per-title by renderBooks(), not overwritten by
+    // physical-copy totals from the status endpoint.
+    if (groupedBooks.length) renderBooks();
   }
 
   async function handleLookup() {
@@ -3855,6 +3872,41 @@ function initStudentPage() {
   });
 
   searchInput?.addEventListener('input', renderBooks);
+  catalogAdvanced?.addEventListener('toggle', () => {
+    const title = catalogAdvanced.querySelector('.bb-cat-toggle-copy strong');
+    if (title) title.textContent = catalogAdvanced.open ? 'Filters verbergen' : 'Filters tonen';
+  });
+  catalogUnknown?.addEventListener('change', renderBooks);
+  catalogEasy?.addEventListener('change', () => {
+    onlyEasyReading = Boolean(catalogEasy.checked);
+    themeFilterRenderer.render();
+    renderBooks();
+  });
+  catalogExam?.addEventListener('change', () => {
+    onlyExamList = Boolean(catalogExam.checked);
+    themeFilterRenderer.render();
+    renderBooks();
+  });
+  catalogReset?.addEventListener('click', () => {
+    if (searchInput) searchInput.value = '';
+    selectedThemeKeys.clear();
+    onlyExamList = false;
+    onlyEasyReading = false;
+    selectedLanguage = '';
+    selectedPageLimit = 0;
+    selectedAvailability = '';
+    sortBy = 'author';
+    if (sortSelect) sortSelect.value = sortBy;
+    if (languageSelect) languageSelect.value = '';
+    if (availabilitySelect) availabilitySelect.value = '';
+    if (catalogUnknown) catalogUnknown.checked = false;
+    updateSortControlAccessibility(sortSelect, sortBy, {
+      baseLabel: 'Sorteer de boeken', gridId: 'book-grid',
+    });
+    syncPageFilterUi();
+    themeFilterRenderer.render();
+    renderBooks();
+  });
 
   languageSelect?.addEventListener('change', () => {
     selectedLanguage = languageSelect.value || '';

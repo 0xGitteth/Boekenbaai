@@ -13,10 +13,11 @@ const existing = read('public/catalog-v40.css');
 const loginFlow = read('public/google-login-hint.js');
 const googleRuntime = read('google-auth-runtime-preload.js');
 
-for (const html of [staff, student]) {
-  const links = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
-  assert.equal(links.at(-1), 'portal-unified-v41.css', 'Unified CSS must load after all legacy card/branding CSS');
-}
+const staffStylesheets = [...staff.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
+const studentStylesheets = [...student.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
+assert.equal(staffStylesheets.at(-1), 'portal-unified-v41.css');
+assert.equal(studentStylesheets.at(-1), 'student-catalog-from-staff-v42.css',
+  'The student catalogue mirrors every canonical staff catalogue CSS layer after the unified styles');
 assert.ok(staff.indexOf('catalog-v40.css') < staff.indexOf('portal-unified-v41.css'));
 assert.ok(student.indexOf('student-v31.css') < student.indexOf('portal-unified-v41.css'));
 

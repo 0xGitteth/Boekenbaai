@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="student-v31.css" />
     <link rel="stylesheet" href="portal-unified-v41.css" />
+    <link rel="stylesheet" href="student-catalog-from-staff-v42.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -51,61 +52,66 @@
             <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-library-title" tabindex="-1">Bibliotheek</h1><p>Zoek een boek, bekijk het aanbod of scan de barcode om te lenen.</p></div>
             <p id="student-action-message" role="status" aria-live="polite"></p>
             <section class="panel" id="student-collection" aria-labelledby="collection-title">
-        <div class="panel__header">
-          <div>
-          <h2 id="collection-title">Alle boeken</h2>
-          </div>
-        </div>
-        <div class="filters">
-          <div class="filters__themes">
-            <span class="filters__label" id="theme-filter-label">Filter op thema:</span>
-            <div
-              class="filters__pills"
-              id="theme-filter-pills"
-              role="group"
-              aria-labelledby="theme-filter-label"
-            ></div>
-          </div>
-          <div class="filters__group bb-student-search">
-            <label class="filters__label" for="search-input">Zoek een boek</label>
-            <div class="bb-student-search-row">
-              <input id="search-input" type="search" placeholder="Zoek op titel, auteur of onderwerp…" />
-              <button type="button" id="student-scan-open" class="btn" aria-expanded="false" aria-controls="student-scan-panel">Boek scannen</button>
-            </div>
-          </div>
-          <div class="filters__group">
-            <label class="filters__label" for="book-language-select">Taal:</label>
-            <select id="book-language-select" aria-controls="book-grid">
-              <option value="">Alle talen</option>
-            </select>
-          </div>
-          <div class="filters__group filters__group--pages">
-            <label class="filters__label" for="book-page-range">Aantal bladzijdes:</label>
-            <div class="page-filter" aria-controls="book-grid">
-              <input id="book-page-range" type="range" min="0" max="1000" step="10" value="1000" />
-              <div class="page-filter__meta">
-                <span id="book-page-range-label">Alle lengtes</span>
-                <button id="book-page-range-reset" class="page-filter__reset hidden" type="button">Reset</button>
-              </div>
-            </div>
-          </div>
-          <div class="filters__group">
-            <label class="filters__label" for="book-availability-select">Beschikbaarheid:</label>
-            <select id="book-availability-select" aria-controls="book-grid">
-              <option value="">Alles tonen</option>
-              <option value="available">Alleen beschikbaar</option>
-            </select>
-          </div>
-          <div class="filters__group">
-            <label class="filters__label" for="book-sort-select">Sorteer op:</label>
-            <select id="book-sort-select" aria-controls="book-grid">
-              <option value="title">Titel (A-Z)</option>
-              <option value="author" selected>Auteur (achternaam A-Z)</option>
-              <option value="popular">Meest populair</option>
-            </select>
-          </div>
-        </div>
-            <section class="bb-student-scan-panel" id="student-scan-panel" aria-labelledby="student-scan-title" hidden>
+              <div class="panel__header"><h2 id="collection-title">Boekenoverzicht</h2></div>
+              <div class="bb-catalog-v36" aria-label="Boekenoverzicht">
+              <p class="bb-catalog-intro">Eén catalogus, met alle titels en hun bijbehorende exemplaren.</p>
+              <section class="bb-catalog-filter-panel" aria-labelledby="bb-cat-filter-heading">
+                <header class="bb-cat-panel-header">
+                  <span class="bb-cat-panel-icon" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10m-7 5h4"></path><circle cx="8" cy="7" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="14" cy="12" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="12" cy="17" r="2.1" fill="currentColor" stroke="none"></circle></svg></span>
+                  <div class="bb-cat-panel-heading"><h4 id="bb-cat-filter-heading">Zoek en filter</h4>
+                    <p>Vind je boek direct, of verfijn de resultaten met filters.</p></div>
+                  <button type="button" class="bb-cat-reset" id="bb-cat-reset"><svg aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"></path></svg> Alles wissen</button>
+                </header>
+                <div class="bb-cat-search-row">
+                  <label class="bb-cat-search-field" for="search-input">
+                    <span aria-hidden="true"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg></span>
+                    <input id="search-input" type="search" aria-label="Zoek op titel, auteur of trefwoord" autocomplete="off" placeholder="Zoek op titel, auteur of trefwoord…" />
+                  </label>
+                  <button type="button" id="student-scan-open" class="btn bb-cat-scan-button" aria-expanded="false" aria-controls="student-scan-panel">Boek scannen</button>
+                  <label class="bb-cat-sort" for="staff-book-sort-select"><span>Sorteer op</span>
+                    <select id="staff-book-sort-select" aria-controls="book-grid">
+                      <option value="title">Titel (A–Z)</option>
+                      <option value="author" selected>Auteur (A–Z)</option>
+                      <option value="popular">Meest populair</option>
+                    </select>
+                  </label>
+                </div>
+                <details class="bb-cat-advanced" id="bb-cat-advanced">
+                  <summary class="bb-cat-advanced-toggle">
+                    <span class="bb-cat-toggle-icon" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10m-7 5h4"></path><circle cx="8" cy="7" r="1.9" fill="currentColor" stroke="none"></circle><circle cx="15" cy="12" r="1.9" fill="currentColor" stroke="none"></circle></svg></span>
+                    <span class="bb-cat-toggle-copy"><strong>Filters tonen</strong>
+                      <small id="bb-cat-filter-caption">Thema’s, pagina’s, beschikbaarheid, taal en kenmerken</small></span>
+                    <span class="bb-cat-chevron" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></svg></span>
+                  </summary>
+                  <div class="bb-cat-advanced-content">
+                    <div class="bb-cat-themes">
+                      <h5>Thema’s <span>Meest voorkomende eerst · meerdere mogelijk</span></h5>
+                      <div class="filters__pills" id="theme-filter-pills" role="group" aria-label="Filter op thema"></div>
+                    </div>
+                    <div class="bb-cat-other-filters">
+                      <fieldset class="bb-cat-pages">
+                        <legend>Aantal pagina’s</legend>
+                        <div class="bb-cat-page-top"><span>Maximaal aantal pagina’s</span>
+                          <output id="bb-cat-page-output" for="bb-cat-page-range">Alle lengtes</output></div>
+                        <input type="range" id="bb-cat-page-range" min="50" max="650" step="25" value="650" aria-label="Maximaal aantal pagina’s" />
+                        <div class="bb-cat-page-scale"><span>50</span><span>350</span><span>650+</span></div>
+                        <label class="bb-cat-unknown"><input id="bb-cat-unknown" type="checkbox" disabled /> Ook boeken zonder bekend aantal pagina’s</label>
+                      </fieldset>
+                      <label class="bb-cat-field">Beschikbaarheid
+                        <select id="bb-cat-availability"><option value="">Alle boeken</option><option value="available">Beschikbaar</option><option value="borrowed">Uitgeleend (minstens één exemplaar)</option></select>
+                      </label>
+                      <label class="bb-cat-field">Taal
+                        <select id="bb-cat-language"><option value="">Alle talen</option></select>
+                      </label>
+                      <div class="bb-cat-feature-filters" role="group" aria-label="Bijzondere kenmerken">
+                        <label><input id="bb-cat-easy" type="checkbox" role="switch" /><span class="bb-cat-switch-track" aria-hidden="true"></span> Makkelijk Lezen</label>
+                        <label><input id="bb-cat-exam" type="checkbox" role="switch" /><span class="bb-cat-switch-track" aria-hidden="true"></span> Examenleeslijst</label>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              </section>
+              <section class="bb-student-scan-panel" id="student-scan-panel" aria-labelledby="student-scan-title" hidden>
               <div class="bb-student-scan-heading"><div><h2 id="student-scan-title">Barcode scannen</h2><p>Scan de barcode van een boek of typ het nummer om de beschikbaarheid te bekijken.</p></div><button type="button" id="student-scan-close" class="btn btn--ghost">Sluiten</button></div>
               <div class="student-dashboard__scan">
             <label for="barcode-input">Scan of typ de barcode:</label>
@@ -121,9 +127,16 @@
             <div class="book-result" id="book-result" role="status" aria-live="polite"></div>
           </div>
             </section>
-        <div class="summary" id="summary"></div>
-        <div class="book-grid" id="book-grid"></div>
-      </section>
+              <div class="bb-cat-results">
+                <div class="summary" id="summary" role="status" aria-live="polite"></div>
+                <div class="bb-cat-legend" aria-label="Betekenis van omslagmarkeringen">
+                  <span><i class="bb-cat-easy-key" aria-hidden="true"></i> Makkelijk Lezen</span>
+                  <span><i class="bb-cat-exam-key" aria-hidden="true"></i> Examenleeslijst</span>
+                </div>
+              </div>
+              <div class="book-grid" id="book-grid"></div>
+            </div>
+            </section>
 
           </section>
           <section id="student-profile-view" aria-labelledby="student-profile-title" hidden>
