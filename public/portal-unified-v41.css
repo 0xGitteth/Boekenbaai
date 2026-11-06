@@ -1,0 +1,438 @@
+/*
+ * Boekenbaai: same book-card surface across student, teacher and admin.
+ * This layer intentionally overrides the earlier staff cover-only layout.
+ * The catalogue DOM, actions, filters, roles and auth flows stay unchanged.
+ */
+
+/* Student masthead: the approved compact, transparent Het Dok brand.
+   Crop the emblem from the existing official SVG and typeset the wordmark
+   separately in white. No white badge behind the school logo. */
+body[data-page="student"] .bb-student-school-brand {
+  display:inline-flex;
+  align-items:center;
+  flex:0 0 auto;
+  min-width:0;
+  gap:6px;
+  color:#fff;
+  font:500 20px/1.1 system-ui,-apple-system,"Segoe UI",sans-serif;
+  white-space:nowrap;
+}
+body[data-page="student"] .bb-student-school-emblem,
+body[data-page="staff"] .bb-login-school-emblem {
+  display:block;
+  flex:0 0 40px;
+  width:40px;
+  height:45px;
+  background-image:url("logo/het-dok-logo.svg");
+  background-repeat:no-repeat;
+  background-size:140px 45px;
+  background-position:left center;
+}
+body[data-page="student"] .bb-student-context {
+  display:none;
+}
+
+/* The original logo and compact wordmark match the teacher/admin branding,
+   without affecting authenticated teachers' established navigation. */
+body[data-page="staff"] .bb-login-site-brand {
+  display:none;
+  align-items:center;
+  gap:22px;
+  white-space:nowrap;
+}
+body[data-page="staff"] .bb-login-wordmark {
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  font:850 19px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:white;
+  text-decoration:none;
+}
+body[data-page="staff"] .bb-login-book-symbol {
+  width:39px;
+  height:39px;
+  flex:0 0 39px;
+  border-radius:9px;
+  background:#ffffff20 url("logo/boekenbaai-book-mark-v31.svg") center/27px no-repeat;
+}
+body[data-page="staff"] .bb-login-school-brand {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  color:white;
+  font:500 20px/1.15 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="staff"] .bb-login-back {display:none}
+
+/* Staff login only. The role-specific logged-in layout continues using the
+   existing masthead, sidebar, tabs and account metadata. */
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) {
+  display:flex;
+  flex-direction:column;
+  min-height:100dvh;
+  background:#f1f5fb;
+  color:#172e51;
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {
+  display:flex;
+  align-items:center;
+  flex:0 0 68px;
+  width:100%;
+  height:68px;
+  min-height:68px;
+  gap:0;
+  margin:0;
+  padding:0 30px;
+  border:0;
+  border-radius:0;
+  background:#102f64;
+  box-shadow:0 1px 0 #0b2753;
+  overflow:visible;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero--staff .hero__content,
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero--staff .hero__illustration,
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero--staff .hero__actions {
+  display:none;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-site-brand {
+  display:inline-flex;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) > main {
+  display:flex;
+  flex:1 0 auto;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  max-width:none;
+  min-width:0;
+  margin:0;
+  padding:clamp(32px,7vh,90px) 20px;
+  background:
+    radial-gradient(ellipse 54% 62% at -10% 110%,#dce8f9 0%,transparent 95%),
+    radial-gradient(ellipse 42% 40% at 106% -10%,#dfeafa 0%,transparent 94%),
+    #f3f7fd;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #staff-login-panel {
+  width:min(100%,650px);
+  max-width:650px;
+  margin:0;
+  padding:clamp(24px,3.4vw,42px);
+  border:1px solid #c8d8f0;
+  border-radius:22px;
+  background:#fff;
+  box-shadow:0 16px 38px #153c6b18;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #staff-login-panel .panel__header {
+  margin:0 0 27px;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #staff-login-title {
+  margin:0;
+  color:#142f60;
+  font:850 clamp(25px,2.6vw,35px)/1.16 system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:-.025em;
+  overflow-wrap:break-word;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form {
+  display:grid;
+  gap:18px;
+  width:100%;
+  max-width:none;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form .form-field {
+  min-width:0;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form .form-field > label {
+  display:block;
+  color:#27456f;
+  font-size:15px;
+  font-weight:750;
+  margin:0 0 8px;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input {
+  width:100%;
+  min-height:48px;
+  padding:10px 14px;
+  border:1px solid #c8d2e0;
+  border-radius:11px;
+  background:#fff;
+  color:#192f51;
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input:focus-visible {
+  outline:3px solid #80aef2;
+  outline-offset:2px;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form button[type="submit"] {
+  width:100%;
+  min-height:49px;
+  padding:11px 16px;
+  border:1px solid #102f64;
+  border-radius:10px;
+  background:#102f64;
+  color:white;
+  font:800 15px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;
+  cursor:pointer;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form button[type="submit"]:hover:not(:disabled) {
+  background:#1a4583;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form button[type="submit"]:disabled {
+  opacity:.52;
+  cursor:not-allowed;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-message:empty {
+  display:none;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-message {
+  margin:13px 0 0;
+  font-size:13px;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-back {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  min-height:46px;
+  margin-top:17px;
+  padding:10px 12px;
+  border-radius:10px;
+  background:#e5effb;
+  color:#183f78;
+  font-size:14px;
+  font-weight:750;
+  text-align:center;
+  text-decoration:none;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-back:hover {
+  background:#d7e7fa;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .footer {
+  display:block;
+  width:100%;
+  margin:0;
+  padding:15px 20px 24px;
+  color:#657d9d;
+  background:#f3f7fd;
+  text-align:center;
+  font-size:12px;
+}
+
+/* The one and only green band denotes Makkelijk Lezen: on the full card,
+   never on the cover, and without an extra box-shadow or outline. */
+body[data-page="student"] #book-grid > .book-card,
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {
+  box-sizing:border-box;
+  border:1px solid #dce4ef;
+  border-radius:13px;
+  background:#fff;
+  box-shadow:0 2px 10px #152d520d;
+  outline:0;
+  overflow:visible;
+  transition:border-color .17s ease,box-shadow .17s ease,transform .17s ease;
+}
+body[data-page="student"] #book-grid > .book-card--easy-reading,
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card--easy-reading {
+  border:2px solid #19b99a;
+  outline:0;
+  box-shadow:0 2px 10px #152d520d;
+}
+body[data-page="student"] #book-grid .book-card--easy-reading .book-card__cover-wrapper,
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card--easy-reading .book-card__cover-wrapper {
+  outline:0!important;
+  outline-offset:0!important;
+  border:0;
+}
+@media (hover:hover) and (pointer:fine) {
+  body[data-page="student"] #book-grid > .book-card:hover,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card:hover {
+    border-color:#9dbbdc;
+    box-shadow:0 8px 23px #152d5224;
+    transform:translateY(-2px);
+  }
+  body[data-page="student"] #book-grid > .book-card--easy-reading:hover,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card--easy-reading:hover {
+    border-color:#109c84;
+    box-shadow:0 8px 23px #14766624;
+  }
+}
+body[data-page="student"] #book-grid > .book-card:focus-within,
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card:focus-within {
+  box-shadow:0 7px 21px #152d521e;
+}
+body[data-page="student"] #book-grid > .book-card--easy-reading:focus-within,
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card--easy-reading:focus-within {
+  border-color:#109c84;
+}
+body[data-page="student"] #book-grid > .book-card:focus-visible,
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card:focus-visible {
+  outline:3px solid #78a9e7;
+  outline-offset:3px;
+}
+/* Older cover-only hover/focus layers must not recreate a second band. */
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
+  transition:none;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:hover .book-card__cover-wrapper,
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-visible .book-card__cover-wrapper,
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-within:not(:focus-visible) .book-card__cover-wrapper {
+  box-shadow:0 3px 12px #12356222;
+  transform:none;
+}
+/* Preserve 2:3 covers and the original gold exam bookmark. */
+body[data-page="student"] #book-grid .book-card--exam-list::before {display:none}
+
+/* Staff and admin now use the same airy, white cards as students. The
+   existing 5/4/3/2 column responsive grid and the real edit controls stay. */
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {
+  display:flex;
+  flex-direction:column;
+  align-self:stretch;
+  justify-self:stretch;
+  width:100%;
+  max-width:none;
+  min-width:0;
+  min-height:0;
+  margin:0;
+  padding:12px;
+  gap:8px;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__media {
+  width:100%;
+  height:auto;
+  min-width:0;
+  max-width:none;
+  padding:0;
+  margin:0;
+  flex:0 0 auto;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
+  width:100%!important;
+  max-width:none!important;
+  height:auto;
+  min-height:0;
+  aspect-ratio:2/3;
+  margin:0;
+  border-radius:7px;
+  overflow:hidden;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__content {
+  display:flex;
+  flex:1;
+  flex-direction:column;
+  gap:6px;
+  min-height:0;
+  min-width:0;
+  padding:0;
+  margin:0;
+  background:transparent;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__title {
+  min-height:0;
+  font-size:14px;
+  line-height:1.3;
+  font-weight:810;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__author {
+  font-size:12px;
+  line-height:1.45;
+  margin:0;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-pages {
+  font-size:11.5px;
+  line-height:1.45;
+  margin:0;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__tags {
+  order:1;
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  min-height:22px;
+  margin:2px 0 9px;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__tag {
+  padding:4px 7px;
+  border-radius:9px;
+  font-size:10.7px;
+  line-height:1.3;
+  font-weight:720;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__status {
+  order:2;
+  align-self:flex-start;
+  margin-top:auto;
+  gap:7px;
+  font-size:11.7px;
+  line-height:1.45;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-actions {
+  order:3;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:stretch;
+  gap:6px;
+  margin-top:7px;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-actions button {
+  min-height:38px;
+  padding:7px 8px;
+  border-radius:9px;
+  font-size:12px;
+  font-weight:750;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-view {
+  background:#e7effb;
+  border:1px solid #d3e0ef;
+  color:#184b85;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-edit {
+  padding:7px 8px;
+  background:transparent;
+  border:1px solid transparent;
+  color:#184b85;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .bb-cat-card-edit:hover {
+  background:#eef3fb;
+  border-color:#d8e4f2;
+}
+@media (max-width:760px) {
+  body[data-page="student"] .bb-student-school-brand {gap:4px;font-size:16px}
+  body[data-page="student"] .bb-student-school-emblem {flex-basis:31px;width:31px;height:36px;background-size:112px 36px}
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {
+    height:63px;min-height:63px;flex-basis:63px;padding:0 14px;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) > main {
+    padding:25px 13px 40px;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #staff-login-panel {
+    padding:25px 19px;border-radius:15px;
+  }
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {
+    padding:9px;
+    gap:6px;
+  }
+}
+@media (max-width:470px) {
+  body[data-page="student"] .bb-student-school-brand {font-size:13px;gap:2px}
+  body[data-page="student"] .bb-student-school-emblem {flex-basis:25px;width:25px;height:29px;background-size:90px 29px}
+  body[data-page="staff"] .bb-login-site-brand {gap:11px}
+  body[data-page="staff"] .bb-login-wordmark {font-size:15px;gap:6px}
+  body[data-page="staff"] .bb-login-book-symbol {flex-basis:32px;width:32px;height:32px;background-size:23px}
+  body[data-page="staff"] .bb-login-school-brand {gap:4px;font-size:14px}
+  body[data-page="staff"] .bb-login-school-emblem {flex-basis:30px;width:30px;height:34px;background-size:105px 34px}
+}
+@media (prefers-reduced-motion:reduce) {
+  body[data-page="student"] #book-grid > .book-card,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {transition:none;transform:none!important}
+}
+@media (forced-colors:active) {
+  body[data-page="student"] #book-grid > .book-card--easy-reading,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card--easy-reading {
+    border:2px solid Highlight;
+  }
+  body[data-page="student"] #book-grid > .book-card:focus-visible,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card:focus-visible {
+    outline:3px solid Highlight;
+  }
+}
