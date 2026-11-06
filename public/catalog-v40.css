@@ -64,6 +64,19 @@ body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-within:not(:
   box-shadow:0 0 0 2px #78a9e7,0 8px 20px #17365b26;
 }
 
+/* Forced-colors modes suppress shadows. Restore a real system-colour
+   indicator so keyboard focus is visible in Windows High Contrast. */
+@media (forced-colors:active) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-visible {
+    outline:3px solid Highlight;
+    outline-offset:5px;
+  }
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-within:not(:focus-visible) .book-card__cover-wrapper {
+    outline:2px solid Highlight;
+    outline-offset:2px;
+  }
+}
+
 @media (prefers-reduced-motion:reduce) {
   body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
     transition:none;
