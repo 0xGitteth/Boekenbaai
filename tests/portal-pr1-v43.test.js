@@ -46,7 +46,10 @@ const controlGroup=student.slice(student.indexOf('<section class="bb-catalog-fil
 assert.match(controlGroup,/id="student-filter-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="bb-cat-advanced"/);
 assert.match(controlGroup,/id="student-help-choose"[^>]*disabled/);
 assert.match(controlGroup,/id="student-help-choose-note">Binnenkort/);
-assert.match(controlGroup,/id="student-scan-open"/);
+assert.doesNotMatch(controlGroup,/id="student-scan-open"/,
+  'Scan must be a separate button beside, not inside, the compact filter surface');
+assert.match(student, /class="bb-student-discovery-layout"/);
+assert.match(student, /id="student-scan-open"/);
 assert.match(controlGroup,/id="bb-cat-reset"/);
 assert.match(controlGroup,/id="bb-cat-advanced"/);
 assert.match(controlGroup,/<summary class="bb-cat-advanced-toggle" hidden>/);
