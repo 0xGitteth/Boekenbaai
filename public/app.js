@@ -3016,6 +3016,9 @@ function initStudentPage() {
   const scanClose = document.querySelector('#student-scan-close');
   const scanPanel = document.querySelector('#student-scan-panel');
   const studentActionMessage = document.querySelector('#student-action-message');
+  const studentProfileAccount = document.querySelector('#student-profile-account');
+  const studentAccountName = document.querySelector('#student-account-name');
+  const studentAccountUsername = document.querySelector('#student-account-username');
 
   function closeStudentMenu() {
     studentSidebar?.classList.remove('is-open');
@@ -3313,6 +3316,10 @@ function initStudentPage() {
     loginPanel?.classList.toggle('hidden', loggedIn);
     dashboard?.classList.toggle('hidden', !loggedIn);
     activitySection?.classList.toggle('hidden', !loggedIn);
+    studentProfileAccount?.classList.toggle('hidden', !loggedIn);
+    if (studentAccountName) studentAccountName.textContent = loggedIn ? authUser.name || '' : '';
+    if (studentAccountUsername) studentAccountUsername.textContent = loggedIn
+      ? authUser.username || 'Niet beschikbaar' : '';
     logoutButton?.classList.toggle('hidden', !loggedIn);
     if (studentAccountStatus) studentAccountStatus.textContent = loggedIn
       ? getUserGreetingName(authUser) || 'Ingelogd'
