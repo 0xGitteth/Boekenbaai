@@ -3142,6 +3142,16 @@ function initStudentPage() {
         li.append(' ');
         appendTextElement(li, 'span', `Sinds ${formatDate(item.borrowedAt)}`);
       }
+      // The profile offers a direct way back to the real grouped book
+      // detail, where the matching OWN copy can be returned.
+      const group = groupedBooks.find(entry => entry.copies?.some(copy => copy.id === item.bookId));
+      const target = group || book;
+      if (target) {
+        const open = appendTextElement(li, 'button', 'Bekijken', {
+          type: 'button', className: 'btn btn--secondary bb-student-borrowed-view',
+        });
+        open?.addEventListener('click', () => openBookDetail(target));
+      }
     }
   }
 
