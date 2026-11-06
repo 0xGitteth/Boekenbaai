@@ -149,7 +149,8 @@ body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form .form-f
   font-weight:750;
   margin:0 0 8px;
 }
-body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input {
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input[type="text"],
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input[type="password"] {
   width:100%;
   min-height:48px;
   padding:10px 14px;
@@ -159,7 +160,7 @@ body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input {
   color:#192f51;
   font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
 }
-body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input:focus-visible {
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) #login-form input:not([type="checkbox"]):focus-visible {
   outline:3px solid #80aef2;
   outline-offset:2px;
 }
