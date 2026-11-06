@@ -11,6 +11,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Boekenbaai – Leerlingenportaal</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="student-v31.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -19,95 +20,36 @@
     />
   </head>
   <body data-page="student">
-    <header class="hero hero--student">
-      <div class="hero__content">
-        <h1>Welkom bij Boekenbaai</h1>
-        <p>
-          De schoolbibliotheek van VSO Het Dok. Via deze website kun je jouw boeken lenen en
-          weer terugbrengen! Handig hè?
-        </p>
-      </div>
-      <div class="hero__illustration" aria-hidden="true">
-        <img class="hero__logo" src="logo/het-dok-logo.svg" alt="" />
-      </div>
-      <div class="hero__actions">
-        <a class="btn btn--ghost hero__link" href="staff.html">Docenteninlog</a>
-        <div class="hero__actions-spacer" aria-hidden="true"></div>
-      </div>
+    <header class="bb-student-sitebar">
+      <button type="button" id="student-menu-toggle" class="bb-student-hamburger" aria-expanded="false" aria-controls="student-sidebar" aria-label="Navigatie openen">☰</button>
+      <a class="bb-student-wordmark" href="/" aria-label="Boekenbaai, naar bibliotheek">
+        <span class="bb-student-wordmark-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 6c-3-2-6-2-9-1v14c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Z"/><path d="M12 6v14"/></svg></span>Boekenbaai
+      </a>
+      <img class="bb-student-school-logo" src="logo/het-dok-logo.svg" alt="VSO Het Dok" />
+      <span class="bb-student-context">Bibliotheek</span>
+      <span class="bb-student-sitebar-spacer"></span>
+      <span id="student-account-status" class="bb-student-account-status">Gast / tablet</span>
+      <button type="button" id="student-account-open" class="bb-student-account-button">Inloggen</button>
+      <a class="bb-student-staff-link" href="staff.html">Docenten</a>
     </header>
-
-    <main>
-      <section class="panel panel--login" id="student-login-panel" aria-labelledby="student-login-title">
-        <div class="panel__header">
-          <h2 id="student-login-title">Log in en start met lezen</h2>
-        </div>
-        <form id="student-login-form" class="login-form">
-          <div class="form-field">
-            <label for="student-login-name">Je naam</label>
-            <input 
-              id="student-login-name" 
-              type="text" 
-              autocomplete="off" 
-              placeholder="Typ je voor- en achternaam"
-              required 
-            />
-            <ul 
-              id="student-login-suggestions" 
-              class="login-suggestions hidden" 
-              role="listbox"
-              aria-label="Naamvoorstellen"
-            ></ul>
-          </div>
-          <div class="form-field">
-            <label for="student-login-password">Wachtwoord</label>
-            <input
-              id="student-login-password"
-              type="password"
-              autocomplete="current-password"
-              required
-            />
-          </div>
-          <button type="submit" class="btn">Inloggen</button>
-        </form>
-        <p id="student-login-message" class="hint" role="status" aria-live="polite"></p>
-      </section>
-
-      <section class="panel panel--student hidden" id="student-dashboard">
-        <div class="panel__header">
-          <h2>Mijn leesmoment</h2>
-          <p class="panel__subtitle">Scan de barcode om een boek te lenen of terug te brengen.</p>
-        </div>
-        <div class="student-dashboard__grid">
-          <aside class="student-dashboard__info">
-            <div class="student-dashboard__identity">
-              <h3 id="student-name"></h3>
-              <p id="student-grade" class="muted"></p>
-            </div>
-            <h4>Mijn boeken</h4>
-            <p id="student-borrowed-empty" class="hint"></p>
-            <ul id="student-borrowed-list" class="borrowed-list"></ul>
-            <button type="button" class="btn btn--ghost" id="student-logout">Uitloggen</button>
-          </aside>
-          <div class="student-dashboard__scan">
-            <label for="barcode-input">Scan of typ de barcode:</label>
-            <input
-              id="barcode-input"
-              type="text"
-              inputmode="numeric"
-              placeholder="Scan hier…"
-              autocomplete="off"
-              disabled
-            />
-            <button id="lookup-button" class="btn" disabled>Zoek boek</button>
-            <div class="book-result" id="book-result" role="status" aria-live="polite"></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel" id="student-collection" aria-labelledby="collection-title">
+    <div id="student-sidebar-scrim" class="bb-student-scrim" hidden></div>
+    <div class="bb-student-layout">
+      <aside id="student-sidebar" class="bb-student-sidebar" aria-label="Leerlingnavigatie">
+        <div class="bb-student-sidebar-label">BIBLIOTHEEK</div>
+        <nav class="bb-student-nav" aria-label="Hoofdnavigatie">
+          <button type="button" id="student-nav-library" class="bb-student-nav-button is-active" aria-current="page"><span aria-hidden="true">⌕</span>Bibliotheek</button>
+          <button type="button" id="student-nav-profile" class="bb-student-nav-button"><span aria-hidden="true">♙</span>Mijn profiel</button>
+        </nav>
+      </aside>
+      <main class="bb-student-main">
+        <div class="bb-student-content">
+          <section id="student-library-view" aria-labelledby="student-library-title">
+            <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-library-title" tabindex="-1">Bibliotheek</h1><p>Zoek een boek, bekijk het aanbod of scan de barcode om te lenen.</p></div>
+            <p id="student-action-message" role="status" aria-live="polite"></p>
+            <section class="panel" id="student-collection" aria-labelledby="collection-title">
         <div class="panel__header">
           <div>
-          <h2 id="collection-title">Ontdek onze boeken</h2>
+          <h2 id="collection-title">Alle boeken</h2>
           </div>
         </div>
         <div class="filters">
@@ -120,9 +62,12 @@
               aria-labelledby="theme-filter-label"
             ></div>
           </div>
-          <div class="filters__group">
-            <label class="filters__label" for="search-input">Zoek:</label>
-            <input id="search-input" type="search" placeholder="Titel, auteur of trefwoord" />
+          <div class="filters__group bb-student-search">
+            <label class="filters__label" for="search-input">Zoek een boek</label>
+            <div class="bb-student-search-row">
+              <input id="search-input" type="search" placeholder="Zoek op titel, auteur of onderwerp…" />
+              <button type="button" id="student-scan-open" class="btn" aria-expanded="false" aria-controls="student-scan-panel">Boek scannen</button>
+            </div>
           </div>
           <div class="filters__group">
             <label class="filters__label" for="book-language-select">Taal:</label>
@@ -156,18 +101,100 @@
             </select>
           </div>
         </div>
+            <section class="bb-student-scan-panel" id="student-scan-panel" aria-labelledby="student-scan-title" hidden>
+              <div class="bb-student-scan-heading"><div><h2 id="student-scan-title">Barcode scannen</h2><p>Scan de barcode van een boek of typ het nummer om de beschikbaarheid te bekijken.</p></div><button type="button" id="student-scan-close" class="btn btn--ghost">Sluiten</button></div>
+              <div class="student-dashboard__scan">
+            <label for="barcode-input">Scan of typ de barcode:</label>
+            <input
+              id="barcode-input"
+              type="text"
+              inputmode="numeric"
+              placeholder="Scan hier…"
+              autocomplete="off"
+              disabled
+            />
+            <button id="lookup-button" class="btn" disabled>Zoek boek</button>
+            <div class="book-result" id="book-result" role="status" aria-live="polite"></div>
+          </div>
+            </section>
         <div class="summary" id="summary"></div>
         <div class="book-grid" id="book-grid"></div>
       </section>
 
-      <section class="panel" id="student-activity" aria-labelledby="student-activity-title">
+          </section>
+          <section id="student-profile-view" aria-labelledby="student-profile-title" hidden>
+            <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-profile-title" tabindex="-1">Mijn profiel</h1><p>Bekijk jouw geleende boeken en uitleenactiviteiten na volledig inloggen.</p></div>
+            <section class="panel panel--login" id="student-login-panel" aria-labelledby="student-login-title">
+        <div class="panel__header"><h2 id="student-login-title">Inloggen op jouw profiel</h2><p class="panel__subtitle">Kies je naam uit de lijst en meld je aan met je schoolaccount.</p></div>
+        <form id="student-login-form" class="login-form">
+          <div class="form-field">
+            <label for="student-login-name">Je naam</label>
+            <input 
+              id="student-login-name" 
+              type="text" 
+              autocomplete="off" 
+              placeholder="Typ je voor- en achternaam"
+              required 
+            />
+            <ul 
+              id="student-login-suggestions" 
+              class="login-suggestions hidden" 
+              role="listbox"
+              aria-label="Naamvoorstellen"
+            ></ul>
+          </div>
+          <div class="form-field">
+            <label for="student-login-password">Wachtwoord</label>
+            <input
+              id="student-login-password"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+          </div>
+          <button type="submit" class="btn">Inloggen</button>
+        </form>
+        <p id="student-login-message" class="hint" role="status" aria-live="polite"></p>
+      </section>
+            <section class="panel panel--student hidden" id="student-dashboard">
+        <div class="panel__header">
+          <h2>Mijn boeken</h2>
+          <p class="panel__subtitle">De boeken die je op dit moment hebt geleend.</p>
+        </div>
+        <div class="student-dashboard__grid">
+          <aside class="student-dashboard__info">
+            <div class="student-dashboard__identity">
+              <h3 id="student-name"></h3>
+              <p id="student-grade" class="muted"></p>
+            </div>
+            <h4>Nu geleend</h4>
+            <p id="student-borrowed-empty" class="hint"></p>
+            <ul id="student-borrowed-list" class="borrowed-list"></ul>
+            <button type="button" class="btn btn--ghost" id="student-logout">Uitloggen</button>
+          </aside>
+
+        </div>
+      </section>
+            <section class="panel" id="student-activity" aria-labelledby="student-activity-title">
         <div class="panel__header">
           <h2 id="student-activity-title">Laatste activiteit</h2>
+          <p class="panel__subtitle" id="student-activity-subtitle">Alleen jouw uitleen- en inlevermomenten.</p>
         </div>
         <ul id="student-activity-list" class="activity-list"></ul>
         <p id="student-activity-empty" class="hint"></p>
       </section>
-    </main>
+            <section class="panel hidden" id="student-profile-account" aria-labelledby="student-profile-account-title">
+              <div class="panel__header"><h2 id="student-profile-account-title">Mijn account</h2></div>
+              <dl class="bb-student-account-facts">
+                <div><dt>Naam</dt><dd id="student-account-name"></dd></div>
+                <div><dt>Gebruikersnaam</dt><dd id="student-account-username"></dd></div>
+              </dl>
+              <p class="panel__subtitle">Instellen van een snelle uitleenpincode volgt in een aparte beveiligde uitbreiding.</p>
+            </section>
+          </section>
+        </div>
+      </main>
+    </div>
 
     <footer class="footer">
       Gemaakt voor VSO Het Dok • Voor vragen over privacy of AVG, neem contact op met de beheerder.
@@ -406,6 +433,7 @@
               Importgegevens
             </button>
             <button type="button" class="btn" data-book-detail-edit hidden>Boek bewerken</button>
+            <button type="button" class="btn" id="student-book-detail-action" hidden>Boek lenen</button>
             <button type="button" class="btn btn--ghost" data-book-detail-close>Sluiten</button>
           </div>
           <div id="book-detail-import-data" class="book-detail__import-data hidden"></div>

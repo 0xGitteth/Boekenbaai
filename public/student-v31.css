@@ -1,0 +1,386 @@
+/*
+ * Boekenbaai student portal, approved v3.1 visual language (18 October 2026).
+ * Scoped to the student page. No separate application, demo book records,
+ * alternative authentication, or changes to staff interfaces.
+ */
+body[data-page="student"] {
+  --student-navy:#102f64;
+  --student-ink:#16263e;
+  --student-muted:#61728a;
+  --student-canvas:#f0f4fa;
+  --student-line:#dce4ef;
+  --student-ring:#80aef2;
+  margin:0;
+  background:var(--student-canvas);
+  color:var(--student-ink);
+  font:15px/1.48 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="student"] [hidden] {display:none!important}
+body[data-page="student"] button,
+body[data-page="student"] input,
+body[data-page="student"] select {font-family:inherit}
+body[data-page="student"] :is(button,a,input,select):focus-visible {
+  outline:3px solid var(--student-ring);
+  outline-offset:2px;
+}
+body[data-page="student"] .bb-student-sitebar {
+  height:68px;
+  background:var(--student-navy);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:0 27px;
+  position:sticky;
+  top:0;
+  z-index:45;
+  box-shadow:0 1px 0 #0b2753;
+}
+body[data-page="student"] .bb-student-wordmark {
+  display:flex;align-items:center;gap:12px;
+  color:#fff;text-decoration:none;
+  font-size:17.5px;font-weight:850;letter-spacing:-.025em;white-space:nowrap;
+}
+body[data-page="student"] .bb-student-wordmark-icon {
+  width:35px;height:35px;display:grid;place-items:center;
+  border-radius:9px;background:#ffffff19;flex:none;
+}
+body[data-page="student"] .bb-student-wordmark-icon svg {width:24px;height:24px}
+body[data-page="student"] .bb-student-school-logo {
+  height:43px;width:105px;object-fit:contain;
+  padding:4px 8px;background:#fff;border-radius:6px;flex:none;
+}
+body[data-page="student"] .bb-student-context {
+  padding-left:16px;border-left:1px solid #496791;
+  color:#d6e3f5;font-size:13px;white-space:nowrap;
+}
+body[data-page="student"] .bb-student-sitebar-spacer {flex:1;min-width:0}
+body[data-page="student"] .bb-student-account-status {
+  color:#d7e4f7;font-size:12px;font-weight:650;
+  max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+body[data-page="student"] .bb-student-account-button,
+body[data-page="student"] .bb-student-staff-link {
+  min-height:38px;padding:8px 12px;
+  border-radius:8px;border:1px solid #ffffff78;background:#ffffff18;
+  color:#fff;text-decoration:none;font-size:12px;font-weight:700;white-space:nowrap;
+}
+body[data-page="student"] :is(.bb-student-account-button,.bb-student-staff-link):hover {background:#ffffff30}
+body[data-page="student"] .bb-student-hamburger {
+  display:none;align-items:center;justify-content:center;
+  min-width:41px;min-height:41px;padding:6px;
+  background:transparent;border:1px solid #5e79a1;border-radius:8px;color:#fff;
+  font-size:20px;line-height:1;
+}
+body[data-page="student"] .bb-student-layout {
+  display:grid;grid-template-columns:230px minmax(0,1fr);
+  max-width:1610px;margin:0 auto;min-height:calc(100dvh - 68px);
+}
+body[data-page="student"] .bb-student-sidebar {
+  background:#fff;border-right:1px solid var(--student-line);
+  padding:29px 17px 26px;position:sticky;top:68px;
+  height:calc(100dvh - 68px);overflow-y:auto;
+}
+body[data-page="student"] .bb-student-sidebar-label {
+  font-size:11px;color:#78869a;font-weight:800;letter-spacing:.07em;
+  padding:0 12px 12px;
+}
+body[data-page="student"] .bb-student-nav {display:grid;gap:5px}
+body[data-page="student"] .bb-student-nav-button {
+  display:flex;align-items:center;gap:11px;width:100%;min-height:46px;
+  border:0;border-radius:10px;background:transparent;
+  padding:12px;color:#31435e;text-align:left;font-size:14px;font-weight:640;
+}
+body[data-page="student"] .bb-student-nav-button span {display:inline-block;width:20px;text-align:center;font-size:18px;line-height:1}
+body[data-page="student"] .bb-student-nav-button:hover {background:#eef3fa}
+body[data-page="student"] .bb-student-nav-button.is-active {background:var(--student-navy);color:#fff}
+body[data-page="student"] .bb-student-main {
+  display:block;width:auto;max-width:none;min-width:0;
+  margin:0;padding:30px clamp(18px,2.9vw,45px) 80px;
+}
+body[data-page="student"] .bb-student-content {max-width:1190px;margin:0 auto;min-width:0}
+body[data-page="student"] .bb-student-page-heading {margin:0 0 23px}
+body[data-page="student"] .bb-student-overline {
+  color:#48739a;font-size:10.5px;font-weight:850;letter-spacing:.11em;margin-bottom:8px;
+}
+body[data-page="student"] .bb-student-page-heading h1 {
+  margin:0;font:850 clamp(24px,2.5vw,32px)/1.17 system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:-.025em;color:var(--student-ink);
+}
+body[data-page="student"] .bb-student-page-heading p {
+  color:var(--student-muted);font-size:14px;margin-top:8px;max-width:720px;
+}
+body[data-page="student"] :is(#student-collection,#student-login-panel,#student-dashboard,#student-activity,.bb-student-scan-panel) {
+  border:1px solid var(--student-line);
+  background:#fff;border-radius:14px;padding:21px 23px;
+  box-shadow:0 2px 10px #152d5208;margin:0 0 17px;max-width:none;
+}
+body[data-page="student"] .panel__header {
+  margin-bottom:14px;
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+}
+body[data-page="student"] .panel__header h2 {
+  color:#173a68;font:800 17px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="student"] .panel__subtitle {color:#61728a;font-size:13px;margin-top:4px}
+body[data-page="student"] #student-login-panel {max-width:570px;margin:0 0 20px}
+body[data-page="student"] #student-login-panel .login-form {max-width:none}
+body[data-page="student"] .bb-student-search {grid-column:1/-1;order:-3}
+body[data-page="student"] .bb-student-search .filters__label {display:block;margin-bottom:7px}
+body[data-page="student"] .bb-student-search-row {display:flex;gap:10px;align-items:stretch;min-width:0}
+body[data-page="student"] .bb-student-search-row #search-input {
+  flex:1;min-width:0;min-height:46px;padding:10px 14px;
+  border:1px solid #cbd7e7;border-radius:10px;background:#fff;color:#173654;
+  font-size:14px;
+}
+body[data-page="student"] .bb-student-search-row .btn {
+  flex:none;min-height:46px;padding:10px 17px;
+  border:1px solid #194178;border-radius:9px;
+  background:var(--student-navy);color:#fff;font-weight:740;font-size:13px;
+}
+body[data-page="student"] .bb-student-search-row .btn:hover {background:#204b88}
+body[data-page="student"] #student-collection .filters {
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:13px 15px;margin:0 0 16px;padding:0;
+  background:transparent;border:0;
+}
+body[data-page="student"] #student-collection .filters__themes {
+  grid-column:1/-1;order:-2;min-width:0;
+}
+body[data-page="student"] #student-collection .filters__label {
+  color:#45627f;font-size:12.5px;font-weight:750;
+}
+body[data-page="student"] #student-collection .filters__pills {
+  display:flex;align-items:center;flex-wrap:nowrap;gap:7px;
+  overflow-x:auto;overflow-y:hidden;padding:4px 1px 10px;
+  scrollbar-width:thin;min-width:0;
+}
+body[data-page="student"] #student-collection .filters__pill {
+  flex:0 0 auto;min-height:35px;border-radius:99px;
+  padding:7px 12px;font-size:12px;
+}
+body[data-page="student"] #student-collection .filters__group {min-width:0}
+body[data-page="student"] #student-collection .filters__group:not(.bb-student-search) {
+  display:flex;flex-direction:column;gap:6px;align-items:stretch;
+}
+body[data-page="student"] #student-collection :is(select,input[type="range"]) {max-width:100%}
+body[data-page="student"] #student-collection select {min-height:42px;border-radius:8px}
+body[data-page="student"] .summary {
+  margin:0 0 18px;padding:10px 0;border-top:1px solid #e7edf5;
+  display:flex;flex-wrap:wrap;gap:12px 25px;background:transparent;
+}
+body[data-page="student"] .summary__item {
+  padding:0;background:transparent;box-shadow:none;border:0;
+  font-size:14px;color:#244d7c;font-weight:750;
+}
+body[data-page="student"] .summary__item span {
+  display:block;color:#6a7d91;font-size:11.5px;font-weight:500;margin-top:3px;
+}
+body[data-page="student"] #book-grid {
+  display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  gap:15px!important;align-items:stretch;min-width:0;
+}
+body[data-page="student"] #book-grid.book-grid--empty {display:block!important}
+body[data-page="student"] #book-grid .book-card {
+  display:flex;flex-direction:column;min-width:0;max-width:none;
+  padding:13px;border:1px solid #dce4ef;border-radius:13px;
+  background:#fff;box-shadow:0 2px 10px #152d5209;
+  overflow:visible;gap:8px;transform:none;
+}
+body[data-page="student"] #book-grid .book-card:hover,
+body[data-page="student"] #book-grid .book-card:focus-within {
+  border-color:#9dbbdc;box-shadow:0 6px 18px #152d521a;
+}
+body[data-page="student"] #book-grid .book-card__media {
+  padding:0;width:100%;height:auto;max-width:none;margin:0;flex:0 0 auto;
+}
+body[data-page="student"] #book-grid .book-card__cover-wrapper {
+  width:100%;height:auto;min-height:0;max-width:none;max-height:none;
+  aspect-ratio:2/3;border-radius:7px;overflow:hidden;
+  position:relative;box-shadow:0 3px 12px #12356222;
+  background:#dbe2f5;
+}
+body[data-page="student"] #book-grid .book-card__cover,
+body[data-page="student"] #book-grid .book-card__cover-fallback {
+  position:absolute;inset:0;width:100%;height:100%;
+  aspect-ratio:2/3;object-fit:cover;border-radius:7px;
+}
+body[data-page="student"] #book-grid .book-card__cover[hidden],
+body[data-page="student"] #book-grid .book-card__cover-fallback[hidden] {display:none!important}
+body[data-page="student"] #book-grid .book-card__content {
+  display:flex;flex-direction:column;min-width:0;min-height:0;
+  gap:6px;padding:0;margin:0;flex:1;background:transparent;
+}
+body[data-page="student"] #book-grid .book-card__title {
+  font-size:14px;line-height:1.3;font-weight:810;color:#173558;margin:0;min-height:0;
+}
+body[data-page="student"] #book-grid .book-card__author {
+  font-size:12px;color:#61728a;margin:0;line-height:1.45;
+}
+body[data-page="student"] #book-grid .bb-cat-card-pages {
+  display:block;font-size:11.5px;color:#72869d;
+}
+body[data-page="student"] #book-grid .book-card__tags {
+  order:1;display:flex;flex-wrap:wrap;align-items:flex-start;
+  gap:5px;padding:0;margin:2px 0 9px;min-height:22px;
+}
+body[data-page="student"] #book-grid .book-card__tag {
+  font-size:10.7px;font-weight:720;line-height:1.3;
+  border:1px solid var(--theme-pill-border,#d6e1ef);
+  background:var(--theme-pill-bg,#eef4fa);
+  color:var(--theme-pill-text,#385875);
+  border-radius:9px;padding:4px 7px;white-space:normal;
+}
+body[data-page="student"] #book-grid .book-card__status {
+  order:2;align-self:flex-start;margin-top:auto;
+  display:inline-flex;align-items:center;gap:7px;
+  background:transparent;padding:0;border:0;
+  font-size:11.7px;color:#55728a;font-weight:600;
+}
+body[data-page="student"] #book-grid .book-card__status::before {
+  content:"";height:8px;width:8px;flex:0 0 8px;border-radius:50%;background:#18a477;
+}
+body[data-page="student"] #book-grid .book-card__status--borrowed::before {background:#d18f28}
+body[data-page="student"] #book-grid .bb-cat-card-actions {
+  order:3;display:flex;align-items:stretch;gap:6px;margin-top:7px;flex-wrap:wrap;
+}
+body[data-page="student"] #book-grid .bb-cat-card-actions button {
+  flex:1 1 80px;min-height:38px;
+  border-radius:9px;padding:7px 8px;
+  font-size:12px;font-weight:750;
+}
+body[data-page="student"] #book-grid .bb-cat-card-view {
+  background:#e7effb;border:1px solid #d3e0ef;color:#184b85;
+}
+body[data-page="student"] #book-grid .bb-student-card-action {
+  background:var(--student-navy);color:#fff;border:1px solid #194178;
+}
+body[data-page="student"] #book-grid .bb-cat-cover-placeholder {
+  position:absolute;inset:0;display:flex;
+  flex-direction:column;align-items:center;justify-content:space-between;
+  padding:14px 11px;gap:0;isolation:isolate;
+  background:linear-gradient(165deg,var(--bb-cover-top,#7da8d8),var(--bb-cover-bottom,#426c9a));
+  color:#fff;text-align:center;
+}
+body[data-page="student"] #book-grid .bb-cat-cover-placeholder__author {
+  font-size:clamp(9px,.85vw,12px);font-weight:800;text-transform:uppercase;
+  letter-spacing:.05em;color:#fff;
+}
+body[data-page="student"] #book-grid .bb-cat-cover-placeholder__label {
+  font-size:8px;font-weight:700;color:#fff;opacity:.85;
+  background:transparent;position:static;padding:0;
+}
+body[data-page="student"] #book-grid .bb-cat-cover-placeholder__symbol {
+  display:grid;place-items:center;flex:1;font-size:clamp(31px,3vw,65px);
+  color:#fff;line-height:1;
+}
+body[data-page="student"] #book-grid .bb-cat-cover-placeholder__title {
+  font-size:clamp(13px,1.25vw,19px);
+  font-weight:850;color:#fff;overflow-wrap:anywhere;line-height:1.17;
+}
+body[data-page="student"] #book-grid .book-card--easy-reading .book-card__cover-wrapper {
+  outline:3px solid #1ba7a6;outline-offset:2px;
+}
+body[data-page="student"] #book-grid .book-card--exam-list .book-card__cover-wrapper::after {
+  content:"";position:absolute;top:0;right:10px;width:18px;height:28px;
+  background:#d99436;clip-path:polygon(0 0,100% 0,100% 100%,50% 73%,0 100%);
+  z-index:3;
+}
+body[data-page="student"] .bb-student-scan-panel {margin-top:17px}
+body[data-page="student"] .bb-student-scan-heading {
+  display:flex;align-items:flex-start;justify-content:space-between;gap:15px;margin-bottom:17px;
+}
+body[data-page="student"] .bb-student-scan-heading h2 {font-size:17px;color:#173a68;margin:0 0 5px}
+body[data-page="student"] .bb-student-scan-heading p {font-size:13px;color:var(--student-muted);margin:0}
+body[data-page="student"] .bb-student-scan-panel .student-dashboard__scan {
+  width:100%;max-width:none;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;
+  background:transparent;border:0;padding:0;
+}
+body[data-page="student"] .bb-student-scan-panel .student-dashboard__scan > label {grid-column:1/-1}
+body[data-page="student"] .bb-student-scan-panel #barcode-input {min-height:44px;min-width:0}
+body[data-page="student"] .bb-student-scan-panel #lookup-button {min-height:44px}
+body[data-page="student"] .bb-student-scan-panel #book-result {grid-column:1/-1;min-width:0;margin-top:4px}
+body[data-page="student"] #student-profile-view .student-dashboard__grid {
+  display:block;grid-template-columns:1fr;
+}
+body[data-page="student"] #student-profile-view .student-dashboard__info {
+  padding:0;background:transparent;border:0;max-width:none;
+}
+body[data-page="student"] #student-profile-view .student-dashboard__identity {margin-bottom:15px}
+body[data-page="student"] #student-borrowed-list .borrowed-list__item {
+  display:flex;align-items:center;flex-wrap:wrap;gap:8px;
+}
+body[data-page="student"] #student-borrowed-list .bb-student-borrowed-view {
+  margin-left:auto;min-height:36px;padding:7px 12px;
+  font-size:12px;background:#e9f0fb;color:#173f78;border-color:#d3e0ef;
+}
+
+body[data-page="student"] #student-activity .activity-list__item {border-bottom:1px solid #edf1f5}
+body[data-page="student"] .bb-student-account-facts {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0 0 15px}
+body[data-page="student"] .bb-student-account-facts div {padding:11px 13px;background:#f5f8fd;border:1px solid #e5ecf5;border-radius:9px;min-width:0}
+body[data-page="student"] .bb-student-account-facts dt {font-size:12px;color:#647b94}
+body[data-page="student"] .bb-student-account-facts dd {font-size:14px;font-weight:750;margin:3px 0 0;overflow-wrap:anywhere}
+body[data-page="student"] #student-action-message:empty {display:none}
+body[data-page="student"] #student-action-message {
+  background:#eef5fd;border:1px solid #d3e3f3;color:#285780;
+  border-radius:9px;padding:11px 13px;margin-bottom:14px;
+  font-size:13px;
+}
+body[data-page="student"] .footer {
+  background:var(--student-canvas);color:#72829a;
+  border:0;text-align:center;font-size:12px;padding:15px 20px 26px;
+}
+@media (max-width:1000px) {
+  body[data-page="student"] #student-collection .filters {grid-template-columns:repeat(2,minmax(0,1fr))}
+  body[data-page="student"] #book-grid {grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  body[data-page="student"] .bb-student-context {display:none}
+}
+@media (max-width:760px) {
+  body[data-page="student"] .bb-student-sitebar {height:63px;padding:0 14px;gap:9px}
+  body[data-page="student"] .bb-student-hamburger {display:flex}
+  body[data-page="student"] .bb-student-wordmark {font-size:16px}
+  body[data-page="student"] .bb-student-school-logo {height:34px;width:78px;padding:3px 6px}
+  body[data-page="student"] .bb-student-staff-link {display:none}
+  body[data-page="student"] .bb-student-account-status {display:none}
+  body[data-page="student"] .bb-student-layout {display:block;min-height:calc(100dvh - 63px)}
+  body[data-page="student"] .bb-student-sidebar {
+    display:block;position:fixed;top:63px;left:0;z-index:60;
+    width:min(290px,85vw);height:calc(100dvh - 63px);
+    box-shadow:10px 0 24px #102b5040;
+    transform:translateX(-110%);transition:transform .2s ease;
+  }
+  body[data-page="student"] .bb-student-sidebar.is-open {transform:translateX(0)}
+  body[data-page="student"] .bb-student-scrim:not([hidden]) {
+    display:block;position:fixed;inset:63px 0 0;background:#0b224b70;z-index:55;
+  }
+  body[data-page="student"] .bb-student-main {padding:19px 13px 55px}
+  body[data-page="student"] :is(#student-collection,#student-login-panel,#student-dashboard,#student-activity,.bb-student-scan-panel) {padding:17px 15px}
+  body[data-page="student"] #book-grid {grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important}
+}
+@media (max-width:470px) {
+  body[data-page="student"] .bb-student-wordmark-icon {display:none}
+  body[data-page="student"] .bb-student-wordmark {font-size:15px}
+  body[data-page="student"] .bb-student-school-logo {height:29px;width:63px;padding:2px 5px}
+  body[data-page="student"] .bb-student-account-button {min-height:35px;font-size:11px;padding:7px 9px}
+  body[data-page="student"] .bb-student-search-row {gap:7px}
+  body[data-page="student"] .bb-student-search-row #search-input {font-size:12px;padding:9px 10px}
+  body[data-page="student"] .bb-student-search-row .btn {font-size:11.5px;padding:8px 10px}
+  body[data-page="student"] #student-collection .filters {grid-template-columns:repeat(2,minmax(0,1fr))}
+  body[data-page="student"] #book-grid {gap:9px!important}
+  body[data-page="student"] #book-grid .book-card {padding:9px;gap:6px}
+  body[data-page="student"] #book-grid .book-card__title {font-size:12.5px}
+  body[data-page="student"] #book-grid .book-card__author {font-size:11px}
+  body[data-page="student"] #book-grid .bb-cat-cover-placeholder {padding:9px 7px}
+  body[data-page="student"] #book-grid .bb-cat-cover-placeholder__author {font-size:9px}
+  body[data-page="student"] #book-grid .bb-cat-cover-placeholder__symbol {font-size:33px}
+  body[data-page="student"] #book-grid .bb-cat-cover-placeholder__title {font-size:12px}
+  body[data-page="student"] #book-grid .bb-cat-card-actions button {flex-basis:100%;min-height:40px}
+  body[data-page="student"] .bb-student-scan-heading {flex-wrap:wrap}
+}
+@media (prefers-reduced-motion:reduce) {
+  body[data-page="student"] .bb-student-sidebar {transition:none}
+}
+@media (forced-colors:active) {
+  body[data-page="student"] .bb-student-nav-button.is-active {outline:2px solid Highlight}
+  body[data-page="student"] #book-grid .book-card:focus-visible {outline:3px solid Highlight;outline-offset:3px}
+}
