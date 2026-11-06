@@ -1,0 +1,72 @@
+/*
+ * Final staff-library refinement after PR #316.
+ * Keep the approved cover-first catalogue, 2:3 imagery and five-column
+ * desktop layout. The reduced cover footprint comes from real grid/card
+ * widths, not CSS zoom/scale. No white card surfaces are reintroduced.
+ * Student screens and all loan, edit and filter handlers are untouched.
+ */
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {
+  justify-self:center;
+}
+
+@media (min-width:761px) {
+  /* With the slightly larger gap, covers render about 7% narrower than
+     in v3.9 across typical five-column desktop viewports. */
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    column-gap:24px!important;
+    row-gap:33px!important;
+  }
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {
+    width:94%;
+  }
+}
+
+@media (max-width:760px) {
+  /* Keep the two-up mobile grid and readable/tappable card controls. */
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    column-gap:13px!important;
+    row-gap:29px!important;
+  }
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {
+    width:96%;
+  }
+}
+@media (max-width:410px) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid {
+    column-gap:11px!important;
+  }
+}
+
+/* The cover itself receives the interaction treatment. The existing
+   turquoise Makkelijk Lezen outline and gold exam bookmark stay visible. */
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
+  transition:box-shadow .18s ease,transform .18s ease;
+}
+
+@media (hover:hover) and (pointer:fine) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:hover .book-card__cover-wrapper {
+    box-shadow:0 0 0 2px #71b6cf,0 10px 22px #17365b30;
+    transform:translateY(-2px);
+  }
+}
+
+/* The card itself is already keyboard-focusable, with working Enter/Space
+   activation. Focus belongs visibly around its cover rather than an
+   otherwise invisible card rectangle. Inner action buttons keep their
+   existing native focus indicators. */
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-visible {
+  outline:none;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-visible .book-card__cover-wrapper {
+  box-shadow:0 0 0 4px #78a9e7,0 8px 20px #17365b30;
+}
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:focus-within:not(:focus-visible) .book-card__cover-wrapper {
+  box-shadow:0 0 0 2px #78a9e7,0 8px 20px #17365b26;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
+    transition:none;
+    transform:none!important;
+  }
+}
