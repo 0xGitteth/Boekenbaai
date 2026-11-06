@@ -3013,9 +3013,9 @@ function initStudentPage() {
   const studentProfileView = document.querySelector('#student-profile-view');
   const studentNavLibrary = document.querySelector('#student-nav-library');
   const studentNavProfile = document.querySelector('#student-nav-profile');
-  const studentMenuToggle = document.querySelector('#student-menu-toggle');
-  const studentSidebar = document.querySelector('#student-sidebar');
-  const studentScrim = document.querySelector('#student-sidebar-scrim');
+  const studentFilterToggle = document.querySelector('#student-filter-toggle');
+  const studentFilterLabel = document.querySelector('#student-filter-label');
+  const studentLoginPreview = document.querySelector('#student-login-preview');
   const studentAccountStatus = document.querySelector('#student-account-status');
   const studentAccountOpen = document.querySelector('#student-account-open');
   const scanOpen = document.querySelector('#student-scan-open');
@@ -3026,13 +3026,6 @@ function initStudentPage() {
   const studentAccountName = document.querySelector('#student-account-name');
   const studentAccountUsername = document.querySelector('#student-account-username');
 
-  function closeStudentMenu() {
-    studentSidebar?.classList.remove('is-open');
-    if (studentScrim) studentScrim.hidden = true;
-    studentMenuToggle?.setAttribute('aria-expanded', 'false');
-    // An off-screen mobile drawer must not remain keyboard-focusable.
-    if (studentSidebar) studentSidebar.inert = window.innerWidth <= 760;
-  }
 
   function showStudentPage(page, { focus = false } = {}) {
     const profile = page === 'profile';
@@ -3043,7 +3036,6 @@ function initStudentPage() {
       if (active) button?.setAttribute('aria-current', 'page');
       else button?.removeAttribute('aria-current');
     }
-    closeStudentMenu();
     if (focus) {
       const heading = document.querySelector(profile ? '#student-profile-title' : '#student-library-title');
       heading?.focus({ preventScroll: true });
@@ -3054,18 +3046,6 @@ function initStudentPage() {
   studentNavLibrary?.addEventListener('click', () => showStudentPage('library', { focus: true }));
   studentNavProfile?.addEventListener('click', () => showStudentPage('profile', { focus: true }));
   studentAccountOpen?.addEventListener('click', () => showStudentPage('profile', { focus: true }));
-  studentMenuToggle?.addEventListener('click', () => {
-    const open = !studentSidebar?.classList.contains('is-open');
-    studentSidebar?.classList.toggle('is-open', open);
-    if (studentScrim) studentScrim.hidden = !open;
-    if (studentSidebar) studentSidebar.inert = !open && window.innerWidth <= 760;
-    studentMenuToggle.setAttribute('aria-expanded', String(open));
-  });
-  studentScrim?.addEventListener('click', closeStudentMenu);
-  window.addEventListener('resize', closeStudentMenu);
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closeStudentMenu();
-  });
   scanOpen?.addEventListener('click', () => {
     if (!scanPanel) return;
     scanPanel.hidden = false;
@@ -3338,6 +3318,7 @@ function initStudentPage() {
   function renderAuthState() {
     const loggedIn = authUser && authUser.role === 'student';
     loginPanel?.classList.toggle('hidden', loggedIn);
+    studentLoginPreview?.classList.toggle('hidden', loggedIn);
     dashboard?.classList.toggle('hidden', !loggedIn);
     activitySection?.classList.toggle('hidden', !loggedIn);
     studentProfileAccount?.classList.toggle('hidden', !loggedIn);
@@ -3476,7 +3457,7 @@ function initStudentPage() {
       Number(limited && Boolean(catalogUnknown?.checked));
     if (catalogFilterCaption) catalogFilterCaption.textContent = activeCount
       ? activeCount + ' filter' + (activeCount === 1 ? '' : 's') + ' actief'
-      : 'Thema’s, pagina’s, beschikbaarheid, taal en kenmerken';
+      : '';
     if (catalogExam) catalogExam.checked = Boolean(onlyExamList);
     if (catalogEasy) catalogEasy.checked = Boolean(onlyEasyReading);
     renderBookGrid({
@@ -3872,9 +3853,13 @@ function initStudentPage() {
   });
 
   searchInput?.addEventListener('input', renderBooks);
+  studentFilterToggle?.addEventListener('click', () => {
+    if (catalogAdvanced) catalogAdvanced.open = !catalogAdvanced.open;
+  });
   catalogAdvanced?.addEventListener('toggle', () => {
-    const title = catalogAdvanced.querySelector('.bb-cat-toggle-copy strong');
-    if (title) title.textContent = catalogAdvanced.open ? 'Filters verbergen' : 'Filters tonen';
+    const expanded = Boolean(catalogAdvanced.open);
+    studentFilterToggle?.setAttribute('aria-expanded', String(expanded));
+    if (studentFilterLabel) studentFilterLabel.textContent = expanded ? 'Filters verbergen' : 'Filters tonen';
   });
   catalogUnknown?.addEventListener('change', renderBooks);
   catalogEasy?.addEventListener('change', () => {
