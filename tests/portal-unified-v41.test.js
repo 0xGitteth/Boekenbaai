@@ -16,8 +16,9 @@ const googleRuntime = read('google-auth-runtime-preload.js');
 const staffStylesheets = [...staff.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
 const studentStylesheets = [...student.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
 assert.equal(staffStylesheets.at(-1), 'portal-pr1-v43.css');
-assert.equal(studentStylesheets.at(-1), 'portal-pr1-v43.css',
-  'Every portal loads the same final shared design layer');
+assert.equal(studentStylesheets.at(-1), 'portal-student-compact-v44.css',
+  'The student-specific compact layout overrides the legacy sidebar grid after the shared layer');
+assert.ok(student.indexOf('portal-student-compact-v44.css') > student.indexOf('portal-pr1-v43.css'));
 assert.ok(staff.indexOf('catalog-v40.css') < staff.indexOf('portal-unified-v41.css'));
 assert.ok(student.indexOf('student-v31.css') < student.indexOf('portal-unified-v41.css'));
 
