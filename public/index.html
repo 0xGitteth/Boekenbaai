@@ -45,6 +45,7 @@
         <div class="bb-student-content">
           <section id="student-library-view" aria-labelledby="student-library-title">
             <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-library-title" tabindex="-1">Bibliotheek</h1><p>Zoek een boek, bekijk het aanbod of scan de barcode om te lenen.</p></div>
+            <p id="student-action-message" role="status" aria-live="polite"></p>
             <section class="panel" id="student-collection" aria-labelledby="collection-title">
         <div class="panel__header">
           <div>
@@ -100,9 +101,6 @@
             </select>
           </div>
         </div>
-        <div class="summary" id="summary"></div>
-        <div class="book-grid" id="book-grid"></div>
-      </section>
             <section class="bb-student-scan-panel" id="student-scan-panel" aria-labelledby="student-scan-title" hidden>
               <div class="bb-student-scan-heading"><div><h2 id="student-scan-title">Barcode scannen</h2><p>Scan de barcode van een boek of typ het nummer om de beschikbaarheid te bekijken.</p></div><button type="button" id="student-scan-close" class="btn btn--ghost">Sluiten</button></div>
               <div class="student-dashboard__scan">
@@ -119,6 +117,10 @@
             <div class="book-result" id="book-result" role="status" aria-live="polite"></div>
           </div>
             </section>
+        <div class="summary" id="summary"></div>
+        <div class="book-grid" id="book-grid"></div>
+      </section>
+
           </section>
           <section id="student-profile-view" aria-labelledby="student-profile-title" hidden>
             <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-profile-title" tabindex="-1">Mijn profiel</h1><p>Bekijk jouw geleende boeken en uitleenactiviteiten na volledig inloggen.</p></div>
@@ -176,10 +178,19 @@
             <section class="panel" id="student-activity" aria-labelledby="student-activity-title">
         <div class="panel__header">
           <h2 id="student-activity-title">Laatste activiteit</h2>
+          <p class="panel__subtitle" id="student-activity-subtitle">Alleen jouw uitleen- en inlevermomenten.</p>
         </div>
         <ul id="student-activity-list" class="activity-list"></ul>
         <p id="student-activity-empty" class="hint"></p>
       </section>
+            <section class="panel hidden" id="student-profile-account" aria-labelledby="student-profile-account-title">
+              <div class="panel__header"><h2 id="student-profile-account-title">Mijn account</h2></div>
+              <dl class="bb-student-account-facts">
+                <div><dt>Naam</dt><dd id="student-account-name"></dd></div>
+                <div><dt>Schoolaccount</dt><dd id="student-account-email"></dd></div>
+              </dl>
+              <p class="panel__subtitle">Instellen van een snelle uitleenpincode volgt in een aparte beveiligde uitbreiding.</p>
+            </section>
           </section>
         </div>
       </main>
