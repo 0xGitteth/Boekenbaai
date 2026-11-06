@@ -66,7 +66,8 @@ assert.match(app, /role === 'student'/);
 assert.match(css, /#book-grid \.book-card:hover \.book-card__cover-wrapper/);
 assert.match(css, /box-shadow:0 12px 25px #142f5650!important/);
 assert.match(css, /#book-grid > \.book-card--easy-reading:hover/);
-assert.match(css, /#book-grid \.book-card--easy-reading \.book-card__cover-wrapper \{\s*outline:3px solid #19ad8e!important/);
+assert.match(css, /body\[data-page="student"\] #student-collection \.bb-catalog-v36 #book-grid \.book-card--easy-reading \.book-card__cover-wrapper,[\s\S]*?outline:3px solid #19ad8e!important/,
+  'Student Makkelijk Lezen cover must outrank the old high-specificity reset');
 assert.match(css, /#book-grid > \.book-card--easy-reading \{\s*border:2px solid #1aa887!important;\s*background:#fff!important/);
 assert.doesNotMatch(css, /#book-grid > \.book-card--easy-reading \{\s*background:(?:#e|rgba\(1)/);
 assert.match(css, /#book-grid \.book-card--exam-list \.book-card__cover-wrapper::after \{\s*width:27px!important;\s*height:42px!important/);
@@ -74,6 +75,10 @@ assert.match(css, /\.bb-cat-legend \.bb-cat-exam-key \{\s*width:17px!important;\
 assert.match(css, /@media\(forced-colors:active\)/);
 assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
 assert.match(studentCss, /SOURCE portal-unified-v41\.css: final green border/);
+assert.match(studentCss,
+  /body\[data-page="student"\] #student-collection \.bb-catalog-v36 #book-grid \.book-card--easy-reading \.book-card__cover-wrapper \{[\s\S]*?outline:0!important;/,
+  'The mirrored source contains the old specific outline reset, which PR1 must override');
+
 assert.match(src, /Makkelijk Lezen/);
 
 // Codex P2 regressions: the staff mobile header and drawer are DIFFERENT
