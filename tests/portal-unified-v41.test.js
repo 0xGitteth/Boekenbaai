@@ -44,7 +44,12 @@ assert.match(css, /:has\(#staff-login-panel:not\(\.hidden\)\)/,
   'Redesign must be restricted to the visible login, not the logged-in staff portal');
 assert.match(css, /\.hero--staff \.hero__actions/);
 assert.match(css, /#login-form button\[type="submit"\]:disabled/);
-assert.match(css, /#login-form input:focus-visible/);
+assert.match(css, /#login-form input:not\\(\\[type="checkbox"\\]\\):focus-visible/,
+  'Text fields keep their high visibility focus without resizing checkbox controls');
+assert.match(css, /#login-form input\\[type="text"\\],\\s*body\\[data-page="staff"\\]:has\\(#staff-login-panel:not\\(\\.hidden\\)\\) #login-form input\\[type="password"\\]/,
+  'Large field styles apply only to the two legitimate text/password fields');
+assert.doesNotMatch(css, /#login-form input \\{\\s*width:100%/,
+  'The Google remember-me checkbox must keep its native, compact dimensions');
 assert.match(css, /body\[data-page="staff"\] \.bb-login-site-brand \{\s*display:none;/);
 assert.match(css, /body\[data-page="student"\] \.bb-student-school-brand/);
 assert.match(css, /background-image:url\("logo\/het-dok-logo\.svg"\)/);
