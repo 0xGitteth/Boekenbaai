@@ -1539,6 +1539,19 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.editButton.hidden = !isAdmin;
     state.editButton.disabled = !isAdmin;
   }
+  const studentAction = document.querySelector('#student-book-detail-action');
+  if (studentAction) {
+    const descriptor = pageType === 'student'
+      ? resolveStudentBookAction(book, authUser) : null;
+    studentAction.hidden = !descriptor;
+    studentAction.disabled = !descriptor;
+    if (descriptor) {
+      studentAction.textContent = descriptor.label;
+      studentAction.onclick = () => bookDetailState.studentActionHandler?.(book);
+    } else {
+      studentAction.onclick = null;
+    }
+  }
   
 }
 
@@ -2209,6 +2222,15 @@ function createBookCard(template, book, folders, options = {}) {
       });
       edit?.addEventListener('click',(event)=>{
         event.stopPropagation();options.onEdit(book);
+      });
+    }
+    if (options.studentActionLabel && typeof options.onStudentAction === 'function') {
+      const studentAction = appendTextElement(actions, 'button', options.studentActionLabel, {
+        type: 'button', className: 'bb-student-card-action',
+      });
+      studentAction?.addEventListener('click', event => {
+        event.stopPropagation();
+        options.onStudentAction(book);
       });
     }
     card.setAttribute('role','group');
@@ -2933,6 +2955,25 @@ function createLoginAutocomplete({ inputElement, suggestionsElement, type = 'stu
   };
 }
 
+
+function resolveStudentBookAction(book, user) {
+  // The public catalogue deliberately never contains other borrowers' IDs.
+  // Only /api/me's own borrowedBooks identifies a student's exact copy.
+  if (!book) return null;
+  const copies = Array.isArray(book.copies) ? book.copies : [book];
+  const isStudent = user?.role === 'student';
+  const ownedIds = new Set(isStudent && Array.isArray(user.borrowedBooks)
+    ? user.borrowedBooks.map(item => typeof item === 'string' ? item : item?.bookId).filter(Boolean)
+    : []);
+  const mine = copies.find(copy => ownedIds.has(copy.id));
+  if (mine) return { label: 'Boek terugbrengen', type: 'return', bookId: mine.id };
+  const available = copies.find(copy => copy?.id && copy.status !== 'borrowed');
+  if (!available) return null;
+  return isStudent
+    ? { label: 'Boek lenen', type: 'borrow', bookId: available.id }
+    : { label: 'Inloggen om te lenen', type: 'login', bookId: null };
+}
+
 function initStudentPage() {
   const loginPanel = document.querySelector('#student-login-panel');
   const loginForm = document.querySelector('#student-login-form');
@@ -2962,6 +3003,72 @@ function initStudentPage() {
   const barcodeInput = document.querySelector('#barcode-input');
   const lookupButton = document.querySelector('#lookup-button');
   const bookResult = document.querySelector('#book-result');
+  const studentLibraryView = document.querySelector('#student-library-view');
+  const studentProfileView = document.querySelector('#student-profile-view');
+  const studentNavLibrary = document.querySelector('#student-nav-library');
+  const studentNavProfile = document.querySelector('#student-nav-profile');
+  const studentMenuToggle = document.querySelector('#student-menu-toggle');
+  const studentSidebar = document.querySelector('#student-sidebar');
+  const studentScrim = document.querySelector('#student-sidebar-scrim');
+  const studentAccountStatus = document.querySelector('#student-account-status');
+  const studentAccountOpen = document.querySelector('#student-account-open');
+  const scanOpen = document.querySelector('#student-scan-open');
+  const scanClose = document.querySelector('#student-scan-close');
+  const scanPanel = document.querySelector('#student-scan-panel');
+  const studentActionMessage = document.querySelector('#student-action-message');
+
+  function closeStudentMenu() {
+    studentSidebar?.classList.remove('is-open');
+    if (studentScrim) studentScrim.hidden = true;
+    studentMenuToggle?.setAttribute('aria-expanded', 'false');
+  }
+
+  function showStudentPage(page, { focus = false } = {}) {
+    const profile = page === 'profile';
+    if (studentLibraryView) studentLibraryView.hidden = profile;
+    if (studentProfileView) studentProfileView.hidden = !profile;
+    for (const [button, active] of [[studentNavLibrary, !profile], [studentNavProfile, profile]]) {
+      button?.classList.toggle('is-active', active);
+      if (active) button?.setAttribute('aria-current', 'page');
+      else button?.removeAttribute('aria-current');
+    }
+    closeStudentMenu();
+    if (focus) {
+      const heading = document.querySelector(profile ? '#student-profile-title' : '#student-library-title');
+      heading?.focus({ preventScroll: true });
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }
+
+  studentNavLibrary?.addEventListener('click', () => showStudentPage('library', { focus: true }));
+  studentNavProfile?.addEventListener('click', () => showStudentPage('profile', { focus: true }));
+  studentAccountOpen?.addEventListener('click', () => showStudentPage('profile', { focus: true }));
+  studentMenuToggle?.addEventListener('click', () => {
+    const open = !studentSidebar?.classList.contains('is-open');
+    studentSidebar?.classList.toggle('is-open', open);
+    if (studentScrim) studentScrim.hidden = !open;
+    studentMenuToggle.setAttribute('aria-expanded', String(open));
+  });
+  studentScrim?.addEventListener('click', closeStudentMenu);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeStudentMenu();
+  });
+  scanOpen?.addEventListener('click', () => {
+    if (!scanPanel) return;
+    scanPanel.hidden = false;
+    scanOpen.setAttribute('aria-expanded', 'true');
+    barcodeInput?.focus();
+    scanPanel.scrollIntoView({ block: 'nearest' });
+  });
+  scanClose?.addEventListener('click', () => {
+    if (!scanPanel) return;
+    scanPanel.hidden = true;
+    scanOpen?.setAttribute('aria-expanded', 'false');
+    scanOpen?.focus();
+  });
+  const studentRedirectState = new URLSearchParams(window.location.search).get('googleAuth');
+  showStudentPage(studentRedirectState === 'success' || window.location.hash === '#mijn-profiel'
+    ? 'profile' : 'library');
 
   let folders = [];
   let allBooks = [];
@@ -3085,16 +3192,10 @@ function initStudentPage() {
   }
 
   function enableScanArea() {
-    const loggedIn = authUser && authUser.role === 'student';
-    if (barcodeInput) {
-      barcodeInput.disabled = !loggedIn;
-      if (!loggedIn) {
-        barcodeInput.value = '';
-      }
-    }
-    if (lookupButton) {
-      lookupButton.disabled = !loggedIn;
-    }
+    // Barcode lookup is a public read-only endpoint. Only the actual loan
+    // operation is authenticated server-side.
+    if (barcodeInput) barcodeInput.disabled = false;
+    if (lookupButton) lookupButton.disabled = false;
   }
 
   function resetBookResult() {
@@ -3102,7 +3203,7 @@ function initStudentPage() {
       replaceWithTextElement(
         bookResult,
         'p',
-        'Log in en scan een boek om te starten.',
+        'Scan of typ de barcode van een boek om de beschikbaarheid te bekijken.',
         { className: 'book-result__status' }
       );
     }
@@ -3211,7 +3312,12 @@ function initStudentPage() {
     const loggedIn = authUser && authUser.role === 'student';
     loginPanel?.classList.toggle('hidden', loggedIn);
     dashboard?.classList.toggle('hidden', !loggedIn);
+    activitySection?.classList.toggle('hidden', !loggedIn);
     logoutButton?.classList.toggle('hidden', !loggedIn);
+    if (studentAccountStatus) studentAccountStatus.textContent = loggedIn
+      ? getUserGreetingName(authUser) || 'Ingelogd'
+      : 'Gast / tablet';
+    if (studentAccountOpen) studentAccountOpen.textContent = loggedIn ? 'Mijn profiel' : 'Inloggen';
     if (studentName) {
       studentName.textContent = loggedIn ? getUserGreetingName(authUser) : '';
     }
@@ -3222,8 +3328,12 @@ function initStudentPage() {
     renderBorrowedBooks();
     if (!loggedIn) {
       resetBookResult();
+      activityRequestToken += 1;
+      activityList?.replaceChildren();
+    } else {
+      loadStudentActivity();
     }
-    loadStudentActivity();
+    if (groupedBooks.length) renderBooks();
   }
 
   updateAuthUi = renderAuthState;
@@ -3282,19 +3392,21 @@ function initStudentPage() {
   }
   async function loadStudentActivity() {
     if (!activityList || !activitySection) return;
-    const loggedIn = authUser && authUser.role === 'student';
-    const mode = loggedIn ? 'personal' : 'public';
+    const loggedIn = authUser && authUser.role === 'student' && Boolean(authUser.id);
+    if (!loggedIn) {
+      activityRequestToken += 1;
+      activityList.replaceChildren();
+      return;
+    }
+    const mode = 'personal';
     lastActivityMode = mode;
-    const requestId = Date.now();
-    activityRequestToken = requestId;
+    const requestId = ++activityRequestToken;
     renderActivity({ mode, loading: true });
     try {
       // Leerlingen mogen alleen hun eigen uitleenlog opvragen; de server weigert
       // andere leerling-id's met een 401/403. Daarom sturen we uitsluitend het
       // eigen studentId mee en vallen we anders terug op de openbare feed.
-      const endpoint = loggedIn && authUser?.id
-        ? `/api/students/${authUser.id}/loans`
-        : '/api/activity/public';
+      const endpoint = `/api/students/${authUser.id}/loans`;
       const result = await fetchJson(endpoint);
       if (activityRequestToken !== requestId) return;
       const entries = Array.isArray(result) ? result : [];
@@ -3321,6 +3433,14 @@ function initStudentPage() {
         pageLimit: selectedPageLimit,
         availability: selectedAvailability,
         sortBy,
+      },
+      cardOptions: book => {
+        const action = resolveStudentBookAction(book, authUser);
+        return {
+          catalogLayout: true,
+          studentActionLabel: action?.label || '',
+          onStudentAction: () => handleCardLoanAction(book),
+        };
       },
     });
   }
@@ -3408,10 +3528,6 @@ function initStudentPage() {
   }
 
   async function handleLookup() {
-    if (!authUser || authUser.role !== 'student') {
-      resetBookResult();
-      return;
-    }
     const barcode = barcodeInput?.value.trim();
     if (!barcode) return;
     try {
@@ -3439,10 +3555,6 @@ function initStudentPage() {
 
   function renderBookPrompt() {
     if (!bookResult) return;
-    if (!authUser || authUser.role !== 'student') {
-      resetBookResult();
-      return;
-    }
     if (!currentBarcodeSelection?.groups?.length) {
       resetBookResult();
       return;
@@ -3522,15 +3634,21 @@ function initStudentPage() {
     }
 
     const actions = appendElement(bookResult, 'div', { className: 'book-result__actions' });
+    if (!loggedIn && hasAvailable) {
+      const signIn = appendTextElement(actions, 'button', 'Inloggen om te lenen', {
+        className: 'btn', type: 'button',
+      });
+      signIn.addEventListener('click', () => showStudentPage('profile', { focus: true }));
+    }
     if (loggedIn && !borrowedByStudent && hasAvailable) {
-      const borrowBtn = appendTextElement(actions, 'button', 'Ik leen dit boek', {
+      const borrowBtn = appendTextElement(actions, 'button', 'Boek lenen', {
         className: 'btn',
         type: 'button',
       });
       borrowBtn.addEventListener('click', () => handleBorrow(selectedGroup));
     }
     if (borrowedByStudent && loggedIn) {
-      const returnBtn = appendTextElement(actions, 'button', 'Ik breng het terug', {
+      const returnBtn = appendTextElement(actions, 'button', 'Boek terugbrengen', {
         className: 'btn btn--secondary',
         type: 'button',
       });
@@ -3545,6 +3663,43 @@ function initStudentPage() {
       );
     }
   }
+
+
+  let studentLoanInProgress = false;
+  async function handleCardLoanAction(book) {
+    const action = resolveStudentBookAction(book, authUser);
+    if (!action) return;
+    if (action.type === 'login') {
+      closeBookDetail();
+      showStudentPage('profile', { focus: true });
+      return;
+    }
+    if (studentLoanInProgress || !action.bookId || authUser?.role !== 'student') return;
+    studentLoanInProgress = true;
+    if (studentActionMessage) studentActionMessage.textContent = 'Boek wordt verwerkt…';
+    try {
+      const operation = action.type === 'return' ? 'check-in' : 'check-out';
+      await fetchJson(`/api/books/${encodeURIComponent(action.bookId)}/${operation}`, {
+        method: 'POST', body: {},
+      });
+      closeBookDetail();
+      await refreshData();
+      if (studentActionMessage) studentActionMessage.textContent = action.type === 'return'
+        ? 'Boek teruggebracht.' : 'Boek geleend. Veel leesplezier!';
+    } catch (error) {
+      if (studentActionMessage) studentActionMessage.textContent =
+        error?.message || 'De leenhandeling is niet gelukt.';
+      const detailMessage = document.querySelector('#book-detail-message');
+      if (detailMessage && !document.querySelector('#book-detail')?.classList.contains('hidden')) {
+        detailMessage.textContent = error?.message || 'De leenhandeling is niet gelukt.';
+      }
+    } finally {
+      studentLoanInProgress = false;
+    }
+  }
+  // The shared book-detail dialog delegates student actions to the
+  // student-only controller; staff functions and role checks stay unchanged.
+  bookDetailState.studentActionHandler = handleCardLoanAction;
 
   async function handleBorrow(group) {
     if (!group) return;
@@ -3641,7 +3796,8 @@ function initStudentPage() {
       loginForm.reset();
       loginMessage.textContent = `Welkom ${getUserGreetingName(authUser)}!`;
       await refreshData();
-      barcodeInput?.focus();
+      showStudentPage('profile');
+      studentName?.focus?.();
     } catch (error) {
       loginMessage.textContent = error.message;
     }
@@ -3656,6 +3812,7 @@ function initStudentPage() {
     }
     clearAuth();
     loginMessage.textContent = 'Je bent uitgelogd.';
+    if (barcodeInput) barcodeInput.value = '';
     renderBorrowedBooks();
     resetBookResult();
   });
