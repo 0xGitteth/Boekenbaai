@@ -308,6 +308,10 @@ body[data-page="student"] #student-profile-view .student-dashboard__info {
 }
 body[data-page="student"] #student-profile-view .student-dashboard__identity {margin-bottom:15px}
 body[data-page="student"] #student-activity .activity-list__item {border-bottom:1px solid #edf1f5}
+body[data-page="student"] .bb-student-account-facts {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0 0 15px}
+body[data-page="student"] .bb-student-account-facts div {padding:11px 13px;background:#f5f8fd;border:1px solid #e5ecf5;border-radius:9px;min-width:0}
+body[data-page="student"] .bb-student-account-facts dt {font-size:12px;color:#647b94}
+body[data-page="student"] .bb-student-account-facts dd {font-size:14px;font-weight:750;margin:3px 0 0;overflow-wrap:anywhere}
 body[data-page="student"] #student-action-message:empty {display:none}
 body[data-page="student"] #student-action-message {
   background:#eef5fd;border:1px solid #d3e3f3;color:#285780;
