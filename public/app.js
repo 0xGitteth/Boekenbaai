@@ -3024,6 +3024,8 @@ function initStudentPage() {
     studentSidebar?.classList.remove('is-open');
     if (studentScrim) studentScrim.hidden = true;
     studentMenuToggle?.setAttribute('aria-expanded', 'false');
+    // An off-screen mobile drawer must not remain keyboard-focusable.
+    if (studentSidebar) studentSidebar.inert = window.innerWidth <= 760;
   }
 
   function showStudentPage(page, { focus = false } = {}) {
@@ -3050,9 +3052,11 @@ function initStudentPage() {
     const open = !studentSidebar?.classList.contains('is-open');
     studentSidebar?.classList.toggle('is-open', open);
     if (studentScrim) studentScrim.hidden = !open;
+    if (studentSidebar) studentSidebar.inert = !open && window.innerWidth <= 760;
     studentMenuToggle.setAttribute('aria-expanded', String(open));
   });
   studentScrim?.addEventListener('click', closeStudentMenu);
+  window.addEventListener('resize', closeStudentMenu);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') closeStudentMenu();
   });
