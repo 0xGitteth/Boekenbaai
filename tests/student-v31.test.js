@@ -30,7 +30,7 @@ assert.match(html,/href="student-v31.css"/);
 assert.match(html,/<button[^>]+id="student-nav-library"[^>]+aria-current="page"/);
 assert.match(html,/<button[^>]+id="student-nav-profile"/);
 assert.equal((html.match(/class="bb-student-nav-button/g)||[]).length,2,
-  'Exactly Bibliotheek and Mijn profiel in the student sidebar');
+  'Exactly Bibliotheek and Mijn profiel in the shared top navigation');
 assert.equal((html.match(/id="student-scan-open"/g)||[]).length,1,
   'Exactly one student scan trigger, adjacent to search');
 assert.ok(html.indexOf('id="student-scan-open"') > html.indexOf('id="search-input"'));
@@ -63,10 +63,18 @@ assert.match(css,/@media \(prefers-reduced-motion:reduce\)/);
 assert.match(app,/function showStudentPage\(page, \{ focus = false \} = \{\}\)/);
 assert.match(app,/showStudentPage\(studentRedirectState \|\| window\.location\.hash === '#mijn-profiel'/,
   'All Google redirect states, including link pending and login errors, reopen the profile');
-assert.match(app,/studentSidebar\.inert = window\.innerWidth <= 760;/,
-  'Offscreen mobile navigation must not be focusable');
-assert.match(app,/studentSidebar\.inert = !open && window\.innerWidth <= 760;/,
-  'Opened mobile navigation must regain keyboard access');
+assert.doesNotMatch(html,/id="student-sidebar"|id="student-menu-toggle"/,
+  'The student portal has no sidebar or menu drawer');
+assert.match(html,/<nav class="bb-student-nav bb-shared-primary-nav"/,
+  'Both student destinations are available in the common header');
+assert.match(html,/id="student-login-preview"/);
+assert.match(app,/studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn\)/,
+  'Guest preview must disappear once the student logs in');
+assert.match(app,/studentFilterToggle\?\.addEventListener\('click'/,
+  'The compact filter button must open the actual filters');
+assert.match(app,/studentFilterToggle\?\.setAttribute\('aria-expanded', String\(expanded\)\)/);
+assert.doesNotMatch(app,/studentSidebar\.inert/,
+  'Removed mobile drawer must not retain obsolete inert handling');
 
 assert.match(app,/activitySection\?\.classList\.toggle\('hidden', !loggedIn\)/);
 assert.match(app,/studentProfileAccount\?\.classList\.toggle\('hidden', !loggedIn\)/);

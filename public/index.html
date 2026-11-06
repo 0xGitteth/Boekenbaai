@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="student-v31.css" />
     <link rel="stylesheet" href="portal-unified-v41.css" />
     <link rel="stylesheet" href="student-catalog-from-staff-v42.css" />
+    <link rel="stylesheet" href="portal-pr1-v43.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -22,30 +23,22 @@
     />
   </head>
   <body data-page="student">
-    <header class="bb-student-sitebar">
-      <button type="button" id="student-menu-toggle" class="bb-student-hamburger" aria-expanded="false" aria-controls="student-sidebar" aria-label="Navigatie openen">☰</button>
+
+    <header class="bb-student-sitebar bb-shared-sitebar">
       <a class="bb-student-wordmark" href="/" aria-label="Boekenbaai, naar bibliotheek">
-        <span class="bb-student-wordmark-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 6c-3-2-6-2-9-1v14c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Z"/><path d="M12 6v14"/></svg></span>Boekenbaai
+        <span class="bb-student-wordmark-icon" aria-hidden="true"></span><span class="bb-student-brand-text">Boekenbaai</span>
       </a>
-      <span class="bb-student-school-brand" aria-label="Het Dok">
-        <span class="bb-student-school-emblem" aria-hidden="true"></span>
-        <span class="bb-student-school-name">Het Dok</span>
-      </span>
-      <span class="bb-student-context">Bibliotheek</span>
+      <img class="bb-shared-school-logo" src="logo/het-dok-header-v31.svg" width="132" height="43" alt="Het Dok" />
+      <nav class="bb-student-nav bb-shared-primary-nav" aria-label="Hoofdnavigatie">
+        <button type="button" id="student-nav-library" class="bb-student-nav-button is-active" aria-current="page"><span class="bb-student-nav-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6c-3-2-6-2-9-1v14c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Z"/><path d="M12 6v14"/></svg></span>Bibliotheek</button>
+        <button type="button" id="student-nav-profile" class="bb-student-nav-button"><span class="bb-student-nav-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21v-1.5a7.5 7.5 0 0 1 15 0V21"/></svg></span>Mijn profiel</button>
+      </nav>
       <span class="bb-student-sitebar-spacer"></span>
       <span id="student-account-status" class="bb-student-account-status">Gast / tablet</span>
       <button type="button" id="student-account-open" class="bb-student-account-button">Inloggen</button>
       <a class="bb-student-staff-link" href="staff.html">Docenten</a>
     </header>
-    <div id="student-sidebar-scrim" class="bb-student-scrim" hidden></div>
     <div class="bb-student-layout">
-      <aside id="student-sidebar" class="bb-student-sidebar" aria-label="Leerlingnavigatie">
-        <div class="bb-student-sidebar-label">BIBLIOTHEEK</div>
-        <nav class="bb-student-nav" aria-label="Hoofdnavigatie">
-          <button type="button" id="student-nav-library" class="bb-student-nav-button is-active" aria-current="page"><span aria-hidden="true">⌕</span>Bibliotheek</button>
-          <button type="button" id="student-nav-profile" class="bb-student-nav-button"><span aria-hidden="true">♙</span>Mijn profiel</button>
-        </nav>
-      </aside>
       <main class="bb-student-main">
         <div class="bb-student-content">
           <section id="student-library-view" aria-labelledby="student-library-title">
@@ -55,34 +48,26 @@
               <div class="panel__header"><h2 id="collection-title">Boekenoverzicht</h2></div>
               <div class="bb-catalog-v36" aria-label="Boekenoverzicht">
               <p class="bb-catalog-intro">Eén catalogus, met alle titels en hun bijbehorende exemplaren.</p>
-              <section class="bb-catalog-filter-panel" aria-labelledby="bb-cat-filter-heading">
-                <header class="bb-cat-panel-header">
-                  <span class="bb-cat-panel-icon" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10m-7 5h4"></path><circle cx="8" cy="7" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="14" cy="12" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="12" cy="17" r="2.1" fill="currentColor" stroke="none"></circle></svg></span>
-                  <div class="bb-cat-panel-heading"><h4 id="bb-cat-filter-heading">Zoek en filter</h4>
-                    <p>Vind je boek direct, of verfijn de resultaten met filters.</p></div>
-                  <button type="button" class="bb-cat-reset" id="bb-cat-reset"><svg aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"></path></svg> Alles wissen</button>
-                </header>
+
+              <section class="bb-catalog-filter-panel bb-student-compact-filters" aria-label="Boeken zoeken en filteren">
                 <div class="bb-cat-search-row">
                   <label class="bb-cat-search-field" for="search-input">
                     <span aria-hidden="true"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg></span>
                     <input id="search-input" type="search" aria-label="Zoek op titel, auteur of trefwoord" autocomplete="off" placeholder="Zoek op titel, auteur of trefwoord…" />
                   </label>
+                  <button type="button" id="student-filter-toggle" class="bb-student-filter-button" aria-expanded="false" aria-controls="bb-cat-advanced">
+                    <span aria-hidden="true">☷</span> <span id="student-filter-label">Filters tonen</span>
+                    <span id="bb-cat-filter-caption" class="bb-student-filter-count" aria-live="polite"></span>
+                  </button>
+                  <button type="button" id="student-help-choose" class="bb-student-choose-button" disabled aria-describedby="student-help-choose-note">
+                    <span aria-hidden="true">✧</span> Help me kiezen
+                    <small id="student-help-choose-note">Binnenkort</small>
+                  </button>
                   <button type="button" id="student-scan-open" class="btn bb-cat-scan-button" aria-expanded="false" aria-controls="student-scan-panel">Boek scannen</button>
-                  <label class="bb-cat-sort" for="staff-book-sort-select"><span>Sorteer op</span>
-                    <select id="staff-book-sort-select" aria-controls="book-grid">
-                      <option value="title">Titel (A–Z)</option>
-                      <option value="author" selected>Auteur (A–Z)</option>
-                      <option value="popular">Meest populair</option>
-                    </select>
-                  </label>
                 </div>
                 <details class="bb-cat-advanced" id="bb-cat-advanced">
-                  <summary class="bb-cat-advanced-toggle">
-                    <span class="bb-cat-toggle-icon" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10m-7 5h4"></path><circle cx="8" cy="7" r="1.9" fill="currentColor" stroke="none"></circle><circle cx="15" cy="12" r="1.9" fill="currentColor" stroke="none"></circle></svg></span>
-                    <span class="bb-cat-toggle-copy"><strong>Filters tonen</strong>
-                      <small id="bb-cat-filter-caption">Thema’s, pagina’s, beschikbaarheid, taal en kenmerken</small></span>
-                    <span class="bb-cat-chevron" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></svg></span>
-                  </summary>
+                  <summary class="bb-cat-advanced-toggle" hidden>Filters tonen</summary>
+                  <div class="bb-student-filter-actions"><button type="button" class="bb-cat-reset" id="bb-cat-reset">Alles wissen</button></div>
                   <div class="bb-cat-advanced-content">
                     <div class="bb-cat-themes">
                       <h5>Thema’s <span>Meest voorkomende eerst · meerdere mogelijk</span></h5>
@@ -133,6 +118,13 @@
                   <span><i class="bb-cat-easy-key" aria-hidden="true"></i> Makkelijk Lezen</span>
                   <span><i class="bb-cat-exam-key" aria-hidden="true"></i> Examenleeslijst</span>
                 </div>
+                <label class="bb-cat-sort" for="staff-book-sort-select"><span>Sorteer op</span>
+                    <select id="staff-book-sort-select" aria-controls="book-grid">
+                      <option value="title">Titel (A–Z)</option>
+                      <option value="author" selected>Auteur (A–Z)</option>
+                      <option value="popular">Meest populair</option>
+                    </select>
+                  </label>
               </div>
               <div class="book-grid" id="book-grid"></div>
             </div>
@@ -141,9 +133,15 @@
           </section>
           <section id="student-profile-view" aria-labelledby="student-profile-title" hidden>
             <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-profile-title" tabindex="-1">Mijn profiel</h1><p>Bekijk jouw geleende boeken en uitleenactiviteiten na volledig inloggen.</p></div>
-            <section class="panel panel--login" id="student-login-panel" aria-labelledby="student-login-title">
-        <div class="panel__header"><h2 id="student-login-title">Inloggen op jouw profiel</h2><p class="panel__subtitle">Kies je naam uit de lijst en meld je aan met je schoolaccount.</p></div>
-        <form id="student-login-form" class="login-form">
+
+            <section class="panel panel--login bb-student-login-card" id="student-login-panel" aria-labelledby="student-login-title">
+              <div class="bb-student-login-layout">
+                <div class="bb-student-login-primary">
+                  <div class="bb-student-login-title-row">
+                    <span class="bb-student-login-person" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21v-1.5a7.5 7.5 0 0 1 15 0V21"/></svg></span>
+                    <div class="panel__header"><h2 id="student-login-title">Inloggen op jouw profiel</h2><p class="panel__subtitle">Kies je naam en meld je aan met je schoolaccount.</p></div>
+                  </div>
+                          <form id="student-login-form" class="login-form">
           <div class="form-field">
             <label for="student-login-name">Je naam</label>
             <input 
@@ -171,8 +169,31 @@
           </div>
           <button type="submit" class="btn">Inloggen</button>
         </form>
-        <p id="student-login-message" class="hint" role="status" aria-live="polite"></p>
-      </section>
+                  <p id="student-login-message" class="hint" role="status" aria-live="polite"></p>
+                </div>
+                <div class="bb-student-login-art" aria-hidden="true">
+                  <svg viewBox="0 0 320 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <ellipse cx="157" cy="214" rx="126" ry="16" fill="#92B9ED" opacity=".3"/>
+                    <path d="M50 157q-7-18 15-22l169-19q21-2 25 17l-172 23q-17 2-15 25l173-21q14-2 13 12l-170 26q-22 3-31-12z" fill="#E9A839"/>
+                    <path d="M77 177q-8-16 14-20l154-20q11-2 12 8l-166 26q-11 2-9 9z" fill="#FFF8E9"/>
+                    <path d="M61 121q-10-17 12-20l173-18q21-2 25 16l-177 20q-18 2-12 23l171-17q14-2 13 13l-173 19q-25 3-32-16z" fill="#245AA8"/>
+                    <path d="M89 140q-9-13 12-16l164-18q8-2 10 9l-172 19q-14 2-10 9z" fill="#FBFCFF"/>
+                    <path d="M73 83q-9-18 16-21l175-17q23-2 24 15l-182 19q-19 2-13 23l183-17q11-1 11 13l-183 22q-24 3-31-15z" fill="#367BCE"/>
+                    <path d="M100 102q-11-16 11-19l174-18q7-2 7 11l-179 17q-10 2-8 12z" fill="#FFF9EA"/>
+                    <path d="M54 40l14-20M258 19l11 21M22 100l-24-4" stroke="#3C8FE7" stroke-width="5" stroke-linecap="round"/>
+                  </svg>
+                </div>
+              </div>
+            </section>
+            <section id="student-login-preview" class="bb-student-login-preview" aria-labelledby="student-login-preview-title">
+              <h2 id="student-login-preview-title">Wat kun je doen na het inloggen?</h2>
+              <p>Bekijk jouw persoonlijke bibliotheekoverzicht.</p>
+              <div class="bb-student-preview-grid">
+                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true">▤</span><div><strong>Geleende boeken</strong><small>Bekijk welke boeken je nu leent.</small></div><span aria-hidden="true">⌑</span></div>
+                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true">↶</span><div><strong>Uitleengeschiedenis</strong><small>Bekijk welke boeken je eerder hebt geleend.</small></div><span aria-hidden="true">⌑</span></div>
+                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21v-1.5a7.5 7.5 0 0 1 15 0V21"/></svg></span><div><strong>Mijn account</strong><small>Bekijk je accountgegevens.</small></div><span aria-hidden="true">⌑</span></div>
+              </div>
+            </section>
             <section class="panel panel--student hidden" id="student-dashboard">
         <div class="panel__header">
           <h2>Mijn boeken</h2>

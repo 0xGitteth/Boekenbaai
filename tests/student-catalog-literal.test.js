@@ -24,12 +24,24 @@ function catalogue(html) {
   return html.slice(from,end);
 }
 const staffMarkup=catalogue(staff);
-const studentMarkup=catalogue(student)
-  .replace(/\s*<button type="button" id="student-scan-open"[^>]*>[^<]*<\/button>/,'')
-  .replace(/\s*<section class="bb-student-scan-panel"[\s\S]*?<\/section>/,'');
+const studentMarkup=catalogue(student);
 const norm=s=>s.replace(/\s+/g,' ').trim();
-assert.equal(norm(studentMarkup),norm(staffMarkup),
-  'Student filters, structure, results and legend must be literal copies of staff.html');
+// PR1 deliberately simplifies the outer student filter toolbar. The complete
+// advanced filter form is still the staff form, with exactly the same IDs.
+function advancedContent(markup) {
+  const start=markup.indexOf('<div class="bb-cat-advanced-content">');
+  const end=markup.indexOf('</details>',start);
+  assert.ok(start>=0 && end>start,'Advanced filter fields are present');
+  return markup.slice(start,end);
+}
+assert.equal(norm(advancedContent(studentMarkup)),norm(advancedContent(staffMarkup)),
+  'Student advanced filter fields are copied verbatim from staff.html');
+assert.match(studentMarkup, /class="bb-cat-legend"/);
+assert.match(studentMarkup, /id="bb-cat-easy-key"|class="bb-cat-easy-key"/);
+assert.match(studentMarkup, /class="bb-cat-exam-key"/);
+assert.match(studentMarkup, /id="bb-cat-advanced"/);
+assert.match(studentMarkup, /id="student-help-choose"[^>]*disabled/,
+  'Help me kiezen is clearly unavailable until PR2');
 
 for(const id of [
   'bb-cat-reset','bb-cat-advanced','bb-cat-filter-caption','bb-cat-page-range',
@@ -83,4 +95,4 @@ assert.match(mirroredCss,
 
 execFileSync(process.execPath,[path.join(root,'scripts','sync-student-catalog-css.cjs'),'--check'],
   {cwd:root,stdio:'pipe'});
-console.log('Student library: literal staff HTML, identical CSS sources, safe student actions OK.');
+console.log('Student library: shared advanced form, mirrored CSS sources, safe student actions OK.');

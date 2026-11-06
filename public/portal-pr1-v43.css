@@ -1,0 +1,748 @@
+/*
+ * Boekenbaai PR1 - shared masthead, books-first student library,
+ * profile login, neutral double hover and larger exam bookmark.
+ * Student-only layout controls remain intentionally separate from staff
+ * catalogue workflows and authentication.
+ */
+
+/* ONE consistent brand scale and baseline across student, teacher, admin,
+   and staff login; same official Het Dok header SVG on every page. */
+body[data-page="student"] .bb-student-sitebar,
+body[data-page="staff"].bb-v32-active .hero.hero--staff,
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {
+  box-sizing:border-box;
+  height:64px!important;
+  min-height:64px!important;
+  padding:0 28px!important;
+  gap:13px!important;
+  background:#102f64!important;
+  box-shadow:0 1px 0 #0b2753!important;
+}
+body[data-page="student"] .bb-student-sitebar {width:100%;display:flex;align-items:center}
+body[data-page="student"] .bb-student-wordmark {
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  margin:0;
+  font:800 19px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:-.024em;
+  color:#fff;
+  text-decoration:none;
+  white-space:nowrap;
+}
+body[data-page="student"] .bb-student-wordmark-icon,
+body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before,
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-book-symbol {
+  box-sizing:border-box;
+  display:inline-block;
+  flex:0 0 36px!important;
+  width:36px!important;
+  height:36px!important;
+  margin:0!important;
+  border:0;
+  border-radius:9px!important;
+  background:#ffffff19 url("logo/boekenbaai-book-mark-v31.svg") center / 25px no-repeat!important;
+}
+body[data-page="student"] .bb-student-brand-text {position:relative;top:1px}
+body[data-page="student"] .bb-shared-school-logo {
+  box-sizing:border-box;
+  display:block;
+  flex:0 0 132px;
+  width:132px;
+  height:43px;
+  object-fit:contain;
+  margin:0 0 0 8px;
+}
+body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1 {
+  font:800 19px/1 system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  letter-spacing:-.024em;
+  gap:10px!important;
+  align-items:center;
+  white-space:nowrap;
+}
+body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::first-line {line-height:1}
+body[data-page="staff"].bb-v32-active .hero--staff .hero__illustration {
+  box-sizing:border-box;
+  flex:0 0 132px!important;
+  width:132px!important;
+  height:43px!important;
+  margin:0 0 0 8px!important;
+  padding:0!important;
+}
+body[data-page="staff"].bb-v32-active .hero--staff .hero__logo {
+  width:132px!important;
+  height:43px!important;
+  max-height:43px!important;
+  object-fit:contain;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-site-brand {
+  gap:21px;
+  align-items:center;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-wordmark {
+  display:inline-flex;
+  gap:10px;
+  align-items:center;
+  font:800 19px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:-.024em;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-school-brand {
+  width:132px;
+  height:43px;
+}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-school-brand .bb-login-school-emblem {display:none}
+body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-school-brand img {
+  width:132px;
+  height:43px;
+  object-fit:contain;
+}
+
+/* Matching top navigation pills for every role. The existing staff nav
+   buttons, their role checks and active-view logic are untouched. */
+body[data-page="student"] .bb-shared-primary-nav {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:1 1 auto;
+  gap:6px;
+  margin-left:clamp(6px,3vw,44px);
+  min-width:0;
+}
+body[data-page="student"] .bb-student-nav-button,
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav {
+  box-sizing:border-box;
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  width:auto;
+  height:38px!important;
+  min-height:38px!important;
+  padding:0 13px!important;
+  border-radius:9px!important;
+  border:1px solid transparent;
+  background:transparent;
+  color:#f4f8ff;
+  font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+  white-space:nowrap;
+  cursor:pointer;
+  transition:background .16s ease,border-color .16s ease;
+}
+body[data-page="student"] .bb-student-nav-button {gap:8px}
+body[data-page="student"] .bb-student-nav-symbol {
+  display:inline-grid;
+  place-items:center;
+  width:17px;
+  font-size:16px;
+  line-height:1;
+  color:inherit;
+}
+body[data-page="student"] .bb-student-nav-symbol svg {display:block;width:17px;height:17px}
+body[data-page="student"] .bb-student-login-person svg {display:block;width:27px;height:27px}
+body[data-page="student"] .bb-student-preview-icon svg {display:block;width:24px;height:24px}
+body[data-page="student"] .bb-student-nav-button.is-active,
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab--active,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav--active {
+  background:#23599f!important;
+  color:#fff!important;
+  border-color:#2a65aa!important;
+}
+body[data-page="student"] .bb-student-nav-button:hover,
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab:hover,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav:hover {
+  background:#ffffff24;
+  color:#fff!important;
+}
+body[data-page="student"] .bb-student-nav-button:focus-visible,
+body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab:focus-visible,
+body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav:focus-visible {
+  outline:3px solid #a9d0ff;outline-offset:2px;
+}
+body[data-page="student"] .bb-student-account-button,
+body[data-page="student"] .bb-student-staff-link {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:38px;
+  min-height:38px;
+  padding:0 12px;
+  border-radius:9px;
+  border:1px solid #ffffff70;
+  font-size:12px;
+  background:#ffffff13;
+}
+body[data-page="student"] .bb-student-account-button:hover,
+body[data-page="student"] .bb-student-staff-link:hover {background:#ffffff28}
+body[data-page="staff"].bb-v32-active .hero--staff #logout-button {
+  min-height:38px;
+  border-radius:9px;
+  border-color:#ffffff6a;
+}
+
+/* No sidebar. Navigation is always visible in the header. */
+body[data-page="student"] .bb-student-layout {
+  display:block!important;
+  width:100%;
+  max-width:none!important;
+  min-height:calc(100dvh - 64px);
+}
+body[data-page="student"] .bb-student-main {
+  display:block;
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:27px clamp(16px,2.6vw,44px) 70px;
+}
+body[data-page="student"] .bb-student-content {width:100%;max-width:none;margin:0 auto}
+body[data-page="student"] .bb-student-page-heading {margin-bottom:17px}
+body[data-page="student"] .bb-student-page-heading h1 {font-size:clamp(25px,2.5vw,32px)}
+body[data-page="student"] .bb-student-page-heading p {margin:6px 0 0}
+
+/* A compact entry to filters and discovery. All the original filter fields
+   remain inside the expandable section and keep their original IDs. */
+body[data-page="student"] #student-collection {
+  background:#fff;
+  border-radius:14px;
+  padding:18px!important;
+  box-shadow:0 2px 12px #122d5011;
+}
+body[data-page="student"] #student-collection > .panel__header,
+body[data-page="student"] #student-collection .bb-catalog-v36 > .bb-catalog-intro {display:none}
+body[data-page="student"] #student-collection .bb-catalog-filter-panel {
+  display:block;
+  padding:13px!important;
+  background:#f8faff;
+  border:1px solid #dbe6f3;
+  border-radius:12px;
+  box-shadow:none;
+  margin:0;
+}
+body[data-page="student"] #student-collection .bb-cat-search-row {
+  display:grid!important;
+  grid-template-columns:minmax(190px,1fr) auto auto auto!important;
+  align-items:center;
+  gap:9px!important;
+  margin:0!important;
+}
+body[data-page="student"] #student-collection .bb-cat-search-field {
+  min-width:0;
+  width:100%;
+  height:44px;
+  border-radius:10px;
+  background:white;
+}
+body[data-page="student"] #student-collection .bb-cat-search-field input {
+  width:100%;
+  height:100%;
+  min-height:42px;
+  font-size:13px;
+  border-radius:10px;
+}
+body[data-page="student"] #student-collection .bb-student-filter-button,
+body[data-page="student"] #student-collection .bb-student-choose-button,
+body[data-page="student"] #student-collection .bb-cat-scan-button {
+  box-sizing:border-box;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  min-width:0;
+  min-height:44px;
+  height:44px;
+  padding:0 14px;
+  font:750 12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;
+  border-radius:10px;
+  white-space:nowrap;
+}
+body[data-page="student"] #student-collection .bb-student-filter-button {
+  border:1px solid #d2e1f3;
+  background:#eaf2fd;
+  color:#194477;
+  cursor:pointer;
+}
+body[data-page="student"] #student-collection .bb-student-filter-button:hover {background:#dceafd}
+body[data-page="student"] #student-collection .bb-student-filter-count:empty {display:none}
+body[data-page="student"] #student-collection .bb-student-filter-count:not(:empty) {
+  display:inline;
+  padding:3px 6px;
+  border-radius:7px;
+  font-size:10px;
+  background:#d2e3fa;
+}
+body[data-page="student"] #student-collection .bb-student-choose-button:disabled {
+  border:1px solid #aac9ef;
+  background:linear-gradient(120deg,#dbeafb,#edf5ff);
+  color:#1c518e;
+  box-shadow:0 2px 7px #234d8614;
+  cursor:not-allowed;
+  opacity:1;
+}
+body[data-page="student"] #student-collection .bb-student-choose-button small {
+  padding:3px 5px;
+  border:1px solid #a3bfdf;
+  border-radius:6px;
+  font:700 9px/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:#547aa6;
+}
+body[data-page="student"] #student-collection .bb-cat-scan-button {
+  color:#fff;
+  background:#102f64;
+  border:1px solid #102f64;
+  font-size:12px;
+  min-width:112px;
+}
+body[data-page="student"] #student-collection #bb-cat-advanced:not([open]) {display:none}
+body[data-page="student"] #student-collection #bb-cat-advanced[open] {
+  display:block;
+  margin:12px 0 0;
+  border-top:1px solid #d7e3f1;
+  padding:12px 0 1px;
+  background:transparent;
+  box-shadow:none;
+}
+body[data-page="student"] #student-collection #bb-cat-advanced > summary[hidden] {display:none!important}
+body[data-page="student"] #student-collection #bb-cat-advanced .bb-cat-advanced-content {
+  display:block;
+  margin:0;
+  padding:0!important;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+body[data-page="student"] #student-collection .bb-student-filter-actions {
+  display:flex;
+  justify-content:flex-end;
+  margin:0 0 9px;
+}
+body[data-page="student"] #student-collection .bb-student-filter-actions .bb-cat-reset {
+  min-height:35px;
+  padding:6px 10px;
+  border:1px solid #d4e2f1;
+  border-radius:8px;
+  background:#fff;
+  color:#24558c;
+  font-size:12px;
+}
+body[data-page="student"] #student-collection .bb-cat-results {
+  display:flex;
+  align-items:center;
+  gap:12px 20px;
+  flex-wrap:wrap;
+  margin-top:12px;
+  padding:12px 2px 12px;
+  border-top:0;
+}
+body[data-page="student"] #student-collection .bb-cat-results #summary {margin:0 auto 0 0}
+body[data-page="student"] #student-collection .bb-cat-results .bb-cat-legend {
+  display:inline-flex;
+  gap:13px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+body[data-page="student"] #student-collection .bb-cat-results .bb-cat-sort {
+  margin:0;
+  min-width:160px;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+}
+body[data-page="student"] #student-collection .bb-cat-results .bb-cat-sort select {
+  min-height:38px;
+  max-width:180px;
+  font-size:12px;
+}
+body[data-page="student"] #student-collection .bb-student-scan-panel {margin:12px 0 0}
+
+/* Matching double shadow on card and cover, not a coloured hover border.
+   Makkelijk Lezen is the sole exception: one green outline on each,
+   with a green-tinted shadow, but NEVER a green card background. */
+body[data-page="student"] #student-collection #book-grid > .book-card,
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card {
+  background:#fff!important;
+  transition:box-shadow .19s ease,transform .19s ease;
+}
+body[data-page="student"] #student-collection #book-grid .book-card__cover-wrapper,
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
+  transition:box-shadow .19s ease,transform .19s ease!important;
+  box-shadow:0 3px 12px #142f562b;
+}
+body[data-page="student"] #student-collection #book-grid > .book-card--easy-reading,
+body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card--easy-reading {
+  border:2px solid #1aa887!important;
+  background:#fff!important;
+}
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card--easy-reading .book-card__cover-wrapper,
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card--easy-reading .book-card__cover-wrapper {
+  outline:3px solid #19ad8e!important;
+  outline-offset:1px!important;
+  box-shadow:0 4px 14px #147f6730;
+}
+@media (hover:hover) and (pointer:fine) {
+  body[data-page="student"] #student-collection #book-grid > .book-card:hover,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card:hover {
+    box-shadow:0 11px 25px #17365b33!important;
+    transform:translateY(-2px);
+    border-color:#dce4ef!important;
+  }
+  body[data-page="student"] #student-collection #book-grid .book-card:hover .book-card__cover-wrapper,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card:hover .book-card__cover-wrapper {
+    box-shadow:0 12px 25px #142f5650!important;
+    transform:translateY(-2px)!important;
+  }
+  body[data-page="student"] #student-collection #book-grid > .book-card--easy-reading:hover,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card--easy-reading:hover {
+    border-color:#0f9c7c!important;
+    background:#fff!important;
+    box-shadow:0 10px 27px #07896944!important;
+  }
+  body[data-page="student"] #student-collection #book-grid .book-card--easy-reading:hover .book-card__cover-wrapper,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card--easy-reading:hover .book-card__cover-wrapper {
+    outline-color:#0f9c7c!important;
+    box-shadow:0 12px 28px #058c6c66!important;
+  }
+}
+
+/* Exam list markers: larger gold bookmark on every cover, including mobile. */
+body[data-page="student"] #student-collection #book-grid .book-card--exam-list .book-card__cover-wrapper::after,
+body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card--exam-list .book-card__cover-wrapper::after {
+  width:27px!important;
+  height:42px!important;
+  right:11px!important;
+  top:0!important;
+  background:#d79b36!important;
+  clip-path:polygon(0 0,100% 0,100% 100%,50% 74%,0 100%)!important;
+  filter:drop-shadow(0 3px 3px #4229064d);
+  z-index:4;
+}
+body[data-page="student"] #student-collection .bb-cat-legend .bb-cat-exam-key,
+body[data-page="staff"] .bb-cat-legend .bb-cat-exam-key {
+  width:17px!important;
+  height:24px!important;
+  background:#d79b36;
+}
+body[data-page="student"] #student-collection .bb-cat-legend .bb-cat-easy-key,
+body[data-page="staff"] .bb-cat-legend .bb-cat-easy-key {
+  width:14px;
+  height:14px;
+  border-color:#19ad8e;
+}
+
+/* Profile login, derived from staff's calm white-card login but with
+   small decorative books and non-interactive feature previews. */
+body[data-page="student"] #student-login-panel.bb-student-login-card {
+  box-sizing:border-box;
+  max-width:1140px;
+  width:100%;
+  padding:0!important;
+  overflow:hidden;
+  border:1px solid #d0dff1;
+  border-radius:21px;
+  background:linear-gradient(117deg,#fff 46%,#f0f6ff);
+  box-shadow:0 10px 30px #14356520;
+}
+body[data-page="student"] .bb-student-login-layout {
+  display:grid;
+  grid-template-columns:minmax(0,1.45fr) minmax(230px,.8fr);
+  min-height:310px;
+}
+body[data-page="student"] .bb-student-login-primary {
+  padding:clamp(21px,3vw,40px);
+  min-width:0;
+}
+body[data-page="student"] .bb-student-login-title-row {
+  display:flex;
+  align-items:flex-start;
+  gap:15px;
+  margin-bottom:20px;
+}
+body[data-page="student"] .bb-student-login-title-row .panel__header {
+  display:block;
+  margin:0;
+}
+body[data-page="student"] .bb-student-login-title-row #student-login-title {
+  font:830 clamp(21px,2vw,29px)/1.22 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:#173769;
+  letter-spacing:-.025em;
+}
+body[data-page="student"] .bb-student-login-title-row .panel__subtitle {margin-top:6px;font-size:14px}
+body[data-page="student"] .bb-student-login-person {
+  display:grid;place-items:center;
+  flex:0 0 48px;width:48px;height:48px;
+  background:#e2eefc;border-radius:13px;
+  color:#205b9f;font-size:27px;
+}
+body[data-page="student"] #student-login-panel .login-form {
+  max-width:none;
+  width:100%;
+  display:grid;
+  gap:14px;
+}
+body[data-page="student"] #student-login-panel .login-form input[type="text"],
+body[data-page="student"] #student-login-panel .login-form input[type="password"] {
+  box-sizing:border-box;
+  width:100%;
+  min-height:47px;
+  border:1px solid #cbd7e5;
+  border-radius:10px;
+  background:#fff;
+  padding:11px 14px;
+}
+body[data-page="student"] #student-login-panel .login-form button[type="submit"] {
+  box-sizing:border-box;
+  width:100%;
+  min-height:47px;
+  border-radius:10px;
+  background:#102f64;
+  border:1px solid #102f64;
+  color:#fff;
+  font-weight:800;
+}
+body[data-page="student"] #student-login-panel .login-form button[type="submit"]:disabled {
+  opacity:.45;
+  cursor:not-allowed;
+}
+body[data-page="student"] .bb-student-login-art {
+  display:grid;
+  place-items:center;
+  background:radial-gradient(circle at 80% 80%,#c7ddf9 5%,#eaf3ff 60%,transparent 80%);
+  padding:12px;
+}
+body[data-page="student"] .bb-student-login-art svg {
+  display:block;
+  width:100%;
+  max-width:320px;
+  height:auto;
+}
+body[data-page="student"] .bb-student-login-preview {
+  max-width:1140px;
+  margin:24px 0 0;
+}
+body[data-page="student"] .bb-student-login-preview h2 {
+  font:800 20px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:#163660;
+  margin:0 0 5px;
+}
+body[data-page="student"] .bb-student-login-preview > p {font-size:13px;color:#627c99;margin:0 0 16px}
+body[data-page="student"] .bb-student-preview-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:13px;
+}
+body[data-page="student"] .bb-student-preview-item {
+  display:flex;align-items:center;gap:13px;
+  padding:17px;
+  border:1px solid #dbe6f4;
+  border-radius:13px;
+  background:#fff;
+  color:#20446e;
+  box-shadow:0 3px 13px #153b6710;
+  min-width:0;
+}
+body[data-page="student"] .bb-student-preview-icon {
+  flex:0 0 43px;
+  display:grid;place-items:center;
+  width:43px;height:43px;
+  border-radius:12px;
+  background:#e7f0fd;
+  color:#1c5e9d;
+  font-size:22px;
+}
+body[data-page="student"] .bb-student-preview-item div {flex:1;min-width:0}
+body[data-page="student"] .bb-student-preview-item strong {display:block;font-size:14px}
+body[data-page="student"] .bb-student-preview-item small {display:block;font-size:12px;color:#66809d;margin-top:4px;line-height:1.4}
+body[data-page="student"] .bb-student-preview-item > span:last-child {font-size:20px;color:#809bb8}
+
+@media(max-width:1270px) {
+  body[data-page="student"] #student-collection .bb-cat-search-row {
+    grid-template-columns:minmax(170px,1fr) auto auto!important;
+  }
+  body[data-page="student"] #student-collection .bb-cat-scan-button {grid-column:3}
+}
+@media(max-width:1040px) {
+  body[data-page="student"] .bb-student-sitebar {
+    flex-wrap:wrap;
+    height:auto!important;
+    min-height:64px;
+    row-gap:0!important;
+    padding-top:8px!important;
+    padding-bottom:8px!important;
+  }
+  body[data-page="student"] .bb-shared-primary-nav {
+    order:7;
+    flex:0 0 100%;
+    height:42px;
+    margin:6px 0 0;
+  }
+  body[data-page="student"] .bb-student-account-status {display:none}
+  body[data-page="student"] .bb-student-sitebar-spacer {flex:1 1 auto}
+}
+@media(max-width:800px) {
+  body[data-page="student"] #student-collection .bb-cat-search-row {
+    grid-template-columns:minmax(150px,1fr) auto!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-choose-button {grid-column:1;justify-self:start}
+  body[data-page="student"] #student-collection .bb-cat-scan-button {grid-column:2;justify-self:end}
+  body[data-page="student"] .bb-student-login-layout {grid-template-columns:1fr minmax(180px,.5fr)}
+  body[data-page="student"] .bb-student-login-art svg {max-width:215px}
+}
+@media(max-width:650px) {
+  body[data-page="student"] .bb-student-sitebar {
+    min-height:64px;
+    padding:8px 13px!important;
+    gap:8px!important;
+  }
+  body[data-page="student"] .bb-student-wordmark {font-size:16px;gap:7px}
+  body[data-page="student"] .bb-shared-school-logo {flex-basis:100px;width:100px;height:33px;margin:0}
+  body[data-page="student"] .bb-student-brand-text {top:0}
+  body[data-page="student"] .bb-student-account-button {padding:0 9px}
+  body[data-page="student"] .bb-student-staff-link {display:none}
+  body[data-page="student"] .bb-student-main {padding:17px 11px 50px!important}
+  body[data-page="student"] #student-collection {padding:12px!important}
+  body[data-page="student"] #student-collection .bb-cat-search-row {
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+    gap:8px!important;
+  }
+  body[data-page="student"] #student-collection .bb-cat-search-field {grid-column:1/-1}
+  body[data-page="student"] #student-collection .bb-student-filter-button {grid-column:1}
+  body[data-page="student"] #student-collection .bb-student-choose-button {grid-column:2}
+  body[data-page="student"] #student-collection .bb-cat-scan-button {grid-column:1/-1;justify-self:stretch}
+  body[data-page="student"] #student-collection .bb-cat-results {gap:11px}
+  body[data-page="student"] #student-collection .bb-cat-results #summary {width:100%}
+  body[data-page="student"] #student-collection .bb-cat-results .bb-cat-sort {margin-left:0}
+  body[data-page="student"] .bb-student-login-layout {display:block}
+  body[data-page="student"] .bb-student-login-art {display:none}
+  body[data-page="student"] .bb-student-preview-grid {grid-template-columns:1fr}
+  body[data-page="student"] .bb-student-login-primary {padding:22px 17px}
+  body[data-page="student"] .bb-student-login-title-row {gap:10px}
+  body[data-page="student"] .bb-student-login-person {flex-basis:37px;width:37px;height:37px;font-size:21px}
+  body[data-page="student"] #student-collection #book-grid .book-card--exam-list .book-card__cover-wrapper::after,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card--exam-list .book-card__cover-wrapper::after {width:23px!important;height:36px!important}
+}
+@media(prefers-reduced-motion:reduce) {
+  body[data-page="student"] #student-collection #book-grid > .book-card,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card,
+  body[data-page="student"] #student-collection #book-grid .book-card__cover-wrapper,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card__cover-wrapper {transition:none;transform:none!important}
+}
+@media(forced-colors:active) {
+  body[data-page="student"] #student-collection #book-grid > .book-card--easy-reading,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card--easy-reading {border:2px solid Highlight!important}
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card--easy-reading .book-card__cover-wrapper,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid .book-card--easy-reading .book-card__cover-wrapper {outline:3px solid Highlight!important}
+  body[data-page="student"] #student-collection #book-grid > .book-card:focus-visible,
+  body[data-page="staff"] .bb-catalog-v36 #book-grid > .book-card:focus-visible {outline:3px solid Highlight!important}
+}
+
+
+/* Codex P2: the genuine staff navigation becomes a WHITE sliding drawer on
+   mobile. Keep dark inactive text and full-size, keyboard-usable row buttons.
+   Desktop header pills retain their light labels. */
+@media (max-width:760px) {
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav {
+    box-sizing:border-box;
+    width:100%;
+    min-height:44px!important;
+    height:auto!important;
+    padding:10px 13px!important;
+    justify-content:flex-start;
+    white-space:normal;
+    text-align:left;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab:not(.admin-modern__tab--active),
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav:not(.bb-teacher-v31-nav--active) {
+    color:#263e62!important;
+    background:transparent!important;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab:not(.admin-modern__tab--active):hover,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav:not(.bb-teacher-v31-nav--active):hover {
+    color:#174477!important;
+    background:#eaf1fb!important;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab--active,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav--active {
+    background:#23599f!important;
+    color:#fff!important;
+  }
+
+  /* Do not let the 132px desktop schoolmark and 28px page padding force
+     the logged-in staff menu, account and logout off narrow screens. */
+  body[data-page="staff"].bb-v32-active .hero.hero--staff {
+    height:64px!important;
+    min-height:64px!important;
+    padding:0 12px!important;
+    gap:7px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content {min-width:0;}
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1 {
+    font-size:15px!important;
+    gap:7px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before {
+    flex-basis:29px!important;width:29px!important;height:29px!important;
+    background-size:21px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__illustration {
+    flex:0 1 98px!important;
+    width:98px!important;
+    min-width:58px;
+    height:34px!important;
+    margin:0 0 0 2px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__logo {
+    display:block;
+    width:100%!important;height:100%!important;max-height:100%!important;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {
+    padding:0 12px!important;
+  }
+}
+@media (max-width:480px) {
+  body[data-page="staff"].bb-v32-active .hero.hero--staff {
+    padding:0 8px!important;
+    gap:5px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1 {
+    font-size:13px!important;gap:6px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before {
+    flex-basis:26px!important;width:26px!important;height:26px!important;
+    background-size:19px!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff .hero__illustration {
+    flex:0 1 72px!important;
+    width:72px!important;
+    min-width:0;
+    height:27px!important;
+    margin-left:0!important;
+  }
+  body[data-page="staff"].bb-v32-active .hero--staff #logout-button {
+    min-height:34px!important;
+    padding:6px 8px!important;
+    font-size:11px!important;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {padding:0 10px!important}
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-site-brand {gap:11px!important}
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-wordmark {font-size:15px!important;gap:7px!important}
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-book-symbol {
+    width:30px!important;height:30px!important;flex-basis:30px!important;background-size:21px!important;
+  }
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-school-brand,
+  body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-school-brand img {
+    width:98px!important;height:34px!important;flex:0 0 98px!important;
+  }
+}
+
+/* Codex P2: existing name autocomplete is absolutely positioned, often
+   below a password field hidden by Google auth. It must not be clipped. */
+body[data-page="student"] #student-login-panel.bb-student-login-card {
+  overflow:visible;
+}
+body[data-page="student"] #student-login-panel .bb-student-login-primary {
+  position:relative;
+  z-index:2;
+}
+body[data-page="student"] .bb-student-login-art {
+  overflow:hidden;
+  border-radius:0 20px 20px 0;
+}

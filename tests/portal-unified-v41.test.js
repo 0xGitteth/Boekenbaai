@@ -15,15 +15,15 @@ const googleRuntime = read('google-auth-runtime-preload.js');
 
 const staffStylesheets = [...staff.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
 const studentStylesheets = [...student.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
-assert.equal(staffStylesheets.at(-1), 'portal-unified-v41.css');
-assert.equal(studentStylesheets.at(-1), 'student-catalog-from-staff-v42.css',
-  'The student catalogue mirrors every canonical staff catalogue CSS layer after the unified styles');
+assert.equal(staffStylesheets.at(-1), 'portal-pr1-v43.css');
+assert.equal(studentStylesheets.at(-1), 'portal-pr1-v43.css',
+  'Every portal loads the same final shared design layer');
 assert.ok(staff.indexOf('catalog-v40.css') < staff.indexOf('portal-unified-v41.css'));
 assert.ok(student.indexOf('student-v31.css') < student.indexOf('portal-unified-v41.css'));
 
-assert.match(student, /class="bb-student-school-brand"/);
-assert.match(student, /class="bb-student-school-emblem"/);
-assert.match(student, /class="bb-student-school-name">Het Dok/);
+assert.match(student, /class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.match(staff, /class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.match(student, /class="bb-student-wordmark-icon"/);
 assert.doesNotMatch(student, /<img class="bb-student-school-logo"/,
   'The student masthead must not put the navy logo into a white box');
 assert.match(staff, /class="bb-login-site-brand"/);
@@ -64,7 +64,7 @@ assert.ok(css.includes(forStudent) && css.includes(forStaff));
 assert.match(css, /#book-grid > \.book-card--easy-reading \{\s*border:2px solid #19b99a;\s*outline:0;/,
   'Green badge is a single border around the complete card');
 assert.match(css, /#book-grid \.book-card--easy-reading \.book-card__cover-wrapper \{\s*outline:0!important;/,
-  'Neither role may draw another green outline around the cover');
+  'The former v41 cover-outline rule is intentionally superseded by v43 green-card hover');
 assert.match(css, /#book-grid > \.book-card:hover \{/,
   'Matching whole-card hover effects apply to all roles');
 assert.match(css, /#book-grid \.book-card:hover \.book-card__cover-wrapper,/,
