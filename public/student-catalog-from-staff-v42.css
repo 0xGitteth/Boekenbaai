@@ -1677,7 +1677,71 @@ body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-c
 }
 
 
-/* SOURCE portal-unified-v41.css: unified staff book-card section */
+/* SOURCE portal-unified-v41.css: final green border, hover, focus, cards and responsive rules */
+/* The one and only green band denotes Makkelijk Lezen: on the full card,
+   never on the cover, and without an extra box-shadow or outline. */
+body[data-page="student"] #book-grid > .book-card,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card {
+  box-sizing:border-box;
+  border:1px solid #dce4ef;
+  border-radius:13px;
+  background:#fff;
+  box-shadow:0 2px 10px #152d520d;
+  outline:0;
+  overflow:visible;
+  transition:border-color .17s ease,box-shadow .17s ease,transform .17s ease;
+}
+body[data-page="student"] #book-grid > .book-card--easy-reading,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card--easy-reading {
+  border:2px solid #19b99a;
+  outline:0;
+  box-shadow:0 2px 10px #152d520d;
+}
+body[data-page="student"] #book-grid .book-card--easy-reading .book-card__cover-wrapper,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card--easy-reading .book-card__cover-wrapper {
+  outline:0!important;
+  outline-offset:0!important;
+  border:0;
+}
+@media (hover:hover) and (pointer:fine) {
+  body[data-page="student"] #book-grid > .book-card:hover,
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card:hover {
+    border-color:#9dbbdc;
+    box-shadow:0 8px 23px #152d5224;
+    transform:translateY(-2px);
+  }
+  body[data-page="student"] #book-grid > .book-card--easy-reading:hover,
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card--easy-reading:hover {
+    border-color:#109c84;
+    box-shadow:0 8px 23px #14766624;
+  }
+}
+body[data-page="student"] #book-grid > .book-card:focus-within,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card:focus-within {
+  box-shadow:0 7px 21px #152d521e;
+}
+body[data-page="student"] #book-grid > .book-card--easy-reading:focus-within,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card--easy-reading:focus-within {
+  border-color:#109c84;
+}
+body[data-page="student"] #book-grid > .book-card:focus-visible,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card:focus-visible {
+  outline:3px solid #78a9e7;
+  outline-offset:3px;
+}
+/* Older cover-only hover/focus layers must not recreate a second band. */
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
+  transition:none;
+}
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card:hover .book-card__cover-wrapper,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card:focus-visible .book-card__cover-wrapper,
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card:focus-within:not(:focus-visible) .book-card__cover-wrapper {
+  box-shadow:0 3px 12px #12356222;
+  transform:none;
+}
+/* Preserve 2:3 covers and the original gold exam bookmark. */
+body[data-page="student"] #book-grid .book-card--exam-list::before {display:none}
+
 /* Staff and admin now use the same airy, white cards as students. The
    existing 5/4/3/2 column responsive grid and the real edit controls stay. */
 body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card {
@@ -1792,13 +1856,56 @@ body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat
   background:#eef3fb;
   border-color:#d8e4f2;
 }
-
+@media (max-width:760px) {
+  body[data-page="student"] .bb-student-school-brand {gap:4px;font-size:16px}
+  body[data-page="student"] .bb-student-school-emblem {flex-basis:31px;width:31px;height:36px;background-size:105px 34px}
+  body[data-page="student"] #student-collection:has(#staff-login-panel:not(.hidden)) .hero.hero--staff {
+    height:63px;min-height:63px;flex-basis:63px;padding:0 14px;
+  }
+  body[data-page="student"] #student-collection:has(#staff-login-panel:not(.hidden)) > main {
+    padding:25px 13px 40px;
+  }
+  body[data-page="student"] #student-collection:has(#staff-login-panel:not(.hidden)) #staff-login-panel {
+    padding:25px 19px;border-radius:15px;
+  }
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card {
+    padding:9px;
+    gap:6px;
+  }
+}
+@media (max-width:470px) {
+  body[data-page="student"] .bb-student-school-brand {font-size:13px;gap:2px}
+  body[data-page="student"] .bb-student-school-emblem {flex-basis:25px;width:25px;height:29px;background-size:83px 27px}
+  body[data-page="student"] #student-collection .bb-login-site-brand {gap:11px}
+  body[data-page="student"] #student-collection .bb-login-wordmark {font-size:15px;gap:6px}
+  body[data-page="student"] #student-collection .bb-login-book-symbol {flex-basis:32px;width:32px;height:32px;background-size:23px}
+  body[data-page="student"] #student-collection .bb-login-school-brand {gap:4px;font-size:14px}
+  body[data-page="student"] #student-collection .bb-login-school-emblem {flex-basis:30px;width:30px;height:34px;background-size:99px 33px}
+}
+@media (prefers-reduced-motion:reduce) {
+  body[data-page="student"] #book-grid > .book-card,
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card {transition:none;transform:none!important}
+}
+@media (forced-colors:active) {
+  body[data-page="student"] #book-grid > .book-card--easy-reading,
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card--easy-reading {
+    border:2px solid Highlight;
+  }
+  body[data-page="student"] #book-grid > .book-card:focus-visible,
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card:focus-visible {
+    outline:3px solid Highlight;
+  }
+}
 
 /* Student-only controls */
 
 /* Student-only controls retain their real scan and loan actions in the copied
    staff UI; no staff-only buttons or admin data are introduced here. */
-body[data-page="student"] .bb-student-content {max-width:1450px;}
+/* The original 1450px cap plus the sidebar squeezed the five-column
+   catalogue far more than the full-width staff library. Use all space
+   available beside the approved student navigation. */
+body[data-page="student"] .bb-student-layout {max-width:none;}
+body[data-page="student"] .bb-student-content {max-width:none;}
 body[data-page="student"] #student-collection .panel__header {
   display:flex;align-items:center;margin:0 0 13px;padding:0;
 }
