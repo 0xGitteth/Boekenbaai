@@ -47,6 +47,10 @@ body[data-page="student"] #student-collection .bb-student-discovery-layout > .bb
   background:transparent!important;
   box-shadow:none!important;
 }
+body[data-page="student"] #student-collection .bb-student-discovery-layout > #student-scan-open {
+  margin:0!important;
+  align-self:start!important;
+}
 /* The books are a separate card below the search toolbar. */
 body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid {
   box-sizing:border-box;
