@@ -121,17 +121,16 @@
       heading.append(button);
     }
     box.append(heading);
-    if (description) box.append(el('p', 'bb-teacher-v31-hint', description));
+
     return box;
   }
   function makeView(name, title, subtitle) {
     const view = el('section', 'bb-teacher-v31-view');
     view.dataset.teacherView = name;
     const heading = el('div', 'bb-teacher-v31-view-heading');
-    heading.append(el('p', 'bb-teacher-v31-eyebrow', 'DOCENTENPORTAAL'));
     const h = el('h2', '', title);
     h.tabIndex = -1;
-    heading.append(h, el('p', 'bb-teacher-v31-hint', subtitle));
+    heading.append(h);
     view.append(heading);
     panels[name] = view;
     return view;
