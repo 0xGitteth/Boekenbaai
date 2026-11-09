@@ -645,8 +645,7 @@
     const currentHead = make('div', { className: 'bb-admin-v31-loan-current-header' });
     const currentIntro = make('div');
     currentIntro.append(
-      make('h3', { text: 'Huidige uitleningen' }),
-      make('p', { text: 'Bekijk lopende uitleningen of registreer een inname.' })
+      make('h3', { text: 'Huidige uitleningen' })
     );
     currentHead.append(currentIntro, filterField);
     list.setAttribute('tabindex', '0');
