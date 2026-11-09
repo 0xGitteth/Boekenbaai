@@ -37,6 +37,16 @@ body[data-page="student"] #student-collection .bb-student-discovery-layout {
   border-radius:15px!important;
   box-shadow:0 2px 12px #19375b10!important;
 }
+body[data-page="student"] #student-collection .bb-student-discovery-layout > .bb-student-compact-filters {
+  display:block!important;
+  box-sizing:border-box;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
 /* The books are a separate card below the search toolbar. */
 body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid {
   box-sizing:border-box;
