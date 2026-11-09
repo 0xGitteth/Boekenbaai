@@ -20,6 +20,7 @@
   let page = 'start';
   let requestId = 0;
   let importTaskCount = null;
+  let importTaskError = false;
   let mentorTaskCount = null;
   let nav, scrim, menu;
   const taskSummary = { classes: [], status: 'loading' };
@@ -197,9 +198,13 @@
     const rightColumn = el('div', 'bb-teacher-v31-dashboard-column');
     const classesCard = card('Mijn klassen', 'classes');
     classesCard.id = 'bb-teacher-v31-classes-summary';
-    const taskCard = card('Taken voor mij', 'tasks');
-    addAction(taskCard, 'Klaswissels en koppelingen', 'Bekijk openstaande verzoeken per klas', 'tasks');
-    addAction(taskCard, 'Boekimportcontroles', 'Gedeelde controletaken per klas', 'tasks');
+    const taskCard = card('Taken voor mij');
+    taskCard.id = 'bb-teacher-v31-tasks-summary';
+    const taskItems = el('div', 'bb-teacher-v31-open-task-list');
+    taskItems.setAttribute('aria-live', 'polite');
+    taskItems.setAttribute('aria-atomic', 'true');
+    taskCard.append(taskItems);
+    renderDashboardTasks();
     const recent = card('Recente activiteit');
     recent.id = 'bb-teacher-v31-activity';
     leftColumn.append(classesCard, recent);
@@ -256,9 +261,33 @@
   }
   function refreshTaskMetric() {
     const node = document.querySelector('#bb-teacher-v31-metrics > :nth-child(4) strong');
-    if (!node) return;
-    node.textContent = importTaskCount === null || mentorTaskCount === null
+    if (node) node.textContent = importTaskCount === null || mentorTaskCount === null
       ? '—' : String(importTaskCount + mentorTaskCount);
+    renderDashboardTasks();
+  }
+  function renderDashboardTasks() {
+    const host = document.querySelector('#bb-teacher-v31-tasks-summary .bb-teacher-v31-open-task-list');
+    if (!host) return;
+    host.replaceChildren();
+    const mentorReady = taskSummary.status === 'ready' && Number.isSafeInteger(mentorTaskCount);
+    const importReady = !importTaskError && Number.isSafeInteger(importTaskCount);
+    if (mentorReady && mentorTaskCount > 0) {
+      addAction(host, 'Klaswissels en koppelingen',
+        mentorTaskCount + (mentorTaskCount === 1 ? ' openstaand verzoek' : ' openstaande verzoeken'), 'tasks');
+    }
+    if (importReady && importTaskCount > 0) {
+      addAction(host, 'Boekimportcontroles',
+        importTaskCount + (importTaskCount === 1 ? ' openstaande controle' : ' openstaande controles'), 'tasks');
+    }
+    if (taskSummary.status === 'error' || importTaskError) {
+      host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state',
+        'Niet alle taken zijn momenteel beschikbaar.'));
+    } else if (!mentorReady || !importReady) {
+      host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state', 'Taken laden…'));
+    } else if (mentorTaskCount === 0 && importTaskCount === 0) {
+      host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state',
+        'Je hebt momenteel geen openstaande taken.'));
+    }
   }
   function renderMentorTasks() {
     const host = document.getElementById('bb-teacher-v31-mentor-tasks');
@@ -339,6 +368,7 @@
     // In particular, an API error must never leave an earlier teacher's data.
     clearClassSummary();
     importTaskCount = null;
+    importTaskError = false;
     refreshTaskMetric();
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
@@ -354,7 +384,11 @@
       metrics.append(box);
     }
     const token = localStorage.getItem('boekenbaai_token');
-    if (!token) return;
+    if (!token) {
+      importTaskError = true;
+      refreshTaskMetric();
+      return;
+    }
     try {
       const response = await fetch(apiAddress('/api/staff/loans'), {
         headers: {Authorization: 'Bearer ' + token, Accept: 'application/json'},
@@ -382,10 +416,12 @@
         if (current !== requestId || !active) return;
         importTaskCount = Number.isSafeInteger(taskData.summary?.open)
           ? taskData.summary.open : null;
+        importTaskError = importTaskCount === null;
         refreshTaskMetric();
       } catch {
         if (current === requestId && active) {
           importTaskCount = null;
+          importTaskError = true;
           refreshTaskMetric();
         }
       }
@@ -409,6 +445,9 @@
       }
     } catch (error) {
       if (current === requestId && active) {
+        importTaskCount = null;
+        importTaskError = true;
+        refreshTaskMetric();
         metrics.replaceChildren(el('p','bb-teacher-v31-hint',error.message));
         clearClassSummary();
         classesCard.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-classes-state',
@@ -443,6 +482,7 @@
     } else {
       mentorTaskCount = null;
       importTaskCount = null;
+      importTaskError = false;
       taskSummary.classes = [];
       taskSummary.status = 'loading';
       renderMentorTasks();
