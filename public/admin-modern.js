@@ -669,7 +669,7 @@
       const title = document.querySelector('.hero--staff h1');
       const intro = document.querySelector('.hero--staff .hero__content p');
       if (title) title.textContent = 'Docentenportaal Boekenbaai';
-      if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
+      if (intro) intro.textContent = '';
       const logo = document.querySelector('.hero--staff .hero__logo');
       if (logo) {
         // Restore Vite's original (possibly fingerprinted) URL rather than
