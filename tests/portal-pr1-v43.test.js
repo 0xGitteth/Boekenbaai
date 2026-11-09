@@ -28,8 +28,8 @@ const headerEnd=student.indexOf('</header>',headerStart);
 const navPos=student.indexOf('<nav class="bb-student-nav');
 assert.ok(navPos>headerStart&&navPos<headerEnd,'Student tabs must be physically inside the shared header');
 assert.ok(student.indexOf('<main class="bb-student-main">')>headerEnd);
-assert.match(student,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
-assert.match(staff,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.doesNotMatch(student,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.doesNotMatch(staff,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
 assert.match(css,/height:64px!important/);
 assert.match(css,/font:800 19px\/1 system-ui/);
 for(const h of [student,staff]){
