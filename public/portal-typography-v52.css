@@ -1,0 +1,44 @@
+/* Unified type design: Nunito for the website, Fredoka only for the Boekenbaai wordmark.
+   Explicit cascade layer keeps legacy unlayered !important font declarations from
+   reintroducing system fonts. Do not change cover sizes or the 6-column grid. */
+@layer boekenbaai-typografie {
+  html body, html body * {
+    font-family:"Nunito",system-ui,sans-serif!important;
+  }
+  /* Header wordmarks; Het Dok image/logo is deliberately unchanged. */
+  html body[data-page="student"] .bb-student-brand-text,
+  html body[data-page="staff"] .bb-login-wordmark > span:last-child,
+  html body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1 {
+    font-family:"Fredoka","Nunito",system-ui,sans-serif!important;
+    font-weight:600!important;
+    letter-spacing:0!important;
+  }
+
+  /* Shared restrained scale: avoid modifying icons, cover artwork and compact
+     catalogue metadata. App-specific controls keep their usable dimensions. */
+  html body {
+    font-size:14px!important;
+    line-height:1.45!important;
+  }
+  html body :is(button,input,select,textarea) {
+    font-family:"Nunito",system-ui,sans-serif!important;
+  }
+  html body :is(.bb-student-page-heading h1,.bb-teacher-v31-view-heading h2,.bb-admin-v31-heading h2,.bb-v32-teacher-dashboard .bb-teacher-v31-view-heading h2) {
+    font-size:28px!important;
+    line-height:1.2!important;
+  }
+  html body :is(.panel__header h2,.bb-teacher-v31-card-heading h3,.bb-v32-teacher-lower h3,.bb-admin-v31-card h3) {
+    font-size:20px!important;
+    line-height:1.25!important;
+  }
+  html body :is(.bb-cat-search-field input,.bb-student-compact-filters input[type="search"]) {
+    font-size:14px!important;
+  }
+  html body :is(.bb-shared-primary-nav,.bb-shared-sitebar .bb-student-nav-button,.bb-staff-filter-button,.bb-student-filter-button) {
+    font-size:13px!important;
+  }
+  html body :is(.bb-v32-book-preview strong,.bb-v32-teacher-dashboard .bb-teacher-v31-card p) {
+    font-size:13px!important;
+  }
+}
+/* Match accessible browser zoom and user text scaling: do not disable it. */

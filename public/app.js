@@ -4015,7 +4015,8 @@ function initStaffPage() {
   const adminCropY = document.querySelector('#admin-book-crop-y');
   const adminCropZoom = document.querySelector('#admin-book-crop-zoom');
   const adminCropReset = document.querySelector('#admin-book-crop-reset');
-  let adminBookCrop = null;
+  const defaultNewBookCrop = () => ({ enabled: true, x: 50, y: 50, zoom: 1 });
+  let adminBookCrop = defaultNewBookCrop();
   let adminCropSourceUrl = '';
   let adminCropLocalUrl = '';
   let adminCropLastInputUrl = '';
@@ -4815,7 +4816,7 @@ function initStaffPage() {
   adminBookCover?.addEventListener('input', () => {
     const nextUrl = adminBookCover.value.trim();
     if (nextUrl !== adminCropLastInputUrl) {
-      adminBookCrop = null;
+      adminBookCrop = nextUrl ? defaultNewBookCrop() : null;
       adminCropPreviewFallbackFor = '';
       adminCropLastInputUrl = nextUrl;
     }
@@ -4901,7 +4902,7 @@ function initStaffPage() {
     if (adminBookCover) {
       adminBookCover.value = '';
     }
-    adminBookCrop = null;
+    adminBookCrop = defaultNewBookCrop();
     adminCropSourceUrl = '';
     adminCropLocalUrl = '';
     adminCropLastInputUrl = '';
@@ -5098,7 +5099,7 @@ function initStaffPage() {
       const metadataCoverUrl = extractMetadataCoverUrl(metadata);
       if (metadataCoverUrl) {
         adminBookCover.value = metadataCoverUrl;
-        adminBookCrop = null;
+        adminBookCrop = defaultNewBookCrop();
         adminCropSourceUrl = '';
         adminCropLocalUrl = '';
         adminCropLastInputUrl = metadataCoverUrl.trim();
