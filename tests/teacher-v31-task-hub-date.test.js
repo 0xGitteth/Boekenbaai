@@ -13,7 +13,11 @@ new vm.Script(teacher.replaceAll('import.meta','({env:{}})'),{filename:'teacher-
 new vm.Script(students,{filename:'student-management.js'});
 assert.doesNotMatch(html,/placeholder="voornaam\.achternaam"/);
 assert.match(html,/Kies waar je e-mails over openstaande taken ontvangt/);
-assert.match(teacher,/const taskCard = card\('Taken voor mij', 'tasks'\)/);
+assert.match(teacher,/const taskCard = card\('Taken voor mij'\)/);
+assert.match(teacher,/taskCard\.id = 'bb-teacher-v31-tasks-summary'/,
+  'Dashboard tasks remain visible even when there are no open items');
+assert.doesNotMatch(teacher,/addAction\(taskCard,/,
+  'Static task shortcuts are replaced by actual open tasks');
 assert.match(students,/text: 'Taken voor jou'/);
 assert.match(teacher,/tasks\.append\(transferPanel\)/);
 assert.match(teacher,/place\(document\.getElementById\('book-import-followups-panel'\), tasks\)/);
