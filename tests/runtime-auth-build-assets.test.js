@@ -56,6 +56,7 @@ for (const filename of [
   'logo/het-dok-footer-v53.svg',
   'logo/koraal-logo-v53.svg',
   'logo/koraal-original-transparent-v54.svg',
+  'logo/koraal-full-original-v56.svg',
 ]) {
   const builtPath = path.join(distDir, filename);
   const sourcePath = path.join(publicDir, filename);
