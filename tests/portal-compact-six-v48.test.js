@@ -18,6 +18,16 @@ assert.ok(css.includes('html body[data-page="student"] #student-collection .bb-c
 assert.match(css, /grid-template-columns:repeat\(6,minmax\(0,1fr\)\)!important;/);
 assert.match(css, /@media \(max-width:959px\)/);
 assert.match(css, /-webkit-line-clamp:2/);
+const titleRule = css.match(/#book-grid \.book-card__title \{([\s\S]*?)\}/)?.[1];
+assert.ok(titleRule, 'Shared title rule exists');
+assert.match(titleRule, /min-height:0!important;/);
+assert.match(titleRule, /max-height:none!important;/);
+assert.match(titleRule, /height:auto!important;/);
+assert.match(titleRule, /flex:0 0 auto!important;/);
+assert.doesNotMatch(titleRule, /min-height:34px/);
+const statusRule = css.match(/#book-grid \.book-card__status \{([\s\S]*?)\}/)?.[1];
+assert.match(statusRule, /margin:auto 0 0!important;/);
+
 assert.match(css, /aspect-ratio:2 \/ 3!important;/);
 assert.match(css, /align-items:stretch!important;/);
 assert.match(css, /grid-auto-rows:auto;/);
