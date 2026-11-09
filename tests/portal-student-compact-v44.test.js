@@ -30,8 +30,8 @@ assert.match(css,/header\.bb-student-sitebar \.bb-student-nav\.bb-shared-primary
   'Override old full-width sidebar buttons without changing the real tabs');
 assert.match(css,/\.bb-student-brand-text \{\s*position:relative;\s*top:3px!important;/);
 assert.match(css,/\.bb-shared-school-logo \{[\s\S]*?width:132px!important;[\s\S]*?height:43px!important;/);
-assert.match(staff,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
-assert.match(html,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.doesNotMatch(staff,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.doesNotMatch(html,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
 assert.match(sharedCss,/height:64px!important/);
 
 const discoveryStart=html.indexOf('<div class="bb-student-discovery-layout">');
