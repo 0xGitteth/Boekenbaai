@@ -1,0 +1,21 @@
+/* Koraal: unmodified original letterforms and original right-hand tagline, converted
+   directly from the uploaded PNG to a transparent embedded image. 
+   Keep the same rendered height as the Het Dok footer logo. */
+html body .bb-site-footer__brand .bb-site-footer__koraal {
+  display:block!important;
+  box-sizing:content-box!important;
+  height:31px!important;
+  width:auto!important;
+  max-width:none!important;
+  aspect-ratio:350 / 63!important;
+  object-fit:contain!important;
+  background:transparent!important;
+  border:0!important;
+  border-radius:0!important;
+}
+html body .bb-site-footer__brand .bb-site-footer__dok {
+  height:31px!important;
+  width:auto!important;
+  max-width:none!important;
+  object-fit:contain!important;
+}

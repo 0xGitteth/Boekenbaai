@@ -5,7 +5,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..', 'public');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 const css = read('portal-branding-fixes-v54.css');
-const logo = read('logo/koraal-original-transparent-v54.svg');
+const logo = read('logo/koraal-full-original-v56.svg');
 for (const file of ['index.html', 'staff.html']) {
   const html = read(file);
   assert.match(html, /portal-branding-fixes-v54\.css/);
@@ -13,7 +13,7 @@ for (const file of ['index.html', 'staff.html']) {
   assert.ok(html.indexOf('portal-branding-fixes-v54.css') < html.indexOf('portal-compact-six-v48.css'));
   assert.match(html, /<span>Gemaakt voor<\/span>/);
   assert.match(html, /<span>Onderdeel van<\/span>/);
-  assert.match(html, /logo\/koraal-original-transparent-v54\.svg/);
+  assert.match(html, /logo\/koraal-full-original-v56\.svg/);
   assert.doesNotMatch(html, /<span>Gemaakt voor VSO Het Dok<\/span>|<span>Onderdeel van Koraal Onderwijs<\/span>/);
 }
 assert.match(css, /@media \(min-width:820px\)/);
@@ -28,8 +28,8 @@ assert.match(css, /background:transparent url\("logo\/boekenbaai-logo-header-v53
 assert.match(css, /border-radius:0!important;/);
 assert.match(css, /html body \.bb-site-footer__koraal/);
 assert.match(css, /background:transparent!important;/);
-assert.match(logo, /viewBox="0 0 741 183"/);
-assert.match(logo, /fill="#0D3880"/);
+assert.match(logo, /viewBox="0 0 350 63"/);
+assert.match(logo, /aria-label="Koraal: wonen, leren, werken"/);
 assert.doesNotMatch(logo, /<rect\b|#00A8E7/);
-assert.match(logo, /M707,0/);
+assert.match(logo, /data:image\/png;base64,/);
 console.log('Mobile/tablet header single-row fallback, icon and complete Koraal logo: OK');

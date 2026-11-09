@@ -10,7 +10,7 @@ const css = read('public/portal-branding-v53.css');
 const sourceLogo = read('public/logo/boekenbaai-logo-color-v53.svg');
 const headerLogo = read('public/logo/boekenbaai-logo-header-v53.svg');
 const dokFooter = read('public/logo/het-dok-footer-v53.svg');
-const koraal = read('public/logo/koraal-original-transparent-v54.svg');
+const koraal = read('public/logo/koraal-full-original-v56.svg');
 for(const html of [student,staff]){
   assert.match(html, /href="portal-branding-v53\.css"/);
   assert.ok(html.indexOf('portal-branding-v53.css') < html.indexOf('portal-compact-six-v48.css'), 'Compact catalogue still loads last');
@@ -18,7 +18,7 @@ for(const html of [student,staff]){
   assert.match(html, /<span>Onderdeel van<\/span>/);
   assert.match(html, /privacy of AVG/);
   assert.match(html, /src="logo\/het-dok-footer-v53\.svg"/);
-  assert.match(html, /src="logo\/koraal-original-transparent-v54\.svg"/);
+  assert.match(html, /src="logo\/koraal-full-original-v56\.svg"/);
   const header=html.slice(html.indexOf('<header'),html.indexOf('</header>')+9);
   assert.doesNotMatch(header,/het-dok-header-v31\.svg|het-dok-logo\.svg|bb-shared-school-logo/);
 }
@@ -36,8 +36,8 @@ assert.match(sourceLogo, /viewBox="0 0 1102 1182"/);
 assert.match(sourceLogo, /fill="#093F89"/);
 assert.match(headerLogo, /fill="#F5F9FF"/);
 for(const svg of [sourceLogo,headerLogo,dokFooter,koraal])assert.match(svg,/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
-assert.match(koraal, /aria-label="Koraal"/);
-assert.match(koraal, /viewBox="0 0 741 183"/);
+assert.match(koraal, /aria-label="Koraal: wonen, leren, werken"/);
+assert.match(koraal, /viewBox="0 0 350 63"/);
 assert.doesNotMatch(koraal, /<rect|fill="#00A8E7"/);
 assert.match(dokFooter, /aria-label="Het Dok"/);
 console.log('Branding v53: headers, login icon, footer brands and assets OK');
