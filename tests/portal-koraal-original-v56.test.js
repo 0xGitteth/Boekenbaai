@@ -30,9 +30,15 @@ for (const name of ['index.html', 'staff.html']) {
   assert.doesNotMatch(html, /src="logo\/koraal-original-transparent-v54\.svg"/);
 }
 assert.match(css, /\.bb-site-footer__koraal \{/);
-assert.match(css, /height:31px!important;/);
-assert.match(css, /width:auto!important;/);
+const koraalStyle = css.match(/\.bb-site-footer__brand \.bb-site-footer__koraal \{([\s\S]*?)\}/)?.[1];
+const dokStyle = css.match(/\.bb-site-footer__brand \.bb-site-footer__dok \{([\s\S]*?)\}/)?.[1];
+assert.ok(koraalStyle && dokStyle, 'Both footer image styles must be present');
+assert.match(koraalStyle, /height:24px!important;/);
+assert.doesNotMatch(koraalStyle, /height:31px!important;/);
+assert.match(dokStyle, /height:31px!important;/,
+  'The Het Dok logo remains at the original height');
+assert.match(koraalStyle, /width:auto!important;/);
 assert.match(css, /aspect-ratio:350 \/ 63!important;/);
 assert.match(css, /\.bb-site-footer__dok \{/);
 assert.match(css, /background:transparent!important;/);
-console.log('Exact original Koraal wordmark, tagline, transparent background and equal footer height OK');
+console.log('Exact original Koraal wordmark, tagline, transparent background and compact Koraal footer sizing OK');
