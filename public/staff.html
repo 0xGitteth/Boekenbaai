@@ -1327,5 +1327,16 @@
     <script type="module" src="admin-mail-notifications.js"></script>
     <script type="module" src="teacher-modern.js"></script>
     <script type="module" src="uiux-v32.js"></script>
+
+    <!-- Critical six-column layout unaffected by bundled CSS ordering. -->
+    <style id="bb-six-column-critical">
+      @media (min-width:960px) {
+        html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid.book-grid {
+          display:grid!important;
+          grid-template-columns:repeat(6,minmax(0,1fr))!important;
+          column-gap:12px!important;
+        }
+      }
+    </style>
   </body>
 </html>
