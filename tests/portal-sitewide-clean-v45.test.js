@@ -93,8 +93,8 @@ assert.match(css, /#student-login-preview\.bb-student-login-preview \{[\s\S]*?ma
   'Guest preview cards centered too');
 assert.match(css, /body\.bb-admin-v31 \.bb-admin-v31-heading/);
 assert.match(css, /body\.bb-teacher-v31 \.bb-teacher-v31-view-heading/);
-assert.doesNotMatch(css, /body\\.bb-teacher-v31 \\.student-management__section > \\.hint/,
-  'Informative no-class and no-students empty states must never be hidden');
+assert.ok(!css.includes('body.bb-teacher-v31 .student-management__section > .hint'),
+  'Keep informative no-class/no-students empty-state messages visible');
 assert.match(manager, /Je hebt nog geen klas om leerlingen voor te beheren\./);
 assert.match(manager, /Nog geen leerlingen in deze klas\./);
 assert.match(css, /@media\(max-width:600px\)/);
