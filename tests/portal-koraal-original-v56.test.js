@@ -33,7 +33,8 @@ assert.match(css, /\.bb-site-footer__koraal \{/);
 const koraalStyle = css.match(/\.bb-site-footer__brand \.bb-site-footer__koraal \{([\s\S]*?)\}/)?.[1];
 const dokStyle = css.match(/\.bb-site-footer__brand \.bb-site-footer__dok \{([\s\S]*?)\}/)?.[1];
 assert.ok(koraalStyle && dokStyle, 'Both footer image styles must be present');
-assert.match(koraalStyle, /height:24px!important;/);
+assert.match(koraalStyle, /height:18px!important;/);
+assert.doesNotMatch(koraalStyle, /height:24px!important;/);
 assert.doesNotMatch(koraalStyle, /height:31px!important;/);
 assert.match(dokStyle, /height:31px!important;/,
   'The Het Dok logo remains at the original height');
