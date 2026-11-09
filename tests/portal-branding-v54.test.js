@@ -1,0 +1,35 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.join(__dirname, '..', 'public');
+const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+const css = read('portal-branding-fixes-v54.css');
+const logo = read('logo/koraal-original-transparent-v54.svg');
+for (const file of ['index.html', 'staff.html']) {
+  const html = read(file);
+  assert.match(html, /portal-branding-fixes-v54\.css/);
+  assert.ok(html.indexOf('portal-branding-v53.css') < html.indexOf('portal-branding-fixes-v54.css'));
+  assert.ok(html.indexOf('portal-branding-fixes-v54.css') < html.indexOf('portal-compact-six-v48.css'));
+  assert.match(html, /<span>Gemaakt voor<\/span>/);
+  assert.match(html, /<span>Onderdeel van<\/span>/);
+  assert.match(html, /logo\/koraal-original-transparent-v54\.svg/);
+  assert.doesNotMatch(html, /<span>Gemaakt voor VSO Het Dok<\/span>|<span>Onderdeel van Koraal Onderwijs<\/span>/);
+}
+assert.match(css, /@media \(min-width:820px\)/);
+assert.match(css, /@media \(max-width:819px\)/);
+assert.match(css, /flex-flow:row nowrap!important;/);
+assert.match(css, /order:1!important;/);
+assert.match(css, /order:3!important;/);
+assert.match(css, /order:4!important;/);
+assert.match(css, /flex:0 0 100%!important;/);
+assert.match(css, /margin:0 0 0 auto!important;/);
+assert.match(css, /background:transparent url\("logo\/boekenbaai-logo-header-v53\.svg"\)/);
+assert.match(css, /border-radius:0!important;/);
+assert.match(css, /html body \.bb-site-footer__koraal/);
+assert.match(css, /background:transparent!important;/);
+assert.match(logo, /viewBox="0 0 741 183"/);
+assert.match(logo, /fill="#0D3880"/);
+assert.doesNotMatch(logo, /<rect\b|#00A8E7/);
+assert.match(logo, /M707,0/);
+console.log('Mobile/tablet header single-row fallback, icon and complete Koraal logo: OK');
