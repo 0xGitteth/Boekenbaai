@@ -25,6 +25,7 @@ const headerBrandAssets = [
   'logo/boekenbaai-logo-color-v53.svg',
   'logo/het-dok-footer-v53.svg',
   'logo/koraal-logo-v53.svg',
+  'logo/koraal-original-transparent-v54.svg',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
