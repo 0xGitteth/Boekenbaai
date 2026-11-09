@@ -1,0 +1,158 @@
+/*
+ * Student UI v46: compact theme filters and role-appropriate profile.
+ * The general staff catalogue retains its own theme layout.
+ */
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced[open] {
+  position:relative!important;
+  padding-top:9px!important;
+  margin-top:10px!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-student-filter-actions {
+  position:absolute!important;
+  top:6px!important;
+  right:0!important;
+  z-index:2;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  margin:0!important;
+  padding:0!important;
+  width:auto!important;
+  height:auto!important;
+  min-height:0!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-student-filter-actions #bb-cat-reset {
+  min-height:33px!important;
+  padding:5px 9px!important;
+  font-size:12px!important;
+  line-height:1.3!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-themes {
+  min-height:0!important;
+  margin:0!important;
+  padding:3px 2px 14px!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-themes h5 {
+  display:block!important;
+  min-height:30px!important;
+  margin:0 0 6px!important;
+  padding:7px 118px 0 0!important;
+  line-height:1.35!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-themes h5 span {
+  display:none!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #theme-filter-pills {
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:center!important;
+  gap:7px!important;
+  margin:0!important;
+  padding:0!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #theme-filter-pills .bb-cat-theme-linebreak {
+  display:none!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #theme-filter-pills .bb-cat-more--inline {
+  display:inline-flex!important;
+  flex:0 0 auto!important;
+  align-items:center!important;
+  justify-content:center!important;
+  width:auto!important;
+  min-height:34px!important;
+  height:auto!important;
+  padding:6px 11px!important;
+  margin:0!important;
+  border-radius:11px!important;
+  border:1px solid #b8d2f0!important;
+  background:#edf5ff!important;
+  color:#1b5d9e!important;
+  font:750 12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  white-space:normal!important;
+  box-shadow:none!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #theme-filter-pills .bb-cat-more--inline:hover {
+  background:#e0efff!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #theme-filter-pills .bb-cat-more--inline:focus-visible {
+  outline:3px solid #76a8ee!important;
+  outline-offset:2px;
+}
+
+/* Staff session on a public/student route is not a student login and may
+   not expose staff management. Keep the same centered visual scale as
+   the guest login, with one clear route back to the staff portal. */
+body[data-page="student"] #student-profile-view .bb-student-staff-session {
+  box-sizing:border-box;
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:center!important;
+  align-items:center!important;
+  width:100%;
+  max-width:670px;
+  min-height:250px;
+  margin:0 auto!important;
+  padding:32px 22px!important;
+  background:linear-gradient(145deg,#fff,#f8fbff);
+  border:1px solid #d0dff1;
+  border-radius:18px;
+  box-shadow:0 10px 30px #14356520;
+  text-align:center;
+}
+body[data-page="student"] #student-profile-view .bb-student-staff-session.hidden {
+  display:none!important;
+}
+body[data-page="student"] #student-profile-view .bb-student-staff-session-icon {
+  display:grid;
+  place-items:center;
+  width:48px;
+  height:48px;
+  background:#e2eefc;
+  color:#205b9f;
+  border-radius:13px;
+  margin-bottom:14px;
+}
+body[data-page="student"] #student-profile-view .bb-student-staff-session-icon svg {
+  width:27px;
+  height:27px;
+}
+body[data-page="student"] #student-profile-view .bb-student-staff-session h2 {
+  margin:0 0 21px;
+  color:#173769;
+  font:800 clamp(20px,2.5vw,27px)/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="student"] #student-profile-view .bb-student-staff-session-link {
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  min-height:44px;
+  padding:10px 22px;
+  background:#102f64;
+  color:#fff;
+  text-decoration:none;
+  border:1px solid #102f64;
+  border-radius:10px;
+  font-weight:750;
+}
+body[data-page="student"] #student-profile-view .bb-student-staff-session-link:hover {
+  background:#214a85;
+}
+body[data-page="student"] #student-profile-view .bb-student-staff-session-link:focus-visible {
+  outline:3px solid #76a8ee;
+  outline-offset:3px;
+}
+
+/* Protection against stale style caches, not an authorization mechanism.
+   google-auth.js stops the request and DOM insertion on student routes. */
+body[data-page="student"] .google-manage {
+  display:none!important;
+}
+@media (max-width:650px) {
+  body[data-page="student"] #student-profile-view .bb-student-staff-session {
+    min-height:210px;
+    padding:26px 15px!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-themes h5 {
+    padding-right:108px!important;
+  }
+}
