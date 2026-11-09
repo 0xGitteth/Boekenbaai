@@ -1,0 +1,129 @@
+/* v54: header buttons, transparent masthead symbols and original Koraal wordmark. */
+
+/* No badge behind the Boekenbaai emblem. The header SVG already uses white
+   in place of the original dark-blue sections, for contrast with #102f64. */
+html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark-icon,
+html body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before,
+html body[data-page="staff"].bb-admin-v31.bb-v32-active .hero--staff .hero__content h1::before,
+html body[data-page="staff"].bb-teacher-v31.bb-v32-active .hero--staff .hero__content h1::before,
+html body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-book-symbol {
+  background:transparent url("logo/boekenbaai-logo-header-v53.svg") center / contain no-repeat!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+
+/* Keep the desktop-mode mobile browser and landscape tablets on a SINGLE
+   balanced row. Previously the v44 <=1040px rule moved the navigation below
+   the account buttons while leaving the account controls beside the brand. */
+@media (min-width:820px) {
+  html body[data-page="student"] header.bb-student-sitebar.bb-shared-sitebar {
+    display:flex!important;
+    flex-flow:row nowrap!important;
+    flex-wrap:nowrap!important;
+    align-items:center!important;
+    height:64px!important;
+    min-height:64px!important;
+    padding:0 clamp(16px,2vw,28px)!important;
+    gap:10px!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark {
+    order:0!important;
+    flex:0 0 auto!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav {
+    order:1!important;
+    flex:0 1 auto!important;
+    height:100%!important;
+    margin:0 auto!important;
+    padding:0!important;
+    justify-content:center!important;
+    min-width:0!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-account-status {
+    order:2!important;
+    flex:0 0 auto!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-account-button {
+    order:3!important;
+    flex:0 0 auto!important;
+    margin-left:0!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-staff-link {
+    order:4!important;
+    flex:0 0 auto!important;
+  }
+}
+/* Mobile: brand at left, Inloggen / Docenten together at right; nav centered
+   on its own second row. Never let the account buttons sit after the brand. */
+@media (max-width:819px) {
+  html body[data-page="student"] header.bb-student-sitebar.bb-shared-sitebar {
+    display:flex!important;
+    flex-flow:row wrap!important;
+    flex-wrap:wrap!important;
+    align-items:center!important;
+    height:auto!important;
+    min-height:64px!important;
+    padding:8px 12px!important;
+    column-gap:8px!important;
+    row-gap:4px!important;
+    justify-content:flex-start!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark {
+    order:0!important;
+    flex:0 0 auto!important;
+    min-width:0!important;
+    margin:0!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-account-status {
+    display:none!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-account-button {
+    display:inline-flex!important;
+    order:1!important;
+    flex:0 0 auto!important;
+    margin:0 0 0 auto!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-staff-link {
+    display:inline-flex!important;
+    order:2!important;
+    flex:0 0 auto!important;
+    margin:0!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-nav.bb-shared-primary-nav {
+    order:3!important;
+    flex:0 0 100%!important;
+    width:100%!important;
+    height:42px!important;
+    padding:0!important;
+    margin:0!important;
+    align-self:center!important;
+    justify-content:center!important;
+  }
+}
+@media (max-width:430px) {
+  html body[data-page="student"] header.bb-student-sitebar.bb-shared-sitebar {gap:5px!important;padding:8px!important;}
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark {
+    font-size:15px!important;
+    gap:5px!important;
+  }
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-account-button,
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-staff-link {
+    font-size:12px!important;
+    height:34px!important;
+    min-height:34px!important;
+    padding:0 7px!important;
+  }
+}
+/* Koraal wordmark is the complete supplied lettering, without a cyan box.
+   The labels describe the relationship, the images already contain the names. */
+html body .bb-site-footer__koraal {
+  width:98px!important;
+  height:auto!important;
+  aspect-ratio:741 / 183!important;
+  border-radius:0!important;
+  background:transparent!important;
+  object-fit:contain!important;
+}
+html body .bb-site-footer__brands {column-gap:30px!important;}
+html body .bb-site-footer__brand {gap:9px!important;}
