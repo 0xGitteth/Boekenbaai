@@ -233,9 +233,9 @@ assert.match(css,/\.bb-cat-advanced-toggle\s*\{[^}]*min-height:48px/,
 const compactCss=file('portal-refine-v47.css');
 assert.match(html,/<button type="button" id="staff-filter-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="bb-cat-advanced"/,
   'Staff now uses the approved compact filter-toggle layout');
-assert.match(html,/<summary class="bb-cat-advanced-toggle" hidden>Filters tonen<\\/summary>/,
+assert.ok(html.includes('<summary class="bb-cat-advanced-toggle" hidden>Filters tonen</summary>'),
   'The original disclosure summary is visually suppressed in favour of the accessible button');
-assert.match(compactCss,/#staff-book-overview-content \\.bb-staff-compact-filters \\.bb-staff-filter-button/,
+assert.ok(compactCss.includes('#staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-button'),
   'The new compact filter button receives the final shared styling');
 assert.match(css,/#book-grid[^}]*repeat\(2,minmax\(0,1fr\)\)/,
   'Mobile keeps two columns as in the approved HTML');
