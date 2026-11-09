@@ -211,7 +211,7 @@
     teacherPreviewInstalled = true;
     const render = () => {
       preview.replaceChildren();
-      const bookCards = [...grid.querySelectorAll(':scope > .book-card')].slice(0, 5);
+      const bookCards = [...grid.querySelectorAll(':scope > .book-card')].slice(0, 6);
       if (!bookCards.length) {
         preview.append(make('p', 'bb-v32-book-empty', 'Boeken worden geladen of er zijn geen resultaten.'));
         return;
@@ -377,9 +377,10 @@
     if (metrics) {
       const updateLoanCount = () => {
         const value = metrics.children[2]?.querySelector('strong')?.textContent?.trim() || '…';
-        if (loanCount.textContent !== value + ' lopende uitleningen') {
-          loanCount.textContent = value + ' lopende uitleningen';
-        }
+        const message = value === '0' ? 'Geen openstaande uitleningen.'
+          : value === '…' || value === '—' ? 'Uitleningen laden…'
+          : value + (value === '1' ? ' lopende uitlening' : ' lopende uitleningen');
+        if (loanCount.textContent !== message) loanCount.textContent = message;
       };
       updateLoanCount();
       new MutationObserver(updateLoanCount).observe(metrics, {
