@@ -143,8 +143,7 @@
     if (headline) headline.textContent = 'Beheer: Overzicht';
     const eyebrow = overview.querySelector('.bb-admin-v31-eyebrow');
     if (eyebrow) eyebrow.textContent = 'Beheer';
-    const intro = overview.querySelector('.bb-admin-v31-heading p:not(.bb-admin-v31-eyebrow)');
-    if (intro) intro.textContent = 'Welkom terug! Hier vind je de belangrijkste informatie en taken.';
+
     const header = overview.querySelector('.bb-admin-v31-heading');
     header?.append(globalSearch(null, 'admin'));
 
@@ -349,8 +348,7 @@
     start.classList.add('bb-v32-dashboard', 'bb-v32-teacher-dashboard');
     const heading = start.querySelector('.bb-teacher-v31-view-heading h2');
     if (heading) heading.textContent = 'Welkom';
-    const subtitle = start.querySelector('.bb-teacher-v31-view-heading .bb-teacher-v31-hint');
-    if (subtitle) subtitle.textContent = 'Hier vind je jouw klassen, boeken en recente activiteit.';
+
     const search = make('section', 'bb-teacher-v31-card bb-v32-teacher-search');
     const headingRow = make('div', 'bb-teacher-v31-card-heading');
     headingRow.append(make('h3', '', 'Zoek een boek'));
@@ -358,7 +356,7 @@
     all.type = 'button';
     all.addEventListener('click', () => chooseTeacher('catalog'));
     headingRow.append(all);
-    search.append(headingRow, make('p','bb-teacher-v31-hint','Zoek een boek uit de bibliotheek van de school.'));
+    search.append(headingRow);
     search.append(globalSearch(null, 'teacher'));
     const covers = make('div', 'bb-v32-teacher-books');
     covers.id = 'bb-v32-teacher-books';
@@ -369,8 +367,7 @@
     const lower = make('div', 'bb-v32-teacher-lower');
     const loans = make('section', 'bb-teacher-v31-card bb-v32-loan-summary');
     loans.append(make('h3', '', 'Recente uitleningen'));
-    loans.append(make('p', 'bb-teacher-v31-hint',
-      'Bekijk wie een boek leent of lever een boek in via Uitlenen.'));
+
     const openLoans = button('Bekijk uitleningen', '▤', () => chooseTeacher('lending'));
     loans.append(openLoans);
     const loanCount = make('p', 'bb-v32-live-loan-count');

@@ -231,8 +231,8 @@
     const view = make('section', { className: 'admin-modern__view admin-modern__overview' });
     view.dataset.adminModernView = 'overview';
     view.innerHTML = [
-      '<div class="bb-admin-v31-heading"><div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p>',
-      '<h2 tabindex="-1">Start</h2><p>De belangrijkste cijfers en taken op één vaste plek.</p></div></div>',
+      '<div class="bb-admin-v31-heading"><div>',
+      '<h2 tabindex="-1">Start</h2></div></div>',
       '<div class="admin-modern__metrics" id="admin-modern-metrics" aria-live="polite"></div>',
       '<div class="bb-admin-v31-grid">',
       '<div class="bb-admin-v31-column">',
@@ -240,7 +240,6 @@
       '<button type="button" class="bb-admin-v31-link" data-v31-go="tasks">Alle taken →</button></div>',
       '<div id="admin-modern-actions" class="admin-modern__actions-list" aria-live="polite"></div></section>',
       '<section class="bb-admin-v31-card bb-admin-v31-card--stats"><h3>Schoolstatistieken</h3>',
-      '<p>Bekijk uitleen- en leesstatistieken van de school.</p>',
       '<div id="bb-admin-v31-stats"></div></section></div>',
       '<div class="bb-admin-v31-column bb-admin-v31-column--activity">',
       '<section class="bb-admin-v31-card bb-admin-v31-card--activity"><div class="bb-admin-v31-card-head">',
@@ -257,8 +256,7 @@
     const view = make('section', { className: 'admin-modern__view admin-modern__people' });
     view.dataset.adminModernView = 'people';
     const intro = make('div', { className: 'bb-admin-v31-heading' });
-    intro.innerHTML = '<div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p><h2 tabindex="-1">Personen</h2>' +
-      '<p>Beheer leerlingen, docenten en hun schoolaccounts.</p></div>';
+    intro.innerHTML = '<div><h2 tabindex="-1">Personen</h2></div>';
     view.append(intro);
     const tabs = make('div', { className: 'admin-modern__subtabs' });
     tabs.setAttribute('role', 'tablist');
@@ -647,8 +645,7 @@
     const currentHead = make('div', { className: 'bb-admin-v31-loan-current-header' });
     const currentIntro = make('div');
     currentIntro.append(
-      make('h3', { text: 'Huidige uitleningen' }),
-      make('p', { text: 'Bekijk lopende uitleningen of registreer een inname.' })
+      make('h3', { text: 'Huidige uitleningen' })
     );
     currentHead.append(currentIntro, filterField);
     list.setAttribute('tabindex', '0');
@@ -671,7 +668,7 @@
       const title = document.querySelector('.hero--staff h1');
       const intro = document.querySelector('.hero--staff .hero__content p');
       if (title) title.textContent = 'Docentenportaal Boekenbaai';
-      if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
+      if (intro) intro.textContent = '';
       const logo = document.querySelector('.hero--staff .hero__logo');
       if (logo) {
         // Restore Vite's original (possibly fingerprinted) URL rather than
@@ -716,8 +713,7 @@
     const view = make('section', { className: 'admin-modern__view' });
     view.dataset.adminModernView = name;
     const heading = make('div', { className: 'bb-admin-v31-heading' });
-    heading.innerHTML = '<div><p class="bb-admin-v31-eyebrow">Boekenbaai Beheer</p><h2 tabindex="-1">' + title + '</h2>' +
-      '<p>' + description + '</p></div>';
+    heading.innerHTML = '<div><h2 tabindex="-1">' + title + '</h2></div>';
     view.append(heading);
     return view;
   }
@@ -800,7 +796,7 @@
     tasksView.append(make('div', { id: 'bb-admin-v31-tasks' }));
     const accountTaskLinks = make('section', { className: 'bb-admin-v31-card' });
     accountTaskLinks.append(make('h3', { text: 'Andere beheertaken' }));
-    accountTaskLinks.append(make('p', { text: 'Behandel klaswissels en Google-koppelverzoeken via Personen of Klassen.' }));
+
     const taskActions = make('div', { className: 'bb-admin-v31-task-actions' });
     for (const [label, kind] of [['Leerling- en klasverzoeken openen', 'students'], ['Docent- en Google-koppelingen openen', 'teachers']]) {
       const link = make('button', { className: 'btn btn--secondary', text: label, type: 'button' });

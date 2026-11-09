@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="student-catalog-from-staff-v42.css" />
     <link rel="stylesheet" href="portal-pr1-v43.css" />
     <link rel="stylesheet" href="portal-student-compact-v44.css" />
+    <link rel="stylesheet" href="portal-sitewide-clean-v45.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -43,7 +44,7 @@
       <main class="bb-student-main">
         <div class="bb-student-content">
           <section id="student-library-view" aria-labelledby="student-library-title">
-            <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-library-title" tabindex="-1">Bibliotheek</h1><p>Zoek een boek, bekijk het aanbod of scan de barcode om te lenen.</p></div>
+            <h1 id="student-library-title" class="visually-hidden" tabindex="-1">Bibliotheek</h1>
             <p id="student-action-message" role="status" aria-live="polite"></p>
             <section class="panel" id="student-collection" aria-labelledby="collection-title">
               <h2 id="collection-title" class="visually-hidden">Boekenoverzicht</h2>
@@ -137,14 +138,14 @@
 
           </section>
           <section id="student-profile-view" aria-labelledby="student-profile-title" hidden>
-            <div class="bb-student-page-heading"><div class="bb-student-overline">LEERLINGEN</div><h1 id="student-profile-title" tabindex="-1">Mijn profiel</h1><p>Bekijk jouw geleende boeken en uitleenactiviteiten na volledig inloggen.</p></div>
+            <h1 id="student-profile-title" class="visually-hidden" tabindex="-1">Mijn profiel</h1>
 
             <section class="panel panel--login bb-student-login-card" id="student-login-panel" aria-labelledby="student-login-title">
               <div class="bb-student-login-layout">
                 <div class="bb-student-login-primary">
                   <div class="bb-student-login-title-row">
                     <span class="bb-student-login-person" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21v-1.5a7.5 7.5 0 0 1 15 0V21"/></svg></span>
-                    <div class="panel__header"><h2 id="student-login-title">Inloggen op jouw profiel</h2><p class="panel__subtitle">Kies je naam en meld je aan met je schoolaccount.</p></div>
+                    <div class="panel__header"><h2 id="student-login-title">Inloggen op jouw profiel</h2></div>
                   </div>
                           <form id="student-login-form" class="login-form">
           <div class="form-field">
@@ -176,33 +177,20 @@
         </form>
                   <p id="student-login-message" class="hint" role="status" aria-live="polite"></p>
                 </div>
-                <div class="bb-student-login-art" aria-hidden="true">
-                  <svg viewBox="0 0 320 250" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <ellipse cx="157" cy="214" rx="126" ry="16" fill="#92B9ED" opacity=".3"/>
-                    <path d="M50 157q-7-18 15-22l169-19q21-2 25 17l-172 23q-17 2-15 25l173-21q14-2 13 12l-170 26q-22 3-31-12z" fill="#E9A839"/>
-                    <path d="M77 177q-8-16 14-20l154-20q11-2 12 8l-166 26q-11 2-9 9z" fill="#FFF8E9"/>
-                    <path d="M61 121q-10-17 12-20l173-18q21-2 25 16l-177 20q-18 2-12 23l171-17q14-2 13 13l-173 19q-25 3-32-16z" fill="#245AA8"/>
-                    <path d="M89 140q-9-13 12-16l164-18q8-2 10 9l-172 19q-14 2-10 9z" fill="#FBFCFF"/>
-                    <path d="M73 83q-9-18 16-21l175-17q23-2 24 15l-182 19q-19 2-13 23l183-17q11-1 11 13l-183 22q-24 3-31-15z" fill="#367BCE"/>
-                    <path d="M100 102q-11-16 11-19l174-18q7-2 7 11l-179 17q-10 2-8 12z" fill="#FFF9EA"/>
-                    <path d="M54 40l14-20M258 19l11 21M22 100l-24-4" stroke="#3C8FE7" stroke-width="5" stroke-linecap="round"/>
-                  </svg>
-                </div>
+
               </div>
             </section>
-            <section id="student-login-preview" class="bb-student-login-preview" aria-labelledby="student-login-preview-title">
-              <h2 id="student-login-preview-title">Wat kun je doen na het inloggen?</h2>
-              <p>Bekijk jouw persoonlijke bibliotheekoverzicht.</p>
+            <section id="student-login-preview" class="bb-student-login-preview" aria-label="Functies na inloggen">
               <div class="bb-student-preview-grid">
-                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true">▤</span><div><strong>Geleende boeken</strong><small>Bekijk welke boeken je nu leent.</small></div><span aria-hidden="true">⌑</span></div>
-                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true">↶</span><div><strong>Uitleengeschiedenis</strong><small>Bekijk welke boeken je eerder hebt geleend.</small></div><span aria-hidden="true">⌑</span></div>
-                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21v-1.5a7.5 7.5 0 0 1 15 0V21"/></svg></span><div><strong>Mijn account</strong><small>Bekijk je accountgegevens.</small></div><span aria-hidden="true">⌑</span></div>
+                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true">▤</span><div><strong>Geleende boeken</strong></div><span aria-hidden="true">⌑</span></div>
+                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true">↶</span><div><strong>Uitleengeschiedenis</strong></div><span aria-hidden="true">⌑</span></div>
+                <div class="bb-student-preview-item"><span class="bb-student-preview-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21v-1.5a7.5 7.5 0 0 1 15 0V21"/></svg></span><div><strong>Mijn account</strong></div><span aria-hidden="true">⌑</span></div>
               </div>
             </section>
             <section class="panel panel--student hidden" id="student-dashboard">
         <div class="panel__header">
           <h2>Mijn boeken</h2>
-          <p class="panel__subtitle">De boeken die je op dit moment hebt geleend.</p>
+          
         </div>
         <div class="student-dashboard__grid">
           <aside class="student-dashboard__info">
@@ -221,7 +209,7 @@
             <section class="panel" id="student-activity" aria-labelledby="student-activity-title">
         <div class="panel__header">
           <h2 id="student-activity-title">Laatste activiteit</h2>
-          <p class="panel__subtitle" id="student-activity-subtitle">Alleen jouw uitleen- en inlevermomenten.</p>
+          
         </div>
         <ul id="student-activity-list" class="activity-list"></ul>
         <p id="student-activity-empty" class="hint"></p>
@@ -232,7 +220,7 @@
                 <div><dt>Naam</dt><dd id="student-account-name"></dd></div>
                 <div><dt>Gebruikersnaam</dt><dd id="student-account-username"></dd></div>
               </dl>
-              <p class="panel__subtitle">Instellen van een snelle uitleenpincode volgt in een aparte beveiligde uitbreiding.</p>
+              
             </section>
           </section>
         </div>
