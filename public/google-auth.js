@@ -265,15 +265,19 @@
   }
 
   async function renderManagePanel() {
+    // Accountbeheer behoort uitsluitend tot het staffportaal. Een medewerker
+    // kan dezelfde sessie op de openbare leerlingpagina hebben, maar daar
+    // mag geen Google-accountbeheer of leerlingkeuzelijst worden gerenderd.
+    if (document.body?.dataset.page !== 'staff') return;
+    const host = document.querySelector('#teacher-dashboard');
+    if (!host || host.querySelector('.google-manage')) return;
     let data;
     try {
       data = await apiFetch('/api/auth/google/manage');
     } catch (error) {
       return;
     }
-    const host = document.querySelector('#teacher-dashboard') || document.querySelector('main');
-    if (!host || host.querySelector('.google-manage')) return;
-
+    // Niet terugvallen op <main>: dat is op leerling.html een openbaar gebied.
     const panel = makeElement('section', { className: 'google-manage panel' });
     const header = makeElement('div', { className: 'panel__header' });
     const headerText = makeElement('div');

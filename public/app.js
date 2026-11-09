@@ -1726,18 +1726,20 @@ function renderThemePills(container, config = {}) {
         () => onToggleTheme?.({key:theme.key, active:!selectedThemes.has(theme.key)}),theme);
     });
     if (ranked.length > 8) {
-      // As in the approved HTML, the expand/collapse button always starts a
-      // fresh row rather than occupying leftover space after theme pills.
-      const breakRow = document.createElement('span');
-      breakRow.className = 'bb-cat-theme-linebreak';
-      breakRow.setAttribute('aria-hidden', 'true');
-      fragment.append(breakRow);
+      // De studentbibliotheek gebruikt dezelfde regel als de themapills.
+      // Het bestaande staffontwerp behoudt zijn eigen afbreekregel.
+      if (pageType !== 'student') {
+        const breakRow = document.createElement('span');
+        breakRow.className = 'bb-cat-theme-linebreak';
+        breakRow.setAttribute('aria-hidden', 'true');
+        fragment.append(breakRow);
+      }
       const hiddenSelected = ranked.slice(8).filter(t=>selectedThemes.has(t.key)).length;
       const more = appendTextElement(fragment,'button',
-        isExpanded ? 'Toon minder thema’s ⌃' :
+        isExpanded ? 'Minder thema’s' :
           'Toon '+(ranked.length-8)+' overige thema’s'+
-            (hiddenSelected?' ('+hiddenSelected+' geselecteerd)':'')+' ⌄',
-        {type:'button',className:'bb-cat-more'});
+            (hiddenSelected?' ('+hiddenSelected+' geselecteerd)':''),
+        {type:'button',className:'bb-cat-more'+(pageType==='student'?' bb-cat-more--inline':'')});
       more?.setAttribute('aria-expanded',String(isExpanded));
       more?.addEventListener('click',()=>{
         const restoreFocus = document.activeElement === more;
@@ -3016,6 +3018,7 @@ function initStudentPage() {
   const studentFilterToggle = document.querySelector('#student-filter-toggle');
   const studentFilterLabel = document.querySelector('#student-filter-label');
   const studentLoginPreview = document.querySelector('#student-login-preview');
+  const studentStaffSession = document.querySelector('#student-staff-session');
   const studentAccountStatus = document.querySelector('#student-account-status');
   const studentAccountOpen = document.querySelector('#student-account-open');
   const scanOpen = document.querySelector('#student-scan-open');
@@ -3317,8 +3320,10 @@ function initStudentPage() {
 
   function renderAuthState() {
     const loggedIn = authUser && authUser.role === 'student';
-    loginPanel?.classList.toggle('hidden', loggedIn);
-    studentLoginPreview?.classList.toggle('hidden', loggedIn);
+    const staffSession = authUser && (authUser.role === 'teacher' || authUser.role === 'admin');
+    loginPanel?.classList.toggle('hidden', loggedIn || staffSession);
+    studentLoginPreview?.classList.toggle('hidden', loggedIn || staffSession);
+    studentStaffSession?.classList.toggle('hidden', !staffSession);
     dashboard?.classList.toggle('hidden', !loggedIn);
     activitySection?.classList.toggle('hidden', !loggedIn);
     studentProfileAccount?.classList.toggle('hidden', !loggedIn);
@@ -3328,8 +3333,8 @@ function initStudentPage() {
     logoutButton?.classList.toggle('hidden', !loggedIn);
     if (studentAccountStatus) studentAccountStatus.textContent = loggedIn
       ? getUserGreetingName(authUser) || 'Ingelogd'
-      : 'Gast / tablet';
-    if (studentAccountOpen) studentAccountOpen.textContent = loggedIn ? 'Mijn profiel' : 'Inloggen';
+      : staffSession ? 'Medewerker' : 'Gast / tablet';
+    if (studentAccountOpen) studentAccountOpen.textContent = loggedIn || staffSession ? 'Mijn profiel' : 'Inloggen';
     if (studentName) {
       studentName.textContent = loggedIn ? getUserGreetingName(authUser) : '';
     }
@@ -3936,8 +3941,8 @@ function initStudentPage() {
       .then(refreshData)
       .catch((error) => {
         if (error?.code === 'ROLE_MISMATCH') {
+          // De passende route staat in de aparte gecentreerde medewerkerkaart.
           renderAuthState();
-          loginMessage.textContent = 'Je bent ingelogd als medewerker. Ga naar de docentenpagina.';
           return;
         }
         clearAuth();

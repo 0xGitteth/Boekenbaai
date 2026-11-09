@@ -14,7 +14,7 @@ const css=read('public/portal-sitewide-clean-v45.css');
 const studentApp=read('public/app.js');
 const stylesheets=html=>[...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(m=>m[1]);
 
-assert.equal(stylesheets(student).at(-1),'portal-sitewide-clean-v45.css');
+assert.equal(stylesheets(student).at(-1),'portal-student-polish-v46.css');
 assert.equal(stylesheets(staff).at(-1),'portal-sitewide-clean-v45.css');
 assert.ok(stylesheets(student).indexOf('portal-sitewide-clean-v45.css') >
           stylesheets(student).indexOf('portal-student-compact-v44.css'));
@@ -43,7 +43,7 @@ assert.doesNotMatch(student,/Wat kun je doen na het inloggen\?|Bekijk welke boek
 assert.match(student,/id="student-account-username"/);
 assert.match(studentApp,/heading\?\.focus\(\{ preventScroll: true \}\)/,
   'Accessible focus remains at the hidden heading on page switches');
-assert.match(studentApp,/studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn\)/);
+assert.match(studentApp,/studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn \|\| staffSession\)/);
 assert.match(studentApp,/studentLoanInProgress \|\| !action\.bookId \|\| authUser\?\.role !== 'student'/);
 
 const deleted=[

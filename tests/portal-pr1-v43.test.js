@@ -58,7 +58,7 @@ assert.match(app, /studentFilterToggle\?\.addEventListener\('click', \(\) => \{/
 assert.match(app, /catalogAdvanced\.open = !catalogAdvanced\.open/);
 assert.match(app, /studentFilterToggle\?\.setAttribute\('aria-expanded', String\(expanded\)\)/);
 assert.match(app, /catalogReset\?\.addEventListener\('click'/);
-assert.match(app, /studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn\)/);
+assert.match(app, /studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn \|\| staffSession\)/);
 assert.doesNotMatch(app, /studentSidebar\.inert/);
 assert.match(student, /id="student-login-preview"/);
 assert.match(student, /id="student-profile-account"/);

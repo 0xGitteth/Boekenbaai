@@ -16,7 +16,7 @@ const googleRuntime = read('google-auth-runtime-preload.js');
 const staffStylesheets = [...staff.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
 const studentStylesheets = [...student.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(x => x[1]);
 assert.equal(staffStylesheets.at(-1), 'portal-sitewide-clean-v45.css');
-assert.equal(studentStylesheets.at(-1), 'portal-sitewide-clean-v45.css',
+assert.equal(studentStylesheets.at(-1), 'portal-student-polish-v46.css',
   'The shared nonredundant content and final layout layer must load on both portals');
 assert.ok(student.indexOf('portal-student-compact-v44.css') > student.indexOf('portal-pr1-v43.css'));
 assert.ok(staff.indexOf('catalog-v40.css') < staff.indexOf('portal-unified-v41.css'));

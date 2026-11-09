@@ -68,8 +68,8 @@ assert.doesNotMatch(html,/id="student-sidebar"|id="student-menu-toggle"/,
 assert.match(html,/<nav class="bb-student-nav bb-shared-primary-nav"/,
   'Both student destinations are available in the common header');
 assert.match(html,/id="student-login-preview"/);
-assert.match(app,/studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn\)/,
-  'Guest preview must disappear once the student logs in');
+assert.match(app,/studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn \|\| staffSession\)/,
+  'Guest preview must disappear for logged-in students and staff sessions');
 assert.match(app,/studentFilterToggle\?\.addEventListener\('click'/,
   'The compact filter button must open the actual filters');
 assert.match(app,/studentFilterToggle\?\.setAttribute\('aria-expanded', String\(expanded\)\)/);
