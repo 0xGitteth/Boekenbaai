@@ -211,7 +211,7 @@
     teacherPreviewInstalled = true;
     const render = () => {
       preview.replaceChildren();
-      const bookCards = [...grid.querySelectorAll(':scope > .book-card')].slice(0, 6);
+      const bookCards = [...grid.querySelectorAll(':scope > .book-card')].slice(0, 5);
       if (!bookCards.length) {
         preview.append(make('p', 'bb-v32-book-empty', 'Boeken worden geladen of er zijn geen resultaten.'));
         return;
