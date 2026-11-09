@@ -22,6 +22,7 @@
     <link rel="stylesheet" href="catalog-v40.css" />
     <link rel="stylesheet" href="portal-unified-v41.css" />
     <link rel="stylesheet" href="portal-pr1-v43.css" />
+    <link rel="stylesheet" href="portal-sitewide-clean-v45.css" />
     <style>
       .bb-followup-badge {
         display: inline-flex;
@@ -58,9 +59,7 @@
       </div>
       <div class="hero__content">
         <h1>Docentenportaal Boekenbaai</h1>
-        <p>
-          Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.
-        </p>
+        
       </div>
       <div class="hero__illustration" aria-hidden="true">
         <img class="hero__logo" src="logo/het-dok-logo.svg" alt="" />
@@ -121,9 +120,7 @@
         <div class="panel__header panel__header--staff">
           <div class="panel__header-main">
             <h2 id="teacher-panel-title">Overzicht</h2>
-            <p class="panel__subtitle">
-              Bekijk de actuele collectie, filter op thema, zoek of sorteer en houd bij welke leerlingen lenen.
-            </p>
+            
           </div>
           <button
             type="button"
@@ -143,12 +140,12 @@
             <div id="staff-book-overview-content">
 
             <div class="bb-catalog-v36" aria-label="Boekenoverzicht">
-              <p class="bb-catalog-intro">Eén catalogus, met alle titels en hun bijbehorende exemplaren.</p>
+              
               <section class="bb-catalog-filter-panel" aria-labelledby="bb-cat-filter-heading">
                 <header class="bb-cat-panel-header">
                   <span class="bb-cat-panel-icon" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10m-7 5h4"></path><circle cx="8" cy="7" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="14" cy="12" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="12" cy="17" r="2.1" fill="currentColor" stroke="none"></circle></svg></span>
                   <div class="bb-cat-panel-heading"><h4 id="bb-cat-filter-heading">Zoek en filter</h4>
-                    <p>Vind je boek direct, of verfijn de resultaten met filters.</p></div>
+                    </div>
                   <button type="button" class="bb-cat-reset" id="bb-cat-reset"><svg aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"></path></svg> Alles wissen</button>
                 </header>
                 <div class="bb-cat-search-row">
@@ -214,10 +211,7 @@
 
         <section class="teacher-layout__classes teacher-actions" data-role-only="teacher">
           <h3>Mijn klassen</h3>
-          <p class="hint">
-            Houd eenvoudig bij welke leerlingen aan jouw lessen gekoppeld zijn. Nieuwe klassen
-            worden door de beheerder aangemaakt.
-          </p>
+          
           <p id="class-message" class="hint" role="status" aria-live="polite"></p>
           <div id="class-list" class="class-list"></div>
 
@@ -276,9 +270,7 @@
         <div class="panel__header panel__header--admin">
           <div>
             <h2 id="admin-panel-title">Beheer</h2>
-            <p class="panel__subtitle">
-              Voeg nieuwe boeken toe aan de collectie en importeer leerlingaccounts via Excel.
-            </p>
+            
           </div>
           <div class="panel__header-actions panel__header-actions--admin">
             <button id="admin-stats-button" class="btn btn--pill" type="button">
@@ -292,9 +284,7 @@
             <div class="admin-card__header">
               <div class="admin-card__heading">
                 <h3>Boeken beheren</h3>
-                <p class="hint">
-                  Voeg nieuwe titels toe, werk gegevens bij of verwijder boeken uit de collectie.
-                </p>
+                
               </div>
               <button
                 type="button"
@@ -453,10 +443,7 @@
             <div class="admin-card__header">
               <div class="admin-card__intro admin-card__heading">
                 <h3>Docentenaccounts beheren</h3>
-                <p class="hint">
-                  Zoek bestaande docentenaccounts, wijs klassen toe en stel handmatig een tijdelijk
-                  wachtwoord in.
-                </p>
+                
               </div>
               <button
                 type="button"
@@ -604,9 +591,7 @@
             <div class="admin-card__header">
               <div class="admin-card__heading">
                 <h3>Klassen beheren</h3>
-                <p class="hint">
-                  Maak nieuwe klassen aan, koppel docenten en houd de groepen overzichtelijk.
-                </p>
+                
               </div>
               <button
                 type="button"
@@ -660,10 +645,7 @@
             <div class="admin-card__header">
               <div class="admin-card__intro admin-card__heading">
                 <h3>Leerlingaccounts beheren</h3>
-                <p class="hint">
-                  Maak nieuwe leerlingaccounts aan, zoek bestaande accounts en beheer tijdelijke
-                  wachtwoorden of klasindelingen.
-                </p>
+                
               </div>
               <button
                 type="button"
@@ -824,10 +806,7 @@
             <div class="admin-card__header">
               <div class="admin-card__intro admin-card__heading">
                 <h3>Importeren</h3>
-                <p class="hint">
-                  Verwerk Excelbestanden voor grote wijzigingen in één keer. Alle accounts en boeken
-                  worden automatisch bijgewerkt.
-                </p>
+                
               </div>
               <button
                 type="button"
@@ -939,7 +918,7 @@
         <div class="panel__header panel__header--staff">
           <div>
             <h2 id="history-title">Laatste activiteit</h2>
-            <p class="panel__subtitle">Wie leende of bracht wat terug? Je ziet het hier.</p>
+            
           </div>
           <div class="panel__header-actions hidden" id="history-actions" data-role-only="admin">
             <button type="button" class="btn btn--ghost" id="history-clear-button">
