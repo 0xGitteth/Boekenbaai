@@ -1,0 +1,109 @@
+/* v53: unified Boekenbaai brand, footer attribution, matching staff login heading.
+   The original Het Dok brand is intentionally removed from headers, not from the project. */
+
+/* Same icon and size in student, teacher, admin and staff login headers. */
+html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark-icon,
+html body[data-page="staff"] .hero--staff .hero__content h1::before,
+html body[data-page="staff"] .bb-login-book-symbol {
+  background: #ffffff19 url("logo/boekenbaai-logo-header-v53.svg") center / 30px 32px no-repeat!important;
+  border-radius:9px!important;
+}
+/* Teacher/admin brand line retains its Fredoka wordmark while removing school badge. */
+html body[data-page="staff"] .hero--staff .hero__illustration,
+html body[data-page="staff"] .bb-login-school-brand {
+  display:none!important;
+}
+@media(max-width:760px) {
+  html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark-icon,
+  html body[data-page="staff"] .hero--staff .hero__content h1::before,
+  html body[data-page="staff"] .bb-login-book-symbol {
+    background-size:23px 25px!important;
+  }
+}
+
+/* Teacher/admin sign-in: same blue pictogram treatment as the student login. */
+html body[data-page="staff"] #staff-login-panel .bb-staff-login-title-row {
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:12px;
+  margin:0 0 22px;
+}
+html body[data-page="staff"] #staff-login-panel .bb-staff-login-title-row .panel__header {
+  display:block;
+  margin:0;
+  padding:0;
+}
+html body[data-page="staff"] #staff-login-panel .bb-staff-login-title-row h2 {
+  margin:0!important;
+  font-size:clamp(20px,2.1vw,26px)!important;
+  line-height:1.22!important;
+}
+html body[data-page="staff"] #staff-login-panel .bb-staff-login-person {
+  box-sizing:border-box;
+  display:grid;
+  place-items:center;
+  flex:0 0 48px;
+  width:48px;
+  height:48px;
+  border-radius:13px;
+  background:#e2eefc;
+  color:#205b9f;
+}
+html body[data-page="staff"] #staff-login-panel .bb-staff-login-person svg {
+  display:block;
+  width:27px;
+  height:27px;
+}
+@media(max-width:540px) {
+  html body[data-page="staff"] #staff-login-panel .bb-staff-login-title-row {gap:9px;}
+  html body[data-page="staff"] #staff-login-panel .bb-staff-login-person {
+    width:38px;height:38px;flex-basis:38px;
+  }
+  html body[data-page="staff"] #staff-login-panel .bb-staff-login-person svg {width:23px;height:23px;}
+}
+
+/* Website attribution after the existing AVG copy.
+   Authenticated admin originally hid the footer, so explicitly restore it. */
+html body[data-page="student"] .bb-site-footer,
+html body[data-page="staff"] .bb-site-footer {
+  box-sizing:border-box;
+  display:flex!important;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:17px 20px 22px!important;
+  background:#eef3fa;
+  color:#60748e;
+  border-top:1px solid #dce5f1;
+  text-align:center;
+  font-size:12px!important;
+  line-height:1.4;
+}
+html body .bb-site-footer__brands {
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:10px 28px;
+}
+html body .bb-site-footer__brand {
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+}
+html body .bb-site-footer__brand img {display:block;object-fit:contain;flex:none;}
+html body .bb-site-footer__dok {width:94px;height:31px;}
+html body .bb-site-footer__koraal {width:105px;height:27px;border-radius:3px;}
+html body .bb-site-footer__privacy {margin:0!important;color:#697c95;font-size:12px!important;}
+@media(max-width:540px){
+  html body .bb-site-footer__brands {flex-direction:column;gap:9px;}
+  html body[data-page="student"] .bb-site-footer,
+  html body[data-page="staff"] .bb-site-footer {padding:17px 14px 22px!important;}
+}
