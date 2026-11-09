@@ -482,5 +482,16 @@
     </section>
 
     <script type="module" src="app.js"></script>
+
+    <!-- Critical six-column layout unaffected by bundled CSS ordering. -->
+    <style id="bb-six-column-critical">
+      @media (min-width:960px) {
+        html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid.book-grid {
+          display:grid!important;
+          grid-template-columns:repeat(6,minmax(0,1fr))!important;
+          column-gap:12px!important;
+        }
+      }
+    </style>
   </body>
 </html>
