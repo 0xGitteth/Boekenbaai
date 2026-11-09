@@ -1,0 +1,281 @@
+/* Boekenbaai v45: put the books and actual tasks first.
+   Redundant decorative introductions are removed from source where possible.
+   Fallback rules are limited to heading-adjacent explanatory copy. */
+
+/* Student: hide redundant visible page headings, keep their DOM h1 targets
+   accessible to focus and screen readers when changing the top navigation. */
+body[data-page="student"] #student-library-title.visually-hidden,
+body[data-page="student"] #student-profile-title.visually-hidden {
+  position:absolute!important;width:1px!important;height:1px!important;
+  padding:0!important;margin:-1px!important;overflow:hidden!important;
+  clip:rect(0,0,0,0)!important;white-space:nowrap!important;
+  border:0!important;
+}
+body[data-page="student"] .bb-student-main {
+  padding-top:12px!important;
+}
+body[data-page="student"] #student-library-view > #student-action-message:empty {display:none!important;}
+body[data-page="student"] #student-collection {
+  box-sizing:border-box;
+  width:100%;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+body[data-page="student"] #student-collection > .bb-catalog-v36 {
+  width:100%;margin:0;padding:0;min-width:0;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout {
+  box-sizing:border-box;
+  padding:13px!important;
+  margin:0 0 13px!important;
+  background:#fff!important;
+  border:1px solid #d7e3f2!important;
+  border-radius:15px!important;
+  box-shadow:0 2px 12px #19375b10!important;
+}
+/* The books are a separate card below the search toolbar. */
+body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  margin:0!important;
+  padding:14px!important;
+  border:1px solid #d7e3f2;
+  border-radius:15px;
+  background:#fff;
+  box-shadow:0 2px 12px #19375b0c;
+}
+body[data-page="student"] #student-collection .bb-student-scan-panel {
+  margin:0 0 13px!important;
+}
+
+/* Expanded filters: remove the old nested top borders, invisible offsets,
+   and giant blank first row introduced by legacy .bb-cat-advanced styles.
+   All filter controls are unchanged. */
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced[open] {
+  display:flex!important;
+  flex-direction:column!important;
+  gap:0!important;
+  margin:11px 0 0!important;
+  padding:12px 0 0!important;
+  border:0!important;
+  border-top:1px solid #e1e9f3!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced > summary[hidden] {
+  display:none!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-student-filter-actions {
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  min-height:0!important;
+  margin:0 0 7px!important;
+  padding:0!important;
+  border:0!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-advanced-content {
+  display:block!important;
+  box-sizing:border-box;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  min-height:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-themes {
+  box-sizing:border-box;
+  margin:0!important;
+  padding:2px 2px 16px!important;
+  min-height:0!important;
+  border:0!important;
+  border-bottom:1px solid #e1e9f3!important;
+  background:transparent!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-themes h5 {
+  display:flex!important;
+  align-items:baseline!important;
+  flex-wrap:wrap;
+  gap:4px 8px;
+  position:static!important;
+  margin:0 0 11px!important;
+  padding:0!important;
+  border:0!important;
+  line-height:1.4!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-themes h5 span {
+  position:static!important;
+  margin:0!important;
+  font-weight:500;
+  line-height:1.4!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced #theme-filter-pills {
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:center!important;
+  gap:8px!important;
+  padding:0!important;
+  margin:0!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-other-filters {
+  display:grid!important;
+  grid-template-columns:minmax(0,1.6fr) repeat(2,minmax(0,1fr));
+  gap:15px 19px!important;
+  align-items:start!important;
+  box-sizing:border-box;
+  margin:0!important;
+  padding:17px 2px 5px!important;
+  border:0!important;
+  min-height:0!important;
+  background:transparent!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-pages,
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-field {
+  min-width:0!important;margin:0!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-pages legend,
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-field {
+  padding:0!important;line-height:1.4!important;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout .bb-student-sort-row {
+  padding:12px 0 0!important;
+  margin:6px 0 0!important;
+  border-top:1px solid #e1e9f3;
+}
+body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced:not([open]) + .bb-student-sort-row {
+  display:none!important;
+}
+
+/* Student login: one centered white form card. The unconvincing decorative
+   book pile is removed from the HTML rather than replaced by another fake. */
+body[data-page="student"] #student-profile-view {
+  box-sizing:border-box;
+  width:100%;
+  max-width:920px;
+  margin:0 auto;
+  padding:clamp(12px,3vh,32px) 0 32px;
+}
+body[data-page="student"] #student-login-panel.bb-student-login-card {
+  box-sizing:border-box;
+  width:100%;
+  max-width:670px!important;
+  min-width:0;
+  margin:0 auto!important;
+  padding:0!important;
+  overflow:visible!important;
+  border-radius:18px!important;
+  background:linear-gradient(145deg,#fff,#f8fbff)!important;
+}
+body[data-page="student"] #student-login-panel .bb-student-login-layout {
+  display:block!important;
+  min-height:0!important;
+  width:100%;
+}
+body[data-page="student"] #student-login-panel .bb-student-login-primary {
+  box-sizing:border-box;
+  width:100%;
+  max-width:590px;
+  margin:0 auto;
+  padding:28px clamp(18px,3vw,36px) 30px!important;
+}
+body[data-page="student"] #student-login-panel .bb-student-login-title-row {
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:12px!important;
+  margin:0 0 24px!important;
+  text-align:center!important;
+}
+body[data-page="student"] #student-login-panel .bb-student-login-title-row .panel__header {
+  display:block!important;
+  margin:0!important;
+  text-align:center!important;
+}
+body[data-page="student"] #student-login-panel #student-login-title {
+  font-size:clamp(21px,2.5vw,27px);
+  text-align:center!important;
+}
+body[data-page="student"] #student-login-panel .bb-student-login-art {display:none!important;}
+body[data-page="student"] #student-login-preview.bb-student-login-preview {
+  box-sizing:border-box;
+  width:100%;
+  max-width:850px!important;
+  margin:17px auto 0!important;
+  padding:0!important;
+  text-align:center;
+}
+body[data-page="student"] #student-login-preview .bb-student-preview-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:11px;
+}
+body[data-page="student"] #student-login-preview .bb-student-preview-item {
+  min-width:0;
+  justify-content:center;
+  padding:15px 12px;
+  text-align:left;
+}
+body[data-page="student"] #student-login-preview .bb-student-preview-item > span:last-child {display:none!important;}
+body[data-page="student"] #student-login-preview .bb-student-preview-item strong {
+  line-height:1.3;
+}
+body[data-page="student"] #student-activity .panel__header {
+  margin-bottom:10px!important;
+}
+
+/* The same content cleanup applies to app-generated staff pages. Preserve
+   real operational warnings, import instructions, security messages, feedback,
+   and empty/error states. */
+body.bb-teacher-v31 .bb-teacher-v31-view-heading > .bb-teacher-v31-hint,
+body.bb-teacher-v31 .bb-teacher-v31-view-heading > .bb-teacher-v31-eyebrow,
+body.bb-admin-v31 .bb-admin-v31-heading .bb-admin-v31-eyebrow,
+body.bb-admin-v31 .bb-admin-v31-heading > div > p:not(.bb-admin-v31-eyebrow),
+body.bb-teacher-v31 .student-management__header .panel__subtitle,
+body.bb-teacher-v31 .student-management__section > .hint,
+body.bb-teacher-v31 .bb-v32-teacher-search > .bb-teacher-v31-hint,
+body.bb-teacher-v31 .bb-v32-loan-summary > .bb-teacher-v31-hint,
+body.bb-admin-v31 .bb-admin-v31-card--stats > p,
+body.bb-admin-v31 .admin-card__intro > p.hint,
+body[data-page="staff"] .hero--staff .hero__content > p,
+body[data-page="staff"] .teacher-overview__header .bb-catalog-intro,
+body[data-page="staff"] .bb-cat-panel-heading > p,
+body[data-page="staff"] .panel__header > .panel__subtitle,
+body[data-page="staff"] .panel__header > div > .panel__subtitle {
+  display:none!important;
+}
+@media(max-width:900px) {
+  body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-other-filters {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-pages,
+  body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-feature-filters {
+    grid-column:1/-1!important;
+  }
+}
+@media(max-width:600px) {
+  body[data-page="student"] .bb-student-main {padding-top:9px!important}
+  body[data-page="student"] #student-collection .bb-student-discovery-layout {padding:10px!important}
+  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid {padding:9px!important}
+  body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-other-filters {
+    grid-template-columns:1fr!important;
+  }
+  body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-pages,
+  body[data-page="student"] #student-collection .bb-student-discovery-layout #bb-cat-advanced .bb-cat-feature-filters {
+    grid-column:auto!important;
+  }
+  body[data-page="student"] #student-profile-view {padding:10px 0 24px}
+  body[data-page="student"] #student-login-preview .bb-student-preview-grid {grid-template-columns:1fr}
+  body[data-page="student"] #student-login-preview .bb-student-preview-item {justify-content:flex-start}
+  body[data-page="student"] #student-login-panel .bb-student-login-title-row {gap:8px!important}
+}
+@media(prefers-reduced-motion:reduce) {
+  body[data-page="student"] #student-login-panel,
+  body[data-page="student"] #student-collection .bb-student-discovery-layout {transition:none!important}
+}
