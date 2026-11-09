@@ -22,8 +22,8 @@ assert.ok(student.indexOf('portal-student-compact-v44.css') > student.indexOf('p
 assert.ok(staff.indexOf('catalog-v40.css') < staff.indexOf('portal-unified-v41.css'));
 assert.ok(student.indexOf('student-v31.css') < student.indexOf('portal-unified-v41.css'));
 
-assert.match(student, /class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
-assert.match(staff, /class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.doesNotMatch(student, /class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
+assert.doesNotMatch(staff, /class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
 assert.match(student, /class="bb-student-wordmark-icon"/);
 assert.doesNotMatch(student, /<img class="bb-student-school-logo"/,
   'The student masthead must not put the navy logo into a white box');
