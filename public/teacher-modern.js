@@ -206,7 +206,7 @@
     rightColumn.append(taskCard);
     grid.append(leftColumn, rightColumn);
     start.append(grid);
-    const classes = makeView('classes', 'Mijn klassen', 'Bekijk leerlingen, klaswissels en de klassen waarvoor je bevoegd bent.');
+    const classes = makeView('classes', 'Mijn klassen', '');
     const catalog = makeView('catalog', 'Catalogus', 'Zoek, filter en bekijk de beschikbaarheid van de schoolbibliotheek.');
     const lending = makeView('lending', 'Uitlenen en innemen', 'Kies het juiste exemplaar en registreer uitleningen en innames.');
     const tasks = makeView('tasks', 'Taken', 'Bekijk boekimportcontroles, klaswissels en Google-koppelverzoeken.');
@@ -247,7 +247,7 @@
       }
     } else {
       if (title) title.textContent = 'Docentenportaal Boekenbaai';
-      if (intro) intro.textContent = 'Houd zicht op de voortgang van jouw leerlingen en beheer je klassen.';
+      if (intro) intro.textContent = '';
       if (logo?.dataset.v31TeacherOriginal) {
         logo.setAttribute('src', logo.dataset.v31TeacherOriginal);
         logo.alt = '';
