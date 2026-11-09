@@ -21,6 +21,10 @@ const runtimeAuthAssets = [
 const headerBrandAssets = [
   'logo/het-dok-header-v31.svg',
   'logo/boekenbaai-book-mark-v31.svg',
+  'logo/boekenbaai-logo-header-v53.svg',
+  'logo/boekenbaai-logo-color-v53.svg',
+  'logo/het-dok-footer-v53.svg',
+  'logo/koraal-logo-v53.svg',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
