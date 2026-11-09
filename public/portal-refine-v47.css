@@ -1,0 +1,402 @@
+/* Boekenbaai v47: consistent compact catalogues, centred login and real tasks. */
+
+/* The profile is vertically centred in the usable page, like the staff
+   login. Do not centre the authenticated student's dashboard. */
+body[data-page="student"] #student-profile-view:not([hidden]):has(> #student-login-panel:not(.hidden)),
+body[data-page="student"] #student-profile-view:not([hidden]):has(> #student-staff-session:not(.hidden)) {
+  box-sizing:border-box;
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:center!important;
+  align-items:center!important;
+  width:100%;
+  max-width:none!important;
+  min-height:calc(100dvh - 64px - 65px);
+  margin:0 auto!important;
+  padding:26px 16px!important;
+}
+body[data-page="student"] #student-profile-view #student-login-panel,
+body[data-page="student"] #student-profile-view #student-staff-session {
+  flex:0 0 auto;
+}
+body[data-page="student"] #student-profile-view #student-login-preview {
+  flex:0 0 auto;
+  max-width:920px!important;
+}
+body[data-page="student"] #student-login-preview .bb-student-preview-icon--exam {
+  color:#9d6a15;
+  background:#fff2d8;
+}
+body[data-page="student"] #student-login-preview .bb-student-preview-icon--exam svg {
+  width:21px;
+  height:25px;
+}
+@media(max-height:590px) {
+  body[data-page="student"] #student-profile-view:not([hidden]):has(> #student-login-panel:not(.hidden)),
+  body[data-page="student"] #student-profile-view:not([hidden]):has(> #student-staff-session:not(.hidden)) {
+    min-height:0;
+    justify-content:flex-start!important;
+  }
+}
+
+/* Staff and administrators now use the same two-row search surface that
+   students approved. No duplicate white card, introductory heading or
+   always-open full filter block above the covers. All existing field IDs
+   and staff book actions remain attached to their original elements. */
+body[data-page="staff"] .teacher-layout__overview {
+  background:transparent!important;
+  box-shadow:none!important;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  min-width:0;
+}
+body[data-page="staff"] #staff-catalog-title.visually-hidden {
+  position:absolute!important;width:1px!important;height:1px!important;
+  overflow:hidden!important;clip:rect(0,0,0,0)!important;
+  white-space:nowrap!important;
+}
+body[data-page="staff"] #staff-book-overview-content {
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 {
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:none!important;
+  padding:0!important;
+  margin:0!important;
+  background:transparent!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-discovery-layout {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  padding:13px!important;
+  margin:0 0 13px!important;
+  border:1px solid #d7e3f2!important;
+  border-radius:15px!important;
+  background:#fff!important;
+  box-shadow:0 2px 12px #19375b10!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters {
+  box-sizing:border-box;
+  display:block!important;
+  width:100%;
+  min-width:0;
+  padding:0!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-search-row {
+  box-sizing:border-box;
+  display:grid!important;
+  grid-template-columns:minmax(200px,1fr) auto!important;
+  gap:9px!important;
+  align-items:center!important;
+  padding:0!important;
+  margin:0!important;
+  width:100%!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-search-field {
+  display:flex!important;
+  align-items:center;
+  box-sizing:border-box;
+  width:100%!important;
+  min-width:0!important;
+  min-height:44px!important;
+  height:44px!important;
+  margin:0!important;
+  background:#fff!important;
+  border:1px solid #cfdef0!important;
+  border-radius:24px!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-search-field input {
+  width:100%!important;
+  min-width:0!important;
+  min-height:40px!important;
+  height:40px!important;
+  padding:0 11px!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:22px!important;
+  background:transparent!important;
+  font-size:14px!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-button {
+  box-sizing:border-box;
+  display:inline-flex!important;
+  flex:0 0 auto!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:7px!important;
+  min-height:44px!important;
+  padding:0 12px!important;
+  margin:0!important;
+  border:1px solid transparent!important;
+  border-radius:10px!important;
+  background:transparent!important;
+  color:#23476f!important;
+  font:750 12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif!important;
+  white-space:nowrap;
+  cursor:pointer;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-button:hover {
+  background:#edf4fc!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-button:focus-visible {
+  outline:3px solid #76a8ee!important;
+  outline-offset:2px;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-count:empty {
+  display:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-count:not(:empty) {
+  display:inline-flex;
+  padding:3px 6px;
+  border-radius:7px;
+  background:#d2e3fa;
+  font-size:10px;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-results {
+  box-sizing:border-box;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  flex-wrap:wrap!important;
+  gap:7px 16px!important;
+  width:100%!important;
+  min-height:0!important;
+  margin:12px 0 0!important;
+  padding:0!important;
+  background:transparent!important;
+  border:0!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-results #summary {
+  margin:0!important;
+  padding:0!important;
+  width:auto!important;
+  max-width:100%;
+  color:#647b98!important;
+  font-size:12px!important;
+  line-height:1.4!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-results .bb-cat-legend {
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  gap:14px!important;
+  margin:0!important;
+  padding:0!important;
+  color:#536b89!important;
+  font-size:12px!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters #bb-cat-advanced:not([open]) {
+  display:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters #bb-cat-advanced[open] {
+  box-sizing:border-box;
+  display:flex!important;
+  flex-direction:column!important;
+  position:relative!important;
+  margin:11px 0 0!important;
+  padding:12px 0 0!important;
+  border:0!important;
+  border-top:1px solid #e1e9f3!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters #bb-cat-advanced > summary[hidden] {
+  display:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-actions {
+  display:flex!important;
+  justify-content:flex-end!important;
+  align-items:center!important;
+  min-height:0!important;
+  margin:0 0 8px!important;
+  padding:0!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-actions .bb-cat-reset {
+  box-sizing:border-box;
+  min-height:34px!important;
+  padding:6px 10px!important;
+  background:white!important;
+  border:1px solid #d4e2f1!important;
+  border-radius:9px!important;
+  font-size:12px!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-advanced-content {
+  box-sizing:border-box;
+  display:block!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-themes {
+  box-sizing:border-box;
+  margin:0!important;
+  padding:2px 2px 14px!important;
+  border:0!important;
+  border-bottom:1px solid #e1e9f3!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-themes h5 {
+  margin:0 0 9px!important;
+  padding:0!important;
+  font-size:14px!important;
+  line-height:1.4!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-themes h5 span {
+  display:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters #theme-filter-pills {
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-items:center!important;
+  gap:8px!important;
+  margin:0!important;
+  padding:0!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-theme-linebreak {
+  display:none!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-more {
+  display:inline-flex!important;
+  flex:0 0 auto!important;
+  align-items:center!important;
+  justify-content:center!important;
+  width:auto!important;
+  margin:0!important;
+  padding:6px 11px!important;
+  min-height:34px!important;
+  border-radius:11px!important;
+  white-space:normal!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters {
+  box-sizing:border-box;
+  display:grid!important;
+  grid-template-columns:minmax(0,1.6fr) repeat(2,minmax(0,1fr));
+  gap:15px 19px!important;
+  align-items:start!important;
+  margin:0!important;
+  padding:17px 2px 5px!important;
+  border:0!important;
+  background:transparent!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters fieldset {
+  min-width:0!important;margin:0!important;padding:0!important;border:0!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-sort-row {
+  display:none!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  box-sizing:border-box;
+  padding:12px 0 0!important;
+  margin:6px 0 0!important;
+  border-top:1px solid #e1e9f3;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters #bb-cat-advanced[open] + .bb-staff-sort-row {
+  display:flex!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-sort-row .bb-cat-sort {
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  gap:9px!important;
+  width:auto!important;
+  margin:0!important;
+  font-size:12px!important;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-sort-row select {
+  max-width:240px;
+  min-height:38px!important;
+  border:1px solid #ceddf0;
+  border-radius:8px;
+  background:#fff;
+  color:#173b67;
+}
+body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
+  box-sizing:border-box;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  padding:14px!important;
+  margin:0!important;
+  border:1px solid #d7e3f2;
+  border-radius:15px;
+  background:#fff!important;
+  box-shadow:0 2px 12px #19375b0c;
+}
+@media(max-width:800px) {
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters .bb-cat-pages,
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters .bb-cat-feature-filters {
+    grid-column:1/-1!important;
+  }
+}
+@media(max-width:600px) {
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-discovery-layout {
+    padding:10px!important;
+  }
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-search-row {
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-button {
+    justify-self:start;
+  }
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-results .bb-cat-legend {
+    justify-content:flex-start!important;
+  }
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters {
+    grid-template-columns:1fr!important;
+  }
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters .bb-cat-pages,
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-other-filters .bb-cat-feature-filters {
+    grid-column:auto!important;
+  }
+  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
+    padding:9px!important;
+  }
+}
+
+/* The teacher's dashboard tasks box remains, but fixed navigation shortcuts
+   are replaced by actual counted requests. Empty and error states are honest. */
+body[data-page="staff"] #bb-teacher-v31-tasks-summary .bb-teacher-v31-task-state {
+  margin:4px 0!important;
+  padding:12px 14px;
+  border:1px solid #dbe4ef;
+  border-radius:10px;
+  background:#f5f8fc;
+  color:#365776;
+  font-size:14px;
+  line-height:1.4;
+}
+body[data-page="staff"] #bb-teacher-v31-tasks-summary .bb-teacher-v31-open-task-list {
+  display:grid;
+  gap:8px;
+}
+body[data-page="staff"] #bb-teacher-v31-tasks-summary .bb-teacher-v31-open-task-list > .bb-teacher-v31-row {
+  width:100%;
+}
+@media(prefers-reduced-motion:reduce) {
+  body[data-page="staff"] #staff-book-overview-content .bb-staff-filter-button {
+    transition:none!important;
+  }
+}
