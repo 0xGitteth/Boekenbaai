@@ -28,7 +28,7 @@ assert.match(student, /class="bb-student-wordmark-icon"/);
 assert.doesNotMatch(student, /<img class="bb-student-school-logo"/,
   'The student masthead must not put the navy logo into a white box');
 assert.match(staff, /class="bb-login-site-brand"/);
-assert.match(staff, /class="bb-login-school-brand"/);
+assert.doesNotMatch(staff, /class="bb-login-school-brand"/);
 assert.match(staff, /class="bb-login-wordmark"/);
 assert.match(staff, /class="bb-login-back" href="index.html">Terug naar leerlingen/);
 assert.equal((staff.match(/id="login-form"/g)||[]).length,1);
