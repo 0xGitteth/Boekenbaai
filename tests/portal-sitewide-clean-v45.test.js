@@ -43,7 +43,7 @@ assert.doesNotMatch(student,/Wat kun je doen na het inloggen\?|Bekijk welke boek
 assert.match(student,/id="student-account-username"/);
 assert.match(studentApp,/heading\?\.focus\(\{ preventScroll: true \}\)/,
   'Accessible focus remains at the hidden heading on page switches');
-assert.match(studentApp,/studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn\)/);
+assert.match(studentApp,/studentLoginPreview\?\.classList\.toggle\('hidden', loggedIn \|\| staffSession\)/);
 assert.match(studentApp,/studentLoanInProgress \|\| !action\.bookId \|\| authUser\?\.role !== 'student'/);
 
 const deleted=[
