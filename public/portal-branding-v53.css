@@ -3,8 +3,10 @@
 
 /* Same icon and size in student, teacher, admin and staff login headers. */
 html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark-icon,
-html body[data-page="staff"] .hero--staff .hero__content h1::before,
-html body[data-page="staff"] .bb-login-book-symbol {
+html body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before,
+html body[data-page="staff"].bb-admin-v31.bb-v32-active .hero--staff .hero__content h1::before,
+html body[data-page="staff"].bb-teacher-v31.bb-v32-active .hero--staff .hero__content h1::before,
+html body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-book-symbol {
   background: #ffffff19 url("logo/boekenbaai-logo-header-v53.svg") center / 30px 32px no-repeat!important;
   border-radius:9px!important;
 }
@@ -15,8 +17,8 @@ html body[data-page="staff"] .bb-login-school-brand {
 }
 @media(max-width:760px) {
   html body[data-page="student"] header.bb-student-sitebar .bb-student-wordmark-icon,
-  html body[data-page="staff"] .hero--staff .hero__content h1::before,
-  html body[data-page="staff"] .bb-login-book-symbol {
+  html body[data-page="staff"].bb-v32-active .hero--staff .hero__content h1::before,
+  html body[data-page="staff"]:has(#staff-login-panel:not(.hidden)) .bb-login-book-symbol {
     background-size:23px 25px!important;
   }
 }
