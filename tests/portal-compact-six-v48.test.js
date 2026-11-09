@@ -10,10 +10,25 @@ const dashboard = read('public/uiux-v32.js');
 const app = read('public/app.js');
 for (const [html, page] of [[student, 'student'], [staff, 'staff']]) {
   assert.match(html, /<link rel="stylesheet" href="portal-compact-six-v48.css"/);
-  assert.match(html, /<style id="bb-six-column-critical">/);
-  assert.ok(html.includes('html body[data-page="' + page + '"]'));
-  assert.match(html, /grid-template-columns:repeat\(6,minmax\(0,1fr\)\)!important;/);
+  const critical = html.match(/<style id="bb-six-column-critical">([\s\S]*?)<\/style>/)?.[1];
+  assert.ok(critical, page + ': critical six-column style is present');
+  const scope = page === 'student' ? '#student-collection' : '#staff-book-overview-content';
+  const selector = 'html body[data-page="' + page + '"] ' + scope +
+    ' .bb-catalog-v36 #book-grid.book-grid:not(.book-grid--empty)';
+  assert.ok(critical.includes(selector + ' {'),
+    page + ': six-column override must NOT match empty grid');
+  assert.doesNotMatch(critical, /#book-grid\.book-grid\s*\{/,
+    page + ': never force display:grid on empty state');
+  assert.match(critical, /grid-template-columns:repeat\(6,minmax\(0,1fr\)\)!important;/);
+  assert.match(critical, /display:grid!important;/);
+  const emptySelector = 'html body[data-page="' + page + '"] ' + scope +
+    ' .bb-catalog-v36 #book-grid.book-grid--empty';
+  assert.ok(css.includes(emptySelector), page + ': empty-grid CSS is available');
 }
+assert.match(css, /#book-grid\.book-grid--empty \{\s*display:block!important;/,
+  'The empty-state message must use full catalogue width');
+assert.match(app, /grid\.classList\.toggle\('book-grid--empty', !hasVisible\)/,
+  'Rendering must toggle the empty-grid class when no book is visible');
 assert.ok(css.includes('html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid'));
 assert.match(css, /grid-template-columns:repeat\(6,minmax\(0,1fr\)\)!important;/);
 assert.match(css, /@media \(max-width:959px\)/);
