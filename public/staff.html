@@ -25,6 +25,7 @@
     <link rel="stylesheet" href="portal-sitewide-clean-v45.css" />
     <link rel="stylesheet" href="portal-refine-v47.css" />
     <link rel="stylesheet" href="portal-typography-v52.css" />
+    <link rel="stylesheet" href="portal-branding-v53.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <style>
       .bb-followup-badge {
@@ -51,21 +52,15 @@
   </head>
   <body data-page="staff">
     <header class="hero hero--staff">
-      <div class="bb-login-site-brand" aria-label="Boekenbaai, Het Dok">
+      <div class="bb-login-site-brand" aria-label="Boekenbaai">
         <a class="bb-login-wordmark" href="index.html" aria-label="Boekenbaai, naar leerlingbibliotheek">
           <span class="bb-login-book-symbol" aria-hidden="true"></span>
           <span>Boekenbaai</span>
         </a>
-        <span class="bb-login-school-brand">
-          <img class="bb-shared-school-logo" src="logo/het-dok-header-v31.svg" width="132" height="43" alt="Het Dok" />
-        </span>
       </div>
       <div class="hero__content">
         <h1>Docentenportaal Boekenbaai</h1>
         
-      </div>
-      <div class="hero__illustration" aria-hidden="true">
-        <img class="hero__logo" src="logo/het-dok-logo.svg" alt="" />
       </div>
       <div class="hero__actions">
         <a class="btn btn--ghost hero__link" href="index.html">Terug naar leerlingen</a>
@@ -79,8 +74,15 @@
 
     <main>
       <section class="panel panel--login" id="staff-login-panel" aria-labelledby="staff-login-title">
-        <div class="panel__header">
-          <h2 id="staff-login-title">Inloggen voor docenten en beheerders</h2>
+        <div class="bb-staff-login-title-row">
+          <span class="bb-staff-login-person" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="9" cy="8" r="3.5"/><path d="M2.5 20v-1a6.5 6.5 0 0 1 13 0v1"/><path d="M17 5.3a3.5 3.5 0 0 1 0 6.8"/><path d="M18.5 14a5.5 5.5 0 0 1 3 5v1"/>
+            </svg>
+          </span>
+          <div class="panel__header">
+            <h2 id="staff-login-title">Inloggen voor docenten en beheerders</h2>
+          </div>
         </div>
         <form id="login-form" class="login-form">
           <div class="form-field">
@@ -1078,8 +1080,18 @@
       </section>
     </main>
 
-    <footer class="footer">
-      Gemaakt voor VSO Het Dok • Voor vragen over privacy of AVG, neem contact op met de beheerder.
+    <footer class="footer bb-site-footer" aria-label="Over Boekenbaai">
+      <div class="bb-site-footer__brands">
+        <span class="bb-site-footer__brand">
+          <span>Gemaakt voor VSO Het Dok</span>
+          <img class="bb-site-footer__dok" src="logo/het-dok-footer-v53.svg" width="94" height="31" alt="Het Dok" loading="lazy" />
+        </span>
+        <span class="bb-site-footer__brand">
+          <span>Onderdeel van Koraal Onderwijs</span>
+          <img class="bb-site-footer__koraal" src="logo/koraal-logo-v53.svg" width="105" height="27" alt="Koraal" loading="lazy" />
+        </span>
+      </div>
+      <p class="bb-site-footer__privacy">Voor vragen over privacy of AVG, neem contact op met de beheerder.</p>
     </footer>
 
     <section
