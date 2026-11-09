@@ -23,6 +23,11 @@ assert.match(frontend, /const url = cachedUrl && adminCropPreviewFallbackFor !==
 assert.match(frontend, /adminCropPreviewFallbackFor = cachedUrl/);
 assert.match(frontend, /adminCropImage\.src = externalUrl/);
 assert.match(frontend, /adminBookCover\?\.addEventListener\('input'/);
+assert.match(frontend, /const defaultNewBookCrop = \(\) => \(\{ enabled: true, x: 50, y: 50, zoom: 1 \}\)/);
+assert.match(frontend, /adminBookCrop = nextUrl \? defaultNewBookCrop\(\) : null/);
+assert.match(frontend, /adminBookCrop = defaultNewBookCrop\(\)/);
+assert.match(frontend, /adminCropReset\?\.addEventListener\('click', \(\) => \{\s*adminBookCrop = null;/);
+
 
 assert.match(layout, /\.book-card__cover\s*\{[^}]*object-fit: contain;/);
 assert.match(layout, /\.book-detail__cover\s*\{[^}]*object-fit: contain;/);
