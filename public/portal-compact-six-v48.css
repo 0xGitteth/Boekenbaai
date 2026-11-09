@@ -4,8 +4,8 @@
  * The CSS is shared by the student catalogue and authenticated teacher/admin
  * catalogue and loads AFTER the v42/v47 cascade.
  */
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
   display:grid!important;
   grid-template-columns:repeat(6,minmax(0,1fr))!important;
   column-gap:12px!important;
@@ -13,12 +13,12 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   align-items:stretch!important;
   grid-auto-rows:auto;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid.book-grid--empty,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid.book-grid--empty {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid.book-grid--empty,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid.book-grid--empty {
   display:block!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid > .book-card {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid > .book-card {
   box-sizing:border-box;
   display:flex!important;
   flex-direction:column!important;
@@ -34,8 +34,8 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   gap:6px!important;
   overflow:visible;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__media,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__media {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__media,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__media {
   display:block!important;
   flex:0 0 auto!important;
   width:100%!important;
@@ -44,8 +44,8 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   margin:0!important;
   padding:0!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__cover-wrapper,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__cover-wrapper,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__cover-wrapper {
   position:relative;
   display:block!important;
   box-sizing:border-box;
@@ -60,15 +60,15 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   padding:0!important;
   border-radius:7px;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__cover,
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__cover-fallback,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__cover,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__cover-fallback {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__cover,
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__cover-fallback,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__cover,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__cover-fallback {
   height:100%!important;
   width:100%!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__content,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__content {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__content,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__content {
   display:flex!important;
   flex:1 1 auto!important;
   flex-direction:column!important;
@@ -80,8 +80,8 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   gap:5px!important;
   background:transparent!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__title,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__title {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__title,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__title {
   font-size:13px!important;
   line-height:1.3!important;
   min-height:34px!important;
@@ -93,33 +93,33 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   overflow:hidden!important;
   overflow-wrap:anywhere;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__author,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__author {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__author,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__author {
   font-size:11.8px!important;
   line-height:1.35!important;
   margin:0!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-pages,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-pages {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-pages,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-pages {
   font-size:11.2px!important;
   line-height:1.35!important;
   margin:0!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__tags,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__tags {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__tags,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__tags {
   min-height:0!important;
   margin:1px 0 2px!important;
   padding:0!important;
   gap:4px!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__tag,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__tag {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__tag,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__tag {
   font-size:10.2px!important;
   line-height:1.25!important;
   padding:4px 6px!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__status,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__status {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__status,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__status {
   align-self:stretch!important;
   margin:auto 0 0!important;
   padding:0!important;
@@ -127,8 +127,8 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   line-height:1.4!important;
   gap:5px!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions {
   display:flex!important;
   flex-wrap:wrap!important;
   align-items:stretch!important;
@@ -137,8 +137,8 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
   margin:3px 0 0!important;
   padding:0!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions button,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions button {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions button,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions button {
   flex:1 1 78px;
   min-width:0!important;
   width:auto!important;
@@ -156,89 +156,89 @@ body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid 
 /* Six columns also apply on common landscape tablets (1024px and up).
    Smaller screens step down only when readable width requires it. */
 @media (max-width:959px) {
-  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
-  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
+  html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
+  html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
     grid-template-columns:repeat(5,minmax(0,1fr))!important;
   }
 }
 @media (max-width:799px) {
-  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
-  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
+  html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
+  html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
     grid-template-columns:repeat(4,minmax(0,1fr))!important;
   }
 }
 @media (max-width:679px) {
-  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
-  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
+  html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
+  html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
     grid-template-columns:repeat(3,minmax(0,1fr))!important;
   }
 }
 @media (max-width:509px) {
-  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
-  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
+  html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid,
+  html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid {
     grid-template-columns:repeat(2,minmax(0,1fr))!important;
     column-gap:8px!important;
     row-gap:14px!important;
   }
-  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card,
-  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid > .book-card {
+  html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card,
+  html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid > .book-card {
     padding:8px!important;
   }
-  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions button,
-  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions button {
+  html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions button,
+  html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions button {
     min-height:44px!important;
   }
 }
 
 /* Teacher homepage keeps exactly five preview columns. */
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
   grid-template-columns:repeat(5,minmax(0,1fr))!important;
 }
 @media(max-width:650px) {
-  body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
+  html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
     grid-template-columns:repeat(3,minmax(0,1fr))!important;
   }
 }
 @media(max-width:420px) {
-  body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
+  html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
     grid-template-columns:repeat(2,minmax(0,1fr))!important;
   }
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-books {
   gap:10px!important;
   margin-top:1px!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-preview {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-preview {
   align-self:start;
   gap:3px!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-cover {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-cover {
   box-sizing:border-box;
   width:100%!important;
   max-width:none!important;
   height:auto!important;
   aspect-ratio:2 / 3!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-search {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-search {
   min-height:0!important;
   padding:14px 16px!important;
   gap:8px!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-preview strong {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-preview strong {
   font-size:12px!important;
   line-height:1.28!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-preview small {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-book-preview small {
   font-size:11px!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower {
   display:grid!important;
   grid-template-columns:repeat(3,minmax(0,1fr))!important;
   gap:14px!important;
   align-items:stretch!important;
   margin-bottom:25px!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower > .bb-teacher-v31-card {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower > .bb-teacher-v31-card {
   box-sizing:border-box;
   display:flex!important;
   flex-direction:column!important;
@@ -250,22 +250,22 @@ body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower > .bb-teache
   gap:9px!important;
   margin:0!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-teacher-v31-card-heading {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-teacher-v31-card-heading {
   margin:0!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-teacher-v31-card-heading h3,
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower > .bb-v32-loan-summary > h3 {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-teacher-v31-card-heading h3,
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower > .bb-v32-loan-summary > h3 {
   margin:0!important;
   font-size:17px;
   line-height:1.35;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-v32-loan-summary {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-v32-loan-summary {
   align-content:start!important;
   justify-content:flex-start!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-v32-live-loan-count,
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #history-list > .history-item:only-child:not(:has(.history-item__time)),
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #bb-teacher-v31-tasks-summary .bb-teacher-v31-task-state {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-v32-live-loan-count,
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #history-list > .history-item:only-child:not(:has(.history-item__time)),
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #bb-teacher-v31-tasks-summary .bb-teacher-v31-task-state {
   box-sizing:border-box;
   width:100%;
   min-height:45px;
@@ -280,72 +280,72 @@ body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #bb-teacher-
   font-size:13px!important;
   line-height:1.4!important;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #history-list {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #history-list {
   margin:0!important;
   padding:0!important;
   max-height:176px;
 }
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-v32-loan-summary .bb-v32-quick-link {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower .bb-v32-loan-summary .bb-v32-quick-link {
   margin:0!important;
   min-height:39px!important;
   padding:6px 9px!important;
 }
 /* Let actual history rows and open task buttons grow naturally when occupied. */
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #history-list > .history-item:not(:only-child),
-body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #bb-teacher-v31-tasks-summary .bb-teacher-v31-row {
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #history-list > .history-item:not(:only-child),
+html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower #bb-teacher-v31-tasks-summary .bb-teacher-v31-row {
   min-height:44px;
 }
 @media(max-width:900px) {
-  body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower {
+  html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower {
     grid-template-columns:repeat(2,minmax(0,1fr))!important;
     margin-bottom:30px!important;
   }
 }
 @media(max-width:650px) {
-  body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower {
+  html body.bb-teacher-v31 .bb-v32-teacher-dashboard .bb-v32-teacher-lower {
     grid-template-columns:minmax(0,1fr)!important;
   }
 }
 @media(prefers-reduced-motion:reduce) {
-  body.bb-teacher-v31 .bb-v32-book-preview,
-  body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card,
-  body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid > .book-card {
+  html body.bb-teacher-v31 .bb-v32-book-preview,
+  html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid > .book-card,
+  html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid > .book-card {
     transition:none!important;
   }
 }
 
 /* v49: protect a uniform card row, even with two-line titles or tags. */
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__author,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__author {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__author,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__author {
   white-space:nowrap!important;
   overflow:hidden!important;
   text-overflow:ellipsis!important;
   flex:0 0 auto!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__tags,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__tags {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .book-card__tags,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .book-card__tags {
   max-height:45px!important;
   overflow:hidden!important;
   align-content:start!important;
   flex:0 0 auto!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions {
   margin-top:5px!important;
 }
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions button,
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions button {
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid .bb-cat-card-actions button,
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid .bb-cat-card-actions button {
   min-height:36px!important;
 }
 /* Save vertical space above the first catalogue row without hiding filters. */
-body[data-page="staff"] #staff-book-overview-content .bb-staff-discovery-layout {
+html body[data-page="staff"] #staff-book-overview-content .bb-staff-discovery-layout {
   padding:10px 12px!important;
   margin-bottom:10px!important;
 }
-body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-results {
+html body[data-page="staff"] #staff-book-overview-content .bb-staff-compact-filters .bb-cat-results {
   margin-top:7px!important;
 }
-body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid,
-body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid {
+html body[data-page="staff"] #staff-book-overview-content .bb-catalog-v36 #book-grid,
+html body[data-page="student"] #student-collection .bb-catalog-v36 #book-grid {
   row-gap:12px!important;
 }
