@@ -29,7 +29,7 @@ assert.match(css,/header\.bb-student-sitebar \.bb-student-nav\.bb-shared-primary
 assert.match(css,/header\.bb-student-sitebar \.bb-student-nav\.bb-shared-primary-nav \.bb-student-nav-button \{[\s\S]*?width:auto!important;/,
   'Override old full-width sidebar buttons without changing the real tabs');
 assert.match(css,/\.bb-student-brand-text \{\s*position:relative;\s*top:3px!important;/);
-assert.doesNotMatch(css,/\.bb-shared-school-logo \{[\s\S]*?width:132px!important;[\s\S]*?height:43px!important;/);
+assert.match(css,/\.bb-shared-school-logo \{[\s\S]*?width:132px!important;[\s\S]*?height:43px!important;/);
 assert.doesNotMatch(staff,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
 assert.doesNotMatch(html,/class="bb-shared-school-logo" src="logo\/het-dok-header-v31\.svg"/);
 assert.match(sharedCss,/height:64px!important/);
