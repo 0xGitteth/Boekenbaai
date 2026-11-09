@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="portal-unified-v41.css" />
     <link rel="stylesheet" href="portal-pr1-v43.css" />
     <link rel="stylesheet" href="portal-sitewide-clean-v45.css" />
+    <link rel="stylesheet" href="portal-refine-v47.css" />
     <style>
       .bb-followup-badge {
         display: inline-flex;
@@ -134,41 +135,31 @@
         </div>
         <div class="teacher-layout">
           <section class="teacher-layout__overview" aria-labelledby="staff-catalog-title">
-            <div class="teacher-overview__header">
-              <h3 id="staff-catalog-title">Boekenoverzicht</h3>
-            </div>
+            <h3 id="staff-catalog-title" class="visually-hidden">Boekenoverzicht</h3>
             <div id="staff-book-overview-content">
 
             <div class="bb-catalog-v36" aria-label="Boekenoverzicht">
               
-              <section class="bb-catalog-filter-panel" aria-labelledby="bb-cat-filter-heading">
-                <header class="bb-cat-panel-header">
-                  <span class="bb-cat-panel-icon" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10m-7 5h4"></path><circle cx="8" cy="7" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="14" cy="12" r="2.1" fill="currentColor" stroke="none"></circle><circle cx="12" cy="17" r="2.1" fill="currentColor" stroke="none"></circle></svg></span>
-                  <div class="bb-cat-panel-heading"><h4 id="bb-cat-filter-heading">Zoek en filter</h4>
-                    </div>
-                  <button type="button" class="bb-cat-reset" id="bb-cat-reset"><svg aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"></path></svg> Alles wissen</button>
-                </header>
-                <div class="bb-cat-search-row">
-                  <label class="bb-cat-search-field" for="search-input">
+              <div class="bb-staff-discovery-layout">
+                <section class="bb-catalog-filter-panel bb-staff-compact-filters" aria-label="Boeken zoeken en filteren">
+                  <div class="bb-cat-search-row">
+                    <label class="bb-cat-search-field" for="search-input">
                     <span aria-hidden="true"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg></span>
                     <input id="search-input" type="search" aria-label="Zoek op titel, auteur of trefwoord" autocomplete="off" placeholder="Zoek op titel, auteur of trefwoord…" />
                   </label>
-                  <label class="bb-cat-sort" for="staff-book-sort-select"><span>Sorteer op</span>
-                    <select id="staff-book-sort-select" aria-controls="book-grid">
-                      <option value="title">Titel (A–Z)</option>
-                      <option value="author" selected>Auteur (A–Z)</option>
-                      <option value="popular">Meest populair</option>
-                    </select>
-                  </label>
+                    <button type="button" id="staff-filter-toggle" class="bb-staff-filter-button" aria-expanded="false" aria-controls="bb-cat-advanced"><span aria-hidden="true">☷</span> <span id="staff-filter-label">Filters tonen</span><span id="bb-cat-filter-caption" class="bb-staff-filter-count" aria-live="polite"></span></button>
+                  </div>
+                  <div class="bb-cat-results">
+                <div class="summary" id="summary" role="status" aria-live="polite"></div>
+                <div class="bb-cat-legend" aria-label="Betekenis van omslagmarkeringen">
+                  <span><i class="bb-cat-easy-key" aria-hidden="true"></i> Makkelijk Lezen</span>
+                  <span><i class="bb-cat-exam-key" aria-hidden="true"></i> Examenleeslijst</span>
                 </div>
-                <details class="bb-cat-advanced" id="bb-cat-advanced">
-                  <summary class="bb-cat-advanced-toggle">
-                    <span class="bb-cat-toggle-icon" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" viewBox="0 0 24 24"><path d="M4 7h16M7 12h10m-7 5h4"></path><circle cx="8" cy="7" r="1.9" fill="currentColor" stroke="none"></circle><circle cx="15" cy="12" r="1.9" fill="currentColor" stroke="none"></circle></svg></span>
-                    <span class="bb-cat-toggle-copy"><strong>Filters tonen</strong>
-                      <small id="bb-cat-filter-caption">Thema’s, pagina’s, beschikbaarheid, taal en kenmerken</small></span>
-                    <span class="bb-cat-chevron" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></svg></span>
-                  </summary>
-                  <div class="bb-cat-advanced-content">
+              </div>
+                  <details class="bb-cat-advanced" id="bb-cat-advanced">
+                    <summary class="bb-cat-advanced-toggle" hidden>Filters tonen</summary>
+                    <div class="bb-staff-filter-actions"><button type="button" class="bb-cat-reset" id="bb-cat-reset"><svg aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"></path></svg> Alles wissen</button></div>
+                    <div class="bb-cat-advanced-content">
                     <div class="bb-cat-themes">
                       <h5>Thema’s <span>Meest voorkomende eerst · meerdere mogelijk</span></h5>
                       <div class="filters__pills" id="theme-filter-pills" role="group" aria-label="Filter op thema"></div>
@@ -194,14 +185,15 @@
                       </div>
                     </div>
                   </div>
-                </details>
-              </section>
-              <div class="bb-cat-results">
-                <div class="summary" id="summary" role="status" aria-live="polite"></div>
-                <div class="bb-cat-legend" aria-label="Betekenis van omslagmarkeringen">
-                  <span><i class="bb-cat-easy-key" aria-hidden="true"></i> Makkelijk Lezen</span>
-                  <span><i class="bb-cat-exam-key" aria-hidden="true"></i> Examenleeslijst</span>
-                </div>
+                  </details>
+                  <div class="bb-staff-sort-row"><label class="bb-cat-sort" for="staff-book-sort-select"><span>Sorteer op</span>
+                    <select id="staff-book-sort-select" aria-controls="book-grid">
+                      <option value="title">Titel (A–Z)</option>
+                      <option value="author" selected>Auteur (A–Z)</option>
+                      <option value="popular">Meest populair</option>
+                    </select>
+                  </label></div>
+                </section>
               </div>
               <div class="book-grid" id="book-grid"></div>
             </div>

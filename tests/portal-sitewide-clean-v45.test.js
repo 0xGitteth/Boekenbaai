@@ -14,8 +14,8 @@ const css=read('public/portal-sitewide-clean-v45.css');
 const studentApp=read('public/app.js');
 const stylesheets=html=>[...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(m=>m[1]);
 
-assert.equal(stylesheets(student).at(-1),'portal-student-polish-v46.css');
-assert.equal(stylesheets(staff).at(-1),'portal-sitewide-clean-v45.css');
+assert.equal(stylesheets(student).at(-1),'portal-refine-v47.css');
+assert.equal(stylesheets(staff).at(-1),'portal-refine-v47.css');
 assert.ok(stylesheets(student).indexOf('portal-sitewide-clean-v45.css') >
           stylesheets(student).indexOf('portal-student-compact-v44.css'));
 assert.ok(stylesheets(staff).indexOf('portal-sitewide-clean-v45.css') >

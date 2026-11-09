@@ -228,10 +228,15 @@ assert.match(css,/\.bb-catalog-filter-panel\s*\{[^}]*padding:22px/,
   'Desktop filter padding comes from approved 22px measurement');
 assert.match(css,/\.bb-cat-advanced-toggle\s*\{[^}]*min-height:48px/,
   'Closed filter switch must match the compact approved control');
-for (const label of ['bb-cat-panel-icon','bb-cat-toggle-icon','bb-cat-chevron']) {
-  assert.match(html,new RegExp('class="'+label+'"[^>]*>\\s*<svg'),
-    label+' uses the actual approved SVG icon instead of arbitrary glyphs');
-}
+// v47 supersedes the old three-icon header/chevron UI with a single
+// compact accessible filter button, matching the live student catalogue.
+const compactCss=file('portal-refine-v47.css');
+assert.match(html,/<button type="button" id="staff-filter-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="bb-cat-advanced"/,
+  'Staff now uses the approved compact filter-toggle layout');
+assert.ok(html.includes('<summary class="bb-cat-advanced-toggle" hidden>Filters tonen</summary>'),
+  'The original disclosure summary is visually suppressed in favour of the accessible button');
+assert.ok(compactCss.includes('#staff-book-overview-content .bb-staff-compact-filters .bb-staff-filter-button'),
+  'The new compact filter button receives the final shared styling');
 assert.match(css,/#book-grid[^}]*repeat\(2,minmax\(0,1fr\)\)/,
   'Mobile keeps two columns as in the approved HTML');
 assert.match(css,/\.book-card__cover-wrapper\s*\{[^}]*width:100%;max-width:none/,

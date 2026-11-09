@@ -3977,6 +3977,8 @@ function initStaffPage() {
   const catalogExam = document.querySelector('#bb-cat-exam');
   const catalogReset = document.querySelector('#bb-cat-reset');
   const catalogAdvanced = document.querySelector('#bb-cat-advanced');
+  const staffFilterToggle = document.querySelector('#staff-filter-toggle');
+  const staffFilterLabel = document.querySelector('#staff-filter-label');
   const catalogFilterCaption = document.querySelector('#bb-cat-filter-caption');
   const historyList = document.querySelector('#history-list');
   const historyActions = document.querySelector('#history-actions');
@@ -4679,7 +4681,7 @@ function initStaffPage() {
       Number(limited) + Number(limited && Boolean(catalogUnknown?.checked));
     if (catalogFilterCaption) catalogFilterCaption.textContent = activeCount
       ? activeCount + ' filter'+(activeCount===1?'':'s')+' actief'
-      : 'Thema’s, pagina’s, beschikbaarheid, taal en kenmerken';
+      : '';
     if (catalogAdvanced) {
       const title = catalogAdvanced.querySelector('.bb-cat-toggle-copy strong');
       if (title) title.textContent = catalogAdvanced.open?'Filters verbergen':'Filters tonen';
@@ -7229,7 +7231,15 @@ function initStaffPage() {
   for(const control of [catalogUnknown,catalogAvailability,catalogLanguage,catalogEasy,catalogExam]){
     control?.addEventListener('change',renderBooks);
   }
-  catalogAdvanced?.addEventListener('toggle',renderBooks);
+  staffFilterToggle?.addEventListener('click', () => {
+    if (catalogAdvanced) catalogAdvanced.open = !catalogAdvanced.open;
+  });
+  catalogAdvanced?.addEventListener('toggle', () => {
+    const expanded = Boolean(catalogAdvanced.open);
+    staffFilterToggle?.setAttribute('aria-expanded', String(expanded));
+    if (staffFilterLabel) staffFilterLabel.textContent = expanded ? 'Filters verbergen' : 'Filters tonen';
+    renderBooks();
+  });
   catalogReset?.addEventListener('click',()=>{
     selectedThemeKeys.clear();
     onlyExamList=false;onlyEasyReading=false;
