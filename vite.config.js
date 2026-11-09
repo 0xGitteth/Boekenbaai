@@ -26,6 +26,7 @@ const headerBrandAssets = [
   'logo/het-dok-footer-v53.svg',
   'logo/koraal-logo-v53.svg',
   'logo/koraal-original-transparent-v54.svg',
+  'logo/koraal-full-original-v56.svg',
 ];
 
 const deployTarget = process.env.DEPLOY_TARGET;
