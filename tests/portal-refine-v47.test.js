@@ -12,8 +12,8 @@ const teacher=file('public/teacher-modern.js');
 const css=file('public/portal-refine-v47.css');
 
 const lastCss = html=>[...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].at(-1)?.[1];
-assert.equal(lastCss(staff),'portal-refine-v47.css');
-assert.equal(lastCss(student),'portal-refine-v47.css');
+assert.equal(lastCss(staff),'portal-compact-six-v48.css');
+assert.equal(lastCss(student),'portal-compact-six-v48.css');
 const ids=[
 'staff-filter-toggle','staff-filter-label','bb-cat-filter-caption','bb-cat-reset',
 'bb-cat-advanced','bb-cat-language','bb-cat-availability','bb-cat-easy','bb-cat-exam',
