@@ -476,8 +476,7 @@
           : klass
             ? `Leerlingen in ${klass.name}`
             : 'Mijn leerlingen',
-      }),
-      make('p', { className: 'hint', text: 'Tussentijdse instroom, klaswissels en uitstroom kun je hier direct regelen.' })
+      })
     );
     header.append(heading);
     const add = make('button', { className: 'btn', text: '+ Leerling toevoegen', type: 'button' });
@@ -585,10 +584,7 @@
     panel = make('section', { className: 'panel student-management', id: 'student-management-panel' });
     const header = make('div', { className: 'panel__header student-management__header' });
     const text = make('div');
-    text.append(
-      make('h3', { text: 'Leerlingbeheer' }),
-      make('p', { className: 'panel__subtitle', text: 'Snel leerlingen toevoegen, verplaatsen, afmelden en eerste Google-logins controleren.' })
-    );
+    text.append(make('h3', { text: 'Leerlingbeheer' }));
     header.append(text);
     panel.append(header);
     renderClassContext(panel);
