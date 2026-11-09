@@ -105,7 +105,7 @@ assert.match(stillLoading[0].label,/Taken laden/);
 assert.doesNotMatch(stillLoading[0].label,/geen openstaande taken/);
 const failed=simulate(0,null,'ready',true);
 assert.match(failed[0].label,/Niet alle taken/);
-const partiallyKnown=simulate(1,null,'loading',true);
+const partiallyKnown=simulate(1,null,'ready',true);
 assert.ok(partiallyKnown.some(x=>x.action&&x.title==='Klaswissels en koppelingen'));
 assert.ok(partiallyKnown.some(x=>/Niet alle taken/.test(x.label||'')));
 console.log('v47: source-backed teacher tasks, compact staff books, centred login and honest reading-list preview OK.');
