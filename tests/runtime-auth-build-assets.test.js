@@ -55,6 +55,7 @@ for (const filename of [
   'logo/boekenbaai-logo-color-v53.svg',
   'logo/het-dok-footer-v53.svg',
   'logo/koraal-logo-v53.svg',
+  'logo/koraal-original-transparent-v54.svg',
 ]) {
   const builtPath = path.join(distDir, filename);
   const sourcePath = path.join(publicDir, filename);
