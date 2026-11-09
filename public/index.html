@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="portal-student-polish-v46.css" />
     <link rel="stylesheet" href="portal-refine-v47.css" />
     <link rel="stylesheet" href="portal-typography-v52.css" />
+    <link rel="stylesheet" href="portal-branding-v53.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -34,7 +35,6 @@
       <a class="bb-student-wordmark" href="/" aria-label="Boekenbaai, naar bibliotheek">
         <span class="bb-student-wordmark-icon" aria-hidden="true"></span><span class="bb-student-brand-text">Boekenbaai</span>
       </a>
-      <img class="bb-shared-school-logo" src="logo/het-dok-header-v31.svg" width="132" height="43" alt="Het Dok" />
       <nav class="bb-student-nav bb-shared-primary-nav" aria-label="Hoofdnavigatie">
         <button type="button" id="student-nav-library" class="bb-student-nav-button is-active" aria-current="page"><span class="bb-student-nav-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6c-3-2-6-2-9-1v14c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Z"/><path d="M12 6v14"/></svg></span>Bibliotheek</button>
         <button type="button" id="student-nav-profile" class="bb-student-nav-button"><span class="bb-student-nav-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4.5 21v-1.5a7.5 7.5 0 0 1 15 0V21"/></svg></span>Mijn profiel</button>
@@ -237,8 +237,18 @@
       </main>
     </div>
 
-    <footer class="footer">
-      Gemaakt voor VSO Het Dok • Voor vragen over privacy of AVG, neem contact op met de beheerder.
+    <footer class="footer bb-site-footer" aria-label="Over Boekenbaai">
+      <div class="bb-site-footer__brands">
+        <span class="bb-site-footer__brand">
+          <span>Gemaakt voor VSO Het Dok</span>
+          <img class="bb-site-footer__dok" src="logo/het-dok-footer-v53.svg" width="94" height="31" alt="Het Dok" loading="lazy" />
+        </span>
+        <span class="bb-site-footer__brand">
+          <span>Onderdeel van Koraal Onderwijs</span>
+          <img class="bb-site-footer__koraal" src="logo/koraal-logo-v53.svg" width="105" height="27" alt="Koraal" loading="lazy" />
+        </span>
+      </div>
+      <p class="bb-site-footer__privacy">Voor vragen over privacy of AVG, neem contact op met de beheerder.</p>
     </footer>
 
     <section
