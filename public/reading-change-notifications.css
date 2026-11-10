@@ -47,3 +47,19 @@
   .bb-reading-alerts__head { flex-direction: column; }
   .bb-reading-alerts__item { align-items: stretch; }
 }
+.bb-reading-alerts__pending h4 { margin: 10px 0; font-size: .94rem; }
+.bb-reading-alerts__archive {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dbe6f1;
+}
+.bb-reading-alerts__archive summary {
+  cursor: pointer;
+  font-weight: 750;
+  color: #3a536c;
+  padding: 6px 0;
+}
+.bb-reading-alerts__archive .bb-reading-alerts__item {
+  padding-left: 0;
+  color: #455b70;
+}
