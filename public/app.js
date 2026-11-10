@@ -3725,9 +3725,16 @@ function initStudentPage() {
     if (studentActionMessage) studentActionMessage.textContent = 'Boek wordt verwerkt…';
     try {
       const operation = action.type === 'return' ? 'check-in' : 'check-out';
+      const finished = operation === 'check-in'
+        ? await window.BoekenbaaiReadCompletion?.ask(book?.title || 'Dit boek')
+        : undefined;
+      if (operation === 'check-in' && typeof finished !== 'boolean') {
+        throw Error('Kies Ja of Nee om dit boek terug te brengen.');
+      }
       await fetchJson(`/api/books/${encodeURIComponent(action.bookId)}/${operation}`, {
-        method: 'POST', body: {},
+        method: 'POST', body: operation === 'check-in' ? { finished } : {},
       });
+      if (operation === 'check-in') window.dispatchEvent(new Event('boekenbaai:reading-record-created'));
       closeBookDetail();
       await refreshData();
       if (studentActionMessage) studentActionMessage.textContent = action.type === 'return'
@@ -3801,10 +3808,14 @@ function initStudentPage() {
     if (!targetId) return;
     const payload = group?.id ? { groupId: group.id } : {};
     try {
+      const finished = await window.BoekenbaaiReadCompletion?.ask(book?.title || group?.title || 'Dit boek');
+      if (typeof finished !== 'boolean') throw Error('Kies Ja of Nee om dit boek terug te brengen.');
+      payload.finished = finished;
       const result = await fetchJson(`/api/books/${encodeURIComponent(targetId)}/check-in`, {
         method: 'POST',
         body: payload,
       });
+      window.dispatchEvent(new Event('boekenbaai:reading-record-created'));
       applyBookUpdateToSelection(result.book);
       renderBookPrompt();
       await refreshData();
