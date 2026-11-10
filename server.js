@@ -19,6 +19,8 @@ const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
+const studentPinCheckout = require('./student-pin-checkout-core');
+const authSecurityForPin = require('./google-auth-security-core');
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   configuration: importMailConfiguration, readSchoolLinks, prefsFor,
   schoolEmailFor, validEmail, beginVerification, confirmVerification,
@@ -7336,8 +7338,31 @@ async function handleApi(req, res, requestUrl) {
     // student borrowedBooks or erase existing loan history.
     const checkoutMatch = requestUrl.pathname.match(/^\/api\/books\/([\w-]+)\/check-out$/);
     if (checkoutMatch && req.method === 'POST') {
-      if (!user) return sendJson(res, 401, { message: 'Log eerst in om boeken te lenen' });
       const body = await parseBody(req);
+      let checkoutUser = user;
+      if (body.pinCheckoutGrant !== undefined) {
+        // Never promote a PIN to a full learner session. The bearer capability
+        // is consumed exactly once and is tied to THIS physical book route.
+        if (!authSecurityForPin.isSameOriginMutation(req,
+          authSecurityForPin.getExpectedOrigin(req,
+            process.env.BOEKENBAAI_PUBLIC_URL || ''))) {
+          return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+        }
+        let studentId = null;
+        try {
+          studentId = studentPinCheckout.consumeGrant(body.pinCheckoutGrant, checkoutMatch[1]);
+        } catch (error) {
+          if (['DATABASE_WRITE_BUSY', 'DATABASE_WRITE_CONFLICT'].includes(error?.code)) {
+            return sendJson(res, 409, { message: 'Probeer de uitleenactie opnieuw.' });
+          }
+          throw error;
+        }
+        if (!studentId) {
+          return sendJson(res, 401, { message: 'De uitleentoestemming is verlopen. Voer je PIN opnieuw in.' });
+        }
+        checkoutUser = { id: studentId, role: 'student' };
+      }
+      if (!checkoutUser) return sendJson(res, 401, { message: 'Log eerst in om boeken te lenen' });
       const db = loadDb(); // After body upload: do not commit stale inventory.
       const classId = typeof body.classId === 'string' ? body.classId.trim() : '';
       if (body.classId !== undefined && (!classId || body.studentId)) {
@@ -7346,22 +7371,22 @@ async function handleApi(req, res, requestUrl) {
       let student = null;
       let klass = null;
       if (classId) {
-        if (!ensureRole(user, ['teacher', 'admin'])) {
+        if (!ensureRole(checkoutUser, ['teacher', 'admin'])) {
           return sendJson(res, 403, { message: 'Alleen medewerkers lenen boeken uit aan klassen.' });
         }
         klass = db.classes.find((item) => item.id === classId);
         if (!klass) return sendJson(res, 404, { message: 'Klas niet gevonden.' });
-        if (!mayManageClass(db, user, classId)) {
+        if (!mayManageClass(db, checkoutUser, classId)) {
           return sendJson(res, 403, { message: 'Je mag alleen boeken voor jouw eigen klassen lenen.' });
         }
-      } else if (user.role === 'student') {
-        if (body.studentId && body.studentId !== user.id) {
+      } else if (checkoutUser.role === 'student') {
+        if (body.studentId && body.studentId !== checkoutUser.id) {
           return sendJson(res, 403, { message: 'Je kunt alleen voor jezelf lenen.' });
         }
-        student = findStudentById(db, user.id);
-      } else if (ensureRole(user, ['teacher', 'admin'])) {
+        student = findStudentById(db, checkoutUser.id);
+      } else if (ensureRole(checkoutUser, ['teacher', 'admin'])) {
         student = findStudentById(db, body.studentId);
-        if (student && !mayManageStudent(db, user, student)) {
+        if (student && !mayManageStudent(db, checkoutUser, student)) {
           return sendJson(res, 403, { message: 'Je kunt alleen boeken aan leerlingen uit jouw klassen lenen.' });
         }
       }
@@ -7394,10 +7419,10 @@ async function handleApi(req, res, requestUrl) {
       book.dueDate = dueDate.value;
       if (student) student.borrowedBooks.push({ bookId: book.id, borrowedAt: now, dueDate: dueDate.value });
       appendHistory(db, student ? {
-        type: 'check_out', bookId: book.id, studentId: student.id, performedBy: user.id,
+        type: 'check_out', bookId: book.id, studentId: student.id, performedBy: checkoutUser.id,
         message: `${student.name} heeft ${book.title} geleend`,
       } : {
-        type: 'check_out_class', bookId: book.id, classId: klass.id, performedBy: user.id,
+        type: 'check_out_class', bookId: book.id, classId: klass.id, performedBy: checkoutUser.id,
         message: `Voor klas ${klass.name}: ${book.title} uitgeleend`,
       });
       saveDb(db);
@@ -7405,12 +7430,12 @@ async function handleApi(req, res, requestUrl) {
         // Only the authenticated staff actor who performed this operation
         // may receive a borrower ID. Anonymous/student catalogue GET routes
         // and student self-checkout never expose borrower identity.
-        book: ensureRole(user, ['teacher', 'admin'])
+        book: ensureRole(checkoutUser, ['teacher', 'admin'])
           ? { ...sanitizeBookForResponse(book), borrowedBy: student?.id || null,
             borrowedByClassId: klass?.id || null }
           : sanitizeBookForResponse(book),
         borrowerType: klass ? 'class' : 'student',
-        ...(ensureRole(user, ['teacher', 'admin']) ? { borrowerId: klass?.id || student?.id } : {}),
+        ...(ensureRole(checkoutUser, ['teacher', 'admin']) ? { borrowerId: klass?.id || student?.id } : {}),
       });
     }
 
