@@ -7401,6 +7401,11 @@ async function handleApi(req, res, requestUrl) {
       });
       if (selection.error) return sendJson(res, selection.statusCode || 400, { message: selection.error });
       const { book, group } = selection;
+      if (body.pinCheckoutGrant !== undefined && book.id !== checkoutMatch[1]) {
+        // The general catalogue API may fall back to body.bookId/groupId if
+        // the route ID is gone. A PIN grant must NEVER select another copy.
+        return sendJson(res, 409, { message: 'Dit exemplaar is niet meer beschikbaar. Scan opnieuw.' });
+      }
       if (book.status === 'borrowed' || book.borrowedBy || book.borrowedByClassId) {
         return sendJson(res, 409, { message: 'Dit exemplaar is al uitgeleend.' });
       }
