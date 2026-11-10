@@ -507,7 +507,7 @@ async function run() {
     assert.strictEqual((await call('/api/books/' + importedTasks[0].bookId
       + '/check-out', teacherB, { classId: 'class-b' })).status, 200);
     assert.strictEqual((await call('/api/books/' + importedTasks[0].bookId
-      + '/check-in', teacherB, { classId: 'class-b' })).status, 200);
+      + '/check-in', teacherB, { classId: 'class-b', finished: false })).status, 200);
     const obsoleteLoan = await call(root + '/' + importedTasks[0].id + '/decision',
       teacherB, { choice: 'class_loan', revision: 1 });
     assert.strictEqual(obsoleteLoan.status, 409);
@@ -525,7 +525,7 @@ async function run() {
       + '/check-out', teacherB, { classId: 'class-b' });
     assert.strictEqual(checkout.status, 200, JSON.stringify(checkout.body));
     const checkin = await call('/api/books/' + importedTasks[0].bookId
-      + '/check-in', teacherB, { classId: 'class-b' });
+      + '/check-in', teacherB, { classId: 'class-b', finished: false });
     assert.strictEqual(checkin.status, 200, JSON.stringify(checkin.body));
     const oldExcelAgain = await call('/api/admin/book-import-stages', admin,
       { mode: 'inventory_sync', file: sample, fileName: 'pr6-oud-na-inname.xlsx' });
@@ -665,9 +665,9 @@ async function run() {
     // actual returns, it closes remaining class tasks for removed copies.
     assert.strictEqual((await call('/api/books', admin, undefined, 'DELETE')).status, 400);
     assert.strictEqual((await call('/api/books/one/check-in', teacherA2,
-      { studentId: 'stu-a' })).status, 200);
+      { studentId: 'stu-a', finished: true })).status, 200);
     assert.strictEqual((await call('/api/books/two/check-in', teacherA2,
-      { classId: 'class-a' })).status, 200);
+      { classId: 'class-a', finished: false })).status, 200);
     const bulk = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     const bulkReport = 'f0000000-0000-4000-a000-000000000005';
     bulk.bookImportFollowups.push(makeTask({ id: 'bulk-pending',
