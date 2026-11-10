@@ -4118,6 +4118,7 @@ function initStaffPage() {
   const adminStudentDetailGrade = document.querySelector('#admin-student-detail-grade');
   const adminStudentDetailLoansMeta = document.querySelector('#admin-student-detail-loans');
   const adminStudentDetailMessage = document.querySelector('#admin-student-detail-message');
+  const adminStudentPinReset = document.querySelector('#admin-student-detail-pin-reset');
   const adminStudentDetailPasswordForm = document.querySelector('#admin-student-detail-password-form');
   const adminStudentDetailPasswordInput = document.querySelector('#admin-student-detail-password');
   const adminStudentDetailPasswordGenerateButton = document.querySelector(
@@ -8060,6 +8061,26 @@ function initStaffPage() {
   });
 
   adminBookIdInput?.addEventListener('input', updateAdminBookDeleteButtonVisibility);
+
+  adminStudentPinReset?.addEventListener('click', async () => {
+    if (authUser?.role !== 'admin' || !selectedAdminStudentId) return;
+    const student = students.find(entry => entry.id === selectedAdminStudentId);
+    if (!student || !window.confirm('De uitleen-PIN van ' + student.name + ' resetten?')) return;
+    adminStudentPinReset.disabled = true;
+    if (adminStudentDetailMessage) adminStudentDetailMessage.textContent = 'PIN wordt gereset…';
+    try {
+      await fetchJson('/api/auth/student-pin/students/' +
+        encodeURIComponent(student.id) + '/reset', { method: 'POST', body: {} });
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent =
+          'PIN gereset. De leerling kan via Google een nieuwe instellen.';
+      }
+    } catch (error) {
+      if (adminStudentDetailMessage) adminStudentDetailMessage.textContent = error.message;
+    } finally {
+      adminStudentPinReset.disabled = false;
+    }
+  });
 
   adminBooksDeleteAllButton?.addEventListener('click', async () => {
     if (!authUser || authUser.role !== 'admin') {
