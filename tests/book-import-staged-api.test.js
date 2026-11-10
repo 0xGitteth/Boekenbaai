@@ -1611,11 +1611,11 @@ async function run() {
     assert.ok(receiptDbBeforeReturn.bookImportLoanReceipts.includes(historicStudentReceipt));
     assert.ok(receiptDbBeforeReturn.bookImportLoanReceipts.includes(historicClassReceipt));
     const returnedHistoricStudent = await call('/api/books/' + importedStudentCopy.id
-      + '/check-in', token2, { studentId: 'student-match' });
+      + '/check-in', token2, { studentId: 'student-match', finished: true });
     assert.strictEqual(returnedHistoricStudent.status, 200,
       JSON.stringify(returnedHistoricStudent.body).slice(0, 400));
     const returnedHistoricClass = await call('/api/books/' + historicClassCopy.id
-      + '/check-in', token2, { classId: 'class-match' });
+      + '/check-in', token2, { classId: 'class-match', finished: false });
     assert.strictEqual(returnedHistoricClass.status, 200,
       JSON.stringify(returnedHistoricClass.body).slice(0, 400));
     const returnedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
