@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="portal-branding-fixes-v54.css" />
     <link rel="stylesheet" href="portal-koraal-original-v56.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
+    <link rel="stylesheet" href="student-pin.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -232,7 +233,29 @@
                 <div><dt>Naam</dt><dd id="student-account-name"></dd></div>
                 <div><dt>Gebruikersnaam</dt><dd id="student-account-username"></dd></div>
               </dl>
-              
+              <details id="student-pin-details" class="bb-student-pin">
+                <summary>Mijn uitleen-PIN</summary>
+                <p class="hint">Stel via je eigen Google-schoolaccount een PIN van zes cijfers in.
+                  Deze PIN gebruik je straks om zelfstandig boeken te lenen.</p>
+                <p id="student-pin-status" role="status" aria-live="polite">Open dit onderdeel om je PIN-status te controleren.</p>
+                <form id="student-pin-form" class="bb-student-pin-form" hidden>
+                  <div class="form-field">
+                    <label for="student-pin-new">Nieuwe PIN (6 cijfers)</label>
+                    <input id="student-pin-new" type="password" inputmode="numeric" pattern="[0-9]{6}"
+                      minlength="6" maxlength="6" autocomplete="new-password" required />
+                  </div>
+                  <div class="form-field">
+                    <label for="student-pin-repeat">Herhaal je PIN</label>
+                    <input id="student-pin-repeat" type="password" inputmode="numeric" pattern="[0-9]{6}"
+                      minlength="6" maxlength="6" autocomplete="new-password" required />
+                  </div>
+                  <div class="bb-student-pin-actions">
+                    <button id="student-pin-save" type="submit" class="btn btn--primary">PIN opslaan</button>
+                    <button id="student-pin-reset" type="button" class="btn btn--secondary" hidden>Mijn PIN resetten</button>
+                  </div>
+                </form>
+                <p id="student-pin-feedback" role="status" aria-live="polite"></p>
+              </details>
             </section>
           </section>
         </div>
@@ -495,6 +518,7 @@
     </section>
 
     <script type="module" src="app.js"></script>
+    <script defer src="student-pin.js"></script>
 
     <!-- Critical six-column layout unaffected by bundled CSS ordering. -->
     <style id="bb-six-column-critical">
