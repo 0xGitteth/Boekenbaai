@@ -162,7 +162,8 @@ function consumeGrant(grant, bookId) {
       if (entry && entry.bookId === bookId && Number(entry.expiresAt) > Date.now()) {
         const credential = pins.credentialFor(auth, entry.studentId);
         const link = currentLink(auth, entry.studentId);
-        if (activeStudent(db, entry.studentId) && credential?.hash
+        if (activeStudent(db, entry.studentId) && availableBook(db, entry.bookId)
+          && credential?.hash
           && pins.currentGeneration(credential) === entry.generation
           && credential.linkedSub === entry.linkedSub
           && link?.sub === entry.linkedSub) {
