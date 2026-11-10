@@ -292,6 +292,8 @@ function updateSortControlAccessibility(select, sortValue, { baseLabel = 'Sortee
 function setAuth(token) {
   authToken = token;
   localStorage.setItem('boekenbaai_token', token);
+  // PIN inputs on shared tablets must be cleared before any new login.
+  window.dispatchEvent(new Event('boekenbaai:student-auth-pending'));
 }
 
 function clearAuth({ silent = false } = {}) {
@@ -414,6 +416,11 @@ async function reloadCurrentUser(expectedRoles) {
   }
   authUser = me;
   updateAuthUi();
+  if (me.role === 'student') {
+    window.dispatchEvent(new CustomEvent('boekenbaai:student-auth-validated', {
+      detail: { studentId: me.id },
+    }));
+  }
   passwordChangeController?.handleAuthChange(authUser);
   return me;
 }
