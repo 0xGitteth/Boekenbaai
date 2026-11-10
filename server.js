@@ -4642,6 +4642,10 @@ async function handleApi(req, res, requestUrl) {
     const readingRecordMatch = requestUrl.pathname.match(/^\/api\/reading-records\/([\w-]+)$/);
     if (readingRecordMatch && req.method === 'PATCH') {
       if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
+      if (!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req, process.env.BOEKENBAAI_PUBLIC_URL || ''))) {
+        return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+      }
       const body = await parseBody(req);
       if (typeof body.finished !== 'boolean' ||
           !Number.isInteger(body.revision) || body.revision < 1) {
