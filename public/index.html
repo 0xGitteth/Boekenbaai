@@ -26,6 +26,7 @@
     <link rel="stylesheet" href="student-pin.css" />
     <link rel="stylesheet" href="student-quick-loan.css" />
     <link rel="stylesheet" href="read-completion.css" />
+    <link rel="stylesheet" href="personal-exam-reading-list.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -235,6 +236,21 @@
                 <div><dt>Naam</dt><dd id="student-account-name"></dd></div>
                 <div><dt>Gebruikersnaam</dt><dd id="student-account-username"></dd></div>
               </dl>
+              <section id="student-exam-reading-list" class="bb-exam-reading-list"
+                aria-labelledby="student-exam-reading-list-title">
+                <div class="bb-exam-reading-list__heading">
+                  <div>
+                    <h3 id="student-exam-reading-list-title">Mijn examenleeslijst</h3>
+                    <p class="hint">Bewaar hier boeken voor je examen. Uitgelezen examenboeken verschijnen automatisch.
+                      Je kunt boeken ook zelf toevoegen vanuit de boekdetails.</p>
+                  </div>
+                  <span id="student-exam-reading-list-count" class="bb-exam-reading-list__count"></span>
+                </div>
+                <p id="student-exam-reading-list-status" class="hint" role="status" aria-live="polite"></p>
+                <ul id="student-exam-reading-list-books" class="bb-exam-reading-list__books"></ul>
+                <p class="hint">Een boek verwijderen verandert je leesregistratie niet.
+                  Een printbare lijst komt later beschikbaar.</p>
+              </section>
               <section class="reading-records" aria-labelledby="student-reading-records-title">
                 <h3 id="student-reading-records-title">Mijn leesregistraties</h3>
                 <p class="hint">Je kunt later nog wijzigen of je een ingeleverd boek hebt uitgelezen.</p>
@@ -517,6 +533,7 @@
             </button>
             <button type="button" class="btn" data-book-detail-edit hidden>Boek bewerken</button>
             <button type="button" class="btn" id="student-book-detail-action" hidden>Boek lenen</button>
+            <button type="button" class="btn btn--secondary" id="student-book-detail-exam-list" hidden>Toevoegen aan examenleeslijst</button>
             <button type="button" class="btn btn--ghost" data-book-detail-close>Sluiten</button>
           </div>
           <div id="book-detail-import-data" class="book-detail__import-data hidden"></div>
@@ -574,6 +591,7 @@
       </div>
     </dialog>
     <script defer src="read-completion.js"></script>
+    <script defer src="personal-exam-reading-list.js"></script>
     <script type="module" src="app.js"></script>
     <script defer src="student-pin.js"></script>
 
