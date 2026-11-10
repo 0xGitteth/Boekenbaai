@@ -146,6 +146,10 @@ function consumeGrant(grant, bookId) {
   if (typeof grant !== 'string' || !/^[a-zA-Z0-9_-]{32,100}$/.test(grant)
     || typeof bookId !== 'string' || !/^[\w-]{1,100}$/.test(bookId)) return null;
   const hash = core.tokenHash(grant);
+  // Unknown tokens must not trigger a write of the auth file.
+  if (!(loadAuth().pinCheckoutGrants || []).some(item => item.tokenHash === hash)) {
+    return null;
+  }
   let studentId = null;
   mutateJsonLocked({
     lockPath: DATA_PATH, filePath: AUTH_PATH, read: loadAuth,
