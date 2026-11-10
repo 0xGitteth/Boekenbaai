@@ -3751,7 +3751,13 @@ function initStudentPage() {
     // Refresh public availability and clear the scanned, now-stale copy.
     const title = String(event?.detail?.title || 'Het boek');
     updateBarcodeSelection(null);
-    await refreshData();
+    if (authUser?.role === 'student') {
+      await refreshData();
+    } else {
+      // Shared-tablet quick loans create no authenticated student session.
+      // Still refresh the anonymous catalog and its availability counts.
+      await loadBooks();
+    }
     if (bookResult) {
       bookResult.replaceChildren();
       appendTextElement(bookResult, 'p', title + ' is uitgeleend. Veel leesplezier!', {
