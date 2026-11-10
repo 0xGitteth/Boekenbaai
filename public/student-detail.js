@@ -375,6 +375,25 @@
       });
       normalActions.append(move);
     }
+    const resetPin = make('button', {
+      className: 'btn btn--secondary', text: 'Uitleen-PIN resetten', type: 'button',
+    });
+    resetPin.addEventListener('click', async () => {
+      if (!window.confirm('De uitleen-PIN van ' + student.name + ' resetten?')) return;
+      resetPin.disabled = true;
+      message.textContent = 'PIN wordt gereset…';
+      try {
+        await api('/api/auth/student-pin/students/' + encodeURIComponent(student.id) + '/reset',
+          { method: 'POST', body: {} });
+        message.textContent =
+          'PIN gereset. De leerling kan via Google een nieuwe instellen.';
+      } catch (error) {
+        message.textContent = error.message;
+      } finally {
+        resetPin.disabled = false;
+      }
+    });
+    normalActions.append(resetPin);
     const leave = make('button', { className: 'btn btn--ghost student-detail__danger', text: 'Van school afmelden', type: 'button' });
     leave.addEventListener('click', () => {
       const underlying = findUnderlyingAction(row, 'Van school');
