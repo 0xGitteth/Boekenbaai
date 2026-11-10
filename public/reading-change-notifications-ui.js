@@ -110,7 +110,9 @@ if (panel) {
   }
 
   async function loadPage(page, generation) {
-    if (loading) return;
+    // A fresh page-0 refresh must be allowed to supersede an in-flight
+    // earlier response (e.g. after logging into another teacher account).
+    if (page > 0 && loading) return;
     loading = true;
     refreshButton.disabled = true;
     moreButton.disabled = true;
@@ -126,9 +128,11 @@ if (panel) {
       if (page === 0) list.replaceChildren();
       message.textContent = error.message;
     } finally {
-      loading = false;
-      refreshButton.disabled = false;
-      moreButton.disabled = false;
+      if (generation === serial) {
+        loading = false;
+        refreshButton.disabled = false;
+        moreButton.disabled = false;
+      }
     }
   }
 
