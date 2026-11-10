@@ -1,0 +1,102 @@
+/* Scoped to PIN quick checkout on the shared student tablet. */
+body[data-page="student"] .bb-quick-loan {
+  box-sizing: border-box;
+  width: min(92vw, 500px);
+  max-height: min(90dvh, 760px);
+  overflow-y: auto;
+  border: 1px solid #cedbea;
+  border-radius: 15px;
+  padding: clamp(16px, 3vw, 26px);
+  color: #213958;
+  background: #fff;
+  box-shadow: 0 18px 54px #142d4c44;
+  font-family: Nunito, sans-serif;
+}
+body[data-page="student"] .bb-quick-loan::backdrop {
+  background: #12284299;
+}
+body[data-page="student"] .bb-quick-loan__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+body[data-page="student"] .bb-quick-loan__header h2 {
+  font-size: 1.3rem;
+  margin: 0 0 4px;
+}
+body[data-page="student"] .bb-quick-loan__header p {
+  margin: 0 0 8px;
+  font-size: .88rem;
+}
+body[data-page="student"] .bb-quick-loan__book {
+  padding: 10px 12px;
+  border: 1px solid #dce8f5;
+  background: #f5f8fe;
+  border-radius: 8px;
+  font-weight: 800;
+  margin: 10px 0 14px;
+}
+body[data-page="student"] #student-quick-loan-form {
+  display: grid;
+  gap: 14px;
+}
+body[data-page="student"] #student-quick-loan-form .form-field {
+  display: grid;
+  gap: 6px;
+}
+body[data-page="student"] #student-quick-loan-form .form-field input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #bfcfe3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  box-sizing: border-box;
+}
+body[data-page="student"] .bb-quick-loan__results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 175px;
+  overflow: auto;
+}
+body[data-page="student"] .bb-quick-loan__choice {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #d8e4f3;
+  background: #fff;
+  text-align: left;
+  border-radius: 6px;
+  color: #183759;
+  font: inherit;
+  cursor: pointer;
+}
+body[data-page="student"] .bb-quick-loan__choice:hover,
+body[data-page="student"] .bb-quick-loan__choice:focus-visible {
+  background: #f3f8ff;
+  outline: 2px solid #7399cc;
+  outline-offset: -2px;
+}
+body[data-page="student"] .bb-quick-loan__selected {
+  margin: 0;
+  font-size: .86rem;
+}
+body[data-page="student"] #student-quick-loan-message {
+  min-height: 1.1rem;
+  margin: 0;
+  font-size: .88rem;
+}
+body[data-page="student"] .bb-quick-loan__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+body[data-page="student"] .bb-quick-loan__actions > button {
+  flex: 1 1 145px;
+}
+@media (max-width: 460px) {
+  body[data-page="student"] .bb-quick-loan__header { flex-direction: column; }
+  body[data-page="student"] .bb-quick-loan__actions { flex-direction: column; }
+}

@@ -96,8 +96,10 @@ assert.match(app,/const barcode = barcodeInput\?\.value\.trim\(\);/,
   'Barcode scanning remains an actual server-backed lookup');
 assert.match(server,/const barcodeMatch = requestUrl\.pathname\.match\(\/\^\\\/api\\\/books\\\/barcode/,
   'Read-only barcode endpoint is already available anonymously');
-assert.match(server,/if \(!user\) return sendJson\(res, 401, \{ message: 'Log eerst in om boeken te lenen' \}\)/,
-  'Server still requires an authenticated user for checkout');
+assert.match(server,/if \(!checkoutUser\) return sendJson\(res, 401, \{ message: 'Log eerst in om boeken te lenen' \}\)/,
+  'Checkout must require authenticated student/staff or a valid one-use PIN grant');
+assert.match(server,/studentPinCheckout\.consumeGrant\(body\.pinCheckoutGrant, checkoutMatch\[1\]\)/,
+  'The PIN grant is consumed only for its one intended physical checkout');
 assert.match(server,/if \(!user\) return sendJson\(res, 401, \{ message: 'Log eerst in om boeken terug te brengen' \}\)/,
   'Server still requires an authenticated user for check-in');
 assert.match(googlePolicy,/nameInput\.dataset\.selectedAccountId/,

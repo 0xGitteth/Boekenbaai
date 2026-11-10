@@ -9,6 +9,7 @@ const core = require('./google-auth-core');
 const security = require('./google-auth-security-core');
 const { readJsonSnapshot, mutateJsonLockedAsync } = require('./database-write-coordinator');
 const pins = require('./student-pin-core');
+const checkout = require('./student-pin-checkout-core');
 
 const originalCreateServer = http.createServer.bind(http);
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -22,6 +23,25 @@ const PIN_SECRET = pins.configuredSecret();
 const MUTATION_LIMIT = 5;
 const MUTATION_WINDOW_MS = 60 * 1000;
 const mutationAttempts = new Map();
+const networkVerifyAttempts = new Map();
+function networkVerifyAllowed(req) {
+  // Secondary throttle for a shared client/network. The per-student lockout
+  // in the persistent auth store is authoritative across all processes.
+  const key = String(req.socket?.remoteAddress || 'unknown').slice(0, 96);
+  const now = Date.now();
+  if (networkVerifyAttempts.size > 2000) {
+    for (const [ip, entry] of networkVerifyAttempts) {
+      if (entry.at < now - 10 * 60_000) networkVerifyAttempts.delete(ip);
+    }
+  }
+  const entry = networkVerifyAttempts.get(key);
+  const next = entry && entry.at > now - 10 * 60_000
+    ? { count: entry.count + 1, at: entry.at }
+    : { count: 1, at: now };
+  networkVerifyAttempts.set(key, next);
+  return next.count <= 300;
+}
+
 
 function sendJson(res, status, payload) {
   res.statusCode = status;
@@ -146,17 +166,38 @@ function checkedContext(db, auth, token) {
 
 async function handleStudentPin(req, res, requestUrl) {
   const route = requestUrl.pathname;
+  const isVerify = route === '/api/auth/student-pin/verify' && req.method === 'POST';
   const isStatus = route === '/api/auth/student-pin/status' && req.method === 'GET';
   const isSet = route === '/api/auth/student-pin/set' && req.method === 'POST';
   const isSelfReset = route === '/api/auth/student-pin/reset' && req.method === 'POST';
   const staffReset = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/reset$/);
-  if (!isStatus && !isSet && !isSelfReset
+  if (!isStatus && !isSet && !isSelfReset && !isVerify
     && !(staffReset && req.method === 'POST')) {
     return sendJson(res, 404, { message: 'Niet gevonden.' });
   }
   if (!isStatus && !security.isSameOriginMutation(
     req, security.getExpectedOrigin(req, PUBLIC_URL))) {
     return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+  }
+
+  if (isVerify) {
+    if (!networkVerifyAllowed(req)) {
+      res.setHeader('Retry-After', '600');
+      return sendJson(res, 429, { message: 'Te veel PIN-pogingen. Probeer later opnieuw.' });
+    }
+    const body = await parseBody(req);
+    try {
+      const result = await checkout.issueGrant({
+        studentId: body.studentId, bookId: body.bookId, pin: body.pin,
+      });
+      return sendJson(res, 200, result);
+    } catch (error) {
+      if (error?.status) {
+        if (error.status === 429) res.setHeader('Retry-After', '900');
+        return sendJson(res, error.status, { message: error.message });
+      }
+      throw error;
+    }
   }
 
   const token = getToken(req);

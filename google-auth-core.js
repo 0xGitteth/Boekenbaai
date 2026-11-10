@@ -129,6 +129,16 @@ function normalizeStore(input) {
     safe.studentPins = source.studentPins.filter(entry =>
       entry && typeof entry === 'object' && typeof entry.studentId === 'string');
   }
+  // PIN checkout grants are one-action bearer capabilities, not login sessions.
+  // Keep them in the protected auth store and preserve across all auth writes.
+  if (Array.isArray(source.pinCheckoutGrants)) {
+    safe.pinCheckoutGrants = source.pinCheckoutGrants.filter(entry =>
+      entry && typeof entry === 'object' && typeof entry.tokenHash === 'string');
+  }
+  if (Array.isArray(source.pinAttemptLimits)) {
+    safe.pinAttemptLimits = source.pinAttemptLimits.filter(entry =>
+      entry && typeof entry === 'object' && typeof entry.studentId === 'string');
+  }
   return safe;
 }
 
@@ -143,6 +153,15 @@ function pruneStore(store, now = Date.now()) {
   safe.pendingIdentities = safe.pendingIdentities.filter(
     (entry) => Number(entry?.expiresAt) > now
   );
+  if (safe.pinCheckoutGrants) {
+    safe.pinCheckoutGrants = safe.pinCheckoutGrants.filter(
+      (entry) => Number(entry?.expiresAt) > now && Number(entry?.expiresAt) <= now + 60_000
+    );
+  }
+  if (safe.pinAttemptLimits) {
+    safe.pinAttemptLimits = safe.pinAttemptLimits.filter(entry =>
+      Number(entry?.blockedUntil) > now || Number(entry?.updatedAt) > now - 20 * 60_000);
+  }
   const pendingCutoff = now - PENDING_LINK_REQUEST_MAX_AGE_MS;
   const historyCutoff = now - LINK_REQUEST_HISTORY_MAX_AGE_MS;
   safe.linkRequests = safe.linkRequests.filter((entry) => {

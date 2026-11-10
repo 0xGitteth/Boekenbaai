@@ -3668,6 +3668,18 @@ function initStudentPage() {
     }
 
     const actions = appendElement(bookResult, 'div', { className: 'book-result__actions' });
+    if (!loggedIn && hasAvailable && availableBook) {
+      const quick = appendTextElement(actions, 'button', 'Snel lenen met PIN', {
+        className: 'btn', type: 'button',
+      });
+      quick.addEventListener('click', () => {
+        window.BoekenbaaiQuickLoan?.open({
+          id: availableBook.id,
+          title: selectedGroup.title || referenceBook?.title || 'Dit boek',
+          status: availableBook.status,
+        });
+      });
+    }
     if (!loggedIn && hasAvailable) {
       const signIn = appendTextElement(actions, 'button', 'Inloggen om te lenen', {
         className: 'btn', type: 'button',
@@ -3734,6 +3746,25 @@ function initStudentPage() {
   // The shared book-detail dialog delegates student actions to the
   // student-only controller; staff functions and role checks stay unchanged.
   bookDetailState.studentActionHandler = handleCardLoanAction;
+  window.addEventListener('boekenbaai:quick-loan-completed', async event => {
+    // The PIN route never changes the currently logged-in user.
+    // Refresh public availability and clear the scanned, now-stale copy.
+    const title = String(event?.detail?.title || 'Het boek');
+    updateBarcodeSelection(null);
+    if (authUser?.role === 'student') {
+      await refreshData();
+    } else {
+      // Shared-tablet quick loans create no authenticated student session.
+      // Still refresh the anonymous catalog and its availability counts.
+      await loadBooks();
+    }
+    if (bookResult) {
+      bookResult.replaceChildren();
+      appendTextElement(bookResult, 'p', title + ' is uitgeleend. Veel leesplezier!', {
+        className: 'book-result__status',
+      });
+    }
+  });
 
   async function handleBorrow(group) {
     if (!group) return;
@@ -4093,6 +4124,7 @@ function initStaffPage() {
   const adminStudentDetailGrade = document.querySelector('#admin-student-detail-grade');
   const adminStudentDetailLoansMeta = document.querySelector('#admin-student-detail-loans');
   const adminStudentDetailMessage = document.querySelector('#admin-student-detail-message');
+  const adminStudentPinReset = document.querySelector('#admin-student-detail-pin-reset');
   const adminStudentDetailPasswordForm = document.querySelector('#admin-student-detail-password-form');
   const adminStudentDetailPasswordInput = document.querySelector('#admin-student-detail-password');
   const adminStudentDetailPasswordGenerateButton = document.querySelector(
@@ -8035,6 +8067,26 @@ function initStaffPage() {
   });
 
   adminBookIdInput?.addEventListener('input', updateAdminBookDeleteButtonVisibility);
+
+  adminStudentPinReset?.addEventListener('click', async () => {
+    if (authUser?.role !== 'admin' || !selectedAdminStudentId) return;
+    const student = students.find(entry => entry.id === selectedAdminStudentId);
+    if (!student || !window.confirm('De uitleen-PIN van ' + student.name + ' resetten?')) return;
+    adminStudentPinReset.disabled = true;
+    if (adminStudentDetailMessage) adminStudentDetailMessage.textContent = 'PIN wordt gereset…';
+    try {
+      await fetchJson('/api/auth/student-pin/students/' +
+        encodeURIComponent(student.id) + '/reset', { method: 'POST', body: {} });
+      if (adminStudentDetailMessage) {
+        adminStudentDetailMessage.textContent =
+          'PIN gereset. De leerling kan via Google een nieuwe instellen.';
+      }
+    } catch (error) {
+      if (adminStudentDetailMessage) adminStudentDetailMessage.textContent = error.message;
+    } finally {
+      adminStudentPinReset.disabled = false;
+    }
+  });
 
   adminBooksDeleteAllButton?.addEventListener('click', async () => {
     if (!authUser || authUser.role !== 'admin') {

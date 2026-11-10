@@ -459,8 +459,27 @@
     const leave = make('button', { className: 'btn btn--ghost student-management__danger-button', text: 'Van school', type: 'button' });
     move.addEventListener('click', () => openTransfer(student, sourceClassOverride));
     leave.addEventListener('click', () => deactivate(student));
-    actions.append(move, leave);
-    row.append(info, actions);
+    const resetPin = make('button', {
+      className: 'btn btn--ghost', text: 'PIN resetten', type: 'button',
+    });
+    const pinFeedback = make('span', { className: 'student-management__message hint' });
+    pinFeedback.setAttribute('role', 'status');
+    resetPin.addEventListener('click', async () => {
+      if (!window.confirm('De uitleen-PIN van ' + student.name + ' resetten?')) return;
+      resetPin.disabled = true;
+      pinFeedback.textContent = 'PIN wordt gereset…';
+      try {
+        await api('/api/auth/student-pin/students/' + encodeURIComponent(student.id) + '/reset',
+          { method: 'POST', body: {} });
+        pinFeedback.textContent = 'PIN gereset. Leerling kan via Google een nieuwe instellen.';
+      } catch (error) {
+        pinFeedback.textContent = error.message;
+      } finally {
+        resetPin.disabled = false;
+      }
+    });
+    actions.append(move, resetPin, leave);
+    row.append(info, actions, pinFeedback);
     return row;
   }
 
