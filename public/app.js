@@ -1549,6 +1549,27 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.editButton.hidden = !isAdmin;
     state.editButton.disabled = !isAdmin;
   }
+  const examListAction = document.querySelector('#student-book-detail-exam-list');
+  if (examListAction) {
+    // Keep the approved compact six-book catalog cards unchanged. Examinable
+    // books can be added from their detail dialog when signed in.
+    const examBook = copies.find(copy => copy?.suitableForExamList === true);
+    const canAdd = pageType === 'student' && authUser?.role === 'student' && examBook?.id;
+    examListAction.hidden = !canAdd;
+    examListAction.disabled = !canAdd;
+    examListAction.onclick = canAdd ? async () => {
+      examListAction.disabled = true;
+      try {
+        await window.BoekenbaaiExamReadingList?.addBook(examBook.id);
+        if (state.message) state.message.textContent = 'Boek staat op je examenleeslijst.';
+      } catch (error) {
+        if (state.message) state.message.textContent =
+          error?.message || 'Toevoegen aan examenleeslijst is mislukt.';
+      } finally {
+        examListAction.disabled = false;
+      }
+    } : null;
+  }
   const studentAction = document.querySelector('#student-book-detail-action');
   if (studentAction) {
     const descriptor = pageType === 'student'
