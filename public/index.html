@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="portal-branding-fixes-v54.css" />
     <link rel="stylesheet" href="portal-koraal-original-v56.css" />
     <link rel="stylesheet" href="student-pin.css" />
+    <link rel="stylesheet" href="student-quick-loan.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -516,6 +517,45 @@
         </div>
       </div>
     </section>
+
+    <dialog id="student-quick-loan-dialog" class="bb-quick-loan"
+      aria-labelledby="student-quick-loan-title" aria-describedby="student-quick-loan-description">
+      <div class="bb-quick-loan__header">
+        <div>
+          <h2 id="student-quick-loan-title">Snel een boek lenen</h2>
+          <p id="student-quick-loan-description">Gebruik je persoonlijke uitleen-PIN.</p>
+        </div>
+        <button type="button" id="student-quick-loan-close" class="btn btn--ghost"
+          aria-label="Snel lenen sluiten">Sluiten</button>
+      </div>
+      <p id="student-quick-loan-book" class="bb-quick-loan__book"></p>
+      <form id="student-quick-loan-form" autocomplete="off">
+        <div class="form-field">
+          <label for="student-quick-loan-name">Jouw naam</label>
+          <input id="student-quick-loan-name" type="search" autocomplete="off"
+            placeholder="Typ minimaal 3 letters" aria-controls="student-quick-loan-results"
+            aria-expanded="false" required />
+          <ul id="student-quick-loan-results" class="bb-quick-loan__results"
+            aria-label="Leerlingen die overeenkomen met je zoekopdracht"></ul>
+          <p id="student-quick-loan-selected" class="bb-quick-loan__selected"></p>
+        </div>
+        <div class="form-field">
+          <label for="student-quick-loan-pin">Jouw PIN (6 cijfers)</label>
+          <input id="student-quick-loan-pin" type="password" inputmode="numeric"
+            autocomplete="off" pattern="[0-9]{6}" minlength="6" maxlength="6" required />
+        </div>
+        <p id="student-quick-loan-message" role="status" aria-live="polite"></p>
+        <div class="bb-quick-loan__actions">
+          <button id="student-quick-loan-submit" type="submit" class="btn">
+            Boek lenen
+          </button>
+          <button id="student-quick-loan-google" type="button" class="btn btn--ghost">
+            Inloggen met Google
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <script defer src="student-quick-loan.js"></script>
 
     <script type="module" src="app.js"></script>
     <script defer src="student-pin.js"></script>
