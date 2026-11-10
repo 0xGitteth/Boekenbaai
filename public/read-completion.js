@@ -88,6 +88,36 @@
     staffList?.replaceChildren();
   }
 
+  function updateAudit(content, record) {
+    // Update just one saved row. Other records may have unsaved dropdown
+    // changes, which must never be discarded by a full-list rerender.
+    content.querySelectorAll('.reading-record__edited, .reading-record__history')
+      .forEach(node => node.remove());
+    const changes = Array.isArray(record.changes) ? record.changes : [];
+    if (changes.length) {
+      content.append(create('span', 'reading-record__edited',
+        'Achteraf gewijzigd (' + changes.length + (changes.length === 1 ? ' keer)' : ' keer)')));
+      const history = create('details', 'reading-record__history');
+      history.append(create('summary', '', 'Wijzigingsgeschiedenis bekijken'));
+      const original = record.originalFinished ? 'Ja' : 'Nee';
+      const initialDate = record.reportedAt
+        ? new Date(record.reportedAt).toLocaleString('nl-NL') : 'Datum onbekend';
+      history.append(create('p', 'hint',
+        'Oorspronkelijk: ' + original + ' · ' + initialDate +
+        ' · ' + (record.reportedByName || 'Onbekend')));
+      const entries = create('ol', '');
+      for (const change of changes) {
+        const when = change.changedAt
+          ? new Date(change.changedAt).toLocaleString('nl-NL') : 'Datum onbekend';
+        entries.append(create('li', '',
+          when + ' · ' + (change.changedByName || 'Onbekend') + ': ' +
+          (change.previous ? 'Ja' : 'Nee') + ' → ' + (change.finished ? 'Ja' : 'Nee')));
+      }
+      history.append(entries);
+      content.append(history);
+    }
+  }
+
   function render(records, container) {
     container.replaceChildren();
     if (!records.length) {
@@ -105,29 +135,7 @@
         ? new Date(record.reportedAt).toLocaleDateString('nl-NL') : '';
       content.append(create('span', 'hint',
         [record.author || '', date, who.trim()].filter(Boolean).join(' · ')));
-      const changes = Array.isArray(record.changes) ? record.changes : [];
-      if (changes.length) {
-        content.append(create('span', 'reading-record__edited',
-          'Achteraf gewijzigd (' + changes.length + (changes.length === 1 ? ' keer)' : ' keer)')));
-        const history = create('details', 'reading-record__history');
-        history.append(create('summary', '', 'Wijzigingsgeschiedenis bekijken'));
-        const original = record.originalFinished ? 'Ja' : 'Nee';
-        const initialDate = record.reportedAt
-          ? new Date(record.reportedAt).toLocaleString('nl-NL') : 'Datum onbekend';
-        history.append(create('p', 'hint',
-          'Oorspronkelijk: ' + original + ' · ' + initialDate +
-          ' · ' + (record.reportedByName || 'Onbekend')));
-        const entries = create('ol', '');
-        for (const change of changes) {
-          const when = change.changedAt
-            ? new Date(change.changedAt).toLocaleString('nl-NL') : 'Datum onbekend';
-          entries.append(create('li', '',
-            when + ' · ' + (change.changedByName || 'Onbekend') + ': ' +
-            (change.previous ? 'Ja' : 'Nee') + ' → ' + (change.finished ? 'Ja' : 'Nee')));
-        }
-        history.append(entries);
-        content.append(history);
-      }
+      updateAudit(content, record);
       const controls = create('div', 'reading-record__controls');
       const label = create('label', '', 'Uitgelezen?');
       const select = create('select');
@@ -156,11 +164,8 @@
             }),
           });
           Object.assign(record, result.record);
-          render(cachedRecords, container);
-          const saved = create('p', 'hint',
-            'Antwoord gewijzigd. Je kunt de wijzigingsgeschiedenis bij dit boek bekijken.');
-          saved.setAttribute('role', 'status');
-          container.prepend(saved);
+          updateAudit(content, record);
+          feedback.textContent = 'Antwoord gewijzigd. De wijzigingsgeschiedenis is bijgewerkt.';
           // The caller already updated the visible record. Other modules
           // may update statistics without throwing away the loaded pages.
           window.dispatchEvent(new CustomEvent('boekenbaai:reading-record-updated', {
