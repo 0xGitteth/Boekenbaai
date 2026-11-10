@@ -61,6 +61,8 @@ let searchCalls = 0;
 let verificationCalls = 0;
 let checkoutCalls = 0;
 let lastLoan = null;
+let holdVerify = false;
+let releaseVerify = null;
 const emitted = [];
 const fetchStub = async (url, options) => {
   if (url.includes('/api/login-search')) {
@@ -73,6 +75,9 @@ const fetchStub = async (url, options) => {
   if (url === '/api/auth/student-pin/verify') {
     verificationCalls++;
     lastLoan = JSON.parse(options.body);
+    if (holdVerify) {
+      return new Promise(resolve => { releaseVerify = resolve; });
+    }
     return { ok: true, async json() { return { grant: 'opaque-short-lived-grant' }; } };
   }
   if (url.includes('/check-out')) {
@@ -130,5 +135,29 @@ vm.runInNewContext(source, {
   assert.equal(emitted[0].type, 'boekenbaai:quick-loan-completed');
   assert.equal(elements.get('student-action-message').textContent,
     'Testboek is uitgeleend. Veel leesplezier!');
-  console.log('Quick loan UI, min-three autocomplete, PIN wiping and production assets verified.');
+
+  // A pending verification must not checkout if the dialog is canceled and
+  // reopened for the same book, even when a stale result later arrives.
+  holdVerify = true;
+  window.BoekenbaaiQuickLoan.open({ id: 'copy-one', title: 'Testboek', status: 'available' });
+  name.value = 'Anna';
+  name.listeners.input();
+  await new Promise(resolve => setTimeout(resolve, 260));
+  elements.get('student-quick-loan-results').children[0].children[0].listeners.click();
+  pin.value = '123456';
+  const oldSubmit = form.listeners.submit({ preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(releaseVerify, 'PIN request is deliberately pending');
+  dialog.close();
+  window.BoekenbaaiQuickLoan.open({ id: 'copy-one', title: 'Testboek', status: 'available' });
+  releaseVerify({
+    ok: true, async json() { return { grant: 'stale-grant-must-not-be-used' }; },
+  });
+  await oldSubmit;
+  assert.equal(checkoutCalls, 1, 'Old PIN response may not checkout after dialog cancellation');
+  assert.equal(dialog.open, true, 'A new dialog remains open');
+  assert.equal(pin.value, '', 'Reopened dialog never inherits another learner PIN');
+  dialog.close();
+
+  console.log('Quick loan UI, account hygiene, stale responses and dist assets verified.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
