@@ -78,11 +78,12 @@ const start=teacher.indexOf('  function renderDashboardTasks() {');
 const end=teacher.indexOf('  function renderMentorTasks() {',start);
 assert.ok(start>0&&end>start,'Extract actual production task rendering');
 const taskRenderer=teacher.slice(start,end);
-function simulate(mentor,imports,status='ready',importError=false){
+function simulate(mentor,imports,status='ready',importError=false,reading=0,readingError=false){
   const host={nodes:[],replaceChildren(){this.nodes=[];},append(node){this.nodes.push(node);}};
   const ctx={
     document:{querySelector(sel){assert.equal(sel,'#bb-teacher-v31-tasks-summary .bb-teacher-v31-open-task-list');return host;}},
     taskSummary:{status},mentorTaskCount:mentor,importTaskCount:imports,importTaskError:importError,
+    readingAlertCount:reading, readingAlertError:readingError,
     el:(tag,cls,label)=>({tag,cls,label}),
     addAction:(where,title,subtitle,destination)=>where.append({action:true,title,subtitle,destination}),
   };
@@ -96,6 +97,10 @@ const two=simulate(3,2);
 assert.equal(two.length,2);
 assert.deepEqual(two.map(n=>n.title),['Klaswissels en koppelingen','Boekimportcontroles']);
 assert.deepEqual(two.map(n=>n.destination),['tasks','tasks']);
+const readingNotice=simulate(0,0,'ready',false,2);
+assert.equal(readingNotice.length,1);
+assert.equal(readingNotice[0].title, 'Gewijzigde leesantwoorden');
+assert.equal(readingNotice[0].destination, 'tasks');
 const one=simulate(0,4);
 assert.equal(one.length,1);
 assert.equal(one[0].title,'Boekimportcontroles');

@@ -43,3 +43,19 @@
   .reading-record__item { align-items: stretch; }
   .reading-record__controls { width: 100%; }
 }
+
+.reading-record__edited {
+  display: inline-block;
+  width: max-content;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: #345579;
+  background: #edf3f9;
+  font-size: .79rem;
+  font-weight: 800;
+}
+.reading-record__history { font-size: .84rem; max-width: 65ch; }
+.reading-record__history summary { cursor: pointer; padding: 3px 0; }
+.reading-record__history ol { margin: 6px 0; padding-left: 20px; }
+.reading-record__history li { margin: 5px 0; }
+.reading-record__history p { margin: 7px 0; }

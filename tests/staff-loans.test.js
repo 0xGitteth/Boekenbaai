@@ -262,6 +262,20 @@ async function run() {
     assert.strictEqual(corrected.status, 200, JSON.stringify(corrected.body));
     assert.strictEqual(corrected.body.record.finished, false);
     assert.strictEqual(corrected.body.record.revision, 2);
+    assert.strictEqual(corrected.body.record.originalFinished, true);
+    assert.strictEqual(corrected.body.record.changes.length, 1);
+    assert.strictEqual(corrected.body.record.changes[0].previous, true);
+    assert.strictEqual(corrected.body.record.changes[0].finished, false);
+    assert.strictEqual(corrected.body.record.changes[0].changedByName, 'Jij',
+      'A pupil sees their own correction in the private audit trail');
+    assert.ok(corrected.body.record.changes[0].changedAt);
+    assert.ok(corrected.body.record.reportedByName);
+    const mentorHistory = await call('/api/reading-records', teacherA);
+    const mentorRecord = mentorHistory.body.records
+      .find(entry => entry.id === individualRecord.id);
+    assert.ok(mentorRecord);
+    assert.strictEqual(mentorRecord.changes[0].changedByName, 'Leerling A',
+      'A mentor can see which pupil changed the answer');
     const teacherNotices = await call('/api/staff/reading-change-notifications', teacherA);
     assert.strictEqual(teacherNotices.status, 200, JSON.stringify(teacherNotices.body));
     assert.strictEqual(teacherNotices.body.unreadCount, 1);
@@ -298,6 +312,11 @@ async function run() {
     const adminFix = await call('/api/reading-records/' + individualRecord.id, admin,
       { finished: true, revision: corrected.body.record.revision }, 'PATCH');
     assert.strictEqual(adminFix.status, 200);
+    assert.strictEqual(adminFix.body.record.changes.length, 2);
+    assert.strictEqual(adminFix.body.record.originalFinished, true);
+    assert.strictEqual(adminFix.body.record.changes[1].previous, false);
+    assert.strictEqual(adminFix.body.record.changes[1].finished, true);
+    assert.ok(adminFix.body.record.changes[1].changedByName);
     assert.strictEqual((await call('/api/staff/reading-change-notifications', teacherA))
       .body.notifications.length, 1, 'Staff correction must not produce an extra mentor notice');
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).readingRecords

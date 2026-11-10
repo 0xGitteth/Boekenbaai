@@ -22,6 +22,8 @@
   let importTaskCount = null;
   let importTaskError = false;
   let mentorTaskCount = null;
+  let readingAlertCount = null;
+  let readingAlertError = false;
   let nav, scrim, menu;
   const taskSummary = { classes: [], status: 'loading' };
   // Mirror staff-loans.js: all staff endpoints may live on a separate API host.
@@ -103,6 +105,7 @@
       taskSummary.status = 'loading';
       renderMentorTasks();
       window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+      window.dispatchEvent(new Event('boekenbaai:reading-alerts-refresh'));
     }
     if (next === 'catalog') {
       // The old layout defaults to a folded overview on login. In the
@@ -214,11 +217,6 @@
     rightColumn.append(taskCard);
     grid.append(leftColumn, rightColumn);
     start.append(grid);
-    // Reading-change notices are information, not outstanding tasks.
-    // Put the existing teacher-only inbox prominently on Start.
-    place(document.getElementById('staff-reading-change-notifications'), start);
-    const alerts = document.getElementById('staff-reading-change-notifications');
-    if (alerts) start.insertBefore(alerts, grid);
     const classes = makeView('classes', 'Mijn klassen', '');
     const catalog = makeView('catalog', 'Catalogus', 'Zoek, filter en bekijk de beschikbaarheid van de schoolbibliotheek.');
     const lending = makeView('lending', 'Uitlenen en innemen', 'Kies het juiste exemplaar en registreer uitleningen en innames.');
@@ -241,6 +239,7 @@
     transferPanel.setAttribute('aria-label', 'Klaswissels en Google-koppelingen');
     tasks.append(transferPanel);
     place(document.getElementById('book-import-followups-panel'), tasks);
+    place(document.getElementById('staff-reading-change-notifications'), tasks);
     renderMentorTasks();
     installLoanDuePreview();
     place(document.getElementById('book-import-mail-preferences-panel'), account);
@@ -270,7 +269,8 @@
   function refreshTaskMetric() {
     const node = document.querySelector('#bb-teacher-v31-metrics > :nth-child(4) strong');
     if (node) node.textContent = importTaskCount === null || mentorTaskCount === null
-      ? '—' : String(importTaskCount + mentorTaskCount);
+      || readingAlertCount === null
+      ? '—' : String(importTaskCount + mentorTaskCount + readingAlertCount);
     renderDashboardTasks();
   }
   function renderDashboardTasks() {
@@ -279,6 +279,7 @@
     host.replaceChildren();
     const mentorReady = taskSummary.status === 'ready' && Number.isSafeInteger(mentorTaskCount);
     const importReady = !importTaskError && Number.isSafeInteger(importTaskCount);
+    const readingReady = !readingAlertError && Number.isSafeInteger(readingAlertCount);
     if (mentorReady && mentorTaskCount > 0) {
       addAction(host, 'Klaswissels en koppelingen',
         mentorTaskCount + (mentorTaskCount === 1 ? ' openstaand verzoek' : ' openstaande verzoeken'), 'tasks');
@@ -287,12 +288,16 @@
       addAction(host, 'Boekimportcontroles',
         importTaskCount + (importTaskCount === 1 ? ' openstaande controle' : ' openstaande controles'), 'tasks');
     }
-    if (taskSummary.status === 'error' || importTaskError) {
+    if (readingReady && readingAlertCount > 0) {
+      addAction(host, 'Gewijzigde leesantwoorden',
+        readingAlertCount + (readingAlertCount === 1 ? ' melding om te lezen' : ' meldingen om te lezen'), 'tasks');
+    }
+    if (taskSummary.status === 'error' || importTaskError || readingAlertError) {
       host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state',
         'Niet alle taken zijn momenteel beschikbaar.'));
-    } else if (!mentorReady || !importReady) {
+    } else if (!mentorReady || !importReady || !readingReady) {
       host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state', 'Taken laden…'));
-    } else if (mentorTaskCount === 0 && importTaskCount === 0) {
+    } else if (mentorTaskCount === 0 && importTaskCount === 0 && readingAlertCount === 0) {
       host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state',
         'Je hebt momenteel geen openstaande taken.'));
     }
@@ -490,6 +495,8 @@
     } else {
       mentorTaskCount = null;
       importTaskCount = null;
+      readingAlertCount = null;
+      readingAlertError = false;
       importTaskError = false;
       taskSummary.classes = [];
       taskSummary.status = 'loading';
@@ -514,6 +521,14 @@
   watcher.observe(admin, { attributes: true, attributeFilter: ['class'] });
   const login = document.getElementById('staff-login-panel');
   if (login) watcher.observe(login, { attributes: true, attributeFilter: ['class'] });
+  window.addEventListener('boekenbaai:reading-alerts-count', event => {
+    if (!active) return;
+    const detail = event.detail || {};
+    readingAlertError = detail.status === 'error';
+    readingAlertCount = !readingAlertError && Number.isSafeInteger(detail.count)
+      ? detail.count : null;
+    refreshTaskMetric();
+  });
   window.addEventListener('boekenbaai:mentor-tasks-updated', event => {
     if (!active) return;
     const detail = event.detail || {};
