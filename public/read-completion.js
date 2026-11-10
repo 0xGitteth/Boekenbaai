@@ -49,8 +49,17 @@
     return token && token !== 'cookie' ? { Authorization: 'Bearer ' + token } : {};
   }
 
+  function resolveApiUrl(route) {
+    if (typeof window.BoekenbaaiResolveApiUrl === 'function') {
+      return window.BoekenbaaiResolveApiUrl(route);
+    }
+    const meta = document.querySelector('meta[name="boekenbaai-api-base"]');
+    const base = String(window.BOEKENBAAI_API_BASE || meta?.content || '').trim();
+    return base ? base.replace(/\/$/, '') + route : route;
+  }
+
   async function api(route, options = {}) {
-    const response = await fetch(route, {
+    const response = await fetch(resolveApiUrl(route), {
       credentials: 'same-origin',
       ...options,
       headers: {
