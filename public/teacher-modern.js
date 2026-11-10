@@ -93,7 +93,10 @@
       panels[next].querySelector('h2')?.focus({ preventScroll: true });
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
-    if (next === 'start') void updateStart();
+    if (next === 'start') {
+      void updateStart();
+      window.dispatchEvent(new Event('boekenbaai:reading-alerts-refresh'));
+    }
     // Newly arriving transfers and Google-link requests must be discoverable
     // whenever the task hub is reopened, not only after login.
     if (next === 'tasks') {
@@ -211,6 +214,11 @@
     rightColumn.append(taskCard);
     grid.append(leftColumn, rightColumn);
     start.append(grid);
+    // Reading-change notices are information, not outstanding tasks.
+    // Put the existing teacher-only inbox prominently on Start.
+    place(document.getElementById('staff-reading-change-notifications'), start);
+    const alerts = document.getElementById('staff-reading-change-notifications');
+    if (alerts) start.insertBefore(alerts, grid);
     const classes = makeView('classes', 'Mijn klassen', '');
     const catalog = makeView('catalog', 'Catalogus', 'Zoek, filter en bekijk de beschikbaarheid van de schoolbibliotheek.');
     const lending = makeView('lending', 'Uitlenen en innemen', 'Kies het juiste exemplaar en registreer uitleningen en innames.');
