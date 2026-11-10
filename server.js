@@ -4631,13 +4631,22 @@ async function handleApi(req, res, requestUrl) {
     // or staff currently authorized for their class may see/edit them.
     if (req.method === 'GET' && requestUrl.pathname === '/api/reading-records') {
       if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
+      const pageText = requestUrl.searchParams.get('page') || '0';
+      if (!/^(0|[1-9][0-9]{0,5})$/.test(pageText)) {
+        return sendJson(res, 400, { message: 'Ongeldige pagina.' });
+      }
+      const page = Number(pageText);
+      const pageSize = 75;
       const db = getDb();
-      const records = (db.readingRecords || [])
+      const available = (db.readingRecords || [])
         .filter(record => mayViewReadingRecord(db, user, record))
-        .sort((a, b) => String(b.reportedAt || '').localeCompare(String(a.reportedAt || '')))
-        .slice(0, 200)
+        .sort((a, b) => String(b.reportedAt || '').localeCompare(String(a.reportedAt || '')));
+      const start = page * pageSize;
+      const records = available.slice(start, start + pageSize)
         .map(record => publicReadingRecord(db, record, user));
-      return sendJson(res, 200, { records });
+      return sendJson(res, 200, {
+        records, nextPage: start + pageSize < available.length ? page + 1 : null,
+      });
     }
     const readingRecordMatch = requestUrl.pathname.match(/^\/api\/reading-records\/([\w-]+)$/);
     if (readingRecordMatch && req.method === 'PATCH') {
