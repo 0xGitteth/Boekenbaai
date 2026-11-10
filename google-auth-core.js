@@ -113,7 +113,7 @@ function emptyAuthStore() {
 
 function normalizeStore(input) {
   const source = input && typeof input === 'object' ? input : {};
-  return {
+  const safe = {
     version: 1,
     links: Array.isArray(source.links) ? source.links.filter(Boolean) : [],
     sessions: Array.isArray(source.sessions) ? source.sessions.filter(Boolean) : [],
@@ -122,6 +122,14 @@ function normalizeStore(input) {
       : [],
     linkRequests: Array.isArray(source.linkRequests) ? source.linkRequests.filter(Boolean) : [],
   };
+  // PIN credentials are intentionally auth-only: never place a verifier in
+  // db.students, which is also used for public/teacher API projections.
+  // Keep older auth snapshots byte-shape compatible until PIN setup is used.
+  if (Array.isArray(source.studentPins)) {
+    safe.studentPins = source.studentPins.filter(entry =>
+      entry && typeof entry === 'object' && typeof entry.studentId === 'string');
+  }
+  return safe;
 }
 
 function requestTimestamp(entry) {

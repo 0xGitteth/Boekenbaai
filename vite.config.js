@@ -10,6 +10,8 @@ const runtimeAuthAssets = [
   'google-auth.css',
   'google-auth.js',
   'google-login-hint.js',
+  'student-pin.js',
+  'student-pin.css',
   'admin-modern.css',
   'admin-modern.js',
   'admin-google-links.js',

@@ -1,0 +1,41 @@
+/* Student PIN settings: contained in the existing authenticated profile card. */
+body[data-page="student"] #student-pin-details {
+  margin-top: 16px;
+  border-top: 1px solid #dbe6f3;
+  padding-top: 13px;
+}
+body[data-page="student"] #student-pin-details summary {
+  cursor: pointer;
+  color: #213f67;
+  font-weight: 800;
+  font-size: 0.95rem;
+  padding: 8px 0;
+}
+body[data-page="student"] #student-pin-details > p,
+body[data-page="student"] #student-pin-details .hint {
+  margin: 8px 0;
+  max-width: 58ch;
+}
+body[data-page="student"] .bb-student-pin-form {
+  max-width: 440px;
+  display: grid;
+  gap: 10px;
+  padding: 12px 0;
+}
+body[data-page="student"] .bb-student-pin-form[hidden] {
+  display: none;
+}
+body[data-page="student"] .bb-student-pin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+body[data-page="student"] #student-pin-details .form-field input {
+  width: 100%;
+  min-height: 42px;
+}
+body[data-page="student"] #student-pin-feedback:not(:empty) {
+  padding: 6px 0;
+  font-weight: 700;
+}
