@@ -55,56 +55,76 @@ if (panel) {
     badge.textContent = '';
     moreButton.hidden = true;
     message.textContent = '';
+    publishCount('ready', 0);
+  }
+
+  function publishCount(status, count) {
+    window.dispatchEvent(new CustomEvent('boekenbaai:reading-alerts-count', {
+      detail: { status, count },
+    }));
+  }
+
+  function itemFor(notice) {
+    const row = make('article', undefined, 'bb-reading-alerts__item');
+    if (!notice.readAt) row.classList.add('bb-reading-alerts__item--unread');
+    const content = make('div', undefined, 'bb-reading-alerts__text');
+    const before = notice.previous ? 'Ja' : 'Nee';
+    const after = notice.updated ? 'Ja' : 'Nee';
+    content.append(make('strong', notice.studentName + ' heeft een leesantwoord gewijzigd'));
+    content.append(make('p', 'Boek: ' + notice.title + '. Van ' + before + ' naar ' + after + '.',
+      'bb-reading-alerts__detail'));
+    if (notice.changedAt) {
+      const date = new Date(notice.changedAt);
+      if (Number.isFinite(date.getTime())) {
+        content.append(make('span',
+          date.toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' }), 'hint'));
+      }
+    }
+    const status = make('div', undefined, 'bb-reading-alerts__status');
+    if (notice.readAt) {
+      status.append(make('span', 'Gelezen', 'bb-reading-alerts__read'));
+    } else {
+      const read = make('button', 'Markeer als gelezen', 'btn btn--secondary');
+      read.type = 'button';
+      read.addEventListener('click', async () => {
+        read.disabled = true;
+        message.textContent = '';
+        try {
+          await request('/api/staff/reading-change-notifications/' +
+            encodeURIComponent(notice.id) + '/read', 'POST');
+          // Reading is the only action. The report is already changed and
+          // does not require approval; this removes it from open tasks.
+          await refresh();
+        } catch (error) {
+          message.textContent = error.message;
+          read.disabled = false;
+        }
+      });
+      status.append(read);
+    }
+    row.append(content, status);
+    return row;
   }
 
   function render(unreadCount) {
     badge.textContent = String(unreadCount);
     badge.hidden = unreadCount === 0;
     list.replaceChildren();
-    if (!loaded.length) {
-      list.append(make('p', 'Er zijn geen wijzigingen gemeld.', 'hint'));
+    const unread = loaded.filter(item => !item.readAt);
+    const read = loaded.filter(item => Boolean(item.readAt));
+    const pending = make('section', undefined, 'bb-reading-alerts__pending');
+    pending.append(make('h4', 'Nog te lezen (' + unreadCount + ')'));
+    if (!unread.length) {
+      pending.append(make('p', 'Geen openstaande leesmeldingen.', 'hint'));
     }
-    for (const notice of loaded) {
-      const row = make('article', undefined, 'bb-reading-alerts__item');
-      if (!notice.readAt) row.classList.add('bb-reading-alerts__item--unread');
-      const content = make('div', undefined, 'bb-reading-alerts__text');
-      const before = notice.previous ? 'Ja' : 'Nee';
-      const after = notice.updated ? 'Ja' : 'Nee';
-      content.append(make('strong', notice.studentName + ' heeft een leesantwoord gewijzigd'));
-      content.append(make('p',
-        'Boek: ' + notice.title + '. Van ' + before + ' naar ' + after + '.',
-        'bb-reading-alerts__detail'));
-      if (notice.changedAt) {
-        const date = new Date(notice.changedAt);
-        if (Number.isFinite(date.getTime())) {
-          content.append(make('span',
-            date.toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' }), 'hint'));
-        }
-      }
-      const status = make('div', undefined, 'bb-reading-alerts__status');
-      if (notice.readAt) {
-        status.append(make('span', 'Gelezen', 'bb-reading-alerts__read'));
-      } else {
-        const read = make('button', 'Markeer als gelezen', 'btn btn--secondary');
-        read.type = 'button';
-        read.addEventListener('click', async () => {
-          read.disabled = true;
-          message.textContent = '';
-          try {
-            await request('/api/staff/reading-change-notifications/' +
-              encodeURIComponent(notice.id) + '/read', 'POST');
-            // The server stores one read receipt per teacher. There is
-            // no approval/rejection operation and no outstanding task.
-            await refresh();
-          } catch (error) {
-            message.textContent = error.message;
-            read.disabled = false;
-          }
-        });
-        status.append(read);
-      }
-      row.append(content, status);
-      list.append(row);
+    for (const notice of unread) pending.append(itemFor(notice));
+    list.append(pending);
+    if (read.length) {
+      const archive = make('details', undefined, 'bb-reading-alerts__archive');
+      const summary = make('summary', 'Gelezen meldingen (' + read.length + ')');
+      archive.append(summary);
+      for (const notice of read) archive.append(itemFor(notice));
+      list.append(archive);
     }
     moreButton.hidden = nextPage === null;
   }
@@ -122,11 +142,13 @@ if (panel) {
       loaded = page === 0 ? payload.notifications : loaded.concat(payload.notifications);
       nextPage = Number.isInteger(payload.nextPage) ? payload.nextPage : null;
       render(payload.unreadCount || 0);
+      publishCount('ready', payload.unreadCount || 0);
       message.textContent = '';
     } catch (error) {
       if (generation !== serial || !teacherActive()) return;
       if (page === 0) list.replaceChildren();
       message.textContent = error.message;
+      publishCount('error', null);
     } finally {
       if (generation === serial) {
         loading = false;
