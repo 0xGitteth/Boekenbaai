@@ -148,8 +148,11 @@
     if (nextPage !== null) {
       const more = create('button', 'btn btn--ghost', 'Meer leesregistraties laden');
       more.type = 'button';
-      more.disabled = paging;
-      more.addEventListener('click', () => loadPage(nextPage, generation));
+      more.addEventListener('click', async () => {
+        more.disabled = true;
+        await loadPage(nextPage, generation);
+        more.disabled = false;
+      });
       container.append(more);
     }
   }
