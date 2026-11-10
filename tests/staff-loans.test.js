@@ -12,7 +12,8 @@ const hash = (password) => crypto.createHash('sha256').update(password).digest('
 async function call(route, token, payload, method) {
   const response = await fetch(BASE + route, {
     method: method || (payload === undefined ? 'GET' : 'POST'),
-    headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    headers: { Origin: BASE, 'Sec-Fetch-Site': 'same-origin',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
       ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
   });
