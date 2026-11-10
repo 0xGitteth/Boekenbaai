@@ -21,6 +21,10 @@ const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 const { createReturnReadingRecord, mayViewReadingRecord, publicReadingRecord,
   amendReadingRecord } = require('./reading-completion-core');
+const {
+  createReadingChangeNotification, listTeacherNotifications,
+  markNotificationRead, isActiveTeacher,
+} = require('./reading-change-notifications');
 const studentPinCheckout = require('./student-pin-checkout-core');
 const authSecurityForPin = require('./google-auth-security-core');
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
@@ -4627,6 +4631,39 @@ async function handleApi(req, res, requestUrl) {
     // PR5: one staff-only directory for choosing a physical copy and its
     // borrower. Identity and loan details are filtered SERVER-SIDE using
     // live teacher/class membership, including class-owned loans.
+    // Purely informational changes made by students. Each assigned mentor
+    // receives their own read receipt; acknowledging never approves/rejects.
+    if (req.method === 'GET' && requestUrl.pathname === '/api/staff/reading-change-notifications') {
+      if (!user || !isActiveTeacher(user)) {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen voor gekoppelde docenten.' });
+      }
+      const pageText = requestUrl.searchParams.get('page') || '0';
+      if (!/^(0|[1-9][0-9]{0,5})$/.test(pageText)) {
+        return sendJson(res, 400, { message: 'Ongeldige pagina.' });
+      }
+      const db = getDb();
+      return sendJson(res, 200, listTeacherNotifications(db, user, { page: Number(pageText) }));
+    }
+    const readingNotificationMatch = requestUrl.pathname.match(
+      /^\/api\/staff\/reading-change-notifications\/([\w-]+)\/read$/);
+    if (readingNotificationMatch && req.method === 'POST') {
+      if (!user || !isActiveTeacher(user)) {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen voor gekoppelde docenten.' });
+      }
+      if (!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req, process.env.BOEKENBAAI_PUBLIC_URL || ''))) {
+        return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+      }
+      const db = loadDb();
+      const result = markNotificationRead(db, user,
+        readingNotificationMatch[1], new Date().toISOString());
+      if (result.status !== 200) {
+        return sendJson(res, result.status, { message: 'Melding niet gevonden of niet toegankelijk.' });
+      }
+      if (result.changed) saveDb(db);
+      return sendJson(res, 200, { read: true });
+    }
+
     // Reading answers belong to completed loan periods. Only the student
     // or staff currently authorized for their class may see/edit them.
     if (req.method === 'GET' && requestUrl.pathname === '/api/reading-records') {
@@ -4669,7 +4706,20 @@ async function handleApi(req, res, requestUrl) {
       if ((record.revision || 1) !== body.revision) {
         return sendJson(res, 409, { message: 'Het antwoord is inmiddels gewijzigd. Vernieuw de lijst.' });
       }
-      if (amendReadingRecord(record, body.finished, user.id, new Date().toISOString())) saveDb(db);
+      const oldFinished = record.finished;
+      const changedAt = new Date().toISOString();
+      if (amendReadingRecord(record, body.finished, user.id, changedAt)) {
+        // A pupil can immediately correct their own status. Mentors receive
+        // an individual notice without any approval/rejection workflow.
+        if (user.role === 'student') {
+          const student = findStudentById(db, user.id);
+          createReadingChangeNotification(db, {
+            student, record, previous: oldFinished,
+            updated: body.finished, actorId: user.id, now: changedAt,
+          });
+        }
+        saveDb(db);
+      }
       return sendJson(res, 200, { record: publicReadingRecord(db, record, user) });
     }
 

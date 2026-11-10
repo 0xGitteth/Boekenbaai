@@ -262,6 +262,34 @@ async function run() {
     assert.strictEqual(corrected.status, 200, JSON.stringify(corrected.body));
     assert.strictEqual(corrected.body.record.finished, false);
     assert.strictEqual(corrected.body.record.revision, 2);
+    const teacherNotices = await call('/api/staff/reading-change-notifications', teacherA);
+    assert.strictEqual(teacherNotices.status, 200, JSON.stringify(teacherNotices.body));
+    assert.strictEqual(teacherNotices.body.unreadCount, 1);
+    assert.strictEqual(teacherNotices.body.notifications.length, 1);
+    const alert = teacherNotices.body.notifications[0];
+    assert.strictEqual(alert.studentName, 'Leerling A');
+    assert.strictEqual(alert.previous, true);
+    assert.strictEqual(alert.updated, false);
+    assert.strictEqual(alert.readAt, null);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications', teacherB))
+      .body.unreadCount, 0);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications', studentA)).status, 403);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications', admin)).status, 403);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications/' +
+      alert.id + '/read', studentA, {}, 'POST')).status, 403);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications/' +
+      alert.id + '/read', teacherB, {}, 'POST')).status, 403);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications/' +
+      alert.id + '/read', teacherA, {}, 'POST')).status, 200);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications/' +
+      alert.id + '/read', teacherA, {}, 'POST')).status, 200,
+      'Marking a notification as read is idempotent');
+    assert.strictEqual((await call('/api/staff/reading-change-notifications', teacherA))
+      .body.unreadCount, 0);
+    assert.ok((await call('/api/staff/reading-change-notifications', teacherA))
+      .body.notifications[0].readAt);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications?page=abc',
+      teacherA)).status, 400);
     assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, teacherA,
       { finished: true, revision: individualRecord.revision }, 'PATCH')).status, 409);
     const correctedClass = await call('/api/reading-records/' + classRecord.id, teacherA,
@@ -270,6 +298,8 @@ async function run() {
     const adminFix = await call('/api/reading-records/' + individualRecord.id, admin,
       { finished: true, revision: corrected.body.record.revision }, 'PATCH');
     assert.strictEqual(adminFix.status, 200);
+    assert.strictEqual((await call('/api/staff/reading-change-notifications', teacherA))
+      .body.notifications.length, 1, 'Staff correction must not produce an extra mentor notice');
     assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).readingRecords
       .find(item => item.id === individualRecord.id).changes.length, 2);
     assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, admin,

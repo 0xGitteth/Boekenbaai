@@ -29,6 +29,7 @@
     <link rel="stylesheet" href="portal-branding-fixes-v54.css" />
     <link rel="stylesheet" href="portal-koraal-original-v56.css" />
     <link rel="stylesheet" href="read-completion.css" />
+    <link rel="stylesheet" href="reading-change-notifications.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <style>
       .bb-followup-badge {
@@ -140,6 +141,22 @@
             Inklappen
           </button>
         </div>
+        <section id="staff-reading-change-notifications" class="bb-reading-alerts"
+          aria-labelledby="staff-reading-alerts-title" data-role-only="teacher">
+          <div class="bb-reading-alerts__head">
+            <div>
+              <h3 id="staff-reading-alerts-title">Meldingen leesstatus
+                <span id="staff-reading-alerts-count" class="bb-reading-alerts__count" hidden></span>
+              </h3>
+              <p class="hint">Wanneer een leerling een leesantwoord wijzigt, zie je dat hier.
+                Dit is alleen ter informatie. Je hoeft niets goed te keuren.</p>
+            </div>
+            <button type="button" class="btn btn--ghost" id="staff-reading-alerts-refresh">Vernieuwen</button>
+          </div>
+          <div id="staff-reading-alerts-list" aria-live="polite"></div>
+          <button type="button" class="btn btn--secondary" id="staff-reading-alerts-more" hidden>Meer meldingen laden</button>
+          <p id="staff-reading-alerts-message" class="hint" role="status" aria-live="polite"></p>
+        </section>
         <div class="teacher-layout">
           <section class="teacher-layout__overview" aria-labelledby="staff-catalog-title">
             <h3 id="staff-catalog-title" class="visually-hidden">Boekenoverzicht</h3>
@@ -1359,6 +1376,7 @@
     <script defer src="read-completion.js"></script>
     <script type="module" src="app.js"></script>
     <script type="module" src="staff-loans.js"></script>
+    <script type="module" src="reading-change-notifications-ui.js"></script>
     <script type="module" src="book-import-followups.js"></script>
     <script type="module" src="book-import-mail-settings.js"></script>
     <script type="module" src="admin-mail-notifications.js"></script>
