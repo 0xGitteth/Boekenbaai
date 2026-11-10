@@ -24,6 +24,10 @@ for (const file of ['read-completion.js', 'read-completion.css']) {
   assert.ok(vite.includes("'" + file + "'"), file + ' must be copied into dist');
 }
 assert.match(index, /id="student-reading-records"/);
+assert.match(student, /window\.BoekenbaaiResolveApiUrl = resolveApiUrl/,
+  'Reading helper must share app.js configured API-base resolution');
+assert.match(source, /fetch\(resolveApiUrl\(route\)/,
+  'Reading history and edits must use the configured API base');
 assert.match(staffHtml, /id="staff-reading-records"/);
 assert.match(server, /typeof body.finished !== 'boolean'/);
 assert.match(server, /createReturnReadingRecord\(/);
