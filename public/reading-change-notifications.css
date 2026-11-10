@@ -1,0 +1,49 @@
+/* Teacher-only informational notices; not part of the open-task counter. */
+.bb-reading-alerts {
+  margin: 0 0 16px;
+  padding: 16px 18px;
+  background: #fff;
+  border: 1px solid #d9e4ee;
+  border-radius: 12px;
+}
+.bb-reading-alerts__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+}
+.bb-reading-alerts__head h3 { margin: 0 0 6px; font-size: 1.08rem; }
+.bb-reading-alerts__head p { margin: 0 0 10px; }
+.bb-reading-alerts__count {
+  display: inline-block;
+  min-width: 1.55em;
+  padding: .1em .45em;
+  margin-left: 6px;
+  border-radius: 1em;
+  background: #e8eef8;
+  color: #24466a;
+  text-align: center;
+  font-size: .83em;
+}
+.bb-reading-alerts__count[hidden] { display: none; }
+.bb-reading-alerts__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid #e3ebf3;
+  padding: 12px 0;
+}
+.bb-reading-alerts__item--unread { border-left: 3px solid #537eae; padding-left: 10px; }
+.bb-reading-alerts__text { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; }
+.bb-reading-alerts__text strong { font-size: .94rem; }
+.bb-reading-alerts__detail { font-size: .87rem; margin: 0; }
+.bb-reading-alerts__text .hint { font-size: .8rem; }
+.bb-reading-alerts__status { display: flex; align-items: center; gap: 8px; }
+.bb-reading-alerts__read { color: #4b6076; font-size: .88rem; }
+#staff-reading-alerts-message:not(:empty) { margin-top: 10px; }
+@media (max-width: 540px) {
+  .bb-reading-alerts__head { flex-direction: column; }
+  .bb-reading-alerts__item { align-items: stretch; }
+}
