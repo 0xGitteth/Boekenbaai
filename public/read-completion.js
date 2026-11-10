@@ -12,6 +12,9 @@
 
   let pending = null;
   let generation = 0;
+  let cachedRecords = [];
+  let nextPage = null;
+  let paging = false;
 
   // Escape, clicking the backdrop, and the usual close button are
   // intentionally unavailable. Only an explicit Ja or Nee resolves a return.
@@ -70,6 +73,8 @@
 
   function clearRecords() {
     generation++;
+    cachedRecords = [];
+    nextPage = null;
     studentList?.replaceChildren();
     staffList?.replaceChildren();
   }
@@ -121,7 +126,11 @@
           record.finished = result.record.finished;
           record.revision = result.record.revision;
           feedback.textContent = 'Antwoord gewijzigd.';
-          window.dispatchEvent(new Event('boekenbaai:reading-record-updated'));
+          // The caller already updated the visible record. Other modules
+          // may update statistics without throwing away the loaded pages.
+          window.dispatchEvent(new CustomEvent('boekenbaai:reading-record-updated', {
+            detail: { source: 'read-editor' },
+          }));
         } catch (error) {
           feedback.textContent = error.message;
           // A stale revision is deliberately not submitted again without
@@ -136,24 +145,50 @@
       row.append(content, controls);
       container.append(row);
     }
+    if (nextPage !== null) {
+      const more = create('button', 'btn btn--ghost', 'Meer leesregistraties laden');
+      more.type = 'button';
+      more.disabled = paging;
+      more.addEventListener('click', () => loadPage(nextPage, generation));
+      container.append(more);
+    }
+  }
+
+  async function loadPage(page, serial) {
+    const container = studentList || staffList;
+    if (!container || (page > 0 && paging)) return;
+    paging = true;
+    try {
+      const result = await api('/api/reading-records?page=' + page);
+      if (serial !== generation) return;
+      const records = Array.isArray(result.records) ? result.records : [];
+      cachedRecords = page === 0 ? records : [...cachedRecords, ...records];
+      nextPage = Number.isInteger(result.nextPage) ? result.nextPage : null;
+      render(cachedRecords, container);
+    } catch (error) {
+      if (serial !== generation) return;
+      if (page === 0) container.replaceChildren(create('p', 'hint', error.message));
+      else {
+        const warning = create('p', 'hint', error.message);
+        warning.setAttribute('role', 'alert');
+        container.append(warning);
+      }
+    } finally {
+      paging = false;
+    }
   }
 
   async function refresh() {
     const container = studentList || staffList;
     if (!container) return;
     const serial = ++generation;
+    cachedRecords = [];
+    nextPage = null;
     if (!window.localStorage.getItem('boekenbaai_token')) {
       container.replaceChildren();
       return;
     }
-    try {
-      const result = await api('/api/reading-records');
-      if (serial !== generation) return;
-      render(Array.isArray(result.records) ? result.records : [], container);
-    } catch (error) {
-      if (serial !== generation) return;
-      container.replaceChildren(create('p', 'hint', error.message));
-    }
+    await loadPage(0, serial);
   }
 
   window.addEventListener('boekenbaai:staff-auth-cleared', clearRecords);
@@ -161,7 +196,9 @@
   window.addEventListener('boekenbaai:student-auth-validated', refresh);
   window.addEventListener('boekenbaai:staff-refresh', refresh);
   window.addEventListener('boekenbaai:reading-record-created', refresh);
-  window.addEventListener('boekenbaai:reading-record-updated', refresh);
+  window.addEventListener('boekenbaai:reading-record-updated', event => {
+    if (event.detail?.source !== 'read-editor') refresh();
+  });
   window.addEventListener('pageshow', refresh);
 
   window.BoekenbaaiReadCompletion = { ask, refresh };
