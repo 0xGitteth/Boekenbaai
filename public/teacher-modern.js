@@ -95,7 +95,10 @@
       panels[next].querySelector('h2')?.focus({ preventScroll: true });
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
-    if (next === 'start') void updateStart();
+    if (next === 'start') {
+      void updateStart();
+      window.dispatchEvent(new Event('boekenbaai:reading-alerts-refresh'));
+    }
     // Newly arriving transfers and Google-link requests must be discoverable
     // whenever the task hub is reopened, not only after login.
     if (next === 'tasks') {
