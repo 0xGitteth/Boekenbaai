@@ -9,6 +9,8 @@ const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 const studentManagement = fs.readFileSync(path.join(root, 'public/student-management.js'), 'utf8');
+const studentDetail = fs.readFileSync(path.join(root, 'public/student-detail.js'), 'utf8');
+const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const staff = fs.readFileSync(path.join(root, 'public/staff.html'), 'utf8');
 const vite = fs.readFileSync(path.join(root, 'vite.config.js'), 'utf8');
 const source = fs.readFileSync(path.join(root, 'public/student-quick-loan.js'), 'utf8');
@@ -19,6 +21,12 @@ assert.match(html, /id="student-quick-loan-results"/);
 assert.match(app, /BoekenbaaiQuickLoan\?\.open/);
 assert.match(app, /boekenbaai:quick-loan-completed/);
 assert.match(studentManagement, /PIN resetten/);
+assert.match(studentDetail, /normalActions\.append\(resetPin\)/,
+  'PIN reset must be visible in enhanced teacher detail dialog');
+assert.match(app, /if \(authUser\?\.role === 'student'\) \{[\s\S]*?await refreshData\(\);[\s\S]*?\} else \{[\s\S]*?await loadBooks\(\);/,
+  'Anonymous quick loans must refresh the public catalogue');
+assert.match(server, /body\.pinCheckoutGrant !== undefined && book\.id !== checkoutMatch\[1\]/,
+  'PIN checkout must never silently change physical copies');
 assert.match(staff, /id="admin-student-detail-pin-reset"/);
 for (const file of ['student-quick-loan.js', 'student-quick-loan.css']) {
   assert.ok(vite.includes("'" + file + "'"), 'Must copy quick-loan asset to dist: ' + file);
