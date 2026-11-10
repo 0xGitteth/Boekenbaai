@@ -330,6 +330,9 @@ function resolveApiUrl(url) {
   const path = url.startsWith('/') ? url : `/${url}`;
   return `${base}${path}`;
 }
+// Classic runtime helpers use the same Vite/env/meta API-base configuration
+// as the catalogue and loan requests. This resolves separate API hosting.
+window.BoekenbaaiResolveApiUrl = resolveApiUrl;
 
 function normalizeBarcode(value) {
   if (value == null) {
