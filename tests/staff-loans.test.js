@@ -222,6 +222,12 @@ async function run() {
     reinstatedDb.classes.find((klass) => klass.id === 'class-a').teacherIds = ['teacher-a'];
     fs.writeFileSync(dbPath, JSON.stringify(reinstatedDb));
 
+    // A return without Ja/Nee cannot alter inventory or create a reading record.
+    const missingAnswer = await call('/api/books/book-class/check-in', teacherA,
+      { classId: 'class-a' });
+    assert.strictEqual(missingAnswer.status, 400);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8'))
+      .books.find(copy => copy.id === 'book-class').status, 'borrowed');
     const returnedClass = await call('/api/books/book-class/check-in', teacherA,
       { classId: 'class-a', finished: false });
     assert.strictEqual(returnedClass.status, 200);
@@ -230,6 +236,53 @@ async function run() {
     const returnedStudent = await call('/api/books/book-student/check-in', teacherA,
       { studentId: 'stu-a', finished: true });
     assert.strictEqual(returnedStudent.status, 200);
+
+    // Teachers may answer for pupils/class; pupils can later correct their
+    // own result, but may never change a class or a different pupil's record.
+    const teacherRecords = await call('/api/reading-records', teacherA);
+    assert.strictEqual(teacherRecords.status, 200);
+    assert.strictEqual(teacherRecords.body.records.length, 3);
+    const individualRecord = teacherRecords.body.records
+      .find(item => item.subjectType === 'student');
+    const classRecord = teacherRecords.body.records
+      .find(item => item.subjectType === 'class' && item.finished === false);
+    assert.ok(individualRecord && classRecord);
+    assert.strictEqual(individualRecord.finished, true);
+    assert.strictEqual((await call('/api/reading-records', teacherB)).body.records.length, 0);
+    const ownRecords = await call('/api/reading-records', studentA);
+    assert.strictEqual(ownRecords.body.records.length, 1);
+    assert.strictEqual(ownRecords.body.records[0].subjectId, undefined);
+    assert.strictEqual((await call('/api/reading-records/' + classRecord.id, studentA,
+      { finished: true, revision: classRecord.revision }, 'PATCH')).status, 403);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, teacherB,
+      { finished: false, revision: individualRecord.revision }, 'PATCH')).status, 403);
+    const corrected = await call('/api/reading-records/' + individualRecord.id, studentA,
+      { finished: false, revision: individualRecord.revision }, 'PATCH');
+    assert.strictEqual(corrected.status, 200, JSON.stringify(corrected.body));
+    assert.strictEqual(corrected.body.record.finished, false);
+    assert.strictEqual(corrected.body.record.revision, 2);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, teacherA,
+      { finished: true, revision: individualRecord.revision }, 'PATCH')).status, 409);
+    const correctedClass = await call('/api/reading-records/' + classRecord.id, teacherA,
+      { finished: true, revision: classRecord.revision }, 'PATCH');
+    assert.strictEqual(correctedClass.status, 200);
+    const adminFix = await call('/api/reading-records/' + individualRecord.id, admin,
+      { finished: true, revision: corrected.body.record.revision }, 'PATCH');
+    assert.strictEqual(adminFix.status, 200);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).readingRecords
+      .find(item => item.id === individualRecord.id).changes.length, 2);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, admin,
+      { finished: 'ja', revision: 3 }, 'PATCH')).status, 400);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, null,
+      { finished: true, revision: 3 }, 'PATCH')).status, 401);
+
+    const selfLoan = await call('/api/books/book-other/check-out', studentA, {});
+    assert.strictEqual(selfLoan.status, 200);
+    const selfReturn = await call('/api/books/book-other/check-in', studentA,
+      { finished: false });
+    assert.strictEqual(selfReturn.status, 200);
+    assert.strictEqual(selfReturn.body.readingRecord.finished, false);
+    assert.strictEqual((await call('/api/reading-records', studentA)).body.records.length, 2);
     const after = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.deepStrictEqual(after.students[0].borrowedBooks, []);
     assert.ok(after.books.every((copy) => copy.status === 'available'));
