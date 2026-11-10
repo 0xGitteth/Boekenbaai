@@ -45,6 +45,15 @@ function mayViewReadingRecord(db, user, record) {
   return user.role === 'teacher' && mayManageClass(db, user, record.subjectId);
 }
 
+function readingActorName(db, user, id) {
+  if (user?.role === 'student' && id === user.id) return 'Jij';
+  const staff = (db.users || []).find(entry => entry.id === id);
+  if (staff) return String(staff.name || 'Docent');
+  const student = (db.students || []).find(entry => entry.id === id);
+  if (student) return String(student.name || 'Leerling');
+  return 'Gebruiker niet meer aanwezig';
+}
+
 function publicReadingRecord(db, record, user) {
   const isStudent = record.subjectType === 'student';
   const subject = isStudent
@@ -64,6 +73,17 @@ function publicReadingRecord(db, record, user) {
     reportedAt: record.reportedAt,
     updatedAt: record.updatedAt,
     revision: record.revision || 1,
+    originalFinished: Array.isArray(record.changes) && record.changes.length
+      ? record.changes[0].previous : record.finished,
+    reportedByName: readingActorName(db, user, record.reportedBy),
+    // This audit history does not mutate the original check-in. Expose it
+    // only through the same student/class scoped reading-record endpoint.
+    changes: (Array.isArray(record.changes) ? record.changes : []).map(change => ({
+      previous: change.previous,
+      finished: change.finished,
+      changedAt: change.changedAt,
+      changedByName: readingActorName(db, user, change.changedBy),
+    })),
   };
 }
 
