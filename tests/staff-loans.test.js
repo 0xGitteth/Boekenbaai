@@ -189,7 +189,7 @@ async function run() {
     withSharedBarcode.books.find((copy) => copy.id === 'book-class').barcode = '55220011';
     fs.writeFileSync(dbPath, JSON.stringify(withSharedBarcode));
     const classBarcodeReturn = await call('/api/books/55220011/check-in', teacherA,
-      { classId: 'class-a' });
+      { classId: 'class-a', finished: true });
     assert.strictEqual(classBarcodeReturn.status, 200,
       'A grouped return must find the class-owned copy');
     assert.strictEqual(classBarcodeReturn.body.book.id, 'book-class');
@@ -223,12 +223,12 @@ async function run() {
     fs.writeFileSync(dbPath, JSON.stringify(reinstatedDb));
 
     const returnedClass = await call('/api/books/book-class/check-in', teacherA,
-      { classId: 'class-a' });
+      { classId: 'class-a', finished: false });
     assert.strictEqual(returnedClass.status, 200);
     assert.strictEqual((await call('/api/books/book-class/check-in', teacherA,
       { classId: 'class-a' })).status, 400);
     const returnedStudent = await call('/api/books/book-student/check-in', teacherA,
-      { studentId: 'stu-a' });
+      { studentId: 'stu-a', finished: true });
     assert.strictEqual(returnedStudent.status, 200);
     const after = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.deepStrictEqual(after.students[0].borrowedBooks, []);
