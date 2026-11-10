@@ -25,6 +25,8 @@ const {
   createReadingChangeNotification, listTeacherNotifications,
   markNotificationRead, isActiveTeacher,
 } = require('./reading-change-notifications');
+const { studentList: personalExamList, addToList: addExamBook,
+  removeFromList: removeExamBook } = require('./personal-exam-reading-list-core');
 const studentPinCheckout = require('./student-pin-checkout-core');
 const authSecurityForPin = require('./google-auth-security-core');
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
@@ -4662,6 +4664,64 @@ async function handleApi(req, res, requestUrl) {
       }
       if (result.changed) saveDb(db);
       return sendJson(res, 200, { read: true });
+    }
+
+    // A learner's personal exam list is separate from wishes and loans.
+    // Only explicit read completion produces automatic entries. This GET
+    // composes immutable read records and a small manual inclusion/exclusion
+    // overlay, so changing Ja->Nee immediately updates the list.
+    if (requestUrl.pathname === '/api/student/exam-reading-list'
+      && req.method === 'GET') {
+      if (!user || user.role !== 'student') {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen voor ingelogde leerlingen.' });
+      }
+      const db = getDb();
+      return sendJson(res, 200, personalExamList(db, user.id));
+    }
+    if (requestUrl.pathname === '/api/student/exam-reading-list'
+      && req.method === 'POST') {
+      if (!user || user.role !== 'student') {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen voor ingelogde leerlingen.' });
+      }
+      if (!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req, process.env.BOEKENBAAI_PUBLIC_URL || ''))) {
+        return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+      }
+      const body = await parseBody(req);
+      if (typeof body.bookId !== 'string' || !/^[\w-]{1,100}$/.test(body.bookId)) {
+        return sendJson(res, 400, { message: 'Kies een geldig boek.' });
+      }
+      const db = loadDb();
+      const book = db.books.find(entry => entry.id === body.bookId);
+      if (!book) return sendJson(res, 404, { message: 'Boek niet gevonden.' });
+      try {
+        const outcome = addExamBook(db, user.id, book, new Date().toISOString());
+        if (outcome.changed) saveDb(db);
+      } catch (error) {
+        if (error?.status) return sendJson(res, error.status, { message: error.message });
+        throw error;
+      }
+      return sendJson(res, 200, personalExamList(db, user.id));
+    }
+    const examListDelete = requestUrl.pathname.match(
+      /^\/api\/student\/exam-reading-list\/([a-f0-9]{64})$/);
+    if (examListDelete && req.method === 'DELETE') {
+      if (!user || user.role !== 'student') {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen voor ingelogde leerlingen.' });
+      }
+      if (!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req, process.env.BOEKENBAAI_PUBLIC_URL || ''))) {
+        return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+      }
+      const db = loadDb();
+      try {
+        removeExamBook(db, user.id, examListDelete[1], new Date().toISOString());
+        saveDb(db);
+      } catch (error) {
+        if (error?.status) return sendJson(res, error.status, { message: error.message });
+        throw error;
+      }
+      return sendJson(res, 200, personalExamList(db, user.id));
     }
 
     // Reading answers belong to completed loan periods. Only the student
