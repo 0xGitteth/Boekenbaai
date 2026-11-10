@@ -1,0 +1,45 @@
+/* Mandatory Ja/Nee confirmation and responsive reading-record corrections. */
+.reading-completion-dialog {
+  box-sizing: border-box;
+  width: min(92vw, 450px);
+  max-height: 88dvh;
+  overflow: auto;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid #c9d6e5;
+  border-radius: 16px;
+  background: #fff;
+  color: #243958;
+  box-shadow: 0 20px 52px #15283b55;
+}
+.reading-completion-dialog::backdrop { background: #0c1d3499; }
+.reading-completion-dialog h2 { font-size: 1.35rem; margin: 0 0 12px; }
+.reading-completion-dialog p { margin: 8px 0 15px; }
+.reading-completion-dialog__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.reading-completion-dialog__actions button { min-height: 46px; }
+.reading-records { margin-top: 20px; border-top: 1px solid #d7e2ef; padding-top: 16px; }
+.reading-records h3 { margin: 0 0 8px; font-size: 1.04rem; }
+.reading-record__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e2eaf3;
+}
+.reading-record__info { display: flex; flex-direction: column; gap: 4px; min-width: min(100%, 190px); }
+.reading-record__info strong { font-size: .94rem; }
+.reading-record__info .hint { font-size: .8rem; }
+.reading-record__controls { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.reading-record__controls label { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
+.reading-record__controls select { padding: 7px 10px; border-radius: 7px; border: 1px solid #bbcadc; }
+.reading-record__controls button { padding: 8px 12px; }
+.reading-record__controls .hint { width: 100%; margin: 0; }
+@media (max-width: 440px) {
+  .reading-record__item { align-items: stretch; }
+  .reading-record__controls { width: 100%; }
+}

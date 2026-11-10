@@ -220,7 +220,7 @@ async function runTests() {
         Authorization: `Bearer ${teacherToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ studentId: 's2', title: 'Het mysterie' }),
+      body: JSON.stringify({ studentId: 's2', title: 'Het mysterie', finished: false }),
     });
     assert.strictEqual(checkinByBarcode.status, 200);
     assert.strictEqual(checkinByBarcode.body.book.id, 'copy-b1');

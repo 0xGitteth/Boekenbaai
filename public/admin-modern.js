@@ -651,6 +651,10 @@
     list.setAttribute('tabindex', '0');
     list.setAttribute('aria-label', 'Overzicht van huidige uitleningen');
     current.append(currentHead, list);
+    // The reading-history editor was added after the original loan list.
+    // Preserve it when the admin layout moves the controls into two cards.
+    const readingHistory = panel.querySelector('.reading-records');
+    if (readingHistory) current.append(readingHistory);
     panel.replaceChildren(create, current);
   }
 

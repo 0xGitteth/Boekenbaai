@@ -26,7 +26,10 @@ for (const id of [
 ]) assert.ok(html.includes('id="' + id + '"'), 'Existing loan control missing: ' + id);
 assert.match(loans, /\/api\/books\/' \+ encodeURIComponent\(book\.value\) \+ '\/check-out'/);
 assert.match(loans, /\/api\/books\/' \+ encodeURIComponent\(loan\.bookId\) \+ '\/check-in'/);
-assert.match(loans, /window\.confirm\('Dit exemplaar als ingeleverd registreren\?'\)/);
+assert.match(loans, /BoekenbaaiReadCompletion\?\.ask\(loan\.title\)/,
+  'Innemen vraagt verplicht Ja/Nee in plaats van een algemene bevestiging');
+assert.match(admin, /const readingHistory = panel\.querySelector\('\.reading-records'\)/,
+  'Beheer moet de leesregistraties behouden bij de nieuwe indeling');
 
 // Desktop: clear two-stage cards, borrower and copy fields aligned; mobile
 // returns to one-column field flow and a noncramped current-loans list.

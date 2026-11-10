@@ -12,7 +12,8 @@ const hash = (password) => crypto.createHash('sha256').update(password).digest('
 async function call(route, token, payload, method) {
   const response = await fetch(BASE + route, {
     method: method || (payload === undefined ? 'GET' : 'POST'),
-    headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    headers: { Origin: BASE, 'Sec-Fetch-Site': 'same-origin',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
       ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
   });
@@ -189,7 +190,7 @@ async function run() {
     withSharedBarcode.books.find((copy) => copy.id === 'book-class').barcode = '55220011';
     fs.writeFileSync(dbPath, JSON.stringify(withSharedBarcode));
     const classBarcodeReturn = await call('/api/books/55220011/check-in', teacherA,
-      { classId: 'class-a' });
+      { classId: 'class-a', finished: true });
     assert.strictEqual(classBarcodeReturn.status, 200,
       'A grouped return must find the class-owned copy');
     assert.strictEqual(classBarcodeReturn.body.book.id, 'book-class');
@@ -222,14 +223,92 @@ async function run() {
     reinstatedDb.classes.find((klass) => klass.id === 'class-a').teacherIds = ['teacher-a'];
     fs.writeFileSync(dbPath, JSON.stringify(reinstatedDb));
 
-    const returnedClass = await call('/api/books/book-class/check-in', teacherA,
+    // A return without Ja/Nee cannot alter inventory or create a reading record.
+    const missingAnswer = await call('/api/books/book-class/check-in', teacherA,
       { classId: 'class-a' });
+    assert.strictEqual(missingAnswer.status, 400);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8'))
+      .books.find(copy => copy.id === 'book-class').status, 'borrowed');
+    const returnedClass = await call('/api/books/book-class/check-in', teacherA,
+      { classId: 'class-a', finished: false });
     assert.strictEqual(returnedClass.status, 200);
     assert.strictEqual((await call('/api/books/book-class/check-in', teacherA,
       { classId: 'class-a' })).status, 400);
     const returnedStudent = await call('/api/books/book-student/check-in', teacherA,
-      { studentId: 'stu-a' });
+      { studentId: 'stu-a', finished: true });
     assert.strictEqual(returnedStudent.status, 200);
+
+    // Teachers may answer for pupils/class; pupils can later correct their
+    // own result, but may never change a class or a different pupil's record.
+    const teacherRecords = await call('/api/reading-records', teacherA);
+    assert.strictEqual(teacherRecords.status, 200);
+    assert.strictEqual(teacherRecords.body.records.length, 3);
+    const individualRecord = teacherRecords.body.records
+      .find(item => item.subjectType === 'student');
+    const classRecord = teacherRecords.body.records
+      .find(item => item.subjectType === 'class' && item.finished === false);
+    assert.ok(individualRecord && classRecord);
+    assert.strictEqual(individualRecord.finished, true);
+    assert.strictEqual((await call('/api/reading-records', teacherB)).body.records.length, 0);
+    const ownRecords = await call('/api/reading-records', studentA);
+    assert.strictEqual(ownRecords.body.records.length, 1);
+    assert.strictEqual(ownRecords.body.records[0].subjectId, undefined);
+    assert.strictEqual((await call('/api/reading-records/' + classRecord.id, studentA,
+      { finished: true, revision: classRecord.revision }, 'PATCH')).status, 403);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, teacherB,
+      { finished: false, revision: individualRecord.revision }, 'PATCH')).status, 403);
+    const corrected = await call('/api/reading-records/' + individualRecord.id, studentA,
+      { finished: false, revision: individualRecord.revision }, 'PATCH');
+    assert.strictEqual(corrected.status, 200, JSON.stringify(corrected.body));
+    assert.strictEqual(corrected.body.record.finished, false);
+    assert.strictEqual(corrected.body.record.revision, 2);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, teacherA,
+      { finished: true, revision: individualRecord.revision }, 'PATCH')).status, 409);
+    const correctedClass = await call('/api/reading-records/' + classRecord.id, teacherA,
+      { finished: true, revision: classRecord.revision }, 'PATCH');
+    assert.strictEqual(correctedClass.status, 200);
+    const adminFix = await call('/api/reading-records/' + individualRecord.id, admin,
+      { finished: true, revision: corrected.body.record.revision }, 'PATCH');
+    assert.strictEqual(adminFix.status, 200);
+    assert.strictEqual(JSON.parse(fs.readFileSync(dbPath, 'utf8')).readingRecords
+      .find(item => item.id === individualRecord.id).changes.length, 2);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, admin,
+      { finished: 'ja', revision: 3 }, 'PATCH')).status, 400);
+    assert.strictEqual((await call('/api/reading-records/' + individualRecord.id, null,
+      { finished: true, revision: 3 }, 'PATCH')).status, 401);
+
+    const selfLoan = await call('/api/books/book-other/check-out', studentA, {});
+    assert.strictEqual(selfLoan.status, 200);
+    const selfReturn = await call('/api/books/book-other/check-in', studentA,
+      { finished: false });
+    assert.strictEqual(selfReturn.status, 200);
+    assert.strictEqual(selfReturn.body.readingRecord.finished, false);
+    assert.strictEqual((await call('/api/reading-records', studentA)).body.records.length, 2);
+
+    // Older records must remain accessible and editable after the first page.
+    const withHistory = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const template = withHistory.readingRecords.find(item => item.subjectType === 'student');
+    for (let n = 0; n < 210; n++) {
+      withHistory.readingRecords.push({
+        ...template, id: 'historic-reading-' + n,
+        reportedAt: new Date(Date.UTC(2020, 0, 1, 0, n)).toISOString(),
+        updatedAt: new Date(Date.UTC(2020, 0, 1, 0, n)).toISOString(),
+      });
+    }
+    fs.writeFileSync(dbPath, JSON.stringify(withHistory));
+    const firstPage = await call('/api/reading-records?page=0', teacherA);
+    assert.strictEqual(firstPage.status, 200);
+    assert.strictEqual(firstPage.body.records.length, 75);
+    assert.strictEqual(firstPage.body.nextPage, 1);
+    const secondPage = await call('/api/reading-records?page=1', teacherA);
+    assert.strictEqual(secondPage.body.records.length, 75);
+    const thirdPage = await call('/api/reading-records?page=2', teacherA);
+    assert.ok(thirdPage.body.records.length > 0);
+    assert.strictEqual(thirdPage.body.nextPage, null);
+    assert.ok(thirdPage.body.records.some(entry => entry.id.startsWith('historic-reading-')));
+    assert.strictEqual((await call('/api/reading-records?page=2', teacherB)).body.records.length, 0);
+    assert.strictEqual((await call('/api/reading-records?page=abc', teacherA)).status, 400);
+
     const after = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.deepStrictEqual(after.students[0].borrowedBooks, []);
     assert.ok(after.books.every((copy) => copy.status === 'available'));

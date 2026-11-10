@@ -25,6 +25,7 @@
     <link rel="stylesheet" href="portal-koraal-original-v56.css" />
     <link rel="stylesheet" href="student-pin.css" />
     <link rel="stylesheet" href="student-quick-loan.css" />
+    <link rel="stylesheet" href="read-completion.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -234,6 +235,11 @@
                 <div><dt>Naam</dt><dd id="student-account-name"></dd></div>
                 <div><dt>Gebruikersnaam</dt><dd id="student-account-username"></dd></div>
               </dl>
+              <section class="reading-records" aria-labelledby="student-reading-records-title">
+                <h3 id="student-reading-records-title">Mijn leesregistraties</h3>
+                <p class="hint">Je kunt later nog wijzigen of je een ingeleverd boek hebt uitgelezen.</p>
+                <div id="student-reading-records" aria-live="polite"></div>
+              </section>
               <details id="student-pin-details" class="bb-student-pin">
                 <summary>Mijn uitleen-PIN</summary>
                 <p class="hint">Stel via je eigen Google-schoolaccount een PIN van zes cijfers in.
@@ -557,6 +563,17 @@
     </dialog>
     <script defer src="student-quick-loan.js"></script>
 
+    <dialog id="reading-completion-dialog" class="reading-completion-dialog"
+      aria-labelledby="reading-completion-title" aria-describedby="reading-completion-description">
+      <h2 id="reading-completion-title">Is dit boek uitgelezen?</h2>
+      <p id="reading-completion-description"></p>
+      <p class="hint">Kies Ja of Nee om het boek terug te brengen.</p>
+      <div class="reading-completion-dialog__actions">
+        <button id="reading-completion-yes" type="button" class="btn">Ja</button>
+        <button id="reading-completion-no" type="button" class="btn btn--secondary">Nee</button>
+      </div>
+    </dialog>
+    <script defer src="read-completion.js"></script>
     <script type="module" src="app.js"></script>
     <script defer src="student-pin.js"></script>
 
