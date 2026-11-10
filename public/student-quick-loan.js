@@ -22,6 +22,7 @@
   let searchAbort = null;
   let requestSerial = 0;
   let busy = false;
+  let flowEpoch = 0;
 
   async function api(url, method = 'GET', body, signal) {
     const response = await fetch(url, {
@@ -47,6 +48,9 @@
   }
 
   function reset() {
+    // Invalidate any previous async PIN/checkout response, including a
+    // canceled dialog reopened for the same physical book.
+    flowEpoch += 1;
     clearSearch();
     form.reset();
     selectedStudentId = '';
@@ -135,6 +139,7 @@
     }
     const attemptedStudent = selectedStudentId;
     const attemptedBook = bookId;
+    const attemptedEpoch = flowEpoch;
     const code = pin.value;
     busy = true;
     submit.disabled = true;
@@ -146,10 +151,10 @@
     try {
       const approval = await api('/api/auth/student-pin/verify', 'POST',
         { studentId: attemptedStudent, bookId: attemptedBook, pin: code });
-      if (!dialog.open || bookId !== attemptedBook) return;
+      if (!dialog.open || flowEpoch !== attemptedEpoch || bookId !== attemptedBook) return;
       const loan = await api('/api/books/' + encodeURIComponent(attemptedBook) + '/check-out',
         'POST', { pinCheckoutGrant: approval.grant });
-      if (!dialog.open || bookId !== attemptedBook) return;
+      if (!dialog.open || flowEpoch !== attemptedEpoch || bookId !== attemptedBook) return;
       const label = loan?.book?.title || bookTitle;
       dialog.close();
       const action = document.getElementById('student-action-message');
@@ -158,16 +163,18 @@
         detail: { bookId: attemptedBook, title: label },
       }));
     } catch (error) {
-      if (dialog.open && bookId === attemptedBook) {
+      if (dialog.open && flowEpoch === attemptedEpoch && bookId === attemptedBook) {
         message.textContent = error.message + ' Controleer je gegevens of gebruik Google.';
         pin.focus();
       }
     } finally {
-      busy = false;
-      submit.disabled = false;
-      google.disabled = false;
-      name.disabled = false;
-      pin.disabled = false;
+      if (flowEpoch === attemptedEpoch) {
+        busy = false;
+        submit.disabled = false;
+        google.disabled = false;
+        name.disabled = false;
+        pin.disabled = false;
+      }
     }
   });
 
