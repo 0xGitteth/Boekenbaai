@@ -205,7 +205,7 @@ async function stop() {
     assert.equal((await checkout('copy-three', expirable.body.grant)).status, 401,
       'Expired grant cannot lend books');
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       const wrong = await verify('student-a', 'copy-four', '999999');
       assert.equal(wrong.status, 401, JSON.stringify(wrong.body));
     }
