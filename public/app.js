@@ -3668,6 +3668,18 @@ function initStudentPage() {
     }
 
     const actions = appendElement(bookResult, 'div', { className: 'book-result__actions' });
+    if (!loggedIn && hasAvailable && availableBook) {
+      const quick = appendTextElement(actions, 'button', 'Snel lenen met PIN', {
+        className: 'btn', type: 'button',
+      });
+      quick.addEventListener('click', () => {
+        window.BoekenbaaiQuickLoan?.open({
+          id: availableBook.id,
+          title: selectedGroup.title || referenceBook?.title || 'Dit boek',
+          status: availableBook.status,
+        });
+      });
+    }
     if (!loggedIn && hasAvailable) {
       const signIn = appendTextElement(actions, 'button', 'Inloggen om te lenen', {
         className: 'btn', type: 'button',
@@ -3734,6 +3746,19 @@ function initStudentPage() {
   // The shared book-detail dialog delegates student actions to the
   // student-only controller; staff functions and role checks stay unchanged.
   bookDetailState.studentActionHandler = handleCardLoanAction;
+  window.addEventListener('boekenbaai:quick-loan-completed', async event => {
+    // The PIN route never changes the currently logged-in user.
+    // Refresh public availability and clear the scanned, now-stale copy.
+    const title = String(event?.detail?.title || 'Het boek');
+    updateBarcodeSelection(null);
+    await refreshData();
+    if (bookResult) {
+      bookResult.replaceChildren();
+      appendTextElement(bookResult, 'p', title + ' is uitgeleend. Veel leesplezier!', {
+        className: 'book-result__status',
+      });
+    }
+  });
 
   async function handleBorrow(group) {
     if (!group) return;
