@@ -156,14 +156,21 @@ if (panel) {
       returnButton.textContent = 'Innemen';
       returnButton.disabled = busy;
       returnButton.addEventListener('click', async () => {
-        if (busy || !window.confirm('Dit exemplaar als ingeleverd registreren?')) return;
+        if (busy) return;
         busy = true;
         returnButton.disabled = true;
         try {
+          const finished = await window.BoekenbaaiReadCompletion?.ask(loan.title);
+          if (typeof finished !== 'boolean') {
+            throw Error('Kies Ja of Nee om het boek in te nemen.');
+          }
+          const payload = loan.borrowerType === 'class'
+            ? { classId: loan.borrowerId, finished }
+            : { studentId: loan.borrowerId, finished };
           await request('/api/books/' + encodeURIComponent(loan.bookId) + '/check-in',
-            'POST', loan.borrowerType === 'class'
-              ? { classId: loan.borrowerId } : { studentId: loan.borrowerId });
-          message.textContent = 'Boek is ingenomen.';
+            'POST', payload);
+          window.dispatchEvent(new Event('boekenbaai:reading-record-created'));
+          message.textContent = 'Boek is ingenomen. Het leesantwoord is opgeslagen.';
           await refresh();
           window.dispatchEvent(new Event('boekenbaai:loans-changed'));
         } catch (error) {
