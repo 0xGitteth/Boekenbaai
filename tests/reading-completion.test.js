@@ -31,6 +31,12 @@ assert.match(source, /fetch\(resolveApiUrl\(route\)/,
 assert.match(staffHtml, /id="staff-reading-records"/);
 assert.match(server, /typeof body.finished !== 'boolean'/);
 assert.match(server, /createReturnReadingRecord\(/);
+assert.match(source, /Achteraf gewijzigd/);
+assert.match(source, /Wijzigingsgeschiedenis bekijken/);
+assert.match(source, /record\.originalFinished/);
+assert.match(source, /change\.changedByName/);
+assert.match(source, /Object\.assign\(record, result\.record\)/,
+  'Saved corrections must refresh their visible audit trail');
 assert.match(student, /await window.BoekenbaaiReadCompletion\?\.ask/);
 assert.match(student, /body: operation === 'check-in' \? \{ finished \} : \{\}/);
 assert.match(staff, /finished = await window.BoekenbaaiReadCompletion\?\.ask/);
