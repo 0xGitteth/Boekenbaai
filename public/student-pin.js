@@ -12,6 +12,19 @@
   if (!details || !form || !status || !feedback || !newPin || !repeatPin || !save || !reset) return;
 
   let pending = false;
+  let authEpoch = 0;
+  let currentStudentId = null;
+
+  function clearSensitiveState() {
+    authEpoch += 1;
+    form.reset();
+    form.hidden = true;
+    details.open = false;
+    status.textContent = 'Open dit onderdeel om je PIN-status te controleren.';
+    feedback.textContent = '';
+    reset.hidden = true;
+    setBusy(false);
+  }
 
   function authHeaders() {
     const token = localStorage.getItem('boekenbaai_token');
@@ -43,11 +56,13 @@
 
   async function refresh() {
     if (!details.open || pending) return;
+    const epoch = authEpoch;
     status.textContent = 'PIN-status controleren…';
     feedback.textContent = '';
     form.hidden = true;
     try {
       const data = await api('/api/auth/student-pin/status');
+      if (epoch !== authEpoch || !details.open) return;
       if (!data.configured) {
         status.textContent = 'PIN is nog niet beschikbaar. Vraag de beheerder om dit te activeren.';
       } else if (!data.canSet) {
@@ -61,9 +76,24 @@
         save.textContent = data.hasPin ? 'PIN wijzigen' : 'PIN opslaan';
       }
     } catch (error) {
-      status.textContent = error.message;
+      if (epoch === authEpoch && details.open) status.textContent = error.message;
     }
   }
+
+  window.addEventListener('boekenbaai:staff-auth-cleared', () => {
+    currentStudentId = null;
+    clearSensitiveState();
+  });
+  window.addEventListener('boekenbaai:student-auth-pending', clearSensitiveState);
+  window.addEventListener('boekenbaai:student-auth-validated', event => {
+    const studentId = String(event?.detail?.studentId || '');
+    if (!studentId || studentId !== currentStudentId) {
+      currentStudentId = studentId;
+      clearSensitiveState();
+    } else if (details.open) {
+      refresh();
+    }
+  });
 
   details.addEventListener('toggle', () => {
     if (details.open) refresh();
@@ -85,38 +115,45 @@
       feedback.textContent = 'De twee PIN-codes zijn niet hetzelfde.';
       return;
     }
+    const epoch = authEpoch;
     setBusy(true);
     feedback.textContent = '';
     try {
       await api('/api/auth/student-pin/set', 'POST', { pin: value });
+      if (epoch !== authEpoch) return;
       form.reset();
       feedback.textContent = 'Je nieuwe PIN is opgeslagen.';
     } catch (error) {
+      if (epoch !== authEpoch) return;
       feedback.textContent = error.message;
     } finally {
-      setBusy(false);
+      if (epoch === authEpoch) setBusy(false);
     }
-    // Preserve success/error feedback while refreshing controls.
+    if (epoch !== authEpoch) return;
     const message = feedback.textContent;
     await refresh();
-    feedback.textContent = message;
+    if (epoch === authEpoch) feedback.textContent = message;
   });
 
   reset.addEventListener('click', async () => {
     if (pending || !window.confirm('Je huidige uitleen-PIN resetten?')) return;
+    const epoch = authEpoch;
     setBusy(true);
     feedback.textContent = '';
     try {
       await api('/api/auth/student-pin/reset', 'POST', {});
+      if (epoch !== authEpoch) return;
       form.reset();
       feedback.textContent = 'Je PIN is gereset. Je kunt een nieuwe instellen.';
     } catch (error) {
+      if (epoch !== authEpoch) return;
       feedback.textContent = error.message;
     } finally {
-      setBusy(false);
+      if (epoch === authEpoch) setBusy(false);
     }
+    if (epoch !== authEpoch) return;
     const message = feedback.textContent;
     await refresh();
-    feedback.textContent = message;
+    if (epoch === authEpoch) feedback.textContent = message;
   });
 })();
