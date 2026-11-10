@@ -35,8 +35,11 @@ assert.match(source, /Achteraf gewijzigd/);
 assert.match(source, /Wijzigingsgeschiedenis bekijken/);
 assert.match(source, /record\.originalFinished/);
 assert.match(source, /change\.changedByName/);
-assert.match(source, /Object\.assign\(record, result\.record\)/,
-  'Saved corrections must refresh their visible audit trail');
+assert.match(source, /Object\.assign\(record, result\.record\)/);
+assert.match(source, /updateAudit\(content, record\)/,
+  'Only the changed row should refresh its audit trail');
+assert.doesNotMatch(source, /Object\.assign\(record, result\.record\);\s*render\(cachedRecords, container\)/,
+  'Saving one answer must not clear unsaved dropdowns on other records');
 assert.match(student, /await window.BoekenbaaiReadCompletion\?\.ask/);
 assert.match(student, /body: operation === 'check-in' \? \{ finished \} : \{\}/);
 assert.match(staff, /finished = await window.BoekenbaaiReadCompletion\?\.ask/);
