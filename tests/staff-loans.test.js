@@ -284,6 +284,31 @@ async function run() {
     assert.strictEqual(selfReturn.status, 200);
     assert.strictEqual(selfReturn.body.readingRecord.finished, false);
     assert.strictEqual((await call('/api/reading-records', studentA)).body.records.length, 2);
+
+    // Older records must remain accessible and editable after the first page.
+    const withHistory = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const template = withHistory.readingRecords.find(item => item.subjectType === 'student');
+    for (let n = 0; n < 210; n++) {
+      withHistory.readingRecords.push({
+        ...template, id: 'historic-reading-' + n,
+        reportedAt: new Date(Date.UTC(2020, 0, 1, 0, n)).toISOString(),
+        updatedAt: new Date(Date.UTC(2020, 0, 1, 0, n)).toISOString(),
+      });
+    }
+    fs.writeFileSync(dbPath, JSON.stringify(withHistory));
+    const firstPage = await call('/api/reading-records?page=0', teacherA);
+    assert.strictEqual(firstPage.status, 200);
+    assert.strictEqual(firstPage.body.records.length, 75);
+    assert.strictEqual(firstPage.body.nextPage, 1);
+    const secondPage = await call('/api/reading-records?page=1', teacherA);
+    assert.strictEqual(secondPage.body.records.length, 75);
+    const thirdPage = await call('/api/reading-records?page=2', teacherA);
+    assert.ok(thirdPage.body.records.length > 0);
+    assert.strictEqual(thirdPage.body.nextPage, null);
+    assert.ok(thirdPage.body.records.some(entry => entry.id.startsWith('historic-reading-')));
+    assert.strictEqual((await call('/api/reading-records?page=2', teacherB)).body.records.length, 0);
+    assert.strictEqual((await call('/api/reading-records?page=abc', teacherA)).status, 400);
+
     const after = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.deepStrictEqual(after.students[0].borrowedBooks, []);
     assert.ok(after.books.every((copy) => copy.status === 'available'));
