@@ -205,6 +205,20 @@ async function stop() {
     assert.equal((await checkout('copy-three', expirable.body.grant)).status, 401,
       'Expired grant cannot lend books');
 
+    const deletedGrant = await verify('student-a', 'copy-three');
+    assert.equal(deletedGrant.status, 200, JSON.stringify(deletedGrant.body));
+    const beforeDeletion = readDb();
+    fs.writeFileSync(dbFile, JSON.stringify({
+      ...beforeDeletion,
+      books: beforeDeletion.books.filter(item => item.id !== 'copy-three'),
+    }));
+    const fallback = await checkout('copy-three', deletedGrant.body.grant,
+      { bookId: 'copy-four', barcode: '9789023456784' });
+    assert.notEqual(fallback.status, 200,
+      'A deleted physical copy must not redirect a PIN grant to an alternate copy');
+    assert.equal(readDb().books.find(item => item.id === 'copy-four').status, 'available');
+    fs.writeFileSync(dbFile, JSON.stringify(beforeDeletion));
+
     for (let i = 0; i < 5; i++) {
       const wrong = await verify('student-a', 'copy-four', '999999');
       assert.equal(wrong.status, 401, JSON.stringify(wrong.body));
