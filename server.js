@@ -19,6 +19,8 @@ const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
+const { createReturnReadingRecord, mayViewReadingRecord, publicReadingRecord,
+  amendReadingRecord } = require('./reading-completion-core');
 const studentPinCheckout = require('./student-pin-checkout-core');
 const authSecurityForPin = require('./google-auth-security-core');
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
@@ -1962,6 +1964,7 @@ function loadDb() {
   if (!Array.isArray(data.students)) data.students = [];
   if (!Array.isArray(data.folders)) data.folders = [];
   if (!Array.isArray(data.history)) data.history = [];
+  if (!Array.isArray(data.readingRecords)) data.readingRecords = [];
   if (!Array.isArray(data.importJobs)) data.importJobs = [];
   if (!Array.isArray(data.bookImportFollowups)) data.bookImportFollowups = [];
   if (!data.bookImportEmailPreferences || typeof data.bookImportEmailPreferences !== 'object'
@@ -4624,6 +4627,39 @@ async function handleApi(req, res, requestUrl) {
     // PR5: one staff-only directory for choosing a physical copy and its
     // borrower. Identity and loan details are filtered SERVER-SIDE using
     // live teacher/class membership, including class-owned loans.
+    // Reading answers belong to completed loan periods. Only the student
+    // or staff currently authorized for their class may see/edit them.
+    if (req.method === 'GET' && requestUrl.pathname === '/api/reading-records') {
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
+      const db = getDb();
+      const records = (db.readingRecords || [])
+        .filter(record => mayViewReadingRecord(db, user, record))
+        .sort((a, b) => String(b.reportedAt || '').localeCompare(String(a.reportedAt || '')))
+        .slice(0, 200)
+        .map(record => publicReadingRecord(db, record, user));
+      return sendJson(res, 200, { records });
+    }
+    const readingRecordMatch = requestUrl.pathname.match(/^\/api\/reading-records\/([\w-]+)$/);
+    if (readingRecordMatch && req.method === 'PATCH') {
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
+      const body = await parseBody(req);
+      if (typeof body.finished !== 'boolean' ||
+          !Number.isInteger(body.revision) || body.revision < 1) {
+        return sendJson(res, 400, { message: 'Kies Ja of Nee en gebruik de actuele versie.' });
+      }
+      const db = loadDb();
+      const record = db.readingRecords.find(entry => entry.id === readingRecordMatch[1]);
+      if (!record) return sendJson(res, 404, { message: 'Leesregistratie niet gevonden.' });
+      if (!mayViewReadingRecord(db, user, record)) {
+        return sendJson(res, 403, { message: 'Geen toestemming om dit antwoord te wijzigen.' });
+      }
+      if ((record.revision || 1) !== body.revision) {
+        return sendJson(res, 409, { message: 'Het antwoord is inmiddels gewijzigd. Vernieuw de lijst.' });
+      }
+      if (amendReadingRecord(record, body.finished, user.id, new Date().toISOString())) saveDb(db);
+      return sendJson(res, 200, { record: publicReadingRecord(db, record, user) });
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/staff/loans') {
       if (!ensureRole(user, ['teacher', 'admin'])) {
         return sendJson(res, user ? 403 : 401, { message: 'Alleen medewerkers kunnen uitleningen beheren.' });
@@ -7493,6 +7529,17 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 409, { message: 'Dit boek staat niet op de uitleenlijst van deze leerling.' });
         }
       }
+      // No digital return can complete without an explicit Ja/Nee answer.
+      // Student, teacher and class returns share this invariant. Record the
+      // answer with the same DB snapshot as the stock change.
+      if (typeof body.finished !== 'boolean') {
+        return sendJson(res, 400, { message: 'Is dit boek uitgelezen? Kies Ja of Nee.' });
+      }
+      const returnedAt = new Date().toISOString();
+      const readingRecord = createReturnReadingRecord({
+        db, book, student, klass, finished: body.finished,
+        actorId: user.id, now: returnedAt,
+      });
       noteLoanActivity(db, book.id);
       book.status = 'available';
       book.borrowedBy = null;
@@ -7508,7 +7555,10 @@ async function handleApi(req, res, requestUrl) {
         message: `Klas ${klass.name} heeft ${book.title} teruggebracht`,
       });
       saveDb(db);
-      return sendJson(res, 200, { book: sanitizeBookForResponse(book) });
+      return sendJson(res, 200, {
+        book: sanitizeBookForResponse(book),
+        readingRecord: publicReadingRecord(db, readingRecord, user),
+      });
     }
 
     const barcodeMatch = requestUrl.pathname.match(/^\/api\/books\/barcode\/([\w-]+)$/);
