@@ -10,6 +10,15 @@ const pins = require('../student-pin-core');
 const { accountCredentialFingerprint } = require('../google-auth-security-core');
 
 const root = path.resolve(__dirname, '..');
+// vite.config.js uses publicDir: false; classic scripts and their stylesheet
+// have to be explicitly copied into the production distribution.
+const viteConfig = fs.readFileSync(path.join(root, 'vite.config.js'), 'utf8');
+const studentPage = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+for (const asset of ['student-pin.js', 'student-pin.css']) {
+  assert.ok(viteConfig.includes("'" + asset + "'"), 'Production build must copy ' + asset);
+  assert.ok(studentPage.includes('"' + asset + '"'), 'Student page must load ' + asset);
+}
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'boekenbaai-pin-'));
 const dbPath = path.join(tmp, 'db.json');
 const authPath = dbPath + '.auth.json';
