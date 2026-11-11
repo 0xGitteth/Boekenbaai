@@ -427,7 +427,7 @@
   button.setAttribute('aria-haspopup','dialog');
   button.setAttribute('aria-controls','student-choice-dialog');
   button.addEventListener('click',begin);
-  closeButton.addEventListener('click',close);
+  closeButton.addEventListener('click',()=>close());
   dialog.addEventListener('close',()=>{
     const handoff=detailHandoff,focus=previousFocus;
     if(active)resetSession();
