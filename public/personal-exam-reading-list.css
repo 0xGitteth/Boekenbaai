@@ -57,3 +57,26 @@
   .exam-reading__actions label { width: 100%; }
   .exam-reading__actions select { flex: 1 1 auto; max-width: none; }
 }
+
+.exam-reading__picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 9px 14px;
+  max-width: 750px;
+}
+.exam-reading__picker label { font-weight: 700; font-size: .86rem; }
+.exam-reading__picker input,
+.exam-reading__picker select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #bdcbdc;
+  border-radius: 7px;
+  color: #243958;
+}
+.exam-reading__picker .btn { width: max-content; min-height: 40px; }
+@media (max-width: 600px) {
+  .exam-reading__picker { grid-template-columns: 1fr; }
+}
