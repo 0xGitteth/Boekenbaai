@@ -158,11 +158,11 @@ function addExternalBook(db, studentId, input, actorId, now) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Vul de gegevens van je eigen boek in.');
   }
-  const title = typeof input.title === 'string' ? input.title.trim().replace(/\\s+/g, ' ') : '';
-  const author = typeof input.author === 'string' ? input.author.trim().replace(/\\s+/g, ' ') : '';
+  const title = typeof input.title === 'string' ? input.title.trim().replace(/\s+/g, ' ') : '';
+  const author = typeof input.author === 'string' ? input.author.trim().replace(/\s+/g, ' ') : '';
   const rawIsbn = typeof input.isbn === 'string' ? input.isbn.trim() : '';
   const isbn = rawIsbn.replace(/[\\s-]/g, '').toUpperCase();
-  const genre = typeof input.genre === 'string' ? input.genre.trim().replace(/\\s+/g, ' ') : '';
+  const genre = typeof input.genre === 'string' ? input.genre.trim().replace(/\s+/g, ' ') : '';
   const rawPages = input.pageCount;
   const pages = rawPages === '' || rawPages === null || rawPages === undefined ? null : Number(rawPages);
   if (!title || !author || title.length > 300 || author.length > 300) {
@@ -181,7 +181,7 @@ function addExternalBook(db, studentId, input, actorId, now) {
     throw new Error('Het ISBN heeft een ongeldig controlecijfer.');
   }
   const normalized = value => String(value || '').normalize('NFKC')
-    .trim().replace(/\\s+/g, ' ').toLocaleLowerCase('nl-NL');
+    .trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
   const existing = getEntries(db, studentId).find(entry =>
     normalized(entry.title) === normalized(title) && normalized(entry.author) === normalized(author));
   if (existing) return { entry: existing, created: false };
