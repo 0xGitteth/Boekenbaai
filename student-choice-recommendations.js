@@ -31,8 +31,10 @@ const THEME_HINTS = Object.freeze({
 function validateChoices(value) {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const result = {};
+  const neutral = {route:'new',activity:'unknown',situation:'none',
+    mood:'none',length:'any',detail:'none'};
   for (const [field, values] of Object.entries(QUESTION_VALUES)) {
-    result[field] = values.includes(input[field]) ? input[field] : values[0];
+    result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
   result.allowRepeats = input.allowRepeats === true;
   result.seed = typeof input.seed === 'string' ? input.seed.slice(0, 50) : '';
@@ -93,6 +95,50 @@ function readKeysAndThemes(db, studentId, works) {
 function tie(key, seed) {
   return crypto.createHash('sha256').update(seed + '\0' + key).digest().readUInt32BE(0) / 0xffffffff;
 }
+function recordedBorrowCounts(db) {
+  const byId = new Map((db.books || []).map(book => [String(book.id), keyOf(book)]));
+  const counts = new Map();
+  for (const entry of db.history || []) {
+    if (!entry || !['check_out','check_out_class'].includes(entry.type)) continue;
+    const key = byId.get(String(entry.bookId || ''));
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
+}
+
+// Surprise skips the questionnaire entirely. When sufficient checkout
+// history exists, offer one frequently borrowed title, one title with fewer
+// recorded loans, and one random title. Without history, all three are
+// random. The counts refer only to recorded Boekenbaai loans.
+function surpriseBooks(db, candidates, limit) {
+  const counts = recordedBorrowCounts(db);
+  const remaining = candidates.slice().sort((a,b) =>
+    a.tiebreak-b.tiebreak || a.work.title.localeCompare(b.work.title,'nl'));
+  const available = remaining.filter(item => item.work.available > 0);
+  const pool = available.length >= Math.min(3,limit) ? available : remaining;
+  const selected = [];
+  const pick = (item,reason) => {
+    if(!item || selected.some(x=>x.work.key===item.work.key))return;
+    selected.push({...item, surpriseReason:reason});
+  };
+  const highest = Math.max(0,...pool.map(item=>counts.get(item.work.key)||0));
+  if(highest>=2 && pool.length>=3) {
+    const popular = pool.slice().sort((a,b) =>
+      (counts.get(b.work.key)||0)-(counts.get(a.work.key)||0) || a.tiebreak-b.tiebreak);
+    pick(popular[0], 'Vaak geleend in Boekenbaai');
+    const uncommon = pool.filter(item=>item.work.key!==selected[0]?.work.key)
+      .sort((a,b)=>(counts.get(a.work.key)||0)-(counts.get(b.work.key)||0)
+        || a.tiebreak-b.tiebreak);
+    if(uncommon.length && (counts.get(uncommon[0].work.key)||0)<highest) {
+      pick(uncommon[0], 'Minder vaak geleend in Boekenbaai');
+    }
+  }
+  for(const item of pool) {
+    if(selected.length >= limit)break;
+    pick(item,'Een willekeurige keuze uit de bibliotheek');
+  }
+  return selected.slice(0,limit);
+}
 function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {}) {
   const choice = validateChoices(input);
   const works = groupBooks(db);
@@ -112,20 +158,22 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     let score = matched.length * 12 + familiar.length * 5 + (work.available ? 3 : 0);
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
     // Free-time activity is deliberately not mapped to a book's genre.
-    if (choice.route === 'surprise') score += tie(work.key, choice.seed) * 5;
     candidates.push({ work, matched, familiar, score, tiebreak: tie(work.key, choice.seed) });
   }
   candidates.sort((a,b) => b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
-  const picked=candidates.slice(0,Math.max(1,Math.min(3,limit)));
+  const count=Math.max(1,Math.min(3,limit));
+  const picked=choice.route==='surprise'
+    ? surpriseBooks(db,candidates,count)
+    : candidates.slice(0,count);
   return {
-    suggestions: picked.map(({work,matched,familiar})=>({
+    suggestions: picked.map(({work,matched,familiar,surpriseReason})=>({
       key:work.key,bookId:work.bookId,title:work.title,author:work.author,
       available:work.available,total:work.total,
-      reason:matched.length ? 'Thema: '+matched.slice(0,2).join(', ')
+      reason:surpriseReason || (matched.length ? 'Thema: '+matched.slice(0,2).join(', ')
         : familiar.length ? 'Sluit aan bij een thema dat je eerder hebt gelezen: '+familiar[0]
           : choice.length==='short' && work.pages && work.pages<=180
-            ? work.pages+' pagina’s' : 'Een ander boek uit de bibliotheek',
+            ? work.pages+' pagina’s' : 'Een ander boek uit de bibliotheek'),
     })),
     exhausted: !picked.length && works.length > 0,
     emptyCatalog: works.length===0,

@@ -28,6 +28,7 @@ const makeResponse=(status,body)=>({
 });
 let resolvePin;
 const invalidated=[];
+const suggestRequests=[];
 const fetchStub=async (url,options={})=>{
   if(url==='/api/me')return makeResponse(401,{message:'Geen toegang'});
   if(url.startsWith('/api/login-search?'))return makeResponse(200,{
@@ -39,6 +40,16 @@ const fetchStub=async (url,options={})=>{
     invalidated.push(JSON.parse(options.body).choiceGrant);
     return makeResponse(200,{closed:true});
   }
+  if(url==='/api/auth/student-pin/choice-suggest'){
+    suggestRequests.push(JSON.parse(options.body));
+    return makeResponse(200,{suggestions:[1,2,3].map(i=>({
+      key:String(i),bookId:'book-'+i,title:'Titel '+i,author:'Auteur',
+      reason:'Een willekeurige keuze uit de bibliotheek',available:1,
+    }))});
+  }
+  if(url==='/api/books')return makeResponse(200,[1,2,3].map(i=>({
+    id:'book-'+i,title:'Titel '+i,author:'Auteur',status:'available',
+  })));
   throw Error('Unexpected URL: '+url);
 };
 const windowStub={
@@ -61,14 +72,14 @@ vm.runInNewContext(code,{
   const log=elements.get('student-choice-chat-log');
   assert.equal(log.children.length,1,
     'The chat should open with one conversational message, not two introductory messages');
-  assert.match(log.children[0].children[0].textContent,/Hoi! Ik help je een leuk boek te vinden/);
-  const firstChoice=actions.children.find(x=>x.textContent==='Met mijn PIN');
-  assert.ok(actions.children.some(x=>x.textContent==='Zonder PIN'));
+  assert.match(log.children[0].children[0].textContent,/Log in voor persoonlijke tips/);
+  const firstChoice=actions.children.find(x=>x.textContent==='Inloggen');
+  assert.ok(actions.children.some(x=>x.textContent==='Zonder inloggen'));
   assert.ok(firstChoice,'PIN is integrated as first chat answer');
   firstChoice.listeners.click();
   const form=actions.children[0];
   assert.equal(form.tag,'form','PIN verification is inside the chat, not a separate login page');
-  assert.match(log.children[2].children[0].textContent,/dezelfde PIN die je gebruikt om boeken te lenen/);
+  assert.equal(log.children[2].children[0].textContent,'Zoek je naam en vul je PIN in.');
   const name=form.children[1],matches=form.children[2],pin=form.children[4],other=form.children[7];
   name.value='San';name.listeners.input();
   await new Promise(resolve=>setTimeout(resolve,260));
@@ -80,8 +91,10 @@ vm.runInNewContext(code,{
   assert.ok(resolvePin,'PIN response deliberately held pending');
   other.listeners.click();
   assert.equal(pin.value,'','Switching to anonymous mode must wipe PIN input');
-  assert.ok(actions.children.some(x=>x.textContent==='Iets nieuws ontdekken'),
-    'Anonymous chat should advance immediately');
+  assert.ok(actions.children.some(x=>x.textContent==='Stel me vragen'),
+    'Anonymous chat should offer a questionnaire');
+  assert.ok(actions.children.some(x=>x.textContent==='Verras me met 3 boeken'),
+    'Anonymous chat should offer a distinct immediate surprise');
   resolvePin(makeResponse(200,{grant:'valid-late-token',firstName:'Sanne'}));
   await pending;
   await new Promise(resolve=>setImmediate(resolve));
@@ -89,6 +102,19 @@ vm.runInNewContext(code,{
     'A late PIN success after switching mode is explicitly revoked');
   assert.ok(!log.children.some(row=>row.children[0]?.textContent?.includes('Hoi Sanne')),
     'A late reply must never revive personalized mode');
-  assert.ok(actions.children.some(x=>x.textContent==='Iets nieuws ontdekken'));
-  console.log('Choice chat pending PIN response, anonymous switch and privacy cleanup: OK');
+  assert.ok(actions.children.some(x=>x.textContent==='Verras me met 3 boeken'));
+  const surprise=actions.children.find(x=>x.textContent==='Verras me met 3 boeken');
+  surprise.listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.length,1,'Surprise must immediately query for books');
+  assert.equal(suggestRequests[0].choices.route,'surprise');
+  assert.equal(suggestRequests[0].choices.activity,undefined,
+    'Surprise must not force a question about hobbies');
+  assert.equal(suggestRequests[0].anonymous,true);
+  assert.equal(log.children.filter(row=>
+    row.children[0]?.textContent?.includes('Wat doe je graag')).length,0,
+    'Surprise mode must skip the questionnaire');
+  assert.ok(actions.children.some(x=>x.textContent==='Nog drie verrassingen'));
+  console.log('Choice chat anonymous switch, login wording, instant surprise and privacy: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});
