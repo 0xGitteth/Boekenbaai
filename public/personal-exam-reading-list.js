@@ -64,8 +64,10 @@
       const row = el('article', 'exam-reading__row');
       const info = el('div', 'exam-reading__info');
       info.append(el('strong', '', item.title));
-      const metadata = [item.author, item.isbn ? 'ISBN ' + item.isbn : '',
-        item.suitableForExamList ? 'Gemarkeerd als examenmateriaal' : 'Niet als examenmateriaal gemarkeerd']
+      const metadata = (item.externalSource
+        ? [item.author, item.genre || '', item.isbn ? 'ISBN ' + item.isbn : '']
+        : [item.author, item.isbn ? 'ISBN ' + item.isbn : '',
+          item.suitableForExamList ? 'Gemarkeerd als examenmateriaal' : 'Niet als examenmateriaal gemarkeerd'])
         .filter(Boolean).join(' · ');
       info.append(el('span', 'hint', metadata));
       if (item.externalSource) info.append(el('span', 'hint', 'Eigen boek, geschiktheid nog niet gecontroleerd'));
@@ -137,7 +139,8 @@
 
   async function refresh() {
     const sequence = ++requestSequence;
-    if (!window.localStorage.getItem('boekenbaai_token')) {
+    const tokenAtStart = window.localStorage.getItem('boekenbaai_token');
+    if (!tokenAtStart) {
       root.replaceChildren();
       summary.textContent = '';
       feedback.textContent = '';
@@ -147,10 +150,12 @@
     root.replaceChildren(el('p', 'hint', 'Examenleeslijst laden…'));
     try {
       const result = await api('/api/exam-reading-list');
-      if (sequence !== requestSequence) return;
+      if (sequence !== requestSequence ||
+          tokenAtStart !== window.localStorage.getItem('boekenbaai_token')) return;
       render(result);
     } catch (error) {
-      if (sequence !== requestSequence) return;
+      if (sequence !== requestSequence ||
+          tokenAtStart !== window.localStorage.getItem('boekenbaai_token')) return;
       root.replaceChildren(el('p', 'hint', error.message));
       summary.textContent = '';
       if (section) section.hidden = true;
@@ -160,11 +165,15 @@
   async function addBook(bookId) {
     if (working || !bookId) return;
     working = true;
+    const sequence = requestSequence;
+    const tokenAtStart = window.localStorage.getItem('boekenbaai_token');
     feedback.textContent = 'Toevoegen…';
     try {
       const result = await api('/api/exam-reading-list', {
         method: 'POST', body: JSON.stringify({ bookId }),
       });
+      if (sequence !== requestSequence ||
+          tokenAtStart !== window.localStorage.getItem('boekenbaai_token')) return;
       feedback.textContent = result.created
         ? 'Boek toegevoegd aan je examenleeslijst.'
         : 'Dit boek staat al op je examenleeslijst.';
@@ -189,6 +198,8 @@
     if (working) return;
     const value = id => document.getElementById('student-exam-add-'+id)?.value || '';
     working = true;
+    const sequence = requestSequence;
+    const tokenAtStart = window.localStorage.getItem('boekenbaai_token');
     addSave.disabled = true;
     addFeedback.textContent = 'Boek toevoegen…';
     try {
@@ -199,13 +210,16 @@
           pageCount:value('pages'), genre:value('genre'),
         }}),
       });
+      if (sequence !== requestSequence ||
+          tokenAtStart !== window.localStorage.getItem('boekenbaai_token')) return;
       addDialog.close();
       addForm.reset();
       working = false;
       feedback.textContent = result.created ? 'Eigen examenboek toegevoegd.' : 'Dit boek staat al op je lijst.';
       await refresh();
     } catch (error) {
-      addFeedback.textContent = error.message;
+      if (sequence === requestSequence &&
+          tokenAtStart === window.localStorage.getItem('boekenbaai_token')) addFeedback.textContent = error.message;
     } finally {
       working = false;
       addSave.disabled = false;
