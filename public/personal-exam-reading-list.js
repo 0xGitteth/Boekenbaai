@@ -14,6 +14,10 @@
   let requestSequence = 0;
   let working = false;
 
+  function notifyProfile() {
+    window.dispatchEvent(new Event('boekenbaai:exam-reading-list-updated'));
+  }
+
   function el(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -110,6 +114,7 @@
             method: 'PATCH',
             body: JSON.stringify({ status: select.value, revision: item.revision }),
           });
+          notifyProfile();
           await refresh();
         } catch (error) {
           feedback.textContent = error.message;
@@ -125,6 +130,7 @@
             method: 'DELETE',
             body: JSON.stringify({ revision: item.revision }),
           });
+          notifyProfile();
           await refresh();
         } catch (error) {
           feedback.textContent = error.message;
@@ -174,6 +180,7 @@
       });
       if (sequence !== requestSequence ||
           tokenAtStart !== window.localStorage.getItem('boekenbaai_token')) return;
+      if (result.created) notifyProfile();
       feedback.textContent = result.created
         ? 'Boek toegevoegd aan je examenleeslijst.'
         : 'Dit boek staat al op je examenleeslijst.';
@@ -215,6 +222,7 @@
       addDialog.close();
       addForm.reset();
       working = false;
+      if (result.created) notifyProfile();
       feedback.textContent = result.created ? 'Eigen examenboek toegevoegd.' : 'Dit boek staat al op je lijst.';
       await refresh();
     } catch (error) {
