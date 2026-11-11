@@ -17,11 +17,18 @@ const db={
     {id:'someone-else',subjectId:'s2',subjectType:'student',bookId:'two',finished:true},
   ],
   history:[{id:'log1',type:'check_out',studentId:'s1',bookId:'one',timestamp:'2026-11-02T12:00:05Z'}],
+  examReadingLists:[
+    {studentId:'s1',externalSource:true,manualStatus:'gelezen',title:'Eigen roman',
+      author:'Schrijver Z',pageCount:145,genre:'fictie'},
+    {studentId:'s1',externalSource:true,manualStatus:'gelezen',title:'Eén',
+      author:'Auteur A',pageCount:120,genre:'fantasy'},
+  ],
 };
 const data=buildStudentReadingProfile(db,'s1',{now:new Date('2026-11-11T12:00:00Z')});
 assert.equal(data.statistics.registeredLoanPeriods,3,'Recorded loan + active, not duplicate checkout');
-assert.equal(data.statistics.readTitles,1);
-assert.equal(data.statistics.readPagesKnown,120);
+assert.equal(data.statistics.readTitles,2);
+assert.equal(data.statistics.selfReportedExternalReadTitles,1);
+assert.equal(data.statistics.readPagesKnown,265);
 assert.equal(data.statistics.topGenres[0].name,'fantasy');
 assert.equal(data.statistics.weekdaysWithLoans,8,'Overlapping weekdays count only once');
 assert.equal(data.recent[0].kind,'current');
