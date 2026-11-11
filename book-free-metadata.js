@@ -99,7 +99,8 @@ function nextCandidate(books, now = Date.now(), excluded = new Set(), failedCove
     const failedCover = failedCovers.has(book.coverUrl) && !book.localCoverUrl;
     const check = book.freeMetadataCheck;
     const last = Number.isFinite(Date.parse(check?.checkedAt)) ? Date.parse(check.checkedAt) : 0;
-    const recent = last && now - last < 90 * 86400000;
+    const recent = last && now - last < 90 * 86400000
+      && check?.isbn === isbn && normalizeText(check?.title) === normalizeText(book.title);
     // The cover downloader may discover a broken image after the initial
     // metadata check. Retry only if this particular URL has not been checked.
     if (recent && !(failedCover && check.failedCoverUrl !== book.coverUrl)) continue;
@@ -156,7 +157,7 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
     }
     book.freeMetadataCheck = {
       source:'EasyCB', status:status === 'found' && !usableFor(book,metadata) ? 'mismatch' : status,
-      checkedAt:now, isbn:candidate.isbn, failedCoverUrl,
+      checkedAt:now, isbn:candidate.isbn, title:book.title, failedCoverUrl,
     };
   }
   return {updated,newCover};
