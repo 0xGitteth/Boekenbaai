@@ -126,6 +126,7 @@
     const missing = Number(s.booksMissingPageCount || 0);
     statsRoot.append(make('p', 'bb-profile-stat-note',
       (missing ? 'Van ' + missing + ' uitgelezen boek(en) is het aantal pagina’s onbekend. ' : '') +
+      (s.selfReportedExternalReadTitles ? s.selfReportedExternalReadTitles + ' zelf als uitgelezen geregistreerde eigen examenboek(en) zijn meegeteld. ' : '') +
       'Weekdagen zijn maandag tot en met vrijdag; vakanties en feestdagen worden niet apart afgetrokken. ' +
       'De geschiedenis bevat de gegevens die Boekenbaai heeft opgeslagen. Oudere uitleningen van vóór de registratie kunnen ontbreken.'));
   }
