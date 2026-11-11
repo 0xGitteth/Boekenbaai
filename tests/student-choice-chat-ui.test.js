@@ -59,11 +59,16 @@ vm.runInNewContext(code,{
   await elements.get('student-help-choose').listeners.click();
   const actions=elements.get('student-choice-chat-actions');
   const log=elements.get('student-choice-chat-log');
-  const firstChoice=actions.children.find(x=>x.textContent==='Ja, met mijn PIN');
+  assert.equal(log.children.length,1,
+    'The chat should open with one conversational message, not two introductory messages');
+  assert.match(log.children[0].children[0].textContent,/Hoi! Ik help je een leuk boek te vinden/);
+  const firstChoice=actions.children.find(x=>x.textContent==='Met mijn PIN');
+  assert.ok(actions.children.some(x=>x.textContent==='Zonder PIN'));
   assert.ok(firstChoice,'PIN is integrated as first chat answer');
   firstChoice.listeners.click();
   const form=actions.children[0];
   assert.equal(form.tag,'form','PIN verification is inside the chat, not a separate login page');
+  assert.match(log.children[2].children[0].textContent,/dezelfde PIN die je gebruikt om boeken te lenen/);
   const name=form.children[1],matches=form.children[2],pin=form.children[4],other=form.children[7];
   name.value='San';name.listeners.input();
   await new Promise(resolve=>setTimeout(resolve,260));
