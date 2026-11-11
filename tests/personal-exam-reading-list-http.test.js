@@ -119,6 +119,9 @@ async function run() {
 
     const loan = await call('/api/books/copy-c/check-out', teacher, { studentId: 'stu-a' });
     assert.equal(loan.status, 200, JSON.stringify(loan.body));
+    const whileBorrowed = await call('/api/exam-reading-list', student);
+    assert.equal(whileBorrowed.body.entries.find(e => e.bookId === 'copy-c').status,
+      'aan_het_lezen', 'Exam books should appear immediately upon checkout');
     const returned = await call('/api/books/copy-c/check-in', student, { finished: true });
     assert.equal(returned.status, 200, JSON.stringify(returned.body));
     const automatic = (await call('/api/exam-reading-list', student)).body;
