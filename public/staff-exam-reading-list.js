@@ -121,7 +121,7 @@
           });
           await refreshList();
         } catch (error) {
-          msg.textContent = error.message;
+          feedback.textContent = error.message;
           await refreshList();
         }
       }
@@ -174,7 +174,14 @@
     renderBooks();
     refreshList();
   });
-  studentSearch.addEventListener('input', renderStudents);
+  studentSearch.addEventListener('input', () => {
+    renderStudents();
+    if (studentChoice.value !== selectedStudent) {
+      selectedStudent = '';
+      renderBooks();
+      refreshList();
+    }
+  });
   bookSearch.addEventListener('input', renderBooks);
   bookChoice.addEventListener('change', () => {
     addButton.disabled = !selectedStudent || !bookChoice.value;
