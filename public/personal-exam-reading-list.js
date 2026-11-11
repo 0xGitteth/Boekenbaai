@@ -85,7 +85,7 @@
         option.value = value;
         select.append(option);
       }
-      select.value = item.manualStatus || 'nog_lezen';
+      select.value = item.readFromReturn ? 'gelezen' : (item.manualStatus || 'nog_lezen');
       if (item.readFromReturn) {
         select.disabled = true;
         label.title = 'Wijzig een bevestigd leesantwoord bij Laatst geleende boeken.';
