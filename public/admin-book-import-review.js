@@ -161,8 +161,8 @@
     const metadataLabel = make('label', 'bb-review__check');
     const metadata = make('input');
     metadata.type = 'checkbox';
-    metadata.checked = true;
-    metadataLabel.append(metadata, document.createTextNode(' Ontbrekende boekinformatie opzoeken via ISBN (kan langer duren)'));
+    metadata.checked = false;
+    metadataLabel.append(metadata, document.createTextNode(' Optioneel: ontbrekende ISBN-gegevens al tijdens de preview opzoeken (duurt langer). Extra gratis verrijking kan na de import automatisch doorgaan.'));
     const syncLabel = make('label', 'bb-review__check');
     const syncMode = make('input');
     syncMode.type = 'checkbox';
