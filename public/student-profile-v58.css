@@ -150,7 +150,7 @@ body[data-page="student"] #student-profile-view .bb-profile-book-card:hover,
 .bb-profile-tabs button {
   border:1px solid #d7e3f0; border-radius:8px;
   padding:9px 12px; background:#f7f9fd; color:#345579;
-  cursor:pointer; font:750 13px/1.3 inherit;
+  cursor:pointer; font:inherit; font-size:13px; font-weight:750; line-height:1.3;
 }
 .bb-profile-tabs button[aria-selected="true"] {background:#dfeefa;border-color:#9fc0df;color:#123e73;}
 .bb-profile-dialog #student-history-entries .bb-profile-book-card {margin-bottom:10px;}
