@@ -135,6 +135,11 @@ function normalizeStore(input) {
     safe.pinCheckoutGrants = source.pinCheckoutGrants.filter(entry =>
       entry && typeof entry === 'object' && typeof entry.tokenHash === 'string');
   }
+  // Scoped choice grants never authenticate /api/me or library mutations.
+  if (Array.isArray(source.studentChoiceGrants)) {
+    safe.studentChoiceGrants = source.studentChoiceGrants.filter(entry =>
+      entry && typeof entry === 'object' && typeof entry.tokenHash === 'string');
+  }
   if (Array.isArray(source.pinAttemptLimits)) {
     safe.pinAttemptLimits = source.pinAttemptLimits.filter(entry =>
       entry && typeof entry === 'object' && typeof entry.studentId === 'string');
@@ -157,6 +162,10 @@ function pruneStore(store, now = Date.now()) {
     safe.pinCheckoutGrants = safe.pinCheckoutGrants.filter(
       (entry) => Number(entry?.expiresAt) > now && Number(entry?.expiresAt) <= now + 60_000
     );
+  }
+  if (safe.studentChoiceGrants) {
+    safe.studentChoiceGrants = safe.studentChoiceGrants.filter(entry =>
+      Number(entry?.expiresAt) > now && Number(entry?.expiresAt) <= now + 10 * 60_000);
   }
   if (safe.pinAttemptLimits) {
     safe.pinAttemptLimits = safe.pinAttemptLimits.filter(entry =>
