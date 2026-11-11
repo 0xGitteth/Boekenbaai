@@ -3,7 +3,7 @@
 // A low-volume, resumable worker. Import HTTP responses do not await any
 // external request. The saved per-book check is the restart checkpoint.
 const {
-  validContact, nextCandidate, fetchEasyCb, applyResult,
+  validContact, isbnOf, workKey, nextCandidate, fetchEasyCb, applyResult,
 } = require('./book-free-metadata');
 
 function createFreeMetadataWorker({
@@ -36,6 +36,9 @@ function createFreeMetadataWorker({
       continueSoon = true;
       const result = await fetchEasyCb(candidate.isbn, {contact, fetchImpl});
       if (stopped) return;
+      // An import may have started while the external website responded.
+      // Preserve the reviewed import snapshot and do not write into its stage.
+      if (isPaused()) return;
       if (result.status === 'error') {
         // A temporary outage cannot cause a busy request loop or a database
         // write. Retry after a delay, never immediately.
@@ -59,8 +62,8 @@ function createFreeMetadataWorker({
     const seen = new Set();
     let checked = 0, pending = 0;
     for (const book of books) {
-      const key = require('./book-free-metadata').workKey(book);
-      if (seen.has(key) || !require('./book-free-metadata').isbnOf(book)) continue;
+      const key = workKey(book);
+      if (seen.has(key) || !isbnOf(book)) continue;
       seen.add(key);
       if (book.freeMetadataCheck?.checkedAt) checked++;
       if (nextCandidate([book])) pending++;
