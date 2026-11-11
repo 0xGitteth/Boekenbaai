@@ -28,11 +28,21 @@ function createFreeMetadataWorker({
     if (isPaused()) { schedule(4000); return; }
     running = true;
     let continueSoon = false;
+    let nextDelay = gap;
     try {
       const now = Date.now();
       for (const [key, retryAt] of failedInProcess) if (retryAt <= now) failedInProcess.delete(key);
       const candidate = nextCandidate(loadDb().books, now, new Set(failedInProcess.keys()));
-      if (!candidate) return;
+      if (!candidate) {
+        // After all other works are processed, revisit a temporarily failed
+        // ISBN when its cooldown expires, without busy polling.
+        const retryAt = Math.min(...failedInProcess.values());
+        if (Number.isFinite(retryAt)) {
+          continueSoon = true;
+          nextDelay = Math.max(gap, retryAt - Date.now());
+        }
+        return;
+      }
       continueSoon = true;
       const result = await fetchEasyCb(candidate.isbn, {contact, fetchImpl});
       if (stopped) return;
@@ -54,7 +64,7 @@ function createFreeMetadataWorker({
       continueSoon = false;
     } finally {
       running = false;
-      if (!stopped && continueSoon) schedule(gap);
+      if (!stopped && continueSoon) schedule(nextDelay);
     }
   }
   function status() {
