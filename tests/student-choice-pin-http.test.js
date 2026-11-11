@@ -24,7 +24,8 @@ const db={
   users:[{id:'t',name:'Mentor',role:'teacher',active:true,classIds:['ca'],passwordHash:'secret'}],
   books:Array.from({length:12},(_,i)=>({
     id:'book-'+i,title:'Titel '+i,author:'Schrijver '+i,
-    themes:i%2?['Mysterie','Spanning']:['Avontuur','Vriendschap'],
+    themes:i===11?undefined:i%2?['Mysterie','Spanning']:['Avontuur','Vriendschap'],
+    tags:i===11?['Humor']:[],
     status:'available',borrowedBy:null,borrowedByClassId:null,pageCount:140+i,
   })),
   readingRecords:[
@@ -110,6 +111,10 @@ async function stop(){
     assert.ok(/^[\w-]{32,}$/.test(grant));
     assert.notEqual((await request('/api/me',undefined,grant)).status,200,
       'Recommendation grant may never authenticate a student session');
+    const rawTags=await suggest({route:'new',mood:'funny',seed:'derived'});
+    assert.equal(rawTags.status,200);
+    assert.equal(rawTags.body.suggestions[0].bookId,'book-11',
+      'Raw catalogue tags must be normalized with the shared curator rules');
     const choices={route:'similar',activity:'gaming',situation:'secret',detail:'puzzles',mood:'exciting',length:'any',seed:'same'};
     const first=await suggest(choices,grant);
     assert.equal(first.status,200,JSON.stringify(first.body));
