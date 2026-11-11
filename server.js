@@ -95,7 +95,7 @@ const freeMetadataWorker = createFreeMetadataWorker({
   loadDb: () => loadDb(),
   isPaused: () => shuttingDown || Boolean(activeBookImportLease)
     || Boolean(bookImportStageStore.active()),
-  fetchImpl: global.fetch,
+  fetchImpl: globalThis.fetch,
   getFailedCovers: () => new Set([...coverBackfillFailures.entries()]
     .filter(([, failure]) => failure?.phase === 'download'
       && failure.attempts > coverRetryDelays.length)
