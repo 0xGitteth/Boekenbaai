@@ -2026,6 +2026,9 @@ function groupBooksByTitleAuthor(books = []) {
   return result;
 }
 
+// The choice helper reuses the existing catalogue book-detail UI.
+if (typeof window !== 'undefined') window.BoekenbaaiOpenBookDetail = openBookDetail;
+
 function createBookCard(template, book, folders, options = {}) {
   if (!template) return null;
   const fragment = template.content.cloneNode(true);

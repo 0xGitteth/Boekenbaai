@@ -16,6 +16,8 @@ const runtimeAuthAssets = [
   'student-quick-loan.css',
   'read-completion.js',
   'read-completion.css',
+  'student-book-choice.js',
+  'student-book-choice.css',
   'personal-exam-reading-list.js',
   'personal-exam-reading-list.css',
   'staff-exam-reading-list.js',
