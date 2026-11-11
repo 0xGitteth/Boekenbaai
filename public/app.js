@@ -1558,7 +1558,8 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     examAdd.onclick = eligible ? async () => {
       examAdd.disabled = true;
       try {
-        await window.BoekenbaaiExamList?.addBook(representative.id);
+        if (!window.BoekenbaaiExamList?.addBook) throw Error('Examenleeslijst is nog niet geladen.');
+        await window.BoekenbaaiExamList.addBook(representative.id);
         if (state.message) state.message.textContent = 'Boek staat op je examenleeslijst.';
       } catch (error) {
         if (state.message) state.message.textContent = error.message || 'Toevoegen mislukt.';
