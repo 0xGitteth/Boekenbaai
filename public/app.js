@@ -2008,7 +2008,7 @@ function groupBooksByTitleAuthor(books = []) {
 }
 
 // The choice helper reuses the existing catalogue book-detail UI.
-window.BoekenbaaiOpenBookDetail = openBookDetail;
+if (typeof window !== 'undefined') window.BoekenbaaiOpenBookDetail = openBookDetail;
 
 function createBookCard(template, book, folders, options = {}) {
   if (!template) return null;
