@@ -17,6 +17,7 @@
   let loadVersion = 0;
   let active = false;
   let previousFocus = null;
+  let handoffToDetail = false;
 
   const make = (tag, className, value) => {
     const node = document.createElement(tag);
@@ -58,8 +59,9 @@
       item.suitableForExamList ||= book.suitableForExamList === true;
       const count = Number(book.pageCount || book.pages);
       if (Number.isFinite(count) && count > 0 && !item.pages) item.pages = count;
-      for (const theme of [...(Array.isArray(book.themes) ? book.themes : []),
-        ...(Array.isArray(book.tags) ? book.tags : [])]) {
+      // The API's themes already incorporate manual curator corrections.
+      // Raw source tags must never re-add manually cleared themes.
+      for (const theme of (Array.isArray(book.themes) ? book.themes : [])) {
         if (typeof theme === 'string' && theme.trim()) item.themeSet.add(theme.trim());
       }
       if (!item.coverUrl && (book.localCoverUrl || book.coverUrl)) {
@@ -136,6 +138,11 @@
     if (chosen.exam) reasons.push('Gemarkeerd als examenmateriaal');
     return reasons.join(' · ') || 'Beschikbaar in de bibliotheek';
   }
+  function coverUrl(value) {
+    const url = String(value || '').trim();
+    return /^\\/api\\/covers\\/[a-f0-9]{64}\\.(?:jpg|png|webp|gif)$/i.test(url)
+      ? apiUrl(url) : url;
+  }
   function renderSuggestions() {
     const chosen = {
       themes: checkedThemes(),
@@ -174,7 +181,7 @@
         image.loading = 'lazy';
         image.onerror = () => { image.remove(); label.hidden = false; };
         image.onload = () => { label.hidden = true; };
-        image.src = book.coverUrl;
+        image.src = coverUrl(book.coverUrl);
         art.prepend(image);
       }
       const content = make('div', 'bb-choice__result-content');
@@ -199,8 +206,21 @@
           }
           const copy = current.copies.find(item => item.status === 'available') ||
             current.copies[0];
-          close();
-          window.BoekenbaaiOpenBookDetail(copy.id);
+          // The catalogue may have loaded before a return. Pass the whole
+          // freshly fetched group, so available copies and student actions
+          // cannot be replaced by stale groupedBooks from the main catalogue.
+          const freshGroup = {
+            id: current.key, title: current.title, author: current.author,
+            representativeBook: copy, copies: current.copies,
+            totalCopies: current.total, availableCopies: current.available,
+            borrowedCopies: current.borrowed, themes: current.themes,
+            easyReading: current.easyReading,
+            suitableForExamList: current.suitableForExamList,
+            metadataIsbn: copy.metadataIsbn || null,
+            coverUrl: current.coverUrl,
+          };
+          close(true);
+          await window.BoekenbaaiOpenBookDetail(freshGroup);
         } catch (error) {
           status.textContent = error.message;
           open.disabled = false;
@@ -223,10 +243,10 @@
     results.replaceChildren();
     status.textContent = 'Je voorkeuren zijn gewist. Kies opnieuw of bekijk beschikbare boeken.';
   }
-  function close() {
+  function close(toDetail = false) {
+    handoffToDetail = toDetail;
     if (dialog.open) dialog.close();
     active = false;
-    previousFocus?.focus?.();
   }
   async function open() {
     if (active) return;
@@ -260,7 +280,8 @@
   closeButton.addEventListener('click', close);
   dialog.addEventListener('close', () => {
     active = false;
-    previousFocus?.focus?.();
+    if (!handoffToDetail) previousFocus?.focus?.();
+    handoffToDetail = false;
   });
   searchButton.addEventListener('click', renderSuggestions);
   clearButton.addEventListener('click', clear);
