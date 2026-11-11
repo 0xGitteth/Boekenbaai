@@ -27,6 +27,7 @@
     <link rel="stylesheet" href="student-quick-loan.css" />
     <link rel="stylesheet" href="read-completion.css" />
     <link rel="stylesheet" href="student-book-choice.css" />
+    <link rel="stylesheet" href="student-book-choice-chat.css" />
     <link rel="stylesheet" href="personal-exam-reading-list.css" />
     <link rel="stylesheet" href="student-profile-v57.css" />
     <link rel="stylesheet" href="student-profile-v58.css" />
@@ -632,43 +633,20 @@
     </dialog>
     <script defer src="student-quick-loan.js"></script>
 
-    <dialog id="student-choice-dialog" class="bb-choice" aria-labelledby="student-choice-title" aria-describedby="student-choice-description">
+    <dialog id="student-choice-dialog" class="bb-choice bb-choice--chat"
+      aria-labelledby="student-choice-title" aria-describedby="student-choice-description">
       <div class="bb-choice__header">
         <div>
           <h2 id="student-choice-title">Help me kiezen</h2>
-          <p id="student-choice-description">Geef aan wat je graag wilt lezen. Je krijgt voorstellen uit de bibliotheek.</p>
+          <p id="student-choice-description">Beantwoord een paar vragen en ontdek boeken uit de bibliotheek.</p>
         </div>
         <button type="button" id="student-choice-close" class="btn btn--ghost" aria-label="Keuzehulp sluiten">Sluiten</button>
       </div>
-      <fieldset class="bb-choice__fieldset">
-        <legend>Waarover lees je graag?</legend>
-        <p class="hint">Je kunt meerdere thema’s kiezen.</p>
-        <div id="student-choice-themes" class="bb-choice__themes" role="group" aria-label="Thema’s"></div>
-      </fieldset>
-      <div class="bb-choice__settings">
-        <label for="student-choice-pages">Hoe lang mag het boek zijn?
-          <select id="student-choice-pages">
-            <option value="0">Maakt niet uit</option>
-            <option value="150">Maximaal 150 pagina’s</option>
-            <option value="300">Maximaal 300 pagina’s</option>
-            <option value="500">Maximaal 500 pagina’s</option>
-          </select>
-        </label>
-        <fieldset class="bb-choice__fieldset bb-choice__flags">
-          <legend>Wat vind je nog meer belangrijk?</legend>
-          <label><input id="student-choice-easy" type="checkbox" /> Makkelijk Lezen</label>
-          <label><input id="student-choice-exam" type="checkbox" /> Gemarkeerd als examenmateriaal</label>
-          <label><input id="student-choice-available" type="checkbox" checked /> Alleen beschikbare boeken</label>
-        </fieldset>
-      </div>
-      <div class="bb-choice__buttons">
-        <button type="button" id="student-choice-search" class="btn">Zoek boeken</button>
-        <button type="button" id="student-choice-clear" class="btn btn--ghost">Alles wissen</button>
-      </div>
-      <p class="bb-choice__status" id="student-choice-status" role="status" aria-live="polite">Kies je voorkeuren.</p>
-      <div class="bb-choice__results" id="student-choice-results" aria-label="Voorgestelde boeken" aria-live="polite"></div>
+      <div id="student-choice-chat-log" class="bb-choice-chat__log" role="log"
+        aria-label="Gesprek over boeken" aria-live="polite" aria-relevant="additions text"></div>
+      <div id="student-choice-chat-actions" class="bb-choice-chat__actions" aria-label="Kies je antwoord"></div>
+      <p id="student-choice-chat-status" class="bb-choice-chat__status" role="status" aria-live="polite"></p>
     </dialog>
-
     <dialog id="reading-completion-dialog" class="reading-completion-dialog"
       aria-labelledby="reading-completion-title" aria-describedby="reading-completion-description">
       <h2 id="reading-completion-title">Is dit boek uitgelezen?</h2>
@@ -681,6 +659,7 @@
     </dialog>
     <script defer src="read-completion.js"></script>
     <script defer src="student-book-choice.js"></script>
+    <script defer src="student-book-choice-chat.js"></script>
     <script defer src="personal-exam-reading-list.js"></script>
     <script defer src="student-reading-profile.js"></script>
     <script type="module" src="app.js"></script>
