@@ -138,8 +138,8 @@ vm.runInNewContext(code,{
   elements.get('student-choice-close').listeners.click();
   loggedIn=true;
   await elements.get('student-help-choose').listeners.click();
-  assert.match(log.children[0].children[0].textContent,
-    /^Hoi Sanne! Wil je zelf ontdekken wat je leuk vindt, of liever meteen een paar boeken bekijken\\?$/);
+  assert.equal(log.children[0].children[0].textContent,
+    'Hoi Sanne! Wil je zelf ontdekken wat je leuk vindt, of liever meteen een paar boeken bekijken?');
   assert.equal(actions.children.length,2);
   assert.deepEqual(actions.children.map(x=>x.textContent),
     ['Ontdek mijn interesses','Laat me drie boeken zien']);
