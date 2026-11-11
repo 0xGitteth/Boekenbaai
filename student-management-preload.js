@@ -8,7 +8,7 @@ const { URL } = require('url');
 const core = require('./google-auth-core');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { setParnassysStudentNumber, getParnassysStudentNumber } = require('./google-first-people-import');
-const { examReadingAccess } = require('./exam-reading-access');
+const { examReadingAccess, classifyClass } = require('./exam-reading-access');
 const { commitPairedJson } = require('./paired-store-commit');
 const { acquireFileLock } = require('./book-import-reminder-mail');
 
@@ -369,6 +369,7 @@ function buildManagementState(context) {
     .map((klass) => ({
       id: klass.id,
       name: klass.name || '',
+      examReadingLevel: classifyClass(klass.name),
       isOwn: ownIds.has(klass.id),
       hasMentor: Array.isArray(klass.teacherIds) && klass.teacherIds.length > 0,
     }))
