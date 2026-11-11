@@ -14,14 +14,9 @@ function extractBetween(source, startMarker, endMarker) {
   return source.slice(start, end).trim();
 }
 
-const serverFactory = new Function(
-  [
-    extractBetween(serverSource, 'const CANONICAL_THEMES = [', 'const EMPTY_DB = {'),
-    "function parseMultiValueField(value) { if (Array.isArray(value)) return value; if (value == null || value === '') return []; return String(value).split(/[;,\\n]/).map((entry) => entry.trim()).filter(Boolean); }",
-    'return { CANONICAL_THEMES, normalizeRawThemeTag, isSuppressedThemeTag, mapExactTagToTheme, suggestThemesFromTag, deriveThemesFromTags, attachDerivedThemeFields };',
-  ].join('\n\n')
-);
-
+// The production server and personal choice helper import the same pure
+// rules. Test the real shared implementation, not a copied server source fragment.
+assert.match(serverSource, /require\('\.\/book-theme-normalization'\)/);
 const {
   CANONICAL_THEMES,
   normalizeRawThemeTag,
@@ -30,7 +25,7 @@ const {
   suggestThemesFromTag,
   deriveThemesFromTags,
   attachDerivedThemeFields,
-} = serverFactory();
+} = require('../book-theme-normalization');
 
 const appFactory = new Function(
   [

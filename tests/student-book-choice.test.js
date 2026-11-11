@@ -8,6 +8,8 @@ const { execFileSync } = require('node:child_process');
 const root = path.join(__dirname, '..');
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 const js = read('public/student-book-choice.js');
+execFileSync(process.execPath,['--check',path.join(root,'public','student-book-choice-chat.js')]);
+assert.match(read('public/student-book-choice-chat.js'),/closeButton\.addEventListener\('click',\(\)=>close\(\)\)/);
 const html = read('public/index.html');
 const vite = read('vite.config.js');
 execFileSync(process.execPath,
@@ -89,8 +91,15 @@ assert.ok(js.includes('if (!active || selection !== selectionVersion) return;'),
 assert.match(html, /id="student-help-choose"[^>]*aria-haspopup="dialog"/);
 assert.doesNotMatch(html, /id="student-help-choose"[^>]*disabled/);
 assert.match(html, /id="student-choice-dialog"/);
-assert.match(html, /id="student-choice-search"/);
-assert.match(html, /id="student-choice-results"/);
+assert.match(html, /id="student-choice-chat-log"/);
+assert.match(html, /id="student-choice-chat-actions"/);
+assert.doesNotMatch(html, /id="student-choice-themes"/);
+assert.ok(read('public/student-book-choice-chat.js').includes('/api/auth/student-pin/choice-begin'));
+assert.ok(read('public/student-book-choice-chat.js').includes('/api/auth/student-pin/choice-suggest'));
+assert.match(read('public/student-book-choice-chat.js'), /boekenbaai:student-auth-pending/);
+assert.match(vite, /'student-book-choice-chat\.js'/);
+assert.match(vite, /'student-book-choice-chat\.css'/);
+assert.match(html, /id="student-choice-chat-log"/);
 assert.match(html, /student-book-choice\.js/);
 assert.match(vite, /'student-book-choice\.js'/);
 assert.match(vite, /'student-book-choice\.css'/);

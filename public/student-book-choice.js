@@ -2,7 +2,8 @@
   'use strict';
   const button = document.getElementById('student-help-choose');
   const dialog = document.getElementById('student-choice-dialog');
-  if (!button || !dialog) return;
+  // The original filter chooser is retained only for legacy regression helpers.
+  if (!button || !dialog || !document.getElementById('student-choice-themes')) return;
   const closeButton = document.getElementById('student-choice-close');
   const clearButton = document.getElementById('student-choice-clear');
   const searchButton = document.getElementById('student-choice-search');

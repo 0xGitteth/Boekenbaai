@@ -10,6 +10,7 @@ const security = require('./google-auth-security-core');
 const { readJsonSnapshot, mutateJsonLockedAsync } = require('./database-write-coordinator');
 const pins = require('./student-pin-core');
 const checkout = require('./student-pin-checkout-core');
+const choice = require('./student-choice-access');
 
 const originalCreateServer = http.createServer.bind(http);
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -113,12 +114,12 @@ function rateAllow(key) {
   return attempts.length <= MUTATION_LIMIT;
 }
 
-async function parseBody(req) {
+async function parseBody(req, maxBytes = 1024) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 1024) {
+    if (size > maxBytes) {
       const error = Error('Payload te groot');
       error.status = 413;
       throw error;
@@ -167,11 +168,16 @@ function checkedContext(db, auth, token) {
 async function handleStudentPin(req, res, requestUrl) {
   const route = requestUrl.pathname;
   const isVerify = route === '/api/auth/student-pin/verify' && req.method === 'POST';
+  const isChoiceBegin = route === '/api/auth/student-pin/choice-begin' && req.method === 'POST';
+  const isChoiceSuggest = route === '/api/auth/student-pin/choice-suggest' && req.method === 'POST';
+  const isChoiceEnd = route === '/api/auth/student-pin/choice-end' && req.method === 'POST';
+  const isChoiceReset = route === '/api/auth/student-pin/choice-reset' && req.method === 'POST';
   const isStatus = route === '/api/auth/student-pin/status' && req.method === 'GET';
   const isSet = route === '/api/auth/student-pin/set' && req.method === 'POST';
   const isSelfReset = route === '/api/auth/student-pin/reset' && req.method === 'POST';
   const staffReset = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/reset$/);
   if (!isStatus && !isSet && !isSelfReset && !isVerify
+    && !isChoiceBegin && !isChoiceSuggest && !isChoiceEnd && !isChoiceReset
     && !(staffReset && req.method === 'POST')) {
     return sendJson(res, 404, { message: 'Niet gevonden.' });
   }
@@ -198,6 +204,43 @@ async function handleStudentPin(req, res, requestUrl) {
       }
       throw error;
     }
+  }
+
+  if (isChoiceBegin) {
+    if (!networkVerifyAllowed(req)) {
+      res.setHeader('Retry-After','600');
+      return sendJson(res,429,{ message:'Te veel PIN-pogingen. Probeer later opnieuw.' });
+    }
+    const body=await parseBody(req);
+    try {
+      const result=await choice.startChoice({studentId:body.studentId,pin:body.pin});
+      return sendJson(res,200,result);
+    } catch (error) {
+      if(error?.status){
+        if(error.status===429)res.setHeader('Retry-After','900');
+        return sendJson(res,error.status,{message:error.message});
+      }
+      throw error;
+    }
+  }
+  if (isChoiceSuggest) {
+    const body=await parseBody(req,32768);
+    const result=await choice.suggestions({
+      grant:body.choiceGrant,sessionToken:getToken(req),choices:body.choices,
+      anonymous:body.anonymous===true,
+    });
+    return sendJson(res,200,result);
+  }
+  if (isChoiceReset) {
+    const body=await parseBody(req);
+    return sendJson(res,200,await choice.clearHistory({
+      grant:body.choiceGrant,sessionToken:getToken(req),
+    }));
+  }
+  if (isChoiceEnd) {
+    const body=await parseBody(req);
+    await choice.closeChoice(body.choiceGrant);
+    return sendJson(res,200,{closed:true});
   }
 
   const token = getToken(req);
