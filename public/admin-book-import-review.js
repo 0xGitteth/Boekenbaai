@@ -151,6 +151,23 @@
     header.append(make('h4', '', 'Nieuwe boekimport met controle'));
     header.append(make('p', 'hint', 'Bekijk elk boek, corrigeer fouten en importeer pas na je bevestiging. Bestaande edities worden niet zomaar toegevoegd of overschreven.'));
     root.append(header);
+    const enrichmentStatus = make('p', 'hint', 'Gratis aanvulling van boekgegevens: status wordt gecontroleerd.');
+    enrichmentStatus.setAttribute('role', 'status');
+    root.append(enrichmentStatus);
+    async function refreshEnrichmentStatus() {
+      try {
+        const data = await request('/api/admin/book-enrichment/status');
+        if (!root.isConnected) return;
+        enrichmentStatus.textContent = data.enabled
+          ? 'Extra gratis boekgegevens worden na de import aangevuld. Gecontroleerd: '
+            + data.checkedWorks + ' titels. Nog te controleren: ' + data.pendingWorks + '.'
+          : 'Automatische gratis aanvulling na import staat nog uit. Configureer het EasyCB-contactadres op de server.';
+      } catch {
+        // Logged-out visitors must not see a misleading enabled status.
+        enrichmentStatus.textContent = 'Extra boekgegevens kunnen na import worden aangevuld als dit op de server is ingesteld.';
+      }
+    }
+    void refreshEnrichmentStatus();
     const form = make('form', 'bb-review__upload');
     const fileLabel = make('label', '', 'Excelbestand (.xlsx of .xls)');
     const file = make('input');
@@ -592,6 +609,7 @@
             revision: stage.revision, confirm: true,
           });
           rememberResponse(payload);
+          void refreshEnrichmentStatus();
         }, 'Bevestigde boeken worden opgeslagen…');
       });
       const cancelButton = button('Import annuleren', 'btn btn--ghost');
@@ -782,6 +800,7 @@
     syncStage();
     window.setInterval(syncStage, 1500);
     window.addEventListener('focus', syncStage);
+    window.addEventListener('focus', refreshEnrichmentStatus);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) syncStage();
     });
