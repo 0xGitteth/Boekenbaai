@@ -7652,6 +7652,14 @@ async function handleApi(req, res, requestUrl) {
       book.borrowedAt = now;
       book.dueDate = dueDate.value;
       if (student) student.borrowedBooks.push({ bookId: book.id, borrowedAt: now, dueDate: dueDate.value });
+      if (student && book.suitableForExamList === true && examReadingAccess(db, student).eligible) {
+        // An eligible pupil's current exam loan is visible as "Aan het lezen"
+        // before the compulsory Ja/Nee answer at check-in.
+        const listed = addExamBook(db, student.id, book, checkoutUser.id, now, false);
+        if (listed.created || listed.entry.manualStatus === 'nog_lezen') {
+          changeExamStatus(listed.entry, 'aan_het_lezen', checkoutUser.id, now);
+        }
+      }
       appendHistory(db, student ? {
         type: 'check_out', bookId: book.id, studentId: student.id, performedBy: checkoutUser.id,
         message: `${student.name} heeft ${book.title} geleend`,
