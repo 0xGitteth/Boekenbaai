@@ -7658,6 +7658,7 @@ async function handleApi(req, res, requestUrl) {
         const listed = addExamBook(db, student.id, book, checkoutUser.id, now, false);
         if (listed.created || listed.entry.manualStatus === 'nog_lezen') {
           changeExamStatus(listed.entry, 'aan_het_lezen', checkoutUser.id, now);
+          listed.entry.autoCurrentLoan = true;
         }
       }
       appendHistory(db, student ? {
