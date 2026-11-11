@@ -112,7 +112,7 @@ const freeMetadataWorker = createFreeMetadataWorker({
     });
     return outcome;
   },
-  onNewCover: () => scheduleCoverBackfill({ resetFailures: true }),
+  onNewCover: () => scheduleCoverBackfill(),
 });
 
 function scheduleBackfillRetry() {
