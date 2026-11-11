@@ -188,7 +188,16 @@
         }
       },200);
     });
-    other.addEventListener('click',()=>{clearSearch();message('Zonder inloggen','student');finishIdentity();});
+    other.addEventListener('click',()=>{
+      // A pending successful PIN response must never reactivate personal
+      // mode after the learner explicitly chose anonymous recommendations.
+      epoch++;
+      clearSearch();
+      pin.value='';selected='';busy=false;personal=false;firstName='';
+      grant='';
+      message('Zonder inloggen','student');
+      finishIdentity();
+    });
     google.addEventListener('click',()=>{
       clearSearch();close();
       document.getElementById('student-nav-profile')?.click();
