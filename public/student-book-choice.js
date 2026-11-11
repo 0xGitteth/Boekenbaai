@@ -140,7 +140,7 @@
   }
   function coverUrl(value) {
     const url = String(value || '').trim();
-    return /^\\/api\\/covers\\/[a-f0-9]{64}\\.(?:jpg|png|webp|gif)$/i.test(url)
+    return /^\/api\/covers\/[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/i.test(url)
       ? apiUrl(url) : url;
   }
   function renderSuggestions() {
