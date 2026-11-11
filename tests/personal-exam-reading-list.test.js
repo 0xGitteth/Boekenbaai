@@ -18,8 +18,8 @@ const db = {
     { id: 'student-a', classIds: ['klas-a'] },
     { id: 'student-b', classIds: ['klas-b'] },
   ],
-  classes: [{ id: 'klas-a', teacherIds: ['teacher-a'] },
-    { id: 'klas-b', teacherIds: ['teacher-b'] }],
+  classes: [{ id: 'klas-a', name: 'Bovenbouw structuur', teacherIds: ['teacher-a'] },
+    { id: 'klas-b', name: 'Onderbouw BKT', teacherIds: ['teacher-b'] }],
   examReadingLists: [], readingRecords: [],
 };
 const student = db.students[0];
