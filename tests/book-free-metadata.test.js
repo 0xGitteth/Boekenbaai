@@ -54,6 +54,27 @@ assert.equal(current.books[1].coverUrl,source.coverUrl);
 assert.equal(current.books[2].description,'');
 assert.equal(current.books[2].freeMetadataCheck,undefined);
 assert.equal(nextCandidate(current.books,Date.parse('2026-11-12T00:00:00Z'))?.title,'Andere titel');
+const staleCover = 'https://covers.openlibrary.org/b/isbn/' + isbn + '-L.jpg';
+const failedUrls = new Set([staleCover]);
+const broken = {
+  books:[
+    {id:'broken',metadataIsbn:isbn,title:source.title,author:source.author,
+      description:'Zelf geschreven',tags:['Handmatig'],pageCount:80,coverUrl:staleCover,localCoverUrl:'',
+      importProvenance:{fieldSources:{coverUrl:{sourceType:'metadata',sourceDetail:'openlibrary'}}},
+      freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',failedCoverUrl:''}},
+    {id:'manual',metadataIsbn:isbn,title:source.title,author:source.author,
+      description:'Zelf geschreven',tags:['Handmatig'],pageCount:80,coverUrl:staleCover,localCoverUrl:'',
+      importProvenance:{fieldSources:{coverUrl:{sourceType:'manual'}}},
+      freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',failedCoverUrl:''}},
+  ],
+};
+const alternative = nextCandidate(broken.books,Date.parse('2026-11-12T00:00:00Z'),new Set(),failedUrls);
+assert.ok(alternative,'A failed image may be retried despite a recent metadata check');
+applyResult(broken,alternative,source,'2026-11-12T00:00:00Z','found',failedUrls);
+assert.equal(broken.books[0].coverUrl,source.coverUrl,'Replace a verified failed metadata cover');
+assert.equal(broken.books[1].coverUrl,staleCover,'Preserve manually selected cover even if broken');
+assert.equal(nextCandidate(broken.books,Date.parse('2026-11-13T00:00:00Z'),
+  new Set(),failedUrls),null,'Do not repeatedly retry an unchanged failed URL');
 async function run(){
   let calls=0, changedCover=0;
   const db = {books:[{id:'x',metadataIsbn:isbn,title:source.title,author:source.author,
