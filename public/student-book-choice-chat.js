@@ -424,7 +424,7 @@
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Stel me vragen',()=>{choices={route:'new'};askActivity();}]]
+        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};askActivity();}]]
         : [['Andere richting',askSituation],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
