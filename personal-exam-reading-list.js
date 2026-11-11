@@ -102,8 +102,8 @@ function ensureList(db) {
   return db.examReadingLists;
 }
 
-function addBook(db, studentId, book, actorId, now, manually = true) {
-  const key = keyForBook(book);
+function addBook(db, studentId, book, actorId, now, manually = true, originalEditionKey = '') {
+  const key = originalEditionKey || keyForBook(book);
   if (!key) throw Error('exam_list_book_identity_required');
   const list = ensureList(db);
   let entry = list.find(item => item.studentId === studentId && item.editionKey === key);
@@ -150,12 +150,11 @@ function synchronizeReturn(db, record, now) {
   const existing = getEntries(db, record.subjectId)
     .find(entry => entry.editionKey === matchingKey);
   if (existing) return existing;
-  // Preserve the original edition key from the check-in when present.
-  const created = addBook(db, record.subjectId, book, record.reportedBy, now, false);
-  if (created.entry.editionKey !== matchingKey && matchingKey) {
-    created.entry.editionKey = matchingKey;
-  }
-  return created.entry;
+  // Use the immutable identity captured at check-in. Reconstructing a book
+  // from one ISBN could otherwise merge two different editions and then
+  // accidentally rewrite the identity of an existing personal-list entry.
+  const result = addBook(db, record.subjectId, book, record.reportedBy, now, false, matchingKey);
+  return result.entry;
 }
 
 function changeStatus(entry, status, actorId, now) {
