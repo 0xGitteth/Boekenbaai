@@ -25,7 +25,7 @@ assert.equal(source.description,'Een & ander over de stad.');
 assert.equal(source.coverUrl,'https://easycbapi.nl/resources/jpg/'+isbn+'_VRK.jpg');
 assert.deepEqual(source.tags,['Lokaal verleden']);
 assert.equal(source.publishedYear,2023);
-assert.equal(parseEasyCb(sample.replace('isbn:'+isbn,'isbn:9789025869975'),isbn),null,
+assert.equal(parseEasyCb(sample.replace('isbn:'+isbn,'isbn:9789025869977'),isbn),null,
   'Never attach data returned for a different edition');
 assert.equal(validContact('test@example.org'),true);
 assert.equal(validContact('invalid'),false);
@@ -75,10 +75,10 @@ assert.equal(broken.books[0].coverUrl,source.coverUrl,'Replace a verified failed
 assert.equal(broken.books[1].coverUrl,staleCover,'Preserve manually selected cover even if broken');
 assert.equal(nextCandidate(broken.books,Date.parse('2026-11-13T00:00:00Z'),
   new Set(),failedUrls),null,'Do not repeatedly retry an unchanged failed URL');
-const corrected={...broken.books[0],description:'',metadataIsbn:'9789025869975',
+const corrected={...broken.books[0],description:'',metadataIsbn:'9789025869977',
   freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',title:source.title,isbn}};
 assert.equal(nextCandidate([corrected],Date.parse('2026-11-12T00:00:00Z'))?.isbn,
-  '9789025869975','A corrected ISBN must trigger a new lookup');
+  '9789025869977','A corrected ISBN must trigger a new lookup');
 async function run(){
   let calls=0, changedCover=0;
   const db = {books:[{id:'x',metadataIsbn:isbn,title:source.title,author:source.author,
