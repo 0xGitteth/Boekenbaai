@@ -41,8 +41,7 @@ function validateChoices(value) {
   return result;
 }
 function available(book) {
-  return book.status !== 'borrowed' && !book.borrowedBy && !book.borrowedByClassId
-    && book.status !== 'unavailable' && book.status !== 'removed';
+  return book.status === 'available' && !book.borrowedBy && !book.borrowedByClassId;
 }
 function groupBooks(db) {
   const map = new Map();
