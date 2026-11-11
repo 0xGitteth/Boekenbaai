@@ -25,6 +25,9 @@ const {
   createReadingChangeNotification, listTeacherNotifications,
   markNotificationRead, isActiveTeacher,
 } = require('./reading-change-notifications');
+const { STATUSES: EXAM_STATUSES, keyForBook: examEditionKey, listForStudent, publicEntry,
+  mayManageExamList, addBook: addExamBook, synchronizeReturn: syncExamReturn,
+  changeStatus: changeExamStatus } = require('./personal-exam-reading-list');
 const studentPinCheckout = require('./student-pin-checkout-core');
 const authSecurityForPin = require('./google-auth-security-core');
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
@@ -4664,6 +4667,96 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, { read: true });
     }
 
+
+    // Personal exam-reading lists are separate from stock and the circulation
+    // history. The student's identity is derived from the authenticated user
+    // or validated against current class membership for staff.
+    if (req.method === 'GET' && requestUrl.pathname === '/api/exam-reading-list') {
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
+      const requestedId = requestUrl.searchParams.get('studentId');
+      if (user.role === 'student' && requestedId && requestedId !== user.id) {
+        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      }
+      const studentId = user.role === 'student' ? user.id : requestedId;
+      const db = getDb();
+      const student = (db.students || []).find(item => item.id === studentId);
+      if (!student) return sendJson(res, 404, { message: 'Leerling niet gevonden.' });
+      if (!mayManageExamList(db, user, student)) {
+        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      }
+      return sendJson(res, 200, listForStudent(db, studentId));
+    }
+
+    if (req.method === 'POST' && requestUrl.pathname === '/api/exam-reading-list') {
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
+      if (!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req, process.env.BOEKENBAAI_PUBLIC_URL || ''))) {
+        return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+      }
+      const body = await parseBody(req);
+      if (typeof body.bookId !== 'string' || !/^[\w-]{1,128}$/.test(body.bookId)) {
+        return sendJson(res, 400, { message: 'Kies een boek uit de bibliotheek.' });
+      }
+      if (user.role === 'student' && body.studentId && body.studentId !== user.id) {
+        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      }
+      const studentId = user.role === 'student' ? user.id : body.studentId;
+      const db = loadDb();
+      const student = (db.students || []).find(item => item.id === studentId);
+      if (!student) return sendJson(res, 404, { message: 'Leerling niet gevonden.' });
+      if (!mayManageExamList(db, user, student)) {
+        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      }
+      const book = (db.books || []).find(item => item.id === body.bookId);
+      if (!book) return sendJson(res, 404, { message: 'Dit boek staat niet in de bibliotheek.' });
+      const result = addExamBook(db, studentId, book, user.id, new Date().toISOString());
+      if (result.created || result.entry.addedManually && result.entry.updatedBy === user.id) {
+        // saveDb is safe also for an idempotent duplicate add; it keeps the
+        // list durable when several copies of the same edition exist.
+        saveDb(db);
+      }
+      return sendJson(res, result.created ? 201 : 200, {
+        entry: publicEntry(db, result.entry), created: result.created,
+      });
+    }
+
+    const examEntryMatch = requestUrl.pathname.match(/^\/api\/exam-reading-list\/([\w-]+)$/);
+    if (examEntryMatch && (req.method === 'PATCH' || req.method === 'DELETE')) {
+      if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
+      if (!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req, process.env.BOEKENBAAI_PUBLIC_URL || ''))) {
+        return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
+      }
+      const body = await parseBody(req);
+      if (!Number.isInteger(body.revision) || body.revision < 1) {
+        return sendJson(res, 400, { message: 'Vernieuw de lijst voordat je deze wijzigt.' });
+      }
+      if (req.method === 'PATCH' && !EXAM_STATUSES.has(body.status)) {
+        return sendJson(res, 400, { message: 'Kies een geldige leesstatus.' });
+      }
+      const db = loadDb();
+      const list = Array.isArray(db.examReadingLists) ? db.examReadingLists : [];
+      const index = list.findIndex(item => item.id === examEntryMatch[1]);
+      if (index < 0) return sendJson(res, 404, { message: 'Boek niet op de leeslijst gevonden.' });
+      const entry = list[index];
+      const student = (db.students || []).find(item => item.id === entry.studentId);
+      if (!mayManageExamList(db, user, student)) {
+        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      }
+      if ((entry.revision || 1) !== body.revision) {
+        return sendJson(res, 409, { message: 'De leeslijst is gewijzigd. Vernieuw de lijst.' });
+      }
+      if (req.method === 'DELETE') {
+        list.splice(index, 1);
+        saveDb(db);
+        return sendJson(res, 200, { removed: true });
+      }
+      if (changeExamStatus(entry, body.status, user.id, new Date().toISOString())) {
+        saveDb(db);
+      }
+      return sendJson(res, 200, { entry: publicEntry(db, entry) });
+    }
+
     // Reading answers belong to completed loan periods. Only the student
     // or staff currently authorized for their class may see/edit them.
     if (req.method === 'GET' && requestUrl.pathname === '/api/reading-records') {
@@ -4709,6 +4802,7 @@ async function handleApi(req, res, requestUrl) {
       const oldFinished = record.finished;
       const changedAt = new Date().toISOString();
       if (amendReadingRecord(record, body.finished, user.id, changedAt)) {
+        syncExamReturn(db, record, changedAt);
         // A pupil can immediately correct their own status. Mentors receive
         // an individual notice without any approval/rejection workflow.
         if (user.role === 'student') {
@@ -4742,6 +4836,10 @@ async function handleApi(req, res, requestUrl) {
       const books = db.books.map((book) => ({
         id: book.id, title: book.title, author: book.author, barcode: book.barcode,
         status: book.status, fixedLocation: book.fixedLocation || null,
+        editionKey: examEditionKey(book),
+        editionIsbn: book.editionIsbn || null,
+        metadataIsbn: book.metadataIsbn || null,
+        publishedYear: book.publishedYear || null,
       }));
       const loans = db.books.filter((book) => book.status === 'borrowed')
         .map((book) => {
@@ -7603,6 +7701,7 @@ async function handleApi(req, res, requestUrl) {
         db, book, student, klass, finished: body.finished,
         actorId: user.id, now: returnedAt,
       });
+      syncExamReturn(db, readingRecord, returnedAt);
       noteLoanActivity(db, book.id);
       book.status = 'available';
       book.borrowedBy = null;

@@ -5,6 +5,7 @@
 // Keep an immutable book snapshot to survive a later inventory replacement.
 const { randomUUID } = require('node:crypto');
 const { mayManageClass, mayManageStudent } = require('./book-loan-policy');
+const { keyForBook, snapshot } = require('./personal-exam-reading-list');
 
 function createReturnReadingRecord({ db, book, student = null, klass = null, finished, actorId, now }) {
   if (typeof finished !== 'boolean') throw Error('reading_answer_required');
@@ -18,6 +19,9 @@ function createReturnReadingRecord({ db, book, student = null, klass = null, fin
     title: String(book.title || 'Onbekend boek'),
     author: String(book.author || ''),
     isbn: String(book.metadataIsbn || book.editionIsbn || book.barcode || ''),
+    editionKey: keyForBook(book),
+    publishedYear: snapshot(book).publishedYear,
+    pageCount: snapshot(book).pageCount,
     suitableForExamList: book.suitableForExamList === true,
     subjectType,
     subjectId,

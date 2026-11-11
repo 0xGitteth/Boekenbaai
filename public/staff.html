@@ -29,6 +29,7 @@
     <link rel="stylesheet" href="portal-branding-fixes-v54.css" />
     <link rel="stylesheet" href="portal-koraal-original-v56.css" />
     <link rel="stylesheet" href="read-completion.css" />
+    <link rel="stylesheet" href="personal-exam-reading-list.css" />
     <link rel="stylesheet" href="reading-change-notifications.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <style>
@@ -996,6 +997,24 @@
           <p class="hint">Antwoorden bij ingeleverde boeken van leerlingen en klassen die je mag beheren. Je kunt Ja of Nee later aanpassen.</p>
           <div id="staff-reading-records" aria-live="polite"></div>
         </section>
+        <section class="reading-records exam-reading" id="staff-exam-reading"
+          aria-labelledby="staff-exam-reading-title">
+          <h3 id="staff-exam-reading-title">Examenleeslijst per leerling</h3>
+          <p class="hint">Beheer alleen de leeslijsten van leerlingen die aan jouw klassen zijn gekoppeld.</p>
+          <div class="exam-reading__picker">
+            <label for="staff-exam-student-search">Zoek leerling</label>
+            <input id="staff-exam-student-search" type="search" autocomplete="off" placeholder="Naam leerling"/>
+            <label for="staff-exam-student">Leerling</label>
+            <select id="staff-exam-student"><option value="">Selecteer een leerling</option></select>
+            <label for="staff-exam-book-search">Zoek boek om toe te voegen</label>
+            <input id="staff-exam-book-search" type="search" autocomplete="off" placeholder="Titel of auteur"/>
+            <label for="staff-exam-book">Boek</label>
+            <select id="staff-exam-book"><option value="">Zoek een boek</option></select>
+            <button type="button" class="btn btn--secondary" id="staff-exam-book-add" disabled>Toevoegen</button>
+          </div>
+          <p id="staff-exam-message" class="hint" role="status" aria-live="polite"></p>
+          <div id="staff-exam-entries" aria-live="polite"></div>
+        </section>
       </section>
       <section class="panel panel--staff hidden" id="book-import-followups-panel"
         data-visible-for="teacher,admin" aria-labelledby="book-import-followups-title">
@@ -1374,6 +1393,7 @@
       </div>
     </dialog>
     <script defer src="read-completion.js"></script>
+    <script defer src="staff-exam-reading-list.js"></script>
     <script type="module" src="app.js"></script>
     <script type="module" src="staff-loans.js"></script>
     <script type="module" src="reading-change-notifications-ui.js"></script>
