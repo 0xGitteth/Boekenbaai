@@ -30,6 +30,8 @@ assert.match(css,/#student-exam-reading-section:not\(\[hidden\]\)/);
 assert.match(js,/\/api\/me\/reading-profile/);
 assert.match(js,/\/api\/reading-records\//);
 assert.match(js,/boekenbaai:reading-record-updated/);
+assert.match(js,/error\.status === 409/);
+assert.match(read('public/student-detail.js'),/klass\.examReadingLevel === 'mixed'/);
 assert.match(api,/requestUrl\.pathname === '\/api\/me\/reading-profile'/);
 assert.match(api,/buildStudentReadingProfile\(getDb\(\), user\.id/);
 assert.match(exam,/externalBook/);
