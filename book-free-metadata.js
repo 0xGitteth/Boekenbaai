@@ -115,6 +115,12 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
         if (value === null || value === undefined || value === '') return;
         if (book[field] !== undefined && book[field] !== null && book[field] !== '') return;
         book[field] = value;
+        // Record the supplier without changing any teacher-entered values.
+        if (!book.importProvenance || typeof book.importProvenance !== 'object') {
+          book.importProvenance = {fieldSources:{}};
+        }
+        if (!book.importProvenance.fieldSources) book.importProvenance.fieldSources = {};
+        book.importProvenance.fieldSources[field] = {sourceType:'metadata',sourceDetail:'easycb'};
         updated++;
       };
       update('description', metadata.description);
@@ -123,10 +129,20 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
       update('pageCount', metadata.pageCount);
       if (!book.coverUrl && metadata.coverUrl) {
         book.coverUrl = metadata.coverUrl;
+        if (!book.importProvenance || typeof book.importProvenance !== 'object') {
+          book.importProvenance = {fieldSources:{}};
+        }
+        if (!book.importProvenance.fieldSources) book.importProvenance.fieldSources = {};
+        book.importProvenance.fieldSources.coverUrl = {sourceType:'metadata',sourceDetail:'easycb'};
         newCover = true; updated++;
       }
       if ((!Array.isArray(book.tags) || !book.tags.length) && metadata.tags.length) {
         book.tags = metadata.tags.slice(0, 20);
+        if (!book.importProvenance || typeof book.importProvenance !== 'object') {
+          book.importProvenance = {fieldSources:{}};
+        }
+        if (!book.importProvenance.fieldSources) book.importProvenance.fieldSources = {};
+        book.importProvenance.fieldSources.tags = {sourceType:'metadata',sourceDetail:'easycb'};
         updated++;
       }
     }
