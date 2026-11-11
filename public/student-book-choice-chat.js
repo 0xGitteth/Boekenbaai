@@ -90,13 +90,13 @@
   }
   function finishIdentity(){
     message(personal&&firstName
-      ? 'Hoi '+firstName+'! Hoe wil je een boek vinden?'
-      : 'Wil je eerst een paar vragen beantwoorden, of meteen drie boekentips zien?');
+      ? 'Hoi '+firstName+'! Wil je zelf ontdekken wat je leuk vindt, of zal ik je verrassen met een paar boeken? Je kunt ook iets kiezen dat lijkt op wat je eerder hebt gelezen.'
+      : 'Wil je zelf ontdekken wat je leuk vindt, of zal ik je verrassen met een paar boeken?');
     currentStep='route';
     options([
-      ['Stel me vragen',()=>answer('route','new')],
+      ['Ontdek mijn interesses',()=>answer('route','new')],
       ...(personal?[['Iets als eerder gelezen',()=>answer('route','similar')]]:[]),
-      ['Verras me met 3 boeken',()=>answer('route','surprise')],
+      ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }
   async function begin(){
@@ -413,7 +413,7 @@
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Stel me vragen',()=>{choices={route:'new'};askActivity();}]]
+        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};askActivity();}]]
         : [['Andere richting',askSituation],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),

@@ -91,10 +91,13 @@ vm.runInNewContext(code,{
   assert.ok(resolvePin,'PIN response deliberately held pending');
   other.listeners.click();
   assert.equal(pin.value,'','Switching to anonymous mode must wipe PIN input');
-  assert.ok(actions.children.some(x=>x.textContent==='Stel me vragen'),
+  assert.ok(actions.children.some(x=>x.textContent==='Ontdek mijn interesses'),
     'Anonymous chat should offer a questionnaire');
-  assert.ok(actions.children.some(x=>x.textContent==='Verras me met 3 boeken'),
+  assert.ok(actions.children.some(x=>x.textContent==='Laat me drie boeken zien'),
     'Anonymous chat should offer a distinct immediate surprise');
+  assert.ok(log.children.some(row => row.children[0]?.textContent ===
+    'Wil je zelf ontdekken wat je leuk vindt, of zal ik je verrassen met een paar boeken?'),
+    'The exact agreed question appears in anonymous chat');
   resolvePin(makeResponse(200,{grant:'valid-late-token',firstName:'Sanne'}));
   await pending;
   await new Promise(resolve=>setImmediate(resolve));
@@ -102,8 +105,8 @@ vm.runInNewContext(code,{
     'A late PIN success after switching mode is explicitly revoked');
   assert.ok(!log.children.some(row=>row.children[0]?.textContent?.includes('Hoi Sanne')),
     'A late reply must never revive personalized mode');
-  assert.ok(actions.children.some(x=>x.textContent==='Verras me met 3 boeken'));
-  const surprise=actions.children.find(x=>x.textContent==='Verras me met 3 boeken');
+  assert.ok(actions.children.some(x=>x.textContent==='Laat me drie boeken zien'));
+  const surprise=actions.children.find(x=>x.textContent==='Laat me drie boeken zien');
   surprise.listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
