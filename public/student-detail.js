@@ -225,6 +225,20 @@
       basics.append(field('Klas', classControl, { locked: true }));
     }
 
+    let examAccessControl = null;
+    if (student.examReadingNeedsDecision) {
+      examAccessControl = make('select');
+      examAccessControl.append(
+        new Option('Nee, onderbouw', 'no'),
+        new Option('Ja, bovenbouw (jaar 3/4)', 'yes')
+      );
+      examAccessControl.value = student.examReadingEligibleOverride ? 'yes' : 'no';
+      basics.append(field('Toegang tot examenleeslijst', examAccessControl, { locked: !isAdmin }));
+      basics.append(make('p', {
+        className: 'hint',
+        text: 'Bij deze gemengde klas bepaalt Beheer per leerling of jaar 3/4 van toepassing is. Deze keuze blijft staan bij een nieuwe import.',
+      }));
+    }
     if (isAdmin) {
       basics.append(make('p', {
         className: 'hint',
@@ -301,6 +315,8 @@
             body: {
               name: name.value,
               classIds: [classControl.value],
+              ...(examAccessControl && (student.classIds || []).includes(classControl.value)
+                ? { examReadingEligibleOverride: examAccessControl.value === 'yes' } : {}),
               parnassysStudentNumber: number.value,
             },
           });
