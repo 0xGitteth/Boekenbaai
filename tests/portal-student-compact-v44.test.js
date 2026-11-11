@@ -54,7 +54,7 @@ assert.ok(html.indexOf('id="bb-cat-filter-caption"',panel)<results);
 const filters=html.slice(panel,panelClose);
 assert.match(filters,/id="student-filter-toggle"/);
 assert.match(filters,/id="student-help-choose"[^>]*aria-haspopup="dialog"/);
-assert.match(student,/id="student-choice-dialog"/);
+assert.match(html,/id="student-choice-dialog"/);
 assert.match(filters,/class="bb-cat-legend"/);
 assert.match(filters,/class="bb-cat-easy-key"/);
 assert.match(filters,/class="bb-cat-exam-key"/);
