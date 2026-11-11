@@ -196,10 +196,21 @@ function addExternalBook(db, studentId, input, actorId, now) {
 }
 
 function synchronizeReturn(db, record, now) {
-  if (!record || record.subjectType !== 'student' ||
-      record.finished !== true || record.suitableForExamList !== true) return null;
+  if (!record || record.subjectType !== 'student' || record.suitableForExamList !== true) return null;
   const student = (db.students || []).find(item => item.id === record.subjectId);
   if (!examReadingAccess(db, student).eligible) return null;
+  // When a currently loaned exam copy is returned, undo the *automatic*
+  // in-progress state. A later correction from Ja to Nee must become
+  // "Nog lezen", not incorrectly remain "Aan het lezen".
+  const returningKey = keyForReading(record, db);
+  const onList = getEntries(db, record.subjectId).find(entry => entry.editionKey === returningKey);
+  if (onList?.autoCurrentLoan === true) {
+    onList.autoCurrentLoan = false;
+    if (onList.manualStatus === 'aan_het_lezen') {
+      changeStatus(onList, 'nog_lezen', record.reportedBy, now);
+    }
+  }
+  if (record.finished !== true) return null;
   // The confirmed reader is the student, even when staff submitted the return.
   const book = {
     id: record.bookId,
