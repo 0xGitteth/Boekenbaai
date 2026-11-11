@@ -13,6 +13,7 @@
   let books = [];
   let selectedStudent = '';
   let requestId = 0;
+  let directoryGeneration = 0;
   let loading = false;
 
   const el = (name, text, className = '') => {
@@ -63,11 +64,15 @@
     bookChoice.replaceChildren(el('option', query ? 'Kies een boek' : 'Zoek op titel of auteur'));
     bookChoice.firstChild.value = '';
     for (const book of matching) {
-      const key = String(book.editionIsbn || book.metadataIsbn ||
+      const key = String(book.editionKey || book.editionIsbn || book.metadataIsbn ||
         book.title + '|' + book.author).toLowerCase();
       if (unique.has(key)) continue;
       unique.add(key);
-      const opt = el('option', (book.title || 'Boek') + (book.author ? ' · ' + book.author : ''));
+      const opt = el('option', (book.title || 'Boek') +
+        (book.author ? ' · ' + book.author : '') +
+        (book.editionIsbn || book.metadataIsbn
+          ? ' · ISBN ' + (book.editionIsbn || book.metadataIsbn)
+          : book.publishedYear ? ' · ' + book.publishedYear : ''));
       opt.value = book.id;
       bookChoice.append(opt);
       if (unique.size >= 80) break;
@@ -151,10 +156,17 @@
     }
   }
   async function refreshDirectory() {
-    if (loading || !localStorage.getItem('boekenbaai_token')) return;
+    // Every new request and every authentication boundary invalidates older
+    // directory responses. A delayed response must never repaint previous
+    // students on a shared device after logout or account switching.
+    const generation = ++directoryGeneration;
+    const tokenAtStart = localStorage.getItem('boekenbaai_token');
+    if (!tokenAtStart || loading) return;
     loading = true;
     try {
       const data = await api('/api/staff/loans');
+      if (generation !== directoryGeneration ||
+          tokenAtStart !== localStorage.getItem('boekenbaai_token')) return;
       students = (data.students || []).slice().sort((a,b) =>
         String(a.name).localeCompare(String(b.name),'nl'));
       books = (data.books || []).slice().sort((a,b) =>
@@ -164,9 +176,16 @@
       renderBooks();
       await refreshList();
     } catch (error) {
-      feedback.textContent = error.message;
+      if (generation === directoryGeneration &&
+          tokenAtStart === localStorage.getItem('boekenbaai_token')) {
+        feedback.textContent = error.message;
+      }
     } finally {
       loading = false;
+      // If account B logged in while A's request was still running, fetch
+      // B's own directory instead of reusing A's stale response.
+      if (generation !== directoryGeneration &&
+          localStorage.getItem('boekenbaai_token')) refreshDirectory();
     }
   }
   studentChoice.addEventListener('change', () => {
@@ -208,6 +227,7 @@
   window.addEventListener('boekenbaai:reading-record-created', refreshList);
   window.addEventListener('boekenbaai:reading-record-updated', refreshList);
   window.addEventListener('boekenbaai:staff-auth-cleared', () => {
+    directoryGeneration++;
     requestId++;
     selectedStudent = ''; students = []; books = [];
     output.replaceChildren();
