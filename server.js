@@ -96,6 +96,10 @@ const freeMetadataWorker = createFreeMetadataWorker({
   isPaused: () => shuttingDown || Boolean(activeBookImportLease)
     || Boolean(bookImportStageStore.active()),
   fetchImpl: global.fetch,
+  getFailedCovers: () => new Set([...coverBackfillFailures.entries()]
+    .filter(([, failure]) => failure?.phase === 'download'
+      && failure.attempts > coverRetryDelays.length)
+    .map(([source]) => source)),
   commit: async (apply) => {
     let outcome = null;
     await mutateJsonLockedAsync({
@@ -168,6 +172,11 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
                 ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
             });
             console.warn('Boekomslag tijdelijk niet beschikbaar:', error.message);
+            if (attempts > coverRetryDelays.length && typeof freeMetadataWorker !== 'undefined') {
+              // Only after all safe image-download retries fail, try a second
+              // verified ISBN cover source. Never block the image worker here.
+              freeMetadataWorker.schedule(2500);
+            }
             continue;
           }
           // Never race against the one-active-import staging transaction.
