@@ -18,6 +18,8 @@ const runtimeAuthAssets = [
   'read-completion.css',
   'student-book-choice.js',
   'student-book-choice.css',
+  'student-book-choice-chat.js',
+  'student-book-choice-chat.css',
   'personal-exam-reading-list.js',
   'personal-exam-reading-list.css',
   'student-reading-profile.js',
