@@ -35,5 +35,9 @@ assert.match(read('public/student-detail.js'),/klass\.examReadingLevel === 'mixe
 assert.match(api,/requestUrl\.pathname === '\/api\/me\/reading-profile'/);
 assert.match(api,/buildStudentReadingProfile\(getDb\(\), user\.id/);
 assert.match(exam,/externalBook/);
+assert.match(exam,/boekenbaai:exam-reading-list-updated/);
+assert.match(js,/boekenbaai:exam-reading-list-updated/);
+assert.match(js,/hasStatistics/);
+assert.match(js,/showTab\(hasHistory \? 'history' : 'stats'\)/);
 assert.match(exam,/section\.hidden = entries\.length === 0/);
 console.log('Student profile v58 wiring and privacy: OK');
