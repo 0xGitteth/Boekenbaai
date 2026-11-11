@@ -138,6 +138,14 @@ assert.equal(addExternalBook(privateDb,'solo',{
 assert.equal(listForStudent(privateDb,'solo').entries[0].externalSource,true);
 changeStatus(personal.entry,'gelezen','solo',now);
 assert.equal(publicEntry(privateDb,personal.entry).status,'gelezen');
+changeStatus(personal.entry,'nog_lezen','solo',now);
+privateDb.readingRecords.push({
+  id:'same-title-return',subjectType:'student',subjectId:'solo',
+  editionKey:'isbn13||9780306406157',title:'Mijn eigen boek',author:'Auteur X',finished:true,
+});
+assert.equal(publicEntry(privateDb,personal.entry).readFromReturn,true,
+  'A later real school checkout should confirm the matching private title');
+assert.equal(publicEntry(privateDb,personal.entry).status,'gelezen');
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'',author:'X'},'solo',now),/titel en auteur/i);
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',pageCount:-4},'solo',now),/pagina/i);
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',isbn:'1234567890123'},'solo',now),/controlecijfer/i);
