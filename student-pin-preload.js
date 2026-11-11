@@ -227,6 +227,7 @@ async function handleStudentPin(req, res, requestUrl) {
     const body=await parseBody(req,32768);
     const result=await choice.suggestions({
       grant:body.choiceGrant,sessionToken:getToken(req),choices:body.choices,
+      anonymous:body.anonymous===true,
     });
     return sendJson(res,200,result);
   }
