@@ -138,6 +138,11 @@ async function stop(){
     assert.equal(staff.body.personalized,false,'Teacher session must not reveal pupil choices');
     const full=await suggest(choices,undefined,'session-a');
     assert.equal(full.status,200);
+    const explicitlyAnonymous=await request('/api/auth/student-pin/choice-suggest',
+      {anonymous:true,choices},'session-a');
+    assert.equal(explicitlyAnonymous.status,200);
+    assert.equal(explicitlyAnonymous.body.personalized,false,
+      'Explicit anonymous mode must override a residual valid student session');
     assert.equal(full.body.personalized,true);
     assert.equal(full.body.firstName,'Sanne');
     assert.equal((await request('/api/auth/student-pin/choice-reset',{choiceGrant:grant})).status,200);
