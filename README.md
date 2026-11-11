@@ -64,6 +64,7 @@ Deze bestandstransacties vereisen dat alle schrijvende serverprocessen **hetzelf
 | `BOEKENBAAI_ALLOWED_ORIGINS` | `https://jouwnaam.github.io` | Komma-gescheiden expliciete origins voor toegestane cross-origin API-verzoeken. Gebruik geen wildcard voor productie. |
 | `BOEKENBAAI_IMPORT_ENRICH_ISBN` | `true` | Zet op `true` om tijdens Excel-boekimport automatisch ontbrekende velden aan te vullen met ISBN-metadata. Kan per import worden overschreven met de payload-flag `enrichIsbn`. |
 | `BOEKENBAAI_ENABLE_ISBNBARCODE` | `true` | Zet op `true` om naast Open Library ook de ISBNBarcode.org API te raadplegen voor boekmetadata. Standaard staat alleen Open Library aan. |
+| `BOEKENBAAI_EASYCB_CONTACT` | `bibliotheek@example.org` | Optioneel contactadres dat EasyCB vereist voor automatisch herhaald gebruik. Zonder geldig adres geen EasyCB-verzoeken. Dit is geen betaalde API-sleutel en verstuurt geen e-mail. |
 | `BOEKENBAAI_ISBN_CACHE_TTL_MS` | `300000` | Tijd (in milliseconden) dat ISBN-metadata in het in-memory cache blijft staan. Resultaten – ook "niet gevonden" – verlopen standaard na 5 minuten. |
 | `DEPLOY_TARGET` | `gh-pages` | Gebruik deze tijdens het bouwen (`DEPLOY_TARGET=gh-pages npm run build`) om de Vite-base op `/Boekenbaai/` te zetten voor GitHub Pages. |
 
@@ -79,6 +80,17 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 - De server gebruikt altijd de waarden uit het Excelbestand als bron; metadata vult alleen lege velden aan voor titel, auteur(s), beschrijving, uitgever, gepubliceerd jaar, aantal pagina’s, taal, cover-URL en tags.
 - Verrijking kan centraal worden geactiveerd met `BOEKENBAAI_IMPORT_ENRICH_ISBN=true` en per import worden aan- of uitgezet met de payload-flag `enrichIsbn`.
 - Heb je boekenseries met één gedeelde buitenste barcode, maar wil je wel unieke metadata ophalen? Voeg dan in Excel een kolom toe met de kop `metadata isbn`, `intern isbn` of `isbn inwendig`. Die waarde wordt opgeslagen als intern metadata-ISBN en voortaan als sleutel gebruikt voor verrijking.
+
+### Gratis boekverrijking na import (zonder extra API-kosten)
+
+- In de **nieuwe gecontroleerde Excelimport** staat het trage opzoeken van ISBN-gegevens tijdens de preview standaard **uit**. Als de Excelrij zonder extra informatie niet veilig te controleren is, kan de beheerder die optie zelf aanzetten.
+- Na het duurzaam opslaan start een **aparte, begrensde achtergrondverrijking**. De upload, review, uitleningen en importbevestiging wachten hier nooit op. Dezelfde routine werkt ook na de oude import en na het bijwerken van een boek. Bij een serverherstart worden nog ontbrekende gegevens hervat.
+- De gratis dienst **EasyCB** wordt alleen aangeroepen wanneer `BOEKENBAAI_EASYCB_CONTACT` een echt geldig contactadres bevat. De dienst verlangt dit bij herhaald geautomatiseerd gebruik. Er worden maximaal één ISBN-zoekactie tegelijk en niet vaker dan circa eens per 1,8 seconde gestart. Antwoorden hebben een timeout en fouten leiden niet tot onbegrensde herhaallussen.
+- Alleen bestaande boeken met een geldig ISBN én ontbrekende gegevens worden opgezocht. Fysieke exemplaren van dezelfde titel/uitgave delen de opzoekactie. Een exact ISBN en een overeenkomstige titel zijn verplicht voordat gegevens worden overgenomen.
+- De aanvulling gebruikt voorrang van bestaande gegevens: ingevoerde beschrijvingen, covers en onderwerpen worden **niet overschreven**. Alleen ontbrekende beschrijving, uitgever, publicatiejaar, pagina's, onderwerpstags en een herkenbare **voorkantomslag** worden ingevuld. De bron en het laatste opzoekmoment blijven per boek vastgelegd. Een nieuwe coverlink wordt met de bestaande veilige omslagdownloader lokaal gecontroleerd en gecachet.
+- Beheerders kunnen voortgang bekijken via `GET /api/admin/book-enrichment/status` (adminauthenticatie vereist). De uitslag bevat alleen aantallen, geen leerlinggegevens.
+- Deze eerste fase gebruikt een specifieke gratis, Nederlandstalige boekbron en de reeds bestaande HTML-uitleesfunctionaliteit van Bureau ISBN bij optionele ISBN-preview. Het is **geen onbeperkte algemene webzoekmachine**. Willekeurige webwinkels automatisch doorzoeken zonder toestemming of juiste rechten is niet ingebouwd.
+- De metadatahouder en de school moeten de voorwaarden en rechten voor overgenomen omslagbestanden en tekst controleren. Het kunnen opvragen van een bestand betekent niet automatisch dat herpublicatie is toegestaan. EasyCB is een gratis dienst van een derde partij die zonder garantie wordt aangeboden.
 
 ### Intern ISBN voor metadata
 
