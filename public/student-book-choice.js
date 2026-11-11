@@ -13,7 +13,6 @@
   const availableInput = document.getElementById('student-choice-available');
   const results = document.getElementById('student-choice-results');
   const status = document.getElementById('student-choice-status');
-  let allBooks = [];
   let editions = [];
   let loadVersion = 0;
   let active = false;
@@ -115,9 +114,9 @@
     if (!response.ok) throw Error('De actuele bibliotheek kon niet worden geladen.');
     const body = await response.json();
     if (!Array.isArray(body)) throw Error('De catalogusgegevens zijn niet beschikbaar.');
-    allBooks = body;
-    editions = mergeCopies(body);
-    return editions;
+    // Keep the response local. A stale request from a closed dialog may
+    // otherwise overwrite the current session's recommendations.
+    return mergeCopies(body);
   }
   function matches(book, selectedThemes, maxPages, onlyEasy, onlyExam, onlyAvailable) {
     if (onlyAvailable && !book.available) return false;
@@ -184,7 +183,7 @@
       content.append(make('p', 'bb-choice__reason', explanation(book, chosen)));
       content.append(make('span', book.available ? 'bb-choice__available' : 'bb-choice__unavailable',
         book.available ? book.available + ' van ' + book.total + ' beschikbaar'
-          : 'Momenteel uitgeleend'));
+          : 'Momenteel niet beschikbaar'));
       const open = make('button', 'btn btn--secondary', 'Bekijk boek');
       open.type = 'button';
       open.addEventListener('click', async () => {
@@ -239,8 +238,9 @@
     searchButton.disabled = true;
     const request = ++loadVersion;
     try {
-      await fetchCurrentBooks();
+      const current = await fetchCurrentBooks();
       if (request !== loadVersion || !active) return;
+      editions = current;
       renderThemes();
       status.textContent = editions.length
         ? 'Kies waar je naar op zoek bent. Meerdere thema’s kunnen samen.'
@@ -249,7 +249,7 @@
       status.textContent = error.message;
     } finally {
       searchButton.disabled = false;
-      themeArea.querySelector('input')?.focus();
+      if (active) themeArea.querySelector('input')?.focus();
     }
   }
   button.disabled = false;
