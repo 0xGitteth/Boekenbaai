@@ -8,6 +8,7 @@ const { URL } = require('url');
 const core = require('./google-auth-core');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const { setParnassysStudentNumber, getParnassysStudentNumber } = require('./google-first-people-import');
+const { examReadingAccess } = require('./exam-reading-access');
 const { commitPairedJson } = require('./paired-store-commit');
 const { acquireFileLock } = require('./book-import-reminder-mail');
 
@@ -271,6 +272,7 @@ function appendHistory(db, type, message, extra = {}) {
 
 function sanitizeStudent(db, store, student) {
   const ids = studentClassIds(db, student);
+  const examAccess = examReadingAccess(db, student);
   const link = core.findLinkByAccount(store, 'student', student.id);
   return {
     id: student.id,
@@ -279,6 +281,9 @@ function sanitizeStudent(db, store, student) {
     lastName: student.lastName || '',
     classIds: ids,
     classNames: classNames(db, ids),
+    examReadingEligible: examAccess.eligible,
+    examReadingNeedsDecision: examAccess.needsDecision,
+    examReadingEligibleOverride: student.examReadingEligibleOverride === true,
     parnassysStudentNumber: getParnassysStudentNumber(student),
     active: student.active !== false,
     googleLinked: Boolean(link?.sub),
