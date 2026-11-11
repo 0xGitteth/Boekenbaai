@@ -145,7 +145,15 @@
     const recent = Array.isArray(data?.recent) ? data.recent : [];
     if (!recent.length) recentRoot.append(make('p', 'hint', 'Je hebt nog geen boeken geleend.'));
     else for (const entry of recent) recentRoot.append(renderBook(entry));
-    historyOpen.hidden = !recent.length;
+    // Self-reported books may provide statistics without any school loans.
+    const stats = data?.statistics || {};
+    const hasStatistics = Number(stats.readTitles || 0) > 0 ||
+      Number(stats.readPagesKnown || 0) > 0 ||
+      Number(stats.weekdaysWithLoans || 0) > 0;
+    historyOpen.hidden = !recent.length && !hasStatistics;
+    historyOpen.textContent = recent.length
+      ? 'Volledige leengeschiedenis'
+      : 'Mijn leesstatistieken';
     renderStats();
     renderHistory();
   }
@@ -239,8 +247,12 @@
   editDialog.addEventListener('close', () => { editing = null; editFeedback.textContent = ''; });
   historyOpen.addEventListener('click', () => {
     if (!studentId) return;
-    showTab('history');
+    const hasHistory = Array.isArray(data?.recent) && data.recent.length > 0;
+    showTab(hasHistory ? 'history' : 'stats');
     historyDialog.showModal();
+    // Fetch the latest external-book changes even if another tab edited
+    // the exam list before this dialog was opened.
+    refresh();
   });
   historyClose.addEventListener('click', () => historyDialog.close());
   historyTab.addEventListener('click', () => showTab('history'));
@@ -266,5 +278,6 @@
   window.addEventListener('boekenbaai:staff-auth-cleared', clear);
   window.addEventListener('boekenbaai:reading-record-created', refresh);
   window.addEventListener('boekenbaai:reading-record-updated', refresh);
+  window.addEventListener('boekenbaai:exam-reading-list-updated', refresh);
   window.addEventListener('pageshow', refresh);
 })();
