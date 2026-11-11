@@ -1,0 +1,280 @@
+/* Authenticated student profile: match the compact teacher portal cards.
+   Guest login, staff handoff and book catalogue stay unchanged. */
+body[data-page="student"] #student-profile-view .bb-student-profile-welcome { display:none; }
+
+body[data-page="student"] #student-profile-view:has(> #student-dashboard:not(.hidden)) {
+  width:100%;
+  max-width:1170px;
+  padding:9px 0 52px;
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:15px;
+  align-items:stretch;
+}
+body[data-page="student"] #student-profile-view:has(> #student-dashboard:not(.hidden)) > .bb-student-profile-welcome {
+  box-sizing:border-box;
+  display:flex;
+  grid-column:1/-1;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:16px;
+  padding:3px 1px 7px;
+  margin:0;
+}
+body[data-page="student"] .bb-student-profile-eyebrow {
+  margin:0 0 5px;
+  color:#476e99;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.09em;
+}
+body[data-page="student"] .bb-student-profile-welcome h2 {
+  margin:0 0 5px;
+  color:#10254b;
+  font:800 clamp(25px,2.2vw,31px)/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:-.025em;
+}
+body[data-page="student"] .bb-student-profile-identity {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px 12px;
+  margin:0;
+  color:#607793;
+  font-size:14px;
+}
+body[data-page="student"] .bb-student-profile-identity strong {
+  color:#284362;
+  font-weight:750;
+}
+body[data-page="student"] .bb-student-profile-identity #student-grade:not(:empty) {
+  border-left:1px solid #cdd9e8;
+  padding-left:12px;
+}
+body[data-page="student"] #student-profile-view #student-logout {
+  box-sizing:border-box;
+  display:inline-flex;
+  flex:0 0 auto;
+  width:auto!important;
+  min-height:39px;
+  padding:8px 15px;
+  margin:0;
+  background:#fff;
+  border:1px solid #c9d8e9;
+  border-radius:9px;
+  color:#214c82;
+  font-size:13px;
+  font-weight:750;
+  box-shadow:none;
+}
+body[data-page="student"] #student-profile-view #student-logout:hover { background:#edf3fb; }
+body[data-page="student"] #student-profile-view :is(#student-dashboard,#student-activity,.bb-student-profile-card) {
+  box-sizing:border-box;
+  min-width:0;
+  margin:0;
+  padding:18px 20px;
+  background:#fff;
+  border:1px solid #d8e3f1;
+  border-radius:13px;
+  box-shadow:none;
+}
+body[data-page="student"] #student-profile-view #student-dashboard,
+body[data-page="student"] #student-profile-view #student-activity {
+  align-self:stretch;
+  min-height:0;
+}
+body[data-page="student"] #student-profile-view .bb-student-profile-card-heading {
+  display:flex;
+  align-items:center;
+  gap:11px;
+  margin:0 0 13px;
+}
+body[data-page="student"] #student-profile-view .bb-student-profile-card-heading h3 {
+  margin:0;
+  color:#10254b;
+  font:800 16px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+body[data-page="student"] #student-profile-view .bb-student-profile-icon {
+  box-sizing:border-box;
+  display:inline-grid;
+  flex:0 0 35px;
+  width:35px;
+  height:35px;
+  place-items:center;
+  border-radius:9px;
+  background:#eaf1fb;
+  color:#245f9e;
+}
+body[data-page="student"] #student-profile-view .bb-student-profile-icon svg {
+  display:block;
+  width:19px;
+  height:19px;
+}
+body[data-page="student"] #student-profile-view .bb-student-profile-card--activity .bb-student-profile-icon,
+body[data-page="student"] #student-profile-view .bb-student-profile-card--reading .bb-student-profile-icon {
+  background:#e9f6f1;
+  color:#228567;
+}
+body[data-page="student"] #student-profile-view .bb-student-profile-card--exam .bb-student-profile-icon {
+  background:#fff3df;
+  color:#a86f20;
+}
+body[data-page="student"] #student-profile-view .bb-student-profile-card--pin .bb-student-profile-icon {
+  background:#f0ebfb;
+  color:#7258ab;
+}
+body[data-page="student"] #student-profile-view :is(#student-borrowed-empty,#student-activity-empty) {
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  width:100%;
+  min-height:48px;
+  margin:0;
+  padding:11px 13px;
+  border:1px solid #dbe4ef;
+  border-radius:10px;
+  background:#f5f8fc;
+  color:#365776;
+  font-size:13px;
+  line-height:1.45;
+}
+body[data-page="student"] #student-profile-view :is(#student-borrowed-empty,#student-activity-empty).hidden { display:none!important; }
+body[data-page="student"] #student-profile-view :is(#student-borrowed-list,#student-activity-list) {
+  padding:0;
+  margin:0;
+  gap:8px;
+}
+body[data-page="student"] #student-profile-view #student-borrowed-list .borrowed-list__item,
+body[data-page="student"] #student-profile-view #student-activity-list .activity-list__item {
+  min-width:0;
+  padding:11px 12px;
+  margin:0;
+  border:1px solid #e1e9f3;
+  border-radius:10px;
+  background:#f9fbfe;
+  box-shadow:none;
+  color:#284362;
+  overflow-wrap:anywhere;
+}
+body[data-page="student"] #student-profile-view #student-borrowed-list .borrowed-list__item strong,
+body[data-page="student"] #student-profile-view #student-activity-list .activity-list__item strong { color:#173a68; }
+body[data-page="student"] #student-profile-view #student-activity-list .activity-list__item { gap:5px 10px; }
+body[data-page="student"] #student-profile-view #student-profile-account {
+  box-sizing:border-box;
+  display:grid;
+  grid-column:1/-1;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:15px;
+  width:100%;
+  min-width:0;
+  max-width:none;
+  padding:0;
+  margin:0;
+  background:transparent;
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+}
+body[data-page="student"] #student-profile-view #student-profile-account.hidden { display:none!important; }
+body[data-page="student"] #student-profile-account .bb-student-profile-card {
+  align-self:stretch;
+  min-height:0;
+}
+body[data-page="student"] #student-profile-account .bb-student-account-facts {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin:0;
+}
+body[data-page="student"] #student-profile-account .bb-student-account-facts div {
+  padding:12px;
+  border:1px solid #e1e9f3;
+  border-radius:9px;
+  background:#f5f8fc;
+}
+body[data-page="student"] #student-profile-account .bb-student-account-facts dt { color:#607793; }
+body[data-page="student"] #student-profile-account .bb-student-account-facts dd { color:#173a68; }
+body[data-page="student"] #student-profile-account .reading-records {
+  margin:0;
+  padding:18px 20px;
+  border:1px solid #d8e3f1;
+}
+body[data-page="student"] #student-profile-account .reading-records > .hint {
+  max-width:none;
+  margin:0 0 12px;
+  color:#607793;
+  font-size:13px;
+  line-height:1.5;
+}
+body[data-page="student"] #student-profile-account :is(#student-reading-records,#student-exam-reading-list) > .hint {
+  margin:0;
+  padding:10px 12px;
+  border:1px solid #dbe4ef;
+  border-radius:9px;
+  background:#f5f8fc;
+  color:#365776;
+  font-size:13px;
+}
+body[data-page="student"] #student-profile-account .exam-reading__row,
+body[data-page="student"] #student-profile-account .reading-record__item { gap:10px; padding:10px 0; }
+body[data-page="student"] #student-profile-account #student-exam-reading-summary {
+  margin:0 0 10px;
+  color:#365776;
+  font-size:13px;
+}
+body[data-page="student"] #student-profile-account #student-exam-reading-summary:empty,
+body[data-page="student"] #student-profile-account #student-exam-reading-feedback:empty { display:none; }
+body[data-page="student"] #student-profile-account #student-pin-details {
+  margin:0;
+  padding:18px 20px;
+  border:1px solid #d8e3f1;
+  border-radius:13px;
+  background:#fff;
+}
+body[data-page="student"] #student-profile-account #student-pin-details summary {
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:0;
+  margin:0;
+  cursor:pointer;
+  color:#10254b;
+  font:800 16px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;
+  list-style:none;
+}
+body[data-page="student"] #student-profile-account #student-pin-details summary::-webkit-details-marker { display:none; }
+body[data-page="student"] #student-profile-account #student-pin-details summary::after {
+  content:"";
+  flex:0 0 8px;
+  width:8px;
+  height:8px;
+  margin:0 3px 0 auto;
+  border-right:2px solid #64809f;
+  border-bottom:2px solid #64809f;
+  transform:rotate(45deg);
+  transition:transform .15s ease;
+}
+body[data-page="student"] #student-profile-account #student-pin-details[open] summary::after { transform:rotate(225deg); }
+body[data-page="student"] #student-profile-account #student-pin-details > p { color:#607793; font-size:13px; line-height:1.5; }
+body[data-page="student"] #student-profile-account #student-pin-details > p.hint { max-width:none; margin:12px 0 8px; }
+body[data-page="student"] #student-profile-account #student-pin-status { margin:9px 0 0; }
+body[data-page="student"] #student-profile-account .bb-student-pin-form { max-width:none; padding:13px 0 0; gap:11px; }
+body[data-page="student"] #student-profile-account .bb-student-pin-form .form-field { margin:0; }
+body[data-page="student"] #student-profile-account .bb-student-pin-form .form-field label { font-size:13px; }
+body[data-page="student"] #student-profile-account #student-pin-feedback:empty { display:none; }
+@media (max-width:850px) {
+  body[data-page="student"] #student-profile-view:has(> #student-dashboard:not(.hidden)),
+  body[data-page="student"] #student-profile-view #student-profile-account { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:520px) {
+  body[data-page="student"] #student-profile-view:has(> #student-dashboard:not(.hidden)) { gap:12px; padding-top:4px; }
+  body[data-page="student"] #student-profile-view:has(> #student-dashboard:not(.hidden)) > .bb-student-profile-welcome { align-items:flex-start; }
+  body[data-page="student"] .bb-student-profile-welcome h2 { font-size:25px; }
+  body[data-page="student"] #student-profile-view #student-logout { padding:8px 10px; }
+  body[data-page="student"] #student-profile-view :is(#student-dashboard,#student-activity,.bb-student-profile-card),
+  body[data-page="student"] #student-profile-account #student-pin-details,
+  body[data-page="student"] #student-profile-account .reading-records { padding:16px; }
+  body[data-page="student"] #student-profile-account .bb-student-account-facts { grid-template-columns:minmax(0,1fr); }
+}
+@media (prefers-reduced-motion:reduce) {
+  body[data-page="student"] #student-profile-account #student-pin-details summary::after { transition:none; }
+}
