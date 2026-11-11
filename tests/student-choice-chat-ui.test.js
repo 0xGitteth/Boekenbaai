@@ -95,7 +95,7 @@ vm.runInNewContext(code,{
   other.listeners.click();
   assert.equal(pin.value,'','Switching to anonymous mode must wipe PIN input');
   assert.ok(log.children.some(row=>row.children[0]?.textContent===
-    'Wil je zelf ontdekken wat je leuk vindt, of liever meteen een paar boeken bekijken?'),
+    'Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?'),
     'Show the selected exact question to anonymous learners');
   assert.ok(actions.children.some(x=>x.textContent==='Ontdek mijn interesses'),
     'The first answer should start the questionnaire');
@@ -139,7 +139,7 @@ vm.runInNewContext(code,{
   loggedIn=true;
   await elements.get('student-help-choose').listeners.click();
   assert.equal(log.children[0].children[0].textContent,
-    'Hoi Sanne! Wil je zelf ontdekken wat je leuk vindt, of liever meteen een paar boeken bekijken?');
+    'Hoi Sanne! Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?');
   assert.equal(actions.children.length,2);
   assert.deepEqual(actions.children.map(x=>x.textContent),
     ['Ontdek mijn interesses','Laat me drie boeken zien']);
