@@ -10,6 +10,7 @@ const {
 const { normalizeCoverCrop } = require('./lib/cover-crop');
 const { createCoverAssetStore } = require('./lib/cover-assets');
 const { planCoverBackfill } = require('./lib/cover-backfill-plan');
+const { createFreeMetadataWorker } = require('./book-free-metadata-worker');
 const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
@@ -86,6 +87,29 @@ let coverBackfillPending = false;
 const coverBackfillFailures = new Map();
 const coverRetryDelays = [30_000, 120_000, 600_000];
 let coverBackfillRetryTimer = null;
+
+// Optional, zero-subscription enrichment. No HTTP import or review awaits it.
+// A real contact email is mandatory for automated EasyCB lookups.
+const freeMetadataWorker = createFreeMetadataWorker({
+  contact: process.env.BOEKENBAAI_EASYCB_CONTACT || '',
+  loadDb: () => loadDb(),
+  isPaused: () => shuttingDown || Boolean(activeBookImportLease)
+    || Boolean(bookImportStageStore.active()),
+  fetchImpl: global.fetch,
+  commit: async (apply) => {
+    let outcome = null;
+    await mutateJsonLockedAsync({
+      lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 2500,
+      read: () => loadDb(),
+      mutate: (db) => {
+        outcome = apply(db);
+        return db;
+      },
+    });
+    return outcome;
+  },
+  onNewCover: () => scheduleCoverBackfill({ resetFailures: true }),
+});
 
 function scheduleBackfillRetry() {
   if (shuttingDown || coverBackfillRetryTimer) return;
@@ -4635,6 +4659,7 @@ async function handleApi(req, res, requestUrl) {
       });
       saveDb(db);
       if (book.coverUrl && !book.localCoverUrl) scheduleCoverBackfill({ resetFailures: true });
+      freeMetadataWorker.schedule(1500);
       return sendJson(res, 200, {
         book,
         createdCopies: createdCopies.map((entry) => entry.id),
@@ -4972,6 +4997,12 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 200, { taskId: task.id, classId: task.classId, revision: task.revision });
       }
       return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+    }
+
+    // Operational visibility without exposing private learner or loan data.
+    if (requestUrl.pathname === '/api/admin/book-enrichment/status' && req.method === 'GET') {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, 403, { message: 'Alleen voor beheerders.' });
+      return sendJson(res, 200, freeMetadataWorker.status());
     }
 
     // PR3 staged book import is separate from the legacy direct upload route.
@@ -5394,6 +5425,7 @@ async function handleApi(req, res, requestUrl) {
               retainedEditions: fresh.summary.acknowledgedEditions,
               report, omittedExistingCopies: fresh.summary.omittedExistingCopies,
             });
+            freeMetadataWorker.schedule(1500);
             return sendJson(res, 200, importStageView(stage));
           }
           const plan = buildStageApplyPlan(
@@ -5548,6 +5580,7 @@ async function handleApi(req, res, requestUrl) {
           const result = { batchId, created: newCopies.length,
             restoredLoans: importedLoanHistory.length, importedRows: plan.created.length, report };
           bookImportStageStore.finishApply(stage, result);
+          freeMetadataWorker.schedule(1500);
           return sendJson(res, 200, importStageView(stage));
         } finally {
           bookImportStageStore.abortApply(stage);
@@ -8709,6 +8742,8 @@ server.listen(PORT, () => {
   // Resume interrupted cover caching without delaying startup or test setup.
   if (typeof setImmediate === 'function') {
     const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
+    const resumeMetadata = setTimeout(() => freeMetadataWorker.schedule(), 12000);
+    resumeMetadata.unref?.();
     if (typeof restartBackfill?.unref === 'function') restartBackfill.unref();
     const firstCleanup = setTimeout(runCoverGarbageCollection, 60_000);
     if (typeof firstCleanup?.unref === 'function') firstCleanup.unref();
@@ -8722,6 +8757,7 @@ function gracefulShutdown(signal) {
     return;
   }
   shuttingDown = true;
+  freeMetadataWorker.stop();
   console.log(`Ontvangen signaal ${signal}, server wordt afgesloten...`);
   // Stop starting new recipients; finish an in-flight bridge request before
   // exiting. Outbound fetch is not covered by server.close().
