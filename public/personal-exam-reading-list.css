@@ -1,0 +1,59 @@
+/* Personal exam list follows the existing calm, compact profile styling. */
+.exam-reading__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e1e9f1;
+}
+.exam-reading__info {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.exam-reading__info strong { font-size: .98rem; overflow-wrap: anywhere; }
+.exam-reading__info .hint { font-size: .82rem; margin: 0; }
+.exam-reading__read {
+  width: fit-content;
+  background: #eaf5ec;
+  color: #23663a;
+  border: 1px solid #b8ddc3;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-weight: 700;
+  font-size: .79rem;
+}
+.exam-reading__actions {
+  display: flex;
+  flex: 1 1 300px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.exam-reading__actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .85rem;
+}
+.exam-reading__actions select {
+  max-width: 170px;
+  min-height: 39px;
+  padding: 6px 9px;
+  border: 1px solid #bccbdd;
+  border-radius: 7px;
+  background: #fff;
+  color: #243958;
+}
+.exam-reading__actions .btn { min-height: 39px; padding: 7px 11px; }
+.exam-reading__actions .hint { width: 100%; margin: 0; }
+@media (max-width: 600px) {
+  .exam-reading__actions { justify-content: flex-start; }
+  .exam-reading__actions label { width: 100%; }
+  .exam-reading__actions select { flex: 1 1 auto; max-width: none; }
+}
