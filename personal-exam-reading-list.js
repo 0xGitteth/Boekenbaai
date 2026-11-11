@@ -166,7 +166,7 @@ function addExternalBook(db, studentId, input, actorId, now) {
   const title = typeof input.title === 'string' ? input.title.trim().replace(/\s+/g, ' ') : '';
   const author = typeof input.author === 'string' ? input.author.trim().replace(/\s+/g, ' ') : '';
   const rawIsbn = typeof input.isbn === 'string' ? input.isbn.trim() : '';
-  const isbn = rawIsbn.replace(/[\\s-]/g, '').toUpperCase();
+  const isbn = rawIsbn.replace(/[\s-]/g, '').toUpperCase();
   const genre = typeof input.genre === 'string' ? input.genre.trim().replace(/\s+/g, ' ') : '';
   const rawPages = input.pageCount;
   const pages = rawPages === '' || rawPages === null || rawPages === undefined ? null : Number(rawPages);
