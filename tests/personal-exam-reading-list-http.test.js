@@ -34,6 +34,8 @@ async function run() {
         metadataIsbn: '9780306406157', suitableForExamList: true, status: 'available' },
       { id: 'copy-c', title: 'Titel C', author: 'B Auteur',
         metadataIsbn: '9780140328721', suitableForExamList: true, status: 'available' },
+      { id: 'copy-d', title: 'Titel A', author: 'A Auteur',
+        metadataIsbn: '9780140328721', suitableForExamList: true, status: 'available' },
     ],
     students: [
       { id: 'stu-a', name: 'Student A', username: 'stu-a', passwordHash: hash('pass'),
@@ -82,6 +84,15 @@ async function run() {
     assert.equal((await call('/api/exam-reading-list?studentId=stu-a', other)).status, 403);
     assert.equal((await call('/api/exam-reading-list?studentId=stu-a', wrongTeacher)).status, 403);
     assert.equal((await call('/api/exam-reading-list?studentId=stu-a', teacher)).status, 200);
+    const staffDirectory = await call('/api/staff/loans', teacher);
+    assert.equal(staffDirectory.status, 200);
+    const firstEdition = staffDirectory.body.books.find(book => book.id === 'copy-a');
+    const anotherEdition = staffDirectory.body.books.find(book => book.id === 'copy-d');
+    assert.equal(firstEdition.metadataIsbn, '9780306406157');
+    assert.equal(anotherEdition.metadataIsbn, '9780140328721');
+    assert.notEqual(firstEdition.editionKey, anotherEdition.editionKey,
+      'Staff selector must distinguish different editions of the same title');
+
     assert.equal((await call('/api/exam-reading-list', student)).body.entries.length, 0);
     assert.equal((await call('/api/exam-reading-list', student,
       { bookId: 'copy-a', studentId: 'stu-b' })).status, 403);
