@@ -8,6 +8,7 @@ const security=require('./google-auth-security-core');
 const pins=require('./student-pin-core');
 const {readJsonSnapshot,mutateJsonLockedAsync}=require('./database-write-coordinator');
 const {rankBooks}=require('./student-choice-recommendations');
+const {attachDerivedThemeFields}=require('./book-theme-normalization');
 const DATA_PATH=process.env.BOEKENBAAI_DATA_PATH
   ? path.resolve(__dirname,process.env.BOEKENBAAI_DATA_PATH) : path.join(__dirname,'data','db.json');
 const AUTH_PATH=process.env.BOEKENBAAI_AUTH_DATA_PATH
@@ -112,7 +113,10 @@ async function suggestions({grant,sessionToken,choices}){
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
       const identity=resolveChoice(db,loadAuth(),{grant,sessionToken});
-      result=rankBooks(db,choices,{
+      // Match public catalogue GET normalization. Raw imported tags are
+      // not curator-approved themes until these shared rules are applied.
+      const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
+      result=rankBooks(catalogue,choices,{
         studentId:identity?.studentId||'',
         seenKeys:identity?pastKeys(db,identity.studentId):[],
       });
