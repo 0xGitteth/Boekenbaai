@@ -4694,7 +4694,7 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
       }
       const body = await parseBody(req);
-      if (typeof body.bookId !== 'string' || !/^[\\w-]{1,128}$/.test(body.bookId)) {
+      if (typeof body.bookId !== 'string' || !/^[\w-]{1,128}$/.test(body.bookId)) {
         return sendJson(res, 400, { message: 'Kies een boek uit de bibliotheek.' });
       }
       if (user.role === 'student' && body.studentId && body.studentId !== user.id) {
@@ -4720,7 +4720,7 @@ async function handleApi(req, res, requestUrl) {
       });
     }
 
-    const examEntryMatch = requestUrl.pathname.match(/^\\/api\\/exam-reading-list\\/([\\w-]+)$/);
+    const examEntryMatch = requestUrl.pathname.match(/^\/api\/exam-reading-list\/([\w-]+)$/);
     if (examEntryMatch && (req.method === 'PATCH' || req.method === 'DELETE')) {
       if (!user) return sendJson(res, 401, { message: 'Log eerst in.' });
       if (!authSecurityForPin.isSameOriginMutation(req,
