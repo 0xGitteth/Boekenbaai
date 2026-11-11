@@ -90,15 +90,14 @@
   }
   function finishIdentity(){
     message(personal&&firstName
-      ? 'Hoi '+firstName+'! Wil je een boek dat lijkt op iets wat je eerder hebt gelezen, of liever iets nieuws?'
-      : 'Oké! Zullen we iets nieuws zoeken, of wil je verrast worden?');
+      ? 'Hoi '+firstName+'! Hoe wil je een boek vinden?'
+      : 'Wil je eerst een paar vragen beantwoorden, of meteen drie boekentips zien?');
     currentStep='route';
-    const items=[
-      ...(personal?[['Iets als mijn eerder gelezen boeken',()=>answer('route','similar')]]:[]),
-      ['Iets nieuws ontdekken',()=>answer('route','new')],
-      ['Verras me',()=>answer('route','surprise')],
-    ];
-    options(items);
+    options([
+      ['Stel me vragen',()=>answer('route','new')],
+      ...(personal?[['Iets als eerder gelezen',()=>answer('route','similar')]]:[]),
+      ['Verras me met 3 boeken',()=>answer('route','surprise')],
+    ]);
   }
   async function begin(){
     previousFocus=document.activeElement;
@@ -119,15 +118,15 @@
     }catch(_){/* Invalid/guest sessions never inherit personal data. */}
     if(!active||marker!==epoch)return;
     notice('');
-    message('Hoi! Ik help je een leuk boek te vinden. Wil je dat ik rekening houd met wat je eerder hebt gelezen? Dat kan met dezelfde PIN als bij het lenen van boeken. Je kunt ook zonder PIN verder.');
+    message('Hoi! Ik help je een boek te vinden. Log in voor persoonlijke tips, of ga zonder inloggen verder.');
     options([
-      ['Met mijn PIN',showPin],
-      ['Zonder PIN',()=>{personal=false;finishIdentity();}],
+      ['Inloggen',showPin],
+      ['Zonder inloggen',()=>{personal=false;finishIdentity();}],
     ]);
   }
   function showPin(){
     currentStep='pin';
-    message('Zoek je naam in de lijst en vul je PIN in. Dit is dezelfde PIN die je gebruikt om boeken te lenen.');
+    message('Zoek je naam en vul je PIN in.');
     const form=el('form','bb-choice-chat__pin');
     form.autocomplete='off';
     const label=el('label','','Jouw naam');
@@ -137,13 +136,13 @@
     name.setAttribute('aria-label','Zoek jouw naam');
     name.setAttribute('aria-expanded','false');
     const matches=el('ul','bb-choice-chat__matches');
-    const pinLabel=el('label','','Jouw PIN (6 cijfers)');
+    const pinLabel=el('label','','PIN (6 cijfers)');
     const pin=el('input');
     pin.type='password';pin.inputMode='numeric';pin.autocomplete='off';
     pin.pattern='[0-9]{6}';pin.maxLength=6;pin.minLength=6;pin.required=true;
-    const submit=el('button','btn','Persoonlijke tips starten');
+    const submit=el('button','btn','Inloggen');
     submit.type='submit';
-    const other=el('button','btn btn--ghost','Zonder PIN verder');
+    const other=el('button','btn btn--ghost','Zonder inloggen');
     other.type='button';
     const google=el('button','btn btn--ghost','Inloggen met Google');
     google.type='button';
@@ -229,7 +228,7 @@
   }
   function answer(field,value){
     choices[field]=value;
-    if(field==='route')askActivity();
+    if(field==='route') value==='surprise' ? showRecommendations() : askActivity();
     else if(field==='activity')askDetail();
     else if(field==='detail')askSituation();
     else if(field==='situation')askMood();
@@ -382,7 +381,9 @@
       if(!active||marker!==epoch)return;
       const catalogue=Array.isArray(available)?available:[];
       lastBooks=results.suggestions;
-      const block=message('Ik heb deze boeken voor je gevonden:');
+      const block=message(choices.route==='surprise'
+        ? 'Deze drie boeken heb ik voor je uitgekozen:'
+        : 'Ik heb deze boeken voor je gevonden:');
       const list=el('div','bb-choice-chat__result-list');
       for(const book of results.suggestions){
         shownInDialogue.add(book.key);
@@ -390,7 +391,9 @@
         list.append(resultCard(book,catalogue));
       }
       block.append(list);
-      notice('Deze tips zijn gebaseerd op je antwoorden.');
+      notice(choices.route==='surprise'
+        ? 'Een afwisselende selectie uit de bibliotheek.'
+        : 'Deze tips zijn gebaseerd op je antwoorden.');
       message('Zit er iets tussen?');
       followupButtons(false);
     }catch(err){
@@ -407,9 +410,13 @@
   }
   function followupButtons(exhausted){
     options([
-      ...(!exhausted?[['Nog drie voorstellen',()=>showRecommendations()]]:[]),
-      ['Andere richting',askSituation],
-      ['Korter boek',()=>{choices.length='short';showRecommendations();}],
+      ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
+        ()=>showRecommendations()]]:[]),
+      ...(choices.route==='surprise'
+        ? [['Stel me vragen',()=>{choices={route:'new'};askActivity();}]]
+        : [['Andere richting',askSituation],
+          ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
+          ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
