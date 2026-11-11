@@ -5,6 +5,12 @@
   if (!root) return;
   const feedback = document.getElementById('student-exam-reading-feedback');
   const summary = document.getElementById('student-exam-reading-summary');
+  const section = document.getElementById('student-exam-reading-section');
+  const addTrigger = document.getElementById('student-exam-add-trigger');
+  const addDialog = document.getElementById('student-exam-add-dialog');
+  const addForm = document.getElementById('student-exam-add-form');
+  const addFeedback = document.getElementById('student-exam-add-feedback');
+  const addSave = document.getElementById('student-exam-add-save');
   let requestSequence = 0;
   let working = false;
 
@@ -51,14 +57,9 @@
   function render(data) {
     root.replaceChildren();
     const entries = Array.isArray(data.entries) ? data.entries : [];
-    const actualRead = Number(data.statistics?.readBooks || 0);
-    summary.textContent = entries.length + ' ' +
-      (entries.length === 1 ? 'boek' : 'boeken') + ' op je lijst. ' +
-      actualRead + ' verschillende boeken bevestigd uitgelezen bij inleveren.';
-    if (!entries.length) {
-      root.append(el('p', 'hint', 'Je examenleeslijst is nog leeg. Open een boek in de bibliotheek en kies ‘Op examenleeslijst’.'));
-      return;
-    }
+    summary.textContent = '';
+    if (section) section.hidden = entries.length === 0;
+    if (!entries.length) return;
     for (const item of entries) {
       const row = el('article', 'exam-reading__row');
       const info = el('div', 'exam-reading__info');
@@ -67,6 +68,8 @@
         item.suitableForExamList ? 'Gemarkeerd als examenmateriaal' : 'Niet als examenmateriaal gemarkeerd']
         .filter(Boolean).join(' · ');
       info.append(el('span', 'hint', metadata));
+      if (item.externalSource) info.append(el('span', 'hint', 'Eigen boek, geschiktheid nog niet gecontroleerd'));
+      info.append(el('span', 'bb-profile-status' + (item.status === 'gelezen' ? ' bb-profile-status--read' : ''), statusText(item.status)));
       if (item.readFromReturn) {
         info.append(el('span', 'exam-reading__read', 'Gelezen, bevestigd bij inleveren'));
       } else if (item.status === 'gelezen') {
@@ -83,7 +86,7 @@
       select.value = item.manualStatus || 'nog_lezen';
       if (item.readFromReturn) {
         select.disabled = true;
-        label.title = 'Wijzig een bevestigd leesantwoord bij Mijn leesregistraties.';
+        label.title = 'Wijzig een bevestigd leesantwoord bij Laatst geleende boeken.';
       }
       label.append(select);
       const save = el('button', 'btn btn--secondary', 'Opslaan');
@@ -150,6 +153,7 @@
       if (sequence !== requestSequence) return;
       root.replaceChildren(el('p', 'hint', error.message));
       summary.textContent = '';
+      if (section) section.hidden = true;
     }
   }
 
@@ -173,6 +177,39 @@
     }
   }
 
+  // Personal books never create school stock or circulation transactions.
+  addTrigger?.addEventListener('click', () => {
+    addFeedback.textContent = '';
+    addDialog.showModal();
+    document.getElementById('student-exam-add-title')?.focus();
+  });
+  document.getElementById('student-exam-add-cancel')?.addEventListener('click', () => addDialog.close());
+  addForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (working) return;
+    const value = id => document.getElementById('student-exam-add-'+id)?.value || '';
+    working = true;
+    addSave.disabled = true;
+    addFeedback.textContent = 'Boek toevoegen…';
+    try {
+      const result = await api('/api/exam-reading-list', {
+        method:'POST',
+        body:JSON.stringify({ externalBook:{
+          title:value('title'), author:value('author'), isbn:value('isbn'),
+          pageCount:value('pages'), genre:value('genre'),
+        }}),
+      });
+      addDialog.close();
+      addForm.reset();
+      feedback.textContent = result.created ? 'Eigen examenboek toegevoegd.' : 'Dit boek staat al op je lijst.';
+      await refresh();
+    } catch (error) {
+      addFeedback.textContent = error.message;
+    } finally {
+      working = false;
+      addSave.disabled = false;
+    }
+  });
   window.BoekenbaaiExamList = { addBook, refresh };
   for (const eventName of [
     'boekenbaai:student-auth-validated',
@@ -187,6 +224,9 @@
       root.replaceChildren();
       summary.textContent = '';
       feedback.textContent = '';
+      if (section) section.hidden = true;
+      if (addDialog?.open) addDialog.close();
+      addForm?.reset();
     });
   }
   refresh();
