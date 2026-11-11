@@ -146,6 +146,12 @@ privateDb.readingRecords.push({
 assert.equal(publicEntry(privateDb,personal.entry).readFromReturn,true,
   'A later real school checkout should confirm the matching private title');
 assert.equal(publicEntry(privateDb,personal.entry).status,'gelezen');
+const spacedIsbn = addExternalBook(privateDb,'solo',{
+  title:'Boek met ISBN',author:'Auteur B',isbn:'978 0 306 40615 7',
+},'solo',now);
+assert.equal(spacedIsbn.created,true);
+assert.equal(spacedIsbn.entry.isbn,'9780306406157',
+  'Whitespace-separated valid ISBNs must be accepted');
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'',author:'X'},'solo',now),/titel en auteur/i);
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',pageCount:-4},'solo',now),/pagina/i);
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',isbn:'1234567890123'},'solo',now),/controlecijfer/i);
