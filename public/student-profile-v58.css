@@ -1,0 +1,191 @@
+/* Student profile v58: no empty equal-height cards, responsive reading history. */
+body[data-page="student"] #student-profile-view.bb-student-profile-v58:has(#student-dashboard:not(.hidden)) {
+  width:100%;
+  max-width:1170px;
+  margin:0 auto;
+  padding:9px 0 50px;
+  display:block;
+}
+body[data-page="student"] #student-profile-view .bb-profile-layout { display:none; }
+body[data-page="student"] #student-profile-view.bb-student-profile-v58:has(#student-dashboard:not(.hidden)) > .bb-student-profile-welcome {
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:14px;
+  padding:3px 1px 21px;
+}
+body[data-page="student"] .bb-profile-header-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+body[data-page="student"] #student-profile-view #student-exam-add-trigger {
+  box-sizing:border-box; width:auto; min-height:39px; padding:8px 13px;
+  border-radius:9px; border:1px solid #bdd5ef; color:#1d508e; background:#e6f1fe;
+  font-size:13px; font-weight:750;
+}
+body[data-page="student"] #student-exam-add-trigger:hover { background:#d6e8fb; }
+body[data-page="student"] #student-profile-view.bb-student-profile-v58:has(#student-dashboard:not(.hidden)) .bb-profile-layout {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  align-items:start;
+  gap:16px;
+}
+body[data-page="student"] #student-profile-view .bb-profile-left {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  align-content:start;
+  align-items:start;
+  gap:15px;
+  min-width:0;
+}
+body[data-page="student"] #student-profile-view .bb-profile-layout:has(> #student-exam-reading-section:not([hidden])) {
+  grid-template-columns:minmax(0,0.95fr) minmax(0,1.12fr);
+}
+body[data-page="student"] #student-profile-view .bb-profile-layout:has(> #student-exam-reading-section:not([hidden])) .bb-profile-left {
+  grid-template-columns:minmax(0,1fr);
+}
+body[data-page="student"] #student-profile-view #student-profile-account:not(.hidden) {
+  display:contents!important;
+}
+body[data-page="student"] #student-profile-view #student-dashboard,
+body[data-page="student"] #student-profile-view #student-activity,
+body[data-page="student"] #student-profile-view #student-reading-summary-card,
+body[data-page="student"] #student-profile-view #student-exam-reading-section {
+  box-sizing:border-box;
+  align-self:start;
+  min-width:0;
+  min-height:0;
+  height:auto;
+  margin:0;
+  padding:18px 20px;
+  background:#fff;
+  border:1px solid #d8e3f1;
+  border-radius:13px;
+  box-shadow:none;
+}
+body[data-page="student"] #student-profile-view #student-exam-reading-section {
+  align-self:stretch;
+}
+body[data-page="student"] #student-profile-view #student-reading-summary-card > .bb-student-profile-card-heading,
+body[data-page="student"] #student-profile-view #student-exam-reading-section > .bb-student-profile-card-heading {
+  margin-bottom:13px;
+}
+body[data-page="student"] #student-profile-view #student-reading-summary-card .reading-record__item {display:none;}
+body[data-page="student"] #student-profile-view #student-reading-records[hidden] {display:none!important;}
+body[data-page="student"] #student-profile-view #student-reading-summary-card > .hint,
+body[data-page="student"] #student-profile-view #student-exam-reading-section > .hint {display:none;}
+body[data-page="student"] #student-profile-view .bb-profile-history-open {
+  box-sizing:border-box; width:auto; min-height:38px; padding:8px 12px;
+  margin-top:13px; font-size:13px; border-radius:8px;
+}
+body[data-page="student"] #student-profile-view #student-pin-details {
+  box-sizing:border-box;
+  align-self:start;
+  grid-column:auto;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:15px 18px!important;
+  background:#fff;
+  border:1px solid #d8e3f1;
+  border-radius:13px;
+  box-shadow:none;
+}
+body[data-page="student"] #student-profile-view #student-pin-details:not([open]) {
+  max-height:68px;
+  overflow:hidden;
+}
+body[data-page="student"] #student-profile-view #student-pin-details summary {
+  display:flex;
+  min-height:34px;
+  align-items:center;
+  margin:0;
+}
+body[data-page="student"] #student-profile-view #student-pin-details:not([open]) > :not(summary) {display:none!important;}
+body[data-page="student"] #student-profile-view #student-exam-reading-summary:empty,
+body[data-page="student"] #student-profile-view #student-exam-reading-feedback:empty {display:none!important;}
+body[data-page="student"] #student-profile-view #student-exam-reading-list .exam-reading__row { gap:9px; padding:12px 0; }
+body[data-page="student"] #student-profile-view #student-exam-reading-list .exam-reading__actions {flex-basis:auto;}
+body[data-page="student"] #student-profile-view .bb-profile-book-card {
+  width:100%;
+  display:flex; align-items:center; gap:12px;
+  padding:10px 12px; margin:0 0 8px;
+  border:1px solid #e1e9f3; border-radius:10px;
+  text-align:left; color:#19345d; background:#f7faff;
+  cursor:pointer; font:inherit; box-shadow:none;
+}
+body[data-page="student"] #student-profile-view .bb-profile-book-card:hover,
+.bb-profile-dialog .bb-profile-book-card:hover { border-color:#97b9e2; background:#eef5ff; }
+.bb-profile-book-card:focus-visible {outline:3px solid #8db3e7;outline-offset:2px;}
+.bb-profile-book-cover {
+  flex:0 0 44px; width:44px; height:66px;
+  border:1px solid #dce4ee; border-radius:5px;
+  object-fit:cover; background:#e8eef7;
+}
+.bb-profile-book-cover--fallback {
+  display:grid; place-items:center; text-align:center;
+  font-size:10px; font-weight:750; padding:3px; color:#557296;
+  overflow:hidden;
+}
+.bb-profile-book-copy {flex:1; display:grid; gap:4px; min-width:0;}
+.bb-profile-book-copy strong {font-size:14px;line-height:1.35;color:#173a68;overflow-wrap:anywhere;}
+.bb-profile-book-copy small {font-size:12px;color:#607793;}
+.bb-profile-status {
+  width:fit-content; max-width:100%; border-radius:6px;
+  padding:3px 7px; font-size:11px; font-weight:750;
+  color:#31577e; background:#e9f0fa;
+}
+.bb-profile-status--read {color:#16634f;background:#dcf4e9;}
+.bb-profile-status--unread {color:#915125;background:#fff0dd;}
+.bb-profile-dialog {
+  box-sizing:border-box; width:min(94vw,740px);
+  max-height:88dvh; overflow:auto; padding:24px;
+  border:1px solid #d8e3f1; border-radius:16px;
+  background:#fff; color:#18385c; box-shadow:0 20px 55px #14264149;
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+.bb-profile-dialog::backdrop {background:#10274688;}
+.bb-profile-dialog--edit {width:min(92vw,475px);}
+.bb-profile-dialog-heading {display:flex;justify-content:space-between;align-items:center;gap:13px;}
+.bb-profile-dialog h2 {margin:0 0 14px;font-size:21px;line-height:1.3;}
+.bb-profile-dialog .hint {font-size:13px;color:#5e728b;}
+.bb-profile-tabs {display:flex;gap:8px;border-bottom:1px solid #dce6f2;margin:0 0 18px;padding-bottom:12px;}
+.bb-profile-tabs button {
+  border:1px solid #d7e3f0; border-radius:8px;
+  padding:9px 12px; background:#f7f9fd; color:#345579;
+  cursor:pointer; font:inherit; font-size:13px; font-weight:750; line-height:1.3;
+}
+.bb-profile-tabs button[aria-selected="true"] {background:#dfeefa;border-color:#9fc0df;color:#123e73;}
+.bb-profile-dialog #student-history-entries .bb-profile-book-card {margin-bottom:10px;}
+.bb-profile-dialog .bb-profile-book-card {
+  display:flex;align-items:center;gap:12px;width:100%;
+  padding:10px;margin:0 0 8px;cursor:pointer;
+  border:1px solid #e1e9f3;border-radius:10px;background:#f8fbff;text-align:left;
+}
+.bb-profile-dialog--edit form {display:grid;gap:9px;}
+.bb-profile-dialog--edit form > label {font-weight:700;font-size:13px;margin-top:4px;}
+.bb-profile-dialog--edit input,
+.bb-profile-dialog--edit select {box-sizing:border-box;width:100%;min-height:42px;padding:9px 11px;border:1px solid #bfcfe1;border-radius:9px;background:#fff;color:#19345d;font:inherit;}
+.bb-profile-dialog-actions {display:flex;justify-content:flex-end;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;}
+.bb-profile-book-name {font-weight:750;color:#173a68;margin:0 0 7px;}
+.bb-profile-stat-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.bb-profile-stat {display:grid;gap:5px;padding:14px;border:1px solid #e0e9f4;background:#f7faff;border-radius:10px;min-width:0;}
+.bb-profile-stat strong {font-size:22px;color:#173a68;line-height:1.25;overflow-wrap:anywhere;}
+.bb-profile-stat span {font-size:12px;color:#5c7491;}
+.bb-profile-stat-note {margin:13px 0 0;color:#607793;font-size:12px;}
+.bb-profile-stat-genres {margin:14px 0 0;padding:0;list-style:none;display:grid;gap:7px;}
+.bb-profile-stat-genres li {display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e3eaf3;padding:7px 0;}
+@media (max-width:840px) {
+  body[data-page="student"] #student-profile-view .bb-profile-layout:has(> #student-exam-reading-section:not([hidden])) {grid-template-columns:1fr;}
+  body[data-page="student"] #student-profile-view .bb-profile-layout:has(> #student-exam-reading-section:not([hidden])) .bb-profile-left {grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width:630px) {
+  body[data-page="student"] #student-profile-view .bb-profile-left,
+  body[data-page="student"] #student-profile-view .bb-profile-layout:has(> #student-exam-reading-section:not([hidden])) .bb-profile-left {grid-template-columns:1fr;}
+  body[data-page="student"] #student-profile-view.bb-student-profile-v58:has(#student-dashboard:not(.hidden)) > .bb-student-profile-welcome {align-items:start;}
+  body[data-page="student"] .bb-profile-header-actions {justify-content:flex-end;}
+  .bb-profile-stat-grid {grid-template-columns:1fr;}
+  .bb-profile-dialog {padding:17px;}
+}
+@media (max-width:440px) {
+  body[data-page="student"] .bb-profile-header-actions {flex-direction:column;align-items:stretch;}
+  body[data-page="student"] #student-profile-view #student-exam-add-trigger {font-size:12px;}
+  .bb-profile-dialog-heading {align-items:flex-start;}
+}

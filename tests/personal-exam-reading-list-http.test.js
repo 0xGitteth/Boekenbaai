@@ -119,6 +119,9 @@ async function run() {
 
     const loan = await call('/api/books/copy-c/check-out', teacher, { studentId: 'stu-a' });
     assert.equal(loan.status, 200, JSON.stringify(loan.body));
+    const whileBorrowed = await call('/api/exam-reading-list', student);
+    assert.equal(whileBorrowed.body.entries.find(e => e.bookId === 'copy-c').status,
+      'aan_het_lezen', 'Exam books should appear immediately upon checkout');
     const returned = await call('/api/books/copy-c/check-in', student, { finished: true });
     assert.equal(returned.status, 200, JSON.stringify(returned.body));
     const automatic = (await call('/api/exam-reading-list', student)).body;
@@ -145,6 +148,33 @@ async function run() {
     assert.equal((await call('/api/exam-reading-list', student)).body.entries.length, 1);
     assert.equal((await call('/api/exam-reading-list?studentId=stu-b', other)).status, 403,
       'Lower-school students cannot open the personal exam list');
+    const personal = await call('/api/exam-reading-list', student, {
+      externalBook:{title:'Eigen boek',author:'Onbekende auteur',pageCount:147,genre:'Fantasy'},
+    });
+    assert.equal(personal.status,201,JSON.stringify(personal.body));
+    assert.equal(personal.body.entry.externalSource,true);
+    assert.equal(personal.body.entry.pageCount,147);
+    const existing = await call('/api/exam-reading-list',student,{
+      externalBook:{title:'Eigen boek',author:'Onbekende auteur'},
+    });
+    assert.equal(existing.status,200);
+    assert.equal(existing.body.created,false);
+    assert.equal((await call('/api/exam-reading-list',other,{
+      externalBook:{title:'Verboden boek',author:'Test'},
+    })).status,403);
+    assert.equal((await call('/api/exam-reading-list',student,{
+      externalBook:{title:'',author:'Test'},
+    })).status,400);
+    const mine = await call('/api/me/reading-profile',student);
+    assert.equal(mine.status,200,JSON.stringify(mine.body));
+    assert.equal(mine.body.statistics.readTitles,0,'Corrected unread return is not counted as read');
+    assert.ok(mine.body.history.some(row=>row.recordId===returned.body.readingRecord.id));
+    assert.equal((await call('/api/me/reading-profile',other)).status,200,
+      'Underbouw keeps access to its own general reading history');
+    assert.equal((await call('/api/me/reading-profile',null)).status,401);
+    const persisted = JSON.parse(fs.readFileSync(dbPath,'utf8'));
+    assert.equal(persisted.books.length,4,'Own books are never added to school inventory');
+    assert.ok(persisted.examReadingLists.some(row=>row.externalSource&&row.studentId==='stu-a'));
   } finally {
     child.kill('SIGTERM');
     fs.rmSync(tmp, { recursive: true, force: true });
