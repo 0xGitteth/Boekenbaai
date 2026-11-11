@@ -3360,7 +3360,9 @@ function initStudentPage() {
     activitySection?.classList.toggle('hidden', !loggedIn);
     studentProfileAccount?.classList.toggle('hidden', !loggedIn);
     const examSection = document.querySelector('#student-exam-reading-section');
-    if (examSection) examSection.hidden = !loggedIn || authUser.examReadingEligible !== true;
+    if (examSection && (!loggedIn || authUser.examReadingEligible !== true)) examSection.hidden = true;
+    const examAddTrigger = document.getElementById('student-exam-add-trigger');
+    if (examAddTrigger) examAddTrigger.hidden = !loggedIn || authUser.examReadingEligible !== true;
     if (studentAccountName) studentAccountName.textContent = loggedIn ? authUser.name || '' : '';
     if (studentAccountUsername) studentAccountUsername.textContent = loggedIn
       ? authUser.username || 'Niet beschikbaar' : '';
