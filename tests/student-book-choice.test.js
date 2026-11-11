@@ -80,9 +80,9 @@ assert.equal(helpers.coverUrl(localCover), 'https://api.example.nl' + localCover
   'Cached cover must be served from configured API host');
 assert.equal(helpers.coverUrl('https://covers.openlibrary.org/b/id/22-M.jpg'),
   'https://covers.openlibrary.org/b/id/22-M.jpg');
-assert.match(js, /representativeBook: copy, copies: current\\.copies/,
+assert.match(js, /representativeBook: copy, copies: current\.copies/,
   'Fresh grouped details must bypass stale availability in main catalogue');
-assert.match(js, /close\\(true\\)/, 'Focus handoff bypasses stale focus restoration');
+assert.match(js, /close\(true\)/, 'Focus handoff bypasses stale focus restoration');
 assert.match(html, /id="student-help-choose"[^>]*aria-haspopup="dialog"/);
 assert.doesNotMatch(html, /id="student-help-choose"[^>]*disabled/);
 assert.match(html, /id="student-choice-dialog"/);
