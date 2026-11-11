@@ -120,11 +120,12 @@ async function suggestions({grant,sessionToken,choices}){
       result.firstName=identity?.firstName||'';
       if(identity&&result.suggestions.length){
         if(!Array.isArray(db.studentChoiceSeen))db.studentChoiceSeen=[];
+        const prior=pastKeys(db,identity.studentId);
         db.studentChoiceSeen=db.studentChoiceSeen.filter(x=>
           x.studentId!==identity.studentId &&
           Number.isFinite(Date.parse(x.updatedAt)) &&
           Date.parse(x.updatedAt)>Date.now()-RECENT_DAYS*86400000);
-        const keys=[...pastKeys(db,identity.studentId),...result.suggestions.map(x=>x.key)];
+        const keys=[...prior,...result.suggestions.map(x=>x.key)];
         db.studentChoiceSeen.push({
           studentId:identity.studentId,keys:[...new Set(keys)].slice(-240),
           updatedAt:new Date().toISOString(),
