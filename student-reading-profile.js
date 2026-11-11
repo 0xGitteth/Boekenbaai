@@ -80,6 +80,23 @@ function buildStudentReadingProfile(db, studentId, { page = 0, pageSize = 50, no
       for (const tag of info.tags) genres.set(tag, (genres.get(tag) || 0) + 1);
     }
   }
+  let selfReportedExternalReadTitles = 0;
+  for (const item of db.examReadingLists || []) {
+    if (!item || item.studentId !== studentId || item.externalSource !== true ||
+        item.manualStatus !== 'gelezen') continue;
+    const key = normalize(item.title) + '|' + normalize(item.author);
+    if (key === '|' || distinctReadBooks.has(key)) continue;
+    distinctReadBooks.add(key);
+    selfReportedExternalReadTitles++;
+    const count = Number(item.pageCount || 0);
+    if (Number.isInteger(count) && count > 0 && count < 100000) knownPages += count;
+    else missingPages++;
+    if (item.genre) {
+      const genre = String(item.genre).trim();
+      if (genre) genres.set(genre, (genres.get(genre) || 0) + 1);
+    }
+  }
+
   for (const loan of student.borrowedBooks || []) {
     const bookId = getBorrowedId(loan);
     if (!bookId) continue;
@@ -124,6 +141,7 @@ function buildStudentReadingProfile(db, studentId, { page = 0, pageSize = 50, no
     statistics: {
       registeredLoanPeriods: entries.length,
       readTitles: distinctReadBooks.size,
+      selfReportedExternalReadTitles,
       readPagesKnown: knownPages,
       booksMissingPageCount: missingPages,
       topGenres: genreRanking.slice(0, 5),
