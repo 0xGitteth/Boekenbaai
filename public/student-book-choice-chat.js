@@ -103,7 +103,7 @@
   }
   function finishIdentity(){
     message((personal&&firstName ? 'Hoi '+firstName+'! ' : '') +
-      'Wil je zelf ontdekken wat je leuk vindt, of liever meteen een paar boeken bekijken?');
+      'Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?');
     currentStep='route';
     options([
       ['Ontdek mijn interesses',beginInterests],
