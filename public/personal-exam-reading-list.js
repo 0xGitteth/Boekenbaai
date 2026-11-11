@@ -107,7 +107,7 @@
           });
           await refresh();
         } catch (error) {
-          message.textContent = error.message;
+          feedback.textContent = error.message;
           select.disabled = Boolean(item.readFromReturn);
           await refresh();
         }
@@ -122,7 +122,7 @@
           });
           await refresh();
         } catch (error) {
-          message.textContent = error.message;
+          feedback.textContent = error.message;
           remove.disabled = false;
         }
       });
