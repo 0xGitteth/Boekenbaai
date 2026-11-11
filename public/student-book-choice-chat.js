@@ -368,7 +368,7 @@
     };
     try{
       const results=await api('/api/auth/student-pin/choice-suggest',{
-        ...(grant?{choiceGrant:grant}:{}),choices:submitted,
+        ...(grant?{choiceGrant:grant}:{}),anonymous:!personal,choices:submitted,
       });
       if(!active||marker!==epoch)return;
       if(!results.suggestions?.length){
