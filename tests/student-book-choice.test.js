@@ -89,7 +89,14 @@ assert.ok(js.includes('if (!active || selection !== selectionVersion) return;'),
 assert.match(html, /id="student-help-choose"[^>]*aria-haspopup="dialog"/);
 assert.doesNotMatch(html, /id="student-help-choose"[^>]*disabled/);
 assert.match(html, /id="student-choice-dialog"/);
-assert.match(html, /id="student-choice-search"/);
+assert.match(html, /id="student-choice-chat-log"/);
+assert.match(html, /id="student-choice-chat-actions"/);
+assert.doesNotMatch(html, /id="student-choice-themes"/);
+assert.match(read('public/student-book-choice-chat.js'), //api/auth/student-pin/choice-begin/);
+assert.match(read('public/student-book-choice-chat.js'), //api/auth/student-pin/choice-suggest/);
+assert.match(read('public/student-book-choice-chat.js'), /boekenbaai:student-auth-pending/);
+assert.match(vite, /'student-book-choice-chat\.js'/);
+assert.match(vite, /'student-book-choice-chat\.css'/);
 assert.match(html, /id="student-choice-results"/);
 assert.match(html, /student-book-choice\.js/);
 assert.match(vite, /'student-book-choice\.js'/);
