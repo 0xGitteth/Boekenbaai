@@ -40,8 +40,8 @@ assert.match(studentMarkup, /class="bb-cat-legend"/);
 assert.match(studentMarkup, /id="bb-cat-easy-key"|class="bb-cat-easy-key"/);
 assert.match(studentMarkup, /class="bb-cat-exam-key"/);
 assert.match(studentMarkup, /id="bb-cat-advanced"/);
-assert.match(studentMarkup, /id="student-help-choose"[^>]*disabled/,
-  'Help me kiezen is clearly unavailable until PR2');
+assert.match(studentMarkup, /id="student-help-choose"[^>]*aria-haspopup="dialog"/,
+  'Help me kiezen opent een werkende keuzehulp');
 
 for(const id of [
   'bb-cat-reset','bb-cat-advanced','bb-cat-filter-caption','bb-cat-page-range',
