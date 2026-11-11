@@ -26,6 +26,7 @@
     <link rel="stylesheet" href="student-pin.css" />
     <link rel="stylesheet" href="student-quick-loan.css" />
     <link rel="stylesheet" href="read-completion.css" />
+    <link rel="stylesheet" href="personal-exam-reading-list.css" />
     <link rel="stylesheet" href="portal-compact-six-v48.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -239,6 +240,13 @@
                 <h3 id="student-reading-records-title">Mijn leesregistraties</h3>
                 <p class="hint">Je kunt later nog wijzigen of je een ingeleverd boek hebt uitgelezen.</p>
                 <div id="student-reading-records" aria-live="polite"></div>
+              </section>
+              <section class="reading-records exam-reading" aria-labelledby="student-exam-reading-title">
+                <h3 id="student-exam-reading-title">Mijn examenleeslijst</h3>
+                <p class="hint">Bewaar boeken voor je examen. Boeken die als examenmateriaal zijn gemarkeerd, worden na een bevestigd ‘Ja’ bij inleveren automatisch toegevoegd. Controleer zelf welke boeken bij jouw examen passen.</p>
+                <p id="student-exam-reading-summary" class="hint" role="status"></p>
+                <div id="student-exam-reading-list" aria-live="polite"></div>
+                <p id="student-exam-reading-feedback" class="hint" role="status"></p>
               </section>
               <details id="student-pin-details" class="bb-student-pin">
                 <summary>Mijn uitleen-PIN</summary>
@@ -517,6 +525,7 @@
             </button>
             <button type="button" class="btn" data-book-detail-edit hidden>Boek bewerken</button>
             <button type="button" class="btn" id="student-book-detail-action" hidden>Boek lenen</button>
+            <button type="button" class="btn btn--secondary" id="student-book-detail-exam-add" hidden>Op examenleeslijst</button>
             <button type="button" class="btn btn--ghost" data-book-detail-close>Sluiten</button>
           </div>
           <div id="book-detail-import-data" class="book-detail__import-data hidden"></div>
@@ -574,6 +583,7 @@
       </div>
     </dialog>
     <script defer src="read-completion.js"></script>
+    <script defer src="personal-exam-reading-list.js"></script>
     <script type="module" src="app.js"></script>
     <script defer src="student-pin.js"></script>
 
