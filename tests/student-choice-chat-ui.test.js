@@ -27,10 +27,13 @@ const makeResponse=(status,body)=>({
   json:async()=>body,
 });
 let resolvePin;
+let loggedIn=false;
 const invalidated=[];
 const suggestRequests=[];
 const fetchStub=async (url,options={})=>{
-  if(url==='/api/me')return makeResponse(401,{message:'Geen toegang'});
+  if(url==='/api/me')return loggedIn
+    ? makeResponse(200,{id:'s',role:'student',firstName:'Sanne'})
+    : makeResponse(401,{message:'Geen toegang'});
   if(url.startsWith('/api/login-search?'))return makeResponse(200,{
     matches:[{id:'s',displayName:'Sanne J. · Bovenbouw'}],
   });
@@ -120,5 +123,32 @@ vm.runInNewContext(code,{
     row.children[0]?.textContent?.includes('Wat doe je graag')).length,0,
     'Surprise mode must skip the questionnaire');
   assert.ok(actions.children.some(x=>x.textContent==='Nog drie verrassingen'));
-  console.log('Choice chat anonymous switch, login wording, instant surprise and privacy: OK');
+
+  // Reopening anonymously must show the same two choices, with the first
+  // taking the learner directly to the normal interest questions.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
+  actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat doe je graag in je vrije tijd?'));
+
+  // Signed-in learners also get only the approved two main options. The
+  // previously offered similar-books route remains available as an explicit
+  // consent question after choosing to explore their interests.
+  elements.get('student-choice-close').listeners.click();
+  loggedIn=true;
+  await elements.get('student-help-choose').listeners.click();
+  assert.match(log.children[0].children[0].textContent,
+    /^Hoi Sanne! Wil je zelf ontdekken wat je leuk vindt, of liever meteen een paar boeken bekijken\\?$/);
+  assert.equal(actions.children.length,2);
+  assert.deepEqual(actions.children.map(x=>x.textContent),
+    ['Ontdek mijn interesses','Laat me drie boeken zien']);
+  actions.children[0].listeners.click();
+  assert.ok(log.children.some(row=>row.children[0]?.textContent===
+    'Wil je ook tips die lijken op boeken die je eerder hebt gelezen?'));
+  assert.deepEqual(actions.children.map(x=>x.textContent),
+    ['Ja, graag','Nee, liever iets anders']);
+  actions.children[0].listeners.click();
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat doe je graag in je vrije tijd?'));
+  console.log('Choice chat: approved route text, two choices, instant books and private personal preferences: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});
