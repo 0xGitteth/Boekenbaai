@@ -5,7 +5,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const {
   keyForBook, addBook, synchronizeReturn, listForStudent, changeStatus,
-  publicEntry, mayManageExamList,
+  publicEntry, mayManageExamList, addExternalBook,
 } = require('../personal-exam-reading-list');
 const { createReturnReadingRecord, amendReadingRecord } = require('../reading-completion-core');
 
@@ -119,6 +119,28 @@ assert.equal(publicEntry(db, manualLegacy).readFromReturn, true,
 
 
 
+// A private exam title exists without school stock, loan, check-in, or an
+// ISBN. Normalized title and author prevent accidental duplicate additions.
+const privateDb = { books: [], students:[{id:'solo'}], classes:[],
+  examReadingLists:[], readingRecords:[] };
+const personal = addExternalBook(privateDb,'solo',{
+  title:'  Mijn eigen boek ', author:' Auteur X ', pageCount:251, genre:'Fantasy',
+},'solo',now);
+assert.equal(personal.created,true);
+assert.equal(personal.entry.externalSource,true);
+assert.equal(personal.entry.pageCount,251);
+assert.equal(personal.entry.suitableForExamList,false);
+assert.equal(personal.entry.bookId,'');
+assert.equal(privateDb.books.length,0);
+assert.equal(addExternalBook(privateDb,'solo',{
+  title:'Mijn eigen boek', author:'Auteur X',
+},'solo',now).created,false);
+assert.equal(listForStudent(privateDb,'solo').entries[0].externalSource,true);
+changeStatus(personal.entry,'gelezen','solo',now);
+assert.equal(publicEntry(privateDb,personal.entry).status,'gelezen');
+assert.throws(()=>addExternalBook(privateDb,'solo',{title:'',author:'X'},'solo',now),/titel en auteur/i);
+assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',pageCount:-4},'solo',now),/pagina/i);
+assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',isbn:'1234567890123'},'solo',now),/controlecijfer/i);
 for (const name of ['server.js', 'public/personal-exam-reading-list.js']) {
   execFileSync(process.execPath, ['--check', path.join(__dirname, '..', name)], { stdio: 'pipe' });
 }
