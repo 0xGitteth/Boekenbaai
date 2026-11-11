@@ -44,8 +44,8 @@ assert.match(css,/body\[data-page="staff"\]:has\(#staff-login-panel:not\(\.hidde
 
 const controlGroup=student.slice(student.indexOf('<section class="bb-catalog-filter-panel'),student.indexOf('</details>')+10);
 assert.match(controlGroup,/id="student-filter-toggle"[^>]*aria-expanded="false"[^>]*aria-controls="bb-cat-advanced"/);
-assert.match(controlGroup,/id="student-help-choose"[^>]*disabled/);
-assert.match(controlGroup,/id="student-help-choose-note">Binnenkort/);
+assert.match(controlGroup,/id="student-help-choose"[^>]*aria-haspopup="dialog"/);
+assert.match(student,/id="student-choice-dialog"/);
 assert.doesNotMatch(controlGroup,/id="student-scan-open"/,
   'Scan must be a separate button beside, not inside, the compact filter surface');
 assert.match(student, /class="bb-student-discovery-layout"/);
