@@ -341,7 +341,7 @@
         metadataIsbn:copy.metadataIsbn||null,
         coverUrl:copy.localCoverUrl||copy.coverUrl||'',
       };
-      detailHandoff=true;close();
+      close(true);
       await window.BoekenbaaiOpenBookDetail(group);
     }catch(err){
       if(active&&marker===epoch)notice(err.message);
@@ -354,7 +354,7 @@
     busy=true;currentStep='results';
     const marker=epoch;notice('Boeken zoeken…');clearActions();
     const submitted={
-      ...choices,seed,excludeKeys:[...seenInTab,...shownInDialogue].slice(-130),
+      ...choices,seed,excludeKeys:[...(!personal?seenInTab:[]),...shownInDialogue].slice(-130),
       ...extra,
     };
     try{
@@ -377,7 +377,8 @@
       const block=message('Deze boeken komen uit de actuele bibliotheek:');
       const list=el('div','bb-choice-chat__result-list');
       for(const book of results.suggestions){
-        shownInDialogue.add(book.key);seenInTab.add(book.key);
+        shownInDialogue.add(book.key);
+        if(!personal)seenInTab.add(book.key);
         list.append(resultCard(book,catalogue));
       }
       block.append(list);
@@ -414,11 +415,12 @@
       }]]:[]),
     ]);
   }
-  function close(){
-    const focus=previousFocus;const handoff=detailHandoff;
+  function close(toDetail=false){
+    const focus=previousFocus;
     resetSession();
+    detailHandoff=toDetail;
     if(dialog.open)dialog.close();
-    if(!handoff)focus?.focus?.();
+    if(!toDetail)focus?.focus?.();
   }
   button.disabled=false;
   button.removeAttribute('aria-describedby');
@@ -427,8 +429,10 @@
   button.addEventListener('click',begin);
   closeButton.addEventListener('click',close);
   dialog.addEventListener('close',()=>{
+    const handoff=detailHandoff,focus=previousFocus;
     if(active)resetSession();
-    if(!detailHandoff)previousFocus?.focus?.();
+    detailHandoff=false;
+    if(!handoff)focus?.focus?.();
   });
   window.addEventListener('boekenbaai:student-auth-pending',()=>{
     if(active)close();
