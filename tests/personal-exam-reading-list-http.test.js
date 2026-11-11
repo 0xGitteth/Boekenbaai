@@ -44,8 +44,8 @@ async function run() {
         classIds: ['class-b'], borrowedBooks: [] },
     ],
     classes: [
-      { id: 'class-a', name: 'Klas A', teacherIds: ['teacher-a'], studentIds: ['stu-a'] },
-      { id: 'class-b', name: 'Klas B', teacherIds: ['teacher-b'], studentIds: ['stu-b'] },
+      { id: 'class-a', name: 'Bovenbouw structuur', teacherIds: ['teacher-a'], studentIds: ['stu-a'] },
+      { id: 'class-b', name: 'Onderbouw BKT', teacherIds: ['teacher-b'], studentIds: ['stu-b'] },
     ],
     users: [
       { id: 'teacher-a', name: 'Teacher A', role: 'teacher', username: 'teacher-a',
@@ -86,6 +86,9 @@ async function run() {
     assert.equal((await call('/api/exam-reading-list?studentId=stu-a', teacher)).status, 200);
     const staffDirectory = await call('/api/staff/loans', teacher);
     assert.equal(staffDirectory.status, 200);
+    assert.equal((await call('/api/me', student)).body.examReadingEligible, true);
+    assert.equal((await call('/api/me', other)).body.examReadingEligible, false);
+    assert.equal((await call('/api/exam-reading-list', other, { bookId: 'copy-a' })).status, 403);
     const firstEdition = staffDirectory.body.books.find(book => book.id === 'copy-a');
     const anotherEdition = staffDirectory.body.books.find(book => book.id === 'copy-d');
     assert.equal(firstEdition.metadataIsbn, '9780306406157');
@@ -140,7 +143,8 @@ async function run() {
       student, { revision: autoEntry.revision }, 'DELETE');
     assert.equal(deleted.status, 200);
     assert.equal((await call('/api/exam-reading-list', student)).body.entries.length, 1);
-    assert.equal((await call('/api/exam-reading-list?studentId=stu-b', other)).body.entries.length, 0);
+    assert.equal((await call('/api/exam-reading-list?studentId=stu-b', other)).status, 403,
+      'Lower-school students cannot open the personal exam list');
   } finally {
     child.kill('SIGTERM');
     fs.rmSync(tmp, { recursive: true, force: true });

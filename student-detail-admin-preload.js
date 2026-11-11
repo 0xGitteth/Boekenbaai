@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { URL } = require('url');
 const core = require('./google-auth-core');
+const { examReadingAccess } = require('./exam-reading-access');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
 const {
   getParnassysStudentNumber,
@@ -279,6 +280,19 @@ function updateStudentAsAdmin(context, studentId, body) {
       ensureClassMembership(context.db, student, requested);
       cancelOpenTransfers(context.db, student.id, context.user.id);
       changes.push('klas');
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'examReadingEligibleOverride')) {
+    if (typeof body.examReadingEligibleOverride !== 'boolean') {
+      return { status: 400, payload: { message: 'Kies Ja of Nee voor de examenleeslijst.' } };
+    }
+    if (!examReadingAccess(context.db, student).needsDecision) {
+      return { status: 400, payload: { message: 'Handmatige toegang kan alleen bij gemengde klassen worden ingesteld.' } };
+    }
+    if ((student.examReadingEligibleOverride === true) !== body.examReadingEligibleOverride) {
+      student.examReadingEligibleOverride = body.examReadingEligibleOverride;
+      changes.push('toegang examenleeslijst');
     }
   }
 

@@ -4,6 +4,7 @@
 const { randomUUID } = require('node:crypto');
 const { getEditionKey } = require('./book-edition-identity');
 const { mayManageStudent } = require('./book-loan-policy');
+const { examReadingAccess } = require('./exam-reading-access');
 
 const STATUSES = new Set(['nog_lezen', 'aan_het_lezen', 'gelezen']);
 
@@ -153,6 +154,8 @@ function addBook(db, studentId, book, actorId, now, manually = true, originalEdi
 function synchronizeReturn(db, record, now) {
   if (!record || record.subjectType !== 'student' ||
       record.finished !== true || record.suitableForExamList !== true) return null;
+  const student = (db.students || []).find(item => item.id === record.subjectId);
+  if (!examReadingAccess(db, student).eligible) return null;
   // The confirmed reader is the student, even when staff submitted the return.
   const book = {
     id: record.bookId,

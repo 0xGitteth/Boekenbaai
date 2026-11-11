@@ -1552,7 +1552,7 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const examAdd = document.getElementById('student-book-detail-exam-add');
   if (examAdd) {
     const eligible = pageType === 'student' && authUser?.role === 'student' &&
-      Boolean(representative?.id);
+      authUser.examReadingEligible === true && Boolean(representative?.id);
     examAdd.hidden = !eligible;
     examAdd.disabled = !eligible;
     examAdd.onclick = eligible ? async () => {
@@ -3359,6 +3359,8 @@ function initStudentPage() {
     dashboard?.classList.toggle('hidden', !loggedIn);
     activitySection?.classList.toggle('hidden', !loggedIn);
     studentProfileAccount?.classList.toggle('hidden', !loggedIn);
+    const examSection = document.querySelector('#student-exam-reading-section');
+    if (examSection) examSection.hidden = !loggedIn || authUser.examReadingEligible !== true;
     if (studentAccountName) studentAccountName.textContent = loggedIn ? authUser.name || '' : '';
     if (studentAccountUsername) studentAccountUsername.textContent = loggedIn
       ? authUser.username || 'Niet beschikbaar' : '';

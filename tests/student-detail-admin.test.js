@@ -53,8 +53,8 @@ const db = {
   ],
   folders: [],
   classes: [
-    { id: 'class-a', name: 'Structuur A', studentIds: ['student-1'], teacherIds: ['teacher-a'] },
-    { id: 'class-b', name: 'Structuur B', studentIds: ['student-2'], teacherIds: ['teacher-b'] },
+    { id: 'class-a', name: 'OZA', studentIds: ['student-1'], teacherIds: ['teacher-a'] },
+    { id: 'class-b', name: 'Onderbouw BKT', studentIds: ['student-2'], teacherIds: ['teacher-b'] },
   ],
   users: [
     { id: 'admin-1', name: 'Boekenbaai Beheer', username: 'admin', passwordHash: 'x', role: 'admin', active: true },
@@ -210,6 +210,31 @@ async function request(pathname, { token, method = 'GET', body } = {}) {
     });
     assert.strictEqual(teacherOverride.response.status, 403, 'Een docent mag adminvelden niet via de API overrulen');
 
+    const managementBefore = await request('/api/mentor/student-management', { token: tokens.admin });
+    assert.strictEqual(managementBefore.response.status, 200);
+    const mixedBefore = managementBefore.payload.students.find((entry) => entry.id === 'student-1');
+    assert.strictEqual(mixedBefore.examReadingNeedsDecision, true);
+    assert.strictEqual(mixedBefore.examReadingEligible, false);
+
+    const grantMixed = await request('/api/admin/students/student-1', {
+      token: tokens.admin,
+      method: 'PATCH',
+      body: { examReadingEligibleOverride: true },
+    });
+    assert.strictEqual(grantMixed.response.status, 200, JSON.stringify(grantMixed.payload));
+    const managementAfter = await request('/api/mentor/student-management', { token: tokens.admin });
+    const approved = managementAfter.payload.students.find((entry) => entry.id === 'student-1');
+    assert.strictEqual(approved.examReadingEligible, true);
+    assert.strictEqual(approved.examReadingEligibleOverride, true);
+
+    const refusedLower = await request('/api/admin/students/student-2', {
+      token: tokens.admin,
+      method: 'PATCH',
+      body: { examReadingEligibleOverride: true },
+    });
+    assert.strictEqual(refusedLower.response.status, 400,
+      'A lower-school student cannot be elevated with a manual override');
+
     const teacherGoogle = await request('/api/auth/google/student-email', {
       token: tokens.teacher,
       method: 'POST',
@@ -249,6 +274,8 @@ async function request(pathname, { token, method = 'GET', body } = {}) {
     // Laad de studentsessie eerst door de security/runtime stack heen, zodat unlink ook cached sessies moet intrekken.
     const beforeUnlink = await request('/api/me', { token: tokens.student });
     assert.strictEqual(beforeUnlink.response.status, 200, 'De gekoppelde studentsessie moet vooraf geldig zijn');
+    assert.strictEqual(beforeUnlink.payload.examReadingEligible, false,
+      'Changing from a mixed class to lower school immediately revokes access even with an old override');
 
     const unlink = await request('/api/auth/google/student-email?unlink=1', {
       token: tokens.admin,
