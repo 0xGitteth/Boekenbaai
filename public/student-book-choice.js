@@ -15,6 +15,7 @@
   const status = document.getElementById('student-choice-status');
   let editions = [];
   let loadVersion = 0;
+  let selectionVersion = 0;
   let active = false;
   let previousFocus = null;
   let handoffToDetail = false;
@@ -194,11 +195,13 @@
       const open = make('button', 'btn btn--secondary', 'Bekijk boek');
       open.type = 'button';
       open.addEventListener('click', async () => {
+        const selection = ++selectionVersion;
         open.disabled = true;
         try {
           // Refresh the entire catalogue, not an old suggestion snapshot,
           // before the existing book-detail view checks physical stock.
           const latest = await fetchCurrentBooks();
+          if (!active || selection !== selectionVersion) return;
           const current = latest.find(item => item.key === book.key);
           if (!current) throw Error('Dit boek staat niet meer in de bibliotheek.');
           if (typeof window.BoekenbaaiOpenBookDetail !== 'function') {
@@ -222,9 +225,12 @@
           close(true);
           await window.BoekenbaaiOpenBookDetail(freshGroup);
         } catch (error) {
-          status.textContent = error.message;
+          if (active && selection === selectionVersion) {
+            status.textContent = error.message;
+            renderThemes();
+          }
+        } finally {
           open.disabled = false;
-          renderThemes();
         }
       });
       content.append(open);
@@ -245,8 +251,10 @@
   }
   function close(toDetail = false) {
     handoffToDetail = toDetail;
-    if (dialog.open) dialog.close();
     active = false;
+    ++loadVersion;
+    ++selectionVersion;
+    if (dialog.open) dialog.close();
   }
   async function open() {
     if (active) return;
@@ -257,6 +265,7 @@
     results.replaceChildren();
     searchButton.disabled = true;
     const request = ++loadVersion;
+    ++selectionVersion;
     try {
       const current = await fetchCurrentBooks();
       if (request !== loadVersion || !active) return;
@@ -280,6 +289,8 @@
   closeButton.addEventListener('click', close);
   dialog.addEventListener('close', () => {
     active = false;
+    ++loadVersion;
+    ++selectionVersion;
     if (!handoffToDetail) previousFocus?.focus?.();
     handoffToDetail = false;
   });
