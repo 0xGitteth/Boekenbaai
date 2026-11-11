@@ -8,6 +8,8 @@ const { execFileSync } = require('node:child_process');
 const root = path.join(__dirname, '..');
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 const js = read('public/student-book-choice.js');
+execFileSync(process.execPath,['--check',path.join(root,'public','student-book-choice-chat.js')]);
+assert.match(read('public/student-book-choice-chat.js'),/closeButton\.addEventListener\('click',\(\)=>close\(\)\)/);
 const html = read('public/index.html');
 const vite = read('vite.config.js');
 execFileSync(process.execPath,
