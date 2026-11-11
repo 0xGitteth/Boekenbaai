@@ -28,6 +28,7 @@ const {
 const { STATUSES: EXAM_STATUSES, keyForBook: examEditionKey, listForStudent, publicEntry,
   mayManageExamList, addBook: addExamBook, synchronizeReturn: syncExamReturn,
   changeStatus: changeExamStatus } = require('./personal-exam-reading-list');
+const { examReadingAccess } = require('./exam-reading-access');
 const studentPinCheckout = require('./student-pin-checkout-core');
 const authSecurityForPin = require('./google-auth-security-core');
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
@@ -4578,6 +4579,7 @@ async function handleApi(req, res, requestUrl) {
           firstName: getPreferredFirstName(student),
           role: 'student',
           grade: student.grade || '',
+          examReadingEligible: examReadingAccess(db, student).eligible,
           borrowedBooks: student.borrowedBooks || [],
           classIds: student.classIds || [],
           username: student.username || '',
@@ -4681,8 +4683,9 @@ async function handleApi(req, res, requestUrl) {
       const db = getDb();
       const student = (db.students || []).find(item => item.id === studentId);
       if (!student) return sendJson(res, 404, { message: 'Leerling niet gevonden.' });
-      if (!mayManageExamList(db, user, student)) {
-        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      if (!mayManageExamList(db, user, student) ||
+          (user.role === 'student' && !examReadingAccess(db, student).eligible)) {
+        return sendJson(res, 403, { message: 'Examenleeslijst is alleen beschikbaar voor bovenbouwleerlingen.' });
       }
       return sendJson(res, 200, listForStudent(db, studentId));
     }
@@ -4704,8 +4707,9 @@ async function handleApi(req, res, requestUrl) {
       const db = loadDb();
       const student = (db.students || []).find(item => item.id === studentId);
       if (!student) return sendJson(res, 404, { message: 'Leerling niet gevonden.' });
-      if (!mayManageExamList(db, user, student)) {
-        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      if (!mayManageExamList(db, user, student) ||
+          (user.role === 'student' && !examReadingAccess(db, student).eligible)) {
+        return sendJson(res, 403, { message: 'Examenleeslijst is alleen beschikbaar voor bovenbouwleerlingen.' });
       }
       const book = (db.books || []).find(item => item.id === body.bookId);
       if (!book) return sendJson(res, 404, { message: 'Dit boek staat niet in de bibliotheek.' });
@@ -4740,8 +4744,9 @@ async function handleApi(req, res, requestUrl) {
       if (index < 0) return sendJson(res, 404, { message: 'Boek niet op de leeslijst gevonden.' });
       const entry = list[index];
       const student = (db.students || []).find(item => item.id === entry.studentId);
-      if (!mayManageExamList(db, user, student)) {
-        return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
+      if (!mayManageExamList(db, user, student) ||
+          (user.role === 'student' && !examReadingAccess(db, student).eligible)) {
+        return sendJson(res, 403, { message: 'Examenleeslijst is alleen beschikbaar voor bovenbouwleerlingen.' });
       }
       if ((entry.revision || 1) !== body.revision) {
         return sendJson(res, 409, { message: 'De leeslijst is gewijzigd. Vernieuw de lijst.' });
