@@ -76,6 +76,27 @@ assert.equal(db.examReadingLists[1].addedManually, false);
 assert.equal(publicEntry(db, db.examReadingLists[1]).readFromReturn, true);
 assert.equal(db.readingRecords.length, 2, 'Circulation audit history is intact');
 
+// Conflicting official ISBN fields must never merge two distinct editions
+// or overwrite the stable key of an existing manual list item.
+const originalKey = result.entry.editionKey;
+const conflictBook = { id: 'copy-conflict', title: 'Andere titel',
+  author: 'Andere auteur', metadataIsbn: a.metadataIsbn,
+  editionIsbn: otherBook.metadataIsbn, suitableForExamList: true };
+const conflict = createReturnReadingRecord({
+  db, book: conflictBook, student, finished: true,
+  actorId: 'teacher-a', now,
+});
+assert.notEqual(conflict.editionKey, originalKey);
+synchronizeReturn(db, conflict, now);
+assert.equal(db.examReadingLists.length, 3);
+assert.equal(result.entry.editionKey, originalKey,
+  'Existing ISBN A entry must keep its original identity');
+assert.ok(db.examReadingLists.some(item =>
+  item.title === 'Andere titel' && item.editionKey === conflict.editionKey));
+assert.equal(publicEntry(db, result.entry).readFromReturn, false,
+  'Conflicting return must not mark existing ISBN A title as read');
+
+
 for (const name of ['server.js', 'public/personal-exam-reading-list.js']) {
   execFileSync(process.execPath, ['--check', path.join(__dirname, '..', name)], { stdio: 'pipe' });
 }
