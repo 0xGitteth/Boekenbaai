@@ -88,14 +88,25 @@
     }
     log.replaceChildren();clearActions();notice('');
   }
+  function beginInterests(){
+    if(!personal){
+      answer('route','new');
+      return;
+    }
+    // Let the learner decide whether past reading is relevant, rather than
+    // interpreting every finished book as a book they enjoyed.
+    message('Wil je ook tips die lijken op boeken die je eerder hebt gelezen?');
+    options([
+      ['Ja, graag',()=>answer('route','similar')],
+      ['Nee, liever iets anders',()=>answer('route','new')],
+    ]);
+  }
   function finishIdentity(){
-    message(personal&&firstName
-      ? 'Hoi '+firstName+'! Wil je zelf ontdekken wat je leuk vindt, of zal ik je verrassen met een paar boeken? Je kunt ook iets kiezen dat lijkt op wat je eerder hebt gelezen.'
-      : 'Wil je zelf ontdekken wat je leuk vindt, of zal ik je verrassen met een paar boeken?');
+    message((personal&&firstName ? 'Hoi '+firstName+'! ' : '') +
+      'Wil je zelf ontdekken wat je leuk vindt, of liever meteen een paar boeken bekijken?');
     currentStep='route';
     options([
-      ['Ontdek mijn interesses',()=>answer('route','new')],
-      ...(personal?[['Iets als eerder gelezen',()=>answer('route','similar')]]:[]),
+      ['Ontdek mijn interesses',beginInterests],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }
