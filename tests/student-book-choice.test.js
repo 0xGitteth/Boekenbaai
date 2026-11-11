@@ -83,6 +83,9 @@ assert.equal(helpers.coverUrl('https://covers.openlibrary.org/b/id/22-M.jpg'),
 assert.match(js, /representativeBook: copy, copies: current\.copies/,
   'Fresh grouped details must bypass stale availability in main catalogue');
 assert.match(js, /close\(true\)/, 'Focus handoff bypasses stale focus restoration');
+assert.ok(js.includes('const selection = ++selectionVersion;'));
+assert.ok(js.includes('if (!active || selection !== selectionVersion) return;'),
+  'Late book-detail responses cannot reopen the chooser or its details');
 assert.match(html, /id="student-help-choose"[^>]*aria-haspopup="dialog"/);
 assert.doesNotMatch(html, /id="student-help-choose"[^>]*disabled/);
 assert.match(html, /id="student-choice-dialog"/);
