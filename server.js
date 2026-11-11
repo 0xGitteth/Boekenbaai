@@ -6820,6 +6820,7 @@ async function handleApi(req, res, requestUrl) {
         saveDb(db);
         booksDurablyCommitted = true;
         scheduleCoverBackfill({ resetFailures: true });
+        freeMetadataWorker.schedule(1500);
       }
 
       if (!cancelled && importFinalizeDelayMs > 0) {
