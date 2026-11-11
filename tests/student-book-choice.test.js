@@ -28,10 +28,11 @@ const helpers = vm.runInNewContext(`(() => {
   ${between('  const normalized = ', '  function renderThemes()')}
   ${between('  function matches(', '  function renderSuggestions()')}
   return {
-    mergeCopies, matches, explanation, availableThemes,
+    mergeCopies, matches, explanation, availableThemes, coverUrl,
     setEditions(value) { editions = value; }
   };
-})()`);
+})()`, { window: { BOEKENBAAI_API_BASE: 'https://api.example.nl' },
+  document: { querySelector() { return null; } } });
 const sourceBooks = [
   { id: 'copy-1', title: 'Reis door het bos', author: 'Auteur A',
     metadataIsbn: '9780306406157', themes: ['Avontuur'],
@@ -45,9 +46,12 @@ const sourceBooks = [
   { id: 'copy-4', title: 'Een ander boek', author: 'Auteur C',
     metadataIsbn: '9780306406157', themes: ['Avontuur'],
     status: 'available', easyReading: true },
+  { id: 'copy-5', title: 'Gecorrigeerde thema’s', author: 'Auteur D',
+    themes: [], themesCleared: true, tags: ['Pesten'],
+    status: 'available' },
 ];
 const grouped = helpers.mergeCopies(sourceBooks);
-assert.equal(grouped.length, 3, 'Physical copies group into real catalog titles');
+assert.equal(grouped.length, 4, 'Physical copies group into real catalog titles');
 const travel = grouped.find(item => item.title === 'Reis door het bos');
 const mystery = grouped.find(item => item.title === 'Een moeilijk mysterie');
 const easy = grouped.find(item => item.title === 'Een ander boek');
@@ -67,6 +71,18 @@ assert.equal(helpers.explanation(travel, {
 }), 'Thema: Avontuur · 110 pagina’s');
 helpers.setEditions(grouped);
 assert.ok(helpers.availableThemes().some(item => item.label === 'Avontuur'));
+assert.ok(!helpers.availableThemes().some(item => item.label === 'Pesten'),
+  'Raw tags must not restore manually cleared themes');
+assert.equal(helpers.matches(grouped.find(book => book.title === 'Gecorrigeerde thema’s'),
+  ['pesten'], 0, false, false, false), false);
+const localCover = '/api/covers/' + 'a'.repeat(64) + '.jpg';
+assert.equal(helpers.coverUrl(localCover), 'https://api.example.nl' + localCover,
+  'Cached cover must be served from configured API host');
+assert.equal(helpers.coverUrl('https://covers.openlibrary.org/b/id/22-M.jpg'),
+  'https://covers.openlibrary.org/b/id/22-M.jpg');
+assert.match(js, /representativeBook: copy, copies: current\\.copies/,
+  'Fresh grouped details must bypass stale availability in main catalogue');
+assert.match(js, /close\\(true\\)/, 'Focus handoff bypasses stale focus restoration');
 assert.match(html, /id="student-help-choose"[^>]*aria-haspopup="dialog"/);
 assert.doesNotMatch(html, /id="student-help-choose"[^>]*disabled/);
 assert.match(html, /id="student-choice-dialog"/);
