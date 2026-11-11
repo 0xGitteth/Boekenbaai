@@ -201,6 +201,7 @@
       });
       addDialog.close();
       addForm.reset();
+      working = false;
       feedback.textContent = result.created ? 'Eigen examenboek toegevoegd.' : 'Dit boek staat al op je lijst.';
       await refresh();
     } catch (error) {
