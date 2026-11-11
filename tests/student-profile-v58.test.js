@@ -38,6 +38,18 @@ assert.match(exam,/externalBook/);
 assert.match(exam,/boekenbaai:exam-reading-list-updated/);
 assert.match(js,/boekenbaai:exam-reading-list-updated/);
 assert.match(js,/hasStatistics/);
+assert.match(html,/id="student-recent-books"[^>]*><p class="hint bb-student-profile-empty">/);
+assert.match(js,/make\('p', 'hint bb-student-profile-empty', 'Je hebt nog geen boeken geleend\.'\)/);
+assert.match(js,/recentRoot\.replaceChildren\(make\('p', 'hint bb-student-profile-empty', error\.message\)\)/);
+// Empty states for current loans, activity and recent books use one shared
+// rule with the same exact values as the teacher dashboard's compact cards.
+assert.match(css,/#student-borrowed-empty:not\(\.hidden\)/);
+assert.match(css,/#student-activity-empty:not\(\.hidden\)/);
+assert.match(css,/#student-recent-books > \.bb-student-profile-empty/);
+for (const declaration of ['min-height:45px', 'padding:10px 13px', 'border:1px solid #dbe4ef',
+  'border-radius:10px', 'background:#f5f8fc', 'color:#365776', 'font-size:13px', 'line-height:1.4']) {
+  assert.ok(css.includes(declaration), 'Shared empty-state property missing: ' + declaration);
+}
 assert.match(js,/showTab\(hasHistory \? 'history' : 'stats'\)/);
 assert.match(exam,/section\.hidden = entries\.length === 0/);
 console.log('Student profile v58 wiring and privacy: OK');

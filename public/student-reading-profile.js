@@ -143,7 +143,7 @@
   function renderRecent() {
     recentRoot.replaceChildren();
     const recent = Array.isArray(data?.recent) ? data.recent : [];
-    if (!recent.length) recentRoot.append(make('p', 'hint', 'Je hebt nog geen boeken geleend.'));
+    if (!recent.length) recentRoot.append(make('p', 'hint bb-student-profile-empty', 'Je hebt nog geen boeken geleend.'));
     else for (const entry of recent) recentRoot.append(renderBook(entry));
     // Self-reported books may provide statistics without any school loans.
     const stats = data?.statistics || {};
@@ -170,7 +170,7 @@
       renderRecent();
     } catch (error) {
       if (serial !== generation || studentId !== owner) return;
-      recentRoot.replaceChildren(make('p', 'hint', error.message));
+      recentRoot.replaceChildren(make('p', 'hint bb-student-profile-empty', error.message));
       historyOpen.hidden = true;
     }
   }

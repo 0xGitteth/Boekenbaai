@@ -71,6 +71,35 @@ body[data-page="student"] #student-profile-view #student-reading-summary-card .r
 body[data-page="student"] #student-profile-view #student-reading-records[hidden] {display:none!important;}
 body[data-page="student"] #student-profile-view #student-reading-summary-card > .hint,
 body[data-page="student"] #student-profile-view #student-exam-reading-section > .hint {display:none;}
+/* Match the empty task/loan state on the teacher dashboard.
+   Rendered reading-history placeholders use the same class on first load
+   and after asynchronous data refresh. */
+body[data-page="student"] #student-profile-view :is(
+  #student-borrowed-empty:not(.hidden),
+  #student-activity-empty:not(.hidden),
+  #student-recent-books > .bb-student-profile-empty
+) {
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  width:100%;
+  min-height:45px;
+  margin:0;
+  padding:10px 13px;
+  border:1px solid #dbe4ef;
+  border-radius:10px;
+  background:#f5f8fc;
+  color:#365776;
+  font-size:13px;
+  font-weight:400;
+  line-height:1.4;
+}
+body[data-page="student"] #student-profile-view
+  #student-reading-summary-card #student-recent-books > .bb-student-profile-empty {
+  max-width:none;
+  margin:0;
+}
+
 body[data-page="student"] #student-profile-view .bb-profile-history-open {
   box-sizing:border-box; width:auto; min-height:38px; padding:8px 12px;
   margin-top:13px; font-size:13px; border-radius:8px;
