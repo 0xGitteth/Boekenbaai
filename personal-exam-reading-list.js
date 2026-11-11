@@ -83,6 +83,8 @@ function publicEntry(db, entry) {
     manualStatus: entry.manualStatus,
     readFromReturn: recordedRead,
     addedManually: entry.addedManually === true,
+    externalSource: entry.externalSource === true,
+    genre: entry.genre || '',
     addedAt: entry.addedAt,
     updatedAt: entry.updatedAt,
     revision: entry.revision || 1,
@@ -151,6 +153,48 @@ function addBook(db, studentId, book, actorId, now, manually = true, originalEdi
   return { entry, created: true };
 }
 
+
+function addExternalBook(db, studentId, input, actorId, now) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Vul de gegevens van je eigen boek in.');
+  }
+  const title = typeof input.title === 'string' ? input.title.trim().replace(/\\s+/g, ' ') : '';
+  const author = typeof input.author === 'string' ? input.author.trim().replace(/\\s+/g, ' ') : '';
+  const rawIsbn = typeof input.isbn === 'string' ? input.isbn.trim() : '';
+  const isbn = rawIsbn.replace(/[\\s-]/g, '').toUpperCase();
+  const genre = typeof input.genre === 'string' ? input.genre.trim().replace(/\\s+/g, ' ') : '';
+  const rawPages = input.pageCount;
+  const pages = rawPages === '' || rawPages === null || rawPages === undefined ? null : Number(rawPages);
+  if (!title || !author || title.length > 300 || author.length > 300) {
+    throw new Error('Vul een titel en auteur in (maximaal 300 tekens).');
+  }
+  if (genre.length > 80) throw new Error('Genre mag maximaal 80 tekens bevatten.');
+  if (pages !== null && (!Number.isInteger(pages) || pages < 1 || pages > 99999)) {
+    throw new Error('Aantal pagina’s moet tussen 1 en 99.999 liggen.');
+  }
+  if (isbn && !/^(?:[0-9]{13}|[0-9]{9}[0-9X])$/.test(isbn)) {
+    throw new Error('Vul een geldig ISBN-10 of ISBN-13 in, of laat dit veld leeg.');
+  }
+  const book = { title, author, ...(isbn ? { metadataIsbn: isbn } : {}),
+    ...(pages ? { pageCount: pages } : {}) };
+  if (isbn && !String(getEditionKey(book) || '').startsWith('isbn13||')) {
+    throw new Error('Het ISBN heeft een ongeldig controlecijfer.');
+  }
+  const normalized = value => String(value || '').normalize('NFKC')
+    .trim().replace(/\\s+/g, ' ').toLocaleLowerCase('nl-NL');
+  const existing = getEntries(db, studentId).find(entry =>
+    normalized(entry.title) === normalized(title) && normalized(entry.author) === normalized(author));
+  if (existing) return { entry: existing, created: false };
+  const result = addBook(db, studentId, book, actorId, now);
+  if (result.created) {
+    result.entry.externalSource = true;
+    result.entry.genre = genre;
+    result.entry.suitableForExamList = false;
+    result.entry.bookId = '';
+  }
+  return result;
+}
+
 function synchronizeReturn(db, record, now) {
   if (!record || record.subjectType !== 'student' ||
       record.finished !== true || record.suitableForExamList !== true) return null;
@@ -168,7 +212,10 @@ function synchronizeReturn(db, record, now) {
   };
   const matchingKey = keyForReading(record, db);
   const existing = getEntries(db, record.subjectId)
-    .find(entry => entry.editionKey === matchingKey);
+    .find(entry => entry.editionKey === matchingKey ||
+      (entry.externalSource === true &&
+        String(entry.title || '').trim().toLowerCase() === String(record.title || '').trim().toLowerCase() &&
+        String(entry.author || '').trim().toLowerCase() === String(record.author || '').trim().toLowerCase()));
   if (existing) return existing;
   // Use the immutable identity captured at check-in. Reconstructing a book
   // from one ISBN could otherwise merge two different editions and then
@@ -190,5 +237,5 @@ function changeStatus(entry, status, actorId, now) {
 module.exports = {
   STATUSES, keyForBook, keyForReading, snapshot, listForStudent,
   mayManageExamList, publicEntry, getEntries, addBook,
-  synchronizeReturn, changeStatus,
+  synchronizeReturn, changeStatus, addExternalBook,
 };
