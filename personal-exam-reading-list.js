@@ -55,10 +55,15 @@ function snapshot(book) {
   };
 }
 
-function recordsFor(db, studentId, key) {
+function recordsFor(db, studentId, key, entry = null) {
+  const normalize = value => String(value || '').normalize('NFKC').trim()
+    .replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
   return (db.readingRecords || []).filter(record =>
     record.subjectType === 'student' && record.subjectId === studentId &&
-    keyForReading(record, db) === key);
+    (keyForReading(record, db) === key ||
+      (entry?.externalSource === true &&
+        normalize(record.title) === normalize(entry.title) &&
+        normalize(record.author) === normalize(entry.author))));
 }
 
 function getEntries(db, studentId) {
@@ -67,7 +72,7 @@ function getEntries(db, studentId) {
 }
 
 function publicEntry(db, entry) {
-  const records = recordsFor(db, entry.studentId, entry.editionKey);
+  const records = recordsFor(db, entry.studentId, entry.editionKey, entry);
   const recordedRead = records.some(record => record.finished === true);
   return {
     id: entry.id,
