@@ -49,7 +49,11 @@
       },
     });
     const content = await response.json().catch(() => ({}));
-    if (!response.ok) throw Error(content.message || 'Leesgegevens konden niet worden geladen.');
+    if (!response.ok) {
+      const error = new Error(content.message || 'Leesgegevens konden niet worden geladen.');
+      error.status = response.status;
+      throw error;
+    }
     return content;
   }
   function fmt(date) {
@@ -213,7 +217,20 @@
       }));
       await refresh();
     } catch (error) {
-      if (owner === studentId) editFeedback.textContent = error.message;
+      if (owner === studentId && error.status === 409) {
+        // A stale revision must not be retried against the old snapshot.
+        // Reopen from the freshly retrieved history to review the new state.
+        editDialog.close();
+        editing = null;
+        await refresh();
+        if (owner === studentId) {
+          const target = historyDialog.open ? historyRoot : recentRoot;
+          target.prepend(make('p', 'hint',
+            'Dit antwoord is intussen gewijzigd. De gegevens zijn vernieuwd. Open het boek opnieuw om het huidige antwoord te bekijken.'));
+        }
+      } else if (owner === studentId) {
+        editFeedback.textContent = error.message;
+      }
     } finally {
       editSave.disabled = false;
     }
