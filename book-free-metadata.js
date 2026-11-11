@@ -92,24 +92,29 @@ function titleAgrees(book, source) {
 function usableFor(book, metadata) {
   return Boolean(metadata && isbnOf(book) === metadata.isbn && titleAgrees(book, metadata));
 }
-function nextCandidate(books, now = Date.now(), excluded = new Set()) {
-  const seen = new Set();
+function nextCandidate(books, now = Date.now(), excluded = new Set(), failedCovers = new Set()) {
   for (const book of Array.isArray(books) ? books : []) {
     const isbn = isbnOf(book), key = workKey(book);
-    if (!isbn || seen.has(key) || excluded.has(key)) continue;
-    seen.add(key);
+    if (!isbn || excluded.has(key)) continue;
+    const failedCover = failedCovers.has(book.coverUrl) && !book.localCoverUrl;
     const check = book.freeMetadataCheck;
     const last = Number.isFinite(Date.parse(check?.checkedAt)) ? Date.parse(check.checkedAt) : 0;
-    if (last && now - last < 90 * 86400000) continue;
-    if (!isMissing(book)) continue;
+    const recent = last && now - last < 90 * 86400000;
+    // The cover downloader may discover a broken image after the initial
+    // metadata check. Retry only if this particular URL has not been checked.
+    if (recent && !(failedCover && check.failedCoverUrl !== book.coverUrl)) continue;
+    if (!isMissing(book) && !failedCover) continue;
     return {isbn, key, title:book.title, author:book.author};
   }
   return null;
 }
-function applyResult(db, candidate, metadata, now = new Date().toISOString(), status = 'found') {
+function applyResult(db, candidate, metadata, now = new Date().toISOString(), status = 'found',
+  failedCovers = new Set()) {
   let updated = 0, newCover = false;
   for (const book of db.books || []) {
     if (workKey(book) !== candidate.key) continue;
+    const failedCoverUrl = failedCovers.has(book.coverUrl) && !book.localCoverUrl
+      ? book.coverUrl : '';
     if (status === 'found' && usableFor(book, metadata)) {
       const update = (field, value) => {
         if (value === null || value === undefined || value === '') return;
@@ -127,7 +132,10 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
       update('publisher', metadata.publisher);
       update('publishedYear', metadata.publishedYear);
       update('pageCount', metadata.pageCount);
-      if (!book.coverUrl && metadata.coverUrl) {
+      const coverSource = book.importProvenance?.fieldSources?.coverUrl?.sourceType;
+      if (metadata.coverUrl && (
+        !book.coverUrl || (failedCoverUrl && !['manual', 'excel'].includes(coverSource))
+      ) && book.coverUrl !== metadata.coverUrl) {
         book.coverUrl = metadata.coverUrl;
         if (!book.importProvenance || typeof book.importProvenance !== 'object') {
           book.importProvenance = {fieldSources:{}};
@@ -148,7 +156,7 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
     }
     book.freeMetadataCheck = {
       source:'EasyCB', status:status === 'found' && !usableFor(book,metadata) ? 'mismatch' : status,
-      checkedAt:now, isbn:candidate.isbn,
+      checkedAt:now, isbn:candidate.isbn, failedCoverUrl,
     };
   }
   return {updated,newCover};
