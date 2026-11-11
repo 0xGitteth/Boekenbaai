@@ -315,7 +315,8 @@
             body: {
               name: name.value,
               classIds: [classControl.value],
-              ...(examAccessControl && (student.classIds || []).includes(classControl.value)
+              ...(examAccessControl && (state.classes || []).some(klass =>
+                klass.id === classControl.value && klass.examReadingLevel === 'mixed')
                 ? { examReadingEligibleOverride: examAccessControl.value === 'yes' } : {}),
               parnassysStudentNumber: number.value,
             },
