@@ -1549,6 +1549,24 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.editButton.hidden = !isAdmin;
     state.editButton.disabled = !isAdmin;
   }
+  const examAdd = document.getElementById('student-book-detail-exam-add');
+  if (examAdd) {
+    const eligible = pageType === 'student' && authUser?.role === 'student' &&
+      Boolean(representative?.id);
+    examAdd.hidden = !eligible;
+    examAdd.disabled = !eligible;
+    examAdd.onclick = eligible ? async () => {
+      examAdd.disabled = true;
+      try {
+        await window.BoekenbaaiExamList?.addBook(representative.id);
+        if (state.message) state.message.textContent = 'Boek staat op je examenleeslijst.';
+      } catch (error) {
+        if (state.message) state.message.textContent = error.message || 'Toevoegen mislukt.';
+      } finally {
+        examAdd.disabled = false;
+      }
+    } : null;
+  }
   const studentAction = document.querySelector('#student-book-detail-action');
   if (studentAction) {
     const descriptor = pageType === 'student'
