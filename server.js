@@ -26,9 +26,10 @@ const {
   markNotificationRead, isActiveTeacher,
 } = require('./reading-change-notifications');
 const { STATUSES: EXAM_STATUSES, keyForBook: examEditionKey, listForStudent, publicEntry,
-  mayManageExamList, addBook: addExamBook, synchronizeReturn: syncExamReturn,
+  mayManageExamList, addBook: addExamBook, addExternalBook: addExternalExamBook, synchronizeReturn: syncExamReturn,
   changeStatus: changeExamStatus } = require('./personal-exam-reading-list');
 const { examReadingAccess } = require('./exam-reading-access');
+const { buildStudentReadingProfile } = require('./student-reading-profile');
 const studentPinCheckout = require('./student-pin-checkout-core');
 const authSecurityForPin = require('./google-auth-security-core');
 const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
@@ -4670,6 +4671,21 @@ async function handleApi(req, res, requestUrl) {
     }
 
 
+    // All profile reading data belongs to the authenticated pupil. No student
+    // ID is accepted from the request, and the returned data is not public.
+    if (req.method === 'GET' && requestUrl.pathname === '/api/me/reading-profile') {
+      if (!user || user.role !== 'student') {
+        return sendJson(res, user ? 403 : 401, { message: 'Alleen voor je eigen profiel.' });
+      }
+      const pageText = requestUrl.searchParams.get('page') || '0';
+      if (!/^(0|[1-9][0-9]{0,5})$/.test(pageText)) {
+        return sendJson(res, 400, { message: 'Ongeldige pagina.' });
+      }
+      const result = buildStudentReadingProfile(getDb(), user.id, { page: Number(pageText) });
+      if (!result) return sendJson(res, 404, { message: 'Leerling niet gevonden.' });
+      return sendJson(res, 200, result);
+    }
+
     // Personal exam-reading lists are separate from stock and the circulation
     // history. The student's identity is derived from the authenticated user
     // or validated against current class membership for staff.
@@ -4697,8 +4713,10 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Ongeldige aanvraagherkomst.' });
       }
       const body = await parseBody(req);
-      if (typeof body.bookId !== 'string' || !/^[\w-]{1,128}$/.test(body.bookId)) {
-        return sendJson(res, 400, { message: 'Kies een boek uit de bibliotheek.' });
+      const external = Object.prototype.hasOwnProperty.call(body, 'externalBook');
+      if (external && body.bookId !== undefined ||
+          !external && (typeof body.bookId !== 'string' || !/^[\w-]{1,128}$/.test(body.bookId))) {
+        return sendJson(res, 400, { message: 'Kies een bibliotheekboek of vul één eigen boek in.' });
       }
       if (user.role === 'student' && body.studentId && body.studentId !== user.id) {
         return sendJson(res, 403, { message: 'Geen toegang tot deze leeslijst.' });
@@ -4711,9 +4729,18 @@ async function handleApi(req, res, requestUrl) {
           (user.role === 'student' && !examReadingAccess(db, student).eligible)) {
         return sendJson(res, 403, { message: 'Examenleeslijst is alleen beschikbaar voor bovenbouwleerlingen.' });
       }
-      const book = (db.books || []).find(item => item.id === body.bookId);
-      if (!book) return sendJson(res, 404, { message: 'Dit boek staat niet in de bibliotheek.' });
-      const result = addExamBook(db, studentId, book, user.id, new Date().toISOString());
+      let result;
+      if (external) {
+        try {
+          result = addExternalExamBook(db, studentId, body.externalBook, user.id, new Date().toISOString());
+        } catch (error) {
+          return sendJson(res, 400, { message: error.message || 'Ongeldige boekgegevens.' });
+        }
+      } else {
+        const book = (db.books || []).find(item => item.id === body.bookId);
+        if (!book) return sendJson(res, 404, { message: 'Dit boek staat niet in de bibliotheek.' });
+        result = addExamBook(db, studentId, book, user.id, new Date().toISOString());
+      }
       if (result.created || result.entry.addedManually && result.entry.updatedBy === user.id) {
         // saveDb is safe also for an idempotent duplicate add; it keeps the
         // list durable when several copies of the same edition exist.
