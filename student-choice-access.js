@@ -106,13 +106,13 @@ function pastKeys(db,studentId){
     Date.parse(entry.updatedAt)<Date.now()-RECENT_DAYS*86400000)return [];
   return Array.isArray(entry.keys)?entry.keys.filter(x=>typeof x==='string').slice(-240):[];
 }
-async function suggestions({grant,sessionToken,choices}){
+async function suggestions({grant,sessionToken,choices,anonymous=false}){
   // Authentication is rechecked inside the atomic DB transaction. We
   // serialize reading/updating recommendation history across server workers.
   let result;
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
-      const identity=resolveChoice(db,loadAuth(),{grant,sessionToken});
+      const identity=anonymous?null:resolveChoice(db,loadAuth(),{grant,sessionToken});
       // Match public catalogue GET normalization. Raw imported tags are
       // not curator-approved themes until these shared rules are applied.
       const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
