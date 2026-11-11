@@ -96,6 +96,28 @@ assert.ok(db.examReadingLists.some(item =>
 assert.equal(publicEntry(db, result.entry).readFromReturn, false,
   'Conflicting return must not mark existing ISBN A title as read');
 
+// Old returns without editionKey put a physical barcode in the "isbn"
+// field. Reading status must still match the same title/author identity.
+const oldBook = { id: 'legacy-no-isbn', title: 'Boek zonder ISBN',
+  author: 'Auteur C', barcode: 'DOK-LOCAL-0008',
+  suitableForExamList: true };
+db.books.push(oldBook);
+const manualLegacy = addBook(db, student.id, oldBook, student.id, now).entry;
+const oldRecord = createReturnReadingRecord({
+  db, book: oldBook, student, finished: true, actorId: 'teacher-a', now,
+});
+delete oldRecord.editionKey;
+assert.equal(oldRecord.isbn, oldBook.barcode,
+  'Legacy record used the copy barcode as its ISBN fallback');
+synchronizeReturn(db, oldRecord, now);
+assert.equal(publicEntry(db, manualLegacy).readFromReturn, true);
+assert.equal(db.examReadingLists.filter(entry =>
+  entry.title === oldBook.title).length, 1);
+db.books = db.books.filter(book => book.id !== oldBook.id);
+assert.equal(publicEntry(db, manualLegacy).readFromReturn, true,
+  'Historic reading survives removal of physical copy');
+
+
 
 for (const name of ['server.js', 'public/personal-exam-reading-list.js']) {
   execFileSync(process.execPath, ['--check', path.join(__dirname, '..', name)], { stdio: 'pipe' });
