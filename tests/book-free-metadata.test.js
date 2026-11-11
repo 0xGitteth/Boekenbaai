@@ -61,11 +61,11 @@ const broken = {
     {id:'broken',metadataIsbn:isbn,title:source.title,author:source.author,
       description:'Zelf geschreven',tags:['Handmatig'],pageCount:80,coverUrl:staleCover,localCoverUrl:'',
       importProvenance:{fieldSources:{coverUrl:{sourceType:'metadata',sourceDetail:'openlibrary'}}},
-      freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',failedCoverUrl:''}},
+      freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',title:source.title,isbn,failedCoverUrl:''}},
     {id:'manual',metadataIsbn:isbn,title:source.title,author:source.author,
       description:'Zelf geschreven',tags:['Handmatig'],pageCount:80,coverUrl:staleCover,localCoverUrl:'',
       importProvenance:{fieldSources:{coverUrl:{sourceType:'manual'}}},
-      freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',failedCoverUrl:''}},
+      freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',title:source.title,isbn,failedCoverUrl:''}},
   ],
 };
 const alternative = nextCandidate(broken.books,Date.parse('2026-11-12T00:00:00Z'),new Set(),failedUrls);
@@ -75,6 +75,10 @@ assert.equal(broken.books[0].coverUrl,source.coverUrl,'Replace a verified failed
 assert.equal(broken.books[1].coverUrl,staleCover,'Preserve manually selected cover even if broken');
 assert.equal(nextCandidate(broken.books,Date.parse('2026-11-13T00:00:00Z'),
   new Set(),failedUrls),null,'Do not repeatedly retry an unchanged failed URL');
+const corrected={...broken.books[0],description:'',metadataIsbn:'9789025869975',
+  freeMetadataCheck:{checkedAt:'2026-11-11T00:00:00Z',title:source.title,isbn}};
+assert.equal(nextCandidate([corrected],Date.parse('2026-11-12T00:00:00Z'))?.isbn,
+  '9789025869975','A corrected ISBN must trigger a new lookup');
 async function run(){
   let calls=0, changedCover=0;
   const db = {books:[{id:'x',metadataIsbn:isbn,title:source.title,author:source.author,
