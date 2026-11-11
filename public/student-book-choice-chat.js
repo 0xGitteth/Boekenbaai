@@ -90,8 +90,8 @@
   }
   function finishIdentity(){
     message(personal&&firstName
-      ? 'Hoi '+firstName+'! Wil je iets ontdekken dat lijkt op wat je eerder hebt gelezen, of liever iets nieuws?'
-      : 'Je hoeft niet te weten wat voor boek je zoekt. Waar wil je beginnen?');
+      ? 'Hoi '+firstName+'! Wil je een boek dat lijkt op iets wat je eerder hebt gelezen, of liever iets nieuws?'
+      : 'Oké! Zullen we iets nieuws zoeken, of wil je verrast worden?');
     currentStep='route';
     const items=[
       ...(personal?[['Iets als mijn eerder gelezen boeken',()=>answer('route','similar')]]:[]),
@@ -105,7 +105,6 @@
     resetSession();
     active=true;seed=Math.random().toString(36).slice(2)+Date.now().toString(36);
     dialog.showModal();
-    message('Welkom bij Help me kiezen. Ik stel je een paar vragen en zoek daarna echte boeken in onze bibliotheek.');
     notice('Controleren of je al ingelogd bent…');
     const marker=epoch;
     try{
@@ -120,15 +119,15 @@
     }catch(_){/* Invalid/guest sessions never inherit personal data. */}
     if(!active||marker!==epoch)return;
     notice('');
-    message('Wil je persoonlijke boekentips met dezelfde PIN als bij boeken lenen? Zonder inloggen kan ook.');
+    message('Hoi! Ik help je een leuk boek te vinden. Wil je dat ik rekening houd met wat je eerder hebt gelezen? Dat kan met dezelfde PIN als bij het lenen van boeken. Je kunt ook zonder PIN verder.');
     options([
-      ['Ja, met mijn PIN',showPin],
-      ['Nee, gewoon verder',()=>{personal=false;finishIdentity();}],
+      ['Met mijn PIN',showPin],
+      ['Zonder PIN',()=>{personal=false;finishIdentity();}],
     ]);
   }
   function showPin(){
     currentStep='pin';
-    message('Zoek je naam en vul je zescijferige uitleen-PIN in. Je gegevens worden alleen gebruikt voor boekentips.');
+    message('Zoek je naam in de lijst en vul je PIN in. Dit is dezelfde PIN die je gebruikt om boeken te lenen.');
     const form=el('form','bb-choice-chat__pin');
     form.autocomplete='off';
     const label=el('label','','Jouw naam');
@@ -144,7 +143,7 @@
     pin.pattern='[0-9]{6}';pin.maxLength=6;pin.minLength=6;pin.required=true;
     const submit=el('button','btn','Persoonlijke tips starten');
     submit.type='submit';
-    const other=el('button','btn btn--ghost','Zonder inloggen');
+    const other=el('button','btn btn--ghost','Zonder PIN verder');
     other.type='button';
     const google=el('button','btn btn--ghost','Inloggen met Google');
     google.type='button';
@@ -239,7 +238,7 @@
   }
   function askActivity(){
     currentStep='activity';
-    message('Wat doe je graag als je even vrij bent?');
+    message('Wat doe je graag in je vrije tijd?');
     options([
       ['Gamen',()=>answer('activity','gaming')],
       ['Films of series kijken',()=>answer('activity','film')],
@@ -255,8 +254,8 @@
     const questions={
       gaming:'Wat vind je leuk aan een game?',
       film:'Wat vind je leuk aan een film of serie?',
-      sport:'Wat vind je interessant aan sporten?',
-      music:'Wat spreekt je aan bij muziek?',
+      sport:'Wat vind je leuk aan sporten?',
+      music:'Wat vind je leuk aan muziek?',
       nature:'Wat vind je interessant aan dieren of de natuur?',
       other:'Wat maakt een verhaal voor jou interessant?',
       unknown:'Wat zou je in een verhaal willen ontdekken?',
@@ -375,7 +374,7 @@
         notice(results.emptyCatalog?'Er staan nog geen boeken in de bibliotheek.':
           'Ik heb geen nieuwe passende boeken meer. Je kunt een andere richting proberen of eerdere tips bekijken.');
         message(results.emptyCatalog?'Er zijn nu nog geen boeken om voor te stellen.':
-          'Met deze keuzes zijn er geen nieuwe boeken meer die ik kan voorstellen.');
+          'Ik heb geen andere boeken gevonden die bij je antwoorden passen.');
         followupButtons(true);
         return;
       }
@@ -383,7 +382,7 @@
       if(!active||marker!==epoch)return;
       const catalogue=Array.isArray(available)?available:[];
       lastBooks=results.suggestions;
-      const block=message('Deze boeken komen uit de actuele bibliotheek:');
+      const block=message('Ik heb deze boeken voor je gevonden:');
       const list=el('div','bb-choice-chat__result-list');
       for(const book of results.suggestions){
         shownInDialogue.add(book.key);
@@ -391,7 +390,7 @@
         list.append(resultCard(book,catalogue));
       }
       block.append(list);
-      notice('Dit zijn suggesties, geen voorspelling van je leesniveau.');
+      notice('Deze tips zijn gebaseerd op je antwoorden.');
       message('Zit er iets tussen?');
       followupButtons(false);
     }catch(err){
@@ -412,7 +411,7 @@
       ['Andere richting',askSituation],
       ['Korter boek',()=>{choices.length='short';showRecommendations();}],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
-      ['Helemaal opnieuw',()=>{choices={};message('Dan beginnen we opnieuw met de vragen.');finishIdentity();}],
+      ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
         if(busy)return;busy=true;
         try{
