@@ -25,7 +25,7 @@ const {
   createReadingChangeNotification, listTeacherNotifications,
   markNotificationRead, isActiveTeacher,
 } = require('./reading-change-notifications');
-const { STATUSES: EXAM_STATUSES, listForStudent, publicEntry,
+const { STATUSES: EXAM_STATUSES, keyForBook: examEditionKey, listForStudent, publicEntry,
   mayManageExamList, addBook: addExamBook, synchronizeReturn: syncExamReturn,
   changeStatus: changeExamStatus } = require('./personal-exam-reading-list');
 const studentPinCheckout = require('./student-pin-checkout-core');
@@ -4836,6 +4836,10 @@ async function handleApi(req, res, requestUrl) {
       const books = db.books.map((book) => ({
         id: book.id, title: book.title, author: book.author, barcode: book.barcode,
         status: book.status, fixedLocation: book.fixedLocation || null,
+        editionKey: examEditionKey(book),
+        editionIsbn: book.editionIsbn || null,
+        metadataIsbn: book.metadataIsbn || null,
+        publishedYear: book.publishedYear || null,
       }));
       const loans = db.books.filter((book) => book.status === 'borrowed')
         .map((book) => {
