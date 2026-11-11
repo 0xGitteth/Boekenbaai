@@ -8,6 +8,7 @@ const {
 
 function createFreeMetadataWorker({
   loadDb, commit, onNewCover = () => {}, isPaused = () => false,
+  getFailedCovers = () => new Set(),
   contact = '', fetchImpl = global.fetch, logger = console,
   delayMs = 1800,
 } = {}) {
@@ -32,7 +33,8 @@ function createFreeMetadataWorker({
     try {
       const now = Date.now();
       for (const [key, retryAt] of failedInProcess) if (retryAt <= now) failedInProcess.delete(key);
-      const candidate = nextCandidate(loadDb().books, now, new Set(failedInProcess.keys()));
+      const failedCovers = getFailedCovers();
+      const candidate = nextCandidate(loadDb().books, now, new Set(failedInProcess.keys()), failedCovers);
       if (!candidate) {
         // After all other works are processed, revisit a temporarily failed
         // ISBN when its cooldown expires, without busy polling.
@@ -56,7 +58,7 @@ function createFreeMetadataWorker({
         return;
       }
       const outcome = await commit(db => applyResult(
-        db, candidate, result.metadata, new Date().toISOString(), result.status,
+        db, candidate, result.metadata, new Date().toISOString(), result.status, failedCovers,
       ));
       if (outcome?.newCover) onNewCover();
     } catch (error) {
@@ -76,7 +78,7 @@ function createFreeMetadataWorker({
       if (seen.has(key) || !isbnOf(book)) continue;
       seen.add(key);
       if (book.freeMetadataCheck?.checkedAt) checked++;
-      if (nextCandidate([book])) pending++;
+      if (nextCandidate([book], Date.now(), new Set(), getFailedCovers())) pending++;
     }
     return {enabled, running, checkedWorks:checked, pendingWorks:pending};
   }
