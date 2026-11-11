@@ -17,11 +17,28 @@ function keyForBook(book) {
   return book.id ? 'copy||' + String(book.id) : '';
 }
 
-function keyForReading(record) {
-  return record.editionKey || keyForBook({
-    ...record,
-    metadataIsbn: record.isbn || '',
-  }) || (record.bookId ? 'copy||' + record.bookId : '');
+function keyForReading(record, db = null) {
+  if (record.editionKey) return record.editionKey;
+
+  // Older records stored the physical copy barcode in "isbn" when a book
+  // had no ISBN. That barcode is not reliable edition-level metadata.
+  const sameSnapshot = item => item &&
+    String(item.title || '').normalize('NFKC').trim().toLowerCase() ===
+      String(record.title || '').normalize('NFKC').trim().toLowerCase() &&
+    String(item.author || '').normalize('NFKC').trim().toLowerCase() ===
+      String(record.author || '').normalize('NFKC').trim().toLowerCase();
+  const currentBook = (db?.books || []).find(book =>
+    book.id === record.bookId && sameSnapshot(book));
+  if (currentBook) return keyForBook(currentBook);
+
+  const priorEntry = (db?.examReadingLists || []).find(entry =>
+    entry.bookId === record.bookId && sameSnapshot(entry));
+  if (priorEntry) return priorEntry.editionKey;
+
+  // No official ISBN can be proven after that copy is gone. Fall back to
+  // the legacy title/author identity rather than guessing from its barcode.
+  return keyForBook({ title: record.title, author: record.author }) ||
+    (record.bookId ? 'copy||' + record.bookId : '');
 }
 
 function snapshot(book) {
@@ -40,7 +57,7 @@ function snapshot(book) {
 function recordsFor(db, studentId, key) {
   return (db.readingRecords || []).filter(record =>
     record.subjectType === 'student' && record.subjectId === studentId &&
-    keyForReading(record) === key);
+    keyForReading(record, db) === key);
 }
 
 function getEntries(db, studentId) {
@@ -79,7 +96,7 @@ function listForStudent(db, studentId) {
   const records = (db.readingRecords || []).filter(record =>
     record.subjectType === 'student' && record.subjectId === studentId);
   const finishedWorks = new Set(records.filter(record => record.finished === true)
-    .map(keyForReading).filter(Boolean));
+    .map(record => keyForReading(record, db)).filter(Boolean));
   return {
     entries,
     statistics: {
@@ -146,7 +163,7 @@ function synchronizeReturn(db, record, now) {
     pageCount: record.pageCount,
     suitableForExamList: true,
   };
-  const matchingKey = keyForReading(record);
+  const matchingKey = keyForReading(record, db);
   const existing = getEntries(db, record.subjectId)
     .find(entry => entry.editionKey === matchingKey);
   if (existing) return existing;
