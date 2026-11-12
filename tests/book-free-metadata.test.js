@@ -82,6 +82,22 @@ assert.ok(alternative,'A failed image may be retried despite a recent metadata c
 applyResult(broken,alternative,source,'2026-11-12T00:00:00Z','found',failedUrls);
 assert.equal(broken.books[0].coverUrl,source.coverUrl,'Replace a verified failed metadata cover');
 assert.equal(broken.books[1].coverUrl,staleCover,'Preserve manually selected cover even if broken');
+
+const manuallyCleared = {
+  id:'manually-cleared',metadataIsbn:isbn,title:source.title,author:source.author,
+  description:'',pageCount:null,tags:[],coverUrl:'',
+  importProvenance:{fieldSources:{coverUrl:{sourceType:'manual'}}},
+};
+const manuallyClearedDb={books:[manuallyCleared]};
+const clearedCandidate=nextCandidate(manuallyClearedDb.books);
+assert.ok(clearedCandidate);
+const clearedOutcome=applyResult(manuallyClearedDb,clearedCandidate,source);
+assert.equal(manuallyCleared.coverUrl,'',
+  'EasyCB must not restore a cover explicitly removed by a teacher');
+assert.equal(manuallyCleared.importProvenance.fieldSources.coverUrl.sourceType,'manual',
+  'Manually cleared cover provenance must remain intact');
+assert.equal(clearedOutcome.newCover,false);
+
 assert.equal(nextCandidate(broken.books,Date.parse('2026-11-13T00:00:00Z'),
   new Set(),failedUrls),null,'Do not repeatedly retry an unchanged failed URL');
 const corrected={...broken.books[0],description:'',metadataIsbn:'9789025869977',
