@@ -53,15 +53,16 @@ function bookWorks(db, job) {
   }
   return grouped;
 }
-function needsExtra(book) {
+function needsExtra(book,failedCovers=new Set()) {
   const description = String(book?.description || '').replace(/<[^>]*>/g,'').trim();
   const tagCount = Array.isArray(book?.tags) ? book.tags.filter(Boolean).length : 0;
   const cover = Boolean(book?.coverUrl || book?.localCoverUrl);
-  return {cover:!cover, description:description.length < 280, topics:tagCount < 3,
-    any:!cover || description.length < 280 || tagCount < 3};
+  const broken=Boolean(book?.coverUrl&&!book?.localCoverUrl&&failedCovers.has(book.coverUrl));
+  return {cover:!cover||broken, description:description.length < 280, topics:tagCount < 3,
+    any:!cover || broken || description.length < 280 || tagCount < 3};
 }
-function needsExtraWork(books) {
-  return books.some(book => needsExtra(book).any);
+function needsExtraWork(books,failedCovers=new Set()) {
+  return books.some(book => needsExtra(book,failedCovers).any);
 }
 function freePending(book, now = Date.now()) {
   return Boolean(isbnOf(book) && nextCandidate([book], now));
@@ -92,17 +93,18 @@ function addJob(db, bookIds, {id = crypto.randomUUID(), source = 'import', fileN
   }
   return job;
 }
-function remainingWorks(db,job) {
+function remainingWorks(db,job,failedCovers=new Set()) {
   const completed = new Set(Array.isArray(job.completedKeys)?job.completedKeys:[]);
   const active = new Set(job.state==='running' ? job.approvedKeys || []:[]);
   return [...bookWorks(db,job)].filter(([key,books])=>
-    !completed.has(key)&&!active.has(key)&&needsExtraWork(books)).map(([key])=>key);
+    !completed.has(key)&&!active.has(key)&&needsExtraWork(books,failedCovers)).map(([key])=>key);
 }
 function getJobPlan(db,job,{
   easyCbEnabled=false, braveConfigured=false, now = new Date(), env = process.env,
+  failedCovers=new Set(),
 }={}) {
   const groups=bookWorks(db,job);
-  const remaining=remainingWorks(db,job);
+  const remaining=remainingWorks(db,job,failedCovers);
   const waitingFree=pendingFreeWorks(db,job,easyCbEnabled,now.getTime());
   const usage=currentUsage(db,now,env);
   const safeBudget=Math.min(usage.available, Math.max(0,Math.floor(usage.available / MAX_REQUESTS_PER_WORK)
@@ -129,44 +131,50 @@ function getJobPlan(db,job,{
     approvedMonth:job.approval?.month||null,
     reservedRequests:job.requestsReserved||0,
     lastError:job.lastError||null,
+    withoutCover:[...groups.values()].filter(books=>books.every(b=>needsExtra(b,failedCovers).cover)).length,
+    limitedDescriptions:[...groups.values()].filter(books=>books.some(b=>needsExtra(b,failedCovers).description)).length,
+    incompleteIdentity:(job.bookIds||[]).filter(id=>{
+      const b=(db.books||[]).find(x=>x.id===id);
+      return b&&(!String(b.title||'').trim()||!String(b.author||'').trim());
+    }).length,
   };
 }
 function approveJob(db,id,{confirmed=false,expectedRequests,expectedMonth,easyCbEnabled=false,
-  braveConfigured=false,now=new Date(),env=process.env}={}) {
+  braveConfigured=false,now=new Date(),env=process.env,failedCovers=new Set()}={}) {
   ensureJobs(db);
   if (!confirmed) return {ok:false,error:'confirmation_required'};
   if (!braveConfigured) return {ok:false,error:'api_key_missing'};
   if (db.braveEnrichmentJobs.some(job => job.state==='running')) return {ok:false,error:'another_job_running'};
   const job=db.braveEnrichmentJobs.find(j=>j.id===id);
   if (!job) return {ok:false,error:'job_missing'};
-  const plan=getJobPlan(db,job,{easyCbEnabled,braveConfigured,now,env});
+  const plan=getJobPlan(db,job,{easyCbEnabled,braveConfigured,now,env,failedCovers});
   if (!plan.canApprove || !plan.possibleWorks)
     return {ok:false,error:'not_ready'};
   if (expectedMonth!==monthKey(now) || !Number.isSafeInteger(expectedRequests)
     || expectedRequests!==plan.possibleMaxRequests)
     return {ok:false,error:'stale_budget'};
-  const keys=remainingWorks(db,job).slice(0,plan.possibleWorks);
+  const keys=remainingWorks(db,job,failedCovers).slice(0,plan.possibleWorks);
   job.state='running';job.approvedKeys=keys;job.cursor=0;job.step=0;
   job.approval={month:monthKey(now),maxRequests:keys.length*MAX_REQUESTS_PER_WORK,
     approvedAt:now.toISOString()};
   job.requestsReserved=0;job.lastError=null;job.updatedAt=now.toISOString();
   return {ok:true,approvedWorks:keys.length,maxRequests:job.approval.maxRequests};
 }
-function shouldQueryStep(step,books) {
+function shouldQueryStep(step,books,failedCovers=new Set()) {
   if (step===0) return true; // web: find publisher / edition page
-  if (step===1) return books.some(b=>needsExtra(b).cover); // image fallback
+  if (step===1) return books.some(b=>needsExtra(b,failedCovers).cover); // image fallback
   if (step===2) return books.some(b=>needsExtra(b).description||needsExtra(b).topics);
   return false;
 }
-function finishApprovedChunk(db,job) {
+function finishApprovedChunk(db,job,failedCovers=new Set()) {
   const done=new Set(job.completedKeys||[]);
   for (const key of job.approvedKeys||[]) done.add(key);
   job.completedKeys=[...done];
   job.approvedKeys=[];job.cursor=0;job.step=0;job.approval=null;
-  job.state=remainingWorks(db,job).length?'awaiting_approval':'complete';
+  job.state=remainingWorks(db,job,failedCovers).length?'awaiting_approval':'complete';
   job.updatedAt=new Date().toISOString();
 }
-function claimNext(db,{now=new Date(),env=process.env}={}) {
+function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}) {
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.state==='running');
   if (!job) return null;
@@ -177,13 +185,13 @@ function claimNext(db,{now=new Date(),env=process.env}={}) {
   const groups=bookWorks(db,job);
   for (;;) {
     if (job.cursor >= job.approvedKeys.length) {
-      finishApprovedChunk(db,job);return null;
+      finishApprovedChunk(db,job,failedCovers);return null;
     }
     const key=job.approvedKeys[job.cursor],books=groups.get(key)||[];
-    if (job.step>=MAX_REQUESTS_PER_WORK || !books.length || !needsExtraWork(books)) {
+    if (job.step>=MAX_REQUESTS_PER_WORK || !books.length || !needsExtraWork(books,failedCovers)) {
       job.cursor++;job.step=0;continue;
     }
-    if (!shouldQueryStep(job.step,books)) {job.step++;continue;}
+    if (!shouldQueryStep(job.step,books,failedCovers)) {job.step++;continue;}
     if (job.requestsReserved >= job.approval.maxRequests || usage.reserved >= cap
       || (Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
       job.state='paused';job.lastError='budget_exhausted';return null;
