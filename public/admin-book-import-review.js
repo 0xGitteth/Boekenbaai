@@ -222,9 +222,15 @@
             details.textContent = 'Onderzoek gepauzeerd (' + (job.lastError || 'onbekende reden')
               + '). Voortgang is bewaard. Er worden geen nieuwe zoekopdrachten uitgevoerd.';
           } else {
-            details.textContent = 'Afgerond. ' + job.completedWorks + ' titels onderzocht.';
+            details.textContent = 'Zoekronde afgerond: ' + job.completedWorks + ' titels onderzocht. '
+              + (job.withoutCover || 0) + ' titels hebben nog geen werkende omslaglink en '
+              + (job.limitedDescriptions || 0) + ' een beperkte beschrijving. '
+              + 'Deze titels blijven zichtbaar als aandachtspunt.';
           }
           item.append(title, details);
+          if (job.incompleteIdentity) item.append(make('p', 'hint',
+            job.incompleteIdentity + ' exemplaren hebben geen bruikbare titel en auteur; '
+            + 'die kunnen nog niet veilig op internet worden onderzocht.'));
           if (job.canApprove && info.configured) {
             const accept = button('Aanvullend zoeken goedkeuren', 'btn btn--secondary');
             accept.addEventListener('click', async () => {
