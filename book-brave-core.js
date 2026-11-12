@@ -116,8 +116,9 @@ function getJobPlan(db,job,{
   }
   // When the worker encountered a provider limit, its next step must still
   // require explicit approval. There is never an automatic new-month retry.
-  const resumable=state==='paused' && waitingFree===0
-    && remaining.length>0 && !['unauthorized','payment_required'].includes(job.lastError);
+  const resumable=state==='paused' && waitingFree===0 && remaining.length>0;
+  // Reapproval is explicit even after invalid credentials. Updating the
+  // server's API key does not itself resume requests.
   return {
     id:job.id,source:job.source,fileName:job.fileName,createdAt:job.createdAt,
     state,books:job.bookIds?.length||0,uniqueWorks:groups.size,
