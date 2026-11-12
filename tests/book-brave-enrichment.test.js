@@ -139,6 +139,55 @@ async function run(){
   assert.equal(cover,1);
   assert.deepEqual(db2.students,undefined,'Worker does not modify students');
   worker.stop();
+
+  // Another edition's cover can be recovered from a verified source page
+  // even when the image-search result title itself lacks the author's name.
+  const db3={books:[{...book('y'),description:'Lange beschrijving. '.repeat(24),
+    tags:['Avontuur','Geheimen','Vriendschap']}],braveEnrichmentJobs:[]};
+  const coverJob=addJob(db3,['y'],{id:'cover-job'});
+  assert.equal(approveJob(db3,coverJob.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const steps=[];
+  let sourcePageRequests=0;
+  const coverWorker=createBraveWorker({
+    apiKey:'test-only-key',loadDb:()=>db3,commit:async fn=>fn(db3),delayMs:50,
+    fetchSearch:async step=>{
+      steps.push(step);
+      if(step===0)return {pages:[]};
+      if(step===1)return {images:[{title:target.title,
+        pageUrl:'https://www.uitgeverijvoorbeeld.nl/boek',imageUrl:'',width:0,height:0}]};
+      throw Error('Third Brave request was not needed');
+    },
+    findPages:async result=>{
+      if(!result.pages?.length)return [];
+      sourcePageRequests++;
+      return [found];
+    },
+  });
+  coverWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,500));
+  assert.deepEqual(steps,[0,1]);
+  assert.equal(sourcePageRequests,1);
+  assert.equal(db3.books[0].coverUrl,found.coverUrl);
+  assert.equal(db3.braveUsage.reserved,2);
+  coverWorker.stop();
+
+  // A failed provider request never continues silently. Another approval
+  // is required and all past debits remain in the persistent ledger.
+  const db4={books:[book('z')],braveEnrichmentJobs:[]};
+  const paused=addJob(db4,['z'],{id:'paused'});
+  assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const firstClaim=claimNext(db4,{now,env:environment});
+  assert.equal(claimNext(db4,{now,env:environment}),null,
+    'A persistent in-flight lease prevents parallel requests');
+  finishClaim(db4,firstClaim,{error:'rate_limited'});
+  assert.equal(paused.state,'paused');
+  assert.equal(db4.braveUsage.reserved,1);
+  assert.equal(getJobPlan(db4,paused,{braveConfigured:true,now,env:environment}).canApprove,true);
+  assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  assert.equal(db4.braveUsage.reserved,1,'A second approval cannot erase spent requests');
   console.log('Brave deferred consent, persistent budget, verifiable scraping and worker passed');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
