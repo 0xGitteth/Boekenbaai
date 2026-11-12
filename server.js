@@ -5068,7 +5068,7 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 201, {id:added.id});
     }
     const braveApprove = requestUrl.pathname.match(
-      /^\\/api\\/admin\\/book-enrichment\\/brave\\/([a-f0-9-]+)\\/approve$/
+      new RegExp('^/api/admin/book-enrichment/brave/([a-f0-9-]+)/approve$')
     );
     if (braveApprove && req.method === 'POST') {
       if (!ensureRole(user, ['admin'])) return sendJson(res, 403, {message:'Alleen voor beheerders.'});
