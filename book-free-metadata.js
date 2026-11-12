@@ -16,7 +16,9 @@ const isbnOf = book => {
   return '';
 };
 const workKey = book => JSON.stringify([isbnOf(book), normalizeText(book?.title), normalizeText(book?.author)]);
-const isMissing = book => !String(book?.description || '').trim()
+const isMissing = book => !String(book?.publisher || '').trim()
+  || !Number.isInteger(Number(book?.publishedYear)) || Number(book?.publishedYear) < 1
+  || !String(book?.description || '').trim()
   || !String(book?.coverUrl || '').trim()
   || !Number.isInteger(Number(book?.pageCount)) || Number(book?.pageCount) < 1
   || !(Array.isArray(book?.tags) && book.tags.length);
