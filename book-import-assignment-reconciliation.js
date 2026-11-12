@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { matchEntityByName } = require('./book-import-analysis-context');
-const { noteLoanActivity } = require('./book-import-followups');
+const { noteLoanActivity, circulationRevision } = require('./book-import-followups');
 const { excelLoanReceiptKey, persistExcelLoanReceipts } = require('./book-import-loan-migration');
 
 const ACTIONS = new Set(['apply', 'keep', 'later']);
@@ -148,7 +148,11 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   for(const {row,copy} of found.filter(item=>!item.kind)) {
     const base={rowIndex:row.index,worksheetRow:row.sourceRowNumber,
       title:copy.title,author:copy.author,barcode:copy.barcode||'',
-      bookId:copy.id,editionIsbn:edition(copy)||''};
+      bookId:copy.id,editionIsbn:edition(copy)||'',
+      // Compare the exact circulation state even if a book was borrowed
+      // and returned back to its earlier visible status during review.
+      circulationRevision:circulationRevision(db,copy.id),
+      loanBorrowedAt:copy.borrowedAt||null,loanDueDate:copy.dueDate||null};
     if(duplicateIds.has(copy.id)) {
       differences.push({...base,id:row.index+':issue',kind:'issue',
         reason:'duplicate_copy_rows'});

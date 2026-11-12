@@ -163,6 +163,21 @@ assert.equal(preview(sameEditionAlreadyHeld,
   [row(0,'4711001',loanTo('tim','Tim Leerling'))],
   [{id:'0:loan',action:'apply'}]).error,'unsafe_assignment_choice');
 
+// A fresh checkout and return can restore the same visible borrower state.
+// The saved review must still be considered stale by its circulation revision.
+const circulationDb=directory();
+const reviewedCirculation=preview(circulationDb,[
+  row(0,'4711001',loanTo('tim','Tim Leerling')),
+],[{id:'0:loan',action:'apply'}]);
+assert.equal(reviewedCirculation.differences[0].circulationRevision,0);
+circulationDb.bookImportLoanActivityCounters={'copy-1':2};
+const changedCirculation=preview(circulationDb,[
+  row(0,'4711001',loanTo('tim','Tim Leerling')),
+],[{id:'0:loan',action:'apply'}]);
+assert.equal(changedCirculation.differences[0].circulationRevision,2);
+assert.notDeepEqual(changedCirculation,reviewedCirculation,
+  'A borrow/return cycle must invalidate an old administrative approval');
+
 assert.equal(preview(directory(),[]).summary.readyToApply,false);
 assert.equal(preview(directory(),[row(0,'4711002')]).summary.differences,0);
 console.log('Administrative assignment reconciliation: choices, metadata retention, identity and zero implicit deletions passed');

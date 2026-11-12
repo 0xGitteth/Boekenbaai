@@ -132,6 +132,58 @@ async function run(){
     assert.equal(keptApplied.data.result.corrected,0);
     assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).books[0].borrowedBy,'tim');
 
+    // A postponed discrepancy must survive closing the import panel and
+    // remain visible through the durable administrator report endpoint.
+    const postponed=await begin([row()]);
+    assert.equal(postponed.status,201,JSON.stringify(postponed.data));
+    const invalidCorrection=await call(
+      '/api/admin/book-import-stages/'+postponed.data.id+'/review',
+      token,{revision:postponed.data.revision,corrections:[
+        {index:0,fields:{quantity:'1000'}},
+      ],acceptWarnings:true,assignmentResolutions:[{id:'0:loan',action:'later'}]});
+    assert.equal(invalidCorrection.status,400,
+      'Review API cannot reintroduce large quantities into correction mode');
+    const later=await call('/api/admin/book-import-stages/'+postponed.data.id+'/review',
+      token,{revision:postponed.data.revision,corrections:[],acceptWarnings:true,
+        assignmentResolutions:[{id:'0:loan',action:'later'}]});
+    assert.equal(later.status,200,JSON.stringify(later.data));
+    const laterApplied=await call('/api/admin/book-import-stages/'+postponed.data.id+'/apply',
+      token,{revision:later.data.revision,confirm:true});
+    assert.equal(laterApplied.status,200,JSON.stringify(laterApplied.data));
+    assert.equal(laterApplied.data.result.corrected,0);
+    const report=await call('/api/admin/book-import-reports/'
+      +laterApplied.data.result.batchId,token);
+    assert.equal(report.status,200,JSON.stringify(report.data));
+    assert.equal(report.data.fullyReviewed,false);
+    assert.equal(report.data.deferredDifferences.length,1);
+    assert.equal(report.data.deferredDifferences[0].bookId,'copy-1');
+    assert.equal(report.data.deferredDifferences[0].before.id,'tim');
+    assert.equal(report.data.deferredDifferences[0].worksheetRow,2);
+
+    // The same apparent borrower state after circulation is not the same
+    // historical loan period. The database ledger must make approval stale.
+    const stale=await begin([row()]);
+    assert.equal(stale.status,201,JSON.stringify(stale.data));
+    const staleReviewed=await call('/api/admin/book-import-stages/'+stale.data.id+'/review',
+      token,{revision:stale.data.revision,corrections:[],acceptWarnings:true,
+        assignmentResolutions:[{id:'0:loan',action:'apply'}]});
+    assert.equal(staleReviewed.status,200,JSON.stringify(staleReviewed.data));
+    const changed=JSON.parse(fs.readFileSync(file,'utf8'));
+    changed.bookImportLoanActivityCounters=changed.bookImportLoanActivityCounters||{};
+    changed.bookImportLoanActivityCounters['copy-1']=
+      (changed.bookImportLoanActivityCounters['copy-1']||0)+2;
+    fs.writeFileSync(file,JSON.stringify(changed));
+    const staleAttempt=await call('/api/admin/book-import-stages/'+stale.data.id+'/apply',
+      token,{revision:staleReviewed.data.revision,confirm:true});
+    assert.equal(staleAttempt.status,409,'Circulation revision must invalidate old decisions');
+    assert.equal(staleAttempt.data.error,'assignment_preview_stale');
+    assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).books[0].borrowedBy,'tim');
+
+    const multiple=await begin([{...row(),Aantal:1000}]);
+    assert.equal(multiple.status,400,
+      'A large number of physical copies cannot be expanded during correction preview');
+    assert.equal(multiple.data.error,'assignment_requires_single_copy');
+
     const rejected=await begin([row('Tim Leerling')],'assignment_reconcile',true);
     assert.equal(rejected.status,400,'Correction mode must never call metadata enrichment');
     const final=JSON.parse(fs.readFileSync(file,'utf8'));

@@ -788,6 +788,26 @@
           if (stage.mode === 'assignment_reconcile') {
             results.append(make('p', 'bb-review__detail',
               'Administratieve correcties opgeslagen zonder inlevering of wijziging van leesantwoorden.'));
+            const postponed = Array.isArray(done.report.deferredDifferences)
+              ? done.report.deferredDifferences : [];
+            if (postponed.length) {
+              const outstanding = make('section', 'bb-review__totals');
+              outstanding.append(make('h4', '',
+                postponed.length + ' verschil(len) later controleren'));
+              outstanding.append(make('p', 'hint',
+                'De openstaande verschillen zijn bewaard in het importverslag. '
+                + 'Download dit verslag zodat je ze later terug kunt vinden.'));
+              for (const item of postponed.slice(0, 25)) {
+                outstanding.append(make('p', 'bb-review__detail',
+                  'Excelrij ' + item.worksheetRow + ' · ' + item.title
+                  + ' · ' + (item.barcode || item.editionIsbn || 'geen code')
+                  + (item.reason ? ' · ' + item.reason : '')));
+              }
+              if (postponed.length > 25) outstanding.append(make('p', 'hint',
+                'De overige ' + (postponed.length - 25)
+                + ' verschillen staan in het volledige importverslag.'));
+              results.append(outstanding);
+            }
           } else if (done.report.fullyReviewed === false) {
             results.append(make('p', 'bb-review__detail',
               'De boekimport is opgeslagen, maar is nog niet volledig gecontroleerd.'

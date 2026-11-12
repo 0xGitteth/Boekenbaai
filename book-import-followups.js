@@ -179,6 +179,9 @@ function listTasks(db, user, now = Date.now()) {
 
 function reportIsFullyReviewed(db, reportId) {
   const report = (db.bookImportReports || []).find((entry) => entry?.id === reportId);
+  if (report?.mode === 'assignment_reconcile'
+    && Array.isArray(report.deferredDifferences)
+    && report.deferredDifferences.some(item=>item?.status==='open')) return false;
   const related = new Set(Array.isArray(report?.followupTaskIds) ? report.followupTaskIds : []);
   return !(db.bookImportFollowups || []).some((task) =>
     (task.reportId === reportId || related.has(task.id))
