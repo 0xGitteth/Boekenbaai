@@ -5994,6 +5994,7 @@ async function handleApi(req, res, requestUrl) {
       };
       const createdBooks = [];
       const updatedBooks = [];
+      const braveAffectedIds = new Set();
       const skipped = [];
       let changed = false;
 
@@ -6230,6 +6231,7 @@ async function handleApi(req, res, requestUrl) {
         const affectedBookIds = new Set();
         if (existingBook?.id) {
           affectedBookIds.add(existingBook.id);
+          braveAffectedIds.add(existingBook.id);
         }
         const hasCoverInput = coverUrlSource !== undefined && String(coverUrlSource).trim();
         const hasPublisherInput = publisherSource !== undefined && String(publisherSource).trim();
@@ -6642,6 +6644,7 @@ async function handleApi(req, res, requestUrl) {
           copy.importProvenance = normalizeBookImportProvenance(baseTemplate.importProvenance);
           db.books.push(copy);
           affectedBookIds.add(copy.id);
+          braveAffectedIds.add(copy.id);
           createdBooks.push({
             title: copy.title,
             author: copy.author,
@@ -6921,7 +6924,7 @@ async function handleApi(req, res, requestUrl) {
           };
         }
         inheritSnapshot(db, latestForImport);
-        addJob(db,[...affectedBookIds],{
+        addJob(db,[...braveAffectedIds],{
           id:importJobId||crypto.randomUUID(),source:'legacy',
         });
         saveDb(db);
