@@ -137,7 +137,7 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
       update('publishedYear', metadata.publishedYear);
       update('pageCount', metadata.pageCount);
       const coverSource = book.importProvenance?.fieldSources?.coverUrl?.sourceType;
-      if (metadata.coverUrl && (
+      if (coverSource !== 'manual' && metadata.coverUrl && (
         !book.coverUrl || (failedCoverUrl && coverSource === 'metadata')
       ) && book.coverUrl !== metadata.coverUrl) {
         book.coverUrl = metadata.coverUrl;
