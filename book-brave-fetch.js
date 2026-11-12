@@ -149,12 +149,16 @@ function parseBookPage(html,target,url) {
   const description=cleaned(decodeEntities(rawDescription),2500);
   let coverUrl='';
   const rawImage=asOne(book.image)||meta['og:image']||meta['twitter:image']||'';
-  try{
-    const resolved=new URL(rawImage,location).href;
-    const u=safeCoverUrl(resolved);
-    if(!/(?:logo|avatar|placeholder|social|banner|og-default|default-image)/i.test(u.pathname)
-      &&/^(?:https?):$/.test(u.protocol))coverUrl=u.href;
-  }catch{/* Missing/unsafe image. */}
+  if (typeof rawImage === 'string' && rawImage.trim()) {
+    try {
+      const resolved=new URL(rawImage.trim(),location).href;
+      const u=safeCoverUrl(resolved);
+      // new URL('', page) produces the HTML page itself; it is not a cover.
+      if (u.href !== location.href
+        && !/(?:logo|avatar|placeholder|social|banner|og-default|default-image)/i.test(u.pathname)
+        && /^(?:https?):$/.test(u.protocol)) coverUrl=u.href;
+    } catch {/* No valid image on this page. */}
+  }
   const rawKeywords=book.keywords||meta.keywords||[];
   const tags=(Array.isArray(rawKeywords)?rawKeywords:String(rawKeywords).split(/[,;|]/))
     .map(x=>cleaned(asOne(x),70)).filter(x=>x.length>=3).slice(0,16);
@@ -245,9 +249,11 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) 
     const root=u.origin;
     if(!robots.has(root)){
       const response=await fetchPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
-      robots.set(root,response?.body||'');
+      // A failed robots lookup must not silently authorize crawling.
+      robots.set(root,response?.error || (response?.status && ![200,404].includes(response.status))
+        ? null : (response?.body ?? ''));
     }
-    if(!robotsAllowed(robots.get(root),u.pathname))continue;
+    if(robots.get(root)===null || !robotsAllowed(robots.get(root),u.pathname))continue;
     const page=await fetchPage(u.href);
     if(!page?.body)continue;
     const parsed=parseBookPage(page.body,target,u.href);
