@@ -76,6 +76,14 @@ Deze bestandstransacties vereisen dat alle schrijvende serverprocessen **hetzelf
 
 De server probeert boekinformatie standaard eerst op te halen bij Open Library. Wanneer `BOEKENBAAI_ENABLE_ISBNBARCODE=true` staat, wordt daarna als fallback een verzoek naar ISBNBarcode.org gedaan en blijft de bestaande barcode-parser actief. De resultaten worden tijdelijk in een in-memory cache opgeslagen (standaard 5 minuten). Parallelle verzoeken naar dezelfde ISBN worden gecoördineerd zodat er maximaal één upstream-lookup tegelijk actief is. Omdat de cache alleen in het serverproces leeft, wordt deze gewist bij een herstart.
 
+### Gecontroleerde Excelimport: gewone import of administratie corrigeren
+
+De beheerder kiest vóór het uploaden de importsoort. De **gewone boekimport** behoudt de bestaande werkwijze: nieuwe boeken of ontbrekende fysieke exemplaren toevoegen, met een aparte optie om de huidige voorraad op ISBN te vergelijken. Een ontbrekende titel, leerling of klas in Excel is **nooit** automatisch een verwijder- of inleveropdracht.
+
+**Administratie corrigeren** is een afzonderlijke, expliciete handeling voor al bestaande exemplaren. Deze modus haalt geen nieuwe ISBN-metadata op en voegt geen boeken toe. Boekenbaai koppelt een Excelrij uitsluitend aan één herkenbaar fysiek exemplaar: bij meerdere exemplaren van dezelfde editie is een individuele exemplaarbarcode vereist. Per verschil zie je de huidige registratie en de Excelwaarde. Je kiest voor **corrigeren**, **behouden** of **later controleren**. Onzekere identificaties kunnen niet automatisch worden toegepast.
+
+Een leeg leerling- of klasveld betekent *onbekend*, nooit *automatisch ingeleverd*. Alleen een afzonderlijk bevestigde administratieve correctie kan een onjuiste actieve registratie beëindigen. Dit is geen echte inlevering: leesantwoorden en de bestaande uitleengeschiedenis blijven intact. Als een uitlening naar een andere leerling wordt gecorrigeerd, worden oude uitleen- en vervaldata niet aan die nieuwe leerling toegeschreven. Alle uitgevoerde correcties worden apart vastgelegd. Vlak vóór het opslaan vergelijkt de server de keuzes opnieuw met de actuele database; wijzigingen sinds de preview blokkeren het opslaan.
+
 ### Excel-import: optionele ISBN-verrijking
 
 - Via de adminpagina kun je een Excelbestand met boeken uploaden. Zet de optie **ISBN-verrijking** aan om lege velden automatisch aan te vullen met metadata uit Open Library of ISBNBarcode.org.
