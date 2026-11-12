@@ -614,7 +614,10 @@
       const summary = plan.summary || {};
       const overview = make('div', 'bb-review__totals');
       overview.append(make('h4', '', 'Administratieve koppelingen controleren'));
-      overview.append(make('p', '', (summary.differences || 0) + ' verschillen, '
+      overview.append(make('p', '', (summary.differences || 0) + ' controlepunten, waarvan '
+        + (summary.actualDifferences || 0) + ' verschillen in registraties, '
+        + (summary.classQuestions || 0) + ' vragen over klasvermeldingen en '
+        + (summary.issues || 0) + ' andere punten voor handmatige controle. '
         + (summary.pending || 0) + ' nog zonder keuze, '
         + (summary.apply || 0) + ' te corrigeren.'));
       overview.append(make('p', 'hint',
@@ -662,8 +665,9 @@
       });
       controls.append(reviewButton, applyButton, cancelButton);
       if (summary.pending || hasUnreviewedChanges()) controls.append(make('p', 'hint',
-        'Kies bij ieder verschil: corrigeren, behouden of later controleren. '
-        + 'Controleer je keuzes opnieuw voordat je ze toepast.'));
+        'Kies per controlepunt wat de Excelvermelding betekent. '
+        + 'Onzekere exemplaren blijven beschermd. '
+        + 'Controleer alle keuzes opnieuw voordat je correcties toepast.'));
       results.append(controls);
       const list = make('div', 'bb-review__rowlist');
       const differences = Array.isArray(plan.differences) ? plan.differences : [];
@@ -681,6 +685,7 @@
           const reasons = {
             ambiguous_physical_copy: 'Boekenbaai kent meerdere exemplaren met dit ISBN. Zonder individuele barcode is niet zeker welk exemplaar bij deze Excelrij hoort. Behoud dit verschil of controleer het later.',
             conflicting_excel_borrowers: 'Excel vermeldt zowel een leerling als een klas als lener. Controleer welke registratie klopt.',
+            multiple_class_contexts: 'Excel noemt meerdere of ongeldige klassen. Controleer de klasvermeldingen voordat je een vaste plek of uitlening kiest.',
             source_row_requires_review: 'Deze Excelrij bevat nog een conflict of onopgelost gegeven. Controleer de brongegevens bij de gewone boekimport.',
             physical_copy_not_found: 'Geen bestaand exemplaar gevonden met dit ISBN of deze exemplaarbarcode. Controleer de ISBN-gegevens; gebruik de gewone import als dit echt een nieuw boek is.',
             missing_valid_isbn: 'Het ISBN ontbreekt of is ongeldig.',
@@ -691,10 +696,27 @@
             borrower_not_uniquely_matched: 'De leerling of klas is niet eenduidig herkend.',
             fixed_location_needs_manual_identification: 'De vaste klaslocatie kan niet eenduidig worden herkend.',
             student_loan_records_disagree: 'Bestaande leerling- en uitleengegevens spreken elkaar tegen.',
-            conflicting_excel_borrowers: 'Excel vermeldt zowel een leerling als een klas.',
           };
           card.append(make('p', 'bb-review__reason',
             reasons[diff.reason] || 'Handmatige controle vereist: ' + diff.reason));
+        } else if (diff.kind === 'class_context') {
+          card.append(make('p', 'bb-review__detail',
+            'Excel vermeldt bij Klassen: ' + diff.className));
+          const currentLoan = diff.beforeLoan?.type === 'none'
+            ? 'Niet uitgeleend'
+            : (diff.beforeLoan?.type === 'student' ? 'Leerling: ' : 'Klas: ')
+              + (diff.beforeLoan?.name || 'Onbekend');
+          card.append(make('p', 'bb-review__detail',
+            'Huidige locatie: ' + (diff.beforeLocation || 'Niet geregistreerd')
+            + ' · Huidige uitlening: ' + currentLoan));
+          card.append(make('p', 'hint',
+            'De kolom Klassen geeft niet aan of het boek vast in deze klas staat '
+            + 'of tijdelijk door de klas wordt geleend. Kies de juiste betekenis. '
+            + 'Er wordt niets aangepast voordat je de correctie bevestigt.'));
+          if (!diff.classId) card.append(make('p', 'bb-review__reason',
+            'Deze klas is niet eenduidig als klasaccount gevonden. Een vaste '
+            + 'locatie kun je wel kiezen, maar een klasuitlening vereist eerst '
+            + 'een herkenbaar klasaccount.'));
         } else {
           const label = diff.kind === 'loan' ? 'Uitlening' : 'Vaste locatie';
           const show = value => diff.kind === 'loan'
@@ -716,7 +738,13 @@
           ['keep', 'Huidige gegevens behouden'],
           ['later', 'Later handmatig controleren'],
         ];
-        if (diff.kind !== 'issue' && !diff.reason) {
+        if (diff.kind === 'class_context') {
+          actions.splice(1, 0,
+            ['class_fixed', 'Staat vast in ' + diff.className],
+            ...(!diff.classId || diff.hasExplicitLoan ? [] :
+              [['class_loan', 'Tijdelijk uitgeleend aan ' + diff.className]]),
+            ['class_unrelated', 'Deze klasvermelding is niet van toepassing']);
+        } else if (diff.kind !== 'issue' && !diff.reason) {
           actions.splice(1, 0, ['apply', diff.kind === 'loan'
             ? (diff.blankSource
               ? 'Administratief rechtzetten: uitlening was onjuist (geen inlevering)'
@@ -741,7 +769,7 @@
         list.append(card);
       }
       if (!differences.length) list.append(make('p', 'hint',
-        'Geen verschillen gevonden bij eenduidig herkende fysieke exemplaren.'));
+        'Geen verschillen of vragen gevonden bij eenduidig herkende fysieke exemplaren.'));
       results.append(list);
       const navigation = make('div', 'bb-review__pagination');
       const prev = button('Vorige', 'btn btn--ghost');

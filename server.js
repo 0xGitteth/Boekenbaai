@@ -5429,6 +5429,14 @@ async function handleApi(req, res, requestUrl) {
                 editionIsbn:item.editionIsbn,barcode:item.barcode,
                 kind:item.kind,reason:item.reason||null,
                 before:item.before??null,after:item.after??null,
+                // Ambiguous class context has no traditional before/after.
+                // Preserve the exact class note and current state for later
+                // review rather than losing the question when the stage ends.
+                ...(item.kind==='class_context' ? {
+                  className:item.className||'',classId:item.classId||null,
+                  beforeLocation:item.beforeLocation||null,
+                  beforeLoan:item.beforeLoan||null,
+                } : {}),
                 recordedAt:now,status:'open',
               }));
             const report = {
