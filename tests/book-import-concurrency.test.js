@@ -67,7 +67,7 @@ async function main() {
   assert.match(app, /state\.coverImage\.onerror = \(\) =>/);
   assert.match(app, /coverImage\.onerror = \(\) =>/);
   assert.match(importUi, /metadata\.type = 'checkbox';\s*metadata\.checked = false;/,
-    'Import preview must not wait for optional remote ISBN lookups by default');
+    'Metadata enrichment must be enabled by default for a full import preview');
   console.log('Book import concurrency and cover fallback checks passed');
 }
 
