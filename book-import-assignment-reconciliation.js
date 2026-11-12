@@ -12,7 +12,10 @@ const { noteLoanActivity, circulationRevision } = require('./book-import-followu
 const { excelLoanReceiptKey, persistExcelLoanReceipts } = require('./book-import-loan-migration');
 
 const ACTIONS = new Set(['apply', 'keep', 'later']);
-const norm = value => normalizeBookIdentityComparable(value || '');
+// Accents in Excel may differ from older stored metadata (Rene/René).
+// Only relax spelling after an unambiguous ISBN/exemplar match.
+const norm = value => normalizeBookIdentityComparable(value || '')
+  .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '');
 const bookKey = book => [
   norm(book?.title), norm(book?.author),
 ];
