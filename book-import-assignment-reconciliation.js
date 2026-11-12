@@ -11,7 +11,8 @@ const { matchEntityByName } = require('./book-import-analysis-context');
 const { noteLoanActivity, circulationRevision } = require('./book-import-followups');
 const { excelLoanReceiptKey, persistExcelLoanReceipts } = require('./book-import-loan-migration');
 
-const ACTIONS = new Set(['apply', 'keep', 'later']);
+const ACTIONS = new Set(['apply', 'keep', 'later', 'class_fixed', 'class_loan', 'class_unrelated']);
+const CLASS_ACTIONS = new Set(['class_fixed', 'class_loan', 'class_unrelated']);
 // Accents in Excel may differ from older stored metadata (Rene/René).
 // Only relax spelling after an unambiguous ISBN/exemplar match.
 const norm = value => normalizeBookIdentityComparable(value || '')
@@ -33,7 +34,7 @@ function normalizeResolutions(input) {
   const seen = new Set(), values = [];
   for (const entry of input) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)
-      || typeof entry.id !== 'string' || !/^\d+:(loan|location|issue)$/.test(entry.id)
+      || typeof entry.id !== 'string' || !/^\d+:(loan|location|issue|class_context)$/.test(entry.id)
       || !ACTIONS.has(entry.action) || seen.has(entry.id))
       return { ok:false,error:'invalid_assignment_choices' };
     seen.add(entry.id);
@@ -186,7 +187,11 @@ function buildAssignmentPreview(analysis, db, input=[]) {
     }
     // No borrower in Excel means unknown, not "returned". Show a separate
     // optional correction when the copy is recorded as borrowed.
-    if(current.type!==desired.type || current.id!==desired.id) {
+    // A generic class note cannot imply that a currently borrowed copy
+    // should be administratively returned. It needs classification first.
+    const classContextOnly = Array.isArray(info.classContext) && info.classContext.length
+      && !info.studentLoan && !info.classLoan;
+    if(!classContextOnly && (current.type!==desired.type || current.id!==desired.id)) {
       if(current.type!=='none'||desired.type!=='none') {
         const claim=desired.type==='student'
           ? (db.students||[]).find(x=>x.id===desired.id) : null;
@@ -206,7 +211,26 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       }
     }
     const location=desiredLocation(row,db);
-    if(location.error){
+    if(location.error==='class_context_requires_classification'){
+      const tokens=info.classContext||[];
+      if(tokens.length!==1 || !String(tokens[0]||'').trim()){
+        differences.push({...base,id:row.index+':issue',kind:'issue',
+          reason:'multiple_class_contexts'});
+      } else {
+        const className=String(tokens[0]).trim();
+        const match=matchEntityByName(className,db.classes||[]);
+        const classId=match.status==='matched'?match.matches[0].id:null;
+        const resolvedName=match.status==='matched'?match.matches[0].name:className;
+        // Already tied to this class in one of the two independent ways.
+        // The vague Excel field does not establish a contradictory change.
+        const alreadyRelated=norm(copy.fixedLocation)===norm(resolvedName)
+          ||(classId && current.type==='class' && current.id===classId);
+        if(!alreadyRelated) differences.push({...base,id:row.index+':class_context',
+          kind:'class_context',className:resolvedName,classId,
+          beforeLocation:String(copy.fixedLocation||'').trim(),beforeLoan:current,
+          hasExplicitLoan:Boolean(info.studentLoan||info.classLoan)});
+      }
+    } else if(location.error){
       differences.push({...base,id:row.index+':issue',kind:'issue',reason:location.error});
     }else{
       const old=String(copy.fixedLocation||'').trim();
@@ -225,8 +249,14 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   for(const choice of normalized.values){
     if(!valid.has(choice.id))return {ok:false,error:'stale_assignment_choice'};
     const diff=differences.find(x=>x.id===choice.id);
-    if(choice.action==='apply' && (diff.kind==='issue'||diff.reason))
+    if (diff.kind==='class_context') {
+      if (choice.action==='apply'
+        ||(choice.action==='class_loan' && (!diff.classId||diff.hasExplicitLoan)))
+        return {ok:false,error:'unsafe_assignment_choice'};
+    } else if (CLASS_ACTIONS.has(choice.action)
+      ||(choice.action==='apply' && (diff.kind==='issue'||diff.reason))) {
       return {ok:false,error:'unsafe_assignment_choice'};
+    }
   }
   // No selected row may give two physical copies of the same edition to
   // one pupil. Compare both the current state and all proposed changes.
@@ -241,25 +271,36 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   }
   for(const d of differences) d.choice=selected.get(d.id)||'pending';
   const pending=differences.filter(x=>x.choice==='pending').length;
-  const apply=differences.filter(x=>x.choice==='apply').length;
+  const apply=differences.filter(x=>x.choice==='apply'
+    ||x.choice==='class_fixed'||x.choice==='class_loan').length;
   const issues=differences.filter(x=>x.kind==='issue'||x.reason).length;
+  const classQuestions=differences.filter(x=>x.kind==='class_context').length;
   return {ok:true,differences,summary:{
     differences:differences.length,pending,apply,
-    kept:differences.filter(x=>x.choice==='keep').length,
+    kept:differences.filter(x=>x.choice==='keep'||x.choice==='class_unrelated').length,
     deferred:differences.filter(x=>x.choice==='later').length,
-    issues,readyToApply:pending===0&&differences.length>0,
+    issues,classQuestions,actualDifferences:differences.length-issues-classQuestions,
+    readyToApply:pending===0&&differences.length>0,
   }};
 }
 function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString(), batchId=crypto.randomUUID()) {
   if(!preview?.ok||!preview.summary?.readyToApply)
     throw Error('assignment_review_not_ready');
   const audit=[],receiptPairs=[];
-  for(const entry of preview.differences.filter(d=>d.choice==='apply')){
+  for(const entry of preview.differences.filter(d=>d.choice==='apply'
+    ||d.choice==='class_fixed'||d.choice==='class_loan')){
     const copy=(db.books||[]).find(b=>b.id===entry.bookId);
     if(!copy)throw Error('assignment_book_missing');
-    if(entry.kind==='loan'){
+    const kind=entry.kind==='class_context'
+      ?entry.choice==='class_fixed'?'location':'loan':entry.kind;
+    const beforeValue=entry.kind==='class_context'
+      ? kind==='loan'?entry.beforeLoan:entry.beforeLocation:entry.before;
+    const afterValue=entry.kind==='class_context'
+      ? kind==='loan'?{type:'class',id:entry.classId,name:entry.className}
+        :entry.className:entry.after;
+    if(kind==='loan'){
       const before=borrowerOf(copy,db);
-      if(before.error||before.id!==entry.before.id||before.type!==entry.before.type)
+      if(before.error||before.id!==beforeValue.id||before.type!==beforeValue.type)
         throw Error('assignment_loan_changed');
       if(before.type!=='none')receiptPairs.push({bookId:copy.id,
         borrower:{type:before.type,id:before.id}});
@@ -267,7 +308,7 @@ function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString
         if(!Array.isArray(person.borrowedBooks))continue;
         person.borrowedBooks=person.borrowedBooks.filter(item=>borrowedId(item)!==copy.id);
       }
-      const target=entry.after;
+      const target=afterValue;
       if(target.type==='none'){
         copy.status='available';
         copy.borrowedBy=null;
@@ -292,13 +333,15 @@ function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString
         receiptPairs.push({bookId:copy.id,borrower:{type:target.type,id:target.id}});
       }
       noteLoanActivity(db,copy.id);
-    }else if(entry.kind==='location'){
-      copy.fixedLocation=entry.after||null;
+    }else if(kind==='location'){
+      if(String(copy.fixedLocation||'').trim()!==String(beforeValue||'').trim())
+        throw Error('assignment_location_changed');
+      copy.fixedLocation=afterValue||null;
     }else throw Error('unsupported_assignment_kind');
     audit.push({id:crypto.randomUUID(),importBatchId:batchId,
-      bookId:copy.id,kind:entry.kind,worksheetRow:entry.worksheetRow,
-      before:entry.before,after:entry.after,performedBy:actorId,createdAt:now,
-      administrativeCorrection:true});
+      bookId:copy.id,kind,worksheetRow:entry.worksheetRow,
+      before:beforeValue,after:afterValue,performedBy:actorId,createdAt:now,
+      sourceKind:entry.kind,administrativeCorrection:true});
   }
   if(receiptPairs.length)persistExcelLoanReceipts(db,receiptPairs);
   if(!Array.isArray(db.bookAssignmentCorrectionLog))db.bookAssignmentCorrectionLog=[];
