@@ -20,6 +20,12 @@ assert.match(admin, /'keep'/);
 assert.match(admin, /boekenbaai_token/);
 assert.match(admin, /Bestaande uitleenregistraties worden opnieuw gecontroleerd/);
 assert.match(admin, /Geen uitgestelde administratieve controles/);
+assert.match(admin, /!task\.hasExplicitLoan/,
+  'Never advertise a class checkout while Excel contains an explicit borrower');
+assert.match(admin, /const selections = new Map\(\)/);
+assert.match(admin, /remembered\.revision === task\.revision/);
+assert.match(admin, /selections\.set\(task\.id/);
+assert.match(admin, /selections\.delete\(task\.id\)/);
 assert.match(followups, /deferredCount/);
 assert.match(followups, /boekenbaai:assignment-tasks-changed/);
 assert.doesNotMatch(admin, /innerHTML\s*=/,
