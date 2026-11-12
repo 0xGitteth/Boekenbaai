@@ -165,6 +165,33 @@ async function run(){
   assert.ok(commits>=2,'Worker retries a transient storage failure on its own');
   assert.equal(dbRetry.books[0].coverUrl,source.coverUrl);
   retryWorker.stop();
+
+  // If an import starts while EasyCB is responding, do not save metadata
+  // or the lookup checkpoint until the import has finished.
+  const duringImport={books:[{
+    id:'paused-free',metadataIsbn:isbn,title:source.title,author:source.author,
+    description:'',tags:[],pageCount:null,coverUrl:'',
+  }]};
+  let importing=false, writes=0;
+  const pausedWorker=createFreeMetadataWorker({
+    loadDb:()=>duringImport,contact:'school@example.org',delayMs:1000,
+    fetchImpl:async ()=>({
+      ok:true,status:200,headers:{get:()=>null},
+      text:async ()=>{importing=true;return sample;},
+    }),
+    isPaused:()=>importing,
+    commit:async callback=>{writes++;return callback(duringImport);},
+  });
+  pausedWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,300));
+  assert.equal(writes,0,'No metadata write during the active import');
+  assert.equal(duringImport.books[0].coverUrl,'');
+  importing=false;
+  await new Promise(resolve=>setTimeout(resolve,450));
+  assert.equal(duringImport.books[0].coverUrl,source.coverUrl,
+    'EasyCB metadata is saved after the import releases its pause');
+  assert.equal(writes,1);
+  pausedWorker.stop();
   console.log('Free metadata parser, asynchronous processing and checkpoints passed.');
 }
 run().catch(err=>{console.error(err);process.exitCode=1;});
