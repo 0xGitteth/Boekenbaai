@@ -9,7 +9,10 @@ const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./b
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { matchEntityByName } = require('./book-import-analysis-context');
 const { noteLoanActivity } = require('./book-import-followups');
-const { excelLoanReceiptKey, persistExcelLoanReceipts } = require('./book-import-loan-migration');
+const { persistExcelLoanReceipts } = require('./book-import-loan-migration');
+const { examReadingAccess } = require('./exam-reading-access');
+const { keyForBook: examKey, addBook: addExamBook,
+  changeStatus: changeExamStatus } = require('./personal-exam-reading-list');
 
 const ACTIONS = new Set(['apply', 'keep', 'later']);
 const norm = value => normalizeBookIdentityComparable(value || '');
@@ -149,6 +152,14 @@ function buildAssignmentPreview(analysis, db, input=[]) {
     }
     const current=borrowerOf(copy,db);
     const desired=desiredLoan(row,db);
+    // 'Klassen' without an explicit fixed-place marker is only a vague
+    // context. It may mean a shelf, class set or a temporary loan.
+    if(row.context?.classContext?.length && !row.context.fixedLocation
+      && !row.context.studentLoan && !row.context.classLoan) {
+      differences.push({...base,id:row.index+':issue',kind:'issue',
+        reason:'class_context_requires_classification'});
+      continue;
+    }
     const info=row.context||{};
     if(current.error || desired.error) {
       differences.push({...base,id:row.index+':issue',kind:'issue',
@@ -219,6 +230,37 @@ function buildAssignmentPreview(analysis, db, input=[]) {
     issues,readyToApply:pending===0&&differences.length>0,
   }};
 }
+function clearAutomaticExamLoan(db,copy,studentId,actorId,now){
+  const editionKey=examKey(copy);
+  for(const item of db.examReadingLists||[]){
+    if(item.studentId!==studentId||item.editionKey!==editionKey
+      ||item.autoCurrentLoan!==true)continue;
+    if(item.autoLoanBookId && item.autoLoanBookId!==copy.id)continue;
+    // When the same student still has another copy of this edition, do not
+    // pretend that their in-progress reading has finished.
+    if((db.books||[]).some(other=>other.id!==copy.id
+      &&other.borrowedBy===studentId&&other.status==='borrowed'
+      &&examKey(other)===editionKey))continue;
+    item.autoCurrentLoan=false;
+    delete item.autoLoanBookId;
+    delete item.autoLoanBorrowedAt;
+    if(item.manualStatus==='aan_het_lezen')
+      changeExamStatus(item,'nog_lezen',actorId,now);
+  }
+}
+function markAutomaticExamLoan(db,copy,student,actorId,now){
+  // Imported loans have no invented start date. Without one, the return
+  // record cannot safely distinguish an old loan period from a later one.
+  if(copy.suitableForExamList!==true||!copy.borrowedAt
+    ||!examReadingAccess(db,student).eligible)return;
+  const listed=addExamBook(db,student.id,copy,actorId,now,false);
+  if(listed.created||listed.entry.manualStatus==='nog_lezen'){
+    changeExamStatus(listed.entry,'aan_het_lezen',actorId,now);
+    listed.entry.autoCurrentLoan=true;
+    listed.entry.autoLoanBookId=copy.id;
+    listed.entry.autoLoanBorrowedAt=copy.borrowedAt;
+  }
+}
 function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString(), batchId=crypto.randomUUID()) {
   if(!preview?.ok||!preview.summary?.readyToApply)
     throw Error('assignment_review_not_ready');
@@ -232,6 +274,8 @@ function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString
         throw Error('assignment_loan_changed');
       if(before.type!=='none')receiptPairs.push({bookId:copy.id,
         borrower:{type:before.type,id:before.id}});
+      if(before.type==='student')
+        clearAutomaticExamLoan(db,copy,before.id,actorId,now);
       for(const person of db.students||[]){
         if(!Array.isArray(person.borrowedBooks))continue;
         person.borrowedBooks=person.borrowedBooks.filter(item=>borrowedId(item)!==copy.id);
@@ -253,6 +297,7 @@ function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString
           if(!Array.isArray(person.borrowedBooks))person.borrowedBooks=[];
           person.borrowedBooks.push({bookId:copy.id,borrowedAt:copy.borrowedAt||null,
             dueDate:copy.dueDate||null,source:'excel_admin_correction'});
+          markAutomaticExamLoan(db,copy,person,actorId,now);
         }
         receiptPairs.push({bookId:copy.id,borrower:{type:target.type,id:target.id}});
       }

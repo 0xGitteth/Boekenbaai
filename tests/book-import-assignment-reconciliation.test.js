@@ -102,4 +102,42 @@ assert.equal(buildAssignmentPreview({ok:true,rows:[
   rows[0],{...rows[0],index:3,sourceRowNumber:5},
 ]},db).differences.some(x=>x.reason==='duplicate_copy_rows'),true,
   'Multiple rows for the same physical copy are never silently applied');
+const vagueClass=buildAssignmentPreview({ok:true,rows:[row(1,{
+  editionIsbn:ISBN2,barcode:'10002',title:'Tweede boek',author:'Auteur B',
+},{classContext:['Klas A']})]},db);
+assert.equal(vagueClass.differences[0].reason,'class_context_requires_classification',
+  'A generic class column must not silently become a permanent shelf location');
+
+const borrowedAt='2026-11-01T10:00:00Z';
+const examBook={id:'exam-copy',title:'Examenboek',author:'Auteur Exam',
+  editionIsbn:ISBN1,metadataIsbn:ISBN1,barcode:'20001',status:'borrowed',
+  borrowedBy:'s1',borrowedByClassId:null,borrowedAt,
+  suitableForExamList:true};
+const examDb={books:[examBook],
+  students:[
+    {id:'s1',name:'Lisa',active:true,classIds:['bb'],
+      borrowedBooks:[{bookId:examBook.id,borrowedAt}]},
+    {id:'s2',name:'Tim',active:true,classIds:['bb'],borrowedBooks:[]},
+  ],
+  classes:[{id:'bb',name:'Bovenbouw structuur',studentIds:['s1','s2']}],
+  examReadingLists:[{id:'old-entry',studentId:'s1',
+    editionKey:'isbn13||'+ISBN1,bookId:examBook.id,
+    title:'Examenboek',author:'Auteur Exam',manualStatus:'aan_het_lezen',
+    autoCurrentLoan:true,autoLoanBookId:examBook.id,autoLoanBorrowedAt:borrowedAt,
+    addedAt:borrowedAt,updatedAt:borrowedAt}],
+  readingRecords:[],
+};
+const examRow=row(0,{editionIsbn:ISBN1,barcode:'20001',
+  title:'Examenboek',author:'Auteur Exam'},
+  {studentLoan:{status:'matched',id:'s2',name:'Tim'}});
+const examPlan=buildAssignmentPreview({ok:true,rows:[examRow]},examDb,
+  [{id:'0:loan',action:'apply'}]);
+assert.equal(examPlan.summary.readyToApply,true);
+applyAssignmentPreview(examDb,examPlan,'admin','2026-11-12T12:00:00Z','exam-correction');
+assert.equal(examDb.examReadingLists.find(x=>x.studentId==='s1').manualStatus,'nog_lezen');
+assert.equal(examDb.examReadingLists.find(x=>x.studentId==='s1').autoCurrentLoan,false);
+assert.equal(examDb.examReadingLists.find(x=>x.studentId==='s2').manualStatus,'aan_het_lezen');
+assert.equal(examDb.examReadingLists.find(x=>x.studentId==='s2').autoLoanBookId,examBook.id);
+assert.equal(examDb.readingRecords.length,0,'Correcting exam loans must not create read records');
+
 console.log('Opt-in assignment reconciliation, safety, empty cells and audit: OK');
