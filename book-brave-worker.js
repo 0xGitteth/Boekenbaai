@@ -92,7 +92,15 @@ function createBraveWorker({
     try {
       // Atomic, durable debit/reservation occurs before each external API
       // call and is never refunded on an error or process crash.
-      const claim=await commit(db=>claimNext(db,{failedCovers:getFailedCovers()}));
+      const claim=await commit(db=>isPaused()
+        ? {deferred:true} : claimNext(db,{failedCovers:getFailedCovers()}));
+      if(claim?.deferred){
+        // An import began after our initial pause check but before the
+        // atomic claim. Do not debit an API call during import preparation.
+        keepGoing=true;
+        retryDelay=4000;
+        return;
+      }
       if(!claim)return;
       keepGoing=true;
       const result=await fetchSearch(claim.step,claim,{apiKey});
