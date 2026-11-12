@@ -48,18 +48,28 @@ function createFreeMetadataWorker({
       continueSoon = true;
       const result = await fetchEasyCb(candidate.isbn, {contact, fetchImpl});
       if (stopped) return;
-      // An import may have started while the external website responded.
-      // Preserve the reviewed import snapshot and do not write into its stage.
-      if (isPaused()) return;
       if (result.status === 'error') {
         // A temporary outage cannot cause a busy request loop or a database
         // write. Retry after a delay, never immediately.
         failedInProcess.set(candidate.key, Date.now() + 15 * 60 * 1000);
         return;
       }
-      const outcome = await commit(db => applyResult(
-        db, candidate, result.metadata, new Date().toISOString(), result.status, failedCovers,
-      ));
+      // An import may have started while the external website responded.
+      // Wait without modifying ANY database field or consuming a second
+      // lookup. Check again under the lock before saving the result.
+      let outcome = null;
+      while (!stopped) {
+        if (isPaused()) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          continue;
+        }
+        outcome = await commit(db => isPaused()
+          ? { deferred: true }
+          : applyResult(db, candidate, result.metadata,
+            new Date().toISOString(), result.status, failedCovers));
+        if (!outcome?.deferred) break;
+      }
+      if (stopped) return;
       if (outcome?.newCover) onNewCover();
     } catch (error) {
       logger.warn?.('Gratis boekverrijking overgeslagen:', error?.message || String(error));
