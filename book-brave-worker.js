@@ -115,13 +115,27 @@ function createBraveWorker({
       }
       if(stopped)return;
       const bad=result.error||null;
-      const outcome=await commit(db=>{
-        const updated=updateFromPages(db,claim,pages,{
-          imageUrl,failedCovers:getFailedCovers(),
+      let outcome=null;
+      // A legacy import can start during Brave's network request. Do not
+      // modify ANY database fields (including progress/usage) until that
+      // import has committed or cancelled. Recheck under the DB lock to
+      // avoid a race between the pause check and the actual commit.
+      while(!stopped){
+        if(isPaused()){
+          await new Promise(resolve=>setTimeout(resolve,200));
+          continue;
+        }
+        outcome=await commit(db=>{
+          if(isPaused())return {deferred:true};
+          const updated=updateFromPages(db,claim,pages,{
+            imageUrl,failedCovers:getFailedCovers(),
+          });
+          finishClaim(db,claim,{providerRemaining:result.providerRemaining,error:bad});
+          return updated;
         });
-        finishClaim(db,claim,{providerRemaining:result.providerRemaining,error:bad});
-        return updated;
-      });
+        if(!outcome?.deferred)break;
+      }
+      if(stopped)return;
       if(outcome?.newCover)onNewCover();
       // Stop after 429, missing entitlement or paid quota. No silent
       // repeated retries and no new approval without an explicit action.
