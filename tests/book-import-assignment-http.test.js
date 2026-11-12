@@ -256,6 +256,9 @@ async function run(){
     assert.equal(sameLocation.status,201,JSON.stringify(sameLocation.data));
     assert.equal(sameLocation.data.decisions.summary.differences,0,
       'A confirmed matching class location must not be reported as another difference');
+    const cancelledPreview=await call('/api/admin/book-import-stages/'
+      +sameLocation.data.id+'/cancel',token,{revision:sameLocation.data.revision});
+    assert.equal(cancelledPreview.status,200,JSON.stringify(cancelledPreview.data));
     const deferredQueue=await call('/api/admin/book-import-assignment-tasks',token);
     assert.equal(deferredQueue.status,200);
     assert.equal(deferredQueue.data.summary.open,2);
