@@ -24,8 +24,9 @@ function userEdited(book,field){
 }
 function updateFromPages(db,claim,pages,{imageUrl='',failedCovers=new Set()}={}) {
   let added=0,newCover=false;
+  const approvedIds=new Set(Array.isArray(claim.bookIds)?claim.bookIds:[]);
   for(const book of db.books||[]){
-    if(workKey(book)!==claim.key)continue;
+    if(!approvedIds.has(book.id)||workKey(book)!==claim.key)continue;
     for(const page of pages||[]){
       if(!page||!['isbn','title_author'].includes(page.confidence))continue;
       if(!userEdited(book,'description') && page.description?.length>=90
