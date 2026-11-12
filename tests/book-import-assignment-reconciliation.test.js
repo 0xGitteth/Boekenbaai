@@ -178,6 +178,40 @@ assert.equal(changedCirculation.differences[0].circulationRevision,2);
 assert.notDeepEqual(changedCirculation,reviewedCirculation,
   'A borrow/return cycle must invalidate an old administrative approval');
 
+// A legacy library record may store the edition ISBN only as its scan
+// barcode. It must match uniquely, without guessing between two copies.
+const legacyCopy = copy('legacy-1', ISBN, {
+  editionIsbn:'', metadataIsbn:'', isbn13:'',
+});
+const legacyDb = { ...directory(), books:[legacyCopy] };
+const legacyMatched=preview(legacyDb,[row(0,'',loanTo('tim','Tim Leerling'))]);
+assert.equal(legacyMatched.differences.length,1);
+assert.equal(legacyMatched.differences[0].kind,'loan');
+assert.equal(legacyMatched.differences[0].bookId,'legacy-1');
+const legacyAmbiguous = { ...directory(), books:[
+  legacyCopy, copy('legacy-2', ISBN, {
+    editionIsbn:'', metadataIsbn:'', isbn13:'',
+  }),
+]};
+assert.equal(preview(legacyAmbiguous,[row(0,'',loanTo('tim','Tim Leerling'))])
+  .differences[0].reason,'ambiguous_physical_copy');
+const arbitraryBarcodeOnly = { ...directory(), books:[
+  copy('non-isbn', '4711001', {
+    editionIsbn:'', metadataIsbn:'', isbn13:'',
+  }),
+]};
+assert.equal(preview(arbitraryBarcodeOnly,[row(0,'',loanTo('tim','Tim Leerling'))])
+  .differences[0].reason,'physical_copy_not_found');
+
+// A conflicting worksheet borrower is a source problem, not evidence that
+// a book has disappeared from the collection.
+const bothBorrowers=row(0,'4711001',{
+  ...loanTo('tim','Tim Leerling'), ...classLoan('a','Klas A'),
+});
+bothBorrowers.status='conflict';
+assert.equal(preview(directory(),[bothBorrowers]).differences[0].reason,
+  'conflicting_excel_borrowers');
+
 assert.equal(preview(directory(),[]).summary.readyToApply,false);
 assert.equal(preview(directory(),[row(0,'4711002')]).summary.differences,0);
 console.log('Administrative assignment reconciliation: choices, metadata retention, identity and zero implicit deletions passed');
