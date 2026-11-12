@@ -32,6 +32,15 @@ assert.equal(validContact('invalid'),false);
 assert.equal(isbnOf({metadataIsbn:isbn}),isbn);
 const noCover = parseEasyCb(sample.replace(isbn+'_VRK.jpg','unrelated.jpg'),isbn);
 assert.equal(noCover.coverUrl,'','Do not mistake rear or arbitrary image for front cover');
+const otherwiseComplete={metadataIsbn:isbn,title:source.title,author:source.author,
+  description:'Deze informatie bestaat al.',pageCount:80,coverUrl:source.coverUrl,
+  tags:['Geschiedenis'],publisher:source.publisher,publishedYear:source.publishedYear};
+assert.ok(nextCandidate([{...otherwiseComplete,publisher:''}]),
+  'A missing publisher must trigger enrichment even when all other fields are present');
+assert.ok(nextCandidate([{...otherwiseComplete,publishedYear:null}]),
+  'An unknown publication year must trigger enrichment');
+assert.equal(nextCandidate([otherwiseComplete]),null,
+  'Already complete bibliographic data should not trigger a needless request');
 const current = {
   books:[
     {id:'a',metadataIsbn:isbn,title:source.title,author:'Gertie Schouwenberg',
@@ -120,6 +129,26 @@ async function run(){
   await new Promise(resolve=>setTimeout(resolve,300));
   assert.equal(calls,1,'Restart respects saved enrichment checkpoint');
   resumed.stop();
+
+  // Temporary database lock failures must retry without another import or
+  // a server restart. The first downloaded result is not falsely committed.
+  const dbRetry={books:[{id:'retry',metadataIsbn:isbn,title:source.title,author:source.author,
+    description:'',tags:[],pageCount:0,coverUrl:''}]};
+  let commits=0;
+  const retryWorker=createFreeMetadataWorker({
+    loadDb:()=>dbRetry,contact:'school@example.org',fetchImpl,
+    delayMs:50,retryDelayMs:75,
+    commit:async callback=>{
+      commits++;
+      if(commits===1)throw Error('database lock busy');
+      return callback(dbRetry);
+    },
+  });
+  retryWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,480));
+  assert.ok(commits>=2,'Worker retries a transient storage failure on its own');
+  assert.equal(dbRetry.books[0].coverUrl,source.coverUrl);
+  retryWorker.stop();
   console.log('Free metadata parser, asynchronous processing and checkpoints passed.');
 }
 run().catch(err=>{console.error(err);process.exitCode=1;});
