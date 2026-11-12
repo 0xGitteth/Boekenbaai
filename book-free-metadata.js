@@ -120,6 +120,7 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
       ? book.coverUrl : '';
     if (status === 'found' && usableFor(book, metadata)) {
       const update = (field, value) => {
+        if (book.importProvenance?.fieldSources?.[field]?.sourceType === 'manual') return;
         if (value === null || value === undefined || value === '') return;
         if (book[field] !== undefined && book[field] !== null && book[field] !== '') return;
         book[field] = value;
@@ -137,7 +138,7 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
       update('pageCount', metadata.pageCount);
       const coverSource = book.importProvenance?.fieldSources?.coverUrl?.sourceType;
       if (metadata.coverUrl && (
-        !book.coverUrl || (failedCoverUrl && !['manual', 'excel'].includes(coverSource))
+        !book.coverUrl || (failedCoverUrl && coverSource === 'metadata')
       ) && book.coverUrl !== metadata.coverUrl) {
         book.coverUrl = metadata.coverUrl;
         if (!book.importProvenance || typeof book.importProvenance !== 'object') {
@@ -147,7 +148,8 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
         book.importProvenance.fieldSources.coverUrl = {sourceType:'metadata',sourceDetail:'easycb'};
         newCover = true; updated++;
       }
-      if ((!Array.isArray(book.tags) || !book.tags.length) && metadata.tags.length) {
+      if (book.importProvenance?.fieldSources?.tags?.sourceType !== 'manual'
+        && (!Array.isArray(book.tags) || !book.tags.length) && metadata.tags.length) {
         book.tags = metadata.tags.slice(0, 20);
         if (!book.importProvenance || typeof book.importProvenance !== 'object') {
           book.importProvenance = {fieldSources:{}};
