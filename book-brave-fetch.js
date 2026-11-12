@@ -19,7 +19,7 @@ function sameWorkTitle(targetTitle,candidateTitle,author='') {
   // Publisher or shop names following a vertical bar are not part of
   // bibliographic titles. Do not treat an unseparated longer title (e.g.
   // "Dune Messiah") as an edition of "Dune".
-  const title=normalize(cleaned(candidateTitle,500).split(/\\s+\\|\\s+/)[0]);
+  const title=normalize(cleaned(candidateTitle,500).split(/\s+\|\s+/)[0]);
   const fullAuthor=normalize(author);
   const candidates=[title];
   if(fullAuthor){
