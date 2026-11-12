@@ -126,7 +126,7 @@ assert.equal(implicitClass.differences[0].classId,'a');
 assert.equal(implicitClass.summary.classQuestions,1);
 assert.equal(implicitClass.summary.actualDifferences,0);
 assert.equal(implicitClass.summary.readyToApply,false);
-assert.equal(preview(db,[row(0,'4711002',{classContext:['Klas A']})],
+assert.equal(preview(directory(),[row(0,'4711002',{classContext:['Klas A']})],
   [{id:'0:class_context',action:'apply'}]).error,'unsafe_assignment_choice');
 
 const classFixedDb=directory();
