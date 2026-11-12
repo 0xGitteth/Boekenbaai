@@ -178,6 +178,24 @@ assert.equal(changedCirculation.differences[0].circulationRevision,2);
 assert.notDeepEqual(changedCirculation,reviewedCirculation,
   'A borrow/return cycle must invalidate an old administrative approval');
 
+// Accent differences between spreadsheet author fields and stored
+// metadata must not prevent a uniquely identified book from matching.
+const accentDb = { ...directory(), books: [
+  copy('accent-1', '9789086960088', {
+    title:'Hittegolf', author:'Rene Appel',
+    editionIsbn:'9789086960088', metadataIsbn:'9789086960088',
+  }),
+]};
+const accentRow = {
+  ...row(0,'',loanTo('tim','Tim Leerling')),
+  book: {
+    ...row(0,'').book,
+    editionIsbn:'9789086960088', title:'Hittegolf',
+    author:'René Appel',
+  },
+};
+assert.equal(preview(accentDb,[accentRow]).differences[0].bookId,'accent-1');
+
 // A legacy library record may store the edition ISBN only as its scan
 // barcode. It must match uniquely, without guessing between two copies.
 const legacyCopy = copy('legacy-1', ISBN, {
