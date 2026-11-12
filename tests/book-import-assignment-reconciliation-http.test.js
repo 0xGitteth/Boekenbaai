@@ -101,15 +101,21 @@ async function main(){
       token,{revision:prepared.body.revision,confirm:true});
     assert.equal(rejectedApply.status,409,'Cannot apply a preview with undecided differences');
 
-    const reviewed=await call('/api/admin/book-import-stages/'+prepared.body.id+'/review',
-      token,{revision:prepared.body.revision,acceptWarnings:true,corrections:[],
+    // A rejected apply intentionally closes that draft. Start a new review
+    // instead of retrying an unsafe saved preview.
+    const freshStage=await call('/api/admin/book-import-stages',token,{
+      file:data,fileName:'proef.xlsx',mode:'assignment_reconcile',enrichIsbn:false,
+    });
+    assert.equal(freshStage.status,201);
+    const reviewed=await call('/api/admin/book-import-stages/'+freshStage.body.id+'/review',
+      token,{revision:freshStage.body.revision,acceptWarnings:true,corrections:[],
         assignmentResolutions:[
           {id:loanChange.id,action:'apply'},
           {id:blankChange.id,action:'keep'},
         ]});
     assert.equal(reviewed.status,200,JSON.stringify(reviewed.body).slice(0,650));
     assert.equal(reviewed.body.decisions.summary.readyToApply,true);
-    const applied=await call('/api/admin/book-import-stages/'+prepared.body.id+'/apply',
+    const applied=await call('/api/admin/book-import-stages/'+freshStage.body.id+'/apply',
       token,{revision:reviewed.body.revision,confirm:true});
     assert.equal(applied.status,200,JSON.stringify(applied.body).slice(0,650));
     assert.equal(applied.body.result.corrected,1);
