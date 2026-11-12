@@ -197,6 +197,11 @@ if (panel && host) {
     }
     render();
   }
+  // The admin shell moves this panel into Taken and toggles its visibility.
+  // Fetch immediately when the tab opens, without waiting for the poll.
+  new MutationObserver(() => {
+    if (!panel.classList.contains('hidden')) refresh();
+  }).observe(panel, {attributes:true, attributeFilter:['class']});
   window.addEventListener('boekenbaai:staff-refresh', refresh);
   window.addEventListener('boekenbaai:staff-auth-cleared', () => {
     serial++; administrator = false; tasks = []; render();
