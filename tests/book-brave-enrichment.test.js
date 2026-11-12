@@ -7,7 +7,7 @@ const {
   MAX_REQUESTS_PER_WORK,
 }=require('../book-brave-core');
 const {
-  parseBookPage,parseMonthlyRemaining,matchTitleAuthor,queryFor,
+  parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,
   robotsAllowed,discoverPages,selectImageResult,fetchHtml,
 }=require('../book-brave-fetch');
 const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
@@ -116,11 +116,52 @@ assert.equal(oldWithoutProvenance.description,'Eerder handmatig aangepast',
 assert.equal(notApproved.coverUrl,'',
   'A new unrelated copy of the same work must not be enriched without approval');
 
+// Imported records often use "unknown" for missing metadata. Those fields
+// are eligible, while a deliberately cleared teacher field remains protected.
+const emptyUnknown={...book('empty-unknown'),publisher:'',pageCount:null,
+  importProvenance:{fieldSources:Object.fromEntries(
+    ['description','publisher','pageCount','coverUrl','tags']
+      .map(field=>[field,{sourceType:'unknown'}]))}};
+const manuallyCleared={...book('manually-cleared'),description:'',
+  importProvenance:{fieldSources:{description:{sourceType:'manual'}}}};
+const unknownDb={books:[emptyUnknown,manuallyCleared]};
+updateFromPages(unknownDb,{key:JSON.stringify([target.isbn,
+  target.title.toLowerCase(),target.author.toLowerCase()]),
+  bookIds:['empty-unknown','manually-cleared']},[
+  {...found,description:found.description.repeat(4),publisher:'Uitgeverij',
+    pageCount:360},
+]);
+assert.match(emptyUnknown.description,/gevaarlijke reis/);
+assert.equal(emptyUnknown.coverUrl,found.coverUrl);
+assert.deepEqual(emptyUnknown.tags,found.tags);
+assert.equal(emptyUnknown.publisher,'Uitgeverij');
+assert.equal(emptyUnknown.pageCount,360);
+assert.equal(emptyUnknown.importProvenance.fieldSources.description.sourceType,'metadata');
+assert.equal(manuallyCleared.description,'',
+  'A teacher-cleared field must stay empty despite web results');
+
 assert.equal(parseBookPage(html,{...target,title:'Verkeerd boek',isbn:'9789025869977'},
   'https://www.uitgeverijvoorbeeld.nl/boeken/de-brief'),null);
 assert.equal(parseBookPage(html,target,'http://localhost/book'),null);
 assert.equal(matchTitleAuthor(target,{title:'De brief voor de koning',author:'Tonke Dragt'}),true);
 assert.equal(matchTitleAuthor(target,{title:'De brief voor de koning',author:'Anders'}),false);
+assert.equal(sameWorkTitle('Dune','Dune Messiah','Frank Herbert'),false,
+  'A sequel is a different work despite sharing the first word');
+assert.equal(matchTitleAuthor({title:'Dune',author:'Frank Herbert'},
+  {title:'Dune Messiah',author:'Frank Herbert'}),false);
+assert.equal(matchTitleAuthor(target,
+  {title:'De brief voor de koning Tonke Dragt'}),true);
+assert.equal(sameWorkTitle(target.title,'De brief voor de koning | Uitgeverij'),true);
+const sequelHtml=`<html><head><script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Book","name":"Dune Messiah",
+"author":{"name":"Frank Herbert"},"isbn":"9789025869977",
+"description":"Dune appears here but this is its sequel.",
+"image":"https://publisher.example/dune-messiah.jpg"}
+</script></head></html>`;
+assert.equal(parseBookPage(sequelHtml,{
+  title:'Dune',author:'Frank Herbert',isbn:'9789025869977'},
+  'https://publisher.example/dune-messiah'),null,
+  'A matching ISBN must not override an explicitly different work title');
 assert.match(queryFor(1,target),/kaft/);
 assert.equal(parseMonthlyRemaining({headers:{get(k){
   return k==='x-ratelimit-policy'?'2;w=1, 1200;w=2592000':'1, 734';
@@ -173,6 +214,42 @@ async function run(){
     ?{error:'request_error'}:{body:html}});
   assert.equal(blocked.length,0,
     'If robots.txt is unreachable, page crawling is not authorized');
+
+  // A redirected landing page can have image: "cover.jpg"; resolve it
+  // against the actual response location rather than the original link.
+  const relativePage=`<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Book",
+"name":"De brief voor de koning","author":{"name":"Tonke Dragt"},
+"image":"cover.jpg"}
+</script>`;
+  const redirectResult=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/old-book',{
+    dnsLookup:async()=>[{address:'8.8.8.8'}],
+    httpsGet:(url,_opts,respond)=>{
+      const request=new EventEmitter();
+      const response=new EventEmitter();
+      response.resume=()=>{};
+      if(url.pathname==='/old-book'){
+        response.statusCode=302;
+        response.headers={location:'/books/current/'};
+        respond(response);
+      }else{
+        assert.equal(url.pathname,'/books/current/');
+        response.statusCode=200;
+        response.headers={'content-type':'text/html'};
+        respond(response);
+        setImmediate(()=>{response.emit('data',Buffer.from(relativePage));response.emit('end');});
+      }
+      return request;
+    },
+  });
+  assert.equal(redirectResult.finalUrl,
+    'https://www.uitgeverijvoorbeeld.nl/books/current/');
+  const redirected=await discoverPages({pages:[
+    {title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/old-book'},
+  ]},target,{fetchPage:async url=>url.endsWith('/robots.txt')
+    ?{body:'User-agent: *\\nAllow: /'}:redirectResult});
+  assert.equal(redirected[0]?.coverUrl,
+    'https://www.uitgeverijvoorbeeld.nl/books/current/cover.jpg');
   const db2={books:[book('x')],braveEnrichmentJobs:[],braveUsage:null};
   const j=addJob(db2,['x'],{id:'import1'});
   assert.equal(approveJob(db2,j.id,{confirmed:true,expectedRequests:3,
