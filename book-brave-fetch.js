@@ -188,6 +188,9 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500}={}) {
           lookup:(_h,_opt,cb)=>cb(null,addrs[0].address,4),
           family:4,signal:ctl.signal,
         },res=>{
+          // A stream error can occur even after redirect/404 early returns.
+          // The request error handler does not observe IncomingMessage errors.
+          res.on('error',reject);
           const status=res.statusCode;
           if([301,302,303,307,308].includes(status)){
             res.resume();resolve({redirect:res.headers.location});return;
@@ -203,7 +206,6 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500}={}) {
           const chunks=[];let length=0;
           res.on('data',b=>{length+=b.length;if(length>maxBytes){res.destroy();resolve({error:'too_large'});}else chunks.push(b);});
           res.on('end',()=>{if(!finished){finished=true;resolve({status,body:Buffer.concat(chunks).toString('utf8')});}});
-          res.on('error',reject);
         });
         req.on('error',reject);
       });
@@ -219,23 +221,50 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500}={}) {
 }
 function robotsAllowed(content,path){
   if(!content||typeof content!=='string')return true;
-  let active=false,groupMatched=false,rule='';
-  for(const line of content.split(/\r?\n/)){
-    const clean=line.split('#')[0].trim();
+  // Consecutive User-agent directives form one group until a rule starts.
+  // A subsequent User-agent directive after rules begins a new group.
+  const groups=[];
+  let current={agents:[],rules:[]};
+  function finishGroup(){
+    if(current.agents.length)groups.push(current);
+    current={agents:[],rules:[]};
+  }
+  for(const rawLine of content.split(/\r?\n/)){
+    const clean=rawLine.split('#')[0].trim();
+    if(!clean){finishGroup();continue;}
     const entry=clean.match(/^(user-agent|disallow|allow)\s*:\s*(.*)$/i);
     if(!entry)continue;
     const type=entry[1].toLowerCase(),value=entry[2].trim();
-    if(type==='user-agent') {
-      // Simplified fail-conservative rule for the generic Boekenbaai bot:
-      // never bypass a wildcard Disallow through another specific agent.
-      active=value==='*'||/boekenbaai/i.test(value);
-      if(active)groupMatched=true;
-    } else if(active&&value&&path.startsWith(value.replace(/\$$/,''))){
-      if(value.length>rule.length||value.length===rule.length&&type==='allow')
-        rule=(type==='disallow'?'!':'')+value;
+    if(type==='user-agent'){
+      if(current.rules.length)finishGroup();
+      current.agents.push(value.toLowerCase());
+    }else if(current.agents.length&&value){
+      current.rules.push({type,value});
     }
   }
-  return !groupMatched||!rule.startsWith('!');
+  finishGroup();
+  let selected={length:-1,allow:true};
+  for(const group of groups){
+    if(!group.agents.some(agent=>agent==='*'||agent.includes('boekenbaai')))continue;
+    for(const rule of group.rules){
+      // Fail conservatively for wildcard Disallow; never let a wildcard
+      // Allow match more URLs than it really does.
+      if(rule.value.includes('*')&&rule.type==='allow')continue;
+      const anchored=rule.value.endsWith('$');
+      const withoutAnchor=anchored?rule.value.slice(0,-1):rule.value;
+      const prefix=withoutAnchor.split('*')[0];
+      if(!prefix||!path.startsWith(prefix))continue;
+      if(anchored&&!rule.value.includes('*')&&path!==withoutAnchor)continue;
+      const specificity=withoutAnchor.length;
+      // A tied Disallow wins, avoiding accidental crawling when groups
+      // disagree. A more specific Allow can still override it.
+      if(specificity>selected.length
+        ||(specificity===selected.length&&rule.type==='disallow')){
+        selected={length:specificity,allow:rule.type==='allow'};
+      }
+    }
+  }
+  return selected.allow;
 }
 async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) {
   const candidates=Array.isArray(search?.pages)?search.pages:[];
