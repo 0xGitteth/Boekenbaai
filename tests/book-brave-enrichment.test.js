@@ -36,7 +36,7 @@ assert.equal(approveJob(db,job.id,{confirmed:true,expectedRequests:5,expectedMon
   braveConfigured:true,now,env:environment}).error,'stale_budget');
 assert.equal(approveJob(db,job.id,{confirmed:true,expectedRequests:6,expectedMonth:'2026-11',
   braveConfigured:true,now,env:environment}).ok,true);
-assert.equal(db.braveUsage,undefined,'Permission alone must not debit the paid API');
+assert.equal(db.braveUsage.reserved || 0,0,'Permission alone must not debit the paid API');
 assert.equal(getJobPlan(db,job,{braveConfigured:true,now,env:environment}).state,'running');
 assert.equal(approveJob(db,job.id,{confirmed:true,expectedRequests:6,expectedMonth:'2026-11',
   braveConfigured:true,now,env:environment}).error,'another_job_running');
@@ -126,7 +126,7 @@ async function run(){
       return {pages:[{title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/boek'}],
         providerRemaining:990};
     },
-    findPages:async ()=>[found],
+    findPages:async ()=>[{...found,description:found.description.repeat(3)}],
   });
   worker.schedule();
   await new Promise(resolve=>setTimeout(resolve,450));
