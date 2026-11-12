@@ -281,9 +281,13 @@ async function run(){
     const loanReview=await call('/api/admin/book-import-stages/'
       +deferredLoanImport.data.id+'/review',token,{
       revision:deferredLoanImport.data.revision,corrections:[],acceptWarnings:true,
-      assignmentResolutions:[{id:'0:loan',action:'later'}],
+      assignmentResolutions:[
+        {id:'0:loan',action:'later'},
+        {id:'0:location',action:'keep'},
+      ],
     });
     assert.equal(loanReview.status,200,JSON.stringify(loanReview.data));
+    assert.equal(loanReview.data.decisions.summary.readyToApply,true);
     const loanPostponed=await call('/api/admin/book-import-stages/'
       +deferredLoanImport.data.id+'/apply',token,{
       revision:loanReview.data.revision,confirm:true,
