@@ -62,7 +62,7 @@ p=getJobPlan(db,job,{braveConfigured:true,now:december,env:environment});
 assert.equal(p.possibleWorks,1);
 assert.equal(approveJob(db,job.id,{confirmed:true,expectedRequests:3,expectedMonth:'2026-12',
   braveConfigured:true,now:december,env:environment}).ok,true);
-assert.equal(db.braveUsage.reserved,6,'Consent alone does not touch the old month's ledger');
+assert.equal(db.braveUsage.reserved,6,"Consent alone does not touch the old month's ledger");
 assert.equal(claimNext(db,{now:december,env:environment}).step,0);
 assert.equal(db.braveUsage.month,'2026-12');
 assert.equal(db.braveUsage.reserved,1);
