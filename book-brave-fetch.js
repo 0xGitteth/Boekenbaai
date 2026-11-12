@@ -16,9 +16,10 @@ function normalize(value) {
 function matchTitleAuthor(target,candidate,context='') {
   const title=normalize(target.title), author=normalize(target.author);
   if(title.length<4||author.length<2)return false;
-  const hay=normalize([candidate.title,candidate.author,context].filter(Boolean).join(' '));
   const surname=author.split(' ').filter(x=>x.length>=3).slice(-1)[0]||author;
-  return hay.includes(title)&&hay.includes(surname);
+  return normalize(candidate.title).includes(title)
+    && (normalize(candidate.author).includes(surname)
+      || normalize(String(context).slice(0,18000)).includes(surname));
 }
 function parseMonthlyRemaining(response) {
   const policy=String(response?.headers?.get?.('x-ratelimit-policy')||'');
@@ -237,7 +238,7 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) 
   for(const candidate of candidates){
     if(outputs.length>=maxPages)break;
     // Search metadata is only used for coarse preselection.
-    if(!matchTitleAuthor(target,{title:candidate.title},''))continue;
+    if(!normalize(candidate.title).includes(normalize(target.title)))continue;
     let u;try{u=safeCoverUrl(candidate.url);if(u.protocol!=='https:')continue;}catch{continue;}
     if(visited.has(u.href))continue;visited.add(u.href);
     const root=u.origin;
