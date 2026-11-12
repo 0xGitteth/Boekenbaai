@@ -28,7 +28,7 @@
 .bb-review__fields { display: grid; gap: .7rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bb-review__field { display: grid; gap: .3rem; min-width: 0; }
 .bb-review__field span { font-weight: 600; font-size: .9rem; }
-.bb-review__field input, .bb-review__field textarea { width: 100%; min-width: 0; padding: .5rem .6rem; border: 1px solid var(--accent-border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.bb-review__field input, .bb-review__field textarea, .bb-review__field select { width: 100%; min-width: 0; padding: .5rem .6rem; border: 1px solid var(--accent-border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .bb-review__pagination { display: flex; align-items: center; gap: .8rem; justify-content: center; }
 .bb-review__legacy { margin-top: 1rem; padding: .5rem 0; }
 .bb-review__legacy > summary { cursor: pointer; color: var(--text); font-weight: 600; }
@@ -44,3 +44,7 @@
 .bb-review__live-alert p { margin: 0; }
 .bb-review__live-alert .btn { justify-self: start; }
 .bb-review__upload[hidden] { display: none !important; }
+
+.bb-review__upload > .bb-review__field, .bb-review__upload > .bb-review__mode-hint { grid-column: 1 / -1; }
+.bb-review__check[hidden], .bb-review__mode-hint[hidden] { display: none !important; }
+.bb-review__row .bb-review__field select { width: 100%; }
