@@ -89,6 +89,12 @@ let coverBackfillPending = false;
 const coverBackfillFailures = new Map();
 const coverRetryDelays = [30_000, 120_000, 600_000];
 let coverBackfillRetryTimer = null;
+function exhaustedCoverSourceUrls() {
+  return new Set([...coverBackfillFailures.entries()]
+    .filter(([,failure]) => failure?.phase === 'download'
+      && failure.attempts > coverRetryDelays.length)
+    .map(([source]) => source));
+}
 
 // Optional, zero-subscription enrichment. No HTTP import or review awaits it.
 // A real contact email is mandatory for automated EasyCB lookups.
@@ -98,10 +104,7 @@ const freeMetadataWorker = createFreeMetadataWorker({
   isPaused: () => shuttingDown || Boolean(activeBookImportLease)
     || Boolean(bookImportStageStore.active()),
   fetchImpl: globalThis.fetch,
-  getFailedCovers: () => new Set([...coverBackfillFailures.entries()]
-    .filter(([, failure]) => failure?.phase === 'download'
-      && failure.attempts > coverRetryDelays.length)
-    .map(([source]) => source)),
+  getFailedCovers: exhaustedCoverSourceUrls,
   commit: async (apply) => {
     let outcome = null;
     await mutateJsonLockedAsync({
@@ -123,9 +126,7 @@ const braveWorker = createBraveWorker({
   loadDb: () => loadDb(),
   isPaused: () => shuttingDown || Boolean(activeBookImportLease)
     || bookImportStageStore.active()?.status === 'applying',
-  getFailedCovers: () => new Set([...coverBackfillFailures.entries()]
-    .filter(([, entry]) => entry?.phase === 'download'
-      && entry.attempts > coverRetryDelays.length).map(([url]) => url)),
+  getFailedCovers: exhaustedCoverSourceUrls,
   commit: async (apply) => {
     let outcome = null;
     await mutateJsonLockedAsync({
@@ -5045,6 +5046,7 @@ async function handleApi(req, res, requestUrl) {
           .slice(-30).reverse().map(job => getJobPlan(db, job, {
             braveConfigured: braveWorker.configured,
             easyCbEnabled: freeMetadataWorker.enabled,
+            failedCovers: exhaustedCoverSourceUrls(),
           })),
       });
     }
@@ -5083,6 +5085,7 @@ async function handleApi(req, res, requestUrl) {
             expectedMonth:body.month,
             braveConfigured:braveWorker.configured,
             easyCbEnabled:freeMetadataWorker.enabled,
+            failedCovers:exhaustedCoverSourceUrls(),
           });
           return db;
         },
