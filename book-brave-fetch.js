@@ -170,7 +170,8 @@ function parseBookPage(html,target,url) {
 }
 // Safeguarded remote HTML retrieval: DNS pinning, public IPv4 only,
 // HTTPS only, bounded payload, redirects and end-to-end timeout.
-async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500}={}) {
+async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
+  dnsLookup=dns.lookup,httpsGet=https.get}={}) {
   const ctl=new AbortController();
   let timeout;
   try {
@@ -179,11 +180,11 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500}={}) {
     for(let redirect=0;redirect<=2;redirect++){
       const parsed=safeCoverUrl(current);
       if(parsed.protocol!=='https:')return {error:'unsafe_url'};
-      const addrs=await dns.lookup(parsed.hostname,{family:4,all:true});
+      const addrs=await dnsLookup(parsed.hostname,{family:4,all:true});
       if(!addrs.length||addrs.some(x=>!publicIPv4(x.address)))return {error:'unsafe_dns'};
       const result=await new Promise((resolve,reject)=>{
         let finished=false;
-        const req=https.get(parsed,{
+        const req=httpsGet(parsed,{
           headers:{Accept:'text/html,text/plain;q=0.3','User-Agent':'Boekenbaai/1.0 (school-library-metadata)'},
           lookup:(_h,_opt,cb)=>cb(null,addrs[0].address,4),
           family:4,signal:ctl.signal,
