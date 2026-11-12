@@ -225,7 +225,10 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     job.requestsReserved++;job.updatedAt=now.toISOString();
     const representative=books[0];
     job.inFlight={key,step,reservedAt:now.toISOString()};
-    return {id:job.id,key,step,title:representative.title,author:representative.author,
+    // Consent applies to the exact imported book IDs, not later books that
+    // happen to share the same ISBN, title and author.
+    return {id:job.id,key,step,bookIds:books.map(book=>book.id),
+      title:representative.title,author:representative.author,
       isbn:isbnOf(representative)};
   }
 }
