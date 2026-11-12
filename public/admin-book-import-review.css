@@ -44,3 +44,13 @@
 .bb-review__live-alert p { margin: 0; }
 .bb-review__live-alert .btn { justify-self: start; }
 .bb-review__upload[hidden] { display: none !important; }
+
+/* Import mode and administrative corrections use the existing form layout. */
+.bb-review__upload .bb-review__field { grid-column: 1 / -1; }
+.bb-review__upload .bb-review__field select,
+.bb-review__row .bb-review__field select {
+  width: 100%; min-width: 0; padding: .55rem .65rem;
+  border: 1px solid var(--accent-border); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: inherit;
+}
+.bb-review__check[hidden], .bb-review__field[hidden] { display: none !important; }
