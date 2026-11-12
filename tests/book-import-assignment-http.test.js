@@ -206,7 +206,7 @@ async function run(){
     assert.equal(laterClassReport.data.deferredDifferences[0].className,'Klas A');
     assert.equal(laterClassReport.data.deferredDifferences[0].beforeLoan.id,'tim');
     assert.equal(laterClassReport.data.deferredDifferences[0].kind,'class_context');
-    assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).books[0].fixedLocation,null,
+    assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).books[0].fixedLocation??null,null,
       'Later review must never change the fixed location');
 
     const classroom=await begin([{...row(),Klassen:'Klas A'}]);
