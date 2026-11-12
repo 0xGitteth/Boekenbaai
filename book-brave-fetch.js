@@ -17,8 +17,9 @@ function matchTitleAuthor(target,candidate,context='') {
   const title=normalize(target.title), author=normalize(target.author);
   if(title.length<4||author.length<2)return false;
   const surname=author.split(' ').filter(x=>x.length>=3).slice(-1)[0]||author;
-  return normalize(candidate.title).includes(title)
-    && (normalize(candidate.author).includes(surname)
+  const headline=normalize(candidate.title);
+  return headline.includes(title)
+    && (headline.includes(surname)||normalize(candidate.author).includes(surname)
       || normalize(String(context).slice(0,18000)).includes(surname));
 }
 function parseMonthlyRemaining(response) {
