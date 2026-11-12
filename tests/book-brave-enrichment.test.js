@@ -126,6 +126,12 @@ assert.equal(parseMonthlyRemaining({headers:{get(k){
 }}}),734);
 assert.equal(robotsAllowed('User-agent: *\nDisallow: /boeken\nAllow: /open','/boeken/tekst'),false);
 assert.equal(robotsAllowed('User-agent: *\nDisallow: /boeken','/over'),true);
+assert.equal(robotsAllowed('User-agent: *\nUser-agent: OtherBot\nDisallow: /','/boek'),false,
+  'Consecutive agents belong to the same disallow group');
+assert.equal(robotsAllowed('User-agent: OtherBot\nDisallow: /\n\nUser-agent: *\nAllow: /','/boek'),true,
+  'Unrelated agents cannot impose their restrictions on Boekenbaai');
+assert.equal(robotsAllowed('User-agent: *\nDisallow: /boeken\nAllow: /boeken/toegestaan','/boeken/toegestaan'),true,
+  'A more specific allow rule must override a broad disallow');
 assert.equal(selectImageResult([{title:'De brief voor de koning Tonke Dragt',
   imageUrl:'https://files.uitgeverijvoorbeeld.nl/debrief.jpg',width:300,height:430}],target),
   'https://files.uitgeverijvoorbeeld.nl/debrief.jpg');
@@ -239,6 +245,45 @@ async function run(){
     expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
   assert.equal(db5.braveUsage.reserved,1,
     'Reapproval cannot erase the previously reserved API request');
+
+  // If an import begins during a Brave network fetch, the retrieved result
+  // must wait in memory. Neither metadata nor the durable job checkpoint
+  // may be written while that import is using the database.
+  const pausedDb={books:[book('during-import')],braveEnrichmentJobs:[]};
+  const pausedJob=addJob(pausedDb,['during-import'],{id:'during-import'});
+  assert.equal(approveJob(pausedDb,pausedJob.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  let importActive=false;
+  let pendingSearch=false;
+  let claimedCommitCount=0;
+  const concurrentWorker=createBraveWorker({
+    apiKey:'test-only-key',loadDb:()=>pausedDb,
+    isPaused:()=>importActive,delayMs:50,
+    commit:async fn=>{
+      claimedCommitCount++;
+      return fn(pausedDb);
+    },
+    fetchSearch:async ()=>{
+      importActive=true;
+      pendingSearch=true;
+      return {pages:[{title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/boek'}]};
+    },
+    findPages:async ()=>[{...found,description:found.description.repeat(4)}],
+  });
+  concurrentWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,350));
+  assert.equal(pendingSearch,true);
+  assert.equal(claimedCommitCount,1,
+    'No result commit while an import is active; only the initial claim is recorded');
+  assert.equal(pausedDb.books[0].coverUrl,'');
+  assert.equal(pausedJob.inFlight?.step,0,
+    'The claim must survive while import blocks result persistence');
+  importActive=false;
+  await new Promise(resolve=>setTimeout(resolve,550));
+  assert.equal(pausedDb.books[0].coverUrl,found.coverUrl,
+    'The pending result must be applied after the import is complete');
+  assert.equal(pausedJob.state,'complete');
+  concurrentWorker.stop();
   console.log('Brave deferred consent, persistent budget, verifiable scraping and worker passed');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
