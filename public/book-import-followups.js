@@ -72,12 +72,13 @@ if (panel) {
   }
   function render() {
     list.replaceChildren();
-    const count = state.summary.open || 0;
+    const count = (state.summary.open || 0)
+      + (roleIsAdmin() ? Number(panel.dataset.deferredCount || 0) : 0);
     badge.hidden = count === 0;
     badge.textContent = String(count);
     const visible = state.tasks.filter((task) =>
       ['open', 'reminder', 'admin_review'].includes(task.status));
-    if (!visible.length) list.append(el('p', 'Geen openstaande importtaken.', 'hint'));
+    if (!visible.length) list.append(el('p', 'Geen openstaande klascontroles.', 'hint'));
     for (const task of visible) {
       const klass = state.classes.find((entry) => entry.id === task.classId);
       const article = el('article', null, 'class-card');
@@ -212,6 +213,7 @@ if (panel) {
     }, 'PUT');
   });
   window.addEventListener('boekenbaai:staff-refresh', refresh);
+  window.addEventListener('boekenbaai:assignment-tasks-changed', render);
   window.addEventListener('boekenbaai:staff-auth-cleared', () => {
     serial++;
     state = { tasks: [], classes: [], students: [], summary: {} };

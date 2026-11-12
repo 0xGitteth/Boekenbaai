@@ -666,7 +666,8 @@
       controls.append(reviewButton, applyButton, cancelButton);
       if (summary.pending || hasUnreviewedChanges()) controls.append(make('p', 'hint',
         'Kies per controlepunt wat de Excelvermelding betekent. '
-        + 'Onzekere exemplaren blijven beschermd. '
+        + 'Keuzes voor later worden na definitieve bevestiging een taak '
+        + 'voor de beheerder. Onzekere exemplaren blijven beschermd. '
         + 'Controleer alle keuzes opnieuw voordat je correcties toepast.'));
       results.append(controls);
       const list = make('div', 'bb-review__rowlist');
@@ -823,10 +824,12 @@
             if (postponed.length) {
               const outstanding = make('section', 'bb-review__totals');
               outstanding.append(make('h4', '',
-                postponed.length + ' verschil(len) later controleren'));
+                postponed.length + ' controlepunt(en) toegevoegd aan Taken'));
               outstanding.append(make('p', 'hint',
-                'De openstaande verschillen zijn bewaard in het importverslag. '
-                + 'Download dit verslag zodat je ze later terug kunt vinden.'));
+                'De controlepunten blijven onder Taken → Boekimport controleren '
+                + 'zichtbaar voor beheerders. Je kunt daar later een keuze maken '
+                + 'zonder de Excel opnieuw te uploaden. Het importverslag kan ook '
+                + 'als JSON worden gedownload.'));
               for (const item of postponed.slice(0, 25)) {
                 outstanding.append(make('p', 'bb-review__detail',
                   'Excelrij ' + item.worksheetRow + ' · ' + item.title

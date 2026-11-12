@@ -54,6 +54,10 @@ const { circulationRevision, noteLoanActivity,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
   cancelTasksForDeletedBooks, cancelMissingBookTask, escalateTasksForDeletedClass,
   libraryOnlyTask, performDecision, assignTask } = require('./book-import-followups');
+const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
+  listDeferredAssignmentTasks,
+  findTask: findDeferredAssignmentTask,
+  resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
 
 const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
@@ -1393,6 +1397,10 @@ function loadDb() {
   if (!Array.isArray(data.readingRecords)) data.readingRecords = [];
   if (!Array.isArray(data.importJobs)) data.importJobs = [];
   if (!Array.isArray(data.bookImportFollowups)) data.bookImportFollowups = [];
+  if (!Array.isArray(data.bookImportAssignmentTasks)) data.bookImportAssignmentTasks = [];
+  // Preserve pre-upgrade postponed corrections before another import trims
+  // their original source report. This is saved with the next database write.
+  migrateLegacyDeferredTasks(data);
   if (!data.bookImportEmailPreferences || typeof data.bookImportEmailPreferences !== 'object'
     || Array.isArray(data.bookImportEmailPreferences)) data.bookImportEmailPreferences = {};
   data.books = data.books.map(ensureBookShape);
@@ -4952,6 +4960,52 @@ async function handleApi(req, res, requestUrl) {
       }
     }
 
+    // Deferred administration checks are admin-only tasks. They have their
+    // own durable collection, independent of the last 30 import reports.
+    const assignmentTaskRoot = '/api/admin/book-import-assignment-tasks';
+    if (requestUrl.pathname === assignmentTaskRoot
+      || requestUrl.pathname.startsWith(assignmentTaskRoot + '/')) {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, user ? 403 : 401, {
+        message: 'Alleen beheerders mogen uitgestelde administratiecontroles bekijken.',
+      });
+      if (req.method === 'GET' && requestUrl.pathname === assignmentTaskRoot) {
+        return sendJson(res, 200, listDeferredAssignmentTasks(getDb()));
+      }
+      const resolveMatch = requestUrl.pathname.match(
+        /^\/api\/admin\/book-import-assignment-tasks\/([a-f0-9-]{32,36})\/resolve$/);
+      if (req.method === 'POST' && resolveMatch) {
+        const body = await parseBody(req, 5000);
+        const database = loadDb();
+        const task = findDeferredAssignmentTask(database, resolveMatch[1]);
+        if (!task) return sendJson(res, 404, { message: 'Deze controle bestaat niet meer.' });
+        const result = resolveDeferredAssignmentTask(database, task, user, body);
+        if (!result.ok) {
+          const messages = {
+            review_no_longer_matches: 'Het boek of de uitleenregistratie is veranderd. '
+              + 'Controleer de actuele situatie en rond de taak desgewenst handmatig af.',
+            review_no_longer_safe: 'Deze correctie kan niet meer veilig worden toegepast. '
+              + 'Controleer het boek opnieuw.',
+            manual_review_required: 'Voor deze bronfout kan Boekenbaai geen veilige '
+              + 'automatische correctie bepalen. Controleer het boek handmatig.',
+            confirmation_required: 'Bevestig de administratieve correctie expliciet.',
+          };
+          return sendJson(res, 409, { error: result.error,
+            message: messages[result.error]
+              || 'Deze controle is veranderd of de keuze is niet veilig. Vernieuw de takenlijst.' });
+        }
+        appendHistory(database, {
+          type:'book_assignment_deferred_resolved', performedBy:user.id,
+          bookId:task.original?.bookId || task.bookId || null,
+          message: result.corrected
+            ? 'Uitgestelde administratieve boekcorrectie uitgevoerd vanuit Taken'
+            : 'Uitgestelde administratieve controle afgehandeld zonder boekwijziging',
+        });
+        saveDb(database);
+        return sendJson(res, 200, result);
+      }
+      return sendJson(res, 405, {message:'Methode niet toegestaan.'});
+    }
+
     // PR6: all classrooms share one persistent task per physical book. The
     // server scopes every task to current teacher assignments, never the
     // client's cached class or student list.
@@ -5448,6 +5502,9 @@ async function handleApi(req, res, requestUrl) {
               fullyReviewed:deferredDifferences.length===0,
               deferredDifferences,corrections:changed.audit,
             };
+            const deferredTasks = createDeferredAssignmentTasks(database,
+              report, stage.analysis.rows, fresh.differences, now);
+            report.deferredTaskIds = deferredTasks.map(task => task.id);
             if (!Array.isArray(database.bookImportReports)) database.bookImportReports=[];
             database.bookImportReports.push(report);
             database.bookImportReports=database.bookImportReports.slice(-30);
