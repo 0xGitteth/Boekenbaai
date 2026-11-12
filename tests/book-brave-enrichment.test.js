@@ -118,7 +118,7 @@ assert.equal(notApproved.coverUrl,'',
 
 // Imported records often use "unknown" for missing metadata. Those fields
 // are eligible, while a deliberately cleared teacher field remains protected.
-const emptyUnknown={...book('empty-unknown'),publisher:'',pageCount:null,
+const emptyUnknown={...book('empty-unknown'),publisher:'',pageCount:0,
   importProvenance:{fieldSources:Object.fromEntries(
     ['description','publisher','pageCount','coverUrl','tags']
       .map(field=>[field,{sourceType:'unknown'}]))}};
