@@ -65,6 +65,8 @@ Deze bestandstransacties vereisen dat alle schrijvende serverprocessen **hetzelf
 | `BOEKENBAAI_IMPORT_ENRICH_ISBN` | `true` | Zet op `true` om tijdens Excel-boekimport automatisch ontbrekende velden aan te vullen met ISBN-metadata. Kan per import worden overschreven met de payload-flag `enrichIsbn`. |
 | `BOEKENBAAI_ENABLE_ISBNBARCODE` | `true` | Zet op `true` om naast Open Library ook de ISBNBarcode.org API te raadplegen voor boekmetadata. Standaard staat alleen Open Library aan. |
 | `BOEKENBAAI_EASYCB_CONTACT` | `bibliotheek@example.org` | Optioneel contactadres dat EasyCB vereist voor automatisch herhaald gebruik. Zonder geldig adres geen EasyCB-verzoeken. Dit is geen betaalde API-sleutel en verstuurt geen e-mail. |
+| `BOEKENBAAI_BRAVE_API_KEY` | `alleen op de server` | Optionele geheime Brave Search-API-sleutel. Zet deze uitsluitend als omgevingsvariabele op Sliplane. Zonder sleutel is Brave uit; toestemming en voortgang blijven zichtbaar. |
+| `BOEKENBAAI_BRAVE_MONTHLY_CAP` | `600` | Optioneel lager maximum voor Brave-verzoeken vanuit Boekenbaai. Standaard 900, technisch nooit hoger dan 900 per UTC-kalendermaand. |
 | `BOEKENBAAI_ISBN_CACHE_TTL_MS` | `300000` | Tijd (in milliseconden) dat ISBN-metadata in het in-memory cache blijft staan. Resultaten – ook "niet gevonden" – verlopen standaard na 5 minuten. |
 | `DEPLOY_TARGET` | `gh-pages` | Gebruik deze tijdens het bouwen (`DEPLOY_TARGET=gh-pages npm run build`) om de Vite-base op `/Boekenbaai/` te zetten voor GitHub Pages. |
 
@@ -83,7 +85,7 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 
 ### Gratis boekverrijking na import (zonder extra API-kosten)
 
-- In de **nieuwe gecontroleerde Excelimport** staat het trage opzoeken van ISBN-gegevens tijdens de preview standaard **uit**. Als de Excelrij zonder extra informatie niet veilig te controleren is, kan de beheerder die optie zelf aanzetten.
+- In de **nieuwe gecontroleerde Excelimport** staat het opzoeken van ontbrekende ISBN-gegevens tijdens de preview standaard **aan**, omdat volledigheid vooropstaat. De beheerder kan deze stap desgewenst uitschakelen. De aanvullende EasyCB- en Brave-stappen blijven van de directe importbevestiging gescheiden.
 - Na het duurzaam opslaan start een **aparte, begrensde achtergrondverrijking**. De upload, review, uitleningen en importbevestiging wachten hier nooit op. Dezelfde routine werkt ook na de oude import en na het bijwerken van een boek. Bij een serverherstart worden nog ontbrekende gegevens hervat.
 - De gratis dienst **EasyCB** wordt alleen aangeroepen wanneer `BOEKENBAAI_EASYCB_CONTACT` een echt geldig contactadres bevat. De dienst verlangt dit bij herhaald geautomatiseerd gebruik. Er worden maximaal één ISBN-zoekactie tegelijk en niet vaker dan circa eens per 1,8 seconde gestart. Antwoorden hebben een timeout en fouten leiden niet tot onbegrensde herhaallussen.
 - Alleen boeken met een geldig ISBN én ontbrekende gegevens worden opgezocht. Wanneer een bestaande omslaglink na de gebruikelijke downloadpogingen aantoonbaar niet werkt, kan een nieuwe, gecontroleerde omslagbron worden geprobeerd. Handmatig of uit Excel gekozen omslaglinks blijven behouden. Fysieke exemplaren van dezelfde titel/uitgave delen de opzoekactie. Een exact ISBN en een overeenkomstige titel zijn verplicht voordat gegevens worden overgenomen.
@@ -91,6 +93,23 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 - Beheerders kunnen voortgang bekijken via `GET /api/admin/book-enrichment/status` (adminauthenticatie vereist). De uitslag bevat alleen aantallen, geen leerlinggegevens.
 - Deze eerste fase gebruikt een specifieke gratis, Nederlandstalige boekbron en de reeds bestaande HTML-uitleesfunctionaliteit van Bureau ISBN bij optionele ISBN-preview. Het is **geen onbeperkte algemene webzoekmachine**. Willekeurige webwinkels automatisch doorzoeken zonder toestemming of juiste rechten is niet ingebouwd.
 - De metadatahouder en de school moeten de voorwaarden en rechten voor overgenomen omslagbestanden en tekst controleren. Het kunnen opvragen van een bestand betekent niet automatisch dat herpublicatie is toegestaan. EasyCB is een gratis dienst van een derde partij die zonder garantie wordt aangeboden.
+
+### Uitgebreide zoekopdrachten met uitgestelde Brave-toestemming
+
+De gecontroleerde boekimport zoekt standaard ontbrekende informatie op via ISBN. Na het bevestigen worden de boeken **direct duurzaam opgeslagen**. EasyCB vult in de achtergrond aan (wanneer een geldig contactadres is ingesteld). Een afzonderlijke, eveneens duurzame `braveEnrichmentJobs`-taak blijft bewaard bij sluiten van de browser, opnieuw inloggen of serverherstart.
+
+1. De beheerpagina toont de nog ontbrekende informatie, het maximum van **drie Brave-verzoeken per onderscheiden boek**, het beschikbare budget en het aantal boeken waarvoor deze maand een volledige reservering past.
+2. De beheerder kan op een later moment toestemming geven. Er vinden **geen Brave-verzoeken vóór die expliciete goedkeuring** plaats. Je kunt de pagina meteen daarna verlaten. Een openstaande aanvraag verdwijnt niet.
+3. De server bevestigt de maand, het maximaal aantal verzoeken en het actuele budget onder database-lock. Ieder verzoek wordt **vóór het netwerkverzoek** in de database gereserveerd. Als de server daarna uitvalt, wordt hetzelfde verzoek niet automatisch nog eens verzonden.
+4. De zoekronde gebruikt eerst Brave Web Search en leest enkele relevante gevonden boekpagina's uit, controleert ISBN óf titel en auteur en haalt gestructureerde boekgegevens op (JSON-LD / HTML-meta). Bij gebrek aan een omslag volgt waar nodig Brave Image Search; bij onvoldoende verhaalgegevens kan nog één aanvullende zoekactie volgen.
+5. Een omslag van een andere uitgave van hetzelfde werk is toegestaan wanneer de identiteit betrouwbaar is vastgesteld. De bestaande veilige omslagdownload controleert de uiteindelijke afbeelding. Handmatig ingevoerde of vanuit Excel vastgestelde gegevens blijven behouden.
+6. Een quotum- of toegangsprobleem zet de taak veilig op pauze. De beheerder moet een nieuwe goedkeuring geven voor verdere verzoeken. De reeds verwerkte boeken en het verbruik blijven opgeslagen. Niet-volledig verwerkte boeken worden als zodanig geteld.
+
+Boekenbaai registreert uitsluitend het eigen gebruik en heeft een harde grens van **maximaal 900 verzoeken per UTC-kalendermaand** (of een lagere ingestelde grens). Deze veiligheidsmarge gaat uit van Brave Search met $5/1.000 verzoeken en $5 gratis tegoed per maand. De teller van Brave zelf kan afwijken, bijvoorbeeld als dezelfde API-sleutel elders gebruikt wordt of het krediet door een andere dienst wordt verbruikt. Om onbedoelde kosten echt uit te sluiten, moet in het Brave-account **betaald opwaarderen en automatisch opladen uitstaan**. Het providerquotum uit HTTP-headers is extra controle en bewijst niet hoeveel gratis geldtegoed resteert.
+
+Het zoeken en automatisch uitlezen respecteert veiligheidscontroles op externe adressen, beperkte paginagrootte en eenvoudige robots.txt-uitsluitingen. Een webpagina wordt alleen als bron voor boekgegevens gebruikt wanneer ISBN of titel én auteur voldoende overeenkomen. Er worden geen volledige Brave-zoekresultaten opgeslagen. Voor het herpubliceren van gekopieerde omslagen en teksten blijven de bronvoorwaarden gelden.
+
+Ook zonder recente Excelimport kan een beheerder vanuit de importpagina de **bestaande collectie controleren**. De leerling- en leenadministratie wordt daarbij niet verwijderd of opnieuw geïmporteerd. De Brave API-sleutel blijft buiten client-side code en HTTP-responses.
 
 ### Intern ISBN voor metadata
 
