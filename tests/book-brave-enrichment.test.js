@@ -67,6 +67,10 @@ assert.equal(claimNext(db,{now:december,env:environment}).step,0);
 assert.equal(db.braveUsage.month,'2026-12');
 assert.equal(db.braveUsage.reserved,1);
 assert.equal(MAX_REQUESTS_PER_WORK,3);
+finishClaim(db,{id:job.id,key:job.inFlight.key,step:job.inFlight.step});
+assert.equal(claimNext(db,{now:new Date('2027-01-01T09:00:00Z'),env:environment}),null);
+assert.equal(job.state,'paused','Changing free-credit month requires another approval');
+assert.equal(job.completedKeys.length,2,'Earlier works remain marked completed on a month change');
 
 const html=`<html><head>
 <meta property="og:title" content="De brief voor de koning | Uitgeverij"/>
