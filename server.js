@@ -4454,6 +4454,17 @@ async function handleApi(req, res, requestUrl) {
         coverUrl,
         localCoverUrl,
         coverCrop: normalizeCoverCrop(body.coverCrop),
+        // Newly entered data belongs to the administrator. Background
+        // enrichment must never reinterpret these fields as auto-generated.
+        importProvenance: {fieldSources:Object.fromEntries(
+          ['description','publisher','publishedYear','pageCount','coverUrl','tags']
+            .filter(field => {
+              const value={description:body.description,publisher,publishedYear,
+                pageCount,coverUrl,tags}[field];
+              return Array.isArray(value)?value.length>0
+                :value!==null&&value!==undefined&&String(value).trim()!=='';
+            }).map(field=>[field,createFieldSource('manual')])
+        )},
       };
       const quantity = parseQuantityInput(body.quantity, { defaultValue: 1 });
       const createdBooks = [];
@@ -4590,6 +4601,9 @@ async function handleApi(req, res, requestUrl) {
       const nextLocalCoverUrl = nextCoverUrl === resolveEffectiveCoverUrl(previousCoverUrl)
         ? cachedEditionCover
         : (hasCoverUrl ? preparedLocalCoverUrl : '');
+      const previousManualValues=Object.fromEntries(
+        ['description','publisher','publishedYear','pageCount','coverUrl','tags']
+          .map(field=>[field,book[field]]));
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -4615,6 +4629,17 @@ async function handleApi(req, res, requestUrl) {
         localCoverUrl: nextLocalCoverUrl,
         coverCrop: nextCoverCrop,
       });
+      const changedManualFields = [];
+      for (const field of ['description','publisher','publishedYear','pageCount','coverUrl','tags']) {
+        if (JSON.stringify(previousManualValues[field]) !== JSON.stringify(book[field]))
+          changedManualFields.push(field);
+      }
+      if (changedManualFields.length) {
+        const provenance=normalizeBookImportProvenance(book.importProvenance) || {fieldSources:{}};
+        for (const field of changedManualFields)
+          provenance.fieldSources[field]=createFieldSource('manual');
+        book.importProvenance=provenance;
+      }
       // If title/author/ISBN changed, this copy moved to another catalog
       // edition. Do not overwrite artwork on the edition it just left.
       if ((hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop'))
@@ -4625,6 +4650,11 @@ async function handleApi(req, res, requestUrl) {
           copy.coverUrl = nextCoverUrl;
           copy.localCoverUrl = book.localCoverUrl;
           copy.coverCrop = nextCoverCrop;
+          if (changedManualFields.includes('coverUrl')) {
+            const provenance=normalizeBookImportProvenance(copy.importProvenance) || {fieldSources:{}};
+            provenance.fieldSources.coverUrl=createFieldSource('manual');
+            copy.importProvenance=provenance;
+          }
         }
       }
       if (quantityChange !== 0) {
@@ -5042,12 +5072,19 @@ async function handleApi(req, res, requestUrl) {
         configured: braveWorker.configured,
         freeConfigured: freeMetadataWorker.enabled,
         usage: currentUsage(db),
-        jobs: (Array.isArray(db.braveEnrichmentJobs) ? db.braveEnrichmentJobs : [])
-          .slice(-30).reverse().map(job => getJobPlan(db, job, {
-            braveConfigured: braveWorker.configured,
-            easyCbEnabled: freeMetadataWorker.enabled,
-            failedCovers: exhaustedCoverSourceUrls(),
-          })),
+        jobs: (()=>{
+          const plans=(Array.isArray(db.braveEnrichmentJobs) ? db.braveEnrichmentJobs : [])
+            .map(job=>getJobPlan(db,job,{
+              braveConfigured:braveWorker.configured,
+              easyCbEnabled:freeMetadataWorker.enabled,
+              failedCovers:exhaustedCoverSourceUrls(),
+            }));
+          // Every pending or paused task remains accessible regardless of age;
+          // limit only completed history, not delayed approvals.
+          return [...plans.filter(job=>job.state!=='complete'),
+            ...plans.filter(job=>job.state==='complete').slice(-12)]
+            .sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+        })(),
       });
     }
     if (requestUrl.pathname === braveRoot + '/scan' && req.method === 'POST') {
@@ -5059,9 +5096,18 @@ async function handleApi(req, res, requestUrl) {
         lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 5000,read:()=>loadDb(),
         mutate:db=>{
           // Existing uncompleted collection scans should be resumed, not duplicated.
-          if(!(db.braveEnrichmentJobs||[]).some(j=>j.source==='collection'&&j.state!=='complete')){
+          const activeCollection=(db.braveEnrichmentJobs||[]).some(job=>{
+            if(job.source!=='collection')return false;
+            const plan=getJobPlan(db,job,{
+              braveConfigured:braveWorker.configured,
+              easyCbEnabled:freeMetadataWorker.enabled,
+              failedCovers:exhaustedCoverSourceUrls(),
+            });
+            // Stored awaiting_free can already be effectively complete.
+            return plan.state==='running'||plan.waitingFree>0||plan.needsBrave>0;
+          });
+          if(!activeCollection)
             added=addJob(db,db.books.map(book=>book.id),{source:'collection'});
-          }
           return db;
         },
       });
