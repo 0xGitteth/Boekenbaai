@@ -155,6 +155,72 @@ assert.equal(spacedIsbn.entry.isbn,'9780306406157',
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'',author:'X'},'solo',now),/titel en auteur/i);
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',pageCount:-4},'solo',now),/pagina/i);
 assert.throws(()=>addExternalBook(privateDb,'solo',{title:'X',author:'Y',isbn:'1234567890123'},'solo',now),/controlecijfer/i);
+
+const sameTitleDb={books:[],students:[{id:'solo'}],examReadingLists:[],readingRecords:[]};
+const bookA=addExternalBook(sameTitleDb,'solo',{
+  title:'Dezelfde titel',author:'Auteur',isbn:'9780140328721',
+},'solo',now);
+const bookB=addExternalBook(sameTitleDb,'solo',{
+  title:'Dezelfde titel',author:'Auteur',isbn:'9780306406157',
+},'solo',now);
+assert.equal(bookA.created,true);
+assert.equal(bookB.created,true,'Distinct explicit ISBNs must remain distinct list entries');
+sameTitleDb.readingRecords.push({
+  subjectType:'student',subjectId:'solo',bookId:'x',title:'Dezelfde titel',
+  author:'Auteur',isbn:'9780306406157',editionKey:'isbn13||9780306406157',finished:true,
+});
+assert.equal(publicEntry(sameTitleDb,bookA.entry).readFromReturn,false,
+  'Different explicit ISBN must not mark an external book read');
+assert.equal(publicEntry(sameTitleDb,bookB.entry).readFromReturn,true);
+
+// The historic "isbn" column can hold a physical barcode that happens
+// to have valid ISBN digits. An explicit legacy key must take precedence.
+const barcodeDb={books:[],students:[{id:'student-a',classIds:['klas-a']}],
+  classes:db.classes,examReadingLists:[],readingRecords:[]};
+const externalMatching=addExternalBook(barcodeDb,'student-a',{
+  title:'Barcode als ISBN',author:'Auteur B',isbn:'9780140328721',
+},'student-a',now);
+const physical={id:'copy-barcode',title:'Barcode als ISBN',author:'Auteur B',
+  barcode:'9780306406157',suitableForExamList:true};
+barcodeDb.books.push(physical);
+const barcodeReturn=createReturnReadingRecord({
+  db:barcodeDb,book:physical,student:barcodeDb.students[0],
+  finished:true,actorId:'teacher-a',now,
+});
+assert.match(barcodeReturn.editionKey,/^legacy\|\|/,
+  'A copy barcode must not become an official edition identifier');
+assert.equal(barcodeReturn.isbn,'9780306406157');
+assert.equal(publicEntry(barcodeDb,externalMatching.entry).readFromReturn,true,
+  'A legacy return must still match the external title despite ISBN-like barcode digits');
+assert.equal(synchronizeReturn(barcodeDb,barcodeReturn,now)?.id,externalMatching.entry.id,
+  'The matched private title must not be added a second time');
+assert.equal(barcodeDb.examReadingLists.length,1);
+
+const newerBorrowedAt='2026-11-12T07:30:00.000Z';
+const periodStudent={...student,borrowedBooks:[{bookId:a.id,borrowedAt:newerBorrowedAt}]};
+const periodDb={books:[{...a,borrowedAt:newerBorrowedAt}],students:[periodStudent],
+  classes:db.classes,examReadingLists:[],readingRecords:[]};
+const periodEntry=addBook(periodDb,'student-a',a,'teacher-a',now).entry;
+changeStatus(periodEntry,'aan_het_lezen','teacher-a',now);
+periodEntry.autoCurrentLoan=true;
+periodEntry.autoLoanBookId=a.id;
+periodEntry.autoLoanBorrowedAt=newerBorrowedAt;
+const priorReturn={subjectType:'student',subjectId:'student-a',
+  bookId:a.id,editionKey:keyForBook(a),title:a.title,author:a.author,
+  loanBorrowedAt:'2026-10-12T07:30:00.000Z',reportedBy:'teacher-a',
+  suitableForExamList:true,finished:false};
+synchronizeReturn(periodDb,priorReturn,now);
+assert.equal(periodEntry.autoCurrentLoan,true,
+  'Editing an earlier loan must not clear the current automatic reading status');
+assert.equal(periodEntry.manualStatus,'aan_het_lezen');
+synchronizeReturn(periodDb,{...priorReturn,loanBorrowedAt:newerBorrowedAt},now);
+assert.equal(periodEntry.autoCurrentLoan,false);
+assert.equal(periodEntry.manualStatus,'nog_lezen',
+  'Returning the tracked current period must clear its automatic status');
+const serverSource=fs.readFileSync(path.join(__dirname,'../server.js'),'utf8');
+assert.match(serverSource,/autoLoanBookId = book\.id/);
+assert.match(serverSource,/autoLoanBorrowedAt = now/);
+
 for (const name of ['server.js', 'public/personal-exam-reading-list.js']) {
   execFileSync(process.execPath, ['--check', path.join(__dirname, '..', name)], { stdio: 'pipe' });
 }

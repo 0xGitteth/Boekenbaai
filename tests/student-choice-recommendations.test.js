@@ -68,6 +68,32 @@ assert.ok(newSurprises.suggestions.every(item=>!mixed.suggestions.some(old=>old.
 const personalizedSurprises=rankBooks(borrowedDb,{route:'surprise',seed:'fixed'},{studentId:'s'});
 assert.ok(personalizedSurprises.suggestions.every(item=>item.title!=='Vreemde wereld'),
   'Already read titles remain excluded even in surprise mode');
+const manuallyRead={...db,examReadingLists:[{
+  studentId:'s',externalSource:false,manualStatus:'gelezen',
+  title:'Geheim van de stad',author:'Schrijver Geheim van de stad',
+}]};
+const historySignals=readKeysAndThemes(manuallyRead,'s',groupBooks(manuallyRead));
+assert.ok(historySignals.readKeys.has(keyOf(db.books[0])),
+  'A manually read catalogue book must be included in read signals');
+assert.ok(historySignals.themes.has('mysterie'));
+assert.ok(!rankBooks(manuallyRead,{route:'similar',seed:'manual'},{studentId:'s'})
+  .suggestions.some(x=>x.title==='Geheim van de stad'),
+  'Read catalogue titles must not be recommended again');
+assert.equal(readKeysAndThemes(manuallyRead,'t',groupBooks(manuallyRead)).readKeys.size,1,
+  'Reading signals must remain restricted to the active learner');
+
+const scarceDb={books:[
+  book('v1','Beschikbaar 1',['Avontuur']),
+  book('v2','Beschikbaar 2',['Avontuur']),
+  ...Array.from({length:6},(_,i)=>({
+    ...book('z'+i,'Uitgeleend '+i,['Mysterie']),status:'borrowed',
+  })),
+]};
+const scarce=rankBooks(scarceDb,{route:'surprise',seed:'0'});
+assert.equal(scarce.suggestions.length,3);
+assert.ok(scarce.suggestions.slice(0,2).every(x=>x.available>0),
+  'Every available title must be selected before unavailable suggestions');
+
 const empty=rankBooks({books:[]},{});
 assert.equal(empty.emptyCatalog,true);
 assert.equal(empty.suggestions.length,0);

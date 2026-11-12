@@ -78,7 +78,11 @@
       ? make('img', 'bb-profile-book-cover')
       : make('div', 'bb-profile-book-cover bb-profile-book-cover--fallback', 'BOEK');
     if (entry.coverUrl) {
-      cover.src = entry.coverUrl; cover.alt = ''; cover.loading = 'lazy';
+      // Cached cover URLs are served by the API origin, which can be
+      // different from a separately hosted static frontend's origin.
+      cover.src = /^\/api\/covers\/[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/i.test(entry.coverUrl)
+        ? route(entry.coverUrl) : entry.coverUrl;
+      cover.alt = ''; cover.loading = 'lazy';
       cover.addEventListener('error', () => {
         cover.replaceWith(make('div', 'bb-profile-book-cover bb-profile-book-cover--fallback', 'BOEK'));
       }, { once: true });

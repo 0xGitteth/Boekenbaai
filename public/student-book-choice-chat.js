@@ -415,7 +415,7 @@
         options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
       }else{
         notice(err.message);
-        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',askSituation]]);
+        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices.route='new';askSituation();}]]);
       }
     }finally{busy=false;}
   }
@@ -425,19 +425,31 @@
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
         ? [['Ontdek mijn interesses',()=>{choices={route:'new'};askActivity();}]]
-        : [['Andere richting',askSituation],
+        : [['Andere richting',()=>{choices.route='new';askSituation();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
         if(busy)return;busy=true;
+        const marker=epoch;
         try{
           await api('/api/auth/student-pin/choice-reset',grant?{choiceGrant:grant}:{});
+          if(!active||marker!==epoch)return;
           seenInTab.clear();shownInDialogue.clear();
           message('Je eerdere aanbevelingen zijn gewist. We beginnen weer zonder eerdere voorstellen.');
           finishIdentity();
-        }catch(err){notice(err.message);}finally{busy=false;}
+        }catch(err){
+          if(!active||marker!==epoch)return;
+          if(err.status===401&&grant){
+            grant='';personal=false;firstName='';
+            message('Je persoonlijke sessie is verlopen. Je kunt opnieuw met je PIN aanmelden of zonder inloggen verder.');
+            options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
+          }else{
+            notice(err.message);
+            followupButtons(false);
+          }
+        }finally{busy=false;}
       }]]:[]),
     ]);
   }

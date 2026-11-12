@@ -245,9 +245,12 @@ function finishClaim(db,claim,{providerRemaining=null,error=null}={}) {
       Number.isSafeInteger(db.braveUsage.providerRemaining) ? db.braveUsage.providerRemaining : Infinity,
       providerRemaining);
   }
-  if (error==='rate_limited'||error==='payment_required'||error==='unauthorized') {
+  if (error) {
+    // A provider outage must not silently consume the other approved
+    // searches and mark an unfinished work complete. Keep all reservations
+    // charged, pause the current work and require a fresh explicit approval.
     pauseActiveChunk(job,error);
-  } else if (error) job.lastError=error;
+  }
   job.updatedAt=new Date().toISOString();
 }
 module.exports={MAX_REQUESTS_PER_WORK,HARD_MONTHLY_CAP,monthKey,monthlyCap,

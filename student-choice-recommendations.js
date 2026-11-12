@@ -84,7 +84,7 @@ function readKeysAndThemes(db, studentId, works) {
     if (byKey.has(key)) readKeys.add(key);
   }
   for (const item of db.examReadingLists || []) {
-    if (item?.studentId !== studentId || item.externalSource !== true || item.manualStatus !== 'gelezen') continue;
+    if (item?.studentId !== studentId || item.manualStatus !== 'gelezen') continue;
     const key = keyOf(item);
     if (byKey.has(key)) readKeys.add(key);
   }
@@ -115,7 +115,8 @@ function surpriseBooks(db, candidates, limit) {
   const remaining = candidates.slice().sort((a,b) =>
     a.tiebreak-b.tiebreak || a.work.title.localeCompare(b.work.title,'nl'));
   const available = remaining.filter(item => item.work.available > 0);
-  const pool = available.length >= Math.min(3,limit) ? available : remaining;
+  // Prefer lendable books even when fewer than three are available.
+  const pool = available.length ? available : remaining;
   const selected = [];
   const pick = (item,reason) => {
     if(!item || selected.some(x=>x.work.key===item.work.key))return;
@@ -134,6 +135,11 @@ function surpriseBooks(db, candidates, limit) {
     }
   }
   for(const item of pool) {
+    if(selected.length >= limit)break;
+    pick(item,'Een willekeurige keuze uit de bibliotheek');
+  }
+  // Only the missing slots can be filled by currently unavailable titles.
+  for(const item of remaining) {
     if(selected.length >= limit)break;
     pick(item,'Een willekeurige keuze uit de bibliotheek');
   }

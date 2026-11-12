@@ -15,7 +15,7 @@ function normalize(value) {
 }
 function sameWorkTitle(targetTitle,candidateTitle,author='') {
   const expected=normalize(targetTitle);
-  if(expected.length<4)return false;
+  if(!expected)return false;
   // Publisher or shop names following a vertical bar are not part of
   // bibliographic titles. Do not treat an unseparated longer title (e.g.
   // "Dune Messiah") as an edition of "Dune".
@@ -194,7 +194,7 @@ function parseBookPage(html,target,url) {
 // Safeguarded remote HTML retrieval: DNS pinning, public IPv4 only,
 // HTTPS only, bounded payload, redirects and end-to-end timeout.
 async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
-  dnsLookup=dns.lookup,httpsGet=https.get}={}) {
+  dnsLookup=dns.lookup,httpsGet=https.get,allowRedirect=null}={}) {
   const ctl=new AbortController();
   let timeout;
   try {
@@ -234,7 +234,12 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
         req.on('error',reject);
       });
       if(result.redirect){
-        current=new URL(result.redirect,parsed).href;
+        const next=new URL(result.redirect,parsed).href;
+        // The destination can be a different path or host. Require a fresh
+        // robots.txt decision before opening the redirected HTML page.
+        if(typeof allowRedirect==='function' && !(await allowRedirect(next)))
+          return {error:'robots_disallowed'};
+        current=next;
         continue;
       }
       return {...result,finalUrl:parsed.href};
@@ -293,21 +298,26 @@ function robotsAllowed(content,path){
 async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) {
   const candidates=Array.isArray(search?.pages)?search.pages:[];
   const outputs=[];const visited=new Set();const robots=new Map();
+  async function allowedPage(url){
+    let u;
+    try{u=safeCoverUrl(url);if(u.protocol!=='https:')return false;}catch{return false;}
+    const root=u.origin;
+    if(!robots.has(root)){
+      const response=await fetchPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
+      // A missing or unreachable robots.txt never authorizes extra crawling.
+      robots.set(root,response?.error || (response?.status && ![200,404].includes(response.status))
+        ? null : (response?.body ?? ''));
+    }
+    return robots.get(root)!==null && robotsAllowed(robots.get(root),u.pathname+u.search);
+  }
   for(const candidate of candidates){
     if(outputs.length>=maxPages)break;
     // Search metadata is only used for coarse preselection.
     if(!normalize(candidate.title).includes(normalize(target.title)))continue;
     let u;try{u=safeCoverUrl(candidate.url);if(u.protocol!=='https:')continue;}catch{continue;}
     if(visited.has(u.href))continue;visited.add(u.href);
-    const root=u.origin;
-    if(!robots.has(root)){
-      const response=await fetchPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
-      // A failed robots lookup must not silently authorize crawling.
-      robots.set(root,response?.error || (response?.status && ![200,404].includes(response.status))
-        ? null : (response?.body ?? ''));
-    }
-    if(robots.get(root)===null || !robotsAllowed(robots.get(root),u.pathname))continue;
-    const page=await fetchPage(u.href);
+    if(!(await allowedPage(u.href)))continue;
+    const page=await fetchPage(u.href,{allowRedirect:allowedPage});
     if(!page?.body)continue;
     const parsed=parseBookPage(page.body,target,page.finalUrl||u.href);
     if(parsed)outputs.push(parsed);
