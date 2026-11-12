@@ -28,6 +28,8 @@ const makeResponse=(status,body)=>({
 });
 let resolvePin;
 let loggedIn=false;
+let failSuggest=false;
+let resetStatus=200;
 const invalidated=[];
 const suggestRequests=[];
 const fetchStub=async (url,options={})=>{
@@ -45,11 +47,14 @@ const fetchStub=async (url,options={})=>{
   }
   if(url==='/api/auth/student-pin/choice-suggest'){
     suggestRequests.push(JSON.parse(options.body));
+    if(failSuggest)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
     return makeResponse(200,{suggestions:[1,2,3].map(i=>({
       key:String(i),bookId:'book-'+i,title:'Titel '+i,author:'Auteur',
       reason:'Een willekeurige keuze uit de bibliotheek',available:1,
     }))});
   }
+  if(url==='/api/auth/student-pin/choice-reset')
+    return makeResponse(resetStatus,resetStatus===200?{ok:true}:{message:'Wissen mislukt'});
   if(url==='/api/books')return makeResponse(200,[1,2,3].map(i=>({
     id:'book-'+i,title:'Titel '+i,author:'Auteur',status:'available',
   })));
@@ -150,5 +155,38 @@ vm.runInNewContext(code,{
     ['Ja, graag','Nee, liever iets anders']);
   actions.children[0].listeners.click();
   assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat doe je graag in je vrije tijd?'));
-  console.log('Choice chat: approved route text, two choices, instant books and private personal preferences: OK');
+
+  // Reset errors must leave meaningful actions available. The option click
+  // itself clears all buttons before the API request begins.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Laat me drie boeken zien').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(actions.children.some(x=>x.textContent==='Mijn eerdere aanbevelingen wissen'));
+  resetStatus=503;
+  actions.children.find(x=>x.textContent==='Mijn eerdere aanbevelingen wissen').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(actions.children.some(x=>x.textContent==='Mijn eerdere aanbevelingen wissen'),
+    'A failed reset must restore the available chat actions');
+  resetStatus=200;
+
+  // After surprise fails, "Andere richting" must use the answers rather
+  // than accidentally submitting the surprise route again.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  failSuggest=true;
+  actions.children.find(x=>x.textContent==='Laat me drie boeken zien').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(actions.children.some(x=>x.textContent==='Andere richting'));
+  actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
+  failSuggest=false;
+  actions.children.find(x=>x.textContent==='Iemand ontdekt een geheim').listeners.click();
+  actions.children.find(x=>x.textContent==='Spannend verhaal').listeners.click();
+  actions.children.find(x=>x.textContent==='Maakt niet uit').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.at(-1).choices.route,'new',
+    'The fallback questionnaire must use the answered route, not surprise');
+  console.log('Choice chat: approved route text, reset recovery, fallback routing and privacy: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});

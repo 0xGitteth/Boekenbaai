@@ -55,15 +55,27 @@ function snapshot(book) {
   };
 }
 
+function isbnIdentity(item) {
+  const saved=String(item?.editionKey||'');
+  if(/^isbn13\|\|\d{13}$/.test(saved))return saved;
+  const key=getEditionKey({metadataIsbn:String(item?.isbn||item?.editionIsbn||item?.metadataIsbn||'')});
+  return key?.startsWith('isbn13||')?key:'';
+}
+function sameTitleAuthorWithoutIsbnConflict(left,right) {
+  const normalize=value=>String(value||'').normalize('NFKC').trim()
+    .replace(/\s+/g,' ').toLocaleLowerCase('nl-NL');
+  const l=isbnIdentity(left),r=isbnIdentity(right);
+  return !(l&&r&&l!==r)
+    && normalize(left?.title)===normalize(right?.title)
+    && normalize(left?.author)===normalize(right?.author);
+}
+
 function recordsFor(db, studentId, key, entry = null) {
-  const normalize = value => String(value || '').normalize('NFKC').trim()
-    .replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
   return (db.readingRecords || []).filter(record =>
     record.subjectType === 'student' && record.subjectId === studentId &&
     (keyForReading(record, db) === key ||
       (entry?.externalSource === true &&
-        normalize(record.title) === normalize(entry.title) &&
-        normalize(record.author) === normalize(entry.author))));
+        sameTitleAuthorWithoutIsbnConflict(entry,record))));
 }
 
 function getEntries(db, studentId) {
@@ -185,10 +197,8 @@ function addExternalBook(db, studentId, input, actorId, now) {
   if (isbn && !String(getEditionKey(book) || '').startsWith('isbn13||')) {
     throw new Error('Het ISBN heeft een ongeldig controlecijfer.');
   }
-  const normalized = value => String(value || '').normalize('NFKC')
-    .trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
   const existing = getEntries(db, studentId).find(entry =>
-    normalized(entry.title) === normalized(title) && normalized(entry.author) === normalized(author));
+    sameTitleAuthorWithoutIsbnConflict(entry,{title,author,isbn}));
   if (existing) return { entry: existing, created: false };
   const result = addBook(db, studentId, book, actorId, now);
   if (result.created) {
@@ -209,11 +219,26 @@ function synchronizeReturn(db, record, now) {
   // "Nog lezen", not incorrectly remain "Aan het lezen".
   const returningKey = keyForReading(record, db);
   const onList = getEntries(db, record.subjectId).find(entry => entry.editionKey === returningKey);
-  if (onList?.autoCurrentLoan === true) {
-    onList.autoCurrentLoan = false;
-    if (onList.manualStatus === 'aan_het_lezen') {
-      changeStatus(onList, 'nog_lezen', record.reportedBy, now);
-    }
+  // A corrected answer from an earlier loan period must not undo a new
+  // automatic "Aan het lezen" status for the same edition or same copy.
+  const currentLoan=(student.borrowedBooks||[]).find(item=>
+    (typeof item==='string'?item:item.bookId)===record.bookId);
+  const borrowedAt=typeof currentLoan==='string'
+    ? (db.books||[]).find(book=>book.id===record.bookId)?.borrowedAt
+    : currentLoan?.borrowedAt;
+  const recordedPeriod=Boolean(record.bookId&&record.loanBorrowedAt);
+  const sameTrackedPeriod=recordedPeriod&&onList?.autoLoanBookId===record.bookId
+    &&onList?.autoLoanBorrowedAt===record.loanBorrowedAt;
+  // Legacy markers without a loan-period ID may only be undone at the
+  // actual current return, never by changing an earlier reading answer.
+  const sameLegacyPeriod=recordedPeriod&&!onList?.autoLoanBookId
+    &&!onList?.autoLoanBorrowedAt&&borrowedAt===record.loanBorrowedAt;
+  if(onList?.autoCurrentLoan===true&&(sameTrackedPeriod||sameLegacyPeriod)){
+    onList.autoCurrentLoan=false;
+    delete onList.autoLoanBookId;
+    delete onList.autoLoanBorrowedAt;
+    if(onList.manualStatus==='aan_het_lezen')
+      changeStatus(onList,'nog_lezen',record.reportedBy,now);
   }
   if (record.finished !== true) return null;
   // The confirmed reader is the student, even when staff submitted the return.
@@ -230,8 +255,7 @@ function synchronizeReturn(db, record, now) {
   const existing = getEntries(db, record.subjectId)
     .find(entry => entry.editionKey === matchingKey ||
       (entry.externalSource === true &&
-        String(entry.title || '').trim().toLowerCase() === String(record.title || '').trim().toLowerCase() &&
-        String(entry.author || '').trim().toLowerCase() === String(record.author || '').trim().toLowerCase()));
+        sameTitleAuthorWithoutIsbnConflict(entry,record)));
   if (existing) return existing;
   // Use the immutable identity captured at check-in. Reconstructing a book
   // from one ISBN could otherwise merge two different editions and then

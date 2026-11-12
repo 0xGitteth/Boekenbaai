@@ -145,6 +145,19 @@ assert.equal(parseBookPage(html,{...target,title:'Verkeerd boek',isbn:'978902586
 assert.equal(parseBookPage(html,target,'http://localhost/book'),null);
 assert.equal(matchTitleAuthor(target,{title:'De brief voor de koning',author:'Tonke Dragt'}),true);
 assert.equal(matchTitleAuthor(target,{title:'De brief voor de koning',author:'Anders'}),false);
+
+assert.equal(sameWorkTitle('It','It','Stephen King'),true,
+  'Two-letter titles are valid when they match exactly');
+assert.equal(matchTitleAuthor({title:'It',author:'Stephen King'},
+  {title:'It Stephen King'}),true);
+assert.equal(selectImageResult([{title:'It Stephen King',imageUrl:'https://example.org/it.jpg',
+  width:300,height:450}],{title:'It',author:'Stephen King',isbn:'9780306406157'}),
+  'https://example.org/it.jpg');
+const shortPage=`<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Book","name":"It",
+"author":{"name":"Stephen King"},"isbn":"9780306406157"}</script>`;
+assert.equal(parseBookPage(shortPage,{title:'It',author:'Stephen King',
+  isbn:'9780306406157'},'https://example.org/it')?.confidence,'isbn');
 assert.equal(sameWorkTitle('Dune','Dune Messiah','Frank Herbert'),false,
   'A sequel is a different work despite sharing the first word');
 assert.equal(matchTitleAuthor({title:'Dune',author:'Frank Herbert'},
@@ -214,6 +227,54 @@ async function run(){
     ?{error:'request_error'}:{body:html}});
   assert.equal(blocked.length,0,
     'If robots.txt is unreachable, page crawling is not authorized');
+
+  // The remote request must never reach a disallowed redirect target.
+  const attemptedPages=[];
+  const robotsRedirect=await discoverPages({pages:[
+    {title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/open'},
+  ]},target,{fetchPage:async(url,opts={})=>{
+    if(url.endsWith('/robots.txt'))return {body:'User-agent: *\nDisallow: /blocked\nAllow: /open'};
+    return fetchHtml(url,{
+      ...opts,dnsLookup:async()=>[{address:'8.8.8.8'}],
+      httpsGet:(location,_opts,respond)=>{
+        attemptedPages.push(location.pathname);
+        const request=new EventEmitter(),response=new EventEmitter();
+        response.statusCode=302;
+        response.headers={location:'/blocked/book'};
+        response.resume=()=>{};
+        respond(response);
+        return request;
+      },
+    });
+  }});
+  assert.equal(robotsRedirect.length,0);
+  assert.deepEqual(attemptedPages,['/open'],
+    'Never fetch a redirect landing in a robots-disallowed path');
+
+  const otherHostRequests=[];
+  const crossHost=await discoverPages({pages:[
+    {title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/open'},
+  ]},target,{fetchPage:async(url,opts={})=>{
+    if(url.endsWith('/robots.txt')){
+      return {body:url.includes('verkeerde.nl')
+        ? 'User-agent: *\nDisallow: /' : 'User-agent: *\nAllow: /'};
+    }
+    return fetchHtml(url,{
+      ...opts,dnsLookup:async()=>[{address:'8.8.8.8'}],
+      httpsGet:(location,_opts,respond)=>{
+        otherHostRequests.push(location.hostname);
+        const request=new EventEmitter(),response=new EventEmitter();
+        response.statusCode=302;
+        response.headers={location:'https://www.verkeerde.nl/blocked/book'};
+        response.resume=()=>{};
+        respond(response);
+        return request;
+      },
+    });
+  }});
+  assert.equal(crossHost.length,0);
+  assert.deepEqual(otherHostRequests,['www.uitgeverijvoorbeeld.nl'],
+    'Check the destination host robots.txt before following its redirect');
 
   // A redirected landing page can have image: "cover.jpg"; resolve it
   // against the actual response location rather than the original link.
@@ -312,6 +373,34 @@ async function run(){
 
   // A failed provider request never continues silently. Another approval
   // is required and all past debits remain in the persistent ledger.
+  const tempDb={books:[book('transient')],braveEnrichmentJobs:[]};
+  const transientJob=addJob(tempDb,['transient'],{id:'transient-error'});
+  assert.equal(approveJob(tempDb,transientJob.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const transientClaim=claimNext(tempDb,{now,env:environment});
+  finishClaim(tempDb,transientClaim,{error:'timeout'});
+  assert.equal(transientJob.state,'paused');
+  assert.equal(transientJob.completedKeys.length,0,
+    'Three permitted searches must not mark a failed work complete');
+  assert.equal(tempDb.braveUsage.reserved,1,'The failed request stays debited');
+  assert.equal(getJobPlan(tempDb,transientJob,{braveConfigured:true,now,env:environment}).canApprove,true);
+
+  const workerErrorDb={books:[book('worker-error')],braveEnrichmentJobs:[]};
+  const workerErrorJob=addJob(workerErrorDb,['worker-error'],{id:'worker-error'});
+  assert.equal(approveJob(workerErrorDb,workerErrorJob.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  let failedSearchCount=0;
+  const failedWorker=createBraveWorker({
+    apiKey:'test-only-key',loadDb:()=>workerErrorDb,
+    commit:async(fn)=>fn(workerErrorDb),delayMs:50,
+    fetchSearch:async()=>{failedSearchCount++;return {error:'request_error'};},
+  });
+  failedWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,320));
+  assert.equal(failedSearchCount,1,'A transient outage must not spend the rest of the budget');
+  assert.equal(workerErrorJob.state,'paused');
+  assert.equal(workerErrorJob.completedKeys.length,0);
+  failedWorker.stop();
   const db4={books:[book('z')],braveEnrichmentJobs:[]};
   const paused=addJob(db4,['z'],{id:'paused'});
   assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,

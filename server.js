@@ -7210,6 +7210,8 @@ async function handleApi(req, res, requestUrl) {
         if (listed.created || listed.entry.manualStatus === 'nog_lezen') {
           changeExamStatus(listed.entry, 'aan_het_lezen', checkoutUser.id, now);
           listed.entry.autoCurrentLoan = true;
+          listed.entry.autoLoanBookId = book.id;
+          listed.entry.autoLoanBorrowedAt = now;
         }
       }
       appendHistory(db, student ? {

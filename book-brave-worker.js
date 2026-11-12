@@ -147,10 +147,9 @@ function createBraveWorker({
       }
       if(stopped)return;
       if(outcome?.newCover)onNewCover();
-      // Stop after 429, missing entitlement or paid quota. No silent
-      // repeated retries and no new approval without an explicit action.
-      if(['rate_limited','unauthorized','payment_required'].includes(bad))
-        keepGoing=false;
+      // Any provider/search error pauses this job. No later step is issued
+      // automatically until an administrator reviews the status and approves.
+      if(bad)keepGoing=false;
     }catch(error) {
       logger.warn?.('Brave-verrijking onderbroken:',error?.message||String(error));
       // A database failure must not depend on a browser being open.

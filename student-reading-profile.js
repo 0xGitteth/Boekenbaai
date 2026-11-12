@@ -10,8 +10,13 @@ function safeDate(value) {
   return d && Number.isFinite(d.getTime()) ? d : null;
 }
 function safeCover(book) {
-  const url = typeof book?.coverUrl === 'string' ? book.coverUrl.trim() : '';
-  return /^(https?:\/\/|\/(?!\/))/.test(url) ? url.slice(0, 2048) : '';
+  // The locally cached copy remains usable if the external host disappears.
+  // Validate both candidates and prefer our own cached cover.
+  for(const candidate of [book?.localCoverUrl,book?.coverUrl]){
+    const url=typeof candidate==='string'?candidate.trim():'';
+    if(/^(https?:\/\/|\/(?!\/))/.test(url))return url.slice(0,2048);
+  }
+  return '';
 }
 function tagsFor(book) {
   return Array.isArray(book?.tags)

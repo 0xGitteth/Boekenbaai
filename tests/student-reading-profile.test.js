@@ -41,5 +41,15 @@ assert.equal(buildStudentReadingProfile(db,'s1',{page:0,pageSize:2}).nextPage,1)
 assert.equal(buildStudentReadingProfile(db,'not-found'),null);
 const dates=new Set();assert.equal(addWeekdays(dates,'invalid','2026-11-05'),false);
 assert.equal(safeCover({coverUrl:'javascript:alert(1)'}),'');
+assert.equal(safeCover({
+  localCoverUrl:'/api/covers/1234.jpg',
+  coverUrl:'https://unreachable.example/old.jpg',
+}),'/api/covers/1234.jpg',
+  'The cached cover must be preferred over a broken external URL');
+assert.equal(safeCover({
+  localCoverUrl:'javascript:alert(1)',
+  coverUrl:'https://example.org/fallback.jpg',
+}),'https://example.org/fallback.jpg',
+  'An unsafe cached URL must fall back to the validated external URL');
 assert.ok(safeCover({coverUrl:'/covers/local.jpg'}));
 console.log('Student reading overview and statistics: OK');
