@@ -199,7 +199,7 @@
           braveItems.append(make('p', 'hint',
             'Na een boekimport verschijnt hier hoeveel titels nog extra onderzoek nodig hebben.'));
         }
-        for (const job of jobs.slice(0, 12)) {
+        for (const job of jobs) { // Includes every pending approval, even older imports.
           const item = make('div', 'bb-review__brave-job');
           const name = job.source === 'collection' ? 'Bestaande collectie'
             : (job.fileName || 'Boekimport');
@@ -220,7 +220,8 @@
               + ' verzoeken gereserveerd. Je kunt deze pagina sluiten.';
           } else if (job.state === 'paused') {
             details.textContent = 'Onderzoek gepauzeerd (' + (job.lastError || 'onbekende reden')
-              + '). Voortgang is bewaard. Er worden geen nieuwe zoekopdrachten uitgevoerd.';
+              + '). Voortgang is bewaard. Je kunt later opnieuw toestemming geven '
+              + 'nadat het probleem is verholpen.';
           } else {
             details.textContent = 'Zoekronde afgerond: ' + job.completedWorks + ' titels onderzocht. '
               + (job.withoutCover || 0) + ' titels hebben nog geen werkende omslaglink en '
