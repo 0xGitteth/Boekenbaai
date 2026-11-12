@@ -1,13 +1,14 @@
 'use strict';
 
 const assert=require('node:assert/strict');
+const {EventEmitter}=require('node:events');
 const {
   addJob,getJobPlan,approveJob,claimNext,finishClaim,currentUsage,
   MAX_REQUESTS_PER_WORK,
 }=require('../book-brave-core');
 const {
   parseBookPage,parseMonthlyRemaining,matchTitleAuthor,queryFor,
-  robotsAllowed,discoverPages,selectImageResult,
+  robotsAllowed,discoverPages,selectImageResult,fetchHtml,
 }=require('../book-brave-fetch');
 const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
 
@@ -139,6 +140,22 @@ assert.equal(selectImageResult([{title:'Onbekend boek',
   imageUrl:'https://files.uitgeverijvoorbeeld.nl/unknown.jpg',width:300,height:430}],target),'');
 
 async function run(){
+  // Late stream errors after a 404 response must not crash Node: the
+  // IncomingMessage handler must be registered before resume() is called.
+  const lateHttpResult=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{
+    dnsLookup:async()=>[{address:'8.8.8.8'}],
+    httpsGet:(_url,_options,onResponse)=>{
+      const request=new EventEmitter();
+      const response=new EventEmitter();
+      response.statusCode=404;
+      response.headers={};
+      response.resume=()=>setImmediate(()=>response.emit('error',new Error('late remote stream failure')));
+      onResponse(response);
+      return request;
+    },
+  });
+  assert.equal(lateHttpResult.status,404);
+  await new Promise(resolve=>setTimeout(resolve,25));
   let pageCalls=0;
   const pages=await discoverPages({pages:[
     {title:'De brief voor de koning',url:'https://www.uitgeverijvoorbeeld.nl/boek'},
