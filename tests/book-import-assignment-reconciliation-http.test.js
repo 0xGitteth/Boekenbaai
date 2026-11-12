@@ -111,7 +111,7 @@ async function main(){
       token,{revision:freshStage.body.revision,acceptWarnings:true,corrections:[],
         assignmentResolutions:[
           {id:loanChange.id,action:'apply'},
-          {id:blankChange.id,action:'keep'},
+          {id:blankChange.id,action:'later'},
         ]});
     assert.equal(reviewed.status,200,JSON.stringify(reviewed.body).slice(0,650));
     assert.equal(reviewed.body.decisions.summary.readyToApply,true);
@@ -119,6 +119,10 @@ async function main(){
       token,{revision:reviewed.body.revision,confirm:true});
     assert.equal(applied.status,200,JSON.stringify(applied.body).slice(0,650));
     assert.equal(applied.body.result.corrected,1);
+    assert.equal(applied.body.result.report.fullyReviewed,false);
+    assert.equal(applied.body.result.report.deferredDifferences.length,1);
+    assert.equal(applied.body.result.report.deferredDifferences[0].bookId,'copy-b',
+      'Later-to-review differences must be visible in the downloadable report');
     const after=JSON.parse(fs.readFileSync(dbFile,'utf8'));
     assert.equal(after.books.length,2);
     assert.equal(after.books.find(x=>x.id==='copy-a').borrowedBy,'s2');
@@ -130,6 +134,9 @@ async function main(){
     assert.equal(after.books[0].localCoverUrl,original.books[0].localCoverUrl);
     assert.deepEqual(after.readingRecords,[]);
     assert.equal(after.bookAssignmentCorrectionLog.length,1);
+    assert.equal(after.bookAssignmentDeferredReviews.length,1);
+    assert.equal(after.bookAssignmentDeferredReviews[0].status,'open');
+    assert.equal(after.bookAssignmentDeferredReviews[0].bookId,'copy-b');
 
     const repeat=await call('/api/admin/book-import-stages',token,{
       file:data,fileName:'proef.xlsx',mode:'assignment_reconcile',enrichIsbn:false,
@@ -139,7 +146,22 @@ async function main(){
       'Only the blank field on a still-borrowed copy remains a difference');
     assert.equal(repeat.body.decisions.differences[0].bookId,'copy-b',
       'Correctly registered borrowers do not generate new corrections');
-    console.log('Corrected Excel import HTTP preview, decisions, persistence and safe repeat: OK');
+    // A return followed by a new loan to the same student changes the
+    // circulation revision, even if owner and dates appear unchanged.
+    const verified=await call('/api/admin/book-import-stages/'+repeat.body.id+'/review',
+      token,{revision:repeat.body.revision,acceptWarnings:true,corrections:[],
+        assignmentResolutions:[{id:repeat.body.decisions.differences[0].id,action:'apply'}]});
+    assert.equal(verified.status,200);
+    const updatedDb=JSON.parse(fs.readFileSync(dbFile,'utf8'));
+    updatedDb.bookImportLoanActivityCounters=Object.assign(
+      {},updatedDb.bookImportLoanActivityCounters,{['copy-b']:42});
+    fs.writeFileSync(dbFile,JSON.stringify(updatedDb));
+    const stale=await call('/api/admin/book-import-stages/'+repeat.body.id+'/apply',
+      token,{revision:verified.body.revision,confirm:true});
+    assert.equal(stale.status,409,'A new circulation period must invalidate old corrections');
+    assert.equal(JSON.parse(fs.readFileSync(dbFile,'utf8')).books
+      .find(x=>x.id==='copy-b').borrowedBy,'s1');
+    console.log('Corrected Excel HTTP preview, deferred audit and stale-loan protection: OK');
   }finally{
     child.kill('SIGTERM');
     fs.rmSync(dir,{recursive:true,force:true});

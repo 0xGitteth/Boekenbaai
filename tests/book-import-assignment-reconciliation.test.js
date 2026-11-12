@@ -140,4 +140,51 @@ assert.equal(examDb.examReadingLists.find(x=>x.studentId==='s2').manualStatus,'a
 assert.equal(examDb.examReadingLists.find(x=>x.studentId==='s2').autoLoanBookId,examBook.id);
 assert.equal(examDb.readingRecords.length,0,'Correcting exam loans must not create read records');
 
+// Contradictory physical identifiers must not be reduced to the first barcode.
+const conflictRow={...rows[0],status:'conflict',issues:[
+  {severity:'conflict',code:'conflicting_physical_barcodes'},
+]};
+const conflicted=buildAssignmentPreview({ok:true,rows:[conflictRow]},db);
+assert.equal(conflicted.differences[0].kind,'issue');
+assert.equal(conflicted.differences[0].reason,'source_conflict_requires_review');
+assert.equal(buildAssignmentPreview({ok:true,rows:[conflictRow]},db,
+  [{id:'0:issue',action:'apply'}]).ok,false);
+
+const doubleDb={books:[
+  {id:'first',title:'Dubbel boek',author:'Auteur Z',barcode:'30001',
+    editionIsbn:ISBN1,status:'available'},
+  {id:'second',title:'Dubbel boek',author:'Auteur Z',barcode:'30002',
+    editionIsbn:ISBN1,status:'available'},
+],students:[{id:'s2',name:'Tim',active:true,borrowedBooks:[]}],classes:[]};
+const doubleRows=[row(0,{editionIsbn:ISBN1,barcode:'30001',
+  title:'Dubbel boek',author:'Auteur Z'},
+  {studentLoan:{status:'matched',id:'s2',name:'Tim'}}),
+  row(1,{editionIsbn:ISBN1,barcode:'30002',
+    title:'Dubbel boek',author:'Auteur Z'},
+    {studentLoan:{status:'matched',id:'s2',name:'Tim'}})];
+const doublePlan=buildAssignmentPreview({ok:true,rows:doubleRows},doubleDb,
+  [{id:'0:loan',action:'apply'},{id:'1:loan',action:'apply'}]);
+assert.equal(doublePlan.ok,false);
+assert.equal(doublePlan.error,'student_multiple_copies_after_correction',
+  'Two proposed corrections may not allocate duplicate editions to one pupil');
+assert.equal(buildAssignmentPreview({ok:true,rows:doubleRows},doubleDb,
+  [{id:'0:loan',action:'apply'},{id:'1:loan',action:'keep'}]).ok,true);
+
+const loanRevisionDb={books:[{id:'copy',title:'Revisie',author:'Auteur',
+  editionIsbn:ISBN2,barcode:'40001',status:'borrowed',
+  borrowedBy:'s1',borrowedByClassId:null,borrowedAt:'2026-11-01T10:00:00Z'}],
+ students:[{id:'s1',name:'Lisa',borrowedBooks:[{bookId:'copy'}],active:true}],
+ classes:[],bookImportLoanActivityCounters:{copy:4}};
+const loanRow=row(0,{editionIsbn:ISBN2,barcode:'40001',
+  title:'Revisie',author:'Auteur'});
+const loanPlan=buildAssignmentPreview({ok:true,rows:[loanRow]},loanRevisionDb,
+  [{id:'0:loan',action:'apply'}]);
+assert.equal(loanPlan.summary.readyToApply,true);
+loanRevisionDb.bookImportLoanActivityCounters.copy=6; // Return + new checkout to the same person.
+const changedPeriod=buildAssignmentPreview({ok:true,rows:[loanRow]},loanRevisionDb,
+  [{id:'0:loan',action:'apply'}]);
+assert.equal(changedPeriod.differences[0].before.id,loanPlan.differences[0].before.id);
+assert.notEqual(JSON.stringify(changedPeriod),JSON.stringify(loanPlan),
+  'Same borrower with a new loan period must invalidate the saved approval');
+
 console.log('Opt-in assignment reconciliation, safety, empty cells and audit: OK');

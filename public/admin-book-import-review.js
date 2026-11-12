@@ -679,6 +679,8 @@
             fixed_location_needs_manual_identification:'De vaste plek is niet eenduidig.',
             student_loan_records_disagree:'De leerlingadministratie en de boekregistratie komen niet overeen.',
             conflicting_excel_borrowers:'Excel noemt tegelijk een leerling en een klas.',
+            source_conflict_requires_review:'De Excelrij bevat tegenstrijdige brongegevens. Corrigeer die eerst in Excel.',
+            class_context_requires_classification:'Alleen de naam van een klas zegt niet of het om een vaste plek of tijdelijke uitlening gaat.',
           };
           card.append(make('p','bb-review__reason',
             reasons[diff.reason]||'Deze koppeling moet handmatig worden nagekeken: '+diff.reason));
@@ -771,6 +773,23 @@
           if (stage.mode === 'assignment_reconcile') {
             results.append(make('p','bb-review__detail',
               'De correcties zijn opgeslagen zonder echte inleveringen te registreren.'));
+            const deferred=done.report.deferredDifferences||[];
+            if(deferred.length){
+              results.append(make('p','bb-review__reason',
+                deferred.length+' verschil(len) zijn bewaard voor later onderzoek. '
+                +'Download het verslag om deze terug te vinden.'));
+              const remaining=make('details','bb-review__omitted');
+              remaining.append(make('summary','',
+                'Later te controleren verschillen bekijken'));
+              for(const item of deferred.slice(0,30)){
+                remaining.append(make('p','bb-review__detail',
+                  'Excelrij '+item.worksheetRow+' · '+(item.title||'Onbekend boek')
+                  +' · '+item.kind+(item.reason?' · '+item.reason:'')));
+              }
+              if(deferred.length>30)remaining.append(make('p','hint',
+                'Er zijn nog meer verschillen. Download het volledige verslag.'));
+              results.append(remaining);
+            }
           } else if (done.report.fullyReviewed === false) {
             results.append(make('p', 'bb-review__detail',
               'De boekimport is opgeslagen, maar is nog niet volledig gecontroleerd.'
@@ -793,9 +812,13 @@
           });
           results.append(download);
         }
-        setNotice(done.report?.fullyReviewed === false
-          ? 'De boeken zijn opgeslagen. De klascontext wordt door docenten of beheer gecontroleerd.'
-          : 'De gecontroleerde import is afgerond.');
+        setNotice(stage.mode === 'assignment_reconcile'
+          ? (done.report?.deferredDifferences?.length
+            ? 'Correcties opgeslagen. Later te controleren verschillen staan in het importverslag.'
+            : 'De gekozen administratieve correcties zijn opgeslagen.')
+          : done.report?.fullyReviewed === false
+            ? 'De boeken zijn opgeslagen. De klascontext wordt door docenten of beheer gecontroleerd.'
+            : 'De gecontroleerde import is afgerond.');
         return;
       }
       if (stage.mode === 'assignment_reconcile') {

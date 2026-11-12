@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { matchEntityByName } = require('./book-import-analysis-context');
-const { noteLoanActivity } = require('./book-import-followups');
+const { circulationRevision, noteLoanActivity } = require('./book-import-followups');
 const { persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { examReadingAccess } = require('./exam-reading-access');
 const { keyForBook: examKey, addBook: addExamBook,
@@ -125,10 +125,19 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   for(const row of analysis.rows) {
     if(row.status==='skipped')continue;
     const context=row.context||{};
-    const located=findCopy(row,db,byBarcode,byIsbn);
     const relevant=Boolean(context.studentLoan||context.classLoan
       ||context.fixedLocation||context.classContext?.length
       ||context.libraryPresence);
+    // When source identity or borrower columns contradict each other,
+    // no individual barcode extracted from the row can authorize a change.
+    if(row.status==='conflict'||row.status==='unresolved'
+      ||(row.issues||[]).some(issue=>['conflict','error'].includes(issue.severity))){
+      if(relevant)found.push({id:row.index+':issue',rowIndex:row.index,
+        worksheetRow:row.sourceRowNumber,title:row.book?.title||'',
+        kind:'issue',reason:'source_conflict_requires_review',bookId:null});
+      continue;
+    }
+    const located=findCopy(row,db,byBarcode,byIsbn);
     if(located.error) {
       if(relevant)found.push({id:row.index+':issue',rowIndex:row.index,
         worksheetRow:row.sourceRowNumber,title:row.book?.title||'',
@@ -144,7 +153,9 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   for(const {row,copy} of found.filter(item=>!item.kind)) {
     const base={rowIndex:row.index,worksheetRow:row.sourceRowNumber,
       title:copy.title,author:copy.author,barcode:copy.barcode||'',
-      bookId:copy.id,editionIsbn:edition(copy)||''};
+      bookId:copy.id,editionIsbn:edition(copy)||'',
+      circulationRevision:circulationRevision(db,copy.id),
+      borrowedAt:copy.borrowedAt||null,dueDate:copy.dueDate||null};
     if(duplicateIds.has(copy.id)) {
       differences.push({...base,id:row.index+':issue',kind:'issue',
         reason:'duplicate_copy_rows'});
@@ -220,6 +231,28 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       return {ok:false,error:'unsafe_assignment_choice'};
   }
   for(const d of differences) d.choice=selected.get(d.id)||'pending';
+  // Validate the ENTIRE proposed state. Checking each student against only
+  // currently stored loans misses two simultaneous Excel assignments of the
+  // same edition to one student.
+  const finalBorrowers=new Map((db.books||[]).map(book=>[
+    book.id,book.status==='borrowed'?book.borrowedBy:null,
+  ]));
+  const changedIds=new Set();
+  for(const diff of differences){
+    if(diff.kind!=='loan'||diff.choice!=='apply')continue;
+    finalBorrowers.set(diff.bookId,diff.after.type==='student'?diff.after.id:null);
+    changedIds.add(diff.bookId);
+  }
+  const studentEditionOwners=new Map();
+  for(const copy of db.books||[]){
+    const studentId=finalBorrowers.get(copy.id),isbn=edition(copy);
+    if(!studentId||!isbn)continue;
+    const key=JSON.stringify([studentId,isbn]);
+    const existing=studentEditionOwners.get(key);
+    if(existing&&(changedIds.has(copy.id)||changedIds.has(existing)))
+      return {ok:false,error:'student_multiple_copies_after_correction'};
+    studentEditionOwners.set(key,copy.id);
+  }
   const pending=differences.filter(x=>x.choice==='pending').length;
   const apply=differences.filter(x=>x.choice==='apply').length;
   const issues=differences.filter(x=>x.kind==='issue'||x.reason).length;

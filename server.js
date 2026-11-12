@@ -5399,13 +5399,38 @@ async function handleApi(req, res, requestUrl) {
             // This administrative mode NEVER creates a book, mutates metadata,
             // or generates reading completion / check-in history.
             const changed = applyAssignmentPreview(database, fresh, user.id, now, batchId);
+            const deferredDetails=fresh.differences.filter(item=>item.choice==='later')
+              .map(item=>({
+                id:crypto.randomUUID(),importBatchId:batchId,
+                bookId:item.bookId||null,worksheetRow:item.worksheetRow,
+                title:item.title||'',author:item.author||'',
+                barcode:item.barcode||'',editionIsbn:item.editionIsbn||'',
+                kind:item.kind,reason:item.reason||'',
+                before:item.before??null,after:item.after??null,
+                status:'open',createdAt:now,
+              }));
+            if(!Array.isArray(database.bookAssignmentDeferredReviews))
+              database.bookAssignmentDeferredReviews=[];
+            // Completing a later Excel correction closes corresponding old
+            // "later controleren" records, without losing their audit.
+            for(const old of database.bookAssignmentDeferredReviews){
+              if(old.status!=='open')continue;
+              if(changed.audit.some(item=>item.bookId===old.bookId
+                &&item.kind===old.kind)){
+                old.status='resolved';
+                old.resolvedAt=now;
+                old.resolvedBy=user.id;
+              }
+            }
+            database.bookAssignmentDeferredReviews.push(...deferredDetails);
             const report = {
               id:batchId,createdBy:user.id,importedAt:now,
               mode:'assignment_reconcile',fileName:stage.fileName,
               applied:changed.applied,loanCorrections:changed.loans,
               locationCorrections:changed.locations,
               kept:fresh.summary.kept,deferred:fresh.summary.deferred,
-              corrections:changed.audit,
+              fullyReviewed:deferredDetails.length===0,
+              corrections:changed.audit,deferredDifferences:deferredDetails,
             };
             if (!Array.isArray(database.bookImportReports)) database.bookImportReports=[];
             database.bookImportReports.push(report);
