@@ -1,7 +1,8 @@
 'use strict';
 const assert = require('node:assert/strict');
 const {
-  createDeferredAssignmentTasks, listDeferredAssignmentTasks,
+  createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
+  listDeferredAssignmentTasks,
   findTask, resolveDeferredAssignmentTask,
 } = require('../book-import-assignment-tasks');
 const { buildAssignmentPreview } = require('../book-import-assignment-reconciliation');
@@ -142,4 +143,24 @@ assert.equal(resolveDeferredAssignmentTask(db,old,admin,
   {choice:'manual_done',revision:1}).ok,true);
 assert.equal(db.bookImportReports[0].fullyReviewed,true);
 assert.equal(listDeferredAssignmentTasks(db).summary.open,0);
+// Opening a future database snapshot also migrates older report tasks.
+// They survive once the old report is trimmed by the next 30 imports.
+db=initial();
+db.bookImportReports.push({
+  id:'migration-report',mode:'assignment_reconcile',fullyReviewed:false,
+  importedAt:today,fileName:'oude-import.xlsx',
+  deferredDifferences:[{id:'0:issue',status:'open',kind:'issue',
+    reason:'source_row_requires_review',title:'Oorlogswinter',worksheetRow:5}],
+});
+assert.equal(migrateLegacyDeferredTasks(db),1);
+assert.equal(migrateLegacyDeferredTasks(db),0,'Migration must be idempotent');
+const migrated = db.bookImportAssignmentTasks[0];
+assert.equal(migrated.legacy,true);
+db.bookImportReports=[];
+assert.equal(listDeferredAssignmentTasks(db).summary.open,1);
+assert.equal(resolveDeferredAssignmentTask(db,migrated,admin,
+  {choice:'manual_done',revision:1}).ok,true);
+assert.equal(migrated.status,'completed');
+assert.equal(listDeferredAssignmentTasks(db).summary.open,0);
+
 console.log('Deferred administrator tasks: security, persistent queue, safe resolution, stale loan and legacy records OK');
