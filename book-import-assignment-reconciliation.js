@@ -18,7 +18,10 @@ const bookKey = book => [
 ];
 const edition = book => canonicalizeBookIsbn13(book?.editionIsbn)
   || canonicalizeBookIsbn13(book?.metadataIsbn)
-  || canonicalizeBookIsbn13(book?.isbn13);
+  || canonicalizeBookIsbn13(book?.isbn13)
+  // Older library records store the edition ISBN only in `barcode`.
+  // A genuine individual scan barcode is NOT an ISBN and will be rejected.
+  || canonicalizeBookIsbn13(book?.barcode);
 const borrowedId = loan => typeof loan === 'string' ? loan : loan?.bookId;
 
 function normalizeResolutions(input) {
@@ -127,9 +130,12 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   for(const row of analysis.rows) {
     if(row.status==='skipped')continue;
     const context=row.context||{};
+    // A source conflict is not proof that the physical book is missing.
+    // Report the underlying conflict before attempting any correction.
     const located=['ready','warning'].includes(row.status)
       ? findCopy(row,db,byBarcode,byIsbn)
-      : {error:'unreviewed_source_row'};
+      : {error:context.studentLoan && context.classLoan
+        ? 'conflicting_excel_borrowers' : 'source_row_requires_review'};
     const relevant=Boolean(context.studentLoan||context.classLoan
       ||context.fixedLocation||context.classContext?.length
       ||context.libraryPresence);
