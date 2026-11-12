@@ -119,7 +119,7 @@ assert.equal(emptyLocation.differences.length,1);
 assert.equal(emptyLocation.differences[0].blankSource,true);
 assert.equal(emptyLocation.summary.readyToApply,false);
 assert.equal(db.books[1].fixedLocation,'Klas A');
-const implicitClass=preview(db,[row(0,'4711002',{classContext:['Klas A']})]);
+const implicitClass=preview(directory(),[row(0,'4711002',{classContext:['Klas A']})]);
 assert.equal(implicitClass.differences[0].kind,'class_context');
 assert.equal(implicitClass.differences[0].className,'Klas A');
 assert.equal(implicitClass.differences[0].classId,'a');
