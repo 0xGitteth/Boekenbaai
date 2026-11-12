@@ -91,6 +91,7 @@ function desiredLocation(row, db) {
 }
 function findCopy(row, db, byBarcode, byIsbn) {
   const book=row.book||{},barcode=normalizeRuntimeBarcode(book.barcode);
+  if(book.barcode && !barcode)return {error:'invalid_physical_barcode'};
   const isbn=canonicalizeBookIsbn13(book.editionIsbn);
   if(!isbn)return {error:'missing_valid_isbn'};
   const candidates=barcode?byBarcode.get(barcode)||[]:byIsbn.get(isbn)||[];
@@ -126,7 +127,9 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   for(const row of analysis.rows) {
     if(row.status==='skipped')continue;
     const context=row.context||{};
-    const located=findCopy(row,db,byBarcode,byIsbn);
+    const located=['ready','warning'].includes(row.status)
+      ? findCopy(row,db,byBarcode,byIsbn)
+      : {error:'unreviewed_source_row'};
     const relevant=Boolean(context.studentLoan||context.classLoan
       ||context.fixedLocation||context.classContext?.length
       ||context.libraryPresence);

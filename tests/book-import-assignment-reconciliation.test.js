@@ -132,10 +132,10 @@ assert.equal(db.books[0].borrowedBy,null);
 assert.equal(db.students[0].borrowedBooks.length,0);
 
 db=directory();
-const unknown=preview(db,[row(0,'not-in-library',loanTo('tim','Tim Leerling'))]);
+const unknown=preview(db,[row(0,'99887711',loanTo('tim','Tim Leerling'))]);
 assert.equal(unknown.differences[0].kind,'issue');
 assert.equal(unknown.differences[0].reason,'physical_copy_not_found');
-assert.equal(preview(db,[row(0,'not-in-library',loanTo('tim','Tim Leerling'))],
+assert.equal(preview(db,[row(0,'99887711',loanTo('tim','Tim Leerling'))],
   [{id:'0:issue',action:'apply'}]).ok,false);
 const ambiguous=preview(db,[row(0,'',loanTo('tim','Tim Leerling'))]);
 assert.equal(ambiguous.differences[0].reason,'ambiguous_physical_copy');
