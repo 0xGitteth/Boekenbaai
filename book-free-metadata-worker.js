@@ -10,7 +10,7 @@ function createFreeMetadataWorker({
   loadDb, commit, onNewCover = () => {}, isPaused = () => false,
   getFailedCovers = () => new Set(),
   contact = '', fetchImpl = global.fetch, logger = console,
-  delayMs = 1800,
+  delayMs = 1800, retryDelayMs = 30000,
 } = {}) {
   const enabled = validContact(contact);
   let timer = null, running = false, stopped = false;
@@ -63,7 +63,10 @@ function createFreeMetadataWorker({
       if (outcome?.newCover) onNewCover();
     } catch (error) {
       logger.warn?.('Gratis boekverrijking overgeslagen:', error?.message || String(error));
-      continueSoon = false;
+      // A temporary database lock or I/O failure must not strand the
+      // remaining queue until a restart or another administrator action.
+      continueSoon = true;
+      nextDelay = Math.max(50, retryDelayMs);
     } finally {
       running = false;
       if (!stopped && continueSoon) schedule(nextDelay);
