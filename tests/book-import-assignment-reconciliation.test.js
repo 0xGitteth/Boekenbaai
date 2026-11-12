@@ -120,8 +120,79 @@ assert.equal(emptyLocation.differences[0].blankSource,true);
 assert.equal(emptyLocation.summary.readyToApply,false);
 assert.equal(db.books[1].fixedLocation,'Klas A');
 const implicitClass=preview(db,[row(0,'4711002',{classContext:['Klas A']})]);
-assert.equal(implicitClass.differences[0].kind,'issue');
-assert.equal(implicitClass.differences[0].reason,'class_context_requires_classification');
+assert.equal(implicitClass.differences[0].kind,'class_context');
+assert.equal(implicitClass.differences[0].className,'Klas A');
+assert.equal(implicitClass.differences[0].classId,'a');
+assert.equal(implicitClass.summary.classQuestions,1);
+assert.equal(implicitClass.summary.actualDifferences,0);
+assert.equal(implicitClass.summary.readyToApply,false);
+assert.equal(preview(db,[row(0,'4711002',{classContext:['Klas A']})],
+  [{id:'0:class_context',action:'apply'}]).error,'unsafe_assignment_choice');
+
+const classFixedDb=directory();
+const fixedSource=row(0,'4711001',{classContext:['Klas A']});
+// A vague class column must NOT return a copy currently lent to a pupil.
+const fixedProposal=preview(classFixedDb,[fixedSource],
+  [{id:'0:class_context',action:'class_fixed'}]);
+assert.deepEqual(fixedProposal.differences.map(d=>d.kind),['class_context']);
+assert.equal(fixedProposal.summary.apply,1);
+const beforeHistory=JSON.stringify(classFixedDb.history);
+const beforeRecords=JSON.stringify(classFixedDb.readingRecords);
+const fixedResult=applyAssignmentPreview(classFixedDb,fixedProposal,'admin',now);
+assert.equal(fixedResult.locations,1);
+assert.equal(fixedResult.loans,0);
+assert.equal(classFixedDb.books[0].fixedLocation,'Klas A');
+assert.equal(classFixedDb.books[0].borrowedBy,'lisa');
+assert.equal(classFixedDb.books[0].status,'borrowed');
+assert.equal(JSON.stringify(classFixedDb.history),beforeHistory);
+assert.equal(JSON.stringify(classFixedDb.readingRecords),beforeRecords);
+assert.equal(preview(classFixedDb,[fixedSource]).summary.differences,0,
+  'A matching registered fixed location must not remain a question');
+
+const classLoanDb=directory();
+const classLoanProposal=preview(classLoanDb,[
+  row(0,'4711002',{classContext:['Klas A']}),
+],[{id:'0:class_context',action:'class_loan'}]);
+assert.equal(classLoanProposal.summary.apply,1);
+const classLoanResult=applyAssignmentPreview(classLoanDb,classLoanProposal,'admin',now);
+assert.equal(classLoanResult.loans,1);
+assert.equal(classLoanDb.books[1].status,'borrowed');
+assert.equal(classLoanDb.books[1].borrowedByClassId,'a');
+assert.equal(classLoanDb.books[1].borrowedAt,null);
+assert.equal(classLoanDb.books[1].fixedLocation,null,
+  'Temporary class loan may not silently become a permanent location');
+assert.equal(preview(classLoanDb,[row(0,'4711002',{classContext:['Klas A']})])
+  .summary.differences,0, 'Matching registered class loan should not be flagged');
+
+const notRelatedDb=directory();
+const unmodifiedBooks=JSON.stringify(notRelatedDb.books);
+const unrelated=preview(notRelatedDb,[
+  row(0,'4711002',{classContext:['Klas A']}),
+],[{id:'0:class_context',action:'class_unrelated'}]);
+assert.equal(unrelated.summary.readyToApply,true);
+assert.equal(unrelated.summary.apply,0);
+assert.equal(applyAssignmentPreview(notRelatedDb,unrelated,'admin',now).applied,0);
+assert.equal(JSON.stringify(notRelatedDb.books),unmodifiedBooks);
+
+const unknownClassContext=preview(directory(),[
+  row(0,'4711002',{classContext:['Onbekende klas']}),
+]);
+assert.equal(unknownClassContext.differences[0].classId,null);
+assert.equal(preview(directory(),[
+  row(0,'4711002',{classContext:['Onbekende klas']}),
+],[{id:'0:class_context',action:'class_loan'}]).error,'unsafe_assignment_choice');
+assert.equal(preview(directory(),[
+  row(0,'4711002',{classContext:['Onbekende klas']}),
+],[{id:'0:class_context',action:'class_fixed'}]).summary.apply,1);
+
+const severalClasses=preview(directory(),[
+  row(0,'4711002',{classContext:['Klas A','Klas B']}),
+]);
+assert.equal(severalClasses.differences[0].kind,'issue');
+assert.equal(severalClasses.differences[0].reason,'multiple_class_contexts');
+assert.equal(preview(directory(),[
+  row(0,'4711002',{classContext:['Klas A','Klas B']}),
+],[{id:'0:issue',action:'class_fixed'}]).error,'unsafe_assignment_choice');
 
 db=directory();
 const classChange=preview(db,[row(0,'4711001',classLoan('b','Klas B'))],
