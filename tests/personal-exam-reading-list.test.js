@@ -173,6 +173,29 @@ assert.equal(publicEntry(sameTitleDb,bookA.entry).readFromReturn,false,
   'Different explicit ISBN must not mark an external book read');
 assert.equal(publicEntry(sameTitleDb,bookB.entry).readFromReturn,true);
 
+// The historic "isbn" column can hold a physical barcode that happens
+// to have valid ISBN digits. An explicit legacy key must take precedence.
+const barcodeDb={books:[],students:[{id:'student-a',classIds:['klas-a']}],
+  classes:db.classes,examReadingLists:[],readingRecords:[]};
+const externalMatching=addExternalBook(barcodeDb,'student-a',{
+  title:'Barcode als ISBN',author:'Auteur B',isbn:'9780140328721',
+},'student-a',now);
+const physical={id:'copy-barcode',title:'Barcode als ISBN',author:'Auteur B',
+  barcode:'9780306406157',suitableForExamList:true};
+barcodeDb.books.push(physical);
+const barcodeReturn=createReturnReadingRecord({
+  db:barcodeDb,book:physical,student:barcodeDb.students[0],
+  finished:true,actorId:'teacher-a',now,
+});
+assert.match(barcodeReturn.editionKey,/^legacy\|\|/,
+  'A copy barcode must not become an official edition identifier');
+assert.equal(barcodeReturn.isbn,'9780306406157');
+assert.equal(publicEntry(barcodeDb,externalMatching.entry).readFromReturn,true,
+  'A legacy return must still match the external title despite ISBN-like barcode digits');
+assert.equal(synchronizeReturn(barcodeDb,barcodeReturn,now)?.id,externalMatching.entry.id,
+  'The matched private title must not be added a second time');
+assert.equal(barcodeDb.examReadingLists.length,1);
+
 const newerBorrowedAt='2026-11-12T07:30:00.000Z';
 const periodStudent={...student,borrowedBooks:[{bookId:a.id,borrowedAt:newerBorrowedAt}]};
 const periodDb={books:[{...a,borrowedAt:newerBorrowedAt}],students:[periodStudent],

@@ -58,6 +58,11 @@ function snapshot(book) {
 function isbnIdentity(item) {
   const saved=String(item?.editionKey||'');
   if(/^isbn13\|\|\d{13}$/.test(saved))return saved;
+  // A saved legacy/work/copy identity is intentional evidence that no
+  // official edition ISBN was established. A reading record's "isbn" may
+  // be the physical copy barcode, even if its digits resemble an ISBN.
+  if(saved)return '';
+  if(item?.subjectType==='student' && item?.bookId)return '';
   const key=getEditionKey({metadataIsbn:String(item?.isbn||item?.editionIsbn||item?.metadataIsbn||'')});
   return key?.startsWith('isbn13||')?key:'';
 }
