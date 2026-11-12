@@ -62,6 +62,40 @@ function legacyId(reportId, differenceId) {
     .digest('hex').slice(0, 32);
 }
 
+function migrateLegacyDeferredTasks(db) {
+  // A pre-upgrade report could otherwise fall out of the last-30 reports
+  // during ANY later database write (not only an assignment import).
+  if (!Array.isArray(db.bookImportAssignmentTasks))
+    db.bookImportAssignmentTasks = [];
+  const seen = new Set(db.bookImportAssignmentTasks
+    .map(task => reportKey(task.reportId, task.differenceId)));
+  let migrated = 0;
+  for (const report of db.bookImportReports || []) {
+    if (report?.mode !== 'assignment_reconcile') continue;
+    for (const item of report.deferredDifferences || []) {
+      if (item?.status !== 'open') continue;
+      const key = reportKey(report.id, item.id);
+      if (seen.has(key)) continue;
+      db.bookImportAssignmentTasks.push({
+        id: legacyId(report.id, item.id), reportId: report.id,
+        differenceId: item.id, fileName: report.fileName || '',
+        kind: item.kind, worksheetRow: item.worksheetRow,
+        bookId: item.bookId || null,
+        title: norm(item.title), author: norm(item.author),
+        editionIsbn: norm(item.editionIsbn), barcode: norm(item.barcode),
+        reason: norm(item.reason), original: clone(item),
+        sourceRow: null, legacy: true,
+        status: 'open', revision: 1,
+        createdAt: item.recordedAt || report.importedAt,
+        resolvedAt: null, resolvedBy: null, resolution: null,
+      });
+      seen.add(key);
+      migrated++;
+    }
+  }
+  return migrated;
+}
+
 function listDeferredAssignmentTasks(db) {
   const stored = Array.isArray(db.bookImportAssignmentTasks)
     ? db.bookImportAssignmentTasks : [];
@@ -229,7 +263,11 @@ function resolveDeferredAssignmentTask(db, task, actor, payload, now=new Date().
     changed=applyAssignmentPreview(db,plan,actor.id,now,crypto.randomUUID());
     if(changed.applied !== 1)return {ok:false,error:'unsafe_correction'};
   }
-  if (!task.legacy) {
+  // A migrated legacy task is also persistent; only a virtual fallback
+  // without backing task storage must skip the status mutation.
+  const persisted=(db.bookImportAssignmentTasks || [])
+    .some(item=>item.id===task.id);
+  if (persisted) {
     task.status='completed';task.revision+=1;
     task.resolvedAt=now;task.resolvedBy=actor.id;task.resolution=choice;
   }
@@ -245,6 +283,6 @@ function resolveDeferredAssignmentTask(db, task, actor, payload, now=new Date().
 }
 
 module.exports={
-  createDeferredAssignmentTasks, listDeferredAssignmentTasks,
+  createDeferredAssignmentTasks, migrateLegacyDeferredTasks, listDeferredAssignmentTasks,
   findTask, resolveDeferredAssignmentTask,
 };
