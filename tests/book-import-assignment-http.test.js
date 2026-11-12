@@ -271,6 +271,48 @@ async function run(){
     assert.equal((await call('/api/admin/book-import-assignment-tasks',token))
       .data.summary.open,1);
 
+    // Complete end-to-end path: postpone a real loan correction, then
+    // safely apply it days later from the administrator's task list.
+    const deferredLoanImport=await begin([row('Lisa Leerling')]);
+    assert.equal(deferredLoanImport.status,201,JSON.stringify(deferredLoanImport.data));
+    const loanReview=await call('/api/admin/book-import-stages/'
+      +deferredLoanImport.data.id+'/review',token,{
+      revision:deferredLoanImport.data.revision,corrections:[],acceptWarnings:true,
+      assignmentResolutions:[{id:'0:loan',action:'later'}],
+    });
+    assert.equal(loanReview.status,200,JSON.stringify(loanReview.data));
+    const loanPostponed=await call('/api/admin/book-import-stages/'
+      +deferredLoanImport.data.id+'/apply',token,{
+      revision:loanReview.data.revision,confirm:true,
+    });
+    assert.equal(loanPostponed.status,200,JSON.stringify(loanPostponed.data));
+    const loanTasks=await call('/api/admin/book-import-assignment-tasks',token);
+    const deferredLoan=loanTasks.data.tasks.find(task=>
+      task.reportId===loanPostponed.data.result.batchId);
+    assert.equal(deferredLoan.kind,'loan');
+    assert.equal(deferredLoan.after.name,'Lisa Leerling');
+    assert.equal((await call('/api/admin/book-import-assignment-tasks/'
+      +deferredLoan.id+'/resolve',teacherToken,
+      {revision:deferredLoan.revision,choice:'apply',confirm:true})).status,403);
+    const appliedLater=await call('/api/admin/book-import-assignment-tasks/'
+      +deferredLoan.id+'/resolve',token,
+      {revision:deferredLoan.revision,choice:'apply',confirm:true});
+    assert.equal(appliedLater.status,200,JSON.stringify(appliedLater.data));
+    assert.equal(appliedLater.data.corrected,1);
+    const afterDeferred=JSON.parse(fs.readFileSync(file,'utf8'));
+    assert.equal(afterDeferred.books[0].borrowedBy,'lisa');
+    assert.equal(afterDeferred.books[0].description,'Bewaarde omschrijving');
+    assert.equal(afterDeferred.books[0].coverUrl,'https://example.org/cover.jpg');
+    assert.equal(afterDeferred.books[0].fixedLocation,'Klas A');
+    assert.equal(afterDeferred.readingRecords.length,1);
+    const updatedReport=await call('/api/admin/book-import-reports/'
+      +loanPostponed.data.result.batchId,token);
+    assert.equal(updatedReport.data.fullyReviewed,true);
+    assert.equal(updatedReport.data.deferredDifferences[0].status,'completed');
+    assert.equal((await call('/api/admin/book-import-assignment-tasks/'
+      +deferredLoan.id+'/resolve',token,
+      {revision:deferredLoan.revision,choice:'apply',confirm:true})).status,409);
+
     const final=JSON.parse(fs.readFileSync(file,'utf8'));
     assert.equal(final.books.length,1);
     assert.equal(final.readingRecords.length,1);
