@@ -13,14 +13,34 @@ function normalize(value) {
   return cleaned(value,500).normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
     .toLocaleLowerCase('nl-NL').replace(/[^a-z0-9]+/g,' ').trim();
 }
+function sameWorkTitle(targetTitle,candidateTitle,author='') {
+  const expected=normalize(targetTitle);
+  if(expected.length<4)return false;
+  // Publisher or shop names following a vertical bar are not part of
+  // bibliographic titles. Do not treat an unseparated longer title (e.g.
+  // "Dune Messiah") as an edition of "Dune".
+  const title=normalize(cleaned(candidateTitle,500).split(/\\s+\\|\\s+/)[0]);
+  const fullAuthor=normalize(author);
+  const candidates=[title];
+  if(fullAuthor){
+    if(title.endsWith(' '+fullAuthor))
+      candidates.push(title.slice(0,-fullAuthor.length-1));
+    if(title.startsWith(fullAuthor+' '))
+      candidates.push(title.slice(fullAuthor.length+1));
+    for(const label of ['cover','omslag','kaft','boek']){
+      if(title.endsWith(' '+fullAuthor+' '+label))
+        candidates.push(title.slice(0,-fullAuthor.length-label.length-2));
+    }
+  }
+  return candidates.some(value=>value===expected);
+}
 function matchTitleAuthor(target,candidate,context='') {
-  const title=normalize(target.title), author=normalize(target.author);
-  if(title.length<4||author.length<2)return false;
+  const author=normalize(target.author);
+  if(author.length<2||!sameWorkTitle(target.title,candidate.title,target.author))return false;
   const surname=author.split(' ').filter(x=>x.length>=3).slice(-1)[0]||author;
   const headline=normalize(candidate.title);
-  return headline.includes(title)
-    && (headline.includes(surname)||normalize(candidate.author).includes(surname)
-      || normalize(String(context).slice(0,18000)).includes(surname));
+  return headline.includes(surname)||normalize(candidate.author).includes(surname)
+    ||normalize(String(context).slice(0,18000)).includes(surname);
 }
 function parseMonthlyRemaining(response) {
   const policy=String(response?.headers?.get?.('x-ratelimit-policy')||'');
@@ -143,8 +163,11 @@ function parseBookPage(html,target,url) {
   const wantedIsbn=String(target.isbn||'').replace(/[^0-9X]/gi,'');
   // Exact ISBN or title+author is mandatory; a similar title is insufficient.
   const exactIsbn=Boolean(isbn&&wantedIsbn&&isbn===wantedIsbn);
+  const sameTitle=sameWorkTitle(target.title,title,target.author);
   const sameWork=matchTitleAuthor(target,{title,author},allText.slice(0,15000));
-  if(!exactIsbn&&!sameWork)return null;
+  // A matching ISBN alone is insufficient when the structured title names
+  // a different work. Exact title and work-level identity remain mandatory.
+  if(!sameTitle||(!exactIsbn&&!sameWork))return null;
   const rawDescription=asOne(book.description)||meta.description||meta['og:description']||'';
   const description=cleaned(decodeEntities(rawDescription),2500);
   let coverUrl='';
@@ -214,7 +237,7 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
         current=new URL(result.redirect,parsed).href;
         continue;
       }
-      return result;
+      return {...result,finalUrl:parsed.href};
     }
     return {error:'too_many_redirects'};
   }catch{return {error:'request_error'};}
@@ -286,7 +309,7 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) 
     if(robots.get(root)===null || !robotsAllowed(robots.get(root),u.pathname))continue;
     const page=await fetchPage(u.href);
     if(!page?.body)continue;
-    const parsed=parseBookPage(page.body,target,u.href);
+    const parsed=parseBookPage(page.body,target,page.finalUrl||u.href);
     if(parsed)outputs.push(parsed);
   }
   return outputs;
@@ -300,5 +323,5 @@ function selectImageResult(images,target) {
   }
   return '';
 }
-module.exports={normalize,matchTitleAuthor,parseMonthlyRemaining,queryFor,fetchBrave,
+module.exports={normalize,sameWorkTitle,matchTitleAuthor,parseMonthlyRemaining,queryFor,fetchBrave,
   parseBookPage,fetchHtml,robotsAllowed,discoverPages,selectImageResult};
