@@ -16,6 +16,9 @@ if (panel && host) {
   let serial = 0;
   let busy = false;
   let administrator = false;
+  // Preserve a decision while the task list polls in the background.
+  // A changed task revision invalidates the old selection.
+  const selections = new Map();
   function el(tag, text, cls) {
     const node = document.createElement(tag);
     if (text !== undefined && text !== null) node.textContent = text;
@@ -127,13 +130,22 @@ if (panel && host) {
           'Vaste locatie administratief corrigeren volgens Excel');
         if (task.kind === 'class_context') {
           option(choice, 'class_fixed', 'Staat vast in ' + task.className);
-          if (task.classId) option(choice, 'class_loan',
+          if (task.classId && !task.hasExplicitLoan) option(choice, 'class_loan',
             'Tijdelijk uitgeleend aan ' + task.className);
           option(choice, 'class_unrelated', 'Klasvermelding is niet van toepassing');
         }
       }
       option(choice, 'keep', 'Bestaande registratie gecontroleerd: behouden');
       option(choice, 'manual_done', 'Handmatig gecontroleerd en afgehandeld');
+      const remembered = selections.get(task.id);
+      if (remembered && remembered.revision === task.revision
+        && [...choice.options].some(item => item.value === remembered.value)) {
+        choice.value = remembered.value;
+      } else selections.delete(task.id);
+      choice.addEventListener('change', () => {
+        if (!choice.value) selections.delete(task.id);
+        else selections.set(task.id, {revision:task.revision,value:choice.value});
+      });
       const label = el('label', null, 'form-field');
       label.append(el('span', 'Wat is de juiste situatie?'), choice);
       const save = el('button', 'Keuze bevestigen', 'btn btn--secondary');
@@ -153,13 +165,15 @@ if (panel && host) {
           await request(root + '/' + encodeURIComponent(task.id) + '/resolve',
             'POST', {choice:choice.value,revision:task.revision,
               ...(applies ? {confirm:true} : {})});
+          selections.delete(task.id);
           await refresh();
           window.dispatchEvent(new Event('boekenbaai:loans-changed'));
         } catch (error) {
           message.textContent = error.message;
           // Keep the error visible while updating stale task revisions.
           await refresh();
-          host.querySelector('#book-import-assignment-tasks-message').textContent = error.message;
+          const currentMessage = host.querySelector('#book-import-assignment-tasks-message');
+          if (currentMessage) currentMessage.textContent = error.message;
         } finally { busy = false; }
       });
       card.append(form);
@@ -186,6 +200,10 @@ if (panel && host) {
       if (current !== serial) return;
       tasks = Array.isArray(result.tasks) ? result.tasks : [];
       administrator = true;
+      const currentTasks = new Map(tasks.map(task => [task.id,task.revision]));
+      for (const [id,selection] of selections) {
+        if (currentTasks.get(id) !== selection.revision) selections.delete(id);
+      }
     } catch (error) {
       if (current !== serial) return;
       if (error.status === 403) {
@@ -204,7 +222,7 @@ if (panel && host) {
   }).observe(panel, {attributes:true, attributeFilter:['class']});
   window.addEventListener('boekenbaai:staff-refresh', refresh);
   window.addEventListener('boekenbaai:staff-auth-cleared', () => {
-    serial++; administrator = false; tasks = []; render();
+    serial++; administrator = false; tasks = []; selections.clear(); render();
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refresh();
