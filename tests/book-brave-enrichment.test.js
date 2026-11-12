@@ -88,7 +88,7 @@ assert.match(found.description,/gevaarlijke reis/);
 assert.deepEqual(found.tags,['avontuur','geheimen','vriendschap']);
 assert.equal(found.coverUrl,'https://www.uitgeverijvoorbeeld.nl/images/debrief-voorkant.jpg');
 const sourceWithoutImage=html.replace(
-  ',"image":"https://www.uitgeverijvoorbeeld.nl/images/debrief-voorkant.jpg"', '');
+  /,\s*"image":"https:\/\/www\.uitgeverijvoorbeeld\.nl\/images\/debrief-voorkant\.jpg"/, '');
 assert.equal(parseBookPage(sourceWithoutImage,target,
   'https://www.uitgeverijvoorbeeld.nl/boeken/de-brief')?.coverUrl,'',
   'A book page without image metadata must not become its own cover');
