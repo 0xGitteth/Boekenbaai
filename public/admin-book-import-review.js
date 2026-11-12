@@ -679,8 +679,10 @@
         ].filter(Boolean).join(' · ')));
         if (diff.kind === 'issue') {
           const reasons = {
-            ambiguous_physical_copy: 'Meerdere exemplaren passen bij deze rij. Vul een unieke exemplaarbarcode in.',
-            physical_copy_not_found: 'Dit fysieke exemplaar bestaat nog niet in Boekenbaai. Gebruik de gewone import.',
+            ambiguous_physical_copy: 'Boekenbaai kent meerdere exemplaren met dit ISBN. Zonder individuele barcode is niet zeker welk exemplaar bij deze Excelrij hoort. Behoud dit verschil of controleer het later.',
+            conflicting_excel_borrowers: 'Excel vermeldt zowel een leerling als een klas als lener. Controleer welke registratie klopt.',
+            source_row_requires_review: 'Deze Excelrij bevat nog een conflict of onopgelost gegeven. Controleer de brongegevens bij de gewone boekimport.',
+            physical_copy_not_found: 'Geen bestaand exemplaar gevonden met dit ISBN of deze exemplaarbarcode. Controleer de ISBN-gegevens; gebruik de gewone import als dit echt een nieuw boek is.',
             missing_valid_isbn: 'Het ISBN ontbreekt of is ongeldig.',
             title_author_mismatch: 'De titel of auteur verschilt van het opgeslagen boek.',
             edition_identity_mismatch: 'De barcode hoort bij een andere ISBN-editie.',
@@ -1028,6 +1030,16 @@
         }
         if (dec.reason && dec.reason !== 'skipped') {
           card.append(make('p', 'bb-review__reason', reasonNames[dec.reason] || dec.reason));
+        }
+        // Unknown column values remain visible and untouched; never guess
+        // that arbitrary 'a' or 'n' values represent loans or locations.
+        const extras = (row.issues || []).filter((issue) =>
+          issue.code === 'unknown_columns_present');
+        for (const extra of extras) {
+          const values = Array.isArray(extra.values) ? extra.values : [];
+          card.append(make('p', 'bb-review__detail',
+            'Extra Excelgegevens (niet gekoppeld aan boekgegevens): '
+            + values.map((entry) => String(entry.header) + ': ' + String(entry.value ?? '')).join(' · ')));
         }
         const issues = (row.issues || []).filter((issue) => issue.severity !== 'info');
         if (issues.length) {
