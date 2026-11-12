@@ -20,7 +20,8 @@ function userEdited(book,field){
   if(source==='manual')return true;
   const value=book[field];
   const populated=Array.isArray(value)?value.length>0
-    : value!==null&&value!==undefined&&String(value).trim()!=='';
+    : field==='pageCount' ? Number(value)>0
+      : value!==null&&value!==undefined&&String(value).trim()!=='';
   return populated && source!=='metadata';
 }
 function updateFromPages(db,claim,pages,{imageUrl='',failedCovers=new Set()}={}) {
