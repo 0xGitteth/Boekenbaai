@@ -10,6 +10,9 @@ const {
 const { normalizeCoverCrop } = require('./lib/cover-crop');
 const { createCoverAssetStore } = require('./lib/cover-assets');
 const { planCoverBackfill } = require('./lib/cover-backfill-plan');
+const { createFreeMetadataWorker } = require('./book-free-metadata-worker');
+const { createBraveWorker } = require('./book-brave-worker');
+const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook } = require('./book-import-workbook');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
@@ -86,6 +89,55 @@ let coverBackfillPending = false;
 const coverBackfillFailures = new Map();
 const coverRetryDelays = [30_000, 120_000, 600_000];
 let coverBackfillRetryTimer = null;
+function exhaustedCoverSourceUrls() {
+  return new Set([...coverBackfillFailures.entries()]
+    .filter(([,failure]) => failure?.phase === 'download'
+      && failure.attempts > coverRetryDelays.length)
+    .map(([source]) => source));
+}
+
+// Optional, zero-subscription enrichment. No HTTP import or review awaits it.
+// A real contact email is mandatory for automated EasyCB lookups.
+const freeMetadataWorker = createFreeMetadataWorker({
+  contact: process.env.BOEKENBAAI_EASYCB_CONTACT || '',
+  loadDb: () => loadDb(),
+  isPaused: () => shuttingDown || Boolean(activeBookImportLease)
+    || Boolean(bookImportStageStore.active()),
+  fetchImpl: globalThis.fetch,
+  getFailedCovers: exhaustedCoverSourceUrls,
+  commit: async (apply) => {
+    let outcome = null;
+    await mutateJsonLockedAsync({
+      lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 2500,
+      read: () => loadDb(),
+      mutate: (db) => {
+        outcome = apply(db);
+        return db;
+      },
+    });
+    return outcome;
+  },
+  onNewCover: () => scheduleCoverBackfill(),
+});
+
+// A durable approved job can continue independently of the import page.
+const braveWorker = createBraveWorker({
+  apiKey: process.env.BOEKENBAAI_BRAVE_API_KEY || '',
+  loadDb: () => loadDb(),
+  isPaused: () => shuttingDown || Boolean(activeBookImportLease)
+    || bookImportStageStore.active()?.status === 'applying',
+  getFailedCovers: exhaustedCoverSourceUrls,
+  commit: async (apply) => {
+    let outcome = null;
+    await mutateJsonLockedAsync({
+      lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 4000,
+      read: () => loadDb(),
+      mutate: db => {outcome = apply(db);return db;},
+    });
+    return outcome;
+  },
+  onNewCover: () => scheduleCoverBackfill(),
+});
 
 function scheduleBackfillRetry() {
   if (shuttingDown || coverBackfillRetryTimer) return;
@@ -144,6 +196,11 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
                 ? Date.now() + coverRetryDelays[attempts - 1] : Infinity,
             });
             console.warn('Boekomslag tijdelijk niet beschikbaar:', error.message);
+            if (attempts > coverRetryDelays.length && typeof freeMetadataWorker !== 'undefined') {
+              // Only after all safe image-download retries fail, try a second
+              // verified ISBN cover source. Never block the image worker here.
+              freeMetadataWorker.schedule(2500);
+            }
             continue;
           }
           // Never race against the one-active-import staging transaction.
@@ -4397,6 +4454,17 @@ async function handleApi(req, res, requestUrl) {
         coverUrl,
         localCoverUrl,
         coverCrop: normalizeCoverCrop(body.coverCrop),
+        // Newly entered data belongs to the administrator. Background
+        // enrichment must never reinterpret these fields as auto-generated.
+        importProvenance: {fieldSources:Object.fromEntries(
+          ['description','publisher','publishedYear','pageCount','coverUrl','tags']
+            .filter(field => {
+              const value={description:body.description,publisher,publishedYear,
+                pageCount,coverUrl,tags}[field];
+              return Array.isArray(value)?value.length>0
+                :value!==null&&value!==undefined&&String(value).trim()!=='';
+            }).map(field=>[field,createFieldSource('manual')])
+        )},
       };
       const quantity = parseQuantityInput(body.quantity, { defaultValue: 1 });
       const createdBooks = [];
@@ -4533,6 +4601,9 @@ async function handleApi(req, res, requestUrl) {
       const nextLocalCoverUrl = nextCoverUrl === resolveEffectiveCoverUrl(previousCoverUrl)
         ? cachedEditionCover
         : (hasCoverUrl ? preparedLocalCoverUrl : '');
+      const previousManualValues=Object.fromEntries(
+        ['description','publisher','publishedYear','pageCount','coverUrl','tags']
+          .map(field=>[field,book[field]]));
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
@@ -4558,6 +4629,17 @@ async function handleApi(req, res, requestUrl) {
         localCoverUrl: nextLocalCoverUrl,
         coverCrop: nextCoverCrop,
       });
+      const changedManualFields = [];
+      for (const field of ['description','publisher','publishedYear','pageCount','coverUrl','tags']) {
+        if (JSON.stringify(previousManualValues[field]) !== JSON.stringify(book[field]))
+          changedManualFields.push(field);
+      }
+      if (changedManualFields.length) {
+        const provenance=normalizeBookImportProvenance(book.importProvenance) || {fieldSources:{}};
+        for (const field of changedManualFields)
+          provenance.fieldSources[field]=createFieldSource('manual');
+        book.importProvenance=provenance;
+      }
       // If title/author/ISBN changed, this copy moved to another catalog
       // edition. Do not overwrite artwork on the edition it just left.
       if ((hasCoverUrl || Object.prototype.hasOwnProperty.call(body, 'coverCrop'))
@@ -4568,6 +4650,11 @@ async function handleApi(req, res, requestUrl) {
           copy.coverUrl = nextCoverUrl;
           copy.localCoverUrl = book.localCoverUrl;
           copy.coverCrop = nextCoverCrop;
+          if (changedManualFields.includes('coverUrl')) {
+            const provenance=normalizeBookImportProvenance(copy.importProvenance) || {fieldSources:{}};
+            provenance.fieldSources.coverUrl=createFieldSource('manual');
+            copy.importProvenance=provenance;
+          }
         }
       }
       if (quantityChange !== 0) {
@@ -4635,6 +4722,7 @@ async function handleApi(req, res, requestUrl) {
       });
       saveDb(db);
       if (book.coverUrl && !book.localCoverUrl) scheduleCoverBackfill({ resetFailures: true });
+      freeMetadataWorker.schedule(1500);
       return sendJson(res, 200, {
         book,
         createdCopies: createdCopies.map((entry) => entry.id),
@@ -4972,6 +5060,94 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 200, { taskId: task.id, classId: task.classId, revision: task.revision });
       }
       return sendJson(res, 405, { message: 'Methode niet toegestaan.' });
+    }
+
+    // Persistent Brave plan and approval, admin-only and budget checked at
+    // the exact database commit boundary. No API request occurs on approval.
+    const braveRoot = '/api/admin/book-enrichment/brave';
+    if (requestUrl.pathname === braveRoot && req.method === 'GET') {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, 403, {message:'Alleen voor beheerders.'});
+      const db = loadDb();
+      return sendJson(res, 200, {
+        configured: braveWorker.configured,
+        freeConfigured: freeMetadataWorker.enabled,
+        usage: currentUsage(db),
+        jobs: (()=>{
+          const plans=(Array.isArray(db.braveEnrichmentJobs) ? db.braveEnrichmentJobs : [])
+            .map(job=>getJobPlan(db,job,{
+              braveConfigured:braveWorker.configured,
+              easyCbEnabled:freeMetadataWorker.enabled,
+              failedCovers:exhaustedCoverSourceUrls(),
+            }));
+          // Every pending or paused task remains accessible regardless of age;
+          // limit only completed history, not delayed approvals.
+          return [...plans.filter(job=>job.state!=='complete'),
+            ...plans.filter(job=>job.state==='complete').slice(-12)]
+            .sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+        })(),
+      });
+    }
+    if (requestUrl.pathname === braveRoot + '/scan' && req.method === 'POST') {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, 403, {message:'Alleen voor beheerders.'});
+      const body = await parseBody(req, 1200);
+      if (body.confirm !== true) return sendJson(res, 400, {message:'Bevestig het controleren van de bestaande collectie.'});
+      let added=null;
+      await mutateJsonLockedAsync({
+        lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 5000,read:()=>loadDb(),
+        mutate:db=>{
+          // Existing uncompleted collection scans should be resumed, not duplicated.
+          const activeCollection=(db.braveEnrichmentJobs||[]).some(job=>{
+            if(job.source!=='collection')return false;
+            const plan=getJobPlan(db,job,{
+              braveConfigured:braveWorker.configured,
+              easyCbEnabled:freeMetadataWorker.enabled,
+              failedCovers:exhaustedCoverSourceUrls(),
+            });
+            // Stored awaiting_free can already be effectively complete.
+            return plan.state==='running'||plan.waitingFree>0||plan.needsBrave>0;
+          });
+          if(!activeCollection)
+            added=addJob(db,db.books.map(book=>book.id),{source:'collection'});
+          return db;
+        },
+      });
+      if (!added) return sendJson(res, 409, {message:'Er bestaat al een openstaande collectiecontrole.'});
+      freeMetadataWorker.schedule(500);
+      return sendJson(res, 201, {id:added.id});
+    }
+    const braveApprove = requestUrl.pathname.match(
+      new RegExp('^/api/admin/book-enrichment/brave/([a-f0-9-]+)/approve$')
+    );
+    if (braveApprove && req.method === 'POST') {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, 403, {message:'Alleen voor beheerders.'});
+      const body = await parseBody(req, 1200);
+      let outcome;
+      await mutateJsonLockedAsync({
+        lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 5000,read:()=>loadDb(),
+        mutate:db=>{
+          outcome=approveJob(db, braveApprove[1],{
+            confirmed:body.confirm===true,
+            expectedRequests:body.maxRequests,
+            expectedMonth:body.month,
+            braveConfigured:braveWorker.configured,
+            easyCbEnabled:freeMetadataWorker.enabled,
+            failedCovers:exhaustedCoverSourceUrls(),
+          });
+          return db;
+        },
+      });
+      if (!outcome?.ok) return sendJson(res, 409,{
+        message:'De aanvraag kon niet worden goedgekeurd. Vernieuw de berekening.',
+        error:outcome?.error||'unknown',
+      });
+      braveWorker.schedule(300);
+      return sendJson(res, 200, outcome);
+    }
+
+    // Operational visibility without exposing private learner or loan data.
+    if (requestUrl.pathname === '/api/admin/book-enrichment/status' && req.method === 'GET') {
+      if (!ensureRole(user, ['admin'])) return sendJson(res, 403, { message: 'Alleen voor beheerders.' });
+      return sendJson(res, 200, freeMetadataWorker.status());
     }
 
     // PR3 staged book import is separate from the legacy direct upload route.
@@ -5365,6 +5541,9 @@ async function handleApi(req, res, requestUrl) {
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
             database.books.push(...createdCopies);
+            addJob(database,createdCopies.map(book=>book.id),{
+              id:batchId,source:'inventory_sync',fileName:stage.fileName,
+            });
             const followupEntries = [];
             for (const assignment of fresh.classFollowups) {
               const row = stage.analysis.rows[assignment.index];
@@ -5394,6 +5573,8 @@ async function handleApi(req, res, requestUrl) {
               retainedEditions: fresh.summary.acknowledgedEditions,
               report, omittedExistingCopies: fresh.summary.omittedExistingCopies,
             });
+            freeMetadataWorker.schedule(1500);
+            braveWorker.schedule(2000);
             return sendJson(res, 200, importStageView(stage));
           }
           const plan = buildStageApplyPlan(
@@ -5523,6 +5704,9 @@ async function handleApi(req, res, requestUrl) {
           database.bookImportReports.push(report);
           database.bookImportReports = database.bookImportReports.slice(-30);
           database.books.push(...newCopies);
+          addJob(database,newCopies.map(book=>book.id),{
+            id:batchId,source:'reviewed',fileName:stage.fileName,
+          });
           const rowByIndex = new Map(stage.analysis.rows.map((row) => [row.index, row]));
           const classFollowupEntries = sourceReports
             .filter((entry) => entry.status === 'created' && entry.bookIds?.length
@@ -5548,6 +5732,8 @@ async function handleApi(req, res, requestUrl) {
           const result = { batchId, created: newCopies.length,
             restoredLoans: importedLoanHistory.length, importedRows: plan.created.length, report };
           bookImportStageStore.finishApply(stage, result);
+          freeMetadataWorker.schedule(1500);
+          braveWorker.schedule(2000);
           return sendJson(res, 200, importStageView(stage));
         } finally {
           bookImportStageStore.abortApply(stage);
@@ -5857,6 +6043,7 @@ async function handleApi(req, res, requestUrl) {
       };
       const createdBooks = [];
       const updatedBooks = [];
+      const braveAffectedIds = new Set();
       const skipped = [];
       let changed = false;
 
@@ -6093,6 +6280,7 @@ async function handleApi(req, res, requestUrl) {
         const affectedBookIds = new Set();
         if (existingBook?.id) {
           affectedBookIds.add(existingBook.id);
+          braveAffectedIds.add(existingBook.id);
         }
         const hasCoverInput = coverUrlSource !== undefined && String(coverUrlSource).trim();
         const hasPublisherInput = publisherSource !== undefined && String(publisherSource).trim();
@@ -6505,6 +6693,7 @@ async function handleApi(req, res, requestUrl) {
           copy.importProvenance = normalizeBookImportProvenance(baseTemplate.importProvenance);
           db.books.push(copy);
           affectedBookIds.add(copy.id);
+          braveAffectedIds.add(copy.id);
           createdBooks.push({
             title: copy.title,
             author: copy.author,
@@ -6784,9 +6973,14 @@ async function handleApi(req, res, requestUrl) {
           };
         }
         inheritSnapshot(db, latestForImport);
+        addJob(db,[...braveAffectedIds],{
+          id:importJobId||crypto.randomUUID(),source:'legacy',
+        });
         saveDb(db);
         booksDurablyCommitted = true;
         scheduleCoverBackfill({ resetFailures: true });
+        freeMetadataWorker.schedule(1500);
+        braveWorker.schedule(2000);
       }
 
       if (!cancelled && importFinalizeDelayMs > 0) {
@@ -8709,6 +8903,13 @@ server.listen(PORT, () => {
   // Resume interrupted cover caching without delaying startup or test setup.
   if (typeof setImmediate === 'function') {
     const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
+    const resumeMetadata = setTimeout(() => freeMetadataWorker.schedule(), 12000);
+    resumeMetadata.unref?.();
+    const resumeBrave = setTimeout(() => braveWorker.schedule(500), 18000);
+    resumeBrave.unref?.();
+    // Recheck durable leases after a crash or a parallel instance exits.
+    const braveRecovery = setInterval(() => braveWorker.schedule(250), 60000);
+    braveRecovery.unref?.();
     if (typeof restartBackfill?.unref === 'function') restartBackfill.unref();
     const firstCleanup = setTimeout(runCoverGarbageCollection, 60_000);
     if (typeof firstCleanup?.unref === 'function') firstCleanup.unref();
@@ -8722,6 +8923,8 @@ function gracefulShutdown(signal) {
     return;
   }
   shuttingDown = true;
+  freeMetadataWorker.stop();
+  braveWorker.stop();
   console.log(`Ontvangen signaal ${signal}, server wordt afgesloten...`);
   // Stop starting new recipients; finish an in-flight bridge request before
   // exiting. Outbound fetch is not covered by server.close().
