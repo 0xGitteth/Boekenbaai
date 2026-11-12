@@ -93,12 +93,16 @@ async function run(){
       token,{revision:initial.data.revision,confirm:true});
     assert.equal(unsafeApply.status,409,'Never commit unanswered differences');
 
-    const reviewed=await call('/api/admin/book-import-stages/'+initial.data.id+'/review',
-      token,{revision:initial.data.revision,corrections:[],acceptWarnings:true,
+    // A rejected apply intentionally invalidates the old review session.
+    // Upload again instead of accidentally reusing a failed approval.
+    const retry=await begin([row('Tim Leerling')]);
+    assert.equal(retry.status,201,JSON.stringify(retry.data));
+    const reviewed=await call('/api/admin/book-import-stages/'+retry.data.id+'/review',
+      token,{revision:retry.data.revision,corrections:[],acceptWarnings:true,
         assignmentResolutions:[{id:'0:loan',action:'apply'}]});
     assert.equal(reviewed.status,200,JSON.stringify(reviewed.data));
     assert.equal(reviewed.data.decisions.summary.readyToApply,true);
-    const applied=await call('/api/admin/book-import-stages/'+initial.data.id+'/apply',
+    const applied=await call('/api/admin/book-import-stages/'+retry.data.id+'/apply',
       token,{revision:reviewed.data.revision,confirm:true});
     assert.equal(applied.status,200,JSON.stringify(applied.data));
     assert.equal(applied.data.result.correctedLoans,1);
