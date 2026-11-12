@@ -301,6 +301,19 @@
     metadata.type = 'checkbox';
     metadata.checked = true;
     metadataLabel.append(metadata, document.createTextNode(' Ontbrekende ISBN-gegevens tijdens de controle aanvullen (grondiger, duurt langer). Extra verrijking gaat na de import door; Brave vraagt apart toestemming.'));
+    const modeLabel = make('label', 'bb-review__field');
+    modeLabel.append(make('span', '', 'Wat wil je importeren?'));
+    const modeSelect = make('select');
+    for (const [value,title] of [
+      ['ordinary','Gewone boekimport: boeken toevoegen of voorraad aanvullen'],
+      ['reconcile','Administratie corrigeren: uitleningen en vaste locaties'],
+    ]) {
+      const option=make('option','',title);option.value=value;modeSelect.append(option);
+    }
+    modeSelect.value='ordinary';
+    modeLabel.append(modeSelect);
+    const modeHint=make('p','hint bb-review__mode-hint','Bij een gewone import blijven bestaande uitleningen behouden. '
+      +'Bij administratie corrigeren bepaal je per verschil wat aangepast mag worden.');
     const syncLabel = make('label', 'bb-review__check');
     const syncMode = make('input');
     syncMode.type = 'checkbox';
@@ -311,7 +324,14 @@
       'Er worden nooit automatisch boeken verwijderd of uitleningen gewijzigd. Lagere aantallen en afwijkingen moeten eerst worden opgelost.');
     const analyze = button('Bestand controleren', 'btn');
     analyze.type = 'submit';
-    form.append(fileLabel, metadataLabel, syncLabel, syncHint, analyze);
+    function updateImportMode() {
+      const correction=modeSelect.value==='reconcile';
+      metadataLabel.hidden=correction;metadata.disabled=correction;
+      syncLabel.hidden=correction;syncHint.hidden=correction;
+    }
+    modeSelect.addEventListener('change',updateImportMode);
+    form.append(fileLabel,modeLabel,modeHint,metadataLabel,syncLabel,syncHint,analyze);
+    updateImportMode();
     root.append(form);
     const notice = make('p', 'bb-review__notice hint');
     notice.setAttribute('role', 'status');
@@ -335,6 +355,7 @@
     let stage = null;
     let corrections = new Map();
     let inventoryResolutions = new Map();
+    let assignmentResolutions = new Map();
     const skippedEdits = new Map();
     let page = 0;
     let busy = false;
@@ -353,7 +374,11 @@
           !== JSON.stringify([...(stage.corrections || [])].sort(byIndex))
         || JSON.stringify([...inventoryResolutions.values()].sort((a, b) => a.isbn.localeCompare(b.isbn)))
           !== JSON.stringify([...(stage.inventoryResolutions || [])]
-            .sort((a, b) => a.isbn.localeCompare(b.isbn)));
+            .sort((a, b) => a.isbn.localeCompare(b.isbn)))
+        || JSON.stringify([...assignmentResolutions.values()]
+            .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})))
+          !== JSON.stringify([...(stage.assignmentResolutions || [])]
+            .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})));
     };
     const setNotice = (text) => { notice.textContent = text; };
     const frozenControls = new Map();
@@ -394,6 +419,7 @@
       mustRecheckWarnings = false;
       corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
       inventoryResolutions = new Map((stage.inventoryResolutions || []).map((item) => [item.isbn, item]));
+      assignmentResolutions = new Map((stage.assignmentResolutions || []).map((item) => [item.id, item]));
       skippedEdits.clear();
       if (!preservePosition || !sameStage) {
         page = 0;
@@ -468,6 +494,7 @@
               remotePending = null;
               corrections.clear();
               inventoryResolutions.clear();
+              assignmentResolutions.clear();
               skippedEdits.clear();
               liveAlert.replaceChildren();
               render();
@@ -575,6 +602,140 @@
       host.append(editor);
     }
 
+    function renderAssignmentReconciliation() {
+      const plan=stage.decisions||{differences:[],summary:{}};
+      const summary=plan.summary||{};
+      const overview=make('div','bb-review__totals');
+      overview.append(make('h4','','Administratieve koppelingen controleren'));
+      overview.append(make('p','',
+        (summary.differences||0)+' verschillen, waarvan '+(summary.pending||0)
+        +' nog zonder keuze, '+(summary.apply||0)+' geselecteerd voor correctie en '
+        +(summary.issues||0)+' niet veilig automatisch te corrigeren.'));
+      overview.append(make('p','hint',
+        'Boeken en verrijkte gegevens blijven behouden. Een leeg Excelveld '
+        +'is geen bewijs dat een boek is ingeleverd of een vaste plek heeft verloren. '
+        +'Elke correctie moet expliciet worden gekozen. Correcties registreren geen echte inlevering.'));
+      if(stage.fileName)overview.append(make('p','hint',stage.fileName));
+      results.append(overview);
+      const controls=make('div','bb-review__controls');
+      const verify=button('Mijn keuzes controleren','btn btn--secondary');
+      verify.disabled=Boolean(remotePending||busy);
+      verify.addEventListener('click',()=>run(async()=>{
+        const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
+          revision:stage.revision,acceptWarnings:true,corrections:[],
+          assignmentResolutions:[...assignmentResolutions.values()],
+        });
+        rememberResponse(response,true);
+        setNotice('Alle gekozen administratieve correcties zijn opnieuw gecontroleerd.');
+      },'De gekozen correcties worden gecontroleerd…'));
+      const apply=button('Gekozen correcties toepassen','btn');
+      apply.disabled=!summary.readyToApply||hasUnreviewedChanges()||Boolean(remotePending||busy);
+      apply.addEventListener('click',()=>{
+        if(!window.confirm('Je gaat '+summary.apply+' administratieve correcties toepassen. '
+          +'Dit is geen inlevering. Er worden geen boeken of boekgegevens verwijderd. Doorgaan?'))return;
+        run(async()=>{
+          const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/apply',{
+            revision:stage.revision,confirm:true,
+          });
+          rememberResponse(response);
+        },'Gekozen administratieve correcties worden opgeslagen…');
+      });
+      const cancel=button('Import annuleren','btn btn--ghost');
+      cancel.disabled=Boolean(remotePending||busy);
+      cancel.addEventListener('click',()=>{
+        if(!window.confirm('Deze administratiecontrole annuleren?'))return;
+        run(async()=>{
+          const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/cancel',{
+            revision:stage.revision,
+          });
+          rememberResponse(response);
+        },'Administratiecontrole wordt geannuleerd…');
+      });
+      controls.append(verify,apply,cancel);
+      if(summary.pending||hasUnreviewedChanges())controls.append(make('p','hint',
+        'Kies per verschil een actie en klik daarna op “Mijn keuzes controleren”. '
+        +'Pas daarna kun je bevestigen.'));
+      results.append(controls);
+      const diffs=Array.isArray(plan.differences)?plan.differences:[];
+      const maxPage=Math.max(0,Math.ceil(diffs.length/PAGE_SIZE)-1);
+      page=Math.min(page,maxPage);
+      const list=make('div','bb-review__rowlist');
+      for(const diff of diffs.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE)){
+        const card=make('article','bb-review__row');
+        card.append(make('strong','','Excelrij '+diff.worksheetRow+' · '+(diff.title||'Onbekend boek')));
+        const identification=[diff.author||'',diff.editionIsbn||'',
+          diff.barcode||'Geen fysieke barcode'].filter(Boolean).join(' · ');
+        card.append(make('p','hint',identification));
+        if(diff.kind==='issue'){
+          const reasons={
+            ambiguous_physical_copy:'Er zijn meerdere passende fysieke exemplaren. Vul een unieke exemplaarbarcode in.',
+            physical_copy_not_found:'Dit fysieke exemplaar bestaat nog niet in Boekenbaai. Gebruik hiervoor de gewone import.',
+            missing_valid_isbn:'Er ontbreekt een geldig ISBN.',
+            title_author_mismatch:'Titel en auteur komen niet overeen met de huidige registratie.',
+            edition_identity_mismatch:'De fysieke barcode hoort bij een andere editie.',
+            duplicate_copy_rows:'Meer dan één Excelrij verwijst naar dit fysieke exemplaar.',
+            copy_requires_single_excel_row:'Voor een correctie moet de rij precies één fysiek exemplaar beschrijven.',
+            borrower_not_uniquely_matched:'De leerling of klas kon niet eenduidig worden herkend.',
+            fixed_location_needs_manual_identification:'De vaste plek is niet eenduidig.',
+            student_loan_records_disagree:'De leerlingadministratie en de boekregistratie komen niet overeen.',
+            conflicting_excel_borrowers:'Excel noemt tegelijk een leerling en een klas.',
+          };
+          card.append(make('p','bb-review__reason',
+            reasons[diff.reason]||'Deze koppeling moet handmatig worden nagekeken: '+diff.reason));
+        }else{
+          const describe=(v,kind)=>{
+            if(kind==='loan')return v.type==='none'?'Niet uitgeleend / niet ingevuld'
+              :(v.type==='student'?'Leerling: ':'Klas: ')+v.name;
+            return v||'Geen vaste plek ingevuld';
+          };
+          const label=diff.kind==='loan'?'Uitlening':'Vaste locatie';
+          card.append(make('p','bb-review__detail',
+            label+' nu: '+describe(diff.before,diff.kind)));
+          card.append(make('p','bb-review__detail',
+            label+' in Excel: '+describe(diff.after,diff.kind)));
+          if(diff.description)card.append(make('p','hint',diff.description));
+          if(diff.reason)card.append(make('p','bb-review__reason',
+            'Niet veilig om automatisch te corrigeren: '+diff.reason));
+        }
+        const field=make('label','bb-review__field');
+        field.append(make('span','','Wat betekent dit verschil?'));
+        const select=make('select');
+        const entries=[['pending','Maak een keuze'],
+          ['keep','Huidige registratie behouden'],
+          ['later','Later controleren']];
+        if(diff.kind!=='issue'&&!diff.reason){
+          let label='';
+          if(diff.kind==='loan')label=diff.blankSource
+            ? 'Foutieve uitlening administratief verwijderen (geen inlevering)'
+            : 'Uitlening corrigeren naar leerling/klas uit Excel';
+          else label=diff.blankSource?'Vaste plek administratief verwijderen'
+            :'Vaste plek aanpassen volgens Excel';
+          entries.splice(1,0,['apply',label]);
+        }
+        for(const [value,label] of entries){
+          const option=make('option','',label);option.value=value;select.append(option);
+        }
+        select.value=assignmentResolutions.get(diff.id)?.action||'pending';
+        select.addEventListener('change',()=>{
+          if(select.value==='pending')assignmentResolutions.delete(diff.id);
+          else assignmentResolutions.set(diff.id,{id:diff.id,action:select.value});
+          render();
+        });
+        field.append(select);
+        card.append(field);
+        list.append(card);
+      }
+      if(!diffs.length)list.append(make('p','hint',
+        'Geen verschillen gevonden bij herkenbare exemplaren. Er is niets aangepast.'));
+      results.append(list);
+      const navigation=make('div','bb-review__pagination');
+      const prev=button('Vorige','btn btn--ghost');prev.disabled=page===0;
+      prev.addEventListener('click',()=>{page--;render();});
+      const next=button('Volgende','btn btn--ghost');next.disabled=page===maxPage;
+      next.addEventListener('click',()=>{page++;render();});
+      navigation.append(prev,make('span','','Pagina '+(page+1)+' van '+(maxPage+1)),next);
+      results.append(navigation);
+    }
     function render() {
       results.replaceChildren();
       form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
@@ -596,13 +757,21 @@
       }
       if (stage.status === 'completed') {
         const done = stage.result || {};
-        results.append(make('h4', '', stage.mode === 'inventory_sync'
-          ? 'Voorraadvergelijking voltooid' : 'Import voltooid'));
-        results.append(make('p', '', done.created + ' fysieke exemplaren opgeslagen.'
-          + (done.restoredLoans ? ' ' + done.restoredLoans + ' bestaande uitleningen overgenomen.' : '')
+        results.append(make('h4', '', stage.mode === 'assignment_reconcile'
+          ? 'Administratieve correcties opgeslagen'
+          : stage.mode === 'inventory_sync' ? 'Voorraadvergelijking voltooid' : 'Import voltooid'));
+        results.append(make('p', '', stage.mode === 'assignment_reconcile'
+          ? (done.corrected || 0) + ' bestaande koppelingen gecorrigeerd, waarvan '
+            + (done.correctedLoans || 0) + ' uitleningen en '
+            + (done.correctedLocations || 0) + ' vaste locaties. Geen boeken toegevoegd.'
+          : done.created + ' fysieke exemplaren opgeslagen.'
+            + (done.restoredLoans ? ' ' + done.restoredLoans + ' bestaande uitleningen overgenomen.' : '')
           + ' Importverslag: ' + (done.batchId || 'onbekend')));
         if (done.report) {
-          if (done.report.fullyReviewed === false) {
+          if (stage.mode === 'assignment_reconcile') {
+            results.append(make('p','bb-review__detail',
+              'De correcties zijn opgeslagen zonder echte inleveringen te registreren.'));
+          } else if (done.report.fullyReviewed === false) {
             results.append(make('p', 'bb-review__detail',
               'De boekimport is opgeslagen, maar is nog niet volledig gecontroleerd.'
               + ' Er staan klassentaken open in het docentenportaal.'
@@ -627,6 +796,10 @@
         setNotice(done.report?.fullyReviewed === false
           ? 'De boeken zijn opgeslagen. De klascontext wordt door docenten of beheer gecontroleerd.'
           : 'De gecontroleerde import is afgerond.');
+        return;
+      }
+      if (stage.mode === 'assignment_reconcile') {
+        renderAssignmentReconciliation();
         return;
       }
       const summary = stage.summary || {};
@@ -908,8 +1081,10 @@
         let payload;
         try {
           payload = await request(rootPath, {
-            file: encoded, fileName: selected.name, enrichIsbn: metadata.checked,
-            mode: syncMode.checked ? 'inventory_sync' : 'create',
+            file: encoded, fileName: selected.name,
+            enrichIsbn: modeSelect.value !== 'reconcile' && metadata.checked,
+            mode: modeSelect.value === 'reconcile' ? 'assignment_reconcile'
+              : syncMode.checked ? 'inventory_sync' : 'create',
           });
         } catch (error) {
           await syncStage();

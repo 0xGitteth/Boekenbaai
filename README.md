@@ -152,3 +152,11 @@ Stel dan een expliciete `BOEKENBAAI_ALLOWED_ORIGINS` en `BOEKENBAAI_PUBLIC_API_B
   - Een leerling kan alleen zijn of haar eigen uitleenlog opvragen met het eigen `studentId`.
 - **Respons:** lijst met uitleenactiviteiten voor de opgegeven leerling.
 - Bij een ontbrekende of verkeerde leerling-id volgt een `401/403` (toegang geweigerd) of `404` (leerling niet gevonden).
+
+### Gecontroleerd administratieve koppelingen corrigeren
+
+Bij de gecontroleerde Excelimport kiest de beheerder vooraf tussen een **gewone boekimport** en **administratie corrigeren**. De bestaande gewone import en de inventarissynchronisatie blijven ongewijzigd. De correctiemodus controleert uitsluitend reeds aanwezige, identificeerbare fysieke exemplaren en past geen titelmetadata, omslagen of aantallen aan. Er wordt in deze modus geen ISBN- of Brave-verrijking gestart.
+
+Voor ieder verschil in leerlinguitlening of vaste klaslocatie kiest de beheerder **corrigeren**, **huidige registratie behouden** of **later controleren**. Een leeg Excelveld betekent *onbekend*: Boekenbaai beëindigt er nooit automatisch een uitlening door. Zelfs een administratieve verwijdering van een foutieve koppeling is een afzonderlijke, expliciet gekozen actie, geen echte inlevering of nieuw leesantwoord. Bij meerdere exemplaren zonder eenduidige fysieke identificatie wordt geen willekeurig exemplaar gekozen.
+
+Keuzes worden op de server opnieuw gecontroleerd voordat de knop voor definitieve bevestiging beschikbaar is. Vlak vóór opslaan volgt nog een volledige vergelijking met de actuele administratie, zodat tussentijdse uitleenwijzigingen de import blokkeren. De correcties worden met oud en nieuw in het importverslag en in de administratieve controlelog vastgelegd. Geen boek dat ontbreekt in Excel wordt verwijderd of automatisch opnieuw toegewezen.
