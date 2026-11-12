@@ -168,6 +168,120 @@
       }
     }
     void refreshEnrichmentStatus();
+
+    // This panel is independent of the staged Excel upload. Approval can be
+    // given after leaving the browser, after logging in again, or on another
+    // day. The server owns all saved progress and budget checks.
+    const bravePanel = make('section', 'bb-review__brave');
+    const braveHeading = make('h4', '', 'Aanvullend zoeken op internet');
+    const braveNotice = make('p', 'hint', 'De zoekvoortgang wordt geladen.');
+    braveNotice.setAttribute('role', 'status');
+    const braveItems = make('div', 'bb-review__brave-items');
+    bravePanel.append(braveHeading, braveNotice, braveItems);
+    root.append(bravePanel);
+    let braveRefreshing = false;
+    async function refreshBrave() {
+      if (braveRefreshing || !root.isConnected) return;
+      braveRefreshing = true;
+      try {
+        const info = await request('/api/admin/book-enrichment/brave');
+        const usage = info.usage || {};
+        const remaining = Number(usage.available || 0);
+        braveNotice.textContent = info.configured
+          ? 'Zoekbudget van Boekenbaai deze maand: ' + remaining
+            + ' verzoeken beschikbaar, ' + (usage.reserved || 0)
+            + ' gereserveerd (maximum ' + (usage.cap || 900) + ').'
+          : 'Brave staat nog uit. Stel BOEKENBAAI_BRAVE_API_KEY in op de server. '
+            + 'Openstaande importopdrachten blijven bewaard.';
+        braveItems.replaceChildren();
+        const jobs = Array.isArray(info.jobs) ? info.jobs : [];
+        if (!jobs.length) {
+          braveItems.append(make('p', 'hint',
+            'Na een boekimport verschijnt hier hoeveel titels nog extra onderzoek nodig hebben.'));
+        }
+        for (const job of jobs.slice(0, 12)) {
+          const item = make('div', 'bb-review__brave-job');
+          const name = job.source === 'collection' ? 'Bestaande collectie'
+            : (job.fileName || 'Boekimport');
+          const title = make('strong', '', name);
+          const details = make('p', 'hint');
+          if (job.state === 'awaiting_free') {
+            details.textContent = 'Gratis bronnen worden onderzocht voor ' + job.waitingFree
+              + ' titels. Je hoeft deze pagina niet open te houden.';
+          } else if (job.state === 'awaiting_approval') {
+            details.textContent = job.needsBrave + ' titels hebben aanvullende informatie nodig. '
+              + 'Maximaal ' + job.estimatedMaxRequests + ' zoekopdrachten voor alles. '
+              + 'Nu mogelijk: ' + job.possibleWorks + ' titels met maximaal '
+              + job.possibleMaxRequests + ' zoekopdrachten.';
+          } else if (job.state === 'running') {
+            details.textContent = 'Zoeken bezig: ' + job.processedApproved
+              + ' van ' + job.approvedWorks + ' goedgekeurde titels. '
+              + job.reservedRequests + ' van maximaal ' + job.approvedMaxRequests
+              + ' verzoeken gereserveerd. Je kunt deze pagina sluiten.';
+          } else if (job.state === 'paused') {
+            details.textContent = 'Onderzoek gepauzeerd (' + (job.lastError || 'onbekende reden')
+              + '). Voortgang is bewaard. Er worden geen nieuwe zoekopdrachten uitgevoerd.';
+          } else {
+            details.textContent = 'Afgerond. ' + job.completedWorks + ' titels onderzocht.';
+          }
+          item.append(title, details);
+          if (job.canApprove && info.configured) {
+            const accept = button('Aanvullend zoeken goedkeuren', 'btn btn--secondary');
+            accept.addEventListener('click', async () => {
+              const message = 'Brave mag maximaal ' + job.possibleMaxRequests
+                + ' zoekopdrachten uitvoeren voor ' + job.possibleWorks + ' boeken. '
+                + 'Boekenbaai reserveert deze verzoeken binnen de ingestelde maandgrens. '
+                + 'Andere apps die dezelfde Brave-sleutel gebruiken tellen niet mee. '
+                + 'Zorg dat betaalde aanvulling in het Brave-account is uitgeschakeld. '
+                + 'Je kunt de pagina na goedkeuring sluiten. Doorgaan?';
+              if (!window.confirm(message)) return;
+              accept.disabled = true;
+              try {
+                await request('/api/admin/book-enrichment/brave/' + encodeURIComponent(job.id) + '/approve', {
+                  confirm: true, maxRequests: job.possibleMaxRequests, month: usage.month,
+                });
+                setNotice('Brave-onderzoek goedgekeurd en opgeslagen. Je kunt dit scherm sluiten.');
+              } catch (error) {
+                setNotice(error.message || 'Toestemming opslaan is mislukt.');
+              } finally {
+                void refreshEnrichmentStatus();
+                // Clear the refresh guard before reloading after an approval.
+                braveRefreshing = false;
+                void refreshBrave();
+              }
+            });
+            item.append(accept);
+          }
+          braveItems.append(item);
+        }
+        if (info.configured || info.freeConfigured) {
+          const scan = button('Bestaande collectie controleren', 'btn btn--ghost');
+          scan.addEventListener('click', async () => {
+            if (!window.confirm('De bestaande boeken op ontbrekende gegevens controleren? '
+              + 'Gratis bronnen starten automatisch. Brave wordt pas na jouw toestemming gebruikt.')) return;
+            scan.disabled = true;
+            try {
+              await request('/api/admin/book-enrichment/brave/scan', {confirm:true});
+              setNotice('Collectiecontrole opgeslagen. Je kunt later toestemming geven voor Brave.');
+            } catch (error) {
+              setNotice(error.message || 'Collectiecontrole kon niet worden gestart.');
+            } finally {
+              scan.disabled = false;
+              void refreshBrave();
+            }
+          });
+          braveItems.append(scan);
+        }
+        braveItems.append(make('p', 'hint',
+          'Geen toestemming geven mag altijd. De import blijft opgeslagen; je kunt later terugkomen. '
+          + 'De maandgrens bewaakt alleen verzoeken vanuit Boekenbaai, niet het Brave-account zelf.'));
+      } catch {
+        braveNotice.textContent = 'De voortgang van Brave kon niet worden geladen.';
+      } finally {
+        braveRefreshing = false;
+      }
+    }
+    void refreshBrave();
     const form = make('form', 'bb-review__upload');
     const fileLabel = make('label', '', 'Excelbestand (.xlsx of .xls)');
     const file = make('input');
@@ -610,6 +724,7 @@
           });
           rememberResponse(payload);
           void refreshEnrichmentStatus();
+          void refreshBrave();
         }, 'Bevestigde boeken worden opgeslagen…');
       });
       const cancelButton = button('Import annuleren', 'btn btn--ghost');
@@ -801,6 +916,8 @@
     window.setInterval(syncStage, 1500);
     window.addEventListener('focus', syncStage);
     window.addEventListener('focus', refreshEnrichmentStatus);
+    window.addEventListener('focus', refreshBrave);
+    window.setInterval(refreshBrave, 10000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) syncStage();
     });
