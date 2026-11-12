@@ -178,6 +178,14 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.state==='running');
   if (!job) return null;
+  if (job.inFlight) {
+    // Shared persistent volume may be served by more than one Node process.
+    // Do not issue another request while another worker holds this claim.
+    // A crashed claim is already debited and may be skipped after its lease.
+    const claimedAt=Date.parse(job.inFlight.reservedAt||'');
+    if (Number.isFinite(claimedAt) && now.getTime()-claimedAt < 120000) return null;
+    job.inFlight=null;
+  }
   if (job.approval?.month!==monthKey(now)) {
     job.state='paused';job.lastError='month_changed';return null;
   }
