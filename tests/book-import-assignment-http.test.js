@@ -189,6 +189,26 @@ async function run(){
     // The Excel column "Klassen" needs a real classification choice, not
     // merely Keep/Later. Classifying it as a fixed location must never
     // return a book that is currently borrowed by a pupil.
+    const postponedClass=await begin([{...row(),Klassen:'Klas A'}]);
+    assert.equal(postponedClass.status,201,JSON.stringify(postponedClass.data));
+    const postponedClassReviewed=await call(
+      '/api/admin/book-import-stages/'+postponedClass.data.id+'/review',
+      token,{revision:postponedClass.data.revision,corrections:[],acceptWarnings:true,
+        assignmentResolutions:[{id:'0:class_context',action:'later'}]});
+    assert.equal(postponedClassReviewed.status,200,JSON.stringify(postponedClassReviewed.data));
+    const postponedClassApplied=await call(
+      '/api/admin/book-import-stages/'+postponedClass.data.id+'/apply',
+      token,{revision:postponedClassReviewed.data.revision,confirm:true});
+    assert.equal(postponedClassApplied.status,200,JSON.stringify(postponedClassApplied.data));
+    const laterClassReport=await call('/api/admin/book-import-reports/'
+      +postponedClassApplied.data.result.batchId,token);
+    assert.equal(laterClassReport.status,200,JSON.stringify(laterClassReport.data));
+    assert.equal(laterClassReport.data.deferredDifferences[0].className,'Klas A');
+    assert.equal(laterClassReport.data.deferredDifferences[0].beforeLoan.id,'tim');
+    assert.equal(laterClassReport.data.deferredDifferences[0].kind,'class_context');
+    assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).books[0].fixedLocation,null,
+      'Later review must never change the fixed location');
+
     const classroom=await begin([{...row(),Klassen:'Klas A'}]);
     assert.equal(classroom.status,201,JSON.stringify(classroom.data));
     assert.equal(classroom.data.decisions.summary.classQuestions,1);
