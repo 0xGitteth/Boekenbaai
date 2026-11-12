@@ -136,16 +136,16 @@ const fixedProposal=preview(classFixedDb,[fixedSource],
   [{id:'0:class_context',action:'class_fixed'}]);
 assert.deepEqual(fixedProposal.differences.map(d=>d.kind),['class_context']);
 assert.equal(fixedProposal.summary.apply,1);
-const beforeHistory=JSON.stringify(classFixedDb.history);
-const beforeRecords=JSON.stringify(classFixedDb.readingRecords);
+const fixedHistoryBefore=JSON.stringify(classFixedDb.history);
+const fixedRecordsBefore=JSON.stringify(classFixedDb.readingRecords);
 const fixedResult=applyAssignmentPreview(classFixedDb,fixedProposal,'admin',now);
 assert.equal(fixedResult.locations,1);
 assert.equal(fixedResult.loans,0);
 assert.equal(classFixedDb.books[0].fixedLocation,'Klas A');
 assert.equal(classFixedDb.books[0].borrowedBy,'lisa');
 assert.equal(classFixedDb.books[0].status,'borrowed');
-assert.equal(JSON.stringify(classFixedDb.history),beforeHistory);
-assert.equal(JSON.stringify(classFixedDb.readingRecords),beforeRecords);
+assert.equal(JSON.stringify(classFixedDb.history),fixedHistoryBefore);
+assert.equal(JSON.stringify(classFixedDb.readingRecords),fixedRecordsBefore);
 assert.equal(preview(classFixedDb,[fixedSource]).summary.differences,0,
   'A matching registered fixed location must not remain a question');
 
