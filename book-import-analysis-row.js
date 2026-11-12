@@ -432,7 +432,15 @@ function applySourceCollisions(mapped, row) {
   }
   if (mapped.ignoredDangerousHeaders.length) addIssue(row, 'dangerous_headers_ignored', 'warning', { headers: [...mapped.ignoredDangerousHeaders] });
   const nonblankUnknown = mapped.unknown.filter((entry) => !isBlankCellValue(entry.value));
-  if (nonblankUnknown.length) addIssue(row, 'unknown_columns_present', 'warning', { headers: nonblankUnknown.map((entry) => entry.header) });
+  // Preserve unclassified workbook columns in the preview. They are not
+  // automatically mapped to book metadata, locations or loan statuses.
+  // Additional columns are information, not 327 avoidable blocking warnings.
+  if (nonblankUnknown.length) addIssue(row, 'unknown_columns_present', 'info', {
+    headers: nonblankUnknown.map((entry) => entry.header),
+    values: nonblankUnknown.map((entry) => ({
+      header: entry.header, value: entry.value,
+    })),
+  });
 }
 
 function provenanceForBook(mapped, book, identifierAnalysis) {

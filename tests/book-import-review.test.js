@@ -278,11 +278,15 @@ const OTHER_ISBN = '9780439554930';
   }], [], { acceptWarnings: true });
   assert.strictEqual(blankMl.rows[0].book.easyReading, false);
 
-  const warningRow = [{ Titel: 'Waarschuwing', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
-  const unapproved = await analyzeReviewedImport(warningRow);
-  assert.strictEqual(unapproved.rows[0].status, 'warning');
-  assert.strictEqual(unapproved.decisions.rows[0].reason, 'warnings_need_confirmation');
-  const approved = await analyzeReviewedImport(warningRow, [], { acceptWarnings: true });
+  // Unclassified columns must be shown with their values, without inventing
+  // a book field or turning every ordinary workbook row into a warning.
+  const extraColumnRow = [{ Titel: 'Extra gegevens', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
+  const unapproved = await analyzeReviewedImport(extraColumnRow);
+  assert.strictEqual(unapproved.rows[0].status, 'ready');
+  assert.strictEqual(unapproved.decisions.rows[0].canCreate, true);
+  assert.deepStrictEqual(unapproved.rows[0].issues.find(x => x.code === 'unknown_columns_present').values,
+    [{ header: 'Onbekende kolom', value: 'tekst' }]);
+  const approved = await analyzeReviewedImport(extraColumnRow, [], { acceptWarnings: true });
   assert.strictEqual(approved.decisions.rows[0].canCreate, true);
 
   const invalid = [
