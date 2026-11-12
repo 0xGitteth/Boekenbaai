@@ -8861,6 +8861,9 @@ server.listen(PORT, () => {
     resumeMetadata.unref?.();
     const resumeBrave = setTimeout(() => braveWorker.schedule(500), 18000);
     resumeBrave.unref?.();
+    // Recheck durable leases after a crash or a parallel instance exits.
+    const braveRecovery = setInterval(() => braveWorker.schedule(250), 60000);
+    braveRecovery.unref?.();
     if (typeof restartBackfill?.unref === 'function') restartBackfill.unref();
     const firstCleanup = setTimeout(runCoverGarbageCollection, 60_000);
     if (typeof firstCleanup?.unref === 'function') firstCleanup.unref();
