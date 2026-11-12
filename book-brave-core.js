@@ -112,12 +112,16 @@ function getJobPlan(db,job,{
   if (state==='awaiting_free' || state==='awaiting_approval') {
     state=waitingFree>0?'awaiting_free':remaining.length?'awaiting_approval':'complete';
   }
+  // When the worker encountered a provider limit, its next step must still
+  // require explicit approval. There is never an automatic new-month retry.
+  const resumable=state==='paused' && waitingFree===0
+    && remaining.length>0 && !['unauthorized','payment_required'].includes(job.lastError);
   return {
     id:job.id,source:job.source,fileName:job.fileName,createdAt:job.createdAt,
     state,books:job.bookIds?.length||0,uniqueWorks:groups.size,
     completedWorks:job.completedKeys?.length||0,waitingFree,
     needsBrave:remaining.length,estimatedMaxRequests:remaining.length*MAX_REQUESTS_PER_WORK,
-    canApprove:braveConfigured && state==='awaiting_approval' && possible>0,
+    canApprove:braveConfigured && (state==='awaiting_approval'||resumable) && possible>0,
     possibleWorks:possible,possibleMaxRequests:possible*MAX_REQUESTS_PER_WORK,
     deferredWorks:Math.max(0,remaining.length-possible),
     approvedWorks:job.approvedKeys?.length||0,processedApproved:job.cursor||0,
@@ -136,7 +140,7 @@ function approveJob(db,id,{confirmed=false,expectedRequests,expectedMonth,easyCb
   const job=db.braveEnrichmentJobs.find(j=>j.id===id);
   if (!job) return {ok:false,error:'job_missing'};
   const plan=getJobPlan(db,job,{easyCbEnabled,braveConfigured,now,env});
-  if (plan.state!=='awaiting_approval' || !plan.possibleWorks)
+  if (!plan.canApprove || !plan.possibleWorks)
     return {ok:false,error:'not_ready'};
   if (expectedMonth!==monthKey(now) || !Number.isSafeInteger(expectedRequests)
     || expectedRequests!==plan.possibleMaxRequests)
@@ -212,7 +216,14 @@ function finishClaim(db,claim,{providerRemaining=null,error=null}={}) {
       providerRemaining);
   }
   if (error==='rate_limited'||error==='payment_required'||error==='unauthorized') {
-    job.state='paused';job.lastError=error;
+    // Work already finished in the approved chunk stays finished even if a
+    // later provider error pauses the rest. The partly searched work is
+    // eligible for a new explicit approval, never an automatic debit.
+    const done=new Set(job.completedKeys||[]);
+    for (const key of (job.approvedKeys||[]).slice(0,job.cursor||0))done.add(key);
+    job.completedKeys=[...done];
+    job.approvedKeys=[];job.cursor=0;job.step=0;
+    job.state='paused';job.lastError=error;job.approval=null;
   } else if (error) job.lastError=error;
   job.updatedAt=new Date().toISOString();
 }
