@@ -174,6 +174,16 @@ function finishApprovedChunk(db,job,failedCovers=new Set()) {
   job.state=remainingWorks(db,job,failedCovers).length?'awaiting_approval':'complete';
   job.updatedAt=new Date().toISOString();
 }
+function pauseActiveChunk(job,reason) {
+  // Keep fully processed works; partially processed works may be reconsidered
+  // only after a new explicit approval. Every previously claimed request
+  // remains debited in the durable monthly ledger.
+  const done=new Set(job.completedKeys||[]);
+  for(const key of (job.approvedKeys||[]).slice(0,job.cursor||0))done.add(key);
+  job.completedKeys=[...done];
+  job.approvedKeys=[];job.cursor=0;job.step=0;job.approval=null;job.inFlight=null;
+  job.state='paused';job.lastError=reason;job.updatedAt=new Date().toISOString();
+}
 function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}) {
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.state==='running');
@@ -187,7 +197,7 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     job.inFlight=null;
   }
   if (job.approval?.month!==monthKey(now)) {
-    job.state='paused';job.lastError='month_changed';return null;
+    pauseActiveChunk(job,'month_changed');return null;
   }
   const usage=usageForMonth(db,now),cap=monthlyCap(env);
   const groups=bookWorks(db,job);
@@ -202,7 +212,7 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     if (!shouldQueryStep(job.step,books,failedCovers)) {job.step++;continue;}
     if (job.requestsReserved >= job.approval.maxRequests || usage.reserved >= cap
       || (Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
-      job.state='paused';job.lastError='budget_exhausted';return null;
+      pauseActiveChunk(job,'budget_exhausted');return null;
     }
     const step=job.step++;
     // Reserve BEFORE a network call. On a crash this reservation remains used;
@@ -232,14 +242,7 @@ function finishClaim(db,claim,{providerRemaining=null,error=null}={}) {
       providerRemaining);
   }
   if (error==='rate_limited'||error==='payment_required'||error==='unauthorized') {
-    // Work already finished in the approved chunk stays finished even if a
-    // later provider error pauses the rest. The partly searched work is
-    // eligible for a new explicit approval, never an automatic debit.
-    const done=new Set(job.completedKeys||[]);
-    for (const key of (job.approvedKeys||[]).slice(0,job.cursor||0))done.add(key);
-    job.completedKeys=[...done];
-    job.approvedKeys=[];job.cursor=0;job.step=0;
-    job.state='paused';job.lastError=error;job.approval=null;
+    pauseActiveChunk(job,error);
   } else if (error) job.lastError=error;
   job.updatedAt=new Date().toISOString();
 }
