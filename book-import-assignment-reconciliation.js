@@ -15,7 +15,7 @@ const ACTIONS = new Set(['apply', 'keep', 'later']);
 // Accents in Excel may differ from older stored metadata (Rene/René).
 // Only relax spelling after an unambiguous ISBN/exemplar match.
 const norm = value => normalizeBookIdentityComparable(value || '')
-  .normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '');
+  .normalize('NFKD').replace(/\p{M}/gu, '');
 const bookKey = book => [
   norm(book?.title), norm(book?.author),
 ];
