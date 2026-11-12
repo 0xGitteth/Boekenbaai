@@ -247,7 +247,7 @@ async function run(){
   const redirected=await discoverPages({pages:[
     {title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/old-book'},
   ]},target,{fetchPage:async url=>url.endsWith('/robots.txt')
-    ?{body:'User-agent: *\\nAllow: /'}:redirectResult});
+    ?{body:'User-agent: *\nAllow: /'}:redirectResult});
   assert.equal(redirected[0]?.coverUrl,
     'https://www.uitgeverijvoorbeeld.nl/books/current/cover.jpg');
   const db2={books:[book('x')],braveEnrichmentJobs:[],braveUsage:null};
