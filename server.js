@@ -54,7 +54,8 @@ const { circulationRevision, noteLoanActivity,
   listTasks, updateReportCompletion, reportIsFullyReviewed,
   cancelTasksForDeletedBooks, cancelMissingBookTask, escalateTasksForDeletedClass,
   libraryOnlyTask, performDecision, assignTask } = require('./book-import-followups');
-const { createDeferredAssignmentTasks, listDeferredAssignmentTasks,
+const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
+  listDeferredAssignmentTasks,
   findTask: findDeferredAssignmentTask,
   resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
 
@@ -1397,6 +1398,9 @@ function loadDb() {
   if (!Array.isArray(data.importJobs)) data.importJobs = [];
   if (!Array.isArray(data.bookImportFollowups)) data.bookImportFollowups = [];
   if (!Array.isArray(data.bookImportAssignmentTasks)) data.bookImportAssignmentTasks = [];
+  // Preserve pre-upgrade postponed corrections before another import trims
+  // their original source report. This is saved with the next database write.
+  migrateLegacyDeferredTasks(data);
   if (!data.bookImportEmailPreferences || typeof data.bookImportEmailPreferences !== 'object'
     || Array.isArray(data.bookImportEmailPreferences)) data.bookImportEmailPreferences = {};
   data.books = data.books.map(ensureBookShape);
