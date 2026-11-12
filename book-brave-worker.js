@@ -93,6 +93,15 @@ function createBraveWorker({
       if(!result.error&&!stopped){
         if(claim.step===1){
           imageUrl=selectImageResult(result.images,claim);
+          if(!imageUrl){
+            // Many image results identify only the title. Verify their
+            // ORIGINAL publisher/book pages before accepting an image.
+            // Browsing the page does not consume another Brave API request.
+            const candidates=(result.images||[]).slice(0,8)
+              .filter(x=>x.pageUrl&&x.title)
+              .map(x=>({title:x.title,url:x.pageUrl}));
+            pages=await findPages({pages:candidates},claim,{maxPages:2});
+          }
         }else{
           pages=await findPages(result,claim,{maxPages:3});
         }
