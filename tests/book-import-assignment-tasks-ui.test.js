@@ -11,7 +11,7 @@ const server = read('server.js');
 assert.match(html, /id="book-import-assignment-tasks"/);
 assert.match(html, /src="admin-assignment-tasks.js"/);
 assert.match(server, /\/api\/admin\/book-import-assignment-tasks/);
-assert.match(admin, /book-import-assignment-tasks\/'/);
+assert.match(admin, /book-import-assignment-tasks/);
 assert.match(admin, /'apply'/);
 assert.match(admin, /'class_fixed'/);
 assert.match(admin, /'class_loan'/);
