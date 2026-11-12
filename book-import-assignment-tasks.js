@@ -95,6 +95,7 @@ function listDeferredAssignmentTasks(db) {
       after: task.original?.after ?? null,
       className: task.original?.className || '',
       classId: task.original?.classId || null,
+      hasExplicitLoan: task.original?.hasExplicitLoan === true,
       beforeLocation: task.original?.beforeLocation ?? null,
       beforeLoan: task.original?.beforeLoan ?? null,
       createdAt: task.createdAt, revision: task.revision,
