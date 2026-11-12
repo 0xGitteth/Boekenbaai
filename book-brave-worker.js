@@ -13,8 +13,14 @@ function addProvenance(book,field,source){
   book.importProvenance.fieldSources[field]={sourceType:'metadata',sourceDetail:source};
 }
 function userEdited(book,field){
-  return ['manual','excel','existing'].includes(
-    book.importProvenance?.fieldSources?.[field]?.sourceType);
+  const source=book.importProvenance?.fieldSources?.[field]?.sourceType;
+  // Existing values without provenance predate the import provenance system.
+  // Never assume they are machine-written and replace a teacher's work.
+  if(['manual','excel','existing','unknown'].includes(source))return true;
+  const value=book[field];
+  const populated=Array.isArray(value)?value.length>0
+    : value!==null&&value!==undefined&&String(value).trim()!=='';
+  return populated && source!=='metadata';
 }
 function updateFromPages(db,claim,pages,{imageUrl='',failedCovers=new Set()}={}) {
   let added=0,newCover=false;
