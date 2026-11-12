@@ -81,10 +81,11 @@ function createBraveWorker({
     if(isPaused()){schedule(4000);return;}
     running=true;
     let keepGoing=false;
+    let retryDelay=0;
     try {
       // Atomic, durable debit/reservation occurs before each external API
       // call and is never refunded on an error or process crash.
-      const claim=await commit(db=>claimNext(db));
+      const claim=await commit(db=>claimNext(db,{failedCovers:getFailedCovers()}));
       if(!claim)return;
       keepGoing=true;
       const result=await fetchSearch(claim.step,claim,{apiKey});
@@ -112,10 +113,13 @@ function createBraveWorker({
         keepGoing=false;
     }catch(error) {
       logger.warn?.('Brave-verrijking onderbroken:',error?.message||String(error));
-      keepGoing=false;
+      // A database failure must not depend on a browser being open.
+      // The claimed request remains recorded and cannot be billed twice.
+      keepGoing=true;
+      retryDelay=30000;
     }finally{
       running=false;
-      if(!stopped&&keepGoing)schedule(delayMs);
+      if(!stopped&&keepGoing)schedule(retryDelay||delayMs);
     }
   }
   return {
