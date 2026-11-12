@@ -95,6 +95,20 @@ assert.equal(db.students[0].borrowedBooks.length,1);
 assert.equal(db.readingRecords.length,1);
 assert.equal(db.history.length,1);
 
+// A generic class note beside an explicit current borrower is only a
+// location question. It MUST NOT offer a second class checkout.
+db=initial();
+const explicitClass=defer(db,row({
+  classContext:['Klas A'],
+  studentLoan:{status:'matched',id:'lisa',name:'Lisa Leerling'},
+}));
+assert.equal(explicitClass.kind,'class_context');
+assert.equal(listDeferredAssignmentTasks(db).tasks[0].hasExplicitLoan,true);
+assert.equal(resolveDeferredAssignmentTask(db,explicitClass,admin,
+  {choice:'class_loan',revision:1,confirm:true}).ok,false);
+assert.equal(db.books[0].borrowedBy,'lisa');
+assert.equal(db.books[0].borrowedByClassId,null);
+
 // Task stays independently accessible when the report retention limit trims
 // its original report. Completion is still stored in the permanent task.
 db=initial();
