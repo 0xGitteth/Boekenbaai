@@ -13,11 +13,14 @@ const { planCoverBackfill } = require('./lib/cover-backfill-plan');
 const { createFreeMetadataWorker } = require('./book-free-metadata-worker');
 const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
-const { readBookImportWorkbook } = require('./book-import-workbook');
+const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
+const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
+const { normalizeResolutions: normalizeAssignmentResolutions,
+  buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
@@ -5188,22 +5191,39 @@ async function handleApi(req, res, requestUrl) {
         let activated = false;
         try {
         const body = await parseBody(req, 35 * 1024 * 1024);
-        if (body.mode !== undefined && !['create', 'inventory_sync'].includes(body.mode)) {
+        if (body.mode !== undefined && !['create', 'inventory_sync', 'assignment_reconcile'].includes(body.mode)) {
           return sendJson(res, 400, { message: 'Ongeldige importmodus.' });
         }
-        const mode = body.mode === 'inventory_sync' ? 'inventory_sync' : 'create';
+        const mode = ['inventory_sync','assignment_reconcile'].includes(body.mode) ? body.mode : 'create';
+        if (mode === 'assignment_reconcile' && body.enrichIsbn === true) {
+          return sendJson(res, 400, { message: 'Administratie corrigeren gebruikt geen externe boekverrijking.', error:'enrichment_not_allowed' });
+        }
         if (typeof body.file !== 'string' || !body.file) {
           return sendJson(res, 400, { message: 'Kies eerst een Excelbestand.' });
         }
         // Inventory-sync rows describe desired TOTAL stock, not copies to
         // create. An existing school library may exceed the create cap.
         // The inventory planner independently caps NEW additions at 5,000.
-        const maxAnalyzedCopies = mode === 'inventory_sync' ? 1_500_000 : 5000;
+        const maxAnalyzedCopies = mode === 'inventory_sync' ? 1_500_000
+          : mode === 'assignment_reconcile' ? 1500 : 5000;
         const workbook = readBookImportWorkbook(XLSX, body.file, {
           maxRows: 1500, maxCopies: maxAnalyzedCopies,
         });
         if (!workbook.ok) {
           return sendJson(res, 400, { message: 'Dit Excelbestand kan niet veilig verwerkt worden.', error: workbook.error });
+        }
+        if (mode === 'assignment_reconcile') {
+          // Do this BEFORE analyzeBookImportRows, which otherwise expands
+          // quantities into physical copies and may allocate massive arrays.
+          // A correction can only identify one exact existing copy per row.
+          const invalid = workbook.rows.findIndex((row) => {
+            const qty = parseExcelQuantity(mapImportRow(row).fields.quantity);
+            return !qty.valid || qty.value !== 1;
+          });
+          if (invalid >= 0) return sendJson(res, 400, {
+            message:'Splits de Excelrijen: administratie corrigeren ondersteunt precies één exemplaar per rij.',
+            error:'assignment_requires_single_copy',row:invalid + 2,
+          });
         }
         // Authentication can read an older DB before the workbook upload
         // finishes. Read the live collection for the initial preview.
@@ -5258,15 +5278,17 @@ async function handleApi(req, res, requestUrl) {
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
         const latestDatabase = loadDb();
-        analysis.decisions = mode === 'inventory_sync'
-          ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false,
+        analysis.decisions = mode === 'assignment_reconcile'
+          ? buildAssignmentPreview(analysis, latestDatabase)
+          : mode === 'inventory_sync'
+            ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false,
             students: latestDatabase.students, classes: latestDatabase.classes,
             loanReceipts: historicalExcelLoanReceipts(latestDatabase),
             existingFollowups: latestDatabase.bookImportFollowups })
           : buildReviewDecisions(analysis, latestDatabase.books, {
             students: latestDatabase.students, classes: latestDatabase.classes,
           });
-        if (!analysis.decisions.ok && mode === 'inventory_sync') {
+        if (!analysis.decisions.ok && ['inventory_sync','assignment_reconcile'].includes(mode)) {
           return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
             error: analysis.decisions.error });
         }
@@ -5310,10 +5332,25 @@ async function handleApi(req, res, requestUrl) {
           const choices = stage.options.mode === 'inventory_sync'
             ? normalizeInventoryResolutions(body.inventoryResolutions)
             : { ok: true, values: [] };
+          const assignments = stage.options.mode === 'assignment_reconcile'
+            ? normalizeAssignmentResolutions(body.assignmentResolutions)
+            : { ok: true, values: [] };
           if (!choices.ok || (stage.options.mode !== 'inventory_sync'
             && body.inventoryResolutions !== undefined)) {
             return sendJson(res, 400, { message: 'Ongeldige voorraadkeuzes.',
               error: choices.error || 'invalid_sync_resolutions' });
+          }
+          if (stage.options.mode === 'assignment_reconcile'
+            && (!Array.isArray(body.corrections) || body.corrections.length)) {
+            return sendJson(res, 400, {
+              message:'In de correctiemodus geef je alleen beslissingen per verschil door.',
+              error:'assignment_corrections_not_allowed',
+            });
+          }
+          if (!assignments.ok || (stage.options.mode !== 'assignment_reconcile'
+            && body.assignmentResolutions !== undefined)) {
+            return sendJson(res, 400, { message: 'Ongeldige keuzes voor administratieve correcties.',
+              error: assignments.error || 'invalid_assignment_choices' });
           }
           // A review is a fresh retry opportunity. Retain successful metadata.
           stage.options.releaseRetryableLookups?.();
@@ -5331,8 +5368,10 @@ async function handleApi(req, res, requestUrl) {
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
           const latestDatabase = loadDb();
-          reviewed.decisions = stage.options.mode === 'inventory_sync'
-            ? buildInventorySyncPreview(reviewed, latestDatabase.books, {
+          reviewed.decisions = stage.options.mode === 'assignment_reconcile'
+            ? buildAssignmentPreview(reviewed, latestDatabase, assignments.values)
+            : stage.options.mode === 'inventory_sync'
+              ? buildInventorySyncPreview(reviewed, latestDatabase.books, {
               acceptWarnings: body.acceptWarnings, resolutions: choices.values,
               students: latestDatabase.students, classes: latestDatabase.classes,
               loanReceipts: historicalExcelLoanReceipts(latestDatabase),
@@ -5342,12 +5381,12 @@ async function handleApi(req, res, requestUrl) {
               acceptWarnings: body.acceptWarnings,
               students: latestDatabase.students, classes: latestDatabase.classes,
             });
-          if (!reviewed.decisions.ok && stage.options.mode === 'inventory_sync') {
+          if (!reviewed.decisions.ok && ['inventory_sync','assignment_reconcile'].includes(stage.options.mode)) {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
           }
           bookImportStageStore.finishReview(stage, reviewed, body.corrections,
-            body.acceptWarnings, choices.values);
+            body.acceptWarnings, choices.values, assignments.values);
           return sendJson(res, 200, importStageView(stage));
         } finally {
           bookImportStageStore.abortReview(stage);
@@ -5367,6 +5406,56 @@ async function handleApi(req, res, requestUrl) {
           // atomic save, so competing handlers in this process cannot
           // interleave their writes inside the checked transaction.
           const database = loadDb();
+          if (stage.options.mode === 'assignment_reconcile') {
+            const fresh = buildAssignmentPreview(stage.analysis, database,
+              stage.assignmentResolutions);
+            if (!fresh.ok || !fresh.summary.readyToApply
+              || JSON.stringify(fresh) !== JSON.stringify(stage.analysis.decisions)) {
+              return sendJson(res, 409, {
+                message: 'De administratie is sinds de controle veranderd. Controleer het bestand opnieuw.',
+                error: 'assignment_preview_stale',
+              });
+            }
+            const batchId = crypto.randomUUID();
+            const now = new Date().toISOString();
+            // This administrative mode NEVER creates a book, mutates metadata,
+            // or generates reading completion / check-in history.
+            const changed = applyAssignmentPreview(database, fresh, user.id, now, batchId);
+            const deferredDifferences=fresh.differences
+              .filter(item=>item.choice==='later')
+              .map(item=>({
+                id:item.id,worksheetRow:item.worksheetRow,
+                bookId:item.bookId,title:item.title,author:item.author,
+                editionIsbn:item.editionIsbn,barcode:item.barcode,
+                kind:item.kind,reason:item.reason||null,
+                before:item.before??null,after:item.after??null,
+                recordedAt:now,status:'open',
+              }));
+            const report = {
+              id:batchId,createdBy:user.id,importedAt:now,
+              mode:'assignment_reconcile',fileName:stage.fileName,
+              applied:changed.applied,loanCorrections:changed.loans,
+              locationCorrections:changed.locations,
+              kept:fresh.summary.kept,deferred:fresh.summary.deferred,
+              fullyReviewed:deferredDifferences.length===0,
+              deferredDifferences,corrections:changed.audit,
+            };
+            if (!Array.isArray(database.bookImportReports)) database.bookImportReports=[];
+            database.bookImportReports.push(report);
+            database.bookImportReports=database.bookImportReports.slice(-30);
+            appendHistory(database, {
+              type:'book_assignment_corrections',performedBy:user.id,importBatchId:batchId,
+              message: changed.applied + ' administratieve boekkoppelingen gecorrigeerd '
+                + '(zonder inlevering of nieuw exemplaar)',
+            });
+            saveReviewedBookImportDb(database);
+            bookImportStageStore.finishApply(stage, {
+              batchId,created:0,removed:0,corrected:changed.applied,
+              correctedLoans:changed.loans,correctedLocations:changed.locations,
+              report,
+            });
+            return sendJson(res, 200, importStageView(stage));
+          }
           if (stage.options.mode === 'inventory_sync') {
             // Re-evaluate the target using the live collection immediately
             // before the atomic write. A concurrent admin's barcode, edition,
