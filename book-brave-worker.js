@@ -14,9 +14,10 @@ function addProvenance(book,field,source){
 }
 function userEdited(book,field){
   const source=book.importProvenance?.fieldSources?.[field]?.sourceType;
-  // Existing values without provenance predate the import provenance system.
-  // Never assume they are machine-written and replace a teacher's work.
-  if(['manual','excel','existing','unknown'].includes(source))return true;
+  // An intentionally cleared value is protected only if a teacher explicitly
+  // cleared it. Imported "unknown" and absent/legacy values can be enriched
+  // when empty, but populated non-metadata values must never be replaced.
+  if(source==='manual')return true;
   const value=book[field];
   const populated=Array.isArray(value)?value.length>0
     : value!==null&&value!==undefined&&String(value).trim()!=='';
