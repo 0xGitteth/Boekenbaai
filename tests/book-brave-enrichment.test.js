@@ -98,9 +98,11 @@ const manual={...book('manual'),description:'Eigen omschrijving door docent',
     description:{sourceType:'manual'},tags:{sourceType:'manual'},
     coverUrl:{sourceType:'manual'}}}};
 const oldWithoutProvenance={...book('old'),description:'Eerder handmatig aangepast'};
-const mergeDb={books:[manual,oldWithoutProvenance]};
+const notApproved={...book('not-approved')};
+const mergeDb={books:[manual,oldWithoutProvenance,notApproved]};
 updateFromPages(mergeDb,{key:JSON.stringify([target.isbn,
-  target.title.toLowerCase(),target.author.toLowerCase()])},[
+  target.title.toLowerCase(),target.author.toLowerCase()]),
+  bookIds:['manual','old']},[
   {...found,description:found.description.repeat(4)},
 ],{imageUrl:found.coverUrl,failedCovers:new Set([manual.coverUrl])});
 assert.equal(manual.description,'Eigen omschrijving door docent',
@@ -110,6 +112,8 @@ assert.equal(manual.coverUrl,'https://example.org/eigen-omslag.jpg',
   'Teacher cover choices are protected even after a download problem');
 assert.equal(oldWithoutProvenance.description,'Eerder handmatig aangepast',
   'Legacy descriptions with missing provenance are protected');
+assert.equal(notApproved.coverUrl,'',
+  'A new unrelated copy of the same work must not be enriched without approval');
 
 assert.equal(parseBookPage(html,{...target,title:'Verkeerd boek',isbn:'9789025869977'},
   'https://www.uitgeverijvoorbeeld.nl/boeken/de-brief'),null);
