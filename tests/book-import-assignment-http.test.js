@@ -186,6 +186,37 @@ async function run(){
 
     const rejected=await begin([row('Tim Leerling')],'assignment_reconcile',true);
     assert.equal(rejected.status,400,'Correction mode must never call metadata enrichment');
+    // The Excel column "Klassen" needs a real classification choice, not
+    // merely Keep/Later. Classifying it as a fixed location must never
+    // return a book that is currently borrowed by a pupil.
+    const classroom=await begin([{...row(),Klassen:'Klas A'}]);
+    assert.equal(classroom.status,201,JSON.stringify(classroom.data));
+    assert.equal(classroom.data.decisions.summary.classQuestions,1);
+    assert.equal(classroom.data.decisions.summary.actualDifferences,0);
+    assert.equal(classroom.data.decisions.differences.length,1);
+    assert.equal(classroom.data.decisions.differences[0].kind,'class_context');
+    assert.equal(classroom.data.decisions.differences[0].classId,'a');
+    const classroomReviewed=await call(
+      '/api/admin/book-import-stages/'+classroom.data.id+'/review',
+      token,{revision:classroom.data.revision,corrections:[],acceptWarnings:true,
+        assignmentResolutions:[{id:'0:class_context',action:'class_fixed'}]});
+    assert.equal(classroomReviewed.status,200,JSON.stringify(classroomReviewed.data));
+    assert.equal(classroomReviewed.data.decisions.summary.apply,1);
+    const classroomSaved=await call(
+      '/api/admin/book-import-stages/'+classroom.data.id+'/apply',
+      token,{revision:classroomReviewed.data.revision,confirm:true});
+    assert.equal(classroomSaved.status,200,JSON.stringify(classroomSaved.data));
+    assert.equal(classroomSaved.data.result.correctedLocations,1);
+    const afterLocation=JSON.parse(fs.readFileSync(file,'utf8'));
+    assert.equal(afterLocation.books[0].fixedLocation,'Klas A');
+    assert.equal(afterLocation.books[0].borrowedBy,'tim');
+    assert.equal(afterLocation.books[0].status,'borrowed');
+    assert.equal(afterLocation.readingRecords.length,1);
+    const sameLocation=await begin([{...row(),Klassen:'Klas A'}]);
+    assert.equal(sameLocation.status,201,JSON.stringify(sameLocation.data));
+    assert.equal(sameLocation.data.decisions.summary.differences,0,
+      'A confirmed matching class location must not be reported as another difference');
+
     const final=JSON.parse(fs.readFileSync(file,'utf8'));
     assert.equal(final.books.length,1);
     assert.equal(final.readingRecords.length,1);
