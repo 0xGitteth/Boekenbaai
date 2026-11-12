@@ -9,7 +9,7 @@ const {
   parseBookPage,parseMonthlyRemaining,matchTitleAuthor,queryFor,
   robotsAllowed,discoverPages,selectImageResult,
 }=require('../book-brave-fetch');
-const {createBraveWorker}=require('../book-brave-worker');
+const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
 
 function book(id,title='De brief voor de koning'){
   return {id,title,author:'Tonke Dragt',metadataIsbn:'9789083316642',
@@ -87,6 +87,30 @@ assert.equal(found.confidence,'isbn');
 assert.match(found.description,/gevaarlijke reis/);
 assert.deepEqual(found.tags,['avontuur','geheimen','vriendschap']);
 assert.equal(found.coverUrl,'https://www.uitgeverijvoorbeeld.nl/images/debrief-voorkant.jpg');
+const sourceWithoutImage=html.replace(
+  ',"image":"https://www.uitgeverijvoorbeeld.nl/images/debrief-voorkant.jpg"', '');
+assert.equal(parseBookPage(sourceWithoutImage,target,
+  'https://www.uitgeverijvoorbeeld.nl/boeken/de-brief')?.coverUrl,'',
+  'A book page without image metadata must not become its own cover');
+const manual={...book('manual'),description:'Eigen omschrijving door docent',
+  tags:['Zelf ingevoerd'],coverUrl:'https://example.org/eigen-omslag.jpg',
+  importProvenance:{fieldSources:{
+    description:{sourceType:'manual'},tags:{sourceType:'manual'},
+    coverUrl:{sourceType:'manual'}}}};
+const oldWithoutProvenance={...book('old'),description:'Eerder handmatig aangepast'};
+const mergeDb={books:[manual,oldWithoutProvenance]};
+updateFromPages(mergeDb,{key:JSON.stringify([target.isbn,
+  target.title.toLowerCase(),target.author.toLowerCase()])},[
+  {...found,description:found.description.repeat(4)},
+],{imageUrl:found.coverUrl,failedCovers:new Set([manual.coverUrl])});
+assert.equal(manual.description,'Eigen omschrijving door docent',
+  'Background enrichment may not replace teacher text');
+assert.deepEqual(manual.tags,['Zelf ingevoerd']);
+assert.equal(manual.coverUrl,'https://example.org/eigen-omslag.jpg',
+  'Teacher cover choices are protected even after a download problem');
+assert.equal(oldWithoutProvenance.description,'Eerder handmatig aangepast',
+  'Legacy descriptions with missing provenance are protected');
+
 assert.equal(parseBookPage(html,{...target,title:'Verkeerd boek',isbn:'9789025869977'},
   'https://www.uitgeverijvoorbeeld.nl/boeken/de-brief'),null);
 assert.equal(parseBookPage(html,target,'http://localhost/book'),null);
@@ -116,6 +140,12 @@ async function run(){
   }});
   assert.equal(pages.length,1,'Only a verified original book page can be used');
   assert.equal(pageCalls,2,'Robots and page fetched, irrelevant site skipped');
+  const blocked=await discoverPages({pages:[
+    {title:'De brief voor de koning',url:'https://www.uitgeverijvoorbeeld.nl/boek'},
+  ]},target,{fetchPage:async url=>url.endsWith('/robots.txt')
+    ?{error:'request_error'}:{body:html}});
+  assert.equal(blocked.length,0,
+    'If robots.txt is unreachable, page crawling is not authorized');
   const db2={books:[book('x')],braveEnrichmentJobs:[],braveUsage:null};
   const j=addJob(db2,['x'],{id:'import1'});
   assert.equal(approveJob(db2,j.id,{confirmed:true,expectedRequests:3,
@@ -192,6 +222,19 @@ async function run(){
   assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,
     expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
   assert.equal(db4.braveUsage.reserved,1,'A second approval cannot erase spent requests');
+  const db5={books:[book('credential')],braveEnrichmentJobs:[]};
+  const denied=addJob(db5,['credential'],{id:'access-denied'});
+  assert.equal(approveJob(db5,denied.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const attempted=claimNext(db5,{now,env:environment});
+  finishClaim(db5,attempted,{error:'unauthorized'});
+  assert.equal(denied.state,'paused');
+  assert.equal(getJobPlan(db5,denied,{braveConfigured:true,now,env:environment}).canApprove,true,
+    'The administrator can explicitly retry after fixing the API key');
+  assert.equal(approveJob(db5,denied.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  assert.equal(db5.braveUsage.reserved,1,
+    'Reapproval cannot erase the previously reserved API request');
   console.log('Brave deferred consent, persistent budget, verifiable scraping and worker passed');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
