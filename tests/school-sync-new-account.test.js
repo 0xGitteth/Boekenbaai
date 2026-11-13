@@ -131,6 +131,17 @@ for(const applyDeactivations of [false,true]){
   }),/zonder leerlingnummer/i,
   'Incomplete identity in full export must block preview and apply');
 }
+for(const applyDeactivations of [false,true]){
+  assert.throws(()=>runSchoolSync({
+    kind:'student',db:structuredClone(incompleteDb),
+    store:core.emptyAuthStore(),rows:[
+      {Leerlingnummer:'91001','Huidige groep':'Klas A',
+        Roepnaam:'',Achternaam:''},
+    ],
+    fullSchoolSync:true,applyDeactivations,actorId:'admin',
+  }),/zonder naam/i,
+  'A numbered but nameless row in a full export must block all exits');
+}
 
 assert.throws(
   () => runSchoolSync({
