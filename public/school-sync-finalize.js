@@ -3,7 +3,7 @@
 
   const syncState = {
     student: { fileData: '', manualMatches: {}, legacyResolutions: {},
-      preview: null, revision: 0 },
+      legacyDetailsOpen: false, preview: null, revision: 0 },
     teacher: { fileData: '', manualMatches: {}, preview: null, revision: 0 },
   };
 
@@ -113,15 +113,26 @@
       ['legacy-needs-review', 'legacy-reviewed'].includes(row.status));
     if (!missing.length) return;
     const box = make('section', { className: 'admin-modern__import-warnings school-sync__review' });
+    const assumed = missing.filter(student => student.chosen === 'exit').length;
+    const kept = missing.filter(student => student.chosen === 'keep').length;
     box.append(
-      make('h5', { text: 'Oude leerlingaccounts controleren (' + missing.length + ')' }),
+      make('h5', { text: 'Oude leerlingaccounts (' + missing.length + ')' }),
       make('p', { className: 'hint', text:
-        'Deze bestaande accounts hebben geen ParnasSys-leerlingnummer en konden '
-        + 'niet aan de nieuwe export worden gekoppeld. Controleer per leerling of '
-        + 'deze nog op school zit. Bij uitschrijven verwijdert Boekenbaai alleen '
-        + 'accounts zonder te bewaren bibliotheekgegevens, na jouw extra bevestiging. '
-        + 'Accounts met gegevens krijgen een uitschrijftaak.' }),
+        'Omdat dit een volledige ParnasSys-export is, worden '
+        + assumed + ' oude, niet-gekoppelde accounts standaard als uitgeschreven beschouwd. '
+        + 'Bij synchronisatie verdwijnen zij uit de huidige klas. Zonder bibliotheekgegevens '
+        + 'worden ze alleen na extra bevestiging verwijderd. Met bewaarde gegevens blijven '
+        + 'ze inactief bestaan en krijgen ze een uitschrijftaak. '
+        + 'Controleer hieronder alleen de uitzonderingen.' }),
     );
+    const list = document.createElement('details');
+    list.open = Boolean(syncState[kind].legacyDetailsOpen);
+    list.append(make('summary', { text:
+      'Bekijk ' + missing.length + ' oude accounts en pas uitzonderingen aan'
+      + (kept ? ' (' + kept + ' behouden)' : '') }));
+    list.addEventListener('toggle', () => {
+      syncState[kind].legacyDetailsOpen = list.open;
+    });
     for (const student of missing) {
       const row = make('div', { className: 'school-sync__review-row' });
       const details = make('div');
@@ -131,12 +142,11 @@
           + ((student.classes || []).join(', ') || 'Niet bekend') }),
       );
       const select = document.createElement('select');
-      select.append(new Option('Maak een keuze…', ''));
+      select.append(new Option('Uitgeschreven (standaard)', 'exit'));
       select.append(new Option('Leerling zit nog op school, account behouden', 'keep'));
-      select.append(new Option('Leerling is van school, uitschrijven', 'exit'));
-      select.value = syncState[kind].legacyResolutions[student.id] || '';
+      select.value = student.chosen || 'exit';
       select.addEventListener('change', async () => {
-        if (select.value) syncState[kind].legacyResolutions[student.id] = select.value;
+        if (select.value === 'keep') syncState[kind].legacyResolutions[student.id] = 'keep';
         else delete syncState[kind].legacyResolutions[student.id];
         syncState[kind].preview = null;
         syncState[kind].revision += 1;
@@ -144,8 +154,9 @@
         await rerun();
       });
       row.append(details, select);
-      box.append(row);
+      list.append(row);
     }
+    box.append(list);
     resultHost.append(box);
   }
 
@@ -350,6 +361,7 @@
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
               expectedDeletionFingerprint:summary.deletionCandidateFingerprint||'',
+              expectedExitFingerprint:summary.exitCandidateFingerprint||'',
             },
           });
         } catch (error) {
@@ -368,6 +380,7 @@
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
               expectedDeletionFingerprint:summary.deletionCandidateFingerprint||'',
+              expectedExitFingerprint:summary.exitCandidateFingerprint||'',
             },
           });
         }
