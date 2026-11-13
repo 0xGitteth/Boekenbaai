@@ -617,7 +617,7 @@ function findTeacherByExactName(db, name) {
 }
 
 function processTeacherDeactivations(result, originalDb, rows, options,
-  incomingTeacherIds = new Set(), resolutions = {}) {
+  incomingTeacherIds = new Set(), resolutions = {}, pendingReviews = []) {
   result.summary.teachersWithoutGroups = 0;
   result.summary.missingTeachersFromImport = 0;
   result.summary.teacherDeletionEligible = 0;
@@ -641,8 +641,10 @@ function processTeacherDeactivations(result, originalDb, rows, options,
   const successfullyMatchedNames=new Set((result.db.users||[])
     .filter(user=>incomingTeacherIds.has(user.id)&&user.role==='teacher')
     .map(user=>normalizePersonName(user.name)));
+  const disputedIds=new Set(pendingReviews.flatMap(review=>
+    (review.candidates||[]).map(candidate=>candidate.id)));
   for(const teacher of original){
-    if(incomingTeacherIds.has(teacher.id))continue;
+    if(incomingTeacherIds.has(teacher.id)||disputedIds.has(teacher.id))continue;
     if(matchingNames.has(normalizePersonName(teacher.name)) &&
       !successfullyMatchedNames.has(normalizePersonName(teacher.name))){
       // The row refers to the name but did not match any existing account.
@@ -831,7 +833,7 @@ function runSchoolSync(input = {}) {
         .map((entry) => entry.id)
     );
     processTeacherDeactivations(result, originalDb, rows, options, incomingTeacherIds,
-      input.teacherResolutions || {});
+      input.teacherResolutions || {}, reviews);
   }
 
   return result;
