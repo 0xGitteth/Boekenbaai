@@ -143,6 +143,10 @@ async function run(){
     assert.equal(tim.borrowedBy,'tim');
     assert.equal(tim.fixedLocation,'Klas A');
     assert.equal(lisa.description,'Nieuwe beschrijving');
+    const lisaReceipt=crypto.createHash('sha256')
+      .update(JSON.stringify(['copy-1','student','lisa'])).digest('hex');
+    assert.ok(saved.bookImportLoanReceipts?.includes(lisaReceipt),
+      'A verified existing loan must receive a durable receipt for future reuploads');
     assert.equal(tim.description,'Nieuwe beschrijving');
     const newBook=saved.books.find(book=>book.editionIsbn===SECOND);
     assert.ok(newBook,'The missing ISBN was created in the same transaction');
@@ -222,6 +226,13 @@ async function run(){
     const savedDefer=await apply(reviewedDefer);
     assert.equal(savedDefer.status,200,JSON.stringify(savedDefer.data));
     assert.equal(savedDefer.data.result.deferred,1);
+    assert.equal(savedDefer.data.result.report.fullyReviewed,false,
+      'Deferred-only unified import must NOT report completion');
+    const report=await call('/api/admin/book-import-reports/'
+      +savedDefer.data.result.batchId,token);
+    assert.equal(report.status,200);
+    assert.equal(report.data.fullyReviewed,false,
+      'Report API must stay open while the administrative task is pending');
     assert.equal(readDb().books.find(b=>b.id==='copy-1').fixedLocation,null);
     const tasks=await call('/api/admin/book-import-assignment-tasks',token);
     assert.equal(tasks.status,200);
