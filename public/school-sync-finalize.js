@@ -76,33 +76,46 @@
       make('h5', { text: `Even controleren (${reviews.length})` }),
       make('p', {
         className: 'hint',
-        text: 'Boekenbaai denkt dat deze ParnasSys-leerling mogelijk al handmatig is toegevoegd. Kies alleen een bestaand account als het echt dezelfde leerling is.',
+        text: kind==='teacher'
+          ? 'Bij meerdere docentaccounts met dezelfde naam moet je het juiste '
+            +'bestaande account kiezen. Als er geen keuze beschikbaar is, '
+            +'controleer de medewerkersexport en de bestaande accounts.'
+          : 'Boekenbaai denkt dat deze ParnasSys-leerling mogelijk al handmatig is toegevoegd. Kies alleen een bestaand account als het echt dezelfde leerling is.',
       })
     );
     for (const review of reviews) {
       const row = make('div', { className: 'school-sync__review-row' });
       const info = make('div');
       info.append(
-        make('strong', { text: `${review.name} · leerlingnummer ${review.studentNumber}` }),
+        make('strong', { text: kind==='teacher'
+          ? `${review.name} · Excelrij ${review.row||'onbekend'}`
+          : `${review.name} · leerlingnummer ${review.studentNumber}` }),
         make('span', { text: (review.classes || []).join(', ') || 'Geen klas' })
       );
       const select = document.createElement('select');
+      const key=kind==='teacher'?review.sourceKey:review.studentNumber;
       select.append(new Option('Kies het bestaande account…', ''));
       for (const candidate of review.candidates || []) {
         const classes = (candidate.classNames || []).join(', ');
-        select.append(new Option(`${candidate.name}${classes ? ` · ${classes}` : ''}`, candidate.id));
+        select.append(new Option(
+          `${candidate.name}${classes ? ` · ${classes}` : ''}${candidate.username
+            ? ` · ${candidate.username}` : ''}`, candidate.id));
       }
-      select.append(new Option('Geen match, maak een nieuw leerlingaccount', '__new__'));
-      select.value = syncState[kind].manualMatches[review.studentNumber] || '';
+      if(kind==='student')
+        select.append(new Option('Geen match, maak een nieuw leerlingaccount', '__new__'));
+      select.value = syncState[kind].manualMatches[key] || '';
       select.addEventListener('change', async () => {
-        if (select.value) syncState[kind].manualMatches[review.studentNumber] = select.value;
-        else delete syncState[kind].manualMatches[review.studentNumber];
+        if (select.value) syncState[kind].manualMatches[key] = select.value;
+        else delete syncState[kind].manualMatches[key];
         syncState[kind].preview = null;
         syncState[kind].revision += 1;
         select.disabled = true;
         await rerun();
       });
-      row.append(info, select);
+      if(kind==='teacher'&&!(review.candidates||[]).length){
+        row.append(info,make('p',{className:'hint',text:
+          'Controleer of corrigeer de export. Deze rij kan nog niet veilig worden gesynchroniseerd.'}));
+      } else row.append(info,select);
       box.append(row);
     }
     resultHost.append(box);
