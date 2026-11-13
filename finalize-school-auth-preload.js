@@ -536,6 +536,19 @@ function schoolSyncPreview(context, body, apply) {
     manualMatches: body.manualMatches && typeof body.manualMatches === 'object' ? body.manualMatches : {},
   });
 
+  // Deletion is irreversible. A full-school import is not consent to
+  // silently erase even one pupil who has no preserved library records.
+  if (apply && kind==='student'
+    && result.summary.deletionEligible>0 && body.confirmPupilRemoval!==true){
+    const error=new Error(
+      'Deze synchronisatie verwijdert '+result.summary.deletionEligible
+      +' leerlingaccount(s) zonder bibliotheekgegevens. '
+      +'Bevestig deze verwijdering expliciet voordat je synchroniseert.');
+    error.code='PUPIL_REMOVAL_CONFIRMATION';
+    error.summary=result.summary;
+    throw error;
+  }
+
   if (
     apply &&
     result.summary.largeRemovalWarning &&
@@ -674,7 +687,11 @@ async function handleCustomRoute(req, res, requestUrl) {
         sendJson(res, 200, payload);
       }
     } catch (error) {
-      if (error?.code === 'LARGE_REMOVAL_CONFIRMATION') {
+      if (error?.code === 'PUPIL_REMOVAL_CONFIRMATION') {
+        sendJson(res,409,{
+          code:'pupil-removal-confirmation',message:error.message,summary:error.summary,
+        });
+      } else if (error?.code === 'LARGE_REMOVAL_CONFIRMATION') {
         sendJson(res, 409, {
           code: 'large-removal-confirmation',
           message: error.message,
