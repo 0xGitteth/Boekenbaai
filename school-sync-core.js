@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const {
   applyPeopleImport,
   normalizeKey,
@@ -354,8 +355,13 @@ function processMissingStudents(result, originalDb, incomingNumbers, options) {
   result.summary.exitTasks = 0;
   result.summary.exitTasksWithBooks = 0;
   result.summary.deleted = 0;
+  result.summary.deletionCandidateFingerprint = '';
 
   if (!options.fullSchoolSync) return;
+  const deletionIds=missing.filter(student=>!transitionMissingStudent(result.db,
+    result.store,student,{apply:false}).hasData).map(student=>student.id).sort();
+  result.summary.deletionCandidateFingerprint=crypto.createHash('sha256')
+    .update(JSON.stringify(deletionIds)).digest('hex');
   for (const student of missing) {
     const outcome = transitionMissingStudent(result.db,result.store,student,{
       apply:options.applyDeactivations,actorId:options.actorId,
