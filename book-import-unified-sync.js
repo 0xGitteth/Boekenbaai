@@ -5,6 +5,7 @@
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
+const { excelLoanReceiptKey } = require('./book-import-loan-migration');
 
 const METADATA_FIELDS=Object.freeze([
   'title','author','description','publisher','publishedYear','pageCount',
@@ -160,6 +161,17 @@ function metadataPlan(analysis,db,parts,choices=[]){
       }else{
         updates.push({id,isbn,field,value:next,title:rows[0].book?.title,
           bookIds:copies.map(copy=>copy.id),copies:copies.length,
+          // The final plan is recomputed from the current database. Include
+          // old values so a concurrent edit of this selected field makes the
+          // confirmed preview stale even when the target is unchanged.
+          beforeValues:copies.map(copy=>({
+            bookId:copy.id,
+            value:field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
+            ...(field==='coverUrl'?{localCoverUrl:copy.localCoverUrl||''}:{}),
+            ...(field==='manualThemes'?{
+              importedThemes:copy.importedThemes||[],themes:copy.themes||[],
+            }:{}),
+          })),
           worksheetRows:sourceRows.map(row=>row.sourceRowNumber)});
       }
     }
@@ -202,13 +214,36 @@ function buildUnifiedBookImport(analysis,db,{
   }else if(inventoryChoices.values.length)return {ok:false,error:'inventory_not_selected'};
   const projected=projectCopies(analysis,inventory,use);
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
-  const assignments=(use.loans||use.locations)
-    ?buildAssignmentPreview(assignmentSource(analysis,use),assignmentDb,assignmentChoices.values)
-    :buildAssignmentPreview({...analysis,rows:[]},assignmentDb,assignmentChoices.values);
+  const source=use.loans||use.locations
+    ?assignmentSource(analysis,use):{...analysis,rows:[]};
+  let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
   if(!assignments.ok)return assignments;
+  // Receipt IDs survive loan returns and truncated import reports. Re-uploading
+  // an old sheet must never issue another loan to its former borrower.
+  const receipts=new Set(loanReceipts);
+  const manuallyChosen=new Set(assignmentChoices.values.map(choice=>choice.id));
+  const previouslyImported=assignments.differences.filter(diff=>
+    diff.kind==='loan'&&diff.choice==='apply'&&diff.before?.type==='none'
+    &&!manuallyChosen.has(diff.id)
+    &&receipts.has(excelLoanReceiptKey(diff.bookId,{
+      type:diff.after?.type,id:diff.after?.id,
+    })));
+  if(previouslyImported.length){
+    assignments=buildAssignmentPreview(source,assignmentDb,[
+      ...assignmentChoices.values,
+      ...previouslyImported.map(diff=>({id:diff.id,action:'keep'})),
+    ]);
+    if(!assignments.ok)return assignments;
+    const ignored=new Set(previouslyImported.map(diff=>diff.id));
+    for(const diff of assignments.differences)
+      if(ignored.has(diff.id))diff.previouslyImported=true;
+    assignments.summary.previouslyImportedLoans=ignored.size;
+  }else assignments.summary.previouslyImportedLoans=0;
   const metadata=metadataPlan(analysis,db,use,metaChoices.values);
   if(!metadata.ok)return metadata;
-  const total=inventory.summary.addCopies+assignments.summary.apply+metadata.summary.updates;
+  const total=inventory.summary.addCopies+assignments.summary.apply
+    +metadata.summary.updates+assignments.summary.deferred
+    +assignments.summary.kept+metadata.kept;
   return {ok:true,parts:use,inventory,assignments,metadata,summary:{
     newCopies:inventory.summary.addCopies,
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
@@ -222,6 +257,8 @@ function buildUnifiedBookImport(analysis,db,{
     missingStockCopies:assignments.summary.notInCollectionCopies,
     preservedOldCopies:inventory.summary.omittedExistingCopies,
     automatic:assignments.summary.automatic,
+    previouslyImportedLoans:assignments.summary.previouslyImportedLoans,
+    deferred:assignments.summary.deferred,
     readyToApply:inventory.summary.readyToApply
       &&assignments.summary.pending===0&&metadata.summary.issues===0&&total>0,
   }};
