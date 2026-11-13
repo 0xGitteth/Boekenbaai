@@ -156,10 +156,13 @@ assert.ok(renderStart>0&&renderEnd>renderStart);
 const adminNode=element('section');
 const teacherNode=element('section');
 const adminView=element('div');
+const adminTaskHost=element('section');
+let historicRendered=false,exitRendered=false;
 let removed=false;
 const existingPanel={remove(){removed=true;}};
 const adminRenderDoc={
   body:{classList:{contains(){return false;}}},
+  getElementById(id){return id==='bb-admin-v31-tasks'?adminTaskHost:null;},
   querySelector(selector){
     const refs={
       '#teacher-dashboard':{classList:{contains(cls){return cls==='hidden';}}},
@@ -174,6 +177,8 @@ const adminRenderDoc={
 const adminRender=vm.createContext({state:{role:'admin'},document:adminRenderDoc,
   make(tag,options={}){return element(tag,options.className,options.text);},
   renderClassContext(){},renderRequests(){},renderStudents(){},renderOutgoing(){},
+  renderFormerClasses(){historicRendered=true;},
+  renderExitTasks(host){exitRendered=host===adminTaskHost;},
 });
 new vm.Script(students.slice(renderStart,renderEnd)+'\nthis.runRender=render;')
   .runInContext(adminRender);
@@ -184,5 +189,7 @@ assert.equal(adminView.children[0].tag,'section','Administrator gets live manage
 // The new element mock does not map options.id by default; ensure new view was
 // actually appended into the administrator slot instead of the hidden teacher.
 assert.equal(teacherNode.children.length,0);
+assert.equal(historicRendered,true,'Former classroom snapshot must be shown');
+assert.equal(exitRendered,true,'Exit tasks must be placed in admin task hub');
 
 console.log('Teacher tasks, class transfer counts, date overlay, button alignment and email placeholder regressions OK');
