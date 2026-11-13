@@ -490,6 +490,79 @@ function baseDb() {
   assert.strictEqual(selected.db.users.find(u=>u.id==='b').name,'Sam Jansen');
 })();
 
+(function testExistingTeacherWithoutGroupAndNewNonTeacherWithoutGroup() {
+  const db=baseDb();
+  db.classes.push({id:'former-class',name:'Oude klas',
+    teacherIds:['already-employed'],studentIds:[]});
+  db.users.push({id:'already-employed',role:'teacher',name:'Praktijk Docent',
+    username:'praktijk',passwordHash:'x',active:true,classIds:['former-class'],
+    source:'manual-import'});
+  const rows=[
+    {Roepnaam:'Praktijk',Achternaam:'Docent',Gebruikersnaam:'praktijk',
+      Rollen:'Vakdocent','Gekoppelde groepen':''},
+    {Roepnaam:'Administratief',Achternaam:'Medewerker',Rollen:'Administratie',
+      'Gekoppelde groepen':''},
+  ];
+  const result=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin'});
+  assert.equal(result.summary.needsReview,0);
+  assert.equal(result.summary.missingTeachersFromImport,0);
+  assert.equal(result.summary.teachersWithoutGroups,1);
+  assert.equal(result.db.users.find(x=>x.id==='already-employed').active,true);
+  assert.deepStrictEqual(result.db.users.find(x=>x.id==='already-employed').classIds,[]);
+  assert.deepStrictEqual(result.db.classes[0].teacherIds,[]);
+  assert.equal(result.db.users.some(x=>x.name==='Administratief Medewerker'),false,
+    'Non-teaching staff without a class must not get teacher accounts');
+})();
+
+(function testPreserveNewUsernameWhenIdentityMatchesExactName() {
+  const db=baseDb();
+  db.users.push({id:'staff-old',role:'teacher',name:'Sam Jansen',
+    username:'old.login',passwordHash:'x',active:true,classIds:[]});
+  const rows=[{Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'new.login','Gekoppelde groepen':'Klas A'}];
+  const result=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin'});
+  assert.equal(result.summary.needsReview,0);
+  assert.equal(result.summary.missingTeachersFromImport,0);
+  assert.equal(result.summary.created,0);
+  assert.equal(result.db.users.find(u=>u.id==='staff-old').username,'new.login',
+    'Full sync must respect a newly supplied unused ParnasSys username');
+})();
+
+(function testManualSelectedVerifiedEmailAccountIsNotOverriddenByUsername() {
+  const db=baseDb();
+  db.users.push(
+    {id:'staff-a',role:'teacher',name:'Sam Jansen',username:'old-a',
+      passwordHash:'x',active:true,classIds:[]},
+    {id:'staff-b',role:'teacher',name:'Sam Jansen',username:'old-b',
+      passwordHash:'x',active:true,classIds:[]},
+  );
+  const store=core.upsertLink(core.emptyAuthStore(),{
+    accountType:'staff',accountId:'staff-b',email:'sam.b@koraaledu.nl',
+    sub:'verified-staff-b',linkedBy:'test',
+  }).store;
+  const row={Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'old-a',Schoolmail:'sam.b@koraaledu.nl',
+    'Gekoppelde groepen':'Klas A'};
+  const review=runSchoolSync({kind:'teacher',db:structuredClone(db),store,
+    rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'staff-a'}});
+  assert.equal(review.summary.needsReview,1);
+  assert.equal(review.summary.missingTeachersFromImport,0);
+  const chosen=runSchoolSync({kind:'teacher',db:structuredClone(db),store,
+    rows:[row],fullSchoolSync:true,manualMatches:{'staff:2':'staff-b'}});
+  assert.equal(chosen.summary.needsReview,0);
+  assert.equal(chosen.summary.missingTeachersFromImport,1);
+  assert.deepStrictEqual(chosen.db.users.find(u=>u.id==='staff-b').classIds.length,1);
+  assert.deepStrictEqual(chosen.db.users.find(u=>u.id==='staff-a').classIds,[]);
+  assert.equal(chosen.db.users.find(u=>u.id==='staff-a').name,'Sam Jansen');
+  assert.equal(chosen.db.users.find(u=>u.id==='staff-b').username,'old-b',
+    'Taken username must not be reassigned from staff A');
+})();
+
 (function testIncompleteStaffExportRejectsMassOutflow() {
   const db=baseDb();
   db.users.push({id:'old',role:'teacher',name:'Old Teacher',
