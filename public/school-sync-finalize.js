@@ -201,6 +201,65 @@
     box.append(details);resultHost.append(box);
   }
 
+  let teacherTaskRefresh=0;
+  async function loadTeacherExitTasks(attempt=0){
+    const host=document.getElementById('teacher-exit-tasks-panel');
+    if(!host){
+      if(attempt<12)window.setTimeout(()=>loadTeacherExitTasks(attempt+1),250);
+      return;
+    }
+    const request=++teacherTaskRefresh;
+    try{
+      const response=await api('/api/admin/teacher-exits');
+      if(request!==teacherTaskRefresh)return;
+      const tasks=(response.tasks||[]).filter(task=>task.status!=='cancelled');
+      host.replaceChildren();
+      if(!tasks.length)return;
+      const active=tasks.filter(task=>task.status==='open');
+      const section=make('section',{className:'panel school-sync__teacher-exit-tasks'});
+      section.append(make('h3',{text:'Uitschrijven oud-docenten ('+active.length+')'}));
+      section.append(make('p',{className:'hint',text:
+        'Oud-docenten hebben geen toegang meer tot Boekenbaai en zijn '
+        +'niet aan actuele klassen gekoppeld. Hun historische gegevens blijven '
+        +'bewaard. De beheerder kan de controle afronden.'}));
+      for(const task of active){
+        const row=make('div',{className:'school-sync__review-row'});
+        const info=make('div');
+        info.append(make('strong',{text:task.teacherName}));
+        info.append(make('span',{text:'Voormalige klas(sen): '
+          +((task.lastClasses||[]).map(k=>k.name).join(', ')||'Geen')}));
+        const done=make('button',{className:'btn btn--secondary',type:'button',
+          text:'Uitschrijfcontrole afronden'});
+        done.addEventListener('click',async()=>{
+          if(!window.confirm('Uitschrijfcontrole van '+task.teacherName
+            +' afronden? De historische gegevens blijven bewaard.'))return;
+          done.disabled=true;
+          try{
+            await api('/api/admin/teacher-exits/'+encodeURIComponent(task.id)
+              +'/complete',{method:'POST',body:{revision:task.revision,confirm:true}});
+            loadTeacherExitTasks();
+          }catch(error){window.alert(error.message);done.disabled=false;}
+        });
+        row.append(info,done);section.append(row);
+      }
+      const completed=tasks.filter(task=>task.status==='completed');
+      if(completed.length){
+        const details=document.createElement('details');
+        details.append(make('summary',{text:'Afgeronde controles ('+completed.length+')'}));
+        for(const task of completed){
+          details.append(make('p',{className:'hint',text:task.teacherName
+            +' · '+((task.lastClasses||[]).map(k=>k.name).join(', ')||'Geen klas')}));
+        }
+        section.append(details);
+      }
+      host.append(section);
+    }catch(error){
+      if(request===teacherTaskRefresh)host.replaceChildren(
+        make('p',{className:'hint',text:'Uitschrijftaken konden niet geladen worden: '
+          +error.message}));
+    }
+  }
+
   function renderPreview(kind, resultHost, payload, fullSchoolSync, rerun, apply) {
     resultHost.replaceChildren();
     const summary = payload.summary || {};
@@ -528,6 +587,10 @@
 
     const container = make('div', { className: 'school-sync__container' });
     container.append(createSyncBlock('student'), createSyncBlock('teacher'));
+    window.addEventListener('boekenbaai:staff-refresh',()=>loadTeacherExitTasks());
+    window.addEventListener('boekenbaai:mentor-tasks-refresh',
+      ()=>loadTeacherExitTasks());
+    loadTeacherExitTasks();
     const bookSection = document.querySelector('#book-import-form')?.closest('.admin-card__section--import');
     if (bookSection?.nextSibling) content.insertBefore(container, bookSection.nextSibling);
     else content.prepend(container);
