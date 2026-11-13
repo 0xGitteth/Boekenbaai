@@ -314,7 +314,8 @@
     const metadata = make('input');
     metadata.type = 'checkbox';
     metadata.checked = true;
-    metadataLabel.append(metadata, document.createTextNode(' Ontbrekende ISBN-gegevens tijdens de controle aanvullen (grondiger, duurt langer). Extra verrijking gaat na de import door; Brave vraagt apart toestemming.'));
+    metadataLabel.append(metadata, document.createTextNode(
+      ' Ontbrekende boekgegevens opzoeken tijdens de controle (optioneel).'));
     const importMode = make('select');
     for (const [value,label] of [
       ['unified','Samen synchroniseren (aanbevolen)'],
@@ -420,10 +421,16 @@
       syncLabel.hidden=unified||importMode.value==='reconcile';
       syncHint.hidden=unified||importMode.value==='reconcile';
       syncMode.disabled=unified||importMode.value==='reconcile';
-      metadataLabel.hidden=importMode.value==='reconcile';
-      metadata.disabled=importMode.value==='reconcile';
+      const hasBookData=partChecks.get('books').checked
+        ||columns.some(([key])=>partChecks.get(key).checked);
+      metadataLabel.hidden=importMode.value==='reconcile'
+        ||(unified&&!hasBookData);
+      metadata.disabled=metadataLabel.hidden;
     };
     importMode.addEventListener('change',refreshImportMode);
+    for(const check of partChecks.values())check.addEventListener('change',refreshImportMode);
+    allButton.addEventListener('click',refreshImportMode);
+    noneButton.addEventListener('click',refreshImportMode);
     form.append(fileLabel,parts,metadataLabel,advanced,analyze);
     refreshImportMode();
     root.append(form);
