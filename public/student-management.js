@@ -658,6 +658,29 @@
         ?'Nog in bezit: '+loans.map(b=>b.title).join(', ')
         :'Geen boeken meer in bezit',
       }));
+      for(const book of loans) {
+        const returnBook=make('button',{
+          className:'btn btn--ghost',type:'button',
+          text:'Innemen: '+book.title,
+        });
+        returnBook.addEventListener('click',async()=>{
+          if(!window.BoekenbaaiReadCompletion?.ask){
+            window.alert('De vraag of het boek uitgelezen is, is niet beschikbaar. '
+              +'Vernieuw de pagina en probeer opnieuw.');
+            return;
+          }
+          const finished=await window.BoekenbaaiReadCompletion.ask(book.title);
+          if(typeof finished!=='boolean')return;
+          returnBook.disabled=true;
+          try{
+            await api('/api/books/'+encodeURIComponent(book.id)+'/check-in',{
+              method:'POST',body:{studentId:task.studentId,finished},
+            });
+            await refresh();
+          }catch(error){window.alert(error.message);returnBook.disabled=false;}
+        });
+        info.append(returnBook);
+      }
       const done=make('button',{
         className:'btn btn--secondary',type:'button',
         text:'Uitschrijfcontrole afronden',
