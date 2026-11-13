@@ -315,12 +315,23 @@ function prepareStudentRows(db, rows, manualMatches = {}, store = {}) {
       if (conflicts.length) {
         const unique=[exact[0],...conflicts].filter((student,index,array)=>
           array.findIndex(other=>other.id===student.id)===index);
+        const permitted=unique.filter(student=>student.active!==false &&
+          !getParnassysStudentNumber(student));
+        // The explicit administrator decision wins over both the name and
+        // the conflicting login identifier, but ONLY for a displayed and
+        // still eligible candidate. A stale or forged choice stays blocked.
+        const chosenId=clean(manualMatches?.[studentNumber]);
+        const chosen=permitted.find(student=>student.id===chosenId);
+        if (chosen) {
+          setParnassysStudentNumber(chosen,studentNumber);
+          prepared.push(row);
+          return;
+        }
         reviews.push({
           row:index+2,status:'needs-review',name,studentNumber,classes,
           reason:'Naam en gebruikersnaam of schoolmail verwijzen naar verschillende '
             +'leerlingaccounts. Controleer de koppeling handmatig.',
-          candidates:unique.filter(student=>student.active!==false &&
-            !getParnassysStudentNumber(student)).map(student=>({
+          candidates:permitted.map(student=>({
             id:student.id,name:student.name||'',
             classNames:studentClassNames(db,student),
           })),
