@@ -204,13 +204,17 @@ function baseDb() {
     Roepnaam:'Sam',Achternaam:'Meijer'}];
   const preview=runSchoolSync({kind:'student',db:structuredClone(initial),
     store:core.emptyAuthStore(),rows,fullSchoolSync:true});
-  assert.strictEqual(preview.summary.missingFromImport,0,
-    'Unnumbered pupils are not silently classified as departed');
+  assert.strictEqual(preview.summary.missingFromImport,2,
+    'Unmatched old accounts default to exit on a complete school list');
   assert.strictEqual(preview.summary.legacyAccountsWithoutNumber,2);
-  assert.strictEqual(preview.summary.legacyAccountsNeedsReview,2);
-  assert.strictEqual(preview.summary.needsReview,2,
-    'Synchronization blocked until every old account is classified');
-  assert.strictEqual(preview.results.filter(x=>x.status==='legacy-needs-review').length,2);
+  assert.strictEqual(preview.summary.legacyAccountsAutoExit,2);
+  assert.strictEqual(preview.summary.legacyAccountsNeedsReview,0);
+  assert.strictEqual(preview.summary.needsReview,0,
+    'Unmatched old accounts must not require 59 separate decisions');
+  assert.strictEqual(preview.results.filter(x=>x.status==='legacy-reviewed'
+    && x.chosen==='exit' && x.assumedExit).length,2);
+  assert.strictEqual(preview.summary.deletionEligible,1);
+  assert.strictEqual(preview.summary.exitTasks,1);
   assert.strictEqual(preview.db.students.length,3,
     'Preview must not delete old accounts');
   assert.strictEqual(preview.db.students.find(x=>x.id==='still-here').parnassysStudentNumber,'3003',
@@ -227,6 +231,8 @@ function baseDb() {
   assert.strictEqual(second.summary.missingFromImport,1);
   assert.strictEqual(second.summary.deletionEligible,1);
   assert.strictEqual(second.summary.legacyAccountsKept,1);
+  assert.strictEqual(second.summary.legacyAccountsAutoExit,0,
+    'An explicit exit or keep is not counted as an automatic assumption');
   assert.strictEqual(second.results.filter(x=>x.status==='legacy-reviewed').length,2);
   const result=runSchoolSync({kind:'student',db:structuredClone(initial),
     store:core.emptyAuthStore(),rows,fullSchoolSync:true,
@@ -247,11 +253,58 @@ function baseDb() {
   assert.strictEqual(archived.db.studentExitTasks[0].lastClasses[0].name,'Structuur BB');
   assert.strictEqual(archived.db.readingRecords[0].subjectId,'has-history');
 
+  const defaultApplied=runSchoolSync({kind:'student',db:structuredClone(initial),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin'});
+  assert.strictEqual(defaultApplied.summary.deleted,1);
+  assert.strictEqual(defaultApplied.summary.exitTasks,1);
+  assert.strictEqual(defaultApplied.db.students.some(x=>x.id==='left-school'),false);
+  assert.strictEqual(defaultApplied.db.students.find(x=>x.id==='has-history').active,false);
+  assert.strictEqual(defaultApplied.db.readingRecords[0].subjectId,'has-history');
+  assert.strictEqual(defaultApplied.db.classes[0].studentIds.includes('has-history'),false);
+  assert.strictEqual(defaultApplied.db.studentExitTasks[0].lastClasses[0].name,'Structuur BB');
+
+  const partial=runSchoolSync({kind:'student',db:structuredClone(initial),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:false,
+    applyDeactivations:true,actorId:'admin'});
+  assert.strictEqual(partial.summary.legacyAccountsAutoExit,0);
+  assert.strictEqual(partial.summary.deleted,0);
+  assert.strictEqual(partial.db.students.length,3);
+  assert.strictEqual(partial.db.students.find(x=>x.id==='left-school').active,true);
+
   const malformed=runSchoolSync({kind:'student',db:structuredClone(initial),
     store:core.emptyAuthStore(),rows,fullSchoolSync:true,
     legacyResolutions:{'left-school':'unknown','has-history':'keep'}});
   assert.strictEqual(malformed.summary.needsReview,1,
     'Invalid client resolution does not authorize deletion');
+})();
+
+(function testExactDuplicateNamesRequirePairingBeforeAnyDefaultExit() {
+  const db=baseDb();
+  db.classes=[{id:'klass1',name:'Klas A',studentIds:['sam1','sam2'],teacherIds:[]}];
+  db.students=[
+    {id:'sam1',name:'Sam Jansen',username:'sam1',passwordHash:'x',
+      active:true,classIds:['klass1'],borrowedBooks:[]},
+    {id:'sam2',name:'Sam Jansen',username:'sam2',passwordHash:'x',
+      active:true,classIds:['klass1'],borrowedBooks:[]},
+  ];
+  const rows=[{Leerlingnummer:'91001','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen'}];
+  const preview=runSchoolSync({kind:'student',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true});
+  assert.strictEqual(preview.summary.needsReview,1);
+  assert.strictEqual(preview.summary.legacyAccountsAutoExit,0);
+  assert.strictEqual(preview.summary.missingFromImport,0);
+  const review=preview.results.find(x=>x.status==='needs-review');
+  assert.deepStrictEqual(review.candidates.map(x=>x.id),['sam1','sam2'],
+    'Both exact-name candidates must be available to pair explicitly');
+  const chosen=runSchoolSync({kind:'student',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    manualMatches:{'91001':'sam1'}});
+  assert.strictEqual(chosen.summary.needsReview,0);
+  assert.strictEqual(chosen.db.students.find(x=>x.id==='sam1').parnassysStudentNumber,'91001');
+  assert.strictEqual(chosen.summary.legacyAccountsAutoExit,1,
+    'Only the other unmatched account can be scheduled for exit');
 })();
 
 (function testTeacherMultipleGroupsAndNoGroupDeactivation() {

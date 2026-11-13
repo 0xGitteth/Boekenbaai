@@ -46,9 +46,11 @@ const result = runSchoolSync({
   manualMatches: { '80001': '__new__' },
 });
 
-assert.strictEqual(result.summary.needsReview, 1,
-  'Explicitly creating a new ParnasSys identity must not hide the unmatched old manual account');
+assert.strictEqual(result.summary.needsReview, 0,
+  'Explicitly creating a new ParnasSys account leaves an unmatched old account defaulted to exit');
 assert.strictEqual(result.summary.legacyAccountsWithoutNumber, 1);
+assert.strictEqual(result.summary.legacyAccountsAutoExit, 1);
+assert.strictEqual(result.summary.missingFromImport, 1);
 assert.strictEqual(result.summary.created, 1);
 assert.strictEqual(result.db.students.length, 2);
 const created = result.db.students.find((entry) => entry.parnassysStudentNumber === '80001');
@@ -56,13 +58,16 @@ assert.ok(created);
 assert.notStrictEqual(created.id, 'manual-1');
 assert.strictEqual(result.db.students.find((entry) => entry.id === 'manual-1').parnassysStudentNumber, undefined);
 
-assert.throws(() => runSchoolSync({
+const resultApplied=runSchoolSync({
   kind:'student',db:structuredClone(initialDb),store:core.emptyAuthStore(),
   rows:[{Leerlingnummer:'80001','Huidige groep':'Klas A',
     Roepnaam:'Mohamed',Voorvoegsel:'El',Achternaam:'Amrani'}],
   fullSchoolSync:true,applyDeactivations:true,
   manualMatches:{'80001':'__new__'},
-}), /twijfelgevallen/i, 'Unreviewed legacy pupil blocks applying full-school import');
+});
+assert.strictEqual(resultApplied.summary.deleted,1,
+  'Old unlinked account can be removed after confirmation, not duplicated');
+assert.strictEqual(resultApplied.db.students.length,1);
 const keepOld=runSchoolSync({
   kind:'student',db:structuredClone(initialDb),store:core.emptyAuthStore(),
   rows:[{Leerlingnummer:'80001','Huidige groep':'Klas A',
@@ -72,6 +77,154 @@ const keepOld=runSchoolSync({
 });
 assert.strictEqual(keepOld.summary.needsReview,0);
 assert.strictEqual(keepOld.summary.legacyAccountsKept,1);
+
+const duplicateNameDb={
+  books:[],users:[],history:[],
+  students:[
+    {id:'sam-a',name:'Sam Jansen',active:true,borrowedBooks:[],classIds:['a']},
+    {id:'sam-b',name:'Sam Jansen',active:true,borrowedBooks:[],classIds:['a']},
+  ],
+  classes:[{id:'a',name:'Klas A',studentIds:['sam-a','sam-b'],teacherIds:[]}],
+};
+assert.throws(()=>runSchoolSync({
+  kind:'student',db:structuredClone(duplicateNameDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'91001','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen'}],
+  fullSchoolSync:true,applyDeactivations:true,actorId:'admin',
+}),/twijfelgevallen/i,
+'Production wrapper must block a mass exit when two old accounts exactly match a current pupil');
+
+const accentDb={
+  books:[],users:[],history:[],
+  students:[{id:'jose-old',name:'José Jansen',username:'old-jose',
+    active:true,borrowedBooks:[],classIds:['a']}],
+  classes:[{id:'a',name:'Klas A',studentIds:['jose-old'],teacherIds:[]}],
+};
+const accent=runSchoolSync({
+  kind:'student',db:structuredClone(accentDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'97001','Huidige groep':'Klas A',
+    Roepnaam:'Jose',Achternaam:'Jansen'}],
+  fullSchoolSync:true,applyDeactivations:true,actorId:'admin',
+});
+assert.strictEqual(accent.summary.created,0,
+  'Accent variants should not fabricate a new student');
+assert.strictEqual(accent.summary.deleted,0,
+  'Current student must not be auto-exited when accent normalization differs');
+assert.strictEqual(accent.db.students.length,1);
+assert.strictEqual(accent.db.students[0].id,'jose-old');
+assert.strictEqual(accent.db.students[0].parnassysStudentNumber,'97001');
+
+const incompleteDb={
+  books:[],users:[],history:[],
+  students:[{id:'sam-old',name:'Sam Jansen',username:'sam',
+    active:true,borrowedBooks:[],classIds:['a']}],
+  classes:[{id:'a',name:'Klas A',studentIds:['sam-old'],teacherIds:[]}],
+};
+for(const applyDeactivations of [false,true]){
+  assert.throws(()=>runSchoolSync({
+    kind:'student',db:structuredClone(incompleteDb),
+    store:core.emptyAuthStore(),rows:[
+      {Leerlingnummer:'','Huidige groep':'Klas A',
+        Roepnaam:'Sam',Achternaam:'Jansen'},
+    ],
+    fullSchoolSync:true,applyDeactivations,actorId:'admin',
+  }),/zonder leerlingnummer/i,
+  'Incomplete identity in full export must block preview and apply');
+}
+for(const applyDeactivations of [false,true]){
+  assert.throws(()=>runSchoolSync({
+    kind:'student',db:structuredClone(incompleteDb),
+    store:core.emptyAuthStore(),rows:[
+      {Leerlingnummer:'91001','Huidige groep':'Klas A',
+        Roepnaam:'',Achternaam:''},
+    ],
+    fullSchoolSync:true,applyDeactivations,actorId:'admin',
+  }),/zonder naam/i,
+  'A numbered but nameless row in a full export must block all exits');
+}
+
+const unicodeDb={
+  books:[],users:[],history:[],
+  readingRecords:[{id:'old-reading',subjectType:'student',subjectId:'han-old',finished:true}],
+  students:[{id:'han-old',name:'王伟',active:true,borrowedBooks:[],classIds:['a']}],
+  classes:[{id:'a',name:'Klas A',studentIds:['han-old'],teacherIds:[]}],
+};
+const unicode=runSchoolSync({
+  kind:'student',db:structuredClone(unicodeDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'98001','Huidige groep':'Klas A',
+    Roepnaam:'张敏',Achternaam:''}],
+  fullSchoolSync:true,applyDeactivations:true,actorId:'admin',
+});
+assert.strictEqual(unicode.summary.created,1,
+  'Distinct Unicode names must not normalize into the same student');
+assert.strictEqual(unicode.db.students.find(x=>x.id==='han-old').active,false);
+assert.strictEqual(unicode.db.students.find(x=>x.id==='han-old').parnassysStudentNumber,undefined);
+assert.strictEqual(unicode.db.readingRecords[0].subjectId,'han-old',
+  'Historic reading records must not migrate to unrelated enrolled pupil');
+assert.strictEqual(unicode.db.students.find(x=>x.parnassysStudentNumber==='98001').name,'张敏');
+
+const usernameConflictDb={
+  books:[],users:[],history:[],
+  students:[
+    {id:'sam1',name:'Sam Jansen',username:'sam1',active:true,
+      borrowedBooks:[],classIds:['a']},
+    {id:'sam2',name:'Sam Janssen',username:'sam2',active:true,
+      borrowedBooks:[],classIds:['a']},
+  ],
+  classes:[{id:'a',name:'Klas A',studentIds:['sam1','sam2'],teacherIds:[]}],
+};
+const usernameConflict=runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'98002','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Gebruikersnaam:'sam2'}],
+  fullSchoolSync:true,
+});
+assert.strictEqual(usernameConflict.summary.needsReview,1);
+assert.strictEqual(usernameConflict.summary.legacyAccountsAutoExit,0);
+assert.deepStrictEqual(usernameConflict.results.find(x=>x.status==='needs-review')
+  .candidates.map(x=>x.id),['sam1','sam2']);
+assert.throws(()=>runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'98002','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Gebruikersnaam:'sam2'}],
+  fullSchoolSync:true,applyDeactivations:true,
+}),/twijfelgevallen/i,'Conflicting username and exact name must block apply');
+for(const selectedId of ['sam1','sam2']){
+  const resolved=runSchoolSync({
+    kind:'student',db:structuredClone(usernameConflictDb),store:core.emptyAuthStore(),
+    rows:[{Leerlingnummer:'98002','Huidige groep':'Klas A',
+      Roepnaam:'Sam',Achternaam:'Jansen',Gebruikersnaam:'sam2'}],
+    fullSchoolSync:true,manualMatches:{'98002':selectedId},
+  });
+  assert.strictEqual(resolved.summary.needsReview,0,
+    'Explicitly selected account must end the identity-conflict review');
+  assert.strictEqual(resolved.db.students.find(x=>x.id===selectedId)
+    .parnassysStudentNumber,'98002');
+  assert.strictEqual(resolved.summary.legacyAccountsAutoExit,1);
+}
+
+const linkedStore=core.upsertLink(core.emptyAuthStore(),{
+  accountType:'student',accountId:'sam2',email:'sam2@koraaledu.nl',
+  sub:'google-verified-sam2',linkedBy:'test',
+}).store;
+const emailConflict=runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:linkedStore,
+  rows:[{Leerlingnummer:'98003','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Schoolmail:'sam2@koraaledu.nl'}],
+  fullSchoolSync:true,
+});
+assert.strictEqual(emailConflict.summary.needsReview,1);
+assert.strictEqual(emailConflict.summary.legacyAccountsAutoExit,0,
+  'Verified schoolmail link takes precedence over unverified normalized name');
+const emailSelected=runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:linkedStore,
+  rows:[{Leerlingnummer:'98003','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Schoolmail:'sam2@koraaledu.nl'}],
+  fullSchoolSync:true,manualMatches:{'98003':'sam2'},
+});
+assert.strictEqual(emailSelected.summary.needsReview,0);
+assert.strictEqual(emailSelected.db.students.find(x=>x.id==='sam2')
+  .parnassysStudentNumber,'98003');
 
 assert.throws(
   () => runSchoolSync({
@@ -164,9 +317,10 @@ assert.strictEqual(
 const uiSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'school-sync-finalize.js'), 'utf8');
 assert.match(uiSource, /Geen match, maak een nieuw leerlingaccount/);
 assert.match(uiSource, /'__new__'/);
-assert.match(uiSource,/Oude leerlingaccounts controleren/);
+assert.match(uiSource,/Oude leerlingaccounts/);
+assert.match(uiSource,/Uitgeschreven \(standaard\)/);
 assert.match(uiSource,/Leerling zit nog op school, account behouden/);
-assert.match(uiSource,/Leerling is van school, uitschrijven/);
+assert.match(uiSource,/pas uitzonderingen aan/);
 assert.match(uiSource,/legacyResolutions/);
 
 const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'school-sync-new-account-preload.js'), 'utf8');

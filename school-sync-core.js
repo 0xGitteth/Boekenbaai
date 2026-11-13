@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const authCore = require('./google-auth-core');
 const {
   applyPeopleImport,
   normalizeKey,
@@ -22,7 +23,7 @@ function normalizePersonName(value) {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('nl-NL')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .replace(/\s+/g, ' ');
 }
@@ -272,7 +273,7 @@ function recomputeResultCounts(result) {
   result.summary.unchanged = statuses.filter((status) => status === 'unchanged').length;
 }
 
-function prepareStudentRows(db, rows, manualMatches = {}) {
+function prepareStudentRows(db, rows, manualMatches = {}, store = {}) {
   const prepared = [];
   const reviews = [];
   const incomingNumbers = new Set();
@@ -286,12 +287,82 @@ function prepareStudentRows(db, rows, manualMatches = {}) {
     const existingByNumber = studentNumber
       ? (db.students || []).find((student) => getParnassysStudentNumber(student) === studentNumber)
       : null;
-    if (!studentNumber || existingByNumber || findUniqueExactStudent(db, name)) {
+    if (!studentNumber || existingByNumber) {
       prepared.push(row);
       return;
     }
 
-    const candidates = fuzzyManualCandidates(db, name, classes);
+    const exact = (db.students || []).filter(student =>
+      student?.id && student.active !== false &&
+      normalizePersonName(student.name) === normalizePersonName(name));
+    if (exact.length === 1) {
+      // The importer gives verified schoolmail/username matches precedence
+      // over name. Never pre-bind an account if either explicit identity
+      // points elsewhere, as that would override the stronger identifier.
+      const sourceUsername=normalizedRowValue(row,
+        ['gebruikersnaam','username','user','login']).toLowerCase();
+      const sourceEmail=authCore.normalizeEmail(normalizedRowValue(row,
+        ['schoolmail','schoolmailadres','school e-mail','schoolemail','email',
+          'e-mail','e-mailadres','emailadres','googleemail']));
+      const byUsername=sourceUsername ? (db.students||[]).find(student=>
+        String(student?.username||'').trim().toLowerCase()===sourceUsername) : null;
+      const link=sourceEmail ? (authCore.normalizeStore(store).links||[]).find(entry=>
+        entry?.accountType==='student' &&
+        authCore.normalizeEmail(entry?.email)===sourceEmail) : null;
+      const byEmail=link ? (db.students||[]).find(student=>student.id===link.accountId) : null;
+      const conflicts=[byUsername,byEmail].filter(account=>
+        account && account.id!==exact[0].id);
+      if (conflicts.length) {
+        const unique=[exact[0],...conflicts].filter((student,index,array)=>
+          array.findIndex(other=>other.id===student.id)===index);
+        const permitted=unique.filter(student=>student.active!==false &&
+          !getParnassysStudentNumber(student));
+        // The explicit administrator decision wins over both the name and
+        // the conflicting login identifier, but ONLY for a displayed and
+        // still eligible candidate. A stale or forged choice stays blocked.
+        const chosenId=clean(manualMatches?.[studentNumber]);
+        const chosen=permitted.find(student=>student.id===chosenId);
+        if (chosen) {
+          setParnassysStudentNumber(chosen,studentNumber);
+          prepared.push(row);
+          return;
+        }
+        reviews.push({
+          row:index+2,status:'needs-review',name,studentNumber,classes,
+          reason:'Naam en gebruikersnaam of schoolmail verwijzen naar verschillende '
+            +'leerlingaccounts. Controleer de koppeling handmatig.',
+          candidates:permitted.map(student=>({
+            id:student.id,name:student.name||'',
+            classNames:studentClassNames(db,student),
+          })),
+        });
+        return;
+      }
+      // The people importer has stricter accent/punctuation matching.
+      // Establish the ParnasSys number first for a unique normalized match.
+      const oldNumber = getParnassysStudentNumber(exact[0]);
+      if (!oldNumber) setParnassysStudentNumber(exact[0], studentNumber);
+      if (oldNumber && oldNumber !== studentNumber) {
+        reviews.push({
+          row:index+2,status:'needs-review',name,studentNumber,classes,
+          reason:'Naam komt overeen, maar het bestaande leerlingnummer is anders. '
+            +'Controleer dit account voordat je synchroniseert.',
+          candidates:[],
+        });
+        return;
+      }
+      prepared.push(row);
+      return;
+    }
+    // Two students with the exact same name must NOT both be assumed to
+    // have left school. Exact names are intentionally excluded by the fuzzy
+    // matcher; report ambiguous exact matches separately for manual pairing.
+    const candidates = exact.length > 1
+      ? exact.filter(student => !getParnassysStudentNumber(student)).map(student=>({
+        id:student.id, name:student.name || '',
+        classNames:studentClassNames(db,student),
+      }))
+      : fuzzyManualCandidates(db, name, classes);
     const forcedId = clean(manualMatches?.[studentNumber]);
     if (forcedId) {
       const forced = (db.students || []).find(
@@ -305,14 +376,16 @@ function prepareStudentRows(db, rows, manualMatches = {}) {
       }
     }
 
-    if (candidates.length) {
+    if (candidates.length || exact.length > 1) {
       reviews.push({
         row: index + 2,
         status: 'needs-review',
         name,
         studentNumber,
         classes,
-        reason: 'Mogelijk dezelfde leerling als een handmatig toegevoegd account.',
+        reason: exact.length > 1
+          ? 'Meerdere bestaande leerlingen hebben exact dezelfde naam. Kies de juiste koppeling.'
+          : 'Mogelijk dezelfde leerling als een handmatig toegevoegd account.',
         candidates,
       });
       return;
@@ -345,9 +418,10 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   const numberedMissing = (result.db.students || []).filter(
     (student) => student?.active !== false && missingNumbers.has(getParnassysStudentNumber(student))
   );
-  // Older manually created accounts often have no ParnasSys number. They
-  // cannot be treated as current pupils OR school leavers automatically:
-  // prompt the administrator to classify each account individually.
+  // On a verified *full-school* export, existing unnumbered pupils not
+  // matched to current rows are presumed to have left school. Fuzzy matches
+  // pending manual review remain excluded to avoid deleting live accounts.
+  // Admins can explicitly keep individual pupils before final confirmation.
   const potentialMatches = new Set(pendingMatchReviews.flatMap(review =>
     (review.candidates || []).map(candidate => candidate.id)));
   const legacyAccounts = options.fullSchoolSync
@@ -360,15 +434,17 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   let pendingLegacy = 0;
   let keptLegacy = 0;
   for (const student of legacyAccounts) {
-    const choice = legacyResolutions?.[student.id];
+    const rawChoice = legacyResolutions?.[student.id];
+    // Only an explicit 'keep' overrides the default. Invalid selections
+    // fail closed instead of silently authorizing removal.
+    const choice = rawChoice === undefined || rawChoice === null
+      ? 'exit' : rawChoice;
     if (choice === 'exit') confirmedLegacyExits.push(student);
     else if (choice === 'keep') keptLegacy++;
     else {
       pendingLegacy++;
       result.summary.needsReview = (result.summary.needsReview || 0) + 1;
     }
-    // Keep reviewed rows visible so administrators can correct a mistaken
-    // 'keep' or 'exit' selection before final confirmation.
     result.results.push({
       status: choice === 'keep' || choice === 'exit'
         ? 'legacy-reviewed' : 'legacy-needs-review',
@@ -376,8 +452,9 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
       name: student.name || 'Naam onbekend',
       classes: studentClassNames(result.db, student),
       chosen: choice === 'keep' || choice === 'exit' ? choice : '',
-      reason: 'Oud leerlingaccount zonder ParnasSys-leerlingnummer. '
-        + 'Controleer of deze leerling nog op school zit.',
+      assumedExit: choice === 'exit' && rawChoice == null,
+      reason: 'Niet gekoppeld aan de volledige ParnasSys-export. '
+        + 'Standaard uitschrijven; de beheerder kan dit account behouden.',
     });
   }
   const missing = [...numberedMissing, ...confirmedLegacyExits];
@@ -385,7 +462,13 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   result.summary.legacyAccountsNeedsReview = pendingLegacy;
   result.summary.legacyAccountsKept = keptLegacy;
   result.summary.legacyAccountsConfirmedExit = confirmedLegacyExits.length;
+  result.summary.legacyAccountsAutoExit = confirmedLegacyExits.filter(
+    student => legacyResolutions?.[student.id] == null).length;
   result.summary.missingFromImport = options.fullSchoolSync ? missing.length : 0;
+  // Guard the entire cohort being exited, including pupils whose history
+  // requires archival rather than deletion.
+  result.summary.exitCandidateFingerprint = crypto.createHash('sha256')
+    .update(JSON.stringify(missing.map(student=>student.id).sort())).digest('hex');
   result.summary.largeRemovalWarning = Boolean(
     options.fullSchoolSync && missing.length >=
       largeRemovalThreshold((originalDb.students || [])
@@ -518,12 +601,36 @@ function runSchoolSync(input = {}) {
   };
 
   validateSchoolSyncRows(kind, rows);
+  // A complete export must have an identity for every listed pupil.
+  // Otherwise even a pupil visibly present in Excel could be classified
+  // as absent and auto-exited. Blank spacer rows are ignored.
+  if (kind==='student' && input.fullSchoolSync) {
+    const firstIncomplete = rows.findIndex(row=>
+      !studentNumberFromRow(row) &&
+      (personNameFromRow(row) || classNamesFromRow(row).length));
+    if (firstIncomplete!==-1) {
+      const error=new Error('De volledige ParnasSys-export bevat een leerling zonder '
+        +'leerlingnummer (Excelrij '+(firstIncomplete+2)+'). '
+        +'Controleer het bestand voordat je leerlingen uitschrijft.');
+      error.code='INCOMPLETE_PARNASSYS_IDENTITY';
+      throw error;
+    }
+    const firstNameless = rows.findIndex(row =>
+      studentNumberFromRow(row) && !personNameFromRow(row));
+    if (firstNameless!==-1) {
+      const error=new Error('De volledige ParnasSys-export bevat een leerling zonder '
+        +'naam (Excelrij '+(firstNameless+2)+'). '
+        +'Controleer het bestand voordat je leerlingen uitschrijft.');
+      error.code='INCOMPLETE_PARNASSYS_IDENTITY';
+      throw error;
+    }
+  }
 
   let preparedRows = rows;
   let reviews = [];
   let incomingNumbers = new Set();
   if (kind === 'student') {
-    const prepared = prepareStudentRows(db, rows, input.manualMatches || {});
+    const prepared = prepareStudentRows(db, rows, input.manualMatches || {}, store);
     preparedRows = prepared.prepared;
     reviews = prepared.reviews;
     incomingNumbers = prepared.incomingNumbers;
