@@ -89,6 +89,7 @@ function extract(source, begin, end) {
   const currentRow = {
     dataset: { schoolSyncKey: 'match:student:123' },
     getBoundingClientRect() { return { top: 970 }; },
+    getClientRects() { return [{}]; },
     querySelector() { return { focus(options) { assert.deepEqual(options, { preventScroll: true }); } }; },
   };
   let rows = [originalRow];
@@ -113,6 +114,18 @@ function extract(source, begin, end) {
   fakeWindow.scrollY = 0;
   restoreReviewPosition(host, captured);
   assert.equal(fakeWindow.scrollY, 730);
+
+  // A closed <details> still contains rows in the DOM, but their geometry is
+  // zero: such rows must not be used as anchors when the last match vanishes.
+  rows = [{
+    ...currentRow,
+    dataset: { schoolSyncKey: 'legacy-student:hidden' },
+    getClientRects() { return []; },
+    getBoundingClientRect() { return { top: 0 }; },
+  }];
+  fakeWindow.scrollY = 0;
+  restoreReviewPosition(host, captured);
+  assert.equal(fakeWindow.scrollY, 730, 'A collapsed review row is not a visible anchor');
 
   rows = [];
   fakeWindow.scrollY = 0;
