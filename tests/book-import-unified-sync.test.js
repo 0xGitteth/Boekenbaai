@@ -228,4 +228,19 @@ assert.equal(normalizeParts(undefined).value.books,true);
     'A concurrent metadata edit must invalidate the stored preview');
   assert.notEqual(JSON.stringify(revised),JSON.stringify(first));
 }
+{
+  const current=db();
+  const renamedLoan=source(0,loan('tim','Tim Leerling'),{
+    title:'Oorlogswinter, gecorrigeerde titel',
+  },{title:{source:'excel',raw:'Oorlogswinter, gecorrigeerde titel'}});
+  const sync=plan([renamedLoan],current,{
+    parts:parts({books:true,loans:true,fields:{title:true}}),
+  });
+  assert.equal(sync.ok,true);
+  assert.equal(sync.summary.blockedStock,0);
+  assert.equal(sync.summary.proposedLoans,1,
+    'Selecting a title correction must not block the simultaneous loan');
+  assert.equal(sync.summary.metadataFields,1);
+  assert.equal(sync.assignments.differences.find(d=>d.kind==='issue'),undefined);
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
