@@ -566,6 +566,48 @@ function prepareTeacherRows(db,rows,manualMatches={},store={}){
   return {prepared,reviews};
 }
 
+function refreshPresentTeachersWithoutGroups(result,rows){
+  rows.forEach((row,index)=>{
+    if(classNamesFromRow(row).length)return;
+    const name=personNameFromRow(row);
+    if(!name)return;
+    const username=normalizedRowValue(row,
+      ['gebruikersnaam','username','user','login']).toLowerCase();
+    const email=authCore.normalizeEmail(normalizedRowValue(row,
+      ['schoolmail','schoolmailadres','school e-mail','schoolemail','email',
+        'e-mail','e-mailadres','emailadres','googleemail']));
+    const teachers=(result.db.users||[]).filter(u=>u.role==='teacher');
+    const byUsername=username?teachers.find(u=>
+      String(u.username||'').toLowerCase()===username):null;
+    const link=email?(authCore.normalizeStore(result.store).links||[])
+      .find(e=>e.accountType==='staff'&&authCore.normalizeEmail(e.email)===email):null;
+    const byEmail=link?teachers.find(u=>u.id===link.accountId):null;
+    const exact=teachers.filter(u=>
+      u.active!==false&&normalizePersonName(u.name)===normalizePersonName(name));
+    const teacher=byEmail||byUsername||(exact.length===1?exact[0]:null);
+    if(!teacher)return; // Other employee without an existing teacher account.
+    const before=JSON.stringify([teacher.classIds,teacher.active,teacher.name,
+      teacher.source]);
+    for(const klass of result.db.classes||[]){
+      if(Array.isArray(klass.teacherIds))
+        klass.teacherIds=klass.teacherIds.filter(id=>id!==teacher.id);
+    }
+    teacher.classIds=[];
+    teacher.active=true;
+    teacher.inactiveAt=null;teacher.inactiveReason=null;
+    teacher.name=name;teacher.source='parnassys';
+    const entry=result.results.find(x=>x.row===index+2 && x.status==='ignored');
+    const after=JSON.stringify([teacher.classIds,teacher.active,teacher.name,
+      teacher.source]);
+    if(entry){
+      entry.id=teacher.id;
+      entry.status=before===after?'unchanged':'updated';
+      entry.reason='Actieve medewerker zonder gekoppelde groep. '
+        +'De oude klasrechten zijn verwijderd; het account blijft bestaan.';
+    }
+  });
+}
+
 function findTeacherByExactName(db, name) {
   const wanted = normalizePersonName(name);
   const matches = (db.users || []).filter(
@@ -756,6 +798,8 @@ function runSchoolSync(input = {}) {
     domain: input.domain,
     actorId: input.actorId,
   });
+  if(kind==='teacher'&&options.fullSchoolSync)
+    refreshPresentTeachersWithoutGroups(result,preparedRows);
   recomputeResultCounts(result);
   if(kind==='teacher'&&options.fullSchoolSync){
     const failures=(result.results||[]).filter(row=>
