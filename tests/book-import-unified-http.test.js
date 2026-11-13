@@ -199,6 +199,30 @@ async function run(){
     assert.ok(themed.importedThemes.includes('Nieuw thema uit metadata'),
       'Freeform Excel themes must survive DB normalization');
     assert.ok(themed.themes.includes('Nieuw thema uit metadata'));
+    // Deferring the only difference must still create a persistent review
+    // task, even when no stock or immediate correction is selected.
+    const deferOnly=await start([
+      old('',{Barcode:'4711001','Vast in de klas van:':'Klas A'}),
+    ],parts({locations:true}));
+    assert.equal(deferOnly.status,201,JSON.stringify(deferOnly.data));
+    assert.equal(deferOnly.data.decisions.assignments.differences[0].kind,'location');
+    const reviewedDefer=await call(
+      '/api/admin/book-import-stages/'+deferOnly.data.id+'/review',token,{
+      revision:deferOnly.data.revision,corrections:[],acceptWarnings:true,
+      inventoryResolutions:[],metadataResolutions:[],
+      assignmentResolutions:[{id:'0:location',action:'later'}],
+    });
+    assert.equal(reviewedDefer.status,200,JSON.stringify(reviewedDefer.data));
+    assert.equal(reviewedDefer.data.decisions.summary.readyToApply,true);
+    const savedDefer=await apply(reviewedDefer);
+    assert.equal(savedDefer.status,200,JSON.stringify(savedDefer.data));
+    assert.equal(savedDefer.data.result.deferred,1);
+    assert.equal(readDb().books.find(b=>b.id==='copy-1').fixedLocation,null);
+    const tasks=await call('/api/admin/book-import-assignment-tasks',token);
+    assert.equal(tasks.status,200);
+    assert.ok(tasks.data.tasks.some(task=>
+      task.reportId===savedDefer.data.result.batchId),
+      'Deferred-only unified imports must persist a task for later');
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
