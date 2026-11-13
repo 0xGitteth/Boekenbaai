@@ -248,6 +248,7 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     found.push({row,copy:located.copy});
   }
   const differences=found.filter(item=>item.kind==='issue');
+  const acknowledgedLoans=[];
   for(const {row,copy} of found.filter(item=>!item.kind)) {
     const base={rowIndex:row.index,worksheetRow:row.sourceRowNumber,
       title:copy.title,author:copy.author,barcode:copy.barcode||'',
@@ -272,6 +273,15 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
       differences.push({...base,id:row.index+':issue',kind:'issue',
         reason:'student_loan_records_disagree'});
       continue;
+    }
+    if ((info.studentLoan || info.classLoan) && current.type!=='none'
+      &&current.type===desired.type&&current.id===desired.id){
+      // A verified existing Excel loan is already correct, but it still
+      // needs a durable receipt. Otherwise a later reimport would recreate
+      // that loan after the physical book has been returned.
+      acknowledgedLoans.push({bookId:copy.id,borrower:{
+        type:current.type,id:current.id,
+      }});
     }
     // No borrower in Excel means unknown, not "returned". Show a separate
     // optional correction when the copy is recorded as borrowed.
@@ -395,7 +405,8 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     });
   }
   const unmatchedEditions=[...missingByIsbn.values()];
-  return {ok:true,differences,notInCollection:unmatchedEditions,summary:{
+  return {ok:true,differences,acknowledgedLoans,
+    notInCollection:unmatchedEditions,summary:{
     differences:differences.length,pending,apply,automatic,
     notInCollection:unmatchedEditions.length,notInCollectionCopies:notInCollection.length,
     kept:differences.filter(x=>x.choice==='keep'||x.choice==='class_unrelated').length,
