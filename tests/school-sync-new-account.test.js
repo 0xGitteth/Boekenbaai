@@ -189,6 +189,19 @@ assert.throws(()=>runSchoolSync({
     Roepnaam:'Sam',Achternaam:'Jansen',Gebruikersnaam:'sam2'}],
   fullSchoolSync:true,applyDeactivations:true,
 }),/twijfelgevallen/i,'Conflicting username and exact name must block apply');
+for(const selectedId of ['sam1','sam2']){
+  const resolved=runSchoolSync({
+    kind:'student',db:structuredClone(usernameConflictDb),store:core.emptyAuthStore(),
+    rows:[{Leerlingnummer:'98002','Huidige groep':'Klas A',
+      Roepnaam:'Sam',Achternaam:'Jansen',Gebruikersnaam:'sam2'}],
+    fullSchoolSync:true,manualMatches:{'98002':selectedId},
+  });
+  assert.strictEqual(resolved.summary.needsReview,0,
+    'Explicitly selected account must end the identity-conflict review');
+  assert.strictEqual(resolved.db.students.find(x=>x.id===selectedId)
+    .parnassysStudentNumber,'98002');
+  assert.strictEqual(resolved.summary.legacyAccountsAutoExit,1);
+}
 
 const linkedStore=core.upsertLink(core.emptyAuthStore(),{
   accountType:'student',accountId:'sam2',email:'sam2@koraaledu.nl',
@@ -203,6 +216,15 @@ const emailConflict=runSchoolSync({
 assert.strictEqual(emailConflict.summary.needsReview,1);
 assert.strictEqual(emailConflict.summary.legacyAccountsAutoExit,0,
   'Verified schoolmail link takes precedence over unverified normalized name');
+const emailSelected=runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:linkedStore,
+  rows:[{Leerlingnummer:'98003','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Schoolmail:'sam2@koraaledu.nl'}],
+  fullSchoolSync:true,manualMatches:{'98003':'sam2'},
+});
+assert.strictEqual(emailSelected.summary.needsReview,0);
+assert.strictEqual(emailSelected.db.students.find(x=>x.id==='sam2')
+  .parnassysStudentNumber,'98003');
 
 assert.throws(
   () => runSchoolSync({
