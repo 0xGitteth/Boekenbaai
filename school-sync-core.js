@@ -286,12 +286,27 @@ function prepareStudentRows(db, rows, manualMatches = {}) {
     const existingByNumber = studentNumber
       ? (db.students || []).find((student) => getParnassysStudentNumber(student) === studentNumber)
       : null;
-    if (!studentNumber || existingByNumber || findUniqueExactStudent(db, name)) {
+    if (!studentNumber || existingByNumber) {
       prepared.push(row);
       return;
     }
 
-    const candidates = fuzzyManualCandidates(db, name, classes);
+    const exact = (db.students || []).filter(student =>
+      student?.id && student.active !== false &&
+      normalizePersonName(student.name) === normalizePersonName(name));
+    if (exact.length === 1) {
+      prepared.push(row);
+      return;
+    }
+    // Two students with the exact same name must NOT both be assumed to
+    // have left school. Exact names are intentionally excluded by the fuzzy
+    // matcher; report ambiguous exact matches separately for manual pairing.
+    const candidates = exact.length > 1
+      ? exact.filter(student => !getParnassysStudentNumber(student)).map(student=>({
+        id:student.id, name:student.name || '',
+        classNames:studentClassNames(db,student),
+      }))
+      : fuzzyManualCandidates(db, name, classes);
     const forcedId = clean(manualMatches?.[studentNumber]);
     if (forcedId) {
       const forced = (db.students || []).find(
@@ -305,14 +320,16 @@ function prepareStudentRows(db, rows, manualMatches = {}) {
       }
     }
 
-    if (candidates.length) {
+    if (candidates.length || exact.length > 1) {
       reviews.push({
         row: index + 2,
         status: 'needs-review',
         name,
         studentNumber,
         classes,
-        reason: 'Mogelijk dezelfde leerling als een handmatig toegevoegd account.',
+        reason: exact.length > 1
+          ? 'Meerdere bestaande leerlingen hebben exact dezelfde naam. Kies de juiste koppeling.'
+          : 'Mogelijk dezelfde leerling als een handmatig toegevoegd account.',
         candidates,
       });
       return;
