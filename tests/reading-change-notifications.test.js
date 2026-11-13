@@ -92,7 +92,7 @@ assert.match(staffUi, /boekenbaai:staff-refresh/);
 assert.match(staffUi, /boekenbaai:reading-alerts-count/);
 assert.match(staffUi, /Nog te lezen/);
 assert.match(staffUi, /Gelezen meldingen/);
-assert.match(teacher, /readingAlertCount \+ mentorTaskCount|importTaskCount \+ mentorTaskCount \+ readingAlertCount|importTaskCount \+ mentorTaskCount \+ readingAlertCount/);
+assert.match(teacher, /importTaskCount \+ mentorTaskCount[\s\S]{0,85}readingAlertCount \+ exitTaskCount/);
 assert.match(teacher, /Gewijzigde leesantwoorden/);
 assert.match(teacher, /if \(next === 'tasks'\)/);
 assert.ok(!teacher.includes("place(document.getElementById('staff-reading-change-notifications'), start)"));
