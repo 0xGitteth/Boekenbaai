@@ -11,6 +11,7 @@ const { setParnassysStudentNumber, getParnassysStudentNumber } = require('./goog
 const { examReadingAccess, classifyClass } = require('./exam-reading-access');
 const { commitPairedJson } = require('./paired-store-commit');
 const { acquireFileLock } = require('./book-import-reminder-mail');
+const { exitTaskSummary, completeExitTask } = require('./student-exit-workflow');
 
 const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -399,6 +400,7 @@ function buildManagementState(context) {
     outgoing,
     escalated,
     googleRequests: pendingGoogleRequests(context.db, context.store, context.user),
+    formerStudentExits: exitTaskSummary(context.db, context.user),
   };
 }
 
@@ -707,6 +709,27 @@ function deactivateStudent(context, studentId) {
   return { status: 200, payload: { studentId: student.id, inactive: true } };
 }
 
+function finishFormerStudentExit(context,taskId,body) {
+  if (!body || !Number.isSafeInteger(body.revision)
+    || body.confirm !== true) return {status:400,payload:{
+      message:'Bevestig de uitschrijfcontrole en gebruik de actuele taakversie.',
+    }};
+  const finished=completeExitTask(context.db,context.user,taskId,body.revision);
+  if (!finished.ok) {
+    return {status:finished.status,payload:{
+      message:finished.error==='student_still_has_books'
+        ?'Deze oud-leerling heeft nog boeken in bezit. Neem deze eerst in.'
+        :finished.error==='stale_task'
+          ?'De uitschrijftaak is inmiddels veranderd. Vernieuw de lijst.'
+          :'Je hebt geen toegang tot deze uitschrijftaak of de leerling is weer actief.',
+    }};
+  }
+  commitPairedJson({dataPath:DATA_PATH,authPath:AUTH_DATA_PATH,
+    data:context.db,auth:core.pruneStore(context.store),
+    expectedData:context.db,expectedAuth:context.store});
+  return {status:200,payload:{completed:true,taskId}};
+}
+
 function stripCookie(rawCookie, name) {
   return String(rawCookie || '')
     .split(';')
@@ -862,6 +885,15 @@ function handleManagementApi(req, res, requestUrl) {
   if (req.method === 'POST' && resolve) {
     withLockedManagementWrite(req, res,
       context => resolveEscalatedTransfer(context, resolve[1], resolve[2]));
+    return true;
+  }
+
+  const finishExit = requestUrl.pathname.match(
+    /^\/api\/mentor\/student-exits\/([\w-]+)\/complete$/);
+  if (req.method === 'POST' && finishExit) {
+    parseBody(req).then(body => withLockedManagementWrite(req,res,
+      context=>finishFormerStudentExit(context,finishExit[1],body)))
+      .catch(error=>sendJson(res,400,{message:error.message}));
     return true;
   }
 
