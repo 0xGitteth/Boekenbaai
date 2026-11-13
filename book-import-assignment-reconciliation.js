@@ -124,7 +124,8 @@ function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set()) {
   const matching=validEdition.filter(copy=>bookKey(copy).join('|')===bookKey(book).join('|'));
   if(!matching.length)return {error:'title_author_mismatch'};
   const unassigned=matching.filter(copy=>!usedCopies.has(copy.id));
-  if(!unassigned.length)return {error:'no_unallocated_copy'};
+  if(!unassigned.length) return {error:physicalBarcode
+    ? 'duplicate_physical_barcode' : 'no_unallocated_copy'};
   if(physicalBarcode && unassigned.length===1)return {copy:unassigned[0]};
 
   // All copies of an identical edition can share the printed ISBN barcode.
@@ -345,13 +346,26 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   const issues=differences.filter(x=>x.kind==='issue'||x.reason).length;
   const classQuestions=differences.filter(x=>x.kind==='class_context').length;
   const automatic=differences.filter(x=>x.automatic).length;
-  return {ok:true,differences,notInCollection,summary:{
+  const missingByIsbn=new Map();
+  for(const missing of notInCollection){
+    const key=missing.editionIsbn||missing.title||String(missing.worksheetRow);
+    const item=missingByIsbn.get(key);
+    if(item) {
+      item.rows.push(missing.worksheetRow);
+      item.copies++;
+    } else missingByIsbn.set(key,{
+      title:missing.title,editionIsbn:missing.editionIsbn,
+      copies:1,rows:[missing.worksheetRow],
+    });
+  }
+  const unmatchedEditions=[...missingByIsbn.values()];
+  return {ok:true,differences,notInCollection:unmatchedEditions,summary:{
     differences:differences.length,pending,apply,automatic,
-    notInCollection:notInCollection.length,
+    notInCollection:unmatchedEditions.length,notInCollectionCopies:notInCollection.length,
     kept:differences.filter(x=>x.choice==='keep'||x.choice==='class_unrelated').length,
     deferred:differences.filter(x=>x.choice==='later').length,
     issues,classQuestions,actualDifferences:differences.length-issues-classQuestions,
-    readyToApply:pending===0&&apply>0,
+    readyToApply:pending===0&&differences.length>0,
   }};
 }
 function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString(), batchId=crypto.randomUUID()) {
