@@ -19,7 +19,7 @@ function extract(source, begin, end) {
 // appears, but the selected row should end up at its old viewport position.
 {
   const code = extract(books, '    function render() {', '    function renderContents() {');
-  function verifyBookRender({ replacementExists, focused, expectedY }) {
+  function verifyBookRender({ replacementExists, focused, expectedY, nestedList = false }) {
     let focusedAgain = null;
     const control = {
       closest() { return focused ? oldRow : null; },
@@ -40,21 +40,33 @@ function extract(source, begin, end) {
       scrollY: 840,
       scrollTo(options) { scrolls.push(options); this.scrollY = options.top; },
     };
-    const fakeResults = { querySelectorAll() { return replacementExists ? [newRow] : []; } };
+    let rendered = false;
+    const previousList = { scrollTop: 320, contains() { return false; } };
+    const replacementList = { scrollTop: 0 };
+    const fakeResults = {
+      querySelector(selector) {
+        assert.equal(selector, '.bb-review__rowlist');
+        return nestedList ? (rendered ? replacementList : previousList) : null;
+      },
+      querySelectorAll() { return replacementExists ? [newRow] : []; },
+    };
     const render = new Function('window', 'document', 'results', 'renderContents',
       code + '\nreturn render;')(
       fakeWindow, { activeElement: control }, fakeResults,
-      () => { fakeWindow.scrollY = 0; }
+      () => { fakeWindow.scrollY = 0; rendered = true; }
     );
     render();
     assert.equal(fakeWindow.scrollY, expectedY);
     assert.equal(scrolls.at(-1).behavior, 'instant');
     if (focused && replacementExists) assert.deepEqual(focusedAgain, { preventScroll: true });
+    if (nestedList) assert.equal(replacementList.scrollTop, 320,
+      'The separately scrollable book list must keep its own position');
   }
 
   verifyBookRender({ replacementExists: true, focused: true, expectedY: 920 });
   verifyBookRender({ replacementExists: false, focused: true, expectedY: 840 });
   verifyBookRender({ replacementExists: true, focused: false, expectedY: 840 });
+  verifyBookRender({ replacementExists: true, focused: false, expectedY: 840, nestedList: true });
   assert.match(books, /card\.dataset\.reviewRowKey = 'difference:' \+ diff\.id/);
   assert.match(books, /card\.dataset\.reviewRowKey = 'book:' \+ row\.index/);
   assert.match(books, /rememberResponse\(payload, true\);\n        setNotice\('Correcties en waarschuwingen zijn opnieuw gecontroleerd/,
