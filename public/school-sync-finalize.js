@@ -78,14 +78,18 @@
     return {
       scrollY: Number(window.scrollY) || 0,
       rowKey: row.dataset.schoolSyncKey,
+      rowIndex: Array.from(resultHost.querySelectorAll('[data-school-sync-key]')).indexOf(row),
       rowTop: row.getBoundingClientRect().top,
     };
   }
 
   function restoreReviewPosition(resultHost, position) {
     if (!position) return;
-    const matching = Array.from(resultHost.querySelectorAll('[data-school-sync-key]'))
-      .find(row => row.dataset.schoolSyncKey === position.rowKey);
+    const rows = Array.from(resultHost.querySelectorAll('[data-school-sync-key]'));
+    // A resolved match can disappear from the review. In that case, anchor
+    // the next remaining row instead of losing the user's place in the list.
+    const matching = rows.find(row => row.dataset.schoolSyncKey === position.rowKey)
+      || (rows.length ? rows[Math.min(Math.max(0, position.rowIndex), rows.length - 1)] : null);
     const scrollY = matching
       ? window.scrollY + matching.getBoundingClientRect().top - position.rowTop
       : position.scrollY;
