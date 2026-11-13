@@ -2,7 +2,8 @@
   'use strict';
 
   const syncState = {
-    student: { fileData: '', manualMatches: {}, preview: null, revision: 0 },
+    student: { fileData: '', manualMatches: {}, legacyResolutions: {},
+      preview: null, revision: 0 },
     teacher: { fileData: '', manualMatches: {}, preview: null, revision: 0 },
   };
 
@@ -106,6 +107,48 @@
     resultHost.append(box);
   }
 
+  function renderLegacyAccounts(kind, resultHost, payload, rerun) {
+    if (kind !== 'student') return;
+    const missing = (payload.results || []).filter(row =>
+      ['legacy-needs-review', 'legacy-reviewed'].includes(row.status));
+    if (!missing.length) return;
+    const box = make('section', { className: 'admin-modern__import-warnings school-sync__review' });
+    box.append(
+      make('h5', { text: 'Oude leerlingaccounts controleren (' + missing.length + ')' }),
+      make('p', { className: 'hint', text:
+        'Deze bestaande accounts hebben geen ParnasSys-leerlingnummer en konden '
+        + 'niet aan de nieuwe export worden gekoppeld. Controleer per leerling of '
+        + 'deze nog op school zit. Bij uitschrijven verwijdert Boekenbaai alleen '
+        + 'accounts zonder te bewaren bibliotheekgegevens, na jouw extra bevestiging. '
+        + 'Accounts met gegevens krijgen een uitschrijftaak.' }),
+    );
+    for (const student of missing) {
+      const row = make('div', { className: 'school-sync__review-row' });
+      const details = make('div');
+      details.append(
+        make('strong', { text: student.name }),
+        make('span', { text: 'Vorige klas: '
+          + ((student.classes || []).join(', ') || 'Niet bekend') }),
+      );
+      const select = document.createElement('select');
+      select.append(new Option('Maak een keuze…', ''));
+      select.append(new Option('Leerling zit nog op school, account behouden', 'keep'));
+      select.append(new Option('Leerling is van school, uitschrijven', 'exit'));
+      select.value = syncState[kind].legacyResolutions[student.id] || '';
+      select.addEventListener('change', async () => {
+        if (select.value) syncState[kind].legacyResolutions[student.id] = select.value;
+        else delete syncState[kind].legacyResolutions[student.id];
+        syncState[kind].preview = null;
+        syncState[kind].revision += 1;
+        select.disabled = true;
+        await rerun();
+      });
+      row.append(details, select);
+      box.append(row);
+    }
+    resultHost.append(box);
+  }
+
   function renderPreview(kind, resultHost, payload, fullSchoolSync, rerun, apply) {
     resultHost.replaceChildren();
     const summary = payload.summary || {};
@@ -119,6 +162,10 @@
     );
     if (kind === 'student' && fullSchoolSync) {
       grid.append(metric('Niet meer in schoollijst', summary.missingFromImport));
+      if (summary.legacyAccountsWithoutNumber) {
+        grid.append(metric('Oude accounts zonder leerlingnummer',
+          summary.legacyAccountsWithoutNumber));
+      }
       if (summary.missingFromImport) {
         grid.append(metric('Zonder boekgegevens te verwijderen', summary.deletionEligible));
         grid.append(metric('Uitschrijftaken met historie', summary.exitTasks));
@@ -161,6 +208,7 @@
 
     resultHost.append(wrapper);
     renderReviewRows(kind, resultHost, payload, rerun);
+    if (fullSchoolSync) renderLegacyAccounts(kind, resultHost, payload, rerun);
 
     const actions = make('div', { className: 'admin-modern__preview-actions school-sync__actions' });
     const sync = make('button', { className: 'btn', text: 'Synchroniseren', type: 'button' });
@@ -222,6 +270,7 @@
       const fileData = syncState[kind].fileData;
       const fullSchoolSync = full.checkbox.checked;
       const manualMatches = { ...syncState[kind].manualMatches };
+      const legacyResolutions = { ...(syncState[kind].legacyResolutions || {}) };
       previewButton.disabled = true;
       message.textContent = 'Voorcontrole wordt uitgevoerd…';
       try {
@@ -232,6 +281,7 @@
             file: fileData,
             fullSchoolSync,
             manualMatches,
+            legacyResolutions,
           },
         });
         if (
@@ -295,6 +345,7 @@
               file: syncState[kind].fileData,
               fullSchoolSync: full.checkbox.checked,
               manualMatches: syncState[kind].manualMatches,
+              legacyResolutions: syncState[kind].legacyResolutions || {},
               confirmLargeRemoval,
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
@@ -312,6 +363,7 @@
               file: syncState[kind].fileData,
               fullSchoolSync: full.checkbox.checked,
               manualMatches: syncState[kind].manualMatches,
+              legacyResolutions: syncState[kind].legacyResolutions || {},
               confirmLargeRemoval: true,
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
@@ -330,6 +382,7 @@
 
     file.addEventListener('change', async () => {
       syncState[kind].manualMatches = {};
+      if (kind === 'student') syncState[kind].legacyResolutions = {};
       syncState[kind].preview = null;
       syncState[kind].fileData = '';
       syncState[kind].revision += 1;

@@ -185,6 +185,75 @@ function baseDb() {
   assert.strictEqual(result.db.readingRecords[0].subjectId,'read');
 })();
 
+(function testLegacyAccountsWithoutParnassysNumberCannotDisappearFromPreview() {
+  const initial=baseDb();
+  initial.classes.push({id:'former-class',name:'Structuur BB',
+    studentIds:['still-here','left-school','has-history'],
+    teacherIds:['teacher-1']});
+  initial.students.push(
+    {id:'still-here',name:'Sam Meijer',username:'sam',passwordHash:'x',
+      active:true,classIds:['former-class'],borrowedBooks:[]},
+    {id:'left-school',name:'Vertrokken Leerling',username:'left',passwordHash:'x',
+      active:true,classIds:['former-class'],borrowedBooks:[]},
+    {id:'has-history',name:'Met Leesgegevens',username:'history',passwordHash:'x',
+      active:true,classIds:['former-class'],borrowedBooks:[]},
+  );
+  initial.readingRecords=[{id:'rr1',subjectType:'student',subjectId:'has-history',
+    bookId:'b1',finished:true}];
+  const rows=[{Leerlingnummer:'3003','Huidige groep':'Structuur BB',
+    Roepnaam:'Sam',Achternaam:'Meijer'}];
+  const preview=runSchoolSync({kind:'student',db:structuredClone(initial),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true});
+  assert.strictEqual(preview.summary.missingFromImport,0,
+    'Unnumbered pupils are not silently classified as departed');
+  assert.strictEqual(preview.summary.legacyAccountsWithoutNumber,2);
+  assert.strictEqual(preview.summary.legacyAccountsNeedsReview,2);
+  assert.strictEqual(preview.summary.needsReview,2,
+    'Synchronization blocked until every old account is classified');
+  assert.strictEqual(preview.results.filter(x=>x.status==='legacy-needs-review').length,2);
+  assert.strictEqual(preview.db.students.length,3,
+    'Preview must not delete old accounts');
+  assert.strictEqual(preview.db.students.find(x=>x.id==='still-here').parnassysStudentNumber,'3003',
+    'Exact current match receives the ParnasSys number and is not flagged as departed');
+
+  const decisions={
+    'left-school':'exit',
+    'has-history':'keep',
+  };
+  const second=runSchoolSync({kind:'student',db:structuredClone(initial),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    legacyResolutions:decisions});
+  assert.strictEqual(second.summary.needsReview,0);
+  assert.strictEqual(second.summary.missingFromImport,1);
+  assert.strictEqual(second.summary.deletionEligible,1);
+  assert.strictEqual(second.summary.legacyAccountsKept,1);
+  assert.strictEqual(second.results.filter(x=>x.status==='legacy-reviewed').length,2);
+  const result=runSchoolSync({kind:'student',db:structuredClone(initial),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin',legacyResolutions:decisions});
+  assert.strictEqual(result.summary.deleted,1);
+  assert.strictEqual(result.db.students.some(x=>x.id==='left-school'),false);
+  assert.strictEqual(result.db.students.find(x=>x.id==='has-history').active,true);
+  assert.strictEqual(result.db.readingRecords[0].subjectId,'has-history');
+  assert.strictEqual(result.db.classes[0].studentIds.includes('left-school'),false);
+  assert.strictEqual(result.db.classes[0].studentIds.includes('still-here'),true);
+
+  const archived=runSchoolSync({kind:'student',db:structuredClone(initial),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin',
+    legacyResolutions:{'left-school':'keep','has-history':'exit'}});
+  assert.strictEqual(archived.summary.exitTasks,1);
+  assert.strictEqual(archived.db.students.find(x=>x.id==='has-history').active,false);
+  assert.strictEqual(archived.db.studentExitTasks[0].lastClasses[0].name,'Structuur BB');
+  assert.strictEqual(archived.db.readingRecords[0].subjectId,'has-history');
+
+  const malformed=runSchoolSync({kind:'student',db:structuredClone(initial),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    legacyResolutions:{'left-school':'unknown','has-history':'keep'}});
+  assert.strictEqual(malformed.summary.needsReview,1,
+    'Invalid client resolution does not authorize deletion');
+})();
+
 (function testTeacherMultipleGroupsAndNoGroupDeactivation() {
   const db = baseDb();
   db.classes.push({ id: 'old-class', name: 'Oude klas', studentIds: [], teacherIds: ['old-teacher'] });

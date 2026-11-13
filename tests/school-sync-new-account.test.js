@@ -29,6 +29,7 @@ const db = {
   studentTransferRequests: [],
 };
 
+const initialDb = structuredClone(db);
 const result = runSchoolSync({
   kind: 'student',
   db,
@@ -45,13 +46,32 @@ const result = runSchoolSync({
   manualMatches: { '80001': '__new__' },
 });
 
-assert.strictEqual(result.summary.needsReview, 0);
+assert.strictEqual(result.summary.needsReview, 1,
+  'Explicitly creating a new ParnasSys identity must not hide the unmatched old manual account');
+assert.strictEqual(result.summary.legacyAccountsWithoutNumber, 1);
 assert.strictEqual(result.summary.created, 1);
 assert.strictEqual(result.db.students.length, 2);
 const created = result.db.students.find((entry) => entry.parnassysStudentNumber === '80001');
 assert.ok(created);
 assert.notStrictEqual(created.id, 'manual-1');
 assert.strictEqual(result.db.students.find((entry) => entry.id === 'manual-1').parnassysStudentNumber, undefined);
+
+assert.throws(() => runSchoolSync({
+  kind:'student',db:structuredClone(initialDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'80001','Huidige groep':'Klas A',
+    Roepnaam:'Mohamed',Voorvoegsel:'El',Achternaam:'Amrani'}],
+  fullSchoolSync:true,applyDeactivations:true,
+  manualMatches:{'80001':'__new__'},
+}), /twijfelgevallen/i, 'Unreviewed legacy pupil blocks applying full-school import');
+const keepOld=runSchoolSync({
+  kind:'student',db:structuredClone(initialDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'80001','Huidige groep':'Klas A',
+    Roepnaam:'Mohamed',Voorvoegsel:'El',Achternaam:'Amrani'}],
+  fullSchoolSync:true,manualMatches:{'80001':'__new__'},
+  legacyResolutions:{'manual-1':'keep'},
+});
+assert.strictEqual(keepOld.summary.needsReview,0);
+assert.strictEqual(keepOld.summary.legacyAccountsKept,1);
 
 assert.throws(
   () => runSchoolSync({
@@ -144,6 +164,10 @@ assert.strictEqual(
 const uiSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'school-sync-finalize.js'), 'utf8');
 assert.match(uiSource, /Geen match, maak een nieuw leerlingaccount/);
 assert.match(uiSource, /'__new__'/);
+assert.match(uiSource,/Oude leerlingaccounts controleren/);
+assert.match(uiSource,/Leerling zit nog op school, account behouden/);
+assert.match(uiSource,/Leerling is van school, uitschrijven/);
+assert.match(uiSource,/legacyResolutions/);
 
 const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'school-sync-new-account-preload.js'), 'utf8');
 assert.doesNotMatch(preloadSource, /MutationObserver|createServer/, 'De nieuw-accountkeuze hoort geen extra DOM- of HTTP-wrapper meer nodig te hebben');

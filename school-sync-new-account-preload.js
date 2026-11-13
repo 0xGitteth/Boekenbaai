@@ -111,7 +111,8 @@ syncCore.runSchoolSync = function runSchoolSyncWithExplicitNewAccount(input = {}
   result.summary.created = result.results.filter((entry) => entry?.status === 'created').length;
   result.summary.updated = result.results.filter((entry) => entry?.status === 'updated').length;
   result.summary.unchanged = result.results.filter((entry) => entry?.status === 'unchanged').length;
-  result.summary.needsReview = result.results.filter((entry) => entry?.status === 'needs-review').length;
+  result.summary.needsReview = result.results.filter((entry) =>
+    ['needs-review', 'legacy-needs-review'].includes(entry?.status)).length;
   return ensureNoUnresolvedApply(result, input);
 };
 
