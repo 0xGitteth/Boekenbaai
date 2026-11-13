@@ -94,6 +94,14 @@ assert.equal(emitted[1].detail.status,'error');
 assert.equal(emitted[1].detail.classes.length,0);
 ctx.publish('ready');
 assert.equal(emitted.length,2,'A successful update cannot be published without role data');
+ctx.state={...classState, formerStudentExits:[
+  {studentId:'past',status:'open'},{studentId:'done',status:'completed'}]};
+ctx.publish('ready');
+assert.equal(emitted.length,3);
+assert.equal(emitted[2].detail.exitCount,1,
+  'Only open former-pupil tasks contribute to teacher dashboard counts');
+assert.match(teacher,/Uitschrijven oud-leerlingen/);
+assert.match(teacher,/exitTaskCount/);
 
 const taskStart=teacher.indexOf('  function renderMentorTasks() {');
 const taskEnd=teacher.indexOf('  function installLoanDuePreview()',taskStart);
