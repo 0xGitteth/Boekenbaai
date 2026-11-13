@@ -534,6 +534,8 @@ function schoolSyncPreview(context, body, apply) {
     fullSchoolSync: Boolean(body.fullSchoolSync),
     applyDeactivations: Boolean(apply),
     manualMatches: body.manualMatches && typeof body.manualMatches === 'object' ? body.manualMatches : {},
+    legacyResolutions: body.legacyResolutions && typeof body.legacyResolutions === 'object'
+      && !Array.isArray(body.legacyResolutions) ? body.legacyResolutions : {},
   });
 
   // Deletion is irreversible. A full-school import is not consent to
