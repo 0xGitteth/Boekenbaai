@@ -78,6 +78,22 @@ const keepOld=runSchoolSync({
 assert.strictEqual(keepOld.summary.needsReview,0);
 assert.strictEqual(keepOld.summary.legacyAccountsKept,1);
 
+const duplicateNameDb={
+  books:[],users:[],history:[],
+  students:[
+    {id:'sam-a',name:'Sam Jansen',active:true,borrowedBooks:[],classIds:['a']},
+    {id:'sam-b',name:'Sam Jansen',active:true,borrowedBooks:[],classIds:['a']},
+  ],
+  classes:[{id:'a',name:'Klas A',studentIds:['sam-a','sam-b'],teacherIds:[]}],
+};
+assert.throws(()=>runSchoolSync({
+  kind:'student',db:structuredClone(duplicateNameDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'91001','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen'}],
+  fullSchoolSync:true,applyDeactivations:true,actorId:'admin',
+}),/twijfelgevallen/i,
+'Production wrapper must block a mass exit when two old accounts exactly match a current pupil');
+
 assert.throws(
   () => runSchoolSync({
     kind: 'student',
