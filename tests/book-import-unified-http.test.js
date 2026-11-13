@@ -105,7 +105,8 @@ async function run(){
       old('Lisa Leerling'),
       old('Tim Leerling',{'Vast in de klas van:':'Klas A'}),
       {Titel:'Harry Potter en de Steen der Wijzen',Auteur:'J.K. Rowling',
-        'ISBN-nummer':SECOND,Aantal:1,'Vast in de klas van:':'Klas A'},
+        'ISBN-nummer':SECOND,Aantal:1,'Vast in de klas van:':'Klas A',
+        'Naam leerling':'Lisa Leerling'},
     ];
     const selection=parts({books:true,loans:true,locations:true,
       fields:{description:true}});
@@ -114,8 +115,8 @@ async function run(){
     assert.equal(stage.data.mode,'unified_sync');
     assert.equal(stage.data.syncParts.fields.description,true);
     assert.equal(stage.data.decisions.summary.newCopies,1);
-    assert.equal(stage.data.decisions.summary.proposedLoans,1,
-      'Two identical ISBN copies can be assigned to two distinct pupils');
+    assert.equal(stage.data.decisions.summary.proposedLoans,2,
+      'Existing and newly added books can receive loans in the same import');
     assert.equal(stage.data.decisions.summary.proposedLocations,1);
     assert.equal(stage.data.decisions.summary.metadataFields,1);
     assert.equal(stage.data.decisions.metadata.updates[0].copies,2);
@@ -128,7 +129,7 @@ async function run(){
     const applied=await apply(reviewed);
     assert.equal(applied.status,200,JSON.stringify(applied.data));
     assert.equal(applied.data.result.created,1);
-    assert.equal(applied.data.result.correctedLoans,1);
+    assert.equal(applied.data.result.correctedLoans,2);
     assert.equal(applied.data.result.correctedLocations,1);
     assert.equal(applied.data.result.metadataUpdated,2);
     assert.equal(applied.data.result.report.mode,'unified_sync');
@@ -146,6 +147,10 @@ async function run(){
     const newBook=saved.books.find(book=>book.editionIsbn===SECOND);
     assert.ok(newBook,'The missing ISBN was created in the same transaction');
     assert.equal(newBook.fixedLocation,'Klas A');
+    assert.equal(newBook.borrowedBy,'lisa',
+      'The temporary preview ID must be replaced by the new real copy ID');
+    assert.ok(saved.students.find(s=>s.id==='lisa').borrowedBooks.some(
+      entry=>entry.bookId===newBook.id));
     assert.equal(saved.students.find(s=>s.id==='tim').borrowedBooks[0].bookId,'copy-2');
     assert.equal(saved.readingRecords.length,1,'Old reading responses are untouched');
 
