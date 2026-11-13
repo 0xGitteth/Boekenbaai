@@ -366,6 +366,8 @@
     let assignmentResolutions = new Map();
     const skippedEdits = new Map();
     let page = 0;
+    let automaticPage = 0;
+    let automaticExpanded = false;
     let busy = false;
     let openEditor = null;
     let warningsAccepted = false;
@@ -431,6 +433,8 @@
       skippedEdits.clear();
       if (!preservePosition || !sameStage) {
         page = 0;
+        automaticPage = 0;
+        automaticExpanded = false;
         openEditor = null;
       }
       render();
@@ -618,13 +622,12 @@
       const summary = plan.summary || {};
       const overview = make('div', 'bb-review__totals');
       overview.append(make('h4', '', 'Administratieve koppelingen controleren'));
-      overview.append(make('p', '', (summary.differences || 0)
-        + ' verschillen in bestaande registraties. '
-        + (summary.automatic || 0) + ' duidelijke wijzigingen uit Excel voorgesteld, '
-        + (summary.pending || 0) + ' punten vragen een keuze. '
+      overview.append(make('p', '', (summary.automatic || 0)
+        + ' wijzigingen uit Excel voorgesteld voor gezamenlijke bevestiging. '
+        + (summary.pending || 0) + ' uitzonderingen vragen een keuze. '
         + (summary.notInCollection || 0) + ' ISBN-groepen ('
         + (summary.notInCollectionCopies || 0)
-        + ' exemplaren) kunnen niet administratief worden gekoppeld.'));
+        + ' exemplaren) ontbreken of zijn niet eenduidig te koppelen.'));
       overview.append(make('p', 'hint',
         'Er worden geen boeken toegevoegd, verwijderd of opnieuw verrijkt. '
         + 'Lege Excelvelden laten bestaande uitleningen en vaste locaties ongemoeid. '
@@ -657,7 +660,7 @@
         rememberResponse(payload, true);
         setNotice('Alle administratieve keuzes zijn opnieuw gecontroleerd.');
       }, 'De gekozen correcties worden opnieuw gecontroleerd…'));
-      const applyButton = button('Gekozen correcties toepassen', 'btn');
+      const applyButton = button('Voorgestelde wijzigingen bevestigen', 'btn');
       applyButton.disabled = !summary.readyToApply || hasUnreviewedChanges()
         || Boolean(remotePending || busy);
       applyButton.addEventListener('click', () => {
@@ -684,17 +687,51 @@
         }, 'De controle wordt geannuleerd…');
       });
       controls.append(reviewButton, applyButton, cancelButton);
-      if (summary.pending || hasUnreviewedChanges()) controls.append(make('p', 'hint',
-        'Kies per controlepunt wat de Excelvermelding betekent. '
-        + 'Keuzes voor later worden na definitieve bevestiging een taak '
-        + 'voor de beheerder. Onzekere exemplaren blijven beschermd. '
-        + 'Controleer alle keuzes opnieuw voordat je correcties toepast.'));
-      results.append(controls);
-      const list = make('div', 'bb-review__rowlist');
       const differences = Array.isArray(plan.differences) ? plan.differences : [];
-      const maxPage = Math.max(0, Math.ceil(differences.length / PAGE_SIZE) - 1);
-      page = Math.min(page, maxPage);
-      for (const diff of differences.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
+      const openChoices = differences.filter(diff =>
+        (assignmentResolutions.get(diff.id)?.action || diff.choice || 'pending') === 'pending');
+      if (openChoices.length) {
+        const keepOpen = button('Behoud huidige gegevens bij alle ' + openChoices.length
+          + ' openstaande punten', 'btn btn--secondary');
+        keepOpen.disabled = Boolean(remotePending || busy);
+        keepOpen.addEventListener('click', () => {
+          if (!window.confirm('Voor ' + openChoices.length + ' onduidelijke punten '
+            + 'blijven de huidige registraties ongewijzigd. '
+            + (summary.automatic || 0) + ' duidelijke Excelwijzigingen blijven '
+            + 'voorgesteld en worden pas bij de definitieve bevestiging opgeslagen. '
+            + 'Wil je deze keuze maken?')) return;
+          run(async () => {
+            const choices = new Map(assignmentResolutions);
+            for (const diff of openChoices) {
+              choices.set(diff.id, { id: diff.id, action: 'keep' });
+            }
+            const payload = await request(rootPath + '/' + encodeURIComponent(stage.id) + '/review', {
+              revision: stage.revision, acceptWarnings: true, corrections: [],
+              assignmentResolutions: [...choices.values()],
+            });
+            rememberResponse(payload, true);
+            setNotice('Openstaande punten behouden. Controleer het voorstel en bevestig daarna de wijzigingen.');
+          }, 'De onzekere registraties blijven behouden en het voorstel wordt gecontroleerd…');
+        });
+        controls.append(keepOpen);
+      }
+      if (summary.pending || hasUnreviewedChanges()) controls.append(make('p', 'hint',
+        'Alleen echte uitzonderingen vragen een keuze. Je kunt ze afzonderlijk '
+        + 'controleren of in één keer de huidige registratie behouden. '
+        + 'Uitgestelde keuzes worden beheertaken. '
+        + 'Sla je keuzes eerst op via “Mijn keuzes controleren”.'));
+      results.append(controls);
+      const exceptions = differences.filter(diff => !diff.automatic);
+      const proposals = differences.filter(diff => diff.automatic);
+      function renderReviewGroup(group, kind) {
+        const list = make('div', 'bb-review__rowlist');
+        list.dataset.reviewList = kind;
+        const currentPage = kind === 'automatic' ? automaticPage : page;
+        const maxPage = Math.max(0, Math.ceil(group.length / PAGE_SIZE) - 1);
+        const shownPage = Math.min(currentPage, maxPage);
+        if (kind === 'automatic') automaticPage = shownPage;
+        else page = shownPage;
+        for (const diff of group.slice(shownPage * PAGE_SIZE, (shownPage + 1) * PAGE_SIZE)) {
         const card = make('article', 'bb-review__row');
         card.dataset.reviewRowKey = 'difference:' + diff.id;
         card.append(make('strong', '',
@@ -794,56 +831,104 @@
         card.append(label);
         list.append(card);
       }
-      if (!differences.length) list.append(make('p', 'hint',
-        'Geen verschillen of vragen gevonden bij eenduidig herkende fysieke exemplaren.'));
-      results.append(list);
-      const navigation = make('div', 'bb-review__pagination');
-      const prev = button('Vorige', 'btn btn--ghost');
-      prev.disabled = page === 0;
-      prev.addEventListener('click', () => { page--; render(true); });
-      const next = button('Volgende', 'btn btn--ghost');
-      next.disabled = page === maxPage;
-      next.addEventListener('click', () => { page++; render(true); });
-      navigation.append(prev, make('span', '',
-        'Pagina ' + (page + 1) + ' van ' + (maxPage + 1)), next);
-      results.append(navigation);
+        if (!group.length) list.append(make('p', 'hint',
+          'Geen afzonderlijke controles nodig.'));
+        const navigation = make('div', 'bb-review__pagination');
+        if (group.length > PAGE_SIZE) {
+          const prev = button('Vorige', 'btn btn--ghost');
+          prev.disabled = shownPage === 0;
+          prev.addEventListener('click', () => {
+            if (kind === 'automatic') automaticPage--;
+            else page--;
+            render(true, kind);
+          });
+          const next = button('Volgende', 'btn btn--ghost');
+          next.disabled = shownPage === maxPage;
+          next.addEventListener('click', () => {
+            if (kind === 'automatic') automaticPage++;
+            else page++;
+            render(true, kind);
+          });
+          navigation.append(prev, make('span', '',
+            'Pagina ' + (shownPage + 1) + ' van ' + (maxPage + 1)), next);
+        }
+        return { list, navigation };
+      }
+      const exceptionsHeader = make('div', 'bb-review__section-heading');
+      exceptionsHeader.append(make('h4', '',
+        'Handmatig te beoordelen (' + exceptions.length + ')'));
+      exceptionsHeader.append(make('p', 'hint',
+        exceptions.length
+          ? 'Alleen deze punten hebben geen betrouwbaar automatisch antwoord. '
+            + 'Kies per punt of behoud de bestaande registratie in één keer.'
+          : 'Geen handmatige controles nodig voor de bestaande registraties.'));
+      results.append(exceptionsHeader);
+      const manual = renderReviewGroup(exceptions, 'manual');
+      results.append(manual.list);
+      if (exceptions.length > PAGE_SIZE) results.append(manual.navigation);
+
+      if (proposals.length) {
+        const suggested = make('details', 'bb-review__suggested');
+        suggested.open = automaticExpanded;
+        suggested.addEventListener('toggle', () => {
+          if (suggested.isConnected) automaticExpanded = suggested.open;
+        });
+        const loans = proposals.filter(diff => diff.kind === 'loan').length;
+        const locations = proposals.filter(diff => diff.kind === 'location').length;
+        suggested.append(make('summary', '',
+          'Voorgestelde wijzigingen bekijken (' + proposals.length + ')'));
+        suggested.append(make('p', 'hint',
+          loans + ' uitleningen en ' + locations + ' vaste locaties. '
+          + 'Deze voorstellen zijn al geselecteerd, maar worden pas na de '
+          + 'definitieve bevestiging verwerkt. Je kunt een voorstel nog aanpassen.'));
+        const automatic = renderReviewGroup(proposals, 'automatic');
+        suggested.append(automatic.list);
+        if (proposals.length > PAGE_SIZE) suggested.append(automatic.navigation);
+        results.append(suggested);
+      }
     }
 
 
     // Rebuilding a long review removes the focused row temporarily. Keep its
     // position in the viewport, rather than letting browser scroll anchoring
     // move the administrator to the top of the import panel.
-    function render(resetListScroll = false) {
+    function render(resetListScroll = false, targetListKind = null) {
       const scrollY = Number(window.scrollY) || 0;
-      const previousList = results.querySelector('.bb-review__rowlist');
-      const listScrollTop = previousList?.scrollTop || 0;
+      // Import review may display both a scrollable exception list and a
+      // separately scrollable list of proposals. Restore each independently.
+      const originalLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
+      const scrollPositions = new Map(originalLists.map(list =>
+        [list.dataset.reviewList || '', list.scrollTop]));
       const focusedRow = document.activeElement?.closest?.('[data-review-row-key]');
+      const focusedList = focusedRow?.closest?.('.bb-review__rowlist');
+      const focusedListKind = focusedList?.dataset.reviewList || '';
       const rowKey = focusedRow?.dataset.reviewRowKey;
       const rowTop = focusedRow?.getBoundingClientRect().top;
-      const rowTopInList = focusedRow && previousList?.contains(focusedRow)
-        ? rowTop - previousList.getBoundingClientRect().top : null;
+      const rowTopInList = focusedRow && focusedList
+        ? rowTop - focusedList.getBoundingClientRect().top : null;
       const focusedControlIndex = focusedRow
         ? Array.from(focusedRow.querySelectorAll('button, input, select, textarea'))
           .indexOf(document.activeElement) : -1;
       renderContents();
-      const list = results.querySelector('.bb-review__rowlist');
-      if (list && resetListScroll) {
-        // A new page must start at its first row, unlike editing this page.
-        list.scrollTop = 0;
-        list.scrollIntoView({ block: 'start', behavior: 'instant' });
+      const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
+      const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
+      for (const list of updatedLists) {
+        const kind = list.dataset.reviewList || '';
+        list.scrollTop = resetListScroll && (targetListKind === null || kind === targetListKind)
+          ? 0 : (scrollPositions.get(kind) || 0);
+      }
+      if (resetListScroll) {
+        const target = listFor(targetListKind || '');
+        target?.scrollIntoView({ block: 'start', behavior: 'instant' });
         return;
       }
       const replacement = rowKey && Array.from(results.querySelectorAll('[data-review-row-key]'))
         .find(row => row.dataset.reviewRowKey === rowKey);
-      if (list) {
-        // On desktop the book list itself scrolls (max-height: 620px). Its
-        // scrollTop would otherwise reset to zero on every choice.
-        list.scrollTop = listScrollTop;
-        if (replacement && rowTopInList !== null) {
-          const nextRelativeTop = replacement.getBoundingClientRect().top
-            - list.getBoundingClientRect().top;
-          list.scrollTop += nextRelativeTop - rowTopInList;
-        }
+      const list = listFor(focusedListKind);
+      if (replacement && list && rowTopInList !== null && list.contains(replacement)) {
+        const nextRelativeTop = replacement.getBoundingClientRect().top
+          - list.getBoundingClientRect().top;
+        list.scrollTop += nextRelativeTop - rowTopInList;
       }
       const newTop = replacement && Number.isFinite(rowTop)
         ? window.scrollY + replacement.getBoundingClientRect().top - rowTop : scrollY;

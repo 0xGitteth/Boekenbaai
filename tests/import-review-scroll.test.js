@@ -18,11 +18,14 @@ function extract(source, begin, end) {
 // Replacing all children can reset the browser's scrollY before the new list
 // appears, but the selected row should end up at its old viewport position.
 {
-  const code = extract(books, '    function render(resetListScroll = false) {', '    function renderContents() {');
+  const code = extract(books, '    function render(resetListScroll = false, targetListKind = null) {', '    function renderContents() {');
   function verifyBookRender({ replacementExists, focused, expectedY, nestedList = false, pageChanged = false }) {
     let focusedAgain = null;
     const control = {
-      closest() { return focused ? oldRow : null; },
+      closest(selector) {
+        if (selector === '[data-review-row-key]') return focused ? oldRow : null;
+        return null;
+      },
     };
     const oldRow = {
       dataset: { reviewRowKey: 'difference:test-id' },
@@ -41,15 +44,20 @@ function extract(source, begin, end) {
       scrollTo(options) { scrolls.push(options); this.scrollY = options.top; },
     };
     let rendered = false;
-    const previousList = { scrollTop: 320, contains() { return false; } };
+    const previousList = { dataset: {reviewList: ''}, scrollTop: 320, contains() { return false; } };
     let pageNavigation = null;
-    const replacementList = { scrollTop: 0, scrollIntoView(options) { pageNavigation = options; } };
+    const replacementList = {
+      dataset: {reviewList: ''}, scrollTop: 0, contains() { return false; },
+      scrollIntoView(options) { pageNavigation = options; },
+    };
     const fakeResults = {
-      querySelector(selector) {
-        assert.equal(selector, '.bb-review__rowlist');
-        return nestedList ? (rendered ? replacementList : previousList) : null;
+      querySelectorAll(selector) {
+        if (selector === '.bb-review__rowlist') {
+          return nestedList ? [rendered ? replacementList : previousList] : [];
+        }
+        if (selector === '[data-review-row-key]') return replacementExists ? [newRow] : [];
+        throw Error('Unexpected query: ' + selector);
       },
-      querySelectorAll() { return replacementExists ? [newRow] : []; },
     };
     const render = new Function('window', 'document', 'results', 'renderContents',
       code + '\nreturn render;')(
@@ -75,8 +83,10 @@ function extract(source, begin, end) {
   verifyBookRender({ replacementExists: true, focused: false, expectedY: 840 });
   verifyBookRender({ replacementExists: true, focused: false, expectedY: 840, nestedList: true });
   verifyBookRender({ replacementExists: true, focused: false, nestedList: true, pageChanged: true });
-  assert.equal((books.match(/render\(true\)/g) || []).length, 4,
-    'Both book and administrative pagination must start a new page at the top');
+  assert.equal((books.match(/render\(true\)/g) || []).length, 2,
+    'Book pagination must still open each new page at the top');
+  assert.equal((books.match(/render\(true, kind\)/g) || []).length, 2,
+    'Both exception and automatic suggestion lists must reset their own scroll');
   assert.match(books, /card\.dataset\.reviewRowKey = 'difference:' \+ diff\.id/);
   assert.match(books, /card\.dataset\.reviewRowKey = 'book:' \+ row\.index/);
   assert.match(books, /rememberResponse\(payload, true\);\n        setNotice\('Correcties en waarschuwingen zijn opnieuw gecontroleerd/,
