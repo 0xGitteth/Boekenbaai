@@ -511,6 +511,16 @@ function applyPeopleImport(input) {
       return;
     }
 
+    // Current teachers without a class stay employed, but other employees
+    // without classes are not automatically given a new teacher account.
+    if (kind === 'teacher' && parnassys && !classNames.length &&
+      includeUnassignedTeachers && !match.account) {
+      summary.ignored += 1;
+      results.push({ row: rowNumber, name, status: 'ignored',
+        reason: 'Medewerker zonder groep en zonder bestaand docentaccount; geen nieuw account aangemaakt.' });
+      return;
+    }
+
     let account = match.account;
     const wasCreated = !account;
     const beforeName = account?.name || '';
