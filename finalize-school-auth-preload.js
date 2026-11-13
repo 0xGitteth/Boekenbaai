@@ -538,6 +538,15 @@ function schoolSyncPreview(context, body, apply) {
 
   // Deletion is irreversible. A full-school import is not consent to
   // silently erase even one pupil who has no preserved library records.
+  if(apply && kind==='student'
+    && (body.expectedDeletionCount!==result.summary.deletionEligible
+      || !Number.isSafeInteger(body.expectedDeletionCount))){
+    const error=new Error('De lijst met te verwijderen leerlingen is sinds de voorcontrole veranderd. '
+      +'Voer eerst een nieuwe voorcontrole uit.');
+    error.code='PUPIL_REMOVAL_PREVIEW_CHANGED';
+    error.summary=result.summary;
+    throw error;
+  }
   if (apply && kind==='student'
     && result.summary.deletionEligible>0 && body.confirmPupilRemoval!==true){
     const error=new Error(
@@ -687,7 +696,11 @@ async function handleCustomRoute(req, res, requestUrl) {
         sendJson(res, 200, payload);
       }
     } catch (error) {
-      if (error?.code === 'PUPIL_REMOVAL_CONFIRMATION') {
+      if (error?.code === 'PUPIL_REMOVAL_PREVIEW_CHANGED') {
+        sendJson(res,409,{
+          code:'pupil-removal-preview-changed',message:error.message,summary:error.summary,
+        });
+      } else if (error?.code === 'PUPIL_REMOVAL_CONFIRMATION') {
         sendJson(res,409,{
           code:'pupil-removal-confirmation',message:error.message,summary:error.summary,
         });
