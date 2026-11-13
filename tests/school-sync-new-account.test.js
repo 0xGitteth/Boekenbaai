@@ -94,6 +94,44 @@ assert.throws(()=>runSchoolSync({
 }),/twijfelgevallen/i,
 'Production wrapper must block a mass exit when two old accounts exactly match a current pupil');
 
+const accentDb={
+  books:[],users:[],history:[],
+  students:[{id:'jose-old',name:'José Jansen',username:'old-jose',
+    active:true,borrowedBooks:[],classIds:['a']}],
+  classes:[{id:'a',name:'Klas A',studentIds:['jose-old'],teacherIds:[]}],
+};
+const accent=runSchoolSync({
+  kind:'student',db:structuredClone(accentDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'97001','Huidige groep':'Klas A',
+    Roepnaam:'Jose',Achternaam:'Jansen'}],
+  fullSchoolSync:true,applyDeactivations:true,actorId:'admin',
+});
+assert.strictEqual(accent.summary.created,0,
+  'Accent variants should not fabricate a new student');
+assert.strictEqual(accent.summary.deleted,0,
+  'Current student must not be auto-exited when accent normalization differs');
+assert.strictEqual(accent.db.students.length,1);
+assert.strictEqual(accent.db.students[0].id,'jose-old');
+assert.strictEqual(accent.db.students[0].parnassysStudentNumber,'97001');
+
+const incompleteDb={
+  books:[],users:[],history:[],
+  students:[{id:'sam-old',name:'Sam Jansen',username:'sam',
+    active:true,borrowedBooks:[],classIds:['a']}],
+  classes:[{id:'a',name:'Klas A',studentIds:['sam-old'],teacherIds:[]}],
+};
+for(const applyDeactivations of [false,true]){
+  assert.throws(()=>runSchoolSync({
+    kind:'student',db:structuredClone(incompleteDb),
+    store:core.emptyAuthStore(),rows:[
+      {Leerlingnummer:'','Huidige groep':'Klas A',
+        Roepnaam:'Sam',Achternaam:'Jansen'},
+    ],
+    fullSchoolSync:true,applyDeactivations,actorId:'admin',
+  }),/zonder leerlingnummer/i,
+  'Incomplete identity in full export must block preview and apply');
+}
+
 assert.throws(
   () => runSchoolSync({
     kind: 'student',
