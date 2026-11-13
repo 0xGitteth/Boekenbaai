@@ -54,3 +54,21 @@
   background: var(--surface); color: var(--text); font: inherit;
 }
 .bb-review__check[hidden], .bb-review__field[hidden] { display: none !important; }
+
+/* Keep automatically actionable Excel changes available without burying
+   manual exceptions in dozens of already-approved preview rows. */
+.bb-review__section-heading { display: grid; gap: .3rem; }
+.bb-review__section-heading h4, .bb-review__section-heading p { margin: 0; }
+.bb-review__suggested {
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: .85rem 1rem;
+  background: var(--accent-softer);
+}
+.bb-review__suggested > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.bb-review__suggested[open] { display: grid; gap: .75rem; }
+.bb-review__suggested > .bb-review__rowlist { background: var(--surface); border-radius: 8px; }
+.bb-review__suggested > .hint { margin: 0; }
