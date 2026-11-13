@@ -703,6 +703,11 @@
           diff.author || '', diff.editionIsbn || '',
           diff.barcode || 'Geen individuele barcode',
         ].filter(Boolean).join(' · ')));
+        if (diff.needsChoice === 'duplicate_excel_student_edition') {
+          card.append(make('p', 'bb-review__reason',
+            'Deze leerling krijgt in Excel meerdere exemplaren met hetzelfde ISBN. '
+            + 'Kies welk exemplaar uitgeleend moet worden en behoud of controleer het andere.'));
+        }
         if (diff.kind === 'issue') {
           const reasons = {
             ambiguous_physical_copy: 'Alle exemplaren met dit ISBN zijn al uitgeleend. Zonder bestaande match kan Boekenbaai niet veilig bepalen welke actieve uitlening gewijzigd moet worden.',
