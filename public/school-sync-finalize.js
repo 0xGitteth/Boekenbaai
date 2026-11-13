@@ -109,7 +109,8 @@
 
   function renderLegacyAccounts(kind, resultHost, payload, rerun) {
     if (kind !== 'student') return;
-    const missing = (payload.results || []).filter(row => row.status === 'legacy-needs-review');
+    const missing = (payload.results || []).filter(row =>
+      ['legacy-needs-review', 'legacy-reviewed'].includes(row.status));
     if (!missing.length) return;
     const box = make('section', { className: 'admin-modern__import-warnings school-sync__review' });
     box.append(
