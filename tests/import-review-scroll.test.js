@@ -143,7 +143,7 @@ function extract(source, begin, end) {
   )(
     state, 'student', message, results, full, previewButton,
     async (_url, options) => {
-      sentBody = JSON.parse(options.body);
+      sentBody = options.body;
       return new Promise(resolve => { releaseRequest = resolve; });
     },
     () => { rendered += 1; },
