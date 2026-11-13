@@ -11,6 +11,7 @@ const core = require('./google-auth-core');
 const { verifyGoogleIdToken } = require('./google-id-token');
 const { accountCredentialFingerprint } = require('./google-auth-security-core');
 const { runSchoolSync } = require('./school-sync-core');
+const {teacherExitTaskSummary,completeTeacherExitTask} = require('./teacher-exit-workflow');
 const { commitPairedJson, recoverPairedJson } = require('./paired-store-commit');
 const { completePendingGoogleSession } = require('./google-pending-session');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot } = require('./database-write-coordinator');
@@ -536,7 +537,29 @@ function schoolSyncPreview(context, body, apply) {
     manualMatches: body.manualMatches && typeof body.manualMatches === 'object' ? body.manualMatches : {},
     legacyResolutions: body.legacyResolutions && typeof body.legacyResolutions === 'object'
       && !Array.isArray(body.legacyResolutions) ? body.legacyResolutions : {},
+    teacherResolutions: body.teacherResolutions && typeof body.teacherResolutions==='object'
+      && !Array.isArray(body.teacherResolutions) ? body.teacherResolutions : {},
   });
+
+  // The administrator must approve the exact set of departed staff.
+  // Recheck inside the database lock before writing, including accounts
+  // archived for historical data rather than deleted.
+  if(apply && kind==='teacher' && (
+    body.expectedTeacherExitFingerprint!==result.summary.teacherExitCandidateFingerprint ||
+    body.expectedTeacherDeletionFingerprint!==result.summary.teacherDeletionCandidateFingerprint ||
+    body.expectedTeacherDeletionCount!==result.summary.teacherDeletionEligible
+  )){
+    const error=new Error('De lijst met uit te schrijven docenten is sinds de voorcontrole '
+      +'veranderd. Voer opnieuw een voorcontrole uit.');
+    error.code='TEACHER_EXIT_PREVIEW_CHANGED';error.summary=result.summary;throw error;
+  }
+  if(apply && kind==='teacher' && result.summary.teacherDeletionEligible>0 &&
+    body.confirmTeacherRemoval!==true){
+    const error=new Error('Deze synchronisatie verwijdert '
+      +result.summary.teacherDeletionEligible
+      +' docentaccounts zonder te bewaren gegevens. Bevestig de verwijdering expliciet.');
+    error.code='TEACHER_EXIT_CONFIRMATION';error.summary=result.summary;throw error;
+  }
 
   // Deletion is irreversible. A full-school import is not consent to
   // silently erase even one pupil who has no preserved library records.
@@ -667,6 +690,55 @@ async function handleCustomRoute(req, res, requestUrl) {
     reviewStaffLinkRequest(req, res, staffAction[1], staffAction[2]);
     return true;
   }
+  if (req.method==='GET' && pathname==='/api/admin/teacher-exits') {
+    const context=resolveAdmin(req);
+    if(!context){
+      sendJson(res,403,{message:'Alleen beheer kan uitschrijftaken voor docenten zien.'});
+      return true;
+    }
+    sendJson(res,200,{tasks:teacherExitTaskSummary(context.db,context.user)});
+    return true;
+  }
+  const exitMatch=pathname.match(/^\\/api\\/admin\\/teacher-exits\\/([\\w-]+)\\/complete$/);
+  if(req.method==='POST' && exitMatch){
+    if(!resolveAdmin(req)){
+      sendJson(res,403,{message:'Alleen beheer kan docenten uitschrijven.'});
+      return true;
+    }
+    try{
+      const body=await parseBody(req);
+      if(!Number.isSafeInteger(body?.revision)||body.confirm!==true){
+        sendJson(res,400,{message:'Bevestig de controle en gebruik de juiste taakversie.'});
+        return true;
+      }
+      const release=acquireFileLock(DATA_PATH+'.mail-preferences.lock');
+      if(!release){
+        sendJson(res,409,{message:'Een andere wijziging wordt verwerkt.'});
+        return true;
+      }
+      try{
+        const context=resolveAdmin(req);
+        if(!context){
+          sendJson(res,403,{message:'Je beheerderssessie is niet meer geldig.'});
+          return true;
+        }
+        const result=completeTeacherExitTask(context.db,context.user,exitMatch[1],
+          body.revision);
+        if(!result.ok){
+          sendJson(res,result.status,{message:result.error});
+          return true;
+        }
+        commitPairedJson({dataPath:DATA_PATH,authPath:AUTH_DATA_PATH,
+          data:context.db,auth:core.pruneStore(context.store),
+          expectedData:context.db,expectedAuth:context.store});
+        sendJson(res,200,{completed:true,id:exitMatch[1]});
+      }finally{release();}
+    }catch(error){
+      sendJson(res,['DATABASE_WRITE_CONFLICT','DATABASE_WRITE_BUSY'].includes(error?.code)
+        ?409:400,{message:error.message});
+    }
+    return true;
+  }
   if (req.method === 'POST' && ['/api/admin/school-sync/preview', '/api/admin/school-sync/apply'].includes(pathname)) {
     const initialContext = resolveAdmin(req);
     if (!initialContext) {
@@ -702,7 +774,13 @@ async function handleCustomRoute(req, res, requestUrl) {
         sendJson(res, 200, payload);
       }
     } catch (error) {
-      if (error?.code === 'PUPIL_REMOVAL_PREVIEW_CHANGED') {
+      if (error?.code === 'TEACHER_EXIT_PREVIEW_CHANGED') {
+      sendJson(res,409,{code:'teacher-exit-preview-changed',
+        message:error.message,summary:error.summary});
+    } else if (error?.code === 'TEACHER_EXIT_CONFIRMATION') {
+      sendJson(res,409,{code:'teacher-exit-confirmation',
+        message:error.message,summary:error.summary});
+    } else if (error?.code === 'PUPIL_REMOVAL_PREVIEW_CHANGED') {
         sendJson(res,409,{
           code:'pupil-removal-preview-changed',message:error.message,summary:error.summary,
         });
