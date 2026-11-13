@@ -217,22 +217,28 @@ function applyContext(mapped, row, options) {
     });
   }
 
-  const structureClassLoan = SPECIAL_FIXED_LOCATION_ALIASES.get(comparableText(classLoan));
-  const hasRealStudentLoan = Boolean(studentLoan);
-  const classLoanIsFixedMlLocation = Boolean(structureClassLoan && row.book.easyReading && !hasRealStudentLoan);
-  if (classLoanIsFixedMlLocation) {
-    row.context.fixedLocation = { status: 'resolved', label: structureClassLoan, source: 'ml_class_loan_rule' };
-    addIssue(row, 'ml_structuurbb_fixed_location', 'info');
-  }
-
-  if (classLoan && hasRealStudentLoan) addIssue(row, 'multiple_loan_contexts', 'conflict');
-  if (classLoan && !classLoanIsFixedMlLocation) {
-    const match = matchEntityByName(classLoan, options.classes);
-    if (match.status === 'matched') row.context.classLoan = { status: 'matched', ...match.matches[0] };
-    else {
-      row.context.classLoan = { status: match.status, name: classLoan };
-      addIssue(row, match.status === 'ambiguous' ? 'class_loan_ambiguous' : 'class_loan_unmatched', 'conflict', { value: classLoan });
+  // The historical worksheet header "Geleend door klas" also describes
+  // books permanently stored in a classroom. It is NOT trustworthy evidence
+  // of an active checkout. Keep the original text and request classification.
+  // The earlier StructuurBB+Makkelijk-lezen implicit rule is deliberately
+  // removed: it was not applicable to ordinary classroom books.
+  if (classLoan) {
+    row.context.classUse = {
+      source: 'classLoan', name: classLoan,
+      fixedLabel: SPECIAL_FIXED_LOCATION_ALIASES.get(comparableText(classLoan)) || classLoan,
+    };
+    const mentions = row.context.classContext || [];
+    if (!mentions.some(name => comparableText(name) === comparableText(classLoan))) {
+      row.context.classContext = [...mentions, classLoan];
     }
+    addIssue(row, 'class_use_needs_classification', 'warning', {
+      value: classLoan, source: 'Geleend door klas',
+    });
+  }
+  if (classLoan && studentLoan) {
+    // This combination genuinely is ambiguous, even if the class may be a
+    // permanent storage location rather than an additional borrower.
+    addIssue(row, 'multiple_loan_contexts', 'conflict');
   }
   if (hasRealStudentLoan) {
     const match = matchEntityByName(studentLoan, options.students);
