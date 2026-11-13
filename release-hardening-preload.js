@@ -227,7 +227,10 @@ function teacherHasNoLinkedGroups(row) {
 }
 
 function reconcileUngroupedTeachers(input, result) {
-  if (input.kind !== 'teacher') return;
+  // Full ParnasSys staff sync authoritatively clears class membership while
+  // retaining a present employee's account and login. The old deactivation
+  // policy applies only to ordinary/partial imports.
+  if (input.kind !== 'teacher' || input.includeUnassignedTeachers === true) return;
   const rows = Array.isArray(input.rows) ? input.rows : [];
   const now = new Date().toISOString();
   for (const row of rows) {
