@@ -544,7 +544,9 @@ function schoolSyncPreview(context, body, apply) {
     && (body.expectedDeletionCount!==result.summary.deletionEligible
       || !Number.isSafeInteger(body.expectedDeletionCount)
       || body.expectedDeletionFingerprint
-        !==result.summary.deletionCandidateFingerprint)){
+        !==result.summary.deletionCandidateFingerprint
+      || body.expectedExitFingerprint
+        !==result.summary.exitCandidateFingerprint)){
     const error=new Error('De lijst met te verwijderen leerlingen is sinds de voorcontrole veranderd. '
       +'Voer eerst een nieuwe voorcontrole uit.');
     error.code='PUPIL_REMOVAL_PREVIEW_CHANGED';
