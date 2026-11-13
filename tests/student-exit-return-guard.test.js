@@ -24,4 +24,9 @@ assert.match(server,/!mayManageStudent\(db, user, student\)\s*&& !mayReturnForme
 assert.match(client,/BoekenbaaiReadCompletion\.ask\(book\.title\)/);
 assert.match(client,/studentId:task\.studentId,finished/);
 assert.match(client,/\/check-in/);
+assert.match(server,/studentHasLibraryData\(db,student\)/,
+  'Deleting a pupil with reading history must be refused');
+assert.match(server,/db\.studentExitTasks\|\|\[\]\)\.some\(task=>task\.studentId===student\.id/,
+  'An archived pupil with an exit task may not be deleted');
+
 console.log('Former mentor return rights limited to active exit tasks; Ja\/Nee question remains mandatory.');
