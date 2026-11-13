@@ -295,6 +295,20 @@ function prepareStudentRows(db, rows, manualMatches = {}) {
       student?.id && student.active !== false &&
       normalizePersonName(student.name) === normalizePersonName(name));
     if (exact.length === 1) {
+      // The people importer has stricter accent/punctuation matching.
+      // Establish the verified ParnasSys number first, so its unique
+      // normalized-name match cannot be treated as a departed old account.
+      const oldNumber = getParnassysStudentNumber(exact[0]);
+      if (!oldNumber) setParnassysStudentNumber(exact[0], studentNumber);
+      if (oldNumber && oldNumber !== studentNumber) {
+        reviews.push({
+          row:index+2,status:'needs-review',name,studentNumber,classes,
+          reason:'Naam komt overeen, maar het bestaande leerlingnummer is anders. '
+            +'Controleer dit account voordat je synchroniseert.',
+          candidates:[],
+        });
+        return;
+      }
       prepared.push(row);
       return;
     }
@@ -545,6 +559,21 @@ function runSchoolSync(input = {}) {
   };
 
   validateSchoolSyncRows(kind, rows);
+  // A complete export must have an identity for every listed pupil.
+  // Otherwise even a pupil visibly present in Excel could be classified
+  // as absent and auto-exited. Blank spacer rows are ignored.
+  if (kind==='student' && input.fullSchoolSync) {
+    const firstIncomplete = rows.findIndex(row=>
+      !studentNumberFromRow(row) &&
+      (personNameFromRow(row) || classNamesFromRow(row).length));
+    if (firstIncomplete!==-1) {
+      const error=new Error('De volledige ParnasSys-export bevat een leerling zonder '
+        +'leerlingnummer (Excelrij '+(firstIncomplete+2)+'). '
+        +'Controleer het bestand voordat je leerlingen uitschrijft.');
+      error.code='INCOMPLETE_PARNASSYS_IDENTITY';
+      throw error;
+    }
+  }
 
   let preparedRows = rows;
   let reviews = [];
