@@ -381,6 +381,11 @@ function applyPeopleImport(input) {
   const db = input?.db && typeof input.db === 'object' ? input.db : {};
   let store = core.normalizeStore(input?.store);
   const rows = Array.isArray(input?.rows) ? input.rows : [];
+  // Only the full ParnasSys staff synchronizer enables processing employees
+  // with no assigned class. Partial/legacy imports retain their prior policy.
+  const includeUnassignedTeachers = kind === 'teacher' && input?.includeUnassignedTeachers === true;
+  const accountIdByRow = kind === 'teacher' && input?.accountIdByRow &&
+    typeof input.accountIdByRow === 'object' ? input.accountIdByRow : {};
 
   if (!Array.isArray(db.students)) db.students = [];
   if (!Array.isArray(db.users)) db.users = [];
@@ -431,7 +436,7 @@ function applyPeopleImport(input) {
       ? normalizeExternalId(readFirst(row, STUDENT_NUMBER_KEYS))
       : '';
 
-    if (kind === 'teacher' && parnassys && !classNames.length) {
+    if (kind === 'teacher' && parnassys && !classNames.length && !includeUnassignedTeachers) {
       summary.ignored += 1;
       results.push({
         row: rowNumber,
@@ -459,12 +464,27 @@ function applyPeopleImport(input) {
       return;
     }
 
-    const match = findExistingAccount(db, store, kind, {
-      email: core.isAllowedSchoolEmail(email, domain) ? email : '',
-      username: providedUsername,
-      name,
-      studentNumber,
-    });
+    // The sync engine has already vetted this specific identity decision.
+    // Never replace its chosen teacher via email/username/name heuristics.
+    const forcedId = accountIdByRow[index];
+    const forcedAccount = forcedId && kind === 'teacher'
+      ? (db.users || []).find(user => user.id === forcedId &&
+        user.role === 'teacher' && user.active !== false) : null;
+    if (forcedId && !forcedAccount) {
+      summary.conflicts += 1;
+      summary.skipped += 1;
+      results.push({ row: rowNumber, name, status: 'skipped',
+        reason: 'De gekozen docentidentiteit bestaat niet meer of is inactief.' });
+      return;
+    }
+    const match = forcedAccount
+      ? { account: forcedAccount, matchedBy: 'confirmed-staff-account' }
+      : findExistingAccount(db, store, kind, {
+        email: core.isAllowedSchoolEmail(email, domain) ? email : '',
+        username: providedUsername,
+        name,
+        studentNumber,
+      });
 
     if (match.ambiguous) {
       summary.ambiguous += 1;
