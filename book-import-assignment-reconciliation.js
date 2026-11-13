@@ -7,7 +7,8 @@
 const crypto = require('node:crypto');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
-const { matchEntityByName } = require('./book-import-analysis-context');
+const { matchEntityByName, matchStudentWithClass } =
+  require('./book-import-analysis-context');
 const { noteLoanActivity, circulationRevision } = require('./book-import-followups');
 const { excelLoanReceiptKey, persistExcelLoanReceipts } = require('./book-import-loan-migration');
 
@@ -68,7 +69,9 @@ function desiredLoan(row, db) {
   if (student || klass) {
     const item=student||klass, type=student?'student':'class';
     const candidates=type==='student'?db.students:db.classes;
-    const matched=matchEntityByName(item.name,candidates);
+    const matched=type==='student'&&c.studentClassHint
+      ? matchStudentWithClass(item.name,c.studentClassHint.label,db.students||[],db.classes||[])
+      : matchEntityByName(item.name,candidates);
     if(item.status!=='matched' || matched.status!=='matched'
       || matched.matches[0].id!==item.id)
       return {error:'borrower_not_uniquely_matched'};
