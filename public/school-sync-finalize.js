@@ -119,6 +119,12 @@
     );
     if (kind === 'student' && fullSchoolSync) {
       grid.append(metric('Niet meer in schoollijst', summary.missingFromImport));
+      if (summary.missingFromImport) {
+        grid.append(metric('Zonder boekgegevens te verwijderen', summary.deletionEligible));
+        grid.append(metric('Uitschrijftaken met historie', summary.exitTasks));
+        if (summary.exitTasksWithBooks)
+          grid.append(metric('Nog boeken in bezit', summary.exitTasksWithBooks));
+      }
     }
     if (kind === 'teacher') {
       grid.append(metric('Zonder gekoppelde groep', summary.teachersWithoutGroups));
@@ -132,7 +138,10 @@
         make('h5', { text: `${summary.missingFromImport} leerling${summary.missingFromImport === 1 ? '' : 'en'} niet meer in de export` }),
         make('p', {
           className: 'hint',
-          text: 'Bij synchroniseren worden deze leerlingen inactief en verdwijnen ze uit de loginlijst. Hun uitleenhistorie blijft bewaard. Leerlingen met nog uitgeleende boeken worden niet automatisch afgemeld.',
+          text: 'Accounts zonder historische bibliotheekgegevens worden alleen na extra bevestiging verwijderd. '
+            + 'Leerlingen met leesgegevens of uitleningen worden inactief, verdwijnen uit de huidige klas '
+            + 'en krijgen een uitschrijftaak voor de voormalige docent en beheerder. '
+            + 'Lopende uitleningen blijven geregistreerd en moeten worden ingenomen voordat de taak sluit.',
         })
       );
       wrapper.append(note);
@@ -250,13 +259,26 @@
       if (summary.needsReview) return;
       message.textContent = 'Synchronisatie wordt uitgevoerd…';
       let confirmLargeRemoval = false;
+      let confirmPupilRemoval = false;
+      if (kind==='student' && full.checkbox.checked
+        && Number(summary.deletionEligible||0)>0) {
+        confirmPupilRemoval=window.confirm(
+          'Let op: '+summary.deletionEligible
+          +' leerlingaccount(s) zonder bibliotheekgegevens worden definitief verwijderd. '
+          +'Leerlingen met leesgegevens of uitleningen blijven bewaard als inactief account. '
+          +'Wil je de lege accounts verwijderen?');
+        if(!confirmPupilRemoval) {
+          message.textContent='Synchronisatie geannuleerd.';
+          return;
+        }
+      }
       if (summary.largeRemovalWarning) {
         const count = kind === 'teacher'
           ? Number(summary.missingTeachersFromImport || 0)
           : Number(summary.missingFromImport || 0);
         const warning = kind === 'teacher'
           ? `Let op: ${count} docenten staan niet in deze volledige medewerkerslijst en worden inactief. Weet je zeker dat dit de volledige ParnasSys-medewerkersexport is?`
-          : `Let op: ${count} leerlingen staan niet in deze volledige schoollijst en worden inactief. Weet je zeker dat dit de volledige ParnasSys-export van school is?`;
+          : `Let op: ${count} leerlingen staan niet in deze volledige schoollijst. Sommige worden verwijderd en andere krijgen een uitschrijftaak. Weet je zeker dat dit de volledige ParnasSys-export van school is?`;
         confirmLargeRemoval = window.confirm(warning);
         if (!confirmLargeRemoval) {
           message.textContent = 'Synchronisatie geannuleerd.';
@@ -274,6 +296,8 @@
               fullSchoolSync: full.checkbox.checked,
               manualMatches: syncState[kind].manualMatches,
               confirmLargeRemoval,
+              confirmPupilRemoval,
+              expectedDeletionCount:Number(summary.deletionEligible||0),
             },
           });
         } catch (error) {
@@ -288,11 +312,13 @@
               fullSchoolSync: full.checkbox.checked,
               manualMatches: syncState[kind].manualMatches,
               confirmLargeRemoval: true,
+              confirmPupilRemoval,
+              expectedDeletionCount:Number(summary.deletionEligible||0),
             },
           });
         }
         const done = payload.summary || {};
-        message.textContent = `${done.created || 0} nieuw, ${done.updated || 0} gewijzigd, ${done.unchanged || 0} ongewijzigd${done.deactivated ? `, ${done.deactivated} inactief gemaakt` : ''}.`;
+        message.textContent = `${done.created || 0} nieuw, ${done.updated || 0} gewijzigd, ${done.unchanged || 0} ongewijzigd${done.deleted ? `, ${done.deleted} lege accounts verwijderd` : ''}${done.deactivated ? `, ${done.deactivated} inactief met uitschrijftaak` : ''}.`;
         results.replaceChildren(make('p', { className: 'admin-modern__import-done', text: 'Schoolgegevens zijn gesynchroniseerd. De pagina wordt bijgewerkt…' }));
         window.setTimeout(() => window.location.reload(), 900);
       } catch (error) {
