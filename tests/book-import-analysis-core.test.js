@@ -33,6 +33,16 @@ module.exports = async function runCoreTests() {
   assert.deepStrictEqual(row.context.fixedLocation, { status: 'resolved', label: 'SK BB', source: 'ml_class_loan_rule' });
   assert.strictEqual(row.provenance.editionIsbn.raw, ISBN);
 
+  // Unified stock snapshots must group by worksheet row rather than
+  // allocating one normalized object for every existing physical copy.
+  const compactUnified = await analyzeBookImportRows([{
+    Titel:'Voorraadgroep',Auteur:'A Auteur','ISBN-nummer':ISBN,Aantal:1000,
+  }],{mode:'unified_sync',maxCopies:1500000});
+  assert.equal(compactUnified.ok,true);
+  assert.equal(compactUnified.summary.physicalCopies,1000);
+  assert.equal(compactUnified.groups[0].copies.length,1,
+    'One grouping representative prevents needless allocation of 1000 objects');
+
   // Student placeholders must not defeat the special Makkelijk Lezen
   // fixed-location rule, while genuine student names must still conflict.
   for (const placeholder of ['nvt', 'N.V.T.', 'niet van toepassing']) {
