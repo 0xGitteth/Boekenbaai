@@ -134,7 +134,7 @@ function baseDb() {
   assert.strictEqual(applied.summary.deactivated, 1);
 })();
 
-(function testMissingStudentWithBorrowedBookIsNotDeactivated() {
+(function testMissingStudentWithBorrowedBookCreatesExitTask() {
   const db = baseDb();
   db.classes.push({ id: 'class-a', name: 'Klas A', studentIds: ['leave'], teacherIds: [] });
   db.students.push({
@@ -146,8 +146,42 @@ function baseDb() {
     kind: 'student', db, store: core.emptyAuthStore(), rows: [], fullSchoolSync: true,
     applyDeactivations: true, actorId: 'admin',
   });
-  assert.strictEqual(result.db.students[0].active, true);
-  assert.strictEqual(result.summary.deactivationBlockedBorrowed, 1);
+  assert.strictEqual(result.db.students[0].active, false,
+    'Former pupils are no longer active even if a book needs returning');
+  assert.deepStrictEqual(result.db.students[0].classIds,[]);
+  assert.deepStrictEqual(result.db.classes[0].studentIds,[]);
+  assert.strictEqual(result.db.books[0].borrowedBy,'leave',
+    'Current loan stays intact until explicitly returned');
+  assert.strictEqual(result.summary.deactivationBlockedBorrowed,0);
+  assert.strictEqual(result.summary.exitTasks,1);
+  assert.strictEqual(result.summary.exitTasksWithBooks,1);
+  assert.strictEqual(result.db.studentExitTasks[0].status,'open');
+})();
+
+(function testNoHistoryPupilIsDeletedAndReadingRecordsRetained() {
+  const db=baseDb();
+  db.classes.push({id:'old',name:'Structuur BB',studentIds:['empty','read'],teacherIds:['t1']});
+  db.students.push(
+    {id:'empty',name:'Zonder Data',active:true,classIds:['old'],
+      username:'1',passwordHash:'x',borrowedBooks:[],
+      parnassysStudentNumber:'1',externalIds:{parnassys:'1'}},
+    {id:'read',name:'Met Data',active:true,classIds:['old'],
+      username:'2',passwordHash:'x',borrowedBooks:[],
+      parnassysStudentNumber:'2',externalIds:{parnassys:'2'}},
+  );
+  db.readingRecords=[{id:'r1',subjectType:'student',subjectId:'read',
+    bookId:'copy1',finished:true}];
+  const result=runSchoolSync({kind:'student',db,
+    store:core.emptyAuthStore(),rows:[],fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin'});
+  assert.strictEqual(result.summary.deletionEligible,1);
+  assert.strictEqual(result.summary.deleted,1);
+  assert.strictEqual(result.summary.exitTasks,1);
+  assert.deepStrictEqual(result.db.students.map(s=>s.id),['read']);
+  assert.strictEqual(result.db.students[0].active,false);
+  assert.deepStrictEqual(result.db.classes[0].studentIds,[]);
+  assert.strictEqual(result.db.studentExitTasks[0].lastClasses[0].name,'Structuur BB');
+  assert.strictEqual(result.db.readingRecords[0].subjectId,'read');
 })();
 
 (function testTeacherMultipleGroupsAndNoGroupDeactivation() {
