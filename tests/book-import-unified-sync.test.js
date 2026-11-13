@@ -101,6 +101,16 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(renamedEdition.summary.blockedStock,0,
     'Selected title/author changes are allowed without inventing another ISBN');
   assert.equal(renamedEdition.summary.metadataFields,2);
+  const warning={...description,status:'warning'};
+  const caution=plan([warning],current,{
+    parts:parts({fields:{description:true}}),
+  });
+  assert.equal(caution.summary.pendingMetadata,1,
+    'Selected metadata from a warning row needs approval before overwrite');
+  const acceptedWarning=plan([warning],current,{
+    parts:parts({fields:{description:true}}),acceptWarnings:true,
+  });
+  assert.equal(acceptedWarning.summary.metadataFields,1);
   const onlyCover=plan([description],current,{
     parts:parts({fields:{coverUrl:true}}),
   });
