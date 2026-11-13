@@ -23,7 +23,7 @@ assert.equal(canonicalNavigationTarget(browser('POST','www.boekenbaai.nl','/api/
 assert.equal(canonicalNavigationTarget(browser('PATCH','www.boekenbaai.nl','/api/books/1')),'');
 assert.equal(canonicalNavigationTarget(browser('DELETE','www.boekenbaai.nl','/api/books/1')),'');
 assert.equal(canonicalNavigationTarget(browser('GET','www.boekenbaai.nl','/staff.html',{
-  origin:'https://evil.example'}),main+'/staff.html');
+  origin:'https://evil.example'})),main+'/staff.html');
 const headers={};let ended=false;
 const response={setHeader(key,val){headers[key]=val;},end(){ended=true;}};
 assert.equal(redirectCanonicalNavigation(browser('GET','www.boekenbaai.nl','/staff.html?x=1'),response),true);
