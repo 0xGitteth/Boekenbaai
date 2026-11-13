@@ -512,106 +512,71 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   }
 }
 
-function prepareTeacherRows(db,rows,manualMatches={},store={}){
-  const prepared=[],reviews=[];
-  const activeTeachers=(db.users||[]).filter(u=>u.role==='teacher'&&u.active!==false);
-  const verifiedLinks=authCore.normalizeStore(store).links||[];
-  rows.forEach((row,index)=>{
-    const name=personNameFromRow(row);
-    const exact=activeTeachers.filter(u=>
-      normalizePersonName(u.name)===normalizePersonName(name));
-    const username=normalizedRowValue(row,
-      ['gebruikersnaam','username','user','login']).toLowerCase();
-    const email=authCore.normalizeEmail(normalizedRowValue(row,
-      ['schoolmail','schoolmailadres','school e-mail','schoolemail','email',
-        'e-mail','e-mailadres','emailadres','googleemail']));
-    const byUsername=username?activeTeachers.find(u=>
-      String(u.username||'').toLowerCase()===username):null;
-    const link=email?verifiedLinks.find(entry=>entry.accountType==='staff'
-      &&authCore.normalizeEmail(entry.email)===email):null;
-    const byEmail=link?activeTeachers.find(u=>u.id===link.accountId):null;
-    const conflicts=exact.length>0&&(
-      exact.length>1 && !byUsername && !byEmail ||
-      byUsername && !exact.some(u=>u.id===byUsername.id) ||
-      byEmail && !exact.some(u=>u.id===byEmail.id) ||
-      byEmail && byUsername && byEmail.id!==byUsername.id);
-    if(!conflicts){
-      // The general importer does not strip accents/punctuation from names.
-      // Force a uniquely normalized existing identity through its username
-      // before treating any other teacher as departed.
-      if(exact.length===1&&!byUsername&&!byEmail&&exact[0].username)
-        prepared.push({...row,Gebruikersnaam:exact[0].username});
-      else prepared.push(row);
+function prepareTeacherRows(db, rows, manualMatches = {}, store = {}) {
+  const prepared = [];
+  const reviews = [];
+  const accountIdByRow = {};
+  const activeTeachers = (db.users || []).filter(u => u.role === 'teacher' && u.active !== false);
+  const verifiedLinks = authCore.normalizeStore(store).links || [];
+  const addRow = (row, account) => {
+    if (account) accountIdByRow[prepared.length] = account.id;
+    prepared.push(row);
+  };
+  rows.forEach((row, index) => {
+    const name = personNameFromRow(row);
+    const exact = activeTeachers.filter(u =>
+      normalizePersonName(u.name) === normalizePersonName(name));
+    const username = normalizedRowValue(row,
+      ['gebruikersnaam', 'username', 'user', 'login']).toLowerCase();
+    const email = authCore.normalizeEmail(normalizedRowValue(row,
+      ['schoolmail', 'schoolmailadres', 'school e-mail', 'schoolemail', 'email',
+        'e-mail', 'e-mailadres', 'emailadres', 'googleemail']));
+    const byUsername = username ? activeTeachers.find(u =>
+      String(u.username || '').toLowerCase() === username) : null;
+    const link = email ? verifiedLinks.find(entry => entry.accountType === 'staff' &&
+      authCore.normalizeEmail(entry.email) === email) : null;
+    const byEmail = link ? activeTeachers.find(u => u.id === link.accountId) : null;
+    const candidates = [...exact, byUsername, byEmail]
+      .filter(Boolean).filter((u, i, all) => all.findIndex(v => v.id === u.id) === i);
+    const conflicts =
+      (exact.length > 1 && !byUsername && !byEmail) ||
+      (exact.length > 0 && byUsername && !exact.some(u => u.id === byUsername.id)) ||
+      (exact.length > 0 && byEmail && !exact.some(u => u.id === byEmail.id)) ||
+      (byEmail && byUsername && byEmail.id !== byUsername.id);
+
+    if (!conflicts) {
+      // A unique normalized-name match is authoritative for account ID only,
+      // not for the employee's login. Keep the username supplied by ParnasSys.
+      // The importer normally uses stricter accent/punctuation normalization.
+      const chosen = byEmail || byUsername || (exact.length === 1 ? exact[0] : null);
+      addRow(row, chosen);
       return;
     }
-    const candidates=[...exact,byUsername,byEmail]
-      .filter(Boolean).filter((u,i,all)=>all.findIndex(v=>v.id===u.id)===i);
-    const key='staff:'+(index+2);
-    const choice=manualMatches?.[key];
-    const chosen=candidates.find(u=>u.id===choice&&u.username);
-    // Verified Google identity links take precedence. Never let a manual
-    // username override silently repoint another employee's school email.
-    if(chosen&&(!byEmail||byEmail.id===chosen.id)){
-      prepared.push({...row,Gebruikersnaam:chosen.username});
+
+    const key = 'staff:' + (index + 2);
+    const choice = manualMatches?.[key];
+    // A previously verified schoolmail link cannot be assigned to another
+    // employee by a username/name selection.
+    const permitted = candidates.filter(u => !byEmail || u.id === byEmail.id);
+    const chosen = permitted.find(u => u.id === choice);
+    if (chosen) {
+      addRow(row, chosen);
       return;
     }
     reviews.push({
-      status:'needs-review',row:index+2,name,sourceKey:key,
-      reason:byEmail&&exact.some(u=>u.id!==byEmail.id)
-        ?'Naam en gekoppelde schoolmail verwijzen naar verschillende accounts. '
-          +'Controleer de identiteit voordat je een medewerker uitschrijft.'
-        :byUsername&&exact.some(u=>u.id!==byUsername.id)
-          ?'Naam en gebruikersnaam verwijzen naar verschillende docentaccounts. '
-            +'Selecteer het juiste account.'
-          :'Meerdere docentaccounts hebben dezelfde naam. '
-            +'Kies het juiste bestaande account voordat je synchroniseert.',
-      candidates:candidates.filter(u=>!byEmail||u.id===byEmail.id)
-        .map(u=>({id:u.id,name:u.name||'',username:u.username||''})),
+      status: 'needs-review', row: index + 2, name, sourceKey: key,
+      reason: byEmail && candidates.some(u => u.id !== byEmail.id)
+        ? 'Naam en gekoppelde schoolmail verwijzen naar verschillende accounts. '
+          + 'Controleer de identiteit voordat je een medewerker uitschrijft.'
+        : byUsername && exact.some(u => u.id !== byUsername.id)
+          ? 'Naam en gebruikersnaam verwijzen naar verschillende docentaccounts. '
+            + 'Selecteer het juiste account.'
+          : 'Meerdere docentaccounts hebben dezelfde naam. '
+            + 'Kies het juiste bestaande account voordat je synchroniseert.',
+      candidates: permitted.map(u => ({ id: u.id, name: u.name || '', username: u.username || '' })),
     });
   });
-  return {prepared,reviews};
-}
-
-function refreshPresentTeachersWithoutGroups(result,rows){
-  rows.forEach((row,index)=>{
-    if(classNamesFromRow(row).length)return;
-    const name=personNameFromRow(row);
-    if(!name)return;
-    const username=normalizedRowValue(row,
-      ['gebruikersnaam','username','user','login']).toLowerCase();
-    const email=authCore.normalizeEmail(normalizedRowValue(row,
-      ['schoolmail','schoolmailadres','school e-mail','schoolemail','email',
-        'e-mail','e-mailadres','emailadres','googleemail']));
-    const teachers=(result.db.users||[]).filter(u=>u.role==='teacher');
-    const byUsername=username?teachers.find(u=>
-      String(u.username||'').toLowerCase()===username):null;
-    const link=email?(authCore.normalizeStore(result.store).links||[])
-      .find(e=>e.accountType==='staff'&&authCore.normalizeEmail(e.email)===email):null;
-    const byEmail=link?teachers.find(u=>u.id===link.accountId):null;
-    const exact=teachers.filter(u=>
-      u.active!==false&&normalizePersonName(u.name)===normalizePersonName(name));
-    const teacher=byEmail||byUsername||(exact.length===1?exact[0]:null);
-    if(!teacher)return; // Other employee without an existing teacher account.
-    const before=JSON.stringify([teacher.classIds,teacher.active,teacher.name,
-      teacher.source]);
-    for(const klass of result.db.classes||[]){
-      if(Array.isArray(klass.teacherIds))
-        klass.teacherIds=klass.teacherIds.filter(id=>id!==teacher.id);
-    }
-    teacher.classIds=[];
-    teacher.active=true;
-    teacher.inactiveAt=null;teacher.inactiveReason=null;
-    teacher.name=name;teacher.source='parnassys';
-    const entry=result.results.find(x=>x.row===index+2 && x.status==='ignored');
-    const after=JSON.stringify([teacher.classIds,teacher.active,teacher.name,
-      teacher.source]);
-    if(entry){
-      entry.id=teacher.id;
-      entry.status=before===after?'unchanged':'updated';
-      entry.reason='Actieve medewerker zonder gekoppelde groep. '
-        +'De oude klasrechten zijn verwijderd; het account blijft bestaan.';
-    }
-  });
+  return { prepared, reviews, accountIdByRow };
 }
 
 function findTeacherByExactName(db, name) {
@@ -787,6 +752,7 @@ function runSchoolSync(input = {}) {
   let preparedRows = rows;
   let reviews = [];
   let incomingNumbers = new Set();
+  let teacherAccountIdByRow = {};
   if (kind === 'student') {
     const prepared = prepareStudentRows(db, rows, input.manualMatches || {}, store);
     preparedRows = prepared.prepared;
@@ -796,6 +762,7 @@ function runSchoolSync(input = {}) {
     const prepared=prepareTeacherRows(db,rows,input.manualMatches||{},store);
     preparedRows=prepared.prepared;
     reviews=prepared.reviews;
+    teacherAccountIdByRow=prepared.accountIdByRow;
   }
 
   const result = applyPeopleImport({
@@ -805,9 +772,9 @@ function runSchoolSync(input = {}) {
     store,
     domain: input.domain,
     actorId: input.actorId,
+    includeUnassignedTeachers: kind==='teacher' && options.fullSchoolSync,
+    accountIdByRow: teacherAccountIdByRow,
   });
-  if(kind==='teacher'&&options.fullSchoolSync)
-    refreshPresentTeachersWithoutGroups(result,preparedRows);
   recomputeResultCounts(result);
   if(kind==='teacher'&&options.fullSchoolSync){
     const failures=(result.results||[]).filter(row=>
