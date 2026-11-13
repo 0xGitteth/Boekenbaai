@@ -2,7 +2,7 @@
 
 // All enabled domains are planned against the same library snapshot. New
 // copies remain virtual until the single confirmed database transaction.
-const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
+const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
 
@@ -31,12 +31,29 @@ function normalizeParts(input) {
 }
 function virtualId(index,n){return 'unified-preview-copy:'+index+':'+n;}
 function isIsbnBarcode(value,isbn){return Boolean(value)&&canonicalizeBookIsbn13(value)===canonicalizeBookIsbn13(isbn);}
-function stockAnalysis(analysis){
-  return {...analysis,rows:analysis.rows.map(row=>({...row,
-    book:{...row.book,barcode:isIsbnBarcode(row.book?.barcode,row.book?.editionIsbn)
-      ? '':row.book?.barcode},
-    context:{},
-  }))};
+function stockAnalysis(analysis,db,parts){
+  const known=new Map();
+  for(const book of db.books||[]){
+    const isbn=canonicalizeBookIsbn13(book.editionIsbn)
+      ||canonicalizeBookIsbn13(book.metadataIsbn);
+    if(isbn&&!known.has(isbn))known.set(isbn,book);
+  }
+  return {...analysis,rows:analysis.rows.map(row=>{
+    const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
+    const old=known.get(isbn);
+    // When title or author was explicitly selected for updating, an
+    // existing edition may legitimately have older metadata. Only the
+    // inventory identity comparison uses the stored values; the actual new
+    // copies and the selected field update use the reviewed Excel values.
+    const title=old&&parts.fields.title?old.title:row.book?.title;
+    const author=old&&parts.fields.author?old.author:row.book?.author;
+    return {...row,
+      book:{...row.book,title,author,
+        barcode:isIsbnBarcode(row.book?.barcode,row.book?.editionIsbn)
+          ?'':row.book?.barcode},
+      context:{},
+    };
+  })};
 }
 function inventoryNotSelected(analysis){
   return {ok:true,rows:analysis.rows.map(row=>({index:row.index,
@@ -166,7 +183,7 @@ function buildUnifiedBookImport(analysis,db,{
   const use=configured.value;
   let inventory=inventoryNotSelected(analysis);
   if(use.books){
-    const stock=stockAnalysis(analysis);
+    const stock=stockAnalysis(analysis,db,use);
     const parameters={acceptWarnings,students:db.students||[],classes:db.classes||[],
       loanReceipts,existingFollowups};
     let preview=buildInventorySyncPreview(stock,db.books||[],{
