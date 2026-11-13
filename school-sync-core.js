@@ -512,6 +512,45 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   }
 }
 
+function prepareTeacherRows(db,rows,manualMatches={},store={}){
+  const prepared=[],reviews=[];
+  rows.forEach((row,index)=>{
+    const name=personNameFromRow(row);
+    const matched=(db.users||[]).filter(user=>user.role==='teacher'&&
+      user.active!==false&&normalizePersonName(user.name)===normalizePersonName(name));
+    if(matched.length<2){prepared.push(row);return;}
+    const username=normalizedRowValue(row,
+      ['gebruikersnaam','username','user','login']).toLowerCase();
+    const email=authCore.normalizeEmail(normalizedRowValue(row,
+      ['schoolmail','schoolmailadres','school e-mail','schoolemail','email',
+        'e-mail','e-mailadres','emailadres','googleemail']));
+    const byUsername=username?matched.find(user=>
+      String(user.username||'').toLowerCase()===username):null;
+    const byLink=email?(authCore.normalizeStore(store).links||[]).find(link=>
+      link.accountType==='staff'&&authCore.normalizeEmail(link.email)===email):null;
+    const byEmail=byLink?matched.find(user=>user.id===byLink.accountId):null;
+    if((byUsername||byEmail)&&(!byUsername||!byEmail||byUsername.id===byEmail.id)){
+      prepared.push(row);return;
+    }
+    const key='staff:'+(index+2);
+    const choice=manualMatches?.[key];
+    const chosen=matched.find(user=>user.id===choice&&user.username);
+    if(chosen){
+      prepared.push({...row,Gebruikersnaam:chosen.username});
+      return;
+    }
+    reviews.push({
+      status:'needs-review',row:index+2,name,sourceKey:key,
+      reason:'Meerdere bestaande docentaccounts hebben deze naam. '
+        +'Kies het juiste bestaande account voordat je de volledige '
+        +'medewerkerslijst synchroniseert.',
+      candidates:matched.map(user=>({id:user.id,name:user.name||'',
+        username:user.username||''})),
+    });
+  });
+  return {prepared,reviews};
+}
+
 function findTeacherByExactName(db, name) {
   const wanted = normalizePersonName(name);
   const matches = (db.users || []).filter(
@@ -542,11 +581,15 @@ function processTeacherDeactivations(result, originalDb, rows, options,
   const remainingCandidates = [];
   const matchingNames = new Set(rows.map(row=>normalizePersonName(
     personNameFromRow(row))).filter(Boolean));
+  const successfullyMatchedNames=new Set((result.db.users||[])
+    .filter(user=>incomingTeacherIds.has(user.id)&&user.role==='teacher')
+    .map(user=>normalizePersonName(user.name)));
   for(const teacher of original){
     if(incomingTeacherIds.has(teacher.id))continue;
-    if(matchingNames.has(normalizePersonName(teacher.name))){
-      // A skipped or ambiguous staff row still refers to a person in the
-      // export. Never assume departure based on a failed identity match.
+    if(matchingNames.has(normalizePersonName(teacher.name)) &&
+      !successfullyMatchedNames.has(normalizePersonName(teacher.name))){
+      // The row refers to the name but did not match any existing account.
+      // Do not auto-remove a person whose identity is unresolved.
       remainingCandidates.push(teacher);
       continue;
     }
@@ -568,13 +611,16 @@ function processTeacherDeactivations(result, originalDb, rows, options,
   }
   result.summary.teachersWithUnresolvedIdentity=remainingCandidates.length;
   if(remainingCandidates.length){
-    result.summary.needsReview=(result.summary.needsReview||0)+remainingCandidates.length;
+    const reviewNames=new Set(result.results.filter(row=>
+      row.status==='needs-review').map(row=>normalizePersonName(row.name)));
     for(const teacher of remainingCandidates){
+      if(reviewNames.has(normalizePersonName(teacher.name)))continue;
+      result.summary.needsReview=(result.summary.needsReview||0)+1;
+      reviewNames.add(normalizePersonName(teacher.name));
       result.results.push({
         status:'needs-review',id:teacher.id,name:teacher.name||'',
-        reason:'De medewerker staat mogelijk in de export, maar zijn account '
-          +'kon niet eenduidig worden gekoppeld. Controleer de gegevens '
-          +'voordat je synchroniseert.',
+        reason:'De medewerker staat in de export, maar zijn bestaande account '
+          +'kon niet eenduidig worden gekoppeld. Controleer de gegevens.',
         candidates:[],
       });
     }
@@ -681,6 +727,10 @@ function runSchoolSync(input = {}) {
     preparedRows = prepared.prepared;
     reviews = prepared.reviews;
     incomingNumbers = prepared.incomingNumbers;
+  } else if(options.fullSchoolSync){
+    const prepared=prepareTeacherRows(db,rows,input.manualMatches||{},store);
+    preparedRows=prepared.prepared;
+    reviews=prepared.reviews;
   }
 
   const result = applyPeopleImport({
