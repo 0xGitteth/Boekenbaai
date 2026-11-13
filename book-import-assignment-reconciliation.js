@@ -100,7 +100,7 @@ function desiredLocation(row, db) {
   }
   return {error:'fixed_location_needs_manual_identification'};
 }
-function findCopy(row, db, byBarcode, byIsbn) {
+function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set()) {
   const book=row.book||{},barcode=normalizeRuntimeBarcode(book.barcode);
   if(book.barcode && !barcode)return {error:'invalid_physical_barcode'};
   const isbn=canonicalizeBookIsbn13(book.editionIsbn);
@@ -123,23 +123,39 @@ function findCopy(row, db, byBarcode, byIsbn) {
   if(!validEdition.length)return {error:'edition_identity_mismatch'};
   const matching=validEdition.filter(copy=>bookKey(copy).join('|')===bookKey(book).join('|'));
   if(!matching.length)return {error:'title_author_mismatch'};
-  if(matching.length===1)return {copy:matching[0]};
+  const unassigned=matching.filter(copy=>!usedCopies.has(copy.id));
+  if(!unassigned.length)return {error:'no_unallocated_copy'};
+  if(physicalBarcode && unassigned.length===1)return {copy:unassigned[0]};
 
-  // For duplicate ISBNs, a recorded borrower or fixed classroom location
-  // may identify the exact copy. Never select an arbitrary physical book.
+  // All copies of an identical edition can share the printed ISBN barcode.
+  // Matching the actual borrower is preferred; otherwise assign one free
+  // copy internally, as the normal barcode scanner already does.
   const context=row.context||{};
   const student=context.studentLoan?.status==='matched'?context.studentLoan.id:null;
   const klass=context.classLoan?.status==='matched'?context.classLoan.id:null;
   if(student||klass){
-    const held=matching.filter(copy=>student?copy.borrowedBy===student
+    const held=unassigned.filter(copy=>student?copy.borrowedBy===student
       :copy.borrowedByClassId===klass);
     if(held.length===1)return {copy:held[0]};
+    if(held.length>1)return {error:'ambiguous_existing_borrower'};
   }
   const fixed=context.fixedLocation;
   if(fixed?.status==='resolved' && fixed.label){
-    const located=matching.filter(copy=>norm(copy.fixedLocation)===norm(fixed.label));
+    const located=unassigned.filter(copy=>norm(copy.fixedLocation)===norm(fixed.label));
     if(located.length===1)return {copy:located[0]};
+    if(located.length>1)return {copy:located[0]};
   }
+  const free=unassigned.filter(copy=>copy.status!=='borrowed'
+    && !copy.borrowedBy && !copy.borrowedByClassId);
+  if(free.length){
+    // A new explicit location should prefer an unfixed copy rather than
+    // reassigning a classroom's existing stock.
+    if(fixed?.status==='resolved'&&fixed.label){
+      return {copy:free.find(copy=>!copy.fixedLocation)||free[0]};
+    }
+    return {copy:free[0]};
+  }
+  if(unassigned.length===1 && matching.length===1)return {copy:unassigned[0]};
   return {error:'ambiguous_physical_copy'};
 }
 function buildAssignmentPreview(analysis, db, input=[]) {
@@ -161,20 +177,30 @@ function buildAssignmentPreview(analysis, db, input=[]) {
     }
   }
   const matched=new Map(),found=[],notInCollection=[];
-  for(const row of analysis.rows) {
+  // Prioritize concrete Excel loans/locations over empty duplicate rows.
+  // This allows two pupils holding copies of the same ISBN to map onto two
+  // different existing internal copy IDs deterministically.
+  const prioritized=[...analysis.rows].sort((a,b)=>{
+    const rank=row=>Number(Boolean(row.context?.studentLoan||row.context?.classLoan))*3
+      +Number(Boolean(row.context?.fixedLocation))*2
+      +Number(Boolean(row.context?.classContext?.length));
+    return rank(b)-rank(a)||a.index-b.index;
+  });
+  const usedCopies=new Set();
+  for(const row of prioritized) {
     if(row.status==='skipped')continue;
     const context=row.context||{};
     // A source conflict is not proof that the physical book is missing.
     // Report the underlying conflict before attempting any correction.
     const located=['ready','warning'].includes(row.status)
-      ? findCopy(row,db,byBarcode,byIsbn)
+      ? findCopy(row,db,byBarcode,byIsbn,usedCopies)
       : {error:context.studentLoan && context.classLoan
         ? 'conflicting_excel_borrowers' : 'source_row_requires_review'};
     const relevant=Boolean(context.studentLoan||context.classLoan
       ||context.fixedLocation||context.classContext?.length
       ||context.libraryPresence);
     if(located.error) {
-      if(relevant && located.error==='physical_copy_not_found') {
+      if(relevant && ['physical_copy_not_found','no_unallocated_copy'].includes(located.error)) {
         // Nothing can be corrected before this edition exists in the library.
         // The normal inventory import handles new books and their loans.
         notInCollection.push({
@@ -187,11 +213,14 @@ function buildAssignmentPreview(analysis, db, input=[]) {
         kind:'issue',reason:located.error,bookId:null});
       continue;
     }
-    const previous=matched.get(located.copy.id);
-    matched.set(located.copy.id,previous?[...previous,row]:[row]);
-    found.push({row,copy:located.copy});
+    if(relevant) {
+      // Rows that merely list an ISBN without a known location/borrower do
+      // not consume a physical copy or generate administrative actions.
+      usedCopies.add(located.copy.id);
+      matched.set(located.copy.id,[row]);
+      found.push({row,copy:located.copy});
+    }
   }
-  const duplicateIds=new Set([...matched].filter(([,rows])=>rows.length>1).map(([id])=>id));
   const differences=found.filter(item=>item.kind==='issue');
   for(const {row,copy} of found.filter(item=>!item.kind)) {
     const base={rowIndex:row.index,worksheetRow:row.sourceRowNumber,
@@ -201,11 +230,6 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       // and returned back to its earlier visible status during review.
       circulationRevision:circulationRevision(db,copy.id),
       loanBorrowedAt:copy.borrowedAt||null,loanDueDate:copy.dueDate||null};
-    if(duplicateIds.has(copy.id)) {
-      differences.push({...base,id:row.index+':issue',kind:'issue',
-        reason:'duplicate_copy_rows'});
-      continue;
-    }
     const current=borrowerOf(copy,db);
     const desired=desiredLoan(row,db);
     const info=row.context||{};
