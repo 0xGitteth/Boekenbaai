@@ -44,6 +44,7 @@ const FIELD_ALIAS_DEFINITIONS = Object.freeze({
   examMaterial: ['examenmateriaal', 'leeslijst', 'op de leeslijst', 'examlist', 'exam list'],
   easyReading: ['makkelijk lezen', 'makkelijk lezen?', 'makkelijk lezen ?'],
   classes: ['klassen', 'klas', 'klassen context', 'class context'],
+  fixedClass: ['vast in de klas van', 'vast in de klas van:', 'vaste klaslocatie', 'vaste locatie in klas'],
   classLoan: ['geleend door klas', 'uitgeleend aan klas', 'class loan', 'geleend klas'],
   studentLoan: ['naam leerling', 'geleend door leerling', 'leerling', 'student name', 'student loan'],
   libraryPresence: ['aanwezig bieb', 'aanwezig bibliotheek', 'in bieb', 'in bibliotheek'],

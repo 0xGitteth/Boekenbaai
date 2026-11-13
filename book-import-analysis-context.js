@@ -166,12 +166,69 @@ function matchEntityByName(value, entities) {
   return { status: 'unmatched', matches: [] };
 }
 
+// Exact ParnasSys class names are authoritative. These aliases are limited
+// to documented codes used by the school's book worksheet; never infer a
+// class from a similar-looking string or select among multiple matches.
+const CLASS_CODE_ALIASES = new Map([
+  ['structuurbb', ['Bovenbouw structuur', 'SK BB']],
+  ['skobpro', ['Onderbouw structuur pro-basis']],
+  ['skobkt', ['Onderbouw structuur KT']],
+  ['ondbkt', ['Onderbouw BKT']],
+  ['t3', ['VMBO theoretisch 3']],
+  ['t4', ['VMBO theoretisch 4']],
+  ['bk3', ['VMBO basis-kader 3']],
+  ['bk4', ['VMBO basis-kader 4']],
+]);
+
+function matchClassByName(value, classes) {
+  const direct = matchEntityByName(value, classes);
+  if (direct.status !== 'unmatched') return direct;
+  const aliases = CLASS_CODE_ALIASES.get(comparableText(value)) || [];
+  const results = new Map();
+  for (const alias of aliases) {
+    const matched = matchEntityByName(alias, classes);
+    for (const candidate of matched.matches) if (candidate.id) results.set(candidate.id, candidate);
+  }
+  if (results.size === 1) return { status: 'matched', matches: [...results.values()] };
+  if (results.size > 1) return { status: 'ambiguous', matches: [...results.values()] };
+  return direct;
+}
+
+function candidateStudentInClass(name, student, classId, classes) {
+  if (!student || student.active === false || student.status === 'inactive') return false;
+  const memberships = new Set(Array.isArray(student.classIds) ? student.classIds : []);
+  if (student.classId) memberships.add(student.classId);
+  for (const klass of classes || []) {
+    if (Array.isArray(klass.studentIds) && klass.studentIds.includes(student.id)) memberships.add(klass.id);
+  }
+  if (!memberships.has(classId)) return false;
+  const target = comparableText(name);
+  const first = comparableText(student.firstName ||
+    String(student.name || '').trim().split(/\s+/)[0]);
+  return safeEntityNames(student).some(candidate => comparableText(candidate) === target)
+    || (Boolean(first) && first === target);
+}
+
+function matchStudentWithClass(value, classHint, students, classes) {
+  if (!classHint) return matchEntityByName(value, students);
+  const group = matchClassByName(classHint, classes);
+  if (group.status !== 'matched') return { status: group.status, matches: [], classMatch: group };
+  const matches = (Array.isArray(students) ? students : []).filter(person =>
+    candidateStudentInClass(value, person, group.matches[0].id, classes))
+    .map(person => ({ id: jsonSafeIdentifier(person.id),
+      name: safeEntityNames(person)[0] || valueText(value) }))
+    .filter(person => person.id);
+  if (matches.length === 1) return { status: 'matched', matches, classMatch: group };
+  return { status: matches.length ? 'ambiguous' : 'unmatched', matches, classMatch: group };
+}
+
 function applyContext(mapped, row, options) {
   const f = getDataFields(mapped);
   const classTokens = splitMultiValue(f.classes);
   const rawStudentLoan = valueText(f.studentLoan);
   const studentLoan = isPlaceholderAuthor(rawStudentLoan) ? '' : rawStudentLoan;
   const classLoan = valueText(f.classLoan);
+  const fixedClass = valueText(f.fixedClass);
   const libraryPresence = valueText(f.libraryPresence);
   const markers = collectSemanticMarkers(mapped);
 
@@ -205,7 +262,22 @@ function applyContext(mapped, row, options) {
     addIssue(row, 'class_context_needs_review', 'warning', { values: classTokens });
   }
 
-  if (markers.fixedLocation.length) {
+  if (fixedClass) {
+    const locations = splitMultiValue(fixedClass);
+    if (locations.length === 1) {
+      const match = matchClassByName(locations[0], options.classes);
+      row.context.fixedLocation = {
+        status: 'resolved',
+        label: match.status === 'matched' ? match.matches[0].name : locations[0],
+        raw: fixedClass,
+        source: 'explicit_fixed_class',
+      };
+    } else {
+      row.context.fixedLocation = { status: 'needs_review', label: fixedClass,
+        source: 'explicit_fixed_class' };
+      addIssue(row, 'fixed_location_needs_review', 'warning', { value: fixedClass });
+    }
+  } else if (markers.fixedLocation.length) {
     row.context.fixedLocation = {
       status: 'needs_review',
       label: classTokens.length === 1 ? classTokens[0] : '',
@@ -219,15 +291,20 @@ function applyContext(mapped, row, options) {
 
   const structureClassLoan = SPECIAL_FIXED_LOCATION_ALIASES.get(comparableText(classLoan));
   const hasRealStudentLoan = Boolean(studentLoan);
-  const classLoanIsFixedMlLocation = Boolean(structureClassLoan && row.book.easyReading && !hasRealStudentLoan);
+  const classLoanIsFixedMlLocation = Boolean(!fixedClass && structureClassLoan
+    && row.book.easyReading && !hasRealStudentLoan);
   if (classLoanIsFixedMlLocation) {
     row.context.fixedLocation = { status: 'resolved', label: structureClassLoan, source: 'ml_class_loan_rule' };
     addIssue(row, 'ml_structuurbb_fixed_location', 'info');
   }
 
-  if (classLoan && hasRealStudentLoan) addIssue(row, 'multiple_loan_contexts', 'conflict');
-  if (classLoan && !classLoanIsFixedMlLocation) {
-    const match = matchEntityByName(classLoan, options.classes);
+  // When a named pupil is present, the class identifies their cohort;
+  // it is not a second simultaneous borrower. Store it as source context
+  // and require an unambiguous current class membership before matching.
+  if (classLoan && hasRealStudentLoan)
+    row.context.studentClassHint = { label: classLoan, source: 'Geleend door klas' };
+  if (classLoan && !classLoanIsFixedMlLocation && !hasRealStudentLoan) {
+    const match = matchClassByName(classLoan, options.classes);
     if (match.status === 'matched') row.context.classLoan = { status: 'matched', ...match.matches[0] };
     else {
       row.context.classLoan = { status: match.status, name: classLoan };
@@ -235,11 +312,13 @@ function applyContext(mapped, row, options) {
     }
   }
   if (hasRealStudentLoan) {
-    const match = matchEntityByName(studentLoan, options.students);
+    const match = matchStudentWithClass(studentLoan, classLoan, options.students, options.classes);
     if (match.status === 'matched') row.context.studentLoan = { status: 'matched', ...match.matches[0] };
     else {
       row.context.studentLoan = { status: match.status, name: studentLoan };
-      addIssue(row, match.status === 'ambiguous' ? 'student_loan_ambiguous' : 'student_loan_unmatched', 'conflict', { value: studentLoan });
+      addIssue(row, match.status === 'ambiguous' ? 'student_loan_ambiguous' : 'student_loan_unmatched', 'conflict', {
+        value: studentLoan, classHint: classLoan || null,
+      });
     }
   }
 }
@@ -252,5 +331,7 @@ module.exports = {
   collectSemanticMarkers,
   getDataFields,
   matchEntityByName,
+  matchClassByName,
+  matchStudentWithClass,
   applyContext,
 };

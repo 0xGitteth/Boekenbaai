@@ -76,6 +76,7 @@
     ['tags', 'Tags'], ['themes', 'Thema’s'], ['coverUrl', 'Cover URL'],
     ['description', 'Beschrijving'], ['easyReading', 'Makkelijk lezen?'],
     ['examMaterial', 'Examenmateriaal'], ['classes', 'Klassen'],
+    ['fixedClass', 'Vast in de klas van'],
     ['studentLoan', 'Uitgeleend aan leerling'], ['classLoan', 'Uitgeleend aan klas'],
     ['libraryPresence', 'Aanwezig in bibliotheek'],
   ];
@@ -537,7 +538,10 @@
         return source?.source === 'excel' ? String(source.raw ?? '') : (book.suitableForExamList ? 'Ja' : '');
       }
       if (field === 'studentLoan') return row.context?.studentLoan?.name || '';
-      if (field === 'classLoan') return row.context?.classLoan?.name || '';
+      if (field === 'classLoan') return row.context?.studentClassHint?.label
+        || row.context?.classLoan?.name || '';
+      if (field === 'fixedClass') return row.context?.fixedLocation?.source === 'explicit_fixed_class'
+        ? (row.context.fixedLocation.raw ?? row.context.fixedLocation.label ?? '') : '';
       if (field === 'classes') return (row.context?.classContext || []).join('; ');
       if (field === 'libraryPresence') return row.context?.libraryPresence?.value || '';
       return String(book[field] ?? '');

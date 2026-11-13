@@ -54,7 +54,10 @@ module.exports = async function runCoreTests() {
     'Makkelijk lezen?': 'ja', 'Geleend door klas': 'StructuurBB',
     'naam leerling': 'Lisa Leerling',
   }], { students: [{ id: 's1', name: 'Lisa Leerling' }] });
-  assert.ok(codes(realStudentWithClassLoan.rows[0]).has('multiple_loan_contexts'));
+  assert.ok(!codes(realStudentWithClassLoan.rows[0]).has('multiple_loan_contexts'));
+  assert.equal(realStudentWithClassLoan.rows[0].context.studentClassHint.label,'StructuurBB');
+  assert.equal(realStudentWithClassLoan.rows[0].context.studentLoan.status,'unmatched',
+    'No current class directory means the pupil loan cannot be guessed');
   assert.strictEqual(realStudentWithClassLoan.rows[0].context.fixedLocation, undefined);
 
 
