@@ -536,7 +536,13 @@ function prepareTeacherRows(db,rows,manualMatches={},store={}){
       byEmail && !exact.some(u=>u.id===byEmail.id) ||
       byEmail && byUsername && byEmail.id!==byUsername.id);
     if(!conflicts){
-      prepared.push(row);return;
+      // The general importer does not strip accents/punctuation from names.
+      // Force a uniquely normalized existing identity through its username
+      // before treating any other teacher as departed.
+      if(exact.length===1&&!byUsername&&!byEmail&&exact[0].username)
+        prepared.push({...row,Gebruikersnaam:exact[0].username});
+      else prepared.push(row);
+      return;
     }
     const candidates=[...exact,byUsername,byEmail]
       .filter(Boolean).filter((u,i,all)=>all.findIndex(v=>v.id===u.id)===i);
