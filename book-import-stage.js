@@ -47,7 +47,7 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     const stage = {
       id, ownerId, sourceRows: null, workbook: null, fileName: '',
       analysis: null, initialAnalysis: null, corrections: [],
-      inventoryResolutions: [], assignmentResolutions: [],
+      inventoryResolutions: [], assignmentResolutions: [], metadataResolutions: [],
       acceptWarnings: false, options: {}, revision: 0,
       status: 'preparing', createdAt: new Date(now()).toISOString(),
       expiresAt: now() + ttlMs, result: null,
@@ -84,12 +84,13 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     stage.status = 'reviewing';
     return { ok: true };
   }
-  function finishReview(stage, reviewed, corrections, acceptWarnings, inventoryResolutions = [], assignmentResolutions = []) {
+  function finishReview(stage, reviewed, corrections, acceptWarnings, inventoryResolutions = [], assignmentResolutions = [], metadataResolutions = []) {
     if (entries.get(stage?.id) !== stage || stage.status !== 'reviewing') throw Error('invalid_stage_transition');
     stage.analysis = reviewed;
     stage.corrections = corrections;
     stage.inventoryResolutions = inventoryResolutions;
     stage.assignmentResolutions = assignmentResolutions;
+    stage.metadataResolutions = metadataResolutions;
     stage.acceptWarnings = acceptWarnings;
     stage.revision += 1;
     stage.expiresAt = now() + ttlMs;
@@ -160,6 +161,7 @@ function importStageView(stage) {
     syncParts: stage.options?.mode === 'unified_sync' ? stage.options.syncParts : null,
     inventoryResolutions: ['inventory_sync','unified_sync'].includes(stage.options?.mode) ? stage.inventoryResolutions : [],
     assignmentResolutions: ['assignment_reconcile','unified_sync'].includes(stage.options?.mode) ? stage.assignmentResolutions : [],
+    metadataResolutions: stage.options?.mode === 'unified_sync' ? stage.metadataResolutions : [],
     summary: analysis?.summary || null,
     rows: analysis?.rows || [],
     decisions: analysis?.decisions || null,
