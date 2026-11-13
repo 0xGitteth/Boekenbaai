@@ -307,6 +307,65 @@ assert.equal(preview(directory(),[bothBorrowers]).differences[0].reason,
 assert.equal(preview(directory(),[]).summary.readyToApply,false);
 assert.equal(preview(directory(),[row(0,'4711002')]).summary.differences,0);
 
+// A location must never cause an unrelated borrower's occupied copy to be
+// reassigned when another identical edition is available for the new reader.
+const sharedFixed=directory();
+sharedFixed.books[0].fixedLocation='Klas A';
+const safeLocationLoan=preview(sharedFixed,[
+  row(0,'',{
+    ...loanTo('tim','Tim Leerling'),
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  }),
+]);
+assert.equal(safeLocationLoan.ok,true);
+assert.equal(safeLocationLoan.differences.find(d=>d.kind==='loan')?.bookId,'copy-2');
+applyAssignmentPreview(sharedFixed,safeLocationLoan,'admin',now);
+assert.equal(sharedFixed.books[0].borrowedBy,'lisa');
+assert.equal(sharedFixed.books[1].borrowedBy,'tim');
+
+// A uniquely barcoded Excel row must reserve its exact copy first, regardless
+// of the preceding worksheet order of an otherwise identical ISBN-only row.
+const twoFreeCopies=directory();
+twoFreeCopies.books[0].status='available';
+twoFreeCopies.books[0].borrowedBy=null;
+twoFreeCopies.students[0].borrowedBooks=[];
+const physicalPriority=preview(twoFreeCopies,[
+  row(0,'',loanTo('tim','Tim Leerling')),
+  row(1,'4711001',loanTo('sophie','Sophie Leerling')),
+]);
+assert.equal(physicalPriority.differences.length,2);
+assert.equal(physicalPriority.differences[0].bookId,'copy-2');
+assert.equal(physicalPriority.differences[1].bookId,'copy-1');
+assert.equal(physicalPriority.summary.automatic,2);
+
+// Two proposals of the same ISBN to one pupil must not reject the whole
+// import on upload. Present both rows for explicit choice instead.
+const duplicateSuggestion=preview(twoFreeCopies,[
+  row(0,'',loanTo('tim','Tim Leerling')),
+  row(1,'',loanTo('tim','Tim Leerling')),
+]);
+assert.equal(duplicateSuggestion.ok,true);
+assert.equal(duplicateSuggestion.summary.pending,2);
+assert.equal(duplicateSuggestion.summary.automatic,0);
+assert.equal(duplicateSuggestion.differences.every(d=>
+  d.needsChoice==='duplicate_excel_student_edition'),true);
+const resolvedDuplicate=preview(twoFreeCopies,[
+  row(0,'',loanTo('tim','Tim Leerling')),
+  row(1,'',loanTo('tim','Tim Leerling')),
+],[{id:'0:loan',action:'apply'},{id:'1:loan',action:'keep'}]);
+assert.equal(resolvedDuplicate.ok,true);
+assert.equal(resolvedDuplicate.summary.readyToApply,true);
+
+// Bad source rows cannot pre-empt a physical copy needed by a valid borrower.
+const unrecognizedFirst=preview(twoFreeCopies,[
+  row(0,'',{studentLoan:{status:'unmatched',name:'Onbekende leerling'}}),
+  row(1,'',loanTo('tim','Tim Leerling')),
+]);
+assert.equal(unrecognizedFirst.differences.find(d=>d.rowIndex===0)?.reason,
+  'borrower_not_uniquely_matched');
+assert.equal(unrecognizedFirst.differences.find(d=>d.rowIndex===1)?.bookId,'copy-1');
+
+
 // Multiple rows of one ISBN can be distributed among physical copies without
 // individual barcodes, exactly like the application's normal scan workflow.
 const twoCopies=directory();
