@@ -469,13 +469,13 @@ module.exports = async function runReviewTailTests() {
   }]);
   assert.strictEqual(customSuffixedHeader.rows[0].book.editionIsbn, '');
   assert.strictEqual(customSuffixedHeader.rows[0].status, 'unresolved');
-  assert.ok(customSuffixedHeader.rows[0].unknownColumns.includes('ISBN_2024'));
+  assert.deepStrictEqual(customSuffixedHeader.rows[0].unknownColumns, []);
 
   const customSuffixedBesideBase = await analyzeBookImportRows([{
     Titel: 'Custom ISBN naast echte ISBN', Auteur: 'A Auteur', ISBN, ISBN_2024: ISBN_ALT,
   }]);
   assert.strictEqual(customSuffixedBesideBase.rows[0].book.editionIsbn, ISBN);
-  assert.ok(customSuffixedBesideBase.rows[0].unknownColumns.includes('ISBN_2024'));
+  assert.deepStrictEqual(customSuffixedBesideBase.rows[0].unknownColumns, []);
   assert.ok(!issueCodes(customSuffixedBesideBase.rows[0]).has('conflicting_source_columns'));
 
   const duplicateIsbnEvidence = { Titel: 'ISBN bewijs', Auteur: 'A Auteur' };
