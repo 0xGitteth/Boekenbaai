@@ -98,12 +98,6 @@ function collectSemanticMarkers(mapped) {
       }
     }
   }
-  for (const entry of mapped?.unknown || []) {
-    for (const marker of semanticMarkerTokens(entry.value)) {
-      const target = marker.kind === 'own_book' ? ownBook : fixedLocation;
-      target.push({ field: 'unknown', header: entry.header, value: marker.token });
-    }
-  }
   return { ownBook, fixedLocation };
 }
 

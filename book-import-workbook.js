@@ -121,6 +121,7 @@ function duplicateBaseHeader(entries, header) {
 function mapImportRow(row) {
   const fields = Object.create(null);
   const sources = Object.create(null);
+  // Kept empty for compatibility: unrecognized columns are never imported.
   const unknown = [];
   const ignoredDangerousHeaders = [];
   const entries = safeRowEntries(row);
@@ -143,7 +144,7 @@ function mapImportRow(row) {
     const deduplicatedHeaderKey = actualDuplicateBase ? importHeaderKey(actualDuplicateBase) : '';
     const field = HEADER_FIELD_MAP.get(headerKey) || (deduplicatedHeaderKey ? HEADER_FIELD_MAP.get(deduplicatedHeaderKey) : undefined);
     if (!field) {
-      unknown.push({ header, value: jsonSafeCellValue(value) });
+      // Strict allowlist: never interpret or retain values from unknown columns.
       continue;
     }
     // With cellDates enabled SheetJS exposes formatted date cells as Date.

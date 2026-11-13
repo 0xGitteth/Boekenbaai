@@ -26,7 +26,7 @@ The current school inventory shape is recognized directly, including:
 - `naam leerling`
 - `Aanwezig bieb`
 
-Alternative established column names remain supported through explicit aliases. Unknown columns are reported in the analysis instead of being silently assigned a meaning.
+Alternative established column names remain supported through explicit aliases. Unknown columns are ignored entirely: their values are not imported, shown in the preview, or interpreted as book metadata, loan status, class location or semantic markers. This also applies to future extra columns such as `Kolom1`.
 
 ## Important interpretations
 
@@ -36,7 +36,7 @@ Alternative established column names remain supported through explicit aliases. 
 - `Voornaam schrijver` and `Achternaam schrijver` are combined when a direct author column is absent. Placeholder author values such as `nvt` do not block real split-name data. Direct author cells with explicit semicolon/newline or ` & ` separators are retained as structured multiple authors.
 - Any non-empty `Makkelijk lezen?` value means easy-reading. Unusual values remain true but generate a warning for the preview.
 - `Examenmateriaal = Ja` marks a book suitable for the state-exam reading list. `Strip` is not exam approval; it adds a strip/comic hint. `Engels` is not exam approval; it supplies an English-language hint when the language field is empty.
-- `eigen boek`, `vast in de klas` and `Klassenboek` are global semantic markers across the imported row, including recognized bibliographic fields and unknown/note columns. Marker tokens are removed from normalized field values. `eigen boek` excludes that row from the school collection, while `vast in de klas` and `Klassenboek` mean a school-library book with a fixed classroom location that still needs review.
+- `eigen boek`, `vast in de klas` and `Klassenboek` are global semantic markers across the imported row, including recognized bibliographic fields, but not unknown/note columns. Marker tokens are removed from normalized field values. `eigen boek` excludes that row from the school collection, while `vast in de klas` and `Klassenboek` mean a school-library book with a fixed classroom location that still needs review.
 - Real names in `naam leerling` are matched only when exactly one supplied student matches. Duplicate names are conflicts.
 - `Geleend door klas` is normally loan context. Fixed physical location and class loan remain separate concepts and may coexist. The confirmed exception is a Makkelijk Lezen book with `Geleend door klas = StructuurBB` and no real student: that means fixed location `SK BB`, not a class loan.
 - Ordinary `Klassen` values are deliberately not auto-interpreted. They are preserved as class context for beheer because the column does not reliably mean the same thing as `Geleend door klas`. The three semantic markers above are the explicit exception to that rule.
@@ -63,7 +63,7 @@ Exact ISBN metadata lookups can fill missing bibliographic fields. Identifier-le
 The staged result contains:
 
 - summary counts;
-- recognized and unknown columns;
+- recognized columns; the legacy `columns.unknown` response field stays empty;
 - every source row with status (`ready`, `warning`, `conflict`, `unresolved`, or `skipped`);
 - original worksheet row numbers when SheetJS provides them, so blank spreadsheet rows do not shift later preview references;
 - field provenance and exact raw identifier text where relevant, including the exact Excel field that supplied the chosen edition ISBN;

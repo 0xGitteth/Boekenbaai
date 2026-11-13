@@ -95,7 +95,7 @@ function isCompletelyEmptyRow(mapped) {
   for (const entries of Object.values(mapped.sources || {})) {
     if (entries.some((entry) => !isBlankCellValue(entry.value))) return false;
   }
-  return !(mapped.unknown || []).some((entry) => !isBlankCellValue(entry.value));
+  return true;
 }
 
 function cacheMetadataLookups(options) {
@@ -125,25 +125,22 @@ function isClearJunkRow(mapped) {
   for (const entries of Object.values(mapped.sources || {})) {
     for (const entry of entries || []) values.push(entry.value);
   }
-  for (const entry of mapped.unknown || []) values.push(entry.value);
   const populated = values.map((value) => comparableText(value)).filter(Boolean);
   return Boolean(populated.length && populated.every((value) => JUNK_ONLY_TOKENS.has(value)));
 }
 
 function collectColumnSummary(mappedRows) {
   const recognized = new Map();
-  const unknown = new Set();
   const ignoredDangerous = new Set();
   for (const mapped of mappedRows) {
     for (const [field, entries] of Object.entries(mapped.sources)) {
       for (const entry of entries) if (!recognized.has(entry.header)) recognized.set(entry.header, field);
     }
-    for (const entry of mapped.unknown) unknown.add(entry.header);
     for (const header of mapped.ignoredDangerousHeaders) ignoredDangerous.add(header);
   }
   return {
     recognized: Array.from(recognized, ([header, field]) => ({ header, field })),
-    unknown: Array.from(unknown),
+    unknown: [], // Stable response shape; only recognized columns are considered.
     ignoredDangerous: Array.from(ignoredDangerous),
   };
 }
@@ -234,7 +231,7 @@ async function analyzeBookImportRows(rows, options = {}) {
       context: {},
       provenance: {},
       issues: [],
-      unknownColumns: mapped.unknown.map((entry) => entry.header),
+      unknownColumns: [], // Kept for clients that expect this field.
     };
 
     if (isCompletelyEmptyRow(mapped)) {

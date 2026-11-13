@@ -1066,16 +1066,6 @@
         if (dec.reason && dec.reason !== 'skipped') {
           card.append(make('p', 'bb-review__reason', reasonNames[dec.reason] || dec.reason));
         }
-        // Unknown column values remain visible and untouched; never guess
-        // that arbitrary 'a' or 'n' values represent loans or locations.
-        const extras = (row.issues || []).filter((issue) =>
-          issue.code === 'unknown_columns_present');
-        for (const extra of extras) {
-          const values = Array.isArray(extra.values) ? extra.values : [];
-          card.append(make('p', 'bb-review__detail',
-            'Extra Excelgegevens (niet gekoppeld aan boekgegevens): '
-            + values.map((entry) => String(entry.header) + ': ' + String(entry.value ?? '')).join(' · ')));
-        }
         const issues = (row.issues || []).filter((issue) => issue.severity !== 'info');
         if (issues.length) {
           card.append(make('p', 'bb-review__issues', issues.map((issue) => issueNames[issue.code] || issue.code).join(' · ')));
