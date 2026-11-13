@@ -13,6 +13,8 @@ const {
 } = require('./google-first-people-import');
 const { transitionMissingStudent, cancelReturnedStudents } =
   require('./student-exit-workflow');
+const { transitionMissingTeacher, cancelReturnedTeachers } =
+  require('./teacher-exit-workflow');
 
 function clean(value) {
   return String(value || '').trim();
@@ -510,6 +512,73 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   }
 }
 
+function prepareTeacherRows(db, rows, manualMatches = {}, store = {}) {
+  const prepared = [];
+  const reviews = [];
+  const accountIdByRow = {};
+  const activeTeachers = (db.users || []).filter(u => u.role === 'teacher' && u.active !== false);
+  const verifiedLinks = authCore.normalizeStore(store).links || [];
+  const addRow = (row, account) => {
+    if (account) accountIdByRow[prepared.length] = account.id;
+    prepared.push(row);
+  };
+  rows.forEach((row, index) => {
+    const name = personNameFromRow(row);
+    const exact = activeTeachers.filter(u =>
+      normalizePersonName(u.name) === normalizePersonName(name));
+    const username = normalizedRowValue(row,
+      ['gebruikersnaam', 'username', 'user', 'login']).toLowerCase();
+    const email = authCore.normalizeEmail(normalizedRowValue(row,
+      ['schoolmail', 'schoolmailadres', 'school e-mail', 'schoolemail', 'email',
+        'e-mail', 'e-mailadres', 'emailadres', 'googleemail']));
+    const byUsername = username ? activeTeachers.find(u =>
+      String(u.username || '').toLowerCase() === username) : null;
+    const link = email ? verifiedLinks.find(entry => entry.accountType === 'staff' &&
+      authCore.normalizeEmail(entry.email) === email) : null;
+    const byEmail = link ? activeTeachers.find(u => u.id === link.accountId) : null;
+    const candidates = [...exact, byUsername, byEmail]
+      .filter(Boolean).filter((u, i, all) => all.findIndex(v => v.id === u.id) === i);
+    const conflicts =
+      (exact.length > 1 && !byUsername && !byEmail) ||
+      (exact.length > 0 && byUsername && !exact.some(u => u.id === byUsername.id)) ||
+      (exact.length > 0 && byEmail && !exact.some(u => u.id === byEmail.id)) ||
+      (byEmail && byUsername && byEmail.id !== byUsername.id);
+
+    if (!conflicts) {
+      // A unique normalized-name match is authoritative for account ID only,
+      // not for the employee's login. Keep the username supplied by ParnasSys.
+      // The importer normally uses stricter accent/punctuation normalization.
+      const chosen = byEmail || byUsername || (exact.length === 1 ? exact[0] : null);
+      addRow(row, chosen);
+      return;
+    }
+
+    const key = 'staff:' + (index + 2);
+    const choice = manualMatches?.[key];
+    // A previously verified schoolmail link cannot be assigned to another
+    // employee by a username/name selection.
+    const permitted = candidates.filter(u => !byEmail || u.id === byEmail.id);
+    const chosen = permitted.find(u => u.id === choice);
+    if (chosen) {
+      addRow(row, chosen);
+      return;
+    }
+    reviews.push({
+      status: 'needs-review', row: index + 2, name, sourceKey: key,
+      reason: byEmail && candidates.some(u => u.id !== byEmail.id)
+        ? 'Naam en gekoppelde schoolmail verwijzen naar verschillende accounts. '
+          + 'Controleer de identiteit voordat je een medewerker uitschrijft.'
+        : byUsername && exact.some(u => u.id !== byUsername.id)
+          ? 'Naam en gebruikersnaam verwijzen naar verschillende docentaccounts. '
+            + 'Selecteer het juiste account.'
+          : 'Meerdere docentaccounts hebben dezelfde naam. '
+            + 'Kies het juiste bestaande account voordat je synchroniseert.',
+      candidates: permitted.map(u => ({ id: u.id, name: u.name || '', username: u.username || '' })),
+    });
+  });
+  return { prepared, reviews, accountIdByRow };
+}
+
 function findTeacherByExactName(db, name) {
   const wanted = normalizePersonName(name);
   const matches = (db.users || []).filter(
@@ -518,74 +587,115 @@ function findTeacherByExactName(db, name) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function processTeacherDeactivations(result, originalDb, rows, options, incomingTeacherIds = new Set()) {
-  const incomingNames = new Set();
-  const explicitNoGroups = [];
-  for (const row of rows) {
-    const name = personNameFromRow(row);
-    if (name) incomingNames.add(normalizePersonName(name));
-    if (name && classNamesFromRow(row).length === 0) explicitNoGroups.push(name);
-  }
+function processTeacherDeactivations(result, originalDb, rows, options,
+  incomingTeacherIds = new Set(), resolutions = {}, pendingReviews = []) {
+  result.summary.teachersWithoutGroups = 0;
+  result.summary.missingTeachersFromImport = 0;
+  result.summary.teacherDeletionEligible = 0;
+  result.summary.teacherExitTasks = 0;
+  result.summary.teacherDeleted = 0;
+  result.summary.teacherArchived = 0;
+  result.summary.teacherExitCandidateFingerprint = '';
+  result.summary.teacherDeletionCandidateFingerprint = '';
+  result.summary.largeRemovalWarning = false;
+  if (!options.fullSchoolSync) return;
 
-  const explicitIds = new Set();
-  for (const name of explicitNoGroups) {
-    const teacher = findTeacherByExactName(result.db, name);
-    if (teacher && teacher.active !== false && teacher.source === 'parnassys') {
-      explicitIds.add(teacher.id);
+  const original = (originalDb.users || []).filter(user=>
+    user?.id && user.role==='teacher' && user.active!==false);
+  // The complete ParnasSys employee list is authoritative, including old
+  // manually created staff accounts. Being assigned no groups must not
+  // silently deactivate a current employee.
+  const missing = [];
+  const remainingCandidates = [];
+  const matchingNames = new Set(rows.map(row=>normalizePersonName(
+    personNameFromRow(row))).filter(Boolean));
+  const successfullyMatchedNames=new Set((result.db.users||[])
+    .filter(user=>incomingTeacherIds.has(user.id)&&user.role==='teacher')
+    .map(user=>normalizePersonName(user.name)));
+  const disputedIds=new Set(pendingReviews.flatMap(review=>
+    (review.candidates||[]).map(candidate=>candidate.id)));
+  for(const teacher of original){
+    if(incomingTeacherIds.has(teacher.id)||disputedIds.has(teacher.id))continue;
+    if(matchingNames.has(normalizePersonName(teacher.name)) &&
+      !successfullyMatchedNames.has(normalizePersonName(teacher.name))){
+      // The row refers to the name but did not match any existing account.
+      // Do not auto-remove a person whose identity is unresolved.
+      remainingCandidates.push(teacher);
+      continue;
     }
-  }
-
-  const missingIds = new Set();
-  const activeParnassysBefore = (originalDb.users || []).filter(
-    (teacher) =>
-      teacher?.role === 'teacher' &&
-      teacher?.active !== false &&
-      teacher?.source === 'parnassys'
-  );
-  if (options.fullSchoolSync) {
-    for (const teacher of activeParnassysBefore) {
-      if (
-        !incomingTeacherIds.has(teacher.id) &&
-        !incomingNames.has(normalizePersonName(teacher?.name))
-      ) {
-        missingIds.add(teacher.id);
-      }
+    const choice=resolutions?.[teacher.id];
+    if(choice!==undefined && !['exit','keep'].includes(choice)){
+      result.summary.needsReview=(result.summary.needsReview||0)+1;
+      result.results.push({status:'teacher-legacy-needs-review',id:teacher.id,
+        name:teacher.name||'',reason:'Ongeldige keuze: controleer dit account opnieuw.'});
+      continue;
     }
-  }
-
-  const ids = new Set([...explicitIds, ...missingIds]);
-  result.summary.teachersWithoutGroups = explicitIds.size;
-  result.summary.missingTeachersFromImport = options.fullSchoolSync ? missingIds.size : 0;
-  result.summary.largeRemovalWarning = Boolean(
-    options.fullSchoolSync &&
-    missingIds.size >= largeTeacherRemovalThreshold(activeParnassysBefore.length)
-  );
-  result.summary.deactivated = result.summary.deactivated || 0;
-
-  for (const id of ids) {
-    const teacher = (result.db.users || []).find((entry) => entry?.id === id && entry?.role === 'teacher');
-    if (!teacher || teacher.active === false) continue;
-    const missingFromImport = missingIds.has(id);
-    const inactiveReason = missingFromImport
-      ? 'not-in-parnassys-school-list'
-      : 'no-linked-parnassys-groups';
-    if (options.applyDeactivations) {
-      deactivateTeacher(result.db, result.store, teacher, options.actorId, inactiveReason);
-      result.summary.deactivated += 1;
-    }
+    if(choice!=='keep')missing.push(teacher);
     result.results.push({
-      status: options.applyDeactivations ? 'deactivated' : 'would-deactivate',
-      id: teacher.id,
-      name: teacher.name || '',
-      reason: missingFromImport
-        ? options.applyDeactivations
-          ? 'Niet meer in de volledige ParnasSys-medewerkerslijst en daarom inactief gemaakt.'
-          : 'Staat niet in deze volledige ParnasSys-medewerkerslijst.'
-        : options.applyDeactivations
-          ? 'Geen gekoppelde ParnasSys-groep; docentaccount is inactief gemaakt.'
-          : 'Geen gekoppelde ParnasSys-groep; dit docentaccount wordt bij synchroniseren inactief.',
+      status:'teacher-legacy-reviewed',id:teacher.id,
+      name:teacher.name||'',chosen:choice==='keep'?'keep':'exit',
+      classes:teacher.classIds || [],
+      reason:'Niet gekoppeld aan volledige medewerkersexport; '
+        +'standaard uitschrijven tenzij beheer expliciet behoudt.',
     });
   }
+  result.summary.teachersWithUnresolvedIdentity=remainingCandidates.length;
+  if(remainingCandidates.length){
+    const reviewNames=new Set(result.results.filter(row=>
+      row.status==='needs-review').map(row=>normalizePersonName(row.name)));
+    for(const teacher of remainingCandidates){
+      if(reviewNames.has(normalizePersonName(teacher.name)))continue;
+      result.summary.needsReview=(result.summary.needsReview||0)+1;
+      reviewNames.add(normalizePersonName(teacher.name));
+      result.results.push({
+        status:'needs-review',id:teacher.id,name:teacher.name||'',
+        reason:'De medewerker staat in de export, maar zijn bestaande account '
+          +'kon niet eenduidig worden gekoppeld. Controleer de gegevens.',
+        candidates:[],
+      });
+    }
+  }
+  result.summary.teacherLegacyAccounts=(result.results||[])
+    .filter(x=>x.status==='teacher-legacy-reviewed').length;
+  result.summary.missingTeachersFromImport=missing.length;
+  result.summary.teachersWithoutGroups=(result.db.users||[])
+    .filter(u=>u.role==='teacher'&&u.active!==false
+      &&incomingTeacherIds.has(u.id)&&!(u.classIds||[]).length).length;
+  result.summary.largeRemovalWarning=missing.length>=
+    largeTeacherRemovalThreshold(original.length);
+  result.summary.teacherExitCandidateFingerprint=crypto.createHash('sha256')
+    .update(JSON.stringify(missing.map(x=>x.id).sort())).digest('hex');
+  const deletionIds=[];
+  for(const orig of missing){
+    const teacher=(result.db.users||[]).find(u=>u.id===orig.id&&
+      u.role==='teacher'&&u.active!==false);
+    if(!teacher)continue;
+    const outcome=transitionMissingTeacher(result.db,result.store,teacher,{
+      apply:options.applyDeactivations,actorId:options.actorId,
+    });
+    if(!outcome.hasData) {
+      result.summary.teacherDeletionEligible+=1;
+      deletionIds.push(teacher.id);
+    } else result.summary.teacherExitTasks+=1;
+    if(outcome.action==='deleted')result.summary.teacherDeleted++;
+    if(outcome.action==='archived')result.summary.teacherArchived++;
+    result.results.push({
+      status:options.applyDeactivations?outcome.action:
+        outcome.hasData?'would-archive-teacher':'would-delete-teacher',
+      id:teacher.id,name:teacher.name||'',
+      reason:outcome.hasData
+        ?'Historische gegevens blijven bewaard. Het account wordt inactief '
+          +'en krijgt een beheerderstaak.'
+        :'Geen gekoppelde historische gegevens. Account kan na extra bevestiging '
+          +'definitief worden verwijderd.',
+    });
+  }
+  result.summary.teacherDeletionCandidateFingerprint=crypto.createHash('sha256')
+    .update(JSON.stringify(deletionIds.sort())).digest('hex');
+  result.summary.deactivated=(result.summary.deactivated||0)
+    +result.summary.teacherArchived;
+  result.summary.deleted=(result.summary.deleted||0)
+    +result.summary.teacherDeleted;
 }
 
 function runSchoolSync(input = {}) {
@@ -601,6 +711,19 @@ function runSchoolSync(input = {}) {
   };
 
   validateSchoolSyncRows(kind, rows);
+  if(kind==='teacher'&&options.fullSchoolSync){
+    if(!rows.length){
+      const error=new Error('Een volledige medewerkersexport mag niet leeg zijn.');
+      error.code='INCOMPLETE_PARNASSYS_STAFF';throw error;
+    }
+    const missingName=rows.findIndex(row=>!personNameFromRow(row));
+    if(missingName!==-1){
+      const error=new Error('De volledige medewerkersexport bevat een rij zonder '
+        +'medewerkernaam (Excelrij '+(missingName+2)+'). '
+        +'Controleer dit voordat je accounts uitschrijft.');
+      error.code='INCOMPLETE_PARNASSYS_STAFF';throw error;
+    }
+  }
   // A complete export must have an identity for every listed pupil.
   // Otherwise even a pupil visibly present in Excel could be classified
   // as absent and auto-exited. Blank spacer rows are ignored.
@@ -629,11 +752,17 @@ function runSchoolSync(input = {}) {
   let preparedRows = rows;
   let reviews = [];
   let incomingNumbers = new Set();
+  let teacherAccountIdByRow = {};
   if (kind === 'student') {
     const prepared = prepareStudentRows(db, rows, input.manualMatches || {}, store);
     preparedRows = prepared.prepared;
     reviews = prepared.reviews;
     incomingNumbers = prepared.incomingNumbers;
+  } else if(options.fullSchoolSync){
+    const prepared=prepareTeacherRows(db,rows,input.manualMatches||{},store);
+    preparedRows=prepared.prepared;
+    reviews=prepared.reviews;
+    teacherAccountIdByRow=prepared.accountIdByRow;
   }
 
   const result = applyPeopleImport({
@@ -643,10 +772,28 @@ function runSchoolSync(input = {}) {
     store,
     domain: input.domain,
     actorId: input.actorId,
+    includeUnassignedTeachers: kind==='teacher' && options.fullSchoolSync,
+    accountIdByRow: teacherAccountIdByRow,
   });
   recomputeResultCounts(result);
+  if(kind==='teacher'&&options.fullSchoolSync){
+    const failures=(result.results||[]).filter(row=>
+      row.status==='skipped'||row.emailState==='conflict');
+    if(failures.length){
+      result.summary.needsReview=(result.summary.needsReview||0)+failures.length;
+      for(const failure of failures)result.results.push({
+        status:'needs-review',
+        row:failure.row,
+        name:failure.name||'Onbekende medewerker',
+        reason:'Deze medewerker is niet eenduidig verwerkt. '
+          +(failure.reason||failure.message||'Controleer de export en de accountkoppeling.'),
+        candidates:[],
+      });
+    }
+  }
   if (kind==='student') cancelReturnedStudents(result.db);
-  result.summary.needsReview = reviews.length;
+  else cancelReturnedTeachers(result.db);
+  result.summary.needsReview = (result.summary.needsReview||0) + reviews.length;
   result.results.push(...reviews);
 
   if (kind === 'student') {
@@ -658,7 +805,8 @@ function runSchoolSync(input = {}) {
         .filter((entry) => entry?.id && ['created', 'updated', 'unchanged'].includes(entry?.status))
         .map((entry) => entry.id)
     );
-    processTeacherDeactivations(result, originalDb, rows, options, incomingTeacherIds);
+    processTeacherDeactivations(result, originalDb, rows, options, incomingTeacherIds,
+      input.teacherResolutions || {}, reviews);
   }
 
   return result;

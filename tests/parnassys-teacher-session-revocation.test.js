@@ -46,7 +46,7 @@ const db = {
     { id: 'class-a', name: 'Klas A', teacherIds: [teacher.id], studentIds: [] },
   ],
   folders: [],
-  history: [],
+  history: [{type:'book_returned',performedBy:teacher.id,date:'2025-09-01'}],
   studentTransferRequests: [],
 };
 fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
@@ -77,10 +77,10 @@ function workbookBase64(rows) {
 
 const teacherExport = workbookBase64([
   {
-    Roepnaam: 'Docent',
-    Achternaam: 'Een',
+    Roepnaam: 'Andere',
+    Achternaam: 'Docent',
     Rollen: 'Leerkracht',
-    'Gekoppelde groepen': '',
+    'Gekoppelde groepen': 'Klas B',
   },
 ]);
 
@@ -151,6 +151,24 @@ function bearerHeaders(token) {
     const bearerBefore = await fetch(`${baseUrl}/api/me`, { headers: bearerHeaders(teacherToken) });
     assert.strictEqual(bearerBefore.status, 200);
 
+    const previewResponse=await fetch(`${baseUrl}/api/admin/school-sync/preview`,{
+      method:'POST',
+      headers:{
+        ...cookieHeaders(adminToken),
+        Origin:baseUrl,
+        'Sec-Fetch-Site':'same-origin',
+        'Content-Type':'application/json',
+      },
+      body:JSON.stringify({
+        kind:'teacher',file:teacherExport,fullSchoolSync:true,manualMatches:{},
+      }),
+    });
+    assert.strictEqual(previewResponse.status,200,await previewResponse.clone().text());
+    const preview=await previewResponse.json();
+    assert.strictEqual(preview.summary.missingTeachersFromImport,1);
+    assert.strictEqual(preview.summary.teacherExitTasks,1);
+    assert.strictEqual(preview.summary.teacherDeletionEligible,0);
+
     const apply = await fetch(`${baseUrl}/api/admin/school-sync/apply`, {
       method: 'POST',
       headers: {
@@ -164,6 +182,10 @@ function bearerHeaders(token) {
         file: teacherExport,
         fullSchoolSync: true,
         manualMatches: {},
+        confirmLargeRemoval:true,
+        expectedTeacherDeletionCount:0,
+        expectedTeacherDeletionFingerprint:preview.summary.teacherDeletionCandidateFingerprint,
+        expectedTeacherExitFingerprint:preview.summary.teacherExitCandidateFingerprint,
       }),
     });
     assert.strictEqual(apply.status, 200, await apply.text());
@@ -172,6 +194,9 @@ function bearerHeaders(token) {
     const persistedTeacher = persistedDb.users.find((entry) => entry.id === teacher.id);
     assert.strictEqual(persistedTeacher.active, false);
     assert.deepStrictEqual(persistedTeacher.classIds, []);
+    assert.strictEqual(persistedDb.teacherExitTasks.length,1);
+    assert.strictEqual(persistedDb.teacherExitTasks[0].status,'open');
+    assert.strictEqual(persistedDb.history[0].performedBy,teacher.id);
     assert.deepStrictEqual(
       persistedDb.classes.find((entry) => entry.id === 'class-a').teacherIds,
       []

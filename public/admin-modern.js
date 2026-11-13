@@ -798,6 +798,7 @@
     loansView.append(make('div', { id: 'bb-admin-v31-loans' }));
     const tasksView = viewHeading('tasks', 'Taken', 'Controleer openstaande verzoeken en boekimportcontroles.');
     tasksView.append(make('div', { id: 'bb-admin-v31-tasks' }));
+    tasksView.append(make('div', { id: 'teacher-exit-tasks-panel' }));
     const accountTaskLinks = make('section', { className: 'bb-admin-v31-card' });
     accountTaskLinks.append(make('h3', { text: 'Andere beheertaken' }));
 

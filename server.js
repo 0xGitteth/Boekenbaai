@@ -4,6 +4,7 @@ const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
 const {studentHasLibraryData} = require('./student-exit-workflow');
+const {teacherHasData} = require('./teacher-exit-workflow');
 const {
   currentImportOwner, isImportOwnerConfirmedDead, sameImportOwner,
   isImportLeaseActive, IMPORT_HEARTBEAT_MS, IMPORT_LEASE_MS,
@@ -7766,6 +7767,14 @@ async function handleApi(req, res, requestUrl) {
       );
       if (index === -1) {
         return sendJson(res, 404, { message: 'Docent niet gevonden' });
+      }
+      const teacherToRemove=db.users[index];
+      if(teacherHasData(db,teacherToRemove) ||
+        (db.teacherExitTasks||[]).some(task=>task.teacherId===teacherToRemove.id)){
+        return sendJson(res,409,{
+          message:'Dit docentaccount heeft nog historische gegevens of een uitschrijftaak. '
+            +'Deze gegevens moeten bewaard blijven; maak het account inactief.',
+        });
       }
       const [removedTeacher] = db.users.splice(index, 1);
       if (db.bookImportEmailPreferences

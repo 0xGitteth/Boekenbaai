@@ -314,21 +314,23 @@ async function run() {
       assert.equal((await call(route, teacher, { action: 'disable' })).status, 409);
     } finally { busyLock(); }
     assert.equal((await call(route, teacher)).body.mode, 'alternate');
-    // Removing a staff account must also forget the verified address,
-    // pending codes and rate-limit metadata, without dropping other data.
-    assert.equal((await call('/api/teachers/teacher-a',
-      admin, undefined, 'DELETE')).status, 200);
-    saved = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+    // A teacher linked to historical book-import decisions and existing
+    // notification settings cannot be irreversibly deleted. ParnasSys
+    // offboarding will instead revoke the login and retain the archive.
+    const protectedDelete=await call('/api/teachers/teacher-a',
+      admin, undefined, 'DELETE');
+    assert.equal(protectedDelete.status,409);
+    assert.match(protectedDelete.body.message,/historische gegevens/i);
+    saved=JSON.parse(fs.readFileSync(dataPath,'utf8'));
+    assert.equal(saved.users.some(user=>user.id==='teacher-a'),true);
     assert.equal(Object.prototype.hasOwnProperty.call(
-      saved.bookImportEmailPreferences, 'teacher-a'), false);
-    assert.equal(saved.bookImportReports.some(r => r.id === applied.body.result.batchId), true);
-    assert.equal((await call(route, teacher)).status, 401);
-    const deletedResponse = await call(route, teacher, { action: 'disable' });
-    assert.ok([401, 403].includes(deletedResponse.status),
-      'A revoked staff session cannot recreate notification preferences.');
-    assert.equal(Object.prototype.hasOwnProperty.call(
-      JSON.parse(fs.readFileSync(dataPath, 'utf8')).bookImportEmailPreferences,
-      'teacher-a'), false);
+      saved.bookImportEmailPreferences,'teacher-a'),true);
+    assert.equal(saved.bookImportReports.some(r=>r.id===applied.body.result.batchId),true);
+    assert.equal((await call(route,teacher)).status,200,
+      'Refused deletion must not silently revoke valid access.');
+    // Clean teacher deletion and staff-session invalidation are separately
+    // tested by the new teacher offboarding workflow.
+
     console.log('PR7: real staff HTTP preferences, deletion cleanup, lock contention and complete import flow passed');
   } catch (error) {
     console.error(stderr.slice(-1800));

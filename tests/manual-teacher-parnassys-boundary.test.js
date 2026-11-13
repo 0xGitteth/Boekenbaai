@@ -46,9 +46,11 @@ const ungroupedRow = [{
     applyDeactivations: true,
   });
   const teacher = result.db.users.find((entry) => entry.id === 'teacher-1');
-  assert.strictEqual(teacher.active, true, 'Een handmatig beheerde docent mag niet door een naamsovereenkomst met een ongegroepeerde ParnasSys-rij worden uitgezet');
-  assert.deepStrictEqual(teacher.classIds, ['class-a']);
-  assert.deepStrictEqual(result.db.classes[0].teacherIds, ['teacher-1']);
+  assert.strictEqual(teacher.active,true,
+    'Een bestaande docent in de complete export blijft werkzaam zonder groep');
+  assert.deepStrictEqual(teacher.classIds,[],
+    'De vorige klasrechten worden niet gehandhaafd als de export geen groep noemt');
+  assert.deepStrictEqual(result.db.classes[0].teacherIds,[]);
 }
 
 {
@@ -61,7 +63,8 @@ const ungroupedRow = [{
     applyDeactivations: true,
   });
   const teacher = result.db.users.find((entry) => entry.id === 'teacher-1');
-  assert.strictEqual(teacher.active, false, 'Een reeds ParnasSys-beheerde docent zonder gekoppelde groepen moet wel worden gedeactiveerd');
+  assert.strictEqual(teacher.active,true,
+    'Een ParnasSys-docent die wel op de medewerkerslijst staat blijft actief, ook zonder groep');
   assert.deepStrictEqual(teacher.classIds, []);
   assert.deepStrictEqual(result.db.classes[0].teacherIds, []);
 }

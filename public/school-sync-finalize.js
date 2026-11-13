@@ -4,7 +4,8 @@
   const syncState = {
     student: { fileData: '', manualMatches: {}, legacyResolutions: {},
       legacyDetailsOpen: false, preview: null, revision: 0 },
-    teacher: { fileData: '', manualMatches: {}, preview: null, revision: 0 },
+    teacher: { fileData: '', manualMatches: {}, teacherResolutions: {},
+      teacherDetailsOpen: false, preview: null, revision: 0 },
   };
 
   function make(tag, options = {}) {
@@ -75,33 +76,46 @@
       make('h5', { text: `Even controleren (${reviews.length})` }),
       make('p', {
         className: 'hint',
-        text: 'Boekenbaai denkt dat deze ParnasSys-leerling mogelijk al handmatig is toegevoegd. Kies alleen een bestaand account als het echt dezelfde leerling is.',
+        text: kind==='teacher'
+          ? 'Bij meerdere docentaccounts met dezelfde naam moet je het juiste '
+            +'bestaande account kiezen. Als er geen keuze beschikbaar is, '
+            +'controleer de medewerkersexport en de bestaande accounts.'
+          : 'Boekenbaai denkt dat deze ParnasSys-leerling mogelijk al handmatig is toegevoegd. Kies alleen een bestaand account als het echt dezelfde leerling is.',
       })
     );
     for (const review of reviews) {
       const row = make('div', { className: 'school-sync__review-row' });
       const info = make('div');
       info.append(
-        make('strong', { text: `${review.name} · leerlingnummer ${review.studentNumber}` }),
+        make('strong', { text: kind==='teacher'
+          ? `${review.name} · Excelrij ${review.row||'onbekend'}`
+          : `${review.name} · leerlingnummer ${review.studentNumber}` }),
         make('span', { text: (review.classes || []).join(', ') || 'Geen klas' })
       );
       const select = document.createElement('select');
+      const key=kind==='teacher'?review.sourceKey:review.studentNumber;
       select.append(new Option('Kies het bestaande account…', ''));
       for (const candidate of review.candidates || []) {
         const classes = (candidate.classNames || []).join(', ');
-        select.append(new Option(`${candidate.name}${classes ? ` · ${classes}` : ''}`, candidate.id));
+        select.append(new Option(
+          `${candidate.name}${classes ? ` · ${classes}` : ''}${candidate.username
+            ? ` · ${candidate.username}` : ''}`, candidate.id));
       }
-      select.append(new Option('Geen match, maak een nieuw leerlingaccount', '__new__'));
-      select.value = syncState[kind].manualMatches[review.studentNumber] || '';
+      if(kind==='student')
+        select.append(new Option('Geen match, maak een nieuw leerlingaccount', '__new__'));
+      select.value = syncState[kind].manualMatches[key] || '';
       select.addEventListener('change', async () => {
-        if (select.value) syncState[kind].manualMatches[review.studentNumber] = select.value;
-        else delete syncState[kind].manualMatches[review.studentNumber];
+        if (select.value) syncState[kind].manualMatches[key] = select.value;
+        else delete syncState[kind].manualMatches[key];
         syncState[kind].preview = null;
         syncState[kind].revision += 1;
         select.disabled = true;
         await rerun();
       });
-      row.append(info, select);
+      if(kind==='teacher'&&!(review.candidates||[]).length){
+        row.append(info,make('p',{className:'hint',text:
+          'Controleer of corrigeer de export. Deze rij kan nog niet veilig worden gesynchroniseerd.'}));
+      } else row.append(info,select);
       box.append(row);
     }
     resultHost.append(box);
@@ -160,6 +174,105 @@
     resultHost.append(box);
   }
 
+  function renderTeacherExits(kind, resultHost, payload, rerun) {
+    if(kind!=='teacher')return;
+    const accounts=(payload.results||[]).filter(row=>
+      row.status==='teacher-legacy-reviewed');
+    if(!accounts.length)return;
+    const box=make('section',{className:'admin-modern__import-warnings school-sync__review'});
+    box.append(make('h5',{text:'Oude docentaccounts ('+accounts.length+')'}),
+      make('p',{className:'hint',text:
+        'De volledige medewerkerslijst is leidend. Niet-gekoppelde docentaccounts '
+        +'staan standaard op uitgeschreven. Ze verliezen hun klasrechten en toegang. '
+        +'Accounts zonder te bewaren gegevens kunnen na extra bevestiging worden '
+        +'verwijderd; overige blijven inactief bewaard en krijgen een beheerderstaak. '
+        +'Controleer alleen eventuele uitzonderingen.'}));
+    const details=document.createElement('details');
+    details.open=Boolean(syncState.teacher.teacherDetailsOpen);
+    details.addEventListener('toggle',()=>{
+      syncState.teacher.teacherDetailsOpen=details.open;
+    });
+    details.append(make('summary',{text:
+      'Bekijk '+accounts.length+' oude docenten en pas uitzonderingen aan'}));
+    for(const teacher of accounts){
+      const row=make('div',{className:'school-sync__review-row'});
+      const info=make('div');
+      info.append(make('strong',{text:teacher.name}));
+      const select=document.createElement('select');
+      select.append(new Option('Uitgeschreven (standaard)','exit'));
+      select.append(new Option('Docent werkt nog op school, behouden','keep'));
+      select.value=teacher.chosen||'exit';
+      select.addEventListener('change',async()=>{
+        if(select.value==='keep')syncState.teacher.teacherResolutions[teacher.id]='keep';
+        else delete syncState.teacher.teacherResolutions[teacher.id];
+        syncState.teacher.preview=null;syncState.teacher.revision++;
+        select.disabled=true;
+        await rerun();
+      });
+      row.append(info,select);details.append(row);
+    }
+    box.append(details);resultHost.append(box);
+  }
+
+  let teacherTaskRefresh=0;
+  async function loadTeacherExitTasks(attempt=0){
+    const host=document.getElementById('teacher-exit-tasks-panel');
+    if(!host){
+      if(attempt<12)window.setTimeout(()=>loadTeacherExitTasks(attempt+1),250);
+      return;
+    }
+    const request=++teacherTaskRefresh;
+    try{
+      const response=await api('/api/admin/teacher-exits');
+      if(request!==teacherTaskRefresh)return;
+      const tasks=(response.tasks||[]).filter(task=>task.status!=='cancelled');
+      host.replaceChildren();
+      if(!tasks.length)return;
+      const active=tasks.filter(task=>task.status==='open');
+      const section=make('section',{className:'panel school-sync__teacher-exit-tasks'});
+      section.append(make('h3',{text:'Uitschrijven oud-docenten ('+active.length+')'}));
+      section.append(make('p',{className:'hint',text:
+        'Oud-docenten hebben geen toegang meer tot Boekenbaai en zijn '
+        +'niet aan actuele klassen gekoppeld. Hun historische gegevens blijven '
+        +'bewaard. De beheerder kan de controle afronden.'}));
+      for(const task of active){
+        const row=make('div',{className:'school-sync__review-row'});
+        const info=make('div');
+        info.append(make('strong',{text:task.teacherName}));
+        info.append(make('span',{text:'Voormalige klas(sen): '
+          +((task.lastClasses||[]).map(k=>k.name).join(', ')||'Geen')}));
+        const done=make('button',{className:'btn btn--secondary',type:'button',
+          text:'Uitschrijfcontrole afronden'});
+        done.addEventListener('click',async()=>{
+          if(!window.confirm('Uitschrijfcontrole van '+task.teacherName
+            +' afronden? De historische gegevens blijven bewaard.'))return;
+          done.disabled=true;
+          try{
+            await api('/api/admin/teacher-exits/'+encodeURIComponent(task.id)
+              +'/complete',{method:'POST',body:{revision:task.revision,confirm:true}});
+            loadTeacherExitTasks();
+          }catch(error){window.alert(error.message);done.disabled=false;}
+        });
+        row.append(info,done);section.append(row);
+      }
+      const completed=tasks.filter(task=>task.status==='completed');
+      if(completed.length){
+        const details=document.createElement('details');
+        details.append(make('summary',{text:'Afgeronde controles ('+completed.length+')'}));
+        for(const task of completed){
+          details.append(make('p',{className:'hint',text:task.teacherName
+            +' · '+((task.lastClasses||[]).map(k=>k.name).join(', ')||'Geen klas')}));
+        }
+        section.append(details);
+      }
+      host.append(section);
+    }catch(error){
+      if(request===teacherTaskRefresh)host.replaceChildren(
+        make('p',{className:'hint',text:'Uitschrijftaken konden niet geladen worden: '
+          +error.message}));
+    }
+  }
+
   function renderPreview(kind, resultHost, payload, fullSchoolSync, rerun, apply) {
     resultHost.replaceChildren();
     const summary = payload.summary || {};
@@ -186,7 +299,12 @@
     }
     if (kind === 'teacher') {
       grid.append(metric('Zonder gekoppelde groep', summary.teachersWithoutGroups));
-      if (fullSchoolSync) grid.append(metric('Niet meer in medewerkerslijst', summary.missingTeachersFromImport));
+      if (fullSchoolSync) {
+        grid.append(metric('Niet meer in medewerkerslijst', summary.missingTeachersFromImport));
+        grid.append(metric('Accounts zonder historie te verwijderen',
+          summary.teacherDeletionEligible));
+        grid.append(metric('Uitschrijftaken met historie', summary.teacherExitTasks));
+      }
     }
     wrapper.append(grid);
 
@@ -211,7 +329,10 @@
         make('h5', { text: `${summary.missingTeachersFromImport} docent${summary.missingTeachersFromImport === 1 ? '' : 'en'} niet meer in de export` }),
         make('p', {
           className: 'hint',
-          text: 'Bij synchroniseren worden deze docenten inactief en verliezen zij hun klasrechten. Bij een opvallend grote afname vraagt Boekenbaai extra bevestiging om een per ongeluk gefilterde of partiële export op te vangen.',
+          text: 'Bij synchroniseren verliezen vertrokken docenten hun toegang en klasrechten. '
+            + 'Lege accounts kunnen na extra bevestiging worden verwijderd. '
+            + 'Accounts met historie blijven inactief bewaard met een taak voor beheer. '
+            + 'Docenten die wel in de export staan maar geen groep hebben, blijven actief.',
         })
       );
       wrapper.append(note);
@@ -219,7 +340,10 @@
 
     resultHost.append(wrapper);
     renderReviewRows(kind, resultHost, payload, rerun);
-    if (fullSchoolSync) renderLegacyAccounts(kind, resultHost, payload, rerun);
+    if (fullSchoolSync) {
+      renderLegacyAccounts(kind, resultHost, payload, rerun);
+      renderTeacherExits(kind, resultHost, payload, rerun);
+    }
 
     const actions = make('div', { className: 'admin-modern__preview-actions school-sync__actions' });
     const sync = make('button', { className: 'btn', text: 'Synchroniseren', type: 'button' });
@@ -251,7 +375,7 @@
         className: 'hint',
         text: isStudent
           ? 'Exporteer de hele leerlingenlijst uit ParnasSys en upload die hier direct. Je hoeft geen kolommen te verwijderen of te hernoemen. Boekenbaai gebruikt Leerlingnummer, Huidige groep, Roepnaam, Voorvoegsel en Achternaam; extra kolommen zoals Huidige status worden genegeerd.'
-          : 'Upload de onbewerkte medewerkerslijst uit ParnasSys. Boekenbaai gebruikt de naam en Gekoppelde groepen. Alleen medewerkers met minimaal één gekoppelde groep krijgen een actief docentaccount; één docent mag meerdere groepen hebben.',
+          : 'Upload de volledige onbewerkte medewerkerslijst uit ParnasSys. Boekenbaai gebruikt naam en Gekoppelde groepen. Ook docenten zonder gekoppelde groep blijven actief. Ontbrekende docentaccounts worden standaard uitgeschreven; je kunt uitzonderingen behouden.',
       })
     );
 
@@ -282,6 +406,7 @@
       const fullSchoolSync = full.checkbox.checked;
       const manualMatches = { ...syncState[kind].manualMatches };
       const legacyResolutions = { ...(syncState[kind].legacyResolutions || {}) };
+      const teacherResolutions = { ...(syncState[kind].teacherResolutions || {}) };
       previewButton.disabled = true;
       message.textContent = 'Voorcontrole wordt uitgevoerd…';
       try {
@@ -293,6 +418,7 @@
             fullSchoolSync,
             manualMatches,
             legacyResolutions,
+            teacherResolutions,
           },
         });
         if (
@@ -321,6 +447,19 @@
       message.textContent = 'Synchronisatie wordt uitgevoerd…';
       let confirmLargeRemoval = false;
       let confirmPupilRemoval = false;
+      let confirmTeacherRemoval = false;
+      if(kind==='teacher'&&full.checkbox.checked&&
+        Number(summary.teacherDeletionEligible||0)>0){
+        confirmTeacherRemoval=window.confirm('Let op: '
+          +summary.teacherDeletionEligible
+          +' docentaccount(s) zonder bewaarde gegevens worden definitief '
+          +'verwijderd. Docenten met historie blijven inactief bewaard. '
+          +'Bevestig je het verwijderen van deze accounts?');
+        if(!confirmTeacherRemoval){
+          message.textContent='Synchronisatie geannuleerd.';
+          return;
+        }
+      }
       if (kind==='student' && full.checkbox.checked
         && Number(summary.deletionEligible||0)>0) {
         confirmPupilRemoval=window.confirm(
@@ -357,6 +496,11 @@
               fullSchoolSync: full.checkbox.checked,
               manualMatches: syncState[kind].manualMatches,
               legacyResolutions: syncState[kind].legacyResolutions || {},
+              teacherResolutions: syncState[kind].teacherResolutions || {},
+              confirmTeacherRemoval,
+              expectedTeacherDeletionCount:Number(summary.teacherDeletionEligible||0),
+              expectedTeacherDeletionFingerprint:summary.teacherDeletionCandidateFingerprint||'',
+              expectedTeacherExitFingerprint:summary.teacherExitCandidateFingerprint||'',
               confirmLargeRemoval,
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
@@ -376,6 +520,11 @@
               fullSchoolSync: full.checkbox.checked,
               manualMatches: syncState[kind].manualMatches,
               legacyResolutions: syncState[kind].legacyResolutions || {},
+              teacherResolutions: syncState[kind].teacherResolutions || {},
+              confirmTeacherRemoval,
+              expectedTeacherDeletionCount:Number(summary.teacherDeletionEligible||0),
+              expectedTeacherDeletionFingerprint:summary.teacherDeletionCandidateFingerprint||'',
+              expectedTeacherExitFingerprint:summary.teacherExitCandidateFingerprint||'',
               confirmLargeRemoval: true,
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
@@ -386,6 +535,7 @@
         }
         const done = payload.summary || {};
         message.textContent = `${done.created || 0} nieuw, ${done.updated || 0} gewijzigd, ${done.unchanged || 0} ongewijzigd${done.deleted ? `, ${done.deleted} lege accounts verwijderd` : ''}${done.deactivated ? `, ${done.deactivated} inactief met uitschrijftaak` : ''}.`;
+        if(kind==='teacher')loadTeacherExitTasks();
         results.replaceChildren(make('p', { className: 'admin-modern__import-done', text: 'Schoolgegevens zijn gesynchroniseerd. De pagina wordt bijgewerkt…' }));
         window.setTimeout(() => window.location.reload(), 900);
       } catch (error) {
@@ -396,6 +546,7 @@
     file.addEventListener('change', async () => {
       syncState[kind].manualMatches = {};
       if (kind === 'student') syncState[kind].legacyResolutions = {};
+      if (kind === 'teacher') syncState.teacher.teacherResolutions = {};
       syncState[kind].preview = null;
       syncState[kind].fileData = '';
       syncState[kind].revision += 1;
@@ -449,6 +600,10 @@
 
     const container = make('div', { className: 'school-sync__container' });
     container.append(createSyncBlock('student'), createSyncBlock('teacher'));
+    window.addEventListener('boekenbaai:staff-refresh',()=>loadTeacherExitTasks());
+    window.addEventListener('boekenbaai:mentor-tasks-refresh',
+      ()=>loadTeacherExitTasks());
+    loadTeacherExitTasks();
     const bookSection = document.querySelector('#book-import-form')?.closest('.admin-card__section--import');
     if (bookSection?.nextSibling) content.insertBefore(container, bookSection.nextSibling);
     else content.prepend(container);

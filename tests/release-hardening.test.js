@@ -149,6 +149,45 @@ function baseDb() {
   assert.strictEqual(result.store.sessions.length, 0);
 })();
 
+(function testFullSchoolStaffSyncDoesNotReactivateLegacyUngroupedPolicy() {
+  const syncCore = require('../school-sync-core');
+  const db=baseDb();
+  db.classes.push({id:'klass1',name:'Klas A',
+    teacherIds:['t1'],studentIds:[]});
+  db.users.push({
+    id:'t1',role:'teacher',name:'Docent Een',username:'docent.een',
+    passwordHash:'x',classIds:['klass1'],active:true,source:'parnassys',
+  });
+  let store=core.emptyAuthStore();
+  store=core.upsertSession(store,'teacher-session-full',{
+    userId:'t1',type:'staff',remember:true,now:Date.now(),
+  }).store;
+  const result=syncCore.runSchoolSync({
+    kind:'teacher',db,store,fullSchoolSync:true,actorId:'admin',
+    rows:[{Roepnaam:'Docent',Achternaam:'Een',
+      Rollen:'Leerkracht','Gekoppelde groepen':''}],
+  });
+  const teacher=result.db.users.find(x=>x.id==='t1');
+  assert.equal(result.summary.needsReview,0);
+  assert.equal(result.summary.missingTeachersFromImport,0);
+  assert.equal(teacher.active,true,
+    'Full school staff sync must not disable a present teacher without groups');
+  assert.deepStrictEqual(teacher.classIds,[],
+    'Obsolete class grants must be removed');
+  assert.deepStrictEqual(result.db.classes[0].teacherIds,[]);
+  assert.equal(result.store.sessions.length,1,
+    'Present teacher session must not be revoked by legacy hardening');
+
+  const otherDb=baseDb();
+  const other=syncCore.runSchoolSync({
+    kind:'teacher',db:otherDb,store:core.emptyAuthStore(),fullSchoolSync:true,
+    rows:[{Roepnaam:'Administratief',Achternaam:'Medewerker',
+      Rollen:'Administratie','Gekoppelde groepen':''}],
+  });
+  assert.equal(other.db.users.filter(x=>x.role==='teacher').length,0,
+    'An ungrouped nonteacher must not be created as a new teacher');
+})();
+
 (function testTransferTargetWithoutMentorIsInvalidData() {
   const db = baseDb();
   db.classes.push(

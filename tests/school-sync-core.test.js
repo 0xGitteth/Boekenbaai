@@ -326,8 +326,254 @@ function baseDb() {
   assert.ok(gitte);
   assert.strictEqual(gitte.classIds.length, 2);
   const old = result.db.users.find((entry) => entry.id === 'old-teacher');
-  assert.strictEqual(old.active, false);
-  assert.deepStrictEqual(old.classIds, []);
+  assert.strictEqual(old.active,true,
+    'A teacher present in the complete export is still employed without class assignment');
+  assert.deepStrictEqual(old.classIds,[]);
+})();
+
+(function testFullTeacherExportRemovesLegacyStaffButPreservesAuditedTeachers() {
+  const db=baseDb();
+  db.classes=[{id:'old',name:'Structuur BB',studentIds:[],
+    teacherIds:['manual-out','history-out','still-employed']}];
+  db.users.push(
+    {id:'manual-out',role:'teacher',name:'Vertrokken Docent',
+      username:'left',passwordHash:'x',active:true,source:'manual-import',classIds:['old']},
+    {id:'history-out',role:'teacher',name:'Docent met Historie',
+      username:'hist',passwordHash:'x',active:true,source:'manual-import',classIds:['old']},
+    {id:'still-employed',role:'teacher',name:'Actuele Docent',
+      username:'current',passwordHash:'x',active:true,source:'manual-import',classIds:['old']},
+  );
+  db.history.push({type:'book_returned',performedBy:'history-out',date:'2025-02-01'});
+  const rows=[{Roepnaam:'Actuele',Achternaam:'Docent',
+    Gebruikersnaam:'current','Gekoppelde groepen':''}];
+  const before=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true});
+  assert.strictEqual(before.summary.missingTeachersFromImport,2);
+  assert.strictEqual(before.summary.teacherDeletionEligible,1);
+  assert.strictEqual(before.summary.teacherExitTasks,1);
+  assert.strictEqual(before.summary.teacherDeleted,0,'Preview is not a mutation');
+  assert.strictEqual(before.db.users.length,4);
+  assert.strictEqual(before.summary.teachersWithoutGroups,1);
+  assert.strictEqual(before.summary.needsReview,0);
+
+  const applied=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin'});
+  assert.strictEqual(applied.summary.teacherDeleted,1);
+  assert.strictEqual(applied.summary.teacherArchived,1);
+  assert.strictEqual(applied.db.users.some(u=>u.id==='manual-out'),false);
+  assert.strictEqual(applied.db.users.find(u=>u.id==='history-out').active,false);
+  assert.deepStrictEqual(applied.db.users.find(u=>u.id==='history-out').classIds,[]);
+  assert.deepStrictEqual(applied.db.classes[0].teacherIds,[],
+    'All former/current teacher rights follow the new full export with no groups');
+  assert.strictEqual(applied.db.users.find(u=>u.id==='still-employed').active,true);
+  assert.strictEqual(applied.db.teacherExitTasks.length,1);
+  assert.strictEqual(applied.db.teacherExitTasks[0].lastClasses[0].name,'Structuur BB');
+  assert.strictEqual(applied.db.history[0].performedBy,'history-out');
+
+  const partial=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:false,applyDeactivations:true});
+  assert.strictEqual(partial.summary.teacherDeleted,0);
+  assert.strictEqual(partial.summary.teacherArchived,0);
+  assert.strictEqual(partial.db.users.length,4);
+})();
+
+(function testTeacherCanBeKeptWhenMissingFromFullExport() {
+  const db=baseDb();
+  db.users.push({id:'old',role:'teacher',name:'Docent zonder export',
+    username:'old',passwordHash:'x',active:true,classIds:[]});
+  const rows=[{Roepnaam:'Huidige',Achternaam:'Docent',
+    'Gekoppelde groepen':'Klas A'}];
+  const preview=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    teacherResolutions:{old:'keep'}});
+  assert.strictEqual(preview.summary.missingTeachersFromImport,0);
+  assert.strictEqual(preview.summary.needsReview,0);
+  assert.strictEqual(preview.results.find(row=>row.id==='old').chosen,'keep');
+  const applied=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,teacherResolutions:{old:'keep'}});
+  assert.strictEqual(applied.db.users.find(u=>u.id==='old').active,true);
+})();
+
+(function testDuplicateTeacherNameRequiresExplicitIdentity() {
+  const db=baseDb();
+  db.users.push(
+    {id:'a',role:'teacher',name:'Alex Jansen',username:'alex1',
+      passwordHash:'x',active:true,classIds:[]},
+    {id:'b',role:'teacher',name:'Alex Jansen',username:'alex2',
+      passwordHash:'x',active:true,classIds:[]},
+  );
+  const rows=[{Roepnaam:'Alex',Achternaam:'Jansen','Gekoppelde groepen':'Klas A'}];
+  const preview=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true});
+  assert.strictEqual(preview.summary.needsReview,1);
+  assert.strictEqual(preview.summary.missingTeachersFromImport,0);
+  assert.deepStrictEqual(preview.results.find(x=>x.status==='needs-review')
+    .candidates.map(x=>x.id),['a','b']);
+  const chosen=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    manualMatches:{'staff:2':'a'}});
+  assert.strictEqual(chosen.summary.needsReview,0);
+  assert.strictEqual(chosen.summary.missingTeachersFromImport,1);
+  assert.strictEqual(chosen.summary.teacherDeletionEligible,1);
+  assert.strictEqual(chosen.db.users.find(u=>u.id==='a').active,true);
+})();
+
+(function testConflictingTeacherIdentityPreventsAutomaticOffboarding() {
+  const db=baseDb();
+  db.users.push(
+    {id:'a',role:'teacher',name:'Sam Jansen',username:'sam-a',
+      passwordHash:'x',active:true,classIds:[]},
+    {id:'b',role:'teacher',name:'Alex de Vries',username:'sam-b',
+      passwordHash:'x',active:true,classIds:[]},
+  );
+  const row={Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'sam-b','Gekoppelde groepen':'Klas A'};
+  const first=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows:[row],fullSchoolSync:true});
+  assert.strictEqual(first.summary.needsReview,1);
+  assert.strictEqual(first.summary.missingTeachersFromImport,0,
+    'A name conflicting with another account username may not cause automatic departure');
+  assert.deepStrictEqual(first.results.find(x=>x.status==='needs-review')
+    .candidates.map(x=>x.id),['a','b']);
+  const chosen=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'a'}});
+  assert.strictEqual(chosen.summary.needsReview,0);
+  assert.strictEqual(chosen.summary.missingTeachersFromImport,1);
+  assert.strictEqual(chosen.db.users.find(x=>x.id==='a').active,true);
+})();
+
+(function testAccentVariantMatchesSameTeacherAccount() {
+  const db=baseDb();
+  db.users.push({id:'jose',role:'teacher',name:'José Jansen',
+    username:'jose',passwordHash:'x',active:true,classIds:[]});
+  const rows=[{Roepnaam:'Jose',Achternaam:'Jansen',
+    'Gekoppelde groepen':'Klas A'}];
+  const result=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true});
+  assert.strictEqual(result.summary.created,0);
+  assert.strictEqual(result.summary.missingTeachersFromImport,0);
+  assert.strictEqual(result.summary.needsReview,0);
+  assert.strictEqual(result.db.users.find(u=>u.id==='jose').name,'Jose Jansen');
+  assert.strictEqual(result.db.users.length,2,'Existing account ID must be retained');
+})();
+
+(function testVerifiedSchoolmailConflictIsNotOverriddenByManualUsername() {
+  const db=baseDb();
+  db.users.push(
+    {id:'a',role:'teacher',name:'Sam Jansen',username:'sam-a',
+      passwordHash:'x',active:true,classIds:[]},
+    {id:'b',role:'teacher',name:'Alex de Vries',username:'sam-b',
+      passwordHash:'x',active:true,classIds:[]},
+  );
+  const store=core.upsertLink(core.emptyAuthStore(),{
+    accountType:'staff',accountId:'b',email:'alex@koraaledu.nl',
+    sub:'verified-google-b',linkedBy:'test',
+  }).store;
+  const row={Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'sam-a',Schoolmail:'alex@koraaledu.nl',
+    'Gekoppelde groepen':'Klas A'};
+  const conflict=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store,rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'a'}});
+  assert.strictEqual(conflict.summary.needsReview,1,
+    'Selection of A cannot override Google email already verified to B');
+  assert.strictEqual(conflict.summary.missingTeachersFromImport,0,
+    'Both candidate accounts protected until conflict resolved');
+  const selected=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store,rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'b'}});
+  assert.strictEqual(selected.summary.needsReview,0);
+  assert.strictEqual(selected.summary.missingTeachersFromImport,1);
+  assert.strictEqual(selected.db.users.find(u=>u.id==='b').name,'Sam Jansen');
+})();
+
+(function testExistingTeacherWithoutGroupAndNewNonTeacherWithoutGroup() {
+  const db=baseDb();
+  db.classes.push({id:'former-class',name:'Oude klas',
+    teacherIds:['already-employed'],studentIds:[]});
+  db.users.push({id:'already-employed',role:'teacher',name:'Praktijk Docent',
+    username:'praktijk',passwordHash:'x',active:true,classIds:['former-class'],
+    source:'manual-import'});
+  const rows=[
+    {Roepnaam:'Praktijk',Achternaam:'Docent',Gebruikersnaam:'praktijk',
+      Rollen:'Vakdocent','Gekoppelde groepen':''},
+    {Roepnaam:'Administratief',Achternaam:'Medewerker',Rollen:'Administratie',
+      'Gekoppelde groepen':''},
+  ];
+  const result=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin'});
+  assert.equal(result.summary.needsReview,0);
+  assert.equal(result.summary.missingTeachersFromImport,0);
+  assert.equal(result.summary.teachersWithoutGroups,1);
+  assert.equal(result.db.users.find(x=>x.id==='already-employed').active,true);
+  assert.deepStrictEqual(result.db.users.find(x=>x.id==='already-employed').classIds,[]);
+  assert.deepStrictEqual(result.db.classes[0].teacherIds,[]);
+  assert.equal(result.db.users.some(x=>x.name==='Administratief Medewerker'),false,
+    'Non-teaching staff without a class must not get teacher accounts');
+})();
+
+(function testPreserveNewUsernameWhenIdentityMatchesExactName() {
+  const db=baseDb();
+  db.users.push({id:'staff-old',role:'teacher',name:'Sam Jansen',
+    username:'old.login',passwordHash:'x',active:true,classIds:[]});
+  const rows=[{Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'new.login','Gekoppelde groepen':'Klas A'}];
+  const result=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true,
+    applyDeactivations:true,actorId:'admin'});
+  assert.equal(result.summary.needsReview,0);
+  assert.equal(result.summary.missingTeachersFromImport,0);
+  assert.equal(result.summary.created,0);
+  assert.equal(result.db.users.find(u=>u.id==='staff-old').username,'new.login',
+    'Full sync must respect a newly supplied unused ParnasSys username');
+})();
+
+(function testManualSelectedVerifiedEmailAccountIsNotOverriddenByUsername() {
+  const db=baseDb();
+  db.users.push(
+    {id:'staff-a',role:'teacher',name:'Sam Jansen',username:'old-a',
+      passwordHash:'x',active:true,classIds:[]},
+    {id:'staff-b',role:'teacher',name:'Sam Jansen',username:'old-b',
+      passwordHash:'x',active:true,classIds:[]},
+  );
+  const store=core.upsertLink(core.emptyAuthStore(),{
+    accountType:'staff',accountId:'staff-b',email:'sam.b@koraaledu.nl',
+    sub:'verified-staff-b',linkedBy:'test',
+  }).store;
+  const row={Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'old-a',Schoolmail:'sam.b@koraaledu.nl',
+    'Gekoppelde groepen':'Klas A'};
+  const review=runSchoolSync({kind:'teacher',db:structuredClone(db),store,
+    rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'staff-a'}});
+  assert.equal(review.summary.needsReview,1);
+  assert.equal(review.summary.missingTeachersFromImport,0);
+  const chosen=runSchoolSync({kind:'teacher',db:structuredClone(db),store,
+    rows:[row],fullSchoolSync:true,manualMatches:{'staff:2':'staff-b'}});
+  assert.equal(chosen.summary.needsReview,0);
+  assert.equal(chosen.summary.missingTeachersFromImport,1);
+  assert.deepStrictEqual(chosen.db.users.find(u=>u.id==='staff-b').classIds.length,1);
+  assert.deepStrictEqual(chosen.db.users.find(u=>u.id==='staff-a').classIds,[]);
+  assert.equal(chosen.db.users.find(u=>u.id==='staff-a').name,'Sam Jansen');
+  assert.equal(chosen.db.users.find(u=>u.id==='staff-b').username,'old-b',
+    'Taken username must not be reassigned from staff A');
+})();
+
+(function testIncompleteStaffExportRejectsMassOutflow() {
+  const db=baseDb();
+  db.users.push({id:'old',role:'teacher',name:'Old Teacher',
+    username:'old',passwordHash:'x',active:true,classIds:[]});
+  for(const rows of [[],[{Roepnaam:'',Achternaam:'',
+    'Gekoppelde groepen':'Klas A'}]]){
+    assert.throws(()=>runSchoolSync({kind:'teacher',
+      db:structuredClone(db),store:core.emptyAuthStore(),rows,
+      fullSchoolSync:true,applyDeactivations:true}),
+    /medewerkersexport|medewerkernaam/i);
+  }
 })();
 
 (function testRenamedTeacherMatchedByUsernameStaysActive() {
