@@ -101,7 +101,7 @@ function baseDb() {
   assert.strictEqual(result.summary.unchanged, 1);
 })();
 
-(function testMissingStudentBecomesInactiveOnlyOnConfirmedApply() {
+(function testEmptyMissingStudentDeletedOnlyOnConfirmedApply() {
   const db = baseDb();
   db.classes.push({ id: 'class-a', name: 'Klas A', studentIds: ['keep', 'leave'], teacherIds: [] });
   db.students.push(
@@ -128,10 +128,11 @@ function baseDb() {
     kind: 'student', db: JSON.parse(JSON.stringify(db)), store: core.emptyAuthStore(), rows,
     fullSchoolSync: true, applyDeactivations: true, actorId: 'admin',
   });
-  const inactive = applied.db.students.find((entry) => entry.id === 'leave');
-  assert.strictEqual(inactive.active, false);
-  assert.deepStrictEqual(inactive.classIds, []);
-  assert.strictEqual(applied.summary.deactivated, 1);
+  assert.strictEqual(applied.db.students.some(entry => entry.id === 'leave'), false);
+  assert.deepStrictEqual(applied.db.classes[0].studentIds,['keep']);
+  assert.strictEqual(applied.summary.deactivated, 0);
+  assert.strictEqual(applied.summary.deleted,1);
+  assert.strictEqual(applied.summary.deletionEligible,1);
 })();
 
 (function testMissingStudentWithBorrowedBookCreatesExitTask() {
