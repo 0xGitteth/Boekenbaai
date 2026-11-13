@@ -176,7 +176,7 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       byIsbn.get(isbn).push(copy);
     }
   }
-  const matched=new Map(),found=[],notInCollection=[];
+  const found=[],notInCollection=[];
   // Prioritize concrete Excel loans/locations over empty duplicate rows.
   // This allows two pupils holding copies of the same ISBN to map onto two
   // different existing internal copy IDs deterministically.
@@ -217,7 +217,6 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       // Rows that merely list an ISBN without a known location/borrower do
       // not consume a physical copy or generate administrative actions.
       usedCopies.add(located.copy.id);
-      matched.set(located.copy.id,[row]);
       found.push({row,copy:located.copy});
     }
   }
@@ -321,25 +320,24 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       return {ok:false,error:'unsafe_assignment_choice'};
     }
   }
-  // No selected row may give two physical copies of the same edition to
-  // one pupil. Compare both the current state and all proposed changes.
-  const selectedStudentEditions = new Set();
-  for (const diff of differences) {
-    if (selected.get(diff.id)!=='apply' || diff.kind!=='loan'
-      || diff.after?.type!=='student') continue;
-    const key=JSON.stringify([diff.after.id,diff.editionIsbn]);
-    if(selectedStudentEditions.has(key))
-      return {ok:false,error:'duplicate_corrected_student_edition'};
-    selectedStudentEditions.add(key);
-  }
-  // Only unambiguous explicit new values are selected automatically.
-  // A single final confirmation still precedes any database mutation.
+  // Unambiguous explicit changes are suggested for the final batch review.
   for(const d of differences) {
     const explicitlySelected=selected.get(d.id);
     const automatic=!explicitlySelected && (d.kind==='loan'||d.kind==='location')
       && !d.blankSource && !d.reason;
     d.choice=explicitlySelected||(automatic?'apply':'pending');
     d.automatic=Boolean(automatic);
+  }
+  // Prevent two proposed copies of one edition going to the same student,
+  // including proposals that were automatically selected from the Excel.
+  const selectedStudentEditions = new Set();
+  for (const diff of differences) {
+    if(diff.choice!=='apply' || diff.kind!=='loan'
+      || diff.after?.type!=='student') continue;
+    const key=JSON.stringify([diff.after.id,diff.editionIsbn]);
+    if(selectedStudentEditions.has(key))
+      return {ok:false,error:'duplicate_corrected_student_edition'};
+    selectedStudentEditions.add(key);
   }
   const pending=differences.filter(x=>x.choice==='pending').length;
   const apply=differences.filter(x=>x.choice==='apply'
