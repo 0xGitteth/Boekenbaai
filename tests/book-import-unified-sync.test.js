@@ -243,4 +243,62 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(sync.summary.metadataFields,1);
   assert.equal(sync.assignments.differences.find(d=>d.kind==='issue'),undefined);
 }
+
+{
+  const current=db();
+  // A former borrower from an old sheet must not replace the current
+  // borrower of the very same physical book.
+  const receipt=excelLoanReceiptKey('copy-1',{type:'student',id:'lisa'});
+  current.books[0].borrowedBy='tim';
+  current.books[0].status='borrowed';
+  current.students[0].borrowedBooks=[];
+  current.students[1].borrowedBooks=[{bookId:'copy-1'}];
+  current.books.pop(); // no other free copies to use
+  const restored=plan([source(0,loan('lisa','Lisa Leerling'))],current,{
+    parts:parts({loans:true}),loanReceipts:[receipt],
+  });
+  assert.equal(restored.ok,true);
+  assert.equal(restored.summary.proposedLoans,0,
+    'An old workbook must not replace Tim with its former borrower Lisa');
+  assert.equal(restored.assignments.differences[0].choice,'keep');
+  assert.equal(restored.summary.previouslyImportedLoans,1);
+}
+{
+  const current=db();
+  const correction=source(0,{},{
+    description:'Door beheer gecorrigeerd',title:'Gecorrigeerde titel',
+  },{
+    description:{source:'manual',detail:'review_correction'},
+    title:{source:'manual',detail:'review_correction'},
+  });
+  const updated=plan([correction],current,{
+    parts:parts({fields:{description:true,title:true}}),
+  });
+  assert.equal(updated.ok,true);
+  assert.deepEqual(updated.metadata.updates.map(d=>d.field).sort(),
+    ['description','title'],'Explicit review corrections must be applied');
+  const enriched=plan([source(0,{},{
+    description:'Automatisch gevonden tekst',
+  },{description:{source:'metadata',detail:'enrichment'}})],current,{
+    parts:parts({fields:{description:true}}),
+  });
+  assert.equal(enriched.metadata.updates.length,0);
+}
+{
+  const current=db();
+  for(const field of ['publishedYear','pageCount']){
+    current.books[0][field]=field==='publishedYear'?2001:100;
+    const invalid=source(0,{},{
+      [field]:null,
+    },{[field]:{source:'excel',raw:'onbekend'}});
+    invalid.status='warning';
+    const predicted=plan([invalid],current,{
+      parts:parts({fields:{[field]:true}}),acceptWarnings:true,
+    });
+    assert.equal(predicted.ok,true);
+    assert.equal(predicted.summary.metadataFields,0,
+      'Invalid numeric Excel cells may never clear saved '+field);
+    assert.equal(predicted.summary.pendingMetadata,1);
+  }
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
