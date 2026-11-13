@@ -795,15 +795,30 @@
     // move the administrator to the top of the import panel.
     function render() {
       const scrollY = Number(window.scrollY) || 0;
+      const previousList = results.querySelector('.bb-review__rowlist');
+      const listScrollTop = previousList?.scrollTop || 0;
       const focusedRow = document.activeElement?.closest?.('[data-review-row-key]');
       const rowKey = focusedRow?.dataset.reviewRowKey;
       const rowTop = focusedRow?.getBoundingClientRect().top;
+      const rowTopInList = focusedRow && previousList?.contains(focusedRow)
+        ? rowTop - previousList.getBoundingClientRect().top : null;
       const focusedControlIndex = focusedRow
         ? Array.from(focusedRow.querySelectorAll('button, input, select, textarea'))
           .indexOf(document.activeElement) : -1;
       renderContents();
+      const list = results.querySelector('.bb-review__rowlist');
       const replacement = rowKey && Array.from(results.querySelectorAll('[data-review-row-key]'))
         .find(row => row.dataset.reviewRowKey === rowKey);
+      if (list) {
+        // On desktop the book list itself scrolls (max-height: 620px). Its
+        // scrollTop would otherwise reset to zero on every choice.
+        list.scrollTop = listScrollTop;
+        if (replacement && rowTopInList !== null) {
+          const nextRelativeTop = replacement.getBoundingClientRect().top
+            - list.getBoundingClientRect().top;
+          list.scrollTop += nextRelativeTop - rowTopInList;
+        }
+      }
       const newTop = replacement && Number.isFinite(rowTop)
         ? window.scrollY + replacement.getBoundingClientRect().top - rowTop : scrollY;
       window.scrollTo({ top: Math.max(0, newTop), behavior: 'instant' });
