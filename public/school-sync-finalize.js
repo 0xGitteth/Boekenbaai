@@ -68,6 +68,31 @@
     return { label, checkbox };
   }
 
+
+  // Keep the selected person's row at the same position while the server
+  // recalculates the import preview. Removing the entire list during a request
+  // would clamp the page scroll back towards the top.
+  function captureReviewPosition(resultHost, control) {
+    const row = control?.closest?.('[data-school-sync-key]');
+    if (!row || !resultHost.contains(row)) return null;
+    return {
+      scrollY: Number(window.scrollY) || 0,
+      rowKey: row.dataset.schoolSyncKey,
+      rowTop: row.getBoundingClientRect().top,
+    };
+  }
+
+  function restoreReviewPosition(resultHost, position) {
+    if (!position) return;
+    const matching = Array.from(resultHost.querySelectorAll('[data-school-sync-key]'))
+      .find(row => row.dataset.schoolSyncKey === position.rowKey);
+    const scrollY = matching
+      ? window.scrollY + matching.getBoundingClientRect().top - position.rowTop
+      : position.scrollY;
+    window.scrollTo({ top: Math.max(0, scrollY), behavior: 'instant' });
+    matching?.querySelector('select')?.focus({ preventScroll: true });
+  }
+
   function renderReviewRows(kind, resultHost, payload, rerun) {
     const reviews = (payload.results || []).filter((entry) => entry.status === 'needs-review');
     if (!reviews.length) return;
@@ -94,6 +119,7 @@
       );
       const select = document.createElement('select');
       const key=kind==='teacher'?review.sourceKey:review.studentNumber;
+      row.dataset.schoolSyncKey = 'match:' + kind + ':' + key;
       select.append(new Option('Kies het bestaande account…', ''));
       for (const candidate of review.candidates || []) {
         const classes = (candidate.classNames || []).join(', ');
@@ -110,7 +136,7 @@
         syncState[kind].preview = null;
         syncState[kind].revision += 1;
         select.disabled = true;
-        await rerun();
+        await rerun(select);
       });
       if(kind==='teacher'&&!(review.candidates||[]).length){
         row.append(info,make('p',{className:'hint',text:
@@ -149,6 +175,7 @@
     });
     for (const student of missing) {
       const row = make('div', { className: 'school-sync__review-row' });
+      row.dataset.schoolSyncKey = 'legacy-student:' + student.id;
       const details = make('div');
       details.append(
         make('strong', { text: student.name }),
@@ -165,7 +192,7 @@
         syncState[kind].preview = null;
         syncState[kind].revision += 1;
         select.disabled = true;
-        await rerun();
+        await rerun(select);
       });
       row.append(details, select);
       list.append(row);
@@ -196,6 +223,7 @@
       'Bekijk '+accounts.length+' oude docenten en pas uitzonderingen aan'}));
     for(const teacher of accounts){
       const row=make('div',{className:'school-sync__review-row'});
+      row.dataset.schoolSyncKey='legacy-teacher:'+teacher.id;
       const info=make('div');
       info.append(make('strong',{text:teacher.name}));
       const select=document.createElement('select');
@@ -207,7 +235,7 @@
         else delete syncState.teacher.teacherResolutions[teacher.id];
         syncState.teacher.preview=null;syncState.teacher.revision++;
         select.disabled=true;
-        await rerun();
+        await rerun(select);
       });
       row.append(info,select);details.append(row);
     }
@@ -393,15 +421,22 @@
     controls.append(fileLabel, full.label, previewButton);
     block.append(controls, message, results);
 
-    async function runPreview() {
+    async function runPreview(control) {
       if (!syncState[kind].fileData) {
         message.textContent = 'Kies eerst een Excelbestand.';
         return;
       }
+      const position = captureReviewPosition(results, control);
       const requestRevision = syncState[kind].revision + 1;
       syncState[kind].revision = requestRevision;
       syncState[kind].preview = null;
-      results.replaceChildren();
+      if (position) {
+        // Keep the old results at their current height while the new preview
+        // loads; disable the stale actions until the server responds.
+        for (const el of results.querySelectorAll('button, input, select')) el.disabled = true;
+      } else {
+        results.replaceChildren();
+      }
       const fileData = syncState[kind].fileData;
       const fullSchoolSync = full.checkbox.checked;
       const manualMatches = { ...syncState[kind].manualMatches };
@@ -429,8 +464,17 @@
         syncState[kind].preview = payload;
         message.textContent = 'Voorcontrole gereed.';
         renderPreview(kind, results, payload, fullSchoolSync, runPreview, applySync);
+        restoreReviewPosition(results, position);
       } catch (error) {
-        if (requestRevision === syncState[kind].revision) message.textContent = error.message;
+        if (requestRevision === syncState[kind].revision) {
+          message.textContent = error.message;
+          if (position) {
+            // An unsuccessful recalculation must not leave an old preview with
+            // disabled controls looking like an actionable current review.
+            results.replaceChildren();
+            window.scrollTo({ top: position.scrollY, behavior: 'instant' });
+          }
+        }
       } finally {
         if (requestRevision === syncState[kind].revision) previewButton.disabled = false;
       }
