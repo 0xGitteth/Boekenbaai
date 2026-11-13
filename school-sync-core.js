@@ -514,38 +514,53 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
 
 function prepareTeacherRows(db,rows,manualMatches={},store={}){
   const prepared=[],reviews=[];
+  const activeTeachers=(db.users||[]).filter(u=>u.role==='teacher'&&u.active!==false);
+  const verifiedLinks=authCore.normalizeStore(store).links||[];
   rows.forEach((row,index)=>{
     const name=personNameFromRow(row);
-    const matched=(db.users||[]).filter(user=>user.role==='teacher'&&
-      user.active!==false&&normalizePersonName(user.name)===normalizePersonName(name));
-    if(matched.length<2){prepared.push(row);return;}
+    const exact=activeTeachers.filter(u=>
+      normalizePersonName(u.name)===normalizePersonName(name));
     const username=normalizedRowValue(row,
       ['gebruikersnaam','username','user','login']).toLowerCase();
     const email=authCore.normalizeEmail(normalizedRowValue(row,
       ['schoolmail','schoolmailadres','school e-mail','schoolemail','email',
         'e-mail','e-mailadres','emailadres','googleemail']));
-    const byUsername=username?matched.find(user=>
-      String(user.username||'').toLowerCase()===username):null;
-    const byLink=email?(authCore.normalizeStore(store).links||[]).find(link=>
-      link.accountType==='staff'&&authCore.normalizeEmail(link.email)===email):null;
-    const byEmail=byLink?matched.find(user=>user.id===byLink.accountId):null;
-    if((byUsername||byEmail)&&(!byUsername||!byEmail||byUsername.id===byEmail.id)){
+    const byUsername=username?activeTeachers.find(u=>
+      String(u.username||'').toLowerCase()===username):null;
+    const link=email?verifiedLinks.find(entry=>entry.accountType==='staff'
+      &&authCore.normalizeEmail(entry.email)===email):null;
+    const byEmail=link?activeTeachers.find(u=>u.id===link.accountId):null;
+    const conflicts=exact.length>0&&(
+      exact.length>1 && !byUsername && !byEmail ||
+      byUsername && !exact.some(u=>u.id===byUsername.id) ||
+      byEmail && !exact.some(u=>u.id===byEmail.id) ||
+      byEmail && byUsername && byEmail.id!==byUsername.id);
+    if(!conflicts){
       prepared.push(row);return;
     }
+    const candidates=[...exact,byUsername,byEmail]
+      .filter(Boolean).filter((u,i,all)=>all.findIndex(v=>v.id===u.id)===i);
     const key='staff:'+(index+2);
     const choice=manualMatches?.[key];
-    const chosen=matched.find(user=>user.id===choice&&user.username);
-    if(chosen){
+    const chosen=candidates.find(u=>u.id===choice&&u.username);
+    // Verified Google identity links take precedence. Never let a manual
+    // username override silently repoint another employee's school email.
+    if(chosen&&(!byEmail||byEmail.id===chosen.id)){
       prepared.push({...row,Gebruikersnaam:chosen.username});
       return;
     }
     reviews.push({
       status:'needs-review',row:index+2,name,sourceKey:key,
-      reason:'Meerdere bestaande docentaccounts hebben deze naam. '
-        +'Kies het juiste bestaande account voordat je de volledige '
-        +'medewerkerslijst synchroniseert.',
-      candidates:matched.map(user=>({id:user.id,name:user.name||'',
-        username:user.username||''})),
+      reason:byEmail&&exact.some(u=>u.id!==byEmail.id)
+        ?'Naam en gekoppelde schoolmail verwijzen naar verschillende accounts. '
+          +'Controleer de identiteit voordat je een medewerker uitschrijft.'
+        :byUsername&&exact.some(u=>u.id!==byUsername.id)
+          ?'Naam en gebruikersnaam verwijzen naar verschillende docentaccounts. '
+            +'Selecteer het juiste account.'
+          :'Meerdere docentaccounts hebben dezelfde naam. '
+            +'Kies het juiste bestaande account voordat je synchroniseert.',
+      candidates:candidates.filter(u=>!byEmail||u.id===byEmail.id)
+        .map(u=>({id:u.id,name:u.name||'',username:u.username||''})),
     });
   });
   return {prepared,reviews};
