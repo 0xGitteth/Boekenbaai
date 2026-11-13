@@ -78,6 +78,9 @@ De server probeert boekinformatie standaard eerst op te halen bij Open Library. 
 
 ### Gecontroleerde Excelimport: gewone import of administratie corrigeren
 
+De import gebruikt uitsluitend kolommen met een bekende naam of ondersteunde alternatieve kolomnaam. Extra kolommen zoals `Kolom1` en toekomstige eigen notitiekolommen worden volledig genegeerd, ook als daarin `a`, `n`, `gaat van de lijst` of een andere instructie staat. Ze verschijnen niet in de controle en veranderen niets aan de boekregistratie. Betekenisvolle aanduidingen in wél herkende kolommen behouden hun bestaande werking.
+
+
 De beheerder kiest vóór het uploaden de importsoort. De **gewone boekimport** behoudt de bestaande werkwijze: nieuwe boeken of ontbrekende fysieke exemplaren toevoegen, met een aparte optie om de huidige voorraad op ISBN te vergelijken. Een ontbrekende titel, leerling of klas in Excel is **nooit** automatisch een verwijder- of inleveropdracht.
 
 **Administratie corrigeren** is een afzonderlijke, expliciete handeling voor al bestaande exemplaren. Deze modus haalt geen nieuwe ISBN-metadata op en voegt geen boeken toe. Boekenbaai koppelt een Excelrij uitsluitend aan één herkenbaar fysiek exemplaar: bij meerdere exemplaren van dezelfde editie is een individuele exemplaarbarcode vereist. Per verschil zie je de huidige registratie en de Excelwaarde. Je kiest voor **corrigeren**, **behouden** of **later controleren**. Onzekere identificaties kunnen niet automatisch worden toegepast.
