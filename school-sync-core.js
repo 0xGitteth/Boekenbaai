@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const authCore = require('./google-auth-core');
 const {
   applyPeopleImport,
   normalizeKey,
@@ -22,7 +23,7 @@ function normalizePersonName(value) {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('nl-NL')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .replace(/\s+/g, ' ');
 }
@@ -272,7 +273,7 @@ function recomputeResultCounts(result) {
   result.summary.unchanged = statuses.filter((status) => status === 'unchanged').length;
 }
 
-function prepareStudentRows(db, rows, manualMatches = {}) {
+function prepareStudentRows(db, rows, manualMatches = {}, store = {}) {
   const prepared = [];
   const reviews = [];
   const incomingNumbers = new Set();
@@ -295,9 +296,39 @@ function prepareStudentRows(db, rows, manualMatches = {}) {
       student?.id && student.active !== false &&
       normalizePersonName(student.name) === normalizePersonName(name));
     if (exact.length === 1) {
+      // The importer gives verified schoolmail/username matches precedence
+      // over name. Never pre-bind an account if either explicit identity
+      // points elsewhere, as that would override the stronger identifier.
+      const sourceUsername=normalizedRowValue(row,
+        ['gebruikersnaam','username','user','login']).toLowerCase();
+      const sourceEmail=authCore.normalizeEmail(normalizedRowValue(row,
+        ['schoolmail','schoolmailadres','school e-mail','schoolemail','email',
+          'e-mail','e-mailadres','emailadres','googleemail']));
+      const byUsername=sourceUsername ? (db.students||[]).find(student=>
+        String(student?.username||'').trim().toLowerCase()===sourceUsername) : null;
+      const link=sourceEmail ? (authCore.normalizeStore(store).links||[]).find(entry=>
+        entry?.accountType==='student' &&
+        authCore.normalizeEmail(entry?.email)===sourceEmail) : null;
+      const byEmail=link ? (db.students||[]).find(student=>student.id===link.accountId) : null;
+      const conflicts=[byUsername,byEmail].filter(account=>
+        account && account.id!==exact[0].id);
+      if (conflicts.length) {
+        const unique=[exact[0],...conflicts].filter((student,index,array)=>
+          array.findIndex(other=>other.id===student.id)===index);
+        reviews.push({
+          row:index+2,status:'needs-review',name,studentNumber,classes,
+          reason:'Naam en gebruikersnaam of schoolmail verwijzen naar verschillende '
+            +'leerlingaccounts. Controleer de koppeling handmatig.',
+          candidates:unique.filter(student=>student.active!==false &&
+            !getParnassysStudentNumber(student)).map(student=>({
+            id:student.id,name:student.name||'',
+            classNames:studentClassNames(db,student),
+          })),
+        });
+        return;
+      }
       // The people importer has stricter accent/punctuation matching.
-      // Establish the verified ParnasSys number first, so its unique
-      // normalized-name match cannot be treated as a departed old account.
+      // Establish the ParnasSys number first for a unique normalized match.
       const oldNumber = getParnassysStudentNumber(exact[0]);
       if (!oldNumber) setParnassysStudentNumber(exact[0], studentNumber);
       if (oldNumber && oldNumber !== studentNumber) {
@@ -588,7 +619,7 @@ function runSchoolSync(input = {}) {
   let reviews = [];
   let incomingNumbers = new Set();
   if (kind === 'student') {
-    const prepared = prepareStudentRows(db, rows, input.manualMatches || {});
+    const prepared = prepareStudentRows(db, rows, input.manualMatches || {}, store);
     preparedRows = prepared.prepared;
     reviews = prepared.reviews;
     incomingNumbers = prepared.incomingNumbers;
