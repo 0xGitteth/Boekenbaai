@@ -143,6 +143,67 @@ for(const applyDeactivations of [false,true]){
   'A numbered but nameless row in a full export must block all exits');
 }
 
+const unicodeDb={
+  books:[],users:[],history:[],
+  readingRecords:[{id:'old-reading',subjectType:'student',subjectId:'han-old',finished:true}],
+  students:[{id:'han-old',name:'王伟',active:true,borrowedBooks:[],classIds:['a']}],
+  classes:[{id:'a',name:'Klas A',studentIds:['han-old'],teacherIds:[]}],
+};
+const unicode=runSchoolSync({
+  kind:'student',db:structuredClone(unicodeDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'98001','Huidige groep':'Klas A',
+    Roepnaam:'张敏',Achternaam:''}],
+  fullSchoolSync:true,applyDeactivations:true,actorId:'admin',
+});
+assert.strictEqual(unicode.summary.created,1,
+  'Distinct Unicode names must not normalize into the same student');
+assert.strictEqual(unicode.db.students.find(x=>x.id==='han-old').active,false);
+assert.strictEqual(unicode.db.students.find(x=>x.id==='han-old').parnassysStudentNumber,undefined);
+assert.strictEqual(unicode.db.readingRecords[0].subjectId,'han-old',
+  'Historic reading records must not migrate to unrelated enrolled pupil');
+assert.strictEqual(unicode.db.students.find(x=>x.parnassysStudentNumber==='98001').name,'张敏');
+
+const usernameConflictDb={
+  books:[],users:[],history:[],
+  students:[
+    {id:'sam1',name:'Sam Jansen',username:'sam1',active:true,
+      borrowedBooks:[],classIds:['a']},
+    {id:'sam2',name:'Sam Janssen',username:'sam2',active:true,
+      borrowedBooks:[],classIds:['a']},
+  ],
+  classes:[{id:'a',name:'Klas A',studentIds:['sam1','sam2'],teacherIds:[]}],
+};
+const usernameConflict=runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'98002','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Gebruikersnaam:'sam2'}],
+  fullSchoolSync:true,
+});
+assert.strictEqual(usernameConflict.summary.needsReview,1);
+assert.strictEqual(usernameConflict.summary.legacyAccountsAutoExit,0);
+assert.deepStrictEqual(usernameConflict.results.find(x=>x.status==='needs-review')
+  .candidates.map(x=>x.id),['sam1','sam2']);
+assert.throws(()=>runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:core.emptyAuthStore(),
+  rows:[{Leerlingnummer:'98002','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Gebruikersnaam:'sam2'}],
+  fullSchoolSync:true,applyDeactivations:true,
+}),/twijfelgevallen/i,'Conflicting username and exact name must block apply');
+
+const linkedStore=core.upsertLink(core.emptyAuthStore(),{
+  accountType:'student',accountId:'sam2',email:'sam2@koraaledu.nl',
+  sub:'google-verified-sam2',linkedBy:'test',
+}).store;
+const emailConflict=runSchoolSync({
+  kind:'student',db:structuredClone(usernameConflictDb),store:linkedStore,
+  rows:[{Leerlingnummer:'98003','Huidige groep':'Klas A',
+    Roepnaam:'Sam',Achternaam:'Jansen',Schoolmail:'sam2@koraaledu.nl'}],
+  fullSchoolSync:true,
+});
+assert.strictEqual(emailConflict.summary.needsReview,1);
+assert.strictEqual(emailConflict.summary.legacyAccountsAutoExit,0,
+  'Verified schoolmail link takes precedence over unverified normalized name');
+
 assert.throws(
   () => runSchoolSync({
     kind: 'student',
