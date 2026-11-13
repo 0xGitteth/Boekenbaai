@@ -107,6 +107,28 @@ const book=(title,overrides={})=>({
   });
   assert.equal(ambiguous.rows[0].status,'conflict');
   assert.equal(ambiguous.rows[0].context.studentLoan.status,'ambiguous');
+  const sameFullName=[
+    {id:'same-1',name:'Sam Smith',firstName:'Sam',active:true,classIds:['skbb']},
+    {id:'same-2',name:'Sam Smith',firstName:'Sam',active:true,classIds:['obkt']},
+  ];
+  const sameAnalysis=await analyzeBookImportRows([book('Gelijke volledige naam',{
+    'Geleend door klas':'OndBKT','naam leerling':'Sam',
+  })],{students:sameFullName,classes});
+  assert.equal(sameAnalysis.rows[0].context.studentLoan.id,'same-2');
+  assert.deepEqual(resolveReviewedLoan(sameAnalysis.rows[0],
+    {students:sameFullName,classes}).borrower,
+    {type:'student',id:'same-2',name:'Sam Smith'},
+    'A global full-name collision must not block a class-qualified loan');
+  assert.equal(sameAnalysis.rows[0].context.classLoan,undefined);
+
+  // Ensure the editor exposes the filled source fields rather than blank
+  // boxes that could trick staff into clearing or overwriting valid context.
+  const fs=require('node:fs'),path=require('node:path');
+  const ui=fs.readFileSync(path.join(__dirname,'..','public/admin-book-import-review.js'),'utf8');
+  assert.match(ui,/field === 'fixedClass'/);
+  assert.match(ui,/row.context\.fixedLocation\.raw/);
+  assert.match(ui,/row.context\?\.studentClassHint\?\.label/);
+
   const corrected=await analyzeReviewedImport([book('Oude locatie',{
     'Vast in de klas van:':'StructuurBB',
   })],[{index:0,fields:{fixedClass:'T4'}}],{
