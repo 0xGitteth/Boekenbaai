@@ -85,9 +85,12 @@
 
   function restoreReviewPosition(resultHost, position) {
     if (!position) return;
-    const rows = Array.from(resultHost.querySelectorAll('[data-school-sync-key]'));
-    // A resolved match can disappear from the review. In that case, anchor
-    // the next remaining row instead of losing the user's place in the list.
+    // Closed details keep their child rows in the DOM. Their bounding boxes
+    // are zero and cannot be used for scroll anchoring.
+    const rows = Array.from(resultHost.querySelectorAll('[data-school-sync-key]'))
+      .filter(row => row.getClientRects().length > 0);
+    // A resolved match can disappear from the review. Anchor the next visible
+    // row; when no review rows remain, use the previous page position.
     const matching = rows.find(row => row.dataset.schoolSyncKey === position.rowKey)
       || (rows.length ? rows[Math.min(Math.max(0, position.rowIndex), rows.length - 1)] : null);
     const scrollY = matching
