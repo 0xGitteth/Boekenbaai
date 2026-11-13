@@ -4,7 +4,8 @@ const crypto = require('crypto');
 // A loan column in Excel represents a previously borrowed physical copy.
 // Accept only an exact, unique borrower match and one physical copy per row;
 // unknown check-out dates must never be invented.
-const { matchEntityByName } = require('./book-import-analysis-context');
+const { matchEntityByName, matchStudentWithClass } =
+  require('./book-import-analysis-context');
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 
 function resolveReviewedLoan(row, { students = [], classes = [] } = {}) {
@@ -24,7 +25,9 @@ function resolveReviewedLoan(row, { students = [], classes = [] } = {}) {
   }
   const kind = studentLoan ? 'student' : 'class';
   const directory = kind === 'student' ? students : classes;
-  const actual = matchEntityByName(desired.name, directory);
+  const actual = kind === 'student' && context.studentClassHint
+    ? matchStudentWithClass(desired.name, context.studentClassHint.label, students, classes)
+    : matchEntityByName(desired.name, directory);
   if (actual.status !== 'matched' || actual.matches[0].id !== desired.id) {
     return { ok: false, error: 'loan_borrower_changed' };
   }
