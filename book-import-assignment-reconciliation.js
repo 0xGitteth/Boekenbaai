@@ -191,35 +191,41 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   for(const row of prioritized) {
     if(row.status==='skipped')continue;
     const context=row.context||{};
-    // A source conflict is not proof that the physical book is missing.
-    // Report the underlying conflict before attempting any correction.
-    const located=['ready','warning'].includes(row.status)
-      ? findCopy(row,db,byBarcode,byIsbn,usedCopies)
-      : {error:context.studentLoan && context.classLoan
-        ? 'conflicting_excel_borrowers' : 'source_row_requires_review'};
+    // Plain ISBN rows with no explicit administration data are not changes.
     const relevant=Boolean(context.studentLoan||context.classLoan
-      ||context.fixedLocation||context.classContext?.length
-      ||context.libraryPresence);
+      ||context.fixedLocation||context.classContext?.length);
+    if(!relevant)continue;
+    const validSource=['ready','warning'].includes(row.status);
+    const loanCheck=validSource && (context.studentLoan||context.classLoan)
+      ? desiredLoan(row,db) : null;
+    const locationCheck=validSource && context.fixedLocation
+      ? desiredLocation(row,db) : null;
+    const sourceError=loanCheck?.error
+      ||(locationCheck?.error!=='class_context_requires_classification'
+        ? locationCheck?.error : null);
+    // An invalid borrower/location should not reserve an otherwise usable
+    // copy and cause a second, valid row to appear as new physical stock.
+    const located=!validSource
+      ? {error:context.studentLoan&&context.classLoan
+        ? 'conflicting_excel_borrowers':'source_row_requires_review'}
+      : sourceError ? {error:sourceError}
+        : findCopy(row,db,byBarcode,byIsbn,usedCopies);
     if(located.error) {
-      if(relevant && ['physical_copy_not_found','no_unallocated_copy'].includes(located.error)) {
+      if(['physical_copy_not_found','no_unallocated_copy'].includes(located.error)) {
         // Nothing can be corrected before this edition exists in the library.
         // The normal inventory import handles new books and their loans.
         notInCollection.push({
           worksheetRow:row.sourceRowNumber,title:row.book?.title||'',
           editionIsbn:row.book?.editionIsbn||'',
         });
-      } else if(relevant)found.push({id:row.index+':issue',rowIndex:row.index,
+      } else found.push({id:row.index+':issue',rowIndex:row.index,
         worksheetRow:row.sourceRowNumber,title:row.book?.title||'',
         editionIsbn:row.book?.editionIsbn||'',
         kind:'issue',reason:located.error,bookId:null});
       continue;
     }
-    if(relevant) {
-      // Rows that merely list an ISBN without a known location/borrower do
-      // not consume a physical copy or generate administrative actions.
-      usedCopies.add(located.copy.id);
-      found.push({row,copy:located.copy});
-    }
+    usedCopies.add(located.copy.id);
+    found.push({row,copy:located.copy});
   }
   const differences=found.filter(item=>item.kind==='issue');
   for(const {row,copy} of found.filter(item=>!item.kind)) {
