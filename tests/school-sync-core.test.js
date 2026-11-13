@@ -420,6 +420,31 @@ function baseDb() {
   assert.strictEqual(chosen.db.users.find(u=>u.id==='a').active,true);
 })();
 
+(function testConflictingTeacherIdentityPreventsAutomaticOffboarding() {
+  const db=baseDb();
+  db.users.push(
+    {id:'a',role:'teacher',name:'Sam Jansen',username:'sam-a',
+      passwordHash:'x',active:true,classIds:[]},
+    {id:'b',role:'teacher',name:'Alex de Vries',username:'sam-b',
+      passwordHash:'x',active:true,classIds:[]},
+  );
+  const row={Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'sam-b','Gekoppelde groepen':'Klas A'};
+  const first=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows:[row],fullSchoolSync:true});
+  assert.strictEqual(first.summary.needsReview,1);
+  assert.strictEqual(first.summary.missingTeachersFromImport,0,
+    'A name conflicting with another account username may not cause automatic departure');
+  assert.deepStrictEqual(first.results.find(x=>x.status==='needs-review')
+    .candidates.map(x=>x.id),['a','b']);
+  const chosen=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'a'}});
+  assert.strictEqual(chosen.summary.needsReview,0);
+  assert.strictEqual(chosen.summary.missingTeachersFromImport,1);
+  assert.strictEqual(chosen.db.users.find(x=>x.id==='a').active,true);
+})();
+
 (function testIncompleteStaffExportRejectsMassOutflow() {
   const db=baseDb();
   db.users.push({id:'old',role:'teacher',name:'Old Teacher',
