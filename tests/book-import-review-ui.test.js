@@ -153,3 +153,32 @@ assert.strictEqual(pendingFieldEdits.afterSelect.requiresRecheck, true,
 assert.strictEqual(pendingFieldEdits.afterSelect.accepted, false);
 
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
+
+
+// Large administrative syncs must show only genuine exceptions by default.
+// Clear Excel proposals are already selected and belong in a collapsed,
+// inspectable detail section, not at the start of a 70-row manual queue.
+{
+  const sectionStart = script.indexOf('    function renderAssignmentReconciliation() {');
+  const sectionEnd = script.indexOf('    // Rebuilding a long review', sectionStart);
+  assert.ok(sectionStart >= 0 && sectionEnd > sectionStart,
+    'Missing administrative exception-first review UI');
+  const reviewUi = script.slice(sectionStart, sectionEnd);
+  const manual = reviewUi.indexOf('const exceptions = differences.filter(diff => !diff.automatic);');
+  const auto = reviewUi.indexOf('const proposals = differences.filter(diff => diff.automatic);');
+  const manualRender = reviewUi.indexOf('renderReviewGroup(exceptions, \'manual\')');
+  const automaticRender = reviewUi.indexOf('renderReviewGroup(proposals, \'automatic\')');
+  assert.ok(manual >= 0 && auto > manual && manualRender > auto
+    && automaticRender > manualRender,
+  'Unresolved exceptions must appear before the optional automatic proposals');
+  assert.match(reviewUi, /const suggested = make\('details', 'bb-review__suggested'\)/);
+  assert.match(reviewUi, /suggested.open = automaticExpanded/);
+  assert.match(reviewUi, /const openChoices = differences.filter\(diff =>/);
+  assert.match(reviewUi, /choices.set\(diff.id, \{ id: diff.id, action: 'keep' \}\)/);
+  assert.match(reviewUi, /assignmentResolutions: \[\.\.\.choices.values\(\)\]/,
+    'Bulk keep must pass the complete choices through the review endpoint first');
+  assert.match(reviewUi, /window.confirm\('Voor ' \+ openChoices.length/,
+    'Bulk keeping unresolved issues requires an explicit administrator confirmation');
+  assert.match(reviewUi, /applyButton.disabled = !summary.readyToApply \|\| hasUnreviewedChanges\(\)/,
+    'No unresolved or unreviewed choice can be applied');
+}
