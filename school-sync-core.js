@@ -573,6 +573,15 @@ function runSchoolSync(input = {}) {
       error.code='INCOMPLETE_PARNASSYS_IDENTITY';
       throw error;
     }
+    const firstNameless = rows.findIndex(row =>
+      studentNumberFromRow(row) && !personNameFromRow(row));
+    if (firstNameless!==-1) {
+      const error=new Error('De volledige ParnasSys-export bevat een leerling zonder '
+        +'naam (Excelrij '+(firstNameless+2)+'). '
+        +'Controleer het bestand voordat je leerlingen uitschrijft.');
+      error.code='INCOMPLETE_PARNASSYS_IDENTITY';
+      throw error;
+    }
   }
 
   let preparedRows = rows;
