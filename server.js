@@ -3606,6 +3606,15 @@ function resolveMetadataLookupKey(metadataIsbn, barcode) {
 function findStudentById(db, id) {
   return db.students.find((student) => student.id === id);
 }
+// Narrow exception for returning a book still borrowed by a pupil who has
+// left school. Do not grant former teachers access to unrelated student
+// editing, reading histories or any other book operations.
+function mayReturnFormerPupilBook(db,user,student){
+  return user?.role==='teacher' && student?.active===false &&
+    (db.studentExitTasks||[]).some(task=>task.status==='open' &&
+      task.studentId===student.id &&
+      (task.allowedTeacherIds||[]).includes(user.id));
+}
 
 function getTeacherClassIds(db, teacherId) {
   if (!teacherId) {
@@ -7416,7 +7425,8 @@ async function handleApi(req, res, requestUrl) {
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
         student = findStudentById(db, body.studentId);
-        if (student && !mayManageStudent(db, user, student)) {
+        if (student && !mayManageStudent(db, user, student)
+          && !mayReturnFormerPupilBook(db,user,student)) {
           return sendJson(res, 403, { message: 'Je kunt alleen uitleningen van jouw leerlingen innemen.' });
         }
       }
