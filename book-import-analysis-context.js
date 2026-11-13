@@ -269,6 +269,7 @@ function applyContext(mapped, row, options) {
       row.context.fixedLocation = {
         status: 'resolved',
         label: match.status === 'matched' ? match.matches[0].name : locations[0],
+        raw: fixedClass,
         source: 'explicit_fixed_class',
       };
     } else {
