@@ -23,6 +23,8 @@ const { createImportStageStore, importStageView, buildStageApplyPlan } = require
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
+const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
+  actualAssignmentPreview } = require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
@@ -5256,10 +5258,17 @@ async function handleApi(req, res, requestUrl) {
         let activated = false;
         try {
         const body = await parseBody(req, 35 * 1024 * 1024);
-        if (body.mode !== undefined && !['create', 'inventory_sync', 'assignment_reconcile'].includes(body.mode)) {
+        if (body.mode !== undefined && !['create', 'inventory_sync', 'assignment_reconcile', 'unified_sync'].includes(body.mode)) {
           return sendJson(res, 400, { message: 'Ongeldige importmodus.' });
         }
-        const mode = ['inventory_sync','assignment_reconcile'].includes(body.mode) ? body.mode : 'create';
+        const mode = ['inventory_sync','assignment_reconcile','unified_sync'].includes(body.mode)
+          ? body.mode : 'create';
+        const selectedParts=mode==='unified_sync' ? normalizeParts(body.syncParts)
+          : {ok:true,value:null};
+        if(!selectedParts.ok)return sendJson(res,400,{
+          message:'Selecteer welke onderdelen of kolommen je wilt synchroniseren.',
+          error:selectedParts.error,
+        });
         if (mode === 'assignment_reconcile' && body.enrichIsbn === true) {
           return sendJson(res, 400, { message: 'Administratie corrigeren gebruikt geen externe boekverrijking.', error:'enrichment_not_allowed' });
         }
@@ -5269,7 +5278,7 @@ async function handleApi(req, res, requestUrl) {
         // Inventory-sync rows describe desired TOTAL stock, not copies to
         // create. An existing school library may exceed the create cap.
         // The inventory planner independently caps NEW additions at 5,000.
-        const maxAnalyzedCopies = mode === 'inventory_sync' ? 1_500_000
+        const maxAnalyzedCopies = ['inventory_sync','unified_sync'].includes(mode) ? 1_500_000
           : mode === 'assignment_reconcile' ? 1500 : 5000;
         const workbook = readBookImportWorkbook(XLSX, body.file, {
           maxRows: 1500, maxCopies: maxAnalyzedCopies,
@@ -5319,7 +5328,7 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, maxRows: 1500, maxCopies: maxAnalyzedCopies,
+          mode, syncParts:selectedParts.value, maxRows: 1500, maxCopies: maxAnalyzedCopies,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
@@ -5343,7 +5352,12 @@ async function handleApi(req, res, requestUrl) {
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
         const latestDatabase = loadDb();
-        analysis.decisions = mode === 'assignment_reconcile'
+        analysis.decisions = mode === 'unified_sync'
+          ? buildUnifiedBookImport(analysis,latestDatabase,{
+            parts:selectedParts.value,loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+            existingFollowups:latestDatabase.bookImportFollowups,
+          })
+          : mode === 'assignment_reconcile'
           ? buildAssignmentPreview(analysis, latestDatabase)
           : mode === 'inventory_sync'
             ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false,
@@ -5353,7 +5367,7 @@ async function handleApi(req, res, requestUrl) {
           : buildReviewDecisions(analysis, latestDatabase.books, {
             students: latestDatabase.students, classes: latestDatabase.classes,
           });
-        if (!analysis.decisions.ok && ['inventory_sync','assignment_reconcile'].includes(mode)) {
+        if (!analysis.decisions.ok && ['inventory_sync','assignment_reconcile','unified_sync'].includes(mode)) {
           return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
             error: analysis.decisions.error });
         }
@@ -5394,13 +5408,13 @@ async function handleApi(req, res, requestUrl) {
           if (typeof body.acceptWarnings !== 'boolean') {
             return sendJson(res, 400, { message: 'Geef expliciet aan of waarschuwingen geaccepteerd worden.' });
           }
-          const choices = stage.options.mode === 'inventory_sync'
+          const choices = ['inventory_sync','unified_sync'].includes(stage.options.mode)
             ? normalizeInventoryResolutions(body.inventoryResolutions)
             : { ok: true, values: [] };
-          const assignments = stage.options.mode === 'assignment_reconcile'
+          const assignments = ['assignment_reconcile','unified_sync'].includes(stage.options.mode)
             ? normalizeAssignmentResolutions(body.assignmentResolutions)
             : { ok: true, values: [] };
-          if (!choices.ok || (stage.options.mode !== 'inventory_sync'
+          if (!choices.ok || (!['inventory_sync','unified_sync'].includes(stage.options.mode)
             && body.inventoryResolutions !== undefined)) {
             return sendJson(res, 400, { message: 'Ongeldige voorraadkeuzes.',
               error: choices.error || 'invalid_sync_resolutions' });
@@ -5412,11 +5426,18 @@ async function handleApi(req, res, requestUrl) {
               error:'assignment_corrections_not_allowed',
             });
           }
-          if (!assignments.ok || (stage.options.mode !== 'assignment_reconcile'
+          if (!assignments.ok || (!['assignment_reconcile','unified_sync'].includes(stage.options.mode)
             && body.assignmentResolutions !== undefined)) {
             return sendJson(res, 400, { message: 'Ongeldige keuzes voor administratieve correcties.',
               error: assignments.error || 'invalid_assignment_choices' });
           }
+          const metadataChoices=stage.options.mode==='unified_sync'
+            ?normalizedMetadataChoice(body.metadataResolutions)
+            :{ok:true,values:[]};
+          if(!metadataChoices.ok ||(stage.options.mode!=='unified_sync'
+            &&body.metadataResolutions!==undefined))
+            return sendJson(res,400,{message:'Ongeldige keuzes bij boekgegevens.',
+              error:metadataChoices.error||'metadata_choices_not_allowed'});
           // A review is a fresh retry opportunity. Retain successful metadata.
           stage.options.releaseRetryableLookups?.();
           // Authentication may have loaded an older snapshot while a large
@@ -5433,7 +5454,15 @@ async function handleApi(req, res, requestUrl) {
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
           const latestDatabase = loadDb();
-          reviewed.decisions = stage.options.mode === 'assignment_reconcile'
+          reviewed.decisions = stage.options.mode === 'unified_sync'
+            ? buildUnifiedBookImport(reviewed,latestDatabase,{
+              parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
+              inventoryResolutions:choices.values,assignmentResolutions:assignments.values,
+              metadataResolutions:metadataChoices.values,
+              loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+              existingFollowups:latestDatabase.bookImportFollowups,
+            })
+            : stage.options.mode === 'assignment_reconcile'
             ? buildAssignmentPreview(reviewed, latestDatabase, assignments.values)
             : stage.options.mode === 'inventory_sync'
               ? buildInventorySyncPreview(reviewed, latestDatabase.books, {
@@ -5446,12 +5475,12 @@ async function handleApi(req, res, requestUrl) {
               acceptWarnings: body.acceptWarnings,
               students: latestDatabase.students, classes: latestDatabase.classes,
             });
-          if (!reviewed.decisions.ok && ['inventory_sync','assignment_reconcile'].includes(stage.options.mode)) {
+          if (!reviewed.decisions.ok && ['inventory_sync','assignment_reconcile','unified_sync'].includes(stage.options.mode)) {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
           }
           bookImportStageStore.finishReview(stage, reviewed, body.corrections,
-            body.acceptWarnings, choices.values, assignments.values);
+            body.acceptWarnings, choices.values, assignments.values,metadataChoices.values);
           return sendJson(res, 200, importStageView(stage));
         } finally {
           bookImportStageStore.abortReview(stage);
