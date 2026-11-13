@@ -635,6 +635,19 @@ function runSchoolSync(input = {}) {
   };
 
   validateSchoolSyncRows(kind, rows);
+  if(kind==='teacher'&&options.fullSchoolSync){
+    if(!rows.length){
+      const error=new Error('Een volledige medewerkersexport mag niet leeg zijn.');
+      error.code='INCOMPLETE_PARNASSYS_STAFF';throw error;
+    }
+    const missingName=rows.findIndex(row=>!personNameFromRow(row));
+    if(missingName!==-1){
+      const error=new Error('De volledige medewerkersexport bevat een rij zonder '
+        +'medewerkernaam (Excelrij '+(missingName+2)+'). '
+        +'Controleer dit voordat je accounts uitschrijft.');
+      error.code='INCOMPLETE_PARNASSYS_STAFF';throw error;
+    }
+  }
   // A complete export must have an identity for every listed pupil.
   // Otherwise even a pupil visibly present in Excel could be classified
   // as absent and auto-exited. Blank spacer rows are ignored.
@@ -679,9 +692,24 @@ function runSchoolSync(input = {}) {
     actorId: input.actorId,
   });
   recomputeResultCounts(result);
+  if(kind==='teacher'&&options.fullSchoolSync){
+    const failures=(result.results||[]).filter(row=>
+      row.status==='skipped'||row.emailState==='conflict');
+    if(failures.length){
+      result.summary.needsReview=(result.summary.needsReview||0)+failures.length;
+      for(const failure of failures)result.results.push({
+        status:'needs-review',
+        row:failure.row,
+        name:failure.name||'Onbekende medewerker',
+        reason:'Deze medewerker is niet eenduidig verwerkt. '
+          +(failure.reason||failure.message||'Controleer de export en de accountkoppeling.'),
+        candidates:[],
+      });
+    }
+  }
   if (kind==='student') cancelReturnedStudents(result.db);
   else cancelReturnedTeachers(result.db);
-  result.summary.needsReview = reviews.length;
+  result.summary.needsReview = (result.summary.needsReview||0) + reviews.length;
   result.results.push(...reviews);
 
   if (kind === 'student') {
