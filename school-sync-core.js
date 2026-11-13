@@ -551,15 +551,16 @@ function processTeacherDeactivations(result, originalDb, rows, options,
       continue;
     }
     const choice=resolutions?.[teacher.id];
-    if(choice==='keep')continue;
-    if(choice!==undefined && choice!=='exit'){
+    if(choice!==undefined && !['exit','keep'].includes(choice)){
       result.summary.needsReview=(result.summary.needsReview||0)+1;
+      result.results.push({status:'teacher-legacy-needs-review',id:teacher.id,
+        name:teacher.name||'',reason:'Ongeldige keuze: controleer dit account opnieuw.'});
       continue;
     }
-    missing.push(teacher);
+    if(choice!=='keep')missing.push(teacher);
     result.results.push({
       status:'teacher-legacy-reviewed',id:teacher.id,
-      name:teacher.name||'',chosen:'exit',
+      name:teacher.name||'',chosen:choice==='keep'?'keep':'exit',
       classes:teacher.classIds || [],
       reason:'Niet gekoppeld aan volledige medewerkersexport; '
         +'standaard uitschrijven tenzij beheer expliciet behoudt.',
@@ -578,6 +579,8 @@ function processTeacherDeactivations(result, originalDb, rows, options,
       });
     }
   }
+  result.summary.teacherLegacyAccounts=(result.results||[])
+    .filter(x=>x.status==='teacher-legacy-reviewed').length;
   result.summary.missingTeachersFromImport=missing.length;
   result.summary.teachersWithoutGroups=(result.db.users||[])
     .filter(u=>u.role==='teacher'&&u.active!==false
