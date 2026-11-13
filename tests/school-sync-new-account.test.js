@@ -309,9 +309,15 @@ const teacherMissingLater = runSchoolSync({
   actorId: 'admin',
 });
 assert.strictEqual(
-  teacherMissingLater.db.users.find((entry) => entry.id === 'legacy-teacher').active,
+  teacherMissingLater.db.users.some((entry) => entry.id === 'legacy-teacher'),
   false,
-  'Een later ontbrekende gematchte ParnasSys-docent moet bij een volledige sync wel kunnen worden gedeactiveerd'
+  'Een gematchte maar later ontbrekende docent zonder historische gegevens wordt '
+    +'na bevestiging volledig verwijderd'
+);
+assert.strictEqual(teacherMissingLater.summary.teacherDeleted,1);
+assert.deepStrictEqual(
+  teacherMissingLater.db.classes.find(klass=>klass.id==='teacher-class-a').teacherIds,[],
+  'Een vertrokken docent behoudt geen klasrechten'
 );
 
 const uiSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'school-sync-finalize.js'), 'utf8');
