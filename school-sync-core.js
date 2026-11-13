@@ -333,7 +333,7 @@ function largeTeacherRemovalThreshold(activeCount) {
 }
 
 function processMissingStudents(result, originalDb, incomingNumbers, options,
-  legacyResolutions = {}) {
+  legacyResolutions = {}, pendingMatchReviews = []) {
   const activeNumberedBefore = (originalDb.students || []).filter(
     (student) => student?.active !== false && getParnassysStudentNumber(student)
   );
@@ -348,9 +348,13 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   // Older manually created accounts often have no ParnasSys number. They
   // cannot be treated as current pupils OR school leavers automatically:
   // prompt the administrator to classify each account individually.
+  const potentialMatches = new Set(pendingMatchReviews.flatMap(review =>
+    (review.candidates || []).map(candidate => candidate.id)));
   const legacyAccounts = options.fullSchoolSync
     ? (result.db.students || []).filter(student =>
-      student?.id && student.active !== false && !getParnassysStudentNumber(student))
+      student?.id && student.active !== false &&
+      !getParnassysStudentNumber(student) &&
+      !potentialMatches.has(student.id))
     : [];
   const confirmedLegacyExits = [];
   let pendingLegacy = 0;
@@ -540,7 +544,7 @@ function runSchoolSync(input = {}) {
 
   if (kind === 'student') {
     processMissingStudents(result, originalDb, incomingNumbers, options,
-      input.legacyResolutions || {});
+      input.legacyResolutions || {}, reviews);
   } else {
     const incomingTeacherIds = new Set(
       (result.results || [])
