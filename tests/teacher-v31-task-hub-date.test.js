@@ -94,6 +94,14 @@ assert.equal(emitted[1].detail.status,'error');
 assert.equal(emitted[1].detail.classes.length,0);
 ctx.publish('ready');
 assert.equal(emitted.length,2,'A successful update cannot be published without role data');
+ctx.state={...classState, formerStudentExits:[
+  {studentId:'past',status:'open'},{studentId:'done',status:'completed'}]};
+ctx.publish('ready');
+assert.equal(emitted.length,3);
+assert.equal(emitted[2].detail.exitCount,1,
+  'Only open former-pupil tasks contribute to teacher dashboard counts');
+assert.match(teacher,/Uitschrijven oud-leerlingen/);
+assert.match(teacher,/exitTaskCount/);
 
 const taskStart=teacher.indexOf('  function renderMentorTasks() {');
 const taskEnd=teacher.indexOf('  function installLoanDuePreview()',taskStart);
@@ -156,10 +164,13 @@ assert.ok(renderStart>0&&renderEnd>renderStart);
 const adminNode=element('section');
 const teacherNode=element('section');
 const adminView=element('div');
+const adminTaskHost=element('section');
+let historicRendered=false,exitRendered=false;
 let removed=false;
 const existingPanel={remove(){removed=true;}};
 const adminRenderDoc={
   body:{classList:{contains(){return false;}}},
+  getElementById(id){return id==='bb-admin-v31-tasks'?adminTaskHost:null;},
   querySelector(selector){
     const refs={
       '#teacher-dashboard':{classList:{contains(cls){return cls==='hidden';}}},
@@ -174,6 +185,8 @@ const adminRenderDoc={
 const adminRender=vm.createContext({state:{role:'admin'},document:adminRenderDoc,
   make(tag,options={}){return element(tag,options.className,options.text);},
   renderClassContext(){},renderRequests(){},renderStudents(){},renderOutgoing(){},
+  renderFormerClasses(){historicRendered=true;},
+  renderExitTasks(host){exitRendered=host===adminTaskHost;},
 });
 new vm.Script(students.slice(renderStart,renderEnd)+'\nthis.runRender=render;')
   .runInContext(adminRender);
@@ -184,5 +197,7 @@ assert.equal(adminView.children[0].tag,'section','Administrator gets live manage
 // The new element mock does not map options.id by default; ensure new view was
 // actually appended into the administrator slot instead of the hidden teacher.
 assert.equal(teacherNode.children.length,0);
+assert.equal(historicRendered,true,'Former classroom snapshot must be shown');
+assert.equal(exitRendered,true,'Exit tasks must be placed in admin task hub');
 
 console.log('Teacher tasks, class transfer counts, date overlay, button alignment and email placeholder regressions OK');

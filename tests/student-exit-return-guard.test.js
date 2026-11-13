@@ -1,0 +1,32 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
+const client=fs.readFileSync(path.join(__dirname,'..','public/student-management.js'),'utf8');
+const start=server.indexOf('function mayReturnFormerPupilBook(');
+const end=server.indexOf('\n}',start);
+assert.ok(start>0&&end>start);
+const mayReturn=new Function('return ('+server.slice(start,end+2)+')')();
+const teacher={role:'teacher',id:'former'};
+const stranger={role:'teacher',id:'other'};
+const pupil={id:'student1',active:false};
+const db={studentExitTasks:[{studentId:'student1',status:'open',
+  allowedTeacherIds:['former']}]};
+assert.equal(mayReturn(db,teacher,pupil),true);
+assert.equal(mayReturn(db,stranger,pupil),false);
+assert.equal(mayReturn(db,{role:'student',id:'former'},pupil),false);
+assert.equal(mayReturn(db,teacher,{id:'student2',active:false}),false);
+assert.equal(mayReturn(db,teacher,{...pupil,active:true}),false);
+db.studentExitTasks[0].status='completed';
+assert.equal(mayReturn(db,teacher,pupil),false);
+assert.match(server,/!mayManageStudent\(db, user, student\)\s*&& !mayReturnFormerPupilBook/);
+assert.match(client,/BoekenbaaiReadCompletion\.ask\(book\.title\)/);
+assert.match(client,/studentId:task\.studentId,finished/);
+assert.match(client,/\/check-in/);
+assert.match(server,/studentHasLibraryData\(db,student\)/,
+  'Deleting a pupil with reading history must be refused');
+assert.match(server,/db\.studentExitTasks\|\|\[\]\)\.some\(task=>task\.studentId===student\.id/,
+  'An archived pupil with an exit task may not be deleted');
+
+console.log('Former mentor return rights limited to active exit tasks; Ja\/Nee question remains mandatory.');

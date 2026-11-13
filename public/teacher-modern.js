@@ -22,6 +22,7 @@
   let importTaskCount = null;
   let importTaskError = false;
   let mentorTaskCount = null;
+  let exitTaskCount = null;
   let readingAlertCount = null;
   let readingAlertError = false;
   let nav, scrim, menu;
@@ -269,8 +270,9 @@
   function refreshTaskMetric() {
     const node = document.querySelector('#bb-teacher-v31-metrics > :nth-child(4) strong');
     if (node) node.textContent = importTaskCount === null || mentorTaskCount === null
-      || readingAlertCount === null
-      ? '—' : String(importTaskCount + mentorTaskCount + readingAlertCount);
+      || readingAlertCount === null || exitTaskCount === null
+      ? '—' : String(importTaskCount + mentorTaskCount
+        + readingAlertCount + exitTaskCount);
     renderDashboardTasks();
   }
   function renderDashboardTasks() {
@@ -280,6 +282,8 @@
     const mentorReady = taskSummary.status === 'ready' && Number.isSafeInteger(mentorTaskCount);
     const importReady = !importTaskError && Number.isSafeInteger(importTaskCount);
     const readingReady = !readingAlertError && Number.isSafeInteger(readingAlertCount);
+    const exitReady = taskSummary.status === 'ready'
+      && Number.isSafeInteger(exitTaskCount);
     if (mentorReady && mentorTaskCount > 0) {
       addAction(host, 'Klaswissels en koppelingen',
         mentorTaskCount + (mentorTaskCount === 1 ? ' openstaand verzoek' : ' openstaande verzoeken'), 'tasks');
@@ -292,12 +296,17 @@
       addAction(host, 'Gewijzigde leesantwoorden',
         readingAlertCount + (readingAlertCount === 1 ? ' melding om te lezen' : ' meldingen om te lezen'), 'tasks');
     }
+    if (exitReady && exitTaskCount > 0) {
+      addAction(host, 'Uitschrijven oud-leerlingen',
+        exitTaskCount + (exitTaskCount === 1 ? ' openstaande controle' : ' openstaande controles'), 'tasks');
+    }
     if (taskSummary.status === 'error' || importTaskError || readingAlertError) {
       host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state',
         'Niet alle taken zijn momenteel beschikbaar.'));
-    } else if (!mentorReady || !importReady || !readingReady) {
+    } else if (!mentorReady || !importReady || !readingReady || !exitReady) {
       host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state', 'Taken laden…'));
-    } else if (mentorTaskCount === 0 && importTaskCount === 0 && readingAlertCount === 0) {
+    } else if (mentorTaskCount === 0 && importTaskCount === 0 && readingAlertCount === 0
+      && exitTaskCount === 0) {
       host.append(el('p', 'bb-teacher-v31-hint bb-teacher-v31-task-state',
         'Je hebt momenteel geen openstaande taken.'));
     }
@@ -539,6 +548,8 @@
       ? taskSummary.classes.reduce((sum, row) =>
         sum + (row.incoming || 0) + (row.google || 0) + (row.outgoing || 0), 0)
       : null;
+    exitTaskCount=taskSummary.status==='ready'
+      && Number.isSafeInteger(detail.exitCount)?detail.exitCount:null;
     renderMentorTasks();
     refreshTaskMetric();
   });

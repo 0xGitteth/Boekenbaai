@@ -78,18 +78,22 @@ const start=teacher.indexOf('  function renderDashboardTasks() {');
 const end=teacher.indexOf('  function renderMentorTasks() {',start);
 assert.ok(start>0&&end>start,'Extract actual production task rendering');
 const taskRenderer=teacher.slice(start,end);
-function simulate(mentor,imports,status='ready',importError=false,reading=0,readingError=false){
+function simulate(mentor,imports,status='ready',importError=false,reading=0,readingError=false,exits=0){
   const host={nodes:[],replaceChildren(){this.nodes=[];},append(node){this.nodes.push(node);}};
   const ctx={
     document:{querySelector(sel){assert.equal(sel,'#bb-teacher-v31-tasks-summary .bb-teacher-v31-open-task-list');return host;}},
     taskSummary:{status},mentorTaskCount:mentor,importTaskCount:imports,importTaskError:importError,
     readingAlertCount:reading, readingAlertError:readingError,
+    exitTaskCount:exits,
     el:(tag,cls,label)=>({tag,cls,label}),
     addAction:(where,title,subtitle,destination)=>where.append({action:true,title,subtitle,destination}),
   };
   vm.runInNewContext(taskRenderer+'\nrenderDashboardTasks();',ctx,{timeout:1000});
   return host.nodes;
 }
+const exitsOnly=simulate(0,0,'ready',false,0,false,2);
+assert.equal(exitsOnly.length,1);
+assert.equal(exitsOnly[0].title,'Uitschrijven oud-leerlingen');
 const noTasks=simulate(0,0);
 assert.equal(noTasks.length,1);
 assert.match(noTasks[0].label,/Je hebt momenteel geen openstaande taken/);

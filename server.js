@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const {studentHasLibraryData} = require('./student-exit-workflow');
 const {
   currentImportOwner, isImportOwnerConfirmedDead, sameImportOwner,
   isImportLeaseActive, IMPORT_HEARTBEAT_MS, IMPORT_LEASE_MS,
@@ -3605,6 +3606,15 @@ function resolveMetadataLookupKey(metadataIsbn, barcode) {
 
 function findStudentById(db, id) {
   return db.students.find((student) => student.id === id);
+}
+// Narrow exception for returning a book still borrowed by a pupil who has
+// left school. Do not grant former teachers access to unrelated student
+// editing, reading histories or any other book operations.
+function mayReturnFormerPupilBook(db,user,student){
+  return user?.role==='teacher' && student?.active===false &&
+    (db.studentExitTasks||[]).some(task=>task.status==='open' &&
+      task.studentId===student.id &&
+      (task.allowedTeacherIds||[]).includes(user.id));
 }
 
 function getTeacherClassIds(db, teacherId) {
@@ -7416,7 +7426,8 @@ async function handleApi(req, res, requestUrl) {
         student = findStudentById(db, user.id);
       } else if (ensureRole(user, ['teacher', 'admin'])) {
         student = findStudentById(db, body.studentId);
-        if (student && !mayManageStudent(db, user, student)) {
+        if (student && !mayManageStudent(db, user, student)
+          && !mayReturnFormerPupilBook(db,user,student)) {
           return sendJson(res, 403, { message: 'Je kunt alleen uitleningen van jouw leerlingen innemen.' });
         }
       }
@@ -8042,6 +8053,17 @@ async function handleApi(req, res, requestUrl) {
       const student = findStudentById(db, studentDeleteMatch[1]);
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+      }
+      // Deleting a historical account must not orphan reading records or
+      // permanent former-class exit tasks. Never silently return borrowed
+      // books as a side effect of deletion.
+      if (studentHasLibraryData(db,student)
+        ||(db.studentExitTasks||[]).some(task=>task.studentId===student.id)) {
+        return sendJson(res,409,{
+          message:'Dit account heeft nog bibliotheekgegevens of een uitschrijftaak. '
+            +'Maak de uitleningen eerst af en behoud de historische registratie. '
+            +'Het account kan wel inactief blijven.',
+        });
       }
       db.students = db.students.filter((entry) => entry.id !== student.id);
       for (const klass of db.classes) {

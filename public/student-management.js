@@ -583,6 +583,128 @@
     panel.append(details);
   }
 
+  // Historical class membership is read-only and never placed back in
+  // the current class's studentIds. Only the former teacher(s) and admin
+  // receive these sanitized records from the server.
+  function formerStudentExits() {
+    return Array.isArray(state?.formerStudentExits)
+      ? state.formerStudentExits.filter(entry=>entry.status!=='cancelled') : [];
+  }
+
+  function renderFormerClasses(panel) {
+    const exits=formerStudentExits();
+    if (!exits.length) return;
+    const section=make('section',{
+      className:'student-management__section student-management__former-classes',
+    });
+    const details=document.createElement('details');
+    const header=make('summary',{text:'Voormalige klassen en oud-leerlingen'});
+    details.append(header,make('p',{
+      className:'hint',text:'Dit is een historisch overzicht. Deze leerlingen '
+        +'tellen niet mee in de huidige klas. Accounts zonder bewaarde '
+        +'bibliotheekgegevens zijn verwijderd en staan hier daarom niet.',
+    }));
+    const groups=new Map();
+    for(const exit of exits)for(const klass of exit.lastClasses||[]) {
+      const key=klass.id||klass.name;
+      if(!groups.has(key))groups.set(key,{name:klass.name,students:new Map()});
+      groups.get(key).students.set(exit.studentId,exit);
+    }
+    for(const group of groups.values()) {
+      const classBox=document.createElement('details');
+      classBox.className='student-management__class';
+      classBox.append(make('summary',{
+        text:group.name+' · '+group.students.size+' bewaarde oud-leerling'
+          +(group.students.size===1?'':'en'),
+      }));
+      for(const exit of group.students.values()){
+        classBox.append(make('p',{className:'hint',
+          text:exit.studentName+' · '+(exit.status==='open'
+            ?'Uitschrijfcontrole open':'Uitschrijfcontrole afgerond'),
+        }));
+      }
+      details.append(classBox);
+    }
+    if(!groups.size)details.append(make('p',{className:'hint',
+      text:'Bij deze oud-leerlingen is geen klas geregistreerd.'}));
+    section.append(details);panel.append(section);
+  }
+
+  function renderExitTasks(host) {
+    const previous=document.getElementById('student-exit-tasks-panel');
+    previous?.remove();
+    const tasks=formerStudentExits().filter(entry=>entry.status==='open');
+    if (!host || !tasks.length) return;
+    const section=make('section',{
+      className:'panel student-management student-management__exit-tasks',
+      id:'student-exit-tasks-panel',
+    });
+    section.append(make('h3',{text:'Uitschrijven oud-leerlingen ('+tasks.length+')'}));
+    section.append(make('p',{className:'hint',
+      text:'Deze leerlingen ontbreken in de volledige ParnasSys-lijst. '
+        +'Ze zijn niet meer gekoppeld aan een huidige klas. Controleer '
+        +'openstaande boeken en rond hun uitschrijftaak af. '
+        +'Lees- en uitleenhistorie blijft bewaard.',
+    }));
+    for(const task of tasks) {
+      const card=make('article',{className:'student-management__request'});
+      const info=make('div',{className:'student-management__request-info'});
+      info.append(make('strong',{text:task.studentName}));
+      info.append(make('span',{text:'Voormalige klas: '
+        +((task.lastClasses||[]).map(k=>k.name).join(', ')||'Niet geregistreerd'),
+      }));
+      const loans=task.borrowedBooks||[];
+      info.append(make('span',{text:loans.length
+        ?'Nog in bezit: '+loans.map(b=>b.title).join(', ')
+        :'Geen boeken meer in bezit',
+      }));
+      for(const book of loans) {
+        const returnBook=make('button',{
+          className:'btn btn--ghost',type:'button',
+          text:'Innemen: '+book.title,
+        });
+        returnBook.addEventListener('click',async()=>{
+          if(!window.BoekenbaaiReadCompletion?.ask){
+            window.alert('De vraag of het boek uitgelezen is, is niet beschikbaar. '
+              +'Vernieuw de pagina en probeer opnieuw.');
+            return;
+          }
+          const finished=await window.BoekenbaaiReadCompletion.ask(book.title);
+          if(typeof finished!=='boolean')return;
+          returnBook.disabled=true;
+          try{
+            await api('/api/books/'+encodeURIComponent(book.id)+'/check-in',{
+              method:'POST',body:{studentId:task.studentId,finished},
+            });
+            await refresh();
+          }catch(error){window.alert(error.message);returnBook.disabled=false;}
+        });
+        info.append(returnBook);
+      }
+      const done=make('button',{
+        className:'btn btn--secondary',type:'button',
+        text:'Uitschrijfcontrole afronden',
+      });
+      done.disabled=loans.length>0;
+      done.title=loans.length?'Neem eerst alle boeken in':'Controle afronden';
+      done.addEventListener('click',async()=>{
+        if(!window.confirm('Uitschrijfcontrole van '+task.studentName
+          +' afronden? Het account blijft inactief en de leesgeschiedenis '
+          +'wordt bewaard.'))return;
+        done.disabled=true;
+        try{
+          await api('/api/mentor/student-exits/'
+            +encodeURIComponent(task.id)+'/complete',{
+            method:'POST',body:{revision:task.revision,confirm:true},
+          });
+          await refresh();
+        }catch(error){window.alert(error.message);done.disabled=false;}
+      });
+      card.append(info,done);section.append(card);
+    }
+    host.append(section);
+  }
+
   function render() {
     if (!state) return;
     const dashboard = document.querySelector('#teacher-dashboard');
@@ -610,7 +732,12 @@
     renderRequests(panel);
     renderStudents(panel);
     renderOutgoing(panel);
+    renderFormerClasses(panel);
     host.append(panel);
+    const tasksHost=state.role==='admin'
+      ?document.getElementById('bb-admin-v31-tasks')
+      :document.querySelector('[data-teacher-view="tasks"]');
+    renderExitTasks(tasksHost||panel);
   }
 
   function publishTeacherTasks(status) {
@@ -622,8 +749,10 @@
       google: googleRequestsForClass(klass).length,
       outgoing: outgoingForClass(klass).length,
     })) : [];
+    const exitCount=status==='ready'
+      ?(state?.formerStudentExits||[]).filter(task=>task.status==='open').length:0;
     window.dispatchEvent(new CustomEvent('boekenbaai:mentor-tasks-updated', {
-      detail: { status, classes },
+      detail: { status, classes, exitCount },
     }));
   }
   async function refresh() {
@@ -656,6 +785,7 @@
       activeClassId = '';
       // A stale button must never be clickable with a null backing state.
       document.getElementById('student-management-panel')?.remove();
+      document.getElementById('student-exit-tasks-panel')?.remove();
     });
     refresh();
     // Watch only actual role visibility changes. A body-wide DOM observer
