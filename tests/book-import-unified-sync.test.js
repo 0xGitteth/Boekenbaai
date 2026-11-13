@@ -86,6 +86,20 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(metadataOnly.metadata.updates[0].field,'description');
   assert.deepEqual(metadataOnly.metadata.updates[0].bookIds,['copy-1','copy-2']);
   assert.equal(metadataOnly.summary.readyToApply,true);
+  const renamed=source(0,{},{
+    title:'Oorlogswinter (nieuw)',author:'Nieuwe auteur',
+    authors:['Nieuwe auteur'],
+  },{
+    title:{source:'excel',raw:'Oorlogswinter (nieuw)'},
+    author:{source:'excel',raw:'Nieuwe auteur'},
+  });
+  const renamedEdition=plan([renamed],current,{
+    parts:parts({books:true,fields:{title:true,author:true}}),
+  });
+  assert.equal(renamedEdition.ok,true);
+  assert.equal(renamedEdition.summary.blockedStock,0,
+    'Selected title/author changes are allowed without inventing another ISBN');
+  assert.equal(renamedEdition.summary.metadataFields,2);
   const onlyCover=plan([description],current,{
     parts:parts({fields:{coverUrl:true}}),
   });
