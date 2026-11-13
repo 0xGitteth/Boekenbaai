@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {
-  normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,
+  normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,assignmentSource,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
@@ -300,5 +300,21 @@ assert.equal(normalizeParts(undefined).value.books,true);
       'Invalid numeric Excel cells may never clear saved '+field);
     assert.equal(predicted.summary.pendingMetadata,1);
   }
+}
+
+{
+  const current=db();
+  const unmatched=source(0,{
+    studentLoan:{status:'unmatched',name:'Onbekend'},
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  },{barcode:'4711001'});
+  const locationOnly=assignmentSource({ok:true,rows:[unmatched]},
+    parts({locations:true}),current);
+  assert.equal(locationOnly.rows[0].context.studentLoan,undefined,
+    'Disabled loan fields must be removed from deferred task snapshots');
+  assert.equal(locationOnly.rows[0].context.fixedLocation.label,'Klas A');
+  const nothing=assignmentSource({ok:true,rows:[unmatched]},
+    parts({loans:true}),current);
+  assert.equal(nothing.rows[0].context.fixedLocation,undefined);
 }
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
