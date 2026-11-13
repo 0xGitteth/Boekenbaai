@@ -332,7 +332,8 @@ function largeTeacherRemovalThreshold(activeCount) {
   return Math.max(3, Math.ceil(Math.max(0, activeCount) * 0.2));
 }
 
-function processMissingStudents(result, originalDb, incomingNumbers, options) {
+function processMissingStudents(result, originalDb, incomingNumbers, options,
+  legacyResolutions = {}) {
   const activeNumberedBefore = (originalDb.students || []).filter(
     (student) => student?.active !== false && getParnassysStudentNumber(student)
   );
@@ -341,13 +342,45 @@ function processMissingStudents(result, originalDb, incomingNumbers, options) {
       .map((student) => getParnassysStudentNumber(student))
       .filter((number) => number && !incomingNumbers.has(number))
   );
-  const missing = (result.db.students || []).filter(
+  const numberedMissing = (result.db.students || []).filter(
     (student) => student?.active !== false && missingNumbers.has(getParnassysStudentNumber(student))
   );
-
+  // Older manually created accounts often have no ParnasSys number. They
+  // cannot be treated as current pupils OR school leavers automatically:
+  // prompt the administrator to classify each account individually.
+  const legacyAccounts = options.fullSchoolSync
+    ? (result.db.students || []).filter(student =>
+      student?.id && student.active !== false && !getParnassysStudentNumber(student))
+    : [];
+  const confirmedLegacyExits = [];
+  let pendingLegacy = 0;
+  let keptLegacy = 0;
+  for (const student of legacyAccounts) {
+    const choice = legacyResolutions?.[student.id];
+    if (choice === 'exit') confirmedLegacyExits.push(student);
+    else if (choice === 'keep') keptLegacy++;
+    else {
+      pendingLegacy++;
+      result.summary.needsReview = (result.summary.needsReview || 0) + 1;
+      result.results.push({
+        status: 'legacy-needs-review', id: student.id,
+        name: student.name || 'Naam onbekend',
+        classes: studentClassNames(result.db, student),
+        reason: 'Oud leerlingaccount zonder ParnasSys-leerlingnummer. '
+          + 'Controleer of deze leerling nog op school zit.',
+      });
+    }
+  }
+  const missing = [...numberedMissing, ...confirmedLegacyExits];
+  result.summary.legacyAccountsWithoutNumber = legacyAccounts.length;
+  result.summary.legacyAccountsNeedsReview = pendingLegacy;
+  result.summary.legacyAccountsKept = keptLegacy;
+  result.summary.legacyAccountsConfirmedExit = confirmedLegacyExits.length;
   result.summary.missingFromImport = options.fullSchoolSync ? missing.length : 0;
   result.summary.largeRemovalWarning = Boolean(
-    options.fullSchoolSync && missing.length >= largeRemovalThreshold(activeNumberedBefore.length)
+    options.fullSchoolSync && missing.length >=
+      largeRemovalThreshold((originalDb.students || [])
+        .filter(student => student?.active !== false).length)
   );
   result.summary.deactivated = 0;
   result.summary.deactivationBlockedBorrowed = 0;
@@ -501,7 +534,8 @@ function runSchoolSync(input = {}) {
   result.results.push(...reviews);
 
   if (kind === 'student') {
-    processMissingStudents(result, originalDb, incomingNumbers, options);
+    processMissingStudents(result, originalDb, incomingNumbers, options,
+      input.legacyResolutions || {});
   } else {
     const incomingTeacherIds = new Set(
       (result.results || [])
