@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const {
   normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,
 }=require('../book-import-unified-sync');
+const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
 const source=(index,context={},extra={},provenance={})=>({
   index,sourceRowNumber:index+2,status:'ready',
@@ -157,5 +158,52 @@ assert.equal(normalizeParts(undefined).value.books,true);
     new Map([[0,[{id:'saved-copy'}]]]));
   assert.equal(assigned.differences[0].bookId,'saved-copy');
   assert.equal(current.books.length,2,'The virtual copy was never written to the database');
+}
+{
+  const database=db();
+  database.books[0].status='available';
+  database.books[0].borrowedBy=null;
+  database.students[0].borrowedBooks=[];
+  const receipt=excelLoanReceiptKey('copy-1',{type:'student',id:'lisa'});
+  const stale=plan([source(0,loan('lisa','Lisa Leerling'))],database,{
+    parts:parts({loans:true}),loanReceipts:[receipt],
+  });
+  assert.equal(stale.ok,true);
+  assert.equal(stale.summary.proposedLoans,0,
+    'Reimporting an old worksheet cannot recreate a returned loan');
+  assert.equal(stale.summary.previouslyImportedLoans,1);
+  assert.equal(stale.assignments.differences[0].choice,'keep');
+  assert.equal(stale.assignments.differences[0].previouslyImported,true);
+  assert.equal(database.books[0].borrowedBy,null);
+}
+{
+  const database=db();
+  const later=plan([source(0,{
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  },{barcode:'4711001'})],database,{
+    parts:parts({locations:true}),
+    assignmentResolutions:[{id:'0:location',action:'later'}],
+  });
+  assert.equal(later.ok,true);
+  assert.equal(later.summary.deferred,1);
+  assert.equal(later.summary.readyToApply,true,
+    'A deferred-only review can be confirmed and saved as a task');
+}
+{
+  const database=db();
+  const excel=source(0,{},{
+    description:'Nieuwe tekst',
+  },{description:{source:'excel',raw:'Nieuwe tekst'}});
+  const options={parts:parts({fields:{description:true}})};
+  const first=plan([excel],database,options);
+  assert.equal(first.ok,true);
+  const before=first.metadata.updates[0].beforeValues;
+  assert.equal(before[0].value,'Bestaande beschrijving');
+  database.books[0].description='Later door beheer aangepast';
+  const revised=plan([excel],database,options);
+  assert.equal(revised.ok,true);
+  assert.notDeepEqual(revised.metadata.updates[0].beforeValues,before,
+    'A concurrent metadata edit must invalidate the stored preview');
+  assert.notEqual(JSON.stringify(revised),JSON.stringify(first));
 }
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
