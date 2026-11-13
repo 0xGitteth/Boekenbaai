@@ -76,6 +76,7 @@
     ['tags', 'Tags'], ['themes', 'Thema’s'], ['coverUrl', 'Cover URL'],
     ['description', 'Beschrijving'], ['easyReading', 'Makkelijk lezen?'],
     ['examMaterial', 'Examenmateriaal'], ['classes', 'Klassen'],
+    ['fixedClass', 'Vast in de klas van'],
     ['studentLoan', 'Uitgeleend aan leerling'], ['classLoan', 'Uitgeleend aan klas'],
     ['libraryPresence', 'Aanwezig in bibliotheek'],
   ];
