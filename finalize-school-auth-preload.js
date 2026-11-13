@@ -699,7 +699,7 @@ async function handleCustomRoute(req, res, requestUrl) {
     sendJson(res,200,{tasks:teacherExitTaskSummary(context.db,context.user)});
     return true;
   }
-  const exitMatch=pathname.match(/^\\/api\\/admin\\/teacher-exits\\/([\\w-]+)\\/complete$/);
+  const exitMatch=pathname.match(/^\/api\/admin\/teacher-exits\/([\w-]+)\/complete$/);
   if(req.method==='POST' && exitMatch){
     if(!resolveAdmin(req)){
       sendJson(res,403,{message:'Alleen beheer kan docenten uitschrijven.'});
