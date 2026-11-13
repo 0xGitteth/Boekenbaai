@@ -154,17 +154,31 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   for(const [isbn,rows] of groups){
     const copies=editions.get(isbn);
     for(const field of METADATA_FIELDS.filter(field=>parts.fields[field])){
-      const sourceRows=rows.filter(row=>row.provenance?.[field]?.source==='excel'
-        &&nonempty(row.provenance[field].raw??(field==='author'
-          ?(row.provenance[field].headers||[]).length?'combined-author':'':null)));
+      const sourceRows=rows.filter(row=>{
+        const source=row.provenance?.[field];
+        // A value explicitly corrected in the import review is authoritative
+        // for a selected column. Automatic enrichment is not.
+        const fromExcel=source?.source==='excel';
+        const reviewed=source?.source==='manual'
+          &&source.detail==='review_correction';
+        return (fromExcel||reviewed)
+          &&(reviewed?nonempty(row.book?.[field])
+            :nonempty(source.raw??(field==='author'
+              ?(source.headers||[]).length?'combined-author':'':null)));
+      });
       if(!sourceRows.length)continue;
       const id=isbn+':'+field;
       const variants=new Map(sourceRows.map(row=>
         [JSON.stringify(metadataKey(field,row)),metadataKey(field,row)]));
       const validSources=sourceRows.every(row=>row.status==='ready'
         ||(row.status==='warning'&&acceptWarnings));
-      const conflict=variants.size!==1||!validSources;
       const next=variants.size===1?[...variants.values()][0]:null;
+      // Invalid years/page-counts parse to null even when the Excel cell
+      // contains text. A general warning acknowledgement never authorizes
+      // erasing existing, valid numeric metadata.
+      const unparsedNumeric=['publishedYear','pageCount'].includes(field)
+        &&(next===null||next===undefined||!Number.isFinite(Number(next)));
+      const conflict=variants.size!==1||!validSources||unparsedNumeric;
       const currentDifferent=copies.some(copy=>{
         const current=field==='author'?{value:copy.author,authors:copy.authors}:copy[field];
         return !equal(current,next);
@@ -241,7 +255,7 @@ function buildUnifiedBookImport(analysis,db,{
   const receipts=new Set(loanReceipts);
   const manuallyChosen=new Set(assignmentChoices.values.map(choice=>choice.id));
   const previouslyImported=assignments.differences.filter(diff=>{
-    if(diff.kind!=='loan'||diff.choice!=='apply'||diff.before?.type!=='none'
+    if(diff.kind!=='loan'||diff.choice!=='apply'
       ||manuallyChosen.has(diff.id))return false;
     const borrower={type:diff.after?.type,id:diff.after?.id};
     // ISBNs identify interchangeable physical copies. Historical receipts
@@ -297,6 +311,6 @@ function actualAssignmentPreview(preview,createdByRow){
   }))};
 }
 module.exports={
-  DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,
+  DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
   normalizedMetadataChoice,buildUnifiedBookImport,actualAssignmentPreview,
 };
