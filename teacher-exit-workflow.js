@@ -29,6 +29,14 @@ function teacherHasData(db,teacher){
   if(!teacher?.id)return true;
   if(Object.entries(teacher).some(([field,value])=>!ACCOUNT_FIELDS.has(field)&&hasValue(value)))
     return true;
+  // Do not discard other people's references to this teacher simply because
+  // the source collection also contains the teacher's own account record.
+  if(referencesId((db.users||[]).filter(u=>u?.id!==teacher.id),teacher.id))
+    return true;
+  // Current teacherIds are membership, not history; preserve other class
+  // links that might be added in future (e.g. historical mentorId fields).
+  if(referencesId((db.classes||[]).map(({teacherIds,...rest})=>rest),teacher.id))
+    return true;
   return Object.entries(db||{}).some(([field,value])=>
     !IGNORED_COLLECTIONS.has(field)&&referencesId(value,teacher.id));
 }
