@@ -145,7 +145,7 @@ function importStageView(stage) {
   if (TERMINAL_STATUSES.has(stage.status) || stage.status === 'preparing') {
     return {
       id: stage.id, status: stage.status, revision: stage.revision,
-      mode: ['create','inventory_sync','assignment_reconcile'].includes(stage.options?.mode) ? stage.options.mode : 'create',
+      mode: ['create','inventory_sync','assignment_reconcile','unified_sync'].includes(stage.options?.mode) ? stage.options.mode : 'create',
       fileName: stage.fileName, expiresAt: new Date(stage.expiresAt).toISOString(),
       result: stage.status === 'completed' ? stage.result : null,
     };
@@ -153,12 +153,13 @@ function importStageView(stage) {
   const analysis = stage.analysis;
   return {
     id: stage.id, status: stage.status, revision: stage.revision,
-    mode: ['create','inventory_sync','assignment_reconcile'].includes(stage.options?.mode) ? stage.options.mode : 'create',
+    mode: ['create','inventory_sync','assignment_reconcile','unified_sync'].includes(stage.options?.mode) ? stage.options.mode : 'create',
     fileName: stage.fileName, workbook: stage.workbook,
     expiresAt: new Date(stage.expiresAt).toISOString(),
     corrections: stage.corrections, acceptWarnings: stage.acceptWarnings,
-    inventoryResolutions: stage.options?.mode === 'inventory_sync' ? stage.inventoryResolutions : [],
-    assignmentResolutions: stage.options?.mode === 'assignment_reconcile' ? stage.assignmentResolutions : [],
+    syncParts: stage.options?.mode === 'unified_sync' ? stage.options.syncParts : null,
+    inventoryResolutions: ['inventory_sync','unified_sync'].includes(stage.options?.mode) ? stage.inventoryResolutions : [],
+    assignmentResolutions: ['assignment_reconcile','unified_sync'].includes(stage.options?.mode) ? stage.assignmentResolutions : [],
     summary: analysis?.summary || null,
     rows: analysis?.rows || [],
     decisions: analysis?.decisions || null,
