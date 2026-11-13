@@ -37,7 +37,7 @@ const book=(title,overrides={})=>({
   const mapped=mapImportRow(original);
   assert.equal(mapped.fields.fixedClass,'StructuurBB');
   assert.equal(mapped.fields.classLoan,'');
-  assert.deepEqual(mapped.unknown.map(x=>x.header),['Kolom1']);
+  assert.deepEqual(mapped.unknown,[]);
   const samples=[
     original,
     book('Vaste plek met leerling',{
