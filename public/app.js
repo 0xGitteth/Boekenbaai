@@ -5600,9 +5600,7 @@ function initStaffPage() {
             placeholderOption.value = '';
           }
           for (const student of availableStudents) {
-            const optionText = student.grade
-              ? `${student.name} (${student.grade})`
-              : student.name;
+            const optionText = student.name;
             const option = appendTextElement(select, 'option', optionText);
             if (option) {
               option.value = student.id;
@@ -5654,7 +5652,7 @@ function initStaffPage() {
       const nameSpan = appendTextElement(
         li,
         'span',
-        member.grade ? `${member.name} (${member.grade})` : member.name
+        member.name
       );
       if (nameSpan) {
         nameSpan.className = nameSpan.className || '';
@@ -6857,7 +6855,7 @@ function initStaffPage() {
               placeholderOption.value = '';
             }
             for (const student of availableStudents) {
-              const optionText = `${student.name} (${student.grade || 'leerling'})`;
+              const optionText = student.name;
               const option = appendTextElement(select, 'option', optionText);
               if (option) {
                 option.value = student.id;
