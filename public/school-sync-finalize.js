@@ -298,6 +298,7 @@
               confirmLargeRemoval,
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
+              expectedDeletionFingerprint:summary.deletionCandidateFingerprint||'',
             },
           });
         } catch (error) {
@@ -314,6 +315,7 @@
               confirmLargeRemoval: true,
               confirmPupilRemoval,
               expectedDeletionCount:Number(summary.deletionEligible||0),
+              expectedDeletionFingerprint:summary.deletionCandidateFingerprint||'',
             },
           });
         }
