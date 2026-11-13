@@ -979,7 +979,8 @@
           corrections: Array.from(corrections.values()),
           ...(inventorySync ? { inventoryResolutions: [...inventoryResolutions.values()] } : {}),
         });
-        rememberResponse(payload);
+        // Keep the current page and editor after checking corrected rows.
+        rememberResponse(payload, true);
         setNotice('Correcties en waarschuwingen zijn opnieuw gecontroleerd.');
       }, 'Wijzigingen worden opnieuw geanalyseerd…'));
       const applyButton = button(inventorySync ? 'Synchronisatie bevestigen' : 'Definitief importeren', 'btn');
