@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
 const crypto = require('crypto');
+const {studentHasLibraryData} = require('./student-exit-workflow');
 const {
   currentImportOwner, isImportOwnerConfirmedDead, sameImportOwner,
   isImportLeaseActive, IMPORT_HEARTBEAT_MS, IMPORT_LEASE_MS,
@@ -8052,6 +8053,17 @@ async function handleApi(req, res, requestUrl) {
       const student = findStudentById(db, studentDeleteMatch[1]);
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
+      }
+      // Deleting a historical account must not orphan reading records or
+      // permanent former-class exit tasks. Never silently return borrowed
+      // books as a side effect of deletion.
+      if (studentHasLibraryData(db,student)
+        ||(db.studentExitTasks||[]).some(task=>task.studentId===student.id)) {
+        return sendJson(res,409,{
+          message:'Dit account heeft nog bibliotheekgegevens of een uitschrijftaak. '
+            +'Maak de uitleningen eerst af en behoud de historische registratie. '
+            +'Het account kan wel inactief blijven.',
+        });
       }
       db.students = db.students.filter((entry) => entry.id !== student.id);
       for (const klass of db.classes) {
