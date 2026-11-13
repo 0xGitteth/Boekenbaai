@@ -705,7 +705,10 @@
         ].filter(Boolean).join(' · ')));
         if (diff.kind === 'issue') {
           const reasons = {
-            ambiguous_physical_copy: 'Boekenbaai kent meerdere exemplaren met dit ISBN. Zonder individuele barcode is niet zeker welk exemplaar bij deze Excelrij hoort. Behoud dit verschil of controleer het later.',
+            ambiguous_physical_copy: 'Alle exemplaren met dit ISBN zijn al uitgeleend. Zonder bestaande match kan Boekenbaai niet veilig bepalen welke actieve uitlening gewijzigd moet worden.',
+            ambiguous_existing_borrower: 'Meerdere exemplaren van deze ISBN-editie staan al bij dezelfde lener. Controleer de dubbele uitleenregistratie.',
+            duplicate_physical_barcode: 'Dezelfde unieke exemplaarbarcode staat meerdere keren in het Excelbestand. Controleer of er werkelijk een extra exemplaar is.',
+            physical_barcode_not_found: 'Deze individuele exemplaarbarcode ontbreekt in de bibliotheek, hoewel het ISBN al bekend is. Controleer de barcode.',
             conflicting_excel_borrowers: 'Excel vermeldt zowel een leerling als een klas als lener. Controleer welke registratie klopt.',
             multiple_class_contexts: 'Excel noemt meerdere of ongeldige klassen. Controleer de klasvermeldingen voordat je een vaste plek of uitlening kiest.',
             source_row_requires_review: 'Deze Excelrij bevat nog een conflict of onopgelost gegeven. Controleer de brongegevens bij de gewone boekimport.',
