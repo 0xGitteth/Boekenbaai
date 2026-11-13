@@ -9,6 +9,8 @@ const releaseUi = fs.readFileSync(path.join(root, 'public', 'release-ui-hardenin
 const compat = fs.readFileSync(path.join(root, 'public', 'student-management-compat.js'), 'utf8');
 const googleLinks = fs.readFileSync(path.join(root, 'public', 'admin-google-links.js'), 'utf8');
 const adminModern = fs.readFileSync(path.join(root, 'public', 'admin-modern.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
 
 assert.match(
   releaseUi,
@@ -55,6 +57,24 @@ assert.match(
   /teacher-picker:focus-within[\s\S]*teacher-picker__results/,
   'De lijst met docenten bij klas aanmaken moet als compacte dropdown openen'
 );
+// Current class membership must not display the old class label once
+// stored in the legacy grade field. The list itself uses klass.studentIds.
+assert.match(app,
+  /const members = \(klass\.studentIds \|\| \[\]\)[\s\S]*?const nameSpan = appendTextElement\(\s*li,\s*'span',\s*member\.name\s*\)/,
+  'The class member list must use actual membership and show names only');
+assert.doesNotMatch(app,
+  /member\.grade \? \`\$\{member\.name\} \(\$\{member\.grade\}\)\`/,
+  'Historical grade may not appear as a current class label');
+assert.match(styles,
+  /\.admin-class-details__form \.teacher-picker\s*\{[\s\S]*?position: relative/,
+  'The class editing teacher picker must position its own dropdown');
+assert.match(styles,
+  /\.admin-class-details__form \.teacher-picker__results\s*\{[\s\S]*?display: none;[\s\S]*?max-height: 15rem;[\s\S]*?overflow-y: auto/,
+  'All teachers must be hidden until the searchable dropdown opens');
+assert.match(styles,
+  /\.admin-class-details__form \.teacher-picker:focus-within \.teacher-picker__results:not\(:empty\)\s*\{\s*display: grid/,
+  'Focusing the class editing teacher picker must open the results list');
+
 assert.match(
   releaseUi,
   /setTextIfChanged\(button, 'Importeren'\)/,
