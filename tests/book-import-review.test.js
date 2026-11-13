@@ -278,14 +278,13 @@ const OTHER_ISBN = '9780439554930';
   }], [], { acceptWarnings: true });
   assert.strictEqual(blankMl.rows[0].book.easyReading, false);
 
-  // Unclassified columns must be shown with their values, without inventing
-  // a book field or turning every ordinary workbook row into a warning.
+  // Unclassified columns must be ignored, without affecting imports or previews.
   const extraColumnRow = [{ Titel: 'Extra gegevens', Auteur: 'Auteur', 'ISBN-nummer': ISBN, 'Onbekende kolom': 'tekst' }];
   const unapproved = await analyzeReviewedImport(extraColumnRow);
   assert.strictEqual(unapproved.rows[0].status, 'ready');
   assert.strictEqual(unapproved.decisions.rows[0].canCreate, true);
-  assert.deepStrictEqual(unapproved.rows[0].issues.find(x => x.code === 'unknown_columns_present').values,
-    [{ header: 'Onbekende kolom', value: 'tekst' }]);
+  assert.ok(!unapproved.rows[0].issues.some(x => x.code === 'unknown_columns_present'));
+  assert.deepStrictEqual(unapproved.columns.unknown, []);
   const approved = await analyzeReviewedImport(extraColumnRow, [], { acceptWarnings: true });
   assert.strictEqual(approved.decisions.rows[0].canCreate, true);
 
