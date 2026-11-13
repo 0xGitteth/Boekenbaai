@@ -714,7 +714,7 @@
       const assignment=plan.assignments||{differences:[],summary:{}};
       const metadataPlan=plan.metadata||{updates:[],issues:[],summary:{}};
       const changes=assignment.differences||[];
-      const exceptions=changes.filter(item=>!item.automatic);
+      const exceptions=changes.filter(item=>!item.automatic&&!item.previouslyImported);
       const automatic=changes.filter(item=>item.automatic);
       const pendingAssignments=exceptions.filter(item=>
         (assignmentResolutions.get(item.id)?.action||item.choice)==='pending');
@@ -747,6 +747,9 @@
         :'Geen openstaande uitzonderingen'));
       status.append(document.createTextNode(' · '
         +(summary.preservedOldCopies||0)+' bestaande exemplaren blijven behouden.'));
+      if(summary.previouslyImportedLoans)status.append(make('span','',
+        ' · '+summary.previouslyImportedLoans+
+        ' eerder verwerkte uitleningen worden niet opnieuw geregistreerd.'));
       results.append(status);
 
       const selection=make('details','bb-import__selection-details');
