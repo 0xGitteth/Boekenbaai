@@ -57,6 +57,8 @@ function extract(source, begin, end) {
   verifyBookRender({ replacementExists: true, focused: false, expectedY: 840 });
   assert.match(books, /card\.dataset\.reviewRowKey = 'difference:' \+ diff\.id/);
   assert.match(books, /card\.dataset\.reviewRowKey = 'book:' \+ row\.index/);
+  assert.match(books, /rememberResponse\(payload, true\);\n        setNotice\('Correcties en waarschuwingen zijn opnieuw gecontroleerd/,
+    'Rechecking the book import must not return to page one');
 }
 
 // Run the actual shared student/teacher position helpers with replaced rows.
