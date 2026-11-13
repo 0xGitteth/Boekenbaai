@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const {
   applyPeopleImport,
   normalizeKey,
@@ -9,6 +10,8 @@ const {
   getParnassysStudentNumber,
   setParnassysStudentNumber,
 } = require('./google-first-people-import');
+const { transitionMissingStudent, cancelReturnedStudents } =
+  require('./student-exit-workflow');
 
 function clean(value) {
   return String(value || '').trim();
@@ -348,36 +351,36 @@ function processMissingStudents(result, originalDb, incomingNumbers, options) {
   );
   result.summary.deactivated = 0;
   result.summary.deactivationBlockedBorrowed = 0;
+  result.summary.deletionEligible = 0;
+  result.summary.exitTasks = 0;
+  result.summary.exitTasksWithBooks = 0;
+  result.summary.deleted = 0;
+  result.summary.deletionCandidateFingerprint = '';
 
   if (!options.fullSchoolSync) return;
-
+  const deletionIds=missing.filter(student=>!transitionMissingStudent(result.db,
+    result.store,student,{apply:false}).hasData).map(student=>student.id).sort();
+  result.summary.deletionCandidateFingerprint=crypto.createHash('sha256')
+    .update(JSON.stringify(deletionIds)).digest('hex');
   for (const student of missing) {
-    const borrowed = activeBorrowedBooks(result.db, student);
-    if (options.applyDeactivations && borrowed.length) {
-      result.summary.deactivationBlockedBorrowed += 1;
-      result.results.push({
-        status: 'deactivation-blocked',
-        id: student.id,
-        name: student.name || '',
-        studentNumber: getParnassysStudentNumber(student),
-        reason: 'Niet in de schoollijst, maar heeft nog boeken in bezit.',
-        borrowedBooks: borrowed.map((book) => ({ id: book.id, title: book.title || 'Onbekend boek' })),
-      });
-      continue;
-    }
-
-    if (options.applyDeactivations) {
-      deactivateStudent(result.db, result.store, student, options.actorId, 'not-in-parnassys-school-list');
-      result.summary.deactivated += 1;
-    }
+    const outcome = transitionMissingStudent(result.db,result.store,student,{
+      apply:options.applyDeactivations,actorId:options.actorId,
+    });
+    if (outcome.hasData) {
+      result.summary.exitTasks += 1;
+      if (outcome.loans)result.summary.exitTasksWithBooks += 1;
+    } else result.summary.deletionEligible += 1;
+    if (outcome.action==='deleted')result.summary.deleted += 1;
+    if (outcome.action==='archived')result.summary.deactivated += 1;
     result.results.push({
-      status: options.applyDeactivations ? 'deactivated' : 'missing-from-import',
-      id: student.id,
-      name: student.name || '',
-      studentNumber: getParnassysStudentNumber(student),
-      reason: options.applyDeactivations
-        ? 'Niet meer in de volledige ParnasSys-schoollijst en daarom inactief gemaakt.'
-        : 'Staat niet in deze volledige ParnasSys-schoollijst.',
+      status:options.applyDeactivations?outcome.action:
+        outcome.hasData?'will-archive':'will-delete',
+      id:student.id,name:student.name||'',
+      studentNumber:getParnassysStudentNumber(student),
+      reason:outcome.hasData
+        ?'Historische bibliotheekgegevens worden bewaard. '
+          +'De leerling verdwijnt uit de huidige klas en er komt een uitschrijftaak.'
+        :'Geen bibliotheekgegevens gevonden. Het account mag na bevestiging verwijderd worden.',
     });
   }
 }
@@ -493,6 +496,7 @@ function runSchoolSync(input = {}) {
     actorId: input.actorId,
   });
   recomputeResultCounts(result);
+  if (kind==='student') cancelReturnedStudents(result.db);
   result.summary.needsReview = reviews.length;
   result.results.push(...reviews);
 
