@@ -162,7 +162,7 @@ async function run(){
     // metadata, the stock, loans or locations.
     const coverOnly=await start([
       old('',{Omschrijving:'Andere omschrijving',
-        Omslag:'https://example.org/new-cover.jpg'}),
+        Cover:'https://example.org/new-cover.jpg'}),
     ],parts({fields:{coverUrl:true}}));
     assert.equal(coverOnly.status,201,JSON.stringify(coverOnly.data));
     assert.equal(coverOnly.data.decisions.summary.newCopies,0);
@@ -170,16 +170,14 @@ async function run(){
     assert.equal(coverOnly.data.decisions.summary.proposedLocations,0);
     const coverReviewed=await review(coverOnly);
     assert.equal(coverReviewed.status,200,JSON.stringify(coverReviewed.data));
-    // A header alias may be absent in old Excel versions. The preview must
-    // never touch unrelated fields just because a column was selected.
-    if(coverReviewed.data.decisions.summary.metadataFields){
-      const coverApplied=await apply(coverReviewed);
-      assert.equal(coverApplied.status,200,JSON.stringify(coverApplied.data));
-    }else{
-      assert.equal((await call('/api/admin/book-import-stages/'+coverOnly.data.id+'/cancel',
-        token,{revision:coverReviewed.data.revision})).status,200);
-    }
+    assert.equal(coverReviewed.data.decisions.summary.metadataFields,1,
+      'A recognized selected Cover column is updated on existing editions');
+    const coverApplied=await apply(coverReviewed);
+    assert.equal(coverApplied.status,200,JSON.stringify(coverApplied.data));
+    assert.equal(coverApplied.data.result.metadataUpdated,2);
     assert.equal(readDb().books.length,3);
+    assert.equal(readDb().books.find(book=>book.id==='copy-2').coverUrl,
+      'https://example.org/new-cover.jpg');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').description,
       'Nieuwe beschrijving');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa');
