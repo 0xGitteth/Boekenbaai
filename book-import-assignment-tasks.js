@@ -195,7 +195,11 @@ function correctionPreview(db, task, choice) {
     return { ok:false, error:'manual_review_required' };
   }
   const row = reconstruct(task);
-  const initial = buildAssignmentPreview({ ok:true, rows:[row] }, db);
+  // Preserve the exact physical identity assigned during the original
+  // multirow import. Replanning a single row without its siblings would
+  // otherwise pick another available copy of the same shared ISBN.
+  const options={preferredCopyByRow:{0:task.bookId}};
+  const initial = buildAssignmentPreview({ ok:true, rows:[row] }, db, [], options);
   if (!initial.ok) return {ok:false,error:'review_no_longer_safe'};
   const diff = initial.differences.find(item =>
     item.kind === task.kind && item.bookId === task.bookId);
@@ -234,7 +238,7 @@ function correctionPreview(db, task, choice) {
   }
   const resolutions = initial.differences.map(item =>
     ({id:item.id,action:item===diff?choice:'keep'}));
-  const checked = buildAssignmentPreview({ok:true,rows:[row]},db,resolutions);
+  const checked = buildAssignmentPreview({ok:true,rows:[row]},db,resolutions,options);
   if (!checked.ok || !checked.summary.readyToApply)
     return {ok:false,error:'unsafe_correction'};
   if (checked.differences.find(item => item.id===diff.id)?.choice !== choice)
