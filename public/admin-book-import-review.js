@@ -680,6 +680,7 @@
       page = Math.min(page, maxPage);
       for (const diff of differences.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
         const card = make('article', 'bb-review__row');
+        card.dataset.reviewRowKey = 'difference:' + diff.id;
         card.append(make('strong', '',
           'Excelrij ' + diff.worksheetRow + ' · ' + (diff.title || 'Onbekend boek')));
         card.append(make('p', 'hint', [
@@ -788,7 +789,31 @@
       results.append(navigation);
     }
 
+
+    // Rebuilding a long review removes the focused row temporarily. Keep its
+    // position in the viewport, rather than letting browser scroll anchoring
+    // move the administrator to the top of the import panel.
     function render() {
+      const scrollY = Number(window.scrollY) || 0;
+      const focusedRow = document.activeElement?.closest?.('[data-review-row-key]');
+      const rowKey = focusedRow?.dataset.reviewRowKey;
+      const rowTop = focusedRow?.getBoundingClientRect().top;
+      const focusedControlIndex = focusedRow
+        ? Array.from(focusedRow.querySelectorAll('button, input, select, textarea'))
+          .indexOf(document.activeElement) : -1;
+      renderContents();
+      const replacement = rowKey && Array.from(results.querySelectorAll('[data-review-row-key]'))
+        .find(row => row.dataset.reviewRowKey === rowKey);
+      const newTop = replacement && Number.isFinite(rowTop)
+        ? window.scrollY + replacement.getBoundingClientRect().top - rowTop : scrollY;
+      window.scrollTo({ top: Math.max(0, newTop), behavior: 'instant' });
+      if (replacement && focusedControlIndex >= 0) {
+        replacement.querySelectorAll('button, input, select, textarea')[focusedControlIndex]
+          ?.focus({ preventScroll: true });
+      }
+    }
+
+    function renderContents() {
       results.replaceChildren();
       form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
       if (!stage) return;
@@ -1005,6 +1030,7 @@
       for (const row of rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
         const dec = decisions.rows.find((item) => item.index === row.index) || {};
         const card = make('article', 'bb-review__row bb-review__row--' + (row.status || 'unknown'));
+        card.dataset.reviewRowKey = 'book:' + row.index;
         const first = make('div', 'bb-review__row-header');
         first.append(make('strong', '', 'Rij ' + row.sourceRowNumber + ' · ' + (row.book?.title || '(geen titel)')));
         first.append(make('span', 'bb-review__state', statusNames[row.status] || row.status));
