@@ -84,9 +84,10 @@ module.exports = async function runCoreTests() {
   assert.ok(codes(semantics.rows[3]).has('class_context_needs_review'));
   assert.strictEqual(semantics.rows[4].status, 'skipped');
   assert.strictEqual(semantics.rows[5].context.fixedLocation.status, 'needs_review');
-  assert.strictEqual(semantics.rows[6].status, 'skipped');
-  assert.strictEqual(semantics.rows[6].context.excludeFromSchoolCollection, true);
-  assert.ok(codes(semantics.rows[6]).has('own_book_excluded'));
+  assert.notStrictEqual(semantics.rows[6].status, 'skipped');
+  assert.strictEqual(semantics.rows[6].context.excludeFromSchoolCollection, undefined);
+  assert.ok(!codes(semantics.rows[6]).has('own_book_excluded'),
+    'An unknown Notitie column may not mark a book as privately owned');
   assert.deepStrictEqual(semantics.rows[7].context.classContext, ['2A']);
   assert.strictEqual(semantics.rows[7].context.fixedLocation.label, '2A');
   assert.strictEqual(semantics.rows[7].context.classLoan.status, 'matched');
