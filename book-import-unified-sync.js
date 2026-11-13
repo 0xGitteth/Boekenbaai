@@ -66,23 +66,40 @@ function inventoryNotSelected(analysis){
     unchangedEditions:0,acknowledgedEditions:0,skippedRows:0,omittedExistingCopies:0,
     readyToApply:true}};
 }
-function assignmentSource(analysis,parts){
+function assignmentSource(analysis,parts,db){
+  const oldByIsbn=new Map();
+  for(const book of db.books||[]){
+    const isbn=canonicalizeBookIsbn13(book.editionIsbn)
+      ||canonicalizeBookIsbn13(book.metadataIsbn);
+    if(isbn&&!oldByIsbn.has(isbn))oldByIsbn.set(isbn,book);
+  }
   return {...analysis,rows:analysis.rows.map(row=>{
+    const old=oldByIsbn.get(canonicalizeBookIsbn13(row.book?.editionIsbn));
+    const book={...row.book,
+      title:old&&parts.fields.title?old.title:row.book?.title,
+      author:old&&parts.fields.author?old.author:row.book?.author};
     const context={...row.context};
     if(!parts.loans){delete context.studentLoan;delete context.classLoan;delete context.studentClassHint;}
     if(!parts.locations)delete context.fixedLocation;
     if(!parts.locations||!parts.loans)delete context.classContext;
     delete context.libraryPresence;
-    return {...row,context};
+    return {...row,book,context};
   })};
 }
-function projectCopies(analysis,inventory,parts){
+function projectCopies(analysis,inventory,parts,db){
   const copies=[];
   for(const addition of inventory.proposedAdds){
     const row=analysis.rows[addition.index];
     if(!row)throw Error('unified_source_row_missing');
+    const old=(db.books||[]).find(book=>
+      (canonicalizeBookIsbn13(book.editionIsbn)
+        ||canonicalizeBookIsbn13(book.metadataIsbn))===addition.editionIsbn);
+    // Preview identity must agree with the normalized matching row when a
+    // selected metadata update renames the existing ISBN edition.
+    const title=old&&parts.fields.title?old.title:row.book.title;
+    const author=old&&parts.fields.author?old.author:row.book.author;
     for(let n=0;n<addition.quantity;n++)copies.push({
-      id:virtualId(addition.index,n),title:row.book.title,author:row.book.author,
+      id:virtualId(addition.index,n),title,author,
       editionIsbn:addition.editionIsbn,metadataIsbn:addition.editionIsbn,
       barcode:addition.barcode,status:'available',borrowedBy:null,
       borrowedByClassId:null,borrowedAt:null,dueDate:null,
@@ -213,10 +230,10 @@ function buildUnifiedBookImport(analysis,db,{
       :preview;
     if(!inventory.ok)return inventory;
   }else if(inventoryChoices.values.length)return {ok:false,error:'inventory_not_selected'};
-  const projected=projectCopies(analysis,inventory,use);
+  const projected=projectCopies(analysis,inventory,use,db);
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
   const source=use.loans||use.locations
-    ?assignmentSource(analysis,use):{...analysis,rows:[]};
+    ?assignmentSource(analysis,use,db):{...analysis,rows:[]};
   let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
   if(!assignments.ok)return assignments;
   // Receipt IDs survive loan returns and truncated import reports. Re-uploading
