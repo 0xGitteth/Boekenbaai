@@ -5760,9 +5760,20 @@ async function handleApi(req, res, requestUrl) {
                     book.author=update.value.value;
                     book.authors=update.value.authors;
                   }else if(update.field==='manualThemes'){
-                    book.manualThemes=[...update.value];
+                    const curated=normalizeManualThemes(update.value);
+                    const freeform=curated.length!==(update.value||[]).length;
+                    // Unknown/freeform themes survive ensureBookShape through
+                    // importedThemes, as with newly created Excel copies.
+                    book.manualThemes=freeform?[]:curated;
+                    book.importedThemes=freeform?[...update.value]:[];
                     book.themes=[...update.value];
-                    book.importedThemes=[];
+                    book.themesCleared=false;
+                  }else if(update.field==='coverUrl'){
+                    if(book.coverUrl!==update.value){
+                      book.coverUrl=update.value;
+                      // The cached file belongs to the previous source URL.
+                      book.localCoverUrl='';
+                    }
                   }else{
                     book[update.field]=Array.isArray(update.value)
                       ?[...update.value]:update.value;
