@@ -116,7 +116,7 @@ function normalizedMetadataChoice(input){
   values.sort((a,b)=>a.id.localeCompare(b.id));
   return {ok:true,values};
 }
-function metadataPlan(analysis,db,parts,choices=[]){
+function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   const selected=new Set(choices.map(c=>c.id));
   const editions=new Map();
   for(const book of db.books||[]){
@@ -144,7 +144,8 @@ function metadataPlan(analysis,db,parts,choices=[]){
       const id=isbn+':'+field;
       const variants=new Map(sourceRows.map(row=>
         [JSON.stringify(metadataKey(field,row)),metadataKey(field,row)]));
-      const validSources=sourceRows.every(row=>['ready','warning'].includes(row.status));
+      const validSources=sourceRows.every(row=>row.status==='ready'
+        ||(row.status==='warning'&&acceptWarnings));
       const conflict=variants.size!==1||!validSources;
       const next=variants.size===1?[...variants.values()][0]:null;
       const currentDifferent=copies.some(copy=>{
@@ -246,7 +247,7 @@ function buildUnifiedBookImport(analysis,db,{
       if(ignored.has(diff.id))diff.previouslyImported=true;
     assignments.summary.previouslyImportedLoans=ignored.size;
   }else assignments.summary.previouslyImportedLoans=0;
-  const metadata=metadataPlan(analysis,db,use,metaChoices.values);
+  const metadata=metadataPlan(analysis,db,use,metaChoices.values,acceptWarnings);
   if(!metadata.ok)return metadata;
   const total=inventory.summary.addCopies+assignments.summary.apply
     +metadata.summary.updates+assignments.summary.deferred
