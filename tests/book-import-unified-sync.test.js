@@ -175,6 +175,18 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(stale.assignments.differences[0].choice,'keep');
   assert.equal(stale.assignments.differences[0].previouslyImported,true);
   assert.equal(database.books[0].borrowedBy,null);
+  // That earlier copy can now belong to another person. The same old
+  // worksheet must not silently lend a different free copy to Lisa.
+  database.books[0].borrowedBy='tim';
+  database.books[0].status='borrowed';
+  database.students[1].borrowedBooks=[{bookId:'copy-1'}];
+  const relocated=plan([source(0,loan('lisa','Lisa Leerling'))],database,{
+    parts:parts({loans:true}),loanReceipts:[receipt],
+  });
+  assert.equal(relocated.summary.proposedLoans,0,
+    'Historical ISBN receipts protect returned loans across interchangeable copies');
+  assert.equal(relocated.assignments.differences[0].bookId,'copy-2');
+  assert.equal(relocated.assignments.differences[0].choice,'keep');
 }
 {
   const database=db();
