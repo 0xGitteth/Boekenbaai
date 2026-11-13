@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { mutateJsonLocked } = require('./database-write-coordinator');
+const { redirectCanonicalNavigation } = require('./canonical-domain-redirect');
 const { AsyncLocalStorage } = require('async_hooks');
 const core = require('./google-auth-core');
 const {
@@ -205,6 +206,7 @@ core.upsertSession = function hardenedUpsertSession(store, token, input = {}) {
 function wrapRequestListener(listener) {
   return function securityGuardListener(req, res) {
     try {
+      if (redirectCanonicalNavigation(req, res)) return;
       const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       const pathname = requestUrl.pathname;
       const expectedOrigin = getExpectedOrigin(req, CONFIGURED_PUBLIC_URL);
