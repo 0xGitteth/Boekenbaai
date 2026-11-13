@@ -105,7 +105,17 @@ function transitionMissingStudent(db,store,student,{apply=false,actorId='',now=n
   student.inactiveAt=now;
   student.inactiveReason='not-in-parnassys-school-list';
   student.inactiveBy=actorId||'school-sync';
-  cleanAccountAuth(store,student.id);
+  // Keep verified Google identity links and PIN metadata for historical
+  // accounts. Only revoke their active sessions.
+  if(Array.isArray(store.sessions))store.sessions=store.sessions.filter(entry=>
+    !(entry?.type==='student'&&entry?.userId===student.id));
+  for(const request of store.linkRequests||[]) if(request?.studentId===student.id
+    &&request.status==='pending')request.status='superseded';
+  for(const transfer of db.studentTransferRequests||[]) if(transfer.studentId===student.id
+    &&['pending','rejected'].includes(transfer.status)){
+    transfer.status='cancelled';transfer.escalatedToAdmin=false;
+    transfer.updatedAt=now;
+  }
   const task=studentExitTask(db,student,previousClasses,now,actorId);
   return {action:'archived',hasData:true,loans,previousClasses,taskId:task.id};
 }
