@@ -540,7 +540,9 @@ function schoolSyncPreview(context, body, apply) {
   // silently erase even one pupil who has no preserved library records.
   if(apply && kind==='student'
     && (body.expectedDeletionCount!==result.summary.deletionEligible
-      || !Number.isSafeInteger(body.expectedDeletionCount))){
+      || !Number.isSafeInteger(body.expectedDeletionCount)
+      || body.expectedDeletionFingerprint
+        !==result.summary.deletionCandidateFingerprint)){
     const error=new Error('De lijst met te verwijderen leerlingen is sinds de voorcontrole veranderd. '
       +'Voer eerst een nieuwe voorcontrole uit.');
     error.code='PUPIL_REMOVAL_PREVIEW_CHANGED';
