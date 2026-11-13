@@ -6,6 +6,12 @@ const { mapImportRow } = require('../book-import-workbook');
 const { resolveReviewedLoan } = require('../book-import-loan-migration');
 const { analyzeReviewedImport } = require('../book-import-review');
 const ISBN='9789044611038';
+let isbnCounter=0;
+function nextValidIsbn(){
+  const stem='978902'+String(++isbnCounter).padStart(6,'0');
+  const weighted=stem.split('').reduce((sum,ch,index)=>sum+Number(ch)*(index%2?3:1),0);
+  return stem+String((10-weighted%10)%10);
+}
 const classes=[
   {id:'skbb',name:'Bovenbouw structuur',studentIds:['dex','amelia','dex-duplicate']},
   {id:'obkt',name:'Onderbouw BKT',studentIds:['nena','dex-other']},
@@ -19,7 +25,7 @@ const students=[
   {id:'amelia',name:'Amelia De Wit',firstName:'Amelia',active:true,classIds:['skbb']},
 ];
 const book=(title,overrides={})=>({
-  Titel:title,Auteur:'Voorbeeld Auteur','ISBN-nummer':ISBN,...overrides,
+  Titel:title,Auteur:'Voorbeeld Auteur','ISBN-nummer':nextValidIsbn(),...overrides,
 });
 (async()=>{
   const original={
@@ -36,7 +42,7 @@ const book=(title,overrides={})=>({
     original,
     book('Vaste plek met leerling',{
       'Vast in de klas van:':'SKOBPRO',
-      'naam leerling':'Amelia',
+      'naam leerling':'Amelia De Wit',
     }),
     book('In handen van leerling',{
       'Geleend door klas':'OndBKT','naam leerling':'Nena',
