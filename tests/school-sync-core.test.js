@@ -445,6 +445,51 @@ function baseDb() {
   assert.strictEqual(chosen.db.users.find(x=>x.id==='a').active,true);
 })();
 
+(function testAccentVariantMatchesSameTeacherAccount() {
+  const db=baseDb();
+  db.users.push({id:'jose',role:'teacher',name:'José Jansen',
+    username:'jose',passwordHash:'x',active:true,classIds:[]});
+  const rows=[{Roepnaam:'Jose',Achternaam:'Jansen',
+    'Gekoppelde groepen':'Klas A'}];
+  const result=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store:core.emptyAuthStore(),rows,fullSchoolSync:true});
+  assert.strictEqual(result.summary.created,0);
+  assert.strictEqual(result.summary.missingTeachersFromImport,0);
+  assert.strictEqual(result.summary.needsReview,0);
+  assert.strictEqual(result.db.users.find(u=>u.id==='jose').name,'Jose Jansen');
+  assert.strictEqual(result.db.users.length,2,'Existing account ID must be retained');
+})();
+
+(function testVerifiedSchoolmailConflictIsNotOverriddenByManualUsername() {
+  const db=baseDb();
+  db.users.push(
+    {id:'a',role:'teacher',name:'Sam Jansen',username:'sam-a',
+      passwordHash:'x',active:true,classIds:[]},
+    {id:'b',role:'teacher',name:'Alex de Vries',username:'sam-b',
+      passwordHash:'x',active:true,classIds:[]},
+  );
+  const store=core.upsertLink(core.emptyAuthStore(),{
+    accountType:'staff',accountId:'b',email:'alex@koraaledu.nl',
+    sub:'verified-google-b',linkedBy:'test',
+  }).store;
+  const row={Roepnaam:'Sam',Achternaam:'Jansen',
+    Gebruikersnaam:'sam-a',Schoolmail:'alex@koraaledu.nl',
+    'Gekoppelde groepen':'Klas A'};
+  const conflict=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store,rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'a'}});
+  assert.strictEqual(conflict.summary.needsReview,1,
+    'Selection of A cannot override Google email already verified to B');
+  assert.strictEqual(conflict.summary.missingTeachersFromImport,0,
+    'Both candidate accounts protected until conflict resolved');
+  const selected=runSchoolSync({kind:'teacher',db:structuredClone(db),
+    store,rows:[row],fullSchoolSync:true,
+    manualMatches:{'staff:2':'b'}});
+  assert.strictEqual(selected.summary.needsReview,0);
+  assert.strictEqual(selected.summary.missingTeachersFromImport,1);
+  assert.strictEqual(selected.db.users.find(u=>u.id==='b').name,'Sam Jansen');
+})();
+
 (function testIncompleteStaffExportRejectsMassOutflow() {
   const db=baseDb();
   db.users.push({id:'old',role:'teacher',name:'Old Teacher',
