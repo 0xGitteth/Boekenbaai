@@ -164,3 +164,13 @@
   .bb-import__proposal-table { min-width: 620px; }
   .bb-review__upload > .btn { justify-self: stretch; }
 }
+
+.bb-import__steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr));
+  border: 1px solid var(--accent-border); border-radius: 10px; overflow: hidden; }
+.bb-import__step { padding: .65rem .85rem; text-align: center; font-size: .83rem;
+  font-weight: 650; background: var(--surface); color: var(--text-muted,var(--text)); }
+.bb-import__step + .bb-import__step { border-left: 1px solid var(--accent-border); }
+.bb-import__step--active { color: var(--text); background: var(--accent-softer); font-weight: 800; }
+@media (max-width: 600px) {
+  .bb-import__step { font-size: .75rem; padding: .55rem .3rem; }
+}
