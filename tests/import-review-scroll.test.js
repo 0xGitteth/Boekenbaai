@@ -18,8 +18,8 @@ function extract(source, begin, end) {
 // Replacing all children can reset the browser's scrollY before the new list
 // appears, but the selected row should end up at its old viewport position.
 {
-  const code = extract(books, '    function render() {', '    function renderContents() {');
-  function verifyBookRender({ replacementExists, focused, expectedY, nestedList = false }) {
+  const code = extract(books, '    function render(resetListScroll = false) {', '    function renderContents() {');
+  function verifyBookRender({ replacementExists, focused, expectedY, nestedList = false, pageChanged = false }) {
     let focusedAgain = null;
     const control = {
       closest() { return focused ? oldRow : null; },
@@ -42,7 +42,8 @@ function extract(source, begin, end) {
     };
     let rendered = false;
     const previousList = { scrollTop: 320, contains() { return false; } };
-    const replacementList = { scrollTop: 0 };
+    let pageNavigation = null;
+    const replacementList = { scrollTop: 0, scrollIntoView(options) { pageNavigation = options; } };
     const fakeResults = {
       querySelector(selector) {
         assert.equal(selector, '.bb-review__rowlist');
@@ -55,7 +56,13 @@ function extract(source, begin, end) {
       fakeWindow, { activeElement: control }, fakeResults,
       () => { fakeWindow.scrollY = 0; rendered = true; }
     );
-    render();
+    render(pageChanged);
+    if (pageChanged) {
+      assert.equal(replacementList.scrollTop, 0,
+        'A new review page must show its first row');
+      assert.deepEqual(pageNavigation, { block: 'start', behavior: 'instant' });
+      return;
+    }
     assert.equal(fakeWindow.scrollY, expectedY);
     assert.equal(scrolls.at(-1).behavior, 'instant');
     if (focused && replacementExists) assert.deepEqual(focusedAgain, { preventScroll: true });
@@ -67,6 +74,9 @@ function extract(source, begin, end) {
   verifyBookRender({ replacementExists: false, focused: true, expectedY: 840 });
   verifyBookRender({ replacementExists: true, focused: false, expectedY: 840 });
   verifyBookRender({ replacementExists: true, focused: false, expectedY: 840, nestedList: true });
+  verifyBookRender({ replacementExists: true, focused: false, nestedList: true, pageChanged: true });
+  assert.equal((books.match(/render\(true\)/g) || []).length, 4,
+    'Both book and administrative pagination must start a new page at the top');
   assert.match(books, /card\.dataset\.reviewRowKey = 'difference:' \+ diff\.id/);
   assert.match(books, /card\.dataset\.reviewRowKey = 'book:' \+ row\.index/);
   assert.match(books, /rememberResponse\(payload, true\);\n        setNotice\('Correcties en waarschuwingen zijn opnieuw gecontroleerd/,
