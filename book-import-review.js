@@ -28,6 +28,7 @@ const CORRECTION_COLUMNS = Object.freeze({
   examMaterial: { header: 'Examenmateriaal', fields: ['examMaterial'], type: 'text' },
   studentLoan: { header: 'naam leerling', fields: ['studentLoan'], type: 'text' },
   classLoan: { header: 'Geleend door klas', fields: ['classLoan'], type: 'text' },
+  fixedClass: { header: 'Vast in de klas van:', fields: ['fixedClass'], type: 'text' },
   classes: { header: 'Klassen', fields: ['classes'], type: 'text' },
   libraryPresence: { header: 'Aanwezig bieb', fields: ['libraryPresence'], type: 'text' },
 });
