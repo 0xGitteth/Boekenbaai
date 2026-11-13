@@ -100,7 +100,7 @@ function desiredLocation(row, db) {
   }
   return {error:'fixed_location_needs_manual_identification'};
 }
-function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set()) {
+function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set(), preferredCopyId = null) {
   const book=row.book||{},barcode=normalizeRuntimeBarcode(book.barcode);
   if(book.barcode && !barcode)return {error:'invalid_physical_barcode'};
   const isbn=canonicalizeBookIsbn13(book.editionIsbn);
@@ -126,6 +126,12 @@ function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set()) {
   const unassigned=matching.filter(copy=>!usedCopies.has(copy.id));
   if(!unassigned.length) return {error:physicalBarcode
     ? 'duplicate_physical_barcode' : 'no_unallocated_copy'};
+  // Durable "later" tasks are bound to the physical copy selected during
+  // the original batch. Never remap a postponed decision to the first copy.
+  if(preferredCopyId){
+    const pinned=unassigned.find(copy=>copy.id===preferredCopyId);
+    return pinned?{copy:pinned}:{error:'deferred_copy_mismatch'};
+  }
   if(physicalBarcode && unassigned.length===1)return {copy:unassigned[0]};
 
   // All copies of an identical edition can share the printed ISBN barcode.
@@ -142,9 +148,16 @@ function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set()) {
   }
   const fixed=context.fixedLocation;
   if(fixed?.status==='resolved' && fixed.label){
-    const located=unassigned.filter(copy=>norm(copy.fixedLocation)===norm(fixed.label));
-    if(located.length===1)return {copy:located[0]};
-    if(located.length>1)return {copy:located[0]};
+    const located=unassigned.filter(copy=>
+      norm(copy.fixedLocation)===norm(fixed.label)
+      // A shelf location cannot identify which currently borrowed book
+      // changed hands. Do not steal an unrelated active loan when another
+      // physical copy can be assigned to the new borrower.
+      && (!(student||klass) || (
+        copy.status!=='borrowed' && !copy.borrowedBy && !copy.borrowedByClassId
+      ) || (student&&copy.borrowedBy===student)
+        || (klass&&copy.borrowedByClassId===klass)));
+    if(located.length)return {copy:located[0]};
   }
   const free=unassigned.filter(copy=>copy.status!=='borrowed'
     && !copy.borrowedBy && !copy.borrowedByClassId);
@@ -159,7 +172,7 @@ function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set()) {
   if(unassigned.length===1 && matching.length===1)return {copy:unassigned[0]};
   return {error:'ambiguous_physical_copy'};
 }
-function buildAssignmentPreview(analysis, db, input=[]) {
+function buildAssignmentPreview(analysis, db, input=[], options={}) {
   if(!analysis?.ok||!Array.isArray(analysis.rows))return {ok:false,error:'invalid_review'};
   const normalized=normalizeResolutions(input);
   if(!normalized.ok)return normalized;
@@ -182,9 +195,15 @@ function buildAssignmentPreview(analysis, db, input=[]) {
   // This allows two pupils holding copies of the same ISBN to map onto two
   // different existing internal copy IDs deterministically.
   const prioritized=[...analysis.rows].sort((a,b)=>{
-    const rank=row=>Number(Boolean(row.context?.studentLoan||row.context?.classLoan))*3
-      +Number(Boolean(row.context?.fixedLocation))*2
-      +Number(Boolean(row.context?.classContext?.length));
+    const rank=row=>{
+      const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
+      const barcode=normalizeRuntimeBarcode(row.book?.barcode);
+      const physicalBarcode=barcode && canonicalizeBookIsbn13(barcode)!==isbn;
+      return Number(Boolean(physicalBarcode))*100
+        +Number(Boolean(row.context?.studentLoan||row.context?.classLoan))*3
+        +Number(Boolean(row.context?.fixedLocation))*2
+        +Number(Boolean(row.context?.classContext?.length));
+    };
     return rank(b)-rank(a)||a.index-b.index;
   });
   const usedCopies=new Set();
@@ -209,7 +228,8 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       ? {error:context.studentLoan&&context.classLoan
         ? 'conflicting_excel_borrowers':'source_row_requires_review'}
       : sourceError ? {error:sourceError}
-        : findCopy(row,db,byBarcode,byIsbn,usedCopies);
+        : findCopy(row,db,byBarcode,byIsbn,usedCopies,
+          options.preferredCopyByRow?.[row.index]||null);
     if(located.error) {
       if(['physical_copy_not_found','no_unallocated_copy'].includes(located.error)) {
         // Nothing can be corrected before this edition exists in the library.
@@ -335,16 +355,26 @@ function buildAssignmentPreview(analysis, db, input=[]) {
     d.choice=explicitlySelected||(automatic?'apply':'pending');
     d.automatic=Boolean(automatic);
   }
-  // Prevent two proposed copies of one edition going to the same student,
-  // including proposals that were automatically selected from the Excel.
-  const selectedStudentEditions = new Set();
-  for (const diff of differences) {
-    if(diff.choice!=='apply' || diff.kind!=='loan'
-      || diff.after?.type!=='student') continue;
+  // Two different copies of the same ISBN may not be assigned to one pupil.
+  // If this arises solely from automatic suggestions, keep the import open
+  // and ask for a decision instead of rejecting the entire Excel preview.
+  const studentEditionGroups=new Map();
+  for(const diff of differences) {
+    if(diff.choice!=='apply'||diff.kind!=='loan'
+      ||diff.after?.type!=='student')continue;
     const key=JSON.stringify([diff.after.id,diff.editionIsbn]);
-    if(selectedStudentEditions.has(key))
+    if(!studentEditionGroups.has(key))studentEditionGroups.set(key,[]);
+    studentEditionGroups.get(key).push(diff);
+  }
+  for(const group of studentEditionGroups.values()){
+    if(group.length<2)continue;
+    if(group.filter(d=>!d.automatic).length>1)
       return {ok:false,error:'duplicate_corrected_student_edition'};
-    selectedStudentEditions.add(key);
+    for(const diff of group.filter(d=>d.automatic)){
+      diff.choice='pending';
+      diff.automatic=false;
+      diff.needsChoice='duplicate_excel_student_edition';
+    }
   }
   const pending=differences.filter(x=>x.choice==='pending').length;
   const apply=differences.filter(x=>x.choice==='apply'
