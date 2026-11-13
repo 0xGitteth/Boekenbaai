@@ -362,14 +362,19 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
     else {
       pendingLegacy++;
       result.summary.needsReview = (result.summary.needsReview || 0) + 1;
-      result.results.push({
-        status: 'legacy-needs-review', id: student.id,
-        name: student.name || 'Naam onbekend',
-        classes: studentClassNames(result.db, student),
-        reason: 'Oud leerlingaccount zonder ParnasSys-leerlingnummer. '
-          + 'Controleer of deze leerling nog op school zit.',
-      });
     }
+    // Keep reviewed rows visible so administrators can correct a mistaken
+    // 'keep' or 'exit' selection before final confirmation.
+    result.results.push({
+      status: choice === 'keep' || choice === 'exit'
+        ? 'legacy-reviewed' : 'legacy-needs-review',
+      id: student.id,
+      name: student.name || 'Naam onbekend',
+      classes: studentClassNames(result.db, student),
+      chosen: choice === 'keep' || choice === 'exit' ? choice : '',
+      reason: 'Oud leerlingaccount zonder ParnasSys-leerlingnummer. '
+        + 'Controleer of deze leerling nog op school zit.',
+    });
   }
   const missing = [...numberedMissing, ...confirmedLegacyExits];
   result.summary.legacyAccountsWithoutNumber = legacyAccounts.length;
