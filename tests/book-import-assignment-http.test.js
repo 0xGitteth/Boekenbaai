@@ -93,15 +93,15 @@ async function run(){
     assert.equal(initial.data.decisions.differences[0].kind,'loan');
     assert.equal(initial.data.decisions.differences[0].before.id,'lisa');
     assert.equal(initial.data.decisions.differences[0].after.id,'tim');
-    assert.equal(initial.data.decisions.summary.readyToApply,false);
+    assert.equal(initial.data.decisions.summary.readyToApply,true,
+      'An explicit unambiguous new Excel loan is proposed without 90 decisions');
+    assert.equal(initial.data.decisions.summary.automatic,1);
     const unsafeApply=await call('/api/admin/book-import-stages/'+initial.data.id+'/apply',
-      token,{revision:initial.data.revision,confirm:true});
-    assert.equal(unsafeApply.status,409,'Never commit unanswered differences');
+      token,{revision:initial.data.revision,confirm:false});
+    assert.equal(unsafeApply.status,400,
+      'Even an automatic Excel proposal requires final administrator confirmation');
 
-    // A rejected apply intentionally invalidates the old review session.
-    // Upload again instead of accidentally reusing a failed approval.
-    const retry=await begin([row('Tim Leerling')]);
-    assert.equal(retry.status,201,JSON.stringify(retry.data));
+    const retry=initial;
     const reviewed=await call('/api/admin/book-import-stages/'+retry.data.id+'/review',
       token,{revision:retry.data.revision,corrections:[],acceptWarnings:true,
         assignmentResolutions:[{id:'0:loan',action:'apply'}]});
@@ -125,21 +125,16 @@ async function run(){
     const noLoanExcel=await begin([row()]);
     assert.equal(noLoanExcel.status,201,JSON.stringify(noLoanExcel.data));
     assert.equal(noLoanExcel.data.decisions.summary.readyToApply,false);
-    assert.equal(noLoanExcel.data.decisions.differences[0].blankSource,true);
+    assert.equal(noLoanExcel.data.decisions.differences.length,0,
+      'Empty fields cannot be interpreted as a return');
     assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).books[0].borrowedBy,'tim');
-    const kept=await call('/api/admin/book-import-stages/'+noLoanExcel.data.id+'/review',
-      token,{revision:noLoanExcel.data.revision,corrections:[],acceptWarnings:true,
-        assignmentResolutions:[{id:'0:loan',action:'keep'}]});
-    assert.equal(kept.status,200,JSON.stringify(kept.data));
-    const keptApplied=await call('/api/admin/book-import-stages/'+noLoanExcel.data.id+'/apply',
-      token,{revision:kept.data.revision,confirm:true});
-    assert.equal(keptApplied.status,200,JSON.stringify(keptApplied.data));
-    assert.equal(keptApplied.data.result.corrected,0);
-    assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).books[0].borrowedBy,'tim');
+    const emptyCancelled=await call('/api/admin/book-import-stages/'+noLoanExcel.data.id+'/cancel',
+      token,{revision:noLoanExcel.data.revision});
+    assert.equal(emptyCancelled.status,200);
 
     // A postponed discrepancy must survive closing the import panel and
     // remain visible through the durable administrator report endpoint.
-    const postponed=await begin([row()]);
+    const postponed=await begin([row('Lisa Leerling')]);
     assert.equal(postponed.status,201,JSON.stringify(postponed.data));
     const invalidCorrection=await call(
       '/api/admin/book-import-stages/'+postponed.data.id+'/review',
@@ -182,7 +177,7 @@ async function run(){
 
     // The same apparent borrower state after circulation is not the same
     // historical loan period. The database ledger must make approval stale.
-    const stale=await begin([row()]);
+    const stale=await begin([row('Lisa Leerling')]);
     assert.equal(stale.status,201,JSON.stringify(stale.data));
     const staleReviewed=await call('/api/admin/book-import-stages/'+stale.data.id+'/review',
       token,{revision:stale.data.revision,corrections:[],acceptWarnings:true,
@@ -283,7 +278,6 @@ async function run(){
       revision:deferredLoanImport.data.revision,corrections:[],acceptWarnings:true,
       assignmentResolutions:[
         {id:'0:loan',action:'later'},
-        {id:'0:location',action:'keep'},
       ],
     });
     assert.equal(loanReview.status,200,JSON.stringify(loanReview.data));

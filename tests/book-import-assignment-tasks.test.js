@@ -163,4 +163,52 @@ assert.equal(resolveDeferredAssignmentTask(db,migrated,admin,
 assert.equal(migrated.status,'completed');
 assert.equal(listDeferredAssignmentTasks(db).summary.open,0);
 
+// Postponed shared-ISBN assignments must retain the physical ID allocated
+// during the original multirow preview, not be remapped to the first free copy.
+const shared=initial();
+shared.books[0].status='available';
+shared.books[0].borrowedBy=null;
+shared.students[0].borrowedBooks=[];
+shared.books.push({
+  ...shared.books[0],id:'copy-2',barcode:'4711002',borrowedBy:null,
+});
+shared.students.push({id:'sophie',name:'Sophie Leerling',borrowedBooks:[]});
+const sourceA={
+  ...row({studentLoan:{status:'matched',id:'tim',name:'Tim Leerling'}}),
+  index:0,book:{...row({}).book,barcode:''},
+};
+const sourceB={
+  ...row({studentLoan:{status:'matched',id:'sophie',name:'Sophie Leerling'}}),
+  index:1,sourceRowNumber:6,book:{...row({}).book,barcode:''},
+};
+const multiPlan=buildAssignmentPreview({ok:true,rows:[sourceA,sourceB]},shared,
+  [{id:'0:loan',action:'later'},{id:'1:loan',action:'later'}]);
+assert.equal(multiPlan.ok,true);
+assert.equal(multiPlan.differences.length,2);
+assert.equal(multiPlan.differences[0].bookId,'copy-1');
+assert.equal(multiPlan.differences[1].bookId,'copy-2');
+const multiReport={
+  id:'multi-ISBN-report',mode:'assignment_reconcile',fileName:'dubbele-isbn.xlsx',
+  fullyReviewed:false,importedAt:today,deferredDifferences:multiPlan.differences.map(d=>({
+    id:d.id,kind:d.kind,bookId:d.bookId,worksheetRow:d.worksheetRow,
+    before:d.before,after:d.after,status:'open',
+  })),
+};
+shared.bookImportReports.push(multiReport);
+const tasks=createDeferredAssignmentTasks(shared,multiReport,
+  [sourceA,sourceB],multiPlan.differences,today);
+const sophieTask=tasks.find(task=>task.bookId==='copy-2');
+assert.ok(sophieTask,'The second allocated physical copy is persisted');
+const appliedSophie=resolveDeferredAssignmentTask(shared,sophieTask,admin,
+  {choice:'apply',revision:1,confirm:true});
+assert.equal(appliedSophie.ok,true);
+assert.equal(shared.books[0].borrowedBy,null);
+assert.equal(shared.books[1].borrowedBy,'sophie');
+const timTask=tasks.find(task=>task.bookId==='copy-1');
+assert.equal(resolveDeferredAssignmentTask(shared,timTask,admin,
+  {choice:'apply',revision:1,confirm:true}).ok,true);
+assert.equal(shared.books[0].borrowedBy,'tim');
+assert.equal(shared.students[1].borrowedBooks[0].bookId,'copy-1');
+assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
+
 console.log('Deferred administrator tasks: security, persistent queue, safe resolution, stale loan and legacy records OK');

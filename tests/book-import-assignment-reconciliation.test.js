@@ -46,27 +46,26 @@ assert.equal(unchanged.summary.readyToApply,false,
   'No differences cannot create a phantom administrative action');
 
 const blank=preview(db,[row(0,'4711001')]);
-assert.equal(blank.differences.length,1);
-assert.equal(blank.differences[0].kind,'loan');
-assert.equal(blank.differences[0].blankSource,true);
-assert.equal(blank.differences[0].choice,'pending');
-assert.equal(blank.summary.readyToApply,false,'Blank Excel cell may never end an active loan');
+assert.equal(blank.differences.length,0,
+  'A blank Excel borrower must never imply an administrative return');
+assert.equal(blank.summary.readyToApply,false);
 assert.equal(normalizeResolutions([{id:'0:loan',action:'delete'}]).ok,false);
-const keep=preview(db,[row(0,'4711001')],[{id:'0:loan',action:'keep'}]);
-assert.equal(keep.summary.readyToApply,true);
-const unchangedSnapshot=JSON.stringify(db);
-const keepApplied=applyAssignmentPreview(db,keep,'admin',now);
-assert.equal(keepApplied.applied,0);
-assert.equal(JSON.stringify(db.books),JSON.stringify(JSON.parse(unchangedSnapshot).books));
-assert.deepEqual(db.students,JSON.parse(unchangedSnapshot).students);
-assert.deepEqual(db.history,JSON.parse(unchangedSnapshot).history);
-assert.deepEqual(db.readingRecords,JSON.parse(unchangedSnapshot).readingRecords);
+assert.equal(preview(db,[row(0,'4711001')],[{id:'0:loan',action:'keep'}])
+  .error,'stale_assignment_choice');
+assert.equal(db.books[0].borrowedBy,'lisa');
 
 db=directory();
 const correction=preview(db,[row(0,'4711001',loanTo('tim','Tim Leerling'))]);
 assert.equal(correction.summary.differences,1);
 assert.equal(correction.differences[0].before.id,'lisa');
 assert.equal(correction.differences[0].after.id,'tim');
+assert.equal(correction.differences[0].choice,'apply',
+  'An explicit unambiguous Excel borrower is proposed automatically');
+assert.equal(correction.summary.automatic,1);
+assert.equal(correction.summary.readyToApply,true);
+assert.equal(preview(db,[row(0,'4711001',loanTo('tim','Tim Leerling'))],
+  [{id:'0:loan',action:'keep'}]).differences[0].choice,'keep',
+  'An administrator can still decline the Excel proposal');
 const selected=preview(db,[row(0,'4711001',loanTo('tim','Tim Leerling'))],
   [{id:'0:loan',action:'apply'}]);
 assert.equal(selected.summary.readyToApply,true);
@@ -91,15 +90,13 @@ assert.equal(db.bookAssignmentCorrectionLog[0].administrativeCorrection,true);
 assert.equal(db.bookImportLoanActivityCounters['copy-1'],1);
 
 db=directory();
-const completedWrongLoan=preview(db,[row(0,'4711001')],[{id:'0:loan',action:'apply'}]);
-assert.equal(completedWrongLoan.summary.readyToApply,true);
-applyAssignmentPreview(db,completedWrongLoan,'admin',now);
-assert.equal(db.books[0].status,'available');
-assert.equal(db.books[0].borrowedBy,null);
-assert.deepEqual(db.students[0].borrowedBooks,[]);
+const noReturn=preview(db,[row(0,'4711001')]);
+assert.equal(noReturn.differences.length,0);
+assert.equal(noReturn.summary.apply,0);
+assert.equal(db.books[0].status,'borrowed');
+assert.equal(db.books[0].borrowedBy,'lisa');
 assert.equal(db.history.length,1);
 assert.equal(db.readingRecords.length,1);
-assert.equal(db.bookAssignmentCorrectionLog[0].after.type,'none');
 
 db=directory();
 const location=preview(db,[row(0,'4711002',{
@@ -115,8 +112,8 @@ const locationApprove=preview(db,[row(0,'4711002',{
 applyAssignmentPreview(db,locationApprove,'admin',now);
 assert.equal(db.books[1].fixedLocation,'Klas A');
 const emptyLocation=preview(db,[row(0,'4711002')]);
-assert.equal(emptyLocation.differences.length,1);
-assert.equal(emptyLocation.differences[0].blankSource,true);
+assert.equal(emptyLocation.differences.length,0,
+  'An empty Excel location does not remove a saved classroom location');
 assert.equal(emptyLocation.summary.readyToApply,false);
 assert.equal(db.books[1].fixedLocation,'Klas A');
 const implicitClass=preview(directory(),[row(0,'4711002',{classContext:['Klas A']})]);
@@ -205,14 +202,17 @@ assert.equal(db.students[0].borrowedBooks.length,0);
 db=directory();
 const unknown=preview(db,[row(0,'99887711',loanTo('tim','Tim Leerling'))]);
 assert.equal(unknown.differences[0].kind,'issue');
-assert.equal(unknown.differences[0].reason,'physical_copy_not_found');
+assert.equal(unknown.differences[0].reason,'physical_barcode_not_found');
 assert.equal(preview(db,[row(0,'99887711',loanTo('tim','Tim Leerling'))],
   [{id:'0:issue',action:'apply'}]).ok,false);
-const ambiguous=preview(db,[row(0,'',loanTo('tim','Tim Leerling'))]);
-assert.equal(ambiguous.differences[0].reason,'ambiguous_physical_copy');
+const sharedIsbn=preview(db,[row(0,'',loanTo('tim','Tim Leerling'))]);
+assert.equal(sharedIsbn.differences[0].kind,'loan');
+assert.equal(sharedIsbn.differences[0].bookId,'copy-2',
+  'Pick a free physical copy of a shared ISBN, not another pupil\'s loan');
 const duplicate=preview(db,[row(0,'4711001',loanTo('tim','Tim Leerling')),
   row(1,'4711001',loanTo('tim','Tim Leerling'))]);
-assert.equal(duplicate.differences.every(x=>x.kind==='issue'),true);
+assert.equal(duplicate.differences[1].kind,'issue');
+assert.equal(duplicate.differences[1].reason,'duplicate_physical_barcode');
 assert.equal(preview(db,[row(0,'4711001')],
   [{id:'15:loan',action:'keep'}]).error,'stale_assignment_choice');
 
@@ -283,14 +283,17 @@ const legacyAmbiguous = { ...directory(), books:[
   }),
 ]};
 assert.equal(preview(legacyAmbiguous,[row(0,'',loanTo('tim','Tim Leerling'))])
-  .differences[0].reason,'ambiguous_physical_copy');
+  .differences[0].bookId,'legacy-1',
+  'Duplicate ISBN scan codes identify an available copy, not a special barcode');
 const arbitraryBarcodeOnly = { ...directory(), books:[
   copy('non-isbn', '4711001', {
     editionIsbn:'', metadataIsbn:'', isbn13:'',
   }),
 ]};
-assert.equal(preview(arbitraryBarcodeOnly,[row(0,'',loanTo('tim','Tim Leerling'))])
-  .differences[0].reason,'physical_copy_not_found');
+const needsStock=preview(arbitraryBarcodeOnly,[row(0,'',loanTo('tim','Tim Leerling'))]);
+assert.equal(needsStock.differences.length,0);
+assert.equal(needsStock.summary.notInCollection,1);
+assert.equal(needsStock.notInCollection[0].editionIsbn,ISBN);
 
 // A conflicting worksheet borrower is a source problem, not evidence that
 // a book has disappeared from the collection.
@@ -303,4 +306,111 @@ assert.equal(preview(directory(),[bothBorrowers]).differences[0].reason,
 
 assert.equal(preview(directory(),[]).summary.readyToApply,false);
 assert.equal(preview(directory(),[row(0,'4711002')]).summary.differences,0);
+
+// A location must never cause an unrelated borrower's occupied copy to be
+// reassigned when another identical edition is available for the new reader.
+const sharedFixed=directory();
+sharedFixed.books[0].fixedLocation='Klas A';
+const safeLocationLoan=preview(sharedFixed,[
+  row(0,'',{
+    ...loanTo('tim','Tim Leerling'),
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  }),
+]);
+assert.equal(safeLocationLoan.ok,true);
+assert.equal(safeLocationLoan.differences.find(d=>d.kind==='loan')?.bookId,'copy-2');
+applyAssignmentPreview(sharedFixed,safeLocationLoan,'admin',now);
+assert.equal(sharedFixed.books[0].borrowedBy,'lisa');
+assert.equal(sharedFixed.books[1].borrowedBy,'tim');
+
+// A uniquely barcoded Excel row must reserve its exact copy first, regardless
+// of the preceding worksheet order of an otherwise identical ISBN-only row.
+const twoFreeCopies=directory();
+twoFreeCopies.books[0].status='available';
+twoFreeCopies.books[0].borrowedBy=null;
+twoFreeCopies.students[0].borrowedBooks=[];
+const physicalPriority=preview(twoFreeCopies,[
+  row(0,'',loanTo('tim','Tim Leerling')),
+  row(1,'4711001',loanTo('sophie','Sophie Leerling')),
+]);
+assert.equal(physicalPriority.differences.length,2);
+assert.equal(physicalPriority.differences[0].bookId,'copy-2');
+assert.equal(physicalPriority.differences[1].bookId,'copy-1');
+assert.equal(physicalPriority.summary.automatic,2);
+
+// Two proposals of the same ISBN to one pupil must not reject the whole
+// import on upload. Present both rows for explicit choice instead.
+const duplicateSuggestion=preview(twoFreeCopies,[
+  row(0,'',loanTo('tim','Tim Leerling')),
+  row(1,'',loanTo('tim','Tim Leerling')),
+]);
+assert.equal(duplicateSuggestion.ok,true);
+assert.equal(duplicateSuggestion.summary.pending,2);
+assert.equal(duplicateSuggestion.summary.automatic,0);
+assert.equal(duplicateSuggestion.differences.every(d=>
+  d.needsChoice==='duplicate_excel_student_edition'),true);
+const resolvedDuplicate=preview(twoFreeCopies,[
+  row(0,'',loanTo('tim','Tim Leerling')),
+  row(1,'',loanTo('tim','Tim Leerling')),
+],[{id:'0:loan',action:'apply'},{id:'1:loan',action:'keep'}]);
+assert.equal(resolvedDuplicate.ok,true);
+assert.equal(resolvedDuplicate.summary.readyToApply,true);
+
+// Bad source rows cannot pre-empt a physical copy needed by a valid borrower.
+const unrecognizedFirst=preview(twoFreeCopies,[
+  row(0,'',{studentLoan:{status:'unmatched',name:'Onbekende leerling'}}),
+  row(1,'',loanTo('tim','Tim Leerling')),
+]);
+assert.equal(unrecognizedFirst.differences.find(d=>d.rowIndex===0)?.reason,
+  'borrower_not_uniquely_matched');
+assert.equal(unrecognizedFirst.differences.find(d=>d.rowIndex===1)?.bookId,'copy-1');
+
+
+// Multiple rows of one ISBN can be distributed among physical copies without
+// individual barcodes, exactly like the application's normal scan workflow.
+const twoCopies=directory();
+const distributed=preview(twoCopies,[
+  row(0,'',loanTo('lisa','Lisa Leerling')),
+  row(1,'',loanTo('tim','Tim Leerling')),
+]);
+assert.equal(distributed.differences.length,1);
+assert.equal(distributed.differences[0].bookId,'copy-2');
+assert.equal(distributed.differences[0].after.id,'tim');
+assert.equal(distributed.summary.automatic,1);
+applyAssignmentPreview(twoCopies,distributed,'admin',now);
+assert.equal(twoCopies.books[0].borrowedBy,'lisa');
+assert.equal(twoCopies.books[1].borrowedBy,'tim');
+assert.equal(twoCopies.students[1].borrowedBooks[0].bookId,'copy-2');
+
+// More Excel loan rows than physical stock must not overwrite an existing loan.
+const overbooked=preview(directory(),[
+  row(0,'',loanTo('lisa','Lisa Leerling')),
+  row(1,'',loanTo('tim','Tim Leerling')),
+  row(2,'',loanTo('sophie','Sophie Leerling')),
+]);
+assert.equal(overbooked.summary.notInCollection,1);
+assert.equal(overbooked.summary.notInCollectionCopies,1);
+assert.equal(overbooked.differences.length,1);
+assert.equal(overbooked.differences[0].after.id,'tim');
+
+// A blank ISBN row never steals a physical copy from an explicit borrower row.
+const blankFirst=preview(directory(),[
+  row(0,''),
+  row(1,'',loanTo('tim','Tim Leerling')),
+]);
+assert.equal(blankFirst.differences.length,1);
+assert.equal(blankFirst.differences[0].bookId,'copy-2');
+
+// One ISBN and two distinct saved borrowers, with no copies available, is
+// genuinely ambiguous when Excel names an unrelated third pupil.
+const allLent=directory();
+allLent.books[1].status='borrowed';
+allLent.books[1].borrowedBy='sophie';
+allLent.students[2].borrowedBooks=[{bookId:'copy-2'}];
+assert.equal(preview(allLent,[row(0,'',loanTo('tim','Tim Leerling'))])
+  .differences[0].reason,'ambiguous_physical_copy');
+
+// A distinct physical barcode still identifies its exact individual copy.
+assert.equal(preview(directory(),[row(0,'4711001',loanTo('tim','Tim Leerling'))])
+  .differences[0].bookId,'copy-1');
 console.log('Administrative assignment reconciliation: choices, metadata retention, identity and zero implicit deletions passed');

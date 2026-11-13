@@ -618,18 +618,34 @@
       const summary = plan.summary || {};
       const overview = make('div', 'bb-review__totals');
       overview.append(make('h4', '', 'Administratieve koppelingen controleren'));
-      overview.append(make('p', '', (summary.differences || 0) + ' controlepunten, waarvan '
-        + (summary.actualDifferences || 0) + ' verschillen in registraties, '
-        + (summary.classQuestions || 0) + ' vragen over klasvermeldingen en '
-        + (summary.issues || 0) + ' andere punten voor handmatige controle. '
-        + (summary.pending || 0) + ' nog zonder keuze, '
-        + (summary.apply || 0) + ' te corrigeren.'));
+      overview.append(make('p', '', (summary.differences || 0)
+        + ' verschillen in bestaande registraties. '
+        + (summary.automatic || 0) + ' duidelijke wijzigingen uit Excel voorgesteld, '
+        + (summary.pending || 0) + ' punten vragen een keuze. '
+        + (summary.notInCollection || 0) + ' ISBN-groepen ('
+        + (summary.notInCollectionCopies || 0)
+        + ' exemplaren) kunnen niet administratief worden gekoppeld.'));
       overview.append(make('p', 'hint',
         'Er worden geen boeken toegevoegd, verwijderd of opnieuw verrijkt. '
-        + 'Een lege cel is geen bewijs van inlevering. Alleen een door jou '
-        + 'bevestigde correctie wordt opgeslagen. Een administratieve correctie '
-        + 'is geen gewone inlevering en verandert geen leesantwoord.'));
+        + 'Lege Excelvelden laten bestaande uitleningen en vaste locaties ongemoeid. '
+        + 'Expliciete gegevens worden voorgesteld wanneer de koppeling veilig is. '
+        + 'Je bevestigt alle voorgestelde wijzigingen samen. '
+        + 'Dit is geen gewone inlevering en verandert geen leesantwoord.'));
       results.append(overview);
+      if ((plan.notInCollection || []).length) {
+        const missing = make('details', 'bb-review__omitted');
+        missing.append(make('summary', '',
+          'Nieuwe of extra exemplaren: verwerk deze via de gewone boekenimport'));
+        for (const item of plan.notInCollection.slice(0, 40)) {
+          missing.append(make('p', 'bb-review__detail',
+            (item.title || '(zonder titel)') + ' · ' + (item.editionIsbn || 'geen ISBN')
+            + ' · ' + item.copies + ' exemplaar/exemplaren, Excelrij(en): '
+            + (item.rows || []).join(', ')));
+        }
+        if (plan.notInCollection.length > 40) missing.append(make('p', 'hint',
+          'Overige ISBN-groepen worden niet administratief aangepast.'));
+        results.append(missing);
+      }
       const controls = make('div', 'bb-review__controls');
       const reviewButton = button('Mijn keuzes controleren', 'btn btn--secondary');
       reviewButton.disabled = Boolean(remotePending || busy);
@@ -687,9 +703,17 @@
           diff.author || '', diff.editionIsbn || '',
           diff.barcode || 'Geen individuele barcode',
         ].filter(Boolean).join(' · ')));
+        if (diff.needsChoice === 'duplicate_excel_student_edition') {
+          card.append(make('p', 'bb-review__reason',
+            'Deze leerling krijgt in Excel meerdere exemplaren met hetzelfde ISBN. '
+            + 'Kies welk exemplaar uitgeleend moet worden en behoud of controleer het andere.'));
+        }
         if (diff.kind === 'issue') {
           const reasons = {
-            ambiguous_physical_copy: 'Boekenbaai kent meerdere exemplaren met dit ISBN. Zonder individuele barcode is niet zeker welk exemplaar bij deze Excelrij hoort. Behoud dit verschil of controleer het later.',
+            ambiguous_physical_copy: 'Alle exemplaren met dit ISBN zijn al uitgeleend. Zonder bestaande match kan Boekenbaai niet veilig bepalen welke actieve uitlening gewijzigd moet worden.',
+            ambiguous_existing_borrower: 'Meerdere exemplaren van deze ISBN-editie staan al bij dezelfde lener. Controleer de dubbele uitleenregistratie.',
+            duplicate_physical_barcode: 'Dezelfde unieke exemplaarbarcode staat meerdere keren in het Excelbestand. Controleer of er werkelijk een extra exemplaar is.',
+            physical_barcode_not_found: 'Deze individuele exemplaarbarcode ontbreekt in de bibliotheek, hoewel het ISBN al bekend is. Controleer de barcode.',
             conflicting_excel_borrowers: 'Excel vermeldt zowel een leerling als een klas als lener. Controleer welke registratie klopt.',
             multiple_class_contexts: 'Excel noemt meerdere of ongeldige klassen. Controleer de klasvermeldingen voordat je een vaste plek of uitlening kiest.',
             source_row_requires_review: 'Deze Excelrij bevat nog een conflict of onopgelost gegeven. Controleer de brongegevens bij de gewone boekimport.',
@@ -740,7 +764,7 @@
         label.append(make('span', '', 'Wat betekent dit verschil?'));
         const choice = make('select');
         const actions = [
-          ['pending', 'Kies een beslissing'],
+          ...(!diff.automatic ? [['pending', 'Kies een beslissing']] : []),
           ['keep', 'Huidige gegevens behouden'],
           ['later', 'Later handmatig controleren'],
         ];
@@ -751,20 +775,16 @@
               [['class_loan', 'Tijdelijk uitgeleend aan ' + diff.className]]),
             ['class_unrelated', 'Deze klasvermelding is niet van toepassing']);
         } else if (diff.kind !== 'issue' && !diff.reason) {
-          actions.splice(1, 0, ['apply', diff.kind === 'loan'
-            ? (diff.blankSource
-              ? 'Administratief rechtzetten: uitlening was onjuist (geen inlevering)'
-              : 'Uitlening corrigeren naar leerling of klas uit Excel')
-            : (diff.blankSource
-              ? 'Administratief rechtzetten: geen vaste locatie'
-              : 'Vaste locatie uit Excel overnemen')]);
+          actions.splice(0, 0, ['apply', diff.kind === 'loan'
+            ? 'Uitlening uit Excel overnemen' + (diff.automatic ? ' (voorgesteld)' : '')
+            : 'Vaste locatie uit Excel overnemen' + (diff.automatic ? ' (voorgesteld)' : '')]);
         }
         for (const [value, title] of actions) {
           const option = make('option', '', title);
           option.value = value;
           choice.append(option);
         }
-        choice.value = assignmentResolutions.get(diff.id)?.action || 'pending';
+        choice.value = assignmentResolutions.get(diff.id)?.action || diff.choice || 'pending';
         choice.addEventListener('change', () => {
           if (choice.value === 'pending') assignmentResolutions.delete(diff.id);
           else assignmentResolutions.set(diff.id, { id: diff.id, action: choice.value });

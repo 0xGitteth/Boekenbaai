@@ -1,9 +1,10 @@
 'use strict';
 
 // Opt-in administrative correction of existing physical copies only.
-// Never infer a return or removal from an empty Excel cell. Every difference
-// needs an explicit administrator decision, and every applied difference is
-// recomputed against current persisted book/student/class state.
+// Explicit, uniquely matched new Excel loan/location values are preselected
+// for one confirmed batch; blank cells never infer a return or removal.
+// Ambiguous copies remain unresolved, and every applied change is recomputed
+// against current persisted book/student/class state.
 const crypto = require('node:crypto');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
@@ -99,23 +100,79 @@ function desiredLocation(row, db) {
   }
   return {error:'fixed_location_needs_manual_identification'};
 }
-function findCopy(row, db, byBarcode, byIsbn) {
+function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set(), preferredCopyId = null) {
   const book=row.book||{},barcode=normalizeRuntimeBarcode(book.barcode);
   if(book.barcode && !barcode)return {error:'invalid_physical_barcode'};
   const isbn=canonicalizeBookIsbn13(book.editionIsbn);
   if(!isbn)return {error:'missing_valid_isbn'};
-  const candidates=barcode?byBarcode.get(barcode)||[]:byIsbn.get(isbn)||[];
-  if(candidates.length!==1)
-    return {error:candidates.length?'ambiguous_physical_copy':'physical_copy_not_found'};
-  const copy=candidates[0];
-  if(edition(copy)!==isbn)return {error:'edition_identity_mismatch'};
-  if(bookKey(copy).join('|')!==bookKey(book).join('|'))
-    return {error:'title_author_mismatch'};
   if(book.quantity?.valid!==true||book.quantity.value!==1)
     return {error:'copy_requires_single_excel_row'};
-  return {copy};
+
+  // Excel's ISBN identifies an edition, NOT an individual physical copy.
+  // A barcode that is itself that ISBN must not be treated as a unique copy
+  // identifier when the edition has multiple physical copies.
+  const physicalBarcode=barcode && canonicalizeBookIsbn13(barcode)!==isbn;
+  const candidates=physicalBarcode ? byBarcode.get(barcode)||[] : byIsbn.get(isbn)||[];
+  if(!candidates.length) {
+    // A new ISBN belongs in the normal stock import, not among 45 unrelated
+    // manual administrative choices. Keep a separate informative count.
+    const knownEdition=(byIsbn.get(isbn)||[]).length>0;
+    return {error:knownEdition?'physical_barcode_not_found':'physical_copy_not_found'};
+  }
+  const validEdition=candidates.filter(copy=>edition(copy)===isbn);
+  if(!validEdition.length)return {error:'edition_identity_mismatch'};
+  const matching=validEdition.filter(copy=>bookKey(copy).join('|')===bookKey(book).join('|'));
+  if(!matching.length)return {error:'title_author_mismatch'};
+  const unassigned=matching.filter(copy=>!usedCopies.has(copy.id));
+  if(!unassigned.length) return {error:physicalBarcode
+    ? 'duplicate_physical_barcode' : 'no_unallocated_copy'};
+  // Durable "later" tasks are bound to the physical copy selected during
+  // the original batch. Never remap a postponed decision to the first copy.
+  if(preferredCopyId){
+    const pinned=unassigned.find(copy=>copy.id===preferredCopyId);
+    return pinned?{copy:pinned}:{error:'deferred_copy_mismatch'};
+  }
+  if(physicalBarcode && unassigned.length===1)return {copy:unassigned[0]};
+
+  // All copies of an identical edition can share the printed ISBN barcode.
+  // Matching the actual borrower is preferred; otherwise assign one free
+  // copy internally, as the normal barcode scanner already does.
+  const context=row.context||{};
+  const student=context.studentLoan?.status==='matched'?context.studentLoan.id:null;
+  const klass=context.classLoan?.status==='matched'?context.classLoan.id:null;
+  if(student||klass){
+    const held=unassigned.filter(copy=>student?copy.borrowedBy===student
+      :copy.borrowedByClassId===klass);
+    if(held.length===1)return {copy:held[0]};
+    if(held.length>1)return {error:'ambiguous_existing_borrower'};
+  }
+  const fixed=context.fixedLocation;
+  if(fixed?.status==='resolved' && fixed.label){
+    const located=unassigned.filter(copy=>
+      norm(copy.fixedLocation)===norm(fixed.label)
+      // A shelf location cannot identify which currently borrowed book
+      // changed hands. Do not steal an unrelated active loan when another
+      // physical copy can be assigned to the new borrower.
+      && (!(student||klass) || (
+        copy.status!=='borrowed' && !copy.borrowedBy && !copy.borrowedByClassId
+      ) || (student&&copy.borrowedBy===student)
+        || (klass&&copy.borrowedByClassId===klass)));
+    if(located.length)return {copy:located[0]};
+  }
+  const free=unassigned.filter(copy=>copy.status!=='borrowed'
+    && !copy.borrowedBy && !copy.borrowedByClassId);
+  if(free.length){
+    // A new explicit location should prefer an unfixed copy rather than
+    // reassigning a classroom's existing stock.
+    if(fixed?.status==='resolved'&&fixed.label){
+      return {copy:free.find(copy=>!copy.fixedLocation)||free[0]};
+    }
+    return {copy:free[0]};
+  }
+  if(unassigned.length===1 && matching.length===1)return {copy:unassigned[0]};
+  return {error:'ambiguous_physical_copy'};
 }
-function buildAssignmentPreview(analysis, db, input=[]) {
+function buildAssignmentPreview(analysis, db, input=[], options={}) {
   if(!analysis?.ok||!Array.isArray(analysis.rows))return {ok:false,error:'invalid_review'};
   const normalized=normalizeResolutions(input);
   if(!normalized.ok)return normalized;
@@ -133,30 +190,63 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       byIsbn.get(isbn).push(copy);
     }
   }
-  const matched=new Map(),found=[];
-  for(const row of analysis.rows) {
+  const found=[],notInCollection=[];
+  // Prioritize concrete Excel loans/locations over empty duplicate rows.
+  // This allows two pupils holding copies of the same ISBN to map onto two
+  // different existing internal copy IDs deterministically.
+  const prioritized=[...analysis.rows].sort((a,b)=>{
+    const rank=row=>{
+      const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
+      const barcode=normalizeRuntimeBarcode(row.book?.barcode);
+      const physicalBarcode=barcode && canonicalizeBookIsbn13(barcode)!==isbn;
+      return Number(Boolean(physicalBarcode))*100
+        +Number(Boolean(row.context?.studentLoan||row.context?.classLoan))*3
+        +Number(Boolean(row.context?.fixedLocation))*2
+        +Number(Boolean(row.context?.classContext?.length));
+    };
+    return rank(b)-rank(a)||a.index-b.index;
+  });
+  const usedCopies=new Set();
+  for(const row of prioritized) {
     if(row.status==='skipped')continue;
     const context=row.context||{};
-    // A source conflict is not proof that the physical book is missing.
-    // Report the underlying conflict before attempting any correction.
-    const located=['ready','warning'].includes(row.status)
-      ? findCopy(row,db,byBarcode,byIsbn)
-      : {error:context.studentLoan && context.classLoan
-        ? 'conflicting_excel_borrowers' : 'source_row_requires_review'};
+    // Plain ISBN rows with no explicit administration data are not changes.
     const relevant=Boolean(context.studentLoan||context.classLoan
-      ||context.fixedLocation||context.classContext?.length
-      ||context.libraryPresence);
+      ||context.fixedLocation||context.classContext?.length);
+    if(!relevant)continue;
+    const validSource=['ready','warning'].includes(row.status);
+    const loanCheck=validSource && (context.studentLoan||context.classLoan)
+      ? desiredLoan(row,db) : null;
+    const locationCheck=validSource && context.fixedLocation
+      ? desiredLocation(row,db) : null;
+    const sourceError=loanCheck?.error
+      ||(locationCheck?.error!=='class_context_requires_classification'
+        ? locationCheck?.error : null);
+    // An invalid borrower/location should not reserve an otherwise usable
+    // copy and cause a second, valid row to appear as new physical stock.
+    const located=!validSource
+      ? {error:context.studentLoan&&context.classLoan
+        ? 'conflicting_excel_borrowers':'source_row_requires_review'}
+      : sourceError ? {error:sourceError}
+        : findCopy(row,db,byBarcode,byIsbn,usedCopies,
+          options.preferredCopyByRow?.[row.index]||null);
     if(located.error) {
-      if(relevant)found.push({id:row.index+':issue',rowIndex:row.index,
+      if(['physical_copy_not_found','no_unallocated_copy'].includes(located.error)) {
+        // Nothing can be corrected before this edition exists in the library.
+        // The normal inventory import handles new books and their loans.
+        notInCollection.push({
+          worksheetRow:row.sourceRowNumber,title:row.book?.title||'',
+          editionIsbn:row.book?.editionIsbn||'',
+        });
+      } else found.push({id:row.index+':issue',rowIndex:row.index,
         worksheetRow:row.sourceRowNumber,title:row.book?.title||'',
+        editionIsbn:row.book?.editionIsbn||'',
         kind:'issue',reason:located.error,bookId:null});
       continue;
     }
-    const previous=matched.get(located.copy.id);
-    matched.set(located.copy.id,previous?[...previous,row]:[row]);
+    usedCopies.add(located.copy.id);
     found.push({row,copy:located.copy});
   }
-  const duplicateIds=new Set([...matched].filter(([,rows])=>rows.length>1).map(([id])=>id));
   const differences=found.filter(item=>item.kind==='issue');
   for(const {row,copy} of found.filter(item=>!item.kind)) {
     const base={rowIndex:row.index,worksheetRow:row.sourceRowNumber,
@@ -166,11 +256,6 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       // and returned back to its earlier visible status during review.
       circulationRevision:circulationRevision(db,copy.id),
       loanBorrowedAt:copy.borrowedAt||null,loanDueDate:copy.dueDate||null};
-    if(duplicateIds.has(copy.id)) {
-      differences.push({...base,id:row.index+':issue',kind:'issue',
-        reason:'duplicate_copy_rows'});
-      continue;
-    }
     const current=borrowerOf(copy,db);
     const desired=desiredLoan(row,db);
     const info=row.context||{};
@@ -194,7 +279,8 @@ function buildAssignmentPreview(analysis, db, input=[]) {
     // should be administratively returned. It needs classification first.
     const classContextOnly = Array.isArray(info.classContext) && info.classContext.length
       && !info.studentLoan && !info.classLoan;
-    if(!classContextOnly && (current.type!==desired.type || current.id!==desired.id)) {
+    if((info.studentLoan||info.classLoan) && !classContextOnly
+      && (current.type!==desired.type || current.id!==desired.id)) {
       if(current.type!=='none'||desired.type!=='none') {
         const claim=desired.type==='student'
           ? (db.students||[]).find(x=>x.id===desired.id) : null;
@@ -238,7 +324,7 @@ function buildAssignmentPreview(analysis, db, input=[]) {
     }else{
       const old=String(copy.fixedLocation||'').trim();
       const next=String(location.value||'').trim();
-      if(old!==next&&(old||next)){
+      if(location.provided && old!==next){
         differences.push({...base,id:row.index+':location',kind:'location',
           before:old,after:next,blankSource:!location.provided,reason:'',
           description:location.provided?'Excel vermeldt een andere vaste plek.'
@@ -261,25 +347,57 @@ function buildAssignmentPreview(analysis, db, input=[]) {
       return {ok:false,error:'unsafe_assignment_choice'};
     }
   }
-  // No selected row may give two physical copies of the same edition to
-  // one pupil. Compare both the current state and all proposed changes.
-  const selectedStudentEditions = new Set();
-  for (const diff of differences) {
-    if (selected.get(diff.id)!=='apply' || diff.kind!=='loan'
-      || diff.after?.type!=='student') continue;
-    const key=JSON.stringify([diff.after.id,diff.editionIsbn]);
-    if(selectedStudentEditions.has(key))
-      return {ok:false,error:'duplicate_corrected_student_edition'};
-    selectedStudentEditions.add(key);
+  // Unambiguous explicit changes are suggested for the final batch review.
+  for(const d of differences) {
+    const explicitlySelected=selected.get(d.id);
+    const automatic=!explicitlySelected && (d.kind==='loan'||d.kind==='location')
+      && !d.blankSource && !d.reason;
+    d.choice=explicitlySelected||(automatic?'apply':'pending');
+    d.automatic=Boolean(automatic);
   }
-  for(const d of differences) d.choice=selected.get(d.id)||'pending';
+  // Two different copies of the same ISBN may not be assigned to one pupil.
+  // If this arises solely from automatic suggestions, keep the import open
+  // and ask for a decision instead of rejecting the entire Excel preview.
+  const studentEditionGroups=new Map();
+  for(const diff of differences) {
+    if(diff.choice!=='apply'||diff.kind!=='loan'
+      ||diff.after?.type!=='student')continue;
+    const key=JSON.stringify([diff.after.id,diff.editionIsbn]);
+    if(!studentEditionGroups.has(key))studentEditionGroups.set(key,[]);
+    studentEditionGroups.get(key).push(diff);
+  }
+  for(const group of studentEditionGroups.values()){
+    if(group.length<2)continue;
+    if(group.filter(d=>!d.automatic).length>1)
+      return {ok:false,error:'duplicate_corrected_student_edition'};
+    for(const diff of group.filter(d=>d.automatic)){
+      diff.choice='pending';
+      diff.automatic=false;
+      diff.needsChoice='duplicate_excel_student_edition';
+    }
+  }
   const pending=differences.filter(x=>x.choice==='pending').length;
   const apply=differences.filter(x=>x.choice==='apply'
     ||x.choice==='class_fixed'||x.choice==='class_loan').length;
   const issues=differences.filter(x=>x.kind==='issue'||x.reason).length;
   const classQuestions=differences.filter(x=>x.kind==='class_context').length;
-  return {ok:true,differences,summary:{
-    differences:differences.length,pending,apply,
+  const automatic=differences.filter(x=>x.automatic).length;
+  const missingByIsbn=new Map();
+  for(const missing of notInCollection){
+    const key=missing.editionIsbn||missing.title||String(missing.worksheetRow);
+    const item=missingByIsbn.get(key);
+    if(item) {
+      item.rows.push(missing.worksheetRow);
+      item.copies++;
+    } else missingByIsbn.set(key,{
+      title:missing.title,editionIsbn:missing.editionIsbn,
+      copies:1,rows:[missing.worksheetRow],
+    });
+  }
+  const unmatchedEditions=[...missingByIsbn.values()];
+  return {ok:true,differences,notInCollection:unmatchedEditions,summary:{
+    differences:differences.length,pending,apply,automatic,
+    notInCollection:unmatchedEditions.length,notInCollectionCopies:notInCollection.length,
     kept:differences.filter(x=>x.choice==='keep'||x.choice==='class_unrelated').length,
     deferred:differences.filter(x=>x.choice==='later').length,
     issues,classQuestions,actualDifferences:differences.length-issues-classQuestions,
