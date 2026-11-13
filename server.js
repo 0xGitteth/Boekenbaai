@@ -5788,6 +5788,12 @@ async function handleApi(req, res, requestUrl) {
               const assignments=actualAssignmentPreview(combined.assignments,createdByRow);
               if(assignments.differences.length)
                 corrected=applyAssignmentPreview(database,assignments,user.id,now,batchId);
+              if(assignments.acknowledgedLoans?.length){
+                // The source Excel also confirms loans that were already
+                // recorded correctly. Persist their receipts so that an old
+                // workbook cannot re-lend them after a later return.
+                persistExcelLoanReceipts(database,assignments.acknowledgedLoans);
+              }
               deferredDifferences=assignments.differences.filter(item=>item.choice==='later')
                 .map(item=>({
                   id:item.id,worksheetRow:item.worksheetRow,bookId:item.bookId,
