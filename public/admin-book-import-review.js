@@ -840,14 +840,14 @@
           prev.addEventListener('click', () => {
             if (kind === 'automatic') automaticPage--;
             else page--;
-            render(true);
+            render(true, kind);
           });
           const next = button('Volgende', 'btn btn--ghost');
           next.disabled = shownPage === maxPage;
           next.addEventListener('click', () => {
             if (kind === 'automatic') automaticPage++;
             else page++;
-            render(true);
+            render(true, kind);
           });
           navigation.append(prev, make('span', '',
             'Pagina ' + (shownPage + 1) + ' van ' + (maxPage + 1)), next);
@@ -892,37 +892,43 @@
     // Rebuilding a long review removes the focused row temporarily. Keep its
     // position in the viewport, rather than letting browser scroll anchoring
     // move the administrator to the top of the import panel.
-    function render(resetListScroll = false) {
+    function render(resetListScroll = false, targetListKind = null) {
       const scrollY = Number(window.scrollY) || 0;
-      const previousList = results.querySelector('.bb-review__rowlist');
-      const listScrollTop = previousList?.scrollTop || 0;
+      // Import review may display both a scrollable exception list and a
+      // separately scrollable list of proposals. Restore each independently.
+      const originalLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
+      const scrollPositions = new Map(originalLists.map(list =>
+        [list.dataset.reviewList || '', list.scrollTop]));
       const focusedRow = document.activeElement?.closest?.('[data-review-row-key]');
+      const focusedList = focusedRow?.closest?.('.bb-review__rowlist');
+      const focusedListKind = focusedList?.dataset.reviewList || '';
       const rowKey = focusedRow?.dataset.reviewRowKey;
       const rowTop = focusedRow?.getBoundingClientRect().top;
-      const rowTopInList = focusedRow && previousList?.contains(focusedRow)
-        ? rowTop - previousList.getBoundingClientRect().top : null;
+      const rowTopInList = focusedRow && focusedList
+        ? rowTop - focusedList.getBoundingClientRect().top : null;
       const focusedControlIndex = focusedRow
         ? Array.from(focusedRow.querySelectorAll('button, input, select, textarea'))
           .indexOf(document.activeElement) : -1;
       renderContents();
-      const list = results.querySelector('.bb-review__rowlist');
-      if (list && resetListScroll) {
-        // A new page must start at its first row, unlike editing this page.
-        list.scrollTop = 0;
-        list.scrollIntoView({ block: 'start', behavior: 'instant' });
+      const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
+      const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
+      for (const list of updatedLists) {
+        const kind = list.dataset.reviewList || '';
+        list.scrollTop = resetListScroll && (targetListKind === null || kind === targetListKind)
+          ? 0 : (scrollPositions.get(kind) || 0);
+      }
+      if (resetListScroll) {
+        const target = listFor(targetListKind || '');
+        target?.scrollIntoView({ block: 'start', behavior: 'instant' });
         return;
       }
       const replacement = rowKey && Array.from(results.querySelectorAll('[data-review-row-key]'))
         .find(row => row.dataset.reviewRowKey === rowKey);
-      if (list) {
-        // On desktop the book list itself scrolls (max-height: 620px). Its
-        // scrollTop would otherwise reset to zero on every choice.
-        list.scrollTop = listScrollTop;
-        if (replacement && rowTopInList !== null) {
-          const nextRelativeTop = replacement.getBoundingClientRect().top
-            - list.getBoundingClientRect().top;
-          list.scrollTop += nextRelativeTop - rowTopInList;
-        }
+      const list = listFor(focusedListKind);
+      if (replacement && list && rowTopInList !== null && list.contains(replacement)) {
+        const nextRelativeTop = replacement.getBoundingClientRect().top
+          - list.getBoundingClientRect().top;
+        list.scrollTop += nextRelativeTop - rowTopInList;
       }
       const newTop = replacement && Number.isFinite(rowTop)
         ? window.scrollY + replacement.getBoundingClientRect().top - rowTop : scrollY;
