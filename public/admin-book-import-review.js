@@ -1410,6 +1410,32 @@
             stats.append(stat);
           }
           complete.append(stats);
+          if(done.selectedParts){
+            const selected=done.selectedParts;
+            const labels=[];
+            const untouched=[];
+            for(const [key,label] of [['books','Nieuwe boeken'],['loans','Uitleningen'],
+              ['locations','Vaste locaties']]){
+              (selected[key]?labels:untouched).push(label);
+            }
+            const columnLabels={
+              title:'Titels',author:'Auteurs',description:'Beschrijvingen',
+              publisher:'Uitgevers',publishedYear:'Verschijningsjaren',
+              pageCount:'Pagina-aantallen',language:'Taal',coverUrl:'Omslagen',
+              easyReading:'Makkelijk lezen',suitableForExamList:'Examenleeslijst',
+              tags:'Trefwoorden',manualThemes:'Thema’s',
+            };
+            for(const [field,label] of Object.entries(columnLabels)){
+              (selected.fields?.[field]?labels:untouched).push(label);
+            }
+            const details=make('details','bb-import__selection-details');
+            details.append(make('summary','','Wat is bij deze import meegenomen?'));
+            details.append(make('p','bb-review__detail',
+              'Geselecteerd: '+labels.join(', ')+'.'));
+            details.append(make('p','hint',
+              'Niet geselecteerd en ongewijzigd: '+untouched.join(', ')+'.'));
+            complete.append(details);
+          }
           if(done.deferred)complete.append(make('p','hint',
             done.deferred+' controletaken blijven voor later bewaard.'));
           complete.append(make('p','hint','Importnummer: '+(done.batchId||'onbekend')));
