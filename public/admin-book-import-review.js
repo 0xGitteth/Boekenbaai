@@ -149,8 +149,8 @@
     const root = make('section', 'admin-card__section admin-card__section--import bb-review', '');
     root.id = 'reviewed-import-panel';
     const header = make('div', 'bb-review__header');
-    header.append(make('h4', '', 'Nieuwe boekimport met controle'));
-    header.append(make('p', 'hint', 'Bekijk elk boek, corrigeer fouten en importeer pas na je bevestiging. Bestaande edities worden niet zomaar toegevoegd of overschreven.'));
+    header.append(make('h4', '', 'Boeken en administratie synchroniseren'));
+    header.append(make('p', 'hint', 'Eén Excelbestand, één controle en één definitieve bevestiging. Kies precies wat je wilt bijwerken.'));
     root.append(header);
     const enrichmentStatus = make('p', 'hint', 'Gratis aanvulling van boekgegevens: status wordt gecontroleerd.');
     enrichmentStatus.setAttribute('role', 'status');
@@ -302,43 +302,116 @@
     metadata.type = 'checkbox';
     metadata.checked = true;
     metadataLabel.append(metadata, document.createTextNode(' Ontbrekende ISBN-gegevens tijdens de controle aanvullen (grondiger, duurt langer). Extra verrijking gaat na de import door; Brave vraagt apart toestemming.'));
-    const importModeLabel = make('label', 'bb-review__field');
-    importModeLabel.append(make('span', '', 'Soort import'));
     const importMode = make('select');
-    for (const [value, label] of [
-      ['ordinary', 'Gewone boekimport: boeken toevoegen of voorraad bijwerken'],
-      ['reconcile', 'Administratie corrigeren: uitleningen en vaste locaties'],
+    for (const [value,label] of [
+      ['unified','Samen synchroniseren (aanbevolen)'],
+      ['ordinary','Alleen nieuwe boeken direct toevoegen (oude werkwijze)'],
+      ['reconcile','Alleen administratie controleren (oude werkwijze)'],
     ]) {
-      const option = make('option', '', label);
-      option.value = value;
+      const option=make('option','',label);
+      option.value=value;
       importMode.append(option);
     }
-    importMode.value = 'ordinary';
-    importModeLabel.append(importMode);
-    const importModeHint = make('p', 'hint',
-      'Gewone import laat bestaande koppelingen staan. In de correctiemodus kies je bij '
-      + 'elk gevonden verschil wat ermee moet gebeuren. Lege Excelvelden veranderen niets vanzelf.');
+    importMode.value='unified';
+    const advanced = make('details','bb-import__advanced');
+    advanced.append(make('summary','','Andere importmethoden (geavanceerd)'));
+    const importModeLabel=make('label','bb-review__field');
+    importModeLabel.append(make('span','','Importmethode'),importMode);
     const syncLabel = make('label', 'bb-review__check');
     const syncMode = make('input');
     syncMode.type = 'checkbox';
     syncLabel.append(syncMode, document.createTextNode(
-      ' Voorraad synchroniseren bij herupload: bestaande ISBN-edities vergelijken en alleen ontbrekende exemplaren toevoegen'
+      ' Alleen ontbrekende exemplaren toevoegen (oude voorraadvergelijking)'
     ));
-    const syncHint = make('p', 'hint',
-      'Er worden nooit automatisch boeken verwijderd of uitleningen gewijzigd. Lagere aantallen en afwijkingen moeten eerst worden opgelost.');
-    const analyze = button('Bestand controleren', 'btn');
-    analyze.type = 'submit';
-    function refreshImportMode() {
-      const correction = importMode.value === 'reconcile';
-      metadataLabel.hidden = correction;
-      metadata.disabled = correction;
-      syncLabel.hidden = correction;
-      syncHint.hidden = correction;
-      syncMode.disabled = correction;
-    }
-    importMode.addEventListener('change', refreshImportMode);
-    form.append(fileLabel, importModeLabel, importModeHint, metadataLabel,
-      syncLabel, syncHint, analyze);
+    const syncHint=make('p','hint',
+      'De oude methoden verwerken de administratie en de voorraad apart.');
+    advanced.append(importModeLabel,syncLabel,syncHint);
+
+    const parts = make('section','bb-import__parts');
+    const partsHeading = make('div','bb-import__parts-heading');
+    partsHeading.append(make('strong','','Wat wil je bijwerken?'));
+    const allButton=button('Alles selecteren','btn btn--ghost');
+    allButton.type='button';
+    const noneButton=button('Selectie wissen','btn btn--ghost');
+    noneButton.type='button';
+    partsHeading.append(allButton,noneButton);
+    parts.append(partsHeading);
+    const partChecks=new Map();
+    const columns=[
+      ['title','Titel'],['author','Auteur'],['description','Beschrijving'],
+      ['publisher','Uitgever'],['publishedYear','Verschijningsjaar'],
+      ['pageCount','Aantal pagina’s'],['language','Taal'],
+      ['coverUrl','Boekomslag'],['easyReading','Makkelijk lezen'],
+      ['suitableForExamList','Examenleeslijst'],['tags','Trefwoorden'],
+      ['manualThemes','Thema’s'],
+    ];
+    const checkPart=(key,label,enabled=false)=>{
+      const item=make('label','bb-import__option');
+      const checkbox=make('input');
+      checkbox.type='checkbox';
+      checkbox.checked=enabled;
+      item.append(checkbox,make('span','',label));
+      partChecks.set(key,checkbox);
+      return item;
+    };
+    const card=(heading,subtitle)=>{
+      const section=make('section','bb-import__part-card');
+      section.append(make('strong','',heading),make('p','hint',subtitle));
+      return section;
+    };
+    const stockCard=card('Boekenvoorraad','Voeg ontbrekende ISBN-edities en exemplaren toe. Niets wordt verwijderd.');
+    stockCard.append(checkPart('books','Nieuwe boeken en exemplaren toevoegen',true));
+    const adminCard=card('Administratie','Pas alleen de aangevinkte registraties aan.');
+    adminCard.append(checkPart('loans','Uitleningen bijwerken',true),
+      checkPart('locations','Vaste locaties bijwerken',true));
+    parts.append(stockCard,adminCard);
+    const metadataDetails=make('details','bb-import__columns');
+    metadataDetails.append(make('summary','',
+      'Boekgegevens per Excelkolom bijwerken (optioneel)'));
+    metadataDetails.append(make('p','hint',
+      'Bestaande boekgegevens veranderen uitsluitend voor aangevinkte kolommen '
+      + 'met een ingevulde Excelwaarde. Omslagen en andere gegevens blijven anders staan.'));
+    const columnGrid=make('div','bb-import__column-grid');
+    for(const [key,label] of columns)columnGrid.append(checkPart(key,label));
+    metadataDetails.append(columnGrid);
+    parts.append(metadataDetails);
+    const selectedText=make('p','bb-import__selection hint');
+    const updateSelected=()=>{
+      const n=[...partChecks.values()].filter(input=>input.checked).length;
+      selectedText.textContent=n+' onderdelen geselecteerd · '
+        +'Niet-geselecteerde en lege Excelvelden veranderen niets.';
+    };
+    for(const checkbox of partChecks.values())checkbox.addEventListener('change',updateSelected);
+    allButton.addEventListener('click',()=>{
+      for(const check of partChecks.values())check.checked=true;
+      metadataDetails.open=true;
+      updateSelected();
+    });
+    noneButton.addEventListener('click',()=>{
+      for(const check of partChecks.values())check.checked=false;
+      updateSelected();
+    });
+    parts.append(selectedText);
+    updateSelected();
+    const selectedParts=()=>({
+      books:partChecks.get('books').checked,
+      loans:partChecks.get('loans').checked,
+      locations:partChecks.get('locations').checked,
+      fields:Object.fromEntries(columns.map(([key])=>[key,partChecks.get(key).checked])),
+    });
+    const analyze=button('Excelbestand controleren','btn');
+    analyze.type='submit';
+    const refreshImportMode=()=>{
+      const unified=importMode.value==='unified';
+      parts.hidden=!unified;
+      syncLabel.hidden=unified||importMode.value==='reconcile';
+      syncHint.hidden=unified||importMode.value==='reconcile';
+      syncMode.disabled=unified||importMode.value==='reconcile';
+      metadataLabel.hidden=importMode.value==='reconcile';
+      metadata.disabled=importMode.value==='reconcile';
+    };
+    importMode.addEventListener('change',refreshImportMode);
+    form.append(fileLabel,parts,metadataLabel,advanced,analyze);
     refreshImportMode();
     root.append(form);
     const notice = make('p', 'bb-review__notice hint');
@@ -364,6 +437,7 @@
     let corrections = new Map();
     let inventoryResolutions = new Map();
     let assignmentResolutions = new Map();
+    let metadataResolutions = new Map();
     const skippedEdits = new Map();
     let page = 0;
     let automaticPage = 0;
@@ -388,7 +462,9 @@
         || JSON.stringify([...assignmentResolutions.values()]
             .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})))
           !== JSON.stringify([...(stage.assignmentResolutions || [])]
-            .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})));
+            .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})))
+        || JSON.stringify([...metadataResolutions.values()].sort((a,b)=>a.id.localeCompare(b.id)))
+          !== JSON.stringify([...(stage.metadataResolutions||[])].sort((a,b)=>a.id.localeCompare(b.id)));
     };
     const setNotice = (text) => { notice.textContent = text; };
     const frozenControls = new Map();
@@ -430,6 +506,7 @@
       corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
       inventoryResolutions = new Map((stage.inventoryResolutions || []).map((item) => [item.isbn, item]));
       assignmentResolutions = new Map((stage.assignmentResolutions || []).map((item) => [item.id, item]));
+      metadataResolutions = new Map((stage.metadataResolutions || []).map(item=>[item.id,item]));
       skippedEdits.clear();
       if (!preservePosition || !sameStage) {
         page = 0;
@@ -552,7 +629,7 @@
     }
 
     function updateCorrection(index, field, value) {
-      if (field === 'editionIsbn' && stage?.mode === 'inventory_sync') {
+      if (field === 'editionIsbn' && ['inventory_sync','unified_sync'].includes(stage?.mode)) {
         // ISBN-based choices must not silently carry over after changing the
         // edition identity. The old choice would be stale and uneditable.
         const oldIsbn = stage.rows?.find((item) => item.index === index)?.book?.editionIsbn;
@@ -1307,11 +1384,21 @@
         const encoded = await encodeFile(selected);
         let payload;
         try {
+          const unified=importMode.value==='unified';
+          const selection=selectedParts();
+          if(unified&&!selection.books&&!selection.loans&&!selection.locations
+            &&!Object.values(selection.fields).some(Boolean)){
+            setNotice('Vink minimaal één onderdeel of boekkolom aan.');
+            return;
+          }
           payload = await request(rootPath, {
             file: encoded, fileName: selected.name,
-            enrichIsbn: importMode.value !== 'reconcile' && metadata.checked,
-            mode: importMode.value === 'reconcile' ? 'assignment_reconcile'
-              : syncMode.checked ? 'inventory_sync' : 'create',
+            enrichIsbn: importMode.value !== 'reconcile' && metadata.checked
+              &&(!unified||selection.books||Object.values(selection.fields).some(Boolean)),
+            mode: unified?'unified_sync'
+              : importMode.value==='reconcile'?'assignment_reconcile'
+              : syncMode.checked?'inventory_sync':'create',
+            ...(unified?{syncParts:selection}:{}),
           });
         } catch (error) {
           await syncStage();
