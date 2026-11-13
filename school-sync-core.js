@@ -345,9 +345,10 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   const numberedMissing = (result.db.students || []).filter(
     (student) => student?.active !== false && missingNumbers.has(getParnassysStudentNumber(student))
   );
-  // Older manually created accounts often have no ParnasSys number. They
-  // cannot be treated as current pupils OR school leavers automatically:
-  // prompt the administrator to classify each account individually.
+  // On a verified *full-school* export, existing unnumbered pupils not
+  // matched to current rows are presumed to have left school. Fuzzy matches
+  // pending manual review remain excluded to avoid deleting live accounts.
+  // Admins can explicitly keep individual pupils before final confirmation.
   const potentialMatches = new Set(pendingMatchReviews.flatMap(review =>
     (review.candidates || []).map(candidate => candidate.id)));
   const legacyAccounts = options.fullSchoolSync
@@ -360,15 +361,17 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   let pendingLegacy = 0;
   let keptLegacy = 0;
   for (const student of legacyAccounts) {
-    const choice = legacyResolutions?.[student.id];
+    const rawChoice = legacyResolutions?.[student.id];
+    // Only an explicit 'keep' overrides the default. Invalid selections
+    // fail closed instead of silently authorizing removal.
+    const choice = rawChoice === undefined || rawChoice === null
+      ? 'exit' : rawChoice;
     if (choice === 'exit') confirmedLegacyExits.push(student);
     else if (choice === 'keep') keptLegacy++;
     else {
       pendingLegacy++;
       result.summary.needsReview = (result.summary.needsReview || 0) + 1;
     }
-    // Keep reviewed rows visible so administrators can correct a mistaken
-    // 'keep' or 'exit' selection before final confirmation.
     result.results.push({
       status: choice === 'keep' || choice === 'exit'
         ? 'legacy-reviewed' : 'legacy-needs-review',
@@ -376,8 +379,9 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
       name: student.name || 'Naam onbekend',
       classes: studentClassNames(result.db, student),
       chosen: choice === 'keep' || choice === 'exit' ? choice : '',
-      reason: 'Oud leerlingaccount zonder ParnasSys-leerlingnummer. '
-        + 'Controleer of deze leerling nog op school zit.',
+      assumedExit: choice === 'exit' && rawChoice == null,
+      reason: 'Niet gekoppeld aan de volledige ParnasSys-export. '
+        + 'Standaard uitschrijven; de beheerder kan dit account behouden.',
     });
   }
   const missing = [...numberedMissing, ...confirmedLegacyExits];
@@ -385,7 +389,13 @@ function processMissingStudents(result, originalDb, incomingNumbers, options,
   result.summary.legacyAccountsNeedsReview = pendingLegacy;
   result.summary.legacyAccountsKept = keptLegacy;
   result.summary.legacyAccountsConfirmedExit = confirmedLegacyExits.length;
+  result.summary.legacyAccountsAutoExit = confirmedLegacyExits.filter(
+    student => legacyResolutions?.[student.id] == null).length;
   result.summary.missingFromImport = options.fullSchoolSync ? missing.length : 0;
+  // Guard the entire cohort being exited, including pupils whose history
+  // requires archival rather than deletion.
+  result.summary.exitCandidateFingerprint = crypto.createHash('sha256')
+    .update(JSON.stringify(missing.map(student=>student.id).sort())).digest('hex');
   result.summary.largeRemovalWarning = Boolean(
     options.fullSchoolSync && missing.length >=
       largeRemovalThreshold((originalDb.students || [])
