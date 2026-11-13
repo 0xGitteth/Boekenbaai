@@ -780,10 +780,10 @@
       const navigation = make('div', 'bb-review__pagination');
       const prev = button('Vorige', 'btn btn--ghost');
       prev.disabled = page === 0;
-      prev.addEventListener('click', () => { page--; render(); });
+      prev.addEventListener('click', () => { page--; render(true); });
       const next = button('Volgende', 'btn btn--ghost');
       next.disabled = page === maxPage;
-      next.addEventListener('click', () => { page++; render(); });
+      next.addEventListener('click', () => { page++; render(true); });
       navigation.append(prev, make('span', '',
         'Pagina ' + (page + 1) + ' van ' + (maxPage + 1)), next);
       results.append(navigation);
@@ -793,7 +793,7 @@
     // Rebuilding a long review removes the focused row temporarily. Keep its
     // position in the viewport, rather than letting browser scroll anchoring
     // move the administrator to the top of the import panel.
-    function render() {
+    function render(resetListScroll = false) {
       const scrollY = Number(window.scrollY) || 0;
       const previousList = results.querySelector('.bb-review__rowlist');
       const listScrollTop = previousList?.scrollTop || 0;
@@ -807,6 +807,12 @@
           .indexOf(document.activeElement) : -1;
       renderContents();
       const list = results.querySelector('.bb-review__rowlist');
+      if (list && resetListScroll) {
+        // A new page must start at its first row, unlike editing this page.
+        list.scrollTop = 0;
+        list.scrollIntoView({ block: 'start', behavior: 'instant' });
+        return;
+      }
       const replacement = rowKey && Array.from(results.querySelectorAll('[data-review-row-key]'))
         .find(row => row.dataset.reviewRowKey === rowKey);
       if (list) {
@@ -1179,10 +1185,10 @@
       const navigation = make('div', 'bb-review__pagination');
       const prev = button('Vorige', 'btn btn--ghost');
       prev.disabled = page === 0;
-      prev.addEventListener('click', () => { page -= 1; render(); });
+      prev.addEventListener('click', () => { page -= 1; render(true); });
       const next = button('Volgende', 'btn btn--ghost');
       next.disabled = page === maxPage;
-      next.addEventListener('click', () => { page += 1; render(); });
+      next.addEventListener('click', () => { page += 1; render(true); });
       navigation.append(prev, make('span', '', 'Pagina ' + (page + 1) + ' van ' + (maxPage + 1)), next);
       results.append(navigation);
     }
