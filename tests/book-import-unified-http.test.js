@@ -41,6 +41,7 @@ function original(){
         status:'borrowed',borrowedBy:'lisa',borrowedByClassId:null,
         borrowedAt:'2026-10-05T11:00:00Z',dueDate:'2026-11-12',
         description:'Bestaande beschrijving',coverUrl:'https://example.org/old.jpg',
+        localCoverUrl:'/api/covers/'+('a'.repeat(64))+'.jpg',
         fixedLocation:null},
       {id:'copy-2',title:'Oorlogswinter',author:'Jan Terlouw',
         editionIsbn:ISBN,metadataIsbn:ISBN,barcode:'4711002',
@@ -178,10 +179,26 @@ async function run(){
     assert.equal(readDb().books.length,3);
     assert.equal(readDb().books.find(book=>book.id==='copy-2').coverUrl,
       'https://example.org/new-cover.jpg');
+    assert.equal(readDb().books.find(book=>book.id==='copy-1').localCoverUrl,'',
+      'A changed cover URL cannot leave a stale cached cover in place');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').description,
       'Nieuwe beschrijving');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa');
 
+    // Noncanonical themes belong in importedThemes, not only manualThemes.
+    const themeOnly=await start([
+      {...old(''),["Thema's"]:'Nieuw thema uit metadata'},
+    ],parts({fields:{manualThemes:true}}));
+    assert.equal(themeOnly.status,201,JSON.stringify(themeOnly.data));
+    const themeReviewed=await review(themeOnly);
+    assert.equal(themeReviewed.status,200,JSON.stringify(themeReviewed.data));
+    assert.equal(themeReviewed.data.decisions.summary.metadataFields,1);
+    const themeApplied=await apply(themeReviewed);
+    assert.equal(themeApplied.status,200,JSON.stringify(themeApplied.data));
+    const themed=readDb().books.find(book=>book.id==='copy-1');
+    assert.ok(themed.importedThemes.includes('Nieuw thema uit metadata'),
+      'Freeform Excel themes must survive DB normalization');
+    assert.ok(themed.themes.includes('Nieuw thema uit metadata'));
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
