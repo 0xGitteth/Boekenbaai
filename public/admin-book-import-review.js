@@ -154,7 +154,10 @@
     root.append(header);
     const enrichmentStatus = make('p', 'hint', 'Gratis aanvulling van boekgegevens: status wordt gecontroleerd.');
     enrichmentStatus.setAttribute('role', 'status');
-    root.append(enrichmentStatus);
+    const enrichmentExtra=make('details','bb-import__extras');
+    enrichmentExtra.append(make('summary','',
+      'Boekverrijking en aanvullend zoeken (optioneel)'),enrichmentStatus);
+    root.append(enrichmentExtra);
     async function refreshEnrichmentStatus() {
       try {
         const data = await request('/api/admin/book-enrichment/status');
@@ -179,7 +182,7 @@
     braveNotice.setAttribute('role', 'status');
     const braveItems = make('div', 'bb-review__brave-items');
     bravePanel.append(braveHeading, braveNotice, braveItems);
-    root.append(bravePanel);
+    enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
     async function refreshBrave() {
       if (braveRefreshing || !root.isConnected) return;
@@ -1368,6 +1371,42 @@
       }
       if (stage.status === 'completed') {
         const done = stage.result || {};
+        if (stage.mode === 'unified_sync') {
+          const complete=make('section','bb-import__complete');
+          complete.append(make('h4','','Import afgerond'));
+          complete.append(make('p','hint',
+            'Alleen de geselecteerde onderdelen zijn bijgewerkt. Niet-geselecteerde '
+            +'kolommen, lege Excelvelden en bestaande overige boeken zijn behouden.'));
+          const stats=make('div','bb-import__stat-grid');
+          for(const [count,label] of [
+            [done.created||0,'Nieuwe exemplaren'],
+            [done.correctedLoans||0,'Uitleningen aangepast'],
+            [done.correctedLocations||0,'Vaste locaties aangepast'],
+            [done.metadataUpdated||0,'Boekvelden bijgewerkt'],
+          ]){
+            const stat=make('div','bb-import__stat');
+            stat.append(make('strong','',String(count)),make('span','',label));
+            stats.append(stat);
+          }
+          complete.append(stats);
+          if(done.deferred)complete.append(make('p','hint',
+            done.deferred+' controletaken blijven voor later bewaard.'));
+          complete.append(make('p','hint','Importnummer: '+(done.batchId||'onbekend')));
+          if(done.report){
+            const reportButton=button('Importverslag (JSON)','btn btn--secondary');
+            reportButton.addEventListener('click',()=>{
+              const blob=new Blob([JSON.stringify(done.report,null,2)],{type:'application/json'});
+              const url=URL.createObjectURL(blob);
+              const link=document.createElement('a');
+              link.href=url;link.download='boekenbaai-import-'+done.batchId+'.json';link.click();
+              setTimeout(()=>URL.revokeObjectURL(url),2000);
+            });
+            complete.append(reportButton);
+          }
+          results.append(complete);
+          setNotice('De gezamenlijke import is afgerond.');
+          return;
+        }
         results.append(make('h4', '', stage.mode === 'assignment_reconcile'
           ? 'Administratieve correcties opgeslagen'
           : stage.mode === 'inventory_sync' ? 'Voorraadvergelijking voltooid' : 'Import voltooid'));
@@ -1429,6 +1468,10 @@
         setNotice(done.report?.fullyReviewed === false
           ? 'De boeken zijn opgeslagen. De klascontext wordt door docenten of beheer gecontroleerd.'
           : 'De gecontroleerde import is afgerond.');
+        return;
+      }
+      if(stage.mode==='unified_sync'){
+        renderUnifiedSync();
         return;
       }
       if (stage.mode === 'assignment_reconcile') {
