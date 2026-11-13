@@ -59,17 +59,17 @@ module.exports = async function runReviewTailTests() {
   const unknownColumnMarker = await analyzeBookImportRows([{
     Titel: 'Notitieboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'eigen boek',
   }]);
-  assert.strictEqual(unknownColumnMarker.rows[0].status, 'skipped');
-  assert.strictEqual(unknownColumnMarker.rows[0].context.excludeFromSchoolCollection, true);
-  assert.ok(issueCodes(unknownColumnMarker.rows[0]).has('own_book_excluded'));
-  assert.strictEqual(unknownColumnMarker.groups.length, 0);
+  assert.strictEqual(unknownColumnMarker.rows[0].status, 'ready');
+  assert.strictEqual(unknownColumnMarker.rows[0].context.excludeFromSchoolCollection, undefined);
+  assert.ok(!issueCodes(unknownColumnMarker.rows[0]).has('own_book_excluded'));
+  assert.strictEqual(unknownColumnMarker.groups.length, 1);
 
   const commaUnknownMarker = await analyzeBookImportRows([{
     Titel: 'Komma notitie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Notitie: 'school, eigen boek',
   }]);
-  assert.strictEqual(commaUnknownMarker.rows[0].status, 'skipped');
-  assert.strictEqual(commaUnknownMarker.rows[0].context.excludeFromSchoolCollection, true);
-  assert.ok(issueCodes(commaUnknownMarker.rows[0]).has('own_book_excluded'));
+  assert.strictEqual(commaUnknownMarker.rows[0].status, 'ready');
+  assert.strictEqual(commaUnknownMarker.rows[0].context.excludeFromSchoolCollection, undefined);
+  assert.ok(!issueCodes(commaUnknownMarker.rows[0]).has('own_book_excluded'));
 
   const copyLimitDuplicate = await analyzeBookImportRows([
     { Titel: 'Eerste', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Barcode: '55555', Aantal: 1 },
