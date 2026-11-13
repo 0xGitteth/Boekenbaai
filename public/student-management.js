@@ -749,8 +749,10 @@
       google: googleRequestsForClass(klass).length,
       outgoing: outgoingForClass(klass).length,
     })) : [];
+    const exitCount=status==='ready'
+      ?(state?.formerStudentExits||[]).filter(task=>task.status==='open').length:0;
     window.dispatchEvent(new CustomEvent('boekenbaai:mentor-tasks-updated', {
-      detail: { status, classes },
+      detail: { status, classes, exitCount },
     }));
   }
   async function refresh() {
