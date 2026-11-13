@@ -222,12 +222,19 @@ function buildUnifiedBookImport(analysis,db,{
   // an old sheet must never issue another loan to its former borrower.
   const receipts=new Set(loanReceipts);
   const manuallyChosen=new Set(assignmentChoices.values.map(choice=>choice.id));
-  const previouslyImported=assignments.differences.filter(diff=>
-    diff.kind==='loan'&&diff.choice==='apply'&&diff.before?.type==='none'
-    &&!manuallyChosen.has(diff.id)
-    &&receipts.has(excelLoanReceiptKey(diff.bookId,{
-      type:diff.after?.type,id:diff.after?.id,
-    })));
+  const previouslyImported=assignments.differences.filter(diff=>{
+    if(diff.kind!=='loan'||diff.choice!=='apply'||diff.before?.type!=='none'
+      ||manuallyChosen.has(diff.id))return false;
+    const borrower={type:diff.after?.type,id:diff.after?.id};
+    // ISBNs identify interchangeable physical copies. Historical receipts
+    // refer to the particular copy last time, which may now be borrowed by
+    // somebody else. Check EVERY copy of the edition before recreating an
+    // old worksheet loan on another free copy.
+    return (db.books||[]).some(book=>
+      (canonicalizeBookIsbn13(book.editionIsbn)
+        ||canonicalizeBookIsbn13(book.metadataIsbn))===diff.editionIsbn
+      &&receipts.has(excelLoanReceiptKey(book.id,borrower)));
+  });
   if(previouslyImported.length){
     assignments=buildAssignmentPreview(source,assignmentDb,[
       ...assignmentChoices.values,
