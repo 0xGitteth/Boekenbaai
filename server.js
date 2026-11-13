@@ -24,7 +24,7 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
-  actualAssignmentPreview } = require('./book-import-unified-sync');
+  actualAssignmentPreview, assignmentSource } = require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
@@ -5814,7 +5814,8 @@ async function handleApi(req, res, requestUrl) {
               report.deferredDifferences=deferredDifferences;
               report.fullyReviewed=deferredDifferences.length===0;
               report.corrections=corrected.audit;
-              const tasks=createDeferredAssignmentTasks(database,report,stage.analysis.rows,
+              const savedTaskRows=assignmentSource(stage.analysis,combined.parts,database).rows;
+              const tasks=createDeferredAssignmentTasks(database,report,savedTaskRows,
                 assignments.differences,now);
               report.deferredTaskIds=tasks.map(task=>task.id);
             }
