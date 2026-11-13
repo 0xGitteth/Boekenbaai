@@ -152,6 +152,16 @@
     header.append(make('h4', '', 'Boeken en administratie synchroniseren'));
     header.append(make('p', 'hint', 'Eén Excelbestand, één controle en één definitieve bevestiging. Kies precies wat je wilt bijwerken.'));
     root.append(header);
+    const steps=make('nav','bb-import__steps');
+    steps.setAttribute('aria-label','Importstappen');
+    const stepNodes=[];
+    for(const label of ['1. Bestand en keuzes','2. Verschillen controleren',
+      '3. Import afronden']){
+      const step=make('span','bb-import__step',label);
+      steps.append(step);
+      stepNodes.push(step);
+    }
+    root.append(steps);
     const enrichmentStatus = make('p', 'hint', 'Gratis aanvulling van boekgegevens: status wordt gecontroleerd.');
     enrichmentStatus.setAttribute('role', 'status');
     const enrichmentExtra=make('details','bb-import__extras');
@@ -758,7 +768,8 @@
       const selectedList=make('p','bb-import__selection-list',
         chosenLabels.join(' · '));
       selection.append(selectedList,make('p','hint',
-        'Alle niet-geselecteerde kolommen en lege Excelvelden blijven ongemoeid.'));
+        'ISBN wordt alleen gebruikt om boeken te herkennen. '
+        +'Alle niet-geselecteerde kolommen en lege Excelvelden blijven ongemoeid.'));
       results.append(selection);
 
       const controls=make('div','bb-review__controls bb-import__review-controls');
@@ -1351,6 +1362,13 @@
     }
 
     function renderContents() {
+      const activeStep=!stage||['cancelled','failed'].includes(stage.status)
+        ?0:stage.status==='completed'?2:1;
+      for(let index=0;index<stepNodes.length;index++){
+        stepNodes[index].classList.toggle('bb-import__step--active',index===activeStep);
+        if(index===activeStep)stepNodes[index].setAttribute('aria-current','step');
+        else stepNodes[index].removeAttribute('aria-current');
+      }
       results.replaceChildren();
       form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
       if (!stage) return;
@@ -1373,7 +1391,7 @@
         const done = stage.result || {};
         if (stage.mode === 'unified_sync') {
           const complete=make('section','bb-import__complete');
-          complete.append(make('h4','','Import afgerond'));
+          complete.append(make('h4','','3. Import afgerond'));
           complete.append(make('p','hint',
             'Alleen de geselecteerde onderdelen zijn bijgewerkt. Niet-geselecteerde '
             +'kolommen, lege Excelvelden en bestaande overige boeken zijn behouden.'));
