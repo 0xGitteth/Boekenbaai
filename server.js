@@ -3008,6 +3008,7 @@ async function lookupIsbnMetadata(isbn, options = {}) {
 
   const lookupPromise = (async () => {
     let result;
+    const sourceCandidates=[];
     const debugPayload = DEBUG_ISBN_LOOKUP ? createIsbnLookupDebugPayload(sanitized) : null;
     logIsbnLookupDebug('lookup_start', {
       isbn: sanitized,
@@ -3059,8 +3060,6 @@ async function lookupIsbnMetadata(isbn, options = {}) {
       const sources = [];
       // Preserve each independent provider response before merging metadata.
       // A merged record cannot establish agreement between providers.
-      const sourceCandidates = [];
-
       if (process.env.GOOGLE_BOOKS_API_KEY) {
         const googleBooksUrl = new URL('https://www.googleapis.com/books/v1/volumes');
         googleBooksUrl.searchParams.set('q', `isbn:${sanitized}`);
@@ -3224,7 +3223,7 @@ async function lookupIsbnMetadata(isbn, options = {}) {
     if (result && typeof result === 'object') {
       // Source evidence is always a record of actual provider replies. Never
       // infer three votes from a single merged result or a missing API.
-      if(typeof sourceCandidates!=='undefined' && sourceCandidates.length)
+      if(sourceCandidates.length)
         result.sourceCandidates=sourceCandidates;
       result.coverUrl = resolveEffectiveCoverUrl(result.coverUrl);
       if (debugPayload) {
