@@ -7,7 +7,7 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
 const { excelLoanReceiptKey } = require('./book-import-loan-migration');
 const sourceConfidence=require('./book-import-source-confidence');
-const {nearlySameBookText,smallPageDifference}=require('./book-import-autonomy');
+const {nearlySameBookText,sameBookTitle,smallPageDifference}=require('./book-import-autonomy');
 
 const METADATA_FIELDS=Object.freeze([
   'title','author','description','publisher','publishedYear','pageCount',
@@ -352,7 +352,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       for(const row of sourceRows){
         const value=metadataKey(field,row);
         const similar=(left,right)=>{
-          if(field==='title')return nearlySameBookText(left,right);
+          if(field==='title')return sameBookTitle(left,right);
           if(field!=='author')return equal(left,right);
           const a=Array.isArray(left?.authors)?left.authors:[left?.value];
           const b=Array.isArray(right?.authors)?right.authors:[right?.value];
