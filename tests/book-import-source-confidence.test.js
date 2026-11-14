@@ -113,4 +113,38 @@ const plan=(rows,db,fields,extra={})=>buildUnifiedBookImport(
   assert.equal(result.summary.pendingMetadata,1,
     'Two different titles for one ISBN are genuine, not silently dropped');
 }
+
+{
+  const voted=[
+    {source:'Bureau ISBN',editionIsbn:ISBN,
+      author:'René van Dijk & Piet Jansen',
+      authors:['René van Dijk','Piet Jansen']},
+    {source:'Google Books',editionIsbn:ISBN,
+      author:'René van Dijk & Piet Jansen',
+      authors:['René van Dijk','Piet Jansen']},
+  ];
+  const db=database();
+  db.books[0].author='Rene van Dijk & Piet Jansen';
+  db.books[0].authors=['Rene van Dijk','Piet Jansen'];
+  const rowValue=row(0,{book:{
+    author:'Rene van Dijk & Piet Jansen',
+    authors:['Rene van Dijk','Piet Jansen'],
+  },sourceEvidence:voted,
+    provenance:{author:{source:'excel',raw:'Rene van Dijk & Piet Jansen'}}});
+  const result=plan([rowValue],db,{author:true});
+  assert.equal(result.summary.confidentMetadata,1);
+  assert.deepStrictEqual(result.metadata.updates[0].value.authors,
+    ['René van Dijk','Piet Jansen'],
+    'Source spelling corrections must preserve individual author records');
+}
+{
+  const tie=[
+    {source:'Bureau ISBN',editionIsbn:ISBN,title:'Een ander boek'},
+    {source:'Google Books',editionIsbn:ISBN,title:'Een derde boek'},
+  ];
+  const result=decide({isbn:ISBN,field:'title',excel:'Een ander boek',
+    current:'De Avonturen',evidence:tie});
+  assert.equal(result.action,'keep',
+    'Tied source votes must not override a substantively different stored title');
+}
 console.log('Verified ISBN source consensus, automatic keeps and manual overrides OK');
