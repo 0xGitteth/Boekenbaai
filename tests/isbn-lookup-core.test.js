@@ -157,6 +157,11 @@ async function run() {
   assert.strictEqual(merged.pageCount, 192, 'Google may fill an exact-edition field that CB lacks');
   assert.strictEqual(merged.coverUrl, 'https://metadata.isbn.nl/ie_fcache/paperback.jpg');
   assert.deepStrictEqual(merged.sources, ['Bureau ISBN', 'Google Books']);
+  assert.deepStrictEqual(merged.sourceCandidates.map(x=>x.source),
+    ['Bureau ISBN','Google Books']);
+  assert.strictEqual(merged.sourceCandidates[0].publisher,
+    'Terra - Lannoo, Uitgeverij');
+  assert.strictEqual(merged.sourceCandidates[1].publisher,'Google uitgever');
 
   const requests = [];
   const fetchImpl = async (url) => {
@@ -192,11 +197,16 @@ async function run() {
   assert.strictEqual(result.matchLevel, 'exact_isbn');
   assert.strictEqual(result.publisher, 'Terra - Lannoo, Uitgeverij');
   assert.strictEqual(result.pageCount, 192);
+  assert.deepStrictEqual(result.sourceCandidates.map(x=>x.source),
+    ['Bureau ISBN','Google Books'],
+    'The actual preloaded lookup must retain two separate exact-ISBN replies');
   assert.ok(requests.some((url) => url.includes('metadata.isbn.nl/search.html?search=9789059965607')));
 
   const requestsBeforeCache = requests.length;
   const cached = await lookup('9059965604');
   assert.strictEqual(cached.cacheHit, true, 'ISBN-10 and ISBN-13 should share one cache entry');
+  assert.deepStrictEqual(cached.sourceCandidates,result.sourceCandidates,
+    'Cached source votes cannot degrade into an unverified merged value');
   assert.strictEqual(requests.length, requestsBeforeCache, 'Cached equivalent ISBN must not perform network requests');
 
 
