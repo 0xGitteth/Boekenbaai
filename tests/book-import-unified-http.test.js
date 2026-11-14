@@ -329,6 +329,33 @@ async function run(){
     assert.equal(added.importProvenance.fieldSources.author.sourceType,'existing');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa');
 
+    // The older inventory-only workflow must follow the same identity
+    // preservation rule; otherwise one ISBN can split into catalog groups.
+    const inventoryBefore=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    const inventoryStage=await call('/api/admin/book-import-stages',token,{
+      mode:'inventory_sync',enrichIsbn:false,
+      fileName:'voorraad-zonder-metadata.xlsx',
+      file:workbook([old('',{
+        Titel:'Oorlogs-winter',Auteur:'Jan Térlouw',
+        Aantal:inventoryBefore.length+1,
+      })]),
+    });
+    assert.equal(inventoryStage.status,201,JSON.stringify(inventoryStage.data));
+    assert.equal(inventoryStage.data.decisions.summary.addCopies,1);
+    const inventoryApplied=await call('/api/admin/book-import-stages/'
+      +inventoryStage.data.id+'/apply',token,{
+        revision:inventoryStage.data.revision,confirm:true,
+      });
+    assert.equal(inventoryApplied.status,200,JSON.stringify(inventoryApplied.data));
+    const afterInventory=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    assert.equal(afterInventory.length,inventoryBefore.length+1);
+    const addedInventory=afterInventory.find(book=>
+      !inventoryBefore.some(old=>old.id===book.id));
+    assert.equal(addedInventory.title,'Oorlogswinter');
+    assert.equal(addedInventory.author,'Jan Terlouw');
+    assert.equal(addedInventory.importProvenance.fieldSources.title.sourceType,'existing');
+    assert.equal(addedInventory.importProvenance.fieldSources.author.sourceType,'existing');
+
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
