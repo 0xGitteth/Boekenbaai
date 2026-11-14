@@ -91,7 +91,7 @@ function scopedRow(row,parts,domain){
     :issues.some(issue=>issue.severity==='warning')?'warning':'ready';
   return {...row,issues,status};
 }
-function stockAnalysis(analysis,db,parts){
+function stockAnalysis(analysis,db,parts,effectiveIdentityUpdates=new Set()){
   const known=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
@@ -101,12 +101,13 @@ function stockAnalysis(analysis,db,parts){
     const row=scopedRow(original,parts,'stock');
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
     const old=known.get(isbn);
-    // When title or author was explicitly selected for updating, an
-    // existing edition may legitimately have older metadata. Only the
-    // inventory identity comparison uses the stored values; the actual new
-    // copies and the selected field update use the reviewed Excel values.
-    const title=old&&parts.fields.title?old.title:row.book?.title;
-    const author=old&&parts.fields.author?old.author:row.book?.author;
+    // Relax edition identity only if the reviewed plan WILL actually update
+    // that field. Ticking a checkbox is not sufficient: the admin may choose
+    // "keep", or the Excel value may be blank or only enriched metadata.
+    const title=old&&effectiveIdentityUpdates.has(isbn+':title')
+      ?old.title:row.book?.title;
+    const author=old&&effectiveIdentityUpdates.has(isbn+':author')
+      ?old.author:row.book?.author;
     return {...row,
       book:{...row.book,title,author,
         barcode:isIsbnBarcode(row.book?.barcode,row.book?.editionIsbn)
@@ -125,7 +126,7 @@ function inventoryNotSelected(analysis){
     unchangedEditions:0,acknowledgedEditions:0,skippedRows:0,omittedExistingCopies:0,
     readyToApply:true}};
 }
-function assignmentSource(analysis,parts,db,inventory=null){
+function assignmentSource(analysis,parts,db,inventory=null,effectiveIdentityUpdates=new Set()){
   const oldByIsbn=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
@@ -135,8 +136,10 @@ function assignmentSource(analysis,parts,db,inventory=null){
     const row=scopedRow(original,parts,'assignment');
     const old=oldByIsbn.get(canonicalizeBookIsbn13(row.book?.editionIsbn));
     const book={...row.book,
-      title:old&&parts.fields.title?old.title:row.book?.title,
-      author:old&&parts.fields.author?old.author:row.book?.author};
+      title:old&&effectiveIdentityUpdates.has(row.book?.editionIsbn+':title')
+        ?old.title:row.book?.title,
+      author:old&&effectiveIdentityUpdates.has(row.book?.editionIsbn+':author')
+        ?old.author:row.book?.author};
     const context={...row.context};
     if(!parts.loans){delete context.studentLoan;delete context.classLoan;delete context.studentClassHint;}
     if(!parts.locations)delete context.fixedLocation;
@@ -161,17 +164,19 @@ function assignmentSource(analysis,parts,db,inventory=null){
     return {...row,book,context};
   })};
 }
-function projectCopies(analysis,inventory,parts,db){
+function projectCopies(analysis,inventory,parts,db,effectiveIdentityUpdates=new Set()){
   const copies=[];
   for(const addition of inventory.proposedAdds){
     const row=analysis.rows[addition.index];
     if(!row)throw Error('unified_source_row_missing');
     const old=(db.books||[]).find(book=>
       existingEdition(book)===addition.editionIsbn);
-    // Preview identity must agree with the normalized matching row when a
-    // selected metadata update renames the existing ISBN edition.
-    const title=old&&parts.fields.title?old.title:row.book.title;
-    const author=old&&parts.fields.author?old.author:row.book.author;
+    // Projected copy identity must match the actual selected metadata
+    // update; creation itself continues to use the reviewed Excel fields.
+    const title=old&&effectiveIdentityUpdates.has(addition.editionIsbn+':title')
+      ?old.title:row.book.title;
+    const author=old&&effectiveIdentityUpdates.has(addition.editionIsbn+':author')
+      ?old.author:row.book.author;
     for(let n=0;n<addition.quantity;n++)copies.push({
       id:virtualId(addition.index,n),title,author,
       editionIsbn:addition.editionIsbn,metadataIsbn:addition.editionIsbn,
@@ -319,9 +324,17 @@ function buildUnifiedBookImport(analysis,db,{
   for(const candidate of [configured,inventoryChoices,assignmentChoices,metaChoices])
     if(!candidate.ok)return candidate;
   const use=configured.value;
+  // Determine which title/author edits will truly be applied BEFORE
+  // considering additional copies. A kept, invalid or unselected change
+  // cannot justify introducing copies with a different edition identity.
+  const metadata=metadataPlan(analysis,db,use,metaChoices.values,acceptWarnings);
+  if(!metadata.ok)return metadata;
+  const effectiveIdentityUpdates=new Set(metadata.updates
+    .filter(update=>update.field==='title'||update.field==='author')
+    .map(update=>update.id));
   let inventory=inventoryNotSelected(analysis);
   if(use.books){
-    const stock=stockAnalysis(analysis,db,use);
+    const stock=stockAnalysis(analysis,db,use,effectiveIdentityUpdates);
     const parameters={acceptWarnings,students:db.students||[],classes:db.classes||[],
       loanReceipts,existingFollowups};
     let preview=buildInventorySyncPreview(stock,db.books||[],{
@@ -338,10 +351,10 @@ function buildUnifiedBookImport(analysis,db,{
       :preview;
     if(!inventory.ok)return inventory;
   }else if(inventoryChoices.values.length)return {ok:false,error:'inventory_not_selected'};
-  const projected=projectCopies(analysis,inventory,use,db);
+  const projected=projectCopies(analysis,inventory,use,db,effectiveIdentityUpdates);
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
   const source=use.loans||use.locations
-    ?assignmentSource(analysis,use,db,inventory):{...analysis,rows:[]};
+    ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
   let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
   if(!assignments.ok)return assignments;
   // Receipt IDs survive loan returns and truncated import reports. Re-uploading
@@ -371,8 +384,6 @@ function buildUnifiedBookImport(analysis,db,{
       if(ignored.has(diff.id))diff.previouslyImported=true;
     assignments.summary.previouslyImportedLoans=ignored.size;
   }else assignments.summary.previouslyImportedLoans=0;
-  const metadata=metadataPlan(analysis,db,use,metaChoices.values,acceptWarnings);
-  if(!metadata.ok)return metadata;
   const total=inventory.summary.addCopies+assignments.summary.apply
     +metadata.summary.updates+assignments.summary.deferred
     +assignments.summary.kept+metadata.kept;
