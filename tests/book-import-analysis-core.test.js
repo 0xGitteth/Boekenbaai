@@ -87,6 +87,13 @@ module.exports = async function runCoreTests() {
     'ISBN-nummer':ISBN,
   }]);
   assert.ok(!codes(accentAuthor.rows[0]).has('author_sources_differ'));
+  const tinyAuthorTypo=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Carrie Slee',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(!codes(tinyAuthorTypo.rows[0]).has('author_sources_differ'),
+    'One-letter author typos between two Excel columns do not justify manual review');
   const anotherAuthor=await analyzeBookImportRows([{
     Titel:'Spijt!',Auteur:'Ander Persoon',
     'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
