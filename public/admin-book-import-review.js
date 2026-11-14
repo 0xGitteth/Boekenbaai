@@ -1270,8 +1270,15 @@
       };
       for(const diff of automatic){
         const control=make('select');
-        for(const [value,label] of [['apply','Excel overnemen'],
-          ['keep','Bestaande behouden'],['later','Later controleren']]){
+        const possible=diff.kind==='class_context'
+          ?[['keep','Bestaande registratie behouden'],
+            ['class_fixed','Vaste plek in deze klas'],
+            ...(diff.classId&&!diff.hasExplicitLoan
+              ?[['class_loan','Als uitlening aan klas']]:[]),
+            ['later','Later controleren']]
+          :[['apply','Excel overnemen'],
+            ['keep','Bestaande behouden'],['later','Later controleren']];
+        for(const [value,label] of possible){
           const option=make('option','',label);option.value=value;control.append(option);
         }
         control.value=assignmentResolutions.get(diff.id)?.action||diff.choice||'apply';
@@ -1279,10 +1286,15 @@
           assignmentResolutions.set(diff.id,{id:diff.id,action:control.value});
           render();
         });
-        const description=diff.kind==='loan'
-          ?'Naar '+(diff.after?.name||'onbekend')
-          :'Naar '+String(diff.after||'');
-        addRow(diff.title||'Boek',diff.editionIsbn||'',diff.kind==='loan'?'Uitlening':'Vaste plek',
+        const description=diff.kind==='class_context'
+          ?'Onduidelijke klasnotitie: '+(diff.className||'onbekend')
+            +'. Huidige uitlening en vaste plek blijven behouden.'
+          :diff.kind==='loan'
+            ?'Naar '+(diff.after?.name||'onbekend')
+            :'Naar '+String(diff.after||'');
+        addRow(diff.title||'Boek',diff.editionIsbn||'',
+          diff.kind==='class_context'?'Klasnotitie'
+            :diff.kind==='loan'?'Uitlening':'Vaste plek',
           description,control);
       }
       const formatValue=value=>{
@@ -1297,7 +1309,8 @@
           ['default','Automatisch voorstel volgen'],
           ['keep','Huidige waarde behouden'],
         ];
-        if(item.canUseExcel)possibilities.push(['excel','Excelwaarde overnemen']);
+        if(item.canUseExcel&&item.excel!==null)
+          possibilities.push(['excel','Excelwaarde overnemen']);
         for(const [value,label] of possibilities){
           const option=make('option','',label);
           option.value=value;control.append(option);
@@ -1320,7 +1333,7 @@
             ?' · Bronnen: '+item.sources.join(', '):' · Geen onafhankelijke bronconsensus');
         const wrapper=make('div','bb-import__decision-control');
         wrapper.append(control);
-        if(!item.canUseExcel && item.worksheetRows?.length){
+        if(!item.canUseExcel&&!item.enrichmentOnly &&item.worksheetRows?.length){
           // The same ISBN may appear in several worksheet rows. Every
           // affected row must remain directly editable, including when
           // stock synchronization is not selected.
