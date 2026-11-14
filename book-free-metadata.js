@@ -3,6 +3,8 @@
 // Optional free Dutch ISBN enrichment. The service requires a real contact
 // address for repeated automated requests. Never use it without that setting.
 const {normalizeIsbn, isValidIsbn, toIsbn13, getEquivalentIsbns} = require('./isbn-lookup-core-impl');
+const {nearlySameBookText}=require('./book-import-autonomy');
+const {deriveThemesFromTags}=require('./book-theme-normalization');
 
 const normalizeText = value => String(value || '').normalize('NFKC').trim()
   .replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
@@ -21,7 +23,11 @@ const isMissing = book => !String(book?.publisher || '').trim()
   || !String(book?.description || '').trim()
   || !String(book?.coverUrl || '').trim()
   || !Number.isInteger(Number(book?.pageCount)) || Number(book?.pageCount) < 1
-  || !(Array.isArray(book?.tags) && book.tags.length);
+  || !(Array.isArray(book?.tags) && book.tags.length)
+  || (!Array.isArray(book?.manualThemes)||!book.manualThemes.length)
+    &&(!Array.isArray(book?.importedThemes)||!book.importedThemes.length)
+    &&deriveThemesFromTags([...(Array.isArray(book?.tags)?book.tags:[]),
+      ...(Array.isArray(book?.enrichmentTags)?book.enrichmentTags:[])]).themes.length===0;
 
 function decodeEntities(input) {
   return String(input || '').replace(/&(#x[0-9a-f]+|#[0-9]+|amp|quot|apos|lt|gt|nbsp);/gi, (all, key) => {
@@ -88,11 +94,14 @@ function titleAgrees(book, source) {
   if (a === b) return true;
   // Subtitles and punctuation differ across editions, but never guess a
   // different title. ISBN matching on its own is not enough to override it.
-  return a.length >= 9 && b.length >= 9
-    && (a.startsWith(b + ':') || b.startsWith(a + ':'));
+  return nearlySameBookText(a,b)||(a.length >= 9 && b.length >= 9
+    && (a.startsWith(b + ':') || b.startsWith(a + ':')));
 }
 function usableFor(book, metadata) {
-  return Boolean(metadata && isbnOf(book) === metadata.isbn && titleAgrees(book, metadata));
+  return Boolean(metadata && isbnOf(book)===metadata.isbn
+    &&titleAgrees(book,metadata)
+    &&(!book?.author||!metadata.author
+      ||nearlySameBookText(book.author,metadata.author)));
 }
 function nextCandidate(books, now = Date.now(), excluded = new Set(), failedCovers = new Set()) {
   for (const book of Array.isArray(books) ? books : []) {
@@ -147,6 +156,25 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
         if (!book.importProvenance.fieldSources) book.importProvenance.fieldSources = {};
         book.importProvenance.fieldSources.coverUrl = {sourceType:'metadata',sourceDetail:'easycb'};
         newCover = true; updated++;
+      }
+      // Keep the teacher's own tags intact, but preserve the source's
+      // additional descriptive keywords separately. The catalogue theme
+      // mapper can use both for Help me kiezen without changing manual
+      // themes, reading levels or the original Excel tags.
+      if(Array.isArray(metadata.tags)&&metadata.tags.length
+        &&book.themesCleared!==true){
+        const old=Array.isArray(book.enrichmentTags)?book.enrichmentTags:[];
+        const merged=new Map(old.filter(tag=>typeof tag==='string')
+          .map(tag=>[tag.trim().toLocaleLowerCase('nl'),tag.trim()]));
+        for(const tag of metadata.tags){
+          if(typeof tag==='string'&&tag.trim()&&merged.size<30)
+            merged.set(tag.trim().toLocaleLowerCase('nl'),tag.trim());
+        }
+        const fresh=[...merged.values()];
+        if(JSON.stringify(old)!==JSON.stringify(fresh)){
+          book.enrichmentTags=fresh;
+          updated++;
+        }
       }
       if (book.importProvenance?.fieldSources?.tags?.sourceType !== 'manual'
         && (!Array.isArray(book.tags) || !book.tags.length) && metadata.tags.length) {
