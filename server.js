@@ -5614,6 +5614,10 @@ async function handleApi(req, res, requestUrl) {
             const batchId = crypto.randomUUID();
             const createdCopies = [];
             const createdByRow = new Map();
+            // A new ISBN can occur on several Excel rows with minor spelling
+            // variants. Choose one title/author for ALL its physical copies,
+            // or downstream book grouping and barcode scans split the edition.
+            const newEditionIdentity=new Map();
             const restoredLoanEvents = [];
             const reportsByRow = new Map();
             const clearedThemeRows = new Set((stage.corrections || [])
@@ -5653,14 +5657,24 @@ async function handleApi(req, res, requestUrl) {
                 &&!acceptedIdentityFields.has('title'));
               const keepExistingAuthor=Boolean(existingTemplate
                 &&!acceptedIdentityFields.has('author'));
+              const canonicalNew=newEditionIdentity.get(addition.editionIsbn);
               if(keepExistingTitle)
                 sourceFields.title=createFieldSource('existing','matched_isbn_edition');
+              else if(!existingTemplate&&canonicalNew&&canonicalNew.title!==row.book.title)
+                sourceFields.title=createFieldSource('derived','matched_workbook_isbn');
               if(keepExistingAuthor)
                 sourceFields.author=createFieldSource('existing','matched_isbn_edition');
+              else if(!existingTemplate&&canonicalNew
+                &&(canonicalNew.author!==row.book.author
+                  ||JSON.stringify(canonicalNew.authors)!==JSON.stringify(row.book.authors)))
+                sourceFields.author=createFieldSource('derived','matched_workbook_isbn');
               const template = ensureBookShape({
-                title: keepExistingTitle?existingTemplate.title:row.book.title,
-                author: keepExistingAuthor?existingTemplate.author:row.book.author,
-                authors: keepExistingAuthor?existingTemplate.authors:row.book.authors,
+                title: keepExistingTitle?existingTemplate.title
+                  :canonicalNew?canonicalNew.title:row.book.title,
+                author: keepExistingAuthor?existingTemplate.author
+                  :canonicalNew?canonicalNew.author:row.book.author,
+                authors: keepExistingAuthor?existingTemplate.authors
+                  :canonicalNew?canonicalNew.authors:row.book.authors,
                 description: row.book.description, publisher: row.book.publisher,
                 publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
                 language: row.book.language, coverUrl: row.book.coverUrl,
@@ -5684,6 +5698,12 @@ async function handleApi(req, res, requestUrl) {
                 }),
                 importProvenance: { fieldSources: sourceFields },
               });
+              if(!existingTemplate&&!canonicalNew){
+                newEditionIdentity.set(addition.editionIsbn,{
+                  title:template.title,author:template.author,
+                  authors:[...template.authors],
+                });
+              }
               const ids = [];
               for (let count = 0; count < addition.quantity; count += 1) {
                 const copy = createBookCopyFromTemplate(template);
