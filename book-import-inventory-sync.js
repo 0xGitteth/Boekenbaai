@@ -5,6 +5,7 @@
 // An omitted ISBN or lower Excel quantity NEVER silently deletes stock.
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { comparison: spellingKey } = require('./book-import-source-confidence');
+const {sameBookIdentity}=require('./book-import-autonomy');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
 const { eligibleForDeferredContext, followupContext, contextMatchesTask } =
@@ -130,8 +131,10 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       blockers.add(code);
       if (!reason) reason = code;
     };
-    if (rows.some((row) => comparableIdentity(row.book) !== fingerprint)
-      || existing.some((book) => comparableIdentity(book) !== fingerprint)) {
+    if (rows.some((row) => !sameBookIdentity(row.book,rows[0].book))
+      || existing.some((book) => !sameBookIdentity(book,rows[0].book))) {
+      // ISBN plus a recognizably equivalent title/author is sufficient for
+      // a stock count. A substantially different book remains blocked.
       block('edition_identity_mismatch');
     }
     // Legacy copies with a physical barcode but no edition ISBN must not
