@@ -343,8 +343,19 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       });
       if(!sourceRows.length)continue;
       const id=isbn+':'+field;
-      const variants=new Map(sourceRows.map(row=>
-        [JSON.stringify(metadataKey(field,row)),metadataKey(field,row)]));
+      // Multiple Excel rows of one ISBN may differ only in punctuation or
+      // accents. That is one bibliographic value, not multiple contradictory
+      // title/author identities requiring a manual decision.
+      const variants=new Map(sourceRows.map(row=>{
+        const value=metadataKey(field,row);
+        const signature=field==='title'
+          ?'title:'+sourceConfidence.comparison(value)
+          :field==='author'
+            ?'author:'+sourceConfidence.comparison(value?.value)+'|'
+              +(value?.authors||[]).map(sourceConfidence.comparison).sort().join('|')
+            :JSON.stringify(value);
+        return [signature,value];
+      }));
       const validSources=sourceRows.every(row=>
         metadataSourceSafe(row,field,acceptWarnings));
       const next=variants.size===1?[...variants.values()][0]:null;
