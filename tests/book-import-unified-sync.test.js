@@ -255,11 +255,13 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(preview.ok,true);
   assert.equal(preview.summary.pendingMetadata,0,
     'Two equivalent spellings in Excel must not become an identity conflict');
-  assert.equal(preview.summary.metadataFields,0,
-    'Without independent confirmation, preserve the existing spelling');
-  assert.equal(preview.summary.preservedMetadata,2);
+  assert.equal(preview.metadata.updates.some(change=>change.field==='title'),false,
+    'Equivalent title spelling must not change the existing title');
+  assert.equal(preview.metadata.updates.every(change=>
+    change.field!=='author'||change.value.value==='Jan Terlouw'),true,
+    'Normalizing a missing authors list must not change the author identity');
   assert.equal(preview.summary.readyToApply,true,
-    'Audited automatic retains must be confirmable without manual metadata edits');
+    'Harmless metadata normalization needs no manual identity decision');
 }
 
 {
