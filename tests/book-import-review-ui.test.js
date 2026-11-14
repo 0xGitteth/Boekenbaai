@@ -219,7 +219,7 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
     combined.indexOf('for(const item of blocked)'));
   assert.match(metadata,/issue\.worksheetRows/);
   assert.match(metadata,/source\.sourceRowNumber/);
-  assert.match(metadata,/Excelrij ' \+source\.sourceRowNumber\+' corrigeren'/);
+  assert.ok(metadata.includes("'Excelrij '+source.sourceRowNumber+' corrigeren'"));
   assert.match(metadata,/editRow\(source,card,\{/);
   assert.match(metadata,/onlyFields:\[editField\],metadataIssueId:issue\.id/);
   assert.match(script,/if \(options\.onlyFields && !options\.onlyFields\.includes\(field\)\) continue/);
