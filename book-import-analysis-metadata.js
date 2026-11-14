@@ -434,6 +434,17 @@ async function resolveMetadata(row, options) {
     if (!lookupIsbn || !row.book.editionIsbn || (!force && !hasMissingMetadata())) return;
     try {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
+      // Only actual independent source replies, with an explicitly matching
+      // edition ISBN, qualify as evidence for automatic source choices.
+      if(Array.isArray(result?.sourceCandidates)){
+        row.sourceEvidence=metadataCandidatesFromResult(result.sourceCandidates)
+          .filter(candidate=>candidate.editionIsbn===row.book.editionIsbn
+            &&['googlebooks','openlibrary','isbnbarcode.org'].includes(candidate.source))
+          .map(candidate=>({
+            source:candidate.source,editionIsbn:candidate.editionIsbn,
+            title:candidate.title,author:candidate.author,publisher:candidate.publisher,
+          }));
+      }
       const candidates = metadataCandidatesFromResult(result);
       const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book, row.provenance);
       if (selection.conflict?.code === 'metadata_title_conflict'
