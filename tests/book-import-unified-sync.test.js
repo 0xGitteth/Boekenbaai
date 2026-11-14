@@ -238,6 +238,10 @@ assert.equal(normalizeParts(undefined).value.books,true);
   const renamedLoan=source(0,loan('tim','Tim Leerling'),{
     title:'Oorlogswinter, gecorrigeerde titel',
   },{title:{source:'excel',raw:'Oorlogswinter, gecorrigeerde titel'}});
+  renamedLoan.sourceEvidence=[
+    {source:'googlebooks',editionIsbn:ISBN,title:'Oorlogswinter, gecorrigeerde titel'},
+    {source:'openlibrary',editionIsbn:ISBN,title:'Oorlogswinter, gecorrigeerde titel'},
+  ];
   const sync=plan([renamedLoan],current,{
     parts:parts({books:true,loans:true,fields:{title:true}}),
   });
