@@ -957,9 +957,7 @@ assert.equal(normalizeParts(undefined).value.books,true);
 }
 {
   const current=db();
-  const vague=source(0,{classContext:['Klas A']},{
-    quantity:{valid:true,value:2},
-  });
+  const vague=source(0,{classContext:['Klas A']});
   vague.status='warning';
   vague.issues=[{code:'class_context_needs_review',severity:'warning'}];
   const initial=plan([vague],current,{
