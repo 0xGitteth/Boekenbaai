@@ -61,7 +61,8 @@ function issueAffectsSelection(issue,parts,domain){
   // remain visible as optional context, but may not block the stock count,
   // loan/location matching or every selected metadata field independently.
   // Structural ISBN/title conflicts and malformed values remain blocking.
-  if(code==='metadata_differs_from_excel' && issue?.severity==='warning')
+  if(code==='metadata_differs_from_excel' && issue?.severity==='warning'
+    &&issue?.sourceInvalid!==true)
     return false;
   if(LOAN_ISSUES.has(code))return domain==='assignment'&&parts.loans;
   if(LOCATION_ISSUES.has(code))return domain==='assignment'&&parts.locations;
