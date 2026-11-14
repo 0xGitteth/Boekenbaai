@@ -4,7 +4,6 @@
 // address for repeated automated requests. Never use it without that setting.
 const {normalizeIsbn, isValidIsbn, toIsbn13, getEquivalentIsbns} = require('./isbn-lookup-core-impl');
 const {nearlySameBookText}=require('./book-import-autonomy');
-const {deriveThemesFromTags}=require('./book-theme-normalization');
 
 const normalizeText = value => String(value || '').normalize('NFKC').trim()
   .replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
@@ -24,10 +23,10 @@ const isMissing = book => !String(book?.publisher || '').trim()
   || !String(book?.coverUrl || '').trim()
   || !Number.isInteger(Number(book?.pageCount)) || Number(book?.pageCount) < 1
   || !(Array.isArray(book?.tags) && book.tags.length)
-  || (!Array.isArray(book?.manualThemes)||!book.manualThemes.length)
-    &&(!Array.isArray(book?.importedThemes)||!book.importedThemes.length)
-    &&deriveThemesFromTags([...(Array.isArray(book?.tags)?book.tags:[]),
-      ...(Array.isArray(book?.enrichmentTags)?book.enrichmentTags:[])]).themes.length===0;
+  // Even a book with complete basic metadata may lack the verified
+  // descriptive source keywords needed for Help me kiezen. The worker
+  // records each successful/unsuccessful ISBN check to prevent loops.
+  || !(Array.isArray(book?.enrichmentTags) && book.enrichmentTags.length);
 
 function decodeEntities(input) {
   return String(input || '').replace(/&(#x[0-9a-f]+|#[0-9]+|amp|quot|apos|lt|gt|nbsp);/gi, (all, key) => {
