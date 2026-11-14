@@ -5771,8 +5771,10 @@ async function handleApi(req, res, requestUrl) {
                   }else if(update.field==='coverUrl'){
                     if(book.coverUrl!==update.value){
                       book.coverUrl=update.value;
-                      // The cached file belongs to the previous source URL.
+                      // Both the local cached cover and the custom crop were
+                      // configured for the previous image, not the new URL.
                       book.localCoverUrl='';
+                      book.coverCrop=null;
                     }
                   }else{
                     book[update.field]=Array.isArray(update.value)
