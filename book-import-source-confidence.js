@@ -71,7 +71,7 @@ function decide({isbn,field,excel,current,evidence=[]}){
       value:consensus.value,
       reason:consensus.agreeing+' onafhankelijke ISBN-bronnen bevestigen dezelfde schrijfwijze'};
   }
-  if(consensus.value && consensus.agreeing===1
+  if(consensus.value && consensus.agreeing===1 &&!consensus.conflicting
     &&equivalentSpelling(incoming,consensus.value)
     &&(!old||equivalentSpelling(old,incoming))){
     return {...base,action:'source',value:consensus.value,
