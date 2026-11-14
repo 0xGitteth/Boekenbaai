@@ -43,6 +43,24 @@ module.exports = async function runCoreTests() {
   assert.equal(compactUnified.groups[0].copies.length,1,
     'One grouping representative prevents needless allocation of 1000 objects');
 
+  // The same ISBN with punctuation/accent title variants is one
+  // physical edition, not two conflicting books.
+  const orthographicGroup=await analyzeBookImportRows([
+    {Titel:'P.S. Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN,Aantal:1},
+    {Titel:'PS Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN,Aantal:1},
+  ],{mode:'unified_sync'});
+  assert.equal(orthographicGroup.summary.editionConflicts,0);
+  assert.equal(orthographicGroup.summary.editionGroups,1);
+  assert.equal(orthographicGroup.rows[0].book.title,'P.S. Ik hou van je');
+  assert.equal(orthographicGroup.rows[1].book.title,'PS Ik hou van je',
+    'Grouping may not silently rewrite the teacher Excel value');
+  const genuinelyDifferent=await analyzeBookImportRows([
+    {Titel:'P.S. Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN},
+    {Titel:'Een heel ander boek',Auteur:'A Auteur','ISBN-nummer':ISBN},
+  ],{mode:'unified_sync'});
+  assert.ok(genuinelyDifferent.summary.editionConflicts>0,
+    'An unrelated title with the same ISBN must still be blocked');
+
   // Explicit Tags must survive independently of the derived strip label
   // introduced by Examenmateriaal: Strip.
   const mixedTags=await analyzeBookImportRows([{
