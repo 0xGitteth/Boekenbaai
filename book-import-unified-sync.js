@@ -306,6 +306,11 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     editions.get(isbn).push(book);
   }
   const groups=new Map();
+  // scoping intentionally removes nonblocking diagnostics; retain the raw
+  // Excel-column conflicts separately so the specific conflicted field can
+  // never be imported from whichever duplicate column came first.
+  const sourceIssuesByIndex=new Map(analysis.rows.map(row=>
+    [row.index,row.issues||[]]));
   for(const original of analysis.rows){
     const row=scopedRow(original,parts,'metadata');
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
@@ -320,7 +325,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       // An Excel column disagreement is NOT a trustworthy selected value.
       // Preserve the existing field; never import the arbitrary first cell.
       // Unrelated stock, loans and other metadata remain independently safe.
-      if(rows.some(row=>(row.issues||[]).some(issue=>
+      if(rows.some(row=>(sourceIssuesByIndex.get(row.index)||[]).some(issue=>
         issue.code==='conflicting_source_columns'&&issue.field===field)))continue;
       const sourceRows=rows.filter(row=>{
         if(field==='suitableForExamList' &&(row.issues||[]).some(issue=>
