@@ -86,6 +86,11 @@ function decide({isbn,field,excel,current,evidence=[]}){
       reason:'Eén ISBN-bron bevestigt een equivalente schrijfwijze'};
   }
   if(['title','author'].includes(field) && old
+    &&equivalentSpelling(incoming,old) &&incoming!==old){
+    return {...base,action:'keep',value:old,
+      reason:'Bestaande spelling behouden totdat onafhankelijke ISBN-bronnen een correctie bevestigen'};
+  }
+  if(['title','author'].includes(field) && old
     &&!equivalentSpelling(incoming,old)){
     return {...base,action:'keep',value:old,
       reason:'Bestaande titel of auteur behouden; inhoudelijk afwijkende schrijfwijze niet zeker'};
