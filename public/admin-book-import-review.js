@@ -2,11 +2,13 @@
 (() => {
   'use strict';
   const rootPath = '/api/admin/book-import-stages';
+  const importErrorText=window.BOEKENBAAI_IMPORT_DIAGNOSTICS||{};
   const statusNames = {
     ready: 'Klaar', warning: 'Waarschuwing', conflict: 'Conflict',
     unresolved: 'Nog niet opgelost', skipped: 'Overgeslagen',
   };
   const reasonNames = {
+    ...importErrorText,
     existing_edition_requires_review: 'Dit ISBN bestaat al in de collectie. Sla deze rij over of beoordeel dit later bij synchroniseren.',
     existing_physical_barcode_requires_correction: 'Deze fysieke barcode wordt al door een ander boek gebruikt. Corrigeer de barcode of sla deze rij over.',
     workbook_physical_barcode_conflict: 'Meerdere boeken in dit Excelbestand hebben dezelfde scanbarcode. Corrigeer deze rijen of sla ze over.',
@@ -53,6 +55,7 @@
     skipped: 'Overgeslagen',
   };
   const issueNames = {
+    ...importErrorText,
     conflicting_edition_isbns: 'Tegenstrijdige ISBN-waarden',
     conflicting_source_columns: 'Tegenstrijdige bronkolommen',
     edition_identity_conflict: 'Boeken met hetzelfde ISBN hebben verschillende gegevens',
@@ -126,7 +129,8 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const details = typeof payload.error === 'string' ? ' (' + payload.error + ')' : '';
+      const details = typeof payload.error === 'string'
+        ? ' ('+(importErrorText[payload.error]||'Foutcode '+payload.error)+')' : '';
       throw new Error((payload.message || 'Actie mislukt.') + details);
     }
     return payload;
@@ -847,6 +851,7 @@
       const warningCount=actionableWarnings.reduce((count,entry)=>
         count+entry.issues.length,0);
       const issueLabels={
+        ...importErrorText,
         invalid_published_year:'Ongeldig uitgavejaar',
         invalid_page_count:'Ongeldig aantal pagina’s',
         isbn_repaired:'ISBN automatisch hersteld',
@@ -1041,6 +1046,7 @@
       const metadataCards=make('div','bb-import__exceptions-list');
       const stockCards=make('div','bb-import__exceptions-list');
       const reasonNames={
+        ...importErrorText,
         ambiguous_physical_copy:'Geen veilig beschikbaar exemplaar vast te stellen.',
         conflicting_excel_borrowers:'Excel noemt zowel een leerling als een klas.',
         physical_barcode_not_found:'Unieke barcode staat niet in de bibliotheek.',
