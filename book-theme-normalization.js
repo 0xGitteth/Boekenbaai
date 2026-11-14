@@ -635,7 +635,10 @@ function attachDerivedThemeFields(book, options = {}) {
   const importedThemes = parseMultiValueField(source.importedThemes)
     .filter((theme) => typeof theme === 'string' && theme.trim())
     .slice(0, 40);
-  const derived = deriveThemesFromTags(safeTags, options);
+  const extraTags = parseMultiValueField(source.enrichmentTags).slice(0,30);
+  // ISBN-verified keywords inform the same curated theme mapper as explicit
+  // tags. The original tags stay untouched and manualThemes still win.
+  const derived = deriveThemesFromTags([...safeTags,...extraTags], options);
   return {
     ...source,
     tags: safeTags,
