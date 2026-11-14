@@ -928,6 +928,22 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(filled.metadata.updates.find(item=>item.field==='pageCount').value,214);
   assert.equal(filled.metadata.updates.find(item=>item.field==='tags').value.length,2);
   assert.equal(filled.summary.readyToApply,true);
+  const keepEnrichment=plan([row],current,{
+    parts:parts({books:true}),
+    metadataResolutions:[{id:ISBN+':description',action:'keep'}],
+  });
+  assert.equal(keepEnrichment.ok,true);
+  assert.equal(keepEnrichment.metadata.updates.some(update=>
+    update.field==='description'),false,
+    'An administrator may decline optional auto-enrichment without losing other fields');
+  assert.ok(keepEnrichment.metadata.automaticDecisions.some(item=>
+    item.field==='description'&&item.action==='keep'));
+  const forbiddenExcel=plan([row],current,{
+    parts:parts({books:true}),
+    metadataResolutions:[{id:ISBN+':description',action:'excel'}],
+  });
+  assert.equal(forbiddenExcel.error,'unsafe_metadata_override',
+    'Source-only fields cannot be replaced with fabricated nonexistent Excel values');
   const raw=source(0,{},{
     quantity:{valid:true,value:2},description:'Exceltekst',
   },{description:{source:'excel',raw:'Exceltekst'}});
