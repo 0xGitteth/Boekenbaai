@@ -317,6 +317,11 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   for(const [isbn,rows] of groups){
     const copies=editions.get(isbn);
     for(const field of METADATA_FIELDS.filter(field=>parts.fields[field])){
+      // An Excel column disagreement is NOT a trustworthy selected value.
+      // Preserve the existing field; never import the arbitrary first cell.
+      // Unrelated stock, loans and other metadata remain independently safe.
+      if(rows.some(row=>(row.issues||[]).some(issue=>
+        issue.code==='conflicting_source_columns'&&issue.field===field)))continue;
       const sourceRows=rows.filter(row=>{
         if(field==='suitableForExamList' &&(row.issues||[]).some(issue=>
           issue.code==='unexpected_exam_material_value'))return false;
@@ -336,8 +341,13 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         const fromExcel=source?.source==='excel'&&!derivedFromOther;
         const reviewed=source?.source==='manual'
           &&source.detail==='review_correction';
-        return (fromExcel||reviewed)
-          &&(reviewed?(field==='tags'
+        const verifiedSpelling=source?.source==='metadata'
+          &&source.detail==='verified_isbn_spelling'
+          &&typeof source.correctedFrom==='string'
+          &&Array.isArray(source.sources)&&source.sources.length>=2
+          &&['title','author'].includes(field);
+        return (fromExcel||reviewed||verifiedSpelling)
+          &&((reviewed||verifiedSpelling)?(field==='tags'
               ?nonempty(source.explicitValues):nonempty(row.book?.[field]))
             :composedTags?nonempty(source.explicitValues)
             :nonempty(source.raw??(field==='author'
@@ -533,7 +543,9 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     const copies=editions.get(isbn);
     for(const field of enrichable){
       if(parts.fields[field])continue; // explicit teacher-controlled sync wins
-      const targets=copies.filter(book=>emptyForEnrichment(field,book[field]));
+      const targets=copies.filter(book=>emptyForEnrichment(field,book[field])
+        &&book.importProvenance?.fieldSources?.[field]?.sourceType!=='manual'
+        &&!(field==='tags'&&book.themesCleared===true));
       if(!targets.length)continue;
       const evidenceRows=rows.filter(row=>
         row.provenance?.[field]?.source==='metadata'
@@ -707,12 +719,20 @@ function buildUnifiedBookImport(analysis,db,{
   if(previouslyImported.length){
     assignments=buildAssignmentPreview(source,assignmentDb,[
       ...assignmentChoices.values,
+      ...implicitClassKeeps.map(diff=>({id:diff.id,action:'keep'})),
       ...previouslyImported.map(diff=>({id:diff.id,action:'keep'})),
     ]);
     if(!assignments.ok)return assignments;
     const ignored=new Set(previouslyImported.map(diff=>diff.id));
-    for(const diff of assignments.differences)
+    const implicitIds=new Set(implicitClassKeeps.map(diff=>diff.id));
+    for(const diff of assignments.differences){
       if(ignored.has(diff.id))diff.previouslyImported=true;
+      if(implicitIds.has(diff.id)){
+        diff.automatic=true;diff.autoKept=true;
+        diff.description='Onduidelijke klasvermelding: bestaande registratie veilig behouden';
+      }
+    }
+    assignments.summary.automatic+=implicitIds.size;
     assignments.summary.previouslyImportedLoans=ignored.size;
   }else assignments.summary.previouslyImportedLoans=0;
   const total=inventory.summary.addCopies+assignments.summary.apply
