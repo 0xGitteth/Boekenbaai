@@ -58,14 +58,14 @@ function decide({isbn,field,excel,current,evidence=[]}){
   if(!incoming||!FIELDS.has(field))return {...base,action:'excel',value:excel,
     reason:'Geselecteerde ingevulde Excelkolom'};
   if(consensus.value && consensus.agreeing>=2 && !consensus.conflicting
-    && equivalentSpelling(incoming,consensus.value)
-    &&(!old||equivalentSpelling(old,incoming))){
+    && equivalentSpelling(incoming,consensus.value)){
     return {...base,confidence:'high',action:'source',
       value:consensus.value,
       reason:consensus.agreeing+' onafhankelijke ISBN-bronnen bevestigen dezelfde schrijfwijze'};
   }
   if(consensus.value && consensus.agreeing===1
-    &&equivalentSpelling(incoming,consensus.value)){
+    &&equivalentSpelling(incoming,consensus.value)
+    &&(!old||equivalentSpelling(old,incoming))){
     return {...base,action:'source',value:consensus.value,
       reason:'Eén ISBN-bron bevestigt een equivalente schrijfwijze'};
   }
