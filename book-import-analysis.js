@@ -2,6 +2,7 @@
 
 const { groupBookCopiesByEdition } = require('./book-edition-core');
 const { equivalentSpelling } = require('./book-import-source-confidence');
+const {sameBookIdentity}=require('./book-import-autonomy');
 const { mapImportRow, readBookImportWorkbook, isBlankCellValue } = require('./book-import-workbook');
 const {
   JUNK_ONLY_TOKENS,
@@ -335,16 +336,17 @@ async function analyzeBookImportRows(rows, options = {}) {
   // Consolidate punctuation/accent variants of the SAME explicit ISBN
   // solely for edition grouping; leave the actual Excel row untouched.
   // Materially different titles continue to produce a blocking conflict.
-  const groupTitleByIsbn=new Map();
+  const firstBookByIsbn=new Map();
   const comparableCopies=groupableCopies.map(copy=>{
     const isbn=copy.editionIsbn;
-    const first=groupTitleByIsbn.get(isbn);
+    const first=firstBookByIsbn.get(isbn);
     if(!first){
-      groupTitleByIsbn.set(isbn,copy.title);
+      firstBookByIsbn.set(isbn,copy);
       return copy;
     }
-    return equivalentSpelling(first,copy.title)
-      ?{...copy,title:first}:copy;
+    return sameBookIdentity(first,copy)
+      ?{...copy,title:first.title,author:first.author,
+        authors:[...first.authors]}:copy;
   });
 
   let grouped = { groups: [], conflicts: [] };
