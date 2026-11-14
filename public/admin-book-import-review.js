@@ -1270,10 +1270,15 @@
         const wrapper=make('div','bb-import__decision-control');
         wrapper.append(control);
         if(!item.canUseExcel && item.worksheetRows?.length){
-          const source=(stage.rows||[]).find(row=>
+          // The same ISBN may appear in several worksheet rows. Every
+          // affected row must remain directly editable, including when
+          // stock synchronization is not selected.
+          const affected=(stage.rows||[]).filter(row=>
             item.worksheetRows.includes(row.sourceRowNumber));
-          if(source){
-            const correction=button('Excelwaarde corrigeren','btn btn--secondary');
+          for(const source of affected){
+            const correction=button('Excelrij '+source.sourceRowNumber+' corrigeren',
+              'btn btn--secondary');
+            correction.disabled=Boolean(remotePending||busy);
             correction.addEventListener('click',()=>{
               openEditor=openEditor===source.index?null:source.index;
               render();
