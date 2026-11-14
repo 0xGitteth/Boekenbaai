@@ -6,7 +6,8 @@
 // Ambiguous copies remain unresolved, and every applied change is recomputed
 // against current persisted book/student/class state.
 const crypto = require('node:crypto');
-const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
+const { canonicalizeBookIsbn13 } = require('./book-edition-core');
+const { comparison: spellingKey } = require('./book-import-source-confidence');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { matchEntityByName, matchStudentWithClass } =
   require('./book-import-analysis-context');
@@ -17,8 +18,7 @@ const ACTIONS = new Set(['apply', 'keep', 'later', 'class_fixed', 'class_loan', 
 const CLASS_ACTIONS = new Set(['class_fixed', 'class_loan', 'class_unrelated']);
 // Accents in Excel may differ from older stored metadata (Rene/René).
 // Only relax spelling after an unambiguous ISBN/exemplar match.
-const norm = value => normalizeBookIdentityComparable(value || '')
-  .normalize('NFKD').replace(/\p{M}/gu, '');
+const norm = value => spellingKey(value || '');
 const bookKey = book => [
   norm(book?.title), norm(book?.author),
 ];
