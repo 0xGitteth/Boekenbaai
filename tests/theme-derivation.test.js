@@ -145,6 +145,19 @@ assert.strictEqual(preserved.easyReading, true);
 assert.ok(!preserved.themes.includes('Makkelijk Lezen'));
 
 
+const autoSuggestionTheme = attachDerivedThemeFields({
+  tags:['Schoollabel'],enrichmentTags:['friendship','adventure stories'],
+});
+assert.deepStrictEqual(autoSuggestionTheme.tags,['Schoollabel']);
+assert.deepStrictEqual(autoSuggestionTheme.themes,['Avontuur','Vriendschap'],
+  'Verified source keywords should improve Help me kiezen even when teacher tags are unrelated');
+const keepManualTheme = attachDerivedThemeFields({
+  tags:['Schoollabel'],enrichmentTags:['friendship'],
+  manualThemes:['Mysterie'],
+});
+assert.deepStrictEqual(keepManualTheme.themes,['Mysterie'],
+  'Teacher curated themes remain authoritative');
+
 const manualOverride = attachDerivedThemeFields({
   tags: ['friendship'],
   manualThemes: ['Mysterie', 'Makkelijk Lezen', 'Psychische gezondheid', 'Pesten'],
