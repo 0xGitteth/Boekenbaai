@@ -318,7 +318,7 @@
     // The separate post-import free metadata worker can fill gaps later.
     metadata.checked = false;
     metadataLabel.append(metadata, document.createTextNode(
-      ' Tijdens de controle extra boekgegevens opzoeken (optioneel, kan lang duren).'));
+      ' ISBN-bronnen vergelijken en ontbrekende boekgegevens opzoeken (optioneel, kan langer duren).'));
     const importMode = make('select');
     for (const [value,label] of [
       ['unified','Samen synchroniseren (aanbevolen)'],
@@ -465,6 +465,7 @@
     let page = 0;
     let automaticPage = 0;
     let automaticExpanded = false;
+    let automaticReceiptLimit=20;
     let unifiedLimits={assignments:15,metadata:15,stock:15};
     const unifiedOpenGroups=new Set();
     let busy = false;
@@ -1672,6 +1673,39 @@
             stats.append(stat);
           }
           complete.append(stats);
+          const sourceLog=done.report?.automaticSourceDecisions||[];
+          if(sourceLog.length){
+            const audit=make('details','bb-import__selection-details');
+            audit.append(make('summary','',
+              'Automatische bronkeuzes en behouden gegevens ('+sourceLog.length+')'));
+            audit.append(make('p','hint',
+              'Hoge zekerheid: meerdere onafhankelijke ISBN-bronnen komen overeen. '
+              +'Redelijke zekerheid: Boekenbaai kiest een veilige standaard. '
+              +'Het volledige verslag blijft beschikbaar via de JSON-knop.'));
+            const format=value=>typeof value==='string'?value
+              :Array.isArray(value)?value.join(', ')
+              :value&&typeof value==='object'?(value.value||JSON.stringify(value))
+              :value===undefined||value===null?'leeg':String(value);
+            for(const item of sourceLog.slice(0,automaticReceiptLimit)){
+              const line=make('p','bb-review__detail',
+                (item.isbn||'Onbekende ISBN')+' · '+item.field
+                +' · '+(item.action==='keep'?'Bestaande behouden':'Bijgewerkt')
+                +' ('+(item.confidence==='high'?'hoge zekerheid'
+                  :item.confidence==='manual'?'beheerder':'redelijke zekerheid')+')'
+                +' · '+format(item.before)+' → '+format(item.after));
+              audit.append(line);
+            }
+            if(sourceLog.length>automaticReceiptLimit){
+              const more=button('Nog '+Math.min(20,sourceLog.length-automaticReceiptLimit)
+                +' keuzes bekijken','btn btn--secondary');
+              more.addEventListener('click',()=>{
+                automaticReceiptLimit+=20;
+                render(true);
+              });
+              audit.append(more);
+            }
+            complete.append(audit);
+          }
           if(done.selectedParts){
             const selected=done.selectedParts;
             const labels=[];
