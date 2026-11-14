@@ -3,7 +3,7 @@
 // Optional free Dutch ISBN enrichment. The service requires a real contact
 // address for repeated automated requests. Never use it without that setting.
 const {normalizeIsbn, isValidIsbn, toIsbn13, getEquivalentIsbns} = require('./isbn-lookup-core-impl');
-const {nearlySameBookText}=require('./book-import-autonomy');
+const {nearlySameBookText,sameBookTitle}=require('./book-import-autonomy');
 
 const normalizeText = value => String(value || '').normalize('NFKC').trim()
   .replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
@@ -93,7 +93,7 @@ function titleAgrees(book, source) {
   if (a === b) return true;
   // Subtitles and punctuation differ across editions, but never guess a
   // different title. ISBN matching on its own is not enough to override it.
-  return nearlySameBookText(a,b)||(a.length >= 9 && b.length >= 9
+  return sameBookTitle(a,b)||(a.length >= 9 && b.length >= 9
     && (a.startsWith(b + ':') || b.startsWith(a + ':')));
 }
 function usableFor(book, metadata) {
