@@ -280,10 +280,14 @@ module.exports = async function runMetadataTests() {
       source: 'conflicting-exact',
     }),
   });
-  assert.strictEqual(exactPayloadIdentifierConflict.rows[0].status, 'conflict');
-  assert.ok(codes(exactPayloadIdentifierConflict.rows[0]).has('metadata_identifier_conflict'));
+  assert.strictEqual(exactPayloadIdentifierConflict.rows[0].status, 'warning',
+    'A contradictory third-party payload is not a proven Excel ISBN error');
+  assert.ok(exactPayloadIdentifierConflict.rows[0].issues.some(issue=>
+    issue.code==='metadata_identifier_conflict'
+    &&issue.reviewLevel==='informational'));
   assert.strictEqual(exactPayloadIdentifierConflict.rows[0].book.publisher, '');
-  assert.strictEqual(exactPayloadIdentifierConflict.groups.length, 0);
+  assert.strictEqual(exactPayloadIdentifierConflict.groups.length, 1,
+    'The validated Excel ISBN remains usable without trusting broken metadata');
 
   const titlePayloadIdentifierConflict = await analyzeBookImportRows([{
     Titel: 'Work metadata botsing', Auteur: 'A Auteur',
