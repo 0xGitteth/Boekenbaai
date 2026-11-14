@@ -782,6 +782,71 @@
         +'Alle niet-geselecteerde kolommen en lege Excelvelden blijven ongemoeid.'));
       results.append(selection);
 
+      // Show the actual diagnostic messages before requesting the general
+      // warning acknowledgement. A generic "source_needs_review" message
+      // does not tell administrators what is wrong with the Excel data.
+      const sourceWarnings=(stage.rows||[]).map(row=>({
+        row,issues:(row.issues||[]).filter(issue=>
+          issue.severity==='warning'||issue.severity==='conflict'),
+      })).filter(entry=>entry.issues.length);
+      if(sourceWarnings.length){
+        const warningCount=sourceWarnings.reduce((total,entry)=>
+          total+entry.issues.length,0);
+        const notice=make('section','bb-import__source-warnings');
+        notice.append(make('h4','','Bronwaarschuwingen uit Excel ('+warningCount+')'));
+        notice.append(make('p','hint',
+          'Controleer de meldingen per Excelrij voordat je de waarschuwingen '
+          +'accepteert. Bij ongeldige gegevens kun je de bron corrigeren '
+          +'of de betreffende rij overslaan.'));
+        const warningList=make('div','bb-import__warnings-scroll');
+        const issueLabels={
+          invalid_published_year:'Ongeldig uitgavejaar',
+          invalid_page_count:'Ongeldig aantal pagina’s',
+          isbn_repaired:'ISBN automatisch hersteld',
+          isbn_repair_suggested:'ISBN moet worden gecontroleerd',
+          missing_title:'Titel ontbreekt',
+          missing_author:'Auteur ontbreekt',
+          missing_title_after_metadata:'Titel ontbreekt na aanvullen',
+          missing_author_after_metadata:'Auteur ontbreekt na aanvullen',
+          invalid_quantity:'Ongeldig aantal exemplaren',
+          language_hint_conflict:'Taal wijkt af van de aanwijzing bij examenmateriaal',
+          nonstandard_easy_reading_value:'Afwijkende invoer voor Makkelijk lezen',
+          invalid_or_unrecognized_isbn:'ISBN niet herkend',
+          dangerous_headers_ignored:'Ongeldige kolomkoppen genegeerd',
+          conflicting_source_columns:'Meerdere Excelkolommen spreken elkaar tegen',
+          duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
+          metadata_title_conflict:'Boektitel verschilt van gevonden boekgegevens',
+        };
+        for(const entry of sourceWarnings){
+          const row=entry.row;
+          const group=make('div','bb-import__warning-row');
+          group.append(make('strong','',
+            'Excelrij '+row.sourceRowNumber+' · '+(row.book?.title||'Zonder titel')));
+          const items=make('ul','bb-import__warning-items');
+          for(const issue of entry.issues){
+            const description=issueLabels[issue.code]||
+              String(issue.code||'Onbekende melding').replaceAll('_',' ');
+            const detailParts=[];
+            if(issue.header)detailParts.push('Kolom: '+issue.header);
+            else if(issue.field)detailParts.push('Veld: '+issue.field);
+            if(issue.raw!==undefined&&issue.raw!==null)
+              detailParts.push('In Excel: '+String(issue.raw).slice(0,160));
+            if(issue.suggestion?.canonical)
+              detailParts.push('Voorstel: '+issue.suggestion.canonical);
+            if(issue.repair?.canonical)
+              detailParts.push('Gecorrigeerd naar: '+issue.repair.canonical);
+            const item=make('li','',description+
+              (issue.severity==='conflict'?' (conflict)':' (waarschuwing)')+
+              (detailParts.length?' · '+detailParts.join(' · '):''));
+            items.append(item);
+          }
+          group.append(items);
+          warningList.append(group);
+        }
+        notice.append(warningList);
+        results.append(notice);
+      }
+
       const controls=make('div','bb-review__controls bb-import__review-controls');
       const acceptLabel=make('label','bb-review__check');
       const accept=make('input');accept.type='checkbox';
