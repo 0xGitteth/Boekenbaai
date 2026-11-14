@@ -155,7 +155,7 @@ assert.strictEqual(pendingFieldEdits.afterSelect.accepted, false);
 // Automatic keep decisions may describe multiple bad rows for one ISBN.
 // Each row must expose its own correction editor inside the collapsed audit.
 {
-  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const start=script.indexOf('if(!item.canUseExcel&&!item.enrichmentOnly &&item.worksheetRows?.length)');
   const end=script.indexOf('addRow(item.title||',start);
   assert.ok(start>=0&&end>start,'Missing automatic keep correction UI');
   const correctionUi=script.slice(start,end);
@@ -248,7 +248,7 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
 // keep resolution before the next review. Otherwise a successful correction
 // can lead to stale_metadata_choice when that field now equals the database.
 {
-  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const start=script.indexOf('if(!item.canUseExcel&&!item.enrichmentOnly &&item.worksheetRows?.length)');
   const end=script.indexOf('addRow(item.title||',start);
   const automaticEditor=script.slice(start,end);
   assert.ok(start>=0&&end>start,'Missing automatic decision correction editor');
