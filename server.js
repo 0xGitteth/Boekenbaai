@@ -5861,6 +5861,16 @@ async function handleApi(req, res, requestUrl) {
               report.correctedLocations=corrected.locations;
               report.metadataUpdates=metadataUpdated;
               report.metadataFields=combined.metadata.summary.updates;
+              report.automaticAssignmentKeeps=combined.assignments.differences
+                .filter(item=>item.autoKept===true)
+                .map(item=>({
+                  worksheetRow:item.worksheetRow,
+                  editionIsbn:item.editionIsbn,title:item.title,
+                  className:item.className||'',bookId:item.bookId,
+                  beforeLocation:item.beforeLocation||null,
+                  beforeLoan:item.beforeLoan||null,
+                  reason:'Niet-classificeerbare klasvermelding: bestaande registratie behouden',
+                }));
               report.automaticSourceDecisions=combined.metadata.automaticDecisions
                 .map(item=>({
                   isbn:item.isbn,field:item.field,action:item.action,
