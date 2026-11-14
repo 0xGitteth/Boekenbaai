@@ -800,35 +800,48 @@
         row,issues:(row.issues||[]).filter(issue=>
           issue.severity==='warning'||issue.severity==='conflict'),
       })).filter(entry=>entry.issues.length);
-      if(sourceWarnings.length){
-        const warningCount=sourceWarnings.reduce((total,entry)=>
-          total+entry.issues.length,0);
-        const notice=make('section','bb-import__source-warnings');
-        notice.append(make('h4','','Bronwaarschuwingen uit Excel ('+warningCount+')'));
+      // Book databases frequently spell author names and titles differently
+      // from an explicit Excel value. That comparison is informative, not a
+      // reason to stop every stock, loan and metadata change in that row.
+      const advisoryCount=sourceWarnings.reduce((count,entry)=>
+        count+entry.issues.filter(issue=>
+          issue.code==='metadata_differs_from_excel'&&issue.severity==='warning').length,0);
+      const actionableWarnings=sourceWarnings.map(entry=>({
+        row:entry.row,issues:entry.issues.filter(issue=>
+          !(issue.code==='metadata_differs_from_excel'&&issue.severity==='warning')),
+      })).filter(entry=>entry.issues.length);
+      const warningCount=actionableWarnings.reduce((count,entry)=>
+        count+entry.issues.length,0);
+      const issueLabels={
+        invalid_published_year:'Ongeldig uitgavejaar',
+        invalid_page_count:'Ongeldig aantal pagina’s',
+        isbn_repaired:'ISBN automatisch hersteld',
+        isbn_repair_suggested:'ISBN moet worden gecontroleerd',
+        missing_title:'Titel ontbreekt',
+        missing_author:'Auteur ontbreekt',
+        missing_title_after_metadata:'Titel ontbreekt na aanvullen',
+        missing_author_after_metadata:'Auteur ontbreekt na aanvullen',
+        invalid_quantity:'Ongeldig aantal exemplaren',
+        language_hint_conflict:'Taal wijkt af van het examenmateriaal',
+        nonstandard_easy_reading_value:'Afwijkende invoer voor Makkelijk lezen',
+        invalid_or_unrecognized_isbn:'ISBN niet herkend',
+        conflicting_source_columns:'Excelkolommen spreken elkaar tegen',
+        duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
+        metadata_title_conflict:'Titel spreekt boekinformatie tegen',
+        edition_identity_conflict:'Verschillende boeken hebben hetzelfde ISBN',
+        metadata_isbn_differs:'ISBN komt niet overeen met de gevonden editie',
+        own_book_context_conflict:'Eigen boek is ook als schoolboek vermeld',
+      };
+      if(warningCount){
+        const notice=make('details','bb-import__source-warnings');
+        notice.open=actionableWarnings.length<=5;
+        notice.append(make('summary','',
+          'Brongegevens die aandacht vragen ('+warningCount+')'));
         notice.append(make('p','hint',
-          'Controleer de meldingen per Excelrij voordat je de waarschuwingen '
-          +'accepteert. Bij ongeldige gegevens kun je de bron corrigeren '
-          +'of de betreffende rij overslaan.'));
+          'Dit zijn bronwaarschuwingen. Bekijk vooral de echte conflicten '
+          +'in de groepen onder Handmatig controleren.'));
         const warningList=make('div','bb-import__warnings-scroll');
-        const issueLabels={
-          invalid_published_year:'Ongeldig uitgavejaar',
-          invalid_page_count:'Ongeldig aantal pagina’s',
-          isbn_repaired:'ISBN automatisch hersteld',
-          isbn_repair_suggested:'ISBN moet worden gecontroleerd',
-          missing_title:'Titel ontbreekt',
-          missing_author:'Auteur ontbreekt',
-          missing_title_after_metadata:'Titel ontbreekt na aanvullen',
-          missing_author_after_metadata:'Auteur ontbreekt na aanvullen',
-          invalid_quantity:'Ongeldig aantal exemplaren',
-          language_hint_conflict:'Taal wijkt af van de aanwijzing bij examenmateriaal',
-          nonstandard_easy_reading_value:'Afwijkende invoer voor Makkelijk lezen',
-          invalid_or_unrecognized_isbn:'ISBN niet herkend',
-          dangerous_headers_ignored:'Ongeldige kolomkoppen genegeerd',
-          conflicting_source_columns:'Meerdere Excelkolommen spreken elkaar tegen',
-          duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
-          metadata_title_conflict:'Boektitel verschilt van gevonden boekgegevens',
-        };
-        for(const entry of sourceWarnings){
+        for(const entry of actionableWarnings){
           const row=entry.row;
           const group=make('div','bb-import__warning-row');
           group.append(make('strong','',
@@ -851,11 +864,35 @@
               (detailParts.length?' · '+detailParts.join(' · '):''));
             items.append(item);
           }
-          group.append(items);
-          warningList.append(group);
+          group.append(items);warningList.append(group);
         }
-        notice.append(warningList);
-        results.append(notice);
+        notice.append(warningList);results.append(notice);
+      }
+      if(advisoryCount){
+        const info=make('details','bb-import__source-advisories');
+        info.append(make('summary','',
+          'Online boekinformatie wijkt af ('+advisoryCount+' informatieve vergelijkingen)'));
+        const byField=new Map();
+        for(const entry of sourceWarnings){
+          for(const issue of entry.issues){
+            if(issue.code!=='metadata_differs_from_excel'
+              ||issue.severity!=='warning')continue;
+            const key=issue.field||'overig';
+            byField.set(key,(byField.get(key)||0)+1);
+          }
+        }
+        const labels={title:'titels',author:'auteurs',description:'beschrijvingen',
+          publishedYear:'verschijningsjaren',pageCount:'pagina-aantallen',
+          coverUrl:'omslagen',publisher:'uitgevers',language:'talen',
+          tags:'trefwoorden',manualThemes:'thema’s'};
+        info.append(make('p','hint',
+          'Deze meldingen komen van online boekdatabanken. Ze maken '
+          +'de ingevulde Excelgegevens niet automatisch ongeldig en vragen '
+          +'geen afzonderlijke bevestiging.'));
+        info.append(make('p','bb-import__advisory-stats',
+          [...byField].map(([field,count])=>
+            count+' '+(labels[field]||field)).join(' · ')));
+        results.append(info);
       }
 
       const controls=make('div','bb-review__controls bb-import__review-controls');
@@ -865,7 +902,9 @@
       accept.addEventListener('change',()=>{warningsAccepted=accept.checked;render();});
       acceptLabel.append(accept,document.createTextNode(
         ' Ik heb de eventuele bronwaarschuwingen gecontroleerd.'));
-      controls.append(acceptLabel);
+      // No warning consent is needed for differences against external
+      // metadata alone. Do not demand a checkbox that has nothing to approve.
+      if(warningCount)controls.append(acceptLabel);
       const reviewButton=button('Controle opnieuw berekenen','btn btn--secondary');
       reviewButton.disabled=Boolean(remotePending||busy);
       const reviewChoices=async (assignmentValues,metadataValues)=>{
