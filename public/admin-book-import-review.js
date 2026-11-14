@@ -313,9 +313,12 @@
     const metadataLabel = make('label', 'bb-review__check');
     const metadata = make('input');
     metadata.type = 'checkbox';
-    metadata.checked = true;
+    // Full-library reuploads should not block for hundreds of network
+    // requests unless the administrator deliberately opts into that work.
+    // The separate post-import free metadata worker can fill gaps later.
+    metadata.checked = false;
     metadataLabel.append(metadata, document.createTextNode(
-      ' Ontbrekende boekgegevens opzoeken tijdens de controle (optioneel).'));
+      ' Tijdens de controle extra boekgegevens opzoeken (optioneel, kan lang duren).'));
     const importMode = make('select');
     for (const [value,label] of [
       ['unified','Samen synchroniseren (aanbevolen)'],
