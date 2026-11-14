@@ -95,4 +95,4 @@ function decide({isbn,field,excel,current,evidence=[]}){
       ?'Geen onafhankelijke bronovereenstemming, geldige Excelwaarde voorgesteld'
       :'Geen onafhankelijke bronnen geraadpleegd; geselecteerde Excelwaarde voorgesteld'};
 }
-module.exports={normalizeSource,equivalentSpelling,independentVotes,sourceConsensus,decide};
+module.exports={normalizeSource,comparison,equivalentSpelling,independentVotes,sourceConsensus,decide};
