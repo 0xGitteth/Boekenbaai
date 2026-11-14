@@ -577,6 +577,20 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       const sources=[...new Set(evidenceRows.map(row=>
         row.provenance?.[field]?.detail).filter(Boolean))];
       const id=isbn+':'+field;
+      valid.add(id);
+      if(selected.get(id)==='excel')return {ok:false,error:'unsafe_metadata_override'};
+      if(selected.get(id)==='keep'){
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'manual',
+          reason:'Leeg veld blijft leeg op verzoek van beheerder',
+          before:null,after:null,excel:null,
+          sources,sourceCount:sources.length,canUseExcel:false,
+          enrichmentOnly:true,
+          worksheetRows:evidenceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
       updates.push({
         id,isbn,field,value:chosen,
         title:rows[0].book?.title,bookIds:targets.map(book=>book.id),
@@ -595,7 +609,8 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         id,isbn,field,title:rows[0].book?.title,action:'apply',
         confidence:'medium',reason:'Leeg veld automatisch aangevuld op ISBN',
         before:null,after:chosen,excel:null,
-        sources,sourceCount:sources.length,canUseExcel:true,
+        sources,sourceCount:sources.length,canUseExcel:false,
+        enrichmentOnly:true,
         worksheetRows:evidenceRows.map(row=>row.sourceRowNumber),
       });
     }
