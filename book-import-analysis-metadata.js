@@ -7,7 +7,7 @@ const {
   createAuthorDisplay,
   getOwnDataValue,
 } = require('./book-edition-core');
-const {normalizeSource}=require('./book-import-source-confidence');
+const {normalizeSource,sourceConsensus,equivalentSpelling}=require('./book-import-source-confidence');
 const {
   addIssue,
   comparableText,
@@ -159,9 +159,11 @@ function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
 }
 
 function titleDoesNotContradict(rowBook, candidate) {
-  const rowTitle = comparableText(rowBook?.title);
-  const candidateTitle = comparableText(candidate?.title);
-  return !(rowTitle && candidateTitle && rowTitle !== candidateTitle);
+  const rowTitle = normalizeBookIdentityText(rowBook?.title);
+  const candidateTitle = normalizeBookIdentityText(candidate?.title);
+  // Provider formatting is not edition identity evidence. Ignore accents,
+  // case, punctuation and insignificant spaces in exact-ISBN title checks.
+  return !(rowTitle && candidateTitle && !equivalentSpelling(rowTitle,candidateTitle));
 }
 
 function candidateScore(candidate) {
@@ -233,7 +235,8 @@ function distinctCandidateTitles(candidates) {
   const titles = new Map();
   for (const candidate of candidates) {
     const key = comparableText(candidate.title);
-    if (key && !titles.has(key)) titles.set(key, candidate.title);
+    if (key && ![...titles.values()].some(title=>equivalentSpelling(title,candidate.title)))
+      titles.set(key, candidate.title);
   }
   return Array.from(titles.values());
 }
@@ -457,6 +460,31 @@ async function resolveMetadata(row, options) {
           metadataValue: selection.conflict.titles,
           chosenByAdministrator: true,
         });
+      } else if (selection.conflict?.code === 'metadata_title_conflict') {
+        // A third-party title mismatch alone is NOT sufficient evidence that
+        // a teacher's ISBN-labelled worksheet row is wrong. Only two or more
+        // independent, exact-edition providers agreeing on a materially
+        // different title may block the import as a genuine identity conflict.
+        const consensus=sourceConsensus(row.book.editionIsbn,'title',row.sourceEvidence||[]);
+        const independentlyContradicted=consensus.agreeing>=2
+          &&!consensus.conflicting &&consensus.value
+          &&row.book.title&&!equivalentSpelling(row.book.title,consensus.value);
+        if(independentlyContradicted){
+          addIssue(row,'metadata_title_conflict','conflict',{
+            ...selection.conflict,
+            confirmedTitle:consensus.value,
+            sources:consensus.sources,
+            sourceCount:consensus.agreeing,
+          });
+        }else{
+          addIssue(row,'metadata_differs_from_excel','warning',{
+            field:'title',excelValue:row.book.title,
+            metadataValue:selection.conflict.titles||[],
+            sources:consensus.sources,
+            editionIsbn:row.book.editionIsbn,
+            reviewLevel:'informational',
+          });
+        }
       } else if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       else if (selection.candidate) applyMetadataCandidate(row, selection.candidate, {
         skipThemeEnrichment: options.skipThemeEnrichment === true,
