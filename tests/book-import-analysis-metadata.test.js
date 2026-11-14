@@ -171,6 +171,20 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(contradictoryExactWithTitleless.conflict.code, 'metadata_title_conflict');
   assert.deepStrictEqual(contradictoryExactWithTitleless.conflict.titles, ['Andere titel']);
 
+  // A mismatched or internally broken third-party ISBN result must not
+  // become a compulsory issue for an otherwise valid workbook ISBN.
+  const wrongProviderIsbn=await analyzeBookImportRows([{
+    Titel:'Correcte Excel-editie',Auteur:'A Auteur','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'Andere bron-editie',author:'A Auteur',
+    isbn13:ISBN_ALT,source:'Google Books',
+  })});
+  assert.equal(wrongProviderIsbn.rows[0].status,'warning');
+  assert.equal(wrongProviderIsbn.groups.length,1);
+  assert.ok(wrongProviderIsbn.rows[0].issues.some(issue=>
+    issue.code==='ambiguous_isbn_lookup_results'
+    &&issue.reviewLevel==='informational'));
+
   const matchingExactWithTitleless = selectIsbnMetadataCandidate(ISBN, [
     normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
     normalizeMetadataCandidate({ author: 'A Auteur', isbn13: ISBN, publisher: 'Rijke exacte bron' }),
