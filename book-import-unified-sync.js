@@ -55,43 +55,79 @@ const COLUMN_WARNINGS={
   language_hint_conflict:'language',
   nonstandard_easy_reading_value:'easyReading',
 };
+// Classify each diagnostic by the import section it can actually affect.
+// Unknown diagnostics remain blocking until explicitly reviewed, so future
+// error codes cannot silently bypass safety checks.
+const NONBLOCKING_DIAGNOSTICS=new Set([
+  'isbn_repaired','isbn_resolved_from_metadata','isbn_repair_suggested',
+  'ambiguous_identifier_interpreted_as_isbn',
+  'ambiguous_identifier_interpreted_as_barcode',
+  'metadata_lookup_failed','metadata_not_usable','metadata_not_strict_match',
+  'title_author_metadata_missing_edition_isbn',
+  'nonstandard_easy_reading_value','dangerous_headers_ignored',
+  'ml_structuurbb_fixed_location','own_book_excluded',
+]);
+const STOCK_DIAGNOSTICS=new Set([
+  'invalid_quantity','copy_limit_exceeded',
+]);
+const PHYSICAL_DIAGNOSTICS=new Set([
+  'invalid_physical_barcode','conflicting_physical_barcodes',
+  'duplicate_physical_barcode','barcode_with_multiple_copies',
+]);
+function selectedMetadata(parts){
+  return Object.values(parts.fields||{}).some(Boolean);
+}
 function issueAffectsSelection(issue,parts,domain){
   const code=issue?.code||'';
-  // A disagreement with a THIRD-PARTY metadata service does not mean the
-  // teacher's explicit Excel cells are invalid. These source comparisons
-  // remain visible as optional context, but may not block the stock count,
-  // loan/location matching or every selected metadata field independently.
-  // Structural ISBN/title conflicts and malformed values remain blocking.
-  if(code==='metadata_differs_from_excel' && issue?.severity==='warning')
-    // A malformed OPTIONAL Excel value is a problem only if that exact
-    // metadata field was selected. It cannot block a valid physical ISBN,
-    // borrower, stock count, or an unrelated selected column.
-    return issue?.sourceInvalid===true
-      &&domain==='metadata'&&parts.fields[issue.field]===true;
-  if(LOAN_ISSUES.has(code))return domain==='assignment'&&parts.loans;
-  if(LOCATION_ISSUES.has(code))return domain==='assignment'&&parts.locations;
+  if(NONBLOCKING_DIAGNOSTICS.has(code))return false;
+  if(code==='metadata_differs_from_excel'){
+    return issue.sourceInvalid===true &&domain==='metadata'
+      &&parts.fields?.[issue.field]===true;
+  }
+  if(LOAN_ISSUES.has(code))
+    return domain==='assignment'&&parts.loans;
+  if(LOCATION_ISSUES.has(code))
+    return domain==='assignment'&&parts.locations;
   if(code==='class_context_needs_review')
     return domain==='assignment'&&parts.loans&&parts.locations;
   if(code==='library_presence_needs_review')return false;
+  if(code==='unexpected_exam_material_value')
+    return domain==='metadata'&&parts.fields?.suitableForExamList===true;
+  if(STOCK_DIAGNOSTICS.has(code))return domain==='stock';
+  if(PHYSICAL_DIAGNOSTICS.has(code))
+    return domain==='stock'||(domain==='assignment'&&(parts.loans||parts.locations));
+  if(COLUMN_WARNINGS[code])
+    return domain==='metadata'&&parts.fields?.[COLUMN_WARNINGS[code]]===true;
   if(code==='conflicting_source_columns'){
     if(['studentLoan','classLoan'].includes(issue.field))
       return domain==='assignment'&&parts.loans;
-    if(['fixedClass'].includes(issue.field))
+    if(issue.field==='fixedClass')
       return domain==='assignment'&&parts.locations;
-    if(['classes'].includes(issue.field))
+    if(issue.field==='classes')
       return domain==='assignment'&&parts.loans&&parts.locations;
-    if(['libraryPresence'].includes(issue.field))return false;
-    if(domain==='metadata' && METADATA_FIELDS.includes(issue.field))
-      return parts.fields[issue.field]===true;
-    // A malformed description or publication year cannot invalidate the
-    // physical edition or its separately specified borrower/location.
-    if(domain!=='metadata' && METADATA_FIELDS.includes(issue.field))
-      return ['title','author'].includes(issue.field);
+    if(issue.field==='libraryPresence')return false;
+    if(issue.field==='quantity')return domain==='stock';
+    if(['barcode','ambiguousIdentifier'].includes(issue.field))
+      return domain==='stock'||(domain==='assignment'&&(parts.loans||parts.locations));
+    if(METADATA_FIELDS.includes(issue.field))
+      return ['title','author'].includes(issue.field)
+        ||(domain==='metadata'&&parts.fields?.[issue.field]===true);
   }
-  if(COLUMN_WARNINGS[code])
-    return domain==='metadata'&&parts.fields[COLUMN_WARNINGS[code]]===true;
-  // Unknown and identity-related conflicts must never be silently dropped.
+  // An ISBN or identity conflict is relevant to every selected domain.
+  // Unknown issues likewise keep their conservative behavior.
   return true;
+}
+function actionableSourceIssues(analysis,parts){
+  const active=[];
+  for(const row of analysis.rows||[]){
+    const issues=(row.issues||[]).filter(issue=>
+      ['conflict','warning'].includes(issue.severity)
+      &&( (parts.books&&issueAffectsSelection(issue,parts,'stock'))
+        ||((parts.loans||parts.locations)&&issueAffectsSelection(issue,parts,'assignment'))
+        ||(selectedMetadata(parts)&&issueAffectsSelection(issue,parts,'metadata')) ));
+    if(issues.length)active.push({index:row.index,worksheetRow:row.sourceRowNumber,issues});
+  }
+  return active;
 }
 function scopedRow(row,parts,domain){
   const issues=(row.issues||[]).filter(issue=>issueAffectsSelection(issue,parts,domain));
@@ -513,7 +549,8 @@ function buildUnifiedBookImport(analysis,db,{
     // A review containing only automatic keep decisions is still worth
     // confirming, so the exact choices can be recorded in its import report.
     +metadata.summary.autoKept;
-  return {ok:true,parts:use,inventory,assignments,metadata,summary:{
+  return {ok:true,parts:use,inventory,assignments,metadata,
+    actionableSourceIssues:actionableSourceIssues(analysis,use),summary:{
     newCopies:inventory.summary.addCopies,
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
     proposedLocations:assignments.differences.filter(d=>d.kind==='location'&&d.choice==='apply').length,
@@ -545,5 +582,6 @@ function actualAssignmentPreview(preview,createdByRow){
 }
 module.exports={
   DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
-  normalizedMetadataChoice,buildUnifiedBookImport,actualAssignmentPreview,
+  normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
+  buildUnifiedBookImport,actualAssignmentPreview,
 };
