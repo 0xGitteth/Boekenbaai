@@ -246,6 +246,9 @@ assert.equal(normalizeParts(undefined).value.books,true);
     parts:parts({books:true,loans:true,fields:{title:true}}),
   });
   assert.equal(sync.ok,true);
+  if(sync.summary.blockedStock)console.error('DEBUG_CERTAINTY',JSON.stringify({
+    metadata:sync.metadata,inventory:sync.inventory.rows,summary:sync.summary,
+  }));
   assert.equal(sync.summary.blockedStock,0);
   assert.equal(sync.summary.proposedLoans,1,
     'Selecting a title correction must not block the simultaneous loan');
