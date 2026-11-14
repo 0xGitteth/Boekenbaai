@@ -242,6 +242,28 @@ assert.equal(normalizeParts(undefined).value.books,true);
 
 {
   const current=db();
+  const one=(index,title,author)=>source(index,{},{
+    title,author,authors:[author],
+  },{
+    title:{source:'excel',raw:title},
+    author:{source:'excel',raw:author},
+  });
+  const preview=plan([
+    one(0,'Oorlogswinter!','Jan Térlouw'),
+    one(1,'Oorlogswinter','Jan Terlouw'),
+  ],current,{parts:parts({fields:{title:true,author:true}})});
+  assert.equal(preview.ok,true);
+  assert.equal(preview.summary.pendingMetadata,0,
+    'Two equivalent spellings in Excel must not become an identity conflict');
+  assert.equal(preview.summary.metadataFields,0,
+    'Without independent confirmation, preserve the existing spelling');
+  assert.equal(preview.summary.preservedMetadata,2);
+  assert.equal(preview.summary.readyToApply,true,
+    'Audited automatic retains must be confirmable without manual metadata edits');
+}
+
+{
+  const current=db();
   const fixed=plan([source(0,{
     fixedLocation:{status:'resolved',label:'Klas A'},
     ...loan('tim','Tim Leerling'),
