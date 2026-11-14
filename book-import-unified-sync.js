@@ -7,6 +7,7 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
 const { excelLoanReceiptKey } = require('./book-import-loan-migration');
 const sourceConfidence=require('./book-import-source-confidence');
+const {nearlySameBookText,smallPageDifference}=require('./book-import-autonomy');
 
 const METADATA_FIELDS=Object.freeze([
   'title','author','description','publisher','publishedYear','pageCount',
@@ -344,16 +345,22 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       // Multiple Excel rows of one ISBN may differ only in punctuation or
       // accents. That is one bibliographic value, not multiple contradictory
       // title/author identities requiring a manual decision.
-      const variants=new Map(sourceRows.map(row=>{
+      const variants=new Map();
+      for(const row of sourceRows){
         const value=metadataKey(field,row);
-        const signature=field==='title'
-          ?'title:'+sourceConfidence.comparison(value)
-          :field==='author'
-            ?'author:'+sourceConfidence.comparison(value?.value)+'|'
-              +(value?.authors||[]).map(sourceConfidence.comparison).sort().join('|')
-            :JSON.stringify(value);
-        return [signature,value];
-      }));
+        const similar=(left,right)=>{
+          if(field==='title')return nearlySameBookText(left,right);
+          if(field!=='author')return equal(left,right);
+          const a=Array.isArray(left?.authors)?left.authors:[left?.value];
+          const b=Array.isArray(right?.authors)?right.authors:[right?.value];
+          return a.length===b.length
+            &&nearlySameBookText(left?.value,right?.value)
+            &&a.every(author=>b.some(candidate=>
+              nearlySameBookText(author,candidate)));
+        };
+        if([...variants.values()].some(existing=>similar(value,existing)))continue;
+        variants.set(String(variants.size),value);
+      }
       const validSources=sourceRows.every(row=>
         metadataSourceSafe(row,field,acceptWarnings));
       const next=variants.size===1?[...variants.values()][0]:null;
@@ -417,6 +424,31 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       });
       if(['apply','excel'].includes(selected.get(id))&&conflict)
         return {ok:false,error:'unsafe_metadata_override'};
+      // Page counts and printing years vary between trustworthy catalogues.
+      // They are not edition identity. Never overwrite a plausible existing
+      // value because Excel differs by a few pages (or an uncorroborated year).
+      // An explicit review correction or an "Excel gebruiken" override can
+      // still replace it.
+      if(!conflict&&!manualExcel
+        &&(field==='pageCount'||field==='publishedYear')
+        &&copies.every(copy=>Number.isInteger(Number(copy[field]))
+          &&Number(copy[field])>0)
+        &&copies.every(copy=>Number.isInteger(Number(next))
+          &&Number(next)>0)){
+        const close=field==='pageCount'
+          ?copies.every(copy=>smallPageDifference(copy[field],next))
+          :copies.every(copy=>Math.abs(Number(copy[field])-Number(next))<=1);
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'medium',before:current,after:current,excel:next,
+          reason:close?'Klein catalogusverschil, bestaande waarde blijft behouden'
+            :'Niet doorslaggevend boekdetail, bestaande waarde blijft behouden',
+          sources:decision.agreeingSources,sourceCount:decision.sourceCount,
+          canUseExcel:true,
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
       if(conflict || (decision.action==='keep'&&!manualExcel)){
         automaticDecisions.push({
           id,isbn,field,title:rows[0].book?.title,action:'keep',
