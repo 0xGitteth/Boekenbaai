@@ -78,6 +78,7 @@ function selectedMetadata(parts){
   return Object.values(parts.fields||{}).some(Boolean);
 }
 function issueAffectsSelection(issue,parts,domain){
+  if(issue?.reviewLevel==='informational')return false;
   const code=issue?.code||'';
   if(NONBLOCKING_DIAGNOSTICS.has(code))return false;
   if(code==='metadata_differs_from_excel'){
