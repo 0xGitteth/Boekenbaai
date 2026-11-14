@@ -686,12 +686,13 @@
       if (currentApplyButton) currentApplyButton.disabled = true;
     }
 
-    function editRow(row, host) {
+    function editRow(row, host, options = {}) {
       const current = corrections.get(row.index);
       const editor = make('div', 'bb-review__editor');
       editor.append(make('p', 'hint', 'De correcties worden pas verwerkt wanneer je op “Correcties controleren” klikt.'));
       const grid = make('div', 'bb-review__fields');
       for (const [field, labelText] of fieldDefs) {
+        if (options.onlyFields && !options.onlyFields.includes(field)) continue;
         const fieldWrap = make('label', 'bb-review__field');
         fieldWrap.append(make('span', '', labelText));
         const input = field === 'description' ? make('textarea') : make('input');
@@ -702,7 +703,10 @@
         if (source?.source) {
           input.title = 'Bron: ' + source.source + (source.header ? ', kolom ' + source.header : '');
         }
-        input.addEventListener('input', () => updateCorrection(row.index, field, input.value));
+        input.addEventListener('input', () => {
+          if (options.metadataIssueId)metadataResolutions.delete(options.metadataIssueId);
+          updateCorrection(row.index, field, input.value);
+        });
         fieldWrap.append(input);
         if (field === 'easyReading') {
           fieldWrap.append(make('span', 'hint',
@@ -1007,7 +1011,31 @@
           else metadataResolutions.delete(issue.id);
           render();
         });
-        card.append(choose);issueList.append(card);
+        card.append(choose);
+        // Metadata-only imports must be fully correctable without turning
+        // stock synchronization on or rebuilding the Excel workbook.
+        const editField=issue.field==='manualThemes'?'themes'
+          :issue.field==='suitableForExamList'?'examMaterial':issue.field;
+        const affected=(stage.rows||[]).filter(row=>
+          (issue.worksheetRows||[]).includes(row.sourceRowNumber));
+        for(const source of affected){
+          const edit=button('Excelrij '+source.sourceRowNumber+' corrigeren',
+            'btn btn--secondary');
+          edit.disabled=Boolean(remotePending||busy);
+          edit.addEventListener('click',()=>{
+            openEditor=openEditor===source.index?null:source.index;
+            render();
+          });
+          card.append(edit);
+          if(openEditor===source.index){
+            editRow(source,card,{
+              onlyFields:[editField],metadataIssueId:issue.id,
+            });
+          }
+        }
+        if(!affected.length)card.append(make('p','hint',
+          'De bronrij is niet beschikbaar voor correctie. Controleer de Excel.'));
+        issueList.append(card);
       }
       for(const item of blocked){
         const source=(stage.rows||[]).find(row=>row.index===item.index);
