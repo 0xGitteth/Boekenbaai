@@ -747,6 +747,13 @@
         !metadataResolutions.has(item.id));
       const blocked=(stock.rows||[]).filter(item=>item.action==='blocked'
         &&item.combinedWith===undefined);
+      const manualGroups=new Set();
+      for(const diff of exceptions)
+        manualGroups.add(diff.editionIsbn||('assignment:'+diff.worksheetRow));
+      for(const issue of metadataPlan.issues)
+        manualGroups.add(issue.isbn||('metadata:'+issue.id));
+      for(const item of blocked)
+        manualGroups.add(item.editionIsbn||('row:'+item.worksheetRow));
       const heading=make('div','bb-import__review-heading');
       heading.append(make('h4','','2. Bekijk de voorgestelde wijzigingen'));
       heading.append(make('p','hint',
@@ -778,7 +785,7 @@
       const status=make('p','bb-import__review-status');
       const pending=(summary.pending||0);
       status.append(make('strong','',pending
-        ?pending+' uitzonderingen vragen aandacht'
+        ?manualGroups.size+' boeken of Excelrijen hebben controlepunten'
         :'Geen openstaande uitzonderingen'));
       status.append(document.createTextNode(' · '
         +(summary.preservedOldCopies||0)+' bestaande exemplaren blijven behouden.'));
@@ -878,12 +885,29 @@
               detailParts.push('Voorstel: '+issue.suggestion.canonical);
             if(issue.repair?.canonical)
               detailParts.push('Gecorrigeerd naar: '+issue.repair.canonical);
+            if(issue.confirmedTitle)
+              detailParts.push('Online bevestigde titel: '+String(issue.confirmedTitle).slice(0,160));
+            if(issue.sources?.length)
+              detailParts.push('Onafhankelijke bronnen: '+issue.sources.join(', '));
             const item=make('li','',description+
               (issue.severity==='conflict'?' (conflict)':' (waarschuwing)')+
               (detailParts.length?' · '+detailParts.join(' · '):''));
             items.append(item);
           }
-          group.append(items);warningList.append(group);
+          group.append(items);
+          if(entry.issues.some(issue=>issue.code==='metadata_title_conflict'
+            &&issue.confirmedTitle)&&row.book?.title){
+            // Explicitly retain a verified Excel title without forcing the
+            // administrator to type the exact same title into a text field.
+            const confirmTitle=button('Titel uit Excel bevestigen','btn btn--secondary');
+            confirmTitle.disabled=Boolean(remotePending||busy);
+            confirmTitle.addEventListener('click',()=>{
+              updateCorrection(row.index,'title',row.book.title);
+              render();
+            });
+            group.append(confirmTitle);
+          }
+          warningList.append(group);
         }
         notice.append(warningList);results.append(notice);
       }
@@ -1000,7 +1024,11 @@
 
       const problems=make('section','bb-import__exceptions');
       problems.append(make('h4','','Handmatig controleren ('+
-        (exceptions.length+metadataPlan.issues.length+blocked.length)+')'));
+        manualGroups.size+' boeken of Excelrijen)'));
+      if(manualGroups.size)
+        problems.append(make('p','hint',
+          'Eén boek kan bij meerdere onderdelen voorkomen. '
+          +'De aantallen hieronder zijn per onderdeel.'));
       const assignmentCards=make('div','bb-import__exceptions-list');
       const metadataCards=make('div','bb-import__exceptions-list');
       const stockCards=make('div','bb-import__exceptions-list');
@@ -1015,6 +1043,12 @@
         fixed_location_needs_manual_identification:'Vaste locatie is niet eenduidig.',
         ambiguous_existing_borrower:'Meer exemplaren met dezelfde bestaande lener.',
         student_already_borrowed_edition:'Deze leerling heeft dezelfde ISBN-editie al.',
+        source_needs_review:'De Excelrij heeft een nog niet opgelost invoer- of ISBN-conflict. Bekijk de brongegevens hierboven.',
+        edition_identity_mismatch:'Titel of auteur wijkt af van de bestaande bibliotheekregistratie bij dit ISBN. Controleer welke gegevens bij de fysieke editie horen.',
+        missing_valid_isbn:'Geen geldig ISBN herkend. Controleer het ISBN van deze editie.',
+        possible_existing_book_without_isbn:'Een vergelijkbaar boek staat al zonder ISBN in de bibliotheek. Controleer of dit hetzelfde exemplaar is.',
+        invalid_quantity:'Het aantal exemplaren is ongeldig.',
+        reduction_requires_manual_review:'Excel vermeldt minder exemplaren dan de bibliotheek. Bestaande boeken worden niet verwijderd.',
       };
       for(const diff of exceptions){
         const card=make('article','bb-import__exception');
@@ -1113,7 +1147,8 @@
         card.dataset.reviewRowKey='stock:'+item.index;
         card.append(make('strong','',source?.book?.title||'Boek'));
         card.append(make('p','hint','Excelrij '+item.worksheetRow+' · '+(item.editionIsbn||'Geen ISBN')));
-        card.append(make('p','bb-review__reason','Voorraadcontrole: '+item.reason));
+        card.append(make('p','bb-review__reason',
+          'Voorraadcontrole: '+(reasonNames[item.reason]||item.reason)));
         const edit=button('Gegevens corrigeren','btn btn--secondary');
         edit.addEventListener('click',()=>{
           openEditor=openEditor===item.index?null:item.index;
