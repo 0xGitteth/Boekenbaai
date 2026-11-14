@@ -99,15 +99,17 @@ assert.equal(normalizeParts(undefined).value.books,true);
     parts:parts({books:true,fields:{title:true,author:true}}),
   });
   assert.equal(renamedEdition.ok,true);
-  assert.equal(renamedEdition.summary.blockedStock,0,
-    'Selected title/author changes are allowed without inventing another ISBN');
-  assert.equal(renamedEdition.summary.metadataFields,2);
+  assert.equal(renamedEdition.summary.blockedStock,1,
+    'Substantive identity differences without verification must not silently add stock');
+  assert.equal(renamedEdition.summary.metadataFields,0);
+  assert.equal(renamedEdition.summary.preservedMetadata,2);
   const warning={...description,status:'warning'};
   const caution=plan([warning],current,{
     parts:parts({fields:{description:true}}),
   });
-  assert.equal(caution.summary.pendingMetadata,1,
-    'Selected metadata from a warning row needs approval before overwrite');
+  assert.equal(caution.summary.pendingMetadata,0,
+    'Nonessential unresolved fields preserve existing data without manual prompts');
+  assert.equal(caution.summary.preservedMetadata,1);
   const acceptedWarning=plan([warning],current,{
     parts:parts({fields:{description:true}}),acceptWarnings:true,
   });
@@ -134,8 +136,10 @@ assert.equal(normalizeParts(undefined).value.books,true);
   const conflicts=plan([mk(0,'Links'),mk(1,'Rechts')],current,
     {parts:parts({fields:{description:true}})});
   assert.equal(conflicts.ok,true);
-  assert.equal(conflicts.summary.pendingMetadata,1);
-  assert.equal(conflicts.summary.readyToApply,false);
+  assert.equal(conflicts.summary.pendingMetadata,0,
+    'Conflicting descriptions are not critical ISBN identity questions');
+  assert.equal(conflicts.summary.preservedMetadata,1);
+  assert.equal(conflicts.summary.readyToApply,true);
   const accepted=plan([mk(0,'Links'),mk(1,'Rechts')],current,{
     parts:parts({fields:{description:true},locations:true}),
     metadataResolutions:[{id:ISBN+':description',action:'keep'}],
