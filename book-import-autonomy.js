@@ -38,7 +38,9 @@ function nearlySameBookText(left,right){
   if(digits(a)!==digits(b))return false;
   const shortest=Math.min(a.length,b.length);
   if(shortest<8)return false;
-  const max=shortest>=19?2:1;
+  // Two short edits can represent a single misspelled given name,
+  // such as Carrie/Carry. Never apply this without matching edition ISBN.
+  const max=shortest>=10?2:1;
   return limitedEdits(a,b,max)<=max;
 }
 function sameBookTitle(left,right){
