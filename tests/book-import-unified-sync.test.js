@@ -988,4 +988,112 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(initial.summary.readyToApply,true,
     'A documented automatic keep may complete without a manual checkbox');
 }
+// Codex P2: duplicate Excel description columns must NEVER overwrite a
+// stored description merely because generic source warnings are nonblocking.
+{
+  const current=db();
+  const conflicting=source(0,{},{
+    description:'Eerste beschrijving',publisher:'Nieuwe uitgever',
+  },{
+    description:{source:'excel',raw:'Eerste beschrijving'},
+    publisher:{source:'excel',raw:'Nieuwe uitgever'},
+  });
+  conflicting.status='conflict';
+  conflicting.issues=[{code:'conflicting_source_columns',
+    severity:'conflict',field:'description'}];
+  const selected=plan([conflicting],current,{
+    parts:parts({fields:{description:true,publisher:true}}),
+  });
+  assert.equal(selected.ok,true);
+  assert.equal(selected.summary.pendingMetadata,0);
+  assert.equal(selected.summary.metadataFields,1,
+    'A conflicting description must be skipped, not the safe publisher');
+  assert.equal(selected.metadata.updates[0].field,'publisher');
+  assert.ok(selected.metadata.updates.every(x=>x.field!=='description'));
+  assert.equal(selected.summary.readyToApply,true);
+}
+// Codex P2: source-only enrichment must respect deliberately blank
+// descriptions, covers and tags with manual provenance.
+{
+  const current=db();
+  for(const book of current.books){
+    book.description='';book.coverUrl='';book.tags=[];
+  }
+  current.books[0].importProvenance={fieldSources:{
+    description:{sourceType:'manual'},
+    coverUrl:{sourceType:'manual'},
+    tags:{sourceType:'manual'},
+  }};
+  const enriched=source(0,{},{
+    description:'Online beschrijving',
+    coverUrl:'https://example.org/geverifieerd.jpg',
+    tags:['vrienden'],
+  },{
+    description:{source:'metadata',detail:'googlebooks'},
+    coverUrl:{source:'metadata',detail:'googlebooks'},
+    tags:{source:'metadata',detail:'googlebooks'},
+  });
+  const result=plan([enriched],current,{parts:parts({books:true})});
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.metadataFields,3);
+  for(const update of result.metadata.updates){
+    assert.deepEqual(update.bookIds,['copy-2'],
+      'Manual blank fields must not be repopulated by import enrichment');
+  }
+}
+// Codex P2: two matching ISBN providers must be able to correct a selected
+// author field even after the analyzer records metadata provenance.
+{
+  const current=db();
+  for(const book of current.books){
+    book.author='Carrý Slee';book.authors=['Carrý Slee'];
+  }
+  const verified=source(0,{},{
+    author:'Carry Slee',authors:['Carry Slee'],
+  },{
+    author:{source:'metadata',detail:'verified_isbn_spelling',
+      correctedFrom:'Carrý Slee',sources:['googlebooks','openlibrary']},
+  });
+  verified.sourceEvidence=[
+    {source:'googlebooks',editionIsbn:ISBN,author:'Carry Slee'},
+    {source:'openlibrary',editionIsbn:ISBN,author:'Carry Slee'},
+  ];
+  const result=plan([verified],current,{
+    parts:parts({fields:{author:true}}),
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.metadataFields,1);
+  assert.equal(result.metadata.updates[0].field,'author');
+  assert.equal(result.metadata.updates[0].value.value,'Carry Slee');
+  assert.equal(result.summary.readyToApply,true);
+}
+// Codex P2: previously imported loan receipts must not undo automatic
+// keep resolutions for an unrelated ambiguous class note in the same Excel.
+{
+  const current=db();
+  current.books[0].status='available';
+  current.books[0].borrowedBy=null;
+  current.students[0].borrowedBooks=[];
+  const ambiguous=source(0,{classContext:['Klas A']},
+    {barcode:'4711002'});
+  ambiguous.status='warning';
+  ambiguous.issues=[{code:'class_context_needs_review',
+    severity:'warning'}];
+  const priorLoan=source(1,loan('lisa','Lisa Leerling'),
+    {barcode:'4711001'});
+  const receipt=excelLoanReceiptKey('copy-1',{type:'student',id:'lisa'});
+  const result=plan([ambiguous,priorLoan],current,{
+    parts:parts({loans:true,locations:true}),
+    loanReceipts:[receipt],
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.previouslyImportedLoans,1);
+  const kept=result.assignments.differences.find(x=>x.kind==='class_context');
+  assert.ok(kept,'A vague class note remains visible');
+  assert.equal(kept.choice,'keep');
+  assert.equal(kept.automatic,true);
+  assert.equal(kept.autoKept,true);
+  assert.equal(result.summary.pendingAssignments,0);
+  assert.equal(result.summary.readyToApply,true);
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
