@@ -485,6 +485,16 @@ async function resolveMetadata(row, options) {
             reviewLevel:'informational',
           });
         }
+      } else if (selection.conflict
+        &&['metadata_identifier_conflict','ambiguous_isbn_lookup_results',
+          'ambiguous_metadata_results'].includes(selection.conflict.code)) {
+        // The worksheet already supplies a structurally valid ISBN. A
+        // third-party lookup returning another edition or internally
+        // inconsistent identifiers is insufficient proof that Excel is
+        // wrong; do not turn a provider error into an inventory blocker.
+        addIssue(row,selection.conflict.code,'warning',{
+          ...selection.conflict,reviewLevel:'informational',lookup:'isbn',
+        });
       } else if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       else if (selection.candidate) applyMetadataCandidate(row, selection.candidate, {
         skipThemeEnrichment: options.skipThemeEnrichment === true,
