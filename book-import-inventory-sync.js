@@ -3,7 +3,8 @@
 // PR4: compare a reviewed school Excel against the PHYSICAL library.
 // This pure preview never modifies existing books, loans or loan history.
 // An omitted ISBN or lower Excel quantity NEVER silently deletes stock.
-const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
+const { canonicalizeBookIsbn13 } = require('./book-edition-core');
+const { comparison: spellingKey } = require('./book-import-source-confidence');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
 const { eligibleForDeferredContext, followupContext, contextMatchesTask } =
@@ -18,8 +19,9 @@ function editionKeys(book) {
   return identified.length ? identified : [canonicalizeBookIsbn13(book?.barcode)].filter(Boolean);
 }
 function comparableIdentity(book) {
-  return [normalizeBookIdentityComparable(book?.title || ''),
-    normalizeBookIdentityComparable(book?.author || '')].join('|');
+  // ISBN and (where supplied) a physical barcode identify the edition.
+  // Accent/punctuation-only title/author variants are not new editions.
+  return [spellingKey(book?.title || ''),spellingKey(book?.author || '')].join('|');
 }
 function inventoryIndex(books) {
   const editions = new Map();
