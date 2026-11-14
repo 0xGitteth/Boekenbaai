@@ -502,4 +502,52 @@ assert.equal(normalizeParts(undefined).value.books,true);
     diff.reason==='copy_requires_single_excel_row'),true,
     'A bulk quantity must never assign an ambiguous loan to one copy');
 }
+
+{
+  const current=db();
+  // Keeping a changed title cannot silently authorize a second physical
+  // copy with another title under the same ISBN edition.
+  current.books=[current.books[0]];
+  const changed=source(0,{},{
+    title:'Oorlogswinter, gewijzigde Excelnaam',
+    quantity:{valid:true,value:2},
+  },{title:{source:'excel',raw:'Oorlogswinter, gewijzigde Excelnaam'}});
+  const options={parts:parts({books:true,fields:{title:true}})};
+  const proposed=plan([changed],current,options);
+  assert.equal(proposed.ok,true);
+  assert.equal(proposed.summary.metadataFields,1);
+  assert.equal(proposed.summary.newCopies,1,
+    'A real selected title update may add compatible ISBN copies');
+  assert.equal(proposed.summary.readyToApply,true);
+  const kept=plan([changed],current,{
+    ...options,metadataResolutions:[{id:ISBN+':title',action:'keep'}],
+  });
+  assert.equal(kept.ok,true);
+  assert.equal(kept.summary.metadataFields,0);
+  assert.equal(kept.summary.newCopies,0);
+  assert.equal(kept.summary.blockedStock,1);
+  assert.equal(kept.summary.readyToApply,false,
+    'Keeping the old title must prevent adding an incompatible new copy');
+
+  // Selecting an empty source column is not an instruction to replace its
+  // older identity with a title found through enrichment.
+  const enriched=source(0,{},{
+    title:'Titel uit boekverrijking',quantity:{valid:true,value:2},
+  },{title:{source:'metadata',detail:'enrichment'}});
+  const blankSource=plan([enriched],current,options);
+  assert.equal(blankSource.ok,true);
+  assert.equal(blankSource.summary.metadataFields,0);
+  assert.equal(blankSource.summary.newCopies,0);
+  assert.equal(blankSource.summary.readyToApply,false);
+  const authorChange=source(0,{},{
+    author:'Nieuwe schrijver',authors:['Nieuwe schrijver'],
+    quantity:{valid:true,value:2},
+  },{author:{source:'excel',raw:'Nieuwe schrijver'}});
+  const authorKept=plan([authorChange],current,{
+    parts:parts({books:true,fields:{author:true}}),
+    metadataResolutions:[{id:ISBN+':author',action:'keep'}],
+  });
+  assert.equal(authorKept.summary.blockedStock,1,
+    'Keeping an author correction must not create copies with another author');
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
