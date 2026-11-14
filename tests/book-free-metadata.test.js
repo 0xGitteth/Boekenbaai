@@ -34,7 +34,8 @@ const noCover = parseEasyCb(sample.replace(isbn+'_VRK.jpg','unrelated.jpg'),isbn
 assert.equal(noCover.coverUrl,'','Do not mistake rear or arbitrary image for front cover');
 const otherwiseComplete={metadataIsbn:isbn,title:source.title,author:source.author,
   description:'Deze informatie bestaat al.',pageCount:80,coverUrl:source.coverUrl,
-  tags:['Geschiedenis'],publisher:source.publisher,publishedYear:source.publishedYear};
+  tags:['Geschiedenis'],enrichmentTags:['local history'],
+  publisher:source.publisher,publishedYear:source.publishedYear};
 assert.ok(nextCandidate([{...otherwiseComplete,publisher:''}]),
   'A missing publisher must trigger enrichment even when all other fields are present');
 assert.ok(nextCandidate([{...otherwiseComplete,publishedYear:null}]),
