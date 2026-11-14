@@ -43,6 +43,17 @@ module.exports = async function runCoreTests() {
   assert.equal(compactUnified.groups[0].copies.length,1,
     'One grouping representative prevents needless allocation of 1000 objects');
 
+  // Explicit Tags must survive independently of the derived strip label
+  // introduced by Examenmateriaal: Strip.
+  const mixedTags=await analyzeBookImportRows([{
+    Titel:'Oorlogswinter',Auteur:'Jan Terlouw',
+    'ISBN-nummer':ISBN,Tags:'avontuur',Examenmateriaal:'Strip',
+  }],{mode:'unified_sync'});
+  assert.equal(mixedTags.ok,true);
+  assert.ok(mixedTags.rows[0].book.tags.includes('strip'));
+  assert.deepStrictEqual(mixedTags.rows[0].provenance.tags.explicitValues,['avontuur']);
+  assert.equal(mixedTags.rows[0].provenance.tags.includesDerivedValues,true);
+
   // Student placeholders must not defeat the special Makkelijk Lezen
   // fixed-location rule, while genuine student names must still conflict.
   for (const placeholder of ['nvt', 'N.V.T.', 'niet van toepassing']) {
