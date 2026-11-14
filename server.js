@@ -3057,6 +3057,9 @@ async function lookupIsbnMetadata(isbn, options = {}) {
       };
 
       const sources = [];
+      // Preserve each independent provider response before merging metadata.
+      // A merged record cannot establish agreement between providers.
+      const sourceCandidates = [];
 
       if (process.env.GOOGLE_BOOKS_API_KEY) {
         const googleBooksUrl = new URL('https://www.googleapis.com/books/v1/volumes');
@@ -3151,6 +3154,14 @@ async function lookupIsbnMetadata(isbn, options = {}) {
             });
           }
           if (metadata) {
+            sourceCandidates.push({
+              source:source.name,
+              barcode:metadata.barcode||'',
+              title:metadata.title||'',
+              author:metadata.author||'',
+              authors:metadata.authors||[],
+              publisher:metadata.publisher||'',
+            });
             result = result ? mergeLookupMetadata(result, metadata) : metadata;
             if (debugPayload) {
               const summary = createMetadataFieldSummary(metadata);
@@ -3211,6 +3222,10 @@ async function lookupIsbnMetadata(isbn, options = {}) {
     }
 
     if (result && typeof result === 'object') {
+      // Source evidence is always a record of actual provider replies. Never
+      // infer three votes from a single merged result or a missing API.
+      if(typeof sourceCandidates!=='undefined' && sourceCandidates.length)
+        result.sourceCandidates=sourceCandidates;
       result.coverUrl = resolveEffectiveCoverUrl(result.coverUrl);
       if (debugPayload) {
         debugPayload.mergedResult = createMetadataFieldSummary(result);
