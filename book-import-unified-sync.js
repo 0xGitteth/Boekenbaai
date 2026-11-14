@@ -285,7 +285,10 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
           beforeValues:copies.map(copy=>({
             bookId:copy.id,
             value:field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
-            ...(field==='coverUrl'?{localCoverUrl:copy.localCoverUrl||''}:{}),
+            ...(field==='coverUrl'?{
+              localCoverUrl:copy.localCoverUrl||'',
+              coverCrop:copy.coverCrop??null,
+            }:{}),
             ...(field==='manualThemes'?{
               importedThemes:copy.importedThemes||[],themes:copy.themes||[],
             }:{}),
