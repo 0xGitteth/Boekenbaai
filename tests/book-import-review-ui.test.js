@@ -230,8 +230,10 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
   const start=script.indexOf('    function renderUnifiedSync() {');
   const end=script.indexOf('    function renderAssignmentReconciliation()',start);
   const combined=script.slice(start,end);
-  const metadata=combined.slice(combined.indexOf('for(const issue of metadataPlan.issues)'),
-    combined.indexOf('for(const item of blocked)'));
+  const metadata=combined.slice(combined.indexOf('for(const issue of metadataPlan.issues){'),
+    combined.indexOf('for(const item of blocked){'));
+  assert.ok(metadata.startsWith('for(const issue of metadataPlan.issues){'),
+    'Check the actual metadata cards, not the counting loop');
   assert.match(metadata,/issue\.worksheetRows/);
   assert.match(metadata,/source\.sourceRowNumber/);
   assert.ok(metadata.includes("'Excelrij '+source.sourceRowNumber+' corrigeren'"));
