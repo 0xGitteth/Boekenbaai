@@ -5649,9 +5649,9 @@ async function handleApi(req, res, requestUrl) {
                   update.isbn===addition.editionIsbn
                   &&['title','author'].includes(update.field))
                   .map(update=>update.field)):new Set();
-              const keepExistingTitle=Boolean(isUnified&&existingTemplate
+              const keepExistingTitle=Boolean(existingTemplate
                 &&!acceptedIdentityFields.has('title'));
-              const keepExistingAuthor=Boolean(isUnified&&existingTemplate
+              const keepExistingAuthor=Boolean(existingTemplate
                 &&!acceptedIdentityFields.has('author'));
               if(keepExistingTitle)
                 sourceFields.title=createFieldSource('existing','matched_isbn_edition');
