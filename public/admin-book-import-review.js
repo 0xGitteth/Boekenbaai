@@ -466,6 +466,7 @@
     let automaticPage = 0;
     let automaticExpanded = false;
     let automaticReceiptLimit=20;
+    let automaticReceiptOpen=false;
     let unifiedLimits={assignments:15,metadata:15,stock:15};
     const unifiedOpenGroups=new Set();
     let busy = false;
@@ -1676,6 +1677,10 @@
           const sourceLog=done.report?.automaticSourceDecisions||[];
           if(sourceLog.length){
             const audit=make('details','bb-import__selection-details');
+            audit.open=automaticReceiptOpen;
+            audit.addEventListener('toggle',()=>{
+              if(audit.isConnected)automaticReceiptOpen=audit.open;
+            });
             audit.append(make('summary','',
               'Automatische bronkeuzes en behouden gegevens ('+sourceLog.length+')'));
             audit.append(make('p','hint',
@@ -1700,7 +1705,8 @@
                 +' keuzes bekijken','btn btn--secondary');
               more.addEventListener('click',()=>{
                 automaticReceiptLimit+=20;
-                render(true);
+                automaticReceiptOpen=true;
+                render();
               });
               audit.append(more);
             }
