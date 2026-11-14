@@ -228,6 +228,27 @@ function normalizedMetadataChoice(input){
   values.sort((a,b)=>a.id.localeCompare(b.id));
   return {ok:true,values};
 }
+function metadataSourceSafe(row,field,acceptWarnings){
+  if(row.status==='skipped'||!row.book?.editionIsbn
+    ||!row.book?.title||!row.book?.author)return false;
+  const issues=row.issues||[];
+  // Legacy reviewed/test rows can carry a conservative warning status
+  // without diagnostic objects. Do not silently accept such a warning.
+  if(!issues.length)
+    return row.status==='ready'
+      ||(row.status==='warning'&&acceptWarnings);
+  const relevant=issues.filter(issue=>{
+    const associated=COLUMN_WARNINGS[issue.code];
+    if(associated)return associated===field;
+    if(issue.code==='conflicting_source_columns'
+      &&METADATA_FIELDS.includes(issue.field)){
+      return issue.field===field || ['title','author'].includes(issue.field);
+    }
+    return true;
+  });
+  return !relevant.some(issue=>issue.severity==='conflict'
+    ||(issue.severity==='warning'&&!acceptWarnings));
+}
 function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   const selected=new Set(choices.map(c=>c.id));
   const editions=new Map();
@@ -277,8 +298,8 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       const id=isbn+':'+field;
       const variants=new Map(sourceRows.map(row=>
         [JSON.stringify(metadataKey(field,row)),metadataKey(field,row)]));
-      const validSources=sourceRows.every(row=>row.status==='ready'
-        ||(row.status==='warning'&&acceptWarnings));
+      const validSources=sourceRows.every(row=>
+        metadataSourceSafe(row,field,acceptWarnings));
       const next=variants.size===1?[...variants.values()][0]:null;
       // Invalid years/page-counts parse to null even when the Excel cell
       // contains text. A general warning acknowledgement never authorizes
