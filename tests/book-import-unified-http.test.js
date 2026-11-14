@@ -325,8 +325,8 @@ async function run(){
     assert.equal(added.title,'Oorlogswinter',
       'Matching ISBN editions retain the existing verified spelling');
     assert.equal(added.author,'Jan Terlouw');
-    assert.equal(added.importProvenance.fieldSources.title.source,'existing');
-    assert.equal(added.importProvenance.fieldSources.author.source,'existing');
+    assert.equal(added.importProvenance.fieldSources.title.sourceType,'existing');
+    assert.equal(added.importProvenance.fieldSources.author.sourceType,'existing');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa');
 
     const noParts=await start([old('Tim Leerling')],
