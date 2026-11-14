@@ -55,6 +55,12 @@ function mergeFallbackMetadata(result, fallback) {
       ? base.source
       : fallback.source || 'isbnbarcode.org',
     sources: uniqueStrings([...currentSources, fallback.source || 'isbnbarcode.org']),
+    sourceCandidates:[
+      ...(Array.isArray(base.sourceCandidates)?base.sourceCandidates:[]),
+      {source:fallback.source||'isbnbarcode.org',barcode:fallback.barcode||'',
+        title:fallback.title||'',author:fallback.author||'',
+        authors:fallback.authors||[],publisher:fallback.publisher||''},
+    ],
     sourceUrl: base.sourceUrl || fallback.sourceUrl || '',
     matchLevel: baseFound && base.matchLevel && base.matchLevel !== 'none'
       ? base.matchLevel
