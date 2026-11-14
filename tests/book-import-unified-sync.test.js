@@ -2,6 +2,7 @@
 const assert=require('node:assert/strict');
 const {
   normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,assignmentSource,
+  normalizedMetadataChoice,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
@@ -316,5 +317,68 @@ assert.equal(normalizeParts(undefined).value.books,true);
   const nothing=assignmentSource({ok:true,rows:[unmatched]},
     parts({loans:true}),current);
   assert.equal(nothing.rows[0].context.fixedLocation,undefined);
+}
+
+{
+  // Existing library records from the old format may only contain an ISBN
+  // in the barcode or isbn13 field, never editionIsbn/metadataIsbn.
+  for(const oldIdentifier of [{barcode:ISBN},{barcode:'4711001',isbn13:ISBN}]){
+    const database=db();
+    database.books=[copy('copy-1',{editionIsbn:null,metadataIsbn:null,
+      ...oldIdentifier})];
+    const selected=plan([source(0,{},{
+      description:'Nieuwe Exceltekst',
+    },{description:{source:'excel',raw:'Nieuwe Exceltekst'}})],database,{
+      parts:parts({fields:{description:true}}),
+    });
+    assert.equal(selected.ok,true);
+    assert.equal(selected.summary.metadataFields,1,
+      'Selected metadata must match ISBNs stored in legacy identifier fields');
+    assert.deepEqual(selected.metadata.updates[0].bookIds,['copy-1']);
+  }
+}
+{
+  // Examenmateriaal: Engels implies language=en for enrichment, but is not
+  // permission to overwrite Taal when only Taal was selected and left blank.
+  const database=db();
+  database.books[0].language='nl';
+  const hint=source(0,{},{
+    language:'en',
+  },{language:{source:'excel',raw:'Engels',
+    derived:'exam_material_language_hint'}});
+  const derived=plan([hint],database,{
+    parts:parts({fields:{language:true}}),
+  });
+  assert.equal(derived.ok,true);
+  assert.equal(derived.summary.metadataFields,0);
+  assert.equal(derived.summary.readyToApply,false);
+  const explicit=plan([source(0,{},{
+    language:'en',
+  },{language:{source:'excel',raw:'Engels'}})],database,{
+    parts:parts({fields:{language:true}}),
+  });
+  assert.equal(explicit.summary.metadataFields,1,
+    'A genuinely populated selected language cell is allowed');
+}
+{
+  // A full 1,500-row workbook with multiple fields can exceed the former
+  // arbitrary 6,000-decision cap even though the input is valid.
+  const choices=[];
+  for(let i=0;i<1001;i++){
+    const isbn='978'+String(i).padStart(10,'0');
+    for(const field of ['description','publisher','language','coverUrl','tags','manualThemes']){
+      choices.push({id:isbn+':'+field,action:'keep'});
+    }
+  }
+  assert.equal(choices.length,6006);
+  assert.equal(normalizedMetadataChoice(choices).ok,true);
+  const tooMany=Array.from({length:18001},(_,i)=>({
+    id:'978'+String(Math.floor(i/12)).padStart(10,'0')+':'+
+      ['title','author','description','publisher','publishedYear','pageCount',
+       'language','coverUrl','easyReading','suitableForExamList','tags','manualThemes'][i%12],
+    action:'keep',
+  }));
+  assert.equal(normalizedMetadataChoice(tooMany).ok,false,
+    'The cap should still reject more resolutions than the workbook supports');
 }
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
