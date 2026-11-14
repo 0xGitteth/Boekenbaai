@@ -189,6 +189,19 @@ Controle uitgevoerd op de ontwikkelbranch van PR #384 op 14 november 2026. Deze 
 | `student_already_borrowed_edition` | De leerling heeft deze ISBN-editie al. | Veilig blokkeren bij werkelijk conflict of ontbrekende identiteit; gericht corrigeren |
 | `student_loan_records_disagree` | De boekenregistratie en de uitleenlijst van de leerling komen niet overeen. | Geen lener verzinnen of oude uitlening herhalen; kopie controleren |
 
+## Beleid: zo min mogelijk handmatige stappen
+
+De uitgangspunten van deze aanvullende audit zijn praktisch en ISBN-georiënteerd. De code verifieert niet of een boek perfect beschreven is, maar of de juiste editie wordt gekoppeld aan de juiste fysieke exemplaren.
+
+- **Zekerheid over identiteit:** het ISBN blijft geldig en gelijk. Een ander boek, een ander deelnummer, een fysiek barcodeconflict of onzekere wissel van lener blijft een echt controlepunt.
+- **Bibliografische schrijfvarianten:** kleine accent-, interpunctie- en typeverschillen in auteurs/titels en voldoende specifieke serie-/ondertitelvarianten tellen bij hetzelfde ISBN als dezelfde editie. Twee onafhankelijke ISBN-bronnen mogen kleine spellingfouten verbeteren. Inhoudelijk verschillende boeken mogen niet worden samengevoegd.
+- **Onbelangrijke verschillen:** een kleine afwijking in pagina-aantal, een onzekere drukjaarvariant en een ongeldige optionele Excelkolom veroorzaken geen verplichte beslissing. De geldige bestaande gegevens blijven staan, tenzij de beheerder bewust een andere waarde kiest.
+- **Automatische verrijking:** ISBN-bronnen worden bij de standaardimport geraadpleegd; dit kan worden uitgezet. Betrouwbare ontbrekende beschrijvingen, omslagen, uitgevers, jaren, pagina-aantallen, talen en trefwoorden kunnen worden aangevuld zonder bestaande schoolinformatie te overschrijven. Aanvullende gratis bronkeywords blijven afzonderlijk bewaard en worden via de bestaande gecontroleerde themaregels beschikbaar voor ‘Help me kiezen’. Betalende Brave-zoekopdrachten vereisen aparte toestemming.
+- **Veilige administratieve standaard:** een onduidelijke klasnotitie wordt niet als nieuwe uitlening of nieuwe vaste locatie geïnterpreteerd. De bestaande registratie blijft behouden en de reden komt in het importverslag. Duidelijke, unieke uitleningen blijven automatisch voorgesteld; echte borrower-, ISBN- en kopieconflicten blijven controleerbaar.
+- **Verantwoording en correctie:** de preview toont aantallen automatische wijzigingen, behoudkeuzes, informatieve meldingen en unieke handmatige dossiers. Het volledige verslag bewaart bronkeuzes en automatisch genegeerde klasnotities. Automatische keuzes zijn herzienbaar.
+
+**Acceptatievoorwaarde:** de echte test moet aantonen dat de verplichte controles beperkt blijven tot inhoudelijke ISBN-, editie-, barcode-, voorraad- of uitleningsconflicten, en niet opnieuw oplopen door schrijfwijze-, pagina-, bron- of optionele veldverschillen.
+
 ## Wat de CI automatisch controleert
 
 - De foutcodecatalogus wordt tegen de expliciet in productiemodules uitgegeven codes gecontroleerd; een nieuwe ongemapte foutcode laat de test mislukken.
