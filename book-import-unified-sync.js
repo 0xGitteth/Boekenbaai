@@ -62,9 +62,12 @@ function issueAffectsSelection(issue,parts,domain){
   // remain visible as optional context, but may not block the stock count,
   // loan/location matching or every selected metadata field independently.
   // Structural ISBN/title conflicts and malformed values remain blocking.
-  if(code==='metadata_differs_from_excel' && issue?.severity==='warning'
-    &&issue?.sourceInvalid!==true)
-    return false;
+  if(code==='metadata_differs_from_excel' && issue?.severity==='warning')
+    // A malformed OPTIONAL Excel value is a problem only if that exact
+    // metadata field was selected. It cannot block a valid physical ISBN,
+    // borrower, stock count, or an unrelated selected column.
+    return issue?.sourceInvalid===true
+      &&domain==='metadata'&&parts.fields[issue.field]===true;
   if(LOAN_ISSUES.has(code))return domain==='assignment'&&parts.loans;
   if(LOCATION_ISSUES.has(code))return domain==='assignment'&&parts.locations;
   if(code==='class_context_needs_review')
@@ -80,9 +83,13 @@ function issueAffectsSelection(issue,parts,domain){
     if(['libraryPresence'].includes(issue.field))return false;
     if(domain==='metadata' && METADATA_FIELDS.includes(issue.field))
       return parts.fields[issue.field]===true;
+    // A malformed description or publication year cannot invalidate the
+    // physical edition or its separately specified borrower/location.
+    if(domain!=='metadata' && METADATA_FIELDS.includes(issue.field))
+      return ['title','author'].includes(issue.field);
   }
-  if(domain==='metadata' && COLUMN_WARNINGS[code])
-    return parts.fields[COLUMN_WARNINGS[code]]===true;
+  if(COLUMN_WARNINGS[code])
+    return domain==='metadata'&&parts.fields[COLUMN_WARNINGS[code]]===true;
   // Unknown and identity-related conflicts must never be silently dropped.
   return true;
 }
