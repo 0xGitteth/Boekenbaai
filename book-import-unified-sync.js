@@ -222,7 +222,7 @@ function normalizedMetadataChoice(input){
   for(const item of input){
     if(!item||typeof item!=='object'||Array.isArray(item)
       ||typeof item.id!=='string'||!/^[0-9]{13}:(title|author|description|publisher|publishedYear|pageCount|language|coverUrl|easyReading|suitableForExamList|tags|manualThemes)$/.test(item.id)
-      ||!['keep','apply'].includes(item.action)||seen.has(item.id))
+      ||!['keep','apply','excel'].includes(item.action)||seen.has(item.id))
       return {ok:false,error:'invalid_metadata_choices'};
     seen.add(item.id);
     values.push({id:item.id,action:item.action});
@@ -325,7 +325,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       // identity, still need a human decision. Other ambiguous/invalid
       // columns can simply leave the existing value unchanged.
       if((variants.size>1&&important)||structural){
-        if(selected.get(id)==='apply')return {ok:false,error:'unsafe_metadata_override'};
+        if(['apply','excel'].includes(selected.get(id)))return {ok:false,error:'unsafe_metadata_override'};
         issues.push({id,isbn,field,title:rows[0].book?.title,
           reason:variants.size>1?'conflicting_excel_values':'source_row_requires_review',
           worksheetRows:sourceRows.map(row=>row.sourceRowNumber),copies:copies.length});
@@ -335,9 +335,10 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         isbn,field,excel:important?(field==='author'?next?.value:next):next,
         current, evidence:rows.flatMap(row=>row.sourceEvidence||[]),
       });
-      if(selected.get(id)==='apply'&&conflict)
+      if(['apply','excel'].includes(selected.get(id))&&conflict)
         return {ok:false,error:'unsafe_metadata_override'};
-      if(conflict || (decision.action==='keep'&&selected.get(id)!=='apply')){
+      if(conflict || (decision.action==='keep'
+        &&!['apply','excel'].includes(selected.get(id)))){
         automaticDecisions.push({
           id,isbn,field,title:rows[0].book?.title,action:'keep',
           confidence:'medium',
@@ -346,13 +347,13 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
             :decision.reason,
           before:current,after:current,excel:next,
           sources:decision.agreeingSources,
-          sourceCount:decision.sourceCount,
+          sourceCount:decision.sourceCount,canUseExcel:!conflict,
           worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
         });
         continue;
       }
       let chosen=next;
-      const manualExcel=selected.get(id)==='apply';
+      const manualExcel=['apply','excel'].includes(selected.get(id));
       if(!manualExcel && decision.action==='source' && important){
         chosen=field==='author'
           ?{value:decision.value,authors:[decision.value]}
@@ -368,6 +369,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         reason:manualExcel?'Excelwaarde expliciet gekozen door beheerder':decision.reason,
         before:current,after:chosen,excel:next,
         sources:decision.agreeingSources,sourceCount:decision.sourceCount,
+        canUseExcel:true,
         worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
       });
       if(!changed)continue;
