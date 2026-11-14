@@ -67,6 +67,8 @@ const NONBLOCKING_DIAGNOSTICS=new Set([
   'title_author_metadata_missing_edition_isbn',
   'nonstandard_easy_reading_value','dangerous_headers_ignored',
   'ml_structuurbb_fixed_location','own_book_excluded',
+  'invalid_published_year','invalid_page_count','language_hint_conflict',
+  'unexpected_exam_material_value','class_context_needs_review',
 ]);
 const STOCK_DIAGNOSTICS=new Set([
   'invalid_quantity','copy_limit_exceeded',
@@ -90,11 +92,9 @@ function issueAffectsSelection(issue,parts,domain){
     return domain==='assignment'&&parts.loans;
   if(LOCATION_ISSUES.has(code))
     return domain==='assignment'&&parts.locations;
-  if(code==='class_context_needs_review')
-    return domain==='assignment'&&parts.loans&&parts.locations;
+  if(code==='class_context_needs_review')return false;
   if(code==='library_presence_needs_review')return false;
-  if(code==='unexpected_exam_material_value')
-    return domain==='metadata'&&parts.fields?.suitableForExamList===true;
+  if(code==='unexpected_exam_material_value')return false;
   if(STOCK_DIAGNOSTICS.has(code))return domain==='stock';
   if(PHYSICAL_DIAGNOSTICS.has(code))
     return domain==='stock'||(domain==='assignment'&&(parts.loans||parts.locations));
@@ -112,8 +112,9 @@ function issueAffectsSelection(issue,parts,domain){
     if(['barcode','ambiguousIdentifier'].includes(issue.field))
       return domain==='stock'||(domain==='assignment'&&(parts.loans||parts.locations));
     if(METADATA_FIELDS.includes(issue.field))
-      return ['title','author'].includes(issue.field)
-        ||(domain==='metadata'&&parts.fields?.[issue.field]===true);
+      // Unsafe values in descriptive columns are simply not imported.
+      // Only title/author identity requires an administrator's decision.
+      return ['title','author'].includes(issue.field);
   }
   // An ISBN or identity conflict is relevant to every selected domain.
   // Unknown issues likewise keep their conservative behavior.
@@ -317,6 +318,8 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     const copies=editions.get(isbn);
     for(const field of METADATA_FIELDS.filter(field=>parts.fields[field])){
       const sourceRows=rows.filter(row=>{
+        if(field==='suitableForExamList' &&(row.issues||[]).some(issue=>
+          issue.code==='unexpected_exam_material_value'))return false;
         const source=row.provenance?.[field];
         // A value explicitly corrected in the import review is authoritative
         // for a selected column. Automatic enrichment is not.
@@ -400,9 +403,17 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         });
         continue;
       }
+      const identityCodes=new Set([
+        'conflicting_edition_isbns','edition_identity_conflict',
+        'metadata_title_conflict','author_sources_differ',
+        'missing_valid_isbn','metadata_identifier_conflict',
+      ]);
       const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
-        issue.severity==='conflict'&&!COLUMN_WARNINGS[issue.code]
-        &&issue.code!=='metadata_differs_from_excel'));
+        issue.severity==='conflict'
+        &&(identityCodes.has(issue.code)
+          ||(issue.code==='conflicting_source_columns'
+            &&['title','author','isbn','metadataIsbn','ambiguousIdentifier']
+              .includes(issue.field)))));
       // Distinct titles/authors under the same ISBN, or an unsafe edition
       // identity, still need a human decision. Other ambiguous/invalid
       // columns can simply leave the existing value unchanged.
@@ -642,6 +653,26 @@ function buildUnifiedBookImport(analysis,db,{
     ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
   let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
   if(!assignments.ok)return assignments;
+  // A vague class name is not an instruction to relocate or lend a book.
+  // Leave the existing registration intact by default and log that choice.
+  // The administrator can still explicitly classify the class context.
+  const explicitAssignmentIds=new Set(assignmentChoices.values.map(x=>x.id));
+  const implicitClassKeeps=assignments.differences.filter(item=>
+    item.kind==='class_context'&&item.choice==='pending'
+    &&!explicitAssignmentIds.has(item.id));
+  if(implicitClassKeeps.length){
+    assignments=buildAssignmentPreview(source,assignmentDb,[
+      ...assignmentChoices.values,
+      ...implicitClassKeeps.map(item=>({id:item.id,action:'keep'})),
+    ]);
+    if(!assignments.ok)return assignments;
+    const autoIds=new Set(implicitClassKeeps.map(item=>item.id));
+    for(const diff of assignments.differences)if(autoIds.has(diff.id)){
+      diff.automatic=true;diff.autoKept=true;
+      diff.description='Onduidelijke klasvermelding: bestaande registratie veilig behouden';
+    }
+    assignments.summary.automatic+=autoIds.size;
+  }
   // Receipt IDs survive loan returns and truncated import reports. Re-uploading
   // an old sheet must never issue another loan to its former borrower.
   const receipts=new Set(loanReceipts);
