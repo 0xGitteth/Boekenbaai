@@ -242,6 +242,26 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
 }
 
 
+// Editing an automatically retained value must clear the old manual
+// keep resolution before the next review. Otherwise a successful correction
+// can lead to stale_metadata_choice when that field now equals the database.
+{
+  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const end=script.indexOf('addRow(item.title||',start);
+  const automaticEditor=script.slice(start,end);
+  assert.ok(start>=0&&end>start,'Missing automatic decision correction editor');
+  assert.match(automaticEditor,/metadataIssueId:item\.id/,
+    'Pass the current automatic decision ID to the row editor');
+  const editStart=script.indexOf('    function editRow(row, host, options = {}) {');
+  const editEnd=script.indexOf('    function renderUnifiedSync() {',editStart);
+  const editSource=script.slice(editStart,editEnd);
+  assert.match(editSource,/metadataResolutions\.delete\(options\.metadataIssueId\)/,
+    'Editing a metadata row must clear the superseded decision');
+  assert.ok(editSource.indexOf('metadataResolutions.delete(options.metadataIssueId)')
+    <editSource.indexOf('updateCorrection(row.index, field, input.value)'),
+    'Discard the previous keep choice before submitting the correction');
+}
+
 // Large imports must not render 400+ individual cards nor treat third-party
 // metadata spelling differences as warnings requiring manual approval.
 {
