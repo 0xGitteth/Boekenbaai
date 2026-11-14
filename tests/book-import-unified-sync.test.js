@@ -416,4 +416,90 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(hintOnly.summary.metadataFields,0,
     'A blank Tags cell may never be filled by Examenmateriaal alone');
 }
+
+{
+  // An unchecked student's unmatched loan must not block a valid selected
+  // fixed location or metadata-only update, but must remain blocking if
+  // the loan column itself is explicitly selected.
+  const current=db();
+  const row=source(0,{
+    studentLoan:{status:'unmatched',name:'Onbekende leerling'},
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  },{
+    barcode:'4711002',description:'Aangepaste beschrijving',
+  },{
+    description:{source:'excel',raw:'Aangepaste beschrijving'},
+  });
+  row.status='conflict';
+  row.issues=[{code:'student_loan_unmatched',severity:'conflict',
+    value:'Onbekende leerling'}];
+  const locationOnly=plan([row],current,{parts:parts({locations:true})});
+  assert.equal(locationOnly.ok,true);
+  assert.equal(locationOnly.summary.proposedLocations,1,
+    'Unchecked loan conflicts must not prevent fixed-location updates');
+  assert.equal(locationOnly.summary.pending,0);
+  assert.equal(locationOnly.summary.readyToApply,true);
+  const descriptionOnly=plan([row],current,{
+    parts:parts({fields:{description:true}}),
+  });
+  assert.equal(descriptionOnly.summary.metadataFields,1,
+    'Unchecked loan conflicts must not block selected metadata');
+  assert.equal(descriptionOnly.summary.pendingMetadata,0);
+  const loanOnly=plan([row],current,{parts:parts({loans:true})});
+  assert.equal(loanOnly.summary.proposedLoans,0);
+  assert.equal(loanOnly.assignments.differences[0].kind,'issue',
+    'Selected invalid loan data must still be reviewed');
+
+  const newRow=source(0,{
+    studentLoan:{status:'unmatched',name:'Onbekende leerling'},
+  },{
+    title:'Nieuw boek',author:'Nieuwe auteur',
+    editionIsbn:SECOND,metadataIsbn:SECOND,
+  });
+  newRow.status='conflict';
+  newRow.issues=[{code:'student_loan_unmatched',severity:'conflict'}];
+  const stockOnly=plan([newRow],current,{parts:parts({books:true})});
+  assert.equal(stockOnly.summary.newCopies,1,
+    'Stock-only imports cannot be blocked by an unchecked borrower column');
+
+  const identityConflict=source(0,{
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  },{barcode:'4711002'});
+  identityConflict.status='conflict';
+  identityConflict.issues=[{code:'conflicting_edition_isbns',severity:'conflict'}];
+  const protectedLocation=plan([identityConflict],current,{
+    parts:parts({locations:true}),
+  });
+  assert.equal(protectedLocation.summary.proposedLocations,0);
+  assert.equal(protectedLocation.assignments.differences[0].kind,'issue',
+    'Identity conflicts remain blocking even for selected valid fields');
+}
+{
+  // The stock planner already proposes every copy of a new ISBN at its
+  // selected fixed location. Those 3 physical copies need no extra
+  // single-copy assignment decisions, but a borrower remains ambiguous.
+  const current=db();
+  const row=source(0,{
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  },{
+    title:'Nieuwe editie',author:'Nieuwe auteur',
+    editionIsbn:SECOND,metadataIsbn:SECOND,
+    quantity:{valid:true,value:3},
+  });
+  const bulk=plan([row],current,{parts:parts({books:true,locations:true})});
+  assert.equal(bulk.ok,true);
+  assert.equal(bulk.summary.newCopies,3);
+  assert.equal(bulk.summary.pending,0);
+  assert.equal(bulk.summary.readyToApply,true);
+  assert.equal(bulk.assignments.differences.length,0);
+  const held=plan([{
+    ...row,context:{
+      ...row.context,studentLoan:{status:'matched',id:'tim',name:'Tim Leerling'},
+    },
+  }],current,{parts:parts({books:true,loans:true,locations:true})});
+  assert.equal(held.ok,true);
+  assert.equal(held.assignments.differences.some(diff=>
+    diff.reason==='copy_requires_single_excel_row'),true,
+    'A bulk quantity must never assign an ambiguous loan to one copy');
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
