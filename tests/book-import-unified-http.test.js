@@ -270,6 +270,38 @@ async function run(){
     assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa',
       'Metadata-only corrections must never alter existing loans');
 
+    // A selected Tags column must never import the derived "strip" tag
+    // from Examenmateriaal, including after a human review correction.
+    for (const [correction,expected] of [
+      [{tags:'mysterie'},['mysterie']],
+      [{tags:'fantasie',examMaterial:'Strip'},['fantasie']],
+    ]) {
+      const tagsOnly=await start([
+        old('',{Tags:'avontuur',Examenmateriaal:'Strip'}),
+      ],parts({fields:{tags:true}}));
+      assert.equal(tagsOnly.status,201,JSON.stringify(tagsOnly.data));
+      assert.deepEqual(tagsOnly.data.decisions.metadata.updates[0].value,
+        ['avontuur'],'Initial selected tags must exclude derived strip');
+      const correctedTags=await call(
+        '/api/admin/book-import-stages/'+tagsOnly.data.id+'/review',token,{
+        revision:tagsOnly.data.revision,
+        corrections:[{index:0,fields:correction}],acceptWarnings:true,
+        inventoryResolutions:[],assignmentResolutions:[],metadataResolutions:[],
+      });
+      assert.equal(correctedTags.status,200,JSON.stringify(correctedTags.data));
+      assert.equal(correctedTags.data.decisions.summary.metadataFields,1);
+      assert.deepEqual(correctedTags.data.decisions.metadata.updates[0].value,
+        expected,'Review-corrected Tags must exclude Examenmateriaal tags');
+      assert.deepEqual(correctedTags.data.rows[0].provenance.tags.explicitValues,
+        expected,'Corrected review provenance must retain explicit tags');
+      const appliedTags=await apply(correctedTags);
+      assert.equal(appliedTags.status,200,JSON.stringify(appliedTags.data));
+      const stored=readDb().books.find(book=>book.id==='copy-1');
+      assert.deepEqual(stored.tags,expected,
+        'The committed selected Tags field cannot include a cross-column tag');
+      assert.equal(stored.borrowedBy,'lisa');
+    }
+
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
