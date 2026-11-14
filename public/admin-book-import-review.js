@@ -317,9 +317,19 @@
     const metadataLabel = make('label', 'bb-review__check');
     const metadata = make('input');
     metadata.type = 'checkbox';
-    // Prefer factual ISBN enrichment. It remains optional and no paid Brave
-    // searches are started without separate explicit approval.
-    metadata.checked = true;
+    // A huge workbook must not silently launch hundreds of blocking
+    // third-party requests. Remember the administrator's previous opt-in so
+    // future imports need no additional clicks once enabled.
+    metadata.checked = false;
+    try {
+      metadata.checked=localStorage.getItem('boekenbaai_import_enrich_isbn')==='yes';
+    }catch{}
+    metadata.addEventListener('change',()=>{
+      try {
+        localStorage.setItem('boekenbaai_import_enrich_isbn',
+          metadata.checked?'yes':'no');
+      }catch{}
+    });
     metadataLabel.append(metadata, document.createTextNode(
       ' ISBN-bronnen vergelijken en lege boekgegevens aanvullen (aanbevolen, kan langer duren).'));
     const importMode = make('select');
