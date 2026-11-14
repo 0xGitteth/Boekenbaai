@@ -5803,6 +5803,23 @@ async function handleApi(req, res, requestUrl) {
                   metadataUpdated++;
                 }
               }
+              // Newly added copies of an existing ISBN must inherit the
+              // same accepted metadata decision as its existing copies.
+              // Otherwise a high-confidence source spelling fix could leave
+              // physical copies with conflicting title/author strings.
+              for(const update of combined.metadata.updates){
+                for(const book of createdCopies){
+                  if(book.editionIsbn!==update.isbn)continue;
+                  if(update.field==='author'){
+                    book.author=update.value.value;
+                    book.authors=[...update.value.authors];
+                  }else if(update.field==='title'||update.field==='publisher'){
+                    book[update.field]=update.value;
+                  }else if(update.field==='coverUrl' && book.coverUrl!==update.value){
+                    book.coverUrl=update.value;book.localCoverUrl='';book.coverCrop=null;
+                  }
+                }
+              }
               const assignments=actualAssignmentPreview(combined.assignments,createdByRow);
               if(assignments.differences.length)
                 corrected=applyAssignmentPreview(database,assignments,user.id,now,batchId);
