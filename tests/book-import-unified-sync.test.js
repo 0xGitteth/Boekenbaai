@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const {
   normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,assignmentSource,
-  normalizedMetadataChoice,
+  normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
@@ -38,6 +38,106 @@ assert.equal(normalizeParts({books:false,loans:false,locations:false,fields:{cov
 assert.equal(normalizeParts({books:true,loans:false,locations:false,fields:{coverUrl:'yes'}}).ok,false);
 assert.equal(normalizeParts({books:true,loans:true,locations:true,fields:{mystery:true}}).ok,false);
 assert.equal(normalizeParts(undefined).value.books,true);
+
+// Audit all major diagnostic families. A future unknown error remains
+// conservative rather than being silently dropped by the import planner.
+{
+  const stock=parts({books:true});
+  const loans=parts({loans:true});
+  const fixed=parts({locations:true});
+  const metadata=parts({fields:{pageCount:true}});
+  for(const code of [
+    'isbn_repaired','isbn_resolved_from_metadata',
+    'isbn_repair_suggested','metadata_lookup_failed',
+    'metadata_not_usable','metadata_not_strict_match',
+    'title_author_metadata_missing_edition_isbn',
+    'ambiguous_identifier_interpreted_as_isbn',
+    'ambiguous_identifier_interpreted_as_barcode',
+    'nonstandard_easy_reading_value','dangerous_headers_ignored',
+    'ml_structuurbb_fixed_location',
+  ]){
+    for(const [section,part] of [['stock',stock],['assignment',loans],
+      ['metadata',metadata]]){
+      assert.equal(issueAffectsSelection({code,severity:'warning'},part,section),false,
+        code+' must be nonblocking for '+section);
+    }
+  }
+  for(const code of ['invalid_quantity','copy_limit_exceeded']){
+    assert.equal(issueAffectsSelection({code},stock,'stock'),true);
+    assert.equal(issueAffectsSelection({code},loans,'assignment'),false);
+    assert.equal(issueAffectsSelection({code},metadata,'metadata'),false);
+  }
+  for(const code of ['invalid_physical_barcode','duplicate_physical_barcode',
+    'conflicting_physical_barcodes','barcode_with_multiple_copies']){
+    assert.equal(issueAffectsSelection({code},stock,'stock'),true);
+    assert.equal(issueAffectsSelection({code},loans,'assignment'),true);
+    assert.equal(issueAffectsSelection({code},metadata,'metadata'),false);
+  }
+  for(const code of ['invalid_published_year','invalid_page_count',
+    'language_hint_conflict']){
+    assert.equal(issueAffectsSelection({code},stock,'stock'),false);
+    assert.equal(issueAffectsSelection({code},loans,'assignment'),false);
+  }
+  assert.equal(issueAffectsSelection({code:'invalid_page_count'},metadata,'metadata'),true);
+  assert.equal(issueAffectsSelection({code:'invalid_published_year'},metadata,'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'unexpected_exam_material_value'},
+    parts({fields:{suitableForExamList:true}}),'metadata'),true);
+  assert.equal(issueAffectsSelection({code:'unexpected_exam_material_value'},
+    metadata,'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'class_context_needs_review'},
+    parts({loans:true,locations:true}),'assignment'),true);
+  assert.equal(issueAffectsSelection({code:'class_context_needs_review'},
+    loans,'assignment'),false);
+  assert.equal(issueAffectsSelection({code:'fixed_location_needs_review'},
+    fixed,'assignment'),true);
+  assert.equal(issueAffectsSelection({code:'fixed_location_needs_review'},
+    loans,'assignment'),false);
+  assert.equal(issueAffectsSelection({code:'student_loan_unmatched'},
+    loans,'assignment'),true);
+  assert.equal(issueAffectsSelection({code:'student_loan_unmatched'},
+    stock,'stock'),false);
+  assert.equal(issueAffectsSelection({code:'library_presence_needs_review'},
+    stock,'stock'),false);
+  for(const code of ['metadata_title_conflict','author_sources_differ',
+    'conflicting_edition_isbns','edition_identity_conflict',
+    'missing_title','missing_author','metadata_identifier_conflict']){
+    for(const [section,part] of [['stock',stock],['assignment',loans],
+      ['metadata',metadata]]){
+      assert.equal(issueAffectsSelection({code,severity:'conflict'},part,section),true,
+        code+' must remain blocking in '+section);
+    }
+  }
+  for(const [field,expectedStock,expectedMetadata] of [
+    ['description',false,false],['pageCount',false,true],
+    ['quantity',true,false],['title',true,true],['author',true,true],
+  ]){
+    assert.equal(issueAffectsSelection({code:'conflicting_source_columns',field},
+      stock,'stock'),expectedStock);
+    assert.equal(issueAffectsSelection({code:'conflicting_source_columns',field},
+      metadata,'metadata'),expectedMetadata);
+  }
+  assert.equal(issueAffectsSelection({code:'metadata_differs_from_excel',
+    sourceInvalid:false,field:'pageCount'},metadata,'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'metadata_differs_from_excel',
+    sourceInvalid:true,field:'pageCount'},metadata,'metadata'),true);
+  assert.equal(issueAffectsSelection({code:'metadata_differs_from_excel',
+    sourceInvalid:true,field:'pageCount'},stock,'stock'),false);
+  assert.equal(issueAffectsSelection({code:'new_unrecognized_error'},
+    stock,'stock'),true,'Unknown error codes must remain conservative');
+
+  const example={ok:true,rows:[{
+    index:0,sourceRowNumber:8,book:{title:'A',author:'B',editionIsbn:ISBN},
+    issues:[{code:'isbn_repaired',severity:'warning'},
+      {code:'invalid_page_count',severity:'warning'},
+      {code:'metadata_lookup_failed',severity:'warning'},
+      {code:'conflicting_source_columns',field:'title',severity:'conflict'}],
+  }]};
+  const actionable=actionableSourceIssues(example,stock);
+  assert.equal(actionable.length,1);
+  assert.deepEqual(actionable[0].issues.map(x=>x.code),['conflicting_source_columns'],
+    'Only selected and meaningful diagnostics request administrator acknowledgment');
+}
+
 
 {
   const current=db();
