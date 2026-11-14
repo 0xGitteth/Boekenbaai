@@ -284,15 +284,13 @@ function metadataSourceSafe(row,field,acceptWarnings){
   if(!issues.length)
     return row.status==='ready'
       ||(row.status==='warning'&&acceptWarnings);
-  const relevant=issues.filter(issue=>{
-    const associated=COLUMN_WARNINGS[issue.code];
-    if(associated)return associated===field;
-    if(issue.code==='conflicting_source_columns'
-      &&METADATA_FIELDS.includes(issue.field)){
-      return issue.field===field || ['title','author'].includes(issue.field);
-    }
-    return true;
-  });
+  // Reuse the exact same domain-specific diagnostic policy that the
+  // source-warning panel uses. Otherwise a benign metadata lookup timeout or
+  // an unrelated invalid Excel column silently prevents valid updates.
+  const onlySelectedField={books:false,loans:false,locations:false,
+    fields:{[field]:true}};
+  const relevant=issues.filter(issue=>
+    issueAffectsSelection(issue,onlySelectedField,'metadata'));
   return !relevant.some(issue=>issue.severity==='conflict'
     ||(issue.severity==='warning'&&!acceptWarnings));
 }
