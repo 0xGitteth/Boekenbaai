@@ -152,6 +152,21 @@ assert.strictEqual(pendingFieldEdits.afterSelect.requiresRecheck, true,
   'Changing a stock decision may never unlock pending Excel corrections');
 assert.strictEqual(pendingFieldEdits.afterSelect.accepted, false);
 
+// Automatic keep decisions may describe multiple bad rows for one ISBN.
+// Each row must expose its own correction editor inside the collapsed audit.
+{
+  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const end=script.indexOf('addRow(item.title||',start);
+  assert.ok(start>=0&&end>start,'Missing automatic keep correction UI');
+  const correctionUi=script.slice(start,end);
+  assert.match(correctionUi,/\.filter\(row=>/);
+  assert.match(correctionUi,/for\(const source of affected\)/);
+  assert.match(correctionUi,/source\.sourceRowNumber\+' corrigeren'/);
+  assert.match(correctionUi,/editRow\(source,wrapper,\{onlyFields:/);
+  assert.doesNotMatch(correctionUi,/\.find\(row=>/,
+    'The first affected workbook row must not be the only editable one');
+}
+
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
 
 
