@@ -356,6 +356,31 @@ async function run(){
     assert.equal(addedInventory.importProvenance.fieldSources.title.sourceType,'existing');
     assert.equal(addedInventory.importProvenance.fieldSources.author.sourceType,'existing');
 
+    // Codex P2: two Excel spellings of a previously unknown ISBN must
+    // create a SINGLE catalog identity, or ISBN barcode scans split copies.
+    const newIsbn='9780061120084';
+    const twinStage=await start([
+      {Titel:'P.S. Ik hou van je',Auteur:'Cecelia Ahern',
+        'ISBN-nummer':newIsbn,Aantal:1},
+      {Titel:'PS Ik hou van je',Auteur:'Cecelia Ahern',
+        'ISBN-nummer':newIsbn,Aantal:1},
+    ],parts({books:true}));
+    assert.equal(twinStage.status,201,JSON.stringify(twinStage.data));
+    assert.equal(twinStage.data.decisions.summary.newCopies,2);
+    assert.equal(twinStage.data.decisions.summary.blockedStock,0);
+    const twinApplied=await apply(twinStage);
+    assert.equal(twinApplied.status,200,JSON.stringify(twinApplied.data));
+    const siblings=readDb().books.filter(book=>book.editionIsbn===newIsbn);
+    assert.equal(siblings.length,2);
+    assert.deepEqual([...new Set(siblings.map(book=>book.title))],
+      ['P.S. Ik hou van je'],
+      'All new copies of one ISBN must share the same canonical title');
+    assert.deepEqual([...new Set(siblings.map(book=>book.author))],
+      ['Cecelia Ahern']);
+    assert.ok(siblings.some(book=>
+      book.importProvenance.fieldSources.title.sourceDetail==='matched_workbook_isbn'),
+      'Canonicalized workbook spelling remains auditable');
+
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
