@@ -831,10 +831,18 @@
         count+entry.issues.filter(issue=>
           issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
           &&issue.sourceInvalid!==true).length,0);
+      // The planner evaluates each source code against the components
+      // actually selected. A corrected ISBN or failed optional lookup is
+      // informative, not a checkbox the administrator must acknowledge.
+      const activeIssueRows=Array.isArray(plan.actionableSourceIssues)
+        ?new Map(plan.actionableSourceIssues.map(entry=>
+          [entry.index,entry.issues||[]])):null;
       const actionableWarnings=sourceWarnings.map(entry=>({
-        row:entry.row,issues:entry.issues.filter(issue=>
-          !(issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
-          &&issue.sourceInvalid!==true)),
+        row:entry.row,issues:activeIssueRows
+          ?(activeIssueRows.get(entry.row.index)||[])
+          :entry.issues.filter(issue=>
+            !(issue.code==='metadata_differs_from_excel'
+              &&issue.severity==='warning'&&issue.sourceInvalid!==true)),
       })).filter(entry=>entry.issues.length);
       const warningCount=actionableWarnings.reduce((count,entry)=>
         count+entry.issues.length,0);
@@ -853,7 +861,7 @@
         invalid_or_unrecognized_isbn:'ISBN niet herkend',
         conflicting_source_columns:'Excelkolommen spreken elkaar tegen',
         duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
-        metadata_title_conflict:'Titel spreekt boekinformatie tegen',
+        metadata_title_conflict:'Twee onafhankelijke ISBN-bronnen bevestigen een andere titel',
         edition_identity_conflict:'Verschillende boeken hebben hetzelfde ISBN',
         metadata_isbn_differs:'ISBN komt niet overeen met de gevonden editie',
         own_book_context_conflict:'Eigen boek is ook als schoolboek vermeld',
