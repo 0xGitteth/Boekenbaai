@@ -253,6 +253,6 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
     script.indexOf('const importMode = make('));
   assert.match(beforeUpload,/metadata\.checked = false/,
     'Hundreds of external lookups must be an explicit opt-in');
-  assert.match(beforeUpload,/kan lang duren/,
+  assert.match(beforeUpload,/kan langer duren/,
     'Administrators should understand the latency before opting in');
 }
