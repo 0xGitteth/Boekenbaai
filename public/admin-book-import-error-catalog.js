@@ -15,6 +15,7 @@
     too_many_columns:'Het werkblad bevat te veel kolommen.',
     worksheet_range_too_large:'Het werkblad bevat een onrealistisch groot bereik.',
     file_too_large:'Het bestand is te groot.',
+    encoded_input_overhead:'Het gecodeerde Excelbestand overschrijdt de maximale uploadgrootte.',
     xlsx_unavailable:'De Excelverwerking is tijdelijk niet beschikbaar.',
     invalid_source_rows:'De bronregels kunnen niet worden verwerkt.',
     edition_grouping_failed:'De boekregels konden niet veilig op editie worden gegroepeerd.',
