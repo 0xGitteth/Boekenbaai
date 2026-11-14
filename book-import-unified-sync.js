@@ -6,6 +6,7 @@ const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
 const { excelLoanReceiptKey } = require('./book-import-loan-migration');
+const sourceConfidence=require('./book-import-source-confidence');
 
 const METADATA_FIELDS=Object.freeze([
   'title','author','description','publisher','publishedYear','pageCount',
@@ -267,7 +268,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     if(!groups.has(isbn))groups.set(isbn,[]);
     groups.get(isbn).push(row);
   }
-  const updates=[],issues=[],valid=new Set();
+  const updates=[],issues=[],automaticDecisions=[],valid=new Set();
   for(const [isbn,rows] of groups){
     const copies=editions.get(isbn);
     for(const field of METADATA_FIELDS.filter(field=>parts.fields[field])){
@@ -315,34 +316,80 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       if(!currentDifferent&&!conflict)continue;
       valid.add(id);
       if(selected.has(id))continue;
-      if(conflict){
+      const current=field==='author'?copies[0].author:copies[0][field];
+      const important=['title','author'].includes(field);
+      const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
+        issue.severity==='conflict'&&!COLUMN_WARNINGS[issue.code]
+        &&issue.code!=='metadata_differs_from_excel'));
+      // Distinct titles/authors under the same ISBN, or an unsafe edition
+      // identity, still need a human decision. Other ambiguous/invalid
+      // columns can simply leave the existing value unchanged.
+      if((variants.size>1&&important)||structural){
         issues.push({id,isbn,field,title:rows[0].book?.title,
-          reason:validSources?'conflicting_excel_values':'source_row_requires_review',
+          reason:variants.size>1?'conflicting_excel_values':'source_row_requires_review',
           worksheetRows:sourceRows.map(row=>row.sourceRowNumber),copies:copies.length});
-      }else{
-        updates.push({id,isbn,field,value:next,title:rows[0].book?.title,
-          bookIds:copies.map(copy=>copy.id),copies:copies.length,
-          // The final plan is recomputed from the current database. Include
-          // old values so a concurrent edit of this selected field makes the
-          // confirmed preview stale even when the target is unchanged.
-          beforeValues:copies.map(copy=>({
-            bookId:copy.id,
-            value:field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
-            ...(field==='coverUrl'?{
-              localCoverUrl:copy.localCoverUrl||'',
-              coverCrop:copy.coverCrop??null,
-            }:{}),
-            ...(field==='manualThemes'?{
-              importedThemes:copy.importedThemes||[],themes:copy.themes||[],
-            }:{}),
-          })),
-          worksheetRows:sourceRows.map(row=>row.sourceRowNumber)});
+        continue;
       }
+      const decision=sourceConfidence.decide({
+        isbn,field,excel:important?(field==='author'?next?.value:next):next,
+        current, evidence:rows.flatMap(row=>row.sourceEvidence||[]),
+      });
+      if(conflict || decision.action==='keep'){
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'medium',
+          reason:conflict
+            ?'Onvoldoende veilige gegevens; bestaande waarde blijft behouden'
+            :decision.reason,
+          before:current,after:current,excel:next,
+          sources:decision.agreeingSources,
+          sourceCount:decision.sourceCount,
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
+      let chosen=next;
+      if(decision.action==='source' && important){
+        chosen=field==='author'
+          ?{value:decision.value,authors:[decision.value]}
+          :decision.value;
+      }else if(decision.action==='source')chosen=decision.value;
+      const changed=copies.some(copy=>!equal(
+        field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
+        chosen));
+      automaticDecisions.push({
+        id,isbn,field,title:rows[0].book?.title,
+        action:changed?'apply':'keep',confidence:decision.confidence,
+        reason:decision.reason,before:current,after:chosen,excel:next,
+        sources:decision.agreeingSources,sourceCount:decision.sourceCount,
+        worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+      });
+      if(!changed)continue;
+      updates.push({id,isbn,field,value:chosen,title:rows[0].book?.title,
+        bookIds:copies.map(copy=>copy.id),copies:copies.length,
+        confidence:decision.confidence,chosenSource:decision.action,
+        reason:decision.reason,sources:decision.agreeingSources,
+        sourceCount:decision.sourceCount,
+        // Concurrent changes to a selected field invalidate confirmation.
+        beforeValues:copies.map(copy=>({
+          bookId:copy.id,
+          value:field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
+          ...(field==='coverUrl'?{
+            localCoverUrl:copy.localCoverUrl||'',coverCrop:copy.coverCrop??null,
+          }:{}),
+          ...(field==='manualThemes'?{
+            importedThemes:copy.importedThemes||[],themes:copy.themes||[],
+          }:{}),
+        })),
+        worksheetRows:sourceRows.map(row=>row.sourceRowNumber)});
     }
   }
   if(choices.some(c=>!valid.has(c.id)))return {ok:false,error:'stale_metadata_choice'};
-  return {ok:true,updates,issues,kept:choices.length,
+  return {ok:true,updates,issues,automaticDecisions,kept:choices.length,
     summary:{updates:updates.length,issues:issues.length,
+      autoHigh:automaticDecisions.filter(item=>item.confidence==='high').length,
+      autoMedium:automaticDecisions.filter(item=>item.confidence==='medium').length,
+      autoKept:automaticDecisions.filter(item=>item.action==='keep').length,
       affectedCopies:new Set(updates.flatMap(update=>update.bookIds)).size}};
 }
 function buildUnifiedBookImport(analysis,db,{
@@ -425,6 +472,9 @@ function buildUnifiedBookImport(analysis,db,{
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
     proposedLocations:assignments.differences.filter(d=>d.kind==='location'&&d.choice==='apply').length,
     metadataFields:metadata.summary.updates,
+    confidentMetadata:metadata.summary.autoHigh,
+    consideredMetadata:metadata.summary.autoMedium,
+    preservedMetadata:metadata.summary.autoKept,
     affectedMetadataCopies:metadata.summary.affectedCopies,
     pending:assignments.summary.pending+inventory.summary.blockedEditions+metadata.summary.issues,
     blockedStock:inventory.summary.blockedEditions,pendingAssignments:assignments.summary.pending,
