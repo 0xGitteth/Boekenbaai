@@ -222,10 +222,10 @@ function normalizedMetadataChoice(input){
   for(const item of input){
     if(!item||typeof item!=='object'||Array.isArray(item)
       ||typeof item.id!=='string'||!/^[0-9]{13}:(title|author|description|publisher|publishedYear|pageCount|language|coverUrl|easyReading|suitableForExamList|tags|manualThemes)$/.test(item.id)
-      ||item.action!=='keep'||seen.has(item.id))
+      ||!['keep','apply'].includes(item.action)||seen.has(item.id))
       return {ok:false,error:'invalid_metadata_choices'};
     seen.add(item.id);
-    values.push({id:item.id,action:'keep'});
+    values.push({id:item.id,action:item.action});
   }
   values.sort((a,b)=>a.id.localeCompare(b.id));
   return {ok:true,values};
@@ -252,7 +252,7 @@ function metadataSourceSafe(row,field,acceptWarnings){
     ||(issue.severity==='warning'&&!acceptWarnings));
 }
 function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
-  const selected=new Set(choices.map(c=>c.id));
+  const selected=new Map(choices.map(c=>[c.id,c.action]));
   const editions=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
@@ -315,7 +315,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       });
       if(!currentDifferent&&!conflict)continue;
       valid.add(id);
-      if(selected.has(id))continue;
+      if(selected.get(id)==='keep')continue;
       const current=field==='author'?copies[0].author:copies[0][field];
       const important=['title','author'].includes(field);
       const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
@@ -325,6 +325,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       // identity, still need a human decision. Other ambiguous/invalid
       // columns can simply leave the existing value unchanged.
       if((variants.size>1&&important)||structural){
+        if(selected.get(id)==='apply')return {ok:false,error:'unsafe_metadata_override'};
         issues.push({id,isbn,field,title:rows[0].book?.title,
           reason:variants.size>1?'conflicting_excel_values':'source_row_requires_review',
           worksheetRows:sourceRows.map(row=>row.sourceRowNumber),copies:copies.length});
@@ -334,7 +335,9 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         isbn,field,excel:important?(field==='author'?next?.value:next):next,
         current, evidence:rows.flatMap(row=>row.sourceEvidence||[]),
       });
-      if(conflict || decision.action==='keep'){
+      if(selected.get(id)==='apply'&&conflict)
+        return {ok:false,error:'unsafe_metadata_override'};
+      if(conflict || (decision.action==='keep'&&selected.get(id)!=='apply')){
         automaticDecisions.push({
           id,isbn,field,title:rows[0].book?.title,action:'keep',
           confidence:'medium',
@@ -349,26 +352,31 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         continue;
       }
       let chosen=next;
-      if(decision.action==='source' && important){
+      const manualExcel=selected.get(id)==='apply';
+      if(!manualExcel && decision.action==='source' && important){
         chosen=field==='author'
           ?{value:decision.value,authors:[decision.value]}
           :decision.value;
-      }else if(decision.action==='source')chosen=decision.value;
+      }else if(!manualExcel && decision.action==='source')chosen=decision.value;
       const changed=copies.some(copy=>!equal(
         field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
         chosen));
       automaticDecisions.push({
         id,isbn,field,title:rows[0].book?.title,
-        action:changed?'apply':'keep',confidence:decision.confidence,
-        reason:decision.reason,before:current,after:chosen,excel:next,
+        action:changed?'apply':'keep',
+        confidence:manualExcel?'manual':decision.confidence,
+        reason:manualExcel?'Excelwaarde expliciet gekozen door beheerder':decision.reason,
+        before:current,after:chosen,excel:next,
         sources:decision.agreeingSources,sourceCount:decision.sourceCount,
         worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
       });
       if(!changed)continue;
       updates.push({id,isbn,field,value:chosen,title:rows[0].book?.title,
         bookIds:copies.map(copy=>copy.id),copies:copies.length,
-        confidence:decision.confidence,chosenSource:decision.action,
-        reason:decision.reason,sources:decision.agreeingSources,
+        confidence:manualExcel?'manual':decision.confidence,
+        chosenSource:manualExcel?'excel':decision.action,
+        reason:manualExcel?'Excelwaarde expliciet gekozen door beheerder':decision.reason,
+        sources:decision.agreeingSources,
         sourceCount:decision.sourceCount,
         // Concurrent changes to a selected field invalidate confirmation.
         beforeValues:copies.map(copy=>({
