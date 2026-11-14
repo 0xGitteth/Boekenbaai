@@ -66,8 +66,8 @@ async function main() {
   const importUi = fs.readFileSync(path.join(__dirname, '../public/admin-book-import-review.js'), 'utf8');
   assert.match(app, /state\.coverImage\.onerror = \(\) =>/);
   assert.match(app, /coverImage\.onerror = \(\) =>/);
-  assert.match(importUi, /metadata\.type = 'checkbox';\s*metadata\.checked = true;/,
-    'Metadata enrichment must be enabled by default for a full import preview');
+  assert.match(importUi, /metadata\.type = 'checkbox';[\s\S]{0,300}metadata\.checked = false;/,
+    'External metadata searches must be opt-in for large full-library imports');
   console.log('Book import concurrency and cover fallback checks passed');
 }
 
