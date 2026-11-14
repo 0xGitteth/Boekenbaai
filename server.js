@@ -5796,8 +5796,10 @@ async function handleApi(req, res, requestUrl) {
                   }
                   book.importProvenance=book.importProvenance||{fieldSources:{}};
                   book.importProvenance.fieldSources=book.importProvenance.fieldSources||{};
-                  book.importProvenance.fieldSources[update.field]=createFieldSource('excel',
-                    'unified_import');
+                  book.importProvenance.fieldSources[update.field]=createFieldSource(
+                    update.chosenSource==='source'?'metadata':'excel',
+                    update.chosenSource==='source'
+                      ?'verified_isbn_source_consensus':'unified_import');
                   metadataUpdated++;
                 }
               }
@@ -5826,6 +5828,15 @@ async function handleApi(req, res, requestUrl) {
               report.correctedLocations=corrected.locations;
               report.metadataUpdates=metadataUpdated;
               report.metadataFields=combined.metadata.summary.updates;
+              report.automaticSourceDecisions=combined.metadata.automaticDecisions
+                .map(item=>({
+                  isbn:item.isbn,field:item.field,action:item.action,
+                  confidence:item.confidence,reason:item.reason,
+                  before:item.before??null,after:item.after??null,
+                  excel:item.excel??null,
+                  sources:item.sources||[],sourceCount:item.sourceCount||0,
+                  worksheetRows:item.worksheetRows||[],
+                }));
               report.selectedParts=combined.parts;
               report.deferredDifferences=deferredDifferences;
               report.fullyReviewed=deferredDifferences.length===0;
