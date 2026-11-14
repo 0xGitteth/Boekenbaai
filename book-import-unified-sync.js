@@ -81,6 +81,11 @@ function scopedRow(row,parts,domain){
   const issues=(row.issues||[]).filter(issue=>issueAffectsSelection(issue,parts,domain));
   const status=row.status==='skipped'||row.context?.excludeFromSchoolCollection
     ?'skipped'
+    // A pre-reviewed/custom row may supply a status without individual
+    // diagnostic objects. With no evidence of what caused that status,
+    // preserve it rather than silently upgrading a warning to "ready".
+    :!(row.issues||[]).length
+      &&['warning','conflict','unresolved'].includes(row.status)?row.status
     :issues.some(issue=>issue.severity==='conflict')?'conflict'
     :(!row.book?.title||!row.book?.author||!row.book?.editionIsbn)?'unresolved'
     :issues.some(issue=>issue.severity==='warning')?'warning':'ready';
