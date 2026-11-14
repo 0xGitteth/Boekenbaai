@@ -313,9 +313,12 @@
     const metadataLabel = make('label', 'bb-review__check');
     const metadata = make('input');
     metadata.type = 'checkbox';
-    metadata.checked = true;
+    // Full-library reuploads should not block for hundreds of network
+    // requests unless the administrator deliberately opts into that work.
+    // The separate post-import free metadata worker can fill gaps later.
+    metadata.checked = false;
     metadataLabel.append(metadata, document.createTextNode(
-      ' Ontbrekende boekgegevens opzoeken tijdens de controle (optioneel).'));
+      ' Tijdens de controle extra boekgegevens opzoeken (optioneel, kan lang duren).'));
     const importMode = make('select');
     for (const [value,label] of [
       ['unified','Samen synchroniseren (aanbevolen)'],
@@ -462,6 +465,8 @@
     let page = 0;
     let automaticPage = 0;
     let automaticExpanded = false;
+    let unifiedLimits={assignments:15,metadata:15,stock:15};
+    const unifiedOpenGroups=new Set();
     let busy = false;
     let openEditor = null;
     let warningsAccepted = false;
@@ -800,35 +805,50 @@
         row,issues:(row.issues||[]).filter(issue=>
           issue.severity==='warning'||issue.severity==='conflict'),
       })).filter(entry=>entry.issues.length);
-      if(sourceWarnings.length){
-        const warningCount=sourceWarnings.reduce((total,entry)=>
-          total+entry.issues.length,0);
-        const notice=make('section','bb-import__source-warnings');
-        notice.append(make('h4','','Bronwaarschuwingen uit Excel ('+warningCount+')'));
+      // Book databases frequently spell author names and titles differently
+      // from an explicit Excel value. That comparison is informative, not a
+      // reason to stop every stock, loan and metadata change in that row.
+      const advisoryCount=sourceWarnings.reduce((count,entry)=>
+        count+entry.issues.filter(issue=>
+          issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
+          &&issue.sourceInvalid!==true).length,0);
+      const actionableWarnings=sourceWarnings.map(entry=>({
+        row:entry.row,issues:entry.issues.filter(issue=>
+          !(issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
+          &&issue.sourceInvalid!==true)),
+      })).filter(entry=>entry.issues.length);
+      const warningCount=actionableWarnings.reduce((count,entry)=>
+        count+entry.issues.length,0);
+      const issueLabels={
+        invalid_published_year:'Ongeldig uitgavejaar',
+        invalid_page_count:'Ongeldig aantal pagina’s',
+        isbn_repaired:'ISBN automatisch hersteld',
+        isbn_repair_suggested:'ISBN moet worden gecontroleerd',
+        missing_title:'Titel ontbreekt',
+        missing_author:'Auteur ontbreekt',
+        missing_title_after_metadata:'Titel ontbreekt na aanvullen',
+        missing_author_after_metadata:'Auteur ontbreekt na aanvullen',
+        invalid_quantity:'Ongeldig aantal exemplaren',
+        language_hint_conflict:'Taal wijkt af van het examenmateriaal',
+        nonstandard_easy_reading_value:'Afwijkende invoer voor Makkelijk lezen',
+        invalid_or_unrecognized_isbn:'ISBN niet herkend',
+        conflicting_source_columns:'Excelkolommen spreken elkaar tegen',
+        duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
+        metadata_title_conflict:'Titel spreekt boekinformatie tegen',
+        edition_identity_conflict:'Verschillende boeken hebben hetzelfde ISBN',
+        metadata_isbn_differs:'ISBN komt niet overeen met de gevonden editie',
+        own_book_context_conflict:'Eigen boek is ook als schoolboek vermeld',
+      };
+      if(warningCount){
+        const notice=make('details','bb-import__source-warnings');
+        notice.open=actionableWarnings.length<=5;
+        notice.append(make('summary','',
+          'Brongegevens die aandacht vragen ('+warningCount+')'));
         notice.append(make('p','hint',
-          'Controleer de meldingen per Excelrij voordat je de waarschuwingen '
-          +'accepteert. Bij ongeldige gegevens kun je de bron corrigeren '
-          +'of de betreffende rij overslaan.'));
+          'Dit zijn bronwaarschuwingen. Bekijk vooral de echte conflicten '
+          +'in de groepen onder Handmatig controleren.'));
         const warningList=make('div','bb-import__warnings-scroll');
-        const issueLabels={
-          invalid_published_year:'Ongeldig uitgavejaar',
-          invalid_page_count:'Ongeldig aantal pagina’s',
-          isbn_repaired:'ISBN automatisch hersteld',
-          isbn_repair_suggested:'ISBN moet worden gecontroleerd',
-          missing_title:'Titel ontbreekt',
-          missing_author:'Auteur ontbreekt',
-          missing_title_after_metadata:'Titel ontbreekt na aanvullen',
-          missing_author_after_metadata:'Auteur ontbreekt na aanvullen',
-          invalid_quantity:'Ongeldig aantal exemplaren',
-          language_hint_conflict:'Taal wijkt af van de aanwijzing bij examenmateriaal',
-          nonstandard_easy_reading_value:'Afwijkende invoer voor Makkelijk lezen',
-          invalid_or_unrecognized_isbn:'ISBN niet herkend',
-          dangerous_headers_ignored:'Ongeldige kolomkoppen genegeerd',
-          conflicting_source_columns:'Meerdere Excelkolommen spreken elkaar tegen',
-          duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
-          metadata_title_conflict:'Boektitel verschilt van gevonden boekgegevens',
-        };
-        for(const entry of sourceWarnings){
+        for(const entry of actionableWarnings){
           const row=entry.row;
           const group=make('div','bb-import__warning-row');
           group.append(make('strong','',
@@ -851,11 +871,35 @@
               (detailParts.length?' · '+detailParts.join(' · '):''));
             items.append(item);
           }
-          group.append(items);
-          warningList.append(group);
+          group.append(items);warningList.append(group);
         }
-        notice.append(warningList);
-        results.append(notice);
+        notice.append(warningList);results.append(notice);
+      }
+      if(advisoryCount){
+        const info=make('details','bb-import__source-advisories');
+        info.append(make('summary','',
+          'Online boekinformatie wijkt af ('+advisoryCount+' informatieve vergelijkingen)'));
+        const byField=new Map();
+        for(const entry of sourceWarnings){
+          for(const issue of entry.issues){
+            if(issue.code!=='metadata_differs_from_excel'
+              ||issue.severity!=='warning'||issue.sourceInvalid===true)continue;
+            const key=issue.field||'overig';
+            byField.set(key,(byField.get(key)||0)+1);
+          }
+        }
+        const labels={title:'titels',author:'auteurs',description:'beschrijvingen',
+          publishedYear:'verschijningsjaren',pageCount:'pagina-aantallen',
+          coverUrl:'omslagen',publisher:'uitgevers',language:'talen',
+          tags:'trefwoorden',manualThemes:'thema’s'};
+        info.append(make('p','hint',
+          'Deze meldingen komen van online boekdatabanken. Ze maken '
+          +'de ingevulde Excelgegevens niet automatisch ongeldig en vragen '
+          +'geen afzonderlijke bevestiging.'));
+        info.append(make('p','bb-import__advisory-stats',
+          [...byField].map(([field,count])=>
+            count+' '+(labels[field]||field)).join(' · ')));
+        results.append(info);
       }
 
       const controls=make('div','bb-review__controls bb-import__review-controls');
@@ -865,7 +909,9 @@
       accept.addEventListener('change',()=>{warningsAccepted=accept.checked;render();});
       acceptLabel.append(accept,document.createTextNode(
         ' Ik heb de eventuele bronwaarschuwingen gecontroleerd.'));
-      controls.append(acceptLabel);
+      // No warning consent is needed for differences against external
+      // metadata alone. Do not demand a checkbox that has nothing to approve.
+      if(warningCount)controls.append(acceptLabel);
       const reviewButton=button('Controle opnieuw berekenen','btn btn--secondary');
       reviewButton.disabled=Boolean(remotePending||busy);
       const reviewChoices=async (assignmentValues,metadataValues)=>{
@@ -943,7 +989,9 @@
       const problems=make('section','bb-import__exceptions');
       problems.append(make('h4','','Handmatig controleren ('+
         (exceptions.length+metadataPlan.issues.length+blocked.length)+')'));
-      const issueList=make('div','bb-import__exceptions-list');
+      const assignmentCards=make('div','bb-import__exceptions-list');
+      const metadataCards=make('div','bb-import__exceptions-list');
+      const stockCards=make('div','bb-import__exceptions-list');
       const reasonNames={
         ambiguous_physical_copy:'Geen veilig beschikbaar exemplaar vast te stellen.',
         conflicting_excel_borrowers:'Excel noemt zowel een leerling als een klas.',
@@ -994,7 +1042,7 @@
           else assignmentResolutions.set(diff.id,{id:diff.id,action:input.value});
           render();
         });
-        card.append(input);issueList.append(card);
+        card.append(input);assignmentCards.append(card);
       }
       for(const issue of metadataPlan.issues){
         const card=make('article','bb-import__exception');
@@ -1042,7 +1090,7 @@
         }
         if(!affected.length)card.append(make('p','hint',
           'De bronrij is niet beschikbaar voor correctie. Controleer de Excel.'));
-        issueList.append(card);
+        metadataCards.append(card);
       }
       for(const item of blocked){
         const source=(stage.rows||[]).find(row=>row.index===item.index);
@@ -1065,11 +1113,45 @@
         });
         card.append(edit,skip);
         if(openEditor===item.index&&source)editRow(source,card);
-        issueList.append(card);
+        stockCards.append(card);
       }
-      if(!issueList.children.length)issueList.append(make('p','hint',
-        'Geen afzonderlijke keuzes nodig. De voorgestelde wijzigingen kunnen gezamenlijk worden bevestigd.'));
-      problems.append(issueList);
+      const groups=[
+        ['assignments','Uitleningen en vaste locaties',assignmentCards],
+        ['metadata','Boekgegevens',metadataCards],
+        ['stock','Boekenvoorraad',stockCards],
+      ];
+      const totalCards=groups.reduce((count,[, ,cards])=>count+cards.children.length,0);
+      if(!totalCards){
+        problems.append(make('p','hint',
+          'Geen handmatige controles nodig voor deze import.'));
+      }
+      for(const [kind,label,cards] of groups){
+        const count=cards.children.length;
+        if(!count)continue;
+        const group=make('details','bb-import__exception-group');
+        group.open=unifiedOpenGroups.has(kind)||count<=5;
+        group.addEventListener('toggle',()=>{
+          if(!group.isConnected)return;
+          if(group.open)unifiedOpenGroups.add(kind);
+          else unifiedOpenGroups.delete(kind);
+        });
+        group.append(make('summary','',label+' ('+count+')'));
+        const limit=unifiedLimits[kind];
+        while(cards.children.length>limit)cards.lastElementChild.remove();
+        group.append(cards);
+        if(count>limit){
+          const more=button('Volgende '+Math.min(15,count-limit)
+            +' controlepunten tonen','btn btn--secondary');
+          more.addEventListener('click',()=>{
+            unifiedLimits[kind]+=15;
+            unifiedOpenGroups.add(kind);
+            render();
+          });
+          group.append(more,make('p','hint',
+            'Getoond: '+limit+' van '+count+'. Je keuzes blijven bewaard.'));
+        }
+        problems.append(group);
+      }
       results.append(problems);
 
       const suggested=make('details','bb-import__proposals');
