@@ -36,7 +36,11 @@ function independentVotes(isbn,field,entries) {
       ||canonicalizeBookIsbn13(entry.editionIsbn)!==target)continue;
     const value=display(entry[field]);
     if(!value)continue;
-    byProvider.set(provider,{source:provider,value});
+    byProvider.set(provider,{
+      source:provider,value,
+      authors:Array.isArray(entry.authors)
+        ?entry.authors.map(display).filter(Boolean):[],
+    });
   }
   return [...byProvider.values()].sort((a,b)=>a.source.localeCompare(b.source));
 }
@@ -53,6 +57,7 @@ function sourceConsensus(isbn,field,entries) {
   const winners=ranked[0]||[];
   const runnerUp=ranked[1]?.length||0;
   return {votes,value:winners[0]?.value||'',
+    authors:winners[0]?.authors||[],
     agreeing:winners.length,conflicting:winners.length<=runnerUp,
     sources:winners.map(vote=>vote.source)};
 }
@@ -68,13 +73,13 @@ function decide({isbn,field,excel,current,evidence=[]}){
   if(consensus.value && consensus.agreeing>=2 && !consensus.conflicting
     && equivalentSpelling(incoming,consensus.value)){
     return {...base,confidence:'high',action:'source',
-      value:consensus.value,
+      value:consensus.value,authors:consensus.authors,
       reason:consensus.agreeing+' onafhankelijke ISBN-bronnen bevestigen dezelfde schrijfwijze'};
   }
   if(consensus.value && consensus.agreeing===1 &&!consensus.conflicting
     &&equivalentSpelling(incoming,consensus.value)
     &&(!old||equivalentSpelling(old,incoming))){
-    return {...base,action:'source',value:consensus.value,
+    return {...base,action:'source',value:consensus.value,authors:consensus.authors,
       reason:'Eén ISBN-bron bevestigt een equivalente schrijfwijze'};
   }
   if(['title','author'].includes(field) && old
