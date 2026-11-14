@@ -1288,7 +1288,7 @@
               editRow(source,wrapper,{onlyFields:[
                 item.field==='manualThemes'?'themes':
                   item.field==='suitableForExamList'?'examMaterial':item.field,
-              ]});
+              ],metadataIssueId:item.id});
             }
           }
         }
