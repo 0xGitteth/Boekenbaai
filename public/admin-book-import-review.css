@@ -191,3 +191,37 @@
 .bb-import__warning-row strong { font-size: .9rem; }
 .bb-import__warning-items { margin: .4rem 0 0; padding-left: 1.3rem; }
 .bb-import__warning-items li { font-size: .86rem; line-height: 1.45; padding: .16rem 0; }
+
+/* The review screen stays compact even for a large school catalogue.
+   Advisory comparisons and actionable exceptions remain independently
+   inspectable, not 400+ full-height forms on the initial page. */
+.bb-import__source-warnings > summary,
+.bb-import__source-advisories > summary,
+.bb-import__exception-group > summary {
+  font-weight: 700;
+  cursor: pointer;
+  padding: .15rem 0;
+}
+.bb-import__source-warnings, .bb-import__source-advisories,
+.bb-import__exception-group {
+  display: block;
+  border: 1px solid var(--accent-border);
+  border-radius: 11px;
+  padding: .85rem 1rem;
+  background: var(--surface);
+}
+.bb-import__source-advisories {
+  background: var(--accent-softer);
+}
+.bb-import__source-warnings[open],
+.bb-import__source-advisories[open],
+.bb-import__exception-group[open] {
+  display: grid;
+  gap: .65rem;
+}
+.bb-import__source-advisories > .hint,
+.bb-import__source-warnings > .hint,
+.bb-import__advisory-stats { margin: 0; }
+.bb-import__advisory-stats { font-size: .87rem; }
+.bb-import__exception-group > .btn { margin-top: .1rem; justify-self: start; }
+.bb-import__exception-group .bb-import__exceptions-list { margin-top: .4rem; }
