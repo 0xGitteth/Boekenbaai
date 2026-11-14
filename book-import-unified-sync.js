@@ -334,14 +334,18 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
           worksheetRows:sourceRows.map(row=>row.sourceRowNumber),copies:copies.length});
         continue;
       }
+      const correctedByAdmin=sourceRows.some(row=>
+        row.provenance?.[field]?.source==='manual'
+        &&row.provenance[field].detail==='review_correction');
+      const manualExcel=correctedByAdmin
+        ||['apply','excel'].includes(selected.get(id));
       const decision=sourceConfidence.decide({
         isbn,field,excel:important?(field==='author'?next?.value:next):next,
         current, evidence:rows.flatMap(row=>row.sourceEvidence||[]),
       });
       if(['apply','excel'].includes(selected.get(id))&&conflict)
         return {ok:false,error:'unsafe_metadata_override'};
-      if(conflict || (decision.action==='keep'
-        &&!['apply','excel'].includes(selected.get(id)))){
+      if(conflict || (decision.action==='keep'&&!manualExcel)){
         automaticDecisions.push({
           id,isbn,field,title:rows[0].book?.title,action:'keep',
           confidence:'medium',
@@ -356,7 +360,6 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         continue;
       }
       let chosen=next;
-      const manualExcel=['apply','excel'].includes(selected.get(id));
       if(!manualExcel && decision.action==='source' && important){
         chosen=field==='author'
           ?{value:decision.value,authors:[decision.value]}
