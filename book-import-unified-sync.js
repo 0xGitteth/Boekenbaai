@@ -328,8 +328,12 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       if(rows.some(row=>(sourceIssuesByIndex.get(row.index)||[]).some(issue=>
         issue.code==='conflicting_source_columns'&&issue.field===field)))continue;
       const sourceRows=rows.filter(row=>{
-        if(field==='suitableForExamList' &&(row.issues||[]).some(issue=>
-          issue.code==='unexpected_exam_material_value'))return false;
+        // scopedRow removes nonblocking notifications. An invalid
+        // Examenmateriaal value must still never be imported as parser
+        // fallback false over an existing true setting.
+        if(field==='suitableForExamList'
+          &&(sourceIssuesByIndex.get(row.index)||[]).some(issue=>
+            issue.code==='unexpected_exam_material_value'))return false;
         const source=row.provenance?.[field];
         // A value explicitly corrected in the import review is authoritative
         // for a selected column. Automatic enrichment is not.
@@ -612,6 +616,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         id,isbn,field,value:chosen,
         title:rows[0].book?.title,bookIds:targets.map(book=>book.id),
         copies:targets.length,confidence:'medium',chosenSource:'source',
+        enrichmentOnly:true,
         reason:'Ontbrekende boekinformatie aangevuld uit een passende ISBN-bron',
         sources,sourceCount:sources.length,
         beforeValues:targets.map(book=>({
@@ -769,6 +774,20 @@ function buildUnifiedBookImport(analysis,db,{
       &&assignments.summary.pending===0&&metadata.summary.issues===0&&total>0,
   }};
 }
+// Selected Excel metadata may intentionally replace existing values.
+// Automatic source-only enrichment must never replace an explicit value
+// on a *new* physical copy that was not part of the enrichment's blank targets.
+function shouldApplyMetadataToCreatedCopy(update,book){
+  if(!update||!book||book.editionIsbn!==update.isbn)return false;
+  if(update.enrichmentOnly!==true)return true;
+  if(book.importProvenance?.fieldSources?.[update.field]?.sourceType==='manual')
+    return false;
+  const value=book[update.field];
+  return value===null||value===undefined||value===''
+    ||(Array.isArray(value)&&value.length===0)
+    ||(['pageCount','publishedYear'].includes(update.field)
+      &&(!Number.isFinite(Number(value))||Number(value)<=0));
+}
 function actualAssignmentPreview(preview,createdByRow){
   const ids=new Map();
   for(const [index,copies] of createdByRow)
@@ -780,5 +799,5 @@ function actualAssignmentPreview(preview,createdByRow){
 module.exports={
   DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
-  buildUnifiedBookImport,actualAssignmentPreview,
+  shouldApplyMetadataToCreatedCopy,buildUnifiedBookImport,actualAssignmentPreview,
 };
