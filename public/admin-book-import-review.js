@@ -317,12 +317,11 @@
     const metadataLabel = make('label', 'bb-review__check');
     const metadata = make('input');
     metadata.type = 'checkbox';
-    // Full-library reuploads should not block for hundreds of network
-    // requests unless the administrator deliberately opts into that work.
-    // The separate post-import free metadata worker can fill gaps later.
-    metadata.checked = false;
+    // Prefer factual ISBN enrichment. It remains optional and no paid Brave
+    // searches are started without separate explicit approval.
+    metadata.checked = true;
     metadataLabel.append(metadata, document.createTextNode(
-      ' ISBN-bronnen vergelijken en ontbrekende boekgegevens opzoeken (optioneel, kan langer duren).'));
+      ' ISBN-bronnen vergelijken en lege boekgegevens aanvullen (aanbevolen, kan langer duren).'));
     const importMode = make('select');
     for (const [value,label] of [
       ['unified','Samen synchroniseren (aanbevolen)'],
@@ -390,8 +389,9 @@
     metadataDetails.append(make('summary','',
       'Boekgegevens per Excelkolom bijwerken (optioneel)'));
     metadataDetails.append(make('p','hint',
-      'Bestaande boekgegevens veranderen uitsluitend voor aangevinkte kolommen '
-      + 'met een ingevulde Excelwaarde. Omslagen en andere gegevens blijven anders staan.'));
+      'Bestaande ingevulde gegevens wijzigen alleen bij aangevinkte Excelkolommen. '
+      + 'Als ISBN-verrijking aanstaat, worden lege velden waar mogelijk '
+      + 'automatisch uit passende online bronnen aangevuld.'));
     const columnGrid=make('div','bb-import__column-grid');
     for(const [key,label] of columns)columnGrid.append(checkPart(key,label));
     metadataDetails.append(columnGrid);
@@ -400,7 +400,8 @@
     const updateSelected=()=>{
       const n=[...partChecks.values()].filter(input=>input.checked).length;
       selectedText.textContent=n+' onderdelen geselecteerd · '
-        +'Niet-geselecteerde en lege Excelvelden veranderen niets.';
+        +'Niet-geselecteerde Excelkolommen overschrijven niets. '
+        +'Lege boekvelden kunnen via ISBN worden aangevuld.';
     };
     for(const checkbox of partChecks.values())checkbox.addEventListener('change',updateSelected);
     allButton.addEventListener('click',()=>{
@@ -818,7 +819,8 @@
         chosenLabels.join(' · '));
       selection.append(selectedList,make('p','hint',
         'ISBN wordt alleen gebruikt om boeken te herkennen. '
-        +'Alle niet-geselecteerde kolommen en lege Excelvelden blijven ongemoeid.'));
+        +'Niet-geselecteerde Excelkolommen overschrijven geen bestaande gegevens. '
+        +'Lege velden kunnen via ISBN-bronnen worden aangevuld.'));
       results.append(selection);
 
       // Show the actual diagnostic messages before requesting the general
