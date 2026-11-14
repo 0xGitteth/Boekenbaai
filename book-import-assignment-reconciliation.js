@@ -8,6 +8,7 @@
 const crypto = require('node:crypto');
 const { canonicalizeBookIsbn13,normalizeBookIdentityComparable } = require('./book-edition-core');
 const { comparison: spellingKey } = require('./book-import-source-confidence');
+const {sameBookIdentity}=require('./book-import-autonomy');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { matchEntityByName, matchStudentWithClass } =
   require('./book-import-analysis-context');
@@ -125,7 +126,7 @@ function findCopy(row, db, byBarcode, byIsbn, usedCopies = new Set(), preferredC
   }
   const validEdition=candidates.filter(copy=>edition(copy)===isbn);
   if(!validEdition.length)return {error:'edition_identity_mismatch'};
-  const matching=validEdition.filter(copy=>bookKey(copy).join('|')===bookKey(book).join('|'));
+  const matching=validEdition.filter(copy=>sameBookIdentity(copy,book));
   if(!matching.length)return {error:'title_author_mismatch'};
   const unassigned=matching.filter(copy=>!usedCopies.has(copy.id));
   if(!unassigned.length) return {error:physicalBarcode
