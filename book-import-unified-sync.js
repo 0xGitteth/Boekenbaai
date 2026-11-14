@@ -193,8 +193,11 @@ function nonempty(value){return value!==null&&value!==undefined
   &&(typeof value!=='string'||value.trim()!=='')
   &&(!Array.isArray(value)||value.length>0);}
 function metadataKey(field,row){
-  if(field==='tags' && row.provenance?.tags?.source==='excel'
-    &&row.provenance.tags.includesDerivedValues){
+  if(field==='tags' && Array.isArray(row.provenance?.tags?.explicitValues)
+    &&((row.provenance.tags.source==='excel'
+      &&row.provenance.tags.includesDerivedValues)
+      ||(row.provenance.tags.source==='manual'
+        &&row.provenance.tags.detail==='review_correction'))){
     // A separate "Examenmateriaal: Strip" cell can add a derived tag.
     // Only Tags column entries may update stored tags.
     return row.provenance.tags.explicitValues||[];
@@ -257,7 +260,8 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         const reviewed=source?.source==='manual'
           &&source.detail==='review_correction';
         return (fromExcel||reviewed)
-          &&(reviewed?nonempty(row.book?.[field])
+          &&(reviewed?(field==='tags'
+              ?nonempty(source.explicitValues):nonempty(row.book?.[field]))
             :composedTags?nonempty(source.explicitValues)
             :nonempty(source.raw??(field==='author'
               ?(source.headers||[]).length?'combined-author':'':null)));
