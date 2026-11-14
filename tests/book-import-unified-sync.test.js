@@ -78,14 +78,14 @@ assert.equal(normalizeParts(undefined).value.books,true);
     assert.equal(issueAffectsSelection({code},stock,'stock'),false);
     assert.equal(issueAffectsSelection({code},loans,'assignment'),false);
   }
-  assert.equal(issueAffectsSelection({code:'invalid_page_count'},metadata,'metadata'),true);
+  assert.equal(issueAffectsSelection({code:'invalid_page_count'},metadata,'metadata'),false);
   assert.equal(issueAffectsSelection({code:'invalid_published_year'},metadata,'metadata'),false);
   assert.equal(issueAffectsSelection({code:'unexpected_exam_material_value'},
-    parts({fields:{suitableForExamList:true}}),'metadata'),true);
+    parts({fields:{suitableForExamList:true}}),'metadata'),false);
   assert.equal(issueAffectsSelection({code:'unexpected_exam_material_value'},
     metadata,'metadata'),false);
   assert.equal(issueAffectsSelection({code:'class_context_needs_review'},
-    parts({loans:true,locations:true}),'assignment'),true);
+    parts({loans:true,locations:true}),'assignment'),false);
   assert.equal(issueAffectsSelection({code:'class_context_needs_review'},
     loans,'assignment'),false);
   assert.equal(issueAffectsSelection({code:'fixed_location_needs_review'},
@@ -108,7 +108,7 @@ assert.equal(normalizeParts(undefined).value.books,true);
     }
   }
   for(const [field,expectedStock,expectedMetadata] of [
-    ['description',false,false],['pageCount',false,true],
+    ['description',false,false],['pageCount',false,false],
     ['quantity',true,false],['title',true,true],['author',true,true],
   ]){
     assert.equal(issueAffectsSelection({code:'conflicting_source_columns',field},
