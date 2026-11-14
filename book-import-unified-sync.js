@@ -76,8 +76,7 @@ function inventoryNotSelected(analysis){
 function assignmentSource(analysis,parts,db){
   const oldByIsbn=new Map();
   for(const book of db.books||[]){
-    const isbn=canonicalizeBookIsbn13(book.editionIsbn)
-      ||canonicalizeBookIsbn13(book.metadataIsbn);
+    const isbn=existingEdition(book);
     if(isbn&&!oldByIsbn.has(isbn))oldByIsbn.set(isbn,book);
   }
   return {...analysis,rows:analysis.rows.map(row=>{
@@ -143,8 +142,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   const selected=new Set(choices.map(c=>c.id));
   const editions=new Map();
   for(const book of db.books||[]){
-    const isbn=canonicalizeBookIsbn13(book.editionIsbn)
-      ||canonicalizeBookIsbn13(book.metadataIsbn);
+    const isbn=existingEdition(book);
     if(!isbn)continue;
     if(!editions.has(isbn))editions.set(isbn,[]);
     editions.get(isbn).push(book);
@@ -275,8 +273,7 @@ function buildUnifiedBookImport(analysis,db,{
     // somebody else. Check EVERY copy of the edition before recreating an
     // old worksheet loan on another free copy.
     return (db.books||[]).some(book=>
-      (canonicalizeBookIsbn13(book.editionIsbn)
-        ||canonicalizeBookIsbn13(book.metadataIsbn))===diff.editionIsbn
+      existingEdition(book)===diff.editionIsbn
       &&receipts.has(excelLoanReceiptKey(book.id,borrower)));
   });
   if(previouslyImported.length){
