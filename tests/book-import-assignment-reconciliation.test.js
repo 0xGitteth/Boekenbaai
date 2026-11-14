@@ -55,6 +55,16 @@ assert.equal(preview(db,[row(0,'4711001')],[{id:'0:loan',action:'keep'}])
 assert.equal(db.books[0].borrowedBy,'lisa');
 
 db=directory();
+const spellingOnly=preview(db,[row(0,'4711002',
+  loanTo('tim','Tim Leerling'),{
+    title:'Oorlogs-winter',author:'Jan Térlouw',
+  })]);
+assert.equal(spellingOnly.ok,true);
+assert.equal(spellingOnly.summary.pending,0,
+  'An exact physical barcode and ISBN must accept safe orthographic author/title variants');
+assert.equal(spellingOnly.differences[0]?.kind,'loan');
+
+db=directory();
 const correction=preview(db,[row(0,'4711001',loanTo('tim','Tim Leerling'))]);
 assert.equal(correction.summary.differences,1);
 assert.equal(correction.differences[0].before.id,'lisa');
