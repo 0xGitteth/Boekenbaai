@@ -136,6 +136,18 @@ assert.equal(implicitClass.summary.readyToApply,false);
 assert.equal(preview(directory(),[row(0,'4711002',{classContext:['Klas A']})],
   [{id:'0:class_context',action:'apply'}]).error,'unsafe_assignment_choice');
 
+const separateClassesDb=directory();
+separateClassesDb.classes=[
+  {id:'c12',name:'Klas 1-2'},{id:'cother',name:'Klas 12'},
+];
+separateClassesDb.books[1].fixedLocation='Klas 1-2';
+const differentClass=preview(separateClassesDb,[
+  row(0,'4711002',{classContext:['Klas 12']}),
+]);
+assert.equal(differentClass.differences[0]?.kind,'class_context',
+  'Punctuation/spacing must not merge two distinct registered class identities');
+assert.equal(differentClass.differences[0]?.classId,'cother');
+
 const classFixedDb=directory();
 const fixedSource=row(0,'4711001',{classContext:['Klas A']});
 // A vague class column must NOT return a copy currently lent to a pupil.
