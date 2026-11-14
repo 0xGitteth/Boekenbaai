@@ -902,6 +902,14 @@ function mergeExactMetadata({ cb, google, openLibrary, isbnBarcode } = {}, targe
           ? 'Open Library'
           : 'isbnbarcode.org',
     sources: available.map((entry) => entry.source),
+    // Preserve *separate*, exact-ISBN provider replies for confidence
+    // decisions. Their merged best-field output alone is not evidence of
+    // agreement between independent registries.
+    sourceCandidates: available.map(entry=>({
+      source:entry.source,barcode:entry.barcode,
+      title:entry.title||'',author:entry.author||'',
+      authors:entry.authors||[],publisher:entry.publisher||'',
+    })),
     sourceUrl: cb?.sourceUrl || '',
     matchLevel: 'exact_isbn',
     found: true,
