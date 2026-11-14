@@ -41,8 +41,30 @@ function nearlySameBookText(left,right){
   const max=shortest>=19?2:1;
   return limitedEdits(a,b,max)<=max;
 }
+function sameBookTitle(left,right){
+  if(nearlySameBookText(left,right))return true;
+  // Publishers often omit a series prefix or parenthetical subtitle.
+  // The shared substantive title segment must be long and specific.
+  const a=String(left??''),b=String(right??'');
+  if(!a.trim()||!b.trim())return false;
+  const digits=s=>(normalized(s).match(/\d+/g)||[]).join('|');
+  if(digits(a)!==digits(b))return false;
+  const parts=s=>s.split(/\s+[-–—]\s+|[:()]/u).map(v=>v.trim())
+    .filter(v=>normalized(v).length>=12);
+  const aParts=parts(a),bParts=parts(b);
+  if(aParts.length<1||bParts.length<1)return false;
+  const shorter=a.length<=b.length?a:b;
+  const longer=a.length>b.length?a:b;
+  // A whole title can occur as the first or last part of an expanded
+  // bibliographic title. Two expanded titles may share a long last part.
+  const full=normalized(shorter);
+  const longParts=parts(longer);
+  if(longParts.some(part=>normalized(part)===full))return true;
+  return aParts.length>1&&bParts.length>1
+    &&nearlySameBookText(aParts.at(-1),bParts.at(-1));
+}
 function sameBookIdentity(a,b){
-  return nearlySameBookText(a?.title,b?.title)
+  return sameBookTitle(a?.title,b?.title)
     &&nearlySameBookText(a?.author,b?.author);
 }
 function smallPageDifference(left,right){
@@ -50,4 +72,4 @@ function smallPageDifference(left,right){
   if(!Number.isInteger(a)||!Number.isInteger(b)||a<=0||b<=0)return false;
   return Math.abs(a-b)<=Math.max(10,Math.ceil(Math.max(a,b)*0.05));
 }
-module.exports={normalized,nearlySameBookText,sameBookIdentity,smallPageDifference};
+module.exports={normalized,nearlySameBookText,sameBookTitle,sameBookIdentity,smallPageDifference};
