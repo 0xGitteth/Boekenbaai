@@ -77,15 +77,13 @@ function decide({isbn,field,excel,current,evidence=[]}){
   if(!incoming||!FIELDS.has(field))return {...base,action:'excel',value:excel,
     reason:'Geselecteerde ingevulde Excelkolom'};
   if(consensus.value && consensus.agreeing>=2 && !consensus.conflicting
-    && (field==='title'?sameBookTitle(incoming,consensus.value)
-      :nearlySameBookText(incoming,consensus.value))){
+    && nearlySameBookText(incoming,consensus.value)){
     return {...base,confidence:'high',action:'source',
       value:consensus.value,authors:consensus.authors,
       reason:consensus.agreeing+' onafhankelijke ISBN-bronnen bevestigen dezelfde schrijfwijze'};
   }
   if(consensus.value && consensus.agreeing===1 &&!consensus.conflicting
-    &&(field==='title'?sameBookTitle(incoming,consensus.value)
-      :nearlySameBookText(incoming,consensus.value))
+    &&nearlySameBookText(incoming,consensus.value)
     &&(!old||nearlySameBookText(old,incoming))){
     return {...base,action:'source',value:consensus.value,authors:consensus.authors,
       reason:'Eén ISBN-bron bevestigt een equivalente schrijfwijze'};
