@@ -807,10 +807,12 @@
       // reason to stop every stock, loan and metadata change in that row.
       const advisoryCount=sourceWarnings.reduce((count,entry)=>
         count+entry.issues.filter(issue=>
-          issue.code==='metadata_differs_from_excel'&&issue.severity==='warning').length,0);
+          issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
+          &&issue.sourceInvalid!==true).length,0);
       const actionableWarnings=sourceWarnings.map(entry=>({
         row:entry.row,issues:entry.issues.filter(issue=>
-          !(issue.code==='metadata_differs_from_excel'&&issue.severity==='warning')),
+          !(issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
+          &&issue.sourceInvalid!==true)),
       })).filter(entry=>entry.issues.length);
       const warningCount=actionableWarnings.reduce((count,entry)=>
         count+entry.issues.length,0);
@@ -878,7 +880,7 @@
         for(const entry of sourceWarnings){
           for(const issue of entry.issues){
             if(issue.code!=='metadata_differs_from_excel'
-              ||issue.severity!=='warning')continue;
+              ||issue.severity!=='warning'||issue.sourceInvalid===true)continue;
             const key=issue.field||'overig';
             byField.set(key,(byField.get(key)||0)+1);
           }
