@@ -474,6 +474,89 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         worksheetRows:sourceRows.map(row=>row.sourceRowNumber)});
     }
   }
+  // After explicit Excel-column synchronization, fill only genuinely
+  // missing descriptive fields from a verified edition-ISBN lookup. This is
+  // separate from the selected Excel columns: enrichment is an opt-in online
+  // lookup, and never overwrites school-entered information. An ambiguous
+  // online value is simply omitted rather than added to manual review.
+  const enrichable=['description','publisher','publishedYear','pageCount',
+    'language','coverUrl','tags'];
+  const emptyForEnrichment=(field,value)=>field==='tags'
+    ?!Array.isArray(value)||value.length===0
+    :value===null||value===undefined||value===''||
+      (['pageCount','publishedYear'].includes(field)
+        &&(!Number.isFinite(Number(value))||Number(value)<=0));
+  for(const [isbn,rows] of groups){
+    const copies=editions.get(isbn);
+    for(const field of enrichable){
+      if(parts.fields[field])continue; // explicit teacher-controlled sync wins
+      const targets=copies.filter(book=>emptyForEnrichment(field,book[field]));
+      if(!targets.length)continue;
+      const evidenceRows=rows.filter(row=>
+        row.provenance?.[field]?.source==='metadata'
+        &&nonempty(row.book?.[field])
+        &&row.book?.editionIsbn===isbn
+        &&!row.issues?.some(issue=>issue.severity==='conflict'));
+      if(!evidenceRows.length)continue;
+      const values=evidenceRows.map(row=>row.book[field]);
+      let chosen=values[0];
+      if(field==='tags'){
+        const unique=new Map();
+        for(const tags of values){
+          for(const tag of Array.isArray(tags)?tags:[]){
+            if(typeof tag!=='string'||!tag.trim())continue;
+            const key=tag.trim().toLocaleLowerCase('nl');
+            if(!unique.has(key))unique.set(key,tag.trim());
+          }
+        }
+        chosen=[...unique.values()].slice(0,30);
+      }else if(field==='description'){
+        chosen=values.filter(value=>typeof value==='string')
+          .sort((a,b)=>b.length-a.length)[0]||'';
+      }else if(field==='coverUrl'){
+        chosen=values.find(value=>typeof value==='string'
+          &&/^https:\/\/[^\s]+$/i.test(value))||'';
+      }else if(['pageCount','publishedYear'].includes(field)){
+        chosen=values.map(Number).filter(Number.isInteger)
+          .filter(value=>value>0&&value<20000)
+          .sort((a,b)=>a-b)[Math.floor(values.length/2)]??null;
+      }else{
+        const counts=new Map();
+        for(const value of values){
+          const key=String(value).toLocaleLowerCase('nl');
+          counts.set(key,(counts.get(key)||0)+1);
+        }
+        chosen=[...values].sort((a,b)=>
+          counts.get(String(b).toLocaleLowerCase('nl'))
+          -counts.get(String(a).toLocaleLowerCase('nl')))[0];
+      }
+      if(!nonempty(chosen))continue;
+      const sources=[...new Set(evidenceRows.map(row=>
+        row.provenance?.[field]?.detail).filter(Boolean))];
+      const id=isbn+':'+field;
+      updates.push({
+        id,isbn,field,value:chosen,
+        title:rows[0].book?.title,bookIds:targets.map(book=>book.id),
+        copies:targets.length,confidence:'medium',chosenSource:'source',
+        reason:'Ontbrekende boekinformatie aangevuld uit een passende ISBN-bron',
+        sources,sourceCount:sources.length,
+        beforeValues:targets.map(book=>({
+          bookId:book.id,value:book[field],
+          ...(field==='coverUrl'?{
+            localCoverUrl:book.localCoverUrl||'',coverCrop:book.coverCrop??null,
+          }:{}),
+        })),
+        worksheetRows:evidenceRows.map(row=>row.sourceRowNumber),
+      });
+      automaticDecisions.push({
+        id,isbn,field,title:rows[0].book?.title,action:'apply',
+        confidence:'medium',reason:'Leeg veld automatisch aangevuld op ISBN',
+        before:null,after:chosen,excel:null,
+        sources,sourceCount:sources.length,canUseExcel:true,
+        worksheetRows:evidenceRows.map(row=>row.sourceRowNumber),
+      });
+    }
+  }
   if(choices.some(c=>!valid.has(c.id)))return {ok:false,error:'stale_metadata_choice'};
   return {ok:true,updates,issues,automaticDecisions,kept:choices.length,
     summary:{updates:updates.length,issues:issues.length,
