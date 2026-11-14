@@ -479,7 +479,10 @@ function buildUnifiedBookImport(analysis,db,{
   }else assignments.summary.previouslyImportedLoans=0;
   const total=inventory.summary.addCopies+assignments.summary.apply
     +metadata.summary.updates+assignments.summary.deferred
-    +assignments.summary.kept+metadata.kept;
+    +assignments.summary.kept+metadata.kept
+    // A review containing only automatic keep decisions is still worth
+    // confirming, so the exact choices can be recorded in its import report.
+    +metadata.summary.autoKept;
   return {ok:true,parts:use,inventory,assignments,metadata,summary:{
     newCopies:inventory.summary.addCopies,
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
