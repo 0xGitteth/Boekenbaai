@@ -242,6 +242,34 @@ async function run(){
     assert.ok(tasks.data.tasks.some(task=>
       task.reportId===savedDefer.data.result.batchId),
       'Deferred-only unified imports must persist a task for later');
+    // Selected metadata-only columns must be repairable through the same
+    // staged review endpoint, without adding inventory to the selection.
+    const badPages=await start([
+      old('',{'Aantal pagina\'s':'onbekend'}),
+    ],parts({fields:{pageCount:true}}));
+    assert.equal(badPages.status,201,JSON.stringify(badPages.data));
+    assert.equal(badPages.data.decisions.summary.pendingMetadata,1);
+    assert.equal(badPages.data.decisions.summary.readyToApply,false);
+    const repairedPages=await call(
+      '/api/admin/book-import-stages/'+badPages.data.id+'/review',token,{
+      revision:badPages.data.revision,
+      corrections:[{index:0,fields:{pageCount:'172'}}],
+      acceptWarnings:true,
+      inventoryResolutions:[],assignmentResolutions:[],metadataResolutions:[],
+    });
+    assert.equal(repairedPages.status,200,JSON.stringify(repairedPages.data));
+    assert.equal(repairedPages.data.decisions.summary.pendingMetadata,0);
+    assert.equal(repairedPages.data.decisions.summary.metadataFields,1);
+    assert.equal(repairedPages.data.decisions.summary.readyToApply,true);
+    const pagesApplied=await apply(repairedPages);
+    assert.equal(pagesApplied.status,200,JSON.stringify(pagesApplied.data));
+    assert.equal(pagesApplied.data.result.metadataUpdated,2,
+      'Only the selected existing pageCount must be updated on both copies');
+    assert.equal(readDb().books.find(book=>book.id==='copy-1').pageCount,172);
+    assert.equal(readDb().books.find(book=>book.id==='copy-2').pageCount,172);
+    assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa',
+      'Metadata-only corrections must never alter existing loans');
+
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
