@@ -313,7 +313,10 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         const current=field==='author'?{value:copy.author,authors:copy.authors}:copy[field];
         return !equal(current,next);
       });
-      if(!currentDifferent&&!conflict)continue;
+      const hasIndependentEvidence=['title','author','publisher'].includes(field)
+        &&rows.some(row=>Array.isArray(row.sourceEvidence)
+          &&row.sourceEvidence.length>0);
+      if(!currentDifferent&&!conflict&&!hasIndependentEvidence)continue;
       valid.add(id);
       if(selected.get(id)==='keep')continue;
       const current=field==='author'?copies[0].author:copies[0][field];
