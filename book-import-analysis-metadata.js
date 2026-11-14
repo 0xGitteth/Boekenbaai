@@ -426,6 +426,35 @@ function applyMetadataCandidate(row, candidate, {
   setField('themes', candidate.themes);
 }
 
+function acceptSourceVerifiedSpelling(row, options) {
+  if(!row.book?.editionIsbn || !Array.isArray(row.sourceEvidence))return;
+  const title=sourceConsensus(row.book.editionIsbn,'title',row.sourceEvidence);
+  if(title.agreeing<2||title.conflicting
+    ||!nearlySameBookText(row.book.title,title.value))return;
+  for(const field of ['title','author']){
+    if(options.correctedMetadataFields?.has(field))continue;
+    const result=field==='title'?title:
+      sourceConsensus(row.book.editionIsbn,'author',row.sourceEvidence);
+    const existing=String(row.book[field]||'');
+    if(result.agreeing<2||result.conflicting||!existing||!result.value
+      ||existing===result.value||!nearlySameBookText(existing,result.value))continue;
+    if(field==='author'){
+      const current=Array.isArray(row.book.authors)?row.book.authors:[existing];
+      // Never silently drop a coauthor or overwrite a reviewed multi-author
+      // list with one supplier's incomplete author entry.
+      if(current.length>1 && (!Array.isArray(result.authors)
+        ||result.authors.length!==current.length))continue;
+      row.book.author=result.value;
+      row.book.authors=Array.isArray(result.authors)&&result.authors.length
+        ?[...result.authors]:[result.value];
+    }else row.book.title=result.value;
+    row.provenance[field]={
+      source:'metadata',detail:'verified_isbn_spelling',
+      correctedFrom:existing,sources:result.sources,
+    };
+  }
+}
+
 async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
@@ -502,6 +531,10 @@ async function resolveMetadata(row, options) {
         correctedMetadataFields: options.correctedMetadataFields,
       });
       else if (candidates.length) addIssue(row, 'metadata_not_usable', 'warning');
+      // Two independent providers with the same exact ISBN may clean up a
+      // small typo. Materially different titles never qualify and remain
+      // subject to the explicit identity conflict rule above.
+      acceptSourceVerifiedSpelling(row,options);
     } catch {
       addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'isbn' });
     }
