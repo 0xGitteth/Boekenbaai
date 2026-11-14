@@ -174,3 +174,20 @@
 @media (max-width: 600px) {
   .bb-import__step { font-size: .75rem; padding: .55rem .3rem; }
 }
+
+/* Source diagnostics are visible before acceptance, but remain compact on
+   imports containing hundreds of lines with warnings. */
+.bb-import__source-warnings {
+  display: grid; gap: .55rem; padding: .9rem 1rem;
+  border: 1px solid var(--accent-border); border-radius: 11px;
+  background: var(--surface);
+}
+.bb-import__source-warnings h4 { margin: 0; font-size: 1rem; }
+.bb-import__source-warnings > .hint { margin: 0; }
+.bb-import__warnings-scroll {
+  max-height: 360px; overflow-y: auto; padding-right: .35rem;
+}
+.bb-import__warning-row { padding: .65rem 0; border-top: 1px solid var(--accent-border); }
+.bb-import__warning-row strong { font-size: .9rem; }
+.bb-import__warning-items { margin: .4rem 0 0; padding-left: 1.3rem; }
+.bb-import__warning-items li { font-size: .86rem; line-height: 1.45; padding: .16rem 0; }
