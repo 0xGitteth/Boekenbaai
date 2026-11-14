@@ -54,10 +54,11 @@ Controle uitgevoerd op de ontwikkelbranch van PR #384 op 14 november 2026. Deze 
 | `worksheet_range_too_large` | Het werkblad bevat een onrealistisch groot bereik. | Afwijzen of opnieuw controleren; geen gedeeltelijke opslag |
 | `xlsx_unavailable` | De Excelverwerking is tijdelijk niet beschikbaar. | Afwijzen of opnieuw controleren; geen gedeeltelijke opslag |
 
-## ISBN en boekidentiteit (25 codes)
+## ISBN en boekidentiteit (26 codes)
 
 | Foutcode | Betekenis | Afhandeling |
 |---|---|---|
+| `source_row_requires_review` | Controleer de bronregel voordat deze wijziging mag doorgaan. | Vergelijken met ISBN en bestaande gegevens; bij onveilig verschil behouden/controleren |
 | `ambiguous_existing_edition_isbn` | Een bestaand exemplaar bevat tegenstrijdige ISBN-velden. | Vergelijken met ISBN en bestaande gegevens; bij onveilig verschil behouden/controleren |
 | `ambiguous_isbn_lookup_results` | Online bronnen leveren geen eenduidige ISBN-match op. | Vergelijken met ISBN en bestaande gegevens; bij onveilig verschil behouden/controleren |
 | `ambiguous_metadata_editions` | Een titel en auteur verwijzen naar meerdere edities. | Vergelijken met ISBN en bestaande gegevens; bij onveilig verschil behouden/controleren |
@@ -84,10 +85,11 @@ Controle uitgevoerd op de ontwikkelbranch van PR #384 op 14 november 2026. Deze 
 | `title_author_mismatch` | Het gevonden exemplaar heeft een andere titel of auteur. | Vergelijken met ISBN en bestaande gegevens; bij onveilig verschil behouden/controleren |
 | `unsupported_identifier_type` | Een ISBN-veld bevat een ongeldig gegevenstype. | Veilig blokkeren bij werkelijk conflict of ontbrekende identiteit; gericht corrigeren |
 
-## Online bronnen en optionele boekvelden (16 codes)
+## Online bronnen en optionele boekvelden (17 codes)
 
 | Foutcode | Betekenis | Afhandeling |
 |---|---|---|
+| `conflicting_excel_values` | Meerdere Excelrijen voor hetzelfde ISBN bevatten verschillende waarden. | Bestaande waarde behouden tot Excelrijen zijn gecorrigeerd |
 | `ambiguous_identifier_interpreted_as_barcode` | Een gecombineerde kolom is als fysieke barcode herkend. | Informatief of automatisch behouden; geen aparte akkoordvraag |
 | `ambiguous_identifier_interpreted_as_isbn` | Een gecombineerde kolom is als ISBN herkend. | Informatief of automatisch behouden; geen aparte akkoordvraag |
 | `dangerous_headers_ignored` | Een onveilige of onbekende kolomnaam is genegeerd. | Informatief of automatisch behouden; geen aparte akkoordvraag |
@@ -153,10 +155,11 @@ Controle uitgevoerd op de ontwikkelbranch van PR #384 op 14 november 2026. Deze 
 | `student_loan_ambiguous` | De leerlingnaam hoort mogelijk bij meerdere accounts. | Alleen binnen geselecteerde context; onduidelijke bestemming laten beoordelen |
 | `student_loan_unmatched` | De genoemde leerling kan niet gevonden worden. | Alleen binnen geselecteerde context; onduidelijke bestemming laten beoordelen |
 
-## Uitleningen en correcties (28 codes)
+## Uitleningen en correcties (29 codes)
 
 | Foutcode | Betekenis | Afhandeling |
 |---|---|---|
+| `loan_context_requires_followup` | De uitlening kan nog niet veilig aan een leerling of klas gekoppeld worden. | Geen lener verzinnen of oude uitlening herhalen; kopie controleren |
 | `ambiguous_existing_borrower` | Meerdere bestaande exemplaren staan op dezelfde lener. | Geen lener verzinnen of oude uitlening herhalen; kopie controleren |
 | `ambiguous_physical_copy` | Het juiste fysieke exemplaar kan niet veilig worden vastgesteld. | Veilig blokkeren bij werkelijk conflict of ontbrekende identiteit; gericht corrigeren |
 | `borrowed_without_borrower` | Het boek staat uitgeleend zonder dat de lener bekend is. | Geen lener verzinnen of oude uitlening herhalen; kopie controleren |
@@ -185,14 +188,6 @@ Controle uitgevoerd op de ontwikkelbranch van PR #384 op 14 november 2026. Deze 
 | `physical_copy_not_found` | Er is nog geen fysiek exemplaar van dit ISBN geregistreerd. | Geen lener verzinnen of oude uitlening herhalen; kopie controleren |
 | `student_already_borrowed_edition` | De leerling heeft deze ISBN-editie al. | Veilig blokkeren bij werkelijk conflict of ontbrekende identiteit; gericht corrigeren |
 | `student_loan_records_disagree` | De boekenregistratie en de uitleenlijst van de leerling komen niet overeen. | Geen lener verzinnen of oude uitlening herhalen; kopie controleren |
-
-## Extra te classificeren codes (3)
-
-| Code | Betekenis |
-|---|---|
-| `loan_context_requires_followup` | De uitlening kan nog niet veilig aan een leerling of klas gekoppeld worden. |
-| `conflicting_excel_values` | Meerdere Excelrijen voor hetzelfde ISBN bevatten verschillende waarden. |
-| `source_row_requires_review` | Controleer de bronregel voordat deze wijziging mag doorgaan. |
 
 ## Wat de CI automatisch controleert
 
