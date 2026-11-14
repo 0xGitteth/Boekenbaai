@@ -787,6 +787,24 @@
         'Alle automatische keuzes kun je hieronder controleren. '
         +'Alleen echte conflicten vragen verplicht om een beslissing.'));
       results.append(confidence);
+      const informative=(stage.rows||[]).reduce((sum,row)=>
+        sum+(row.issues||[]).filter(issue=>
+          issue.reviewLevel==='informational'
+          ||['metadata_lookup_failed','isbn_repaired','metadata_not_usable']
+            .includes(issue.code)).length,0);
+      const safelyKept=(metadataPlan.automaticDecisions||[])
+        .filter(item=>item.action==='keep').length
+        +automatic.filter(item=>item.autoKept).length
+        +(stock.summary?.acknowledgedEditions||0);
+      const autoChanges=(metadataPlan.automaticDecisions||[])
+        .filter(item=>item.action==='apply').length
+        +automatic.filter(item=>item.choice==='apply').length;
+      const autonomous=make('p','bb-import__autonomy-summary hint',
+        'Zelfstandig voorgesteld: '+autoChanges+' wijzigingen of aanvullingen. '
+        +'Veilig behouden: '+safelyKept+' keuzes. '
+        +'Informatieve bronmeldingen: '+informative+'. '
+        +'Unieke boeken of Excelrijen die aandacht vragen: '+manualGroups.size+'.');
+      results.append(autonomous);
       const status=make('p','bb-import__review-status');
       const pending=(summary.pending||0);
       status.append(make('strong','',pending
