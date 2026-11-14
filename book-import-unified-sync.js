@@ -40,13 +40,60 @@ function existingEdition(book){
     ||canonicalizeBookIsbn13(book?.barcode);
 }
 function isIsbnBarcode(value,isbn){return Boolean(value)&&canonicalizeBookIsbn13(value)===canonicalizeBookIsbn13(isbn);}
+// The workbook analyzer necessarily sees ALL columns. Each selected import
+// domain must only be blocked by errors which can affect that domain.
+// Edition identity problems remain blocking in every mode.
+const LOAN_ISSUES=new Set([
+  'student_loan_unmatched','student_loan_ambiguous',
+  'class_loan_unmatched','class_loan_ambiguous',
+]);
+const LOCATION_ISSUES=new Set(['fixed_location_needs_review']);
+const COLUMN_WARNINGS={
+  invalid_published_year:'publishedYear',
+  invalid_page_count:'pageCount',
+  language_hint_conflict:'language',
+  nonstandard_easy_reading_value:'easyReading',
+};
+function issueAffectsSelection(issue,parts,domain){
+  const code=issue?.code||'';
+  if(LOAN_ISSUES.has(code))return domain==='assignment'&&parts.loans;
+  if(LOCATION_ISSUES.has(code))return domain==='assignment'&&parts.locations;
+  if(code==='class_context_needs_review')
+    return domain==='assignment'&&parts.loans&&parts.locations;
+  if(code==='library_presence_needs_review')return false;
+  if(code==='conflicting_source_columns'){
+    if(['studentLoan','classLoan'].includes(issue.field))
+      return domain==='assignment'&&parts.loans;
+    if(['fixedClass'].includes(issue.field))
+      return domain==='assignment'&&parts.locations;
+    if(['classes'].includes(issue.field))
+      return domain==='assignment'&&parts.loans&&parts.locations;
+    if(['libraryPresence'].includes(issue.field))return false;
+    if(domain==='metadata' && METADATA_FIELDS.includes(issue.field))
+      return parts.fields[issue.field]===true;
+  }
+  if(domain==='metadata' && COLUMN_WARNINGS[code])
+    return parts.fields[COLUMN_WARNINGS[code]]===true;
+  // Unknown and identity-related conflicts must never be silently dropped.
+  return true;
+}
+function scopedRow(row,parts,domain){
+  const issues=(row.issues||[]).filter(issue=>issueAffectsSelection(issue,parts,domain));
+  const status=row.status==='skipped'||row.context?.excludeFromSchoolCollection
+    ?'skipped'
+    :issues.some(issue=>issue.severity==='conflict')?'conflict'
+    :(!row.book?.title||!row.book?.author||!row.book?.editionIsbn)?'unresolved'
+    :issues.some(issue=>issue.severity==='warning')?'warning':'ready';
+  return {...row,issues,status};
+}
 function stockAnalysis(analysis,db,parts){
   const known=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
     if(isbn&&!known.has(isbn))known.set(isbn,book);
   }
-  return {...analysis,rows:analysis.rows.map(row=>{
+  return {...analysis,rows:analysis.rows.map(original=>{
+    const row=scopedRow(original,parts,'stock');
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
     const old=known.get(isbn);
     // When title or author was explicitly selected for updating, an
@@ -79,7 +126,8 @@ function assignmentSource(analysis,parts,db){
     const isbn=existingEdition(book);
     if(isbn&&!oldByIsbn.has(isbn))oldByIsbn.set(isbn,book);
   }
-  return {...analysis,rows:analysis.rows.map(row=>{
+  return {...analysis,rows:analysis.rows.map(original=>{
+    const row=scopedRow(original,parts,'assignment');
     const old=oldByIsbn.get(canonicalizeBookIsbn13(row.book?.editionIsbn));
     const book={...row.book,
       title:old&&parts.fields.title?old.title:row.book?.title,
@@ -154,7 +202,8 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     editions.get(isbn).push(book);
   }
   const groups=new Map();
-  for(const row of analysis.rows){
+  for(const original of analysis.rows){
+    const row=scopedRow(original,parts,'metadata');
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
     if(!isbn||row.status==='skipped'||!editions.has(isbn))continue;
     if(!groups.has(isbn))groups.set(isbn,[]);
