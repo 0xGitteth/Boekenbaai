@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const {
   normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
+  shouldApplyMetadataToCreatedCopy,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
@@ -1095,5 +1096,76 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(kept.autoKept,true);
   assert.equal(result.summary.pendingAssignments,0);
   assert.equal(result.summary.readyToApply,true);
+}
+// Codex P2: unknown Examenmateriaal is advisory, not an instruction to
+// overwrite an existing true exam-list flag with parsed fallback false.
+{
+  const current=db();
+  for(const book of current.books)book.suitableForExamList=true;
+  const invalid=source(0,{},{
+    suitableForExamList:false,
+    publisher:'Betrouwbare uitgever',
+  },{
+    suitableForExamList:{source:'excel',raw:'misschien'},
+    publisher:{source:'excel',raw:'Betrouwbare uitgever'},
+  });
+  invalid.status='warning';
+  invalid.issues=[{code:'unexpected_exam_material_value',
+    severity:'warning',raw:'misschien'}];
+  const outcome=plan([invalid],current,{
+    parts:parts({fields:{suitableForExamList:true,publisher:true}}),
+  });
+  assert.equal(outcome.ok,true);
+  assert.equal(outcome.summary.pendingMetadata,0);
+  assert.equal(outcome.summary.metadataFields,1);
+  assert.equal(outcome.metadata.updates[0].field,'publisher');
+  assert.equal(outcome.metadata.updates.some(update=>
+    update.field==='suitableForExamList'),false,
+    'Never import a false fallback after an unknown exam material value');
+  const standalone=plan([invalid],current,{
+    parts:parts({fields:{suitableForExamList:true}}),
+  });
+  assert.equal(standalone.summary.metadataFields,0);
+}
+// Codex P2: automatic enrichment is fill-only for newly created copies.
+// It must not overwrite an explicit Excel publisher or cover even when
+// existing books of the ISBN are missing those fields.
+{
+  const isbn=ISBN;
+  const copyFor=(extra={})=>({
+    editionIsbn:isbn,publisher:'Schooluitgever',
+    coverUrl:'https://example.org/schoolcover.jpg',...extra,
+  });
+  const sourceUpdate=(field,value)=>({
+    isbn,field,value,chosenSource:'source',enrichmentOnly:true,
+  });
+  const onlinePublisher=sourceUpdate('publisher','Online uitgever');
+  const onlineCover=sourceUpdate('coverUrl','https://example.org/online.jpg');
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlinePublisher,copyFor()),false);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlineCover,copyFor()),false);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlinePublisher,
+    copyFor({publisher:''})),true);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlineCover,
+    copyFor({coverUrl:''})),true);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlineCover,
+    copyFor({coverUrl:'',importProvenance:{fieldSources:{
+      coverUrl:{sourceType:'manual'},
+    }}})),false);
+  assert.equal(shouldApplyMetadataToCreatedCopy({
+    ...onlinePublisher,enrichmentOnly:false,
+  },copyFor()),true,
+  'Explicitly synchronized metadata still applies across all copies');
+  assert.equal(shouldApplyMetadataToCreatedCopy({
+    ...onlinePublisher,isbn:SECOND,
+  },copyFor({publisher:''})),false);
+  const existing=db();
+  existing.books.forEach(book=>{book.publisher='';});
+  const enriched=source(0,{},{
+    publisher:'Online uitgever',
+  },{publisher:{source:'metadata',detail:'Google Books'}});
+  const planResult=plan([enriched],existing,{parts:parts({books:true})});
+  assert.equal(planResult.ok,true);
+  assert.equal(planResult.metadata.updates[0].enrichmentOnly,true,
+    'The preview carries the fill-only constraint all the way to confirmation');
 }
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
