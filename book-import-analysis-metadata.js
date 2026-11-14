@@ -444,7 +444,8 @@ async function resolveMetadata(row, options) {
           .map(candidate=>({
             source:normalizeSource(candidate.source),
             editionIsbn:candidate.editionIsbn,
-            title:candidate.title,author:candidate.author,publisher:candidate.publisher,
+            title:candidate.title,author:candidate.author,
+            authors:candidate.authors,publisher:candidate.publisher,
           }));
       }
       const candidates = metadataCandidatesFromResult(result);
