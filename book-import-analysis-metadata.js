@@ -8,7 +8,7 @@ const {
   getOwnDataValue,
 } = require('./book-edition-core');
 const {normalizeSource,sourceConsensus,equivalentSpelling}=require('./book-import-source-confidence');
-const {nearlySameBookText}=require('./book-import-autonomy');
+const {nearlySameBookText,sameBookTitle}=require('./book-import-autonomy');
 const {
   addIssue,
   comparableText,
@@ -164,7 +164,7 @@ function titleDoesNotContradict(rowBook, candidate) {
   const candidateTitle = normalizeBookIdentityText(candidate?.title);
   // Provider formatting is not edition identity evidence. Ignore accents,
   // case, punctuation and insignificant spaces in exact-ISBN title checks.
-  return !(rowTitle && candidateTitle && !nearlySameBookText(rowTitle,candidateTitle));
+  return !(rowTitle && candidateTitle && !sameBookTitle(rowTitle,candidateTitle));
 }
 
 function candidateScore(candidate) {
@@ -236,7 +236,7 @@ function distinctCandidateTitles(candidates) {
   const titles = new Map();
   for (const candidate of candidates) {
     const key = comparableText(candidate.title);
-    if (key && ![...titles.values()].some(title=>nearlySameBookText(title,candidate.title)))
+    if (key && ![...titles.values()].some(title=>sameBookTitle(title,candidate.title)))
       titles.set(key, candidate.title);
   }
   return Array.from(titles.values());
@@ -430,7 +430,7 @@ function acceptSourceVerifiedSpelling(row, options) {
   if(!row.book?.editionIsbn || !Array.isArray(row.sourceEvidence))return;
   const title=sourceConsensus(row.book.editionIsbn,'title',row.sourceEvidence);
   if(title.agreeing<2||title.conflicting
-    ||!nearlySameBookText(row.book.title,title.value))return;
+    ||!sameBookTitle(row.book.title,title.value))return;
   for(const field of ['title','author']){
     if(options.correctedMetadataFields?.has(field))continue;
     const result=field==='title'?title:
@@ -498,7 +498,7 @@ async function resolveMetadata(row, options) {
         const consensus=sourceConsensus(row.book.editionIsbn,'title',row.sourceEvidence||[]);
         const independentlyContradicted=consensus.agreeing>=2
           &&!consensus.conflicting &&consensus.value
-          &&row.book.title&&!nearlySameBookText(row.book.title,consensus.value);
+          &&row.book.title&&!sameBookTitle(row.book.title,consensus.value);
         if(independentlyContradicted){
           addIssue(row,'metadata_title_conflict','conflict',{
             ...selection.conflict,
