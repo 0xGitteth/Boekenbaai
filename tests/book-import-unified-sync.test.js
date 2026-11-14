@@ -61,6 +61,43 @@ assert.equal(normalizeParts(undefined).value.books,true);
 }
 {
   const current=db();
+  const row=source(0,{},{
+    quantity:{valid:true,value:2},
+    pageCount:null,description:'Nieuwe gecontroleerde tekst',
+  },{
+    pageCount:{source:'excel',raw:'onbekend'},
+    description:{source:'excel',raw:'Nieuwe gecontroleerde tekst'},
+  });
+  row.status='warning';
+  row.issues=[
+    {code:'invalid_page_count',severity:'warning',raw:'onbekend'},
+    {code:'metadata_differs_from_excel',severity:'warning',
+      field:'pageCount',sourceInvalid:true,excelValue:'onbekend'},
+  ];
+  const review=plan([row],current,{
+    parts:parts({books:true,fields:{description:true}}),
+    acceptWarnings:false,
+  });
+  assert.equal(review.summary.blockedStock,0,
+    'Unselected invalid page count cannot block a valid physical stock check');
+  assert.equal(review.summary.metadataFields,1,
+    'An independent valid description can be synced without approving page count');
+  assert.equal(review.summary.pendingMetadata,0);
+  assert.equal(review.summary.readyToApply,true);
+
+  const conflict=source(0,{},{
+    quantity:{valid:true,value:2},
+    description:'Conflict in een niet-geselecteerde kolom',
+  },{description:{source:'excel',raw:'Conflict in een niet-geselecteerde kolom'}});
+  conflict.status='conflict';
+  conflict.issues=[{code:'conflicting_source_columns',severity:'conflict',field:'description'}];
+  const safe=plan([conflict],current,{parts:parts({books:true})});
+  assert.equal(safe.summary.blockedStock,0,
+    'A nonidentity Excel column disagreement cannot block the stock plan');
+}
+
+{
+  const current=db();
   const fixed=plan([source(0,{
     fixedLocation:{status:'resolved',label:'Klas A'},
     ...loan('tim','Tim Leerling'),
