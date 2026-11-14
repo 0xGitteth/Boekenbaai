@@ -131,10 +131,11 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       blockers.add(code);
       if (!reason) reason = code;
     };
-    if (rows.some((row) => !sameBookIdentity(row.book,rows[0].book))
-      || existing.some((book) => !sameBookIdentity(book,rows[0].book))) {
-      // ISBN plus a recognizably equivalent title/author is sufficient for
-      // a stock count. A substantially different book remains blocked.
+    const missingIdentity=rows.some(row=>!row.book?.title||!row.book?.author);
+    if(missingIdentity)block('missing_title_or_author');
+    else if(rows.some(row=>!sameBookIdentity(row.book,rows[0].book))
+      ||existing.some(book=>!sameBookIdentity(book,rows[0].book))){
+      // A substantive difference after exact ISBN matching remains unsafe.
       block('edition_identity_mismatch');
     }
     // Legacy copies with a physical barcode but no edition ISBN must not
@@ -143,11 +144,8 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     if (!existing.length && inventory.unidentifiedTitles.has(fingerprint)) {
       block('possible_existing_book_without_isbn');
     }
-    // A brand-new edition must never create an empty title/author book, even
-    // if ordinary Excel warnings were explicitly accepted.
-    if (rows.some((row) => !row.book?.title || !row.book?.author)) {
-      block('missing_title_or_author');
-    }
+    // A missing title/author was rejected above before any fuzzy comparison
+    // so the administrator sees the actionable source error first.
     let target = 0;
     const seenPrinted = new Set();
     const newPrinted = [];
