@@ -892,4 +892,86 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(unsafe.summary.pendingMetadata,1,
     'Structural ISBN identity conflicts must remain blocked');
 }
+
+// Automatically enrich blank bibliographic fields after an opted-in exact
+// ISBN lookup, even when the administrator did not select Excel metadata
+// columns. Existing descriptive content and curator tags remain untouched.
+{
+  const current=db();
+  current.books[0].description='Zelf geschreven tekst';
+  current.books[1].description='';
+  for(const book of current.books){
+    book.publisher='';
+    book.pageCount=null;
+    book.tags=[];
+  }
+  const row=source(0,{},{
+    quantity:{valid:true,value:2},
+    description:'Een ISBN-geverifieerd verhaal over vriendschap.',
+    publisher:'Uitgeverij Test',pageCount:214,
+    tags:['friendship','adventure'],
+  },{
+    description:{source:'metadata',detail:'googlebooks'},
+    publisher:{source:'metadata',detail:'googlebooks'},
+    pageCount:{source:'metadata',detail:'googlebooks'},
+    tags:{source:'metadata',detail:'googlebooks'},
+  });
+  const filled=plan([row],current,{parts:parts({books:true})});
+  assert.equal(filled.ok,true);
+  assert.equal(filled.summary.blockedStock,0);
+  assert.equal(filled.summary.pendingMetadata,0);
+  assert.equal(filled.summary.metadataFields,4,
+    'Verified external data can fill missing fields without selecting Excel columns');
+  const description=filled.metadata.updates.find(item=>item.field==='description');
+  assert.deepEqual(description.bookIds,['copy-2'],
+    'Existing teacher descriptions must not be overwritten');
+  assert.equal(filled.metadata.updates.find(item=>item.field==='pageCount').value,214);
+  assert.equal(filled.metadata.updates.find(item=>item.field==='tags').value.length,2);
+  assert.equal(filled.summary.readyToApply,true);
+  const raw=source(0,{},{
+    quantity:{valid:true,value:2},description:'Exceltekst',
+  },{description:{source:'excel',raw:'Exceltekst'}});
+  const notOpted=plan([raw],current,{parts:parts({books:true})});
+  assert.equal(notOpted.summary.metadataFields,0,
+    'Unselected Excel values are never silently imported');
+}
+{
+  const current=db();
+  for(const b of current.books)b.pageCount=210;
+  const row=source(0,{},{
+    pageCount:214,
+  },{pageCount:{source:'excel',raw:'214'}});
+  const unchanged=plan([row],current,{
+    parts:parts({fields:{pageCount:true}}),
+  });
+  assert.equal(unchanged.summary.metadataFields,0);
+  assert.equal(unchanged.summary.preservedMetadata,1,
+    'A minor page-count disagreement is not worth an automatic rewrite');
+  assert.equal(unchanged.summary.pendingMetadata,0);
+  const explicit=plan([row],current,{
+    parts:parts({fields:{pageCount:true}}),
+    metadataResolutions:[{id:ISBN+':pageCount',action:'excel'}],
+  });
+  assert.equal(explicit.summary.metadataFields,1,
+    'An administrator can intentionally override the nonessential value');
+}
+{
+  const current=db();
+  const vague=source(0,{classContext:['Klas A']},{
+    quantity:{valid:true,value:2},
+  });
+  vague.status='warning';
+  vague.issues=[{code:'class_context_needs_review',severity:'warning'}];
+  const initial=plan([vague],current,{
+    parts:parts({loans:true,locations:true}),
+  });
+  assert.equal(initial.ok,true);
+  assert.equal(initial.summary.pendingAssignments,0,
+    'Vague class notes are safely retained by default');
+  const kept=initial.assignments.differences.find(item=>item.kind==='class_context');
+  assert.equal(kept.choice,'keep');
+  assert.equal(kept.autoKept,true);
+  assert.equal(initial.summary.readyToApply,true,
+    'A documented automatic keep may complete without a manual checkbox');
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
