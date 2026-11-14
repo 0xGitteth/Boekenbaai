@@ -307,7 +307,9 @@ assert.equal(normalizeParts(undefined).value.books,true);
     assert.equal(predicted.ok,true);
     assert.equal(predicted.summary.metadataFields,0,
       'Invalid numeric Excel cells may never clear saved '+field);
-    assert.equal(predicted.summary.pendingMetadata,1);
+    assert.equal(predicted.summary.pendingMetadata,0,
+      'Unparseable optional numbers keep the old value without a compulsory task');
+    assert.equal(predicted.summary.preservedMetadata,1);
   }
 }
 
@@ -521,6 +523,10 @@ assert.equal(normalizeParts(undefined).value.books,true);
     quantity:{valid:true,value:2},
   },{title:{source:'excel',raw:'Oorlogswinter, gewijzigde Excelnaam'}});
   const options={parts:parts({books:true,fields:{title:true}})};
+  changed.sourceEvidence=[
+    {source:'googlebooks',editionIsbn:ISBN,title:'Oorlogswinter, gewijzigde Excelnaam'},
+    {source:'openlibrary',editionIsbn:ISBN,title:'Oorlogswinter, gewijzigde Excelnaam'},
+  ];
   const proposed=plan([changed],current,options);
   assert.equal(proposed.ok,true);
   assert.equal(proposed.summary.metadataFields,1);
@@ -611,8 +617,9 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(preview.summary.metadataFields,1,
     'Invalid page count must not block a valid description column');
   assert.equal(preview.metadata.updates[0].field,'description');
-  assert.equal(preview.summary.pendingMetadata,1,
-    'Selected invalid page count still needs an explicit decision');
+  assert.equal(preview.summary.pendingMetadata,0,
+    'Selected invalid page count automatically preserves existing data');
+  assert.equal(preview.summary.preservedMetadata,1);
   const invalidMetadata=source(0,{},{
     pageCount:null,
   },{pageCount:{source:'excel',raw:'geen getal'}});
@@ -628,7 +635,8 @@ assert.equal(normalizeParts(undefined).value.books,true);
   });
   assert.equal(unsafeNumeric.summary.metadataFields,0,
     'Invalid numeric Excel input is not a harmless external disagreement');
-  assert.equal(unsafeNumeric.summary.pendingMetadata,1);
+  assert.equal(unsafeNumeric.summary.pendingMetadata,0);
+  assert.equal(unsafeNumeric.summary.preservedMetadata,1);
 
   const blocked=source(0,{},{
     description:'Excelbeschrijving',
