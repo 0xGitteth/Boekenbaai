@@ -1213,6 +1213,7 @@
         }
         const td=make('td');td.append(control);tr.append(td);
         body.append(tr);
+        return tr;
       };
       for(const diff of automatic){
         const control=make('select');
@@ -1264,7 +1265,27 @@
           +' · '+marker+' · '+item.reason
           +(item.sources?.length
             ?' · Bronnen: '+item.sources.join(', '):' · Geen onafhankelijke bronconsensus');
-        addRow(item.title||'Boek',item.isbn,item.field,description,control);
+        const wrapper=make('div','bb-import__decision-control');
+        wrapper.append(control);
+        if(!item.canUseExcel && item.worksheetRows?.length){
+          const source=(stage.rows||[]).find(row=>
+            item.worksheetRows.includes(row.sourceRowNumber));
+          if(source){
+            const correction=button('Excelwaarde corrigeren','btn btn--secondary');
+            correction.addEventListener('click',()=>{
+              openEditor=openEditor===source.index?null:source.index;
+              render();
+            });
+            wrapper.append(correction);
+            if(openEditor===source.index){
+              editRow(source,wrapper,{onlyFields:[
+                item.field==='manualThemes'?'themes':
+                  item.field==='suitableForExamList'?'examMaterial':item.field,
+              ]});
+            }
+          }
+        }
+        addRow(item.title||'Boek',item.isbn,item.field,description,wrapper);
       }
       table.append(body);tableWrap.append(table);suggested.append(tableWrap);
       results.append(suggested);
