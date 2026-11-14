@@ -72,6 +72,28 @@ module.exports = async function runCoreTests() {
   assert.deepStrictEqual(mixedTags.rows[0].provenance.tags.explicitValues,['avontuur']);
   assert.equal(mixedTags.rows[0].provenance.tags.includesDerivedValues,true);
 
+  // Duplicate author columns can use a surname-first bibliographic
+  // format or accents without implying another person. A substantive
+  // mismatch stays a blocking conflict.
+  const sameAuthor=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Slee, Carry',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(!codes(sameAuthor.rows[0]).has('author_sources_differ'));
+  const accentAuthor=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Carrý Slee',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(!codes(accentAuthor.rows[0]).has('author_sources_differ'));
+  const anotherAuthor=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Ander Persoon',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(codes(anotherAuthor.rows[0]).has('author_sources_differ'));
+
   // Student placeholders must not defeat the special Makkelijk Lezen
   // fixed-location rule, while genuine student names must still conflict.
   for (const placeholder of ['nvt', 'N.V.T.', 'niet van toepassing']) {
