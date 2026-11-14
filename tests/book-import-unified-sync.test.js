@@ -227,6 +227,21 @@ assert.equal(normalizeParts(undefined).value.books,true);
 
 {
   const current=db();
+  const spellingVariant=source(0,{},{
+    title:'Oorlogs-winter',author:'Jan Térlouw',authors:['Jan Térlouw'],
+    quantity:{valid:true,value:3},
+  });
+  const result=plan([spellingVariant],current,{parts:parts({books:true})});
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.blockedStock,0,
+    'An ISBN-matched punctuation/accent-only edition name is not a new identity');
+  assert.equal(result.summary.newCopies,1);
+  assert.equal(result.summary.readyToApply,true);
+  assert.equal(result.inventory.proposedAdds.length,1);
+}
+
+{
+  const current=db();
   const fixed=plan([source(0,{
     fixedLocation:{status:'resolved',label:'Klas A'},
     ...loan('tim','Tim Leerling'),
