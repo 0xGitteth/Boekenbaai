@@ -3,7 +3,7 @@
 // Per-edition source comparison. A merged Google/OpenLibrary result counts as
 // zero independent votes. Only individual, matched provider replies qualify.
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
-const {nearlySameBookText}=require('./book-import-autonomy');
+const {nearlySameBookText,sameBookTitle}=require('./book-import-autonomy');
 const PROVIDERS=new Set(['bureau isbn','googlebooks','openlibrary','isbnbarcode.org']);
 function normalizeSource(value) {
   const text=typeof value==='string'?value.toLowerCase().trim():'';
@@ -52,7 +52,8 @@ function sourceConsensus(isbn,field,entries) {
     // Accent, spacing and punctuation variants are the same orthographic
     // claim. Two independent providers must not become opposing votes solely
     // because one writes "P.S." and another writes "PS".
-    const matching=[...groups.keys()].find(key=>nearlySameBookText(key,vote.value));
+    const matching=[...groups.keys()].find(key=>(field==='title'
+      ?sameBookTitle(key,vote.value):nearlySameBookText(key,vote.value)));
     const key=matching||vote.value;
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(vote);
@@ -76,13 +77,15 @@ function decide({isbn,field,excel,current,evidence=[]}){
   if(!incoming||!FIELDS.has(field))return {...base,action:'excel',value:excel,
     reason:'Geselecteerde ingevulde Excelkolom'};
   if(consensus.value && consensus.agreeing>=2 && !consensus.conflicting
-    && nearlySameBookText(incoming,consensus.value)){
+    && (field==='title'?sameBookTitle(incoming,consensus.value)
+      :nearlySameBookText(incoming,consensus.value))){
     return {...base,confidence:'high',action:'source',
       value:consensus.value,authors:consensus.authors,
       reason:consensus.agreeing+' onafhankelijke ISBN-bronnen bevestigen dezelfde schrijfwijze'};
   }
   if(consensus.value && consensus.agreeing===1 &&!consensus.conflicting
-    &&nearlySameBookText(incoming,consensus.value)
+    &&(field==='title'?sameBookTitle(incoming,consensus.value)
+      :nearlySameBookText(incoming,consensus.value))
     &&(!old||nearlySameBookText(old,incoming))){
     return {...base,action:'source',value:consensus.value,authors:consensus.authors,
       reason:'Eén ISBN-bron bevestigt een equivalente schrijfwijze'};
