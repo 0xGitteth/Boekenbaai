@@ -7,6 +7,7 @@ const {
   createAuthorDisplay,
   getOwnDataValue,
 } = require('./book-edition-core');
+const {normalizeSource}=require('./book-import-source-confidence');
 const {
   addIssue,
   comparableText,
@@ -424,16 +425,26 @@ function applyMetadataCandidate(row, candidate, {
 async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
-  const hasMissingMetadata = () => !row.book.title || !row.book.author || row.provenance?.author?.incomplete === true
-    || !row.book.publisher || row.book.publishedYear == null
-    || row.book.pageCount == null || !row.book.language || !row.book.coverUrl || !row.book.description
-    || !Array.isArray(row.book.tags) || !row.book.tags.length
-    || !Array.isArray(row.book.themes) || !row.book.themes.length;
-
-  const enrichExactIsbn = async ({ force = false } = {}) => {
-    if (!lookupIsbn || !row.book.editionIsbn || (!force && !hasMissingMetadata())) return;
+  // Lookup functions are provided only when the administrator opts in to
+  // external metadata enrichment/comparison. Complete Excel rows still need
+  // the same provider verification for source-confirmed spelling decisions.
+  const enrichExactIsbn = async () => {
+    if (!lookupIsbn || !row.book.editionIsbn) return;
     try {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
+      // Only actual independent source replies, with an explicitly matching
+      // edition ISBN, qualify as evidence for automatic source choices.
+      if(Array.isArray(result?.sourceCandidates)){
+        row.sourceEvidence=metadataCandidatesFromResult(result.sourceCandidates)
+          .filter(candidate=>candidate.editionIsbn===row.book.editionIsbn
+            &&Boolean(normalizeSource(candidate.source)))
+          .map(candidate=>({
+            source:normalizeSource(candidate.source),
+            editionIsbn:candidate.editionIsbn,
+            title:candidate.title,author:candidate.author,
+            authors:candidate.authors,publisher:candidate.publisher,
+          }));
+      }
       const candidates = metadataCandidatesFromResult(result);
       const selection = selectIsbnMetadataCandidate(row.book.editionIsbn, candidates, row.book, row.provenance);
       if (selection.conflict?.code === 'metadata_title_conflict'
@@ -490,7 +501,7 @@ async function resolveMetadata(row, options) {
       allowIsbnResolution: true, skipThemeEnrichment: options.skipThemeEnrichment === true,
       correctedMetadataFields: options.correctedMetadataFields,
     });
-    if (row.book.editionIsbn) await enrichExactIsbn({ force: true });
+    if (row.book.editionIsbn) await enrichExactIsbn();
   } catch {
     addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'title_author' });
   }

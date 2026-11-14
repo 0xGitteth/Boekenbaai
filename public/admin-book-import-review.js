@@ -318,7 +318,7 @@
     // The separate post-import free metadata worker can fill gaps later.
     metadata.checked = false;
     metadataLabel.append(metadata, document.createTextNode(
-      ' Tijdens de controle extra boekgegevens opzoeken (optioneel, kan lang duren).'));
+      ' ISBN-bronnen vergelijken en ontbrekende boekgegevens opzoeken (optioneel, kan langer duren).'));
     const importMode = make('select');
     for (const [value,label] of [
       ['unified','Samen synchroniseren (aanbevolen)'],
@@ -465,6 +465,8 @@
     let page = 0;
     let automaticPage = 0;
     let automaticExpanded = false;
+    let automaticReceiptLimit=20;
+    let automaticReceiptOpen=false;
     let unifiedLimits={assignments:15,metadata:15,stock:15};
     const unifiedOpenGroups=new Set();
     let busy = false;
@@ -763,6 +765,16 @@
         numbers.append(stat);
       }
       results.append(numbers);
+      const confidence=make('div','bb-import__confidence');
+      confidence.append(make('strong','',
+        (summary.confidentMetadata||0)+' bronbevestigde keuzes'));
+      confidence.append(make('span','',
+        (summary.consideredMetadata||0)+' automatisch beoordeeld, '
+        +(summary.preservedMetadata||0)+' waarden behouden'));
+      confidence.append(make('span','hint',
+        'Alle automatische keuzes kun je hieronder controleren. '
+        +'Alleen echte conflicten vragen verplicht om een beslissing.'));
+      results.append(confidence);
       const status=make('p','bb-import__review-status');
       const pending=(summary.pending||0);
       status.append(make('strong','',pending
@@ -1006,6 +1018,7 @@
       };
       for(const diff of exceptions){
         const card=make('article','bb-import__exception');
+        card.dataset.reviewIsbn=diff.editionIsbn||('unknown:'+diff.id);
         card.dataset.reviewRowKey='difference:'+diff.id;
         card.append(make('strong','',diff.title||'Boek onbekend'));
         const meta=['Excelrij '+diff.worksheetRow,diff.editionIsbn,
@@ -1046,6 +1059,7 @@
       }
       for(const issue of metadataPlan.issues){
         const card=make('article','bb-import__exception');
+        card.dataset.reviewIsbn=issue.isbn;
         card.dataset.reviewRowKey='metadata:'+issue.id;
         card.append(make('strong','',issue.title||issue.isbn));
         card.append(make('p','hint',issue.isbn+' · Boekkolom '+issue.field
@@ -1095,6 +1109,7 @@
       for(const item of blocked){
         const source=(stage.rows||[]).find(row=>row.index===item.index);
         const card=make('article','bb-import__exception');
+        card.dataset.reviewIsbn=item.editionIsbn||('row:'+item.index);
         card.dataset.reviewRowKey='stock:'+item.index;
         card.append(make('strong','',source?.book?.title||'Boek'));
         card.append(make('p','hint','Excelrij '+item.worksheetRow+' · '+(item.editionIsbn||'Geen ISBN')));
@@ -1115,6 +1130,25 @@
         if(openEditor===item.index&&source)editRow(source,card);
         stockCards.append(card);
       }
+      const mergeSameBook=(cards)=>{
+        const originals=Array.from(cards.children);
+        cards.replaceChildren();
+        const groups=new Map();
+        for(const card of originals){
+          const isbn=card.dataset.reviewIsbn||('other:'+groups.size);
+          let parent=groups.get(isbn);
+          if(!parent){
+            parent=make('article','bb-import__book-check');
+            parent.append(make('strong','bb-import__book-isbn',isbn));
+            groups.set(isbn,parent);
+            cards.append(parent);
+          }
+          parent.append(card);
+        }
+      };
+      mergeSameBook(assignmentCards);
+      mergeSameBook(metadataCards);
+      mergeSameBook(stockCards);
       const groups=[
         ['assignments','Uitleningen en vaste locaties',assignmentCards],
         ['metadata','Boekgegevens',metadataCards],
@@ -1160,11 +1194,12 @@
         if(suggested.isConnected)automaticExpanded=suggested.open;
       });
       suggested.append(make('summary','',
-        'Duidelijke wijzigingen bekijken ('+
-        (automatic.length+metadataPlan.updates.length)+')'));
+        'Automatische keuzes bekijken en aanpassen ('+
+        (automatic.length+(metadataPlan.automaticDecisions||[]).length)+')'));
       suggested.append(make('p','hint',
-        'Deze wijzigingen zijn voorgesteld en nog niet opgeslagen. '
-        +'Je kunt ze afzonderlijk bekijken en behouden in plaats van overnemen.'));
+        'Hoge zekerheid betekent bronbevestigd. Bij redelijke zekerheid '
+        +'kiest Boekenbaai veilig zelf, vaak door bestaande gegevens te behouden. '
+        +'Elke keuze blijft aanpasbaar en wordt vastgelegd in het importverslag.'));
       const tableWrap=make('div','bb-import__proposal-scroll');
       const table=make('table','bb-import__proposal-table');
       const head=make('thead');
@@ -1180,6 +1215,7 @@
         }
         const td=make('td');td.append(control);tr.append(td);
         body.append(tr);
+        return tr;
       };
       for(const diff of automatic){
         const control=make('select');
@@ -1198,21 +1234,65 @@
         addRow(diff.title||'Boek',diff.editionIsbn||'',diff.kind==='loan'?'Uitlening':'Vaste plek',
           description,control);
       }
-      for(const update of metadataPlan.updates){
+      const formatValue=value=>{
+        if(value===null||value===undefined)return 'leeg';
+        if(Array.isArray(value))return value.join(', ');
+        if(typeof value==='object')return String(value.value||JSON.stringify(value));
+        return String(value);
+      };
+      for(const item of metadataPlan.automaticDecisions||[]){
         const control=make('select');
-        for(const [value,label] of [['apply','Excel overnemen'],
-          ['keep','Bestaande behouden']]){
-          const option=make('option','',label);option.value=value;control.append(option);
+        const possibilities=[
+          ['default','Automatisch voorstel volgen'],
+          ['keep','Huidige waarde behouden'],
+        ];
+        if(item.canUseExcel)possibilities.push(['excel','Excelwaarde overnemen']);
+        for(const [value,label] of possibilities){
+          const option=make('option','',label);
+          option.value=value;control.append(option);
         }
-        control.value=metadataResolutions.has(update.id)?'keep':'apply';
+        control.value=metadataResolutions.get(item.id)?.action||'default';
         control.addEventListener('change',()=>{
-          if(control.value==='keep')metadataResolutions.set(update.id,
-            {id:update.id,action:'keep'});
-          else metadataResolutions.delete(update.id);
+          if(control.value==='default')metadataResolutions.delete(item.id);
+          else metadataResolutions.set(item.id,{
+            id:item.id,action:control.value,
+          });
           render();
         });
-        addRow(update.title||'Boek',update.isbn,update.field,
-          (update.copies||1)+' bestaand(e) exemplaar/exemplaren',control);
+        const marker=item.confidence==='high'?'Hoge zekerheid'
+          :item.confidence==='manual'?'Door beheer gekozen':'Redelijke zekerheid';
+        const description=(item.action==='keep'
+            ?'Bestaande waarde behouden'
+            :'Voorgesteld: '+formatValue(item.after))
+          +' · '+marker+' · '+item.reason
+          +(item.sources?.length
+            ?' · Bronnen: '+item.sources.join(', '):' · Geen onafhankelijke bronconsensus');
+        const wrapper=make('div','bb-import__decision-control');
+        wrapper.append(control);
+        if(!item.canUseExcel && item.worksheetRows?.length){
+          // The same ISBN may appear in several worksheet rows. Every
+          // affected row must remain directly editable, including when
+          // stock synchronization is not selected.
+          const affected=(stage.rows||[]).filter(row=>
+            item.worksheetRows.includes(row.sourceRowNumber));
+          for(const source of affected){
+            const correction=button('Excelrij '+source.sourceRowNumber+' corrigeren',
+              'btn btn--secondary');
+            correction.disabled=Boolean(remotePending||busy);
+            correction.addEventListener('click',()=>{
+              openEditor=openEditor===source.index?null:source.index;
+              render();
+            });
+            wrapper.append(correction);
+            if(openEditor===source.index){
+              editRow(source,wrapper,{onlyFields:[
+                item.field==='manualThemes'?'themes':
+                  item.field==='suitableForExamList'?'examMaterial':item.field,
+              ],metadataIssueId:item.id});
+            }
+          }
+        }
+        addRow(item.title||'Boek',item.isbn,item.field,description,wrapper);
       }
       table.append(body);tableWrap.append(table);suggested.append(tableWrap);
       results.append(suggested);
@@ -1599,6 +1679,44 @@
             stats.append(stat);
           }
           complete.append(stats);
+          const sourceLog=done.report?.automaticSourceDecisions||[];
+          if(sourceLog.length){
+            const audit=make('details','bb-import__selection-details');
+            audit.open=automaticReceiptOpen;
+            audit.addEventListener('toggle',()=>{
+              if(audit.isConnected)automaticReceiptOpen=audit.open;
+            });
+            audit.append(make('summary','',
+              'Automatische bronkeuzes en behouden gegevens ('+sourceLog.length+')'));
+            audit.append(make('p','hint',
+              'Hoge zekerheid: meerdere onafhankelijke ISBN-bronnen komen overeen. '
+              +'Redelijke zekerheid: Boekenbaai kiest een veilige standaard. '
+              +'Het volledige verslag blijft beschikbaar via de JSON-knop.'));
+            const format=value=>typeof value==='string'?value
+              :Array.isArray(value)?value.join(', ')
+              :value&&typeof value==='object'?(value.value||JSON.stringify(value))
+              :value===undefined||value===null?'leeg':String(value);
+            for(const item of sourceLog.slice(0,automaticReceiptLimit)){
+              const line=make('p','bb-review__detail',
+                (item.isbn||'Onbekende ISBN')+' · '+item.field
+                +' · '+(item.action==='keep'?'Bestaande behouden':'Bijgewerkt')
+                +' ('+(item.confidence==='high'?'hoge zekerheid'
+                  :item.confidence==='manual'?'beheerder':'redelijke zekerheid')+')'
+                +' · '+format(item.before)+' → '+format(item.after));
+              audit.append(line);
+            }
+            if(sourceLog.length>automaticReceiptLimit){
+              const more=button('Nog '+Math.min(20,sourceLog.length-automaticReceiptLimit)
+                +' keuzes bekijken','btn btn--secondary');
+              more.addEventListener('click',()=>{
+                automaticReceiptLimit+=20;
+                automaticReceiptOpen=true;
+                render();
+              });
+              audit.append(more);
+            }
+            complete.append(audit);
+          }
           if(done.selectedParts){
             const selected=done.selectedParts;
             const labels=[];

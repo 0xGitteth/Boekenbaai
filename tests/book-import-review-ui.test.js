@@ -152,6 +152,21 @@ assert.strictEqual(pendingFieldEdits.afterSelect.requiresRecheck, true,
   'Changing a stock decision may never unlock pending Excel corrections');
 assert.strictEqual(pendingFieldEdits.afterSelect.accepted, false);
 
+// Automatic keep decisions may describe multiple bad rows for one ISBN.
+// Each row must expose its own correction editor inside the collapsed audit.
+{
+  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const end=script.indexOf('addRow(item.title||',start);
+  assert.ok(start>=0&&end>start,'Missing automatic keep correction UI');
+  const correctionUi=script.slice(start,end);
+  assert.match(correctionUi,/\.filter\(row=>/);
+  assert.match(correctionUi,/for\(const source of affected\)/);
+  assert.match(correctionUi,/source\.sourceRowNumber\+' corrigeren'/);
+  assert.match(correctionUi,/editRow\(source,wrapper,\{onlyFields:/);
+  assert.doesNotMatch(correctionUi,/\.find\(row=>/,
+    'The first affected workbook row must not be the only editable one');
+}
+
 console.log('Review UI metadata themes, ISBN sources and remote cache regressions passed');
 
 
@@ -227,6 +242,26 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
 }
 
 
+// Editing an automatically retained value must clear the old manual
+// keep resolution before the next review. Otherwise a successful correction
+// can lead to stale_metadata_choice when that field now equals the database.
+{
+  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const end=script.indexOf('addRow(item.title||',start);
+  const automaticEditor=script.slice(start,end);
+  assert.ok(start>=0&&end>start,'Missing automatic decision correction editor');
+  assert.match(automaticEditor,/metadataIssueId:item\.id/,
+    'Pass the current automatic decision ID to the row editor');
+  const editStart=script.indexOf('    function editRow(row, host, options = {}) {');
+  const editEnd=script.indexOf('    function renderUnifiedSync() {',editStart);
+  const editSource=script.slice(editStart,editEnd);
+  assert.match(editSource,/metadataResolutions\.delete\(options\.metadataIssueId\)/,
+    'Editing a metadata row must clear the superseded decision');
+  assert.ok(editSource.indexOf('metadataResolutions.delete(options.metadataIssueId)')
+    <editSource.indexOf('updateCorrection(row.index, field, input.value)'),
+    'Discard the previous keep choice before submitting the correction');
+}
+
 // Large imports must not render 400+ individual cards nor treat third-party
 // metadata spelling differences as warnings requiring manual approval.
 {
@@ -253,6 +288,6 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
     script.indexOf('const importMode = make('));
   assert.match(beforeUpload,/metadata\.checked = false/,
     'Hundreds of external lookups must be an explicit opt-in');
-  assert.match(beforeUpload,/kan lang duren/,
+  assert.match(beforeUpload,/kan langer duren/,
     'Administrators should understand the latency before opting in');
 }

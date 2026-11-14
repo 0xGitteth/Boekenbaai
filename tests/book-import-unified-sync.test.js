@@ -99,15 +99,17 @@ assert.equal(normalizeParts(undefined).value.books,true);
     parts:parts({books:true,fields:{title:true,author:true}}),
   });
   assert.equal(renamedEdition.ok,true);
-  assert.equal(renamedEdition.summary.blockedStock,0,
-    'Selected title/author changes are allowed without inventing another ISBN');
-  assert.equal(renamedEdition.summary.metadataFields,2);
+  assert.equal(renamedEdition.summary.blockedStock,1,
+    'Substantive identity differences without verification must not silently add stock');
+  assert.equal(renamedEdition.summary.metadataFields,0);
+  assert.equal(renamedEdition.summary.preservedMetadata,2);
   const warning={...description,status:'warning'};
   const caution=plan([warning],current,{
     parts:parts({fields:{description:true}}),
   });
-  assert.equal(caution.summary.pendingMetadata,1,
-    'Selected metadata from a warning row needs approval before overwrite');
+  assert.equal(caution.summary.pendingMetadata,0,
+    'Nonessential unresolved fields preserve existing data without manual prompts');
+  assert.equal(caution.summary.preservedMetadata,1);
   const acceptedWarning=plan([warning],current,{
     parts:parts({fields:{description:true}}),acceptWarnings:true,
   });
@@ -134,8 +136,10 @@ assert.equal(normalizeParts(undefined).value.books,true);
   const conflicts=plan([mk(0,'Links'),mk(1,'Rechts')],current,
     {parts:parts({fields:{description:true}})});
   assert.equal(conflicts.ok,true);
-  assert.equal(conflicts.summary.pendingMetadata,1);
-  assert.equal(conflicts.summary.readyToApply,false);
+  assert.equal(conflicts.summary.pendingMetadata,0,
+    'Conflicting descriptions are not critical ISBN identity questions');
+  assert.equal(conflicts.summary.preservedMetadata,1);
+  assert.equal(conflicts.summary.readyToApply,true);
   const accepted=plan([mk(0,'Links'),mk(1,'Rechts')],current,{
     parts:parts({fields:{description:true},locations:true}),
     metadataResolutions:[{id:ISBN+':description',action:'keep'}],
@@ -234,6 +238,10 @@ assert.equal(normalizeParts(undefined).value.books,true);
   const renamedLoan=source(0,loan('tim','Tim Leerling'),{
     title:'Oorlogswinter, gecorrigeerde titel',
   },{title:{source:'excel',raw:'Oorlogswinter, gecorrigeerde titel'}});
+  renamedLoan.sourceEvidence=[
+    {source:'googlebooks',editionIsbn:ISBN,title:'Oorlogswinter, gecorrigeerde titel'},
+    {source:'openlibrary',editionIsbn:ISBN,title:'Oorlogswinter, gecorrigeerde titel'},
+  ];
   const sync=plan([renamedLoan],current,{
     parts:parts({books:true,loans:true,fields:{title:true}}),
   });
@@ -299,7 +307,9 @@ assert.equal(normalizeParts(undefined).value.books,true);
     assert.equal(predicted.ok,true);
     assert.equal(predicted.summary.metadataFields,0,
       'Invalid numeric Excel cells may never clear saved '+field);
-    assert.equal(predicted.summary.pendingMetadata,1);
+    assert.equal(predicted.summary.pendingMetadata,0,
+      'Unparseable optional numbers keep the old value without a compulsory task');
+    assert.equal(predicted.summary.preservedMetadata,1);
   }
 }
 
@@ -513,6 +523,10 @@ assert.equal(normalizeParts(undefined).value.books,true);
     quantity:{valid:true,value:2},
   },{title:{source:'excel',raw:'Oorlogswinter, gewijzigde Excelnaam'}});
   const options={parts:parts({books:true,fields:{title:true}})};
+  changed.sourceEvidence=[
+    {source:'googlebooks',editionIsbn:ISBN,title:'Oorlogswinter, gewijzigde Excelnaam'},
+    {source:'openlibrary',editionIsbn:ISBN,title:'Oorlogswinter, gewijzigde Excelnaam'},
+  ];
   const proposed=plan([changed],current,options);
   assert.equal(proposed.ok,true);
   assert.equal(proposed.summary.metadataFields,1);
@@ -603,8 +617,9 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(preview.summary.metadataFields,1,
     'Invalid page count must not block a valid description column');
   assert.equal(preview.metadata.updates[0].field,'description');
-  assert.equal(preview.summary.pendingMetadata,1,
-    'Selected invalid page count still needs an explicit decision');
+  assert.equal(preview.summary.pendingMetadata,0,
+    'Selected invalid page count automatically preserves existing data');
+  assert.equal(preview.summary.preservedMetadata,1);
   const invalidMetadata=source(0,{},{
     pageCount:null,
   },{pageCount:{source:'excel',raw:'geen getal'}});
@@ -620,7 +635,8 @@ assert.equal(normalizeParts(undefined).value.books,true);
   });
   assert.equal(unsafeNumeric.summary.metadataFields,0,
     'Invalid numeric Excel input is not a harmless external disagreement');
-  assert.equal(unsafeNumeric.summary.pendingMetadata,1);
+  assert.equal(unsafeNumeric.summary.pendingMetadata,0);
+  assert.equal(unsafeNumeric.summary.preservedMetadata,1);
 
   const blocked=source(0,{},{
     description:'Excelbeschrijving',

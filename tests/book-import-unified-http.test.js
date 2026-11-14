@@ -248,8 +248,11 @@ async function run(){
       old('',{'Aantal pagina\'s':'onbekend'}),
     ],parts({fields:{pageCount:true}}));
     assert.equal(badPages.status,201,JSON.stringify(badPages.data));
-    assert.equal(badPages.data.decisions.summary.pendingMetadata,1);
-    assert.equal(badPages.data.decisions.summary.readyToApply,false);
+    assert.equal(badPages.data.decisions.summary.pendingMetadata,0,
+      'Unsafe nonessential page count automatically preserves saved data');
+    assert.equal(badPages.data.decisions.summary.preservedMetadata,1);
+    assert.equal(badPages.data.decisions.summary.readyToApply,true,
+      'Automatic keep decisions can be confirmed and audited');
     const repairedPages=await call(
       '/api/admin/book-import-stages/'+badPages.data.id+'/review',token,{
       revision:badPages.data.revision,

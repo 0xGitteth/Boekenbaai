@@ -6,6 +6,7 @@ const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
 const { excelLoanReceiptKey } = require('./book-import-loan-migration');
+const sourceConfidence=require('./book-import-source-confidence');
 
 const METADATA_FIELDS=Object.freeze([
   'title','author','description','publisher','publishedYear','pageCount',
@@ -221,10 +222,10 @@ function normalizedMetadataChoice(input){
   for(const item of input){
     if(!item||typeof item!=='object'||Array.isArray(item)
       ||typeof item.id!=='string'||!/^[0-9]{13}:(title|author|description|publisher|publishedYear|pageCount|language|coverUrl|easyReading|suitableForExamList|tags|manualThemes)$/.test(item.id)
-      ||item.action!=='keep'||seen.has(item.id))
+      ||!['keep','apply','excel'].includes(item.action)||seen.has(item.id))
       return {ok:false,error:'invalid_metadata_choices'};
     seen.add(item.id);
-    values.push({id:item.id,action:'keep'});
+    values.push({id:item.id,action:item.action});
   }
   values.sort((a,b)=>a.id.localeCompare(b.id));
   return {ok:true,values};
@@ -251,7 +252,7 @@ function metadataSourceSafe(row,field,acceptWarnings){
     ||(issue.severity==='warning'&&!acceptWarnings));
 }
 function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
-  const selected=new Set(choices.map(c=>c.id));
+  const selected=new Map(choices.map(c=>[c.id,c.action]));
   const editions=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
@@ -267,7 +268,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     if(!groups.has(isbn))groups.set(isbn,[]);
     groups.get(isbn).push(row);
   }
-  const updates=[],issues=[],valid=new Set();
+  const updates=[],issues=[],automaticDecisions=[],valid=new Set();
   for(const [isbn,rows] of groups){
     const copies=editions.get(isbn);
     for(const field of METADATA_FIELDS.filter(field=>parts.fields[field])){
@@ -312,37 +313,119 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         const current=field==='author'?{value:copy.author,authors:copy.authors}:copy[field];
         return !equal(current,next);
       });
-      if(!currentDifferent&&!conflict)continue;
+      const hasIndependentEvidence=['title','author','publisher'].includes(field)
+        &&rows.some(row=>Array.isArray(row.sourceEvidence)
+          &&row.sourceEvidence.length>0);
+      if(!currentDifferent&&!conflict&&!hasIndependentEvidence)continue;
       valid.add(id);
-      if(selected.has(id))continue;
-      if(conflict){
-        issues.push({id,isbn,field,title:rows[0].book?.title,
-          reason:validSources?'conflicting_excel_values':'source_row_requires_review',
-          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),copies:copies.length});
-      }else{
-        updates.push({id,isbn,field,value:next,title:rows[0].book?.title,
-          bookIds:copies.map(copy=>copy.id),copies:copies.length,
-          // The final plan is recomputed from the current database. Include
-          // old values so a concurrent edit of this selected field makes the
-          // confirmed preview stale even when the target is unchanged.
-          beforeValues:copies.map(copy=>({
-            bookId:copy.id,
-            value:field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
-            ...(field==='coverUrl'?{
-              localCoverUrl:copy.localCoverUrl||'',
-              coverCrop:copy.coverCrop??null,
-            }:{}),
-            ...(field==='manualThemes'?{
-              importedThemes:copy.importedThemes||[],themes:copy.themes||[],
-            }:{}),
-          })),
-          worksheetRows:sourceRows.map(row=>row.sourceRowNumber)});
+      const current=field==='author'?copies[0].author:copies[0][field];
+      const important=['title','author'].includes(field);
+      if(selected.get(id)==='keep'){
+        // A deliberate override is an auditable decision, even when it
+        // results in no database write. Preserve the consulted providers.
+        const sourceDecision=sourceConfidence.decide({
+          isbn,field,excel:important?(field==='author'?next?.value:next):next,
+          current,evidence:rows.flatMap(row=>row.sourceEvidence||[]),
+        });
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'manual',
+          reason:'Bestaande waarde expliciet behouden door beheerder',
+          before:current,after:current,excel:next,
+          sources:sourceDecision.agreeingSources,
+          sourceCount:sourceDecision.sourceCount,
+          canUseExcel:!conflict,
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
       }
+      const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
+        issue.severity==='conflict'&&!COLUMN_WARNINGS[issue.code]
+        &&issue.code!=='metadata_differs_from_excel'));
+      // Distinct titles/authors under the same ISBN, or an unsafe edition
+      // identity, still need a human decision. Other ambiguous/invalid
+      // columns can simply leave the existing value unchanged.
+      if((variants.size>1&&important)||structural){
+        if(['apply','excel'].includes(selected.get(id)))return {ok:false,error:'unsafe_metadata_override'};
+        issues.push({id,isbn,field,title:rows[0].book?.title,
+          reason:variants.size>1?'conflicting_excel_values':'source_row_requires_review',
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),copies:copies.length});
+        continue;
+      }
+      const correctedByAdmin=sourceRows.some(row=>
+        row.provenance?.[field]?.source==='manual'
+        &&row.provenance[field].detail==='review_correction');
+      const manualExcel=correctedByAdmin
+        ||['apply','excel'].includes(selected.get(id));
+      const decision=sourceConfidence.decide({
+        isbn,field,excel:important?(field==='author'?next?.value:next):next,
+        current, evidence:rows.flatMap(row=>row.sourceEvidence||[]),
+      });
+      if(['apply','excel'].includes(selected.get(id))&&conflict)
+        return {ok:false,error:'unsafe_metadata_override'};
+      if(conflict || (decision.action==='keep'&&!manualExcel)){
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'medium',
+          reason:conflict
+            ?'Onvoldoende veilige gegevens; bestaande waarde blijft behouden'
+            :decision.reason,
+          before:current,after:current,excel:next,
+          sources:decision.agreeingSources,
+          sourceCount:decision.sourceCount,canUseExcel:!conflict,
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
+      let chosen=next;
+      if(!manualExcel && decision.action==='source' && important){
+        chosen=field==='author'
+          ?{value:decision.value,authors:Array.isArray(decision.authors)
+              &&decision.authors.length
+                ?[...decision.authors]:[...(next?.authors||[])]}
+          :decision.value;
+      }else if(!manualExcel && decision.action==='source')chosen=decision.value;
+      const changed=copies.some(copy=>!equal(
+        field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
+        chosen));
+      automaticDecisions.push({
+        id,isbn,field,title:rows[0].book?.title,
+        action:changed?'apply':'keep',
+        confidence:manualExcel?'manual':decision.confidence,
+        reason:manualExcel?'Excelwaarde expliciet gekozen door beheerder':decision.reason,
+        before:current,after:chosen,excel:next,
+        sources:decision.agreeingSources,sourceCount:decision.sourceCount,
+        canUseExcel:true,
+        worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+      });
+      if(!changed)continue;
+      updates.push({id,isbn,field,value:chosen,title:rows[0].book?.title,
+        bookIds:copies.map(copy=>copy.id),copies:copies.length,
+        confidence:manualExcel?'manual':decision.confidence,
+        chosenSource:manualExcel?'excel':decision.action,
+        reason:manualExcel?'Excelwaarde expliciet gekozen door beheerder':decision.reason,
+        sources:decision.agreeingSources,
+        sourceCount:decision.sourceCount,
+        // Concurrent changes to a selected field invalidate confirmation.
+        beforeValues:copies.map(copy=>({
+          bookId:copy.id,
+          value:field==='author'?{value:copy.author,authors:copy.authors}:copy[field],
+          ...(field==='coverUrl'?{
+            localCoverUrl:copy.localCoverUrl||'',coverCrop:copy.coverCrop??null,
+          }:{}),
+          ...(field==='manualThemes'?{
+            importedThemes:copy.importedThemes||[],themes:copy.themes||[],
+          }:{}),
+        })),
+        worksheetRows:sourceRows.map(row=>row.sourceRowNumber)});
     }
   }
   if(choices.some(c=>!valid.has(c.id)))return {ok:false,error:'stale_metadata_choice'};
-  return {ok:true,updates,issues,kept:choices.length,
+  return {ok:true,updates,issues,automaticDecisions,kept:choices.length,
     summary:{updates:updates.length,issues:issues.length,
+      autoHigh:automaticDecisions.filter(item=>item.confidence==='high').length,
+      autoMedium:automaticDecisions.filter(item=>item.confidence==='medium').length,
+      autoKept:automaticDecisions.filter(item=>item.action==='keep').length,
       affectedCopies:new Set(updates.flatMap(update=>update.bookIds)).size}};
 }
 function buildUnifiedBookImport(analysis,db,{
@@ -419,12 +502,18 @@ function buildUnifiedBookImport(analysis,db,{
   }else assignments.summary.previouslyImportedLoans=0;
   const total=inventory.summary.addCopies+assignments.summary.apply
     +metadata.summary.updates+assignments.summary.deferred
-    +assignments.summary.kept+metadata.kept;
+    +assignments.summary.kept+metadata.kept
+    // A review containing only automatic keep decisions is still worth
+    // confirming, so the exact choices can be recorded in its import report.
+    +metadata.summary.autoKept;
   return {ok:true,parts:use,inventory,assignments,metadata,summary:{
     newCopies:inventory.summary.addCopies,
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
     proposedLocations:assignments.differences.filter(d=>d.kind==='location'&&d.choice==='apply').length,
     metadataFields:metadata.summary.updates,
+    confidentMetadata:metadata.summary.autoHigh,
+    consideredMetadata:metadata.summary.autoMedium,
+    preservedMetadata:metadata.summary.autoKept,
     affectedMetadataCopies:metadata.summary.affectedCopies,
     pending:assignments.summary.pending+inventory.summary.blockedEditions+metadata.summary.issues,
     blockedStock:inventory.summary.blockedEditions,pendingAssignments:assignments.summary.pending,
