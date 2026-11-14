@@ -318,9 +318,27 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
           &&row.sourceEvidence.length>0);
       if(!currentDifferent&&!conflict&&!hasIndependentEvidence)continue;
       valid.add(id);
-      if(selected.get(id)==='keep')continue;
       const current=field==='author'?copies[0].author:copies[0][field];
       const important=['title','author'].includes(field);
+      if(selected.get(id)==='keep'){
+        // A deliberate override is an auditable decision, even when it
+        // results in no database write. Preserve the consulted providers.
+        const sourceDecision=sourceConfidence.decide({
+          isbn,field,excel:important?(field==='author'?next?.value:next):next,
+          current,evidence:rows.flatMap(row=>row.sourceEvidence||[]),
+        });
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'manual',
+          reason:'Bestaande waarde expliciet behouden door beheerder',
+          before:current,after:current,excel:next,
+          sources:sourceDecision.agreeingSources,
+          sourceCount:sourceDecision.sourceCount,
+          canUseExcel:!conflict,
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
       const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
         issue.severity==='conflict'&&!COLUMN_WARNINGS[issue.code]
         &&issue.code!=='metadata_differs_from_excel'));
