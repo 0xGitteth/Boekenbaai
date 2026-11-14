@@ -381,4 +381,39 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(normalizedMetadataChoice(tooMany).ok,false,
     'The cap should still reject more resolutions than the workbook supports');
 }
+
+{
+  const current=db();
+  current.books[0].tags=['oud'];
+  current.books[1].tags=['oud'];
+  const explicitTags=source(0,{},{
+    tags:['avontuur','strip'],
+  },{tags:{
+    source:'excel',raw:'avontuur',explicitValues:['avontuur'],
+    derived:'exam_material_strip_tag',includesDerivedValues:true,
+  }});
+  const selected=plan([explicitTags],current,{
+    parts:parts({fields:{tags:true}}),
+  });
+  assert.equal(selected.ok,true);
+  assert.equal(selected.summary.metadataFields,1,
+    'Mixed explicit and derived tags still make a selected tag update');
+  assert.deepEqual(selected.metadata.updates[0].value,['avontuur'],
+    'The Strip hint must not be written into selected Tags metadata');
+  const multiple=plan([source(0,{},{
+    tags:['avontuur','spannend','strip'],
+  },{tags:{
+    source:'excel',raw:'avontuur',
+    explicitValues:['avontuur','spannend'],
+    derived:'exam_material_strip_tag',includesDerivedValues:true,
+  }})],current,{parts:parts({fields:{tags:true}})});
+  assert.deepEqual(multiple.metadata.updates[0].value,['avontuur','spannend']);
+  const hintOnly=plan([source(0,{},{
+    tags:['strip'],
+  },{tags:{
+    source:'derived',detail:'exam_material_strip_tag',raw:'Strip',
+  }})],current,{parts:parts({fields:{tags:true}})});
+  assert.equal(hintOnly.summary.metadataFields,0,
+    'A blank Tags cell may never be filled by Examenmateriaal alone');
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
