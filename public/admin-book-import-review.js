@@ -625,6 +625,13 @@
         || row.identifierAnalysis?.explicit?.raw
         || row.identifierAnalysis?.legacy?.raw
         || row.identifierAnalysis?.ambiguous?.raw || '';
+      if (['publishedYear','pageCount'].includes(field)
+        &&row.provenance?.[field]?.source==='excel'
+        &&row.provenance[field].raw!==undefined){
+        // Invalid numeric Excel cells normalize to null; show the original
+        // entry in the editor so the user knows what needs correcting.
+        return String(row.provenance[field].raw??'');
+      }
       if (field === 'tags') return (book.tags || []).join('; ');
       if (field === 'themes') return (
         Array.isArray(book.manualThemes) && book.manualThemes.length
