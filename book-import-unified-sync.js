@@ -56,6 +56,13 @@ const COLUMN_WARNINGS={
 };
 function issueAffectsSelection(issue,parts,domain){
   const code=issue?.code||'';
+  // A disagreement with a THIRD-PARTY metadata service does not mean the
+  // teacher's explicit Excel cells are invalid. These source comparisons
+  // remain visible as optional context, but may not block the stock count,
+  // loan/location matching or every selected metadata field independently.
+  // Structural ISBN/title conflicts and malformed values remain blocking.
+  if(code==='metadata_differs_from_excel' && issue?.severity==='warning')
+    return false;
   if(LOAN_ISSUES.has(code))return domain==='assignment'&&parts.loans;
   if(LOCATION_ISSUES.has(code))return domain==='assignment'&&parts.locations;
   if(code==='class_context_needs_review')
