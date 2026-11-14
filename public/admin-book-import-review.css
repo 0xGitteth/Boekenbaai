@@ -225,3 +225,15 @@
 .bb-import__advisory-stats { font-size: .87rem; }
 .bb-import__exception-group > .btn { margin-top: .1rem; justify-self: start; }
 .bb-import__exception-group .bb-import__exceptions-list { margin-top: .4rem; }
+
+/* Automatic ISBN source judgement. Keep the compulsory portion small. */
+.bb-import__confidence { display:flex; flex-wrap:wrap; align-items:center;
+  gap:.35rem 1rem; padding:.7rem .9rem; border:1px solid var(--accent-border);
+  background:var(--accent-softer); border-radius:10px; font-size:.9rem; }
+.bb-import__confidence .hint { flex-basis:100%; font-size:.83rem; }
+.bb-import__book-check { display:grid; gap:.55rem; padding:.8rem; border:1px solid var(--accent-border);
+  border-radius:10px; background:var(--surface); }
+.bb-import__book-isbn { font-size:.84rem; }
+.bb-import__book-check > .bb-import__exception { border:0; border-top:1px solid var(--accent-border);
+  border-radius:0; padding:.55rem 0; }
+.bb-import__book-check > .bb-import__exception:last-child { padding-bottom:0; }
