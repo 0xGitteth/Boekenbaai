@@ -120,6 +120,7 @@
     borrower_not_uniquely_matched:'De lener kan niet eenduidig aan een account worden gekoppeld.',
     inactive_student:'De genoemde leerling is niet meer actief.',
     loan_requires_single_copy:'Een uitleenregistratie moet één fysiek exemplaar aanwijzen.',
+    loan_context_requires_followup:'De uitlening kan nog niet veilig aan een leerling of klas gekoppeld worden.',
     copy_requires_single_excel_row:'Deze uitleen- of locatieregel moet één fysiek exemplaar betreffen.',
     loan_borrower_needs_review:'De leerling of klas is niet eenduidig herkend.',
     loan_borrower_changed:'De uitleenregistratie is sinds de controle gewijzigd.',
