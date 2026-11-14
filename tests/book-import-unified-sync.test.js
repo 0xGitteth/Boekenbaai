@@ -605,6 +605,23 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(preview.metadata.updates[0].field,'description');
   assert.equal(preview.summary.pendingMetadata,1,
     'Selected invalid page count still needs an explicit decision');
+  const invalidMetadata=source(0,{},{
+    pageCount:null,
+  },{pageCount:{source:'excel',raw:'geen getal'}});
+  invalidMetadata.status='warning';
+  invalidMetadata.issues=[{
+    code:'metadata_differs_from_excel',severity:'warning',
+    field:'pageCount',sourceInvalid:true,
+    excelValue:'geen getal',metadataValue:200,
+  }];
+  const unsafeNumeric=plan([invalidMetadata],current,{
+    parts:parts({fields:{pageCount:true}}),
+    acceptWarnings:false,
+  });
+  assert.equal(unsafeNumeric.summary.metadataFields,0,
+    'Invalid numeric Excel input is not a harmless external disagreement');
+  assert.equal(unsafeNumeric.summary.pendingMetadata,1);
+
   const blocked=source(0,{},{
     description:'Excelbeschrijving',
   },{description:{source:'excel',raw:'Excelbeschrijving'}});
