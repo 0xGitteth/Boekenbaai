@@ -462,6 +462,8 @@
     let page = 0;
     let automaticPage = 0;
     let automaticExpanded = false;
+    let unifiedLimits={assignments:15,metadata:15,stock:15};
+    const unifiedOpenGroups=new Set();
     let busy = false;
     let openEditor = null;
     let warningsAccepted = false;
@@ -982,7 +984,9 @@
       const problems=make('section','bb-import__exceptions');
       problems.append(make('h4','','Handmatig controleren ('+
         (exceptions.length+metadataPlan.issues.length+blocked.length)+')'));
-      const issueList=make('div','bb-import__exceptions-list');
+      const assignmentCards=make('div','bb-import__exceptions-list');
+      const metadataCards=make('div','bb-import__exceptions-list');
+      const stockCards=make('div','bb-import__exceptions-list');
       const reasonNames={
         ambiguous_physical_copy:'Geen veilig beschikbaar exemplaar vast te stellen.',
         conflicting_excel_borrowers:'Excel noemt zowel een leerling als een klas.',
@@ -1033,7 +1037,7 @@
           else assignmentResolutions.set(diff.id,{id:diff.id,action:input.value});
           render();
         });
-        card.append(input);issueList.append(card);
+        card.append(input);assignmentCards.append(card);
       }
       for(const issue of metadataPlan.issues){
         const card=make('article','bb-import__exception');
@@ -1081,7 +1085,7 @@
         }
         if(!affected.length)card.append(make('p','hint',
           'De bronrij is niet beschikbaar voor correctie. Controleer de Excel.'));
-        issueList.append(card);
+        metadataCards.append(card);
       }
       for(const item of blocked){
         const source=(stage.rows||[]).find(row=>row.index===item.index);
@@ -1104,11 +1108,45 @@
         });
         card.append(edit,skip);
         if(openEditor===item.index&&source)editRow(source,card);
-        issueList.append(card);
+        stockCards.append(card);
       }
-      if(!issueList.children.length)issueList.append(make('p','hint',
-        'Geen afzonderlijke keuzes nodig. De voorgestelde wijzigingen kunnen gezamenlijk worden bevestigd.'));
-      problems.append(issueList);
+      const groups=[
+        ['assignments','Uitleningen en vaste locaties',assignmentCards],
+        ['metadata','Boekgegevens',metadataCards],
+        ['stock','Boekenvoorraad',stockCards],
+      ];
+      const totalCards=groups.reduce((count,[, ,cards])=>count+cards.children.length,0);
+      if(!totalCards){
+        problems.append(make('p','hint',
+          'Geen handmatige controles nodig voor deze import.'));
+      }
+      for(const [kind,label,cards] of groups){
+        const count=cards.children.length;
+        if(!count)continue;
+        const group=make('details','bb-import__exception-group');
+        group.open=unifiedOpenGroups.has(kind)||count<=5;
+        group.addEventListener('toggle',()=>{
+          if(!group.isConnected)return;
+          if(group.open)unifiedOpenGroups.add(kind);
+          else unifiedOpenGroups.delete(kind);
+        });
+        group.append(make('summary','',label+' ('+count+')'));
+        const limit=unifiedLimits[kind];
+        while(cards.children.length>limit)cards.lastElementChild.remove();
+        group.append(cards);
+        if(count>limit){
+          const more=button('Volgende '+Math.min(15,count-limit)
+            +' controlepunten tonen','btn btn--secondary');
+          more.addEventListener('click',()=>{
+            unifiedLimits[kind]+=15;
+            unifiedOpenGroups.add(kind);
+            render();
+          });
+          group.append(more,make('p','hint',
+            'Getoond: '+limit+' van '+count+'. Je keuzes blijven bewaard.'));
+        }
+        problems.append(group);
+      }
       results.append(problems);
 
       const suggested=make('details','bb-import__proposals');
