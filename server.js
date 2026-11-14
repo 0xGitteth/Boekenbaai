@@ -24,7 +24,8 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
-  actualAssignmentPreview, assignmentSource } = require('./book-import-unified-sync');
+  actualAssignmentPreview, assignmentSource, shouldApplyMetadataToCreatedCopy } =
+  require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
@@ -5845,7 +5846,7 @@ async function handleApi(req, res, requestUrl) {
               // physical copies with conflicting title/author strings.
               for(const update of combined.metadata.updates){
                 for(const book of createdCopies){
-                  if(book.editionIsbn!==update.isbn)continue;
+                  if(!shouldApplyMetadataToCreatedCopy(update,book))continue;
                   if(update.field==='author'){
                     book.author=update.value.value;
                     book.authors=[...update.value.authors];
