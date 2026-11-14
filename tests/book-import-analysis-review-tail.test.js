@@ -719,9 +719,13 @@ module.exports = async function runReviewTailTests() {
       title: 'Verkeerde editie', author: 'A Auteur', barcode: ISBN_ALT, found: true, source: 'mismatch',
     }),
   });
-  assert.strictEqual(mismatchedExactIsbn.rows[0].status, 'conflict');
-  assert.ok(issueCodes(mismatchedExactIsbn.rows[0]).has('ambiguous_isbn_lookup_results'));
-  assert.strictEqual(mismatchedExactIsbn.groups.length, 0, 'Mismatched exact-ISBN evidence must block safe edition grouping');
+  assert.strictEqual(mismatchedExactIsbn.rows[0].status, 'warning',
+    'A single incompatible online result is not proof that the Excel ISBN is wrong');
+  assert.ok(mismatchedExactIsbn.rows[0].issues.some(issue=>
+    issue.code==='ambiguous_isbn_lookup_results'
+    &&issue.reviewLevel==='informational'));
+  assert.strictEqual(mismatchedExactIsbn.groups.length, 1,
+    'A valid Excel ISBN remains groupable when only the external lookup is wrong');
 
   const unsupportedWithFallback = await analyzeBookImportRows([{
     Titel: 'Unsupported bron', Auteur: 'A Auteur', 'ISBN-nummer': true, 'Intern ISBN': ISBN,
