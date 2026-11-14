@@ -98,6 +98,35 @@ assert.equal(normalizeParts(undefined).value.books,true);
 
 {
   const current=db();
+  const advisory=source(0,{},{
+    quantity:{valid:true,value:3},
+  });
+  advisory.status='warning';
+  advisory.issues=[{
+    code:'metadata_differs_from_excel',severity:'warning',field:'title',
+    excelValue:'Oorlogswinter',metadataValue:['Online titel'],
+  }];
+  const safe=plan([advisory],current,{parts:parts({books:true})});
+  assert.equal(safe.summary.newCopies,1,
+    'One external title discrepancy must not block adding a verified ISBN copy');
+  assert.equal(safe.summary.blockedStock,0);
+  assert.equal(safe.summary.readyToApply,true);
+  const confirmed=source(0,{},{
+    quantity:{valid:true,value:3},
+  });
+  confirmed.status='conflict';
+  confirmed.issues=[{
+    code:'metadata_title_conflict',severity:'conflict',
+    editionIsbn:ISBN,sourceCount:2,
+  }];
+  const blocked=plan([confirmed],current,{parts:parts({books:true})});
+  assert.equal(blocked.summary.newCopies,0);
+  assert.equal(blocked.summary.blockedStock,1,
+    'Corroborated title/ISBN conflicts remain a mandatory human check');
+}
+
+{
+  const current=db();
   const fixed=plan([source(0,{
     fixedLocation:{status:'resolved',label:'Klas A'},
     ...loan('tim','Tim Leerling'),
