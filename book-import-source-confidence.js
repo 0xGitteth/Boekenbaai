@@ -48,7 +48,10 @@ function sourceConsensus(isbn,field,entries) {
   const votes=independentVotes(isbn,field,entries);
   const groups=new Map();
   for(const vote of votes){
-    const key=display(vote.value).toLocaleLowerCase('nl');
+    // Accent, spacing and punctuation variants are the same orthographic
+    // claim. Two independent providers must not become opposing votes solely
+    // because one writes "P.S." and another writes "PS".
+    const key=comparison(vote.value);
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(vote);
   }
