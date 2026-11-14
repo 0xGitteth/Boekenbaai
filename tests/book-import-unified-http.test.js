@@ -305,6 +305,30 @@ async function run(){
       assert.equal(stored.borrowedBy,'lisa');
     }
 
+    // A newly added physical copy of an existing ISBN must inherit
+    // consistent stored title/author spellings without rewriting the old
+    // records or interpreting punctuation as a new edition.
+    const beforeEdition=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    const spellingStage=await start([old('',{
+      Titel:'Oorlogs-winter',Auteur:'Jan Térlouw',
+      Aantal:beforeEdition.length+1,
+    })],parts({books:true}));
+    assert.equal(spellingStage.status,201,JSON.stringify(spellingStage.data));
+    assert.equal(spellingStage.data.decisions.summary.blockedStock,0);
+    assert.equal(spellingStage.data.decisions.summary.newCopies,1);
+    const spellingApply=await apply(spellingStage);
+    assert.equal(spellingApply.status,200,JSON.stringify(spellingApply.data));
+    assert.equal(spellingApply.data.result.created,1);
+    const editionAfter=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    assert.equal(editionAfter.length,beforeEdition.length+1);
+    const added=editionAfter.find(book=>!beforeEdition.some(old=>old.id===book.id));
+    assert.equal(added.title,'Oorlogswinter',
+      'Matching ISBN editions retain the existing verified spelling');
+    assert.equal(added.author,'Jan Terlouw');
+    assert.equal(added.importProvenance.fieldSources.title.source,'existing');
+    assert.equal(added.importProvenance.fieldSources.author.source,'existing');
+    assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa');
+
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
