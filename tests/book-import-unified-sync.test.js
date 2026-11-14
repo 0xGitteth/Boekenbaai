@@ -266,6 +266,43 @@ assert.equal(normalizeParts(undefined).value.books,true);
 
 {
   const current=db();
+  const safe=source(0,{},{
+    description:'Nieuwe geldige beschrijving',
+  },{description:{source:'excel',raw:'Nieuwe geldige beschrijving'}});
+  safe.status='warning';
+  safe.issues=[
+    {code:'isbn_repaired',severity:'warning'},
+    {code:'metadata_lookup_failed',severity:'warning'},
+    {code:'metadata_differs_from_excel',severity:'warning',field:'title',
+      sourceInvalid:false},
+    {code:'invalid_page_count',severity:'warning'},
+    {code:'class_context_needs_review',severity:'warning'},
+  ];
+  const result=plan([safe],current,{
+    parts:parts({fields:{description:true}}),acceptWarnings:false,
+  });
+  assert.equal(result.summary.metadataFields,1,
+    'Benign lookup failures and unrelated fields may not silently preserve a valid selected description');
+  assert.equal(result.summary.preservedMetadata,0);
+  assert.equal(result.summary.pendingMetadata,0);
+  assert.equal(result.summary.readyToApply,true);
+  assert.equal(result.actionableSourceIssues.length,0,
+    'The review panel and metadata planner must agree on which warnings need approval');
+
+  const selected=source(0,{},{
+    pageCount:null,
+  },{pageCount:{source:'excel',raw:'onbekend'}});
+  selected.status='warning';
+  selected.issues=[{code:'invalid_page_count',severity:'warning'}];
+  const unsafe=plan([selected],current,{
+    parts:parts({fields:{pageCount:true}}),
+  });
+  assert.equal(unsafe.summary.metadataFields,0,
+    'The same policy may not accidentally apply an invalid selected value');
+}
+
+{
+  const current=db();
   const fixed=plan([source(0,{
     fixedLocation:{status:'resolved',label:'Klas A'},
     ...loan('tim','Tim Leerling'),
