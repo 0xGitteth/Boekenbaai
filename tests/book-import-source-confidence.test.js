@@ -138,6 +138,22 @@ const plan=(rows,db,fields,extra={})=>buildUnifiedBookImport(
     'Source spelling corrections must preserve individual author records');
 }
 {
+  const result=plan([row(0)],database(),{author:true},{
+    metadataResolutions:[{id:ISBN+':author',action:'keep'}],
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.metadata.updates.length,0);
+  assert.equal(result.metadata.automaticDecisions.length,1,
+    'An explicit keep must be included in the saved decision audit');
+  assert.equal(result.metadata.automaticDecisions[0].action,'keep');
+  assert.equal(result.metadata.automaticDecisions[0].confidence,'manual');
+  assert.equal(result.metadata.automaticDecisions[0].sourceCount,3);
+  assert.equal(result.metadata.automaticDecisions[0].before,'Rene van Dijk');
+  assert.equal(result.metadata.automaticDecisions[0].after,'Rene van Dijk');
+  assert.equal(result.summary.readyToApply,true,
+    'A keep-only review must be confirmable to persist the audit');
+}
+{
   const tie=[
     {source:'Bureau ISBN',editionIsbn:ISBN,title:'Een ander boek'},
     {source:'Google Books',editionIsbn:ISBN,title:'Een derde boek'},
@@ -148,3 +164,32 @@ const plan=(rows,db,fields,extra={})=>buildUnifiedBookImport(
     'Tied source votes must not override a substantively different stored title');
 }
 console.log('Verified ISBN source consensus, automatic keeps and manual overrides OK');
+
+// Complete worksheet rows must still consult providers when the user opts in
+// to ISBN enrichment. Previously, the missing-fields guard skipped these.
+const {resolveMetadata}=require('../book-import-analysis-metadata');
+(async()=>{
+  let calls=0;
+  const complete=row(0,{book:{
+    title:'De Avonturen',author:'René van Dijk',authors:['René van Dijk'],
+    publisher:'Uitgever',publishedYear:2020,pageCount:220,language:'nl',
+    coverUrl:'https://example.org/cover.jpg',description:'Beschrijving',
+    tags:['spannend'],themes:['avontuur'],
+  }});
+  await resolveMetadata(complete,{});
+  assert.equal(calls,0,'No lookup occurs without a provided opt-in resolver');
+  await resolveMetadata(complete,{lookupIsbn:async()=>{
+    calls++;
+    return {found:true,metadata:{isbn13:ISBN,title:'De Avonturen',
+      author:'René van Dijk',publisher:'Uitgever'},
+      sourceCandidates:[
+        {source:'Google Books',isbn13:ISBN,title:'De Avonturen',
+          author:'René van Dijk'},
+        {source:'Open Library',isbn13:ISBN,title:'De Avonturen',
+          author:'René van Dijk'},
+      ]};
+  }});
+  assert.equal(calls,1,'Complete rows still need opted-in verification');
+  assert.equal(complete.sourceEvidence.length,2,
+    'Independent providers remain visible for confidence decisions');
+})().catch(error=>{console.error(error);process.exitCode=1;});
