@@ -225,10 +225,11 @@ function projectCopies(analysis,inventory,parts,db,effectiveIdentityUpdates=new 
       existingEdition(book)===addition.editionIsbn);
     // Projected copy identity must match the actual selected metadata
     // update; creation itself continues to use the reviewed Excel fields.
-    const title=old&&effectiveIdentityUpdates.has(addition.editionIsbn+':title')
-      ?old.title:row.book.title;
-    const author=old&&effectiveIdentityUpdates.has(addition.editionIsbn+':author')
-      ?old.author:row.book.author;
+    // Physical copies of an already identified edition must be comparable
+    // to existing copies while the preview runs. Source-confirmed metadata
+    // updates are applied atomically during confirmation.
+    const title=old?old.title:row.book.title;
+    const author=old?old.author:row.book.author;
     for(let n=0;n<addition.quantity;n++)copies.push({
       id:virtualId(addition.index,n),title,author,
       editionIsbn:addition.editionIsbn,metadataIsbn:addition.editionIsbn,
