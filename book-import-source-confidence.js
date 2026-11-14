@@ -3,7 +3,15 @@
 // Per-edition source comparison. A merged Google/OpenLibrary result counts as
 // zero independent votes. Only individual, matched provider replies qualify.
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
-const PROVIDERS=new Set(['googlebooks','openlibrary','isbnbarcode.org']);
+const PROVIDERS=new Set(['bureau isbn','googlebooks','openlibrary','isbnbarcode.org']);
+function normalizeSource(value) {
+  const text=typeof value==='string'?value.toLowerCase().trim():'';
+  if(text==='google books'||text==='googlebooks')return 'googlebooks';
+  if(text==='open library'||text==='openlibrary')return 'openlibrary';
+  if(text==='bureau isbn')return 'bureau isbn';
+  if(text==='isbnbarcode.org')return 'isbnbarcode.org';
+  return '';
+}
 const FIELDS=new Set(['title','author','publisher']);
 
 function display(value) {
@@ -23,7 +31,7 @@ function independentVotes(isbn,field,entries) {
   if(!target)return [];
   const byProvider=new Map();
   for(const entry of entries){
-    const provider=typeof entry?.source==='string'?entry.source.toLowerCase():'';
+    const provider=normalizeSource(entry?.source);
     if(!PROVIDERS.has(provider)||byProvider.has(provider)
       ||canonicalizeBookIsbn13(entry.editionIsbn)!==target)continue;
     const value=display(entry[field]);
@@ -79,4 +87,4 @@ function decide({isbn,field,excel,current,evidence=[]}){
       ?'Geen onafhankelijke bronovereenstemming, geldige Excelwaarde voorgesteld'
       :'Geen onafhankelijke bronnen geraadpleegd; geselecteerde Excelwaarde voorgesteld'};
 }
-module.exports={equivalentSpelling,independentVotes,sourceConsensus,decide};
+module.exports={normalizeSource,equivalentSpelling,independentVotes,sourceConsensus,decide};
