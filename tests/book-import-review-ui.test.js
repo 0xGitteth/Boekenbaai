@@ -247,3 +247,12 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
   assert.match(screen,/unifiedLimits\[kind\]\+=15/,
     'Administrators can load more exceptions without losing their choices');
 }
+
+{
+  const beforeUpload=script.slice(script.indexOf('const metadata = make('),
+    script.indexOf('const importMode = make('));
+  assert.match(beforeUpload,/metadata\.checked = false/,
+    'Hundreds of external lookups must be an explicit opt-in');
+  assert.match(beforeUpload,/kan lang duren/,
+    'Administrators should understand the latency before opting in');
+}
