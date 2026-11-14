@@ -362,7 +362,9 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       let chosen=next;
       if(!manualExcel && decision.action==='source' && important){
         chosen=field==='author'
-          ?{value:decision.value,authors:[decision.value]}
+          ?{value:decision.value,authors:Array.isArray(decision.authors)
+              &&decision.authors.length
+                ?[...decision.authors]:[...(next?.authors||[])]}
           :decision.value;
       }else if(!manualExcel && decision.action==='source')chosen=decision.value;
       const changed=copies.some(copy=>!equal(
