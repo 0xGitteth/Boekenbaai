@@ -207,3 +207,21 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
   assert.ok(combined.includes("invalid_published_year:'Ongeldig uitgavejaar'"),
     'An invalid publication year must be disclosed before acceptance');
 }
+
+
+// In metadata-only imports, conflicts such as an invalid page count must
+// provide a source editor on the affected worksheet row.
+{
+  const start=script.indexOf('    function renderUnifiedSync() {');
+  const end=script.indexOf('    function renderAssignmentReconciliation()',start);
+  const combined=script.slice(start,end);
+  const metadata=combined.slice(combined.indexOf('for(const issue of metadataPlan.issues)'),
+    combined.indexOf('for(const item of blocked)'));
+  assert.match(metadata,/issue\.worksheetRows/);
+  assert.match(metadata,/source\.sourceRowNumber/);
+  assert.match(metadata,/Excelrij ' \+source\.sourceRowNumber\+' corrigeren'/);
+  assert.match(metadata,/editRow\(source,card,\{/);
+  assert.match(metadata,/onlyFields:\[editField\],metadataIssueId:issue\.id/);
+  assert.match(script,/if \(options\.onlyFields && !options\.onlyFields\.includes\(field\)\) continue/);
+  assert.match(script,/metadataResolutions\.delete\(options\.metadataIssueId\)/);
+}
