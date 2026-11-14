@@ -5640,11 +5640,27 @@ async function handleApi(req, res, requestUrl) {
                 sourceFields[name] = createFieldSource(kind, provenance?.detail || null);
               }
               sourceFields.metadataIsbn = sourceFields.editionIsbn || createFieldSource('unknown');
+              // When the ISBN already exists, preserve its stored identity
+              // for new copies unless the administrator explicitly selected
+              // an accepted title/author update. Harmless punctuation and
+              // accent variants must not create inconsistent physical copies.
+              const acceptedIdentityFields=isUnified
+                ?new Set(combined.metadata.updates.filter(update=>
+                  update.isbn===addition.editionIsbn
+                  &&['title','author'].includes(update.field))
+                  .map(update=>update.field)):new Set();
+              const keepExistingTitle=Boolean(isUnified&&existingTemplate
+                &&!acceptedIdentityFields.has('title'));
+              const keepExistingAuthor=Boolean(isUnified&&existingTemplate
+                &&!acceptedIdentityFields.has('author'));
+              if(keepExistingTitle)
+                sourceFields.title=createFieldSource('existing','matched_isbn_edition');
+              if(keepExistingAuthor)
+                sourceFields.author=createFieldSource('existing','matched_isbn_edition');
               const template = ensureBookShape({
-                // New copies use exactly the data shown and approved in the
-                // reviewed Excel preview. No live metadata is copied from an
-                // existing edition after the administrator confirms.
-                title: row.book.title, author: row.book.author, authors: row.book.authors,
+                title: keepExistingTitle?existingTemplate.title:row.book.title,
+                author: keepExistingAuthor?existingTemplate.author:row.book.author,
+                authors: keepExistingAuthor?existingTemplate.authors:row.book.authors,
                 description: row.book.description, publisher: row.book.publisher,
                 publishedYear: row.book.publishedYear, pageCount: row.book.pageCount,
                 language: row.book.language, coverUrl: row.book.coverUrl,
