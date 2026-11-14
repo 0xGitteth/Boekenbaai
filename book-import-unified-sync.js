@@ -120,7 +120,7 @@ function inventoryNotSelected(analysis){
     unchangedEditions:0,acknowledgedEditions:0,skippedRows:0,omittedExistingCopies:0,
     readyToApply:true}};
 }
-function assignmentSource(analysis,parts,db){
+function assignmentSource(analysis,parts,db,inventory=null){
   const oldByIsbn=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
@@ -136,6 +136,22 @@ function assignmentSource(analysis,parts,db){
     if(!parts.loans){delete context.studentLoan;delete context.classLoan;delete context.studentClassHint;}
     if(!parts.locations)delete context.fixedLocation;
     if(!parts.locations||!parts.loans)delete context.classContext;
+    // A brand-new multi-copy ISBN has its fixed location initialized on
+    // EVERY proposed physical copy by projectCopies(). Sending its quantity
+    // row to the single-copy assignment planner would create a false issue.
+    // Never apply this exception to active loans or existing copies.
+    if(parts.books&&parts.locations&&inventory?.proposedAdds
+      &&row.book?.quantity?.valid===true&&row.book.quantity.value>1
+      &&context.fixedLocation?.status==='resolved'
+      &&!context.studentLoan&&!context.classLoan
+      &&!context.classContext?.length
+      &&!(db.books||[]).some(copy=>
+        existingEdition(copy)===row.book.editionIsbn)){
+      const proposed=inventory.proposedAdds
+        .filter(item=>item.index===row.index)
+        .reduce((sum,item)=>sum+item.quantity,0);
+      if(proposed===row.book.quantity.value)delete context.fixedLocation;
+    }
     delete context.libraryPresence;
     return {...row,book,context};
   })};
@@ -317,7 +333,7 @@ function buildUnifiedBookImport(analysis,db,{
   const projected=projectCopies(analysis,inventory,use,db);
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
   const source=use.loans||use.locations
-    ?assignmentSource(analysis,use,db):{...analysis,rows:[]};
+    ?assignmentSource(analysis,use,db,inventory):{...analysis,rows:[]};
   let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
   if(!assignments.ok)return assignments;
   // Receipt IDs survive loan returns and truncated import reports. Re-uploading
