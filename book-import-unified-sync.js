@@ -31,12 +31,19 @@ function normalizeParts(input) {
   return {ok:true,value:{books:input.books,loans:input.loans,locations:input.locations,fields:selected}};
 }
 function virtualId(index,n){return 'unified-preview-copy:'+index+':'+n;}
+// Older copies may store the edition ISBN in isbn13 or barcode alone.
+// An ISBN-valued barcode is a fallback only when edition fields are absent.
+function existingEdition(book){
+  return canonicalizeBookIsbn13(book?.editionIsbn)
+    ||canonicalizeBookIsbn13(book?.metadataIsbn)
+    ||canonicalizeBookIsbn13(book?.isbn13)
+    ||canonicalizeBookIsbn13(book?.barcode);
+}
 function isIsbnBarcode(value,isbn){return Boolean(value)&&canonicalizeBookIsbn13(value)===canonicalizeBookIsbn13(isbn);}
 function stockAnalysis(analysis,db,parts){
   const known=new Map();
   for(const book of db.books||[]){
-    const isbn=canonicalizeBookIsbn13(book.editionIsbn)
-      ||canonicalizeBookIsbn13(book.metadataIsbn);
+    const isbn=existingEdition(book);
     if(isbn&&!known.has(isbn))known.set(isbn,book);
   }
   return {...analysis,rows:analysis.rows.map(row=>{
@@ -92,8 +99,7 @@ function projectCopies(analysis,inventory,parts,db){
     const row=analysis.rows[addition.index];
     if(!row)throw Error('unified_source_row_missing');
     const old=(db.books||[]).find(book=>
-      (canonicalizeBookIsbn13(book.editionIsbn)
-        ||canonicalizeBookIsbn13(book.metadataIsbn))===addition.editionIsbn);
+      existingEdition(book)===addition.editionIsbn);
     // Preview identity must agree with the normalized matching row when a
     // selected metadata update renames the existing ISBN edition.
     const title=old&&parts.fields.title?old.title:row.book.title;
@@ -120,7 +126,7 @@ function metadataKey(field,row){
 }
 function normalizedMetadataChoice(input){
   if(input===undefined)return {ok:true,values:[]};
-  if(!Array.isArray(input)||input.length>6000)return {ok:false,error:'invalid_metadata_choices'};
+  if(!Array.isArray(input)||input.length>METADATA_FIELDS.length*1500)return {ok:false,error:'invalid_metadata_choices'};
   const seen=new Set(),values=[];
   for(const item of input){
     if(!item||typeof item!=='object'||Array.isArray(item)
@@ -158,7 +164,13 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         const source=row.provenance?.[field];
         // A value explicitly corrected in the import review is authoritative
         // for a selected column. Automatic enrichment is not.
-        const fromExcel=source?.source==='excel';
+        // A value derived from another column (e.g. Examenmateriaal:
+        // Engels => language=en) is not a populated selected Excel cell.
+        // Combined first/last-name author columns remain valid sources.
+        const derivedFromOther=Boolean(source?.includesDerivedValues)
+          ||(Boolean(source?.derived) && !(
+            field==='author'&&source.derived==='combined_name_parts'));
+        const fromExcel=source?.source==='excel'&&!derivedFromOther;
         const reviewed=source?.source==='manual'
           &&source.detail==='review_correction';
         return (fromExcel||reviewed)
