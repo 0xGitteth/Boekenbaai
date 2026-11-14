@@ -7,6 +7,7 @@ const {
   createAuthorDisplay,
   getOwnDataValue,
 } = require('./book-edition-core');
+const {normalizeSource}=require('./book-import-source-confidence');
 const {
   addIssue,
   comparableText,
@@ -439,9 +440,10 @@ async function resolveMetadata(row, options) {
       if(Array.isArray(result?.sourceCandidates)){
         row.sourceEvidence=metadataCandidatesFromResult(result.sourceCandidates)
           .filter(candidate=>candidate.editionIsbn===row.book.editionIsbn
-            &&['googlebooks','openlibrary','isbnbarcode.org'].includes(candidate.source))
+            &&Boolean(normalizeSource(candidate.source)))
           .map(candidate=>({
-            source:candidate.source,editionIsbn:candidate.editionIsbn,
+            source:normalizeSource(candidate.source),
+            editionIsbn:candidate.editionIsbn,
             title:candidate.title,author:candidate.author,publisher:candidate.publisher,
           }));
       }
