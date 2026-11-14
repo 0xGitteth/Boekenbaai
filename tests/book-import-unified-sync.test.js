@@ -550,4 +550,71 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(authorKept.summary.blockedStock,1,
     'Keeping an author correction must not create copies with another author');
 }
+
+{
+  const current=db();
+  const row=source(0,{
+    ...loan('tim','Tim Leerling'),
+    fixedLocation:{status:'resolved',label:'Klas A'},
+  },{
+    description:'Nieuwe beschrijving',
+  },{description:{source:'excel',raw:'Nieuwe beschrijving'}});
+  row.status='warning';
+  row.issues=[{
+    code:'metadata_differs_from_excel',severity:'warning',
+    field:'author',excelValue:'Jan Terlouw',
+    metadataValue:'J. Terlouw',
+  }];
+  const proposal=plan([row],current,{
+    parts:parts({books:true,loans:true,locations:true,
+      fields:{description:true}}),
+    acceptWarnings:false,
+  });
+  assert.equal(proposal.ok,true);
+  assert.equal(proposal.summary.blockedStock,0,
+    'Online author spelling must not block stock comparison');
+  assert.equal(proposal.summary.pendingMetadata,0,
+    'Online author spelling must not block explicitly selected description');
+  assert.equal(proposal.summary.metadataFields,1);
+  assert.equal(proposal.summary.proposedLoans,1);
+  assert.equal(proposal.summary.proposedLocations,1);
+  assert.equal(proposal.summary.readyToApply,true,
+    'External metadata comparisons should not require 3 unrelated decisions');
+}
+{
+  const current=db();
+  const row=source(0,{},{
+    description:'Excelbeschrijving',
+    pageCount:null,
+  },{
+    description:{source:'excel',raw:'Excelbeschrijving'},
+    pageCount:{source:'excel',raw:'onbekend'},
+  });
+  row.status='warning';
+  row.issues=[{
+    code:'invalid_page_count',severity:'warning',
+    raw:'onbekend',field:'pageCount',
+  }];
+  const preview=plan([row],current,{
+    parts:parts({fields:{description:true,pageCount:true}}),
+    acceptWarnings:false,
+  });
+  assert.equal(preview.ok,true);
+  assert.equal(preview.summary.metadataFields,1,
+    'Invalid page count must not block a valid description column');
+  assert.equal(preview.metadata.updates[0].field,'description');
+  assert.equal(preview.summary.pendingMetadata,1,
+    'Selected invalid page count still needs an explicit decision');
+  const blocked=source(0,{},{
+    description:'Excelbeschrijving',
+  },{description:{source:'excel',raw:'Excelbeschrijving'}});
+  blocked.status='conflict';
+  blocked.issues=[{code:'edition_identity_conflict',severity:'conflict'}];
+  const unsafe=plan([blocked],current,{
+    parts:parts({fields:{description:true}}),
+  });
+  assert.equal(unsafe.summary.metadataFields,0);
+  assert.equal(unsafe.summary.pendingMetadata,1,
+    'Structural ISBN identity conflicts must remain blocked');
+}
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
