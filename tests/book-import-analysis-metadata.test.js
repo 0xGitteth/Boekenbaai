@@ -185,6 +185,39 @@ module.exports = async function runMetadataTests() {
     issue.code==='ambiguous_isbn_lookup_results'
     &&issue.reviewLevel==='informational'));
 
+  const sourceVerifiedTypo=await analyzeBookImportRows([{
+    Titel:'Bickerton Neveis',Auteur:'Carrý Slee','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,isbn13:ISBN,title:'Bickerton Neves',author:'Carry Slee',
+    sourceCandidates:[
+      {source:'Google Books',isbn13:ISBN,title:'Bickerton Neves',
+        author:'Carry Slee'},
+      {source:'Open Library',isbn13:ISBN,title:'Bickerton Neves',
+        author:'Carry Slee'},
+    ],
+  })});
+  const typo=sourceVerifiedTypo.rows[0];
+  assert.equal(typo.book.title,'Bickerton Neves',
+    'Two matching ISBN providers can repair a minor title typo');
+  assert.equal(typo.book.author,'Carry Slee');
+  assert.equal(typo.provenance.title.detail,'verified_isbn_spelling');
+  assert.equal(typo.provenance.author.detail,'verified_isbn_spelling');
+  assert.equal(typo.provenance.title.correctedFrom,'Bickerton Neveis');
+  assert.ok(!codes(typo).has('metadata_title_conflict'));
+  const differentVolume=await analyzeBookImportRows([{
+    Titel:'Harry Potter 2',Auteur:'J.K. Rowling','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,isbn13:ISBN,title:'Harry Potter 3',author:'J.K. Rowling',
+    sourceCandidates:[
+      {source:'Google Books',isbn13:ISBN,title:'Harry Potter 3',
+        author:'J.K. Rowling'},
+      {source:'Open Library',isbn13:ISBN,title:'Harry Potter 3',
+        author:'J.K. Rowling'},
+    ],
+  })});
+  assert.equal(differentVolume.rows[0].status,'conflict',
+    'Different volume numbers remain identity conflicts despite one changed character');
+
   const matchingExactWithTitleless = selectIsbnMetadataCandidate(ISBN, [
     normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
     normalizeMetadataCandidate({ author: 'A Auteur', isbn13: ISBN, publisher: 'Rijke exacte bron' }),
