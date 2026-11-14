@@ -119,6 +119,12 @@ function nonempty(value){return value!==null&&value!==undefined
   &&(typeof value!=='string'||value.trim()!=='')
   &&(!Array.isArray(value)||value.length>0);}
 function metadataKey(field,row){
+  if(field==='tags' && row.provenance?.tags?.source==='excel'
+    &&row.provenance.tags.includesDerivedValues){
+    // A separate "Examenmateriaal: Strip" cell can add a derived tag.
+    // Only Tags column entries may update stored tags.
+    return row.provenance.tags.explicitValues||[];
+  }
   const value=row.book?.[field];
   if(field==='author')return {value,authors:row.book?.authors};
   return value;
@@ -165,14 +171,19 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         // A value derived from another column (e.g. Examenmateriaal:
         // Engels => language=en) is not a populated selected Excel cell.
         // Combined first/last-name author columns remain valid sources.
+        const composedTags=field==='tags' && source?.source==='excel'
+          &&source.includesDerivedValues;
         const derivedFromOther=Boolean(source?.includesDerivedValues)
+          &&!composedTags
           ||(Boolean(source?.derived) && !(
-            field==='author'&&source.derived==='combined_name_parts'));
+            field==='author'&&source.derived==='combined_name_parts'
+          ) && !(composedTags && source.derived==='exam_material_strip_tag'));
         const fromExcel=source?.source==='excel'&&!derivedFromOther;
         const reviewed=source?.source==='manual'
           &&source.detail==='review_correction';
         return (fromExcel||reviewed)
           &&(reviewed?nonempty(row.book?.[field])
+            :composedTags?nonempty(source.explicitValues)
             :nonempty(source.raw??(field==='author'
               ?(source.headers||[]).length?'combined-author':'':null)));
       });
