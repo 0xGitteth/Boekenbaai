@@ -321,7 +321,18 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
     for (const field of Object.keys(entry.fields)) {
       const name = field === 'examMaterial' ? 'suitableForExamList' : field;
       if (Object.prototype.hasOwnProperty.call(reviewed.provenance, name)) {
-        reviewed.provenance[name] = { source: 'manual', detail: 'review_correction' };
+        if (field === 'tags') {
+          // Reanalysis has separated user-entered Tags from the tag inferred
+          // from Examenmateriaal: Strip. Preserve that exact selected-column
+          // value when changing provenance from Excel to manual correction.
+          const explicitValues = reviewed.provenance.tags?.explicitValues;
+          reviewed.provenance.tags = {
+            source: 'manual', detail: 'review_correction',
+            explicitValues: Array.isArray(explicitValues) ? [...explicitValues] : [],
+          };
+        } else {
+          reviewed.provenance[name] = { source: 'manual', detail: 'review_correction' };
+        }
       }
     }
     if (Object.prototype.hasOwnProperty.call(entry.fields, 'themes')) {
@@ -340,8 +351,9 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
         }
       }
       const tagsOrigin = reviewed.provenance.tags;
-      if (tagsOrigin?.derived === 'exam_material_strip_tag'
-        || tagsOrigin?.detail === 'exam_material_strip_tag') {
+      if (!Object.prototype.hasOwnProperty.call(entry.fields, 'tags')
+        && (tagsOrigin?.derived === 'exam_material_strip_tag'
+          || tagsOrigin?.detail === 'exam_material_strip_tag')) {
         reviewed.provenance.tags = tagsOrigin.source === 'excel' && tagsOrigin.includesDerivedValues
           ? { ...tagsOrigin, includesManualDerivedValues: true }
           : { source: 'manual', detail: 'review_correction_exam_material',

@@ -149,12 +149,25 @@
     const root = make('section', 'admin-card__section admin-card__section--import bb-review', '');
     root.id = 'reviewed-import-panel';
     const header = make('div', 'bb-review__header');
-    header.append(make('h4', '', 'Nieuwe boekimport met controle'));
-    header.append(make('p', 'hint', 'Bekijk elk boek, corrigeer fouten en importeer pas na je bevestiging. Bestaande edities worden niet zomaar toegevoegd of overschreven.'));
+    header.append(make('h4', '', 'Boeken en administratie synchroniseren'));
+    header.append(make('p', 'hint', 'Eén Excelbestand, één controle en één definitieve bevestiging. Kies precies wat je wilt bijwerken.'));
     root.append(header);
+    const steps=make('nav','bb-import__steps');
+    steps.setAttribute('aria-label','Importstappen');
+    const stepNodes=[];
+    for(const label of ['1. Bestand en keuzes','2. Verschillen controleren',
+      '3. Import afronden']){
+      const step=make('span','bb-import__step',label);
+      steps.append(step);
+      stepNodes.push(step);
+    }
+    root.append(steps);
     const enrichmentStatus = make('p', 'hint', 'Gratis aanvulling van boekgegevens: status wordt gecontroleerd.');
     enrichmentStatus.setAttribute('role', 'status');
-    root.append(enrichmentStatus);
+    const enrichmentExtra=make('details','bb-import__extras');
+    enrichmentExtra.append(make('summary','',
+      'Boekverrijking en aanvullend zoeken (optioneel)'),enrichmentStatus);
+    root.append(enrichmentExtra);
     async function refreshEnrichmentStatus() {
       try {
         const data = await request('/api/admin/book-enrichment/status');
@@ -179,7 +192,7 @@
     braveNotice.setAttribute('role', 'status');
     const braveItems = make('div', 'bb-review__brave-items');
     bravePanel.append(braveHeading, braveNotice, braveItems);
-    root.append(bravePanel);
+    enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
     async function refreshBrave() {
       if (braveRefreshing || !root.isConnected) return;
@@ -301,44 +314,124 @@
     const metadata = make('input');
     metadata.type = 'checkbox';
     metadata.checked = true;
-    metadataLabel.append(metadata, document.createTextNode(' Ontbrekende ISBN-gegevens tijdens de controle aanvullen (grondiger, duurt langer). Extra verrijking gaat na de import door; Brave vraagt apart toestemming.'));
-    const importModeLabel = make('label', 'bb-review__field');
-    importModeLabel.append(make('span', '', 'Soort import'));
+    metadataLabel.append(metadata, document.createTextNode(
+      ' Ontbrekende boekgegevens opzoeken tijdens de controle (optioneel).'));
     const importMode = make('select');
-    for (const [value, label] of [
-      ['ordinary', 'Gewone boekimport: boeken toevoegen of voorraad bijwerken'],
-      ['reconcile', 'Administratie corrigeren: uitleningen en vaste locaties'],
+    for (const [value,label] of [
+      ['unified','Samen synchroniseren (aanbevolen)'],
+      ['ordinary','Alleen nieuwe boeken direct toevoegen (oude werkwijze)'],
+      ['reconcile','Alleen administratie controleren (oude werkwijze)'],
     ]) {
-      const option = make('option', '', label);
-      option.value = value;
+      const option=make('option','',label);
+      option.value=value;
       importMode.append(option);
     }
-    importMode.value = 'ordinary';
-    importModeLabel.append(importMode);
-    const importModeHint = make('p', 'hint',
-      'Gewone import laat bestaande koppelingen staan. In de correctiemodus kies je bij '
-      + 'elk gevonden verschil wat ermee moet gebeuren. Lege Excelvelden veranderen niets vanzelf.');
+    importMode.value='unified';
+    const advanced = make('details','bb-import__advanced');
+    advanced.append(make('summary','','Andere importmethoden (geavanceerd)'));
+    const importModeLabel=make('label','bb-review__field');
+    importModeLabel.append(make('span','','Importmethode'),importMode);
     const syncLabel = make('label', 'bb-review__check');
     const syncMode = make('input');
     syncMode.type = 'checkbox';
     syncLabel.append(syncMode, document.createTextNode(
-      ' Voorraad synchroniseren bij herupload: bestaande ISBN-edities vergelijken en alleen ontbrekende exemplaren toevoegen'
+      ' Alleen ontbrekende exemplaren toevoegen (oude voorraadvergelijking)'
     ));
-    const syncHint = make('p', 'hint',
-      'Er worden nooit automatisch boeken verwijderd of uitleningen gewijzigd. Lagere aantallen en afwijkingen moeten eerst worden opgelost.');
-    const analyze = button('Bestand controleren', 'btn');
-    analyze.type = 'submit';
-    function refreshImportMode() {
-      const correction = importMode.value === 'reconcile';
-      metadataLabel.hidden = correction;
-      metadata.disabled = correction;
-      syncLabel.hidden = correction;
-      syncHint.hidden = correction;
-      syncMode.disabled = correction;
-    }
-    importMode.addEventListener('change', refreshImportMode);
-    form.append(fileLabel, importModeLabel, importModeHint, metadataLabel,
-      syncLabel, syncHint, analyze);
+    const syncHint=make('p','hint',
+      'De oude methoden verwerken de administratie en de voorraad apart.');
+    advanced.append(importModeLabel,syncLabel,syncHint);
+
+    const parts = make('section','bb-import__parts');
+    const partsHeading = make('div','bb-import__parts-heading');
+    partsHeading.append(make('strong','','Wat wil je bijwerken?'));
+    const allButton=button('Alles selecteren','btn btn--ghost');
+    allButton.type='button';
+    const noneButton=button('Selectie wissen','btn btn--ghost');
+    noneButton.type='button';
+    partsHeading.append(allButton,noneButton);
+    parts.append(partsHeading);
+    const partChecks=new Map();
+    const columns=[
+      ['title','Titel'],['author','Auteur'],['description','Beschrijving'],
+      ['publisher','Uitgever'],['publishedYear','Verschijningsjaar'],
+      ['pageCount','Aantal pagina’s'],['language','Taal'],
+      ['coverUrl','Boekomslag'],['easyReading','Makkelijk lezen'],
+      ['suitableForExamList','Examenleeslijst'],['tags','Trefwoorden'],
+      ['manualThemes','Thema’s'],
+    ];
+    const checkPart=(key,label,enabled=false)=>{
+      const item=make('label','bb-import__option');
+      const checkbox=make('input');
+      checkbox.type='checkbox';
+      checkbox.checked=enabled;
+      item.append(checkbox,make('span','',label));
+      partChecks.set(key,checkbox);
+      return item;
+    };
+    const card=(heading,subtitle)=>{
+      const section=make('section','bb-import__part-card');
+      section.append(make('strong','',heading),make('p','hint',subtitle));
+      return section;
+    };
+    const stockCard=card('Boekenvoorraad','Voeg ontbrekende ISBN-edities en exemplaren toe. Niets wordt verwijderd.');
+    stockCard.append(checkPart('books','Nieuwe boeken en exemplaren toevoegen',true));
+    const adminCard=card('Administratie','Pas alleen de aangevinkte registraties aan.');
+    adminCard.append(checkPart('loans','Uitleningen bijwerken',true),
+      checkPart('locations','Vaste locaties bijwerken',true));
+    parts.append(stockCard,adminCard);
+    const metadataDetails=make('details','bb-import__columns');
+    metadataDetails.append(make('summary','',
+      'Boekgegevens per Excelkolom bijwerken (optioneel)'));
+    metadataDetails.append(make('p','hint',
+      'Bestaande boekgegevens veranderen uitsluitend voor aangevinkte kolommen '
+      + 'met een ingevulde Excelwaarde. Omslagen en andere gegevens blijven anders staan.'));
+    const columnGrid=make('div','bb-import__column-grid');
+    for(const [key,label] of columns)columnGrid.append(checkPart(key,label));
+    metadataDetails.append(columnGrid);
+    parts.append(metadataDetails);
+    const selectedText=make('p','bb-import__selection hint');
+    const updateSelected=()=>{
+      const n=[...partChecks.values()].filter(input=>input.checked).length;
+      selectedText.textContent=n+' onderdelen geselecteerd · '
+        +'Niet-geselecteerde en lege Excelvelden veranderen niets.';
+    };
+    for(const checkbox of partChecks.values())checkbox.addEventListener('change',updateSelected);
+    allButton.addEventListener('click',()=>{
+      for(const check of partChecks.values())check.checked=true;
+      metadataDetails.open=true;
+      updateSelected();
+    });
+    noneButton.addEventListener('click',()=>{
+      for(const check of partChecks.values())check.checked=false;
+      updateSelected();
+    });
+    parts.append(selectedText);
+    updateSelected();
+    const selectedParts=()=>({
+      books:partChecks.get('books').checked,
+      loans:partChecks.get('loans').checked,
+      locations:partChecks.get('locations').checked,
+      fields:Object.fromEntries(columns.map(([key])=>[key,partChecks.get(key).checked])),
+    });
+    const analyze=button('Excelbestand controleren','btn');
+    analyze.type='submit';
+    const refreshImportMode=()=>{
+      const unified=importMode.value==='unified';
+      parts.hidden=!unified;
+      syncLabel.hidden=unified||importMode.value==='reconcile';
+      syncHint.hidden=unified||importMode.value==='reconcile';
+      syncMode.disabled=unified||importMode.value==='reconcile';
+      const hasBookData=partChecks.get('books').checked
+        ||columns.some(([key])=>partChecks.get(key).checked);
+      metadataLabel.hidden=importMode.value==='reconcile'
+        ||(unified&&!hasBookData);
+      metadata.disabled=metadataLabel.hidden;
+    };
+    importMode.addEventListener('change',refreshImportMode);
+    for(const check of partChecks.values())check.addEventListener('change',refreshImportMode);
+    allButton.addEventListener('click',refreshImportMode);
+    noneButton.addEventListener('click',refreshImportMode);
+    form.append(fileLabel,parts,metadataLabel,advanced,analyze);
     refreshImportMode();
     root.append(form);
     const notice = make('p', 'bb-review__notice hint');
@@ -364,6 +457,7 @@
     let corrections = new Map();
     let inventoryResolutions = new Map();
     let assignmentResolutions = new Map();
+    let metadataResolutions = new Map();
     const skippedEdits = new Map();
     let page = 0;
     let automaticPage = 0;
@@ -388,7 +482,9 @@
         || JSON.stringify([...assignmentResolutions.values()]
             .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})))
           !== JSON.stringify([...(stage.assignmentResolutions || [])]
-            .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})));
+            .sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})))
+        || JSON.stringify([...metadataResolutions.values()].sort((a,b)=>a.id.localeCompare(b.id)))
+          !== JSON.stringify([...(stage.metadataResolutions||[])].sort((a,b)=>a.id.localeCompare(b.id)));
     };
     const setNotice = (text) => { notice.textContent = text; };
     const frozenControls = new Map();
@@ -430,6 +526,7 @@
       corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
       inventoryResolutions = new Map((stage.inventoryResolutions || []).map((item) => [item.isbn, item]));
       assignmentResolutions = new Map((stage.assignmentResolutions || []).map((item) => [item.id, item]));
+      metadataResolutions = new Map((stage.metadataResolutions || []).map(item=>[item.id,item]));
       skippedEdits.clear();
       if (!preservePosition || !sameStage) {
         page = 0;
@@ -528,6 +625,13 @@
         || row.identifierAnalysis?.explicit?.raw
         || row.identifierAnalysis?.legacy?.raw
         || row.identifierAnalysis?.ambiguous?.raw || '';
+      if (['publishedYear','pageCount'].includes(field)
+        &&row.provenance?.[field]?.source==='excel'
+        &&row.provenance[field].raw!==undefined){
+        // Invalid numeric Excel cells normalize to null; show the original
+        // entry in the editor so the user knows what needs correcting.
+        return String(row.provenance[field].raw??'');
+      }
       if (field === 'tags') return (book.tags || []).join('; ');
       if (field === 'themes') return (
         Array.isArray(book.manualThemes) && book.manualThemes.length
@@ -552,7 +656,7 @@
     }
 
     function updateCorrection(index, field, value) {
-      if (field === 'editionIsbn' && stage?.mode === 'inventory_sync') {
+      if (field === 'editionIsbn' && ['inventory_sync','unified_sync'].includes(stage?.mode)) {
         // ISBN-based choices must not silently carry over after changing the
         // edition identity. The old choice would be stale and uneditable.
         const oldIsbn = stage.rows?.find((item) => item.index === index)?.book?.editionIsbn;
@@ -589,12 +693,13 @@
       if (currentApplyButton) currentApplyButton.disabled = true;
     }
 
-    function editRow(row, host) {
+    function editRow(row, host, options = {}) {
       const current = corrections.get(row.index);
       const editor = make('div', 'bb-review__editor');
       editor.append(make('p', 'hint', 'De correcties worden pas verwerkt wanneer je op “Correcties controleren” klikt.'));
       const grid = make('div', 'bb-review__fields');
       for (const [field, labelText] of fieldDefs) {
+        if (options.onlyFields && !options.onlyFields.includes(field)) continue;
         const fieldWrap = make('label', 'bb-review__field');
         fieldWrap.append(make('span', '', labelText));
         const input = field === 'description' ? make('textarea') : make('input');
@@ -605,7 +710,10 @@
         if (source?.source) {
           input.title = 'Bron: ' + source.source + (source.header ? ', kolom ' + source.header : '');
         }
-        input.addEventListener('input', () => updateCorrection(row.index, field, input.value));
+        input.addEventListener('input', () => {
+          if (options.metadataIssueId)metadataResolutions.delete(options.metadataIssueId);
+          updateCorrection(row.index, field, input.value);
+        });
         fieldWrap.append(input);
         if (field === 'easyReading') {
           fieldWrap.append(make('span', 'hint',
@@ -615,6 +723,430 @@
       }
       editor.append(grid);
       host.append(editor);
+    }
+
+    function renderUnifiedSync() {
+      const plan=stage.decisions||{};
+      const summary=plan.summary||{};
+      const stock=plan.inventory||{rows:[],summary:{}};
+      const assignment=plan.assignments||{differences:[],summary:{}};
+      const metadataPlan=plan.metadata||{updates:[],issues:[],summary:{}};
+      const changes=assignment.differences||[];
+      const exceptions=changes.filter(item=>!item.automatic&&!item.previouslyImported);
+      const automatic=changes.filter(item=>item.automatic);
+      const pendingAssignments=exceptions.filter(item=>
+        (assignmentResolutions.get(item.id)?.action||item.choice)==='pending');
+      const pendingMetadata=metadataPlan.issues.filter(item=>
+        !metadataResolutions.has(item.id));
+      const blocked=(stock.rows||[]).filter(item=>item.action==='blocked'
+        &&item.combinedWith===undefined);
+      const heading=make('div','bb-import__review-heading');
+      heading.append(make('h4','','2. Bekijk de voorgestelde wijzigingen'));
+      heading.append(make('p','hint',
+        'De aangevinkte onderdelen worden samen verwerkt na jouw bevestiging. '
+        +'Alleen uitzonderingen vragen een afzonderlijke keuze.'));
+      results.append(heading);
+      const numbers=make('div','bb-import__stat-grid');
+      for(const [count,label] of [
+        [summary.newCopies||0,'Nieuwe exemplaren'],
+        [summary.proposedLoans||0,'Uitleningen bijwerken'],
+        [summary.proposedLocations||0,'Vaste locaties'],
+        [summary.metadataFields||0,'Boekgegevens wijzigen'],
+      ]){
+        const stat=make('div','bb-import__stat');
+        stat.append(make('strong','',String(count)),make('span','',label));
+        numbers.append(stat);
+      }
+      results.append(numbers);
+      const status=make('p','bb-import__review-status');
+      const pending=(summary.pending||0);
+      status.append(make('strong','',pending
+        ?pending+' uitzonderingen vragen aandacht'
+        :'Geen openstaande uitzonderingen'));
+      status.append(document.createTextNode(' · '
+        +(summary.preservedOldCopies||0)+' bestaande exemplaren blijven behouden.'));
+      if(summary.previouslyImportedLoans)status.append(make('span','',
+        ' · '+summary.previouslyImportedLoans+
+        ' eerder verwerkte uitleningen worden niet opnieuw geregistreerd.'));
+      results.append(status);
+
+      const selection=make('details','bb-import__selection-details');
+      selection.append(make('summary','','Wat wordt bij deze import gesynchroniseerd?'));
+      const chosen=plan.parts||stage.syncParts||{};
+      const chosenLabels=[];
+      if(chosen.books)chosenLabels.push('Nieuwe boeken en exemplaren');
+      if(chosen.loans)chosenLabels.push('Uitleningen');
+      if(chosen.locations)chosenLabels.push('Vaste locaties');
+      const selectedFields=Object.entries(chosen.fields||{})
+        .filter(([,value])=>value).map(([field])=>({
+          title:'Titel',author:'Auteur',description:'Beschrijving',publisher:'Uitgever',
+          publishedYear:'Verschijningsjaar',pageCount:'Aantal pagina’s',
+          language:'Taal',coverUrl:'Omslag',easyReading:'Makkelijk lezen',
+          suitableForExamList:'Examenleeslijst',tags:'Trefwoorden',
+          manualThemes:'Thema’s',
+        }[field]||field));
+      chosenLabels.push(...selectedFields.map(label=>'Boekgegevens: '+label));
+      const selectedList=make('p','bb-import__selection-list',
+        chosenLabels.join(' · '));
+      selection.append(selectedList,make('p','hint',
+        'ISBN wordt alleen gebruikt om boeken te herkennen. '
+        +'Alle niet-geselecteerde kolommen en lege Excelvelden blijven ongemoeid.'));
+      results.append(selection);
+
+      // Show the actual diagnostic messages before requesting the general
+      // warning acknowledgement. A generic "source_needs_review" message
+      // does not tell administrators what is wrong with the Excel data.
+      const sourceWarnings=(stage.rows||[]).map(row=>({
+        row,issues:(row.issues||[]).filter(issue=>
+          issue.severity==='warning'||issue.severity==='conflict'),
+      })).filter(entry=>entry.issues.length);
+      if(sourceWarnings.length){
+        const warningCount=sourceWarnings.reduce((total,entry)=>
+          total+entry.issues.length,0);
+        const notice=make('section','bb-import__source-warnings');
+        notice.append(make('h4','','Bronwaarschuwingen uit Excel ('+warningCount+')'));
+        notice.append(make('p','hint',
+          'Controleer de meldingen per Excelrij voordat je de waarschuwingen '
+          +'accepteert. Bij ongeldige gegevens kun je de bron corrigeren '
+          +'of de betreffende rij overslaan.'));
+        const warningList=make('div','bb-import__warnings-scroll');
+        const issueLabels={
+          invalid_published_year:'Ongeldig uitgavejaar',
+          invalid_page_count:'Ongeldig aantal pagina’s',
+          isbn_repaired:'ISBN automatisch hersteld',
+          isbn_repair_suggested:'ISBN moet worden gecontroleerd',
+          missing_title:'Titel ontbreekt',
+          missing_author:'Auteur ontbreekt',
+          missing_title_after_metadata:'Titel ontbreekt na aanvullen',
+          missing_author_after_metadata:'Auteur ontbreekt na aanvullen',
+          invalid_quantity:'Ongeldig aantal exemplaren',
+          language_hint_conflict:'Taal wijkt af van de aanwijzing bij examenmateriaal',
+          nonstandard_easy_reading_value:'Afwijkende invoer voor Makkelijk lezen',
+          invalid_or_unrecognized_isbn:'ISBN niet herkend',
+          dangerous_headers_ignored:'Ongeldige kolomkoppen genegeerd',
+          conflicting_source_columns:'Meerdere Excelkolommen spreken elkaar tegen',
+          duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
+          metadata_title_conflict:'Boektitel verschilt van gevonden boekgegevens',
+        };
+        for(const entry of sourceWarnings){
+          const row=entry.row;
+          const group=make('div','bb-import__warning-row');
+          group.append(make('strong','',
+            'Excelrij '+row.sourceRowNumber+' · '+(row.book?.title||'Zonder titel')));
+          const items=make('ul','bb-import__warning-items');
+          for(const issue of entry.issues){
+            const description=issueLabels[issue.code]||
+              String(issue.code||'Onbekende melding').replaceAll('_',' ');
+            const detailParts=[];
+            if(issue.header)detailParts.push('Kolom: '+issue.header);
+            else if(issue.field)detailParts.push('Veld: '+issue.field);
+            if(issue.raw!==undefined&&issue.raw!==null)
+              detailParts.push('In Excel: '+String(issue.raw).slice(0,160));
+            if(issue.suggestion?.canonical)
+              detailParts.push('Voorstel: '+issue.suggestion.canonical);
+            if(issue.repair?.canonical)
+              detailParts.push('Gecorrigeerd naar: '+issue.repair.canonical);
+            const item=make('li','',description+
+              (issue.severity==='conflict'?' (conflict)':' (waarschuwing)')+
+              (detailParts.length?' · '+detailParts.join(' · '):''));
+            items.append(item);
+          }
+          group.append(items);
+          warningList.append(group);
+        }
+        notice.append(warningList);
+        results.append(notice);
+      }
+
+      const controls=make('div','bb-review__controls bb-import__review-controls');
+      const acceptLabel=make('label','bb-review__check');
+      const accept=make('input');accept.type='checkbox';
+      accept.checked=warningsAccepted;
+      accept.addEventListener('change',()=>{warningsAccepted=accept.checked;render();});
+      acceptLabel.append(accept,document.createTextNode(
+        ' Ik heb de eventuele bronwaarschuwingen gecontroleerd.'));
+      controls.append(acceptLabel);
+      const reviewButton=button('Controle opnieuw berekenen','btn btn--secondary');
+      reviewButton.disabled=Boolean(remotePending||busy);
+      const reviewChoices=async (assignmentValues,metadataValues)=>{
+        const payload=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
+          revision:stage.revision,acceptWarnings:warningsAccepted,
+          corrections:[...corrections.values()],
+          inventoryResolutions:[...inventoryResolutions.values()],
+          assignmentResolutions:assignmentValues,
+          metadataResolutions:metadataValues,
+        });
+        rememberResponse(payload,true);
+        setNotice('Alle geselecteerde onderdelen zijn opnieuw gecontroleerd.');
+      };
+      reviewButton.addEventListener('click',()=>run(async()=>{
+        await reviewChoices([...assignmentResolutions.values()],
+          [...metadataResolutions.values()]);
+      },'De geselecteerde onderdelen worden opnieuw gecontroleerd…'));
+      const applyButton=button('Alle geselecteerde wijzigingen bevestigen','btn');
+      currentApplyButton=applyButton;
+      applyButton.disabled=!summary.readyToApply||hasUnreviewedChanges()
+        ||Boolean(remotePending||busy);
+      applyButton.addEventListener('click',()=>{
+        const description=(summary.newCopies||0)+' nieuwe exemplaren, '
+          +(summary.proposedLoans||0)+' uitleningen, '
+          +(summary.proposedLocations||0)+' vaste locaties en '
+          +(summary.metadataFields||0)+' boekvelden.';
+        if(!window.confirm('Je bevestigt in één keer: '+description
+          +' Bestaande boeken en lege of niet-geselecteerde kolommen blijven behouden. '
+          +'Doorgaan?'))return;
+        run(async()=>{
+          const payload=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/apply',{
+            revision:stage.revision,confirm:true,
+          });
+          rememberResponse(payload);
+          void refreshEnrichmentStatus();
+          void refreshBrave();
+        },'Boeken en administratie worden samen opgeslagen…');
+      });
+      const cancel=button('Annuleren','btn btn--ghost');
+      cancel.disabled=Boolean(remotePending||busy);
+      cancel.addEventListener('click',()=>{
+        if(!window.confirm('Deze import annuleren? Er is nog niets opgeslagen.'))return;
+        run(async()=>{
+          const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/cancel',{
+            revision:stage.revision,
+          });
+          rememberResponse(response);
+          setNotice('De import is geannuleerd. De bibliotheek is niet aangepast.');
+        },'De controle wordt geannuleerd…');
+      });
+      controls.append(reviewButton,applyButton,cancel);
+      const unresolved=[...pendingAssignments,...pendingMetadata];
+      if(unresolved.length){
+        const bulk=button('Huidige gegevens behouden bij '+unresolved.length
+          +' onzekere punten','btn btn--secondary');
+        bulk.disabled=Boolean(remotePending||busy);
+        bulk.addEventListener('click',()=>{
+          if(!window.confirm('Bij '+unresolved.length+' onduidelijke punten blijft '
+            +'de bestaande registratie behouden. Duidelijke Excelwijzigingen '
+            +'blijven voorgesteld. Doorgaan?'))return;
+          run(async()=>{
+            const a=new Map(assignmentResolutions),m=new Map(metadataResolutions);
+            for(const diff of pendingAssignments)a.set(diff.id,{id:diff.id,action:'keep'});
+            for(const issue of pendingMetadata)m.set(issue.id,{id:issue.id,action:'keep'});
+            await reviewChoices([...a.values()],[...m.values()]);
+          },'De onzekere registraties worden behouden…');
+        });
+        controls.append(bulk);
+      }
+      if(!summary.readyToApply)controls.append(make('p','hint',
+        pending?'Werk de onderstaande uitzonderingen af en bereken de controle opnieuw.'
+          :'Er zijn nog geen wijzigingen om op te slaan, of er staan bronwaarschuwingen open.'));
+      results.append(controls);
+
+      const problems=make('section','bb-import__exceptions');
+      problems.append(make('h4','','Handmatig controleren ('+
+        (exceptions.length+metadataPlan.issues.length+blocked.length)+')'));
+      const issueList=make('div','bb-import__exceptions-list');
+      const reasonNames={
+        ambiguous_physical_copy:'Geen veilig beschikbaar exemplaar vast te stellen.',
+        conflicting_excel_borrowers:'Excel noemt zowel een leerling als een klas.',
+        physical_barcode_not_found:'Unieke barcode staat niet in de bibliotheek.',
+        no_unallocated_copy:'Meer Exceluitleningen dan beschikbare exemplaren.',
+        student_loan_records_disagree:'Leerlingregistratie en boekstatus verschillen.',
+        source_row_requires_review:'Controleer de gegevens in deze Excelrij.',
+        borrower_not_uniquely_matched:'Leerling of klas is niet eenduidig herkend.',
+        fixed_location_needs_manual_identification:'Vaste locatie is niet eenduidig.',
+        ambiguous_existing_borrower:'Meer exemplaren met dezelfde bestaande lener.',
+        student_already_borrowed_edition:'Deze leerling heeft dezelfde ISBN-editie al.',
+      };
+      for(const diff of exceptions){
+        const card=make('article','bb-import__exception');
+        card.dataset.reviewRowKey='difference:'+diff.id;
+        card.append(make('strong','',diff.title||'Boek onbekend'));
+        const meta=['Excelrij '+diff.worksheetRow,diff.editionIsbn,
+          diff.kind==='location'?'Vaste locatie':
+            diff.kind==='loan'?'Uitlening':'Controlepunt'];
+        card.append(make('p','hint',meta.filter(Boolean).join(' · ')));
+        const before=diff.kind==='loan'
+          ?diff.before?.name||'Niet uitgeleend':diff.before||'Geen vaste locatie';
+        const after=diff.kind==='loan'
+          ?diff.after?.name||'Geen nieuwe lener':diff.after||'Geen vaste locatie';
+        card.append(make('p','bb-review__detail',
+          diff.kind==='class_context'
+            ?'Excel vermeldt klas '+diff.className+'. Kies of dit een vaste plek of een uitlening is.'
+            :diff.kind==='issue'
+              ?reasonNames[diff.reason]||diff.reason||'Onzekere koppeling'
+              :'Huidig: '+before+' · Excel: '+after));
+        const input=make('select');
+        const actions=[['pending','Nog beoordelen'],['keep','Huidige gegevens behouden'],
+          ['later','Later controleren']];
+        if(diff.kind==='class_context'){
+          actions.push(['class_fixed','Vast in klas '+diff.className],
+            ...(diff.classId&&!diff.hasExplicitLoan
+              ?[['class_loan','Uitgeleend aan klas '+diff.className]]:[]),
+            ['class_unrelated','Klasvermelding is niet van toepassing']);
+        }else if(diff.kind!=='issue'&&!diff.reason){
+          actions.push(['apply','Excelgegevens overnemen']);
+        }
+        for(const [value,label] of actions){
+          const option=make('option','',label);option.value=value;input.append(option);
+        }
+        input.value=assignmentResolutions.get(diff.id)?.action||diff.choice||'pending';
+        input.addEventListener('change',()=>{
+          if(input.value==='pending')assignmentResolutions.delete(diff.id);
+          else assignmentResolutions.set(diff.id,{id:diff.id,action:input.value});
+          render();
+        });
+        card.append(input);issueList.append(card);
+      }
+      for(const issue of metadataPlan.issues){
+        const card=make('article','bb-import__exception');
+        card.dataset.reviewRowKey='metadata:'+issue.id;
+        card.append(make('strong','',issue.title||issue.isbn));
+        card.append(make('p','hint',issue.isbn+' · Boekkolom '+issue.field
+          +' · Excelrijen '+issue.worksheetRows.join(', ')));
+        card.append(make('p','bb-review__reason',
+          issue.reason==='conflicting_excel_values'
+            ?'Meerdere verschillende waarden in Excel voor dezelfde ISBN-editie.'
+            :'De Excelwaarde is nog niet veilig over te nemen.'));
+        const choose=make('select');
+        for(const [value,label] of [['pending','Nog beoordelen'],
+          ['keep','Huidige boekgegevens behouden']]){
+          const option=make('option','',label);option.value=value;choose.append(option);
+        }
+        choose.value=metadataResolutions.has(issue.id)?'keep':'pending';
+        choose.addEventListener('change',()=>{
+          if(choose.value==='keep')metadataResolutions.set(issue.id,
+            {id:issue.id,action:'keep'});
+          else metadataResolutions.delete(issue.id);
+          render();
+        });
+        card.append(choose);
+        // Metadata-only imports must be fully correctable without turning
+        // stock synchronization on or rebuilding the Excel workbook.
+        const editField=issue.field==='manualThemes'?'themes'
+          :issue.field==='suitableForExamList'?'examMaterial':issue.field;
+        const affected=(stage.rows||[]).filter(row=>
+          (issue.worksheetRows||[]).includes(row.sourceRowNumber));
+        for(const source of affected){
+          const edit=button('Excelrij '+source.sourceRowNumber+' corrigeren',
+            'btn btn--secondary');
+          edit.disabled=Boolean(remotePending||busy);
+          edit.addEventListener('click',()=>{
+            openEditor=openEditor===source.index?null:source.index;
+            render();
+          });
+          card.append(edit);
+          if(openEditor===source.index){
+            editRow(source,card,{
+              onlyFields:[editField],metadataIssueId:issue.id,
+            });
+          }
+        }
+        if(!affected.length)card.append(make('p','hint',
+          'De bronrij is niet beschikbaar voor correctie. Controleer de Excel.'));
+        issueList.append(card);
+      }
+      for(const item of blocked){
+        const source=(stage.rows||[]).find(row=>row.index===item.index);
+        const card=make('article','bb-import__exception');
+        card.dataset.reviewRowKey='stock:'+item.index;
+        card.append(make('strong','',source?.book?.title||'Boek'));
+        card.append(make('p','hint','Excelrij '+item.worksheetRow+' · '+(item.editionIsbn||'Geen ISBN')));
+        card.append(make('p','bb-review__reason','Voorraadcontrole: '+item.reason));
+        const edit=button('Gegevens corrigeren','btn btn--secondary');
+        edit.addEventListener('click',()=>{
+          openEditor=openEditor===item.index?null:item.index;
+          render();
+        });
+        const skip=button('Deze Excelrij overslaan','btn btn--ghost');
+        skip.addEventListener('click',()=>{
+          if(!window.confirm('Deze volledige Excelrij overslaan bij deze import?'))return;
+          toggleSkippedRow(corrections,skippedEdits,item.index,true);
+          if(currentApplyButton)currentApplyButton.disabled=true;
+          render();
+        });
+        card.append(edit,skip);
+        if(openEditor===item.index&&source)editRow(source,card);
+        issueList.append(card);
+      }
+      if(!issueList.children.length)issueList.append(make('p','hint',
+        'Geen afzonderlijke keuzes nodig. De voorgestelde wijzigingen kunnen gezamenlijk worden bevestigd.'));
+      problems.append(issueList);
+      results.append(problems);
+
+      const suggested=make('details','bb-import__proposals');
+      suggested.open=automaticExpanded;
+      suggested.addEventListener('toggle',()=>{
+        if(suggested.isConnected)automaticExpanded=suggested.open;
+      });
+      suggested.append(make('summary','',
+        'Duidelijke wijzigingen bekijken ('+
+        (automatic.length+metadataPlan.updates.length)+')'));
+      suggested.append(make('p','hint',
+        'Deze wijzigingen zijn voorgesteld en nog niet opgeslagen. '
+        +'Je kunt ze afzonderlijk bekijken en behouden in plaats van overnemen.'));
+      const tableWrap=make('div','bb-import__proposal-scroll');
+      const table=make('table','bb-import__proposal-table');
+      const head=make('thead');
+      const hr=make('tr');
+      for(const label of ['Boek / ISBN','Onderdeel','Voorgestelde wijziging','Keuze'])
+        hr.append(make('th','',label));
+      head.append(hr);table.append(head);
+      const body=make('tbody');
+      const addRow=(title,isbn,type,description,control)=>{
+        const tr=make('tr');
+        for(const value of [title+' · '+isbn,type,description]){
+          tr.append(make('td','',value));
+        }
+        const td=make('td');td.append(control);tr.append(td);
+        body.append(tr);
+      };
+      for(const diff of automatic){
+        const control=make('select');
+        for(const [value,label] of [['apply','Excel overnemen'],
+          ['keep','Bestaande behouden'],['later','Later controleren']]){
+          const option=make('option','',label);option.value=value;control.append(option);
+        }
+        control.value=assignmentResolutions.get(diff.id)?.action||diff.choice||'apply';
+        control.addEventListener('change',()=>{
+          assignmentResolutions.set(diff.id,{id:diff.id,action:control.value});
+          render();
+        });
+        const description=diff.kind==='loan'
+          ?'Naar '+(diff.after?.name||'onbekend')
+          :'Naar '+String(diff.after||'');
+        addRow(diff.title||'Boek',diff.editionIsbn||'',diff.kind==='loan'?'Uitlening':'Vaste plek',
+          description,control);
+      }
+      for(const update of metadataPlan.updates){
+        const control=make('select');
+        for(const [value,label] of [['apply','Excel overnemen'],
+          ['keep','Bestaande behouden']]){
+          const option=make('option','',label);option.value=value;control.append(option);
+        }
+        control.value=metadataResolutions.has(update.id)?'keep':'apply';
+        control.addEventListener('change',()=>{
+          if(control.value==='keep')metadataResolutions.set(update.id,
+            {id:update.id,action:'keep'});
+          else metadataResolutions.delete(update.id);
+          render();
+        });
+        addRow(update.title||'Boek',update.isbn,update.field,
+          (update.copies||1)+' bestaand(e) exemplaar/exemplaren',control);
+      }
+      table.append(body);tableWrap.append(table);suggested.append(tableWrap);
+      results.append(suggested);
+      if(assignment.notInCollection?.length){
+        const missing=make('details','bb-import__missing');
+        missing.append(make('summary','',
+          assignment.notInCollection.length+' ISBN-groepen niet gekoppeld'));
+        missing.append(make('p','hint',
+          plan.parts?.books?'Controleer of de voorraadvergelijking deze exemplaren toevoegt.'
+            :'Je hebt nieuwe boeken toevoegen niet aangevinkt. Deze exemplaren worden niet toegevoegd.'));
+        for(const item of assignment.notInCollection.slice(0,30)){
+          missing.append(make('p','bb-review__detail',
+            item.title+' · '+item.editionIsbn+' · '+item.copies+' exemplaar/exemplaren'));
+        }
+        results.append(missing);
+      }
     }
 
     function renderAssignmentReconciliation() {
@@ -940,6 +1472,13 @@
     }
 
     function renderContents() {
+      const activeStep=!stage||['cancelled','failed'].includes(stage.status)
+        ?0:stage.status==='completed'?2:1;
+      for(let index=0;index<stepNodes.length;index++){
+        stepNodes[index].classList.toggle('bb-import__step--active',index===activeStep);
+        if(index===activeStep)stepNodes[index].setAttribute('aria-current','step');
+        else stepNodes[index].removeAttribute('aria-current');
+      }
       results.replaceChildren();
       form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
       if (!stage) return;
@@ -960,6 +1499,68 @@
       }
       if (stage.status === 'completed') {
         const done = stage.result || {};
+        if (stage.mode === 'unified_sync') {
+          const complete=make('section','bb-import__complete');
+          complete.append(make('h4','','3. Import afgerond'));
+          complete.append(make('p','hint',
+            'Alleen de geselecteerde onderdelen zijn bijgewerkt. Niet-geselecteerde '
+            +'kolommen, lege Excelvelden en bestaande overige boeken zijn behouden.'));
+          const stats=make('div','bb-import__stat-grid');
+          for(const [count,label] of [
+            [done.created||0,'Nieuwe exemplaren'],
+            [done.correctedLoans||0,'Uitleningen aangepast'],
+            [done.correctedLocations||0,'Vaste locaties aangepast'],
+            [done.metadataUpdated||0,'Boekvelden bijgewerkt'],
+          ]){
+            const stat=make('div','bb-import__stat');
+            stat.append(make('strong','',String(count)),make('span','',label));
+            stats.append(stat);
+          }
+          complete.append(stats);
+          if(done.selectedParts){
+            const selected=done.selectedParts;
+            const labels=[];
+            const untouched=[];
+            for(const [key,label] of [['books','Nieuwe boeken'],['loans','Uitleningen'],
+              ['locations','Vaste locaties']]){
+              (selected[key]?labels:untouched).push(label);
+            }
+            const columnLabels={
+              title:'Titels',author:'Auteurs',description:'Beschrijvingen',
+              publisher:'Uitgevers',publishedYear:'Verschijningsjaren',
+              pageCount:'Pagina-aantallen',language:'Taal',coverUrl:'Omslagen',
+              easyReading:'Makkelijk lezen',suitableForExamList:'Examenleeslijst',
+              tags:'Trefwoorden',manualThemes:'Thema’s',
+            };
+            for(const [field,label] of Object.entries(columnLabels)){
+              (selected.fields?.[field]?labels:untouched).push(label);
+            }
+            const details=make('details','bb-import__selection-details');
+            details.append(make('summary','','Wat is bij deze import meegenomen?'));
+            details.append(make('p','bb-review__detail',
+              'Geselecteerd: '+labels.join(', ')+'.'));
+            details.append(make('p','hint',
+              'Niet geselecteerd en ongewijzigd: '+untouched.join(', ')+'.'));
+            complete.append(details);
+          }
+          if(done.deferred)complete.append(make('p','hint',
+            done.deferred+' controletaken blijven voor later bewaard.'));
+          complete.append(make('p','hint','Importnummer: '+(done.batchId||'onbekend')));
+          if(done.report){
+            const reportButton=button('Importverslag (JSON)','btn btn--secondary');
+            reportButton.addEventListener('click',()=>{
+              const blob=new Blob([JSON.stringify(done.report,null,2)],{type:'application/json'});
+              const url=URL.createObjectURL(blob);
+              const link=document.createElement('a');
+              link.href=url;link.download='boekenbaai-import-'+done.batchId+'.json';link.click();
+              setTimeout(()=>URL.revokeObjectURL(url),2000);
+            });
+            complete.append(reportButton);
+          }
+          results.append(complete);
+          setNotice('De gezamenlijke import is afgerond.');
+          return;
+        }
         results.append(make('h4', '', stage.mode === 'assignment_reconcile'
           ? 'Administratieve correcties opgeslagen'
           : stage.mode === 'inventory_sync' ? 'Voorraadvergelijking voltooid' : 'Import voltooid'));
@@ -1021,6 +1622,10 @@
         setNotice(done.report?.fullyReviewed === false
           ? 'De boeken zijn opgeslagen. De klascontext wordt door docenten of beheer gecontroleerd.'
           : 'De gecontroleerde import is afgerond.');
+        return;
+      }
+      if(stage.mode==='unified_sync'){
+        renderUnifiedSync();
         return;
       }
       if (stage.mode === 'assignment_reconcile') {
@@ -1307,11 +1912,21 @@
         const encoded = await encodeFile(selected);
         let payload;
         try {
+          const unified=importMode.value==='unified';
+          const selection=selectedParts();
+          if(unified&&!selection.books&&!selection.loans&&!selection.locations
+            &&!Object.values(selection.fields).some(Boolean)){
+            setNotice('Vink minimaal één onderdeel of boekkolom aan.');
+            return;
+          }
           payload = await request(rootPath, {
             file: encoded, fileName: selected.name,
-            enrichIsbn: importMode.value !== 'reconcile' && metadata.checked,
-            mode: importMode.value === 'reconcile' ? 'assignment_reconcile'
-              : syncMode.checked ? 'inventory_sync' : 'create',
+            enrichIsbn: importMode.value !== 'reconcile' && metadata.checked
+              &&(!unified||selection.books||Object.values(selection.fields).some(Boolean)),
+            mode: unified?'unified_sync'
+              : importMode.value==='reconcile'?'assignment_reconcile'
+              : syncMode.checked?'inventory_sync':'create',
+            ...(unified?{syncParts:selection}:{}),
           });
         } catch (error) {
           await syncStage();

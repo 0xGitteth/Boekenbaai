@@ -23,6 +23,8 @@ const { createImportStageStore, importStageView, buildStageApplyPlan } = require
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
+const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
+  actualAssignmentPreview, assignmentSource } = require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
@@ -5256,10 +5258,17 @@ async function handleApi(req, res, requestUrl) {
         let activated = false;
         try {
         const body = await parseBody(req, 35 * 1024 * 1024);
-        if (body.mode !== undefined && !['create', 'inventory_sync', 'assignment_reconcile'].includes(body.mode)) {
+        if (body.mode !== undefined && !['create', 'inventory_sync', 'assignment_reconcile', 'unified_sync'].includes(body.mode)) {
           return sendJson(res, 400, { message: 'Ongeldige importmodus.' });
         }
-        const mode = ['inventory_sync','assignment_reconcile'].includes(body.mode) ? body.mode : 'create';
+        const mode = ['inventory_sync','assignment_reconcile','unified_sync'].includes(body.mode)
+          ? body.mode : 'create';
+        const selectedParts=mode==='unified_sync' ? normalizeParts(body.syncParts)
+          : {ok:true,value:null};
+        if(!selectedParts.ok)return sendJson(res,400,{
+          message:'Selecteer welke onderdelen of kolommen je wilt synchroniseren.',
+          error:selectedParts.error,
+        });
         if (mode === 'assignment_reconcile' && body.enrichIsbn === true) {
           return sendJson(res, 400, { message: 'Administratie corrigeren gebruikt geen externe boekverrijking.', error:'enrichment_not_allowed' });
         }
@@ -5269,7 +5278,7 @@ async function handleApi(req, res, requestUrl) {
         // Inventory-sync rows describe desired TOTAL stock, not copies to
         // create. An existing school library may exceed the create cap.
         // The inventory planner independently caps NEW additions at 5,000.
-        const maxAnalyzedCopies = mode === 'inventory_sync' ? 1_500_000
+        const maxAnalyzedCopies = ['inventory_sync','unified_sync'].includes(mode) ? 1_500_000
           : mode === 'assignment_reconcile' ? 1500 : 5000;
         const workbook = readBookImportWorkbook(XLSX, body.file, {
           maxRows: 1500, maxCopies: maxAnalyzedCopies,
@@ -5319,7 +5328,7 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, maxRows: 1500, maxCopies: maxAnalyzedCopies,
+          mode, syncParts:selectedParts.value, maxRows: 1500, maxCopies: maxAnalyzedCopies,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
@@ -5343,7 +5352,12 @@ async function handleApi(req, res, requestUrl) {
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
         const latestDatabase = loadDb();
-        analysis.decisions = mode === 'assignment_reconcile'
+        analysis.decisions = mode === 'unified_sync'
+          ? buildUnifiedBookImport(analysis,latestDatabase,{
+            parts:selectedParts.value,loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+            existingFollowups:latestDatabase.bookImportFollowups,
+          })
+          : mode === 'assignment_reconcile'
           ? buildAssignmentPreview(analysis, latestDatabase)
           : mode === 'inventory_sync'
             ? buildInventorySyncPreview(analysis, latestDatabase.books, { acceptWarnings: false,
@@ -5353,7 +5367,7 @@ async function handleApi(req, res, requestUrl) {
           : buildReviewDecisions(analysis, latestDatabase.books, {
             students: latestDatabase.students, classes: latestDatabase.classes,
           });
-        if (!analysis.decisions.ok && ['inventory_sync','assignment_reconcile'].includes(mode)) {
+        if (!analysis.decisions.ok && ['inventory_sync','assignment_reconcile','unified_sync'].includes(mode)) {
           return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
             error: analysis.decisions.error });
         }
@@ -5394,13 +5408,13 @@ async function handleApi(req, res, requestUrl) {
           if (typeof body.acceptWarnings !== 'boolean') {
             return sendJson(res, 400, { message: 'Geef expliciet aan of waarschuwingen geaccepteerd worden.' });
           }
-          const choices = stage.options.mode === 'inventory_sync'
+          const choices = ['inventory_sync','unified_sync'].includes(stage.options.mode)
             ? normalizeInventoryResolutions(body.inventoryResolutions)
             : { ok: true, values: [] };
-          const assignments = stage.options.mode === 'assignment_reconcile'
+          const assignments = ['assignment_reconcile','unified_sync'].includes(stage.options.mode)
             ? normalizeAssignmentResolutions(body.assignmentResolutions)
             : { ok: true, values: [] };
-          if (!choices.ok || (stage.options.mode !== 'inventory_sync'
+          if (!choices.ok || (!['inventory_sync','unified_sync'].includes(stage.options.mode)
             && body.inventoryResolutions !== undefined)) {
             return sendJson(res, 400, { message: 'Ongeldige voorraadkeuzes.',
               error: choices.error || 'invalid_sync_resolutions' });
@@ -5412,11 +5426,18 @@ async function handleApi(req, res, requestUrl) {
               error:'assignment_corrections_not_allowed',
             });
           }
-          if (!assignments.ok || (stage.options.mode !== 'assignment_reconcile'
+          if (!assignments.ok || (!['assignment_reconcile','unified_sync'].includes(stage.options.mode)
             && body.assignmentResolutions !== undefined)) {
             return sendJson(res, 400, { message: 'Ongeldige keuzes voor administratieve correcties.',
               error: assignments.error || 'invalid_assignment_choices' });
           }
+          const metadataChoices=stage.options.mode==='unified_sync'
+            ?normalizedMetadataChoice(body.metadataResolutions)
+            :{ok:true,values:[]};
+          if(!metadataChoices.ok ||(stage.options.mode!=='unified_sync'
+            &&body.metadataResolutions!==undefined))
+            return sendJson(res,400,{message:'Ongeldige keuzes bij boekgegevens.',
+              error:metadataChoices.error||'metadata_choices_not_allowed'});
           // A review is a fresh retry opportunity. Retain successful metadata.
           stage.options.releaseRetryableLookups?.();
           // Authentication may have loaded an older snapshot while a large
@@ -5433,7 +5454,15 @@ async function handleApi(req, res, requestUrl) {
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
           const latestDatabase = loadDb();
-          reviewed.decisions = stage.options.mode === 'assignment_reconcile'
+          reviewed.decisions = stage.options.mode === 'unified_sync'
+            ? buildUnifiedBookImport(reviewed,latestDatabase,{
+              parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
+              inventoryResolutions:choices.values,assignmentResolutions:assignments.values,
+              metadataResolutions:metadataChoices.values,
+              loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+              existingFollowups:latestDatabase.bookImportFollowups,
+            })
+            : stage.options.mode === 'assignment_reconcile'
             ? buildAssignmentPreview(reviewed, latestDatabase, assignments.values)
             : stage.options.mode === 'inventory_sync'
               ? buildInventorySyncPreview(reviewed, latestDatabase.books, {
@@ -5446,12 +5475,12 @@ async function handleApi(req, res, requestUrl) {
               acceptWarnings: body.acceptWarnings,
               students: latestDatabase.students, classes: latestDatabase.classes,
             });
-          if (!reviewed.decisions.ok && ['inventory_sync','assignment_reconcile'].includes(stage.options.mode)) {
+          if (!reviewed.decisions.ok && ['inventory_sync','assignment_reconcile','unified_sync'].includes(stage.options.mode)) {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
           }
           bookImportStageStore.finishReview(stage, reviewed, body.corrections,
-            body.acceptWarnings, choices.values, assignments.values);
+            body.acceptWarnings, choices.values, assignments.values,metadataChoices.values);
           return sendJson(res, 200, importStageView(stage));
         } finally {
           bookImportStageStore.abortReview(stage);
@@ -5532,24 +5561,36 @@ async function handleApi(req, res, requestUrl) {
             });
             return sendJson(res, 200, importStageView(stage));
           }
-          if (stage.options.mode === 'inventory_sync') {
-            // Re-evaluate the target using the live collection immediately
-            // before the atomic write. A concurrent admin's barcode, edition,
-            // count or active loan change invalidates the approved preview.
-            const fresh = buildInventorySyncPreview(stage.analysis, database.books, {
-              acceptWarnings: stage.acceptWarnings, resolutions: stage.inventoryResolutions,
-              students: database.students, classes: database.classes,
-              loanReceipts: historicalExcelLoanReceipts(database),
-              existingFollowups: database.bookImportFollowups,
-            });
-            if (!fresh.ok || !fresh.summary.readyToApply
-              || JSON.stringify(fresh.rows) !== JSON.stringify(stage.analysis.decisions?.rows)
-              || JSON.stringify(fresh.proposedAdds) !== JSON.stringify(stage.analysis.decisions?.proposedAdds)
-              || JSON.stringify(fresh.loanAssignments) !== JSON.stringify(stage.analysis.decisions?.loanAssignments)
-              || JSON.stringify(fresh.classFollowups) !== JSON.stringify(stage.analysis.decisions?.classFollowups)
-              || JSON.stringify(fresh.omittedEditions) !== JSON.stringify(stage.analysis.decisions?.omittedEditions)
-              || fresh.summary.omittedExistingCopies
-                !== stage.analysis.decisions?.summary?.omittedExistingCopies) {
+          if (['inventory_sync','unified_sync'].includes(stage.options.mode)) {
+            // A combined import is one transaction, not a stock save followed
+            // by a second non-atomic administrative correction request.
+            const isUnified=stage.options.mode==='unified_sync';
+            const combined=isUnified?buildUnifiedBookImport(stage.analysis,database,{
+              parts:stage.options.syncParts,acceptWarnings:stage.acceptWarnings,
+              inventoryResolutions:stage.inventoryResolutions,
+              assignmentResolutions:stage.assignmentResolutions,
+              metadataResolutions:stage.metadataResolutions,
+              loanReceipts:historicalExcelLoanReceipts(database),
+              existingFollowups:database.bookImportFollowups,
+            }):null;
+            const fresh=isUnified?combined?.inventory
+              :buildInventorySyncPreview(stage.analysis, database.books, {
+                acceptWarnings: stage.acceptWarnings, resolutions: stage.inventoryResolutions,
+                students: database.students, classes: database.classes,
+                loanReceipts: historicalExcelLoanReceipts(database),
+                existingFollowups: database.bookImportFollowups,
+              });
+            if (!fresh?.ok ||(isUnified
+              ?(!combined?.ok||!combined.summary.readyToApply
+                ||JSON.stringify(combined)!==JSON.stringify(stage.analysis.decisions))
+              :(!fresh.summary.readyToApply
+                ||JSON.stringify(fresh.rows)!==JSON.stringify(stage.analysis.decisions?.rows)
+                ||JSON.stringify(fresh.proposedAdds)!==JSON.stringify(stage.analysis.decisions?.proposedAdds)
+                ||JSON.stringify(fresh.loanAssignments)!==JSON.stringify(stage.analysis.decisions?.loanAssignments)
+                ||JSON.stringify(fresh.classFollowups)!==JSON.stringify(stage.analysis.decisions?.classFollowups)
+                ||JSON.stringify(fresh.omittedEditions)!==JSON.stringify(stage.analysis.decisions?.omittedEditions)
+                ||fresh.summary.omittedExistingCopies
+                  !==stage.analysis.decisions?.summary?.omittedExistingCopies))) {
               return sendJson(res, 409, {
                 message: 'De voorraad is sinds de controle gewijzigd of er staan onopgeloste verschillen. Start een nieuwe vergelijking.',
                 error: 'inventory_preview_stale',
@@ -5600,7 +5641,8 @@ async function handleApi(req, res, requestUrl) {
                 manualThemes: preserveAsImported ? [] : row.book.manualThemes,
                 importedThemes: preserveAsImported ? row.book.themes : [],
                 themesCleared: clearedThemeRows.has(addition.index),
-                fixedLocation: row.context?.fixedLocation?.status === 'resolved'
+                fixedLocation: (!isUnified || stage.options.syncParts.locations)
+                  && row.context?.fixedLocation?.status === 'resolved'
                   ? row.context.fixedLocation.label : null,
                 editionIsbn: addition.editionIsbn,
                 metadataIsbn: addition.editionIsbn,
@@ -5689,7 +5731,7 @@ async function handleApi(req, res, requestUrl) {
             })));
             const report = {
               id: batchId, createdBy: user.id, importedAt: now,
-              mode: 'inventory_sync', fileName: stage.fileName,
+              mode: isUnified?'unified_sync':'inventory_sync', fileName: stage.fileName,
               restoredLoans: restoredLoanEvents.length,
               loanChanges: restoredLoanEvents.map((event) => ({
                 bookId: event.bookId, borrowerType: event.classId ? 'class' : 'student',
@@ -5706,6 +5748,79 @@ async function handleApi(req, res, requestUrl) {
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
             database.books.push(...createdCopies);
+            let corrected={applied:0,loans:0,locations:0,audit:[]};
+            let metadataUpdated=0;
+            let deferredDifferences=[];
+            if(isUnified){
+              for(const update of combined.metadata.updates){
+                for(const bookId of update.bookIds){
+                  const book=database.books.find(book=>book.id===bookId);
+                  if(!book)throw Error('unified_metadata_book_missing');
+                  if(update.field==='author'){
+                    book.author=update.value.value;
+                    book.authors=update.value.authors;
+                  }else if(update.field==='manualThemes'){
+                    const curated=normalizeManualThemes(update.value);
+                    const freeform=curated.length!==(update.value||[]).length;
+                    // Unknown/freeform themes survive ensureBookShape through
+                    // importedThemes, as with newly created Excel copies.
+                    book.manualThemes=freeform?[]:curated;
+                    book.importedThemes=freeform?[...update.value]:[];
+                    book.themes=[...update.value];
+                    book.themesCleared=false;
+                  }else if(update.field==='coverUrl'){
+                    if(book.coverUrl!==update.value){
+                      book.coverUrl=update.value;
+                      // Both the local cached cover and the custom crop were
+                      // configured for the previous image, not the new URL.
+                      book.localCoverUrl='';
+                      book.coverCrop=null;
+                    }
+                  }else{
+                    book[update.field]=Array.isArray(update.value)
+                      ?[...update.value]:update.value;
+                  }
+                  book.importProvenance=book.importProvenance||{fieldSources:{}};
+                  book.importProvenance.fieldSources=book.importProvenance.fieldSources||{};
+                  book.importProvenance.fieldSources[update.field]=createFieldSource('excel',
+                    'unified_import');
+                  metadataUpdated++;
+                }
+              }
+              const assignments=actualAssignmentPreview(combined.assignments,createdByRow);
+              if(assignments.differences.length)
+                corrected=applyAssignmentPreview(database,assignments,user.id,now,batchId);
+              if(assignments.acknowledgedLoans?.length){
+                // The source Excel also confirms loans that were already
+                // recorded correctly. Persist their receipts so that an old
+                // workbook cannot re-lend them after a later return.
+                persistExcelLoanReceipts(database,assignments.acknowledgedLoans);
+              }
+              deferredDifferences=assignments.differences.filter(item=>item.choice==='later')
+                .map(item=>({
+                  id:item.id,worksheetRow:item.worksheetRow,bookId:item.bookId,
+                  title:item.title,author:item.author,editionIsbn:item.editionIsbn,
+                  barcode:item.barcode,kind:item.kind,reason:item.reason||null,
+                  before:item.before??null,after:item.after??null,
+                  ...(item.kind==='class_context'?{
+                    className:item.className||'',classId:item.classId||null,
+                    beforeLocation:item.beforeLocation||null,beforeLoan:item.beforeLoan||null,
+                  }:{}),
+                  recordedAt:now,status:'open',
+                }));
+              report.correctedLoans=corrected.loans;
+              report.correctedLocations=corrected.locations;
+              report.metadataUpdates=metadataUpdated;
+              report.metadataFields=combined.metadata.summary.updates;
+              report.selectedParts=combined.parts;
+              report.deferredDifferences=deferredDifferences;
+              report.fullyReviewed=deferredDifferences.length===0;
+              report.corrections=corrected.audit;
+              const savedTaskRows=assignmentSource(stage.analysis,combined.parts,database).rows;
+              const tasks=createDeferredAssignmentTasks(database,report,savedTaskRows,
+                assignments.differences,now);
+              report.deferredTaskIds=tasks.map(task=>task.id);
+            }
             addJob(database,createdCopies.map(book=>book.id),{
               id:batchId,source:'inventory_sync',fileName:stage.fileName,
             });
@@ -5727,16 +5842,23 @@ async function handleApi(req, res, requestUrl) {
               message: `${restoredLoanEvents.length} bestaande Excel-uitleningen overgenomen`,
             });
             appendHistory(database, {
-              type: 'books_inventory_sync', performedBy: user.id,
-              message: `Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
+              type: isUnified?'books_unified_sync':'books_inventory_sync',
+              performedBy:user.id,
+              message: isUnified
+                ?`Boeken gesynchroniseerd: ${createdCopies.length} exemplaren, ${corrected.loans} uitleningen, ${corrected.locations} locaties en ${metadataUpdated} boekgegevens bijgewerkt`
+                :`Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
             });
             saveReviewedBookImportDb(database);
             scheduleCoverBackfill({ resetFailures: true });
             bookImportStageStore.finishApply(stage, {
-              batchId, created: createdCopies.length,
-              restoredLoans: restoredLoanEvents.length, removed: 0,
-              retainedEditions: fresh.summary.acknowledgedEditions,
-              report, omittedExistingCopies: fresh.summary.omittedExistingCopies,
+              batchId,created:createdCopies.length,removed:0,
+              restoredLoans:restoredLoanEvents.length,
+              corrected:corrected.applied,correctedLoans:corrected.loans,
+              correctedLocations:corrected.locations,metadataUpdated,
+              deferred:deferredDifferences.length,
+              selectedParts:isUnified?combined.parts:null,
+              retainedEditions:fresh.summary.acknowledgedEditions,
+              report,omittedExistingCopies:fresh.summary.omittedExistingCopies,
             });
             freeMetadataWorker.schedule(1500);
             braveWorker.schedule(2000);

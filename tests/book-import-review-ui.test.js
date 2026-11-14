@@ -182,3 +182,46 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
   assert.match(reviewUi, /applyButton.disabled = !summary.readyToApply \|\| hasUnreviewedChanges\(\)/,
     'No unresolved or unreviewed choice can be applied');
 }
+
+
+// The combined importer may only ask for warning acknowledgement after
+// rendering actual workbook diagnostics, not generic stock blocking reasons.
+{
+  const start=script.indexOf('    function renderUnifiedSync() {');
+  const end=script.indexOf('    function renderAssignmentReconciliation()',start);
+  assert.ok(start>=0 && end>start,'Unified review renderer missing');
+  const combined=script.slice(start,end);
+  const listing=combined.indexOf('const sourceWarnings=(stage.rows||[]).map(');
+  const displayed=combined.indexOf('results.append(notice);',listing);
+  const acceptance=combined.indexOf("const acceptLabel=make('label','bb-review__check');");
+  assert.ok(listing>=0 && displayed>listing && acceptance>displayed,
+    'Source warnings and affected Excel rows must be visible before acknowledgement');
+  assert.ok(combined.includes("issue.severity==='warning'||issue.severity==='conflict'"),
+    'Warning and conflict diagnostics must be present');
+  assert.ok(combined.includes("'Excelrij '+row.sourceRowNumber"),
+    'Every issue must identify its Excel row');
+  assert.ok(combined.includes('issueLabels[issue.code]'),
+    'The actual issue code must be shown with a clear human-readable description');
+  assert.ok(combined.includes('String(issue.raw).slice(0,160)'),
+    'Show the invalid input value when the parser provides it');
+  assert.ok(combined.includes("invalid_published_year:'Ongeldig uitgavejaar'"),
+    'An invalid publication year must be disclosed before acceptance');
+}
+
+
+// In metadata-only imports, conflicts such as an invalid page count must
+// provide a source editor on the affected worksheet row.
+{
+  const start=script.indexOf('    function renderUnifiedSync() {');
+  const end=script.indexOf('    function renderAssignmentReconciliation()',start);
+  const combined=script.slice(start,end);
+  const metadata=combined.slice(combined.indexOf('for(const issue of metadataPlan.issues)'),
+    combined.indexOf('for(const item of blocked)'));
+  assert.match(metadata,/issue\.worksheetRows/);
+  assert.match(metadata,/source\.sourceRowNumber/);
+  assert.ok(metadata.includes("'Excelrij '+source.sourceRowNumber+' corrigeren'"));
+  assert.match(metadata,/editRow\(source,card,\{/);
+  assert.match(metadata,/onlyFields:\[editField\],metadataIssueId:issue\.id/);
+  assert.match(script,/if \(options\.onlyFields && !options\.onlyFields\.includes\(field\)\) continue/);
+  assert.match(script,/metadataResolutions\.delete\(options\.metadataIssueId\)/);
+}

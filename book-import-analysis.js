@@ -310,7 +310,7 @@ async function analyzeBookImportRows(rows, options = {}) {
           // snapshot. One grouping representative per Excel row retains
           // edition identity conflict detection without allocating thousands
           // of duplicate objects for copies already in the library.
-          const groupingCopies = options.mode === 'inventory_sync' ? 1 : requestedCopies;
+          const groupingCopies = ['inventory_sync','unified_sync'].includes(options.mode) ? 1 : requestedCopies;
           for (let copyIndex = 0; copyIndex < groupingCopies; copyIndex += 1) {
             editionCopies.push({
               title: row.book.title,

@@ -460,7 +460,13 @@ function provenanceForBook(mapped, book, identifierAnalysis) {
     coverUrl: fieldSource(mapped, 'coverUrl'),
     manualThemes: fieldSource(mapped, 'themes'),
     themes: book.manualThemes.length ? { source: 'derived', detail: 'manualThemes' } : { source: 'unknown' },
-    tags: fieldSource(mapped, 'tags'),
+    tags: {
+      ...fieldSource(mapped, 'tags'),
+      // Keep the exact explicitly entered tag list separate from the
+      // 'strip' hint derived from Examenmateriaal. Synchronizing Tags must
+      // never copy a tag sourced solely from another Excel column.
+      explicitValues: mergeListSourceValues(mapped, 'tags', dataFields.tags),
+    },
     suitableForExamList: fieldSource(mapped, 'examMaterial'),
     easyReading: fieldSource(mapped, 'easyReading'),
   };
