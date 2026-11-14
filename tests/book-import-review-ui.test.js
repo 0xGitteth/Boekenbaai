@@ -306,7 +306,7 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
   assert.match(combined,/issue\.sources\?\.length/);
   assert.match(combined,/button\('Titel uit Excel bevestigen'/);
   assert.match(combined,/updateCorrection\(row\.index,'title',row\.book\.title\)/);
-  assert.match(combined,/manualGroups\.size\+' boeken of Excelrijen'/,
+  assert.match(combined,/manualGroups\.size\+' boeken of Excelrijen\)'/,
     'A book appearing in three areas must not be counted as three separate books');
   assert.match(combined,/reasonNames\[item\.reason\]\|\|item\.reason/,
     'Stock cards must translate internal error codes for administrators');
