@@ -42,6 +42,7 @@ function original(){
         borrowedAt:'2026-10-05T11:00:00Z',dueDate:'2026-11-12',
         description:'Bestaande beschrijving',coverUrl:'https://example.org/old.jpg',
         localCoverUrl:'/api/covers/'+('a'.repeat(64))+'.jpg',
+        coverCrop:{enabled:true,x:10,y:80,zoom:2.5},
         fixedLocation:null},
       {id:'copy-2',title:'Oorlogswinter',author:'Jan Terlouw',
         editionIsbn:ISBN,metadataIsbn:ISBN,barcode:'4711002',
@@ -190,6 +191,8 @@ async function run(){
       'https://example.org/new-cover.jpg');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').localCoverUrl,'',
       'A changed cover URL cannot leave a stale cached cover in place');
+    assert.equal(readDb().books.find(book=>book.id==='copy-1').coverCrop,null,
+      'A replacement cover must not inherit the previous image crop');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').description,
       'Nieuwe beschrijving');
     assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa');
