@@ -225,3 +225,25 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
   assert.match(script,/if \(options\.onlyFields && !options\.onlyFields\.includes\(field\)\) continue/);
   assert.match(script,/metadataResolutions\.delete\(options\.metadataIssueId\)/);
 }
+
+
+// Large imports must not render 400+ individual cards nor treat third-party
+// metadata spelling differences as warnings requiring manual approval.
+{
+  const start=script.indexOf('    function renderUnifiedSync() {');
+  const end=script.indexOf('    function renderAssignmentReconciliation()',start);
+  assert.ok(start>=0 && end>start);
+  const screen=script.slice(start,end);
+  assert.match(screen,/issue\.code==='metadata_differs_from_excel'&&issue\.severity==='warning'/,
+    'Metadata disagreements must be counted as separate advisories');
+  assert.match(screen,/Online boekinformatie wijkt af/,
+    'Show advisory count without rendering a warning card per ISBN');
+  assert.match(screen,/if\(warningCount\)controls\.append\(acceptLabel\)/,
+    'Do not require blanket warning consent for third-party comparisons alone');
+  assert.match(screen,/const groups=\[/,
+    'Stock, metadata and circulation issues should be grouped');
+  assert.match(screen,/while\(cards\.children\.length>limit\)cards\.lastElementChild\.remove\(\)/,
+    'Initially display only a manageable number of manual decision cards');
+  assert.match(screen,/unifiedLimits\[kind\]\+=15/,
+    'Administrators can load more exceptions without losing their choices');
+}
