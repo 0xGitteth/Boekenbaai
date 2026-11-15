@@ -1050,6 +1050,11 @@
         'Stap '+(guidedStep+1)+' van 4');
       top.append(steps);
       panel.append(top);
+      panel.append(make('p','bb-guide__storage hint',stage.draftPersisted
+        ?'Je gecontroleerde keuzes en concept zijn op de server bewaard. '
+          +'Een onafgeronde import blijft maximaal 24 uur beschikbaar.'
+        :'Je wijzigingen worden als concept opgeslagen wanneer de server '
+          +'beschikbaar is. Controleer ze voordat je importeert.'));
       const progress=make('div','bb-guide__progress');
       for(let index=1;index<=3;index++){
         const crumb=make('button','bb-guide__crumb'+(guidedStep===index
@@ -1444,6 +1449,17 @@
               explain(detailContent,issue.code);
             card.append(makeDetail(group.warnings.length
               +' bronmelding(en) bij dit boek',detailContent));
+            if(group.warnings.some(issue=>issue.severity==='warning')){
+              const consent=make('label','bb-guide__accept');
+              const checkbox=make('input');checkbox.type='checkbox';
+              checkbox.checked=warningsAccepted;
+              checkbox.addEventListener('change',()=>{
+                warningsAccepted=checkbox.checked;render();
+              });
+              consent.append(checkbox,make('span','',
+                'Ik heb de bronwaarschuwingen gelezen.'));
+              card.append(consent);
+            }
           }
           if([...group.rows.keys()].some(index=>
             corrections.has(index))
