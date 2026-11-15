@@ -410,9 +410,23 @@ async function run(){
     assert.equal((await call(stagedPath+'/apply',token,{
       revision:loaded.data.revision,confirm:true,
     })).status,409,'Unreviewed draft cannot mutate the library');
-    const checked=await call(stagedPath+'/review',token,{
-      revision:loaded.data.revision,
+    const cleared=await call(stagedPath+'/draft',token,{
+      revision:loaded.data.revision,clear:true,
+    });
+    assert.equal(cleared.status,200,JSON.stringify(cleared.data));
+    assert.equal(cleared.data.cleared,true);
+    const resetStage=await call(stagedPath,token);
+    assert.equal(resetStage.data.draft,null,
+      'Reverted choices may clear the saved draft without changing books');
+    const savedAgain=await call(stagedPath+'/draft',token,{
+      revision:resetStage.data.revision,
       ...loaded.data.draft,
+    });
+    assert.equal(savedAgain.status,200,JSON.stringify(savedAgain.data));
+    const restored=await call(stagedPath,token);
+    const checked=await call(stagedPath+'/review',token,{
+      revision:restored.data.revision,
+      ...restored.data.draft,
     });
     assert.equal(checked.status,200,JSON.stringify(checked.data));
     assert.deepEqual(checked.data.corrections.map(row=>row.index),[0,1],
