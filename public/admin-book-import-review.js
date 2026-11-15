@@ -527,6 +527,7 @@
     const candidateChangeHistory=new Map();
     const guidedSelectedRow=new Map();
     let guidedShowDetails=false;
+    let guidedAuditEditor=null;
     const wizardPositionKey='boekenbaai.import.wizard.position.v1';
     function storeGuidedPosition(){
       if(!stage?.id)return;
@@ -660,6 +661,7 @@
         guidedAlternativeRow=null;
         guidedSelectedRow.clear();
         guidedShowDetails=false;
+        guidedAuditEditor=null;
         page = 0;
         automaticPage = 0;
         automaticExpanded = false;
@@ -1554,7 +1556,36 @@
               metadataResolutions.set(item.id,{
                 id:item.id,action:'excel'});render();
             });
-          line.append(choices);auditList.append(line);
+          line.append(choices);
+          // A safely preserved invalid Excel field (for example a text
+          // instead of a page count) remains editable. The old review UI
+          // permitted that even if the planner deliberately emitted no
+          // actionable metadata issue for the field.
+          const worksheetRows=Array.isArray(item.worksheetRows)
+            ?item.worksheetRows:[];
+          const editableField=item.field==='manualThemes'?'themes'
+            :item.field==='suitableForExamList'?'examMaterial'
+              :item.field;
+          if(worksheetRows.length){
+            const editHost=make('div','bb-guide__row-choices');
+            for(const worksheetRow of worksheetRows){
+              const sourceRow=rowByNumber.get(worksheetRow);
+              if(!sourceRow)continue;
+              const editorKey=item.id+':'+sourceRow.index;
+              const open=guidedAuditEditor===editorKey;
+              const edit=button('Excelrij '+worksheetRow
+                +(open?' sluiten':' corrigeren'),'btn btn--secondary');
+              edit.addEventListener('click',()=>{
+                guidedAuditEditor=open?null:editorKey;render();
+              });
+              editHost.append(edit);
+              if(open)editRow(sourceRow,editHost,{
+                onlyFields:[editableField],
+              });
+            }
+            line.append(editHost);
+          }
+          auditList.append(line);
         }
         auditing.append(auditList);
         if(auto.length>12){
