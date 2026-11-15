@@ -321,8 +321,10 @@ function independentlyVerifiedTitleIsbn(rowBook,result){
     const byProvider=votes.get(candidate.editionIsbn);
     if(!byProvider.has(source))byProvider.set(source,candidate);
   }
+  // A dissenting independent ISBN source means this title may have
+  // multiple editions. A 2-to-1 majority is not proof of a physical edition.
   const confirmed=[...votes].filter(([,sources])=>sources.size>=2);
-  if(confirmed.length!==1)return null;
+  if(confirmed.length!==1 || votes.size!==1)return null;
   const [isbn,providers]=confirmed[0];
   const ranked=[...providers.values()]
     .sort((left,right)=>candidateScore(right)-candidateScore(left));
