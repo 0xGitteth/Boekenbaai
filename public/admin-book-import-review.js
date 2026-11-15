@@ -486,6 +486,7 @@
     const unifiedOpenGroups=new Set();
     let busy = false;
     let openEditor = null;
+    const expandedMatchAlternatives=new Set();
     let warningsAccepted = false;
     let mustRecheckWarnings = false;
     let currentApplyButton = null;
@@ -1147,6 +1148,167 @@
         problems.append(make('p','hint',
           'Eén boek kan bij meerdere onderdelen voorkomen. '
           +'De aantallen hieronder zijn per onderdeel.'));
+      // The primary identity workflow is one book card per worksheet row,
+      // not a dropdown per metadata field. Server-side options are only
+      // suggestions: each click writes an ordinary editable correction, and
+      // the full import is revalidated before any real database mutation.
+      const reviewRows=new Set(blocked.map(item=>item.index));
+      for(const issue of metadataPlan.issues||[]){
+        for(const worksheetRow of issue.worksheetRows||[]){
+          const match=(stage.rows||[]).find(row=>
+            row.sourceRowNumber===worksheetRow);
+          if(match)reviewRows.add(match.index);
+        }
+      }
+      const recommended=(stage.rows||[]).filter(row=>
+        reviewRows.has(row.index)&&Array.isArray(row.matchSuggestions)
+        &&row.matchSuggestions.length);
+      if(recommended.length){
+        const matchSection=make('section','bb-match-review');
+        const matchHeading=make('div','bb-match-review__heading');
+        matchHeading.append(make('h4','',
+          'Controleer de voorgestelde boeken ('+recommended.length+')'),
+          make('p','hint',
+            'Vergelijk bij een onzeker ISBN de gegevens met het fysieke boek. '
+            +'Kies een voorgestelde editie of pas de gegevens zelf aan. '
+            +'Pas na ‘Controle opnieuw berekenen’ worden je keuzes gecontroleerd.'));
+        matchSection.append(matchHeading);
+
+        const matchList=make('div','bb-match-review__list');
+        const rawIsbn=row=>row.identifierAnalysis?.explicit?.raw
+          ||row.identifierAnalysis?.legacy?.raw
+          ||row.identifierAnalysis?.ambiguous?.raw
+          ||row.book?.editionIsbn||'';
+        const isSelected=(row,candidate)=>{
+          const values=corrections.get(row.index)?.fields||{};
+          return values.editionIsbn===candidate.editionIsbn
+            &&(values.title===undefined||values.title===candidate.title)
+            &&(values.author===undefined||values.author===candidate.author);
+        };
+        const candidateView=(row,candidate,secondary=false)=>{
+          const info=make('div','bb-match-review__candidate'
+            +(secondary?' bb-match-review__candidate--secondary':''));
+          const cover=make('div','bb-match-review__cover');
+          const imageUrl=typeof candidate.coverUrl==='string'
+            &&/^https:\/\/[^\s"'<>]+$/i.test(candidate.coverUrl)
+            ?candidate.coverUrl:'';
+          if(imageUrl){
+            const image=make('img');
+            image.src=imageUrl;image.alt='Omslag van '+candidate.title;
+            image.loading='lazy';
+            image.referrerPolicy='no-referrer';
+            cover.append(image);
+          }else cover.append(make('span','bb-match-review__cover-mark','B'));
+          const details=make('div','bb-match-review__candidate-body');
+          details.append(make('span','bb-match-review__eyebrow',
+            candidate.origin==='existing'?'Al in Boekenbaai'
+              :'Online gevonden · controleer editie'));
+          details.append(make('strong','bb-match-review__candidate-title',
+            candidate.title||'Boek'));
+          details.append(make('span','',candidate.author||'Auteur onbekend'));
+          if(candidate.editionIsbn)
+            details.append(make('code','bb-match-review__isbn',candidate.editionIsbn));
+          else details.append(make('span','hint',
+            'Nog geen ISBN in de bestaande registratie'));
+          const hints=[];
+          if(candidate.origin==='existing'&&candidate.copies)
+            hints.push(candidate.copies+' bestaand'+(candidate.copies===1?' exemplaar':'e exemplaren'));
+          if(candidate.publisher)hints.push(candidate.publisher);
+          if(candidate.language)hints.push('Taal: '+candidate.language);
+          if(candidate.sources?.length)hints.push('Bron: '+candidate.sources.join(', '));
+          if(candidate.unverifiedTitle)hints.push('Titel nog niet per editie bevestigd');
+          if(hints.length)
+            details.append(make('small','bb-match-review__source',hints.join(' · ')));
+          const actions=make('div','bb-match-review__candidate-actions');
+          if(candidate.editionIsbn){
+            const chosen=isSelected(row,candidate);
+            const accept=button(chosen?'Geselecteerd':'Dit is het juiste boek',
+              chosen?'btn btn--secondary':'btn');
+            accept.disabled=Boolean(remotePending||busy||chosen);
+            accept.addEventListener('click',()=>{
+              // Never store a malformed Excel number as a scan barcode.
+              // Keep untouched fields unless the catalogue actually names
+              // the edition; unverified search hints carry only the ISBN.
+              updateCorrection(row.index,'editionIsbn',candidate.editionIsbn);
+              if(!candidate.unverifiedTitle){
+                if(candidate.title&&candidate.title!==row.book?.title)
+                  updateCorrection(row.index,'title',candidate.title);
+                if(candidate.author&&candidate.author!==row.book?.author)
+                  updateCorrection(row.index,'author',candidate.author);
+              }
+              render();
+            });
+            actions.append(accept);
+          }else{
+            const noIsbn=make('span','hint',
+              'Controleer het nummer op dit boek voordat je het koppelt.');
+            actions.append(noIsbn);
+          }
+          info.append(cover,details,actions);
+          return info;
+        };
+        for(const row of recommended){
+          const card=make('article','bb-match-review__card');
+          card.dataset.reviewRowKey='match:'+row.index;
+          const heading=make('div','bb-match-review__card-heading');
+          heading.append(make('strong','',row.book?.title||'Boek'));
+          heading.append(make('span','bb-match-review__state',
+            'Excelrij '+row.sourceRowNumber+' · '+(row.book?.editionIsbn
+              ?'Identiteit controleren':'ISBN onzeker')));
+          card.append(heading);
+          const compare=make('div','bb-match-review__compare');
+          const excel=make('section','bb-match-review__excel');
+          excel.append(make('span','bb-match-review__eyebrow','In Excel'),
+            make('strong','',row.book?.title||'Titel onbekend'),
+            make('span','',row.book?.author||'Auteur onbekend'),
+            make('span','bb-match-review__isbn',
+              'Code: '+(rawIsbn(row)||'niet ingevuld')));
+          const proposed=make('section','bb-match-review__proposed');
+          proposed.append(make('span','bb-match-review__eyebrow','Beste voorstel'));
+          proposed.append(candidateView(row,row.matchSuggestions[0]));
+          compare.append(excel,proposed);
+          card.append(compare);
+          const options=make('div','bb-match-review__options');
+          const alternatives=row.matchSuggestions.slice(1);
+          if(alternatives.length){
+            const more=button('Andere editie bekijken ('+alternatives.length+')',
+              'btn btn--secondary');
+            more.setAttribute('aria-expanded',
+              String(expandedMatchAlternatives.has(row.index)));
+            more.addEventListener('click',()=>{
+              if(expandedMatchAlternatives.has(row.index))
+                expandedMatchAlternatives.delete(row.index);
+              else expandedMatchAlternatives.add(row.index);
+              render();
+            });
+            options.append(more);
+          }
+          const own=button(openEditor===row.index?'Correctie sluiten':'Zelf corrigeren',
+            'btn btn--secondary');
+          own.addEventListener('click',()=>{
+            openEditor=openEditor===row.index?null:row.index;
+            render();
+          });
+          options.append(own);
+          card.append(options);
+          if(expandedMatchAlternatives.has(row.index)){
+            const alternativesList=make('div','bb-match-review__alternatives');
+            for(const candidate of alternatives)
+              alternativesList.append(candidateView(row,candidate,true));
+            card.append(alternativesList);
+          }
+          if(openEditor===row.index)
+            editRow(row,card,{onlyFields:['title','author','editionIsbn']});
+          const selected=corrections.get(row.index)?.fields||{};
+          if(selected.editionIsbn||selected.title||selected.author)
+            card.append(make('p','bb-match-review__selection-note',
+              'Je wijziging is gekozen maar nog niet verwerkt. '
+              +'Gebruik ‘Controle opnieuw berekenen’ om alle controles te herhalen.'));
+          matchList.append(card);
+        }
+        matchSection.append(matchList);
+        problems.append(matchSection);
+      }
       const assignmentCards=make('div','bb-import__exceptions-list');
       const metadataCards=make('div','bb-import__exceptions-list');
       const stockCards=make('div','bb-import__exceptions-list');
@@ -1345,7 +1507,8 @@
         const count=cards.children.length;
         if(!count)continue;
         const group=make('details','bb-import__exception-group');
-        group.open=unifiedOpenGroups.has(kind)||count<=5;
+        group.open=unifiedOpenGroups.has(kind)
+          ||(count<=5&&!(kind==='stock'&&recommended.length));
         group.addEventListener('toggle',()=>{
           if(!group.isConnected)return;
           if(group.open)unifiedOpenGroups.add(kind);
