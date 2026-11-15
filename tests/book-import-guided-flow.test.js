@@ -18,7 +18,13 @@ const {analyzeReviewedImport}=require('../book-import-review');
     Titel:'Oorlogswinter',Auteur:'Jan Terlouw',
     'ISBN-nummer':'9780306406156',Aantal:1,
   }];
+  // Physical source row was row 21, not row 2. SheetJS stores the
+  // position as nonenumerable __rowNum__, omitted by normal JSON.
+  Object.defineProperty(original[0],'__rowNum__',{
+    value:20,configurable:true,
+  });
   const analysis=await analyzeReviewedImport(original);
+  assert.equal(analysis.rows[0].sourceRowNumber,21);
   const store=createImportStageStore(config);
   const created=store.create({
     ownerId:'administrator',sourceRows:original,analysis,
@@ -48,6 +54,15 @@ const {analyzeReviewedImport}=require('../book-import-review');
 
   // A simulated server restart restores both the spreadsheet and unconfirmed
   // edits without restoring unsafe JavaScript functions or learner sessions.
+  const newFormatRestart=createImportStageStore(config);
+  assert.equal(
+    Object.getOwnPropertyDescriptor(
+      newFormatRestart.active().sourceRows[0],'__rowNum__').value,20);
+  // Existing drafts written before the fix should also survive; their
+  // analysis already contains the exact original worksheet row number.
+  const priorFormat=JSON.parse(fs.readFileSync(draftFile,'utf8'));
+  delete priorFormat.worksheetRowPositions;
+  fs.writeFileSync(draftFile,JSON.stringify(priorFormat));
   const afterRestart=createImportStageStore(config);
   const restored=afterRestart.active();
   assert.equal(restored.id,stage.id);
@@ -55,6 +70,11 @@ const {analyzeReviewedImport}=require('../book-import-review');
   assert.equal(restored.options.enrichIsbn,true);
   assert.equal(restored.options.lookupIsbn,undefined);
   assert.equal(restored.analysis.rows.length,1);
+  assert.equal(Object.getOwnPropertyDescriptor(
+    restored.sourceRows[0],'__rowNum__').value,20);
+  const recalculated=await analyzeReviewedImport(restored.sourceRows);
+  assert.equal(recalculated.rows[0].sourceRowNumber,21,
+    'Reanalysis after restart must keep the actual worksheet row');
   assert.equal(afterRestart.beginApply(restored,1).error,'draft_must_be_reviewed');
   assert.equal(afterRestart.beginReview(restored,1).ok,true);
   afterRestart.finishReview(restored,analysis,pending.corrections,true);
@@ -109,6 +129,10 @@ const {analyzeReviewedImport}=require('../book-import-review');
     '.bb-guide__compare','.bb-guide__deferred-entry',
     '@media (max-width:680px)'])
     assert.ok(css.includes(part),'Missing responsive style '+part);
+  assert.ok(ui.includes('guidedAuditEditor=open?null:editorKey'),
+    'Automatic metadata decisions must have per-row correction editors');
+  assert.ok(ui.includes('if(open)editRow(sourceRow,editHost'),
+    'The editor must reuse the existing validated correction flow');
   assert.ok(server.includes('bookImportStageStore.saveDraft('),
     'Autosave must be stored server-side, never just in localStorage');
   assert.ok(server.includes('bookImportDeferredBookChecks'),
