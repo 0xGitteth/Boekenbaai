@@ -483,3 +483,13 @@
 @media (prefers-reduced-motion:reduce) {
   .bb-guide__meter-fill { transition:none; }
 }
+
+.bb-guide__deferred[hidden] { display:none !important; }
+.bb-guide__deferred { margin-top:.8rem; }
+.bb-guide__deferred-list { display:grid; gap:.55rem; max-height:360px; overflow-y:auto; }
+.bb-guide__deferred-entry { display:grid; gap:.16rem; padding:.7rem .8rem;
+  border:1px solid var(--accent-border); border-radius:10px; }
+.bb-guide__deferred-entry span,.bb-guide__deferred-entry small {
+  font-size:.81rem; color:var(--text-muted,var(--text)); overflow-wrap:anywhere; }
+.bb-guide__row-choices { display:grid; gap:.55rem; }
+.bb-guide__cancel { margin-left:auto; }
