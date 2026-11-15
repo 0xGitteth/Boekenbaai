@@ -2777,7 +2777,7 @@
         ? Array.from(focusedRow.querySelectorAll('button, input, select, textarea'))
           .indexOf(document.activeElement) : -1;
       renderContents();
-      scheduleGuidedDraftSave();
+      if(typeof scheduleGuidedDraftSave==='function')scheduleGuidedDraftSave();
       const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
       const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
       for (const list of updatedLists) {
