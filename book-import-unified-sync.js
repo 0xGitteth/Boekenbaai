@@ -61,6 +61,7 @@ const COLUMN_WARNINGS={
 // error codes cannot silently bypass safety checks.
 const NONBLOCKING_DIAGNOSTICS=new Set([
   'isbn_repaired','isbn_resolved_from_metadata','isbn_repair_suggested',
+  'isbn_repair_override_by_sources',
   'ambiguous_identifier_interpreted_as_isbn',
   'ambiguous_identifier_interpreted_as_barcode',
   'metadata_lookup_failed','metadata_not_usable','metadata_not_strict_match',
