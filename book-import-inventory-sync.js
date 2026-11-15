@@ -146,9 +146,21 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     // Legacy copies with a physical barcode but no edition ISBN must not
     // become silent duplicates just because the new Excel supplies an ISBN.
     // An administrator can add the correct ISBN to the existing book first.
-    if (!existing.length && inventory.unidentifiedTitles.has(fingerprint)) {
-      block('possible_existing_book_without_isbn');
-    }
+    const legacyCandidates=!existing.length
+      ?(inventory.unidentifiedTitles.get(fingerprint)||[]):[];
+    if(legacyCandidates.length)block('possible_existing_book_without_isbn');
+    // Expose only safe catalogue identity fields to authenticated managers,
+    // never physical IDs, borrower names, active loan history or class IDs.
+    const summarizeIdentity=book=>({
+      title:String(book?.title||'').slice(0,220),
+      author:String(book?.author||'').slice(0,180),
+    });
+    const uniqueIdentities=books=>[...new Map(books.map(book=>{
+      const value=summarizeIdentity(book);
+      return [JSON.stringify(value),value];
+    })).values()].slice(0,6);
+    const existingIdentitySamples=uniqueIdentities(existing);
+    const legacyIdentitySamples=uniqueIdentities(legacyCandidates);
     // A missing title/author was rejected above before any fuzzy comparison
     // so the administrator sees the actionable source error first.
     let target = 0;
@@ -365,6 +377,11 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         : reason ? 'blocked' : additional ? 'add_copies' : 'unchanged',
       reason: keepExisting ? '' : reason,
       blockers:keepExisting?[]:[...blockers].sort(),
+      existingIdentitySamples:blockers.has('edition_identity_mismatch')
+        ?existingIdentitySamples:[],
+      legacyIdentitySamples:blockers.has('possible_existing_book_without_isbn')
+        ?legacyIdentitySamples:[],
+      legacyCandidateCopies:legacyCandidates.length,
       resolution: keepExisting ? 'keep_existing' : null };
     if (!reason && !keepExisting) {
       for (const item of newPrinted) proposedAdds.push({
