@@ -86,6 +86,20 @@ assert.ok(legacyWithoutIsbn.rows[0].blockers.includes(
   'possible_existing_book_without_isbn'),
   'Export must explain why a legacy copy is not silently duplicated');
 
+assert.deepStrictEqual(legacyWithoutIsbn.rows[0].legacyIdentitySamples,
+  [{title:'Het boek',author:'De schrijver'}],
+  'A missing ISBN must expose safe existing title/author to prevent duplicates');
+const oldIdentity=preview([row(0,1)],[
+  book('existing-private-id',{title:'Wrong book',borrowedBy:'student-private',
+    status:'borrowed'}),
+]);
+assert.strictEqual(oldIdentity.rows[0].reason,'edition_identity_mismatch');
+assert.deepStrictEqual(oldIdentity.rows[0].existingIdentitySamples,
+  [{title:'Wrong book',author:'De schrijver'}],
+  'Show the existing work without leaking borrower or book IDs');
+assert.ok(!JSON.stringify(oldIdentity.rows[0].existingIdentitySamples)
+  .includes('student-private'));
+
 assert.deepStrictEqual(legacyWithoutIsbn.proposedAdds, []);
 
 // A large snapshot remains reconcilable when it adds ZERO books. The 5,000
