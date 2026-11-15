@@ -259,3 +259,78 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
 }
+
+
+/* Guided identification: a calm, scannable comparison card instead of a
+   second set of dropdowns and a long source-warning list. Responsive in
+   VSO tablet landscape, desktop and narrower viewports. */
+.bb-match-review { display:grid; grid-template-columns:minmax(0,1fr);
+  gap:.9rem; min-width:0; margin:.5rem 0 1rem; }
+.bb-match-review__heading { display:grid; gap:.3rem; }
+.bb-match-review__heading h4 { margin:0; font-size:1.03rem; }
+.bb-match-review__list { display:grid; gap:1rem; min-width:0; }
+.bb-match-review__card { display:grid; gap:.9rem; min-width:0;
+  padding:clamp(.85rem,2vw,1.2rem); border:1px solid var(--accent-border);
+  border-radius:16px; background:var(--surface);
+  box-shadow:0 3px 14px rgba(18,37,63,.045); }
+.bb-match-review__card-heading { display:flex; justify-content:space-between;
+  align-items:center; flex-wrap:wrap; gap:.5rem .8rem; }
+.bb-match-review__card-heading strong { font-size:1rem; min-width:0; overflow-wrap:anywhere; }
+.bb-match-review__state { display:inline-flex; align-items:center;
+  padding:.3rem .65rem; font-size:.77rem; font-weight:750;
+  color:var(--text); background:var(--accent-softer); border-radius:999px; }
+.bb-match-review__compare { display:grid; grid-template-columns:minmax(0,1fr)
+  minmax(0,1.35fr); gap:.75rem; align-items:stretch; }
+.bb-match-review__excel,.bb-match-review__proposed {
+  display:flex; flex-direction:column; gap:.45rem; padding:.85rem 1rem;
+  border:1px solid var(--accent-border); border-radius:12px; min-width:0; }
+.bb-match-review__excel { background:var(--accent-softer); }
+.bb-match-review__proposed { background:var(--surface); border-color:var(--accent-border); }
+.bb-match-review__eyebrow { text-transform:uppercase; letter-spacing:.055em;
+  font-size:.69rem; font-weight:800; color:var(--text-muted,var(--text)); }
+.bb-match-review__excel strong,.bb-match-review__candidate-title {
+  font-size:1rem; font-weight:800; line-height:1.3; overflow-wrap:anywhere; }
+.bb-match-review__isbn { display:inline-block; font-family:inherit;
+  font-size:.85rem; font-weight:650; font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere; }
+.bb-match-review__candidate { display:grid; grid-template-columns:68px minmax(0,1fr);
+  gap:.7rem; align-items:start; min-width:0; }
+.bb-match-review__cover { width:68px; aspect-ratio:2/3; border-radius:7px;
+  overflow:hidden; background:var(--accent-softer); display:grid;
+  place-items:center; border:1px solid var(--accent-border); }
+.bb-match-review__cover img { width:100%; height:100%; object-fit:cover; }
+.bb-match-review__cover-mark { width:65%; height:76%; display:grid;place-items:center;
+  border-radius:3px 8px 8px 3px; border-left:5px solid var(--accent-border);
+  background:var(--surface); color:var(--text-muted,var(--text));
+  font-family:Fredoka,Nunito,sans-serif; font-size:1.3rem; font-weight:750; }
+.bb-match-review__candidate-body { display:flex; flex-direction:column; gap:.32rem;
+  min-width:0; }
+.bb-match-review__source { color:var(--text-muted,var(--text));
+  font-size:.77rem; line-height:1.4; overflow-wrap:anywhere; }
+.bb-match-review__candidate-actions { grid-column:1/-1; display:flex;
+  flex-wrap:wrap; align-items:center; gap:.4rem; }
+.bb-match-review__candidate-actions > .btn { max-width:100%; }
+.bb-match-review__candidate-actions > .hint { font-size:.8rem; }
+.bb-match-review__options { display:flex; gap:.6rem; flex-wrap:wrap; }
+.bb-match-review__options > .btn { min-width:0; }
+.bb-match-review__alternatives { display:grid; grid-template-columns:
+  repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:.65rem;
+  padding-top:.7rem; border-top:1px solid var(--accent-border); }
+.bb-match-review__candidate--secondary { padding:.75rem;
+  border:1px solid var(--accent-border); border-radius:10px; }
+.bb-match-review__selection-note { padding:.65rem .8rem; border-radius:9px;
+  background:var(--accent-softer); border:1px solid var(--accent-border);
+  font-size:.83rem; }
+.bb-match-review .bb-review__editor { margin-top:.1rem; }
+.bb-match-review__card :focus-visible { outline:3px solid var(--accent);
+  outline-offset:3px; }
+@media (max-width:720px) {
+  .bb-match-review__compare { grid-template-columns:minmax(0,1fr); }
+  .bb-match-review__candidate { grid-template-columns:60px minmax(0,1fr); }
+  .bb-match-review__cover { width:60px; }
+  .bb-match-review__options { display:grid; grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion:no-preference) {
+  .bb-match-review__card { transition:box-shadow .18s ease; }
+  .bb-match-review__card:focus-within { box-shadow:0 5px 20px rgba(18,37,63,.08); }
+}
