@@ -167,11 +167,13 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
       return {ok:false,error:'stage_busy_or_closed'};
     if(stage.revision!==expectedRevision)
       return {ok:false,error:'stale_review'};
+    // An explicit clear removes a reverted set of choices so the final
+    // confirmation cannot be blocked by a stale, otherwise invisible draft.
     stage.draft=draft;
-    stage.draftSavedAt=new Date(now()).toISOString();
+    stage.draftSavedAt=draft===null?null:new Date(now()).toISOString();
     stage.expiresAt=now()+ttlMs;
     persist();
-    return {ok:true,savedAt:stage.draftSavedAt,
+    return {ok:true,savedAt:stage.draftSavedAt,cleared:draft===null,
       persisted:stage.draftPersisted===true};
   }
   function beginReview(stage, expectedRevision) {
