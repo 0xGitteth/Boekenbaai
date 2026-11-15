@@ -747,6 +747,75 @@
       host.append(editor);
     }
 
+    // Export the current *unconfirmed* analysis, not the entire school
+    // database. No learner or staff IDs, names, PINs or loan history leave
+    // the browser. This permits debugging without applying a risky import.
+    function diagnosticSnapshot(){
+      const plan=stage?.decisions||{};
+      const stock=new Map((plan.inventory?.rows||[]).map(item=>[item.index,item]));
+      const safeFields=new Set(['title','author','isbn','metadataIsbn',
+        'editionIsbn','barcode','ambiguousIdentifier','quantity','pageCount',
+        'publishedYear','publisher','language','coverUrl']);
+      return {
+        version:1,exportedAt:new Date().toISOString(),fileName:stage?.fileName||'',
+        status:stage?.status,revision:stage?.revision,
+        selectedParts:stage?.syncParts||null,summary:plan.summary||{},
+        inventorySummary:plan.inventory?.summary||{},
+        rows:(stage?.rows||[]).map(row=>{
+          const decision=stock.get(row.index);
+          return {
+            worksheetRow:row.sourceRowNumber,
+            title:row.book?.title||'',author:row.book?.author||'',
+            editionIsbn:row.book?.editionIsbn||'',
+            rawIsbn:row.identifierAnalysis?.explicit?.raw
+              ||row.identifierAnalysis?.legacy?.raw
+              ||row.identifierAnalysis?.ambiguous?.raw||'',
+            status:row.status,
+            issues:(row.issues||[]).map(issue=>({
+              code:issue.code,severity:issue.severity,
+              reviewLevel:issue.reviewLevel||null,field:issue.field||null,
+              ...(safeFields.has(issue.field)?{
+                raw:issue.raw??null,excelValue:issue.excelValue??null,
+                metadataValue:issue.metadataValue??null,
+              }:{}),
+              suggestion:issue.suggestion?.canonical||null,
+              repair:issue.repair?.canonical||null,
+              confirmedTitle:issue.confirmedTitle||null,
+              sources:issue.sources||[],
+              editionIsbns:issue.editionIsbns||[],
+            })),
+            sourceEvidence:(row.sourceEvidence||[]).map(source=>({
+              source:source.source,editionIsbn:source.editionIsbn,
+              title:source.title,author:source.author,
+            })),
+            inventory:decision?{
+              action:decision.action,reason:decision.reason||null,
+              blockers:decision.blockers||[],
+              existingCopies:decision.existingCopies,
+              borrowedCopies:decision.borrowedCopies,
+              targetCopies:decision.targetCopies,
+              addCopies:decision.addCopies,
+            }:null,
+          };
+        }),
+        metadataIssues:(plan.metadata?.issues||[]).map(item=>({
+          isbn:item.isbn,field:item.field,reason:item.reason,
+          worksheetRows:item.worksheetRows||[],
+        })),
+      };
+    }
+
+    function downloadCurrentDiagnosis(){
+      const snapshot=diagnosticSnapshot();
+      const file=new Blob([JSON.stringify(snapshot,null,2)],
+        {type:'application/json'});
+      const url=URL.createObjectURL(file);
+      const link=document.createElement('a');
+      link.href=url;link.download='boekenbaai-import-diagnose.json';
+      link.click();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+    }
+
     function renderUnifiedSync() {
       const plan=stage.decisions||{};
       const summary=plan.summary||{};
@@ -775,6 +844,9 @@
         'De aangevinkte onderdelen worden samen verwerkt na jouw bevestiging. '
         +'Alleen uitzonderingen vragen een afzonderlijke keuze.'));
       results.append(heading);
+      const diagnosticButton=button('Download diagnoseverslag (JSON)','btn btn--secondary');
+      diagnosticButton.addEventListener('click',downloadCurrentDiagnosis);
+      results.append(diagnosticButton);
       const numbers=make('div','bb-import__stat-grid');
       for(const [count,label] of [
         [summary.newCopies||0,'Nieuwe exemplaren'],
