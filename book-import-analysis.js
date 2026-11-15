@@ -72,6 +72,12 @@ function flagConflictingRepairSuggestions(row) {
   const resolvedIsbn = row?.book?.editionIsbn || '';
   const evidenceIsbns = new Set([resolvedIsbn, ...suggestedIsbns].filter(Boolean));
   if (evidenceIsbns.size <= 1) return false;
+  // A checksum-based suggestion is not proof of a specific edition. If
+  // two independent catalogues verified a different ISBN using the exact
+  // worksheet title and author, the weaker arithmetic suggestion is retired.
+  if(row.issues.some(issue=>issue.code==='isbn_repair_override_by_sources'
+    &&issue.metadataIsbn===resolvedIsbn
+    &&Array.isArray(issue.sources)&&issue.sources.length>=2))return false;
   addIssue(row, 'conflicting_isbn_repair_suggestions', 'conflict', { suggestedIsbns, resolvedIsbn });
   return true;
 }
