@@ -179,6 +179,27 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(scoped.summary.blockedStock,1,
     'Uncertain book identity must remain blocked for physical-stock changes');
 
+  const onlyLanguage=plan([row],current,{
+    parts:parts({fields:{language:true}}),
+  });
+  assert.equal(onlyLanguage.summary.pendingMetadata,0);
+  assert.equal(onlyLanguage.metadata.updates.length,0,
+    'Selecting only language cannot bypass an unselected title conflict');
+  assert.ok(onlyLanguage.metadata.automaticDecisions.some(item=>
+    item.field==='language'&&item.action==='keep'));
+  const missingLanguage=db();
+  missingLanguage.books=[copy('copy-1',{language:''})];
+  const withOnlineEnrichment=source(0,{},{language:'nl'},{
+    language:{source:'metadata',detail:'isbn_lookup'},
+  });
+  withOnlineEnrichment.status='conflict';
+  withOnlineEnrichment.issues=[{code:'metadata_title_conflict',severity:'conflict'}];
+  const enrichment=plan([withOnlineEnrichment],missingLanguage,{
+    parts:parts({fields:{pageCount:true}}),
+  });
+  assert.equal(enrichment.metadata.updates.some(item=>item.field==='language'),false,
+    'Automatic enrichment also preserves a disputed physical edition');
+
   const authorClash=source(0,{},{title:'Oorlogswinter',author:'Jan Terlouw',
     authors:['Jan Terlouw'],language:'nl'},{
     title:{source:'excel',raw:'Oorlogswinter'},
