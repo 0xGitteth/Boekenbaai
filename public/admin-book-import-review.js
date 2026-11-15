@@ -462,6 +462,43 @@
     root.append(liveAlert);
     const results = make('div', 'bb-review__results');
     root.append(results);
+    const deferredPanel=make('details','bb-guide__details bb-guide__deferred');
+    const deferredSummary=make('summary','','Uitgestelde boekcontroles laden…');
+    const deferredList=make('div','bb-guide__deferred-list');
+    deferredPanel.append(deferredSummary,deferredList);
+    root.append(deferredPanel);
+    async function refreshDeferred(){
+      try{
+        const data=await request(rootPath+'/deferred');
+        const items=Array.isArray(data.items)?data.items:[];
+        deferredSummary.textContent='Eerder uitgestelde boeken ('+items.length+')';
+        deferredList.replaceChildren();
+        if(!items.length){
+          deferredList.append(make('p','hint',
+            'Er zijn nog geen boeken uitgesteld.'));
+          return;
+        }
+        deferredList.append(make('p','hint',
+          'Deze boeken zijn niet geïmporteerd. De oorspronkelijke Excel blijft '
+          +'nodig om ze later met een gecontroleerd ISBN toe te voegen.'));
+        for(const item of items.slice(0,40)){
+          const line=make('div','bb-guide__deferred-entry');
+          line.append(make('strong','',item.title||'Onbekend boek'),
+            make('span','',item.author||'Auteur onbekend'),
+            make('small','',
+              'Excelrij '+item.worksheetRow+' · Code '
+              +(item.excelIdentifier||'ontbreekt')
+              +' · Bestand '+(item.fileName||'onbekend')));
+          deferredList.append(line);
+        }
+        if(items.length>40)deferredList.append(make('p','hint',
+          'Getoond: 40 van '+items.length+' uitgestelde boeken.'));
+      }catch{
+        deferredSummary.textContent='Eerder uitgestelde boeken';
+        deferredList.replaceChildren(make('p','hint',
+          'Het overzicht kon niet worden geladen.'));
+      }
+    }
     imports.insertBefore(root, imports.firstChild);
 
     const oldSection = imports.querySelector('#book-import-form')?.closest('.admin-card__section');
@@ -1070,6 +1107,7 @@
           });
           rememberResponse(response);
           void refreshEnrichmentStatus();void refreshBrave();
+          void refreshDeferred();
         },'De definitieve wijzigingen worden opgeslagen…');
       };
 
@@ -2735,6 +2773,8 @@
         else stepNodes[index].removeAttribute('aria-current');
       }
       results.replaceChildren();
+      deferredPanel.hidden=Boolean(stage&&['preparing','open','reviewing','applying']
+        .includes(stage.status));
       form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
       if (!stage) return;
       if (stage.status === 'preparing' || stage.status === 'reviewing' || stage.status === 'applying') {
@@ -3230,6 +3270,7 @@
       }, 'Het Excelbestand wordt gecontroleerd…');
     });
     syncStage();
+    void refreshDeferred();
     window.setInterval(syncStage, 1500);
     window.addEventListener('focus', syncStage);
     window.addEventListener('focus', refreshEnrichmentStatus);
