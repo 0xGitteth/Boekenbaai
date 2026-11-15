@@ -510,6 +510,61 @@ function oneNearWorksheetIsbn(row,result){
   return near.length===1?near[0]:'';
 }
 
+// Collect only bounded public book catalogue facts for the review UI.
+// This is discovery evidence, NEVER the authority that changes an ISBN.
+function captureReviewMatchCandidates(row,result,{titleSearch=false}={}){
+  const candidates=[
+    ...metadataCandidatesFromResult(result),
+    ...(Array.isArray(result?.sourceCandidates)
+      ?result.sourceCandidates.map(normalizeMetadataCandidate).filter(Boolean):[]),
+  ];
+  const grouped=new Map();
+  for(const candidate of candidates){
+    if(!candidate.editionIsbn||candidate.identifierIsbns.length>1)continue;
+    const key=candidate.editionIsbn+'|'+(candidate.title||'').toLocaleLowerCase('nl');
+    const source=normalizeSource(candidate.source)
+      ||(titleSearch?'Google Books':'ISBN-bron');
+    if(!grouped.has(key))grouped.set(key,{
+      editionIsbn:candidate.editionIsbn,title:candidate.title||'',
+      author:candidate.author||'',coverUrl:candidate.coverUrl||'',
+      publisher:candidate.publisher||'',language:candidate.language||'',
+      sources:[],
+    });
+    const value=grouped.get(key);
+    if(!value.sources.includes(source))value.sources.push(source);
+    if(!value.coverUrl&&candidate.coverUrl)value.coverUrl=candidate.coverUrl;
+  }
+  if(titleSearch&&Array.isArray(result?.isbnSearchCandidates)){
+    const isbns=[...new Set(result.isbnSearchCandidates
+      .map(canonicalizeBookIsbn13).filter(Boolean))];
+    for(const isbn of isbns.slice(0,10)){
+      if([...grouped.values()].some(candidate=>candidate.editionIsbn===isbn))continue;
+      // A title lookup can return several different editions. The
+      // worksheet title is NOT asserted as their authoritative title.
+      grouped.set(isbn+'|unverified',{
+        editionIsbn:isbn,title:row.book?.title||'',
+        author:row.book?.author||'',coverUrl:'',publisher:'',
+        language:'',sources:['Google Books'],
+        unverifiedTitle:true,
+      });
+    }
+  }
+  const previous=Array.isArray(row.onlineMatchCandidates)
+    ?row.onlineMatchCandidates:[];
+  const unique=new Map();
+  for(const candidate of [...previous,...grouped.values()]){
+    const key=candidate.editionIsbn+'|'+(candidate.title||'').toLocaleLowerCase('nl');
+    if(!unique.has(key))unique.set(key,candidate);
+    else {
+      const earlier=unique.get(key);
+      earlier.sources=[...new Set([...(earlier.sources||[]),
+        ...(candidate.sources||[])])].slice(0,4);
+      if(!earlier.coverUrl&&candidate.coverUrl)earlier.coverUrl=candidate.coverUrl;
+    }
+  }
+  row.onlineMatchCandidates=[...unique.values()].slice(0,12);
+}
+
 async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
@@ -520,6 +575,7 @@ async function resolveMetadata(row, options) {
     if (!lookupIsbn || !row.book.editionIsbn) return;
     try {
       const result = await lookupIsbn(row.book.editionIsbn, { title: row.book.title, author: row.book.author });
+      captureReviewMatchCandidates(row,result);
       // Only actual independent source replies, with an explicitly matching
       // edition ISBN, qualify as evidence for automatic source choices.
       if(Array.isArray(result?.sourceCandidates)){
@@ -603,6 +659,7 @@ async function resolveMetadata(row, options) {
   if (!lookupTitleAuthor || !row.book.title || !row.book.author) return;
   try {
     const result = await lookupTitleAuthor({ title: row.book.title, author: row.book.author, language: row.book.language });
+    captureReviewMatchCandidates(row,result,{titleSearch:true});
     const candidates = metadataCandidatesFromResult(result);
     let individualSources=Array.isArray(result?.sourceCandidates)
       ?[...result.sourceCandidates]:[];
@@ -619,6 +676,7 @@ async function resolveMetadata(row, options) {
         const exact=await lookupIsbn(candidateIsbns[0],{
           title:row.book.title,author:row.book.author,
         });
+        captureReviewMatchCandidates(row,exact);
         if(Array.isArray(exact?.sourceCandidates)){
           individualSources.push(...exact.sourceCandidates);
         }

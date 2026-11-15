@@ -17,7 +17,8 @@ const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
-const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
+const { analyzeReviewedImport, buildReviewDecisions,
+  normalizeCorrections } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
@@ -65,7 +66,6 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
   findTask: findDeferredAssignmentTask,
   resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
 
-const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -89,6 +89,12 @@ const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
   ? path.resolve(__dirname, process.env.BOEKENBAAI_DATA_PATH)
   : DEFAULT_DATA_PATH;
+// Recover an unfinished, administrator-owned school import after a restart.
+// The file is on the same non-public persistent volume as db.json.
+const bookImportStageStore=createImportStageStore({
+  ttlMs:24*60*60*1000,
+  persistenceFile:path.join(path.dirname(DATA_PATH),'book-import-active-stage.json'),
+});
 // Keep original image files next to db.json on the configured persistent volume.
 const coverAssets = createCoverAssetStore({ directory: path.join(path.dirname(DATA_PATH), 'covers') });
 
@@ -5270,7 +5276,20 @@ async function handleApi(req, res, requestUrl) {
           } : null,
         });
       }
-      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel))?$/);
+      if(req.method==='GET' &&requestUrl.pathname===stageRoot+'/deferred'){
+        const database=loadDb();
+        const items=(Array.isArray(database.bookImportDeferredBookChecks)
+          ?database.bookImportDeferredBookChecks:[])
+          .filter(item=>item.status==='open').slice(-500).reverse()
+          .map(item=>({
+            id:item.id,fileName:item.fileName,worksheetRow:item.worksheetRow,
+            title:item.title,author:item.author,
+            excelIdentifier:item.excelIdentifier,
+            editionIsbn:item.editionIsbn,createdAt:item.createdAt,
+          }));
+        return sendJson(res,200,{items,count:items.length});
+      }
+      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
         if (activeImportJobs.size > 0) {
           return sendJson(res, 409, { message: 'De oude boekimport is nog bezig. Rond die eerst af.', error: 'legacy_import_busy' });
@@ -5360,7 +5379,8 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, syncParts:selectedParts.value, maxRows: 1500, maxCopies: maxAnalyzedCopies,
+          mode, syncParts:selectedParts.value, maxRows: 1500,
+          maxCopies: maxAnalyzedCopies,enrichIsbn,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
@@ -5418,6 +5438,14 @@ async function handleApi(req, res, requestUrl) {
       if (!stageMatch) return sendJson(res, 404, { message: 'Importcontrole niet gevonden.' });
       const stage = bookImportStageStore.get(stageMatch[1], user.id);
       if (!stage) return sendJson(res, 404, { message: 'Importcontrole ontbreekt of is verlopen.' });
+      // Functions are deliberately not serialized to disk. Restore
+      // provider lookups for a resumed draft before reanalyzing corrections.
+      if(stage.options?.enrichIsbn
+        &&typeof stage.options.lookupIsbn!=='function'){
+        stage.options.lookupIsbn=resolveLookupIsbnMetadata();
+        stage.options.lookupTitleAuthor=resolveLookupTitleAuthorMetadata();
+        stage.options.releaseRetryableLookups=()=>{};
+      }
       if (req.method === 'GET' && !stageMatch[2]) {
         return sendJson(res, 200, importStageView(stage));
       }
@@ -5428,6 +5456,31 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 409, { message: 'Deze import is inmiddels gewijzigd of wordt verwerkt.', error: cancelled.error });
         }
         return sendJson(res, 200, importStageView(stage));
+      }
+      if(req.method==='POST'&&stageMatch[2]==='draft'){
+        if(stage.options.mode!=='unified_sync')
+          return sendJson(res,400,{message:'Deze importmodus ondersteunt geen conceptkeuzes.'});
+        const body=await parseBody(req,24*1024*1024);
+        if(!Number.isSafeInteger(body.revision)
+          ||typeof body.acceptWarnings!=='boolean')
+          return sendJson(res,400,{message:'Ongeldige conceptversie.'});
+        const normalized=normalizeCorrections(body.corrections,stage.sourceRows.length);
+        const inventory=normalizeInventoryResolutions(body.inventoryResolutions);
+        const assignment=normalizeAssignmentResolutions(body.assignmentResolutions);
+        const metadata=normalizedMetadataChoice(body.metadataResolutions);
+        if(!normalized.ok||!inventory.ok||!assignment.ok||!metadata.ok)
+          return sendJson(res,400,{message:'Ongeldige boekcorrectie.',
+            error:normalized.error||inventory.error||assignment.error||metadata.error});
+        const saved=bookImportStageStore.saveDraft(stage,body.revision,{
+          corrections:[...normalized.corrections.values()],
+          acceptWarnings:body.acceptWarnings,
+          inventoryResolutions:inventory.values,
+          assignmentResolutions:assignment.values,
+          metadataResolutions:metadata.values,
+        });
+        if(!saved.ok)return sendJson(res,409,{message:'De import is inmiddels gewijzigd.',
+          error:saved.error});
+        return sendJson(res,200,saved);
       }
       if (req.method === 'POST' && stageMatch[2] === 'review') {
         // Corrections for a large school spreadsheet can exceed 400 KB even
@@ -5797,6 +5850,42 @@ async function handleApi(req, res, requestUrl) {
                 ? (createdByRow.get(assignment.index) || [])[0]?.id : assignment.bookId,
               borrower: assignment.borrower,
             })));
+            // A teacher may explicitly postpone an uncertain physical
+            // identity while importing independent safe books. Persist the
+            // postponed bibliographic identity separately from learner loans.
+            const deferredBookChecks=(stage.corrections||[])
+              .filter(change=>change?.skip===true)
+              .map(change=>{
+                const original=stage.initialAnalysis?.rows?.[change.index];
+                const book=original?.book||{};
+                const rawIsbn=original?.identifierAnalysis?.explicit?.raw
+                  ||original?.identifierAnalysis?.legacy?.raw
+                  ||original?.identifierAnalysis?.ambiguous?.raw||'';
+                return {
+                  id:crypto.randomUUID(),batchId,
+                  fileName:stage.fileName,
+                  worksheetRow:original?.sourceRowNumber||change.index+2,
+                  title:String(book.title||'').slice(0,400),
+                  author:String(book.author||'').slice(0,250),
+                  excelIdentifier:String(rawIsbn).slice(0,100),
+                  editionIsbn:String(book.editionIsbn||'').slice(0,20),
+                  createdAt:now,status:'open',
+                };
+              });
+            if(deferredBookChecks.length){
+              if(!Array.isArray(database.bookImportDeferredBookChecks))
+                database.bookImportDeferredBookChecks=[];
+              const deferred=database.bookImportDeferredBookChecks;
+              for(const candidate of deferredBookChecks){
+                const existing=deferred.find(item=>item.status==='open'
+                  &&item.fileName===candidate.fileName
+                  &&item.worksheetRow===candidate.worksheetRow
+                  &&item.title===candidate.title
+                  &&item.excelIdentifier===candidate.excelIdentifier);
+                if(!existing)deferred.push(candidate);
+              }
+              database.bookImportDeferredBookChecks=deferred.slice(-1500);
+            }
             const report = {
               id: batchId, createdBy: user.id, importedAt: now,
               mode: isUnified?'unified_sync':'inventory_sync', fileName: stage.fileName,
@@ -5807,6 +5896,7 @@ async function handleApi(req, res, requestUrl) {
               })),
               count: createdCopies.length,
               sourceRows: stage.analysis.summary.sourceRows,
+              deferredBookChecks,
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
               omittedEditions: fresh.omittedEditions,
               inventoryResolutions: stage.inventoryResolutions,
@@ -5962,6 +6052,7 @@ async function handleApi(req, res, requestUrl) {
               corrected:corrected.applied,correctedLoans:corrected.loans,
               correctedLocations:corrected.locations,metadataUpdated,
               deferred:deferredDifferences.length,
+              deferredBooks:deferredBookChecks.length,
               selectedParts:isUnified?combined.parts:null,
               retainedEditions:fresh.summary.acknowledgedEditions,
               report,omittedExistingCopies:fresh.summary.omittedExistingCopies,

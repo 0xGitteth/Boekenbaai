@@ -159,8 +159,8 @@
     const steps=make('nav','bb-import__steps');
     steps.setAttribute('aria-label','Importstappen');
     const stepNodes=[];
-    for(const label of ['1. Bestand en keuzes','2. Verschillen controleren',
-      '3. Import afronden']){
+    for(const label of ['1. Instellen','2. Analyseren','3. Controleren',
+      '4. Afronden']){
       const step=make('span','bb-import__step',label);
       steps.append(step);
       stepNodes.push(step);
@@ -462,6 +462,43 @@
     root.append(liveAlert);
     const results = make('div', 'bb-review__results');
     root.append(results);
+    const deferredPanel=make('details','bb-guide__details bb-guide__deferred');
+    const deferredSummary=make('summary','','Uitgestelde boekcontroles laden…');
+    const deferredList=make('div','bb-guide__deferred-list');
+    deferredPanel.append(deferredSummary,deferredList);
+    root.append(deferredPanel);
+    async function refreshDeferred(){
+      try{
+        const data=await request(rootPath+'/deferred');
+        const items=Array.isArray(data.items)?data.items:[];
+        deferredSummary.textContent='Eerder uitgestelde boeken ('+items.length+')';
+        deferredList.replaceChildren();
+        if(!items.length){
+          deferredList.append(make('p','hint',
+            'Er zijn nog geen boeken uitgesteld.'));
+          return;
+        }
+        deferredList.append(make('p','hint',
+          'Deze boeken zijn niet geïmporteerd. De oorspronkelijke Excel blijft '
+          +'nodig om ze later met een gecontroleerd ISBN toe te voegen.'));
+        for(const item of items.slice(0,40)){
+          const line=make('div','bb-guide__deferred-entry');
+          line.append(make('strong','',item.title||'Onbekend boek'),
+            make('span','',item.author||'Auteur onbekend'),
+            make('small','',
+              'Excelrij '+item.worksheetRow+' · Code '
+              +(item.excelIdentifier||'ontbreekt')
+              +' · Bestand '+(item.fileName||'onbekend')));
+          deferredList.append(line);
+        }
+        if(items.length>40)deferredList.append(make('p','hint',
+          'Getoond: 40 van '+items.length+' uitgestelde boeken.'));
+      }catch{
+        deferredSummary.textContent='Eerder uitgestelde boeken';
+        deferredList.replaceChildren(make('p','hint',
+          'Het overzicht kon niet worden geladen.'));
+      }
+    }
     imports.insertBefore(root, imports.firstChild);
 
     const oldSection = imports.querySelector('#book-import-form')?.closest('.admin-card__section');
@@ -483,14 +520,36 @@
     let automaticReceiptLimit=20;
     let automaticReceiptOpen=false;
     let unifiedLimits={assignments:15,metadata:15,stock:15};
+    let visibleMatchCards=5;
+    let guidedStep=1; // 0 upload, 1 analysis overview, 2 review, 3 final
+    let guidedIndex=0;
+    let guidedAlternativeRow=null;
+    const candidateChangeHistory=new Map();
+    const guidedSelectedRow=new Map();
+    let guidedShowDetails=false;
+    const wizardPositionKey='boekenbaai.import.wizard.position.v1';
+    function storeGuidedPosition(){
+      if(!stage?.id)return;
+      try{localStorage.setItem(wizardPositionKey,
+        JSON.stringify({id:stage.id,step:guidedStep,index:guidedIndex}));}catch{}
+    }
+    function setGuidedStep(next,index=guidedIndex){
+      guidedStep=Math.max(1,Math.min(3,next));
+      guidedIndex=Math.max(0,index);
+      storeGuidedPosition();
+      render();
+    }
     const unifiedOpenGroups=new Set();
     let busy = false;
     let openEditor = null;
+    const expandedMatchAlternatives=new Set();
     let warningsAccepted = false;
     let mustRecheckWarnings = false;
     let currentApplyButton = null;
     let remotePending = null;
     let syncing = false;
+    let draftSaveTimer = null;
+    let draftSaveInFlight = false;
     const PAGE_SIZE = 15;
     const hasUnreviewedChanges = () => {
       if (!stage) return true;
@@ -508,6 +567,40 @@
         || JSON.stringify([...metadataResolutions.values()].sort((a,b)=>a.id.localeCompare(b.id)))
           !== JSON.stringify([...(stage.metadataResolutions||[])].sort((a,b)=>a.id.localeCompare(b.id)));
     };
+    function scheduleGuidedDraftSave(){
+      if(stage?.mode!=='unified_sync'||stage.status!=='open'
+        ||remotePending||busy||!hasUnreviewedChanges())return;
+      if(draftSaveTimer)clearTimeout(draftSaveTimer);
+      draftSaveTimer=setTimeout(async()=>{
+        draftSaveTimer=null;
+        if(!stage||busy||remotePending||draftSaveInFlight)return;
+        const currentStage=stage.id,revision=stage.revision;
+        const snapshot={
+          revision,acceptWarnings:warningsAccepted,
+          corrections:[...corrections.values()],
+          inventoryResolutions:[...inventoryResolutions.values()],
+          assignmentResolutions:[...assignmentResolutions.values()],
+          metadataResolutions:[...metadataResolutions.values()],
+        };
+        draftSaveInFlight=true;
+        try{
+          const result=await request(rootPath+'/'+encodeURIComponent(currentStage)
+            +'/draft',snapshot);
+          if(stage?.id===currentStage&&stage.revision===revision){
+            if(!result.persisted)setNotice('Je keuzes staan nog in het geheugen, '
+              +'maar konden niet blijvend worden opgeslagen.');
+            else {
+              stage.draft={...snapshot};
+              stage.draftSavedAt=result.savedAt;
+            }
+          }
+        }catch(error){
+          if(stage?.id===currentStage&&stage.revision===revision)
+            setNotice('Concept opslaan mislukt. '
+              +'Klik op controleren voordat je de pagina verlaat.');
+        }finally{draftSaveInFlight=false;}
+      },950);
+    }
     const setNotice = (text) => { notice.textContent = text; };
     const frozenControls = new Map();
     function setBusy(value) {
@@ -543,17 +636,34 @@
       stage = payload;
       remotePending = null;
       liveAlert.replaceChildren();
-      warningsAccepted = stage.acceptWarnings === true;
+      const savedDraft=stage.draft||{};
+      warningsAccepted = savedDraft.acceptWarnings ?? (stage.acceptWarnings === true);
       mustRecheckWarnings = false;
-      corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
-      inventoryResolutions = new Map((stage.inventoryResolutions || []).map((item) => [item.isbn, item]));
-      assignmentResolutions = new Map((stage.assignmentResolutions || []).map((item) => [item.id, item]));
-      metadataResolutions = new Map((stage.metadataResolutions || []).map(item=>[item.id,item]));
+      corrections = new Map((savedDraft.corrections||stage.corrections||[])
+        .map(change=>[change.index,change]));
+      inventoryResolutions = new Map((savedDraft.inventoryResolutions
+        ||stage.inventoryResolutions||[]).map(item=>[item.isbn,item]));
+      assignmentResolutions = new Map((savedDraft.assignmentResolutions
+        ||stage.assignmentResolutions||[]).map(item=>[item.id,item]));
+      metadataResolutions = new Map((savedDraft.metadataResolutions
+        ||stage.metadataResolutions||[]).map(item=>[item.id,item]));
       skippedEdits.clear();
+      // A fresh server reanalysis becomes the new correction baseline.
+      candidateChangeHistory.clear();
       if (!preservePosition || !sameStage) {
+        const previous=(()=>{try{return JSON.parse(
+          localStorage.getItem(wizardPositionKey)||'null');}catch{return null;}})();
+        guidedStep=previous?.id===payload.id
+          ?Math.max(1,Math.min(3,Number(previous.step)||1)):1;
+        guidedIndex=previous?.id===payload.id
+          ?Math.max(0,Number(previous.index)||0):0;
+        guidedAlternativeRow=null;
+        guidedSelectedRow.clear();
+        guidedShowDetails=false;
         page = 0;
         automaticPage = 0;
         automaticExpanded = false;
+        visibleMatchCards = 5;
         openEditor = null;
       }
       render();
@@ -702,6 +812,36 @@
       // Prevent applying the PREVIOUS server review while the editor contains
       // changes that have not yet been checked and saved.
       if (currentApplyButton) currentApplyButton.disabled = true;
+      scheduleGuidedDraftSave();
+    }
+
+    function selectCandidateForRow(row,candidate){
+      if(!row||!candidate?.editionIsbn)return;
+      const fields=corrections.get(row.index)?.fields||{};
+      const previous=candidateChangeHistory.get(row.index);
+      const original=previous?.original||{
+        title:fields.title===undefined?row.book?.title:fields.title,
+        author:fields.author===undefined?row.book?.author:fields.author,
+      };
+      const nextApplied={};
+      updateCorrection(row.index,'editionIsbn',candidate.editionIsbn);
+      for(const field of ['title','author']){
+        const current=(corrections.get(row.index)?.fields||{})[field];
+        const changedByUser=previous?.lastApplied?.[field]!==undefined
+          &&current!==previous.lastApplied[field];
+        if(candidate.unverifiedTitle){
+          // Search-only ISBN hints contain no verified title/author. Keep
+          // any manual edit untouched; undo earlier candidate metadata only
+          // when it has not been edited since that earlier candidate.
+          if(previous?.lastApplied?.[field]!==undefined&&!changedByUser)
+            updateCorrection(row.index,field,original[field]||row.book?.[field]||'');
+        }else if(!changedByUser){
+          const value=candidate[field]||row.book?.[field]||'';
+          updateCorrection(row.index,field,value);
+          nextApplied[field]=value;
+        }
+      }
+      candidateChangeHistory.set(row.index,{original,lastApplied:nextApplied});
     }
 
     function updateInventoryResolution(isbn, keep) {
@@ -819,7 +959,683 @@
       setTimeout(()=>URL.revokeObjectURL(url),2000);
     }
 
+
+    // Four-step guided import. All choices use the existing, validated
+    // correction/assignment/metadata endpoints. One book appears only once,
+    // irrespective of how many distinct diagnostics refer to it.
+    function renderGuidedUnifiedSync(){
+      const plan=stage.decisions||{};
+      const summary=plan.summary||{};
+      const inventory=plan.inventory||{};
+      const metadata=plan.metadata||{};
+      const assignments=plan.assignments||{};
+      const rows=stage.rows||[];
+      const rowByNumber=new Map(rows.map(row=>[row.sourceRowNumber,row]));
+      const rowByIndex=new Map(rows.map(row=>[row.index,row]));
+      const blocked=(inventory.rows||[]).filter(item=>
+        item.action==='blocked'&&item.combinedWith===undefined);
+      const manualAssignments=(assignments.differences||[]).filter(item=>
+        !item.automatic&&!item.previouslyImported);
+      const manualMetadata=metadata.issues||[];
+      const actionable=plan.actionableSourceIssues||[];
+      const books=new Map();
+      const groupFor=(isbn,row)=>{
+        const key=isbn||('row:'+row?.index);
+        if(!books.has(key))books.set(key,{
+          key,isbn:isbn||'',rows:new Map(),stock:[],
+          assignments:[],metadata:[],warnings:[],
+        });
+        const group=books.get(key);
+        if(row)group.rows.set(row.index,row);
+        return group;
+      };
+      for(const entry of blocked){
+        const row=rowByIndex.get(entry.index);
+        const group=groupFor(entry.editionIsbn||'',row);
+        group.stock.push(entry);
+      }
+      // Stock planner reports the ISBN group once; rows combined into
+      // that group still require individual candidate selection when they
+      // disagree. Include every source row in the ONE combined book card.
+      for(const row of rows){
+        const isbn=row.book?.editionIsbn;
+        const group=isbn?books.get(isbn):null;
+        if(group?.stock?.length&&row.status!=='skipped')
+          group.rows.set(row.index,row);
+      }
+      for(const diff of manualAssignments){
+        const row=rowByNumber.get(diff.worksheetRow);
+        groupFor(diff.editionIsbn||row?.book?.editionIsbn||'',row)
+          .assignments.push(diff);
+      }
+      for(const issue of manualMetadata){
+        const row=rowByNumber.get(issue.worksheetRows?.[0]);
+        const group=groupFor(issue.isbn||'',row);
+        group.metadata.push(issue);
+        for(const number of issue.worksheetRows||[]){
+          const source=rowByNumber.get(number);
+          if(source)group.rows.set(source.index,source);
+        }
+      }
+      for(const item of actionable){
+        const row=rowByIndex.get(item.index);
+        if(!row)continue;
+        // Informative source messages do not create new review cards.
+        const exceptions=(item.issues||[]).filter(issue=>
+          issue.severity==='conflict'
+          ||issue.reviewLevel!=='informational'
+            &&issue.severity==='warning');
+        if(!exceptions.length)continue;
+        const group=groupFor(row.book?.editionIsbn||'',row);
+        group.warnings.push(...exceptions);
+      }
+      const priority=group=>group.stock.length?0
+        :group.assignments.length?1:group.metadata.length?2:3;
+      const queue=[...books.values()].sort((a,b)=>priority(a)-priority(b)
+        ||Math.min(...[...a.rows.values()].map(row=>row.sourceRowNumber))
+          -Math.min(...[...b.rows.values()].map(row=>row.sourceRowNumber)));
+      const safeText=value=>value===undefined||value===null||value===''
+        ?'Niet ingevuld':String(value);
+      const valueText=value=>value&&typeof value==='object'
+        ?String(value.name||value.value||JSON.stringify(value)):safeText(value);
+      const countSkipped=rows.filter(row=>
+        corrections.get(row.index)?.skip).length;
+      const hasChanges=hasUnreviewedChanges();
+      const panel=make('section','bb-guide');
+      const top=make('header','bb-guide__top');
+      top.append(make('span','bb-guide__eyebrow','BOEKENBAAI · IMPORTEERASSISTENT'),
+        make('h4','',guidedStep===1?'Analyse afgerond'
+          :guidedStep===2?'Boeken controleren':'Import afronden'));
+      const steps=make('div','bb-guide__step-label',
+        'Stap '+(guidedStep+1)+' van 4');
+      top.append(steps);
+      panel.append(top);
+      panel.append(make('p','bb-guide__storage hint',stage.draftPersisted
+        ?'Je gecontroleerde keuzes en concept zijn op de server bewaard. '
+          +'Een onafgeronde import blijft maximaal 24 uur beschikbaar.'
+        :'Je wijzigingen worden als concept opgeslagen wanneer de server '
+          +'beschikbaar is. Controleer ze voordat je importeert.'));
+      const progress=make('div','bb-guide__progress');
+      for(let index=1;index<=3;index++){
+        const crumb=make('button','bb-guide__crumb'+(guidedStep===index
+          ?' bb-guide__crumb--current':''),
+          index===1?'2. Analyse':index===2?'3. Controle':'4. Afronden');
+        crumb.type='button';
+        if(index===3&&guidedStep===1)crumb.disabled=true;
+        crumb.addEventListener('click',()=>setGuidedStep(index));
+        progress.append(crumb);
+      }
+      panel.append(progress);
+      const intro=make('p','bb-guide__intro',
+        guidedStep===1
+          ?'Boekenbaai heeft de voorraad, uitleningen en boekgegevens vergeleken. '
+            +'Automatische beslissingen hoef je niet één voor één goed te keuren.'
+          :guidedStep===2
+            ?'Per boek zie je alle punten die nog aandacht vragen. '
+              +'Na je keuze kun je direct verder met het volgende boek.'
+            :'Controleer het totaaloverzicht. Pas bij de definitieve bevestiging '
+              +'worden gegevens in de bibliotheek opgeslagen.');
+      panel.append(intro);
+      const stats=make('div','bb-guide__stats');
+      for(const [number,label] of [
+        [queue.length,'Boeken met aandacht'],
+        [summary.newCopies||0,'Nieuwe exemplaren'],
+        [summary.proposedLoans||0,'Uitleningen'],
+        [summary.metadataFields||0,'Boekvelden'],
+      ]){
+        const stat=make('div','bb-guide__stat');
+        stat.append(make('strong','',String(number)),
+          make('span','',label));
+        stats.append(stat);
+      }
+      panel.append(stats);
+      const footer=make('nav','bb-guide__footer');
+      footer.setAttribute('aria-label','Navigatie importassistent');
+      const addAction=(host,label,handler,primary=false)=>{
+        const action=button(label,primary?'btn':'btn btn--secondary');
+        action.disabled=Boolean(remotePending||busy);
+        action.addEventListener('click',handler);
+        host.append(action);
+        return action;
+      };
+      const makeDetail=(label,content)=>{
+        const detail=make('details','bb-guide__details');
+        detail.append(make('summary','',label),content);
+        return detail;
+      };
+      const recheck=async()=>{
+        if(draftSaveTimer){clearTimeout(draftSaveTimer);draftSaveTimer=null;}
+        await run(async()=>{
+          const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
+            revision:stage.revision,acceptWarnings:warningsAccepted,
+            corrections:[...corrections.values()],
+            inventoryResolutions:[...inventoryResolutions.values()],
+            assignmentResolutions:[...assignmentResolutions.values()],
+            metadataResolutions:[...metadataResolutions.values()],
+          });
+          rememberResponse(response,true);
+          const current=response.decisions?.summary||{};
+          if(current.readyToApply){
+            guidedStep=3;guidedIndex=0;
+          }else{
+            guidedStep=2;guidedIndex=0;
+          }
+          storeGuidedPosition();
+          setNotice(current.readyToApply
+            ?'Alle controles zijn afgerond. Bekijk de eindcontrole.'
+            :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
+              +'Er zijn nog openstaande punten.');
+        },'De keuzes worden opgeslagen en veilig opnieuw berekend…');
+      };
+      const explain=(host,code)=>{
+        const text=reasonNames[code]||importErrorText[code]
+          ||issueNames[code]||String(code||'Controle nodig');
+        host.append(make('p','bb-guide__reason',text));
+      };
+      const makeLabeled=(label,value)=>{
+        const part=make('div','bb-guide__value');
+        part.append(make('span','bb-guide__eyebrow',label),
+          make('strong','',valueText(value)));
+        return part;
+      };
+      const finish=()=>{
+        if(!summary.readyToApply||hasUnreviewedChanges()){
+          setNotice('Controleer eerst de openstaande keuzes opnieuw.');
+          return;
+        }
+        const desc=(summary.newCopies||0)+' nieuwe exemplaren, '
+          +(summary.proposedLoans||0)+' uitleningen, '
+          +(summary.proposedLocations||0)+' vaste locaties en '
+          +(summary.metadataFields||0)+' boekvelden.';
+        if(!window.confirm('De definitieve import verwerkt '+desc
+          +' Overgeslagen Excelrijen worden niet geïmporteerd. Doorgaan?'))return;
+        run(async()=>{
+          const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/apply',{
+            revision:stage.revision,confirm:true,
+          });
+          rememberResponse(response);
+          void refreshEnrichmentStatus();void refreshBrave();
+          void refreshDeferred();
+        },'De definitieve wijzigingen worden opgeslagen…');
+      };
+
+      if(guidedStep===1){
+        const auto=(metadata.automaticDecisions||[]).length
+          +(assignments.differences||[]).filter(item=>item.automatic).length;
+        const first=make('div','bb-guide__summary-card');
+        first.append(make('strong','','Dit heeft Boekenbaai al zelfstandig beoordeeld'),
+          make('p','',auto+' automatische beslissingen. '
+            +'Bestaande boeken en uitleningen blijven beschermd.'));
+        panel.append(first);
+        if(queue.length){
+          const next=make('div','bb-guide__summary-card');
+          next.append(make('strong','',queue.length+
+            ' boeken hebben nog een controlepunt'),
+            make('p','',
+              'Je ziet straks per boek de Excelgegevens naast de bestaande '
+              +'registratie of het beste online voorstel. Sommige boeken '
+              +'hebben meerdere verschillen, die worden samengevoegd.'));
+          panel.append(next);
+        }else panel.append(make('p','bb-guide__success',
+          'Er zijn geen verplichte boekcontroles.'));
+        addAction(footer,'Diagnoseverslag downloaden',downloadCurrentDiagnosis);
+        addAction(footer,queue.length?'Begin met controleren':'Bekijk eindcontrole',
+          ()=>setGuidedStep(queue.length?2:3,0),true);
+      }else if(guidedStep===2){
+        if(!queue.length){
+          panel.append(make('p','bb-guide__success',
+            'Er zijn geen openstaande controles.'));
+          addAction(footer,'Naar eindcontrole',()=>setGuidedStep(3,0),true);
+        }else{
+          guidedIndex=Math.max(0,Math.min(guidedIndex,queue.length-1));
+          const group=queue[guidedIndex];
+          const groupRows=[...group.rows.values()]
+            .sort((a,b)=>a.sourceRowNumber-b.sourceRowNumber);
+          const selectedRow=guidedSelectedRow.get(group.key);
+          const source=groupRows.find(row=>row.index===selectedRow)
+            ||groupRows.find(row=>Array.isArray(row.matchSuggestions)
+              &&row.matchSuggestions.length)
+            ||groupRows[0]||null;
+          const book=source?.book||{};
+          const progressBar=make('div','bb-guide__meter');
+          progressBar.setAttribute('role','progressbar');
+          progressBar.setAttribute('aria-valuemin','0');
+          progressBar.setAttribute('aria-valuemax',String(queue.length));
+          progressBar.setAttribute('aria-valuenow',String(guidedIndex+1));
+          const progressFill=make('div','bb-guide__meter-fill');
+          progressFill.style.width=((guidedIndex+1)/queue.length*100)+'%';
+          progressBar.append(progressFill);panel.append(progressBar);
+          panel.append(make('p','bb-guide__counter',
+            'Boek '+(guidedIndex+1)+' van '+queue.length
+            +' · Excelrij '+safeText(source?.sourceRowNumber)));
+          const card=make('article','bb-guide__book');
+          card.dataset.reviewRowKey='wizard:'+group.key;
+          const bookhead=make('div','bb-guide__bookhead');
+          const cover=make('div','bb-guide__cover');
+          const candidate=source?.matchSuggestions?.[0];
+          const coverUrl=book.coverUrl||candidate?.coverUrl||'';
+          if(typeof coverUrl==='string'
+            &&/^https:\/\/[^\s"'<>]+$/i.test(coverUrl)){
+            const img=make('img');img.src=coverUrl;
+            img.alt='Omslag van '+safeText(book.title);
+            img.referrerPolicy='no-referrer';img.loading='lazy';cover.append(img);
+          }else cover.append(make('span','','B'));
+          const identity=make('div','bb-guide__bookinfo');
+          identity.append(make('span','bb-guide__eyebrow','TE CONTROLEREN'),
+            make('h5','',safeText(book.title)),
+            make('p','',safeText(book.author)),
+            make('span','bb-guide__isbn',
+              book.editionIsbn?'ISBN '+book.editionIsbn:
+                'ISBN ontbreekt of is ongeldig'));
+          bookhead.append(cover,identity);card.append(bookhead);
+
+          if(group.stock.length){
+            const check=make('section','bb-guide__check');
+            check.append(make('h5','','1. Boek en voorraad'));
+            const first=group.stock[0];
+            explain(check,first.reason);
+            if(groupRows.length>1){
+              const rowChoices=make('div','bb-guide__row-choices');
+              rowChoices.append(make('span','bb-guide__eyebrow',
+                'Excelrijen bij dit ISBN: kies welke je controleert'));
+              const buttons=make('div','bb-guide__actions');
+              for(const row of groupRows){
+                const change=button('Rij '+row.sourceRowNumber
+                  +' · '+safeText(row.book?.title).slice(0,55),
+                  'btn btn--secondary');
+                change.setAttribute('aria-pressed',String(source?.index===row.index));
+                change.addEventListener('click',()=>{
+                  guidedSelectedRow.set(group.key,row.index);
+                  openEditor=null;render();
+                });
+                buttons.append(change);
+              }
+              rowChoices.append(buttons);check.append(rowChoices);
+            }
+            const suggestions=source?.matchSuggestions||[];
+            if(suggestions.length){
+              const compare=make('div','bb-guide__compare');
+              const raw=source.identifierAnalysis?.explicit?.raw
+                ||source.identifierAnalysis?.legacy?.raw
+                ||source.identifierAnalysis?.ambiguous?.raw
+                ||source.book?.editionIsbn||'';
+              compare.append(makeLabeled('In Excel',
+                (book.title||'')+' · '+(raw||'Geen geldig ISBN')));
+              const proposed=suggestions[0];
+              compare.append(makeLabeled(proposed.origin==='existing'
+                ?'Gevonden in Boekenbaai':'Online gevonden',
+                proposed.title+' · '+(proposed.editionIsbn||'ISBN ontbreekt')));
+              check.append(compare);
+              const notice=make('p','hint',
+                'Controleer of de voorgestelde editie daadwerkelijk overeenkomt '
+                +'met het boek dat op school staat.');
+              check.append(notice);
+              const choose=(candidate)=>{
+                if(!candidate.editionIsbn)return;
+                selectCandidateForRow(source,candidate);
+                render();
+              };
+              addAction(check,'Dit is het juiste boek',()=>choose(proposed),true);
+              const alternatives=suggestions.slice(1);
+              if(alternatives.length){
+                const show=button('Andere edities ('+alternatives.length+')',
+                  'btn btn--secondary');
+                show.addEventListener('click',()=>{
+                  guidedAlternativeRow=guidedAlternativeRow===source.index
+                    ?null:source.index;render();
+                });
+                check.append(show);
+                if(guidedAlternativeRow===source.index){
+                  const list=make('div','bb-guide__alternatives');
+                  for(const option of alternatives){
+                    const alt=make('div','bb-guide__alternative');
+                    alt.append(makeLabeled(option.origin==='existing'
+                      ?'Boekenbaai':'Online',option.title
+                      +' · '+safeText(option.editionIsbn)));
+                    if(option.editionIsbn)
+                      addAction(alt,'Deze editie kiezen',()=>choose(option));
+                    list.append(alt);
+                  }
+                  check.append(list);
+                }
+              }
+            }
+            for(const entry of group.stock){
+              if(entry.existingCopies||entry.targetCopies)
+                check.append(make('p','bb-guide__count-note',
+                  'Bestaand: '+(entry.existingCopies||0)
+                  +' · Volgens Excel: '+(entry.targetCopies||0)
+                  +' · Uitgeleend: '+(entry.borrowedCopies||0)));
+              for(const existing of (entry.existingIdentitySamples||[])
+                .concat(entry.legacyIdentitySamples||[]).slice(0,3))
+                check.append(make('p','hint','Bestaand boek: '
+                  +existing.title+' · '+existing.author));
+            }
+            const actions=make('div','bb-guide__actions');
+            addAction(actions,openEditor===source?.index
+              ?'Correctie sluiten':'Zelf corrigeren',()=>{
+                openEditor=openEditor===source?.index?null:source?.index;
+                render();
+              });
+            const skipped=group.rows.size>0&&[...group.rows.keys()].every(index=>
+              corrections.get(index)?.skip);
+            addAction(actions,skipped?'Overslaan ongedaan maken'
+              :'Dit boek later controleren',()=>{
+                const next=!skipped;
+                if(next&&!window.confirm('Dit boek wordt voorlopig NIET '
+                  +'geïmporteerd. Bestaande boeken en uitleningen blijven '
+                  +'ongewijzigd. Het blijft wel in je Excel staan. Doorgaan?'))return;
+                for(const index of group.rows.keys())
+                  toggleSkippedRow(corrections,skippedEdits,index,next);
+                warningsAccepted=false;
+                if(currentApplyButton)currentApplyButton.disabled=true;
+                render();
+              });
+            check.append(actions);
+            if(openEditor===source?.index&&source)
+              editRow(source,check,{onlyFields:[
+                'title','author','editionIsbn','barcode','quantity',
+              ]});
+            if(skipped)check.append(make('p','bb-guide__selected',
+              'Dit boek wordt bij deze import overgeslagen. '
+              +'De oorspronkelijke Excelgegevens blijven beschikbaar.'));
+            card.append(check);
+          }
+
+          if(group.assignments.length){
+            const section=make('section','bb-guide__check');
+            section.append(make('h5','','2. Uitleningen en vaste locaties'));
+            for(const diff of group.assignments){
+              const entry=make('div','bb-guide__choice');
+              entry.append(make('strong','',diff.kind==='loan'?'Uitlening'
+                :diff.kind==='location'?'Vaste locatie'
+                :diff.kind==='class_context'?'Klasvermelding'
+                :'Administratieve koppeling'));
+              if(diff.reason)explain(entry,diff.reason);
+              const compare=make('div','bb-guide__compare');
+              const before=diff.kind==='loan'
+                ?diff.before?.name||'Niet uitgeleend'
+                :diff.before||'Geen vaste locatie';
+              const after=diff.kind==='loan'
+                ?diff.after?.name||'Geen nieuwe uitlening'
+                :diff.kind==='class_context'?'Klas '+safeText(diff.className)
+                  :diff.after||'Geen vaste locatie';
+              compare.append(makeLabeled('Boekenbaai',before),
+                makeLabeled('Excel',after));
+              entry.append(compare);
+              const options=make('div','bb-guide__actions');
+              const selected=assignmentResolutions.get(diff.id)?.action
+                ||diff.choice||'pending';
+              const action=(label,value,primary=false)=>{
+                const control=addAction(options,
+                  selected===value?'✓ '+label:label,()=>{
+                    if(value==='pending')assignmentResolutions.delete(diff.id);
+                    else assignmentResolutions.set(diff.id,{
+                      id:diff.id,action:value});
+                    render();
+                  },primary);
+                control.setAttribute('aria-pressed',String(selected===value));
+              };
+              if(diff.kind==='class_context'){
+                action('Vaste plek in klas','class_fixed');
+                if(diff.classId&&!diff.hasExplicitLoan)
+                  action('Uitgeleend aan klas','class_loan');
+                action('Niet van toepassing','keep');
+              }else if(diff.kind!=='issue'&&!diff.reason){
+                action('Excel overnemen','apply',true);
+                action('Bestaande behouden','keep');
+              }else action('Bestaande behouden','keep');
+              action('Later controleren','later');
+              entry.append(options);section.append(entry);
+            }
+            card.append(section);
+          }
+          if(group.metadata.length){
+            const section=make('section','bb-guide__check');
+            section.append(make('h5','','3. Boekgegevens'));
+            for(const issue of group.metadata){
+              const label=fieldDefs.find(([name])=>name===issue.field)?.[1]
+                ||issue.field;
+              const entry=make('div','bb-guide__choice');
+              entry.append(make('strong','',label));
+              explain(entry,issue.reason);
+              const compare=make('div','bb-guide__compare');
+              compare.append(makeLabeled('Excel',source
+                ?fieldValue(source,issue.field==='manualThemes'?'themes'
+                  :issue.field==='suitableForExamList'?'examMaterial'
+                    :issue.field):''),
+                makeLabeled('Huidige gegevens',
+                  'Bestaande waarde veilig behouden'));
+              entry.append(compare);
+              const options=make('div','bb-guide__actions');
+              const keep=metadataResolutions.get(issue.id)?.action==='keep';
+              const retain=addAction(options,keep?'✓ Huidige waarde behouden'
+                :'Huidige waarde behouden',()=>{
+                  metadataResolutions.set(issue.id,{
+                    id:issue.id,action:'keep'});render();
+                });
+              retain.setAttribute('aria-pressed',String(keep));
+              entry.append(options);
+              const editField=issue.field==='manualThemes'?'themes'
+                :issue.field==='suitableForExamList'?'examMaterial'
+                :issue.field;
+              const editors=make('div','bb-guide__row-choices');
+              const affected=issue.worksheetRows||[];
+              for(const worksheetRow of affected){
+                const sourceRow=rowByNumber.get(worksheetRow);
+                if(!sourceRow)continue;
+                const edit=button('Excelrij '+worksheetRow
+                  +(openEditor===sourceRow.index?' sluiten':' corrigeren'),
+                  'btn btn--secondary');
+                edit.disabled=Boolean(remotePending||busy);
+                edit.addEventListener('click',()=>{
+                  openEditor=openEditor===sourceRow.index?null:sourceRow.index;
+                  render();
+                });
+                editors.append(edit);
+                if(openEditor===sourceRow.index)
+                  editRow(sourceRow,editors,{
+                    onlyFields:[editField],metadataIssueId:issue.id,
+                  });
+              }
+              entry.append(editors);
+              section.append(entry);
+            }
+            card.append(section);
+          }
+          if(group.warnings.length){
+            const detailContent=make('div','bb-guide__warnings');
+            for(const issue of group.warnings)
+              explain(detailContent,issue.code);
+            card.append(makeDetail(group.warnings.length
+              +' bronmelding(en) bij dit boek',detailContent));
+            if(group.warnings.some(issue=>issue.severity==='warning')){
+              const consent=make('label','bb-guide__accept');
+              const checkbox=make('input');checkbox.type='checkbox';
+              checkbox.checked=warningsAccepted;
+              checkbox.addEventListener('change',()=>{
+                warningsAccepted=checkbox.checked;render();
+              });
+              consent.append(checkbox,make('span','',
+                'Ik heb de bronwaarschuwingen gelezen.'));
+              card.append(consent);
+            }
+          }
+          if([...group.rows.keys()].some(index=>
+            corrections.has(index))
+            ||group.assignments.some(diff=>
+              assignmentResolutions.has(diff.id))
+            ||group.metadata.some(issue=>
+              metadataResolutions.has(issue.id)))
+            card.append(make('p','bb-guide__selected',
+              'Je keuze is klaar voor hercontrole. Er is nog niets '
+              +'definitief gewijzigd.'));
+          panel.append(card);
+          const nav=make('div','bb-guide__navigation');
+          const previous=addAction(nav,'Vorig boek',()=>{
+            setGuidedStep(2,guidedIndex-1);
+          });
+          previous.disabled=guidedIndex===0||Boolean(remotePending||busy);
+          if(guidedIndex+1<queue.length)
+            addAction(nav,'Volgend boek',()=>{
+              setGuidedStep(2,guidedIndex+1);
+            },true);
+          else addAction(nav,'Keuzes opslaan en opnieuw controleren',
+            recheck,true);
+          panel.append(nav);
+          addAction(footer,'Keuzes nu controleren',recheck);
+          addAction(footer,'Naar eindoverzicht',()=>setGuidedStep(3));
+        }
+      }else{
+        const pending=summary.pending||0;
+        const note=make('div','bb-guide__summary-card');
+        note.append(make('strong','',pending
+          ?pending+' onopgeloste punten':'De gecontroleerde import staat klaar'));
+        note.append(make('p','',pending
+          ?'Werk de resterende boeken af of behoud bestaande gegevens. '
+            +'Boeken met een onzekere identiteit kun je voorlopig overslaan.'
+          :'Deze aantallen zijn opnieuw door de server berekend. '
+            +'Bij het bevestigen worden bestaande gegevens beschermd.'));
+        panel.append(note);
+        const details=make('div','bb-guide__overview');
+        for(const [label,count] of [
+          ['Nieuwe exemplaren',summary.newCopies||0],
+          ['Uitleningen aanpassen',summary.proposedLoans||0],
+          ['Vaste locaties',summary.proposedLocations||0],
+          ['Boekvelden',summary.metadataFields||0],
+          ['Overgeslagen Excelrijen',countSkipped],
+          ['Openstaande controlepunten',pending],
+        ]){
+          const line=make('div','bb-guide__overview-line');
+          line.append(make('span','',label),make('strong','',String(count)));
+          details.append(line);
+        }
+        panel.append(details);
+        if(pending||hasChanges)
+          panel.append(make('p','bb-guide__attention',
+            'Er staan nog controles open of er zijn keuzes die eerst '
+            +'opnieuw moeten worden berekend.'));
+        const sourceWarnings=actionable.reduce((total,item)=>
+          total+(item.issues||[]).filter(issue=>
+            issue.severity==='warning'||issue.severity==='conflict').length,0);
+        if(sourceWarnings){
+          const accept=make('label','bb-guide__accept');
+          const checkbox=make('input');checkbox.type='checkbox';
+          checkbox.checked=warningsAccepted;
+          checkbox.addEventListener('change',()=>{
+            warningsAccepted=checkbox.checked;
+            render();
+          });
+          accept.append(checkbox,make('span','',
+            'Ik heb de '+sourceWarnings
+            +' relevante bronmeldingen gecontroleerd.'));
+          panel.append(accept);
+        }
+        const auditing=make('div','bb-guide__audit');
+        const auto=(metadata.automaticDecisions||[]);
+        const auditList=make('div','bb-guide__audit-list');
+        for(const item of auto.slice(0,guidedShowDetails?auto.length:12)){
+          const line=make('div','bb-guide__audit-row');
+          line.append(make('strong','',item.title||item.isbn),
+            make('span','',item.field+' · '
+              +(item.action==='keep'?'Bestaande behouden':'Wijziging voorgesteld')));
+          const choices=make('div','bb-guide__audit-actions');
+          const selected=metadataResolutions.get(item.id)?.action;
+          const keep=addAction(choices,selected==='keep'
+            ?'✓ Behouden':'Behouden',()=>{
+              if(selected==='keep')metadataResolutions.delete(item.id);
+              else metadataResolutions.set(item.id,{
+                id:item.id,action:'keep'});
+              render();
+            });
+          keep.setAttribute('aria-pressed',String(selected==='keep'));
+          if(item.canUseExcel&&item.excel!==null)
+            addAction(choices,'Excel gebruiken',()=>{
+              metadataResolutions.set(item.id,{
+                id:item.id,action:'excel'});render();
+            });
+          line.append(choices);auditList.append(line);
+        }
+        auditing.append(auditList);
+        if(auto.length>12){
+          const show=button(guidedShowDetails?'Minder tonen':
+            'Alle '+auto.length+' besluiten bekijken',
+            'btn btn--secondary');
+          show.addEventListener('click',()=>{
+            guidedShowDetails=!guidedShowDetails;render();
+          });
+          auditing.append(show);
+        }
+        if(auto.length)panel.append(makeDetail('Automatische keuzes bekijken '
+          +'en aanpassen ('+auto.length+')',auditing));
+        const automaticAssignments=(assignments.differences||[])
+          .filter(diff=>diff.automatic&&!diff.previouslyImported);
+        if(automaticAssignments.length){
+          const list=make('div','bb-guide__audit-list');
+          for(const diff of automaticAssignments){
+            const line=make('div','bb-guide__audit-row');
+            line.append(make('strong','',diff.title||diff.editionIsbn||'Boek'),
+              make('span','',diff.kind==='loan'?'Uitlening'
+                :diff.kind==='location'?'Vaste locatie'
+                :'Klasvermelding'));
+            const actions=make('div','bb-guide__audit-actions');
+            const selected=assignmentResolutions.get(diff.id)?.action
+              ||diff.choice||'keep';
+            const choose=(label,action)=>{
+              const control=addAction(actions,
+                selected===action?'✓ '+label:label,()=>{
+                  assignmentResolutions.set(diff.id,{id:diff.id,action});
+                  render();
+                });
+              control.setAttribute('aria-pressed',String(selected===action));
+            };
+            if(diff.kind==='class_context'){
+              choose('Behouden','keep');
+              choose('Vaste plek','class_fixed');
+              if(diff.classId&&!diff.hasExplicitLoan)
+                choose('Uitlening aan klas','class_loan');
+            }else{
+              choose('Excel overnemen','apply');
+              choose('Bestaande behouden','keep');
+              choose('Later controleren','later');
+            }
+            line.append(actions);list.append(line);
+          }
+          panel.append(makeDetail('Automatische uitleningen en klaskeuzes '
+            +'aanpassen ('+automaticAssignments.length+')',list));
+        }
+        addAction(footer,'Diagnoseverslag downloaden',downloadCurrentDiagnosis);
+        addAction(footer,'Terug naar boeken',()=>setGuidedStep(2,0));
+        if(hasChanges||!summary.readyToApply){
+          const check=addAction(footer,'Keuzes opnieuw controleren',recheck,true);
+          check.disabled=Boolean(remotePending||busy);
+        }else{
+          const apply=addAction(footer,'Definitieve import bevestigen',finish,true);
+          apply.disabled=Boolean(remotePending||busy
+            ||!summary.readyToApply||hasChanges);
+        }
+      }
+      const cancel=addAction(footer,'Import annuleren',()=>{
+        if(!window.confirm('Deze import annuleren? Er wordt niets '
+          +'aan de bibliotheek gewijzigd.'))return;
+        run(async()=>{
+          const response=await request(rootPath+'/'+encodeURIComponent(stage.id)
+            +'/cancel',{revision:stage.revision});
+          rememberResponse(response);
+          try{localStorage.removeItem(wizardPositionKey);}catch{}
+          setNotice('De import is geannuleerd. Je kunt een nieuw bestand kiezen.');
+        },'De import wordt geannuleerd…');
+      });
+      cancel.classList.add('bb-guide__cancel');
+      panel.append(footer);
+      results.append(panel);
+    }
+
     function renderUnifiedSync() {
+      // The guided flow replaces the old multi-list review. The classic
+      // renderer remains reachable for emergency administrative fallback.
+      if(!new URLSearchParams(window.location.search).has('classicImportReview'))
+        return renderGuidedUnifiedSync();
       const plan=stage.decisions||{};
       const summary=plan.summary||{};
       const stock=plan.inventory||{rows:[],summary:{}};
@@ -1147,6 +1963,183 @@
         problems.append(make('p','hint',
           'Eén boek kan bij meerdere onderdelen voorkomen. '
           +'De aantallen hieronder zijn per onderdeel.'));
+      // The primary identity workflow is one book card per worksheet row,
+      // not a dropdown per metadata field. Server-side options are only
+      // suggestions: each click writes an ordinary editable correction, and
+      // the full import is revalidated before any real database mutation.
+      const reviewRows=new Set(blocked.map(item=>item.index));
+      for(const issue of metadataPlan.issues||[]){
+        for(const worksheetRow of issue.worksheetRows||[]){
+          const match=(stage.rows||[]).find(row=>
+            row.sourceRowNumber===worksheetRow);
+          if(match)reviewRows.add(match.index);
+        }
+      }
+      const recommended=(stage.rows||[]).filter(row=>
+        reviewRows.has(row.index)&&Array.isArray(row.matchSuggestions)
+        &&row.matchSuggestions.length);
+      if(recommended.length){
+        const matchSection=make('section','bb-match-review');
+        const matchHeading=make('div','bb-match-review__heading');
+        matchHeading.append(make('h4','',
+          'Controleer de voorgestelde boeken ('+recommended.length+')'),
+          make('p','hint',
+            'Vergelijk bij een onzeker ISBN de gegevens met het fysieke boek. '
+            +'Kies een voorgestelde editie of pas de gegevens zelf aan. '
+            +'Pas na ‘Controle opnieuw berekenen’ worden je keuzes gecontroleerd.'));
+        matchSection.append(matchHeading);
+
+        const matchList=make('div','bb-match-review__list');
+        const rawIsbn=row=>row.identifierAnalysis?.explicit?.raw
+          ||row.identifierAnalysis?.legacy?.raw
+          ||row.identifierAnalysis?.ambiguous?.raw
+          ||row.book?.editionIsbn||'';
+        const isSelected=(row,candidate)=>{
+          const values=corrections.get(row.index)?.fields||{};
+          return values.editionIsbn===candidate.editionIsbn
+            &&(values.title===undefined||values.title===candidate.title)
+            &&(values.author===undefined||values.author===candidate.author);
+        };
+        const candidateView=(row,candidate,secondary=false)=>{
+          const info=make('div','bb-match-review__candidate'
+            +(secondary?' bb-match-review__candidate--secondary':''));
+          const cover=make('div','bb-match-review__cover');
+          const imageUrl=typeof candidate.coverUrl==='string'
+            &&/^https:\/\/[^\s"'<>]+$/i.test(candidate.coverUrl)
+            ?candidate.coverUrl:'';
+          if(imageUrl){
+            const image=make('img');
+            image.src=imageUrl;image.alt='Omslag van '+candidate.title;
+            image.loading='lazy';
+            image.referrerPolicy='no-referrer';
+            cover.append(image);
+          }else cover.append(make('span','bb-match-review__cover-mark','B'));
+          const details=make('div','bb-match-review__candidate-body');
+          details.append(make('span','bb-match-review__eyebrow',
+            candidate.origin==='existing'?'Al in Boekenbaai'
+              :'Online gevonden · controleer editie'));
+          details.append(make('strong','bb-match-review__candidate-title',
+            candidate.title||'Boek'));
+          details.append(make('span','',candidate.author||'Auteur onbekend'));
+          if(candidate.editionIsbn)
+            details.append(make('code','bb-match-review__isbn',candidate.editionIsbn));
+          else details.append(make('span','hint',
+            'Nog geen ISBN in de bestaande registratie'));
+          const hints=[];
+          if(candidate.origin==='existing'&&candidate.copies)
+            hints.push(candidate.copies+' bestaand'+(candidate.copies===1?' exemplaar':'e exemplaren'));
+          if(candidate.publisher)hints.push(candidate.publisher);
+          if(candidate.language)hints.push('Taal: '+candidate.language);
+          if(candidate.sources?.length)hints.push('Bron: '+candidate.sources.join(', '));
+          if(candidate.identityWarning)
+            hints.push('Titel of auteur wijkt af: controleer op het fysieke boek');
+          if(candidate.unverifiedTitle)hints.push('Titel nog niet per editie bevestigd');
+          if(hints.length)
+            details.append(make('small','bb-match-review__source',hints.join(' · ')));
+          const actions=make('div','bb-match-review__candidate-actions');
+          if(candidate.editionIsbn){
+            const chosen=isSelected(row,candidate);
+            const accept=button(chosen?'Geselecteerd':'Dit is het juiste boek',
+              chosen?'btn btn--secondary':'btn');
+            accept.disabled=Boolean(remotePending||busy||chosen);
+            accept.addEventListener('click',()=>{
+              // Never store a malformed Excel number as a scan barcode.
+              // Keep untouched fields unless the catalogue actually names
+              // the edition; unverified search hints carry only the ISBN.
+              selectCandidateForRow(row,candidate);
+              render();
+            });
+            actions.append(accept);
+          }else{
+            const noIsbn=make('span','hint',
+              'Controleer het nummer op dit boek voordat je het koppelt.');
+            actions.append(noIsbn);
+          }
+          info.append(cover,details,actions);
+          return info;
+        };
+        for(const row of recommended.slice(0,visibleMatchCards)){
+          const card=make('article','bb-match-review__card');
+          card.dataset.reviewRowKey='match:'+row.index;
+          const heading=make('div','bb-match-review__card-heading');
+          heading.append(make('strong','',row.book?.title||'Boek'));
+          heading.append(make('span','bb-match-review__state',
+            'Excelrij '+row.sourceRowNumber+' · '+(row.book?.editionIsbn
+              ?'Identiteit controleren':'ISBN onzeker')));
+          card.append(heading);
+          const compare=make('div','bb-match-review__compare');
+          const excel=make('section','bb-match-review__excel');
+          excel.append(make('span','bb-match-review__eyebrow','In Excel'),
+            make('strong','',row.book?.title||'Titel onbekend'),
+            make('span','',row.book?.author||'Auteur onbekend'),
+            make('span','bb-match-review__isbn',
+              'Code: '+(rawIsbn(row)||'niet ingevuld')));
+          const proposed=make('section','bb-match-review__proposed');
+          proposed.append(make('span','bb-match-review__eyebrow','Beste voorstel'));
+          proposed.append(candidateView(row,row.matchSuggestions[0]));
+          compare.append(excel,proposed);
+          card.append(compare);
+          const options=make('div','bb-match-review__options');
+          const alternatives=row.matchSuggestions.slice(1);
+          if(alternatives.length){
+            const more=button('Andere editie bekijken ('+alternatives.length+')',
+              'btn btn--secondary');
+            more.setAttribute('aria-expanded',
+              String(expandedMatchAlternatives.has(row.index)));
+            more.addEventListener('click',()=>{
+              if(expandedMatchAlternatives.has(row.index))
+                expandedMatchAlternatives.delete(row.index);
+              else expandedMatchAlternatives.add(row.index);
+              render();
+            });
+            options.append(more);
+          }
+          const own=button(openEditor===row.index?'Correctie sluiten':'Zelf corrigeren',
+            'btn btn--secondary');
+          own.addEventListener('click',()=>{
+            openEditor=openEditor===row.index?null:row.index;
+            render();
+          });
+          options.append(own);
+          card.append(options);
+          if(expandedMatchAlternatives.has(row.index)){
+            const alternativesList=make('div','bb-match-review__alternatives');
+            for(const candidate of alternatives)
+              alternativesList.append(candidateView(row,candidate,true));
+            card.append(alternativesList);
+          }
+          if(openEditor===row.index)
+            editRow(row,card,{onlyFields:['title','author','editionIsbn']});
+          const selected=corrections.get(row.index)?.fields||{};
+          if(selected.editionIsbn||selected.title||selected.author)
+            card.append(make('p','bb-match-review__selection-note',
+              'Je wijziging is gekozen maar nog niet verwerkt. '
+              +'Gebruik ‘Controle opnieuw berekenen’ om alle controles te herhalen.'));
+          matchList.append(card);
+        }
+        matchSection.append(matchList);
+        if(recommended.length>visibleMatchCards){
+          const showMore=button('Nog '+Math.min(5,recommended.length-visibleMatchCards)
+            +' boekvoorstellen bekijken','btn btn--secondary');
+          showMore.addEventListener('click',()=>{
+            visibleMatchCards+=5;
+            render();
+          });
+          matchSection.append(showMore);
+        }
+        const matchFooter=make('div','bb-match-review__footer');
+        matchFooter.append(make('p','hint',
+          'Je keuzes worden pas verwerkt na een nieuwe controle en de definitieve import.'));
+        const recalculate=button('Gekozen boeken opnieuw controleren','btn');
+        recalculate.disabled=Boolean(remotePending||busy);
+        recalculate.addEventListener('click',()=>run(async()=>{
+          await reviewChoices([...assignmentResolutions.values()],
+            [...metadataResolutions.values()]);
+        },'De boekvoorstellen worden opnieuw gecontroleerd…'));
+        matchFooter.append(recalculate);
+        matchSection.append(matchFooter);
+        problems.append(matchSection);
+      }
       const assignmentCards=make('div','bb-import__exceptions-list');
       const metadataCards=make('div','bb-import__exceptions-list');
       const stockCards=make('div','bb-import__exceptions-list');
@@ -1345,7 +2338,8 @@
         const count=cards.children.length;
         if(!count)continue;
         const group=make('details','bb-import__exception-group');
-        group.open=unifiedOpenGroups.has(kind)||count<=5;
+        group.open=unifiedOpenGroups.has(kind)
+          ||(count<=5&&!(kind==='stock'&&recommended.length));
         group.addEventListener('toggle',()=>{
           if(!group.isConnected)return;
           if(group.open)unifiedOpenGroups.add(kind);
@@ -1799,6 +2793,7 @@
         ? Array.from(focusedRow.querySelectorAll('button, input, select, textarea'))
           .indexOf(document.activeElement) : -1;
       renderContents();
+      if(typeof scheduleGuidedDraftSave==='function')scheduleGuidedDraftSave();
       const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
       const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
       for (const list of updatedLists) {
@@ -1830,13 +2825,16 @@
 
     function renderContents() {
       const activeStep=!stage||['cancelled','failed'].includes(stage.status)
-        ?0:stage.status==='completed'?2:1;
+        ?0:stage.status==='completed'?3
+          :stage.mode==='unified_sync'?guidedStep:1;
       for(let index=0;index<stepNodes.length;index++){
         stepNodes[index].classList.toggle('bb-import__step--active',index===activeStep);
         if(index===activeStep)stepNodes[index].setAttribute('aria-current','step');
         else stepNodes[index].removeAttribute('aria-current');
       }
       results.replaceChildren();
+      deferredPanel.hidden=Boolean(stage&&['preparing','open','reviewing','applying']
+        .includes(stage.status));
       form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
       if (!stage) return;
       if (stage.status === 'preparing' || stage.status === 'reviewing' || stage.status === 'applying') {
@@ -2332,6 +3330,7 @@
       }, 'Het Excelbestand wordt gecontroleerd…');
     });
     syncStage();
+    void refreshDeferred();
     window.setInterval(syncStage, 1500);
     window.addEventListener('focus', syncStage);
     window.addEventListener('focus', refreshEnrichmentStatus);
