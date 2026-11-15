@@ -402,6 +402,42 @@ module.exports = async function runMetadataTests() {
   assert.equal(unverifiedOverride.rows[0].status,'conflict',
     'Disagreeing providers must never silently choose a different edition');
 
+  // A Google title search may contain many editions. Only one ISBN
+  // differing by a single character from the invalid worksheet ISBN may
+  // proceed, and then only after two independent exact-ISBN confirmations.
+  const numericTypo=await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'9780339554930',
+  }],{
+    lookupTitleAuthor:async()=>({
+      found:true,title:'Herkenbaar boek',author:'A Auteur',
+      isbnSearchCandidates:[ISBN_ALT,ISBN_THIRD],
+      source:'googlebooks-title-author',
+    }),
+    lookupIsbn:async(isbn)=>{
+      assert.equal(isbn,ISBN_ALT,'Only nearest ISBN should be queried');
+      return {found:true,title:'Herkenbaar boek',author:'A Auteur',
+        isbn13:isbn,sourceCandidates:[
+          {source:'Google Books',title:'Herkenbaar boek',
+            author:'A Auteur',isbn13:isbn},
+          {source:'Open Library',title:'Herkenbaar boek',
+            author:'A Auteur',isbn13:isbn},
+        ]};
+    },
+  });
+  assert.equal(numericTypo.rows[0].book.editionIsbn,ISBN_ALT);
+  assert.ok(!codes(numericTypo.rows[0]).has('conflicting_isbn_repair_suggestions'));
+  const ambiguousNumericTypo=await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'9780339554930',
+  }],{
+    lookupTitleAuthor:async()=>({
+      found:true,title:'Herkenbaar boek',author:'A Auteur',
+      isbnSearchCandidates:[ISBN_ALT,'9780339554931'],
+    }),
+    lookupIsbn:async()=>{throw Error('Multiple near-matches must never trigger an exact lookup');},
+  });
+  assert.equal(ambiguousNumericTypo.rows[0].book.editionIsbn,'',
+    'Two different near ISBNs must remain unresolved');
+
   const wrongAuthor = await analyzeBookImportRows([{ Titel: 'Strict titel', Auteur: 'Juiste Auteur' }], {
     lookupTitleAuthor: async () => ({ title: 'Strict titel', author: 'Andere Auteur', isbn13: ISBN, found: true }),
   });
