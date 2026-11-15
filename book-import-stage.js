@@ -34,7 +34,17 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
     }
     let temporary='';
     try{
-      const value=JSON.stringify({...stage,options:serialOptions(stage.options)});
+      // SheetJS keeps the physical worksheet position in a non-enumerable
+      // __rowNum__ property. JSON.stringify silently discards it. Keep
+      // positions in a parallel array and recreate their descriptors on
+      // restore; they must not become user-editable workbook columns.
+      const worksheetRowPositions=stage.sourceRows.map(row=>{
+        const descriptor=Object.getOwnPropertyDescriptor(row,'__rowNum__');
+        return descriptor&&Number.isInteger(descriptor.value)
+          &&descriptor.value>=0?descriptor.value:null;
+      });
+      const value=JSON.stringify({...stage,options:serialOptions(stage.options),
+        worksheetRowPositions});
       if(Buffer.byteLength(value)>32*1024*1024)throw Error('import_draft_too_large');
       fs.mkdirSync(path.dirname(file),{recursive:true});
       temporary=file+'.'+process.pid+'.'+crypto.randomUUID()+'.tmp';
@@ -59,6 +69,23 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
         ||saved.expiresAt<=now()){
         fs.unlinkSync(file);return;
       }
+      // A draft saved before worksheet positions were introduced has no
+      // trustworthy way to recover the original physical Excel row numbers.
+      // Never silently display guessed row positions.
+      if(!Array.isArray(saved.worksheetRowPositions)
+        ||saved.worksheetRowPositions.length!==saved.sourceRows.length
+        ||saved.worksheetRowPositions.some(value=>value!==null
+          &&(!Number.isSafeInteger(value)||value<0||value>2000000))){
+        fs.unlinkSync(file);return;
+      }
+      for(let index=0;index<saved.sourceRows.length;index++){
+        const position=saved.worksheetRowPositions[index];
+        if(position===null)continue;
+        Object.defineProperty(saved.sourceRows[index],'__rowNum__',{
+          value:position,configurable:true,
+        });
+      }
+      delete saved.worksheetRowPositions;
       saved.options=serialOptions(saved.options);
       saved.draftPersisted=true;
       entries.set(saved.id,saved);
