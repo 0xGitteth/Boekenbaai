@@ -5275,6 +5275,19 @@ async function handleApi(req, res, requestUrl) {
           } : null,
         });
       }
+      if(req.method==='GET' &&requestUrl.pathname===stageRoot+'/deferred'){
+        const database=loadDb();
+        const items=(Array.isArray(database.bookImportDeferredBookChecks)
+          ?database.bookImportDeferredBookChecks:[])
+          .filter(item=>item.status==='open').slice(-500).reverse()
+          .map(item=>({
+            id:item.id,fileName:item.fileName,worksheetRow:item.worksheetRow,
+            title:item.title,author:item.author,
+            excelIdentifier:item.excelIdentifier,
+            editionIsbn:item.editionIsbn,createdAt:item.createdAt,
+          }));
+        return sendJson(res,200,{items,count:items.length});
+      }
       const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
         if (activeImportJobs.size > 0) {
