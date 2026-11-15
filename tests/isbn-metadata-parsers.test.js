@@ -212,6 +212,11 @@ async function runTests() {
   },{title:'Herkenbaar boek',author:'A Auteur'});
   assert.strictEqual(ambiguousTitleLookup.isbnCandidates,undefined,
     'A work title matching two editions must not infer an ISBN');
+  assert.deepStrictEqual(Array.from(ambiguousTitleLookup.isbnSearchCandidates),
+    ['9780439554930','9780061120084'],
+    'Candidate ISBNs may be independently checked against a near-match typo');
+  assert.deepStrictEqual(Array.from(titleLookupCandidate.isbnSearchCandidates),
+    ['9780439554930']);
   const {analyzeBookImportRows}=require('../book-import-analysis');
   let exactVerifications=0;
   const actualFallbackRepair=await analyzeBookImportRows([{
