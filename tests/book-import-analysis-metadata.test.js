@@ -609,6 +609,14 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(pageDifference.metadataValue, 123);
   assert.strictEqual(pageDifference.sourceInvalid, true);
 
+  const conflictingThree=await analyzeBookImportRows([
+    {Titel:'Diary of a Wimpy Kid',Auteur:'Jeff Kinney','ISBN-nummer':ISBN},
+    {Titel:'Diary of a Wimpy Kid (Book 1)',Auteur:'Jeff Kinney','ISBN-nummer':ISBN},
+    {Titel:'Diary of a Wimpy Kid (Book 2)',Auteur:'Jeff Kinney','ISBN-nummer':ISBN},
+  ]);
+  assert.ok(conflictingThree.rows.every(row=>row.status==='conflict'),
+    'An unqualified first title cannot hide two conflicting numbered volumes');
+  assert.ok(conflictingThree.rows.every(row=>codes(row).has('edition_identity_conflict')));
   const preserveExcel = await analyzeBookImportRows([{
     Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, Uitgever: 'Excel P', Tags: 'excel-tag',
   }], {
