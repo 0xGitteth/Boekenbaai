@@ -159,8 +159,8 @@
     const steps=make('nav','bb-import__steps');
     steps.setAttribute('aria-label','Importstappen');
     const stepNodes=[];
-    for(const label of ['1. Bestand en keuzes','2. Verschillen controleren',
-      '3. Import afronden']){
+    for(const label of ['1. Instellen','2. Analyseren','3. Controleren',
+      '4. Afronden']){
       const step=make('span','bb-import__step',label);
       steps.append(step);
       stepNodes.push(step);
@@ -484,6 +484,22 @@
     let automaticReceiptOpen=false;
     let unifiedLimits={assignments:15,metadata:15,stock:15};
     let visibleMatchCards=5;
+    let guidedStep=1; // 0 upload, 1 analysis overview, 2 review, 3 final
+    let guidedIndex=0;
+    let guidedAlternativeRow=null;
+    let guidedShowDetails=false;
+    const wizardPositionKey='boekenbaai.import.wizard.position.v1';
+    function storeGuidedPosition(){
+      if(!stage?.id)return;
+      try{localStorage.setItem(wizardPositionKey,
+        JSON.stringify({id:stage.id,step:guidedStep,index:guidedIndex}));}catch{}
+    }
+    function setGuidedStep(next,index=guidedIndex){
+      guidedStep=Math.max(1,Math.min(3,next));
+      guidedIndex=Math.max(0,index);
+      storeGuidedPosition();
+      render();
+    }
     const unifiedOpenGroups=new Set();
     let busy = false;
     let openEditor = null;
@@ -553,6 +569,14 @@
       metadataResolutions = new Map((stage.metadataResolutions || []).map(item=>[item.id,item]));
       skippedEdits.clear();
       if (!preservePosition || !sameStage) {
+        const previous=(()=>{try{return JSON.parse(
+          localStorage.getItem(wizardPositionKey)||'null');}catch{return null;}})();
+        guidedStep=previous?.id===payload.id
+          ?Math.max(1,Math.min(3,Number(previous.step)||1)):1;
+        guidedIndex=previous?.id===payload.id
+          ?Math.max(0,Number(previous.index)||0):0;
+        guidedAlternativeRow=null;
+        guidedShowDetails=false;
         page = 0;
         automaticPage = 0;
         automaticExpanded = false;
@@ -823,6 +847,10 @@
     }
 
     function renderUnifiedSync() {
+      // The guided flow replaces the old multi-list review. The classic
+      // renderer remains reachable for emergency administrative fallback.
+      if(!new URLSearchParams(window.location.search).has('classicImportReview'))
+        return renderGuidedUnifiedSync();
       const plan=stage.decisions||{};
       const summary=plan.summary||{};
       const stock=plan.inventory||{rows:[],summary:{}};
@@ -2019,7 +2047,8 @@
 
     function renderContents() {
       const activeStep=!stage||['cancelled','failed'].includes(stage.status)
-        ?0:stage.status==='completed'?2:1;
+        ?0:stage.status==='completed'?3
+          :stage.mode==='unified_sync'?guidedStep:1;
       for(let index=0;index<stepNodes.length;index++){
         stepNodes[index].classList.toggle('bb-import__step--active',index===activeStep);
         if(index===activeStep)stepNodes[index].setAttribute('aria-current','step');
