@@ -19,6 +19,10 @@ assert.equal(sameBookTitle('Diary of a Wimpy Kid',
 assert.equal(sameBookTitle('Dagen van gras',
   'Dagen van gras / druk 3'),true,
   'A printing suffix may be omitted from a school worksheet');
+assert.equal(require('../book-import-autonomy').hasConflictingEditionQualifiers([
+  'Diary of a Wimpy Kid','Diary of a Wimpy Kid (Book 1)',
+  'Diary of a Wimpy Kid (Book 2)',
+]),true,'An unqualified first row cannot hide conflicting later volumes');
 assert.equal(sameBookTitle('Diary of a Wimpy Kid (Book 1)',
   'Diary of a Wimpy Kid (Book 2)'),false,
   'Two different numbered volumes must remain distinct');
