@@ -24,6 +24,7 @@
     unsupported_identifier_type:'Een ISBN-veld bevat een ongeldig gegevenstype.',
     isbn_repaired:'Het ISBN is met een zekere, controleerbare reparatie hersteld.',
     isbn_repair_suggested:'Er is een ISBN-correctie mogelijk maar nog niet bevestigd.',
+    isbn_repair_override_by_sources:'Twee onafhankelijke boekbronnen bevestigen een correct ISBN; een zwakker controlecijfervoorstel is vervangen.',
     conflicting_isbn_repair_suggestions:'Er zijn verschillende mogelijke ISBN-correcties.',
     conflicting_edition_isbns:'Twee ISBN-velden wijzen op verschillende edities.',
     metadata_isbn_differs:'De online metadata noemt een ander ISBN.',
