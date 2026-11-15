@@ -69,17 +69,20 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
         ||saved.expiresAt<=now()){
         fs.unlinkSync(file);return;
       }
-      // A draft saved before worksheet positions were introduced has no
-      // trustworthy way to recover the original physical Excel row numbers.
-      // Never silently display guessed row positions.
-      if(!Array.isArray(saved.worksheetRowPositions)
-        ||saved.worksheetRowPositions.length!==saved.sourceRows.length
-        ||saved.worksheetRowPositions.some(value=>value!==null
+      // Old imports already preserved the accurate physical worksheet
+      // number in the analyzed row. Migrate drafts created before the
+      // dedicated positions array instead of deleting a teacher's work.
+      const storedPositions=Array.isArray(saved.worksheetRowPositions)
+        ?saved.worksheetRowPositions
+        :saved.analysis.rows.map(row=>Number.isSafeInteger(row?.sourceRowNumber)
+          &&row.sourceRowNumber>=1?row.sourceRowNumber-1:null);
+      if(storedPositions.length!==saved.sourceRows.length
+        ||storedPositions.some(value=>value!==null
           &&(!Number.isSafeInteger(value)||value<0||value>2000000))){
         fs.unlinkSync(file);return;
       }
       for(let index=0;index<saved.sourceRows.length;index++){
-        const position=saved.worksheetRowPositions[index];
+        const position=storedPositions[index];
         if(position===null)continue;
         Object.defineProperty(saved.sourceRows[index],'__rowNum__',{
           value:position,configurable:true,
