@@ -43,8 +43,24 @@ function nearlySameBookText(left,right){
   const max=shortest>=9?2:1;
   return limitedEdits(a,b,max)<=max;
 }
+// An ISBN edition title can carry an extra printing / volume label in a
+// catalogue. Omission of that label is not a different work, but two
+// conflicting non-empty labels must never be treated as interchangeable.
+function editionQualifier(value){
+  const match=String(value??'').trim().match(
+    /^(.*?)\s*(?:\(\s*(?:book|deel|volume|vol\\.?|druk)\s*(\\d+)\s*\)|\s*(?:\/|[-–—])\s*(?:book|deel|volume|vol\\.?|druk)\s*(\\d+))\s*$/iu
+  );
+  if(!match||!normalized(match[1]))return null;
+  return {base:normalized(match[1]),part:Number(match[2]||match[3])};
+}
 function sameBookTitle(left,right){
   if(nearlySameBookText(left,right))return true;
+  const aQualifier=editionQualifier(left),bQualifier=editionQualifier(right);
+  if(aQualifier&&bQualifier
+    &&aQualifier.base===bQualifier.base
+    &&aQualifier.part!==bQualifier.part)return false;
+  if(aQualifier && !bQualifier && aQualifier.base===normalized(right))return true;
+  if(bQualifier && !aQualifier && bQualifier.base===normalized(left))return true;
   // Publishers often omit a series prefix or parenthetical subtitle.
   // The shared substantive title segment must be long and specific.
   const a=String(left??''),b=String(right??'');
