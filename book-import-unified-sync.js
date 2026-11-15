@@ -291,6 +291,14 @@ function metadataSourceSafe(row,field,acceptWarnings){
   if(row.status==='skipped'||!row.book?.editionIsbn
     ||!row.book?.title||!row.book?.author)return false;
   const issues=row.issues||[];
+  // A materially conflicting title/author may mean the spreadsheet describes
+  // a DIFFERENT physical edition even if its ISBN column is valid. Do not
+  // apply its language, authors, description or other metadata silently.
+  // Preserve existing values without asking the teacher to decide on every
+  // unrelated field; the disputed identity field alone remains actionable.
+  if(issues.some(issue=>issue.severity==='conflict'
+    &&['metadata_title_conflict','author_sources_differ'].includes(issue.code)))
+    return false;
   // Legacy reviewed/test rows can carry a conservative warning status
   // without diagnostic objects. Do not silently accept such a warning.
   if(!issues.length)
