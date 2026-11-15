@@ -5811,6 +5811,42 @@ async function handleApi(req, res, requestUrl) {
                 ? (createdByRow.get(assignment.index) || [])[0]?.id : assignment.bookId,
               borrower: assignment.borrower,
             })));
+            // A teacher may explicitly postpone an uncertain physical
+            // identity while importing independent safe books. Persist the
+            // postponed bibliographic identity separately from learner loans.
+            const deferredBookChecks=(stage.corrections||[])
+              .filter(change=>change?.skip===true)
+              .map(change=>{
+                const original=stage.initialAnalysis?.rows?.[change.index];
+                const book=original?.book||{};
+                const rawIsbn=original?.identifierAnalysis?.explicit?.raw
+                  ||original?.identifierAnalysis?.legacy?.raw
+                  ||original?.identifierAnalysis?.ambiguous?.raw||'';
+                return {
+                  id:crypto.randomUUID(),batchId,
+                  fileName:stage.fileName,
+                  worksheetRow:original?.sourceRowNumber||change.index+2,
+                  title:String(book.title||'').slice(0,400),
+                  author:String(book.author||'').slice(0,250),
+                  excelIdentifier:String(rawIsbn).slice(0,100),
+                  editionIsbn:String(book.editionIsbn||'').slice(0,20),
+                  createdAt:now,status:'open',
+                };
+              });
+            if(deferredBookChecks.length){
+              if(!Array.isArray(database.bookImportDeferredBookChecks))
+                database.bookImportDeferredBookChecks=[];
+              const deferred=database.bookImportDeferredBookChecks;
+              for(const candidate of deferredBookChecks){
+                const existing=deferred.find(item=>item.status==='open'
+                  &&item.fileName===candidate.fileName
+                  &&item.worksheetRow===candidate.worksheetRow
+                  &&item.title===candidate.title
+                  &&item.excelIdentifier===candidate.excelIdentifier);
+                if(!existing)deferred.push(candidate);
+              }
+              database.bookImportDeferredBookChecks=deferred.slice(-1500);
+            }
             const report = {
               id: batchId, createdBy: user.id, importedAt: now,
               mode: isUnified?'unified_sync':'inventory_sync', fileName: stage.fileName,
@@ -5821,6 +5857,7 @@ async function handleApi(req, res, requestUrl) {
               })),
               count: createdCopies.length,
               sourceRows: stage.analysis.summary.sourceRows,
+              deferredBookChecks,
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
               omittedEditions: fresh.omittedEditions,
               inventoryResolutions: stage.inventoryResolutions,
@@ -5976,6 +6013,7 @@ async function handleApi(req, res, requestUrl) {
               corrected:corrected.applied,correctedLoans:corrected.loans,
               correctedLocations:corrected.locations,metadataUpdated,
               deferred:deferredDifferences.length,
+              deferredBooks:deferredBookChecks.length,
               selectedParts:isUnified?combined.parts:null,
               retainedEditions:fresh.summary.acknowledgedEditions,
               report,omittedExistingCopies:fresh.summary.omittedExistingCopies,
