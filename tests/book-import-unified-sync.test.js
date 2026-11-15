@@ -49,6 +49,8 @@ assert.equal(normalizeParts(undefined).value.books,true);
   const metadata=parts({fields:{pageCount:true}});
   for(const code of [
     'isbn_repaired','isbn_resolved_from_metadata',
+    'isbn_repair_override_by_sources',
+
     'isbn_repair_suggested','metadata_lookup_failed',
     'metadata_not_usable','metadata_not_strict_match',
     'title_author_metadata_missing_edition_isbn',
