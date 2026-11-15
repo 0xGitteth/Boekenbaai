@@ -348,6 +348,44 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(suggestionConflict.rows[0].status, 'conflict');
   assert.ok(codes(suggestionConflict.rows[0]).has('metadata_isbn_conflicts_with_repair_suggestion'));
 
+  // A checksum guess can be wrong even when its mathematical check digit
+  // is valid. Two independent exact-edition providers may supersede that
+  // weaker guess when BOTH confirm the workbook title and author.
+  const independentlyRepaired = await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'978030640615',
+  }],{lookupTitleAuthor:async()=>({
+    found:true,candidates:[
+      {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'isbnbarcode.org',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_THIRD},
+    ],
+    sourceCandidates:[
+      {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'isbnbarcode.org',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_THIRD},
+    ],
+  })});
+  assert.equal(independentlyRepaired.rows[0].book.editionIsbn,ISBN_ALT);
+  assert.ok(codes(independentlyRepaired.rows[0]).has('isbn_repair_override_by_sources'));
+  assert.equal(independentlyRepaired.rows[0].status,'warning');
+  assert.ok(!codes(independentlyRepaired.rows[0])
+    .has('conflicting_isbn_repair_suggestions'));
+  const unverifiedOverride = await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'978030640615',
+  }],{lookupTitleAuthor:async()=>({
+    found:true,candidates:[
+      {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_THIRD},
+    ],
+    sourceCandidates:[
+      {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_THIRD},
+    ],
+  })});
+  assert.equal(unverifiedOverride.rows[0].book.editionIsbn,'');
+  assert.equal(unverifiedOverride.rows[0].status,'conflict',
+    'Disagreeing providers must never silently choose a different edition');
+
   const wrongAuthor = await analyzeBookImportRows([{ Titel: 'Strict titel', Auteur: 'Juiste Auteur' }], {
     lookupTitleAuthor: async () => ({ title: 'Strict titel', author: 'Andere Auteur', isbn13: ISBN, found: true }),
   });
