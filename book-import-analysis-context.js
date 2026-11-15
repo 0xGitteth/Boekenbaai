@@ -234,10 +234,14 @@ function applyContext(mapped, row, options) {
     // not a school-owned book lent out to that class. Do not make teachers
     // resolve four identical, otherwise unambiguous notes by hand.
     // A real borrower or fixed school location still contradicts ownership.
-    const ownBookStudentMarker=markerKind(studentLoan)==='own_book';
-    const conflictingStudent=Boolean(studentLoan&&!ownBookStudentMarker);
+    // getDataFields has already stripped the semantic 'eigen boek' token.
+    // Look at the original field-specific markers, not the cleaned text.
+    const ownBookStudentMarker=markers.ownBook.some(marker=>
+      marker.field==='studentLoan');
+    const conflictingStudent=Boolean(studentLoan);
     const hasFixedLocation=Boolean(fixedClass||markers.fixedLocation.length);
-    const classIsHint=Boolean(ownBookStudentMarker&&classLoan&&!hasFixedLocation);
+    const classIsHint=Boolean(ownBookStudentMarker&&classLoan
+      &&!hasFixedLocation&&!conflictingStudent);
     const conflictingClass=Boolean(classLoan&&!classIsHint);
     if (classIsHint) row.context.ownBookClassHint={
       label:classLoan,source:'Geleend door klas',
