@@ -483,6 +483,7 @@
     let automaticReceiptLimit=20;
     let automaticReceiptOpen=false;
     let unifiedLimits={assignments:15,metadata:15,stock:15};
+    let visibleMatchCards=5;
     const unifiedOpenGroups=new Set();
     let busy = false;
     let openEditor = null;
@@ -555,6 +556,7 @@
         page = 0;
         automaticPage = 0;
         automaticExpanded = false;
+        visibleMatchCards = 5;
         openEditor = null;
       }
       render();
@@ -1251,7 +1253,7 @@
           info.append(cover,details,actions);
           return info;
         };
-        for(const row of recommended){
+        for(const row of recommended.slice(0,visibleMatchCards)){
           const card=make('article','bb-match-review__card');
           card.dataset.reviewRowKey='match:'+row.index;
           const heading=make('div','bb-match-review__card-heading');
@@ -1311,6 +1313,15 @@
           matchList.append(card);
         }
         matchSection.append(matchList);
+        if(recommended.length>visibleMatchCards){
+          const showMore=button('Nog '+Math.min(5,recommended.length-visibleMatchCards)
+            +' boekvoorstellen bekijken','btn btn--secondary');
+          showMore.addEventListener('click',()=>{
+            visibleMatchCards+=5;
+            render();
+          });
+          matchSection.append(showMore);
+        }
         const matchFooter=make('div','bb-match-review__footer');
         matchFooter.append(make('p','hint',
           'Je keuzes worden pas verwerkt na een nieuwe controle en de definitieve import.'));
