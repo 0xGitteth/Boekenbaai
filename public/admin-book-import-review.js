@@ -1329,17 +1329,30 @@
                     id:issue.id,action:'keep'});render();
                 });
               retain.setAttribute('aria-pressed',String(keep));
-              addAction(options,'Waarde corrigeren',()=>{
-                openEditor=openEditor===source?.index?null:source?.index;
-                render();
-              });
               entry.append(options);
-              if(openEditor===source?.index&&source)
-                editRow(source,entry,{onlyFields:[
-                  issue.field==='manualThemes'?'themes'
-                    :issue.field==='suitableForExamList'?'examMaterial'
-                    :issue.field,
-                ],metadataIssueId:issue.id});
+              const editField=issue.field==='manualThemes'?'themes'
+                :issue.field==='suitableForExamList'?'examMaterial'
+                :issue.field;
+              const editors=make('div','bb-guide__row-choices');
+              const affected=issue.worksheetRows||[];
+              for(const worksheetRow of affected){
+                const sourceRow=rowByNumber.get(worksheetRow);
+                if(!sourceRow)continue;
+                const edit=button('Excelrij '+worksheetRow
+                  +(openEditor===sourceRow.index?' sluiten':' corrigeren'),
+                  'btn btn--secondary');
+                edit.disabled=Boolean(remotePending||busy);
+                edit.addEventListener('click',()=>{
+                  openEditor=openEditor===sourceRow.index?null:sourceRow.index;
+                  render();
+                });
+                editors.append(edit);
+                if(openEditor===sourceRow.index)
+                  editRow(sourceRow,editors,{
+                    onlyFields:[editField],metadataIssueId:issue.id,
+                  });
+              }
+              entry.append(editors);
               section.append(entry);
             }
             card.append(section);
@@ -1458,6 +1471,42 @@
         }
         if(auto.length)panel.append(makeDetail('Automatische keuzes bekijken '
           +'en aanpassen ('+auto.length+')',auditing));
+        const automaticAssignments=(assignments.differences||[])
+          .filter(diff=>diff.automatic&&!diff.previouslyImported);
+        if(automaticAssignments.length){
+          const list=make('div','bb-guide__audit-list');
+          for(const diff of automaticAssignments){
+            const line=make('div','bb-guide__audit-row');
+            line.append(make('strong','',diff.title||diff.editionIsbn||'Boek'),
+              make('span','',diff.kind==='loan'?'Uitlening'
+                :diff.kind==='location'?'Vaste locatie'
+                :'Klasvermelding'));
+            const actions=make('div','bb-guide__audit-actions');
+            const selected=assignmentResolutions.get(diff.id)?.action
+              ||diff.choice||'keep';
+            const choose=(label,action)=>{
+              const control=addAction(actions,
+                selected===action?'✓ '+label:label,()=>{
+                  assignmentResolutions.set(diff.id,{id:diff.id,action});
+                  render();
+                });
+              control.setAttribute('aria-pressed',String(selected===action));
+            };
+            if(diff.kind==='class_context'){
+              choose('Behouden','keep');
+              choose('Vaste plek','class_fixed');
+              if(diff.classId&&!diff.hasExplicitLoan)
+                choose('Uitlening aan klas','class_loan');
+            }else{
+              choose('Excel overnemen','apply');
+              choose('Bestaande behouden','keep');
+              choose('Later controleren','later');
+            }
+            line.append(actions);list.append(line);
+          }
+          panel.append(makeDetail('Automatische uitleningen en klaskeuzes '
+            +'aanpassen ('+automaticAssignments.length+')',list));
+        }
         addAction(footer,'Diagnoseverslag downloaden',downloadCurrentDiagnosis);
         addAction(footer,'Terug naar boeken',()=>setGuidedStep(2,0));
         if(hasChanges||!summary.readyToApply){
@@ -1469,6 +1518,18 @@
             ||!summary.readyToApply||hasChanges);
         }
       }
+      const cancel=addAction(footer,'Import annuleren',()=>{
+        if(!window.confirm('Deze import annuleren? Er wordt niets '
+          +'aan de bibliotheek gewijzigd.'))return;
+        run(async()=>{
+          const response=await request(rootPath+'/'+encodeURIComponent(stage.id)
+            +'/cancel',{revision:stage.revision});
+          rememberResponse(response);
+          try{localStorage.removeItem(wizardPositionKey);}catch{}
+          setNotice('De import is geannuleerd. Je kunt een nieuw bestand kiezen.');
+        },'De import wordt geannuleerd…');
+      });
+      cancel.classList.add('bb-guide__cancel');
       panel.append(footer);
       results.append(panel);
     }
