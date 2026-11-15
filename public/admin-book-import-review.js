@@ -568,39 +568,72 @@
         || JSON.stringify([...metadataResolutions.values()].sort((a,b)=>a.id.localeCompare(b.id)))
           !== JSON.stringify([...(stage.metadataResolutions||[])].sort((a,b)=>a.id.localeCompare(b.id)));
     };
+    let draftSavePending=false;
+    let draftChangeGeneration=0;
     function scheduleGuidedDraftSave(){
       if(stage?.mode!=='unified_sync'||stage.status!=='open'
-        ||remotePending||busy||!hasUnreviewedChanges())return;
+        ||remotePending||busy)return;
+      // Reverted choices must CLEAR an earlier server draft. A local "no
+      // changes" check alone would leave /apply blocked by that hidden draft.
+      if(!hasUnreviewedChanges()&&!stage.draft&&!draftSaveInFlight)return;
+      draftChangeGeneration++;
       if(draftSaveTimer)clearTimeout(draftSaveTimer);
-      draftSaveTimer=setTimeout(async()=>{
+      if(draftSaveInFlight){
+        draftSavePending=true;
         draftSaveTimer=null;
-        if(!stage||busy||remotePending||draftSaveInFlight)return;
-        const currentStage=stage.id,revision=stage.revision;
-        const snapshot={
-          revision,acceptWarnings:warningsAccepted,
-          corrections:[...corrections.values()],
-          inventoryResolutions:[...inventoryResolutions.values()],
-          assignmentResolutions:[...assignmentResolutions.values()],
-          metadataResolutions:[...metadataResolutions.values()],
-        };
-        draftSaveInFlight=true;
-        try{
-          const result=await request(rootPath+'/'+encodeURIComponent(currentStage)
-            +'/draft',snapshot);
-          if(stage?.id===currentStage&&stage.revision===revision){
-            if(!result.persisted)setNotice('Je keuzes staan nog in het geheugen, '
-              +'maar konden niet blijvend worden opgeslagen.');
-            else {
-              stage.draft={...snapshot};
-              stage.draftSavedAt=result.savedAt;
-            }
-          }
-        }catch(error){
-          if(stage?.id===currentStage&&stage.revision===revision)
-            setNotice('Concept opslaan mislukt. '
-              +'Klik op controleren voordat je de pagina verlaat.');
-        }finally{draftSaveInFlight=false;}
+        return;
+      }
+      draftSaveTimer=setTimeout(()=>{
+        draftSaveTimer=null;
+        void flushGuidedDraft();
       },950);
+    }
+    async function flushGuidedDraft(){
+      if(!stage||busy||remotePending||stage.status!=='open')return;
+      if(draftSaveInFlight){draftSavePending=true;return;}
+      const changes=hasUnreviewedChanges();
+      if(!changes&&!stage.draft&&!draftSavePending)return;
+      const currentStage=stage.id,revision=stage.revision;
+      const generation=draftChangeGeneration;
+      const snapshot={
+        revision,acceptWarnings:warningsAccepted,
+        corrections:[...corrections.values()],
+        inventoryResolutions:[...inventoryResolutions.values()],
+        assignmentResolutions:[...assignmentResolutions.values()],
+        metadataResolutions:[...metadataResolutions.values()],
+      };
+      const data=changes?snapshot:{revision,clear:true};
+      draftSavePending=false;
+      draftSaveInFlight=true;
+      let cleared=false;
+      try{
+        const result=await request(rootPath+'/'+encodeURIComponent(currentStage)
+          +'/draft',data);
+        if(stage?.id===currentStage&&stage.revision===revision){
+          if(!result.persisted)
+            setNotice('Concept opslaan mislukt. Controleer je keuzes '
+              +'voordat je de pagina verlaat.');
+          else {
+            stage.draft=result.cleared?null:snapshot;
+            stage.draftSavedAt=result.savedAt;
+            cleared=result.cleared===true;
+          }
+        }
+      }catch(error){
+        if(stage?.id===currentStage&&stage.revision===revision)
+          setNotice('Concept opslaan mislukt. Klik op controleren '
+            +'voordat je de pagina verlaat.');
+      }finally{
+        draftSaveInFlight=false;
+        if(draftSavePending||draftChangeGeneration!==generation){
+          draftSavePending=false;
+          scheduleGuidedDraftSave();
+        }else if(cleared){
+          // Rebuild the final action: confirmation is safe again once the
+          // reverted draft has actually been removed on the server.
+          render();
+        }
+      }
     }
     const setNotice = (text) => { notice.textContent = text; };
     const frozenControls = new Map();
@@ -1042,7 +1075,8 @@
         ?String(value.name||value.value||JSON.stringify(value)):safeText(value);
       const countSkipped=rows.filter(row=>
         corrections.get(row.index)?.skip).length;
-      const hasChanges=hasUnreviewedChanges();
+      const hasChanges=hasUnreviewedChanges()||Boolean(stage.draft)
+        ||draftSaveInFlight||draftSavePending||Boolean(draftSaveTimer);
       const panel=make('section','bb-guide');
       const top=make('header','bb-guide__top');
       top.append(make('span','bb-guide__eyebrow','BOEKENBAAI · IMPORTEERASSISTENT'),
