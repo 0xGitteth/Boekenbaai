@@ -172,8 +172,10 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(scoped.ok,true);
   assert.deepEqual(scoped.metadata.issues.map(issue=>issue.field),['title'],
     'Do not create redundant author/language decisions for a title dispute');
-  assert.ok(scoped.metadata.updates.some(update=>update.field==='language'
-    &&update.value==='nl'));
+  assert.equal(scoped.metadata.updates.some(update=>update.field==='language'),false,
+    'A disputed physical identity must not silently change the book language');
+  assert.ok(scoped.metadata.automaticDecisions.some(item=>
+    item.field==='language'&&item.action==='keep'));
   assert.equal(scoped.summary.blockedStock,1,
     'Uncertain book identity must remain blocked for physical-stock changes');
 
@@ -189,8 +191,8 @@ assert.equal(normalizeParts(undefined).value.books,true);
     parts:parts({fields:{title:true,author:true,language:true}}),
   });
   assert.deepEqual(authorScoped.metadata.issues.map(issue=>issue.field),['author']);
-  assert.ok(authorScoped.metadata.updates.some(update=>update.field==='language'
-    &&update.value==='nl'));
+  assert.equal(authorScoped.metadata.updates.some(update=>update.field==='language'),false,
+    'An author dispute likewise preserves other physical edition details');
 }
 
 {
