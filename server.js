@@ -2389,6 +2389,11 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
     const selected = strictMatches[0];
     const selectedMetadata = selected.metadata;
     const possibleIsbns=[...new Set(strictMatches.flatMap(entry=>entry.isbnCandidates))];
+    // Search candidates are not edition claims. The analyzer may compare
+    // them with an incomplete worksheet ISBN and verify ONE near-match using
+    // independent exact-ISBN providers. Never auto-pick the first result.
+    if(possibleIsbns.length)
+      selectedMetadata.isbnSearchCandidates=possibleIsbns.slice(0,20);
     // More than one candidate edition cannot be inferred from a work title.
     // Do not send an ambiguous candidate list to an automatic repair path.
     if(possibleIsbns.length===1)selectedMetadata.isbnCandidates=possibleIsbns;
