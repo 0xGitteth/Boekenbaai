@@ -533,6 +533,40 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(corroboratedTitleConflict.groups.length,0,
     'A genuine ISBN/title identity conflict must stay blocked');
 
+  // Real import path: independently matching ISBN providers must not flag a
+  // series prefix or edition descriptor as a different physical book.
+  const seriesPrefix=await analyzeBookImportRows([{
+    Titel:'Magnus Chase de hamer van Thor',Auteur:'Rick Riordan',
+    'ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'De hamer van Thor',author:'Rick Riordan',isbn13:ISBN,
+    sourceCandidates:[
+      {source:'Google Books',title:'De hamer van Thor',
+        author:'Rick Riordan',isbn13:ISBN},
+      {source:'Open Library',title:'De hamer van Thor',
+        author:'Rick Riordan',isbn13:ISBN},
+    ],
+  })});
+  assert.ok(!seriesPrefix.rows[0].issues.some(issue=>
+    issue.code==='metadata_title_conflict'));
+  assert.notEqual(seriesPrefix.rows[0].status,'conflict');
+  const differentWork=await analyzeBookImportRows([{
+    Titel:'De Gorgels',Auteur:'Jochem Myjer','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'De Gorgels en het geheim van de gletsjer',
+    author:'Jochem Myjer',isbn13:ISBN,
+    sourceCandidates:[
+      {source:'Google Books',isbn13:ISBN,
+        title:'De Gorgels en het geheim van de gletsjer',
+        author:'Jochem Myjer'},
+      {source:'Open Library',isbn13:ISBN,
+        title:'De Gorgels en het geheim van de gletsjer',
+        author:'Jochem Myjer'},
+    ],
+  })});
+  assert.equal(differentWork.rows[0].status,'conflict',
+    'A series title is not proof of the correct book within that series');
+
   const orthographic=await analyzeBookImportRows([{
     Titel:'P.S. Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN,
   }],{lookupIsbn:async()=>({
