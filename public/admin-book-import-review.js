@@ -1311,6 +1311,17 @@
           matchList.append(card);
         }
         matchSection.append(matchList);
+        const matchFooter=make('div','bb-match-review__footer');
+        matchFooter.append(make('p','hint',
+          'Je keuzes worden pas verwerkt na een nieuwe controle en de definitieve import.'));
+        const recalculate=button('Gekozen boeken opnieuw controleren','btn');
+        recalculate.disabled=Boolean(remotePending||busy);
+        recalculate.addEventListener('click',()=>run(async()=>{
+          await reviewChoices([...assignmentResolutions.values()],
+            [...metadataResolutions.values()]);
+        },'De boekvoorstellen worden opnieuw gecontroleerd…'));
+        matchFooter.append(recalculate);
+        matchSection.append(matchFooter);
         problems.append(matchSection);
       }
       const assignmentCards=make('div','bb-import__exceptions-list');
