@@ -48,7 +48,7 @@ function nearlySameBookText(left,right){
 // conflicting non-empty labels must never be treated as interchangeable.
 function editionQualifier(value){
   const match=String(value??'').trim().match(
-    /^(.*?)\s*(?:\(\s*(?:book|deel|volume|vol\\.?|druk)\s*(\\d+)\s*\)|\s*(?:\/|[-–—])\s*(?:book|deel|volume|vol\\.?|druk)\s*(\\d+))\s*$/iu
+    /^(.*?)\s*(?:\(\s*(?:book|deel|volume|vol\.?|druk)\s*(\d+)\s*\)|\s*(?:\/|[-–—])\s*(?:book|deel|volume|vol\.?|druk)\s*(\d+))\s*$/iu
   );
   if(!match||!normalized(match[1]))return null;
   return {base:normalized(match[1]),part:Number(match[2]||match[3])};
