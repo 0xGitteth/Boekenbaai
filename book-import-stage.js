@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { buildReviewDecisions } = require('./book-import-review');
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { inspectReviewedLoans } = require('./book-import-loan-migration');
@@ -12,14 +14,67 @@ const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 const BUSY_STATUSES = new Set(['preparing', 'reviewing', 'applying']);
 const MAX_FINISHED_STAGES = 8;
 
-function createImportStageStore({ now = Date.now, createId = () => crypto.randomUUID(), ttlMs = DEFAULT_TTL_MS } = {}) {
-  const entries = new Map();
+function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
+  ttlMs=DEFAULT_TTL_MS,persistenceFile=''}={}){
+  const entries=new Map();
+  const file=persistenceFile?path.resolve(persistenceFile):'';
+  const serialOptions=options=>({
+    mode:options?.mode||'unified_sync',syncParts:options?.syncParts||null,
+    maxRows:options?.maxRows||1500,maxCopies:options?.maxCopies||50000,
+    enrichIsbn:options?.enrichIsbn===true,
+  });
+  function persist(){
+    if(!file)return;
+    const stage=[...entries.values()].find(entry=>entry.status==='open');
+    if(!stage){
+      try{fs.unlinkSync(file);}catch(error){
+        if(error.code!=='ENOENT')console.error('Boekimportdraft opruimen mislukt',error);
+      }
+      return;
+    }
+    let temporary='';
+    try{
+      const value=JSON.stringify({...stage,options:serialOptions(stage.options)});
+      if(Buffer.byteLength(value)>32*1024*1024)throw Error('import_draft_too_large');
+      fs.mkdirSync(path.dirname(file),{recursive:true});
+      temporary=file+'.'+process.pid+'.'+crypto.randomUUID()+'.tmp';
+      fs.writeFileSync(temporary,value,{encoding:'utf8',mode:0o600,flag:'wx'});
+      fs.renameSync(temporary,file);
+      stage.draftPersisted=true;
+    }catch(error){
+      stage.draftPersisted=false;
+      console.error('Boekimportdraft opslaan mislukt',error);
+      if(temporary)try{fs.unlinkSync(temporary);}catch{}
+    }
+  }
+  function restore(){
+    if(!file)return;
+    try{
+      const saved=JSON.parse(fs.readFileSync(file,'utf8'));
+      if(!saved||saved.status!=='open'||!saved.id||!saved.ownerId
+        ||!Number.isInteger(saved.revision)||saved.revision<1
+        ||!Array.isArray(saved.sourceRows)||saved.sourceRows.length>1500
+        ||saved.analysis?.ok!==true||!Array.isArray(saved.analysis.rows)
+        ||!saved.options||!Number.isFinite(saved.expiresAt)
+        ||saved.expiresAt<=now()){
+        fs.unlinkSync(file);return;
+      }
+      saved.options=serialOptions(saved.options);
+      saved.draftPersisted=true;
+      entries.set(saved.id,saved);
+    }catch(error){
+      if(error.code!=='ENOENT'){
+        console.error('Boekimportdraft herstellen mislukt',error);
+        try{fs.unlinkSync(file);}catch{}
+      }
+    }
+  }
   function prune() {
     const current = now();
     for (const [id, item] of entries) {
       // A long metadata lookup or save can exceed the usual inactivity TTL.
       // Never detach a still-running stage from the live session.
-      if (item.expiresAt <= current && !BUSY_STATUSES.has(item.status)) entries.delete(id);
+      if (item.expiresAt <= current && !BUSY_STATUSES.has(item.status)) {entries.delete(id);persist();}
     }
     const terminal = [...entries.values()].filter((item) => TERMINAL_STATUSES.has(item.status));
     for (const item of terminal.slice(0, Math.max(0, terminal.length - MAX_FINISHED_STAGES))) entries.delete(item.id);
@@ -62,6 +117,7 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
       sourceRows, workbook, fileName, analysis, initialAnalysis: analysis,
       options, status: 'open', revision: 1, expiresAt: now() + ttlMs,
     });
+    persist();
     return stage;
   }
   function abandon(stage) {
@@ -95,6 +151,7 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     stage.revision += 1;
     stage.expiresAt = now() + ttlMs;
     stage.status = 'open';
+    persist();
   }
   function abortReview(stage) {
     if (stage?.status === 'reviewing') stage.status = 'open';
@@ -115,12 +172,14 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     stage.analysis = null;
     stage.initialAnalysis = null;
     stage.expiresAt = now() + ttlMs;
+    persist();
   }
   function abortApply(stage) {
     // A failed write must never allow an unguarded retry. Start a new review.
     if (stage?.status === 'applying') {
       stage.status = 'failed';
       stage.expiresAt = now() + ttlMs;
+      persist();
     }
   }
   function cancel(stage, expectedRevision) {
@@ -134,8 +193,10 @@ function createImportStageStore({ now = Date.now, createId = () => crypto.random
     stage.analysis = null;
     stage.initialAnalysis = null;
     stage.expiresAt = now() + ttlMs;
+    persist();
     return { ok: true };
   }
+  restore();
   return {
     create, reserve, activate, abandon, get, active, cancel,
     beginReview, finishReview, abortReview, beginApply, finishApply, abortApply,
@@ -158,6 +219,7 @@ function importStageView(stage) {
     fileName: stage.fileName, workbook: stage.workbook,
     expiresAt: new Date(stage.expiresAt).toISOString(),
     corrections: stage.corrections, acceptWarnings: stage.acceptWarnings,
+    draftPersisted: stage.draftPersisted === true,
     syncParts: stage.options?.mode === 'unified_sync' ? stage.options.syncParts : null,
     inventoryResolutions: ['inventory_sync','unified_sync'].includes(stage.options?.mode) ? stage.inventoryResolutions : [],
     assignmentResolutions: ['assignment_reconcile','unified_sync'].includes(stage.options?.mode) ? stage.assignmentResolutions : [],
