@@ -852,6 +852,10 @@
 
     function selectCandidateForRow(row,candidate){
       if(!row||!candidate?.editionIsbn)return;
+      if(candidate.identityWarning
+        &&!window.confirm('De gevonden titel of auteur wijkt af van Excel. '
+          +'Controleer op het fysieke boek of het echt deze editie is. '
+          +'Wil je deze titel, auteur en ISBN overnemen?'))return;
       const fields=corrections.get(row.index)?.fields||{};
       const previous=candidateChangeHistory.get(row.index);
       const original=previous?.original||{
@@ -1300,8 +1304,18 @@
               const proposed=suggestions[0];
               compare.append(makeLabeled(proposed.origin==='existing'
                 ?'Gevonden in Boekenbaai':'Online gevonden',
-                proposed.title+' · '+(proposed.editionIsbn||'ISBN ontbreekt')));
+                proposed.title+' · Auteur: '+safeText(proposed.author)
+                  +' · ISBN '+(proposed.editionIsbn||'ontbreekt')));
               check.append(compare);
+              if(proposed.identityWarning)
+                check.append(make('p','bb-guide__attention',
+                  'Let op: deze kandidaat heeft een afwijkende titel of '
+                  +'auteur. Controleer beide op het fysieke boek voordat '
+                  +'je deze editie kiest.'));
+              if(proposed.unverifiedTitle)
+                check.append(make('p','bb-guide__reason',
+                  'Bij deze online kandidaat is de titel nog niet '
+                  +'onafhankelijk per ISBN bevestigd.'));
               const notice=make('p','hint',
                 'Controleer of de voorgestelde editie daadwerkelijk overeenkomt '
                 +'met het boek dat op school staat.');
@@ -1327,7 +1341,14 @@
                     const alt=make('div','bb-guide__alternative');
                     alt.append(makeLabeled(option.origin==='existing'
                       ?'Boekenbaai':'Online',option.title
-                      +' · '+safeText(option.editionIsbn)));
+                      +' · Auteur: '+safeText(option.author)
+                      +' · ISBN '+safeText(option.editionIsbn)));
+                    if(option.identityWarning)
+                      alt.append(make('p','bb-guide__attention',
+                        'Titel of auteur wijkt af: controleer het boek.'));
+                    if(option.unverifiedTitle)
+                      alt.append(make('p','hint',
+                        'Titel niet onafhankelijk voor deze editie bevestigd.'));
                     if(option.editionIsbn)
                       addAction(alt,'Deze editie kiezen',()=>choose(option));
                     list.append(alt);
