@@ -488,6 +488,7 @@
     let guidedIndex=0;
     let guidedAlternativeRow=null;
     const candidateChangeHistory=new Map();
+    const guidedSelectedRow=new Map();
     let guidedShowDetails=false;
     const wizardPositionKey='boekenbaai.import.wizard.position.v1';
     function storeGuidedPosition(){
@@ -579,6 +580,7 @@
         guidedIndex=previous?.id===payload.id
           ?Math.max(0,Number(previous.index)||0):0;
         guidedAlternativeRow=null;
+        guidedSelectedRow.clear();
         guidedShowDetails=false;
         page = 0;
         automaticPage = 0;
@@ -913,6 +915,15 @@
         const group=groupFor(entry.editionIsbn||'',row);
         group.stock.push(entry);
       }
+      // Stock planner reports the ISBN group once; rows combined into
+      // that group still require individual candidate selection when they
+      // disagree. Include every source row in the ONE combined book card.
+      for(const row of rows){
+        const isbn=row.book?.editionIsbn;
+        const group=isbn?books.get(isbn):null;
+        if(group?.stock?.length&&row.status!=='skipped')
+          group.rows.set(row.index,row);
+      }
       for(const diff of manualAssignments){
         const row=rowByNumber.get(diff.worksheetRow);
         groupFor(diff.editionIsbn||row?.book?.editionIsbn||'',row)
@@ -1092,7 +1103,13 @@
         }else{
           guidedIndex=Math.max(0,Math.min(guidedIndex,queue.length-1));
           const group=queue[guidedIndex];
-          const source=[...group.rows.values()][0]||null;
+          const groupRows=[...group.rows.values()]
+            .sort((a,b)=>a.sourceRowNumber-b.sourceRowNumber);
+          const selectedRow=guidedSelectedRow.get(group.key);
+          const source=groupRows.find(row=>row.index===selectedRow)
+            ||groupRows.find(row=>Array.isArray(row.matchSuggestions)
+              &&row.matchSuggestions.length)
+            ||groupRows[0]||null;
           const book=source?.book||{};
           const progressBar=make('div','bb-guide__meter');
           progressBar.setAttribute('role','progressbar');
@@ -1131,6 +1148,24 @@
             check.append(make('h5','','1. Boek en voorraad'));
             const first=group.stock[0];
             explain(check,first.reason);
+            if(groupRows.length>1){
+              const rowChoices=make('div','bb-guide__row-choices');
+              rowChoices.append(make('span','bb-guide__eyebrow',
+                'Excelrijen bij dit ISBN: kies welke je controleert'));
+              const buttons=make('div','bb-guide__actions');
+              for(const row of groupRows){
+                const change=button('Rij '+row.sourceRowNumber
+                  +' · '+safeText(row.book?.title).slice(0,55),
+                  'btn btn--secondary');
+                change.setAttribute('aria-pressed',String(source?.index===row.index));
+                change.addEventListener('click',()=>{
+                  guidedSelectedRow.set(group.key,row.index);
+                  openEditor=null;render();
+                });
+                buttons.append(change);
+              }
+              rowChoices.append(buttons);check.append(rowChoices);
+            }
             const suggestions=source?.matchSuggestions||[];
             if(suggestions.length){
               const compare=make('div','bb-guide__compare');
