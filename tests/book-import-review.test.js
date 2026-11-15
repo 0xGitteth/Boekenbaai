@@ -221,6 +221,10 @@ const OTHER_ISBN = '9780439554930';
   const disagreeingLookup = async (isbn) => ({
     found: true, isbn13: isbn, title: 'Andere titel',
     author: 'A Auteur', publisher: 'Niet overnemen',
+    sourceCandidates: [
+      { source:'Google Books',isbn13:isbn,title:'Andere titel' },
+      { source:'Open Library',isbn13:isbn,title:'Andere titel' },
+    ],
   });
   const unresolvedTitle = await analyzeReviewedImport(titleChoiceSource, [],
     { lookupIsbn: disagreeingLookup, acceptWarnings: true });
@@ -245,6 +249,19 @@ const OTHER_ISBN = '9780439554930';
     { index: 0, fields: { publisher: 'Excel uitgever' } },
   ], { lookupIsbn: disagreeingLookup, acceptWarnings: true });
   assert.strictEqual(stillConflicted.rows[0].status, 'conflict');
+  const unconfirmedLookup=async (isbn)=>({
+    found:true,isbn13:isbn,title:'Andere titel',author:'A Auteur',
+    sourceCandidates:[{source:'Google Books',isbn13:isbn,title:'Andere titel'}],
+  });
+  const weakTitle=await analyzeReviewedImport(titleChoiceSource,[],{
+    lookupIsbn:unconfirmedLookup,acceptWarnings:true,
+  });
+  assert.equal(weakTitle.rows[0].status,'warning',
+    'A solitary external title variant is informational, not mandatory review');
+  assert.ok(weakTitle.rows[0].issues.some(issue=>
+    issue.code==='metadata_differs_from_excel' &&issue.field==='title'));
+  assert.equal(weakTitle.decisions.summary.readyToApply,true,
+    'A valid ISBN with a weak external discrepancy must remain importable');
 
   // Derived language and comic tags must be attributed to the administrator
   // when the exam-material value came from a review correction.

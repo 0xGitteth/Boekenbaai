@@ -7,7 +7,8 @@ const {
   createAuthorDisplay,
   getOwnDataValue,
 } = require('./book-edition-core');
-const {normalizeSource}=require('./book-import-source-confidence');
+const {normalizeSource,sourceConsensus,equivalentSpelling}=require('./book-import-source-confidence');
+const {nearlySameBookText,sameBookTitle}=require('./book-import-autonomy');
 const {
   addIssue,
   comparableText,
@@ -159,9 +160,11 @@ function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
 }
 
 function titleDoesNotContradict(rowBook, candidate) {
-  const rowTitle = comparableText(rowBook?.title);
-  const candidateTitle = comparableText(candidate?.title);
-  return !(rowTitle && candidateTitle && rowTitle !== candidateTitle);
+  const rowTitle = normalizeBookIdentityText(rowBook?.title);
+  const candidateTitle = normalizeBookIdentityText(candidate?.title);
+  // Provider formatting is not edition identity evidence. Ignore accents,
+  // case, punctuation and insignificant spaces in exact-ISBN title checks.
+  return !(rowTitle && candidateTitle && !sameBookTitle(rowTitle,candidateTitle));
 }
 
 function candidateScore(candidate) {
@@ -233,7 +236,8 @@ function distinctCandidateTitles(candidates) {
   const titles = new Map();
   for (const candidate of candidates) {
     const key = comparableText(candidate.title);
-    if (key && !titles.has(key)) titles.set(key, candidate.title);
+    if (key && ![...titles.values()].some(title=>sameBookTitle(title,candidate.title)))
+      titles.set(key, candidate.title);
   }
   return Array.from(titles.values());
 }
@@ -422,6 +426,35 @@ function applyMetadataCandidate(row, candidate, {
   setField('themes', candidate.themes);
 }
 
+function acceptSourceVerifiedSpelling(row, options) {
+  if(!row.book?.editionIsbn || !Array.isArray(row.sourceEvidence))return;
+  const title=sourceConsensus(row.book.editionIsbn,'title',row.sourceEvidence);
+  if(title.agreeing<2||title.conflicting
+    ||!sameBookTitle(row.book.title,title.value))return;
+  for(const field of ['title','author']){
+    if(options.correctedMetadataFields?.has(field))continue;
+    const result=field==='title'?title:
+      sourceConsensus(row.book.editionIsbn,'author',row.sourceEvidence);
+    const existing=String(row.book[field]||'');
+    if(result.agreeing<2||result.conflicting||!existing||!result.value
+      ||existing===result.value||!nearlySameBookText(existing,result.value))continue;
+    if(field==='author'){
+      const current=Array.isArray(row.book.authors)?row.book.authors:[existing];
+      // Never silently drop a coauthor or overwrite a reviewed multi-author
+      // list with one supplier's incomplete author entry.
+      if(current.length>1 && (!Array.isArray(result.authors)
+        ||result.authors.length!==current.length))continue;
+      row.book.author=result.value;
+      row.book.authors=Array.isArray(result.authors)&&result.authors.length
+        ?[...result.authors]:[result.value];
+    }else row.book.title=result.value;
+    row.provenance[field]={
+      source:'metadata',detail:'verified_isbn_spelling',
+      correctedFrom:existing,sources:result.sources,
+    };
+  }
+}
+
 async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
@@ -457,12 +490,51 @@ async function resolveMetadata(row, options) {
           metadataValue: selection.conflict.titles,
           chosenByAdministrator: true,
         });
+      } else if (selection.conflict?.code === 'metadata_title_conflict') {
+        // A third-party title mismatch alone is NOT sufficient evidence that
+        // a teacher's ISBN-labelled worksheet row is wrong. Only two or more
+        // independent, exact-edition providers agreeing on a materially
+        // different title may block the import as a genuine identity conflict.
+        const consensus=sourceConsensus(row.book.editionIsbn,'title',row.sourceEvidence||[]);
+        const independentlyContradicted=consensus.agreeing>=2
+          &&!consensus.conflicting &&consensus.value
+          &&row.book.title&&!sameBookTitle(row.book.title,consensus.value);
+        if(independentlyContradicted){
+          addIssue(row,'metadata_title_conflict','conflict',{
+            ...selection.conflict,
+            confirmedTitle:consensus.value,
+            sources:consensus.sources,
+            sourceCount:consensus.agreeing,
+          });
+        }else{
+          addIssue(row,'metadata_differs_from_excel','warning',{
+            field:'title',excelValue:row.book.title,
+            metadataValue:selection.conflict.titles||[],
+            sources:consensus.sources,
+            editionIsbn:row.book.editionIsbn,
+            reviewLevel:'informational',
+          });
+        }
+      } else if (selection.conflict
+        &&['metadata_identifier_conflict','ambiguous_isbn_lookup_results',
+          'ambiguous_metadata_results'].includes(selection.conflict.code)) {
+        // The worksheet already supplies a structurally valid ISBN. A
+        // third-party lookup returning another edition or internally
+        // inconsistent identifiers is insufficient proof that Excel is
+        // wrong; do not turn a provider error into an inventory blocker.
+        addIssue(row,selection.conflict.code,'warning',{
+          ...selection.conflict,reviewLevel:'informational',lookup:'isbn',
+        });
       } else if (selection.conflict) addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       else if (selection.candidate) applyMetadataCandidate(row, selection.candidate, {
         skipThemeEnrichment: options.skipThemeEnrichment === true,
         correctedMetadataFields: options.correctedMetadataFields,
       });
       else if (candidates.length) addIssue(row, 'metadata_not_usable', 'warning');
+      // Two independent providers with the same exact ISBN may clean up a
+      // small typo. Materially different titles never qualify and remain
+      // subject to the explicit identity conflict rule above.
+      acceptSourceVerifiedSpelling(row,options);
     } catch {
       addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'isbn' });
     }

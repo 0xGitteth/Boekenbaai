@@ -1,6 +1,8 @@
 'use strict';
 
 const { groupBookCopiesByEdition } = require('./book-edition-core');
+const { equivalentSpelling } = require('./book-import-source-confidence');
+const {sameBookIdentity}=require('./book-import-autonomy');
 const { mapImportRow, readBookImportWorkbook, isBlankCellValue } = require('./book-import-workbook');
 const {
   JUNK_ONLY_TOKENS,
@@ -330,10 +332,26 @@ async function analyzeBookImportRows(rows, options = {}) {
 
   markDuplicateBarcodes(analyzedRows, stagedPhysicalRowIndexes);
   const groupableCopies = editionCopies.filter((copy) => isSafeEditionGroupRow(analyzedRows[copy.__importRowIndex]));
+  // Grouping is a safety check, not a spelling-change instruction.
+  // Consolidate punctuation/accent variants of the SAME explicit ISBN
+  // solely for edition grouping; leave the actual Excel row untouched.
+  // Materially different titles continue to produce a blocking conflict.
+  const firstBookByIsbn=new Map();
+  const comparableCopies=groupableCopies.map(copy=>{
+    const isbn=copy.editionIsbn;
+    const first=firstBookByIsbn.get(isbn);
+    if(!first){
+      firstBookByIsbn.set(isbn,copy);
+      return copy;
+    }
+    return sameBookIdentity(first,copy)
+      ?{...copy,title:first.title,author:first.author,
+        authors:[...first.authors]}:copy;
+  });
 
   let grouped = { groups: [], conflicts: [] };
   try {
-    grouped = groupBookCopiesByEdition(groupableCopies);
+    grouped = groupBookCopiesByEdition(comparableCopies);
   } catch {
     return {
       ok: false,
@@ -346,8 +364,8 @@ async function analyzeBookImportRows(rows, options = {}) {
     };
   }
 
-  applyEditionConflicts(analyzedRows, groupableCopies, grouped.conflicts);
-  const exposedConflicts = exposeEditionConflicts(groupableCopies, grouped.conflicts);
+  applyEditionConflicts(analyzedRows, comparableCopies, grouped.conflicts);
+  const exposedConflicts = exposeEditionConflicts(comparableCopies, grouped.conflicts);
   for (const group of grouped.groups) {
     for (const copy of group.copies || []) {
       delete copy.__importRowIndex;

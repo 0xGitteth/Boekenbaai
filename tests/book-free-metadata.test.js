@@ -34,7 +34,8 @@ const noCover = parseEasyCb(sample.replace(isbn+'_VRK.jpg','unrelated.jpg'),isbn
 assert.equal(noCover.coverUrl,'','Do not mistake rear or arbitrary image for front cover');
 const otherwiseComplete={metadataIsbn:isbn,title:source.title,author:source.author,
   description:'Deze informatie bestaat al.',pageCount:80,coverUrl:source.coverUrl,
-  tags:['Geschiedenis'],publisher:source.publisher,publishedYear:source.publishedYear};
+  tags:['Geschiedenis'],enrichmentTags:['local history'],
+  publisher:source.publisher,publishedYear:source.publishedYear};
 assert.ok(nextCandidate([{...otherwiseComplete,publisher:''}]),
   'A missing publisher must trigger enrichment even when all other fields are present');
 assert.ok(nextCandidate([{...otherwiseComplete,publishedYear:null}]),
@@ -51,6 +52,34 @@ const current = {
       description:'',tags:[],pageCount:null,coverUrl:''},
   ],
 };
+// Enrichment keywords are stored separately from teacher-selected tags.
+const bookWithTags={
+  books:[{id:'extra',metadataIsbn:isbn,title:source.title,
+    author:source.author,description:'Al aanwezig',
+    tags:['Schooltag'],pageCount:80,coverUrl:source.coverUrl,
+    publisher:source.publisher,publishedYear:source.publishedYear}],
+};
+const enrichedCandidate=nextCandidate(bookWithTags.books);
+assert.ok(enrichedCandidate,'Books without usable recommendation themes need keywords');
+applyResult(bookWithTags,enrichedCandidate,source);
+assert.deepEqual(bookWithTags.books[0].tags,['Schooltag'],
+  'Teacher tags must not be overwritten');
+assert.deepEqual(bookWithTags.books[0].enrichmentTags,source.tags);
+const typoTitle={books:[{id:'typo',metadataIsbn:isbn,
+  title:'Het Tegelen van opa en omma',author:source.author,
+  description:'',tags:[],pageCount:null,coverUrl:''}]};
+const typoCandidate=nextCandidate(typoTitle.books);
+assert.ok(typoCandidate);
+applyResult(typoTitle,typoCandidate,source);
+assert.equal(typoTitle.books[0].description,source.description,
+  'An exact ISBN and a one-letter title typo may still enrich recommendations');
+const mistakenAuthor={books:[{id:'wrong-author',metadataIsbn:isbn,
+  title:source.title,author:'Een Andere Schrijver',
+  description:'',tags:[],pageCount:null,coverUrl:''}]};
+applyResult(mistakenAuthor,nextCandidate(mistakenAuthor.books),source);
+assert.equal(mistakenAuthor.books[0].description,'',
+  'An incorrect author with the same ISBN must not gain unrelated descriptive metadata');
+
 const choice = nextCandidate(current.books);
 assert.ok(choice);
 const changed = applyResult(current,choice,source,'2026-11-11T00:00:00Z');

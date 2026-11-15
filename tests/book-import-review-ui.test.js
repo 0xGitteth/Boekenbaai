@@ -155,7 +155,7 @@ assert.strictEqual(pendingFieldEdits.afterSelect.accepted, false);
 // Automatic keep decisions may describe multiple bad rows for one ISBN.
 // Each row must expose its own correction editor inside the collapsed audit.
 {
-  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const start=script.indexOf('if(!item.canUseExcel&&!item.enrichmentOnly &&item.worksheetRows?.length)');
   const end=script.indexOf('addRow(item.title||',start);
   assert.ok(start>=0&&end>start,'Missing automatic keep correction UI');
   const correctionUi=script.slice(start,end);
@@ -230,8 +230,10 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
   const start=script.indexOf('    function renderUnifiedSync() {');
   const end=script.indexOf('    function renderAssignmentReconciliation()',start);
   const combined=script.slice(start,end);
-  const metadata=combined.slice(combined.indexOf('for(const issue of metadataPlan.issues)'),
-    combined.indexOf('for(const item of blocked)'));
+  const metadata=combined.slice(combined.indexOf('for(const issue of metadataPlan.issues){'),
+    combined.indexOf('for(const item of blocked){'));
+  assert.ok(metadata.startsWith('for(const issue of metadataPlan.issues){'),
+    'Check the actual metadata cards, not the counting loop');
   assert.match(metadata,/issue\.worksheetRows/);
   assert.match(metadata,/source\.sourceRowNumber/);
   assert.ok(metadata.includes("'Excelrij '+source.sourceRowNumber+' corrigeren'"));
@@ -246,7 +248,7 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
 // keep resolution before the next review. Otherwise a successful correction
 // can lead to stale_metadata_choice when that field now equals the database.
 {
-  const start=script.indexOf('if(!item.canUseExcel && item.worksheetRows?.length)');
+  const start=script.indexOf('if(!item.canUseExcel&&!item.enrichmentOnly &&item.worksheetRows?.length)');
   const end=script.indexOf('addRow(item.title||',start);
   const automaticEditor=script.slice(start,end);
   assert.ok(start>=0&&end>start,'Missing automatic decision correction editor');
@@ -290,4 +292,31 @@ console.log('Review UI metadata themes, ISBN sources and remote cache regression
     'Hundreds of external lookups must be an explicit opt-in');
   assert.match(beforeUpload,/kan langer duren/,
     'Administrators should understand the latency before opting in');
+}
+
+
+// Workbook title mismatches require evidence, not hundreds of arbitrary
+// mandatory cards. Genuine conflicts must show the independently verified
+// title and let the administrator explicitly keep the Excel title.
+{
+  const start=script.indexOf('    function renderUnifiedSync() {');
+  const end=script.indexOf('    function renderAssignmentReconciliation()',start);
+  const combined=script.slice(start,end);
+  assert.match(combined,/issue\.confirmedTitle/);
+  assert.match(combined,/issue\.sources\?\.length/);
+  assert.match(combined,/button\('Titel uit Excel bevestigen'/);
+  assert.match(combined,/updateCorrection\(row\.index,'title',row\.book\.title\)/);
+  assert.match(combined,/manualGroups\.size\+' boeken of Excelrijen\)'/,
+    'A book appearing in three areas must not be counted as three separate books');
+  assert.match(combined,/reasonNames\[item\.reason\]\|\|item\.reason/,
+    'Stock cards must translate internal error codes for administrators');
+}
+{
+  const css=fs.readFileSync(path.join(__dirname,'..','public',
+    'admin-book-import-review.css'),'utf8');
+  assert.match(css,/\.bb-import__proposal-scroll\s*\{[\s\S]*?overflow-x: auto/);
+  assert.match(css,/\.bb-import__proposals,\s*\n\.bb-import__proposal-scroll/,
+    'Nested grid cells must release min-content width on narrow screens');
+  assert.match(css,/grid-template-columns: minmax\(0,1fr\)/,
+    'A long audit table must scroll inside its panel, not expand the entire page');
 }

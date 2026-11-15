@@ -675,9 +675,11 @@ module.exports = async function runReviewTailTests() {
       title: 'Andere titel', author: 'A Auteur', barcode: ISBN, publisher: 'Niet toepassen', found: true, source: 'test',
     }),
   });
-  assert.strictEqual(metadataTitleConflict.rows[0].status, 'conflict');
-  assert.ok(issueCodes(metadataTitleConflict.rows[0]).has('metadata_title_conflict'));
-  assert.strictEqual(metadataTitleConflict.groups.length, 0, 'Title-conflicted rows must not appear in safe edition groups');
+  assert.strictEqual(metadataTitleConflict.rows[0].status, 'warning');
+  assert.ok(metadataTitleConflict.rows[0].issues.some(issue=>
+    issue.code==='metadata_differs_from_excel'&&issue.field==='title'));
+  assert.strictEqual(metadataTitleConflict.groups.length, 1,
+    'One online title without corroboration is advisory, not a blocking edition conflict');
 
   const duplicateTitleColumns = { Auteur: 'A Auteur', 'ISBN-nummer': ISBN };
   Object.defineProperty(duplicateTitleColumns, 'Titel', { value: 'Titel A', enumerable: true });
@@ -704,10 +706,11 @@ module.exports = async function runReviewTailTests() {
       ],
     }),
   });
-  assert.strictEqual(contradictoryExactCandidates.rows[0].status, 'conflict');
-  assert.ok(issueCodes(contradictoryExactCandidates.rows[0]).has('metadata_title_conflict'));
+  assert.strictEqual(contradictoryExactCandidates.rows[0].status, 'warning',
+    'Several candidate records from the same provider cannot masquerade as independent sources');
+  assert.ok(issueCodes(contradictoryExactCandidates.rows[0]).has('metadata_differs_from_excel'));
   assert.strictEqual(contradictoryExactCandidates.rows[0].book.publisher, '');
-  assert.strictEqual(contradictoryExactCandidates.groups.length, 0);
+  assert.strictEqual(contradictoryExactCandidates.groups.length, 1);
 
   const mismatchedExactIsbn = await analyzeBookImportRows([{
     Titel: 'Verkeerde editie', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
@@ -716,9 +719,13 @@ module.exports = async function runReviewTailTests() {
       title: 'Verkeerde editie', author: 'A Auteur', barcode: ISBN_ALT, found: true, source: 'mismatch',
     }),
   });
-  assert.strictEqual(mismatchedExactIsbn.rows[0].status, 'conflict');
-  assert.ok(issueCodes(mismatchedExactIsbn.rows[0]).has('ambiguous_isbn_lookup_results'));
-  assert.strictEqual(mismatchedExactIsbn.groups.length, 0, 'Mismatched exact-ISBN evidence must block safe edition grouping');
+  assert.strictEqual(mismatchedExactIsbn.rows[0].status, 'warning',
+    'A single incompatible online result is not proof that the Excel ISBN is wrong');
+  assert.ok(mismatchedExactIsbn.rows[0].issues.some(issue=>
+    issue.code==='ambiguous_isbn_lookup_results'
+    &&issue.reviewLevel==='informational'));
+  assert.strictEqual(mismatchedExactIsbn.groups.length, 1,
+    'A valid Excel ISBN remains groupable when only the external lookup is wrong');
 
   const unsupportedWithFallback = await analyzeBookImportRows([{
     Titel: 'Unsupported bron', Auteur: 'A Auteur', 'ISBN-nummer': true, 'Intern ISBN': ISBN,

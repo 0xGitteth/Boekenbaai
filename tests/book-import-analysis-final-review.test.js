@@ -184,8 +184,11 @@ module.exports = async function runFinalReviewTests() {
       title: 'Andere titel', author: 'A Auteur', barcode: ISBN, found: true, source: 'builtin-isbn',
     }),
   });
-  assert.strictEqual(barcodeIdentityConflict.rows[0].status, 'conflict');
-  assert.ok(issueCodes(barcodeIdentityConflict.rows[0]).has('metadata_title_conflict'));
+  assert.strictEqual(barcodeIdentityConflict.rows[0].status, 'warning',
+    'A solitary ISBN-matched metadata title is insufficient to block the workbook');
+  assert.ok(barcodeIdentityConflict.rows[0].issues.some(issue=>
+    issue.code==='metadata_differs_from_excel' &&issue.field==='title'
+    &&issue.reviewLevel==='informational'));
 
   const multiAuthorMetadata = await analyzeBookImportRows([{
     Titel: 'Samen geschreven', Auteur: 'Alice; Bob',

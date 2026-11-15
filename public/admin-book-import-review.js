@@ -2,11 +2,13 @@
 (() => {
   'use strict';
   const rootPath = '/api/admin/book-import-stages';
+  const importErrorText=window.BOEKENBAAI_IMPORT_DIAGNOSTICS||{};
   const statusNames = {
     ready: 'Klaar', warning: 'Waarschuwing', conflict: 'Conflict',
     unresolved: 'Nog niet opgelost', skipped: 'Overgeslagen',
   };
   const reasonNames = {
+    ...importErrorText,
     existing_edition_requires_review: 'Dit ISBN bestaat al in de collectie. Sla deze rij over of beoordeel dit later bij synchroniseren.',
     existing_physical_barcode_requires_correction: 'Deze fysieke barcode wordt al door een ander boek gebruikt. Corrigeer de barcode of sla deze rij over.',
     workbook_physical_barcode_conflict: 'Meerdere boeken in dit Excelbestand hebben dezelfde scanbarcode. Corrigeer deze rijen of sla ze over.',
@@ -53,6 +55,7 @@
     skipped: 'Overgeslagen',
   };
   const issueNames = {
+    ...importErrorText,
     conflicting_edition_isbns: 'Tegenstrijdige ISBN-waarden',
     conflicting_source_columns: 'Tegenstrijdige bronkolommen',
     edition_identity_conflict: 'Boeken met hetzelfde ISBN hebben verschillende gegevens',
@@ -126,7 +129,8 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const details = typeof payload.error === 'string' ? ' (' + payload.error + ')' : '';
+      const details = typeof payload.error === 'string'
+        ? ' ('+(importErrorText[payload.error]||'Foutcode '+payload.error)+')' : '';
       throw new Error((payload.message || 'Actie mislukt.') + details);
     }
     return payload;
@@ -313,12 +317,21 @@
     const metadataLabel = make('label', 'bb-review__check');
     const metadata = make('input');
     metadata.type = 'checkbox';
-    // Full-library reuploads should not block for hundreds of network
-    // requests unless the administrator deliberately opts into that work.
-    // The separate post-import free metadata worker can fill gaps later.
+    // A huge workbook must not silently launch hundreds of blocking
+    // third-party requests. Remember the administrator's previous opt-in so
+    // future imports need no additional clicks once enabled.
     metadata.checked = false;
+    try {
+      metadata.checked=localStorage.getItem('boekenbaai_import_enrich_isbn')==='yes';
+    }catch{}
+    metadata.addEventListener('change',()=>{
+      try {
+        localStorage.setItem('boekenbaai_import_enrich_isbn',
+          metadata.checked?'yes':'no');
+      }catch{}
+    });
     metadataLabel.append(metadata, document.createTextNode(
-      ' ISBN-bronnen vergelijken en ontbrekende boekgegevens opzoeken (optioneel, kan langer duren).'));
+      ' ISBN-bronnen vergelijken en lege boekgegevens aanvullen (aanbevolen, kan langer duren).'));
     const importMode = make('select');
     for (const [value,label] of [
       ['unified','Samen synchroniseren (aanbevolen)'],
@@ -386,8 +399,9 @@
     metadataDetails.append(make('summary','',
       'Boekgegevens per Excelkolom bijwerken (optioneel)'));
     metadataDetails.append(make('p','hint',
-      'Bestaande boekgegevens veranderen uitsluitend voor aangevinkte kolommen '
-      + 'met een ingevulde Excelwaarde. Omslagen en andere gegevens blijven anders staan.'));
+      'Bestaande ingevulde gegevens wijzigen alleen bij aangevinkte Excelkolommen. '
+      + 'Als ISBN-verrijking aanstaat, worden lege velden waar mogelijk '
+      + 'automatisch uit passende online bronnen aangevuld.'));
     const columnGrid=make('div','bb-import__column-grid');
     for(const [key,label] of columns)columnGrid.append(checkPart(key,label));
     metadataDetails.append(columnGrid);
@@ -396,7 +410,8 @@
     const updateSelected=()=>{
       const n=[...partChecks.values()].filter(input=>input.checked).length;
       selectedText.textContent=n+' onderdelen geselecteerd · '
-        +'Niet-geselecteerde en lege Excelvelden veranderen niets.';
+        +'Niet-geselecteerde Excelkolommen overschrijven niets. '
+        +'Lege boekvelden kunnen via ISBN worden aangevuld.';
     };
     for(const checkbox of partChecks.values())checkbox.addEventListener('change',updateSelected);
     allButton.addEventListener('click',()=>{
@@ -747,6 +762,13 @@
         !metadataResolutions.has(item.id));
       const blocked=(stock.rows||[]).filter(item=>item.action==='blocked'
         &&item.combinedWith===undefined);
+      const manualGroups=new Set();
+      for(const diff of exceptions)
+        manualGroups.add(diff.editionIsbn||('assignment:'+diff.worksheetRow));
+      for(const issue of metadataPlan.issues)
+        manualGroups.add(issue.isbn||('metadata:'+issue.id));
+      for(const item of blocked)
+        manualGroups.add(item.editionIsbn||('row:'+item.worksheetRow));
       const heading=make('div','bb-import__review-heading');
       heading.append(make('h4','','2. Bekijk de voorgestelde wijzigingen'));
       heading.append(make('p','hint',
@@ -775,10 +797,28 @@
         'Alle automatische keuzes kun je hieronder controleren. '
         +'Alleen echte conflicten vragen verplicht om een beslissing.'));
       results.append(confidence);
+      const informative=(stage.rows||[]).reduce((sum,row)=>
+        sum+(row.issues||[]).filter(issue=>
+          issue.reviewLevel==='informational'
+          ||['metadata_lookup_failed','isbn_repaired','metadata_not_usable']
+            .includes(issue.code)).length,0);
+      const safelyKept=(metadataPlan.automaticDecisions||[])
+        .filter(item=>item.action==='keep').length
+        +automatic.filter(item=>item.autoKept).length
+        +(stock.summary?.acknowledgedEditions||0);
+      const autoChanges=(metadataPlan.automaticDecisions||[])
+        .filter(item=>item.action==='apply').length
+        +automatic.filter(item=>item.choice==='apply').length;
+      const autonomous=make('p','bb-import__autonomy-summary hint',
+        'Zelfstandig voorgesteld: '+autoChanges+' wijzigingen of aanvullingen. '
+        +'Veilig behouden: '+safelyKept+' keuzes. '
+        +'Informatieve bronmeldingen: '+informative+'. '
+        +'Unieke boeken of Excelrijen die aandacht vragen: '+manualGroups.size+'.');
+      results.append(autonomous);
       const status=make('p','bb-import__review-status');
       const pending=(summary.pending||0);
       status.append(make('strong','',pending
-        ?pending+' uitzonderingen vragen aandacht'
+        ?manualGroups.size+' boeken of Excelrijen hebben controlepunten'
         :'Geen openstaande uitzonderingen'));
       status.append(document.createTextNode(' · '
         +(summary.preservedOldCopies||0)+' bestaande exemplaren blijven behouden.'));
@@ -807,7 +847,8 @@
         chosenLabels.join(' · '));
       selection.append(selectedList,make('p','hint',
         'ISBN wordt alleen gebruikt om boeken te herkennen. '
-        +'Alle niet-geselecteerde kolommen en lege Excelvelden blijven ongemoeid.'));
+        +'Niet-geselecteerde Excelkolommen overschrijven geen bestaande gegevens. '
+        +'Lege velden kunnen via ISBN-bronnen worden aangevuld.'));
       results.append(selection);
 
       // Show the actual diagnostic messages before requesting the general
@@ -824,14 +865,23 @@
         count+entry.issues.filter(issue=>
           issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
           &&issue.sourceInvalid!==true).length,0);
+      // The planner evaluates each source code against the components
+      // actually selected. A corrected ISBN or failed optional lookup is
+      // informative, not a checkbox the administrator must acknowledge.
+      const activeIssueRows=Array.isArray(plan.actionableSourceIssues)
+        ?new Map(plan.actionableSourceIssues.map(entry=>
+          [entry.index,entry.issues||[]])):null;
       const actionableWarnings=sourceWarnings.map(entry=>({
-        row:entry.row,issues:entry.issues.filter(issue=>
-          !(issue.code==='metadata_differs_from_excel'&&issue.severity==='warning'
-          &&issue.sourceInvalid!==true)),
+        row:entry.row,issues:activeIssueRows
+          ?(activeIssueRows.get(entry.row.index)||[])
+          :entry.issues.filter(issue=>
+            !(issue.code==='metadata_differs_from_excel'
+              &&issue.severity==='warning'&&issue.sourceInvalid!==true)),
       })).filter(entry=>entry.issues.length);
       const warningCount=actionableWarnings.reduce((count,entry)=>
         count+entry.issues.length,0);
       const issueLabels={
+        ...importErrorText,
         invalid_published_year:'Ongeldig uitgavejaar',
         invalid_page_count:'Ongeldig aantal pagina’s',
         isbn_repaired:'ISBN automatisch hersteld',
@@ -846,7 +896,7 @@
         invalid_or_unrecognized_isbn:'ISBN niet herkend',
         conflicting_source_columns:'Excelkolommen spreken elkaar tegen',
         duplicate_physical_barcode:'Fysieke barcode komt meerdere keren voor',
-        metadata_title_conflict:'Titel spreekt boekinformatie tegen',
+        metadata_title_conflict:'Twee onafhankelijke ISBN-bronnen bevestigen een andere titel',
         edition_identity_conflict:'Verschillende boeken hebben hetzelfde ISBN',
         metadata_isbn_differs:'ISBN komt niet overeen met de gevonden editie',
         own_book_context_conflict:'Eigen boek is ook als schoolboek vermeld',
@@ -878,12 +928,29 @@
               detailParts.push('Voorstel: '+issue.suggestion.canonical);
             if(issue.repair?.canonical)
               detailParts.push('Gecorrigeerd naar: '+issue.repair.canonical);
+            if(issue.confirmedTitle)
+              detailParts.push('Online bevestigde titel: '+String(issue.confirmedTitle).slice(0,160));
+            if(issue.sources?.length)
+              detailParts.push('Onafhankelijke bronnen: '+issue.sources.join(', '));
             const item=make('li','',description+
               (issue.severity==='conflict'?' (conflict)':' (waarschuwing)')+
               (detailParts.length?' · '+detailParts.join(' · '):''));
             items.append(item);
           }
-          group.append(items);warningList.append(group);
+          group.append(items);
+          if(entry.issues.some(issue=>issue.code==='metadata_title_conflict'
+            &&issue.confirmedTitle)&&row.book?.title){
+            // Explicitly retain a verified Excel title without forcing the
+            // administrator to type the exact same title into a text field.
+            const confirmTitle=button('Titel uit Excel bevestigen','btn btn--secondary');
+            confirmTitle.disabled=Boolean(remotePending||busy);
+            confirmTitle.addEventListener('click',()=>{
+              updateCorrection(row.index,'title',row.book.title);
+              render();
+            });
+            group.append(confirmTitle);
+          }
+          warningList.append(group);
         }
         notice.append(warningList);results.append(notice);
       }
@@ -1000,11 +1067,16 @@
 
       const problems=make('section','bb-import__exceptions');
       problems.append(make('h4','','Handmatig controleren ('+
-        (exceptions.length+metadataPlan.issues.length+blocked.length)+')'));
+        manualGroups.size+' boeken of Excelrijen)'));
+      if(manualGroups.size)
+        problems.append(make('p','hint',
+          'Eén boek kan bij meerdere onderdelen voorkomen. '
+          +'De aantallen hieronder zijn per onderdeel.'));
       const assignmentCards=make('div','bb-import__exceptions-list');
       const metadataCards=make('div','bb-import__exceptions-list');
       const stockCards=make('div','bb-import__exceptions-list');
       const reasonNames={
+        ...importErrorText,
         ambiguous_physical_copy:'Geen veilig beschikbaar exemplaar vast te stellen.',
         conflicting_excel_borrowers:'Excel noemt zowel een leerling als een klas.',
         physical_barcode_not_found:'Unieke barcode staat niet in de bibliotheek.',
@@ -1015,6 +1087,12 @@
         fixed_location_needs_manual_identification:'Vaste locatie is niet eenduidig.',
         ambiguous_existing_borrower:'Meer exemplaren met dezelfde bestaande lener.',
         student_already_borrowed_edition:'Deze leerling heeft dezelfde ISBN-editie al.',
+        source_needs_review:'De Excelrij heeft een nog niet opgelost invoer- of ISBN-conflict. Bekijk de brongegevens hierboven.',
+        edition_identity_mismatch:'Titel of auteur wijkt af van de bestaande bibliotheekregistratie bij dit ISBN. Controleer welke gegevens bij de fysieke editie horen.',
+        missing_valid_isbn:'Geen geldig ISBN herkend. Controleer het ISBN van deze editie.',
+        possible_existing_book_without_isbn:'Een vergelijkbaar boek staat al zonder ISBN in de bibliotheek. Controleer of dit hetzelfde exemplaar is.',
+        invalid_quantity:'Het aantal exemplaren is ongeldig.',
+        reduction_requires_manual_review:'Excel vermeldt minder exemplaren dan de bibliotheek. Bestaande boeken worden niet verwijderd.',
       };
       for(const diff of exceptions){
         const card=make('article','bb-import__exception');
@@ -1113,7 +1191,8 @@
         card.dataset.reviewRowKey='stock:'+item.index;
         card.append(make('strong','',source?.book?.title||'Boek'));
         card.append(make('p','hint','Excelrij '+item.worksheetRow+' · '+(item.editionIsbn||'Geen ISBN')));
-        card.append(make('p','bb-review__reason','Voorraadcontrole: '+item.reason));
+        card.append(make('p','bb-review__reason',
+          'Voorraadcontrole: '+(reasonNames[item.reason]||item.reason)));
         const edit=button('Gegevens corrigeren','btn btn--secondary');
         edit.addEventListener('click',()=>{
           openEditor=openEditor===item.index?null:item.index;
@@ -1219,8 +1298,15 @@
       };
       for(const diff of automatic){
         const control=make('select');
-        for(const [value,label] of [['apply','Excel overnemen'],
-          ['keep','Bestaande behouden'],['later','Later controleren']]){
+        const possible=diff.kind==='class_context'
+          ?[['keep','Bestaande registratie behouden'],
+            ['class_fixed','Vaste plek in deze klas'],
+            ...(diff.classId&&!diff.hasExplicitLoan
+              ?[['class_loan','Als uitlening aan klas']]:[]),
+            ['later','Later controleren']]
+          :[['apply','Excel overnemen'],
+            ['keep','Bestaande behouden'],['later','Later controleren']];
+        for(const [value,label] of possible){
           const option=make('option','',label);option.value=value;control.append(option);
         }
         control.value=assignmentResolutions.get(diff.id)?.action||diff.choice||'apply';
@@ -1228,10 +1314,15 @@
           assignmentResolutions.set(diff.id,{id:diff.id,action:control.value});
           render();
         });
-        const description=diff.kind==='loan'
-          ?'Naar '+(diff.after?.name||'onbekend')
-          :'Naar '+String(diff.after||'');
-        addRow(diff.title||'Boek',diff.editionIsbn||'',diff.kind==='loan'?'Uitlening':'Vaste plek',
+        const description=diff.kind==='class_context'
+          ?'Onduidelijke klasnotitie: '+(diff.className||'onbekend')
+            +'. Huidige uitlening en vaste plek blijven behouden.'
+          :diff.kind==='loan'
+            ?'Naar '+(diff.after?.name||'onbekend')
+            :'Naar '+String(diff.after||'');
+        addRow(diff.title||'Boek',diff.editionIsbn||'',
+          diff.kind==='class_context'?'Klasnotitie'
+            :diff.kind==='loan'?'Uitlening':'Vaste plek',
           description,control);
       }
       const formatValue=value=>{
@@ -1246,7 +1337,8 @@
           ['default','Automatisch voorstel volgen'],
           ['keep','Huidige waarde behouden'],
         ];
-        if(item.canUseExcel)possibilities.push(['excel','Excelwaarde overnemen']);
+        if(item.canUseExcel&&item.excel!==null)
+          possibilities.push(['excel','Excelwaarde overnemen']);
         for(const [value,label] of possibilities){
           const option=make('option','',label);
           option.value=value;control.append(option);
@@ -1269,7 +1361,7 @@
             ?' · Bronnen: '+item.sources.join(', '):' · Geen onafhankelijke bronconsensus');
         const wrapper=make('div','bb-import__decision-control');
         wrapper.append(control);
-        if(!item.canUseExcel && item.worksheetRows?.length){
+        if(!item.canUseExcel&&!item.enrichmentOnly &&item.worksheetRows?.length){
           // The same ISBN may appear in several worksheet rows. Every
           // affected row must remain directly editable, including when
           // stock synchronization is not selected.

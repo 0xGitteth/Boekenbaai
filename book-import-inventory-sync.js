@@ -3,7 +3,9 @@
 // PR4: compare a reviewed school Excel against the PHYSICAL library.
 // This pure preview never modifies existing books, loans or loan history.
 // An omitted ISBN or lower Excel quantity NEVER silently deletes stock.
-const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
+const { canonicalizeBookIsbn13 } = require('./book-edition-core');
+const { comparison: spellingKey } = require('./book-import-source-confidence');
+const {sameBookIdentity}=require('./book-import-autonomy');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
 const { eligibleForDeferredContext, followupContext, contextMatchesTask } =
@@ -18,8 +20,9 @@ function editionKeys(book) {
   return identified.length ? identified : [canonicalizeBookIsbn13(book?.barcode)].filter(Boolean);
 }
 function comparableIdentity(book) {
-  return [normalizeBookIdentityComparable(book?.title || ''),
-    normalizeBookIdentityComparable(book?.author || '')].join('|');
+  // ISBN and (where supplied) a physical barcode identify the edition.
+  // Accent/punctuation-only title/author variants are not new editions.
+  return [spellingKey(book?.title || ''),spellingKey(book?.author || '')].join('|');
 }
 function inventoryIndex(books) {
   const editions = new Map();
@@ -128,8 +131,11 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       blockers.add(code);
       if (!reason) reason = code;
     };
-    if (rows.some((row) => comparableIdentity(row.book) !== fingerprint)
-      || existing.some((book) => comparableIdentity(book) !== fingerprint)) {
+    const missingIdentity=rows.some(row=>!row.book?.title||!row.book?.author);
+    if(missingIdentity)block('missing_title_or_author');
+    else if(rows.some(row=>!sameBookIdentity(row.book,rows[0].book))
+      ||existing.some(book=>!sameBookIdentity(book,rows[0].book))){
+      // A substantive difference after exact ISBN matching remains unsafe.
       block('edition_identity_mismatch');
     }
     // Legacy copies with a physical barcode but no edition ISBN must not
@@ -138,11 +144,8 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     if (!existing.length && inventory.unidentifiedTitles.has(fingerprint)) {
       block('possible_existing_book_without_isbn');
     }
-    // A brand-new edition must never create an empty title/author book, even
-    // if ordinary Excel warnings were explicitly accepted.
-    if (rows.some((row) => !row.book?.title || !row.book?.author)) {
-      block('missing_title_or_author');
-    }
+    // A missing title/author was rejected above before any fuzzy comparison
+    // so the administrator sees the actionable source error first.
     let target = 0;
     const seenPrinted = new Set();
     const newPrinted = [];

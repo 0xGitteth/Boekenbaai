@@ -43,6 +43,24 @@ module.exports = async function runCoreTests() {
   assert.equal(compactUnified.groups[0].copies.length,1,
     'One grouping representative prevents needless allocation of 1000 objects');
 
+  // The same ISBN with punctuation/accent title variants is one
+  // physical edition, not two conflicting books.
+  const orthographicGroup=await analyzeBookImportRows([
+    {Titel:'P.S. Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN,Aantal:1},
+    {Titel:'PS Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN,Aantal:1},
+  ],{mode:'unified_sync'});
+  assert.equal(orthographicGroup.summary.editionConflicts,0);
+  assert.equal(orthographicGroup.summary.editionGroups,1);
+  assert.equal(orthographicGroup.rows[0].book.title,'P.S. Ik hou van je');
+  assert.equal(orthographicGroup.rows[1].book.title,'PS Ik hou van je',
+    'Grouping may not silently rewrite the teacher Excel value');
+  const genuinelyDifferent=await analyzeBookImportRows([
+    {Titel:'P.S. Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN},
+    {Titel:'Een heel ander boek',Auteur:'A Auteur','ISBN-nummer':ISBN},
+  ],{mode:'unified_sync'});
+  assert.ok(genuinelyDifferent.summary.editionConflicts>0,
+    'An unrelated title with the same ISBN must still be blocked');
+
   // Explicit Tags must survive independently of the derived strip label
   // introduced by Examenmateriaal: Strip.
   const mixedTags=await analyzeBookImportRows([{
@@ -53,6 +71,35 @@ module.exports = async function runCoreTests() {
   assert.ok(mixedTags.rows[0].book.tags.includes('strip'));
   assert.deepStrictEqual(mixedTags.rows[0].provenance.tags.explicitValues,['avontuur']);
   assert.equal(mixedTags.rows[0].provenance.tags.includesDerivedValues,true);
+
+  // Duplicate author columns can use a surname-first bibliographic
+  // format or accents without implying another person. A substantive
+  // mismatch stays a blocking conflict.
+  const sameAuthor=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Slee, Carry',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(!codes(sameAuthor.rows[0]).has('author_sources_differ'));
+  const accentAuthor=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Carrý Slee',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(!codes(accentAuthor.rows[0]).has('author_sources_differ'));
+  const tinyAuthorTypo=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Carrie Slee',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(!codes(tinyAuthorTypo.rows[0]).has('author_sources_differ'),
+    'One-letter author typos between two Excel columns do not justify manual review');
+  const anotherAuthor=await analyzeBookImportRows([{
+    Titel:'Spijt!',Auteur:'Ander Persoon',
+    'Voornaam schrijver':'Carry','Achternaam schrijver':'Slee',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.ok(codes(anotherAuthor.rows[0]).has('author_sources_differ'));
 
   // Student placeholders must not defeat the special Makkelijk Lezen
   // fixed-location rule, while genuine student names must still conflict.

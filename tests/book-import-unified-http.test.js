@@ -305,6 +305,82 @@ async function run(){
       assert.equal(stored.borrowedBy,'lisa');
     }
 
+    // A newly added physical copy of an existing ISBN must inherit
+    // consistent stored title/author spellings without rewriting the old
+    // records or interpreting punctuation as a new edition.
+    const beforeEdition=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    const spellingStage=await start([old('',{
+      Titel:'Oorlogs-winter',Auteur:'Jan Térlouw',
+      Aantal:beforeEdition.length+1,
+    })],parts({books:true}));
+    assert.equal(spellingStage.status,201,JSON.stringify(spellingStage.data));
+    assert.equal(spellingStage.data.decisions.summary.blockedStock,0);
+    assert.equal(spellingStage.data.decisions.summary.newCopies,1);
+    const spellingApply=await apply(spellingStage);
+    assert.equal(spellingApply.status,200,JSON.stringify(spellingApply.data));
+    assert.equal(spellingApply.data.result.created,1);
+    const editionAfter=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    assert.equal(editionAfter.length,beforeEdition.length+1);
+    const added=editionAfter.find(book=>!beforeEdition.some(old=>old.id===book.id));
+    assert.equal(added.title,'Oorlogswinter',
+      'Matching ISBN editions retain the existing verified spelling');
+    assert.equal(added.author,'Jan Terlouw');
+    assert.equal(added.importProvenance.fieldSources.title.sourceType,'existing');
+    assert.equal(added.importProvenance.fieldSources.author.sourceType,'existing');
+    assert.equal(readDb().books.find(book=>book.id==='copy-1').borrowedBy,'lisa');
+
+    // The older inventory-only workflow must follow the same identity
+    // preservation rule; otherwise one ISBN can split into catalog groups.
+    const inventoryBefore=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    const inventoryStage=await call('/api/admin/book-import-stages',token,{
+      mode:'inventory_sync',enrichIsbn:false,
+      fileName:'voorraad-zonder-metadata.xlsx',
+      file:workbook([old('',{
+        Titel:'Oorlogs-winter',Auteur:'Jan Térlouw',
+        Aantal:inventoryBefore.length+1,
+      })]),
+    });
+    assert.equal(inventoryStage.status,201,JSON.stringify(inventoryStage.data));
+    assert.equal(inventoryStage.data.decisions.summary.addCopies,1);
+    const inventoryApplied=await call('/api/admin/book-import-stages/'
+      +inventoryStage.data.id+'/apply',token,{
+        revision:inventoryStage.data.revision,confirm:true,
+      });
+    assert.equal(inventoryApplied.status,200,JSON.stringify(inventoryApplied.data));
+    const afterInventory=readDb().books.filter(book=>book.editionIsbn===ISBN);
+    assert.equal(afterInventory.length,inventoryBefore.length+1);
+    const addedInventory=afterInventory.find(book=>
+      !inventoryBefore.some(old=>old.id===book.id));
+    assert.equal(addedInventory.title,'Oorlogswinter');
+    assert.equal(addedInventory.author,'Jan Terlouw');
+    assert.equal(addedInventory.importProvenance.fieldSources.title.sourceType,'existing');
+    assert.equal(addedInventory.importProvenance.fieldSources.author.sourceType,'existing');
+
+    // Codex P2: two Excel spellings of a previously unknown ISBN must
+    // create a SINGLE catalog identity, or ISBN barcode scans split copies.
+    const newIsbn='9780061120084';
+    const twinStage=await start([
+      {Titel:'P.S. Ik hou van je',Auteur:'Cecelia Ahern',
+        'ISBN-nummer':newIsbn,Aantal:1},
+      {Titel:'PS Ik hou van je',Auteur:'Cecelia Ahern',
+        'ISBN-nummer':newIsbn,Aantal:1},
+    ],parts({books:true}));
+    assert.equal(twinStage.status,201,JSON.stringify(twinStage.data));
+    assert.equal(twinStage.data.decisions.summary.newCopies,2);
+    assert.equal(twinStage.data.decisions.summary.blockedStock,0);
+    const twinApplied=await apply(twinStage);
+    assert.equal(twinApplied.status,200,JSON.stringify(twinApplied.data));
+    const siblings=readDb().books.filter(book=>book.editionIsbn===newIsbn);
+    assert.equal(siblings.length,2);
+    assert.deepEqual([...new Set(siblings.map(book=>book.title))],
+      ['P.S. Ik hou van je'],
+      'All new copies of one ISBN must share the same canonical title');
+    assert.deepEqual([...new Set(siblings.map(book=>book.author))],
+      ['Cecelia Ahern']);
+    assert.ok(siblings.some(book=>
+      book.importProvenance.fieldSources.title.sourceDetail==='matched_workbook_isbn'),
+      'Canonicalized workbook spelling remains auditable');
+
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);

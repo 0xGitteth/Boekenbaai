@@ -12,6 +12,11 @@ const votes=[
 assert.equal(equivalentSpelling('Rene van Dijk','René van Dijk'),true);
 assert.equal(equivalentSpelling('Rene van Dijk','René van Dijk Jr.'),false);
 assert.equal(sourceConsensus(ISBN,'author',votes).agreeing,3);
+assert.equal(sourceConsensus(ISBN,'title',[
+  {source:'Google Books',editionIsbn:ISBN,title:'P.S. Ik hou van je'},
+  {source:'Open Library',editionIsbn:ISBN,title:'PS Ik hou van je'},
+]).agreeing,2,
+'Punctuation-only variants from separate ISBN providers count as agreement');
 assert.equal(decide({isbn:ISBN,field:'author',excel:'Rene van Dijk',
   current:'Rene van Dijk',evidence:votes}).confidence,'high');
 assert.equal(decide({isbn:ISBN,field:'author',excel:'Rene van Dijk',

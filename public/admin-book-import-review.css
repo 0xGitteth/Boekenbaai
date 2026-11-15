@@ -237,3 +237,25 @@
 .bb-import__book-check > .bb-import__exception { border:0; border-top:1px solid var(--accent-border);
   border-radius:0; padding:.55rem 0; }
 .bb-import__book-check > .bb-import__exception:last-child { padding-bottom:0; }
+
+
+/* A wide audit table must scroll inside its own panel on mobile.
+   CSS grid items otherwise retain their min-content width and can push the
+   entire staff page, header and footer beyond the viewport. */
+.bb-review, .bb-review__results, .bb-import__proposals,
+.bb-import__proposal-scroll, .bb-import__exceptions,
+.bb-import__exception-group, .bb-import__exceptions-list,
+.bb-import__book-check {
+  min-width: 0;
+  max-width: 100%;
+}
+.bb-review, .bb-review__results, .bb-import__exceptions,
+.bb-import__proposals {
+  grid-template-columns: minmax(0,1fr);
+}
+.bb-import__proposal-scroll {
+  box-sizing: border-box;
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}

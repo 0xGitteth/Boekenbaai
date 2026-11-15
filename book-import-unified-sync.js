@@ -7,6 +7,7 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
 const { excelLoanReceiptKey } = require('./book-import-loan-migration');
 const sourceConfidence=require('./book-import-source-confidence');
+const {nearlySameBookText,sameBookTitle,smallPageDifference}=require('./book-import-autonomy');
 
 const METADATA_FIELDS=Object.freeze([
   'title','author','description','publisher','publishedYear','pageCount',
@@ -55,36 +56,81 @@ const COLUMN_WARNINGS={
   language_hint_conflict:'language',
   nonstandard_easy_reading_value:'easyReading',
 };
+// Classify each diagnostic by the import section it can actually affect.
+// Unknown diagnostics remain blocking until explicitly reviewed, so future
+// error codes cannot silently bypass safety checks.
+const NONBLOCKING_DIAGNOSTICS=new Set([
+  'isbn_repaired','isbn_resolved_from_metadata','isbn_repair_suggested',
+  'ambiguous_identifier_interpreted_as_isbn',
+  'ambiguous_identifier_interpreted_as_barcode',
+  'metadata_lookup_failed','metadata_not_usable','metadata_not_strict_match',
+  'title_author_metadata_missing_edition_isbn',
+  'nonstandard_easy_reading_value','dangerous_headers_ignored',
+  'ml_structuurbb_fixed_location','own_book_excluded',
+  'invalid_published_year','invalid_page_count','language_hint_conflict',
+  'unexpected_exam_material_value','class_context_needs_review',
+]);
+const STOCK_DIAGNOSTICS=new Set([
+  'invalid_quantity','copy_limit_exceeded',
+]);
+const PHYSICAL_DIAGNOSTICS=new Set([
+  'invalid_physical_barcode','conflicting_physical_barcodes',
+  'duplicate_physical_barcode','barcode_with_multiple_copies',
+]);
+function selectedMetadata(parts){
+  return Object.values(parts.fields||{}).some(Boolean);
+}
 function issueAffectsSelection(issue,parts,domain){
+  if(issue?.reviewLevel==='informational')return false;
   const code=issue?.code||'';
-  // A disagreement with a THIRD-PARTY metadata service does not mean the
-  // teacher's explicit Excel cells are invalid. These source comparisons
-  // remain visible as optional context, but may not block the stock count,
-  // loan/location matching or every selected metadata field independently.
-  // Structural ISBN/title conflicts and malformed values remain blocking.
-  if(code==='metadata_differs_from_excel' && issue?.severity==='warning'
-    &&issue?.sourceInvalid!==true)
-    return false;
-  if(LOAN_ISSUES.has(code))return domain==='assignment'&&parts.loans;
-  if(LOCATION_ISSUES.has(code))return domain==='assignment'&&parts.locations;
-  if(code==='class_context_needs_review')
-    return domain==='assignment'&&parts.loans&&parts.locations;
+  if(NONBLOCKING_DIAGNOSTICS.has(code))return false;
+  if(code==='metadata_differs_from_excel'){
+    return issue.sourceInvalid===true &&domain==='metadata'
+      &&parts.fields?.[issue.field]===true;
+  }
+  if(LOAN_ISSUES.has(code))
+    return domain==='assignment'&&parts.loans;
+  if(LOCATION_ISSUES.has(code))
+    return domain==='assignment'&&parts.locations;
+  if(code==='class_context_needs_review')return false;
   if(code==='library_presence_needs_review')return false;
+  if(code==='unexpected_exam_material_value')return false;
+  if(STOCK_DIAGNOSTICS.has(code))return domain==='stock';
+  if(PHYSICAL_DIAGNOSTICS.has(code))
+    return domain==='stock'||(domain==='assignment'&&(parts.loans||parts.locations));
+  if(COLUMN_WARNINGS[code])
+    return domain==='metadata'&&parts.fields?.[COLUMN_WARNINGS[code]]===true;
   if(code==='conflicting_source_columns'){
     if(['studentLoan','classLoan'].includes(issue.field))
       return domain==='assignment'&&parts.loans;
-    if(['fixedClass'].includes(issue.field))
+    if(issue.field==='fixedClass')
       return domain==='assignment'&&parts.locations;
-    if(['classes'].includes(issue.field))
+    if(issue.field==='classes')
       return domain==='assignment'&&parts.loans&&parts.locations;
-    if(['libraryPresence'].includes(issue.field))return false;
-    if(domain==='metadata' && METADATA_FIELDS.includes(issue.field))
-      return parts.fields[issue.field]===true;
+    if(issue.field==='libraryPresence')return false;
+    if(issue.field==='quantity')return domain==='stock';
+    if(['barcode','ambiguousIdentifier'].includes(issue.field))
+      return domain==='stock'||(domain==='assignment'&&(parts.loans||parts.locations));
+    if(METADATA_FIELDS.includes(issue.field))
+      // Unsafe values in descriptive columns are simply not imported.
+      // Only title/author identity requires an administrator's decision.
+      return ['title','author'].includes(issue.field);
   }
-  if(domain==='metadata' && COLUMN_WARNINGS[code])
-    return parts.fields[COLUMN_WARNINGS[code]]===true;
-  // Unknown and identity-related conflicts must never be silently dropped.
+  // An ISBN or identity conflict is relevant to every selected domain.
+  // Unknown issues likewise keep their conservative behavior.
   return true;
+}
+function actionableSourceIssues(analysis,parts){
+  const active=[];
+  for(const row of analysis.rows||[]){
+    const issues=(row.issues||[]).filter(issue=>
+      ['conflict','warning'].includes(issue.severity)
+      &&( (parts.books&&issueAffectsSelection(issue,parts,'stock'))
+        ||((parts.loans||parts.locations)&&issueAffectsSelection(issue,parts,'assignment'))
+        ||(selectedMetadata(parts)&&issueAffectsSelection(issue,parts,'metadata')) ));
+    if(issues.length)active.push({index:row.index,worksheetRow:row.sourceRowNumber,issues});
+  }
+  return active;
 }
 function scopedRow(row,parts,domain){
   const issues=(row.issues||[]).filter(issue=>issueAffectsSelection(issue,parts,domain));
@@ -182,10 +228,11 @@ function projectCopies(analysis,inventory,parts,db,effectiveIdentityUpdates=new 
       existingEdition(book)===addition.editionIsbn);
     // Projected copy identity must match the actual selected metadata
     // update; creation itself continues to use the reviewed Excel fields.
-    const title=old&&effectiveIdentityUpdates.has(addition.editionIsbn+':title')
-      ?old.title:row.book.title;
-    const author=old&&effectiveIdentityUpdates.has(addition.editionIsbn+':author')
-      ?old.author:row.book.author;
+    // Physical copies of an already identified edition must be comparable
+    // to existing copies while the preview runs. Source-confirmed metadata
+    // updates are applied atomically during confirmation.
+    const title=old?old.title:row.book.title;
+    const author=old?old.author:row.book.author;
     for(let n=0;n<addition.quantity;n++)copies.push({
       id:virtualId(addition.index,n),title,author,
       editionIsbn:addition.editionIsbn,metadataIsbn:addition.editionIsbn,
@@ -239,15 +286,13 @@ function metadataSourceSafe(row,field,acceptWarnings){
   if(!issues.length)
     return row.status==='ready'
       ||(row.status==='warning'&&acceptWarnings);
-  const relevant=issues.filter(issue=>{
-    const associated=COLUMN_WARNINGS[issue.code];
-    if(associated)return associated===field;
-    if(issue.code==='conflicting_source_columns'
-      &&METADATA_FIELDS.includes(issue.field)){
-      return issue.field===field || ['title','author'].includes(issue.field);
-    }
-    return true;
-  });
+  // Reuse the exact same domain-specific diagnostic policy that the
+  // source-warning panel uses. Otherwise a benign metadata lookup timeout or
+  // an unrelated invalid Excel column silently prevents valid updates.
+  const onlySelectedField={books:false,loans:false,locations:false,
+    fields:{[field]:true}};
+  const relevant=issues.filter(issue=>
+    issueAffectsSelection(issue,onlySelectedField,'metadata'));
   return !relevant.some(issue=>issue.severity==='conflict'
     ||(issue.severity==='warning'&&!acceptWarnings));
 }
@@ -261,6 +306,11 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     editions.get(isbn).push(book);
   }
   const groups=new Map();
+  // scoping intentionally removes nonblocking diagnostics; retain the raw
+  // Excel-column conflicts separately so the specific conflicted field can
+  // never be imported from whichever duplicate column came first.
+  const sourceIssuesByIndex=new Map(analysis.rows.map(row=>
+    [row.index,row.issues||[]]));
   for(const original of analysis.rows){
     const row=scopedRow(original,parts,'metadata');
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
@@ -272,7 +322,18 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   for(const [isbn,rows] of groups){
     const copies=editions.get(isbn);
     for(const field of METADATA_FIELDS.filter(field=>parts.fields[field])){
+      // An Excel column disagreement is NOT a trustworthy selected value.
+      // Preserve the existing field; never import the arbitrary first cell.
+      // Unrelated stock, loans and other metadata remain independently safe.
+      if(rows.some(row=>(sourceIssuesByIndex.get(row.index)||[]).some(issue=>
+        issue.code==='conflicting_source_columns'&&issue.field===field)))continue;
       const sourceRows=rows.filter(row=>{
+        // scopedRow removes nonblocking notifications. An invalid
+        // Examenmateriaal value must still never be imported as parser
+        // fallback false over an existing true setting.
+        if(field==='suitableForExamList'
+          &&(sourceIssuesByIndex.get(row.index)||[]).some(issue=>
+            issue.code==='unexpected_exam_material_value'))return false;
         const source=row.provenance?.[field];
         // A value explicitly corrected in the import review is authoritative
         // for a selected column. Automatic enrichment is not.
@@ -289,8 +350,13 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         const fromExcel=source?.source==='excel'&&!derivedFromOther;
         const reviewed=source?.source==='manual'
           &&source.detail==='review_correction';
-        return (fromExcel||reviewed)
-          &&(reviewed?(field==='tags'
+        const verifiedSpelling=source?.source==='metadata'
+          &&source.detail==='verified_isbn_spelling'
+          &&typeof source.correctedFrom==='string'
+          &&Array.isArray(source.sources)&&source.sources.length>=2
+          &&['title','author'].includes(field);
+        return (fromExcel||reviewed||verifiedSpelling)
+          &&((reviewed||verifiedSpelling)?(field==='tags'
               ?nonempty(source.explicitValues):nonempty(row.book?.[field]))
             :composedTags?nonempty(source.explicitValues)
             :nonempty(source.raw??(field==='author'
@@ -298,8 +364,25 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       });
       if(!sourceRows.length)continue;
       const id=isbn+':'+field;
-      const variants=new Map(sourceRows.map(row=>
-        [JSON.stringify(metadataKey(field,row)),metadataKey(field,row)]));
+      // Multiple Excel rows of one ISBN may differ only in punctuation or
+      // accents. That is one bibliographic value, not multiple contradictory
+      // title/author identities requiring a manual decision.
+      const variants=new Map();
+      for(const row of sourceRows){
+        const value=metadataKey(field,row);
+        const similar=(left,right)=>{
+          if(field==='title')return sameBookTitle(left,right);
+          if(field!=='author')return equal(left,right);
+          const a=Array.isArray(left?.authors)?left.authors:[left?.value];
+          const b=Array.isArray(right?.authors)?right.authors:[right?.value];
+          return a.length===b.length
+            &&nearlySameBookText(left?.value,right?.value)
+            &&a.every(author=>b.some(candidate=>
+              nearlySameBookText(author,candidate)));
+        };
+        if([...variants.values()].some(existing=>similar(value,existing)))continue;
+        variants.set(String(variants.size),value);
+      }
       const validSources=sourceRows.every(row=>
         metadataSourceSafe(row,field,acceptWarnings));
       const next=variants.size===1?[...variants.values()][0]:null;
@@ -339,9 +422,17 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         });
         continue;
       }
+      const identityCodes=new Set([
+        'conflicting_edition_isbns','edition_identity_conflict',
+        'metadata_title_conflict','author_sources_differ',
+        'missing_valid_isbn','metadata_identifier_conflict',
+      ]);
       const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
-        issue.severity==='conflict'&&!COLUMN_WARNINGS[issue.code]
-        &&issue.code!=='metadata_differs_from_excel'));
+        issue.severity==='conflict'
+        &&(identityCodes.has(issue.code)
+          ||(issue.code==='conflicting_source_columns'
+            &&['title','author','isbn','metadataIsbn','ambiguousIdentifier']
+              .includes(issue.field)))));
       // Distinct titles/authors under the same ISBN, or an unsafe edition
       // identity, still need a human decision. Other ambiguous/invalid
       // columns can simply leave the existing value unchanged.
@@ -363,6 +454,31 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       });
       if(['apply','excel'].includes(selected.get(id))&&conflict)
         return {ok:false,error:'unsafe_metadata_override'};
+      // Page counts and printing years vary between trustworthy catalogues.
+      // They are not edition identity. Never overwrite a plausible existing
+      // value because Excel differs by a few pages (or an uncorroborated year).
+      // An explicit review correction or an "Excel gebruiken" override can
+      // still replace it.
+      if(!conflict&&!manualExcel
+        &&(field==='pageCount'||field==='publishedYear')
+        &&copies.every(copy=>Number.isInteger(Number(copy[field]))
+          &&Number(copy[field])>0)
+        &&copies.every(copy=>Number.isInteger(Number(next))
+          &&Number(next)>0)){
+        const close=field==='pageCount'
+          ?copies.every(copy=>smallPageDifference(copy[field],next))
+          :copies.every(copy=>Math.abs(Number(copy[field])-Number(next))<=1);
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'medium',before:current,after:current,excel:next,
+          reason:close?'Klein catalogusverschil, bestaande waarde blijft behouden'
+            :'Niet doorslaggevend boekdetail, bestaande waarde blijft behouden',
+          sources:decision.agreeingSources,sourceCount:decision.sourceCount,
+          canUseExcel:true,
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
       if(conflict || (decision.action==='keep'&&!manualExcel)){
         automaticDecisions.push({
           id,isbn,field,title:rows[0].book?.title,action:'keep',
@@ -420,6 +536,107 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         worksheetRows:sourceRows.map(row=>row.sourceRowNumber)});
     }
   }
+  // After explicit Excel-column synchronization, fill only genuinely
+  // missing descriptive fields from a verified edition-ISBN lookup. This is
+  // separate from the selected Excel columns: enrichment is an opt-in online
+  // lookup, and never overwrites school-entered information. An ambiguous
+  // online value is simply omitted rather than added to manual review.
+  const enrichable=['description','publisher','publishedYear','pageCount',
+    'language','coverUrl','tags'];
+  const emptyForEnrichment=(field,value)=>field==='tags'
+    ?!Array.isArray(value)||value.length===0
+    :value===null||value===undefined||value===''||
+      (['pageCount','publishedYear'].includes(field)
+        &&(!Number.isFinite(Number(value))||Number(value)<=0));
+  for(const [isbn,rows] of groups){
+    const copies=editions.get(isbn);
+    for(const field of enrichable){
+      if(parts.fields[field])continue; // explicit teacher-controlled sync wins
+      const targets=copies.filter(book=>emptyForEnrichment(field,book[field])
+        &&book.importProvenance?.fieldSources?.[field]?.sourceType!=='manual'
+        &&!(field==='tags'&&book.themesCleared===true));
+      if(!targets.length)continue;
+      const evidenceRows=rows.filter(row=>
+        row.provenance?.[field]?.source==='metadata'
+        &&nonempty(row.book?.[field])
+        &&row.book?.editionIsbn===isbn
+        &&!row.issues?.some(issue=>issue.severity==='conflict'));
+      if(!evidenceRows.length)continue;
+      const values=evidenceRows.map(row=>row.book[field]);
+      let chosen=values[0];
+      if(field==='tags'){
+        const unique=new Map();
+        for(const tags of values){
+          for(const tag of Array.isArray(tags)?tags:[]){
+            if(typeof tag!=='string'||!tag.trim())continue;
+            const key=tag.trim().toLocaleLowerCase('nl');
+            if(!unique.has(key))unique.set(key,tag.trim());
+          }
+        }
+        chosen=[...unique.values()].slice(0,30);
+      }else if(field==='description'){
+        chosen=values.filter(value=>typeof value==='string')
+          .sort((a,b)=>b.length-a.length)[0]||'';
+      }else if(field==='coverUrl'){
+        chosen=values.find(value=>typeof value==='string'
+          &&/^https:\/\/[^\s]+$/i.test(value))||'';
+      }else if(['pageCount','publishedYear'].includes(field)){
+        chosen=values.map(Number).filter(Number.isInteger)
+          .filter(value=>value>0&&value<20000)
+          .sort((a,b)=>a-b)[Math.floor(values.length/2)]??null;
+      }else{
+        const counts=new Map();
+        for(const value of values){
+          const key=String(value).toLocaleLowerCase('nl');
+          counts.set(key,(counts.get(key)||0)+1);
+        }
+        chosen=[...values].sort((a,b)=>
+          counts.get(String(b).toLocaleLowerCase('nl'))
+          -counts.get(String(a).toLocaleLowerCase('nl')))[0];
+      }
+      if(!nonempty(chosen))continue;
+      const sources=[...new Set(evidenceRows.map(row=>
+        row.provenance?.[field]?.detail).filter(Boolean))];
+      const id=isbn+':'+field;
+      valid.add(id);
+      if(selected.get(id)==='excel')return {ok:false,error:'unsafe_metadata_override'};
+      if(selected.get(id)==='keep'){
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,action:'keep',
+          confidence:'manual',
+          reason:'Leeg veld blijft leeg op verzoek van beheerder',
+          before:null,after:null,excel:null,
+          sources,sourceCount:sources.length,canUseExcel:false,
+          enrichmentOnly:true,
+          worksheetRows:evidenceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
+      updates.push({
+        id,isbn,field,value:chosen,
+        title:rows[0].book?.title,bookIds:targets.map(book=>book.id),
+        copies:targets.length,confidence:'medium',chosenSource:'source',
+        enrichmentOnly:true,
+        reason:'Ontbrekende boekinformatie aangevuld uit een passende ISBN-bron',
+        sources,sourceCount:sources.length,
+        beforeValues:targets.map(book=>({
+          bookId:book.id,value:book[field],
+          ...(field==='coverUrl'?{
+            localCoverUrl:book.localCoverUrl||'',coverCrop:book.coverCrop??null,
+          }:{}),
+        })),
+        worksheetRows:evidenceRows.map(row=>row.sourceRowNumber),
+      });
+      automaticDecisions.push({
+        id,isbn,field,title:rows[0].book?.title,action:'apply',
+        confidence:'medium',reason:'Leeg veld automatisch aangevuld op ISBN',
+        before:null,after:chosen,excel:null,
+        sources,sourceCount:sources.length,canUseExcel:false,
+        enrichmentOnly:true,
+        worksheetRows:evidenceRows.map(row=>row.sourceRowNumber),
+      });
+    }
+  }
   if(choices.some(c=>!valid.has(c.id)))return {ok:false,error:'stale_metadata_choice'};
   return {ok:true,updates,issues,automaticDecisions,kept:choices.length,
     summary:{updates:updates.length,issues:issues.length,
@@ -473,6 +690,26 @@ function buildUnifiedBookImport(analysis,db,{
     ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
   let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
   if(!assignments.ok)return assignments;
+  // A vague class name is not an instruction to relocate or lend a book.
+  // Leave the existing registration intact by default and log that choice.
+  // The administrator can still explicitly classify the class context.
+  const explicitAssignmentIds=new Set(assignmentChoices.values.map(x=>x.id));
+  const implicitClassKeeps=assignments.differences.filter(item=>
+    item.kind==='class_context'&&item.choice==='pending'
+    &&!explicitAssignmentIds.has(item.id));
+  if(implicitClassKeeps.length){
+    assignments=buildAssignmentPreview(source,assignmentDb,[
+      ...assignmentChoices.values,
+      ...implicitClassKeeps.map(item=>({id:item.id,action:'keep'})),
+    ]);
+    if(!assignments.ok)return assignments;
+    const autoIds=new Set(implicitClassKeeps.map(item=>item.id));
+    for(const diff of assignments.differences)if(autoIds.has(diff.id)){
+      diff.automatic=true;diff.autoKept=true;
+      diff.description='Onduidelijke klasvermelding: bestaande registratie veilig behouden';
+    }
+    assignments.summary.automatic+=autoIds.size;
+  }
   // Receipt IDs survive loan returns and truncated import reports. Re-uploading
   // an old sheet must never issue another loan to its former borrower.
   const receipts=new Set(loanReceipts);
@@ -492,12 +729,20 @@ function buildUnifiedBookImport(analysis,db,{
   if(previouslyImported.length){
     assignments=buildAssignmentPreview(source,assignmentDb,[
       ...assignmentChoices.values,
+      ...implicitClassKeeps.map(diff=>({id:diff.id,action:'keep'})),
       ...previouslyImported.map(diff=>({id:diff.id,action:'keep'})),
     ]);
     if(!assignments.ok)return assignments;
     const ignored=new Set(previouslyImported.map(diff=>diff.id));
-    for(const diff of assignments.differences)
+    const implicitIds=new Set(implicitClassKeeps.map(diff=>diff.id));
+    for(const diff of assignments.differences){
       if(ignored.has(diff.id))diff.previouslyImported=true;
+      if(implicitIds.has(diff.id)){
+        diff.automatic=true;diff.autoKept=true;
+        diff.description='Onduidelijke klasvermelding: bestaande registratie veilig behouden';
+      }
+    }
+    assignments.summary.automatic+=implicitIds.size;
     assignments.summary.previouslyImportedLoans=ignored.size;
   }else assignments.summary.previouslyImportedLoans=0;
   const total=inventory.summary.addCopies+assignments.summary.apply
@@ -506,7 +751,8 @@ function buildUnifiedBookImport(analysis,db,{
     // A review containing only automatic keep decisions is still worth
     // confirming, so the exact choices can be recorded in its import report.
     +metadata.summary.autoKept;
-  return {ok:true,parts:use,inventory,assignments,metadata,summary:{
+  return {ok:true,parts:use,inventory,assignments,metadata,
+    actionableSourceIssues:actionableSourceIssues(analysis,use),summary:{
     newCopies:inventory.summary.addCopies,
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
     proposedLocations:assignments.differences.filter(d=>d.kind==='location'&&d.choice==='apply').length,
@@ -528,6 +774,20 @@ function buildUnifiedBookImport(analysis,db,{
       &&assignments.summary.pending===0&&metadata.summary.issues===0&&total>0,
   }};
 }
+// Selected Excel metadata may intentionally replace existing values.
+// Automatic source-only enrichment must never replace an explicit value
+// on a *new* physical copy that was not part of the enrichment's blank targets.
+function shouldApplyMetadataToCreatedCopy(update,book){
+  if(!update||!book||book.editionIsbn!==update.isbn)return false;
+  if(update.enrichmentOnly!==true)return true;
+  if(book.importProvenance?.fieldSources?.[update.field]?.sourceType==='manual')
+    return false;
+  const value=book[update.field];
+  return value===null||value===undefined||value===''
+    ||(Array.isArray(value)&&value.length===0)
+    ||(['pageCount','publishedYear'].includes(update.field)
+      &&(!Number.isFinite(Number(value))||Number(value)<=0));
+}
 function actualAssignmentPreview(preview,createdByRow){
   const ids=new Map();
   for(const [index,copies] of createdByRow)
@@ -538,5 +798,6 @@ function actualAssignmentPreview(preview,createdByRow){
 }
 module.exports={
   DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
-  normalizedMetadataChoice,buildUnifiedBookImport,actualAssignmentPreview,
+  normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
+  shouldApplyMetadataToCreatedCopy,buildUnifiedBookImport,actualAssignmentPreview,
 };

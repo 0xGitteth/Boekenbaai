@@ -2,7 +2,8 @@
 const assert=require('node:assert/strict');
 const {
   normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,assignmentSource,
-  normalizedMetadataChoice,
+  normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
+  shouldApplyMetadataToCreatedCopy,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
@@ -39,6 +40,106 @@ assert.equal(normalizeParts({books:true,loans:false,locations:false,fields:{cove
 assert.equal(normalizeParts({books:true,loans:true,locations:true,fields:{mystery:true}}).ok,false);
 assert.equal(normalizeParts(undefined).value.books,true);
 
+// Audit all major diagnostic families. A future unknown error remains
+// conservative rather than being silently dropped by the import planner.
+{
+  const stock=parts({books:true});
+  const loans=parts({loans:true});
+  const fixed=parts({locations:true});
+  const metadata=parts({fields:{pageCount:true}});
+  for(const code of [
+    'isbn_repaired','isbn_resolved_from_metadata',
+    'isbn_repair_suggested','metadata_lookup_failed',
+    'metadata_not_usable','metadata_not_strict_match',
+    'title_author_metadata_missing_edition_isbn',
+    'ambiguous_identifier_interpreted_as_isbn',
+    'ambiguous_identifier_interpreted_as_barcode',
+    'nonstandard_easy_reading_value','dangerous_headers_ignored',
+    'ml_structuurbb_fixed_location',
+  ]){
+    for(const [section,part] of [['stock',stock],['assignment',loans],
+      ['metadata',metadata]]){
+      assert.equal(issueAffectsSelection({code,severity:'warning'},part,section),false,
+        code+' must be nonblocking for '+section);
+    }
+  }
+  for(const code of ['invalid_quantity','copy_limit_exceeded']){
+    assert.equal(issueAffectsSelection({code},stock,'stock'),true);
+    assert.equal(issueAffectsSelection({code},loans,'assignment'),false);
+    assert.equal(issueAffectsSelection({code},metadata,'metadata'),false);
+  }
+  for(const code of ['invalid_physical_barcode','duplicate_physical_barcode',
+    'conflicting_physical_barcodes','barcode_with_multiple_copies']){
+    assert.equal(issueAffectsSelection({code},stock,'stock'),true);
+    assert.equal(issueAffectsSelection({code},loans,'assignment'),true);
+    assert.equal(issueAffectsSelection({code},metadata,'metadata'),false);
+  }
+  for(const code of ['invalid_published_year','invalid_page_count',
+    'language_hint_conflict']){
+    assert.equal(issueAffectsSelection({code},stock,'stock'),false);
+    assert.equal(issueAffectsSelection({code},loans,'assignment'),false);
+  }
+  assert.equal(issueAffectsSelection({code:'invalid_page_count'},metadata,'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'invalid_published_year'},metadata,'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'unexpected_exam_material_value'},
+    parts({fields:{suitableForExamList:true}}),'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'unexpected_exam_material_value'},
+    metadata,'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'class_context_needs_review'},
+    parts({loans:true,locations:true}),'assignment'),false);
+  assert.equal(issueAffectsSelection({code:'class_context_needs_review'},
+    loans,'assignment'),false);
+  assert.equal(issueAffectsSelection({code:'fixed_location_needs_review'},
+    fixed,'assignment'),true);
+  assert.equal(issueAffectsSelection({code:'fixed_location_needs_review'},
+    loans,'assignment'),false);
+  assert.equal(issueAffectsSelection({code:'student_loan_unmatched'},
+    loans,'assignment'),true);
+  assert.equal(issueAffectsSelection({code:'student_loan_unmatched'},
+    stock,'stock'),false);
+  assert.equal(issueAffectsSelection({code:'library_presence_needs_review'},
+    stock,'stock'),false);
+  for(const code of ['metadata_title_conflict','author_sources_differ',
+    'conflicting_edition_isbns','edition_identity_conflict',
+    'missing_title','missing_author','metadata_identifier_conflict']){
+    for(const [section,part] of [['stock',stock],['assignment',loans],
+      ['metadata',metadata]]){
+      assert.equal(issueAffectsSelection({code,severity:'conflict'},part,section),true,
+        code+' must remain blocking in '+section);
+    }
+  }
+  for(const [field,expectedStock,expectedMetadata] of [
+    ['description',false,false],['pageCount',false,false],
+    ['quantity',true,false],['title',true,true],['author',true,true],
+  ]){
+    assert.equal(issueAffectsSelection({code:'conflicting_source_columns',field},
+      stock,'stock'),expectedStock);
+    assert.equal(issueAffectsSelection({code:'conflicting_source_columns',field},
+      metadata,'metadata'),expectedMetadata);
+  }
+  assert.equal(issueAffectsSelection({code:'metadata_differs_from_excel',
+    sourceInvalid:false,field:'pageCount'},metadata,'metadata'),false);
+  assert.equal(issueAffectsSelection({code:'metadata_differs_from_excel',
+    sourceInvalid:true,field:'pageCount'},metadata,'metadata'),true);
+  assert.equal(issueAffectsSelection({code:'metadata_differs_from_excel',
+    sourceInvalid:true,field:'pageCount'},stock,'stock'),false);
+  assert.equal(issueAffectsSelection({code:'new_unrecognized_error'},
+    stock,'stock'),true,'Unknown error codes must remain conservative');
+
+  const example={ok:true,rows:[{
+    index:0,sourceRowNumber:8,book:{title:'A',author:'B',editionIsbn:ISBN},
+    issues:[{code:'isbn_repaired',severity:'warning'},
+      {code:'invalid_page_count',severity:'warning'},
+      {code:'metadata_lookup_failed',severity:'warning'},
+      {code:'conflicting_source_columns',field:'title',severity:'conflict'}],
+  }]};
+  const actionable=actionableSourceIssues(example,stock);
+  assert.equal(actionable.length,1);
+  assert.deepEqual(actionable[0].issues.map(x=>x.code),['conflicting_source_columns'],
+    'Only selected and meaningful diagnostics request administrator acknowledgment');
+}
+
+
 {
   const current=db();
   const loanOnly=plan([source(0,loan('tim','Tim Leerling'))],current,
@@ -59,6 +160,148 @@ assert.equal(normalizeParts(undefined).value.books,true);
     {parts:parts({locations:true})});
   assert.equal(disabled.summary.proposedLoans,0);
 }
+{
+  const current=db();
+  const row=source(0,{},{
+    quantity:{valid:true,value:2},
+    pageCount:null,description:'Nieuwe gecontroleerde tekst',
+  },{
+    pageCount:{source:'excel',raw:'onbekend'},
+    description:{source:'excel',raw:'Nieuwe gecontroleerde tekst'},
+  });
+  row.status='warning';
+  row.issues=[
+    {code:'invalid_page_count',severity:'warning',raw:'onbekend'},
+    {code:'metadata_differs_from_excel',severity:'warning',
+      field:'pageCount',sourceInvalid:true,excelValue:'onbekend'},
+  ];
+  const review=plan([row],current,{
+    parts:parts({books:true,fields:{description:true}}),
+    acceptWarnings:false,
+  });
+  assert.equal(review.summary.blockedStock,0,
+    'Unselected invalid page count cannot block a valid physical stock check');
+  assert.equal(review.summary.metadataFields,1,
+    'An independent valid description can be synced without approving page count');
+  assert.equal(review.summary.pendingMetadata,0);
+  assert.equal(review.summary.readyToApply,true);
+
+  const conflict=source(0,{},{
+    quantity:{valid:true,value:2},
+    description:'Conflict in een niet-geselecteerde kolom',
+  },{description:{source:'excel',raw:'Conflict in een niet-geselecteerde kolom'}});
+  conflict.status='conflict';
+  conflict.issues=[{code:'conflicting_source_columns',severity:'conflict',field:'description'}];
+  const safe=plan([conflict],current,{parts:parts({books:true})});
+  assert.equal(safe.summary.blockedStock,0,
+    'A nonidentity Excel column disagreement cannot block the stock plan');
+}
+
+{
+  const current=db();
+  const advisory=source(0,{},{
+    quantity:{valid:true,value:3},
+  });
+  advisory.status='warning';
+  advisory.issues=[{
+    code:'metadata_differs_from_excel',severity:'warning',field:'title',
+    excelValue:'Oorlogswinter',metadataValue:['Online titel'],
+  }];
+  const safe=plan([advisory],current,{parts:parts({books:true})});
+  assert.equal(safe.summary.newCopies,1,
+    'One external title discrepancy must not block adding a verified ISBN copy');
+  assert.equal(safe.summary.blockedStock,0);
+  assert.equal(safe.summary.readyToApply,true);
+  const confirmed=source(0,{},{
+    quantity:{valid:true,value:3},
+  });
+  confirmed.status='conflict';
+  confirmed.issues=[{
+    code:'metadata_title_conflict',severity:'conflict',
+    editionIsbn:ISBN,sourceCount:2,
+  }];
+  const blocked=plan([confirmed],current,{parts:parts({books:true})});
+  assert.equal(blocked.summary.newCopies,0);
+  assert.equal(blocked.summary.blockedStock,1,
+    'Corroborated title/ISBN conflicts remain a mandatory human check');
+}
+
+{
+  const current=db();
+  const spellingVariant=source(0,{},{
+    title:'Oorlogs-winter',author:'Jan Térlouw',authors:['Jan Térlouw'],
+    quantity:{valid:true,value:3},
+  });
+  const result=plan([spellingVariant],current,{parts:parts({books:true})});
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.blockedStock,0,
+    'An ISBN-matched punctuation/accent-only edition name is not a new identity');
+  assert.equal(result.summary.newCopies,1);
+  assert.equal(result.summary.readyToApply,true);
+  assert.equal(result.inventory.proposedAdds.length,1);
+}
+
+{
+  const current=db();
+  const one=(index,title,author)=>source(index,{},{
+    title,author,authors:[author],
+  },{
+    title:{source:'excel',raw:title},
+    author:{source:'excel',raw:author},
+  });
+  const preview=plan([
+    one(0,'Oorlogswinter!','Jan Térlouw'),
+    one(1,'Oorlogswinter','Jan Terlouw'),
+  ],current,{parts:parts({fields:{title:true,author:true}})});
+  assert.equal(preview.ok,true);
+  assert.equal(preview.summary.pendingMetadata,0,
+    'Two equivalent spellings in Excel must not become an identity conflict');
+  assert.equal(preview.metadata.updates.some(change=>change.field==='title'),false,
+    'Equivalent title spelling must not change the existing title');
+  assert.equal(preview.metadata.updates.every(change=>
+    change.field!=='author'||change.value.value==='Jan Terlouw'),true,
+    'Normalizing a missing authors list must not change the author identity');
+  assert.equal(preview.summary.readyToApply,true,
+    'Harmless metadata normalization needs no manual identity decision');
+}
+
+{
+  const current=db();
+  const safe=source(0,{},{
+    description:'Nieuwe geldige beschrijving',
+  },{description:{source:'excel',raw:'Nieuwe geldige beschrijving'}});
+  safe.status='warning';
+  safe.issues=[
+    {code:'isbn_repaired',severity:'warning'},
+    {code:'metadata_lookup_failed',severity:'warning'},
+    {code:'metadata_differs_from_excel',severity:'warning',field:'title',
+      sourceInvalid:false},
+    {code:'invalid_page_count',severity:'warning'},
+    {code:'class_context_needs_review',severity:'warning'},
+  ];
+  const result=plan([safe],current,{
+    parts:parts({fields:{description:true}}),acceptWarnings:false,
+  });
+  assert.equal(result.summary.metadataFields,1,
+    'Benign lookup failures and unrelated fields may not silently preserve a valid selected description');
+  assert.equal(result.summary.preservedMetadata,0);
+  assert.equal(result.summary.pendingMetadata,0);
+  assert.equal(result.summary.readyToApply,true);
+  assert.equal(result.actionableSourceIssues.length,0,
+    'The review panel and metadata planner must agree on which warnings need approval');
+
+  const selected=source(0,{},{
+    pageCount:null,
+  },{pageCount:{source:'excel',raw:'onbekend'}});
+  selected.status='warning';
+  selected.issues=[{code:'invalid_page_count',severity:'warning'}];
+  const unsafe=plan([selected],current,{
+    parts:parts({fields:{pageCount:true}}),
+  });
+  assert.equal(unsafe.summary.metadataFields,0,
+    'The same policy may not accidentally apply an invalid selected value');
+}
+
 {
   const current=db();
   const fixed=plan([source(0,{
@@ -649,5 +892,280 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(unsafe.summary.metadataFields,0);
   assert.equal(unsafe.summary.pendingMetadata,1,
     'Structural ISBN identity conflicts must remain blocked');
+}
+
+// Automatically enrich blank bibliographic fields after an opted-in exact
+// ISBN lookup, even when the administrator did not select Excel metadata
+// columns. Existing descriptive content and curator tags remain untouched.
+{
+  const current=db();
+  current.books[0].description='Zelf geschreven tekst';
+  current.books[1].description='';
+  for(const book of current.books){
+    book.publisher='';
+    book.pageCount=null;
+    book.tags=[];
+  }
+  const row=source(0,{},{
+    quantity:{valid:true,value:2},
+    description:'Een ISBN-geverifieerd verhaal over vriendschap.',
+    publisher:'Uitgeverij Test',pageCount:214,
+    tags:['friendship','adventure'],
+  },{
+    description:{source:'metadata',detail:'googlebooks'},
+    publisher:{source:'metadata',detail:'googlebooks'},
+    pageCount:{source:'metadata',detail:'googlebooks'},
+    tags:{source:'metadata',detail:'googlebooks'},
+  });
+  const filled=plan([row],current,{parts:parts({books:true})});
+  assert.equal(filled.ok,true);
+  assert.equal(filled.summary.blockedStock,0);
+  assert.equal(filled.summary.pendingMetadata,0);
+  assert.equal(filled.summary.metadataFields,4,
+    'Verified external data can fill missing fields without selecting Excel columns');
+  const description=filled.metadata.updates.find(item=>item.field==='description');
+  assert.deepEqual(description.bookIds,['copy-2'],
+    'Existing teacher descriptions must not be overwritten');
+  assert.equal(filled.metadata.updates.find(item=>item.field==='pageCount').value,214);
+  assert.equal(filled.metadata.updates.find(item=>item.field==='tags').value.length,2);
+  assert.equal(filled.summary.readyToApply,true);
+  const keepEnrichment=plan([row],current,{
+    parts:parts({books:true}),
+    metadataResolutions:[{id:ISBN+':description',action:'keep'}],
+  });
+  assert.equal(keepEnrichment.ok,true);
+  assert.equal(keepEnrichment.metadata.updates.some(update=>
+    update.field==='description'),false,
+    'An administrator may decline optional auto-enrichment without losing other fields');
+  assert.ok(keepEnrichment.metadata.automaticDecisions.some(item=>
+    item.field==='description'&&item.action==='keep'));
+  const forbiddenExcel=plan([row],current,{
+    parts:parts({books:true}),
+    metadataResolutions:[{id:ISBN+':description',action:'excel'}],
+  });
+  assert.equal(forbiddenExcel.error,'unsafe_metadata_override',
+    'Source-only fields cannot be replaced with fabricated nonexistent Excel values');
+  const raw=source(0,{},{
+    quantity:{valid:true,value:2},description:'Exceltekst',
+  },{description:{source:'excel',raw:'Exceltekst'}});
+  const notOpted=plan([raw],current,{parts:parts({books:true})});
+  assert.equal(notOpted.summary.metadataFields,0,
+    'Unselected Excel values are never silently imported');
+}
+{
+  const current=db();
+  for(const b of current.books)b.pageCount=210;
+  const row=source(0,{},{
+    pageCount:214,
+  },{pageCount:{source:'excel',raw:'214'}});
+  const unchanged=plan([row],current,{
+    parts:parts({fields:{pageCount:true}}),
+  });
+  assert.equal(unchanged.summary.metadataFields,0);
+  assert.equal(unchanged.summary.preservedMetadata,1,
+    'A minor page-count disagreement is not worth an automatic rewrite');
+  assert.equal(unchanged.summary.pendingMetadata,0);
+  const explicit=plan([row],current,{
+    parts:parts({fields:{pageCount:true}}),
+    metadataResolutions:[{id:ISBN+':pageCount',action:'excel'}],
+  });
+  assert.equal(explicit.summary.metadataFields,1,
+    'An administrator can intentionally override the nonessential value');
+}
+{
+  const current=db();
+  const vague=source(0,{classContext:['Klas A']});
+  vague.status='warning';
+  vague.issues=[{code:'class_context_needs_review',severity:'warning'}];
+  const initial=plan([vague],current,{
+    parts:parts({loans:true,locations:true}),
+  });
+  assert.equal(initial.ok,true);
+  assert.equal(initial.summary.pendingAssignments,0,
+    'Vague class notes are safely retained by default');
+  const kept=initial.assignments.differences.find(item=>item.kind==='class_context');
+  assert.equal(kept.choice,'keep');
+  assert.equal(kept.autoKept,true);
+  assert.equal(initial.summary.readyToApply,true,
+    'A documented automatic keep may complete without a manual checkbox');
+}
+// Codex P2: duplicate Excel description columns must NEVER overwrite a
+// stored description merely because generic source warnings are nonblocking.
+{
+  const current=db();
+  const conflicting=source(0,{},{
+    description:'Eerste beschrijving',publisher:'Nieuwe uitgever',
+  },{
+    description:{source:'excel',raw:'Eerste beschrijving'},
+    publisher:{source:'excel',raw:'Nieuwe uitgever'},
+  });
+  conflicting.status='conflict';
+  conflicting.issues=[{code:'conflicting_source_columns',
+    severity:'conflict',field:'description'}];
+  const selected=plan([conflicting],current,{
+    parts:parts({fields:{description:true,publisher:true}}),
+  });
+  assert.equal(selected.ok,true);
+  assert.equal(selected.summary.pendingMetadata,0);
+  assert.equal(selected.summary.metadataFields,1,
+    'A conflicting description must be skipped, not the safe publisher');
+  assert.equal(selected.metadata.updates[0].field,'publisher');
+  assert.ok(selected.metadata.updates.every(x=>x.field!=='description'));
+  assert.equal(selected.summary.readyToApply,true);
+}
+// Codex P2: source-only enrichment must respect deliberately blank
+// descriptions, covers and tags with manual provenance.
+{
+  const current=db();
+  for(const book of current.books){
+    book.description='';book.coverUrl='';book.tags=[];
+  }
+  current.books[0].importProvenance={fieldSources:{
+    description:{sourceType:'manual'},
+    coverUrl:{sourceType:'manual'},
+    tags:{sourceType:'manual'},
+  }};
+  const enriched=source(0,{},{
+    description:'Online beschrijving',
+    coverUrl:'https://example.org/geverifieerd.jpg',
+    tags:['vrienden'],
+  },{
+    description:{source:'metadata',detail:'googlebooks'},
+    coverUrl:{source:'metadata',detail:'googlebooks'},
+    tags:{source:'metadata',detail:'googlebooks'},
+  });
+  const result=plan([enriched],current,{parts:parts({books:true})});
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.metadataFields,3);
+  for(const update of result.metadata.updates){
+    assert.deepEqual(update.bookIds,['copy-2'],
+      'Manual blank fields must not be repopulated by import enrichment');
+  }
+}
+// Codex P2: two matching ISBN providers must be able to correct a selected
+// author field even after the analyzer records metadata provenance.
+{
+  const current=db();
+  for(const book of current.books){
+    book.author='Carrý Slee';book.authors=['Carrý Slee'];
+  }
+  const verified=source(0,{},{
+    author:'Carry Slee',authors:['Carry Slee'],
+  },{
+    author:{source:'metadata',detail:'verified_isbn_spelling',
+      correctedFrom:'Carrý Slee',sources:['googlebooks','openlibrary']},
+  });
+  verified.sourceEvidence=[
+    {source:'googlebooks',editionIsbn:ISBN,author:'Carry Slee'},
+    {source:'openlibrary',editionIsbn:ISBN,author:'Carry Slee'},
+  ];
+  const result=plan([verified],current,{
+    parts:parts({fields:{author:true}}),
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.metadataFields,1);
+  assert.equal(result.metadata.updates[0].field,'author');
+  assert.equal(result.metadata.updates[0].value.value,'Carry Slee');
+  assert.equal(result.summary.readyToApply,true);
+}
+// Codex P2: previously imported loan receipts must not undo automatic
+// keep resolutions for an unrelated ambiguous class note in the same Excel.
+{
+  const current=db();
+  current.books[0].status='available';
+  current.books[0].borrowedBy=null;
+  current.students[0].borrowedBooks=[];
+  const ambiguous=source(0,{classContext:['Klas A']},
+    {barcode:'4711002'});
+  ambiguous.status='warning';
+  ambiguous.issues=[{code:'class_context_needs_review',
+    severity:'warning'}];
+  const priorLoan=source(1,loan('lisa','Lisa Leerling'),
+    {barcode:'4711001'});
+  const receipt=excelLoanReceiptKey('copy-1',{type:'student',id:'lisa'});
+  const result=plan([ambiguous,priorLoan],current,{
+    parts:parts({loans:true,locations:true}),
+    loanReceipts:[receipt],
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.previouslyImportedLoans,1);
+  const kept=result.assignments.differences.find(x=>x.kind==='class_context');
+  assert.ok(kept,'A vague class note remains visible');
+  assert.equal(kept.choice,'keep');
+  assert.equal(kept.automatic,true);
+  assert.equal(kept.autoKept,true);
+  assert.equal(result.summary.pendingAssignments,0);
+  assert.equal(result.summary.readyToApply,true);
+}
+// Codex P2: unknown Examenmateriaal is advisory, not an instruction to
+// overwrite an existing true exam-list flag with parsed fallback false.
+{
+  const current=db();
+  for(const book of current.books)book.suitableForExamList=true;
+  const invalid=source(0,{},{
+    suitableForExamList:false,
+    publisher:'Betrouwbare uitgever',
+  },{
+    suitableForExamList:{source:'excel',raw:'misschien'},
+    publisher:{source:'excel',raw:'Betrouwbare uitgever'},
+  });
+  invalid.status='warning';
+  invalid.issues=[{code:'unexpected_exam_material_value',
+    severity:'warning',raw:'misschien'}];
+  const outcome=plan([invalid],current,{
+    parts:parts({fields:{suitableForExamList:true,publisher:true}}),
+  });
+  assert.equal(outcome.ok,true);
+  assert.equal(outcome.summary.pendingMetadata,0);
+  assert.equal(outcome.summary.metadataFields,1);
+  assert.equal(outcome.metadata.updates[0].field,'publisher');
+  assert.equal(outcome.metadata.updates.some(update=>
+    update.field==='suitableForExamList'),false,
+    'Never import a false fallback after an unknown exam material value');
+  const standalone=plan([invalid],current,{
+    parts:parts({fields:{suitableForExamList:true}}),
+  });
+  assert.equal(standalone.summary.metadataFields,0);
+}
+// Codex P2: automatic enrichment is fill-only for newly created copies.
+// It must not overwrite an explicit Excel publisher or cover even when
+// existing books of the ISBN are missing those fields.
+{
+  const isbn=ISBN;
+  const copyFor=(extra={})=>({
+    editionIsbn:isbn,publisher:'Schooluitgever',
+    coverUrl:'https://example.org/schoolcover.jpg',...extra,
+  });
+  const sourceUpdate=(field,value)=>({
+    isbn,field,value,chosenSource:'source',enrichmentOnly:true,
+  });
+  const onlinePublisher=sourceUpdate('publisher','Online uitgever');
+  const onlineCover=sourceUpdate('coverUrl','https://example.org/online.jpg');
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlinePublisher,copyFor()),false);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlineCover,copyFor()),false);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlinePublisher,
+    copyFor({publisher:''})),true);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlineCover,
+    copyFor({coverUrl:''})),true);
+  assert.equal(shouldApplyMetadataToCreatedCopy(onlineCover,
+    copyFor({coverUrl:'',importProvenance:{fieldSources:{
+      coverUrl:{sourceType:'manual'},
+    }}})),false);
+  assert.equal(shouldApplyMetadataToCreatedCopy({
+    ...onlinePublisher,enrichmentOnly:false,
+  },copyFor()),true,
+  'Explicitly synchronized metadata still applies across all copies');
+  assert.equal(shouldApplyMetadataToCreatedCopy({
+    ...onlinePublisher,isbn:SECOND,
+  },copyFor({publisher:''})),false);
+  const existing=db();
+  existing.books.forEach(book=>{book.publisher='';});
+  const enriched=source(0,{},{
+    publisher:'Online uitgever',
+  },{publisher:{source:'metadata',detail:'Google Books'}});
+  const planResult=plan([enriched],existing,{parts:parts({books:true})});
+  assert.equal(planResult.ok,true);
+  assert.equal(planResult.metadata.updates[0].enrichmentOnly,true,
+    'The preview carries the fill-only constraint all the way to confirmation');
 }
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');

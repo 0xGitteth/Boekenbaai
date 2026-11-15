@@ -7,6 +7,8 @@ const {
   isPlaceholderAuthor,
 } = require('./book-edition-core');
 const { isBlankCellValue } = require('./book-import-workbook');
+const { equivalentSpelling } = require('./book-import-source-confidence');
+const {nearlySameBookText}=require('./book-import-autonomy');
 const {
   addIssue,
   comparableText,
@@ -218,7 +220,15 @@ function normalizeBookFields(mapped, row) {
   if (directAuthor.length && combined.length) {
     const combinedComparable = comparableText(combined[0]);
     const directComparables = directAuthor.map((author) => comparableText(author)).filter(Boolean);
-    const exactSplitCorroboratesDirect = directComparables.includes(combinedComparable);
+    // The direct author can be written as "Slee, Carry" while the separate
+    // first/last-name fields say "Carry Slee". That is the same person, not
+    // a competing Excel author. This exception is limited to one author.
+    const exactSplitCorroboratesDirect = directComparables.includes(combinedComparable)
+      ||directAuthor.some(author=>nearlySameBookText(author,combined[0])
+        ||(directAuthor.length===1 && combined.length===1
+          &&author.split(',').length===2
+          &&equivalentSpelling(author.split(',').map(s=>s.trim()).reverse().join(' '),
+            combined[0])));
     const splitIncomplete = !first || !last;
     const splitTokens = combinedComparable.split(/\s+/).filter(Boolean);
     const incompleteSplitCorroboratesDirect = splitIncomplete

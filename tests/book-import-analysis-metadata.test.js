@@ -171,6 +171,53 @@ module.exports = async function runMetadataTests() {
   assert.strictEqual(contradictoryExactWithTitleless.conflict.code, 'metadata_title_conflict');
   assert.deepStrictEqual(contradictoryExactWithTitleless.conflict.titles, ['Andere titel']);
 
+  // A mismatched or internally broken third-party ISBN result must not
+  // become a compulsory issue for an otherwise valid workbook ISBN.
+  const wrongProviderIsbn=await analyzeBookImportRows([{
+    Titel:'Correcte Excel-editie',Auteur:'A Auteur','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'Andere bron-editie',author:'A Auteur',
+    isbn13:ISBN_ALT,source:'Google Books',
+  })});
+  assert.equal(wrongProviderIsbn.rows[0].status,'warning');
+  assert.equal(wrongProviderIsbn.groups.length,1);
+  assert.ok(wrongProviderIsbn.rows[0].issues.some(issue=>
+    issue.code==='ambiguous_isbn_lookup_results'
+    &&issue.reviewLevel==='informational'));
+
+  const sourceVerifiedTypo=await analyzeBookImportRows([{
+    Titel:'Bickerton Neveis',Auteur:'Carrý Slee','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,isbn13:ISBN,title:'Bickerton Neves',author:'Carry Slee',
+    sourceCandidates:[
+      {source:'Google Books',isbn13:ISBN,title:'Bickerton Neves',
+        author:'Carry Slee'},
+      {source:'Open Library',isbn13:ISBN,title:'Bickerton Neves',
+        author:'Carry Slee'},
+    ],
+  })});
+  const typo=sourceVerifiedTypo.rows[0];
+  assert.equal(typo.book.title,'Bickerton Neves',
+    'Two matching ISBN providers can repair a minor title typo');
+  assert.equal(typo.book.author,'Carry Slee');
+  assert.equal(typo.provenance.title.detail,'verified_isbn_spelling');
+  assert.equal(typo.provenance.author.detail,'verified_isbn_spelling');
+  assert.equal(typo.provenance.title.correctedFrom,'Bickerton Neveis');
+  assert.ok(!codes(typo).has('metadata_title_conflict'));
+  const differentVolume=await analyzeBookImportRows([{
+    Titel:'Harry Potter 2',Auteur:'J.K. Rowling','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,isbn13:ISBN,title:'Harry Potter 3',author:'J.K. Rowling',
+    sourceCandidates:[
+      {source:'Google Books',isbn13:ISBN,title:'Harry Potter 3',
+        author:'J.K. Rowling'},
+      {source:'Open Library',isbn13:ISBN,title:'Harry Potter 3',
+        author:'J.K. Rowling'},
+    ],
+  })});
+  assert.equal(differentVolume.rows[0].status,'conflict',
+    'Different volume numbers remain identity conflicts despite one changed character');
+
   const matchingExactWithTitleless = selectIsbnMetadataCandidate(ISBN, [
     normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
     normalizeMetadataCandidate({ author: 'A Auteur', isbn13: ISBN, publisher: 'Rijke exacte bron' }),
@@ -266,10 +313,14 @@ module.exports = async function runMetadataTests() {
       source: 'conflicting-exact',
     }),
   });
-  assert.strictEqual(exactPayloadIdentifierConflict.rows[0].status, 'conflict');
-  assert.ok(codes(exactPayloadIdentifierConflict.rows[0]).has('metadata_identifier_conflict'));
+  assert.strictEqual(exactPayloadIdentifierConflict.rows[0].status, 'warning',
+    'A contradictory third-party payload is not a proven Excel ISBN error');
+  assert.ok(exactPayloadIdentifierConflict.rows[0].issues.some(issue=>
+    issue.code==='metadata_identifier_conflict'
+    &&issue.reviewLevel==='informational'));
   assert.strictEqual(exactPayloadIdentifierConflict.rows[0].book.publisher, '');
-  assert.strictEqual(exactPayloadIdentifierConflict.groups.length, 0);
+  assert.strictEqual(exactPayloadIdentifierConflict.groups.length, 1,
+    'The validated Excel ISBN remains usable without trusting broken metadata');
 
   const titlePayloadIdentifierConflict = await analyzeBookImportRows([{
     Titel: 'Work metadata botsing', Auteur: 'A Auteur',
@@ -383,9 +434,15 @@ module.exports = async function runMetadataTests() {
   const titleConflict = await analyzeBookImportRows([{ Titel: 'Excel titel', Auteur: 'A Auteur', 'ISBN-nummer': ISBN }], {
     lookupIsbn: async () => ({ title: 'Andere titel', author: 'A Auteur', isbn13: ISBN, publisher: 'Mag niet lekken', found: true }),
   });
-  assert.strictEqual(titleConflict.rows[0].status, 'conflict');
-  assert.strictEqual(titleConflict.rows[0].book.publisher, '');
-  assert.ok(codes(titleConflict.rows[0]).has('metadata_title_conflict'));
+  assert.strictEqual(titleConflict.rows[0].status, 'warning',
+    'One uncorroborated online title must not block a valid Excel ISBN');
+  assert.strictEqual(titleConflict.rows[0].book.publisher, '',
+    'Conflicting external metadata must not enrich an unrelated title');
+  assert.ok(titleConflict.rows[0].issues.some(issue=>
+    issue.code==='metadata_differs_from_excel'
+    &&issue.field==='title'&&issue.reviewLevel==='informational'));
+  assert.strictEqual(titleConflict.groups.length,1,
+    'An advisory comparison must not exclude a valid edition from grouping');
 
   const hiddenTitleConflict = await analyzeBookImportRows([{
     Titel: 'Correct', Auteur: 'A Auteur', 'ISBN-nummer': ISBN,
@@ -398,10 +455,43 @@ module.exports = async function runMetadataTests() {
       ],
     }),
   });
-  assert.strictEqual(hiddenTitleConflict.rows[0].status, 'conflict');
+  assert.strictEqual(hiddenTitleConflict.rows[0].status, 'warning');
   assert.strictEqual(hiddenTitleConflict.rows[0].book.publisher, '');
-  assert.ok(codes(hiddenTitleConflict.rows[0]).has('metadata_title_conflict'));
-  assert.strictEqual(hiddenTitleConflict.groups.length, 0);
+  assert.ok(codes(hiddenTitleConflict.rows[0]).has('metadata_differs_from_excel'));
+  assert.strictEqual(hiddenTitleConflict.groups.length, 1,
+    'Multiple unverified candidates are not independent corroboration');
+
+  const corroboratedTitleConflict=await analyzeBookImportRows([{
+    Titel:'Excel titel',Auteur:'A Auteur','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'Ander echt boek',author:'A Auteur',isbn13:ISBN,
+    sourceCandidates:[
+      {source:'Google Books',title:'Ander echt boek',isbn13:ISBN},
+      {source:'Open Library',title:'Ander echt boek',isbn13:ISBN},
+    ],
+  })});
+  assert.strictEqual(corroboratedTitleConflict.rows[0].status,'conflict',
+    'Two independent exact-ISBN sources support a genuine identity review');
+  const verified=corroboratedTitleConflict.rows[0].issues.find(issue=>
+    issue.code==='metadata_title_conflict');
+  assert.equal(verified.sourceCount,2);
+  assert.deepStrictEqual(verified.sources,['googlebooks','openlibrary']);
+  assert.strictEqual(corroboratedTitleConflict.groups.length,0,
+    'A genuine ISBN/title identity conflict must stay blocked');
+
+  const orthographic=await analyzeBookImportRows([{
+    Titel:'P.S. Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'PS Ik hou van je',author:'A Auteur',isbn13:ISBN,
+    sourceCandidates:[
+      {source:'Google Books',title:'PS Ik hou van je',isbn13:ISBN},
+      {source:'Open Library',title:'P.S. Ik hou van je',isbn13:ISBN},
+    ],
+  })});
+  assert.equal(orthographic.rows[0].issues.some(issue=>
+    issue.code==='metadata_title_conflict'),false,
+    'Punctuation-only title variants must not trigger edition conflicts');
+  assert.equal(orthographic.groups.length,1);
 
   let collectionLookups = 0;
   const collectionEnrichment = await analyzeBookImportRows([{
