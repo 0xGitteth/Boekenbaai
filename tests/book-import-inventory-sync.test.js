@@ -68,6 +68,15 @@ assert.deepStrictEqual(ambiguousOldAndNew.proposedAdds, []);
 const matchingOldAndNew = preview([row(0, 1), row(1, 1)], [book('old-isbn-copy')]);
 assert.strictEqual(matchingOldAndNew.summary.addCopies, 1);
 
+const contradictingVolumeGroup=preview([
+  row(0,1,{title:'Het boek'}),
+  row(1,1,{title:'Het boek (Book 1)'}),
+  row(2,1,{title:'Het boek (Book 2)'}),
+]);
+assert.strictEqual(contradictingVolumeGroup.summary.readyToApply,false,
+  'Conflicting numbered volumes sharing an ISBN must not be imported');
+assert.strictEqual(contradictingVolumeGroup.rows[0].reason,'edition_identity_mismatch');
+
 const legacyWithoutIsbn = preview([row(0, 2)], [
   book('old-copy', { metadataIsbn: null, editionIsbn: null, barcode: '44332211' }),
 ]);
