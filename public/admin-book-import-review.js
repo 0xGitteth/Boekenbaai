@@ -1263,8 +1263,22 @@
         card.dataset.reviewRowKey='stock:'+item.index;
         card.append(make('strong','',source?.book?.title||'Boek'));
         card.append(make('p','hint','Excelrij '+item.worksheetRow+' · '+(item.editionIsbn||'Geen ISBN')));
-        card.append(make('p','bb-review__reason',
-          'Voorraadcontrole: '+(reasonNames[item.reason]||item.reason)));
+        const reasons=item.blockers?.length?item.blockers:[item.reason];
+        for(const reason of reasons.filter(Boolean)){
+          card.append(make('p','bb-review__reason',
+            'Voorraadcontrole: '+(reasonNames[reason]||reason)));
+        }
+        if(reasons.includes('source_needs_review')&&source){
+          const relevant=(source.issues||[]).filter(issue=>
+            ['warning','conflict'].includes(issue.severity)
+            &&issue.reviewLevel!=='informational');
+          for(const issue of relevant){
+            const field=issue.field?' ('+issue.field+')':'';
+            card.append(make('p','hint',
+              'Broncontrole'+field+': '
+              +(importErrorText[issue.code]||issueNames[issue.code]||issue.code)));
+          }
+        }
         const edit=button('Gegevens corrigeren','btn btn--secondary');
         edit.addEventListener('click',()=>{
           openEditor=openEditor===item.index?null:item.index;
