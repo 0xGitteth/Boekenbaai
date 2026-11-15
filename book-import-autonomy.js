@@ -143,9 +143,24 @@ function sameBookTitle(left,right){
   return aParts.length>1&&bParts.length>1
     &&nearlySameBookText(aParts.at(-1),bParts.at(-1));
 }
+// Legacy imports occasionally wrote a missing first-name value literally
+// as lower-case "nan " before a valid last name. Never strip a real
+// capitalized personal name ("Nan ..."), and never use this to discover
+// an edition. The caller must already have matched the physical ISBN.
+function missingNamePrefixMatches(stored,desired){
+  if(typeof stored!=='string'||typeof desired!=='string')return false;
+  const old=stored.trim();
+  if(!old.startsWith('nan '))return false;
+  const remainder=old.slice(4).trim();
+  return remainder.length>=3
+    &&normalized(remainder)===normalized(desired)
+    &&Boolean(normalized(desired));
+}
 function sameBookIdentity(a,b){
   return sameBookTitle(a?.title,b?.title)
-    &&nearlySameBookText(a?.author,b?.author);
+    &&(nearlySameBookText(a?.author,b?.author)
+      ||missingNamePrefixMatches(a?.author,b?.author)
+      ||missingNamePrefixMatches(b?.author,a?.author));
 }
 function smallPageDifference(left,right){
   const a=Number(left),b=Number(right);
@@ -153,4 +168,5 @@ function smallPageDifference(left,right){
   return Math.abs(a-b)<=Math.max(10,Math.ceil(Math.max(a,b)*0.05));
 }
 module.exports={normalized,nearlySameBookText,sameBookTitle,
-  hasConflictingEditionQualifiers,sameBookIdentity,smallPageDifference};
+  hasConflictingEditionQualifiers,sameBookIdentity,missingNamePrefixMatches,
+  smallPageDifference};

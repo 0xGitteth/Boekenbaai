@@ -29,10 +29,53 @@ const db=()=>({
   classes:[{id:'a',name:'Klas A'}],
   history:[],readingRecords:[],
 });
-const loan=(id,name)=>({studentLoan:{status:'matched',id,name}});
 const parts=(other={})=>({books:false,loans:false,locations:false,fields:{},...other});
 const plan=(sourceRows,database,options={})=>
   buildUnifiedBookImport({ok:true,rows:sourceRows},database,options);
+const loan=(id,name)=>({studentLoan:{status:'matched',id,name}});
+
+// A historical missing first-name value must not create a new physical book,
+// nor require nine separate decisions for the same bad legacy metadata.
+{
+  const legacy=db();
+  legacy.books=[copy('copy-1',{
+    title:'Haantjes',author:'nan Kluun',authors:['nan Kluun'],
+    status:'borrowed',borrowedBy:'lisa',
+  })];
+  const row=source(0,{},{
+    title:'Haantjes',author:'Kluun',authors:['Kluun'],
+  },{author:{source:'excel',raw:'Kluun'}});
+  row.sourceEvidence=[{
+    source:'bureau isbn',editionIsbn:ISBN,title:'Haantjes',author:'Kluun',
+  }];
+  const preview=plan([row],legacy,{
+    parts:parts({books:true,fields:{author:true}}),
+  });
+  assert.equal(preview.ok,true);
+  assert.equal(preview.summary.blockedStock,0);
+  assert.equal(preview.summary.newCopies,0);
+  const authorUpdate=preview.metadata.updates.find(change=>change.field==='author');
+  assert.deepEqual(authorUpdate.value,{value:'Kluun',authors:['Kluun']});
+  assert.deepEqual(authorUpdate.bookIds,['copy-1'],
+    'Correct only the existing physical copy, retaining its borrower and ID');
+  assert.equal(preview.summary.readyToApply,true);
+  const explicitKeep=plan([row],legacy,{
+    parts:parts({books:true,fields:{author:true}}),
+    metadataResolutions:[{id:ISBN+':author',action:'keep'}],
+  });
+  assert.equal(explicitKeep.metadata.updates.length,0,
+    'An explicit decision to retain original values remains authoritative');
+  const unrelated=db();
+  unrelated.books=[copy('copy-1',{title:'Haantjes',author:'nan Somebody Else'})];
+  assert.equal(plan([row],unrelated,{parts:parts({books:true,fields:{author:true}})})
+    .summary.blockedStock,1,'Never silently repair a different surname');
+  const genuineFirstName=db();
+  genuineFirstName.books=[copy('copy-1',{title:'Haantjes',author:'Nan Kluun'})];
+  assert.equal(plan([row],genuineFirstName,{parts:parts({books:true,fields:{author:true}})})
+    .summary.blockedStock,1,'Preserve capitalized legitimate first names');
+}
+
+
 
 assert.equal(normalizeParts({books:false,loans:false,locations:false,fields:{}}).ok,false);
 assert.equal(normalizeParts({books:false,loans:false,locations:false,fields:{coverUrl:true}}).ok,true);

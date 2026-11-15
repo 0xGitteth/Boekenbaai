@@ -7,7 +7,7 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { buildAssignmentPreview, normalizeResolutions } = require('./book-import-assignment-reconciliation');
 const { excelLoanReceiptKey } = require('./book-import-loan-migration');
 const sourceConfidence=require('./book-import-source-confidence');
-const {nearlySameBookText,sameBookTitle,smallPageDifference}=require('./book-import-autonomy');
+const {nearlySameBookText,sameBookTitle,smallPageDifference,missingNamePrefixMatches}=require('./book-import-autonomy');
 
 const METADATA_FIELDS=Object.freeze([
   'title','author','description','publisher','publishedYear','pageCount',
@@ -453,6 +453,24 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         isbn,field,excel:important?(field==='author'?next?.value:next):next,
         current, evidence:rows.flatMap(row=>row.sourceEvidence||[]),
       });
+      // A legacy spreadsheet conversion can leave "nan Kluun" in ALL
+      // existing copies while the Excel ISBN, title and surname match.
+      // This is a narrowly scoped repair of a corrupt placeholder, not
+      // fuzzy author matching. The original physical copies and loans stay
+      // linked to the same IDs; only the selected author metadata changes.
+      const verifiedPlaceholderRepair=field==='author'&&!conflict
+        &&rows.every(row=>Boolean(canonicalizeBookIsbn13(row.book?.editionIsbn))
+          &&sameBookTitle(row.book?.title,copies[0]?.title))
+        &&copies.some(copy=>missingNamePrefixMatches(copy.author,next?.value))
+        &&copies.every(copy=>sameBookTitle(copy.title,rows[0]?.book?.title)
+          &&(missingNamePrefixMatches(copy.author,next?.value)
+            ||nearlySameBookText(copy.author,next?.value)));
+      if(verifiedPlaceholderRepair&&!manualExcel){
+        decision.action='excel';
+        decision.confidence='high';
+        decision.reason='Ongeldige nan-voornaam uit oude import veilig verwijderd';
+        decision.value=next?.value;
+      }
       if(['apply','excel'].includes(selected.get(id))&&conflict)
         return {ok:false,error:'unsafe_metadata_override'};
       // Page counts and printing years vary between trustworthy catalogues.

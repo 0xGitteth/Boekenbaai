@@ -65,6 +65,18 @@ assert.equal(sameBookIdentity({title:'Oorlogswinter',author:'Jan Terlouw'},
   {title:'Oorlogs-winter',author:'Jan Térlouw'}),true);
 assert.equal(sameBookIdentity({title:'Oorlogswinter',author:'Jan Terlouw'},
   {title:'Oorlogswinter',author:'Jan Vermeer'}),false);
+assert.equal(sameBookIdentity({title:'Haantjes',author:'nan Kluun'},
+  {title:'Haantjes',author:'Kluun'}),true,
+  'Legacy lowercase nan first-name must not create an ISBN-group conflict');
+assert.equal(sameBookIdentity({title:'Haantjes',author:'Nan Kluun'},
+  {title:'Haantjes',author:'Kluun'}),false,
+  'A real capitalized Nan first name must be preserved');
+assert.equal(sameBookIdentity({title:'Haantjes',author:'nan Other Author'},
+  {title:'Haantjes',author:'Kluun'}),false,
+  'This is not a general rule for ignoring first names');
+assert.equal(sameBookIdentity({title:'Other title',author:'nan Kluun'},
+  {title:'Haantjes',author:'Kluun'}),false,
+  'Matching a placeholder surname never overrides the ISBN book title');
 assert.equal(smallPageDifference(210,214),true);
 assert.equal(smallPageDifference(210,240),false);
 assert.equal(smallPageDifference(null,240),false);
