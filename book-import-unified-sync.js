@@ -296,7 +296,7 @@ function metadataSourceSafe(row,field,acceptWarnings){
   // apply its language, authors, description or other metadata silently.
   // Preserve existing values without asking the teacher to decide on every
   // unrelated field; the disputed identity field alone remains actionable.
-  if(issues.some(issue=>issue.severity==='conflict'
+  if(row.unsafeIdentity || issues.some(issue=>issue.severity==='conflict'
     &&['metadata_title_conflict','author_sources_differ'].includes(issue.code)))
     return false;
   // Legacy reviewed/test rows can carry a conservative warning status
@@ -330,7 +330,12 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   const sourceIssuesByIndex=new Map(analysis.rows.map(row=>
     [row.index,row.issues||[]]));
   for(const original of analysis.rows){
-    const row=scopedRow(original,parts,'metadata');
+    const scoped=scopedRow(original,parts,'metadata');
+    // Keep the raw trust boundary even when the *displayed* review is
+    // scoped to an unrelated field such as language or page count.
+    const row={...scoped,unsafeIdentity:(original.issues||[]).some(issue=>
+      issue.severity==='conflict'
+      &&['metadata_title_conflict','author_sources_differ'].includes(issue.code))};
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
     if(!isbn||row.status==='skipped'||!editions.has(isbn))continue;
     if(!groups.has(isbn))groups.set(isbn,[]);
@@ -581,6 +586,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         row.provenance?.[field]?.source==='metadata'
         &&nonempty(row.book?.[field])
         &&row.book?.editionIsbn===isbn
+        &&!row.unsafeIdentity
         &&!row.issues?.some(issue=>issue.severity==='conflict'));
       if(!evidenceRows.length)continue;
       const values=evidenceRows.map(row=>row.book[field]);
