@@ -548,6 +548,8 @@
     let currentApplyButton = null;
     let remotePending = null;
     let syncing = false;
+    let draftSaveTimer = null;
+    let draftSaveInFlight = false;
     const PAGE_SIZE = 15;
     const hasUnreviewedChanges = () => {
       if (!stage) return true;
@@ -565,6 +567,40 @@
         || JSON.stringify([...metadataResolutions.values()].sort((a,b)=>a.id.localeCompare(b.id)))
           !== JSON.stringify([...(stage.metadataResolutions||[])].sort((a,b)=>a.id.localeCompare(b.id)));
     };
+    function scheduleGuidedDraftSave(){
+      if(stage?.mode!=='unified_sync'||stage.status!=='open'
+        ||remotePending||busy||!hasUnreviewedChanges())return;
+      if(draftSaveTimer)clearTimeout(draftSaveTimer);
+      draftSaveTimer=setTimeout(async()=>{
+        draftSaveTimer=null;
+        if(!stage||busy||remotePending||draftSaveInFlight)return;
+        const currentStage=stage.id,revision=stage.revision;
+        const snapshot={
+          revision,acceptWarnings:warningsAccepted,
+          corrections:[...corrections.values()],
+          inventoryResolutions:[...inventoryResolutions.values()],
+          assignmentResolutions:[...assignmentResolutions.values()],
+          metadataResolutions:[...metadataResolutions.values()],
+        };
+        draftSaveInFlight=true;
+        try{
+          const result=await request(rootPath+'/'+encodeURIComponent(currentStage)
+            +'/draft',snapshot);
+          if(stage?.id===currentStage&&stage.revision===revision){
+            if(!result.persisted)setNotice('Je keuzes staan nog in het geheugen, '
+              +'maar konden niet blijvend worden opgeslagen.');
+            else {
+              stage.draft={...snapshot};
+              stage.draftSavedAt=result.savedAt;
+            }
+          }
+        }catch(error){
+          if(stage?.id===currentStage&&stage.revision===revision)
+            setNotice('Concept opslaan mislukt. '
+              +'Klik op controleren voordat je de pagina verlaat.');
+        }finally{draftSaveInFlight=false;}
+      },950);
+    }
     const setNotice = (text) => { notice.textContent = text; };
     const frozenControls = new Map();
     function setBusy(value) {
@@ -600,12 +636,17 @@
       stage = payload;
       remotePending = null;
       liveAlert.replaceChildren();
-      warningsAccepted = stage.acceptWarnings === true;
+      const savedDraft=stage.draft||{};
+      warningsAccepted = savedDraft.acceptWarnings ?? (stage.acceptWarnings === true);
       mustRecheckWarnings = false;
-      corrections = new Map((stage.corrections || []).map((change) => [change.index, change]));
-      inventoryResolutions = new Map((stage.inventoryResolutions || []).map((item) => [item.isbn, item]));
-      assignmentResolutions = new Map((stage.assignmentResolutions || []).map((item) => [item.id, item]));
-      metadataResolutions = new Map((stage.metadataResolutions || []).map(item=>[item.id,item]));
+      corrections = new Map((savedDraft.corrections||stage.corrections||[])
+        .map(change=>[change.index,change]));
+      inventoryResolutions = new Map((savedDraft.inventoryResolutions
+        ||stage.inventoryResolutions||[]).map(item=>[item.isbn,item]));
+      assignmentResolutions = new Map((savedDraft.assignmentResolutions
+        ||stage.assignmentResolutions||[]).map(item=>[item.id,item]));
+      metadataResolutions = new Map((savedDraft.metadataResolutions
+        ||stage.metadataResolutions||[]).map(item=>[item.id,item]));
       skippedEdits.clear();
       // A fresh server reanalysis becomes the new correction baseline.
       candidateChangeHistory.clear();
@@ -771,6 +812,7 @@
       // Prevent applying the PREVIOUS server review while the editor contains
       // changes that have not yet been checked and saved.
       if (currentApplyButton) currentApplyButton.disabled = true;
+      scheduleGuidedDraftSave();
     }
 
     function selectCandidateForRow(row,candidate){
@@ -1057,6 +1099,7 @@
         return detail;
       };
       const recheck=async()=>{
+        if(draftSaveTimer){clearTimeout(draftSaveTimer);draftSaveTimer=null;}
         await run(async()=>{
           const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
             revision:stage.revision,acceptWarnings:warningsAccepted,
@@ -2734,6 +2777,7 @@
         ? Array.from(focusedRow.querySelectorAll('button, input, select, textarea'))
           .indexOf(document.activeElement) : -1;
       renderContents();
+      scheduleGuidedDraftSave();
       const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
       const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
       for (const list of updatedLists) {
