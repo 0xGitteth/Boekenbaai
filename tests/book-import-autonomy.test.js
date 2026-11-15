@@ -27,6 +27,31 @@ assert.equal(sameBookTitle('Diary of a Wimpy Kid (Book 1)',
   'Diary of a Wimpy Kid (Book 2)'),false,
   'Two different numbered volumes must remain distinct');
 
+// Patterns, not hand-written exceptions for individual ISBNs. The workbook
+// title may include a series prefix or a graphic descriptor while a provider
+// reports only the book's own title.
+for(const [worksheet,provider] of [
+  ['Het leven van een loser- Een hondenleven','Een hondenleven'],
+  ['Magnus Chase de hamer van Thor','De hamer van Thor'],
+  ['Magnus Chase het verdoemde zwaard','Het verdoemde zwaard'],
+  ["Dagboek van een muts zoek 't lekker uit","Zoek 't lekker uit!"],
+  ['H@CK het instituut','Het instituut'],
+  ['Opstand','Iko. Opstand'],
+  ['Het achterhuis Graphic','Het Achterhuis'],
+  ['Fantasia 3','Fantasia III'],
+])assert.equal(sameBookTitle(worksheet,provider),true,
+  'Verified ISBN series/edition title variant: '+worksheet);
+
+for(const [worksheet,provider] of [
+  ['De Gorgels','De Gorgels en het geheim van de gletsjer'],
+  ['Percy Jackson en de Olympiers','De bliksemdief'],
+  ['Maus','The Complete MAUS'],
+  ['Het leven van een allerbeste vriend','Logboek van Theo Thorbecke'],
+  ['Fantasia 3','Fantasia IV'],
+  ['Harry Potter 1 de steen der wijzen','Harry Potter 2 de steen der wijzen'],
+])assert.equal(sameBookTitle(worksheet,provider),false,
+  'Materially different work or unknown edition: '+worksheet);
+
 assert.equal(nearlySameBookText('Carrý Slee','Carry Slee'),true);
 assert.equal(nearlySameBookText('Jan Terlouw','Jan Terlouuw'),true);
 assert.equal(nearlySameBookText('Up','Us'),false,
