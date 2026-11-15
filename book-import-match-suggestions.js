@@ -1,13 +1,11 @@
 'use strict';
 
-// These are candidates for a teacher to verify against the PHYSICAL book,
-// never automatic ISBN repairs. Import confirmation continues to use the
-// unchanged, server-side edition, quantity, loan and barcode checks.
+// Suggestions are ONLY for teacher review against the physical book. They
+// never bypass server-side edition, quantity, barcode or loan validation.
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
-const {sameBookTitle,nearlySameBookText}=require('./book-import-autonomy');
-
+const {sameBookTitle,nearlySameBookText,normalized}=require('./book-import-autonomy');
 const MAX_SUGGESTIONS=4;
-const previewText=(value,max=180)=>typeof value==='string'?value.trim().slice(0,max):'';
+const safeText=value=>typeof value==='string'?value.trim():'';
 const goodIsbn=book=>canonicalizeBookIsbn13(book?.editionIsbn)
   ||canonicalizeBookIsbn13(book?.metadataIsbn)
   ||canonicalizeBookIsbn13(book?.isbn13)
@@ -16,100 +14,129 @@ const validCover=value=>typeof value==='string'
   &&/^https:\/\/[^\s"'<>]{1,600}$/i.test(value)?value:'';
 
 function identityCompatible(row,candidate){
-  if(!row?.title||!row?.author||!candidate?.title||!candidate?.author)return false;
-  return sameBookTitle(row.title,candidate.title)
-    &&nearlySameBookText(row.author,candidate.author);
+  return Boolean(row?.title&&row?.author&&candidate?.title&&candidate?.author
+    &&sameBookTitle(row.title,candidate.title)
+    &&nearlySameBookText(row.author,candidate.author));
+}
+function titleKeys(value){
+  const words=safeText(value).normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu,'').toLocaleLowerCase('nl')
+    .match(/[\p{L}\p{N}]+/gu)||[];
+  return {exact:normalized(value),start:words.slice(0,2).join(''),
+    end:words.slice(-2).join('')};
+}
+function addIndex(map,key,item){
+  if(!key)return;
+  if(!map.has(key))map.set(key,[]);
+  map.get(key).push(item);
 }
 
-function bookMatchSuggestions(row,existingBooks=[]){
+// Build ONCE for a whole import, not once for each worksheet row. One
+// object per distinct book identity is stored, no borrower or physical ID.
+function buildMatchCandidateIndex(existingBooks=[]){
+  const groups=new Map();
+  for(const book of Array.isArray(existingBooks)?existingBooks:[]){
+    if(!book||typeof book!=='object')continue;
+    const title=safeText(book.title),author=safeText(book.author);
+    if(!title||!author)continue;
+    const isbn=goodIsbn(book);
+    const key=JSON.stringify([isbn,title,author]);
+    let entry=groups.get(key);
+    if(!entry){
+      entry={origin:'existing',editionIsbn:isbn,title,author,
+        coverUrl:validCover(book.coverUrl),publisher:safeText(book.publisher),
+        language:safeText(book.language),sources:[],copies:0};
+      groups.set(key,entry);
+    }
+    entry.copies++;
+  }
+  const byIsbn=new Map(),byTitle=new Map(),byStart=new Map(),byEnd=new Map();
+  for(const entry of groups.values()){
+    const title=titleKeys(entry.title);
+    addIndex(byIsbn,entry.editionIsbn,entry);
+    addIndex(byTitle,title.exact,entry);
+    addIndex(byStart,title.start,entry);
+    addIndex(byEnd,title.end,entry);
+  }
+  return {byIsbn,byTitle,byStart,byEnd,sourceSize:groups.size};
+}
+function candidatesFor(row,index){
+  const isbn=canonicalizeBookIsbn13(row?.editionIsbn);
+  const title=titleKeys(row?.title);
+  const pooled=new Set();
+  for(const [map,key] of [
+    [index.byIsbn,isbn],[index.byTitle,title.exact],
+    [index.byStart,title.start],[index.byEnd,title.end],
+  ]){
+    for(const entry of map.get(key)||[])pooled.add(entry);
+  }
+  return [...pooled];
+}
+function bookMatchSuggestions(row,existingIndex=[]){
   if(!row?.book||row.status==='skipped')return [];
   const source=row.book;
+  const index=Array.isArray(existingIndex)
+    ?buildMatchCandidateIndex(existingIndex):existingIndex;
   const targetIsbn=canonicalizeBookIsbn13(source.editionIsbn);
-  const requireSuggestions=!targetIsbn
+  const indexedCandidates=candidatesFor(source,index);
+  const mismatchedExisting=Boolean(targetIsbn&&indexedCandidates.some(entry=>
+    entry.editionIsbn===targetIsbn&&!identityCompatible(source,entry)));
+  const requireSuggestions=!targetIsbn||mismatchedExisting
     ||(row.issues||[]).some(issue=>issue.severity==='conflict'
       &&['metadata_title_conflict','edition_identity_conflict',
         'conflicting_edition_isbns','metadata_identifier_conflict',
         'author_sources_differ'].includes(issue.code));
   if(!requireSuggestions)return [];
   const results=new Map();
-  const put=(candidate)=>{
-    if(!candidate.editionIsbn && candidate.origin!=='existing')return;
+  const put=candidate=>{
+    if(!candidate.editionIsbn&&candidate.origin!=='existing')return;
     const key=candidate.origin+':'+candidate.editionIsbn+':'
       +candidate.title.toLocaleLowerCase('nl');
     const previous=results.get(key);
-    if(!previous){
-      results.set(key,candidate);
-    }else{
+    if(!previous)results.set(key,candidate);
+    else {
       previous.copies=Math.max(previous.copies||0,candidate.copies||0);
       previous.sources=[...new Set([...previous.sources,...candidate.sources])].slice(0,4);
       if(!previous.coverUrl&&candidate.coverUrl)previous.coverUrl=candidate.coverUrl;
     }
   };
-  // A valid ISBN on a pre-existing physical book is a useful proposal
-  // ONLY when both title and author match the worksheet. No IDs, borrowers,
-  // class names, loan history or physical barcodes are exposed.
-  const existingGroups=new Map();
-  for(const book of Array.isArray(existingBooks)?existingBooks:[]){
-    const isbn=goodIsbn(book);
-    const isbnConfirmed=Boolean(targetIsbn&&isbn===targetIsbn);
-    const sameTitle=Boolean(source.title&&book.title
-      &&sameBookTitle(source.title,book.title));
-    // When the ISBN is valid, that exact edition may still reveal the
-    // correct title or author. A title-only legacy match remains a TENTATIVE
-    // suggestion; it never authorizes an automatic write.
-    if(!isbnConfirmed&&!identityCompatible(source,book)&&!sameTitle)continue;
-    const identity=[isbn,previewText(book.title),previewText(book.author)].join('|');
-    let group=existingGroups.get(identity);
-    if(!group){
-      group={origin:'existing',editionIsbn:isbn,
-        title:previewText(book.title),author:previewText(book.author),
-        coverUrl:validCover(book.coverUrl),publisher:previewText(book.publisher,100),
-        language:previewText(book.language,20),sources:[],copies:0,
-        identityWarning:!identityCompatible(source,book)};
-      existingGroups.set(identity,group);
-    }
-    group.copies++;
+  for(const entry of indexedCandidates){
+    const sameIsbn=Boolean(targetIsbn&&entry.editionIsbn===targetIsbn);
+    const sameTitle=Boolean(source.title&&sameBookTitle(source.title,entry.title));
+    // An exact ISBN can reveal a wrongly entered title/author. An exact
+    // title without a corroborating author is merely a tentative candidate.
+    if(!sameIsbn&&!identityCompatible(source,entry)&&!sameTitle)continue;
+    put({...entry,identityWarning:!identityCompatible(source,entry)});
   }
-  for(const group of existingGroups.values())put(group);
-  // Title/author lookups are discovery, not exact-edition proof. Retain
-  // source-attributed candidates without promoting them to safe writes.
   for(const suggestion of Array.isArray(row.onlineMatchCandidates)
     ?row.onlineMatchCandidates:[]){
     const isbn=canonicalizeBookIsbn13(suggestion.editionIsbn);
     if(!isbn)continue;
-    const candidate={
+    put({
       origin:'online',editionIsbn:isbn,
-      title:previewText(suggestion.title||source.title),
-      author:previewText(suggestion.author||source.author),
+      title:safeText(suggestion.title||source.title),
+      author:safeText(suggestion.author||source.author),
       coverUrl:validCover(suggestion.coverUrl),
-      publisher:previewText(suggestion.publisher,100),
-      language:previewText(suggestion.language,20),
+      publisher:safeText(suggestion.publisher),
+      language:safeText(suggestion.language),
       sources:Array.isArray(suggestion.sources)
-        ?suggestion.sources.map(s=>previewText(s,50)).filter(Boolean).slice(0,4):[],
+        ?suggestion.sources.map(safeText).filter(Boolean).slice(0,4):[],
       copies:0,unverifiedTitle:suggestion.unverifiedTitle===true,
-    };
-    put(candidate);
+    });
   }
-  const isNear=(isbn)=>{
-    const raw=[row.identifierAnalysis?.explicit?.raw,
-      row.identifierAnalysis?.legacy?.raw,
-      row.identifierAnalysis?.ambiguous?.raw]
-      .find(Boolean);
-    const digits=String(raw||'').replace(/[^0-9X]/gi,'');
-    if(digits.length!==13||isbn.length!==13)return false;
-    return [...isbn].filter((digit,index)=>digit!==digits[index]).length===1;
-  };
+  const raw=[row.identifierAnalysis?.explicit?.raw,
+    row.identifierAnalysis?.legacy?.raw,
+    row.identifierAnalysis?.ambiguous?.raw].find(Boolean);
+  const digits=String(raw||'').replace(/[^0-9X]/gi,'');
+  const isNear=isbn=>digits.length===13&&isbn.length===13
+    &&[...isbn].filter((digit,i)=>digit!==digits[i]).length===1;
   return [...results.values()].sort((a,b)=>{
-    const score=x=>(x.editionIsbn?6:0)
-      +(x.origin==='existing'?5:0)
+    const score=x=>(x.editionIsbn?6:0)+(x.origin==='existing'?5:0)
       +(targetIsbn&&x.editionIsbn===targetIsbn?8:0)
       +(x.editionIsbn&&isNear(x.editionIsbn)?4:0)
-      +(identityCompatible(source,x)?3:0)
-      +(x.identityWarning?-6:0)
-      +(x.sources?.length>=2?2:0)
-      +(x.coverUrl?1:0);
-    return score(b)-score(a)
-      ||a.title.localeCompare(b.title,'nl');
+      +(identityCompatible(source,x)?3:0)+(x.identityWarning?-6:0)
+      +(x.sources?.length>=2?2:0)+(x.coverUrl?1:0);
+    return score(b)-score(a)||a.title.localeCompare(b.title,'nl');
   }).slice(0,MAX_SUGGESTIONS);
 }
-module.exports={bookMatchSuggestions,identityCompatible};
+module.exports={bookMatchSuggestions,buildMatchCandidateIndex,identityCompatible};
