@@ -53,6 +53,18 @@ function editionQualifier(value){
   if(!match||!normalized(match[1]))return null;
   return {base:normalized(match[1]),part:Number(match[2]||match[3])};
 }
+function hasConflictingEditionQualifiers(titles){
+  const qualifiedByBase=new Map();
+  for(const title of titles||[]){
+    const qualifier=editionQualifier(title);
+    if(!qualifier)continue;
+    const numbers=qualifiedByBase.get(qualifier.base)||new Set();
+    numbers.add(qualifier.part);
+    if(numbers.size>1)return true;
+    qualifiedByBase.set(qualifier.base,numbers);
+  }
+  return false;
+}
 function sameBookTitle(left,right){
   if(nearlySameBookText(left,right))return true;
   const aQualifier=editionQualifier(left),bQualifier=editionQualifier(right);
@@ -90,4 +102,5 @@ function smallPageDifference(left,right){
   if(!Number.isInteger(a)||!Number.isInteger(b)||a<=0||b<=0)return false;
   return Math.abs(a-b)<=Math.max(10,Math.ceil(Math.max(a,b)*0.05));
 }
-module.exports={normalized,nearlySameBookText,sameBookTitle,sameBookIdentity,smallPageDifference};
+module.exports={normalized,nearlySameBookText,sameBookTitle,
+  hasConflictingEditionQualifiers,sameBookIdentity,smallPageDifference};
