@@ -99,7 +99,8 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     if (row.status === 'skipped') continue;
     const isbn = canonicalizeBookIsbn13(row.book?.editionIsbn);
     if (!isbn) {
-      decisions[row.index] = { ...decisions[row.index], action: 'blocked', reason: 'missing_valid_isbn' };
+      decisions[row.index] = { ...decisions[row.index], action: 'blocked',
+        reason: 'missing_valid_isbn', blockers: ['missing_valid_isbn'] };
       continue;
     }
     if (!groups.has(isbn)) groups.set(isbn, []);
@@ -359,6 +360,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       action: keepExisting ? 'kept_existing'
         : reason ? 'blocked' : additional ? 'add_copies' : 'unchanged',
       reason: keepExisting ? '' : reason,
+      blockers:keepExisting?[]:[...blockers].sort(),
       resolution: keepExisting ? 'keep_existing' : null };
     if (!reason && !keepExisting) {
       for (const item of newPrinted) proposedAdds.push({
@@ -386,7 +388,8 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         reason = 'unmatched_physical_copies';
         const firstAddition = proposedAdds.findIndex((item) => item.editionIsbn === isbn);
         if (firstAddition >= 0) proposedAdds.splice(firstAddition);
-        decisions[first] = { ...decisions[first], action: 'blocked', reason, addCopies: 0 };
+        decisions[first] = { ...decisions[first], action: 'blocked', reason,
+          blockers:[...new Set([...blockers,reason])].sort(), addCopies: 0 };
       }
       if (!reason) {
         for (const item of plannedLoans) {
