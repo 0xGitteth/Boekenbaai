@@ -381,6 +381,46 @@ async function run(){
       book.importProvenance.fieldSources.title.sourceDetail==='matched_workbook_isbn'),
       'Canonicalized workbook spelling remains auditable');
 
+    // Autosaved drafts contain validated row corrections as a Map whose
+    // keys are source indices. A prior implementation accidentally dropped
+    // those indices, so a reload made /review reject every edit/skip.
+    const draftStage=await start([
+      old('',{Titel:'Oorlogswinter'}),
+      old('',{Titel:'Oorlogswinter'}),
+    ],parts({books:true}));
+    assert.equal(draftStage.status,201,JSON.stringify(draftStage.data));
+    const stagedPath='/api/admin/book-import-stages/'+draftStage.data.id;
+    const draft=await call(stagedPath+'/draft',token,{
+      revision:draftStage.data.revision,acceptWarnings:false,
+      corrections:[
+        {index:0,fields:{title:'Oorlogswinter'}},
+        {index:1,skip:true},
+      ],
+      inventoryResolutions:[],assignmentResolutions:[],
+      metadataResolutions:[],
+    });
+    assert.equal(draft.status,200,JSON.stringify(draft.data));
+    assert.equal(draft.data.persisted,true,
+      'The draft must be written to the private persistent volume');
+    const loaded=await call(stagedPath,token);
+    assert.deepEqual(loaded.data.draft.corrections,[
+      {index:0,skip:false,fields:{title:'Oorlogswinter'}},
+      {index:1,skip:true,fields:{}},
+    ],'Autosaved corrections retain their original row indices');
+    assert.equal((await call(stagedPath+'/apply',token,{
+      revision:loaded.data.revision,confirm:true,
+    })).status,409,'Unreviewed draft cannot mutate the library');
+    const checked=await call(stagedPath+'/review',token,{
+      revision:loaded.data.revision,
+      ...loaded.data.draft,
+    });
+    assert.equal(checked.status,200,JSON.stringify(checked.data));
+    assert.deepEqual(checked.data.corrections.map(row=>row.index),[0,1],
+      'Restored corrections must pass ordinary server validation');
+    assert.equal((await call(stagedPath+'/cancel',token,{
+      revision:checked.data.revision,
+    })).status,200);
+
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
