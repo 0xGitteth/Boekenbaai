@@ -65,8 +65,51 @@ function hasConflictingEditionQualifiers(titles){
   }
   return false;
 }
+// These title variants only matter after an edition ISBN has already been
+// independently established. They must not be used to discover ISBNs.
+function words(value){
+  return String(value??'').normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu,'').toLocaleLowerCase('nl')
+    .match(/[\p{L}\p{N}]+/gu)||[];
+}
+function seriesTitleSuffix(longer,shorter){
+  const a=words(longer),b=words(shorter);
+  if(b.length<2||b.join('').length<12||a.length<=b.length)return false;
+  const prefix=a.slice(0,-b.length).join('');
+  return prefix.length>=3&&a.slice(-b.length).join('|')===b.join('|');
+}
+function explicitlySeparatedTitle(longer,shorter){
+  if(normalized(shorter).length<6)return false;
+  const segments=String(longer??'').split(/(?:\.\s+|:\s+|\s+[-–—]\s+)/u);
+  return segments.length>1
+    &&normalized(segments.at(-1))===normalized(shorter)
+    &&normalized(segments.slice(0,-1).join('')).length>=3;
+}
+function graphicDescriptorEquivalent(left,right){
+  const stripGraphic=value=>String(value??'')
+    .replace(/(?:\s+|\s*[-–—]\s*)(?:graphic(?:\s+novel)?|stripbewerking|striproman)\s*$/iu,'')
+    .trim();
+  const a=stripGraphic(left),b=stripGraphic(right);
+  return a!==String(left??'').trim()||b!==String(right??'').trim()
+    ?normalized(a).length>=12&&normalized(a)===normalized(b):false;
+}
+function numberedTitle(value){
+  const match=String(value??'').trim().match(
+    /^(.*?)\s+(I|II|III|IV|V|VI|VII|VIII|IX|X|[0-9]+)$/iu
+  );
+  if(!match||normalized(match[1]).length<6)return null;
+  const roman={I:1,II:2,III:3,IV:4,V:5,VI:6,VII:7,VIII:8,IX:9,X:10};
+  const part=/^[0-9]+$/.test(match[2])
+    ?Number(match[2]):roman[match[2].toUpperCase()];
+  return Number.isInteger(part)?{base:normalized(match[1]),part}:null;
+}
+function equivalentRomanVolume(left,right){
+  const a=numberedTitle(left),b=numberedTitle(right);
+  return Boolean(a&&b&&a.base===b.base&&a.part===b.part);
+}
 function sameBookTitle(left,right){
   if(nearlySameBookText(left,right))return true;
+  if(equivalentRomanVolume(left,right))return true;
   const aQualifier=editionQualifier(left),bQualifier=editionQualifier(right);
   if(aQualifier&&bQualifier
     &&aQualifier.base===bQualifier.base
@@ -79,6 +122,13 @@ function sameBookTitle(left,right){
   if(!a.trim()||!b.trim())return false;
   const digits=s=>(normalized(s).match(/\d+/g)||[]).join('|');
   if(digits(a)!==digits(b))return false;
+  // A longer catalogue title can contain a series prefix with no punctuation:
+  // "Magnus Chase de hamer van Thor" vs "De hamer van Thor".
+  // NEVER accept an arbitrary shared prefix: "De Gorgels" is not
+  // "De Gorgels en het geheim van de gletsjer".
+  if(seriesTitleSuffix(a,b)||seriesTitleSuffix(b,a)
+    ||explicitlySeparatedTitle(a,b)||explicitlySeparatedTitle(b,a)
+    ||graphicDescriptorEquivalent(a,b))return true;
   const parts=s=>s.split(/\s+[-–—]\s+|[:()]/u).map(v=>v.trim())
     .filter(v=>normalized(v).length>=12);
   const aParts=parts(a),bParts=parts(b);

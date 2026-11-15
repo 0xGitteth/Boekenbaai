@@ -481,6 +481,35 @@ function acceptSourceVerifiedSpelling(row, options) {
   }
 }
 
+function oneStepIsbnTypo(raw,isbn){
+  const value=String(raw??'').replace(/[^0-9]/g,'');
+  if(!/^97[89]/.test(value) || !/^97[89][0-9]{10}$/.test(isbn))return false;
+  if(value.length===13){
+    let differing=0;
+    for(let i=0;i<13;i++)if(value[i]!==isbn[i])differing++;
+    return differing===1;
+  }
+  if(value.length===12){
+    // A missing digit can be repaired only after an independent exact-ISBN
+    // match. Do not treat any arbitrary 12-digit UPC as a partial ISBN.
+    for(let i=0;i<13;i++){
+      if(isbn.slice(0,i)+isbn.slice(i+1)===value)return true;
+    }
+  }
+  return false;
+}
+function oneNearWorksheetIsbn(row,result){
+  const analyses=row?.identifierAnalysis||{};
+  const rawValues=[analyses.explicit?.raw,analyses.legacy?.raw,
+    analyses.ambiguous?.raw].filter(Boolean);
+  const candidates=[...new Set((Array.isArray(result?.isbnSearchCandidates)
+    ?result.isbnSearchCandidates:[]).map(canonicalizeBookIsbn13)
+    .filter(Boolean))];
+  const near=candidates.filter(isbn=>rawValues.some(raw=>
+    oneStepIsbnTypo(raw,isbn)));
+  return near.length===1?near[0]:'';
+}
+
 async function resolveMetadata(row, options) {
   const lookupIsbn = typeof options.lookupIsbn === 'function' ? options.lookupIsbn : null;
   const lookupTitleAuthor = typeof options.lookupTitleAuthor === 'function' ? options.lookupTitleAuthor : null;
@@ -580,9 +609,11 @@ async function resolveMetadata(row, options) {
     // Production Google Books title+author fallback returns no trustworthy
     // edition by itself. Verify its SINGLE candidate ISBN through the
     // existing exact-ISBN multi-provider path before using it to repair.
-    const candidateIsbns=Array.isArray(result?.isbnCandidates)
-      ?[...new Set(result.isbnCandidates.map(canonicalizeBookIsbn13)
-        .filter(Boolean))]:[];
+    const nearbyCandidate=oneNearWorksheetIsbn(row,result);
+    const candidateIsbns=nearbyCandidate?[nearbyCandidate]
+      :Array.isArray(result?.isbnCandidates)
+        ?[...new Set(result.isbnCandidates.map(canonicalizeBookIsbn13)
+          .filter(Boolean))]:[];
     if(lookupIsbn && candidateIsbns.length===1){
       try{
         const exact=await lookupIsbn(candidateIsbns[0],{

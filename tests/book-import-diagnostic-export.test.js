@@ -8,7 +8,8 @@ const start=ui.indexOf('function diagnosticSnapshot()');
 const end=ui.indexOf('function renderUnifiedSync()',start);
 assert.ok(start>=0&&end>start,'Preview diagnosis must exist in the unified import review');
 const block=ui.slice(start,end);
-for(const field of ['sourceEvidence','blockers','editionIsbn','rawIsbn',
+for(const field of ['existingIdentitySamples','legacyIdentitySamples',
+  'sourceEvidence','blockers','editionIsbn','rawIsbn',
   'metadataIssues','worksheetRow','issues','inventorySummary'])
   assert.ok(block.includes(field),'Missing diagnostic detail: '+field);
 for(const privateField of ['studentId','borrowerId','studentLoan','borrowedBooks',

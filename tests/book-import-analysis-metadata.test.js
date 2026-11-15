@@ -402,6 +402,42 @@ module.exports = async function runMetadataTests() {
   assert.equal(unverifiedOverride.rows[0].status,'conflict',
     'Disagreeing providers must never silently choose a different edition');
 
+  // A Google title search may contain many editions. Only one ISBN
+  // differing by a single character from the invalid worksheet ISBN may
+  // proceed, and then only after two independent exact-ISBN confirmations.
+  const numericTypo=await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'9780339554930',
+  }],{
+    lookupTitleAuthor:async()=>({
+      found:true,title:'Herkenbaar boek',author:'A Auteur',
+      isbnSearchCandidates:[ISBN_ALT,ISBN_THIRD],
+      source:'googlebooks-title-author',
+    }),
+    lookupIsbn:async(isbn)=>{
+      assert.equal(isbn,ISBN_ALT,'Only nearest ISBN should be queried');
+      return {found:true,title:'Herkenbaar boek',author:'A Auteur',
+        isbn13:isbn,sourceCandidates:[
+          {source:'Google Books',title:'Herkenbaar boek',
+            author:'A Auteur',isbn13:isbn},
+          {source:'Open Library',title:'Herkenbaar boek',
+            author:'A Auteur',isbn13:isbn},
+        ]};
+    },
+  });
+  assert.equal(numericTypo.rows[0].book.editionIsbn,ISBN_ALT);
+  assert.ok(!codes(numericTypo.rows[0]).has('conflicting_isbn_repair_suggestions'));
+  const ambiguousNumericTypo=await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'9780339554930',
+  }],{
+    lookupTitleAuthor:async()=>({
+      found:true,title:'Herkenbaar boek',author:'A Auteur',
+      isbnSearchCandidates:[ISBN_ALT,'9780339554931'],
+    }),
+    lookupIsbn:async()=>{throw Error('Multiple near-matches must never trigger an exact lookup');},
+  });
+  assert.equal(ambiguousNumericTypo.rows[0].book.editionIsbn,'',
+    'Two different near ISBNs must remain unresolved');
+
   const wrongAuthor = await analyzeBookImportRows([{ Titel: 'Strict titel', Auteur: 'Juiste Auteur' }], {
     lookupTitleAuthor: async () => ({ title: 'Strict titel', author: 'Andere Auteur', isbn13: ISBN, found: true }),
   });
@@ -532,6 +568,40 @@ module.exports = async function runMetadataTests() {
   assert.deepStrictEqual(verified.sources,['googlebooks','openlibrary']);
   assert.strictEqual(corroboratedTitleConflict.groups.length,0,
     'A genuine ISBN/title identity conflict must stay blocked');
+
+  // Real import path: independently matching ISBN providers must not flag a
+  // series prefix or edition descriptor as a different physical book.
+  const seriesPrefix=await analyzeBookImportRows([{
+    Titel:'Magnus Chase de hamer van Thor',Auteur:'Rick Riordan',
+    'ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'De hamer van Thor',author:'Rick Riordan',isbn13:ISBN,
+    sourceCandidates:[
+      {source:'Google Books',title:'De hamer van Thor',
+        author:'Rick Riordan',isbn13:ISBN},
+      {source:'Open Library',title:'De hamer van Thor',
+        author:'Rick Riordan',isbn13:ISBN},
+    ],
+  })});
+  assert.ok(!seriesPrefix.rows[0].issues.some(issue=>
+    issue.code==='metadata_title_conflict'));
+  assert.notEqual(seriesPrefix.rows[0].status,'conflict');
+  const differentWork=await analyzeBookImportRows([{
+    Titel:'De Gorgels',Auteur:'Jochem Myjer','ISBN-nummer':ISBN,
+  }],{lookupIsbn:async()=>({
+    found:true,title:'De Gorgels en het geheim van de gletsjer',
+    author:'Jochem Myjer',isbn13:ISBN,
+    sourceCandidates:[
+      {source:'Google Books',isbn13:ISBN,
+        title:'De Gorgels en het geheim van de gletsjer',
+        author:'Jochem Myjer'},
+      {source:'Open Library',isbn13:ISBN,
+        title:'De Gorgels en het geheim van de gletsjer',
+        author:'Jochem Myjer'},
+    ],
+  })});
+  assert.equal(differentWork.rows[0].status,'conflict',
+    'A series title is not proof of the correct book within that series');
 
   const orthographic=await analyzeBookImportRows([{
     Titel:'P.S. Ik hou van je',Auteur:'A Auteur','ISBN-nummer':ISBN,
