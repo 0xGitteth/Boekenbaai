@@ -9,6 +9,7 @@ const { analyzeIdentifier, looksLikeIsbnCandidate, normalizeRuntimeBarcode } = r
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { inspectReviewedLoans } = require('./book-import-loan-migration');
 const { eligibleForDeferredContext } = require('./book-import-followups');
+const {bookMatchSuggestions}=require('./book-import-match-suggestions');
 
 const CORRECTION_COLUMNS = Object.freeze({
   title: { header: 'Titel', fields: ['title'], type: 'text' },
@@ -360,6 +361,12 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
             derived: 'exam_material_strip_tag' };
       }
     }
+  }
+  // Expose a bounded, book-only shortlist to the authenticated import
+  // review. Nothing here is a write instruction, and every selection
+  // must be rerun through the normal immutable correction workflow.
+  for(const reviewed of analysis.rows){
+    reviewed.matchSuggestions=bookMatchSuggestions(reviewed,options.existingBooks);
   }
   const decisions = buildReviewDecisions(analysis, Array.isArray(options.existingBooks) ? options.existingBooks : [],
     { acceptWarnings: options.acceptWarnings === true,
