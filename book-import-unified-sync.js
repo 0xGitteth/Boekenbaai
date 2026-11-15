@@ -89,6 +89,15 @@ function issueAffectsSelection(issue,parts,domain){
     return issue.sourceInvalid===true &&domain==='metadata'
       &&parts.fields?.[issue.field]===true;
   }
+  // A disagreement about an exact ISBN's TITLE may invalidate the title,
+  // not otherwise independent fields such as language or author. Conversely
+  // conflicting author columns must not block an unchanged title.
+  // Stock/loans remain conservative: their physical identity depends on
+  // the entire title + author pair.
+  if(domain==='metadata'&&code==='metadata_title_conflict')
+    return parts.fields?.title===true;
+  if(domain==='metadata'&&code==='author_sources_differ')
+    return parts.fields?.author===true;
   if(LOAN_ISSUES.has(code))
     return domain==='assignment'&&parts.loans;
   if(LOCATION_ISSUES.has(code))
@@ -428,8 +437,11 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         'metadata_title_conflict','author_sources_differ',
         'missing_valid_isbn','metadata_identifier_conflict',
       ]);
+      const onlyThisField={books:false,loans:false,locations:false,
+        fields:{[field]:true}};
       const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
         issue.severity==='conflict'
+        &&issueAffectsSelection(issue,onlyThisField,'metadata')
         &&(identityCodes.has(issue.code)
           ||(issue.code==='conflicting_source_columns'
             &&['title','author','isbn','metadataIsbn','ambiguousIdentifier']
