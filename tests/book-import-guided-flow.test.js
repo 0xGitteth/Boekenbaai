@@ -135,6 +135,20 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Online enrichment of an unselected field must not offer a broken editor');
   assert.ok(ui.includes('metadataIssueId:item.id,'),
     'Manual correction must clear an earlier metadata keep override');
+  assert.ok(ui.includes('guidedMissingAcknowledged'),
+    'Missing loan and location editions must require explicit acknowledgement');
+  assert.ok(ui.includes('for(const missing of assignments.notInCollection||[])'),
+    'Missing physical books must appear in the guided queue');
+  assert.ok(ui.includes('Niet overgenomen boeken'),
+    'Final overview must count omitted loan/location books');
+  assert.ok(ui.includes('Auteur: '+''), // Next assertions target the actual text.
+    'Guided book candidates must show the author');
+  assert.ok(ui.includes('if(candidate.identityWarning'),
+    'An uncertain title/author identity must require physical confirmation');
+  assert.ok(ui.includes("const data=changes?snapshot:{revision,clear:true}"),
+    'Reverted choices must remove the previous draft before final confirmation');
+  assert.ok(ui.includes('if(draftSavePending||draftChangeGeneration!==generation)'),
+    'Edits during an in-flight save must trigger another save');
   assert.ok(ui.includes('if(open)editRow(sourceRow,editHost'),
     'The editor must reuse the existing validated correction flow');
   assert.ok(server.includes('bookImportStageStore.saveDraft('),
