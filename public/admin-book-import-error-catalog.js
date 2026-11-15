@@ -18,6 +18,7 @@
     encoded_input_overhead:'Het gecodeerde Excelbestand overschrijdt de maximale uploadgrootte.',
     xlsx_unavailable:'De Excelverwerking is tijdelijk niet beschikbaar.',
     invalid_source_rows:'De bronregels kunnen niet worden verwerkt.',
+    draft_must_be_reviewed:'Je hebt opgeslagen conceptkeuzes. Controleer die eerst opnieuw voordat je importeert.',
     edition_grouping_failed:'De boekregels konden niet veilig op editie worden gegroepeerd.',
     missing_valid_isbn:'Er ontbreekt een geldig ISBN. Controleer de boekeditie.',
     invalid_or_unrecognized_isbn:'De ingevulde ISBN-waarde wordt niet herkend.',
