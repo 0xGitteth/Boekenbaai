@@ -487,6 +487,7 @@
     let guidedStep=1; // 0 upload, 1 analysis overview, 2 review, 3 final
     let guidedIndex=0;
     let guidedAlternativeRow=null;
+    const candidateChangeHistory=new Map();
     let guidedShowDetails=false;
     const wizardPositionKey='boekenbaai.import.wizard.position.v1';
     function storeGuidedPosition(){
@@ -568,6 +569,8 @@
       assignmentResolutions = new Map((stage.assignmentResolutions || []).map((item) => [item.id, item]));
       metadataResolutions = new Map((stage.metadataResolutions || []).map(item=>[item.id,item]));
       skippedEdits.clear();
+      // A fresh server reanalysis becomes the new correction baseline.
+      candidateChangeHistory.clear();
       if (!preservePosition || !sameStage) {
         const previous=(()=>{try{return JSON.parse(
           localStorage.getItem(wizardPositionKey)||'null');}catch{return null;}})();
@@ -729,6 +732,35 @@
       // Prevent applying the PREVIOUS server review while the editor contains
       // changes that have not yet been checked and saved.
       if (currentApplyButton) currentApplyButton.disabled = true;
+    }
+
+    function selectCandidateForRow(row,candidate){
+      if(!row||!candidate?.editionIsbn)return;
+      const fields=corrections.get(row.index)?.fields||{};
+      const previous=candidateChangeHistory.get(row.index);
+      const original=previous?.original||{
+        title:fields.title===undefined?row.book?.title:fields.title,
+        author:fields.author===undefined?row.book?.author:fields.author,
+      };
+      const nextApplied={};
+      updateCorrection(row.index,'editionIsbn',candidate.editionIsbn);
+      for(const field of ['title','author']){
+        const current=(corrections.get(row.index)?.fields||{})[field];
+        const changedByUser=previous?.lastApplied?.[field]!==undefined
+          &&current!==previous.lastApplied[field];
+        if(candidate.unverifiedTitle){
+          // Search-only ISBN hints contain no verified title/author. Keep
+          // any manual edit untouched; undo earlier candidate metadata only
+          // when it has not been edited since that earlier candidate.
+          if(previous?.lastApplied?.[field]!==undefined&&!changedByUser)
+            updateCorrection(row.index,field,original[field]||row.book?.[field]||'');
+        }else if(!changedByUser){
+          const value=candidate[field]||row.book?.[field]||'';
+          updateCorrection(row.index,field,value);
+          nextApplied[field]=value;
+        }
+      }
+      candidateChangeHistory.set(row.index,{original,lastApplied:nextApplied});
     }
 
     function updateInventoryResolution(isbn, keep) {
@@ -1119,11 +1151,7 @@
               check.append(notice);
               const choose=(candidate)=>{
                 if(!candidate.editionIsbn)return;
-                updateCorrection(source.index,'editionIsbn',candidate.editionIsbn);
-                updateCorrection(source.index,'title',candidate.unverifiedTitle
-                  ?book.title:candidate.title||book.title);
-                updateCorrection(source.index,'author',candidate.unverifiedTitle
-                  ?book.author:candidate.author||book.author);
+                selectCandidateForRow(source,candidate);
                 render();
               };
               addAction(check,'Dit is het juiste boek',()=>choose(proposed),true);
@@ -1825,15 +1853,7 @@
               // Never store a malformed Excel number as a scan barcode.
               // Keep untouched fields unless the catalogue actually names
               // the edition; unverified search hints carry only the ISBN.
-              updateCorrection(row.index,'editionIsbn',candidate.editionIsbn);
-              // Always replace the earlier choice's title/author too: when
-              // changing candidate A to B we must not leave A's metadata
-              // in the pending correction. Never invent a title from a
-              // search-only ISBN that lacks exact-edition confirmation.
-              updateCorrection(row.index,'title',candidate.unverifiedTitle
-                ?row.book.title:(candidate.title||row.book.title));
-              updateCorrection(row.index,'author',candidate.unverifiedTitle
-                ?row.book.author:(candidate.author||row.book.author));
+              selectCandidateForRow(row,candidate);
               render();
             });
             actions.append(accept);
