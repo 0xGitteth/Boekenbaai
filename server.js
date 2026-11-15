@@ -17,7 +17,8 @@ const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
-const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
+const { analyzeReviewedImport, buildReviewDecisions,
+  normalizeCorrections } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
@@ -5288,7 +5289,7 @@ async function handleApi(req, res, requestUrl) {
           }));
         return sendJson(res,200,{items,count:items.length});
       }
-      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel))?$/);
+      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
         if (activeImportJobs.size > 0) {
           return sendJson(res, 409, { message: 'De oude boekimport is nog bezig. Rond die eerst af.', error: 'legacy_import_busy' });
@@ -5455,6 +5456,31 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 409, { message: 'Deze import is inmiddels gewijzigd of wordt verwerkt.', error: cancelled.error });
         }
         return sendJson(res, 200, importStageView(stage));
+      }
+      if(req.method==='POST'&&stageMatch[2]==='draft'){
+        if(stage.options.mode!=='unified_sync')
+          return sendJson(res,400,{message:'Deze importmodus ondersteunt geen conceptkeuzes.'});
+        const body=await parseBody(req,24*1024*1024);
+        if(!Number.isSafeInteger(body.revision)
+          ||typeof body.acceptWarnings!=='boolean')
+          return sendJson(res,400,{message:'Ongeldige conceptversie.'});
+        const normalized=normalizeCorrections(body.corrections,stage.sourceRows.length);
+        const inventory=normalizeInventoryResolutions(body.inventoryResolutions);
+        const assignment=normalizeAssignmentResolutions(body.assignmentResolutions);
+        const metadata=normalizedMetadataChoice(body.metadataResolutions);
+        if(!normalized.ok||!inventory.ok||!assignment.ok||!metadata.ok)
+          return sendJson(res,400,{message:'Ongeldige boekcorrectie.',
+            error:normalized.error||inventory.error||assignment.error||metadata.error});
+        const saved=bookImportStageStore.saveDraft(stage,body.revision,{
+          corrections:[...normalized.corrections.values()],
+          acceptWarnings:body.acceptWarnings,
+          inventoryResolutions:inventory.values,
+          assignmentResolutions:assignment.values,
+          metadataResolutions:metadata.values,
+        });
+        if(!saved.ok)return sendJson(res,409,{message:'De import is inmiddels gewijzigd.',
+          error:saved.error});
+        return sendJson(res,200,saved);
       }
       if (req.method === 'POST' && stageMatch[2] === 'review') {
         // Corrections for a large school spreadsheet can exceed 400 KB even
