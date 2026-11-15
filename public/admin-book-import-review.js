@@ -1216,6 +1216,8 @@
           if(candidate.publisher)hints.push(candidate.publisher);
           if(candidate.language)hints.push('Taal: '+candidate.language);
           if(candidate.sources?.length)hints.push('Bron: '+candidate.sources.join(', '));
+          if(candidate.identityWarning)
+            hints.push('Titel of auteur wijkt af: controleer op het fysieke boek');
           if(candidate.unverifiedTitle)hints.push('Titel nog niet per editie bevestigd');
           if(hints.length)
             details.append(make('small','bb-match-review__source',hints.join(' · ')));
@@ -1230,12 +1232,14 @@
               // Keep untouched fields unless the catalogue actually names
               // the edition; unverified search hints carry only the ISBN.
               updateCorrection(row.index,'editionIsbn',candidate.editionIsbn);
-              if(!candidate.unverifiedTitle){
-                if(candidate.title&&candidate.title!==row.book?.title)
-                  updateCorrection(row.index,'title',candidate.title);
-                if(candidate.author&&candidate.author!==row.book?.author)
-                  updateCorrection(row.index,'author',candidate.author);
-              }
+              // Always replace the earlier choice's title/author too: when
+              // changing candidate A to B we must not leave A's metadata
+              // in the pending correction. Never invent a title from a
+              // search-only ISBN that lacks exact-edition confirmation.
+              updateCorrection(row.index,'title',candidate.unverifiedTitle
+                ?row.book.title:(candidate.title||row.book.title));
+              updateCorrection(row.index,'author',candidate.unverifiedTitle
+                ?row.book.author:(candidate.author||row.book.author));
               render();
             });
             actions.append(accept);
