@@ -76,6 +76,14 @@ function row(extra={}){
   assert.ok(correctedEdition.some(candidate=>candidate.identityWarning),
     'A materially different title or author remains a tentative suggestion');
 
+  const typo=bookMatchSuggestions(row({
+    book:{title:'Oorlogswimter',author:'Jan Terlouw',editionIsbn:''},
+  }),[{
+    title:'Oorlogswinter',author:'Jan Terlouw',editionIsbn:ISBN,
+  }]);
+  assert.equal(typo[0]?.editionIsbn,ISBN,
+    'A minor title typo and matching author must still suggest the library book');
+
   const longTitle='Een volledige zeer lange titel '.repeat(10);
   const longAuthor='Een auteursnaam met volledige gegevens '.repeat(8);
   const longSuggestion=bookMatchSuggestions(row({
