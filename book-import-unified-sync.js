@@ -89,6 +89,15 @@ function issueAffectsSelection(issue,parts,domain){
     return issue.sourceInvalid===true &&domain==='metadata'
       &&parts.fields?.[issue.field]===true;
   }
+  // A disagreement about an exact ISBN's TITLE may invalidate the title,
+  // not otherwise independent fields such as language or author. Conversely
+  // conflicting author columns must not block an unchanged title.
+  // Stock/loans remain conservative: their physical identity depends on
+  // the entire title + author pair.
+  if(domain==='metadata'&&code==='metadata_title_conflict')
+    return parts.fields?.title===true;
+  if(domain==='metadata'&&code==='author_sources_differ')
+    return parts.fields?.author===true;
   if(LOAN_ISSUES.has(code))
     return domain==='assignment'&&parts.loans;
   if(LOCATION_ISSUES.has(code))
@@ -282,6 +291,14 @@ function metadataSourceSafe(row,field,acceptWarnings){
   if(row.status==='skipped'||!row.book?.editionIsbn
     ||!row.book?.title||!row.book?.author)return false;
   const issues=row.issues||[];
+  // A materially conflicting title/author may mean the spreadsheet describes
+  // a DIFFERENT physical edition even if its ISBN column is valid. Do not
+  // apply its language, authors, description or other metadata silently.
+  // Preserve existing values without asking the teacher to decide on every
+  // unrelated field; the disputed identity field alone remains actionable.
+  if(row.unsafeIdentity || issues.some(issue=>issue.severity==='conflict'
+    &&['metadata_title_conflict','author_sources_differ'].includes(issue.code)))
+    return false;
   // Legacy reviewed/test rows can carry a conservative warning status
   // without diagnostic objects. Do not silently accept such a warning.
   if(!issues.length)
@@ -313,7 +330,12 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   const sourceIssuesByIndex=new Map(analysis.rows.map(row=>
     [row.index,row.issues||[]]));
   for(const original of analysis.rows){
-    const row=scopedRow(original,parts,'metadata');
+    const scoped=scopedRow(original,parts,'metadata');
+    // Keep the raw trust boundary even when the *displayed* review is
+    // scoped to an unrelated field such as language or page count.
+    const row={...scoped,unsafeIdentity:(original.issues||[]).some(issue=>
+      issue.severity==='conflict'
+      &&['metadata_title_conflict','author_sources_differ'].includes(issue.code))};
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
     if(!isbn||row.status==='skipped'||!editions.has(isbn))continue;
     if(!groups.has(isbn))groups.set(isbn,[]);
@@ -428,8 +450,11 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         'metadata_title_conflict','author_sources_differ',
         'missing_valid_isbn','metadata_identifier_conflict',
       ]);
+      const onlyThisField={books:false,loans:false,locations:false,
+        fields:{[field]:true}};
       const structural=sourceRows.some(row=>(row.issues||[]).some(issue=>
         issue.severity==='conflict'
+        &&issueAffectsSelection(issue,onlyThisField,'metadata')
         &&(identityCodes.has(issue.code)
           ||(issue.code==='conflicting_source_columns'
             &&['title','author','isbn','metadataIsbn','ambiguousIdentifier']
@@ -579,6 +604,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         row.provenance?.[field]?.source==='metadata'
         &&nonempty(row.book?.[field])
         &&row.book?.editionIsbn===isbn
+        &&!row.unsafeIdentity
         &&!row.issues?.some(issue=>issue.severity==='conflict'));
       if(!evidenceRows.length)continue;
       const values=evidenceRows.map(row=>row.book[field]);

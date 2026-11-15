@@ -144,14 +144,23 @@ assert.equal(normalizeParts(undefined).value.books,true);
     stock,'stock'),false);
   assert.equal(issueAffectsSelection({code:'library_presence_needs_review'},
     stock,'stock'),false);
-  for(const code of ['metadata_title_conflict','author_sources_differ',
-    'conflicting_edition_isbns','edition_identity_conflict',
+  for(const code of ['conflicting_edition_isbns','edition_identity_conflict',
     'missing_title','missing_author','metadata_identifier_conflict']){
     for(const [section,part] of [['stock',stock],['assignment',loans],
       ['metadata',metadata]]){
       assert.equal(issueAffectsSelection({code,severity:'conflict'},part,section),true,
         code+' must remain blocking in '+section);
     }
+  }
+  for(const [code,field] of [['metadata_title_conflict','title'],
+    ['author_sources_differ','author']]){
+    assert.equal(issueAffectsSelection({code,severity:'conflict'},stock,'stock'),true);
+    assert.equal(issueAffectsSelection({code,severity:'conflict'},loans,'assignment'),true);
+    assert.equal(issueAffectsSelection({code,severity:'conflict'},
+      parts({fields:{[field]:true}}),'metadata'),true);
+    assert.equal(issueAffectsSelection({code,severity:'conflict'},
+      metadata,'metadata'),false,
+      'One uncertain field must not force manual review of unrelated values');
   }
   for(const [field,expectedStock,expectedMetadata] of [
     ['description',false,false],['pageCount',false,false],
@@ -184,6 +193,71 @@ assert.equal(normalizeParts(undefined).value.books,true);
     'Only selected and meaningful diagnostics request administrator acknowledgment');
 }
 
+
+// A true ISBN/title conflict is still a title decision, but the same row's
+// independently populated author and language are not three separate
+// mandatory decisions. Existing physical copies must remain untouched.
+{
+  const current=db();
+  current.books=[copy('copy-1',{language:'en',author:'Jan Terlouw',
+    authors:['Jan Terlouw'],title:'Oorlogswinter'})];
+  const row=source(0,{},{title:'Oorlogswinter',author:'Jan Terlouw',
+    authors:['Jan Terlouw'],language:'nl'},{
+    title:{source:'excel',raw:'Oorlogswinter'},
+    author:{source:'excel',raw:'Jan Terlouw'},
+    language:{source:'excel',raw:'nl'},
+  });
+  row.status='conflict';
+  row.issues=[{code:'metadata_title_conflict',severity:'conflict'}];
+  const scoped=plan([row],current,{
+    parts:parts({books:true,fields:{title:true,author:true,language:true}}),
+  });
+  assert.equal(scoped.ok,true);
+  assert.deepEqual(scoped.metadata.issues.map(issue=>issue.field),['title'],
+    'Do not create redundant author/language decisions for a title dispute');
+  assert.equal(scoped.metadata.updates.some(update=>update.field==='language'),false,
+    'A disputed physical identity must not silently change the book language');
+  assert.ok(scoped.metadata.automaticDecisions.some(item=>
+    item.field==='language'&&item.action==='keep'));
+  assert.equal(scoped.summary.blockedStock,1,
+    'Uncertain book identity must remain blocked for physical-stock changes');
+
+  const onlyLanguage=plan([row],current,{
+    parts:parts({fields:{language:true}}),
+  });
+  assert.equal(onlyLanguage.summary.pendingMetadata,0);
+  assert.equal(onlyLanguage.metadata.updates.length,0,
+    'Selecting only language cannot bypass an unselected title conflict');
+  assert.ok(onlyLanguage.metadata.automaticDecisions.some(item=>
+    item.field==='language'&&item.action==='keep'));
+  const missingLanguage=db();
+  missingLanguage.books=[copy('copy-1',{language:''})];
+  const withOnlineEnrichment=source(0,{},{language:'nl'},{
+    language:{source:'metadata',detail:'isbn_lookup'},
+  });
+  withOnlineEnrichment.status='conflict';
+  withOnlineEnrichment.issues=[{code:'metadata_title_conflict',severity:'conflict'}];
+  const enrichment=plan([withOnlineEnrichment],missingLanguage,{
+    parts:parts({fields:{pageCount:true}}),
+  });
+  assert.equal(enrichment.metadata.updates.some(item=>item.field==='language'),false,
+    'Automatic enrichment also preserves a disputed physical edition');
+
+  const authorClash=source(0,{},{title:'Oorlogswinter',author:'Jan Terlouw',
+    authors:['Jan Terlouw'],language:'nl'},{
+    title:{source:'excel',raw:'Oorlogswinter'},
+    author:{source:'excel',raw:'Jan Terlouw'},
+    language:{source:'excel',raw:'nl'},
+  });
+  authorClash.status='conflict';
+  authorClash.issues=[{code:'author_sources_differ',severity:'conflict'}];
+  const authorScoped=plan([authorClash],current,{
+    parts:parts({fields:{title:true,author:true,language:true}}),
+  });
+  assert.deepEqual(authorScoped.metadata.issues.map(issue=>issue.field),['author']);
+  assert.equal(authorScoped.metadata.updates.some(update=>update.field==='language'),false,
+    'An author dispute likewise preserves other physical edition details');
+}
 
 {
   const current=db();
