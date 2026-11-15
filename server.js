@@ -65,7 +65,6 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
   findTask: findDeferredAssignmentTask,
   resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
 
-const bookImportStageStore = createImportStageStore();
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -89,6 +88,12 @@ const DEFAULT_DATA_PATH = path.join(__dirname, 'data', 'db.json');
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
   ? path.resolve(__dirname, process.env.BOEKENBAAI_DATA_PATH)
   : DEFAULT_DATA_PATH;
+// Recover an unfinished, administrator-owned school import after a restart.
+// The file is on the same non-public persistent volume as db.json.
+const bookImportStageStore=createImportStageStore({
+  ttlMs:24*60*60*1000,
+  persistenceFile:path.join(path.dirname(DATA_PATH),'book-import-active-stage.json'),
+});
 // Keep original image files next to db.json on the configured persistent volume.
 const coverAssets = createCoverAssetStore({ directory: path.join(path.dirname(DATA_PATH), 'covers') });
 
@@ -5360,7 +5365,8 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, syncParts:selectedParts.value, maxRows: 1500, maxCopies: maxAnalyzedCopies,
+          mode, syncParts:selectedParts.value, maxRows: 1500,
+          maxCopies: maxAnalyzedCopies,enrichIsbn,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
           ...(lookupTitleAuthor ? { lookupTitleAuthor: (input) => {
@@ -5418,6 +5424,14 @@ async function handleApi(req, res, requestUrl) {
       if (!stageMatch) return sendJson(res, 404, { message: 'Importcontrole niet gevonden.' });
       const stage = bookImportStageStore.get(stageMatch[1], user.id);
       if (!stage) return sendJson(res, 404, { message: 'Importcontrole ontbreekt of is verlopen.' });
+      // Functions are deliberately not serialized to disk. Restore
+      // provider lookups for a resumed draft before reanalyzing corrections.
+      if(stage.options?.enrichIsbn
+        &&typeof stage.options.lookupIsbn!=='function'){
+        stage.options.lookupIsbn=resolveLookupIsbnMetadata();
+        stage.options.lookupTitleAuthor=resolveLookupTitleAuthorMetadata();
+        stage.options.releaseRetryableLookups=()=>{};
+      }
       if (req.method === 'GET' && !stageMatch[2]) {
         return sendJson(res, 200, importStageView(stage));
       }
