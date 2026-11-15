@@ -5,7 +5,7 @@
 // An omitted ISBN or lower Excel quantity NEVER silently deletes stock.
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { comparison: spellingKey } = require('./book-import-source-confidence');
-const {sameBookIdentity}=require('./book-import-autonomy');
+const {sameBookIdentity,hasConflictingEditionQualifiers}=require('./book-import-autonomy');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
 const { eligibleForDeferredContext, followupContext, contextMatchesTask } =
@@ -133,6 +133,10 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       if (!reason) reason = code;
     };
     const missingIdentity=rows.some(row=>!row.book?.title||!row.book?.author);
+    if(hasConflictingEditionQualifiers([
+      ...rows.map(row=>row.book?.title),
+      ...existing.map(book=>book.title),
+    ]))block('edition_identity_mismatch');
     if(missingIdentity)block('missing_title_or_author');
     else if(rows.some(row=>!sameBookIdentity(row.book,rows[0].book))
       ||existing.some(book=>!sameBookIdentity(book,rows[0].book))){
