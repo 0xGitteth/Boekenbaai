@@ -528,6 +528,7 @@
     const guidedSelectedRow=new Map();
     let guidedShowDetails=false;
     let guidedAuditEditor=null;
+    let guidedMissingAcknowledged=false;
     const wizardPositionKey='boekenbaai.import.wizard.position.v1';
     function storeGuidedPosition(){
       if(!stage?.id)return;
@@ -667,7 +668,10 @@
 
     function rememberResponse(payload, preservePosition = false) {
       const sameStage = stage?.id === payload.id;
+      const previousRevision=stage?.revision;
       stage = payload;
+      if(!sameStage||previousRevision!==stage.revision)
+        guidedMissingAcknowledged=false;
       remotePending = null;
       liveAlert.replaceChildren();
       const savedDraft=stage.draft||{};
@@ -1022,7 +1026,7 @@
         const key=isbn||('row:'+row?.index);
         if(!books.has(key))books.set(key,{
           key,isbn:isbn||'',rows:new Map(),stock:[],
-          assignments:[],metadata:[],warnings:[],
+          assignments:[],missingAssignments:[],metadata:[],warnings:[],
         });
         const group=books.get(key);
         if(row)group.rows.set(row.index,row);
@@ -1047,6 +1051,19 @@
         groupFor(diff.editionIsbn||row?.book?.editionIsbn||'',row)
           .assignments.push(diff);
       }
+      // An absent physical edition cannot receive an imported loan or
+      // location. This is not a pending assignment decision, but the
+      // omission must still be visible before a teacher confirms.
+      for(const missing of assignments.notInCollection||[]){
+        const source=rowByNumber.get(missing.rows?.[0]);
+        const group=groupFor(missing.editionIsbn
+          ||source?.book?.editionIsbn||'',source);
+        group.missingAssignments.push(missing);
+        for(const number of missing.rows||[]){
+          const row=rowByNumber.get(number);
+          if(row)group.rows.set(row.index,row);
+        }
+      }
       for(const issue of manualMetadata){
         const row=rowByNumber.get(issue.worksheetRows?.[0]);
         const group=groupFor(issue.isbn||'',row);
@@ -1069,7 +1086,8 @@
         group.warnings.push(...exceptions);
       }
       const priority=group=>group.stock.length?0
-        :group.assignments.length?1:group.metadata.length?2:3;
+        :group.missingAssignments.length?1
+          :group.assignments.length?2:group.metadata.length?3:4;
       const queue=[...books.values()].sort((a,b)=>priority(a)-priority(b)
         ||Math.min(...[...a.rows.values()].map(row=>row.sourceRowNumber))
           -Math.min(...[...b.rows.values()].map(row=>row.sourceRowNumber)));
@@ -1179,6 +1197,10 @@
         return part;
       };
       const finish=()=>{
+        if(summary.missingStockGroups&&!guidedMissingAcknowledged){
+          setNotice('Bekijk eerst welke boeken niet zijn meegenomen.');
+          return;
+        }
         if(!summary.readyToApply||hasUnreviewedChanges()){
           setNotice('Controleer eerst de openstaande keuzes opnieuw.');
           return;
@@ -1207,6 +1229,17 @@
           make('p','',auto+' automatische beslissingen. '
             +'Bestaande boeken en uitleningen blijven beschermd.'));
         panel.append(first);
+        if(summary.missingStockGroups){
+          const omitted=make('div','bb-guide__attention');
+          omitted.append(make('strong','',
+            (summary.missingStockGroups||0)
+            +' boeken ontbreken in de collectie voor uitleen- of locatiegegevens'));
+          omitted.append(make('p','',
+            'Deze registraties zijn niet opgenomen in de voorgestelde '
+            +'wijzigingen. Je ziet ze bij het controleren en in het '
+            +'eindoverzicht.'));
+          panel.append(omitted);
+        }
         if(queue.length){
           const next=make('div','bb-guide__summary-card');
           next.append(make('strong','',queue.length+
@@ -1399,6 +1432,24 @@
             card.append(check);
           }
 
+          if(group.missingAssignments.length){
+            const missingSection=make('section','bb-guide__check');
+            missingSection.append(make('h5','',
+              'Niet overgenomen: uitlening of vaste locatie'));
+            missingSection.append(make('p','bb-guide__attention',
+              'Boekenbaai kan deze registratie niet uitvoeren omdat '
+              +'het bijbehorende fysieke boek nog niet in de '
+              +'geselecteerde collectie voorkomt. Er wordt niets '
+              +'uitgeleend of verplaatst. Voeg het juiste boek eerst '
+              +'toe en synchroniseer de administratie daarna opnieuw.'));
+            for(const missing of group.missingAssignments)
+              missingSection.append(make('p','bb-guide__count-note',
+                safeText(missing.title)+' · ISBN '
+                +safeText(missing.editionIsbn)
+                +' · '+(missing.copies||0)+' exemplaar/exemplaren'
+                +' · Excelrij(en) '+(missing.rows||[]).join(', ')));
+            card.append(missingSection);
+          }
           if(group.assignments.length){
             const section=make('section','bb-guide__check');
             section.append(make('h5','','2. Uitleningen en vaste locaties'));
@@ -1562,12 +1613,34 @@
           ['Boekvelden',summary.metadataFields||0],
           ['Overgeslagen Excelrijen',countSkipped],
           ['Openstaande controlepunten',pending],
+          ['Niet overgenomen boeken',summary.missingStockGroups||0],
+          ['Niet overgenomen exemplaren',summary.missingStockCopies||0],
         ]){
           const line=make('div','bb-guide__overview-line');
           line.append(make('span','',label),make('strong','',String(count)));
           details.append(line);
         }
         panel.append(details);
+        if(summary.missingStockGroups){
+          const omitted=make('div','bb-guide__attention');
+          omitted.append(make('strong','',
+            (summary.missingStockGroups||0)
+              +' ontbrekende boeken worden niet bijgewerkt.'));
+          omitted.append(make('p','',
+            'De bijbehorende Exceluitleningen en vaste locaties zijn '
+            +'overgeslagen omdat de fysieke exemplaren ontbreken. '
+            +'Je kunt deze later opnieuw synchroniseren.'));
+          const acknowledgement=make('label','bb-guide__accept');
+          const control=make('input');control.type='checkbox';
+          control.checked=guidedMissingAcknowledged;
+          control.addEventListener('change',()=>{
+            guidedMissingAcknowledged=control.checked;render();
+          });
+          acknowledgement.append(control,make('span','',
+            'Ik heb gezien welke ontbrekende boeken niet worden meegenomen.'));
+          omitted.append(acknowledgement);
+          panel.append(omitted);
+        }
         if(pending||hasChanges)
           panel.append(make('p','bb-guide__attention',
             'Er staan nog controles open of er zijn keuzes die eerst '
@@ -1704,7 +1777,8 @@
         }else{
           const apply=addAction(footer,'Definitieve import bevestigen',finish,true);
           apply.disabled=Boolean(remotePending||busy
-            ||!summary.readyToApply||hasChanges);
+            ||!summary.readyToApply||hasChanges
+            ||(summary.missingStockGroups&&!guidedMissingAcknowledged));
         }
       }
       const cancel=addAction(footer,'Import annuleren',()=>{
