@@ -43,6 +43,33 @@ module.exports = async function runCoreTests() {
   assert.equal(compactUnified.groups[0].copies.length,1,
     'One grouping representative prevents needless allocation of 1000 objects');
 
+  // Actual school workbook row 111 uses a checksum-valid ISBN with
+  // an incidental space. This is a safe formatting repair, not a manual
+  // edition decision or an invitation to guess a missing check digit.
+  const spaced=await analyzeBookImportRows([{
+    Titel:'Verdwenen woorden',Auteur:'Monique de Heide',
+    'ISBN-nummer':'978 9044834758',
+  }]);
+  assert.equal(spaced.ok,true);
+  assert.equal(spaced.rows[0].book.editionIsbn,'9789044834758');
+  assert.ok(codes(spaced.rows[0]).has('isbn_repaired'));
+  assert.equal(spaced.summary.repairs,1);
+  assert.equal(spaced.groups.length,1);
+  assert.ok(!codes(spaced.rows[0]).has('invalid_or_unrecognized_isbn'));
+  const wrongDigit=await analyzeBookImportRows([{
+    Titel:'Verdwenen woorden',Auteur:'Monique de Heide',
+    'ISBN-nummer':'978 9044834759',
+  }]);
+  assert.equal(wrongDigit.rows[0].book.editionIsbn,'');
+  assert.ok(codes(wrongDigit.rows[0]).has('invalid_or_unrecognized_isbn'),
+    'Formatting must never silently correct a wrong check digit');
+  const notAnIsbn=await analyzeBookImportRows([{
+    Titel:'Het achterhuis',Auteur:'Anne Frank',
+    'ISBN-nummer':'871 0114001467',
+  }]);
+  assert.equal(notAnIsbn.rows[0].book.editionIsbn,'',
+    'An EAN with valid checksum cannot be misidentified as an ISBN');
+
   // The same ISBN with punctuation/accent title variants is one
   // physical edition, not two conflicting books.
   const orthographicGroup=await analyzeBookImportRows([
