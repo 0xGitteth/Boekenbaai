@@ -757,7 +757,7 @@
         'editionIsbn','barcode','ambiguousIdentifier','quantity','pageCount',
         'publishedYear','publisher','language','coverUrl']);
       return {
-        version:1,exportedAt:new Date().toISOString(),fileName:stage?.fileName||'',
+        version:2,exportedAt:new Date().toISOString(),fileName:stage?.fileName||'',
         status:stage?.status,revision:stage?.revision,
         selectedParts:stage?.syncParts||null,summary:plan.summary||{},
         inventorySummary:plan.inventory?.summary||{},
@@ -795,6 +795,9 @@
               borrowedCopies:decision.borrowedCopies,
               targetCopies:decision.targetCopies,
               addCopies:decision.addCopies,
+              existingIdentitySamples:decision.existingIdentitySamples||[],
+              legacyIdentitySamples:decision.legacyIdentitySamples||[],
+              legacyCandidateCopies:decision.legacyCandidateCopies||0,
             }:null,
           };
         }),
@@ -1269,6 +1272,18 @@
         for(const reason of reasons.filter(value=>value&&value!==item.reason)){
           card.append(make('p','hint',
             'Ook gevonden: '+(reasonNames[reason]||reason)));
+        }
+        if(reasons.includes('edition_identity_mismatch')){
+          for(const existing of item.existingIdentitySamples||[]){
+            card.append(make('p','hint',
+              'Al geregistreerd: '+existing.title+' · '+existing.author));
+          }
+        }
+        if(reasons.includes('possible_existing_book_without_isbn')){
+          for(const existing of item.legacyIdentitySamples||[]){
+            card.append(make('p','hint',
+              'Bestaand zonder ISBN: '+existing.title+' · '+existing.author));
+          }
         }
         if(reasons.includes('source_needs_review')&&source){
           const relevant=(source.issues||[]).filter(issue=>
