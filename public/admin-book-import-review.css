@@ -334,3 +334,13 @@
   .bb-match-review__card { transition:box-shadow .18s ease; }
   .bb-match-review__card:focus-within { box-shadow:0 5px 20px rgba(18,37,63,.08); }
 }
+
+.bb-match-review__footer { display:flex; flex-wrap:wrap; align-items:center;
+  justify-content:space-between; gap:.7rem; padding:.75rem .9rem;
+  border:1px solid var(--accent-border); border-radius:11px;
+  background:var(--accent-softer); }
+.bb-match-review__footer .hint { flex:1 1 250px; }
+@media (max-width:720px) {
+ .bb-match-review__footer { display:grid; }
+ .bb-match-review__footer .btn { width:100%; }
+}
