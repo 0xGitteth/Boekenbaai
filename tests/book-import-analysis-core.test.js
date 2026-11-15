@@ -156,6 +156,42 @@ module.exports = async function runCoreTests() {
   assert.strictEqual(realStudentWithClassLoan.rows[0].context.fixedLocation, undefined);
 
 
+  // School workbook: four explicitly pupil-owned books carry a class in
+  // 'Geleend door klas' solely to identify the pupil's class. These do not
+  // belong in school stock and require no one-by-one confirmation.
+  const privateRows=await analyzeBookImportRows([
+    'Privéboek een','Privéboek twee','Privéboek drie','Privéboek vier',
+  ].map(title=>({
+    Titel:title,Auteur:'A Auteur','ISBN-nummer':ISBN,
+    'Geleend door klas':'SKOBPRO','naam leerling':'eigen boek',
+  })),{classes:[{id:'skobpro',name:'SKOBPRO'}]});
+  assert.strictEqual(privateRows.ok,true);
+  assert.strictEqual(privateRows.summary.skipped,4);
+  assert.strictEqual(privateRows.summary.conflict,0);
+  assert.strictEqual(privateRows.summary.physicalCopies,0);
+  for(const privateRow of privateRows.rows){
+    assert.strictEqual(privateRow.context.excludeFromSchoolCollection,true);
+    assert.strictEqual(privateRow.context.ownBookClassHint.label,'SKOBPRO');
+    assert.ok(codes(privateRow).has('own_book_excluded'));
+    assert.ok(!codes(privateRow).has('own_book_context_conflict'));
+  }
+  const privateWithFixed=await analyzeBookImportRows([{
+    Titel:'Privé of schoolboek?',Auteur:'A Auteur',
+    'ISBN-nummer':ISBN,'naam leerling':'eigen boek',
+    'Vast in de klas van:':'StructuurBB','Geleend door klas':'SKOBPRO',
+  }]);
+  assert.strictEqual(privateWithFixed.rows[0].status,'conflict');
+  assert.ok(codes(privateWithFixed.rows[0]).has('own_book_context_conflict'),
+    'A genuine school fixed location is incompatible with private ownership');
+  const privateWithActualBorrower=await analyzeBookImportRows([{
+    Titel:'Privé of uitgeleend?',Auteur:'A Auteur',
+    'ISBN-nummer':ISBN,Klassen:'eigen boek',
+    'Geleend door klas':'SKOBPRO','naam leerling':'Sam',
+  }]);
+  assert.strictEqual(privateWithActualBorrower.rows[0].status,'conflict');
+  assert.ok(codes(privateWithActualBorrower.rows[0]).has('own_book_context_conflict'),
+    'A real borrower must not be dismissed as an own-book class hint');
+
   const semantics = await analyzeBookImportRows([
     { Titel: 'Schoolboek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN, 'naam leerling': 'eigen boek' },
     { Titel: 'Eigen boek', Auteur: 'A Auteur', 'ISBN-nummer': ISBN_ALT },
