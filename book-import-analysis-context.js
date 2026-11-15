@@ -229,17 +229,35 @@ function applyContext(mapped, row, options) {
   if (markers.ownBook.length) {
     row.context.ownBook = true;
     row.context.excludeFromSchoolCollection = true;
-    if (studentLoan) row.context.studentLoan = { status: 'conflicting', name: studentLoan };
-    if (classLoan) row.context.classLoan = { status: 'conflicting', name: classLoan };
-    if (markers.fixedLocation.length) {
-      row.context.fixedLocation = { status: 'conflicting', label: '', source: 'semantic_marker' };
-    }
-    if (studentLoan || classLoan || markers.fixedLocation.length) {
+    // In the school's workbook, 'naam leerling: eigen boek' with a
+    // 'Geleend door klas' class is a private pupil book WITH a class hint,
+    // not a school-owned book lent out to that class. Do not make teachers
+    // resolve four identical, otherwise unambiguous notes by hand.
+    // A real borrower or fixed school location still contradicts ownership.
+    const ownBookStudentMarker=markerKind(studentLoan)==='own_book';
+    const conflictingStudent=Boolean(studentLoan&&!ownBookStudentMarker);
+    const hasFixedLocation=Boolean(fixedClass||markers.fixedLocation.length);
+    const classIsHint=Boolean(ownBookStudentMarker&&classLoan&&!hasFixedLocation);
+    const conflictingClass=Boolean(classLoan&&!classIsHint);
+    if (classIsHint) row.context.ownBookClassHint={
+      label:classLoan,source:'Geleend door klas',
+    };
+    if (conflictingStudent) row.context.studentLoan={
+      status:'conflicting',name:studentLoan,
+    };
+    if (conflictingClass) row.context.classLoan={
+      status:'conflicting',name:classLoan,
+    };
+    if (hasFixedLocation) row.context.fixedLocation={
+      status:'conflicting',label:fixedClass,source:'semantic_marker',
+    };
+    if (conflictingStudent||conflictingClass||hasFixedLocation) {
       addIssue(row, 'own_book_context_conflict', 'conflict', {
-        studentLoan: studentLoan || '',
-        classLoan: classLoan || '',
-        ownBookMarkers: markers.ownBook,
-        fixedLocationMarkers: markers.fixedLocation,
+        studentLoan: conflictingStudent?studentLoan:'',
+        classLoan: conflictingClass?classLoan:'',
+        fixedClass: fixedClass||'',
+        ownBookMarkers:markers.ownBook,
+        fixedLocationMarkers:markers.fixedLocation,
       });
     }
     addIssue(row, 'own_book_excluded', 'info', { markers: markers.ownBook });
