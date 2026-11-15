@@ -5,7 +5,7 @@
 // An omitted ISBN or lower Excel quantity NEVER silently deletes stock.
 const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { comparison: spellingKey } = require('./book-import-source-confidence');
-const {sameBookIdentity}=require('./book-import-autonomy');
+const {sameBookIdentity,hasConflictingEditionQualifiers}=require('./book-import-autonomy');
 const { normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { inspectReviewedLoans, excelLoanReceiptKey } = require('./book-import-loan-migration');
 const { eligibleForDeferredContext, followupContext, contextMatchesTask } =
@@ -99,7 +99,8 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     if (row.status === 'skipped') continue;
     const isbn = canonicalizeBookIsbn13(row.book?.editionIsbn);
     if (!isbn) {
-      decisions[row.index] = { ...decisions[row.index], action: 'blocked', reason: 'missing_valid_isbn' };
+      decisions[row.index] = { ...decisions[row.index], action: 'blocked',
+        reason: 'missing_valid_isbn', blockers: ['missing_valid_isbn'] };
       continue;
     }
     if (!groups.has(isbn)) groups.set(isbn, []);
@@ -132,6 +133,10 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       if (!reason) reason = code;
     };
     const missingIdentity=rows.some(row=>!row.book?.title||!row.book?.author);
+    if(hasConflictingEditionQualifiers([
+      ...rows.map(row=>row.book?.title),
+      ...existing.map(book=>book.title),
+    ]))block('edition_identity_mismatch');
     if(missingIdentity)block('missing_title_or_author');
     else if(rows.some(row=>!sameBookIdentity(row.book,rows[0].book))
       ||existing.some(book=>!sameBookIdentity(book,rows[0].book))){
@@ -359,6 +364,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
       action: keepExisting ? 'kept_existing'
         : reason ? 'blocked' : additional ? 'add_copies' : 'unchanged',
       reason: keepExisting ? '' : reason,
+      blockers:keepExisting?[]:[...blockers].sort(),
       resolution: keepExisting ? 'keep_existing' : null };
     if (!reason && !keepExisting) {
       for (const item of newPrinted) proposedAdds.push({
@@ -386,7 +392,8 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         reason = 'unmatched_physical_copies';
         const firstAddition = proposedAdds.findIndex((item) => item.editionIsbn === isbn);
         if (firstAddition >= 0) proposedAdds.splice(firstAddition);
-        decisions[first] = { ...decisions[first], action: 'blocked', reason, addCopies: 0 };
+        decisions[first] = { ...decisions[first], action: 'blocked', reason,
+          blockers:[...new Set([...blockers,reason])].sort(), addCopies: 0 };
       }
       if (!reason) {
         for (const item of plannedLoans) {

@@ -13,6 +13,20 @@ assert.equal(sameBookTitle('De avonturen van Kuifje: De zonnetempel',
 assert.equal(sameBookTitle('Harry Potter 1: De steen',
   'Harry Potter 2: De steen'),false);
 assert.equal(nearlySameBookText('Bickerton Neveis','Bickerton Neves'),true);
+assert.equal(sameBookTitle('Diary of a Wimpy Kid',
+  'Diary of a Wimpy Kid (Book 1)'),true,
+  'A catalogue Book 1 label does not invalidate an exact ISBN edition');
+assert.equal(sameBookTitle('Dagen van gras',
+  'Dagen van gras / druk 3'),true,
+  'A printing suffix may be omitted from a school worksheet');
+assert.equal(require('../book-import-autonomy').hasConflictingEditionQualifiers([
+  'Diary of a Wimpy Kid','Diary of a Wimpy Kid (Book 1)',
+  'Diary of a Wimpy Kid (Book 2)',
+]),true,'An unqualified first row cannot hide conflicting later volumes');
+assert.equal(sameBookTitle('Diary of a Wimpy Kid (Book 1)',
+  'Diary of a Wimpy Kid (Book 2)'),false,
+  'Two different numbered volumes must remain distinct');
+
 assert.equal(nearlySameBookText('Carrý Slee','Carry Slee'),true);
 assert.equal(nearlySameBookText('Jan Terlouw','Jan Terlouuw'),true);
 assert.equal(nearlySameBookText('Up','Us'),false,

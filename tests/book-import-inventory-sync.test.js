@@ -68,11 +68,24 @@ assert.deepStrictEqual(ambiguousOldAndNew.proposedAdds, []);
 const matchingOldAndNew = preview([row(0, 1), row(1, 1)], [book('old-isbn-copy')]);
 assert.strictEqual(matchingOldAndNew.summary.addCopies, 1);
 
+const contradictingVolumeGroup=preview([
+  row(0,1,{title:'Het boek'}),
+  row(1,1,{title:'Het boek (Book 1)'}),
+  row(2,1,{title:'Het boek (Book 2)'}),
+]);
+assert.strictEqual(contradictingVolumeGroup.summary.readyToApply,false,
+  'Conflicting numbered volumes sharing an ISBN must not be imported');
+assert.strictEqual(contradictingVolumeGroup.rows[0].reason,'edition_identity_mismatch');
+
 const legacyWithoutIsbn = preview([row(0, 2)], [
   book('old-copy', { metadataIsbn: null, editionIsbn: null, barcode: '44332211' }),
 ]);
 assert.strictEqual(legacyWithoutIsbn.rows[0].reason, 'possible_existing_book_without_isbn');
 assert.strictEqual(legacyWithoutIsbn.summary.readyToApply, false);
+assert.ok(legacyWithoutIsbn.rows[0].blockers.includes(
+  'possible_existing_book_without_isbn'),
+  'Export must explain why a legacy copy is not silently duplicated');
+
 assert.deepStrictEqual(legacyWithoutIsbn.proposedAdds, []);
 
 // A large snapshot remains reconcilable when it adds ZERO books. The 5,000

@@ -192,6 +192,49 @@ async function runTests() {
   assert.strictEqual(scenario5.publisher, 'Uitgeverij X');
   assert.strictEqual(scenario5.description, 'Rijke beschrijving');
 
+  // Production title lookup must expose a UNIQUE ISBN candidate, which
+  // the staged analyzer then verifies via its existing exact-ISBN adapter.
+  const titleLookupCandidate=parseGoogleBooksTitleAuthorFallbackData({
+    items:[{volumeInfo:{
+      title:'Herkenbaar boek',authors:['A Auteur'],
+      industryIdentifiers:[{type:'ISBN_13',identifier:'9780439554930'}],
+    }}],
+  },{title:'Herkenbaar boek',author:'A Auteur'});
+  assert.deepStrictEqual(Array.from(titleLookupCandidate.isbnCandidates),
+    ['9780439554930']);
+  const ambiguousTitleLookup=parseGoogleBooksTitleAuthorFallbackData({
+    items:[
+      {volumeInfo:{title:'Herkenbaar boek',authors:['A Auteur'],
+        industryIdentifiers:[{type:'ISBN_13',identifier:'9780439554930'}]}},
+      {volumeInfo:{title:'Herkenbaar boek',authors:['A Auteur'],
+        industryIdentifiers:[{type:'ISBN_13',identifier:'9780061120084'}]}},
+    ],
+  },{title:'Herkenbaar boek',author:'A Auteur'});
+  assert.strictEqual(ambiguousTitleLookup.isbnCandidates,undefined,
+    'A work title matching two editions must not infer an ISBN');
+  const {analyzeBookImportRows}=require('../book-import-analysis');
+  let exactVerifications=0;
+  const actualFallbackRepair=await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'978030640615',
+  }],{
+    lookupTitleAuthor:async()=>titleLookupCandidate,
+    lookupIsbn:async(isbn)=>{
+      exactVerifications++;
+      assert.strictEqual(isbn,'9780439554930');
+      return {found:true,title:'Herkenbaar boek',author:'A Auteur',
+        isbn13:isbn,sourceCandidates:[
+          {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',
+            isbn13:isbn},
+          {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',
+            isbn13:isbn},
+        ]};
+    },
+  });
+  assert.strictEqual(actualFallbackRepair.rows[0].book.editionIsbn,
+    '9780439554930');
+  assert.ok(exactVerifications>=1);
+  assert.notStrictEqual(actualFallbackRepair.rows[0].status,'conflict');
+  
   const retryDelays = [];
   let retryFetchCalls = 0;
   const retryServer = loadServerModule({

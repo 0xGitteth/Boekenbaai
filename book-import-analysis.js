@@ -2,7 +2,7 @@
 
 const { groupBookCopiesByEdition } = require('./book-edition-core');
 const { equivalentSpelling } = require('./book-import-source-confidence');
-const {sameBookIdentity}=require('./book-import-autonomy');
+const {sameBookIdentity,hasConflictingEditionQualifiers}=require('./book-import-autonomy');
 const { mapImportRow, readBookImportWorkbook, isBlankCellValue } = require('./book-import-workbook');
 const {
   JUNK_ONLY_TOKENS,
@@ -72,6 +72,12 @@ function flagConflictingRepairSuggestions(row) {
   const resolvedIsbn = row?.book?.editionIsbn || '';
   const evidenceIsbns = new Set([resolvedIsbn, ...suggestedIsbns].filter(Boolean));
   if (evidenceIsbns.size <= 1) return false;
+  // A checksum-based suggestion is not proof of a specific edition. If
+  // two independent catalogues verified a different ISBN using the exact
+  // worksheet title and author, the weaker arithmetic suggestion is retired.
+  if(row.issues.some(issue=>issue.code==='isbn_repair_override_by_sources'
+    &&issue.metadataIsbn===resolvedIsbn
+    &&Array.isArray(issue.sources)&&issue.sources.length>=2))return false;
   addIssue(row, 'conflicting_isbn_repair_suggestions', 'conflict', { suggestedIsbns, resolvedIsbn });
   return true;
 }
@@ -331,6 +337,23 @@ async function analyzeBookImportRows(rows, options = {}) {
   }
 
   markDuplicateBarcodes(analyzedRows, stagedPhysicalRowIndexes);
+  const isbnRows=new Map();
+  for(const row of analyzedRows){
+    const isbn=row.book?.editionIsbn;
+    if(!isbn||row.status==='skipped')continue;
+    const items=isbnRows.get(isbn)||[];
+    items.push(row);
+    isbnRows.set(isbn,items);
+  }
+  for(const [isbn,items] of isbnRows){
+    if(!hasConflictingEditionQualifiers(items.map(row=>row.book.title)))continue;
+    for(const row of items){
+      addIssue(row,'edition_identity_conflict','conflict',{
+        conflictType:'conflicting_edition_qualifiers',editionIsbn:isbn,
+      });
+      row.status='conflict';
+    }
+  }
   const groupableCopies = editionCopies.filter((copy) => isSafeEditionGroupRow(analyzedRows[copy.__importRowIndex]));
   // Grouping is a safety check, not a spelling-change instruction.
   // Consolidate punctuation/accent variants of the SAME explicit ISBN
