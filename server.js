@@ -5461,9 +5461,16 @@ async function handleApi(req, res, requestUrl) {
         if(stage.options.mode!=='unified_sync')
           return sendJson(res,400,{message:'Deze importmodus ondersteunt geen conceptkeuzes.'});
         const body=await parseBody(req,24*1024*1024);
-        if(!Number.isSafeInteger(body.revision)
-          ||typeof body.acceptWarnings!=='boolean')
+        if(!Number.isSafeInteger(body.revision))
           return sendJson(res,400,{message:'Ongeldige conceptversie.'});
+        if(body.clear===true){
+          const result=bookImportStageStore.saveDraft(stage,body.revision,null);
+          if(!result.ok)return sendJson(res,409,{
+            message:'De import is inmiddels gewijzigd.',error:result.error});
+          return sendJson(res,200,result);
+        }
+        if(typeof body.acceptWarnings!=='boolean')
+          return sendJson(res,400,{message:'Ongeldige conceptkeuze.'});
         const normalized=normalizeCorrections(body.corrections,stage.sourceRows.length);
         const inventory=normalizeInventoryResolutions(body.inventoryResolutions);
         const assignment=normalizeAssignmentResolutions(body.assignmentResolutions);
@@ -5472,7 +5479,12 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res,400,{message:'Ongeldige boekcorrectie.',
             error:normalized.error||inventory.error||assignment.error||metadata.error});
         const saved=bookImportStageStore.saveDraft(stage,body.revision,{
-          corrections:[...normalized.corrections.values()],
+          // normalizeCorrections returns a Map<worksheetIndex, {skip,fields}>.
+          // The index is the key, not part of its value. Reattach it so
+          // restored drafts can be submitted to /review unchanged.
+          corrections:[...normalized.corrections].map(([index,fields])=>({
+            index,...fields,
+          })),
           acceptWarnings:body.acceptWarnings,
           inventoryResolutions:inventory.values,
           assignmentResolutions:assignment.values,

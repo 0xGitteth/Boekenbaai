@@ -34,7 +34,17 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
     }
     let temporary='';
     try{
-      const value=JSON.stringify({...stage,options:serialOptions(stage.options)});
+      // SheetJS keeps the physical worksheet position in a non-enumerable
+      // __rowNum__ property. JSON.stringify silently discards it. Keep
+      // positions in a parallel array and recreate their descriptors on
+      // restore; they must not become user-editable workbook columns.
+      const worksheetRowPositions=stage.sourceRows.map(row=>{
+        const descriptor=Object.getOwnPropertyDescriptor(row,'__rowNum__');
+        return descriptor&&Number.isInteger(descriptor.value)
+          &&descriptor.value>=0?descriptor.value:null;
+      });
+      const value=JSON.stringify({...stage,options:serialOptions(stage.options),
+        worksheetRowPositions});
       if(Buffer.byteLength(value)>32*1024*1024)throw Error('import_draft_too_large');
       fs.mkdirSync(path.dirname(file),{recursive:true});
       temporary=file+'.'+process.pid+'.'+crypto.randomUUID()+'.tmp';
@@ -59,6 +69,26 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
         ||saved.expiresAt<=now()){
         fs.unlinkSync(file);return;
       }
+      // Old imports already preserved the accurate physical worksheet
+      // number in the analyzed row. Migrate drafts created before the
+      // dedicated positions array instead of deleting a teacher's work.
+      const storedPositions=Array.isArray(saved.worksheetRowPositions)
+        ?saved.worksheetRowPositions
+        :saved.analysis.rows.map(row=>Number.isSafeInteger(row?.sourceRowNumber)
+          &&row.sourceRowNumber>=1?row.sourceRowNumber-1:null);
+      if(storedPositions.length!==saved.sourceRows.length
+        ||storedPositions.some(value=>value!==null
+          &&(!Number.isSafeInteger(value)||value<0||value>2000000))){
+        fs.unlinkSync(file);return;
+      }
+      for(let index=0;index<saved.sourceRows.length;index++){
+        const position=storedPositions[index];
+        if(position===null)continue;
+        Object.defineProperty(saved.sourceRows[index],'__rowNum__',{
+          value:position,configurable:true,
+        });
+      }
+      delete saved.worksheetRowPositions;
       saved.options=serialOptions(saved.options);
       saved.draftPersisted=true;
       entries.set(saved.id,saved);
@@ -137,11 +167,13 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
       return {ok:false,error:'stage_busy_or_closed'};
     if(stage.revision!==expectedRevision)
       return {ok:false,error:'stale_review'};
+    // An explicit clear removes a reverted set of choices so the final
+    // confirmation cannot be blocked by a stale, otherwise invisible draft.
     stage.draft=draft;
-    stage.draftSavedAt=new Date(now()).toISOString();
+    stage.draftSavedAt=draft===null?null:new Date(now()).toISOString();
     stage.expiresAt=now()+ttlMs;
     persist();
-    return {ok:true,savedAt:stage.draftSavedAt,
+    return {ok:true,savedAt:stage.draftSavedAt,cleared:draft===null,
       persisted:stage.draftPersisted===true};
   }
   function beginReview(stage, expectedRevision) {
