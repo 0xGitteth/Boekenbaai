@@ -172,11 +172,12 @@ function analyzeIdentifier(value) {
   if (direct) return { raw, canonical: direct, repair: null, suggestion: null, unsupportedType: false };
 
   const compact = compactIdentifierText(trimmed);
-  // A school worksheet may contain stray whitespace or dashes inside an
-  // otherwise fully valid ISBN. Normalize formatting only after the actual
-  // ISBN-10/13 checksum and edition prefix have passed verification.
-  // An incorrect check digit must never be silently changed here.
-  if (compact !== trimmed && /^[0-9Xx\s-]+$/.test(trimmed)
+  // A school worksheet may contain stray whitespace inside an otherwise
+  // fully valid ISBN. Do not repair misplaced hyphens: their publisher/group
+  // boundaries may be invalid even when the concatenated checksum is valid.
+  // Incorrect check digits are never silently changed here.
+  if (compact !== trimmed && /\s/.test(trimmed) && !trimmed.includes('-')
+      && /^[0-9Xx\s]+$/.test(trimmed)
       && (/^(?:978|979)\d{10}$/.test(compact)
         || /^\d{9}[0-9Xx]$/.test(compact))) {
     const canonical = canonicalizeBookIsbn13(compact);
