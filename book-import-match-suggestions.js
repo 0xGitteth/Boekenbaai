@@ -50,15 +50,17 @@ function buildMatchCandidateIndex(existingBooks=[]){
     }
     entry.copies++;
   }
-  const byIsbn=new Map(),byTitle=new Map(),byStart=new Map(),byEnd=new Map();
+  const byIsbn=new Map(),byTitle=new Map(),byStart=new Map(),
+    byEnd=new Map(),byAuthor=new Map();
   for(const entry of groups.values()){
     const title=titleKeys(entry.title);
     addIndex(byIsbn,entry.editionIsbn,entry);
     addIndex(byTitle,title.exact,entry);
     addIndex(byStart,title.start,entry);
     addIndex(byEnd,title.end,entry);
+    addIndex(byAuthor,normalized(entry.author),entry);
   }
-  return {byIsbn,byTitle,byStart,byEnd,sourceSize:groups.size};
+  return {byIsbn,byTitle,byStart,byEnd,byAuthor,sourceSize:groups.size};
 }
 function candidatesFor(row,index){
   const isbn=canonicalizeBookIsbn13(row?.editionIsbn);
@@ -70,6 +72,12 @@ function candidatesFor(row,index){
   ]){
     for(const entry of map.get(key)||[])pooled.add(entry);
   }
+  // Typos can change every title prefix/suffix key. A matching author
+  // provides a bounded second discovery path without scanning the entire
+  // collection for each row. Keep common-author lookups bounded.
+  const bySameAuthor=index.byAuthor?.get(normalized(row?.author))||[];
+  if(bySameAuthor.length<=120)
+    for(const entry of bySameAuthor)pooled.add(entry);
   return [...pooled];
 }
 function bookMatchSuggestions(row,existingIndex=[]){
