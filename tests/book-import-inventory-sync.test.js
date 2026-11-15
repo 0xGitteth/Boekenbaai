@@ -73,6 +73,10 @@ const legacyWithoutIsbn = preview([row(0, 2)], [
 ]);
 assert.strictEqual(legacyWithoutIsbn.rows[0].reason, 'possible_existing_book_without_isbn');
 assert.strictEqual(legacyWithoutIsbn.summary.readyToApply, false);
+assert.ok(legacyWithoutIsbn.rows[0].blockers.includes(
+  'possible_existing_book_without_isbn'),
+  'Export must explain why a legacy copy is not silently duplicated');
+
 assert.deepStrictEqual(legacyWithoutIsbn.proposedAdds, []);
 
 // A large snapshot remains reconcilable when it adds ZERO books. The 5,000
