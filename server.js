@@ -19,6 +19,7 @@ const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
 const { analyzeReviewedImport, buildReviewDecisions } = require('./book-import-review');
 const { metadataCandidatesFromResult } = require('./book-import-analysis-metadata');
+const { canonicalizeBookIsbn13 } = require('./book-edition-core');
 const { createImportStageStore, importStageView, buildStageApplyPlan } = require('./book-import-stage');
 const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./book-import-inventory-sync');
 const { normalizeResolutions: normalizeAssignmentResolutions,
@@ -2373,13 +2374,24 @@ function parseGoogleBooksTitleAuthorFallbackData(data, target, debugContext = nu
       rejectReason: strictMatch ? null : 'strict_work_mismatch',
     });
     if (strictMatch) {
-      strictMatches.push({ metadata, candidateRichnessScore });
+      // A title/author search is work-level evidence, not proof of a
+      // physical edition. Retain the candidate ISBNs for a subsequent
+      // independent exact-ISBN check; never use them directly as metadata.
+      const isbnCandidates=[...new Set((Array.isArray(volumeInfo.industryIdentifiers)
+        ?volumeInfo.industryIdentifiers:[])
+        .map(entry=>canonicalizeBookIsbn13(entry?.identifier))
+        .filter(Boolean))];
+      strictMatches.push({ metadata, candidateRichnessScore,isbnCandidates });
     }
   }
   if (strictMatches.length) {
     strictMatches.sort((left, right) => right.candidateRichnessScore - left.candidateRichnessScore);
     const selected = strictMatches[0];
     const selectedMetadata = selected.metadata;
+    const possibleIsbns=[...new Set(strictMatches.flatMap(entry=>entry.isbnCandidates))];
+    // More than one candidate edition cannot be inferred from a work title.
+    // Do not send an ambiguous candidate list to an automatic repair path.
+    if(possibleIsbns.length===1)selectedMetadata.isbnCandidates=possibleIsbns;
     logImportFallbackVerbose('fallback_candidate_selected', {
       title: selectedMetadata.title,
       author: selectedMetadata.author,
