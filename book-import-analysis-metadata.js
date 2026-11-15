@@ -575,8 +575,33 @@ async function resolveMetadata(row, options) {
   try {
     const result = await lookupTitleAuthor({ title: row.book.title, author: row.book.author, language: row.book.language });
     const candidates = metadataCandidatesFromResult(result);
-    const verified = independentlyVerifiedTitleIsbn(row.book,result);
+    let individualSources=Array.isArray(result?.sourceCandidates)
+      ?[...result.sourceCandidates]:[];
+    // Production Google Books title+author fallback returns no trustworthy
+    // edition by itself. Verify its SINGLE candidate ISBN through the
+    // existing exact-ISBN multi-provider path before using it to repair.
+    const candidateIsbns=Array.isArray(result?.isbnCandidates)
+      ?[...new Set(result.isbnCandidates.map(canonicalizeBookIsbn13)
+        .filter(Boolean))]:[];
+    if(lookupIsbn && candidateIsbns.length===1){
+      try{
+        const exact=await lookupIsbn(candidateIsbns[0],{
+          title:row.book.title,author:row.book.author,
+        });
+        if(Array.isArray(exact?.sourceCandidates)){
+          individualSources.push(...exact.sourceCandidates);
+        }
+      }catch{
+        // A failed optional lookup does not authorize a guessed ISBN.
+      }
+    }
+    const verified=independentlyVerifiedTitleIsbn(row.book,{
+      sourceCandidates:individualSources,
+    });
     let selection = selectMetadataCandidate(row.book, candidates);
+    if(verified && selection.candidate && !selection.candidate.editionIsbn
+      && !selection.conflict)
+      selection={candidate:verified.candidate,conflict:null};
     // A merged result can include ambiguous editions. A unique independent
     // quorum safely identifies one edition, without guessing among others.
     if(verified && selection.conflict?.code==='ambiguous_metadata_editions')
