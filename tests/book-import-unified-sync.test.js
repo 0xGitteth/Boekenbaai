@@ -29,6 +29,9 @@ const db=()=>({
   classes:[{id:'a',name:'Klas A'}],
   history:[],readingRecords:[],
 });
+const parts=(other={})=>({books:false,loans:false,locations:false,fields:{},...other});
+const plan=(sourceRows,database,options={})=>
+  buildUnifiedBookImport({ok:true,rows:sourceRows},database,options);
 const loan=(id,name)=>({studentLoan:{status:'matched',id,name}});
 
 // A historical missing first-name value must not create a new physical book,
@@ -72,9 +75,7 @@ const loan=(id,name)=>({studentLoan:{status:'matched',id,name}});
     .summary.blockedStock,1,'Preserve capitalized legitimate first names');
 }
 
-const parts=(other={})=>({books:false,loans:false,locations:false,fields:{},...other});
-const plan=(sourceRows,database,options={})=>
-  buildUnifiedBookImport({ok:true,rows:sourceRows},database,options);
+
 
 assert.equal(normalizeParts({books:false,loans:false,locations:false,fields:{}}).ok,false);
 assert.equal(normalizeParts({books:false,loans:false,locations:false,fields:{coverUrl:true}}).ok,true);
