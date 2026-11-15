@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {bookMatchSuggestions}=require('../book-import-match-suggestions');
+const {bookMatchSuggestions,buildMatchCandidateIndex}=require('../book-import-match-suggestions');
 const {analyzeReviewedImport}=require('../book-import-review');
 const ISBN='9780306406157',OTHER='9780439554930';
 
@@ -61,6 +61,44 @@ function row(extra={}){
   }),current);
   assert.ok(titleOnly.some(candidate=>candidate.identityWarning===true),
     'Tentative title-only matches must be visibly flagged');
+
+  // A valid ISBN but incorrect title/author is blocked at inventory
+  // planning, not necessarily at the raw parser level. It MUST still show
+  // the correct existing edition as a visible book suggestion.
+  const validIsbnWrongTitle=row({
+    status:'ready',issues:[],
+    book:{title:'Verkeerde titel',author:'Verkeerde auteur',
+      editionIsbn:ISBN},
+  });
+  const correctedEdition=bookMatchSuggestions(validIsbnWrongTitle,current);
+  assert.ok(correctedEdition.some(candidate=>candidate.editionIsbn===ISBN
+    &&candidate.origin==='existing'));
+  assert.ok(correctedEdition.some(candidate=>candidate.identityWarning),
+    'A materially different title or author remains a tentative suggestion');
+
+  const longTitle='Een volledige zeer lange titel '.repeat(10);
+  const longAuthor='Een auteursnaam met volledige gegevens '.repeat(8);
+  const longSuggestion=bookMatchSuggestions(row({
+    onlineMatchCandidates:[{title:longTitle,author:longAuthor,
+      editionIsbn:OTHER,sources:['Google Books']}],
+  }),[]);
+  assert.equal(longSuggestion[0].title,longTitle.trim());
+  assert.equal(longSuggestion[0].author,longAuthor.trim(),
+    'Preview values are authoritative corrections, never truncated');
+
+  const collectionIndex=buildMatchCandidateIndex(current);
+  assert.deepEqual(bookMatchSuggestions(row(),collectionIndex),matches,
+    'Indexed matching and direct array lookup must have identical results');
+  const bulk=Array.from({length:10000},(_,i)=>({
+    title:'Title '+i,author:'Author '+i,editionIsbn:ISBN,
+  }));
+  const index=buildMatchCandidateIndex(bulk);
+  const start=Date.now();
+  for(let i=0;i<120;i++)bookMatchSuggestions(row({
+    book:{title:'Title '+i,author:'Author '+i,editionIsbn:''},
+  }),index);
+  assert.ok(Date.now()-start<3500,
+    'Indexed review must avoid repeatedly scanning all physical copies');
 
   const many=Array.from({length:100},(_,i)=>({
     title:'Mijn boek',author:'Jan Jansen',editionIsbn:ISBN,
