@@ -357,6 +357,23 @@ module.exports = async function runMetadataTests() {
     found:true,candidates:[
       {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
       {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+    ],
+    sourceCandidates:[
+      {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+    ],
+  })});
+  assert.equal(independentlyRepaired.rows[0].book.editionIsbn,ISBN_ALT);
+  assert.ok(codes(independentlyRepaired.rows[0]).has('isbn_repair_override_by_sources'));
+  assert.equal(independentlyRepaired.rows[0].status,'warning');
+  assert.ok(!codes(independentlyRepaired.rows[0])
+    .has('conflicting_isbn_repair_suggestions'));
+  const dissentingProvider = await analyzeBookImportRows([{
+    Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'978030640615',
+  }],{lookupTitleAuthor:async()=>({
+    found:true,candidates:[
+      {source:'Google Books',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
+      {source:'Open Library',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_ALT},
       {source:'isbnbarcode.org',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_THIRD},
     ],
     sourceCandidates:[
@@ -365,11 +382,10 @@ module.exports = async function runMetadataTests() {
       {source:'isbnbarcode.org',title:'Herkenbaar boek',author:'A Auteur',isbn13:ISBN_THIRD},
     ],
   })});
-  assert.equal(independentlyRepaired.rows[0].book.editionIsbn,ISBN_ALT);
-  assert.ok(codes(independentlyRepaired.rows[0]).has('isbn_repair_override_by_sources'));
-  assert.equal(independentlyRepaired.rows[0].status,'warning');
-  assert.ok(!codes(independentlyRepaired.rows[0])
-    .has('conflicting_isbn_repair_suggestions'));
+  assert.equal(dissentingProvider.rows[0].book.editionIsbn,'');
+  assert.equal(dissentingProvider.rows[0].status,'conflict',
+    'A dissenting independent provider keeps edition repair blocked');
+
   const unverifiedOverride = await analyzeBookImportRows([{
     Titel:'Herkenbaar boek',Auteur:'A Auteur','ISBN-nummer':'978030640615',
   }],{lookupTitleAuthor:async()=>({
