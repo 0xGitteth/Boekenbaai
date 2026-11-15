@@ -28,7 +28,8 @@ function bookMatchSuggestions(row,existingBooks=[]){
   const requireSuggestions=!targetIsbn
     ||(row.issues||[]).some(issue=>issue.severity==='conflict'
       &&['metadata_title_conflict','edition_identity_conflict',
-        'conflicting_edition_isbns','metadata_identifier_conflict'].includes(issue.code));
+        'conflicting_edition_isbns','metadata_identifier_conflict',
+        'author_sources_differ'].includes(issue.code));
   if(!requireSuggestions)return [];
   const results=new Map();
   const put=(candidate)=>{
@@ -49,15 +50,22 @@ function bookMatchSuggestions(row,existingBooks=[]){
   // class names, loan history or physical barcodes are exposed.
   const existingGroups=new Map();
   for(const book of Array.isArray(existingBooks)?existingBooks:[]){
-    if(!identityCompatible(source,book))continue;
     const isbn=goodIsbn(book);
+    const isbnConfirmed=Boolean(targetIsbn&&isbn===targetIsbn);
+    const sameTitle=Boolean(source.title&&book.title
+      &&sameBookTitle(source.title,book.title));
+    // When the ISBN is valid, that exact edition may still reveal the
+    // correct title or author. A title-only legacy match remains a TENTATIVE
+    // suggestion; it never authorizes an automatic write.
+    if(!isbnConfirmed&&!identityCompatible(source,book)&&!sameTitle)continue;
     const identity=[isbn,previewText(book.title),previewText(book.author)].join('|');
     let group=existingGroups.get(identity);
     if(!group){
       group={origin:'existing',editionIsbn:isbn,
         title:previewText(book.title),author:previewText(book.author),
         coverUrl:validCover(book.coverUrl),publisher:previewText(book.publisher,100),
-        language:previewText(book.language,20),sources:[],copies:0};
+        language:previewText(book.language,20),sources:[],copies:0,
+        identityWarning:!identityCompatible(source,book)};
       existingGroups.set(identity,group);
     }
     group.copies++;
@@ -94,8 +102,10 @@ function bookMatchSuggestions(row,existingBooks=[]){
   return [...results.values()].sort((a,b)=>{
     const score=x=>(x.editionIsbn?6:0)
       +(x.origin==='existing'?5:0)
+      +(targetIsbn&&x.editionIsbn===targetIsbn?8:0)
       +(x.editionIsbn&&isNear(x.editionIsbn)?4:0)
       +(identityCompatible(source,x)?3:0)
+      +(x.identityWarning?-6:0)
       +(x.sources?.length>=2?2:0)
       +(x.coverUrl?1:0);
     return score(b)-score(a)
