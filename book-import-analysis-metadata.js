@@ -305,6 +305,30 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, 
   return { candidate: rankedIdentifierless[0] || null, conflict: null };
 }
 
+// A malformed worksheet ISBN must never be changed on one provider's
+// recommendation. A different edition can be accepted only when at least
+// two independent, named ISBN providers agree on the SAME exact edition
+// and its title + authors match the worksheet.
+function independentlyVerifiedTitleIsbn(rowBook,result){
+  const sources=Array.isArray(result?.sourceCandidates)
+    ?result.sourceCandidates.map(normalizeMetadataCandidate).filter(Boolean):[];
+  const votes=new Map();
+  for(const candidate of sources){
+    const source=normalizeSource(candidate.source);
+    if(!source||!candidate.editionIsbn||candidateIdentifierConflict(candidate)
+      ||!strictMetadataMatch(rowBook,candidate))continue;
+    if(!votes.has(candidate.editionIsbn))votes.set(candidate.editionIsbn,new Map());
+    const byProvider=votes.get(candidate.editionIsbn);
+    if(!byProvider.has(source))byProvider.set(source,candidate);
+  }
+  const confirmed=[...votes].filter(([,sources])=>sources.size>=2);
+  if(confirmed.length!==1)return null;
+  const [isbn,providers]=confirmed[0];
+  const ranked=[...providers.values()]
+    .sort((left,right)=>candidateScore(right)-candidateScore(left));
+  return {isbn,candidate:ranked[0],sources:[...providers.keys()].sort()};
+}
+
 function sourceSuggestedIsbns(row) {
   const analyses = row?.identifierAnalysis
     ? [row.identifierAnalysis.explicit, row.identifierAnalysis.legacy, row.identifierAnalysis.ambiguous]
@@ -549,7 +573,14 @@ async function resolveMetadata(row, options) {
   try {
     const result = await lookupTitleAuthor({ title: row.book.title, author: row.book.author, language: row.book.language });
     const candidates = metadataCandidatesFromResult(result);
-    const selection = selectMetadataCandidate(row.book, candidates);
+    const verified = independentlyVerifiedTitleIsbn(row.book,result);
+    let selection = selectMetadataCandidate(row.book, candidates);
+    // A merged result can include ambiguous editions. A unique independent
+    // quorum safely identifies one edition, without guessing among others.
+    if(verified && selection.conflict?.code==='ambiguous_metadata_editions')
+      selection={candidate:verified.candidate,conflict:null};
+    if (!selection.candidate && !selection.conflict && verified)
+      selection={candidate:verified.candidate,conflict:null};
     if (selection.conflict) {
       addIssue(row, selection.conflict.code, 'conflict', selection.conflict);
       return;
@@ -559,12 +590,20 @@ async function resolveMetadata(row, options) {
       return;
     }
     const suggestedIsbns = sourceSuggestedIsbns(row);
-    if (selection.candidate.editionIsbn && suggestedIsbns.length && !suggestedIsbns.includes(selection.candidate.editionIsbn)) {
-      addIssue(row, 'metadata_isbn_conflicts_with_repair_suggestion', 'conflict', {
-        suggestedIsbns,
-        metadataIsbn: selection.candidate.editionIsbn,
+    if (selection.candidate.editionIsbn && suggestedIsbns.length
+      && !suggestedIsbns.includes(selection.candidate.editionIsbn)) {
+      if(!verified || verified.isbn!==selection.candidate.editionIsbn){
+        addIssue(row, 'metadata_isbn_conflicts_with_repair_suggestion', 'conflict', {
+          suggestedIsbns,metadataIsbn:selection.candidate.editionIsbn,
+        });
+        return;
+      }
+      // Keep both original and competing suggestions in the audit. The
+      // superseded checksum guess is not a second authoritative edition.
+      addIssue(row,'isbn_repair_override_by_sources','warning',{
+        suggestedIsbns,metadataIsbn:verified.isbn,
+        sources:verified.sources,reviewLevel:'informational',
       });
-      return;
     }
     if (!selection.candidate.editionIsbn) {
       addIssue(row, 'title_author_metadata_missing_edition_isbn', 'warning', { source: selection.candidate.source || null });
