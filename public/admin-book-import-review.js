@@ -1263,10 +1263,12 @@
         card.dataset.reviewRowKey='stock:'+item.index;
         card.append(make('strong','',source?.book?.title||'Boek'));
         card.append(make('p','hint','Excelrij '+item.worksheetRow+' · '+(item.editionIsbn||'Geen ISBN')));
+        card.append(make('p','bb-review__reason',
+          'Voorraadcontrole: '+(reasonNames[item.reason]||item.reason)));
         const reasons=item.blockers?.length?item.blockers:[item.reason];
-        for(const reason of reasons.filter(Boolean)){
-          card.append(make('p','bb-review__reason',
-            'Voorraadcontrole: '+(reasonNames[reason]||reason)));
+        for(const reason of reasons.filter(value=>value&&value!==item.reason)){
+          card.append(make('p','hint',
+            'Ook gevonden: '+(reasonNames[reason]||reason)));
         }
         if(reasons.includes('source_needs_review')&&source){
           const relevant=(source.issues||[]).filter(issue=>
