@@ -5472,7 +5472,12 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res,400,{message:'Ongeldige boekcorrectie.',
             error:normalized.error||inventory.error||assignment.error||metadata.error});
         const saved=bookImportStageStore.saveDraft(stage,body.revision,{
-          corrections:[...normalized.corrections.values()],
+          // normalizeCorrections returns a Map<worksheetIndex, {skip,fields}>.
+          // The index is the key, not part of its value. Reattach it so
+          // restored drafts can be submitted to /review unchanged.
+          corrections:[...normalized.corrections].map(([index,fields])=>({
+            index,...fields,
+          })),
           acceptWarnings:body.acceptWarnings,
           inventoryResolutions:inventory.values,
           assignmentResolutions:assignment.values,
