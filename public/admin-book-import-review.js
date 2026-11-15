@@ -1566,7 +1566,10 @@
           const editableField=item.field==='manualThemes'?'themes'
             :item.field==='suitableForExamList'?'examMaterial'
               :item.field;
-          if(worksheetRows.length){
+          // Enrichment-only fields are not part of the selected Excel
+          // synchronization. Converting their provenance to manual would
+          // remove the enrichment while never applying the edit.
+          if(worksheetRows.length&&!item.enrichmentOnly){
             const editHost=make('div','bb-guide__row-choices');
             for(const worksheetRow of worksheetRows){
               const sourceRow=rowByNumber.get(worksheetRow);
@@ -1581,6 +1584,9 @@
               editHost.append(edit);
               if(open)editRow(sourceRow,editHost,{
                 onlyFields:[editableField],
+                // Manual corrections must supersede an earlier "Behouden"
+                // decision for the same ISBN/field.
+                metadataIssueId:item.id,
               });
             }
             line.append(editHost);
