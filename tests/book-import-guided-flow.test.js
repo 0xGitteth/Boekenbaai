@@ -131,6 +131,10 @@ const {analyzeReviewedImport}=require('../book-import-review');
     assert.ok(css.includes(part),'Missing responsive style '+part);
   assert.ok(ui.includes('guidedAuditEditor=open?null:editorKey'),
     'Automatic metadata decisions must have per-row correction editors');
+  assert.ok(ui.includes('if(worksheetRows.length&&!item.enrichmentOnly)'),
+    'Online enrichment of an unselected field must not offer a broken editor');
+  assert.ok(ui.includes('metadataIssueId:item.id,'),
+    'Manual correction must clear an earlier metadata keep override');
   assert.ok(ui.includes('if(open)editRow(sourceRow,editHost'),
     'The editor must reuse the existing validated correction flow');
   assert.ok(server.includes('bookImportStageStore.saveDraft('),
