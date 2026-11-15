@@ -172,6 +172,21 @@ function analyzeIdentifier(value) {
   if (direct) return { raw, canonical: direct, repair: null, suggestion: null, unsupportedType: false };
 
   const compact = compactIdentifierText(trimmed);
+  // A school worksheet may contain stray whitespace or dashes inside an
+  // otherwise fully valid ISBN. Normalize formatting only after the actual
+  // ISBN-10/13 checksum and edition prefix have passed verification.
+  // An incorrect check digit must never be silently changed here.
+  if (compact !== trimmed && /^[0-9Xx\s-]+$/.test(trimmed)
+      && (/^(?:978|979)\d{10}$/.test(compact)
+        || /^\d{9}[0-9Xx]$/.test(compact))) {
+    const canonical = canonicalizeBookIsbn13(compact);
+    if (canonical) return {
+      raw, canonical,
+      repair: { kind:'identifier_format_normalized', from:raw,
+        to:compact, canonical, confidence:'high' },
+      suggestion:null,unsupportedType:false,
+    };
+  }
   if (/^\d{8}[0-9Xx]$/.test(trimmed)) {
     const restored = `0${trimmed}`;
     const canonical = canonicalizeBookIsbn13(restored);
