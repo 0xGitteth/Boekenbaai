@@ -132,6 +132,18 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
     if (!reserved.ok) return reserved;
     return { ok: true, stage: activate(reserved.stage, { sourceRows, workbook, analysis, fileName, options }) };
   }
+  function saveDraft(stage, expectedRevision, draft) {
+    if(!stage||entries.get(stage.id)!==stage||stage.status!=='open')
+      return {ok:false,error:'stage_busy_or_closed'};
+    if(stage.revision!==expectedRevision)
+      return {ok:false,error:'stale_review'};
+    stage.draft=draft;
+    stage.draftSavedAt=new Date(now()).toISOString();
+    stage.expiresAt=now()+ttlMs;
+    persist();
+    return {ok:true,savedAt:stage.draftSavedAt,
+      persisted:stage.draftPersisted===true};
+  }
   function beginReview(stage, expectedRevision) {
     if (!stage || entries.get(stage.id) !== stage || stage.status !== 'open') {
       return { ok: false, error: 'stage_busy_or_closed' };
@@ -147,6 +159,8 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
     stage.inventoryResolutions = inventoryResolutions;
     stage.assignmentResolutions = assignmentResolutions;
     stage.metadataResolutions = metadataResolutions;
+    stage.draft=null;
+    stage.draftSavedAt=null;
     stage.acceptWarnings = acceptWarnings;
     stage.revision += 1;
     stage.expiresAt = now() + ttlMs;
@@ -161,6 +175,7 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
       return { ok: false, error: 'stage_busy_or_closed' };
     }
     if (stage.revision !== expectedRevision) return { ok: false, error: 'stale_review' };
+    if(stage.draft)return {ok:false,error:'draft_must_be_reviewed'};
     stage.status = 'applying';
     return { ok: true };
   }
@@ -199,7 +214,8 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
   restore();
   return {
     create, reserve, activate, abandon, get, active, cancel,
-    beginReview, finishReview, abortReview, beginApply, finishApply, abortApply,
+    saveDraft, beginReview, finishReview, abortReview,
+    beginApply, finishApply, abortApply,
   };
 }
 
@@ -220,6 +236,7 @@ function importStageView(stage) {
     expiresAt: new Date(stage.expiresAt).toISOString(),
     corrections: stage.corrections, acceptWarnings: stage.acceptWarnings,
     draftPersisted: stage.draftPersisted === true,
+    draft: stage.draft || null,draftSavedAt:stage.draftSavedAt||null,
     syncParts: stage.options?.mode === 'unified_sync' ? stage.options.syncParts : null,
     inventoryResolutions: ['inventory_sync','unified_sync'].includes(stage.options?.mode) ? stage.inventoryResolutions : [],
     assignmentResolutions: ['assignment_reconcile','unified_sync'].includes(stage.options?.mode) ? stage.assignmentResolutions : [],
