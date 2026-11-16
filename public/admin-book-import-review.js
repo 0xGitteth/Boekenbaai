@@ -697,7 +697,8 @@
             cleared=result.cleared===true;
             draftSaveIssue='';
             draftSaveFailures=0;
-            if(notice.textContent.startsWith('Concept opslaan mislukt'))
+            if(typeof notice!=='undefined'&&notice.textContent
+              ?.startsWith('Concept opslaan mislukt'))
               setNotice('De laatste keuzes zijn veilig opgeslagen.');
           }
         }
