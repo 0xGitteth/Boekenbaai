@@ -339,7 +339,7 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     // A generic class note cannot imply that a currently borrowed copy
     // should be administratively returned. It needs classification first.
     const classContextOnly = Array.isArray(info.classContext) && info.classContext.length
-      && !info.studentLoan && !info.classLoan;
+      && !info.studentLoan && !info.classLoan && !info.fixedLocation;
     // A complete, explicitly confirmed snapshot can propose replacing a
     // mistaken class loan with a permanent classroom location. Never
     // infer a return from a partial file or an empty location cell.
