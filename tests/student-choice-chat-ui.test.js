@@ -30,6 +30,7 @@ let resolvePin;
 let loggedIn=false;
 let failSuggest=false;
 let resetStatus=200;
+let holdSuggestions=false,releaseSuggestion=null;
 const invalidated=[];
 const suggestRequests=[];
 const questionRequests=[];
@@ -69,10 +70,12 @@ const fetchStub=async (url,options={})=>{
   if(url==='/api/auth/student-pin/choice-suggest'){
     suggestRequests.push(JSON.parse(options.body));
     if(failSuggest)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
-    return makeResponse(200,{suggestions:[1,2,3].map(i=>({
+    const result=makeResponse(200,{suggestions:[1,2,3].map(i=>({
       key:String(i),bookId:'book-'+i,title:'Titel '+i,author:'Auteur',
       reason:'Een willekeurige keuze uit de bibliotheek',available:1,
     }))});
+    if(holdSuggestions)return new Promise(resolve=>{releaseSuggestion=()=>resolve(result);});
+    return result;
   }
   if(url==='/api/auth/student-pin/choice-reset')
     return makeResponse(resetStatus,resetStatus===200?{ok:true}:{message:'Wissen mislukt'});
@@ -226,5 +229,34 @@ vm.runInNewContext(code,{
     'The fallback questionnaire must use the answered route, not surprise');
   assert.equal(suggestRequests.at(-1).choices.answers.length,4,
     'Adaptive conversation submits the actual answered questions');
+  // An older suggestion card must not start a second request while the
+  // next adaptive recommendation is still loading.
+  const deepFind=(root,label)=>{
+    if(root?.textContent===label&&root?.tag==='button')return root;
+    for(const child of root?.children||[]){
+      const found=deepFind(child,label);
+      if(found)return found;
+    }
+    return null;
+  };
+  const existingCard=deepFind(log,'Meer zoals dit');
+  assert.ok(existingCard,'Earlier results remain visible in the dialogue');
+  actions.children.find(x=>x.textContent==='Andere vragen').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  for(const choice of ['Iemand ontdekt een geheim','Of het spannend wordt',
+    'Maakt niet uit','Gesprekken']){
+    if(choice==='Gesprekken')holdSuggestions=true;
+    actions.children.find(x=>x.textContent===choice).listeners.click();
+    await new Promise(resolve=>setImmediate(resolve));
+  }
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(releaseSuggestion,'Deferred recommendation request must be pending');
+  const countBefore=suggestRequests.length;
+  existingCard.listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.length,countBefore,
+    'Busy guard prevents overlapping suggestions from old cards');
+  holdSuggestions=false;releaseSuggestion();releaseSuggestion=null;
+  await new Promise(resolve=>setImmediate(resolve));
   console.log('Choice chat: approved route, dynamic followups, back and privacy: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});
