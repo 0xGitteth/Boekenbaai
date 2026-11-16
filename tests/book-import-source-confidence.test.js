@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {equivalentSpelling,independentVotes,sourceConsensus,decide}=
+const {equivalentSpelling,equivalentAuthorName,independentVotes,sourceConsensus,decide}=
   require('../book-import-source-confidence');
 const {buildUnifiedBookImport}=require('../book-import-unified-sync');
 const ISBN='9780306406157';
@@ -11,6 +11,25 @@ const votes=[
 ];
 assert.equal(equivalentSpelling('Rene van Dijk','René van Dijk'),true);
 assert.equal(equivalentSpelling('Rene van Dijk','René van Dijk Jr.'),false);
+assert.equal(equivalentAuthorName('Hinke Abbema, van','Hinke van Abbema'),true);
+assert.equal(equivalentAuthorName('Hinke van Abbema','Hinke van Anders'),false);
+assert.equal(equivalentAuthorName('Hinke van Abbema','Hinke Abbema'),false,
+  'A missing surname particle is not assumed to be a proven match');
+assert.equal(equivalentAuthorName('Anna de Vries & Hinke van Abbema',
+  'Anna van Abbema & Hinke de Vries'),false,
+  'Author tokens must never be rearranged across coauthors');
+const reorderedVotes=[
+  {source:'bureau isbn',editionIsbn:ISBN,author:'Hinke van Abbema',
+    title:'Door jou ben ik mij'},
+  {source:'googlebooks',editionIsbn:ISBN,author:'Hinke van Abbema',
+    title:'Door jou ben ik mij'},
+];
+const reordered=decide({isbn:ISBN,field:'author',
+  excel:'Hinke Abbema, van',current:'Hinke Abbema, van',
+  evidence:reorderedVotes});
+assert.equal(reordered.confidence,'high');
+assert.equal(reordered.action,'source');
+assert.equal(reordered.value,'Hinke van Abbema');
 assert.equal(sourceConsensus(ISBN,'author',votes).agreeing,3);
 assert.equal(sourceConsensus(ISBN,'title',[
   {source:'Google Books',editionIsbn:ISBN,title:'P.S. Ik hou van je'},

@@ -610,3 +610,11 @@
   line-height:1.4;
   color:var(--text-muted,var(--text));
 }
+
+/* Side-by-side ISBN edition evidence in guided import review. */
+.bb-guide__edition-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem;align-items:stretch}
+.bb-guide__edition-grid .bb-guide__alternative{display:flex;flex-direction:column;gap:.45rem;min-width:0;padding:1rem;border:1px solid #b7c6dc;border-radius:.65rem}
+.bb-guide__edition-cover{height:170px;display:flex;align-items:center;justify-content:center;background:#f3f6fb;border-radius:.4rem;overflow:hidden}
+.bb-guide__edition-cover img{height:100%;max-width:100%;object-fit:contain}
+.bb-guide__edition-fact{margin:0;font-size:.9rem}
+.bb-guide__edition-grid .btn{margin-top:auto}

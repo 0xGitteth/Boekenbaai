@@ -7,7 +7,7 @@ const {
   isPlaceholderAuthor,
 } = require('./book-edition-core');
 const { isBlankCellValue } = require('./book-import-workbook');
-const { equivalentSpelling } = require('./book-import-source-confidence');
+const { equivalentSpelling, equivalentAuthorName } = require('./book-import-source-confidence');
 const {nearlySameBookText}=require('./book-import-autonomy');
 const {
   addIssue,
@@ -224,7 +224,7 @@ function normalizeBookFields(mapped, row) {
     // first/last-name fields say "Carry Slee". That is the same person, not
     // a competing Excel author. This exception is limited to one author.
     const exactSplitCorroboratesDirect = directComparables.includes(combinedComparable)
-      ||directAuthor.some(author=>nearlySameBookText(author,combined[0])
+      ||directAuthor.some(author=>equivalentAuthorName(author,combined[0])||nearlySameBookText(author,combined[0])
         ||(directAuthor.length===1 && combined.length===1
           &&author.split(',').length===2
           &&equivalentSpelling(author.split(',').map(s=>s.trim()).reverse().join(' '),

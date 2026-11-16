@@ -7,7 +7,7 @@ const {
   createAuthorDisplay,
   getOwnDataValue,
 } = require('./book-edition-core');
-const {normalizeSource,sourceConsensus,equivalentSpelling}=require('./book-import-source-confidence');
+const {normalizeSource,sourceConsensus,equivalentSpelling,equivalentAuthorName}=require('./book-import-source-confidence');
 const {nearlySameBookText,sameBookTitle}=require('./book-import-autonomy');
 const {
   addIssue,
@@ -139,7 +139,9 @@ function strictMetadataMatch(rowBook, candidate) {
   const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
   if (!rowAuthors.length) return true;
   if (!candidateAuthors.length || rowAuthors.length !== candidateAuthors.length) return false;
-  return rowAuthors.every((author) => candidateAuthors.includes(author));
+  return rowAuthors.every((author) => candidateAuthors.includes(author))
+    ||(rowAuthors.length===1&&candidateAuthors.length===1
+      &&equivalentAuthorName(rowBook.author,candidate.author));
 }
 
 function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
@@ -148,7 +150,10 @@ function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
   if (rowTitle && candidateTitle && rowTitle !== candidateTitle) return false;
   const rowAuthors = normalizeAuthorList(rowBook.authors, rowBook.author).map(comparableText).filter(Boolean);
   const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
-  if (rowAuthors.length && candidateAuthors.length && !rowAuthors.every((author) => candidateAuthors.includes(author))) {
+  if (rowAuthors.length && candidateAuthors.length
+    && !rowAuthors.every((author) => candidateAuthors.includes(author))
+    && !(rowAuthors.length===1&&candidateAuthors.length===1
+      &&equivalentAuthorName(rowBook.author,candidate.author))) {
     const incompleteSplitAuthor = rowProvenance?.author?.source === 'excel'
       && rowProvenance.author.derived === 'combined_name_parts'
       && rowProvenance.author.incomplete === true;
@@ -317,6 +322,7 @@ function flagIndependentAuthorConflict(row,options){
   if(consensus.agreeing<2
     ||consensus.votes.length!==consensus.agreeing
     ||!consensus.value
+    ||equivalentAuthorName(row.book.author,consensus.value)
     ||nearlySameBookText(row.book.author,consensus.value))return;
   const detail={
     field:'author',excelValue:row.book.author,
@@ -467,7 +473,8 @@ function applyMetadataCandidate(row, candidate, {
         detail: candidate.source || null,
         supplementedFrom,
       };
-    } else {
+    } else if (!equivalentAuthorName(row.book.author,candidate.author)
+      && !nearlySameBookText(row.book.author,candidate.author)) {
       addIssue(row, 'metadata_differs_from_excel', 'warning', { field: 'author', excelValue: row.book.author, metadataValue: candidate.author });
     }
   }
@@ -492,7 +499,10 @@ function acceptSourceVerifiedSpelling(row, options) {
       sourceConsensus(row.book.editionIsbn,'author',row.sourceEvidence);
     const existing=String(row.book[field]||'');
     if(result.agreeing<2||result.conflicting||!existing||!result.value
-      ||existing===result.value||!nearlySameBookText(existing,result.value))continue;
+      ||existing===result.value
+      ||!(field==='author'?equivalentAuthorName(existing,result.value)
+        ||nearlySameBookText(existing,result.value)
+        :nearlySameBookText(existing,result.value)))continue;
     if(field==='author'){
       const current=Array.isArray(row.book.authors)?row.book.authors:[existing];
       // Never silently drop a coauthor or overwrite a reviewed multi-author
@@ -557,11 +567,14 @@ function captureReviewMatchCandidates(row,result,{titleSearch=false}={}){
       editionIsbn:candidate.editionIsbn,title:candidate.title||'',
       author:candidate.author||'',coverUrl:candidate.coverUrl||'',
       publisher:candidate.publisher||'',language:candidate.language||'',
+      publishedYear:candidate.publishedYear||'',pageCount:candidate.pageCount||'',
       sources:[],
     });
     const value=grouped.get(key);
     if(!value.sources.includes(source))value.sources.push(source);
     if(!value.coverUrl&&candidate.coverUrl)value.coverUrl=candidate.coverUrl;
+    for(const field of ['publisher','publishedYear','pageCount','language'])
+      if(!value[field]&&candidate[field])value[field]=candidate[field];
   }
   if(titleSearch&&Array.isArray(result?.isbnSearchCandidates)){
     const isbns=[...new Set(result.isbnSearchCandidates
@@ -589,6 +602,8 @@ function captureReviewMatchCandidates(row,result,{titleSearch=false}={}){
       earlier.sources=[...new Set([...(earlier.sources||[]),
         ...(candidate.sources||[])])].slice(0,4);
       if(!earlier.coverUrl&&candidate.coverUrl)earlier.coverUrl=candidate.coverUrl;
+      for(const field of ['publisher','publishedYear','pageCount','language'])
+        if(!earlier[field]&&candidate[field])earlier[field]=candidate[field];
     }
   }
   row.onlineMatchCandidates=[...unique.values()].slice(0,12);
