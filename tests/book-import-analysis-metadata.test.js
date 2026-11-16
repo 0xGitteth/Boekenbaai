@@ -268,7 +268,8 @@ module.exports = async function runMetadataTests() {
   assert.ok(!codes(disagreeingAuthors.rows[0]).has('metadata_author_conflict'),
     'Two providers with different authors do not form a safe consensus');
   const authorOverride=await analyzeBookImportRows([mismatchedAuthorRow],{
-    lookupIsbn:authorLookup,correctedMetadataFields:new Set(['author']),
+    lookupIsbn:authorLookup,
+    correctedMetadataFieldsByRow:new Map([[0,new Set(['author'])]]),
   });
   assert.ok(!codes(authorOverride.rows[0]).has('metadata_author_conflict'),
     'Explicit administrator author corrections remain possible');
