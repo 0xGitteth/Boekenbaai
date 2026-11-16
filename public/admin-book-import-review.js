@@ -716,7 +716,7 @@
                 void flushGuidedDraft();
             },1500*draftSaveFailures);
           }
-          render();
+          setNotice(draftSaveIssue);
         }else if(cleared){
           // Rebuild the final action: confirmation is safe again once the
           // reverted draft has actually been removed on the server.
