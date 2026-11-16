@@ -71,7 +71,8 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
 
 const {listDeferredBookTasks, resolveDeferredBookTask} =
   require('./book-import-deferred-book-tasks');
-const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,removeFalseHistory} =
+const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
+  removeFalseHistory,listCurrentLoans,removeFalseCurrentLoan} =
   require('./book-loan-history-admin');
 
 let xlsxModule = null;
@@ -5029,13 +5030,30 @@ async function handleApi(req, res, requestUrl) {
     // recalculated against the same permanent ledger.
     const loanHistoryRoot='/api/admin/loan-history';
     if(requestUrl.pathname===loanHistoryRoot
-      ||requestUrl.pathname===loanHistoryRoot+'/remove'){
+      ||requestUrl.pathname===loanHistoryRoot+'/remove'
+      ||requestUrl.pathname===loanHistoryRoot+'/current'
+      ||requestUrl.pathname===loanHistoryRoot+'/current/remove'){
       if(!ensureRole(user,['admin']))
         return sendJson(res,user?403:401,{message:'Alleen voor beheerders.'});
       if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot){
         return sendJson(res,200,{items:searchHistory(getDb(),{
           student:requestUrl.searchParams.get('student')||'',
           book:requestUrl.searchParams.get('book')||'',limit:100})});
+      }
+      if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot+'/current'){
+        return sendJson(res,200,{items:listCurrentLoans(getDb(),{
+          borrower:requestUrl.searchParams.get('borrower')||'',
+          book:requestUrl.searchParams.get('book')||'',limit:100})});
+      }
+      if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/current/remove'){
+        const body=await parseBody(req,3000);
+        const database=loadDb();
+        const result=removeFalseCurrentLoan(database,user,body);
+        if(!result.ok)return sendJson(res,409,{
+          message:'De actuele uitlening is gewijzigd of kan niet veilig worden gecorrigeerd.',
+          error:result.error});
+        saveDb(database);
+        return sendJson(res,200,result);
       }
       if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/remove'){
         const body=await parseBody(req,3000);
