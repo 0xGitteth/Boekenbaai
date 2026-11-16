@@ -698,7 +698,7 @@
             draftSaveIssue='';
             draftSaveFailures=0;
             if(typeof notice!=='undefined'&&notice.textContent
-              ?.startsWith('Concept opslaan mislukt'))
+              ?.startsWith('De laatste keuze kon niet veilig worden opgeslagen'))
               setNotice('De laatste keuzes zijn veilig opgeslagen.');
           }
         }
