@@ -38,6 +38,37 @@ const loanTo=(id,name)=>({studentLoan:{status:'matched',id,name}});
 const classLoan=(id,name)=>({classLoan:{status:'matched',id,name}});
 const now='2026-11-12T12:00:00.000Z';
 
+// A source conflict must not fabricate a location comparison with two
+// empty values. Preserve actual Excel context and defer the unsafe link.
+{
+  const unresolved=row(0,'4711002',{
+    fixedLocation:{status:'resolved',label:'Klas A',raw:'StructuurBB'},
+    studentLoan:{status:'unmatched',name:'Amelia'},
+    studentClassHint:{label:'OndBKT'},
+  });
+  unresolved.status='conflict';
+  unresolved.issues=[{code:'student_loan_unmatched',severity:'conflict'}];
+  const blocked=preview(directory(),[unresolved]);
+  assert.equal(blocked.ok,true);
+  assert.equal(blocked.differences.length,1);
+  assert.equal(blocked.differences[0].reason,'source_row_requires_review');
+  assert.equal(blocked.differences[0].excelFixedLocation,'StructuurBB');
+  assert.equal(blocked.differences[0].excelStudent,'Amelia');
+  assert.equal(blocked.differences[0].excelClass,'OndBKT');
+  assert.equal(blocked.differences[0].choice,'later');
+  assert.equal(blocked.differences[0].autoDeferred,true);
+  assert.equal(blocked.summary.pending,0);
+  assert.equal(blocked.summary.apply,0);
+  const before=JSON.stringify(directory().books);
+  const after=directory();
+  assert.equal(applyAssignmentPreview(after,blocked,'admin').applied,0);
+  assert.equal(JSON.stringify(after.books),before);
+  assert.equal(preview(directory(),[unresolved],
+    [{id:'0:issue',action:'apply'}]).error,'unsafe_assignment_choice',
+    'An unresolved borrower must never be applied');
+}
+
+
 let db=directory();
 const unchanged=preview(db,[row(0,'4711001',loanTo('lisa','Lisa Leerling'))]);
 assert.equal(unchanged.ok,true);
