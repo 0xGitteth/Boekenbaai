@@ -71,6 +71,11 @@
     class_context_needs_review: 'Klas moet worden gecontroleerd',
     metadata_differs_from_excel: 'Metadata wijkt af van Excel',
     metadata_author_conflict: 'Twee onafhankelijke ISBN-bronnen bevestigen een andere auteur',
+    student_loan_unmatched: 'De leerling uit Excel is niet gevonden in Boekenbaai',
+    student_loan_ambiguous: 'De leerling uit Excel kan niet eenduidig worden gekoppeld',
+    class_loan_unmatched: 'De klas uit Excel is niet gevonden in Boekenbaai',
+    class_loan_ambiguous: 'De klas uit Excel kan niet eenduidig worden gekoppeld',
+    fixed_location_needs_review: 'De vaste klaslocatie is nog niet bevestigd',
   };
   const fieldDefs = [
     ['title', 'Titel'], ['author', 'Auteur'], ['editionIsbn', 'ISBN'],
@@ -2037,9 +2042,14 @@
           panel.append(make('p','bb-guide__attention',
             'Er staan nog controles open of er zijn keuzes die eerst '
             +'opnieuw moeten worden berekend.'));
+        // Administrative-only warnings that are already safely deferred
+        // are visible in the deferred-task section. They are not messages
+        // the teacher needs to acknowledge as a book identity decision.
         const sourceWarnings=actionable.reduce((total,item)=>
           total+(item.issues||[]).filter(issue=>
-            issue.severity==='warning'||issue.severity==='conflict').length,0);
+            !(deferredAssignmentRows.has(item.index)
+              &&administrativeSourceCodes.has(issue.code))
+            &&(issue.severity==='warning'||issue.severity==='conflict')).length,0);
         if(sourceWarnings){
           const accept=make('label','bb-guide__accept');
           const checkbox=make('input');checkbox.type='checkbox';
