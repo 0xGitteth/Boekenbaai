@@ -229,6 +229,32 @@ function assignmentSource(analysis,parts,db,inventory=null,effectiveIdentityUpda
     return {...row,book,context};
   })};
 }
+function withMissingExcelLoans(source,db,enabled=false){
+  if(!enabled)return {...source,preferredCopyByRow:{}};
+  const known=new Set((source.rows||[])
+    .map(row=>existingEdition(row.book)||canonicalizeBookIsbn13(row.book?.editionIsbn))
+    .filter(Boolean));
+  const barcodes=new Set((source.rows||[])
+    .map(row=>String(row.book?.barcode||'').trim()).filter(Boolean));
+  const rows=[...source.rows],preferredCopyByRow={};
+  let index=Math.max(-1,...rows.map(row=>row.index))+1;
+  for(const copy of db.books||[]){
+    if(copy.status!=='borrowed'||(!copy.borrowedBy&&!copy.borrowedByClassId))
+      continue;
+    const isbn=existingEdition(copy);
+    const barcode=String(copy.barcode||'').trim();
+    if(!isbn||(known.has(isbn))||(barcode&&barcodes.has(barcode)))continue;
+    const i=index++;
+    rows.push({
+      index:i,sourceRowNumber:null,status:'ready',issues:[],
+      missingFromExcel:true,context:{},
+      book:{title:copy.title,author:copy.author,editionIsbn:isbn,
+        barcode:copy.barcode||'',quantity:{valid:true,value:1}},
+    });
+    preferredCopyByRow[i]=copy.id;
+  }
+  return {...source,rows,preferredCopyByRow};
+}
 function projectCopies(analysis,inventory,parts,db,effectiveIdentityUpdates=new Set()){
   const copies=[];
   for(const addition of inventory.proposedAdds){
@@ -693,7 +719,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
 function buildUnifiedBookImport(analysis,db,{
   parts=DEFAULT_PARTS,acceptWarnings=false,inventoryResolutions=[],
   assignmentResolutions=[],metadataResolutions=[],loanReceipts=[],existingFollowups=[],
-  loanHistoryMode=null,
+  loanHistoryMode=null,fullLoanSnapshot=false,
 }={}){
   if(!analysis?.ok||!Array.isArray(analysis.rows))return {ok:false,error:'invalid_review'};
   const configured=normalizeParts(parts);
@@ -732,11 +758,14 @@ function buildUnifiedBookImport(analysis,db,{
   }else if(inventoryChoices.values.length)return {ok:false,error:'inventory_not_selected'};
   const projected=projectCopies(analysis,inventory,use,db,effectiveIdentityUpdates);
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
-  const source=use.loans||use.locations
+  const originalSource=use.loans||use.locations
     ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
+  const source=withMissingExcelLoans(originalSource,db,
+    fullLoanSnapshot===true&&use.loans);
   const blankLoanReview={
     reviewMissingLoans:use.loans&&['preserve','correct'].includes(loanHistoryMode),
-    loanReceipts,
+    reviewAllBlankLoans:use.loans&&fullLoanSnapshot===true,
+    loanReceipts,preferredCopyByRow:source.preferredCopyByRow,
   };
   let assignments=buildAssignmentPreview(source,assignmentDb,
     assignmentChoices.values,blankLoanReview);
@@ -891,5 +920,5 @@ module.exports={
   DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
   shouldApplyMetadataToCreatedCopy,buildUnifiedBookImport,actualAssignmentPreview,
-  rebaseStaleAssignmentChoices,
+  rebaseStaleAssignmentChoices,withMissingExcelLoans,
 };
