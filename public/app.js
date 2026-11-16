@@ -2047,14 +2047,14 @@ function bookLocationSummary(book) {
   const fixed = copies.filter(copy => String(copy?.fixedLocation || '').trim());
   if (!fixed.length) return '';
   const locations = [...new Set(fixed.map(copy => String(copy.fixedLocation).trim()))];
-  if (copies.length === 1) return 'Vast in klas ' + locations[0];
+  if (copies.length === 1) return 'Vaste klaslocatie: ' + locations[0];
   if (fixed.length === copies.length && locations.length === 1) {
-    return 'Alle exemplaren vast in klas ' + locations[0];
+    return 'Alle exemplaren op vaste locatie: ' + locations[0];
   }
   if (locations.length === 1) {
-    return fixed.length + ' van ' + copies.length + ' exemplaren vast in klas ' + locations[0];
+    return fixed.length + ' van ' + copies.length + ' exemplaren op vaste locatie: ' + locations[0];
   }
-  return fixed.length + ' van ' + copies.length + ' exemplaren vast in klassen: '
+  return fixed.length + ' van ' + copies.length + ' exemplaren op vaste klaslocaties: '
     + locations.join(', ');
 }
 
@@ -2216,7 +2216,7 @@ function createBookCard(template, book, folders, options = {}) {
     const location = document.createElement('div');
     location.className = 'book-card__fixed-location';
     location.textContent = locationText;
-    location.setAttribute('aria-label', 'Vaste locatie: ' + locationText);
+    location.setAttribute('aria-label', locationText);
     // Keep the location visible on all variants, not hidden inside themes.
     (statusBadge?.parentElement || card.querySelector('.book-card__content') || card)
       .append(location);
