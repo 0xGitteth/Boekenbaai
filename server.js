@@ -6093,6 +6093,15 @@ async function handleApi(req, res, requestUrl) {
               inventoryResolutions: stage.inventoryResolutions,
               rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index),
             };
+            // Capture the exact reviewed source rows BEFORE applying any
+            // active-loan changes. Recomputing missing-loan synthetic row
+            // indices after one correction would detach later follow-up
+            // tasks from their original physical copy.
+            const reviewedTaskSourceRows=isUnified
+              ?withMissingExcelLoans(
+                assignmentSource(stage.analysis,combined.parts,database),
+                database,stage.options.fullLoanSnapshot===true
+                  &&combined.parts.loans).rows:[];
             if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
@@ -6206,9 +6215,7 @@ async function handleApi(req, res, requestUrl) {
               report.deferredDifferences=deferredDifferences;
               report.fullyReviewed=deferredDifferences.length===0;
               report.corrections=corrected.audit;
-              const savedTaskRows=withMissingExcelLoans(
-                assignmentSource(stage.analysis,combined.parts,database),database,
-                stage.options.fullLoanSnapshot===true&&combined.parts.loans).rows;
+              const savedTaskRows=reviewedTaskSourceRows;
               const tasks=createDeferredAssignmentTasks(database,report,savedTaskRows,
                 assignments.differences,now);
               report.deferredTaskIds=tasks.map(task=>task.id);
