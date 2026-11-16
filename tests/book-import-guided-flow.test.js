@@ -141,8 +141,9 @@ const {analyzeReviewedImport}=require('../book-import-review');
   const focusEnd=ui.indexOf('    let guidedAlternativeRow=',focusBegin);
   assert.ok(focusBegin>=0&&focusEnd>focusBegin,
     'Guided review must implement stable position restoration');
-  const resolveFocus=new Function(
-    ui.slice(focusBegin,focusEnd)+';return resolveGuidedReviewIndex;')();
+  const focusHelpers=new Function(ui.slice(focusBegin,focusEnd)
+    +';return {resolveGuidedReviewIndex,selectGuidedSourceRow};')();
+  const resolveFocus=focusHelpers.resolveGuidedReviewIndex;
   const groups=(...rows)=>rows.map((row,i)=>({
     key:'book-'+i,rows:new Map([[row,true]]),
   }));
@@ -155,6 +156,14 @@ const {analyzeReviewedImport}=require('../book-import-review');
   assert.equal(resolveFocus(groups(10),{rowIndex:20,index:2},0),0,
     'If the last card disappears show the nearest remaining card');
   assert.equal(resolveFocus([], {rowIndex:20,index:1},0),0);
+  const groupedBook={key:'same-isbn',rows:new Map([
+    [4,{index:4,sourceRowNumber:31,matchSuggestions:[]}],
+    [7,{index:7,sourceRowNumber:57,matchSuggestions:[{editionIsbn:'9780306406157'}]}],
+  ])};
+  assert.equal(focusHelpers.selectGuidedSourceRow(groupedBook,null).index,7,
+    'Rechecks must anchor to the suggested worksheet row actually displayed');
+  assert.equal(focusHelpers.selectGuidedSourceRow(groupedBook,4).index,4,
+    'An explicitly selected worksheet row must take priority');
   assert.ok(ui.includes('guidedRecheckFocus=focus'),
     'Server review must remember the active book after success');
   assert.ok(!ui.includes('guidedStep=2;guidedIndex=0;'),
