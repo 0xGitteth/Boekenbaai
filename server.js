@@ -5273,6 +5273,7 @@ async function handleApi(req, res, requestUrl) {
           stage: activeStage ? {
             id: activeStage.id, status: activeStage.status,
             revision: activeStage.revision, fileName: activeStage.fileName,
+            progress:activeStage.progress||null,
           } : null,
         });
       }
@@ -5394,11 +5395,21 @@ async function handleApi(req, res, requestUrl) {
             retryableTitle.clear();
           },
         };
+        reservation.stage.progress={
+          completed:0,total:workbook.rows.length,phase:'analyzing',
+        };
         const analysis = await analyzeReviewedImport(workbook.rows, [], {
           ...options, existingBooks: database.books,
           students: database.students, classes: database.classes,
           acceptWarnings: false,
+          onRowProgress:({completed,total})=>{
+            reservation.stage.progress={completed,total,phase:'analyzing'};
+          },
         });
+        reservation.stage.progress={
+          completed:workbook.rows.length,total:workbook.rows.length,
+          phase:'finalizing',
+        };
         if (!analysis.ok) return sendJson(res, 400, { message: 'Importanalyse mislukt.', error: analysis.error });
         includeDerivedThemesInImportPreview(analysis);
         // Metadata lookups may take time. Check for books added during that
@@ -5540,11 +5551,18 @@ async function handleApi(req, res, requestUrl) {
           // Authentication may have loaded an older snapshot while a large
           // review request was uploading. Review against the latest library.
           const database = loadDb();
+          stage.progress={completed:0,total:stage.sourceRows.length,
+            phase:'analyzing'};
           const reviewed = await analyzeReviewedImport(stage.sourceRows, body.corrections, {
             ...stage.options, existingBooks: database.books,
             students: database.students, classes: database.classes,
             acceptWarnings: body.acceptWarnings,
+            onRowProgress:({completed,total})=>{
+              stage.progress={completed,total,phase:'analyzing'};
+            },
           });
+          stage.progress={completed:stage.sourceRows.length,
+            total:stage.sourceRows.length,phase:'finalizing'};
           if (!reviewed.ok) {
             return sendJson(res, 400, { message: 'Een correctie is ongeldig.', error: reviewed.error, field: reviewed.field, index: reviewed.index });
           }

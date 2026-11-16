@@ -618,3 +618,10 @@
 .bb-guide__edition-cover img{height:100%;max-width:100%;object-fit:contain}
 .bb-guide__edition-fact{margin:0;font-size:.9rem}
 .bb-guide__edition-grid .btn{margin-top:auto}
+
+/* Setup progress: exact browser file-read progress, honest indeterminate server work. */
+.bb-import__setup-progress{display:flex;flex-direction:column;gap:.55rem;margin:1rem 0;padding:1rem;border:1px solid #9fb1d0;border-radius:.65rem;background:#f5f7fb}
+.bb-import__setup-progress[hidden]{display:none}
+.bb-import__setup-progress-label{margin:0;font-weight:600;color:#102c5c}
+.bb-import__setup-progress-meter{display:block;width:100%;height:1rem;accent-color:#13366e}
+.bb-guide__correct-isbn{max-width:100%;white-space:normal;text-align:left}

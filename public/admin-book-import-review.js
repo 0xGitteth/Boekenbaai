@@ -136,12 +136,16 @@
     }
     return payload;
   }
-  function encodeFile(file) {
+  function encodeFile(file,onProgress) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const raw = String(reader.result || '');
         resolve(raw.slice(raw.indexOf(',') + 1));
+      };
+      reader.onprogress = event => {
+        if(event.lengthComputable&&typeof onProgress==='function')
+          onProgress(event.loaded,event.total);
       };
       reader.onerror = () => reject(Error('Bestand lezen is mislukt.'));
       reader.readAsDataURL(file);
@@ -463,6 +467,38 @@
     notice.setAttribute('role', 'status');
     notice.setAttribute('aria-live', 'polite');
     root.append(notice);
+    // Do not invent progress for the server-side ISBN lookups. Report
+    // exact bytes while reading and an indeterminate bar during analysis.
+    const setupProgress=make('section','bb-import__setup-progress');
+    setupProgress.hidden=true;
+    setupProgress.setAttribute('aria-label','Voortgang Excelcontrole');
+    const setupProgressLabel=make('p','bb-import__setup-progress-label');
+    const setupProgressBar=make('progress','bb-import__setup-progress-meter');
+    setupProgressBar.max=100;
+    setupProgress.append(setupProgressLabel,setupProgressBar);
+    root.append(setupProgress);
+    const updateSetupProgress=(phase,loaded=0,total=0)=>{
+      setupProgress.hidden=!phase;
+      if(!phase)return;
+      if(phase==='reading'&&total>0){
+        const percent=Math.min(100,Math.round(loaded/total*100));
+        setupProgressBar.value=percent;
+        setupProgressLabel.textContent='Excelbestand lezen: '+percent
+          +'% ('+loaded.toLocaleString('nl-NL')+' van '
+          +total.toLocaleString('nl-NL')+' bytes)';
+      }else if(phase==='analyzing'&&total>0){
+        const percent=Math.min(100,Math.floor(loaded/total*100));
+        setupProgressBar.value=percent;
+        setupProgressLabel.textContent='Boekgegevens en ISBN-bronnen controleren: '
+          +loaded+' van '+total+' Excelrijen verwerkt ('+percent+'%).';
+      }else{
+        setupProgressBar.removeAttribute('value');
+        setupProgressLabel.textContent=phase==='finalizing'
+          ?'Alle Excelrijen gecontroleerd. Het importvoorstel wordt samengesteld…'
+          :'De analyse wordt gestart. De voortgang per boek verschijnt '
+            +'zodra de server het Excelbestand heeft ingelezen.';
+      }
+    };
     const liveAlert = make('div', 'bb-review__live-alert');
     liveAlert.setAttribute('role', 'status');
     liveAlert.setAttribute('aria-live', 'polite');
@@ -606,6 +642,21 @@
     };
     let draftSavePending=false;
     let draftChangeGeneration=0;
+    let draftSaveIssue='';
+    let draftSaveFailures=0;
+    function updateGuidedSaveStatus(){
+      if(typeof results==='undefined')return;
+      const status=results.querySelector('.bb-guide__save-state');
+      if(!status)return;
+      const unsaved=draftSaveInFlight||draftSavePending||Boolean(draftSaveTimer);
+      const message=draftSaveIssue
+        ||(unsaved?'De laatste keuzes worden opgeslagen…'
+          :stage?.draftPersisted
+            ?'Concept veilig opgeslagen · maximaal 24 uur beschikbaar':'');
+      status.textContent=message;
+      status.hidden=!message;
+      status.classList.toggle('bb-guide__attention',Boolean(draftSaveIssue));
+    }
     function scheduleGuidedDraftSave(){
       if(stage?.mode!=='unified_sync'||stage.status!=='open'
         ||remotePending||busy)return;
@@ -613,6 +664,7 @@
       // changes" check alone would leave /apply blocked by that hidden draft.
       if(!hasUnreviewedChanges()&&!stage.draft&&!draftSaveInFlight)return;
       draftChangeGeneration++;
+      draftSaveFailures=0;
       if(draftSaveTimer)clearTimeout(draftSaveTimer);
       if(draftSaveInFlight){
         draftSavePending=true;
@@ -623,6 +675,7 @@
         draftSaveTimer=null;
         void flushGuidedDraft();
       },950);
+      updateGuidedSaveStatus();
     }
     async function flushGuidedDraft(){
       if(!stage||busy||remotePending||stage.status!=='open')return;
@@ -641,29 +694,53 @@
       const data=changes?snapshot:{revision,clear:true};
       draftSavePending=false;
       draftSaveInFlight=true;
+      updateGuidedSaveStatus();
       let cleared=false;
+      let saveFailed=false;
       try{
         const result=await request(rootPath+'/'+encodeURIComponent(currentStage)
           +'/draft',data);
         if(stage?.id===currentStage&&stage.revision===revision){
-          if(!result.persisted)
-            setNotice('Concept opslaan mislukt. Controleer je keuzes '
-              +'voordat je de pagina verlaat.');
-          else {
+          if(!result.persisted){
+            saveFailed=true;
+            draftSaveIssue='De laatste keuze kon niet veilig worden opgeslagen. '
+              +'Gebruik ‘Keuzes nu controleren’ voordat je deze pagina verlaat.';
+          }else{
             stage.draft=result.cleared?null:snapshot;
             stage.draftSavedAt=result.savedAt;
+            stage.draftPersisted=true;
             cleared=result.cleared===true;
+            draftSaveIssue='';
+            draftSaveFailures=0;
+            if(typeof notice!=='undefined'&&notice.textContent
+              ?.startsWith('De laatste keuze kon niet veilig worden opgeslagen'))
+              setNotice('De laatste keuzes zijn veilig opgeslagen.');
           }
         }
       }catch(error){
-        if(stage?.id===currentStage&&stage.revision===revision)
-          setNotice('Concept opslaan mislukt. Klik op controleren '
-            +'voordat je de pagina verlaat.');
+        if(stage?.id===currentStage&&stage.revision===revision){
+          saveFailed=true;
+          draftSaveIssue='De laatste keuze kon niet veilig worden opgeslagen. '
+            +'Gebruik ‘Keuzes nu controleren’ voordat je deze pagina verlaat.';
+        }
       }finally{
         draftSaveInFlight=false;
+        updateGuidedSaveStatus();
         if(draftSavePending||draftChangeGeneration!==generation){
           draftSavePending=false;
           scheduleGuidedDraftSave();
+        }else if(saveFailed){
+          draftSaveFailures++;
+          if(draftSaveFailures<=2){
+            const retryStage=currentStage,retryRevision=revision;
+            setTimeout(()=>{
+              if(stage?.id===retryStage&&stage.revision===retryRevision
+                &&stage.status==='open'&&!busy)
+                void flushGuidedDraft();
+            },1500*draftSaveFailures);
+          }
+          setNotice(draftSaveIssue);
+          updateGuidedSaveStatus();
         }else if(cleared){
           // Rebuild the final action: confirmation is safe again once the
           // reverted draft has actually been removed on the server.
@@ -705,6 +782,8 @@
       const sameStage = stage?.id === payload.id;
       const previousRevision=stage?.revision;
       stage = payload;
+      draftSaveIssue='';
+      draftSaveFailures=0;
       if(!sameStage||previousRevision!==stage.revision)
         guidedMissingAcknowledged=false;
       remotePending = null;
@@ -1145,11 +1224,9 @@
       top.append(make('h4','',guidedStep===1?'Analyse afgerond'
         :guidedStep===2?'Boeken controleren':'Import afronden'));
       panel.append(top);
-      if(stage.draftPersisted){
-        const saved=make('p','bb-guide__saved hint',
-          'Concept veilig opgeslagen · maximaal 24 uur beschikbaar');
-        panel.append(saved);
-      }
+      // One dedicated status element can be updated without re-rendering
+      // editor controls or accidentally scheduling another autosave.
+      panel.append(make('p','bb-guide__save-state hint'));
       if(guidedStep!==1){
         panel.append(make('p','bb-guide__intro',
           guidedStep===2
@@ -1315,7 +1392,12 @@
             &&/^https:\/\/[^\s"'<>]+$/i.test(coverUrl)){
             const img=make('img');img.src=coverUrl;
             img.alt='Omslag van '+safeText(book.title);
-            img.referrerPolicy='no-referrer';img.loading='lazy';cover.append(img);
+            img.referrerPolicy='no-referrer';img.loading='lazy';
+            img.addEventListener('error',()=>{
+              img.remove();
+              cover.append(make('span','hint','Omslag niet beschikbaar'));
+            },{once:true});
+            cover.append(img);
           }else cover.append(make('span','','B'));
           const identity=make('div','bb-guide__bookinfo');
           identity.append(make('span','bb-guide__eyebrow','TE CONTROLEREN'),
@@ -1351,8 +1433,26 @@
                 alert.append(make('small','',
                   'Bronnen: '+issue.sources.join(', ')));
               alert.append(make('p','',
-                'Controleer de fysieke editie. Er wordt niets automatisch '
-                +'aan de bestaande auteur of titel veranderd.'));
+                'Controleer welke titel of auteur op het fysieke boek staat. '
+                +'De keuze geldt voor de bijbehorende boekgegevens; '
+                +'bestaande exemplaren en uitleningen worden niet gewijzigd.'));
+              // A verified title conflict must offer the actual suggested
+              // title. A generic stock approval is not a title correction.
+              if(confirmed&&relatedRow.index!==undefined){
+                const changedField=field==='titel'?'title':'author';
+                const label=field==='titel'?'titel':'auteur';
+                const actions=make('div','bb-guide__actions');
+                addAction(actions,'Op mijn boek staat deze '+label+': '+confirmed,()=>{
+                  updateCorrection(relatedRow.index,changedField,confirmed);
+                  void recheck();
+                },true);
+                addAction(actions,'De '+label+' uit Excel klopt',()=>{
+                  updateCorrection(relatedRow.index,changedField,
+                    relatedRow.book?.[changedField]||'');
+                  void recheck();
+                });
+                alert.append(actions);
+              }
               card.append(alert);
             }
           }
@@ -1384,6 +1484,26 @@
             // is not a selectable edition. Do not display it as another
             // edition in the comparison.
             const allSuggestions=source?.matchSuggestions||[];
+            const suggestedRepair=source?.issues?.find(issue=>
+              issue.code==='isbn_repair_suggested'
+              &&issue.suggestion?.canonical)?.suggestion?.canonical;
+            if(suggestedRepair&&!source.book?.editionIsbn){
+              const proposal=make('div','bb-guide__identity-conflict');
+              proposal.append(make('strong','',
+                'Dit ISBN uit Excel is ongeldig. Mogelijke correctie: '
+                +suggestedRepair));
+              proposal.append(make('p','',
+                'Dit nummer is een voorstel op basis van het ingevoerde nummer, '
+                +'geen bevestigde editie. Vergelijk het eerst met het ISBN '
+                +'op het fysieke boek.'));
+              const apply=addAction(proposal,'ISBN op mijn boek is '
+                +suggestedRepair,()=>{
+                  updateCorrection(source.index,'editionIsbn',suggestedRepair);
+                  void recheck();
+                });
+              apply.classList.add('bb-guide__correct-isbn');
+              check.append(proposal);
+            }
             const suggestions=allSuggestions.filter(option=>
               typeof option.editionIsbn==='string'
               &&/^97[89][0-9]{10}$/.test(option.editionIsbn));
@@ -1512,7 +1632,9 @@
                   toggleSkippedRow(corrections,skippedEdits,index,next);
                 warningsAccepted=false;
                 if(currentApplyButton)currentApplyButton.disabled=true;
-                render();
+                // Skipping is a real reviewed decision; immediately
+                // recalculate it so the next outstanding book appears.
+                void recheck();
               });
             check.append(actions);
             if(openEditor===source?.index&&source)
@@ -1591,15 +1713,29 @@
             }
             card.append(section);
           }
-          if(group.metadata.length){
+          // The title/author identity choice above also resolves the
+          // matching metadata issue. Never ask the same question twice.
+          const pendingMetadata=group.metadata.filter(issue=>
+            !(issue.reason==='source_row_requires_review'
+              &&['title','author'].includes(issue.field)
+              &&groupRows.some(row=>(row.issues||[]).some(identity=>
+                identity.code===(issue.field==='title'
+                  ?'metadata_title_conflict':'metadata_author_conflict')
+                &&Boolean(identity.confirmedTitle||identity.confirmedAuthor)))));
+          if(pendingMetadata.length){
             const section=make('section','bb-guide__check');
             section.append(make('h5','','3. Boekgegevens'));
-            for(const issue of group.metadata){
+            for(const issue of pendingMetadata){
               const label=fieldDefs.find(([name])=>name===issue.field)?.[1]
                 ||issue.field;
               const entry=make('div','bb-guide__choice');
               entry.append(make('strong','',label));
-              explain(entry,issue.reason);
+              if(issue.reason==='source_row_requires_review')
+                entry.append(make('p','bb-guide__reason',
+                  'Dit boek heeft nog een niet-opgelost verschil in '+label
+                  +'. Als je hierboven de juiste titel of auteur kiest, '
+                  +'wordt dit punt opnieuw beoordeeld.'));
+              else explain(entry,issue.reason);
               const compare=make('div','bb-guide__compare');
               compare.append(makeLabeled('Excel',source
                 ?fieldValue(source,issue.field==='manualThemes'?'themes'
@@ -3053,6 +3189,7 @@
           .indexOf(document.activeElement) : -1;
       renderContents();
       if(typeof scheduleGuidedDraftSave==='function')scheduleGuidedDraftSave();
+      if(typeof updateGuidedSaveStatus==='function')updateGuidedSaveStatus();
       const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
       const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
       for (const list of updatedLists) {
@@ -3563,13 +3700,47 @@
       results.append(navigation);
     }
 
+    file.addEventListener('change',()=>{
+      if(stage?.status==='cancelled'||stage?.status==='failed'){
+        stage=null;
+        results.replaceChildren();
+      }
+      updateSetupProgress(null);
+      setNotice('');
+    });
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const selected = file.files?.[0];
       if (!selected) return setNotice('Kies eerst een Excelbestand.');
       if (selected.size > 25 * 1024 * 1024) return setNotice('Het Excelbestand is te groot (maximaal 25 MB).');
+      // A previous cancellation must not remain visible underneath the
+      // new import progress indicator.
+      if(stage?.status==='cancelled'||stage?.status==='failed'){
+        stage=null;
+        results.replaceChildren();
+      }
+      setNotice('');
+      updateSetupProgress('reading',0,selected.size);
       run(async () => {
-        const encoded = await encodeFile(selected);
+        const encoded = await encodeFile(selected,(loaded,total)=>
+          updateSetupProgress('reading',loaded,total));
+        updateSetupProgress('analyzing');
+        let pollBusy=false;
+        const progressPoll=setInterval(async()=>{
+          if(pollBusy||!setupProgress.isConnected)return;
+          pollBusy=true;
+          try{
+            const active=(await request(rootPath+'/active')).stage;
+            if(!active?.progress)return;
+            const {completed,total,phase}=active.progress;
+            if(phase==='finalizing')updateSetupProgress('finalizing');
+            else if(phase==='analyzing'
+              &&Number.isInteger(completed)&&Number.isInteger(total)
+              &&total>0)updateSetupProgress('analyzing',completed,total);
+          }catch{
+            // A transient status request must never interrupt the import.
+          }finally{pollBusy=false;}
+        },900);
         let payload;
         try {
           const unified=importMode.value==='unified';
@@ -3591,10 +3762,14 @@
         } catch (error) {
           await syncStage();
           throw error;
+        }finally{
+          clearInterval(progressPoll);
         }
         rememberResponse(payload);
         setNotice('Preview gereed. De bibliotheek is nog niet gewijzigd.');
-      }, 'Het Excelbestand wordt gecontroleerd…');
+      }, 'Het Excelbestand wordt gecontroleerd…').finally(()=>{
+        updateSetupProgress(null);
+      });
     });
     syncStage();
     void refreshDeferred();
