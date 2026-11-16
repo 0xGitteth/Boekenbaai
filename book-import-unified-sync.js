@@ -231,19 +231,51 @@ function assignmentSource(analysis,parts,db,inventory=null,effectiveIdentityUpda
 }
 function withMissingExcelLoans(source,db,enabled=false){
   if(!enabled)return {...source,preferredCopyByRow:{}};
-  const known=new Set((source.rows||[])
-    .map(row=>existingEdition(row.book)||canonicalizeBookIsbn13(row.book?.editionIsbn))
-    .filter(Boolean));
-  const barcodes=new Set((source.rows||[])
-    .map(row=>String(row.book?.barcode||'').trim()).filter(Boolean));
   const rows=[...source.rows],preferredCopyByRow={};
+  const borrowed=(db.books||[]).filter(copy=>
+    copy.status==='borrowed'&&(copy.borrowedBy||copy.borrowedByClassId));
+  const represented=new Set();
+  const normalizedBarcode=book=>String(book?.barcode||'').trim();
+  const physicalBarcode=row=>{
+    const barcode=normalizedBarcode(row.book);
+    return barcode&&canonicalizeBookIsbn13(barcode)
+      !==canonicalizeBookIsbn13(row.book?.editionIsbn)
+      ?barcode:null;
+  };
+  // First identify actual physical copies by individual barcode.
+  // One row of an ISBN edition must not hide several other borrowed copies.
+  for(const row of rows){
+    const barcode=physicalBarcode(row);
+    if(!barcode)continue;
+    const matches=borrowed.filter(copy=>
+      normalizedBarcode(copy)===barcode
+      &&existingEdition(copy)===canonicalizeBookIsbn13(row.book?.editionIsbn));
+    if(matches.length===1)represented.add(matches[0].id);
+  }
+  // ISBN-only rows cannot identify an individual copy. Allocate at most
+  // ONE unmatched borrowed copy per source row. A known student/class
+  // borrower takes priority, but never count the entire ISBN edition as
+  // represented by one row.
+  for(const row of rows){
+    if(physicalBarcode(row))continue;
+    const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
+    if(!isbn)continue;
+    const available=borrowed.filter(copy=>
+      !represented.has(copy.id)&&existingEdition(copy)===isbn);
+    if(!available.length)continue;
+    const studentId=row.context?.studentLoan?.id;
+    const classId=row.context?.classLoan?.id;
+    const selected=available.find(copy=>
+      studentId&&copy.borrowedBy===studentId
+      ||classId&&copy.borrowedByClassId===classId)
+      ||available[0];
+    represented.add(selected.id);
+  }
   let index=Math.max(-1,...rows.map(row=>row.index))+1;
-  for(const copy of db.books||[]){
-    if(copy.status!=='borrowed'||(!copy.borrowedBy&&!copy.borrowedByClassId))
-      continue;
+  for(const copy of borrowed){
+    if(represented.has(copy.id))continue;
     const isbn=existingEdition(copy);
-    const barcode=String(copy.barcode||'').trim();
-    if(!isbn||(known.has(isbn))||(barcode&&barcodes.has(barcode)))continue;
+    if(!isbn)continue; // Cannot safely identify an edition without ISBN.
     const i=index++;
     rows.push({
       index:i,sourceRowNumber:null,status:'ready',issues:[],
