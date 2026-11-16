@@ -38,6 +38,20 @@ function row(extra={}){
   assert.equal(online.length,2);
   assert.ok(online.some(candidate=>candidate.origin==='online'
     &&candidate.editionIsbn===OTHER));
+  const duplicateEdition=bookMatchSuggestions(row({
+    onlineMatchCandidates:[
+      {title:'Mijn boek',author:'Jan Jansen',editionIsbn:ISBN,
+        publisher:'Testuitgever',publishedYear:'2024',pageCount:212,
+        coverUrl:'https://example.org/isbn-cover.jpg',sources:['Google Books']},
+    ],
+  }),current);
+  assert.equal(duplicateEdition.filter(candidate=>candidate.editionIsbn===ISBN).length,1,
+    'One ISBN must be one edition option, even when multiple providers return it');
+  assert.equal(duplicateEdition[0].publisher,'Testuitgever',
+    'Useful evidence from multiple matching sources should be combined');
+  assert.equal(duplicateEdition[0].publishedYear,'2024');
+  assert.equal(duplicateEdition[0].pageCount,212);
+
   const withoutInventory=bookMatchSuggestions(row({
     onlineMatchCandidates:[{title:'Mijn boek',author:'Jan Jansen',
       editionIsbn:OTHER,sources:['Google Books']}],
@@ -55,6 +69,12 @@ function row(extra={}){
     status:'conflict',issues:[{code:'author_sources_differ',severity:'conflict'}],
   }),current)[0].editionIsbn,ISBN,
   'A trustworthy ISBN still finds the existing book when author data is wrong');
+
+  assert.deepEqual(bookMatchSuggestions(row({
+    status:'ready',
+    book:{title:'Door jou ben ik mij',author:'Hinke Abbema, van',editionIsbn:ISBN},
+  }),[{title:'Door jou ben ik mij',author:'Hinke van Abbema',editionIsbn:ISBN}]),[],
+  'Reordered author name at the same ISBN is not a new review conflict');
 
   const titleOnly=bookMatchSuggestions(row({
     book:{title:'Mijn boek',author:'Someone Else',editionIsbn:''},
@@ -159,6 +179,11 @@ function row(extra={}){
     'Controle opnieuw berekenen',
   ])assert.ok(ui.includes(fragment),'Missing working card control '+fragment);
   assert.ok(css.includes('.bb-match-review__card'));
+  assert.ok(ui.includes('bb-guide__edition-grid'));
+  assert.ok(ui.includes('void recheck()'),
+    'An edition confirmation must rerun server-side decisions');
+  assert.ok(css.includes('.bb-guide__edition-cover'));
+  assert.ok(ui.includes('publishedYear')&&ui.includes('pageCount'));
   assert.ok(css.includes('max-width:720px'),'Responsive breakpoint must exist');
   console.log('Import suggestion candidates and visual review controls OK');
 })().catch(error=>{console.error(error);process.exitCode=1;});
