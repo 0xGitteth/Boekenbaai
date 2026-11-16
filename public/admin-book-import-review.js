@@ -70,6 +70,7 @@
     nonstandard_easy_reading_value: 'Afwijkende Makkelijk Lezen waarde',
     class_context_needs_review: 'Klas moet worden gecontroleerd',
     metadata_differs_from_excel: 'Metadata wijkt af van Excel',
+    metadata_author_conflict: 'Twee onafhankelijke ISBN-bronnen bevestigen een andere auteur',
   };
   const fieldDefs = [
     ['title', 'Titel'], ['author', 'Auteur'], ['editionIsbn', 'ISBN'],
