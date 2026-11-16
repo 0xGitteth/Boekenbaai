@@ -16,6 +16,34 @@ function borrowEvents(db){
   }
   return [...byId.values()];
 }
+function borrowCountEvents(db){
+  const events=borrowEvents(db);
+  // Every actual check-out is already one occurrence. A confirmed
+  // historical Excel period counts only when no corresponding recorded
+  // check-out is available for the same physical copy, borrower and date.
+  const issued=events.filter(event=>
+    event.type==='check_out'||event.type==='check_out_class');
+  const matches=(event,period)=>{
+    if(event.bookId!==period.bookId)return false;
+    const sameStudent=period.studentId&&event.studentId===period.studentId;
+    const sameClass=period.classId&&event.classId===period.classId;
+    if(!sameStudent&&!sameClass)return false;
+    // Without timestamps, matching an identical physical copy and borrower
+    // is more conservative than inflating the count.
+    if(!period.borrowedAt||!event.timestamp)return true;
+    const start=Date.parse(period.borrowedAt),time=Date.parse(event.timestamp);
+    return !Number.isFinite(start)||!Number.isFinite(time)
+      ||Math.abs(start-time)<=120000;
+  };
+  const remaining=[...issued];
+  const missing=(db.bookLoanPeriods||[]).filter(period=>{
+    const index=remaining.findIndex(event=>matches(event,period));
+    if(index>=0){remaining.splice(index,1);return false;}
+    return true;
+  }).map(period=>({type:'check_out',bookId:period.bookId,
+    studentId:period.studentId||null,classId:period.classId||null}));
+  return [...events,...missing];
+}
 function appendDurableLoanEvent(db,event){
   if(!event || !eventTypes.has(event.type) || !event.id)return false;
   if(!Array.isArray(db.bookLoanEvents))db.bookLoanEvents=[];
@@ -126,5 +154,5 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
     importedPeriodsRemoved:periodIds.size,
     examEntriesRemoved:examIds.size,activeLoanUnchanged:true};
 }
-module.exports={appendDurableLoanEvent,borrowEvents,searchHistory,
+module.exports={appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
   removeFalseHistory,fingerprint};
