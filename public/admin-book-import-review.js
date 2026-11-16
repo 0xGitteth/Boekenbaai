@@ -1379,13 +1379,12 @@
                 selectCandidateForRow(source,candidate);
                 void recheck();
               };
-              addAction(check,'Dit is het juiste boek',()=>choose(proposed),true);
               const alternatives=suggestions.slice(1).filter(option=>
                 option.editionIsbn!==proposed.editionIsbn);
               const editionCard=(option,selected=false)=>{
                 const alt=make('article','bb-guide__alternative');
                 const cover=make('div','bb-guide__edition-cover');
-                if(option.coverUrl&&/^https:\/\/[^\\s"'<>]+$/i.test(option.coverUrl)){
+                if(option.coverUrl&&/^https:\/\/[^\s"'<>]+$/i.test(option.coverUrl)){
                   const img=make('img');
                   img.src=option.coverUrl;
                   img.alt='Omslag van ISBN '+option.editionIsbn;
@@ -1414,20 +1413,15 @@
                 return alt;
               };
               if(alternatives.length){
-                const show=button('Vergelijk '+(alternatives.length+1)
-                  +' edities','btn btn--secondary');
-                show.addEventListener('click',()=>{
-                  guidedAlternativeRow=guidedAlternativeRow===source.index
-                    ?null:source.index;render();
-                });
-                check.append(show);
-                if(guidedAlternativeRow===source.index){
+                check.append(make('h5','','Vergelijk de edities'));
+                {
                   const list=make('div','bb-guide__alternatives bb-guide__edition-grid');
                   list.append(editionCard(proposed,true));
                   for(const option of alternatives)list.append(editionCard(option));
                   check.append(list);
                 }
               }else{
+                addAction(check,'Dit is het juiste boek',()=>choose(proposed),true);
                 const facts=[['Uitgever',proposed.publisher],
                   ['Jaar',proposed.publishedYear],
                   ['Uitvoering',proposed.format],
