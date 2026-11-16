@@ -11,6 +11,8 @@ const goodIsbn=book=>canonicalizeBookIsbn13(book?.editionIsbn)
   ||canonicalizeBookIsbn13(book?.metadataIsbn)
   ||canonicalizeBookIsbn13(book?.isbn13)
   ||canonicalizeBookIsbn13(book?.barcode);
+const safeYear=value=>(typeof value==='number'&&Number.isInteger(value)
+  &&value>=1000&&value<=9999)?String(value):safeText(value);
 const validCover=value=>typeof value==='string'
   &&/^https:\/\/[^\s"'<>]{1,600}$/i.test(value)?value:'';
 
@@ -47,7 +49,7 @@ function buildMatchCandidateIndex(existingBooks=[]){
     if(!entry){
       entry={origin:'existing',editionIsbn:isbn,title,author,
         coverUrl:validCover(book.coverUrl),publisher:safeText(book.publisher),
-        publishedYear:safeText(book.publishedYear||book.publicationYear),
+        publishedYear:safeYear(book.publishedYear||book.publicationYear),
         pageCount:book.pageCount||book.pages||'',
         format:safeText(book.format||book.binding),
         language:safeText(book.language),sources:[],copies:0};
@@ -135,7 +137,7 @@ function bookMatchSuggestions(row,existingIndex=[]){
       author:safeText(suggestion.author||source.author),
       coverUrl:validCover(suggestion.coverUrl),
       publisher:safeText(suggestion.publisher),
-      publishedYear:safeText(suggestion.publishedYear),
+      publishedYear:safeYear(suggestion.publishedYear),
       pageCount:suggestion.pageCount||'',
       format:safeText(suggestion.format),
       language:safeText(suggestion.language),
