@@ -403,6 +403,21 @@ async function run(){
     assert.equal(draft.data.persisted,true,
       'The draft must be written to the private persistent volume');
     const loaded=await call(stagedPath,token);
+    const exportedDraft=await call(stagedPath+'/export',token,{
+      revision:loaded.data.revision,
+    });
+    assert.equal(exportedDraft.status,200,JSON.stringify(exportedDraft.data));
+    const draftWorkbook=XLSX.read(exportedDraft.data.file,{type:'base64'});
+    assert.ok(draftWorkbook.Sheets['Boeken concept']);
+    assert.ok(draftWorkbook.Sheets['Originele Excel']);
+    const draftedRows=XLSX.utils.sheet_to_json(
+      draftWorkbook.Sheets['Boeken concept']);
+    assert.equal(draftedRows[1].Importstatus,'Uitgesteld (niet importeren)');
+    const allExport=await call('/api/admin/books/export',token);
+    assert.equal(allExport.status,200,JSON.stringify(allExport.data));
+    const libraryWorkbook=XLSX.read(allExport.data.file,{type:'base64'});
+    assert.ok(XLSX.utils.sheet_to_json(
+      libraryWorkbook.Sheets.Boeken).length>=2);
     assert.deepEqual(loaded.data.draft.corrections,[
       {index:0,skip:false,fields:{title:'Oorlogswinter'}},
       {index:1,skip:true,fields:{}},
@@ -435,6 +450,28 @@ async function run(){
       revision:checked.data.revision,
     })).status,200);
 
+    // An ISBN correction can make a prior administrative decision ID
+    // disappear. This must not discard the draft's corrected ISBN.
+    const staleStage=await start([old('',{
+      'ISBN-nummer':'9780306406156',
+    })],parts({books:true}));
+    assert.equal(staleStage.status,201,JSON.stringify(staleStage.data));
+    const stalePath='/api/admin/book-import-stages/'+staleStage.data.id;
+    const staleReview=await call(stalePath+'/review',token,{
+      revision:staleStage.data.revision,
+      corrections:[{index:0,fields:{editionIsbn:ISBN}}],
+      acceptWarnings:false,
+      inventoryResolutions:[],
+      assignmentResolutions:[{id:'0:location',action:'keep'}],
+      metadataResolutions:[],
+    });
+    assert.equal(staleReview.status,200,JSON.stringify(staleReview.data));
+    assert.equal(staleReview.data.corrections[0].fields.editionIsbn,ISBN);
+    assert.equal(staleReview.data.reconciledAssignmentChoices,1);
+    assert.deepEqual(staleReview.data.assignmentResolutions,[]);
+    assert.equal((await call(stalePath+'/cancel',token,{
+      revision:staleReview.data.revision,
+    })).status,200);
     const noParts=await start([old('Tim Leerling')],
       parts({fields:{}}));
     assert.equal(noParts.status,400);
