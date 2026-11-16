@@ -4380,7 +4380,12 @@ async function handleApi(req, res, requestUrl) {
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
-      const borrowCounts = getBorrowCountsMap(borrowEvents(db));
+      const borrowCounts = getBorrowCountsMap([
+        ...borrowEvents(db),
+        ...(db.bookLoanPeriods||[]).map(item=>({
+          type:'check_out',bookId:item.bookId,
+        })),
+      ]);
       let books = db.books.map((book) => withBorrowCount(book, borrowCounts));
       const folder = requestUrl.searchParams.get('folder');
       const query = requestUrl.searchParams.get('query');
@@ -4451,7 +4456,12 @@ async function handleApi(req, res, requestUrl) {
       if (!book) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
-      const borrowCounts = getBorrowCountsMap(borrowEvents(db));
+      const borrowCounts = getBorrowCountsMap([
+        ...borrowEvents(db),
+        ...(db.bookLoanPeriods||[]).map(item=>({
+          type:'check_out',bookId:item.bookId,
+        })),
+      ]);
       const payload = withBorrowCount(book, borrowCounts);
       return sendJson(res, 200, sanitizeBookForResponse(payload));
     }
