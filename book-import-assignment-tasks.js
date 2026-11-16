@@ -203,8 +203,9 @@ function correctionPreview(db, task, choice) {
   const formerlyInExcel=task.kind==='loan'
     &&task.original?.previouslyRecordedInExcel===true
     &&task.original?.after?.type==='none';
-  const missingSnapshot=formerlyInExcel
-    &&task.original?.missingFromSnapshot===true;
+  const missingSnapshot=(formerlyInExcel
+    &&task.original?.missingFromSnapshot===true)
+    ||(task.kind==='location'&&task.original?.classFixedToLoan===true);
   const borrower=task.original?.before;
   const receipt=formerlyInExcel
     ?excelLoanReceiptKey(task.bookId,borrower):null;
