@@ -70,6 +70,8 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
 
 const {listDeferredBookTasks, resolveDeferredBookTask} =
   require('./book-import-deferred-book-tasks');
+const {appendDurableLoanEvent,borrowEvents,searchHistory,removeFalseHistory} =
+  require('./book-loan-history-admin');
 
 let xlsxModule = null;
 
@@ -3414,11 +3416,15 @@ function parseBody(req, maxLength = 1e6) {
  * Wordt gebruikt voor check-ins/-outs en verwante gebeurtenissen.
  */
 function appendHistory(db, entry) {
-  db.history.unshift({
+  const event={
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     ...entry,
-  });
+  };
+  db.history.unshift(event);
+  // The activity feed remains compact. The actual circulation history
+  // must not vanish after the 201st unrelated event.
+  appendDurableLoanEvent(db,event);
   db.history = db.history.slice(0, 200);
 }
 
@@ -3427,7 +3433,7 @@ function appendHistory(db, entry) {
  * Filtert uitsluitend check-ins/-outs en sorteert op tijdstip.
  */
 function getStudentLoanHistory(db, studentId) {
-  const entries = Array.isArray(db.history) ? db.history : [];
+  const entries = borrowEvents(db);
   const loans = entries
     .filter((entry) =>
       entry &&
@@ -3448,7 +3454,7 @@ function getStudentLoanHistory(db, studentId) {
 }
 
 function getPublicLoanActivity(db, { limit = 12 } = {}) {
-  const entries = Array.isArray(db.history) ? db.history : [];
+  const entries = borrowEvents(db);
   const sanitized = entries
     .filter((entry) =>
       entry &&
@@ -5015,6 +5021,32 @@ async function handleApi(req, res, requestUrl) {
       } finally {
         releaseSettings();
       }
+    }
+
+    // Correct an erroneous student-book history without modifying
+    // active circulation. Both reading records and activity counts are
+    // recalculated against the same permanent ledger.
+    const loanHistoryRoot='/api/admin/loan-history';
+    if(requestUrl.pathname===loanHistoryRoot
+      ||requestUrl.pathname===loanHistoryRoot+'/remove'){
+      if(!ensureRole(user,['admin']))
+        return sendJson(res,user?403:401,{message:'Alleen voor beheerders.'});
+      if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot){
+        return sendJson(res,200,{items:searchHistory(getDb(),{
+          student:requestUrl.searchParams.get('student')||'',
+          book:requestUrl.searchParams.get('book')||'',limit:100})});
+      }
+      if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/remove'){
+        const body=await parseBody(req,3000);
+        const database=loadDb();
+        const result=removeFalseHistory(database,user,body);
+        if(!result.ok)return sendJson(res,409,{
+          message:'De leenhistorie is veranderd of de verwijdering is ongeldig.',
+          error:result.error});
+        saveDb(database);
+        return sendJson(res,200,result);
+      }
+      return sendJson(res,405,{message:'Methode niet toegestaan.'});
     }
 
     // Physical book checks are independent, persistent admin tasks.
