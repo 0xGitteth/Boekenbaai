@@ -196,6 +196,28 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     }
   }
   const found=[],notInCollection=[];
+  const receipts=options.loanReceipts instanceof Set
+    ?options.loanReceipts:new Set(options.loanReceipts||[]);
+  const wasPreviouslyImportedLoan=copy=>{
+    if(!copy||(!copy.borrowedBy&&!copy.borrowedByClassId))return false;
+    const borrower=copy.borrowedBy
+      ?{type:'student',id:copy.borrowedBy}
+      :{type:'class',id:copy.borrowedByClassId};
+    const key=excelLoanReceiptKey(copy.id,borrower);
+    return Boolean(key&&receipts.has(key));
+  };
+  const missingFormerLoan=row=>{
+    if(options.reviewMissingLoans!==true||row.context?.studentLoan
+      ||row.context?.classLoan||row.book?.quantity?.valid!==true
+      ||row.book.quantity.value!==1
+      ||!['ready','warning'].includes(row.status))return false;
+    const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
+    const barcode=normalizeRuntimeBarcode(row.book?.barcode);
+    return (db.books||[]).some(copy=>
+      ((isbn&&edition(copy)===isbn)
+        ||(barcode&&normalizeRuntimeBarcode(copy.barcode)===barcode))
+      &&wasPreviouslyImportedLoan(copy));
+  };
   // Prioritize concrete Excel loans/locations over empty duplicate rows.
   // This allows two pupils holding copies of the same ISBN to map onto two
   // different existing internal copy IDs deterministically.
@@ -217,7 +239,8 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     const context=row.context||{};
     // Plain ISBN rows with no explicit administration data are not changes.
     const relevant=Boolean(context.studentLoan||context.classLoan
-      ||context.fixedLocation||context.classContext?.length);
+      ||context.fixedLocation||context.classContext?.length
+      ||missingFormerLoan(row));
     if(!relevant)continue;
     const validSource=['ready','warning'].includes(row.status);
     const loanCheck=validSource && (context.studentLoan||context.classLoan)
@@ -302,7 +325,10 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     // should be administratively returned. It needs classification first.
     const classContextOnly = Array.isArray(info.classContext) && info.classContext.length
       && !info.studentLoan && !info.classLoan;
-    if((info.studentLoan||info.classLoan) && !classContextOnly
+    const emptiedExcelLoan=options.reviewMissingLoans===true
+      &&!info.studentLoan&&!info.classLoan&&current.type!=='none'
+      &&wasPreviouslyImportedLoan(copy);
+    if((info.studentLoan||info.classLoan||emptiedExcelLoan) && !classContextOnly
       && (current.type!==desired.type || current.id!==desired.id)) {
       if(current.type!=='none'||desired.type!=='none') {
         const claim=desired.type==='student'
@@ -317,9 +343,14 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
           before:current,after:desired,
           reason:otherEditionBorrowed||conflictingCopy?'student_already_borrowed_edition':'',
           blankSource:desired.type==='none',
-          description:desired.type==='none'
-            ? 'Excel vermeldt geen uitlening. Dit bewijst niet dat het boek is ingeleverd.'
-            : 'Excel noemt een andere leerling of klas.'});
+          previouslyRecordedInExcel:emptiedExcelLoan,
+          description:emptiedExcelLoan
+            ?'Deze uitlening stond eerder in Excel en is nu leeg. '
+              +'Kies bewust of het boek is teruggebracht, de oude registratie '
+              +'fout was, of de bestaande uitlening behouden moet blijven.'
+            :desired.type==='none'
+              ?'Excel vermeldt geen uitlening. Dit bewijst niet dat het boek is ingeleverd.'
+              :'Excel noemt een andere leerling of klas.'});
       }
     }
     const location=desiredLocation(row,db);
@@ -440,7 +471,8 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     readyToApply:pending===0&&differences.length>0,
   }};
 }
-function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString(), batchId=crypto.randomUUID()) {
+function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString(),
+  batchId=crypto.randomUUID(), options={}) {
   if(!preview?.ok||!preview.summary?.readyToApply)
     throw Error('assignment_review_not_ready');
   const audit=[],receiptPairs=[];
@@ -464,6 +496,18 @@ function applyAssignmentPreview(db, preview, actorId, now=new Date().toISOString
       for(const person of db.students||[]){
         if(!Array.isArray(person.borrowedBooks))continue;
         person.borrowedBooks=person.borrowedBooks.filter(item=>borrowedId(item)!==copy.id);
+      }
+      // A confirmed historical return can be retained without inventing
+      // that the borrower read the book. Corrections record no past loan.
+      if(options.loanHistoryMode==='preserve'&&before.type!=='none'){
+        if(!Array.isArray(db.bookLoanPeriods))db.bookLoanPeriods=[];
+        db.bookLoanPeriods.push({
+          id:crypto.randomUUID(),bookId:copy.id,
+          studentId:before.type==='student'?before.id:null,
+          classId:before.type==='class'?before.id:null,
+          borrowedAt:copy.borrowedAt||null,returnedAt:now,
+          source:'excel_reconciliation',importBatchId:batchId,
+        });
       }
       const target=afterValue;
       if(target.type==='none'){
