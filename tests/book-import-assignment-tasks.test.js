@@ -6,6 +6,7 @@ const {
   findTask, resolveDeferredAssignmentTask,
 } = require('../book-import-assignment-tasks');
 const { buildAssignmentPreview, applyAssignmentPreview } = require('../book-import-assignment-reconciliation');
+const {refreshDeferredSnapshotRows}=require('../book-import-unified-sync');
 const ISBN = '9780306406157';
 const admin = {id:'admin',role:'admin'};
 const teacher = {id:'teacher',role:'teacher'};
@@ -251,6 +252,48 @@ assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
   assert.equal(resolved.ok,true);
   assert.equal(live.books[0].borrowedByClassId,'a');
   assert.equal(live.books[0].fixedLocation,null);
+}
+
+
+// A title/author correction in the same unified import must not break
+// a deferred missing-loan task for the second physical copy.
+{
+  const live=initial();
+  live.books[0].title='Gecorrigeerde titel';
+  live.books[0].author='Nieuwe auteur';
+  const oldRow={...row({}),index:37,sourceRowNumber:null,
+    missingFromExcel:true};
+  const oldBook={...oldRow.book};
+  const updated=refreshDeferredSnapshotRows([oldRow],[
+    {rowIndex:37,bookId:'copy-1',kind:'loan'},
+  ],live.books);
+  assert.equal(oldRow.book.title,oldBook.title,
+    'The original reviewed snapshot remains immutable');
+  assert.equal(updated[0].index,37);
+  assert.equal(updated[0].book.title,'Gecorrigeerde titel');
+  assert.equal(updated[0].book.author,'Nieuwe auteur');
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true,
+    preferredCopyByRow:{37:'copy-1'}};
+  const preview=buildAssignmentPreview({ok:true,rows:updated},live,[
+    {id:'37:loan',action:'later'},
+  ],options);
+  assert.equal(preview.ok,true);
+  const difference=preview.differences.find(x=>x.id==='37:loan');
+  assert.ok(difference);
+  assert.equal(difference.missingFromSnapshot,true);
+  const report={id:'metadata-snapshot',mode:'unified_sync',
+    fileName:'gecorrigeerde-titels.xlsx',loanHistoryMode:'correct',
+    deferredDifferences:[{id:difference.id,status:'open'}],
+    importedAt:today,fullyReviewed:false};
+  live.bookImportReports.push(report);
+  const tasks=createDeferredAssignmentTasks(live,report,updated,
+    preview.differences,today);
+  assert.equal(tasks.length,1);
+  assert.equal(tasks[0].sourceRow.book.title,'Gecorrigeerde titel');
+  const applied=resolveDeferredAssignmentTask(live,tasks[0],admin,
+    {choice:'apply',revision:1,confirm:true});
+  assert.equal(applied.ok,true);
+  assert.equal(live.books[0].status,'available');
 }
 
 console.log('Deferred administrator tasks: security, persistent queue, safe resolution, stale loan and legacy records OK');
