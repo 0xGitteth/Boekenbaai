@@ -644,6 +644,7 @@ async function resolveMetadata(row, options) {
           field: 'title', excelValue: row.book.title,
           metadataValue: selection.conflict.titles,
           chosenByAdministrator: true,
+          reviewLevel: 'informational',
         });
       } else if (selection.conflict?.code === 'metadata_title_conflict') {
         // A third-party title mismatch alone is NOT sufficient evidence that
