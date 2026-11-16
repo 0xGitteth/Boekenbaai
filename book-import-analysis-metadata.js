@@ -7,7 +7,7 @@ const {
   createAuthorDisplay,
   getOwnDataValue,
 } = require('./book-edition-core');
-const {normalizeSource,sourceConsensus,equivalentSpelling}=require('./book-import-source-confidence');
+const {normalizeSource,sourceConsensus,equivalentSpelling,equivalentAuthorName}=require('./book-import-source-confidence');
 const {nearlySameBookText,sameBookTitle}=require('./book-import-autonomy');
 const {
   addIssue,
@@ -317,6 +317,7 @@ function flagIndependentAuthorConflict(row,options){
   if(consensus.agreeing<2
     ||consensus.votes.length!==consensus.agreeing
     ||!consensus.value
+    ||equivalentAuthorName(row.book.author,consensus.value)
     ||nearlySameBookText(row.book.author,consensus.value))return;
   const detail={
     field:'author',excelValue:row.book.author,
@@ -467,7 +468,8 @@ function applyMetadataCandidate(row, candidate, {
         detail: candidate.source || null,
         supplementedFrom,
       };
-    } else {
+    } else if (!equivalentAuthorName(row.book.author,candidate.author)
+      && !nearlySameBookText(row.book.author,candidate.author)) {
       addIssue(row, 'metadata_differs_from_excel', 'warning', { field: 'author', excelValue: row.book.author, metadataValue: candidate.author });
     }
   }
@@ -492,7 +494,10 @@ function acceptSourceVerifiedSpelling(row, options) {
       sourceConsensus(row.book.editionIsbn,'author',row.sourceEvidence);
     const existing=String(row.book[field]||'');
     if(result.agreeing<2||result.conflicting||!existing||!result.value
-      ||existing===result.value||!nearlySameBookText(existing,result.value))continue;
+      ||existing===result.value
+      ||!(field==='author'?equivalentAuthorName(existing,result.value)
+        ||nearlySameBookText(existing,result.value)
+        :nearlySameBookText(existing,result.value)))continue;
     if(field==='author'){
       const current=Array.isArray(row.book.authors)?row.book.authors:[existing];
       // Never silently drop a coauthor or overwrite a reviewed multi-author
