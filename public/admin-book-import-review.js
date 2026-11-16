@@ -1616,6 +1616,36 @@
             const suggestions=allSuggestions.filter(option=>
               typeof option.editionIsbn==='string'
               &&/^97[89][0-9]{10}$/.test(option.editionIsbn));
+            if(!source.book?.editionIsbn){
+              const raw=source.identifierAnalysis?.explicit?.raw
+                ||source.identifierAnalysis?.legacy?.raw
+                ||source.identifierAnalysis?.ambiguous?.raw||'';
+              const identifierHint=make('p','bb-guide__count-note',
+                raw?'In Excel staat '+raw+'. Dit is nog geen bevestigd ISBN '
+                  +'van deze editie.'
+                  :'In Excel ontbreekt een herkenbaar ISBN.');
+              check.append(identifierHint);
+            }
+            if(first.reason==='possible_existing_book_without_isbn'){
+              const legacy=make('div','bb-guide__identity-conflict');
+              legacy.append(make('strong','',
+                'Er bestaat mogelijk al een exemplaar zonder ISBN'));
+              legacy.append(make('p','',
+                'Dit kan hetzelfde fysieke boek zijn. Boekenbaai voegt '
+                +'geen tweede exemplaar toe zolang dit niet zeker is. '
+                +'De bestaande uitleningen blijven behouden.'));
+              if(first.legacyCandidateCopies)
+                legacy.append(make('p','hint',
+                  'Mogelijke bestaande exemplaren: '
+                  +first.legacyCandidateCopies+'.'));
+              legacy.append(make('p','',
+                'Heb je het ISBN van het fysieke boek al gecontroleerd? '
+                +'Voeg dat ISBN dan eerst toe aan het bestaande boek '
+                +'via Boeken beheren en controleer daarna deze import opnieuw. '
+                +'Kun je dat nu niet vaststellen, kies dan '
+                +'“Dit boek later controleren”.'));
+              check.append(legacy);
+            }
             if(suggestions.length){
               const compare=make('div','bb-guide__compare');
               const raw=source.identifierAnalysis?.explicit?.raw
