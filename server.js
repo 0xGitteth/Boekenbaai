@@ -27,7 +27,8 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
-  actualAssignmentPreview, assignmentSource, shouldApplyMetadataToCreatedCopy,
+  actualAssignmentPreview, assignmentSource, withMissingExcelLoans,
+  shouldApplyMetadataToCreatedCopy,
   rebaseStaleAssignmentChoices } =
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
@@ -5396,6 +5397,12 @@ async function handleApi(req, res, requestUrl) {
           message:'Selecteer welke onderdelen of kolommen je wilt synchroniseren.',
           error:selectedParts.error,
         });
+        const fullLoanSnapshot=mode==='unified_sync'
+          &&selectedParts.value.loans&&body.fullLoanSnapshot===true;
+        if(body.fullLoanSnapshot!==undefined
+          &&typeof body.fullLoanSnapshot!=='boolean')
+          return sendJson(res,400,{message:'Ongeldige keuze voor volledige uitleenlijst.',
+            error:'invalid_full_loan_snapshot'});
         const loanHistoryMode=mode==='unified_sync'&&selectedParts.value.loans
           ?(body.loanHistoryMode===undefined?'correct':body.loanHistoryMode)
           :null;
@@ -5462,7 +5469,8 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, syncParts:selectedParts.value,loanHistoryMode, maxRows: 1500,
+          mode, syncParts:selectedParts.value,loanHistoryMode,
+          fullLoanSnapshot,maxRows: 1500,
           maxCopies: maxAnalyzedCopies,enrichIsbn,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
@@ -5499,7 +5507,7 @@ async function handleApi(req, res, requestUrl) {
         const latestDatabase = loadDb();
         analysis.decisions = mode === 'unified_sync'
           ? buildUnifiedBookImport(analysis,latestDatabase,{
-            parts:selectedParts.value,loanHistoryMode,
+            parts:selectedParts.value,loanHistoryMode,fullLoanSnapshot,
             loanReceipts:historicalExcelLoanReceipts(latestDatabase),
             existingFollowups:latestDatabase.bookImportFollowups,
           })
@@ -5690,6 +5698,7 @@ async function handleApi(req, res, requestUrl) {
           let rebasedAssignmentCount=0;
           const unifiedParameters={
             parts:stage.options.syncParts,loanHistoryMode:stage.options.loanHistoryMode,
+            fullLoanSnapshot:stage.options.fullLoanSnapshot,
             acceptWarnings:body.acceptWarnings,
             inventoryResolutions:choices.values,
             metadataResolutions:metadataChoices.values,
@@ -5832,6 +5841,7 @@ async function handleApi(req, res, requestUrl) {
             const isUnified=stage.options.mode==='unified_sync';
             const combined=isUnified?buildUnifiedBookImport(stage.analysis,database,{
               parts:stage.options.syncParts,loanHistoryMode:stage.options.loanHistoryMode,
+              fullLoanSnapshot:stage.options.fullLoanSnapshot,
               acceptWarnings:stage.acceptWarnings,
               inventoryResolutions:stage.inventoryResolutions,
               assignmentResolutions:stage.assignmentResolutions,
@@ -6192,10 +6202,13 @@ async function handleApi(req, res, requestUrl) {
                 }));
               report.selectedParts=combined.parts;
               report.loanHistoryMode=stage.options.loanHistoryMode;
+              report.fullLoanSnapshot=stage.options.fullLoanSnapshot;
               report.deferredDifferences=deferredDifferences;
               report.fullyReviewed=deferredDifferences.length===0;
               report.corrections=corrected.audit;
-              const savedTaskRows=assignmentSource(stage.analysis,combined.parts,database).rows;
+              const savedTaskRows=withMissingExcelLoans(
+                assignmentSource(stage.analysis,combined.parts,database),database,
+                stage.options.fullLoanSnapshot===true&&combined.parts.loans).rows;
               const tasks=createDeferredAssignmentTasks(database,report,savedTaskRows,
                 assignments.differences,now);
               report.deferredTaskIds=tasks.map(task=>task.id);
