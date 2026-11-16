@@ -229,7 +229,7 @@ function assignmentSource(analysis,parts,db,inventory=null,effectiveIdentityUpda
     return {...row,book,context};
   })};
 }
-function withMissingExcelLoans(source,db,assignmentDb,enabled=false){
+function withMissingExcelLoans(source,db,enabled=false,assignmentDb=db){
   if(!enabled)return {...source,preferredCopyByRow:{}};
   const rows=[...source.rows],preferredCopyByRow={};
   const borrowed=(db.books||[]).filter(copy=>
@@ -787,8 +787,8 @@ function buildUnifiedBookImport(analysis,db,{
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
   const originalSource=use.loans||use.locations
     ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
-  const source=withMissingExcelLoans(originalSource,db,assignmentDb,
-    fullLoanSnapshot===true&&use.loans);
+  const source=withMissingExcelLoans(originalSource,db,
+    fullLoanSnapshot===true&&use.loans,assignmentDb);
   if(source.snapshotPlanningError)return {ok:false,error:source.snapshotPlanningError};
   const blankLoanReview={
     reviewMissingLoans:use.loans&&['preserve','correct'].includes(loanHistoryMode),
