@@ -60,7 +60,8 @@ function pair(db,studentId,bookId){
     record.subjectType==='student'&&record.subjectId===studentId
     &&record.bookId===bookId);
   const exams=(db.examReadingLists||[]).filter(item=>
-    item.studentId===studentId&&item.bookId===bookId);
+    item.studentId===studentId&&item.bookId===bookId
+      &&item.addedManually!==true&&item.externalSource!==true);
   const periods=(db.bookLoanPeriods||[]).filter(period=>
     period.studentId===studentId&&period.bookId===bookId);
   return {logs,readings,periods,exams};
@@ -174,7 +175,8 @@ function searchHistory(db,{student='',book='',limit=100}={}){
       groupFor(record.subjectId,record.bookId).readings.push(record);
   }
   for(const item of db.examReadingLists||[]){
-    if(item?.studentId&&item.bookId){
+    if(item?.studentId&&item.bookId
+      &&item.addedManually!==true&&item.externalSource!==true){
       const key=JSON.stringify([item.studentId,item.bookId]);
       if(grouped.has(key))grouped.get(key).exams.push(item);
     }
@@ -223,9 +225,9 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
     .filter(item=>!periodIds.has(item.id));
   db.examReadingLists=(db.examReadingLists||[])
     .filter(item=>!examIds.has(item.id));
-  // The administrator explicitly removes this exact student-copy
-  // relationship, including a linked exam list entry for the same copy.
-  // Unrelated manual/external exam titles remain untouched.
+  // Only automatically derived exam-list entries linked to this
+  // relationship are removed. Explicitly or externally added entries
+  // remain independent records and require a separate user decision.
   if(!Array.isArray(db.bookLoanHistoryDeletionAudit))
     db.bookLoanHistoryDeletionAudit=[];
   db.bookLoanHistoryDeletionAudit.push({
