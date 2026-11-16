@@ -543,6 +543,38 @@
             +'zodra de server het Excelbestand heeft ingelezen.';
       }
     };
+    // The server reports real per-row review progress to /active.
+    // Display exactly that, without guessing at elapsed-time percentages.
+    const reviewProgress=make('section','bb-import__setup-progress');
+    reviewProgress.hidden=true;
+    reviewProgress.setAttribute('aria-label','Voortgang hercontrole');
+    const reviewProgressLabel=make('p','bb-import__setup-progress-label');
+    reviewProgressLabel.setAttribute('role','status');
+    const reviewProgressBar=make('progress','bb-import__setup-progress-meter');
+    reviewProgressBar.max=100;
+    reviewProgress.append(reviewProgressLabel,reviewProgressBar);
+    root.append(reviewProgress);
+    const showReviewProgress=(progress)=>{
+      reviewProgress.hidden=false;
+      if(progress?.phase==='finalizing'){
+        reviewProgressBar.removeAttribute('value');
+        reviewProgressLabel.textContent=
+          'Alle Excelrijen zijn gecontroleerd. Het voorstel wordt opnieuw samengesteld…';
+      }else if(progress?.phase==='analyzing'
+        &&Number.isInteger(progress.completed)
+        &&Number.isInteger(progress.total)&&progress.total>0){
+        const percent=Math.floor(100*progress.completed/progress.total);
+        reviewProgressBar.value=percent;
+        reviewProgressLabel.textContent='Boekgegevens controleren: '
+          +progress.completed+' van '+progress.total
+          +' Excelrijen verwerkt ('+percent+'%).';
+      }else{
+        reviewProgressBar.removeAttribute('value');
+        reviewProgressLabel.textContent=
+          'De hercontrole wordt gestart. De voortgang verschijnt zodra '
+          +'de server de eerste Excelrijen verwerkt.';
+      }
+    };
     const liveAlert = make('div', 'bb-review__live-alert');
     liveAlert.setAttribute('role', 'status');
     liveAlert.setAttribute('aria-live', 'polite');
@@ -1322,6 +1354,20 @@
           reviewingBook?guidedSelectedRow.get(reviewingBook.key):null);
         const focus=currentSource
           ?{rowIndex:currentSource.index,index:guidedIndex}:null;
+        showReviewProgress(null);
+        let reviewingPollBusy=false;
+        const reviewingPoll=setInterval(async()=>{
+          if(reviewingPollBusy||!reviewProgress.isConnected)return;
+          reviewingPollBusy=true;
+          try{
+            const active=(await request(rootPath+'/active')).stage;
+            if(active?.id===stage?.id&&active?.progress)
+              showReviewProgress(active.progress);
+          }catch{
+            // A temporary polling error must never interrupt the review.
+          }finally{reviewingPollBusy=false;}
+        },900);
+        try{
         await run(async()=>{
           const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
             revision:stage.revision,acceptWarnings:warningsAccepted,
@@ -1353,6 +1399,10 @@
               :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
                 +'Je kunt verdergaan bij het boek waar je gebleven was.');
         },'De keuzes worden opgeslagen en veilig opnieuw berekend…');
+        }finally{
+          clearInterval(reviewingPoll);
+          reviewProgress.hidden=true;
+        }
       };
       const explain=(host,code)=>{
         const text=reasonNames[code]||importErrorText[code]
