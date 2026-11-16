@@ -294,10 +294,16 @@ async function analyzeBookImportRows(rows, options = {}) {
   // Resolve stock limits, edition grouping and duplicate barcodes in row order.
   const parallelism = Math.min(3, mappedRows.length);
   let nextRowIndex = 0;
+  let completedRows=0;
   await Promise.all(Array.from({ length: parallelism }, async () => {
     while (nextRowIndex < mappedRows.length) {
       const index = nextRowIndex++;
       analyzedRows[index] = await analyzeRow(index);
+      completedRows++;
+      // This counts completed analysis rows, including all asynchronous
+      // ISBN lookups. Progress is never an estimate based on elapsed time.
+      if(typeof options.onRowProgress==='function')
+        options.onRowProgress({completed:completedRows,total:mappedRows.length});
     }
   }));
 
