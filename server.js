@@ -68,6 +68,9 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
   findTask: findDeferredAssignmentTask,
   resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
 
+const {listDeferredBookTasks, resolveDeferredBookTask} =
+  require('./book-import-deferred-book-tasks');
+
 let xlsxModule = null;
 
 function loadXlsx() {
@@ -5012,6 +5015,30 @@ async function handleApi(req, res, requestUrl) {
       } finally {
         releaseSettings();
       }
+    }
+
+    // Physical book checks are independent, persistent admin tasks.
+    const deferredBookTaskRoot='/api/admin/book-import-book-tasks';
+    if(requestUrl.pathname===deferredBookTaskRoot
+      ||requestUrl.pathname.startsWith(deferredBookTaskRoot+'/')){
+      if(!ensureRole(user,['admin']))
+        return sendJson(res,user?403:401,{message:'Alleen voor beheerders.'});
+      if(req.method==='GET'&&requestUrl.pathname===deferredBookTaskRoot)
+        return sendJson(res,200,listDeferredBookTasks(getDb()));
+      const m=requestUrl.pathname.match(
+        /^\/api\/admin\/book-import-book-tasks\/([a-f0-9-]{32,36})\/resolve$/);
+      if(req.method==='POST'&&m){
+        const body=await parseBody(req,2000);
+        const database=loadDb();
+        const result=resolveDeferredBookTask(database,user,m[1],
+          body.revision,body.choice);
+        if(!result.ok)return sendJson(res,409,{message:
+          'Deze boekcontrole kan niet worden afgesloten. Vernieuw de takenlijst.',
+          error:result.error});
+        if(!result.unchanged)saveDb(database);
+        return sendJson(res,200,result);
+      }
+      return sendJson(res,405,{message:'Methode niet toegestaan.'});
     }
 
     // Deferred administration checks are admin-only tasks. They have their
