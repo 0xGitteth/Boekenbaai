@@ -1377,38 +1377,63 @@
               const choose=(candidate)=>{
                 if(!candidate.editionIsbn)return;
                 selectCandidateForRow(source,candidate);
-                render();
+                void recheck();
               };
               addAction(check,'Dit is het juiste boek',()=>choose(proposed),true);
-              const alternatives=suggestions.slice(1);
+              const alternatives=suggestions.slice(1).filter(option=>
+                option.editionIsbn!==proposed.editionIsbn);
+              const editionCard=(option,selected=false)=>{
+                const alt=make('article','bb-guide__alternative');
+                const cover=make('div','bb-guide__edition-cover');
+                if(option.coverUrl&&/^https:\/\/[^\\s"'<>]+$/i.test(option.coverUrl)){
+                  const img=make('img');
+                  img.src=option.coverUrl;
+                  img.alt='Omslag van ISBN '+option.editionIsbn;
+                  img.loading='lazy';img.referrerPolicy='no-referrer';
+                  cover.append(img);
+                }else cover.append(make('span','hint','Geen betrouwbare omslag'));
+                alt.append(cover,make('strong','',safeText(option.title)));
+                for(const [label,value] of [
+                  ['Auteur',option.author],['ISBN',option.editionIsbn],
+                  ['Uitgever',option.publisher],['Jaar',option.publishedYear],
+                  ['Uitvoering',option.format],['Pagina’s',option.pageCount]]){
+                  if(!value)continue;
+                  const line=make('p','bb-guide__edition-fact');
+                  line.append(make('strong','',label+': '),
+                    make('span','',String(value)));alt.append(line);
+                }
+                if(option.sources?.length)
+                  alt.append(make('small','hint',
+                    'Bronnen: '+option.sources.join(', ')));
+                if(option.unverifiedTitle)
+                  alt.append(make('p','bb-guide__attention',
+                    'De titel is niet onafhankelijk voor dit ISBN bevestigd.'));
+                if(option.editionIsbn)
+                  addAction(alt,selected?'Ja, dit is mijn boek'
+                    :'Deze editie kiezen',()=>choose(option),selected);
+                return alt;
+              };
               if(alternatives.length){
-                const show=button('Andere edities ('+alternatives.length+')',
-                  'btn btn--secondary');
+                const show=button('Vergelijk '+(alternatives.length+1)
+                  +' edities','btn btn--secondary');
                 show.addEventListener('click',()=>{
                   guidedAlternativeRow=guidedAlternativeRow===source.index
                     ?null:source.index;render();
                 });
                 check.append(show);
                 if(guidedAlternativeRow===source.index){
-                  const list=make('div','bb-guide__alternatives');
-                  for(const option of alternatives){
-                    const alt=make('div','bb-guide__alternative');
-                    alt.append(makeLabeled(option.origin==='existing'
-                      ?'Boekenbaai':'Online',option.title
-                      +' · Auteur: '+safeText(option.author)
-                      +' · ISBN '+safeText(option.editionIsbn)));
-                    if(option.identityWarning)
-                      alt.append(make('p','bb-guide__attention',
-                        'Titel of auteur wijkt af: controleer het boek.'));
-                    if(option.unverifiedTitle)
-                      alt.append(make('p','hint',
-                        'Titel niet onafhankelijk voor deze editie bevestigd.'));
-                    if(option.editionIsbn)
-                      addAction(alt,'Deze editie kiezen',()=>choose(option));
-                    list.append(alt);
-                  }
+                  const list=make('div','bb-guide__alternatives bb-guide__edition-grid');
+                  list.append(editionCard(proposed,true));
+                  for(const option of alternatives)list.append(editionCard(option));
                   check.append(list);
                 }
+              }else{
+                const facts=[['Uitgever',proposed.publisher],
+                  ['Jaar',proposed.publishedYear],
+                  ['Uitvoering',proposed.format],
+                  ['Pagina’s',proposed.pageCount]].filter(([,value])=>value);
+                if(facts.length)check.append(make('p','hint',
+                  facts.map(([name,value])=>name+': '+value).join(' · ')));
               }
             }
             for(const entry of group.stock){
