@@ -486,11 +486,17 @@
         setupProgressLabel.textContent='Excelbestand lezen: '+percent
           +'% ('+loaded.toLocaleString('nl-NL')+' van '
           +total.toLocaleString('nl-NL')+' bytes)';
+      }else if(phase==='analyzing'&&total>0){
+        const percent=Math.min(100,Math.floor(loaded/total*100));
+        setupProgressBar.value=percent;
+        setupProgressLabel.textContent='Boekgegevens en ISBN-bronnen controleren: '
+          +loaded+' van '+total+' Excelrijen verwerkt ('+percent+'%).';
       }else{
         setupProgressBar.removeAttribute('value');
-        setupProgressLabel.textContent='Boeken en ISBN-bronnen analyseren. '
-          +'De server geeft nog geen voortgang per boek door; '
-          +'daarom wordt geen onbetrouwbaar percentage getoond.';
+        setupProgressLabel.textContent=phase==='finalizing'
+          ?'Alle Excelrijen gecontroleerd. Het importvoorstel wordt samengesteld…'
+          :'De analyse wordt gestart. De voortgang per boek verschijnt '
+            +'zodra de server het Excelbestand heeft ingelezen.';
       }
     };
     const liveAlert = make('div', 'bb-review__live-alert');
@@ -3705,6 +3711,22 @@
         const encoded = await encodeFile(selected,(loaded,total)=>
           updateSetupProgress('reading',loaded,total));
         updateSetupProgress('analyzing');
+        let pollBusy=false;
+        const progressPoll=setInterval(async()=>{
+          if(pollBusy||!setupProgress.isConnected)return;
+          pollBusy=true;
+          try{
+            const active=(await request(rootPath+'/active')).stage;
+            if(!active?.progress)return;
+            const {completed,total,phase}=active.progress;
+            if(phase==='finalizing')updateSetupProgress('finalizing');
+            else if(phase==='analyzing'
+              &&Number.isInteger(completed)&&Number.isInteger(total)
+              &&total>0)updateSetupProgress('analyzing',completed,total);
+          }catch{
+            // A transient status request must never interrupt the import.
+          }finally{pollBusy=false;}
+        },900);
         let payload;
         try {
           const unified=importMode.value==='unified';
@@ -3726,6 +3748,8 @@
         } catch (error) {
           await syncStage();
           throw error;
+        }finally{
+          clearInterval(progressPoll);
         }
         rememberResponse(payload);
         setNotice('Preview gereed. De bibliotheek is nog niet gewijzigd.');
