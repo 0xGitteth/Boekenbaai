@@ -170,6 +170,7 @@ async function handleStudentPin(req, res, requestUrl) {
   const isVerify = route === '/api/auth/student-pin/verify' && req.method === 'POST';
   const isChoiceBegin = route === '/api/auth/student-pin/choice-begin' && req.method === 'POST';
   const isChoiceSuggest = route === '/api/auth/student-pin/choice-suggest' && req.method === 'POST';
+  const isChoiceNext = route === '/api/auth/student-pin/choice-next' && req.method === 'POST';
   const isChoiceEnd = route === '/api/auth/student-pin/choice-end' && req.method === 'POST';
   const isChoiceReset = route === '/api/auth/student-pin/choice-reset' && req.method === 'POST';
   const isStatus = route === '/api/auth/student-pin/status' && req.method === 'GET';
@@ -177,7 +178,7 @@ async function handleStudentPin(req, res, requestUrl) {
   const isSelfReset = route === '/api/auth/student-pin/reset' && req.method === 'POST';
   const staffReset = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/reset$/);
   if (!isStatus && !isSet && !isSelfReset && !isVerify
-    && !isChoiceBegin && !isChoiceSuggest && !isChoiceEnd && !isChoiceReset
+    && !isChoiceBegin && !isChoiceSuggest && !isChoiceNext && !isChoiceEnd && !isChoiceReset
     && !(staffReset && req.method === 'POST')) {
     return sendJson(res, 404, { message: 'Niet gevonden.' });
   }
@@ -222,6 +223,13 @@ async function handleStudentPin(req, res, requestUrl) {
       }
       throw error;
     }
+  }
+  if (isChoiceNext) {
+    const body=await parseBody(req,16384);
+    return sendJson(res,200,choice.nextQuestion({
+      answers:body.answers,seed:body.seed,
+      excludeQuestionIds:body.excludeQuestionIds,
+    }));
   }
   if (isChoiceSuggest) {
     const body=await parseBody(req,32768);
