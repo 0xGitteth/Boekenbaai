@@ -251,6 +251,7 @@
     // A fresh question route never discards the last recommendation history:
     // repeat avoidance continues to work after more than one conversation.
     choices.answers=[];
+    delete choices.referenceBookId;
     questionHistory=[];
     currentQuestion=null;
     askAdaptiveQuestion();
