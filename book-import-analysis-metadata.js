@@ -139,7 +139,9 @@ function strictMetadataMatch(rowBook, candidate) {
   const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
   if (!rowAuthors.length) return true;
   if (!candidateAuthors.length || rowAuthors.length !== candidateAuthors.length) return false;
-  return rowAuthors.every((author) => candidateAuthors.includes(author));
+  return rowAuthors.every((author) => candidateAuthors.includes(author))
+    ||(rowAuthors.length===1&&candidateAuthors.length===1
+      &&equivalentAuthorName(rowBook.author,candidate.author));
 }
 
 function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
@@ -148,7 +150,10 @@ function metadataDoesNotContradict(rowBook, candidate, rowProvenance = null) {
   if (rowTitle && candidateTitle && rowTitle !== candidateTitle) return false;
   const rowAuthors = normalizeAuthorList(rowBook.authors, rowBook.author).map(comparableText).filter(Boolean);
   const candidateAuthors = normalizeAuthorList(candidate.authors, candidate.author).map(comparableText).filter(Boolean);
-  if (rowAuthors.length && candidateAuthors.length && !rowAuthors.every((author) => candidateAuthors.includes(author))) {
+  if (rowAuthors.length && candidateAuthors.length
+    && !rowAuthors.every((author) => candidateAuthors.includes(author))
+    && !(rowAuthors.length===1&&candidateAuthors.length===1
+      &&equivalentAuthorName(rowBook.author,candidate.author))) {
     const incompleteSplitAuthor = rowProvenance?.author?.source === 'excel'
       && rowProvenance.author.derived === 'combined_name_parts'
       && rowProvenance.author.incomplete === true;
