@@ -593,3 +593,20 @@
   }
   .bb-guide__stat span { font-size:.76rem; }
 }
+
+.bb-guide__identity-conflict {
+  display:grid;
+  gap:.38rem;
+  padding:.8rem 1rem;
+  border:1px solid var(--accent-border);
+  border-left:4px solid #b45309;
+  border-radius:10px;
+  background:var(--accent-softer);
+}
+.bb-guide__identity-conflict strong { font-size:.94rem; }
+.bb-guide__identity-conflict p { margin:0; line-height:1.45; }
+.bb-guide__identity-conflict small,.bb-guide__candidate-sources {
+  font-size:.78rem;
+  line-height:1.4;
+  color:var(--text-muted,var(--text));
+}
