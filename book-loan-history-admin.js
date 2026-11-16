@@ -75,41 +75,50 @@ function searchHistory(db,{student='',book='',limit=100}={}){
   const studentQuery=norm(student),bookQuery=norm(book);
   const students=new Map((db.students||[]).map(item=>[item.id,item]));
   const books=new Map((db.books||[]).map(item=>[item.id,item]));
-  const candidates=new Map();
+  const grouped=new Map();
+  const groupFor=(studentId,bookId)=>{
+    const key=JSON.stringify([studentId,bookId]);
+    if(!grouped.has(key))grouped.set(key,{
+      studentId,bookId,logs:[],readings:[],periods:[],exams:[],
+    });
+    return grouped.get(key);
+  };
+  // One linear scan per source. Do not scan all history again for
+  // each candidate: school-sized histories can contain thousands of pairs.
   for(const event of borrowEvents(db)){
-    if(!event.studentId||!event.bookId)continue;
-    const key=JSON.stringify([event.studentId,event.bookId]);
-    candidates.set(key,{studentId:event.studentId,bookId:event.bookId});
+    if(event.studentId&&event.bookId)
+      groupFor(event.studentId,event.bookId).logs.push(event);
   }
   for(const period of db.bookLoanPeriods||[]){
-    if(!period?.studentId||!period.bookId)continue;
-    const key=JSON.stringify([period.studentId,period.bookId]);
-    candidates.set(key,{studentId:period.studentId,bookId:period.bookId});
+    if(period?.studentId&&period.bookId)
+      groupFor(period.studentId,period.bookId).periods.push(period);
   }
   for(const record of db.readingRecords||[]){
-    if(record?.subjectType!=='student'||!record.subjectId||!record.bookId)continue;
-    const key=JSON.stringify([record.subjectId,record.bookId]);
-    candidates.set(key,{studentId:record.subjectId,bookId:record.bookId});
+    if(record?.subjectType==='student'&&record.subjectId&&record.bookId)
+      groupFor(record.subjectId,record.bookId).readings.push(record);
+  }
+  for(const item of db.examReadingLists||[]){
+    if(item?.studentId&&item.bookId){
+      const key=JSON.stringify([item.studentId,item.bookId]);
+      if(grouped.has(key))grouped.get(key).exams.push(item);
+    }
   }
   const matches=[];
-  for(const value of candidates.values()){
-    const studentItem=students.get(value.studentId);
-    const bookItem=books.get(value.bookId);
-    const readings=(db.readingRecords||[]).find(record=>
-      record.subjectType==='student'&&record.subjectId===value.studentId
-      &&record.bookId===value.bookId);
+  for(const group of grouped.values()){
+    const studentItem=students.get(group.studentId);
+    const bookItem=books.get(group.bookId);
     const studentName=String(studentItem?.name||'Leerling niet meer aanwezig');
-    const title=String(bookItem?.title||readings?.title||'Boek niet meer aanwezig');
+    const title=String(bookItem?.title
+      ||group.readings[0]?.title||'Boek niet meer aanwezig');
     if(studentQuery&&!norm(studentName).includes(studentQuery))continue;
     if(bookQuery&&!norm(title).includes(bookQuery))continue;
-    const group=pair(db,value.studentId,value.bookId);
     const active=(studentItem?.borrowedBooks||[]).some(loan=>
-      (typeof loan==='string'?loan:loan?.bookId)===value.bookId);
+      (typeof loan==='string'?loan:loan?.bookId)===group.bookId);
     matches.push({
-      ...value,studentName,title,author:bookItem?.author||readings?.author||'',
+      studentId:group.studentId,bookId:group.bookId,
+      studentName,title,author:bookItem?.author||group.readings[0]?.author||'',
       historyEvents:group.logs.length,readingRecords:group.readings.length,
-      importedPeriods:group.periods.length,
-      examEntries:group.exams.length,
+      importedPeriods:group.periods.length,examEntries:group.exams.length,
       activeLoan:active,fingerprint:fingerprint(group),
     });
   }
