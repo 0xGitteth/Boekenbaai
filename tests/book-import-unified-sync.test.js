@@ -21,6 +21,9 @@ const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export')
   const books=XLSX.utils.sheet_to_json(parsed.Sheets.Boeken);
   assert.equal(books[0]['Vaste locatie'],'SK BB');
   assert.equal(books[0]['Uitgeleend aan leerling'],'Voorbeeld Leerling');
+  assert.equal(books[0]['Naam leerling'],'Voorbeeld Leerling');
+  assert.equal(books[0]['Aantal'],1);
+  assert.ok(books[0]['Overige gegevens (JSON)'].includes('copy-1'));
   assert.equal(books[0]["Thema's"],'Vriendschap; School');
   const original={'Titel':'Foute titel','Auteur':'A Auteur',
     'ISBN-nummer':'9780306406156','Vast in de klas van':'StructuurBB'};
@@ -48,7 +51,7 @@ const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export')
   assert.equal(draft[0]['ISBN-nummer'],ISBN);
   assert.equal(draft[0]['Vast in de klas van'],'StructuurBB');
   assert.equal(draft[0]['Klassen'],'StructuurBB');
-  assert.equal(draft[0]['Aanwezig in bibliotheek'],'Ja');
+  assert.equal(draft[0]['Aanwezig bieb'],'Ja');
   assert.equal(draft[0].Importstatus,'Concept (nog niet geïmporteerd)');
   assert.equal(XLSX.utils.sheet_to_json(
     sheet.Sheets['Originele Excel'])[0].Titel,'Foute titel');
