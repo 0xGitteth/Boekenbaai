@@ -636,6 +636,8 @@
     };
     let draftSavePending=false;
     let draftChangeGeneration=0;
+    let draftSaveIssue='';
+    let draftSaveFailures=0;
     function scheduleGuidedDraftSave(){
       if(stage?.mode!=='unified_sync'||stage.status!=='open'
         ||remotePending||busy)return;
@@ -643,6 +645,7 @@
       // changes" check alone would leave /apply blocked by that hidden draft.
       if(!hasUnreviewedChanges()&&!stage.draft&&!draftSaveInFlight)return;
       draftChangeGeneration++;
+      draftSaveFailures=0;
       if(draftSaveTimer)clearTimeout(draftSaveTimer);
       if(draftSaveInFlight){
         draftSavePending=true;
@@ -672,28 +675,48 @@
       draftSavePending=false;
       draftSaveInFlight=true;
       let cleared=false;
+      let saveFailed=false;
       try{
         const result=await request(rootPath+'/'+encodeURIComponent(currentStage)
           +'/draft',data);
         if(stage?.id===currentStage&&stage.revision===revision){
-          if(!result.persisted)
-            setNotice('Concept opslaan mislukt. Controleer je keuzes '
-              +'voordat je de pagina verlaat.');
-          else {
+          if(!result.persisted){
+            saveFailed=true;
+            draftSaveIssue='De laatste keuze kon niet veilig worden opgeslagen. '
+              +'Gebruik ‘Keuzes nu controleren’ voordat je deze pagina verlaat.';
+          }else{
             stage.draft=result.cleared?null:snapshot;
             stage.draftSavedAt=result.savedAt;
+            stage.draftPersisted=true;
             cleared=result.cleared===true;
+            draftSaveIssue='';
+            draftSaveFailures=0;
+            if(notice.textContent.startsWith('Concept opslaan mislukt'))
+              setNotice('De laatste keuzes zijn veilig opgeslagen.');
           }
         }
       }catch(error){
-        if(stage?.id===currentStage&&stage.revision===revision)
-          setNotice('Concept opslaan mislukt. Klik op controleren '
-            +'voordat je de pagina verlaat.');
+        if(stage?.id===currentStage&&stage.revision===revision){
+          saveFailed=true;
+          draftSaveIssue='De laatste keuze kon niet veilig worden opgeslagen. '
+            +'Gebruik ‘Keuzes nu controleren’ voordat je deze pagina verlaat.';
+        }
       }finally{
         draftSaveInFlight=false;
         if(draftSavePending||draftChangeGeneration!==generation){
           draftSavePending=false;
           scheduleGuidedDraftSave();
+        }else if(saveFailed){
+          draftSaveFailures++;
+          if(draftSaveFailures<=2){
+            const retryStage=currentStage,retryRevision=revision;
+            setTimeout(()=>{
+              if(stage?.id===retryStage&&stage.revision===retryRevision
+                &&stage.status==='open'&&!busy)
+                void flushGuidedDraft();
+            },1500*draftSaveFailures);
+          }
+          render();
         }else if(cleared){
           // Rebuild the final action: confirmation is safe again once the
           // reverted draft has actually been removed on the server.
@@ -735,6 +758,8 @@
       const sameStage = stage?.id === payload.id;
       const previousRevision=stage?.revision;
       stage = payload;
+      draftSaveIssue='';
+      draftSaveFailures=0;
       if(!sameStage||previousRevision!==stage.revision)
         guidedMissingAcknowledged=false;
       remotePending = null;
@@ -1175,10 +1200,15 @@
       top.append(make('h4','',guidedStep===1?'Analyse afgerond'
         :guidedStep===2?'Boeken controleren':'Import afronden'));
       panel.append(top);
-      if(stage.draftPersisted){
+      if(draftSaveIssue){
+        panel.append(make('p','bb-guide__attention',draftSaveIssue));
+      }else if(stage.draftPersisted&&!draftSaveInFlight
+        &&!draftSavePending&&!draftSaveTimer){
         const saved=make('p','bb-guide__saved hint',
           'Concept veilig opgeslagen · maximaal 24 uur beschikbaar');
         panel.append(saved);
+      }else if(draftSaveInFlight||draftSavePending||draftSaveTimer){
+        panel.append(make('p','hint','De laatste keuzes worden opgeslagen…'));
       }
       if(guidedStep!==1){
         panel.append(make('p','bb-guide__intro',
