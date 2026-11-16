@@ -1434,7 +1434,7 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(row.missingFromExcel,true);
   assert.equal(row.book.title,'Oorlogswinter');
   assert.equal(result.assignments.differences.find(d=>d.after?.id==='tim')
-    ?.bookId.startsWith('virtual:'),true);
+    ?.bookId.startsWith('unified-preview-copy:'),true);
 }
 
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
