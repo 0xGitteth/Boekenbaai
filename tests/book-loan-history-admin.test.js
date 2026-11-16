@@ -42,13 +42,14 @@ assert.equal(cleaned.ok,true);
 assert.equal(cleaned.eventsRemoved,1);
 assert.equal(cleaned.readingRecordsRemoved,1);
 assert.equal(cleaned.importedPeriodsRemoved,1);
+assert.equal(cleaned.examEntriesRemoved,1);
 assert.equal(db.bookLoanEvents.length,0);
 assert.equal(db.history.length,0);
 assert.equal(db.bookLoanPeriods.length,0);
 assert.equal(db.readingRecords.length,1);
 assert.equal(db.students[0].borrowedBooks[0].bookId,'b2');
-assert.equal(db.examReadingLists.length,1,
-  'A manually chosen exam book must not be silently removed');
+assert.equal(db.examReadingLists.length,0,
+  'An explicitly deleted student-copy relationship includes its exam list entry');
 assert.equal(db.bookLoanHistoryDeletionAudit.length,1);
 assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
 console.log('Durable circulation history, admin deletion and preservation: OK');
