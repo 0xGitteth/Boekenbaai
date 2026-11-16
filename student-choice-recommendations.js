@@ -194,15 +194,19 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     const traits=dialogue.traitsForBook(work);
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
+    let matchedAnchor=0;
     if(anchorTraits.size&&choice.referenceBookId){
       for(const [trait,evidence] of anchorTraits){
-        if(evidence && traits.has(trait))score+=Math.min(evidence,traits.get(trait));
+        if(evidence && traits.has(trait)){
+          matchedAnchor++;
+          score+=Math.min(evidence,traits.get(trait));
+        }
       }
     }
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
     // Hobbies do not automatically become reading preferences. A feature
     // counts only when an actual catalogue tag or description supports it.
-    candidates.push({ work, matched, familiar, matchedDialogue, score,
+    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor, score,
       tiebreak: tie(work.key, choice.seed) });
   }
   candidates.sort((a,b) => b.score-a.score || b.tiebreak-a.tiebreak ||
@@ -212,13 +216,13 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     ? surpriseBooks(db,candidates,count)
     : candidates.slice(0,count);
   return {
-    suggestions: picked.map(({work,matched,familiar,matchedDialogue,surpriseReason})=>({
+    suggestions: picked.map(({work,matched,familiar,matchedDialogue,matchedAnchor,surpriseReason})=>({
       key:work.key,bookId:work.bookId,title:work.title,author:work.author,
       available:work.available,total:work.total,
       reason:surpriseReason || (matchedDialogue?.matched?.length
         ?'Dit boek sluit aan bij je interesse in '
           +matchedDialogue.matched.slice(0,2).map(t=>traitLabels[t]||t).join(' en ')
-        : choice.referenceBookId&&anchorTraits.size
+        : choice.referenceBookId&&matchedAnchor>0
           ?'Dit boek heeft kenmerken die aansluiten bij het door jou gekozen boek'
         : matched.length ? 'Thema: '+matched.slice(0,2).join(', ')
         : familiar.length ? 'Sluit aan bij een thema dat je eerder hebt gelezen: '+familiar[0]
