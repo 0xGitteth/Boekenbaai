@@ -16,6 +16,7 @@ const { createFreeMetadataWorker } = require('./book-free-metadata-worker');
 const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
+const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
 const { analyzeReviewedImport, buildReviewDecisions,
   normalizeCorrections } = require('./book-import-review');
@@ -5259,6 +5260,19 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, freeMetadataWorker.status());
     }
 
+    // Administrator export uses the committed live database, not an old
+    // workbook. Never expose private borrower details to ordinary readers.
+    if(req.method==='GET'&&requestUrl.pathname==='/api/admin/books/export'){
+      if(!ensureRole(user,['admin']))
+        return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const XLSX=loadXlsx();
+      if(!XLSX)return sendJson(res,503,{message:'Excel-export niet beschikbaar.'});
+      return sendJson(res,200,{
+        filename:'boekenbaai-collectie.xlsx',
+        file:buildWorkbook(XLSX,librarySheets(loadDb())),
+      });
+    }
+
     // PR3 staged book import is separate from the legacy direct upload route.
     // The only authority for applying data is the server-owned, single-use
     // staging record; clients may send corrections, never finished book rows.
@@ -5291,7 +5305,7 @@ async function handleApi(req, res, requestUrl) {
           }));
         return sendJson(res,200,{items,count:items.length});
       }
-      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft))?$/);
+      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft|export))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
         if (activeImportJobs.size > 0) {
           return sendJson(res, 409, { message: 'De oude boekimport is nog bezig. Rond die eerst af.', error: 'legacy_import_busy' });
@@ -5460,6 +5474,40 @@ async function handleApi(req, res, requestUrl) {
       }
       if (req.method === 'GET' && !stageMatch[2]) {
         return sendJson(res, 200, importStageView(stage));
+      }
+      if(req.method==='POST'&&stageMatch[2]==='export'){
+        if(stage.status!=='open')
+          return sendJson(res,409,{message:'Geen actief importconcept om te exporteren.'});
+        const body=await parseBody(req,24*1024*1024);
+        if(body.revision!==stage.revision)
+          return sendJson(res,409,{message:'De importversie is gewijzigd.',error:'stale_review'});
+        const validated=normalizeCorrections(
+          body.corrections??stage.draft?.corrections??stage.corrections,
+          stage.sourceRows.length);
+        const inventory=normalizeInventoryResolutions(
+          body.inventoryResolutions??stage.draft?.inventoryResolutions
+            ??stage.inventoryResolutions);
+        const assignment=normalizeAssignmentResolutions(
+          body.assignmentResolutions??stage.draft?.assignmentResolutions
+            ??stage.assignmentResolutions);
+        const metadata=normalizedMetadataChoice(
+          body.metadataResolutions??stage.draft?.metadataResolutions
+            ??stage.metadataResolutions);
+        if(!validated.ok||!inventory.ok||!assignment.ok||!metadata.ok)
+          return sendJson(res,400,{message:'Ongeldige exportkeuzes.'});
+        const XLSX=loadXlsx();
+        if(!XLSX)return sendJson(res,503,{message:'Excel-export niet beschikbaar.'});
+        return sendJson(res,200,{
+          filename:'boekenbaai-importconcept.xlsx',
+          file:buildWorkbook(XLSX,stageSheets(stage,{
+            corrections:[...validated.corrections].map(([index,fields])=>({
+              index,...fields,
+            })),
+            inventoryResolutions:inventory.values,
+            assignmentResolutions:assignment.values,
+            metadataResolutions:metadata.values,
+          })),
+        });
       }
       if (req.method === 'POST' && stageMatch[2] === 'cancel') {
         const body = await parseBody(req, 10000);
