@@ -111,6 +111,29 @@ async function stop(){
     assert.ok(/^[\w-]{32,}$/.test(grant));
     assert.notEqual((await request('/api/me',undefined,grant)).status,200,
       'Recommendation grant may never authenticate a student session');
+    const questions=await request('/api/auth/student-pin/choice-next',
+      {answers:[],seed:'first-dialogue'});
+    assert.equal(questions.status,200,JSON.stringify(questions.body));
+    assert.equal(questions.body.done,false);
+    assert.ok(questions.body.question.options.length>=3);
+    assert.ok(!JSON.stringify(questions.body).includes('Sanne'),
+      'Anonymous question planning must never return personal student data');
+    const firstQuestion=questions.body.question;
+    const following=await request('/api/auth/student-pin/choice-next',{
+      answers:[{questionId:firstQuestion.id,
+        optionId:firstQuestion.options[0].id}],seed:'first-dialogue',
+    });
+    assert.equal(following.status,200);
+    assert.equal(following.body.question.id===firstQuestion.id,false,
+      'The next question must use the preceding answer and avoid repetitions');
+    const anonymousQuestion=await request('/api/auth/student-pin/choice-next',
+      {answers:[],seed:'fresh-guest'});
+    assert.equal(anonymousQuestion.status,200,
+      'Question planning is public and must not require a PIN');
+    const badOriginQuestion=await request('/api/auth/student-pin/choice-next',
+      {answers:[],seed:'wrong-origin'},'','https://other.invalid');
+    assert.equal(badOriginQuestion.status,403,
+      'New question endpoint must retain origin protection');
     const rawTags=await suggest({route:'new',mood:'funny',seed:'derived'});
     assert.equal(rawTags.status,200);
     assert.equal(rawTags.body.suggestions[0].bookId,'book-11',
