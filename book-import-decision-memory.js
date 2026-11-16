@@ -143,5 +143,28 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
   db.bookImportDecisionMemory=ledger.slice(-MAX_ITEMS);
   return recorded;
 }
+// Explicit Keep/Use Excel choices are edition-wide and may have no row
+// correction. Retain them independently of the short 30-report audit window.
+function recordMetadataReviewChoices(db,decisions,batchId,now){
+  if(!Array.isArray(db.bookImportManualMetadataMemory))
+    db.bookImportManualMetadataMemory=[];
+  let saved=0;
+  for(const choice of decisions||[]){
+    const field=choice?.field,isbn=canonicalizeBookIsbn13(choice?.isbn);
+    if(choice?.confidence!=='manual'||!isbn
+      ||!['title','author','description','publisher','publishedYear','pageCount',
+        'language','coverUrl','easyReading','suitableForExamList','tags','manualThemes']
+        .includes(field))continue;
+    const serial=JSON.stringify({excel:choice.excel??null,after:choice.after??null});
+    if(serial.length>7000)continue;
+    const item={isbn,field,excel:choice.excel??null,after:choice.after??null,
+      batchId,recordedAt:now};
+    db.bookImportManualMetadataMemory.push(item);
+    saved++;
+  }
+  db.bookImportManualMetadataMemory=db.bookImportManualMetadataMemory.slice(-MAX_ITEMS);
+  return saved;
+}
+
 module.exports={FIELDS,sourceIdentity,rowFingerprint,safeRowReplays,
-  recordBookReviewChoices};
+  recordBookReviewChoices,recordMetadataReviewChoices};
