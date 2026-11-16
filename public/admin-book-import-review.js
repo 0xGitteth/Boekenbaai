@@ -475,6 +475,17 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         +'Leeg betekent nooit automatisch dat een boek is ingeleverd. '
         +'Bestaande historische registraties worden niet automatisch gewist.'));
     adminCard.append(loanHistoryLabel);
+    const completeLoansLabel=make('label','bb-review__check');
+    const completeLoans=make('input');
+    completeLoans.type='checkbox';
+    completeLoans.checked=false;
+    completeLoansLabel.append(completeLoans,make('span','',
+      'Dit Excelbestand bevat de volledige actuele uitleenlijst'));
+    adminCard.append(completeLoansLabel,make('p','hint',
+      'Alleen aanvinken als werkelijk alle huidige uitleningen in deze '
+      +'Excel staan. Boekenbaai toont dan ook boeken die nog als geleend '
+      +'staan maar helemaal niet meer in het bestand voorkomen. '
+      +'Je beslist per verschil; er wordt niets automatisch ingeleverd.'));
     parts.append(stockCard,adminCard);
     const metadataDetails=make('details','bb-import__columns');
     metadataDetails.append(make('summary','',
@@ -526,6 +537,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         ||(unified&&!hasBookData);
       metadata.disabled=metadataLabel.hidden;
       loanHistoryLabel.hidden=!unified||!partChecks.get('loans').checked;
+      completeLoansLabel.hidden=!unified||!partChecks.get('loans').checked;
+      if(completeLoansLabel.hidden)completeLoans.checked=false;
     };
     importMode.addEventListener('change',refreshImportMode);
     for(const check of partChecks.values())check.addEventListener('change',refreshImportMode);
@@ -3990,7 +4003,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               : importMode.value==='reconcile'?'assignment_reconcile'
               : syncMode.checked?'inventory_sync':'create',
             ...(unified?{syncParts:selection,
-              ...(selection.loans?{loanHistoryMode:loanHistoryMode.value}:{})}:{}),
+              ...(selection.loans?{loanHistoryMode:loanHistoryMode.value,
+                fullLoanSnapshot:completeLoans.checked}:{})}:{}),
           });
         } catch (error) {
           await syncStage();
