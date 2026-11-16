@@ -41,7 +41,7 @@ function equivalentAuthorName(a,b) {
     &&left.sort().every((word,index)=>word===right.sort()[index]);
 }
 function sameSourceValue(field,a,b){
-  return field==='author'?equivalentAuthorName(a,b)
+  return field==='author'?(equivalentAuthorName(a,b)||nearlySameBookText(a,b))
     :field==='title'?sameBookTitle(a,b):nearlySameBookText(a,b);
 }
 function independentVotes(isbn,field,entries) {
