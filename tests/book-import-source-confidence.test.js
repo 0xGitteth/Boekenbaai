@@ -28,8 +28,8 @@ const wrongAuthor=decide({isbn:ISBN,field:'author',
     {source:'googlebooks',editionIsbn:ISBN,author:'Carry Slee'},
     {source:'openlibrary',editionIsbn:ISBN,author:'Carrie Slee'},
   ]});
-assert.equal(wrongAuthor.action,'keep',
-  'A different Excel author must not be silently overwritten');
+assert.equal(wrongAuthor.action,'excel',
+  'Source spelling suggestions must not overwrite a materially different Excel author');
 assert.equal(sourceConsensus(ISBN,'author',[
   {source:'googlebooks',editionIsbn:ISBN,author:'Carry Slee'},
   {source:'openlibrary',editionIsbn:ISBN,author:'Carrie Slee'},
