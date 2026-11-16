@@ -395,6 +395,10 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       earlierManual.set(item.isbn+':'+item.field,item);
     }
   }
+  for(const item of db.bookImportManualMetadataMemory||[]){
+    if(!item?.isbn||!item.field)continue;
+    earlierManual.set(item.isbn+':'+item.field,item);
+  }
   const editions=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
