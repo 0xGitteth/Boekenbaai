@@ -1315,7 +1315,12 @@
             &&/^https:\/\/[^\s"'<>]+$/i.test(coverUrl)){
             const img=make('img');img.src=coverUrl;
             img.alt='Omslag van '+safeText(book.title);
-            img.referrerPolicy='no-referrer';img.loading='lazy';cover.append(img);
+            img.referrerPolicy='no-referrer';img.loading='lazy';
+            img.addEventListener('error',()=>{
+              img.remove();
+              cover.append(make('span','hint','Omslag niet beschikbaar'));
+            },{once:true});
+            cover.append(img);
           }else cover.append(make('span','','B'));
           const identity=make('div','bb-guide__bookinfo');
           identity.append(make('span','bb-guide__eyebrow','TE CONTROLEREN'),
@@ -1351,8 +1356,24 @@
                 alert.append(make('small','',
                   'Bronnen: '+issue.sources.join(', ')));
               alert.append(make('p','',
-                'Controleer de fysieke editie. Er wordt niets automatisch '
-                +'aan de bestaande auteur of titel veranderd.'));
+                'Controleer welke titel of auteur op het fysieke boek staat. '
+                +'De keuze geldt voor de bijbehorende boekgegevens; '
+                +'bestaande exemplaren en uitleningen worden niet gewijzigd.'));
+              // A verified title conflict must offer the actual suggested
+              // title. A generic stock approval is not a title correction.
+              if(field==='titel'&&confirmed&&relatedRow.index!==undefined){
+                const actions=make('div','bb-guide__actions');
+                addAction(actions,'Mijn boek heet: '+confirmed,()=>{
+                  updateCorrection(relatedRow.index,'title',confirmed);
+                  void recheck();
+                },true);
+                addAction(actions,'Mijn boek heeft de Excel-titel',()=>{
+                  updateCorrection(relatedRow.index,'title',
+                    relatedRow.book?.title||'');
+                  void recheck();
+                });
+                alert.append(actions);
+              }
               card.append(alert);
             }
           }
@@ -1384,6 +1405,26 @@
             // is not a selectable edition. Do not display it as another
             // edition in the comparison.
             const allSuggestions=source?.matchSuggestions||[];
+            const suggestedRepair=source?.issues?.find(issue=>
+              issue.code==='isbn_repair_suggested'
+              &&issue.suggestion?.canonical)?.suggestion?.canonical;
+            if(suggestedRepair&&!source.book?.editionIsbn){
+              const proposal=make('div','bb-guide__identity-conflict');
+              proposal.append(make('strong','',
+                'Dit ISBN uit Excel is ongeldig. Mogelijke correctie: '
+                +suggestedRepair));
+              proposal.append(make('p','',
+                'Dit nummer is een voorstel op basis van het ingevoerde nummer, '
+                +'geen bevestigde editie. Vergelijk het eerst met het ISBN '
+                +'op het fysieke boek.'));
+              const apply=addAction(proposal,'ISBN op mijn boek is '
+                +suggestedRepair,()=>{
+                  updateCorrection(source.index,'editionIsbn',suggestedRepair);
+                  void recheck();
+                });
+              apply.classList.add('bb-guide__correct-isbn');
+              check.append(proposal);
+            }
             const suggestions=allSuggestions.filter(option=>
               typeof option.editionIsbn==='string'
               &&/^97[89][0-9]{10}$/.test(option.editionIsbn));
@@ -1599,7 +1640,12 @@
                 ||issue.field;
               const entry=make('div','bb-guide__choice');
               entry.append(make('strong','',label));
-              explain(entry,issue.reason);
+              if(issue.reason==='source_row_requires_review')
+                entry.append(make('p','bb-guide__reason',
+                  'Dit boek heeft nog een niet-opgelost verschil in '+label
+                  +'. Als je hierboven de juiste titel of auteur kiest, '
+                  +'wordt dit punt opnieuw beoordeeld.'));
+              else explain(entry,issue.reason);
               const compare=make('div','bb-guide__compare');
               compare.append(makeLabeled('Excel',source
                 ?fieldValue(source,issue.field==='manualThemes'?'themes'
