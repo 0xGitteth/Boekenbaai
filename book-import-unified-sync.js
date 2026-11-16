@@ -873,7 +873,11 @@ function buildUnifiedBookImport(analysis,db,{
     // A review containing only automatic keep decisions is still worth
     // confirming, so the exact choices can be recorded in its import report.
     +metadata.summary.autoKept;
+  // Reuse exactly the reviewed rows, including synthetic missing-loan rows
+  // allocated against projected stock. Reconstructing against old stock loses
+  // rows when the same import creates physical copies.
   return {ok:true,parts:use,inventory,assignments,metadata,
+    reviewedAssignmentRows:source.rows,
     actionableSourceIssues:actionableSourceIssues(analysis,use),summary:{
     newCopies:inventory.summary.addCopies,
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
