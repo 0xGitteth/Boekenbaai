@@ -819,6 +819,46 @@ function buildUnifiedBookImport(analysis,db,{
       &&assignments.summary.pending===0&&metadata.summary.issues===0&&total>0,
   }};
 }
+// A corrected ISBN or title can invalidate an older loan/location decision.
+// Rebase only during review recovery, never during the final apply. Keep
+// still-valid decisions and postpone any new administrative difference for
+// affected rows, rather than silently turning it into an automatic apply.
+function rebaseStaleAssignmentChoices(choices,previousRows,currentRows,differences){
+  const before=new Map((previousRows||[]).map(row=>[row.index,row]));
+  const after=new Map((currentRows||[]).map(row=>[row.index,row]));
+  const changed=new Set();
+  const identity=row=>JSON.stringify([
+    row?.book?.editionIsbn||'',row?.book?.title||'',
+    row?.book?.author||'',row?.book?.barcode||'',
+    row?.context?.studentLoan||null,row?.context?.classLoan||null,
+    row?.context?.fixedLocation||null,row?.context?.classContext||null,
+  ]);
+  for(const [index,row] of after){
+    if(before.has(index)&&identity(before.get(index))!==identity(row))
+      changed.add(index);
+  }
+  const valid=new Set((differences||[]).map(diff=>diff.id));
+  const kept=[],removed=[],affected=new Set();
+  for(const choice of choices||[]){
+    const index=Number(String(choice.id||'').split(':')[0]);
+    if(!valid.has(choice.id)||changed.has(index)){
+      removed.push(choice);
+      if(Number.isSafeInteger(index)&&index>=0)affected.add(index);
+    }else kept.push(choice);
+  }
+  const chosen=new Set(kept.map(choice=>choice.id));
+  const postponed=[];
+  for(const diff of differences||[]){
+    if(!affected.has(diff.rowIndex)||chosen.has(diff.id))continue;
+    // Never invent a loan or location update after discarding a stale choice.
+    const choice={id:diff.id,action:'later'};
+    postponed.push(choice);
+    chosen.add(diff.id);
+  }
+  return {choices:[...kept,...postponed],removed,
+    postponed,changedRows:[...changed]};
+}
+
 // Selected Excel metadata may intentionally replace existing values.
 // Automatic source-only enrichment must never replace an explicit value
 // on a *new* physical copy that was not part of the enrichment's blank targets.
@@ -845,4 +885,5 @@ module.exports={
   DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
   shouldApplyMetadataToCreatedCopy,buildUnifiedBookImport,actualAssignmentPreview,
+  rebaseStaleAssignmentChoices,
 };
