@@ -282,15 +282,16 @@ function withMissingExcelLoans(source,db,enabled=false,assignmentDb=db){
   }
   return {...source,rows,preferredCopyByRow};
 }
-// Restore the final metadata for deferred synthetic loan-review rows, while
-// retaining their preview row indices and selected physical copy IDs.
-// A title/author update in the same import must not make the task unresolvable.
+// Persist the exact accepted post-import title/author for postponed tasks,
+// using the physical copy selected during review. Both ordinary Excel rows
+// and synthetic missing-loan rows may become stale after metadata updates.
+// Other source columns and the original worksheet index remain unchanged.
 function refreshDeferredSnapshotRows(rows,differences,books) {
-  const ids=new Map((differences||[]).filter(d=>d.bookId
-    &&Number.isSafeInteger(d.rowIndex)).map(d=>[d.rowIndex,d.bookId]));
+  const ids=new Map((differences||[]).filter(d=>d.choice==='later'
+    &&d.bookId && Number.isSafeInteger(d.rowIndex))
+    .map(d=>[d.rowIndex,d.bookId]));
   const copies=new Map((books||[]).map(copy=>[copy.id,copy]));
   return (rows||[]).map(row=>{
-    if(!row.missingFromExcel)return row;
     const copy=copies.get(ids.get(row.index));
     if(!copy)return row;
     return {...row,book:{...row.book,title:copy.title,author:copy.author}};
