@@ -163,4 +163,45 @@ assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
   assert.equal(active.books[0].borrowedBy,'s');
 }
 
+
+// A book without ISBN still has a durable legacy edition identity shared by
+// its physical copies. Removing a false A relationship must not remove the
+// exam entry while another copy B is being read or has been finished.
+{
+  const {keyForBook}=require('../personal-exam-reading-list');
+  for(const removeOriginalCopy of [false,true]){
+    const a={id:'noisbn-a',title:'Zonder ISBN',author:'Auteur',
+      barcode:'4711001',status:'available'};
+    const b={id:'noisbn-b',title:'Zonder ISBN',author:'Auteur',
+      barcode:'4711002',status:'borrowed',borrowedBy:'s'};
+    const editionKey=keyForBook(a);
+    assert.equal(editionKey,keyForBook(b));
+    assert.ok(editionKey.startsWith('legacy||'));
+    const current={
+      students:[{id:'s',name:'Student',borrowedBooks:[{bookId:'noisbn-b'}]}],
+      books:removeOriginalCopy?[b]:[a,b],
+      history:[{id:'false-a',type:'check_out',bookId:'noisbn-a',
+        studentId:'s',timestamp:'2026-10-01'}],
+      bookLoanEvents:[],bookLoanPeriods:[],
+      readingRecords:[{id:'true-b',bookId:'noisbn-b',
+        subjectType:'student',subjectId:'s',finished:true,
+        editionKey,title:b.title,author:b.author}],
+      examReadingLists:[{id:'exam-a',studentId:'s',bookId:'noisbn-a',
+        title:a.title,author:a.author,editionKey,addedManually:false}],
+    };
+    const history=searchHistory(current,{student:'Student'})
+      .find(item=>item.bookId==='noisbn-a');
+    assert.ok(history);
+    const result=removeFalseHistory(current,admin,{
+      studentId:'s',bookId:'noisbn-a',
+      expectedFingerprint:history.fingerprint,confirm:true,
+    });
+    assert.equal(result.ok,true);
+    assert.equal(result.examEntriesRemoved,0);
+    assert.equal(current.examReadingLists.length,1);
+    assert.equal(current.readingRecords.length,1);
+    assert.equal(current.books.find(copy=>copy.id==='noisbn-b').borrowedBy,'s');
+  }
+}
+
 console.log('Durable circulation history, admin deletion and preservation: OK');
