@@ -29,15 +29,18 @@ function pair(db,studentId,bookId){
   const readings=(db.readingRecords||[]).filter(record=>
     record.subjectType==='student'&&record.subjectId===studentId
     &&record.bookId===bookId);
+  const exams=(db.examReadingLists||[]).filter(item=>
+    item.studentId===studentId&&item.bookId===bookId);
   const periods=(db.bookLoanPeriods||[]).filter(period=>
     period.studentId===studentId&&period.bookId===bookId);
-  return {logs,readings,periods};
+  return {logs,readings,periods,exams};
 }
 function fingerprint(group){
   return crypto.createHash('sha256').update(JSON.stringify([
     group.logs.map(x=>x.id).sort(),
     group.readings.map(x=>x.id).sort(),
     group.periods.map(x=>x.id).sort(),
+    group.exams.map(x=>x.id).sort(),
   ])).digest('hex');
 }
 function searchHistory(db,{student='',book='',limit=100}={}){
@@ -78,6 +81,7 @@ function searchHistory(db,{student='',book='',limit=100}={}){
       ...value,studentName,title,author:bookItem?.author||readings?.author||'',
       historyEvents:group.logs.length,readingRecords:group.readings.length,
       importedPeriods:group.periods.length,
+      examEntries:group.exams.length,
       activeLoan:active,fingerprint:fingerprint(group),
     });
   }
@@ -98,25 +102,29 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
   const logIds=new Set(group.logs.map(item=>item.id));
   const readingIds=new Set(group.readings.map(item=>item.id));
   const periodIds=new Set(group.periods.map(item=>item.id));
+  const examIds=new Set(group.exams.map(item=>item.id));
   db.history=(db.history||[]).filter(item=>!logIds.has(item.id));
   db.bookLoanEvents=(db.bookLoanEvents||[]).filter(item=>!logIds.has(item.id));
   db.readingRecords=(db.readingRecords||[]).filter(item=>!readingIds.has(item.id));
   db.bookLoanPeriods=(db.bookLoanPeriods||[])
     .filter(item=>!periodIds.has(item.id));
-  // Explicit or manually recorded exam-list entries remain independent
-  // evidence and are NOT silently deleted. Without matching returns,
-  // derived read statuses are recalculated by personal-exam-reading-list.
+  db.examReadingLists=(db.examReadingLists||[])
+    .filter(item=>!examIds.has(item.id));
+  // The administrator explicitly removes this exact student-copy
+  // relationship, including a linked exam list entry for the same copy.
+  // Unrelated manual/external exam titles remain untouched.
   if(!Array.isArray(db.bookLoanHistoryDeletionAudit))
     db.bookLoanHistoryDeletionAudit=[];
   db.bookLoanHistoryDeletionAudit.push({
     id:crypto.randomUUID(),performedBy:actor.id,at:now,
     studentId,bookId,eventsRemoved:logIds.size,
     readingRecordsRemoved:readingIds.size,
-    importedPeriodsRemoved:periodIds.size,
+    importedPeriodsRemoved:periodIds.size,examEntriesRemoved:examIds.size,
   });
   return {ok:true,eventsRemoved:logIds.size,
     readingRecordsRemoved:readingIds.size,
-    importedPeriodsRemoved:periodIds.size,activeLoanUnchanged:true};
+    importedPeriodsRemoved:periodIds.size,
+    examEntriesRemoved:examIds.size,activeLoanUnchanged:true};
 }
 module.exports={appendDurableLoanEvent,borrowEvents,searchHistory,
   removeFalseHistory,fingerprint};
