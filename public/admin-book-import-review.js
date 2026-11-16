@@ -136,12 +136,16 @@
     }
     return payload;
   }
-  function encodeFile(file) {
+  function encodeFile(file,onProgress) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         const raw = String(reader.result || '');
         resolve(raw.slice(raw.indexOf(',') + 1));
+      };
+      reader.onprogress = event => {
+        if(event.lengthComputable&&typeof onProgress==='function')
+          onProgress(event.loaded,event.total);
       };
       reader.onerror = () => reject(Error('Bestand lezen is mislukt.'));
       reader.readAsDataURL(file);
@@ -463,6 +467,32 @@
     notice.setAttribute('role', 'status');
     notice.setAttribute('aria-live', 'polite');
     root.append(notice);
+    // Do not invent progress for the server-side ISBN lookups. Report
+    // exact bytes while reading and an indeterminate bar during analysis.
+    const setupProgress=make('section','bb-import__setup-progress');
+    setupProgress.hidden=true;
+    setupProgress.setAttribute('aria-label','Voortgang Excelcontrole');
+    const setupProgressLabel=make('p','bb-import__setup-progress-label');
+    const setupProgressBar=make('progress','bb-import__setup-progress-meter');
+    setupProgressBar.max=100;
+    setupProgress.append(setupProgressLabel,setupProgressBar);
+    root.append(setupProgress);
+    const updateSetupProgress=(phase,loaded=0,total=0)=>{
+      setupProgress.hidden=!phase;
+      if(!phase)return;
+      if(phase==='reading'&&total>0){
+        const percent=Math.min(100,Math.round(loaded/total*100));
+        setupProgressBar.value=percent;
+        setupProgressLabel.textContent='Excelbestand lezen: '+percent
+          +'% ('+loaded.toLocaleString('nl-NL')+' van '
+          +total.toLocaleString('nl-NL')+' bytes)';
+      }else{
+        setupProgressBar.removeAttribute('value');
+        setupProgressLabel.textContent='Boeken en ISBN-bronnen analyseren. '
+          +'De server geeft nog geen voortgang per boek door; '
+          +'daarom wordt geen onbetrouwbaar percentage getoond.';
+      }
+    };
     const liveAlert = make('div', 'bb-review__live-alert');
     liveAlert.setAttribute('role', 'status');
     liveAlert.setAttribute('aria-live', 'polite');
@@ -3609,13 +3639,31 @@
       results.append(navigation);
     }
 
+    file.addEventListener('change',()=>{
+      if(stage?.status==='cancelled'||stage?.status==='failed'){
+        stage=null;
+        results.replaceChildren();
+      }
+      updateSetupProgress(null);
+      setNotice('');
+    });
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const selected = file.files?.[0];
       if (!selected) return setNotice('Kies eerst een Excelbestand.');
       if (selected.size > 25 * 1024 * 1024) return setNotice('Het Excelbestand is te groot (maximaal 25 MB).');
+      // A previous cancellation must not remain visible underneath the
+      // new import progress indicator.
+      if(stage?.status==='cancelled'||stage?.status==='failed'){
+        stage=null;
+        results.replaceChildren();
+      }
+      setNotice('');
+      updateSetupProgress('reading',0,selected.size);
       run(async () => {
-        const encoded = await encodeFile(selected);
+        const encoded = await encodeFile(selected,(loaded,total)=>
+          updateSetupProgress('reading',loaded,total));
+        updateSetupProgress('analyzing');
         let payload;
         try {
           const unified=importMode.value==='unified';
@@ -3640,7 +3688,9 @@
         }
         rememberResponse(payload);
         setNotice('Preview gereed. De bibliotheek is nog niet gewijzigd.');
-      }, 'Het Excelbestand wordt gecontroleerd…');
+      }, 'Het Excelbestand wordt gecontroleerd…').finally(()=>{
+        updateSetupProgress(null);
+      });
     });
     syncStage();
     void refreshDeferred();
