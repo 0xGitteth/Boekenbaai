@@ -93,7 +93,7 @@ function bookMatchSuggestions(row,existingIndex=[]){
     ||(row.issues||[]).some(issue=>issue.severity==='conflict'
       &&['metadata_title_conflict','edition_identity_conflict',
         'conflicting_edition_isbns','metadata_identifier_conflict',
-        'author_sources_differ'].includes(issue.code));
+        'author_sources_differ','metadata_author_conflict'].includes(issue.code));
   if(!requireSuggestions)return [];
   const results=new Map();
   const put=candidate=>{

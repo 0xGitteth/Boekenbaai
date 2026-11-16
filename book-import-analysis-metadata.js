@@ -305,6 +305,35 @@ function selectIsbnMetadataCandidate(requestedIsbn, candidates, rowBook = null, 
   return { candidate: rankedIdentifierless[0] || null, conflict: null };
 }
 
+// An exact ISBN can identify a completely different author even when the
+// title in the spreadsheet is plausible. Two INDEPENDENT providers must
+// unanimously agree on the author before it becomes an identity conflict.
+// This is never an automatic author replacement: the physical copy must be
+// checked. Cosmetic name differences remain covered by the spelling repair.
+function flagIndependentAuthorConflict(row,options){
+  const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
+  if(!isbn||!row.book?.author)return;
+  const consensus=sourceConsensus(isbn,'author',row.sourceEvidence||[]);
+  if(consensus.agreeing<2
+    ||consensus.votes.length!==consensus.agreeing
+    ||!consensus.value
+    ||nearlySameBookText(row.book.author,consensus.value))return;
+  const detail={
+    field:'author',excelValue:row.book.author,
+    confirmedAuthor:consensus.value,sources:consensus.sources,
+    sourceCount:consensus.agreeing,editionIsbn:isbn,
+  };
+  if(options.correctedMetadataFields?.has('author')){
+    // Explicit administrator corrections remain possible, but retain the
+    // evidence in the audit for later inspection.
+    addIssue(row,'metadata_differs_from_excel','warning',{
+      ...detail,chosenByAdministrator:true,reviewLevel:'informational',
+    });
+  }else{
+    addIssue(row,'metadata_author_conflict','conflict',detail);
+  }
+}
+
 // A malformed worksheet ISBN must never be changed on one provider's
 // recommendation. A different edition can be accepted only when at least
 // two independent, named ISBN providers agree on the SAME exact edition
@@ -646,6 +675,7 @@ async function resolveMetadata(row, options) {
       // small typo. Materially different titles never qualify and remain
       // subject to the explicit identity conflict rule above.
       acceptSourceVerifiedSpelling(row,options);
+      flagIndependentAuthorConflict(row,options);
     } catch {
       addIssue(row, 'metadata_lookup_failed', 'warning', { lookup: 'isbn' });
     }

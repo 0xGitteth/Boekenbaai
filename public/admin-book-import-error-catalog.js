@@ -40,6 +40,7 @@
     title_author_metadata_missing_edition_isbn:'De gevonden titel en auteur hebben geen controleerbaar ISBN.',
     isbn_resolved_from_metadata:'Het ISBN is uit passende boekinformatie aangevuld.',
     metadata_title_conflict:'Onafhankelijke ISBN-bronnen bevestigen een inhoudelijk andere titel.',
+    metadata_author_conflict:'Twee onafhankelijke ISBN-bronnen bevestigen een inhoudelijk andere auteur. Controleer de fysieke editie.',
     metadata_differs_from_excel:'De externe boekinformatie wijkt af van Excel. Dit is op zichzelf geen fout.',
     author_sources_differ:'De auteurskolommen binnen Excel spreken elkaar tegen.',
     edition_identity_conflict:'Verschillende Excelboeken hebben hetzelfde ISBN maar andere titels.',

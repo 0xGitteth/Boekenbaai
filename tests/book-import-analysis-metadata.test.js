@@ -218,6 +218,65 @@ module.exports = async function runMetadataTests() {
   assert.equal(differentVolume.rows[0].status,'conflict',
     'Different volume numbers remain identity conflicts despite one changed character');
 
+  // Materially wrong authors must be noticed even when the ISBN and
+  // title are valid. A provider's single claim is not sufficient evidence.
+  const authorProviders=[
+    {source:'Google Books',isbn13:ISBN,title:'Mockingjay',
+      author:'Suzanne Collins'},
+    {source:'Open Library',isbn13:ISBN,title:'Mockingjay',
+      author:'Suzanne Collins'},
+  ];
+  const mismatchedAuthorRow={
+    Titel:'Mockingjay',Auteur:'Anthony Horowitz','ISBN-nummer':ISBN,
+  };
+  const authorLookup=async()=>({
+    found:true,isbn13:ISBN,title:'Mockingjay',author:'Suzanne Collins',
+    sourceCandidates:authorProviders,
+  });
+  const mismatchedAuthor=await analyzeBookImportRows([mismatchedAuthorRow],{
+    lookupIsbn:authorLookup,
+  });
+  const authorRow=mismatchedAuthor.rows[0];
+  assert.equal(authorRow.status,'conflict',
+    'Independent ISBN evidence for a different author requires physical review');
+  assert.equal(authorRow.book.author,'Anthony Horowitz',
+    'Never silently replace a materially different author');
+  const authorIssue=authorRow.issues.find(issue=>
+    issue.code==='metadata_author_conflict');
+  assert.equal(authorIssue?.confirmedAuthor,'Suzanne Collins');
+  assert.deepEqual(authorIssue?.sources,['googlebooks','openlibrary']);
+  assert.ok(authorRow.onlineMatchCandidates.some(candidate=>
+    candidate.author==='Suzanne Collins'&&candidate.editionIsbn===ISBN));
+
+  const oneAuthorSource=await analyzeBookImportRows([mismatchedAuthorRow],{
+    lookupIsbn:async()=>({
+      found:true,isbn13:ISBN,title:'Mockingjay',
+      sourceCandidates:[authorProviders[0]],
+    }),
+  });
+  assert.ok(!codes(oneAuthorSource.rows[0]).has('metadata_author_conflict'),
+    'One provider cannot block a valid ISBN as an author identity conflict');
+  const disagreeingAuthors=await analyzeBookImportRows([mismatchedAuthorRow],{
+    lookupIsbn:async()=>({
+      found:true,isbn13:ISBN,title:'Mockingjay',
+      sourceCandidates:[
+        authorProviders[0],
+        {...authorProviders[1],author:'Another author'},
+      ],
+    }),
+  });
+  assert.ok(!codes(disagreeingAuthors.rows[0]).has('metadata_author_conflict'),
+    'Two providers with different authors do not form a safe consensus');
+  const authorOverride=await analyzeBookImportRows([mismatchedAuthorRow],{
+    lookupIsbn:authorLookup,
+    correctedMetadataFieldsByRow:new Map([[0,new Set(['author'])]]),
+  });
+  assert.ok(!codes(authorOverride.rows[0]).has('metadata_author_conflict'),
+    'Explicit administrator author corrections remain possible');
+  assert.ok(authorOverride.rows[0].issues.some(issue=>
+    issue.code==='metadata_differs_from_excel'
+      &&issue.field==='author'&&issue.chosenByAdministrator===true));
+
   const matchingExactWithTitleless = selectIsbnMetadataCandidate(ISBN, [
     normalizeMetadataCandidate({ title: 'Strict titel', author: 'A Auteur', isbn13: ISBN }),
     normalizeMetadataCandidate({ author: 'A Auteur', isbn13: ISBN, publisher: 'Rijke exacte bron' }),

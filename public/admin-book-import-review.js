@@ -70,6 +70,7 @@
     nonstandard_easy_reading_value: 'Afwijkende Makkelijk Lezen waarde',
     class_context_needs_review: 'Klas moet worden gecontroleerd',
     metadata_differs_from_excel: 'Metadata wijkt af van Excel',
+    metadata_author_conflict: 'Twee onafhankelijke ISBN-bronnen bevestigen een andere auteur',
   };
   const fieldDefs = [
     ['title', 'Titel'], ['author', 'Auteur'], ['editionIsbn', 'ISBN'],
@@ -159,9 +160,15 @@
     const steps=make('nav','bb-import__steps');
     steps.setAttribute('aria-label','Importstappen');
     const stepNodes=[];
-    for(const label of ['1. Instellen','2. Analyseren','3. Controleren',
-      '4. Afronden']){
-      const step=make('span','bb-import__step',label);
+    for(const [index,label] of ['1. Instellen','2. Analyseren',
+      '3. Controleren','4. Afronden'].entries()){
+      const step=button(label,'bb-import__step');
+      step.dataset.step=String(index);
+      step.addEventListener('click',()=>{
+        if(stage?.status!=='open'||stage.mode!=='unified_sync'
+          ||index===0||index===3&&guidedStep===1)return;
+        setGuidedStep(index);
+      });
       steps.append(step);
       stepNodes.push(step);
     }
@@ -504,8 +511,13 @@
     const oldSection = imports.querySelector('#book-import-form')?.closest('.admin-card__section');
     if (oldSection) {
       const details = make('details', 'bb-review__legacy');
-      const summary = make('summary', '', 'Oude directe import (zonder deze controle)');
+      const summary = make('summary', '',
+        'Technische directe import (zonder controles)');
       details.append(summary, oldSection);
+      // Existing technical fallback remains available only at an explicit
+      // diagnostic URL. The everyday teacher workflow has one import path.
+      details.hidden=!new URLSearchParams(window.location.search)
+        .has('legacyBookImport');
       imports.insertBefore(details, root.nextSibling);
     }
     let stage = null;
@@ -1101,39 +1113,20 @@
         ||draftSaveInFlight||draftSavePending||Boolean(draftSaveTimer);
       const panel=make('section','bb-guide');
       const top=make('header','bb-guide__top');
-      top.append(make('span','bb-guide__eyebrow','BOEKENBAAI · IMPORTEERASSISTENT'),
-        make('h4','',guidedStep===1?'Analyse afgerond'
-          :guidedStep===2?'Boeken controleren':'Import afronden'));
-      const steps=make('div','bb-guide__step-label',
-        'Stap '+(guidedStep+1)+' van 4');
-      top.append(steps);
+      top.append(make('h4','',guidedStep===1?'Analyse afgerond'
+        :guidedStep===2?'Boeken controleren':'Import afronden'));
       panel.append(top);
-      panel.append(make('p','bb-guide__storage hint',stage.draftPersisted
-        ?'Je gecontroleerde keuzes en concept zijn op de server bewaard. '
-          +'Een onafgeronde import blijft maximaal 24 uur beschikbaar.'
-        :'Je wijzigingen worden als concept opgeslagen wanneer de server '
-          +'beschikbaar is. Controleer ze voordat je importeert.'));
-      const progress=make('div','bb-guide__progress');
-      for(let index=1;index<=3;index++){
-        const crumb=make('button','bb-guide__crumb'+(guidedStep===index
-          ?' bb-guide__crumb--current':''),
-          index===1?'2. Analyse':index===2?'3. Controle':'4. Afronden');
-        crumb.type='button';
-        if(index===3&&guidedStep===1)crumb.disabled=true;
-        crumb.addEventListener('click',()=>setGuidedStep(index));
-        progress.append(crumb);
+      if(stage.draftPersisted){
+        const saved=make('p','bb-guide__saved hint',
+          'Concept veilig opgeslagen · maximaal 24 uur beschikbaar');
+        panel.append(saved);
       }
-      panel.append(progress);
-      const intro=make('p','bb-guide__intro',
-        guidedStep===1
-          ?'Boekenbaai heeft de voorraad, uitleningen en boekgegevens vergeleken. '
-            +'Automatische beslissingen hoef je niet één voor één goed te keuren.'
-          :guidedStep===2
-            ?'Per boek zie je alle punten die nog aandacht vragen. '
-              +'Na je keuze kun je direct verder met het volgende boek.'
-            :'Controleer het totaaloverzicht. Pas bij de definitieve bevestiging '
-              +'worden gegevens in de bibliotheek opgeslagen.');
-      panel.append(intro);
+      if(guidedStep!==1){
+        panel.append(make('p','bb-guide__intro',
+          guidedStep===2
+            ?'Controleer de voorgestelde gegevens op het fysieke boek en kies per verschil.'
+            :'Controleer het overzicht. Er wordt pas iets opgeslagen na je bevestiging.'));
+      }
       const stats=make('div','bb-guide__stats');
       for(const [number,label] of [
         [queue.length,'Boeken met aandacht'],
@@ -1146,7 +1139,7 @@
           make('span','',label));
         stats.append(stat);
       }
-      panel.append(stats);
+      if(guidedStep===1)panel.append(stats);
       const footer=make('nav','bb-guide__footer');
       footer.setAttribute('aria-label','Navigatie importassistent');
       const addAction=(host,label,handler,primary=false)=>{
@@ -1224,11 +1217,10 @@
       if(guidedStep===1){
         const auto=(metadata.automaticDecisions||[]).length
           +(assignments.differences||[]).filter(item=>item.automatic).length;
-        const first=make('div','bb-guide__summary-card');
-        first.append(make('strong','','Dit heeft Boekenbaai al zelfstandig beoordeeld'),
-          make('p','',auto+' automatische beslissingen. '
-            +'Bestaande boeken en uitleningen blijven beschermd.'));
-        panel.append(first);
+        const autoNote=make('p','bb-guide__auto-note',
+          auto+' besluiten automatisch beoordeeld. '
+          +'Bestaande exemplaren en uitleningen blijven beschermd.');
+        panel.append(autoNote);
         if(summary.missingStockGroups){
           const omitted=make('div','bb-guide__attention');
           omitted.append(make('strong','',
@@ -1241,14 +1233,9 @@
           panel.append(omitted);
         }
         if(queue.length){
-          const next=make('div','bb-guide__summary-card');
-          next.append(make('strong','',queue.length+
-            ' boeken hebben nog een controlepunt'),
-            make('p','',
-              'Je ziet straks per boek de Excelgegevens naast de bestaande '
-              +'registratie of het beste online voorstel. Sommige boeken '
-              +'hebben meerdere verschillen, die worden samengevoegd.'));
-          panel.append(next);
+          panel.append(make('p','bb-guide__compact-note',
+            (summary.pending||0)+' open controlepunten, samengevoegd per boek. '
+            +'Je krijgt alleen vragen die Boekenbaai niet veilig zelf kan afhandelen.'));
         }else panel.append(make('p','bb-guide__success',
           'Er zijn geen verplichte boekcontroles.'));
         addAction(footer,'Diagnoseverslag downloaden',downloadCurrentDiagnosis);
@@ -1301,6 +1288,37 @@
               book.editionIsbn?'ISBN '+book.editionIsbn:
                 'ISBN ontbreekt of is ongeldig'));
           bookhead.append(cover,identity);card.append(bookhead);
+          // Material ISBN disagreements are shown next to the book, not
+          // buried in a long list of technical source warnings.
+          const visibleIdentityChecks=new Set();
+          for(const relatedRow of groupRows){
+            for(const issue of relatedRow.issues||[]){
+              if(!['metadata_author_conflict','metadata_title_conflict']
+                .includes(issue.code))continue;
+              const field=issue.code==='metadata_author_conflict'
+                ?'auteur':'titel';
+              const confirmed=issue.confirmedAuthor||issue.confirmedTitle||'';
+              const key=field+':'+confirmed;
+              if(visibleIdentityChecks.has(key))continue;
+              visibleIdentityChecks.add(key);
+              const alert=make('div','bb-guide__identity-conflict');
+              alert.append(make('strong','',
+                'Controleer de '+field+' bij dit ISBN'));
+              alert.append(make('p','',
+                'In Excel: '+safeText(field==='auteur'
+                  ?relatedRow.book?.author:relatedRow.book?.title)));
+              if(confirmed)
+                alert.append(make('p','',
+                  'Onafhankelijke ISBN-bronnen: '+confirmed));
+              if(issue.sources?.length)
+                alert.append(make('small','',
+                  'Bronnen: '+issue.sources.join(', ')));
+              alert.append(make('p','',
+                'Controleer de fysieke editie. Er wordt niets automatisch '
+                +'aan de bestaande auteur of titel veranderd.'));
+              card.append(alert);
+            }
+          }
 
           if(group.stock.length){
             const check=make('section','bb-guide__check');
@@ -1340,6 +1358,9 @@
                 proposed.title+' · Auteur: '+safeText(proposed.author)
                   +' · ISBN '+(proposed.editionIsbn||'ontbreekt')));
               check.append(compare);
+              if(proposed.sources?.length)
+                check.append(make('p','bb-guide__candidate-sources',
+                  'Gevonden via '+proposed.sources.join(' en ')));
               if(proposed.identityWarning)
                 check.append(make('p','bb-guide__attention',
                   'Let op: deze kandidaat heeft een afwijkende titel of '
@@ -2995,13 +3016,21 @@
           :stage.mode==='unified_sync'?guidedStep:1;
       for(let index=0;index<stepNodes.length;index++){
         stepNodes[index].classList.toggle('bb-import__step--active',index===activeStep);
+        const navigable=stage?.status==='open'
+          &&stage.mode==='unified_sync'&&index>0
+          &&!(index===3&&guidedStep===1);
+        stepNodes[index].disabled=!navigable;
         if(index===activeStep)stepNodes[index].setAttribute('aria-current','step');
         else stepNodes[index].removeAttribute('aria-current');
       }
-      results.replaceChildren();
-      deferredPanel.hidden=Boolean(stage&&['preparing','open','reviewing','applying']
+      const activeImport=Boolean(stage&&['preparing','open','reviewing','applying']
         .includes(stage.status));
-      form.hidden = Boolean(stage && ['preparing', 'open', 'reviewing', 'applying'].includes(stage.status));
+      root.classList.toggle('bb-review--active',activeImport);
+      header.querySelector('.hint').hidden=activeImport;
+      enrichmentExtra.hidden=activeImport;
+      results.replaceChildren();
+      deferredPanel.hidden=activeImport;
+      form.hidden=activeImport;
       if (!stage) return;
       if (stage.status === 'preparing' || stage.status === 'reviewing' || stage.status === 'applying') {
         const messages = {
