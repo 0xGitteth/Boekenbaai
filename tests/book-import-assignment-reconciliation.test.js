@@ -38,6 +38,60 @@ const loanTo=(id,name)=>({studentLoan:{status:'matched',id,name}});
 const classLoan=(id,name)=>({classLoan:{status:'matched',id,name}});
 const now='2026-11-12T12:00:00.000Z';
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
+const {withMissingExcelLoans}=require('../book-import-unified-sync');
+{
+  // Dex has three active books in Boekenbaai, but only two are present in
+  // a complete new Excel. The extra book must be a question, not an
+  // automatic return or an invented historical checkout.
+  const isbn2='9780439554930',isbn3='9780061120084';
+  const live={
+    books:[
+      copy('dex-1','47001',{metadataIsbn:ISBN,borrowedBy:'dex',status:'borrowed'}),
+      copy('dex-2','47002',{metadataIsbn:isbn2,borrowedBy:'dex',status:'borrowed',
+        title:'Tweede boek',author:'Auteur B'}),
+      copy('dex-3','47003',{metadataIsbn:isbn3,borrowedBy:'dex',status:'borrowed',
+        title:'Derde boek',author:'Auteur C'}),
+    ],
+    students:[{id:'dex',name:'Dex',borrowedBooks:[
+      {bookId:'dex-1'},{bookId:'dex-2'},{bookId:'dex-3'},
+    ]}],
+    classes:[],history:[],
+  };
+  const source={ok:true,rows:[
+    row(0,'47001',loanTo('dex','Dex')),
+    row(1,'47002',loanTo('dex','Dex'),{
+      editionIsbn:isbn2,title:'Tweede boek',author:'Auteur B',
+    }),
+  ]};
+  const partial=withMissingExcelLoans(source,live,false);
+  assert.equal(partial.rows.length,2,
+    'A partial Excel is not authoritative over unlisted loans');
+  const full=withMissingExcelLoans(source,live,true);
+  assert.equal(full.rows.length,3);
+  assert.equal(full.rows[2].missingFromExcel,true);
+  assert.equal(full.preferredCopyByRow[2],'dex-3');
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true,
+    loanReceipts:[],preferredCopyByRow:full.preferredCopyByRow};
+  const check=buildAssignmentPreview(full,live,[],options);
+  assert.equal(check.ok,true);
+  assert.equal(check.differences.length,1);
+  assert.equal(check.differences[0].bookId,'dex-3');
+  assert.equal(check.differences[0].missingFromSnapshot,true);
+  assert.equal(check.differences[0].choice,'pending');
+  assert.equal(live.books.filter(b=>b.status==='borrowed').length,3);
+  const chosen=buildAssignmentPreview(full,live,[
+    {id:check.differences[0].id,action:'apply'},
+  ],options);
+  assert.equal(chosen.ok,true);
+  assert.equal(chosen.summary.readyToApply,true);
+  applyAssignmentPreview(live,chosen,'admin',now,'dex-import',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books.filter(b=>b.status==='borrowed').length,2);
+  assert.deepEqual(live.students[0].borrowedBooks.map(x=>x.bookId),
+    ['dex-1','dex-2']);
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+}
+
 
 // A previously imported Excel borrower disappearing from the next Excel
 // must be shown as a decision, never treated as a silent return.
