@@ -246,7 +246,15 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
       } else found.push({id:row.index+':issue',rowIndex:row.index,
         worksheetRow:row.sourceRowNumber,title:row.book?.title||'',
         editionIsbn:row.book?.editionIsbn||'',
-        kind:'issue',reason:located.error,bookId:null});
+        kind:'issue',reason:located.error,bookId:null,
+        sourceStatus:row.status,
+        sourceIssues:(row.issues||[]).filter(issue=>
+          issue.severity==='conflict').map(issue=>issue.code),
+        excelFixedLocation:context.fixedLocation?.raw
+          ||context.fixedLocation?.label||'',
+        excelStudent:context.studentLoan?.name||'',
+        excelClass:context.studentClassHint?.label
+          ||context.classLoan?.name||context.classContext?.join('; ')||''});
       continue;
     }
     usedCopies.add(located.copy.id);
@@ -367,8 +375,20 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     const explicitlySelected=selected.get(d.id);
     const automatic=!explicitlySelected && (d.kind==='loan'||d.kind==='location')
       && !d.blankSource && !d.reason;
-    d.choice=explicitlySelected||(automatic?'apply':'pending');
-    d.automatic=Boolean(automatic);
+    // If the underlying source row has a genuine identity/borrower
+    // conflict, there is no actionable location/loan difference yet.
+    // Do not ask the teacher to compare two invented "no location" values.
+    // Keep existing records unchanged and defer the specific source context.
+    const blockedSource=d.kind==='issue'
+      &&d.reason==='source_row_requires_review';
+    d.choice=explicitlySelected||(blockedSource?'later'
+      :automatic?'apply':'pending');
+    d.automatic=Boolean(automatic||blockedSource);
+    if(blockedSource){
+      d.autoDeferred=true;
+      d.description='De Excelrij heeft nog een onopgelost bronconflict. '
+        +'De uitlening en klaslocatie worden niet automatisch gewijzigd.';
+    }
   }
   // Two different copies of the same ISBN may not be assigned to one pupil.
   // If this arises solely from automatic suggestions, keep the import open
