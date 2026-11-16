@@ -1427,15 +1427,17 @@
                 +'bestaande exemplaren en uitleningen worden niet gewijzigd.'));
               // A verified title conflict must offer the actual suggested
               // title. A generic stock approval is not a title correction.
-              if(field==='titel'&&confirmed&&relatedRow.index!==undefined){
+              if(confirmed&&relatedRow.index!==undefined){
+                const changedField=field==='titel'?'title':'author';
+                const label=field==='titel'?'titel':'auteur';
                 const actions=make('div','bb-guide__actions');
-                addAction(actions,'Mijn boek heet: '+confirmed,()=>{
-                  updateCorrection(relatedRow.index,'title',confirmed);
+                addAction(actions,'Op mijn boek staat deze '+label+': '+confirmed,()=>{
+                  updateCorrection(relatedRow.index,changedField,confirmed);
                   void recheck();
                 },true);
-                addAction(actions,'Mijn boek heeft de Excel-titel',()=>{
-                  updateCorrection(relatedRow.index,'title',
-                    relatedRow.book?.title||'');
+                addAction(actions,'De '+label+' uit Excel klopt',()=>{
+                  updateCorrection(relatedRow.index,changedField,
+                    relatedRow.book?.[changedField]||'');
                   void recheck();
                 });
                 alert.append(actions);
