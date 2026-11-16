@@ -245,9 +245,16 @@ function selection(db,{answers=[],excludeQuestionIds=[],seed='',route='new'}={})
   const works=new Map();
   for(const book of books){
     const k=normalize(book.title)+'|'+normalize(book.author);
-    if(!works.has(k))works.set(k,book);
+    if(!works.has(k))works.set(k,new Map());
+    // Copies of one work may have different enrichment completeness.
+    // Pool verified signals across all copies, as recommendation grouping
+    // already does, instead of trusting only the first physical copy.
+    const profile=works.get(k);
+    for(const [trait,evidence] of traitsForBook(book)){
+      profile.set(trait,Math.max(evidence,profile.get(trait)||0));
+    }
   }
-  const profiles=[...works.values()].map(book=>traitsForBook(book));
+  const profiles=[...works.values()];
   const scored=profiles.map(t=>scoreTraits(t,weights).value);
   const top=profiles.map((t,i)=>({traits:t,score:scored[i]}))
     .sort((a,b)=>b.score-a.score).slice(0,Math.min(24,profiles.length));
