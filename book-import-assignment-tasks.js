@@ -203,11 +203,14 @@ function correctionPreview(db, task, choice) {
   const formerlyInExcel=task.kind==='loan'
     &&task.original?.previouslyRecordedInExcel===true
     &&task.original?.after?.type==='none';
+  const missingSnapshot=formerlyInExcel
+    &&task.original?.missingFromSnapshot===true;
   const borrower=task.original?.before;
   const receipt=formerlyInExcel
     ?excelLoanReceiptKey(task.bookId,borrower):null;
   const options={preferredCopyByRow:{0:task.bookId},
-    ...(receipt?{reviewMissingLoans:true,loanReceipts:[receipt]}:{})};
+    ...(receipt?{reviewMissingLoans:true,loanReceipts:[receipt]}:{}),
+    ...(missingSnapshot?{reviewAllBlankLoans:true}:{})};
   const initial = buildAssignmentPreview({ ok:true, rows:[row] }, db, [], options);
   if (!initial.ok) return {ok:false,error:'review_no_longer_safe'};
   const diff = initial.differences.find(item =>
