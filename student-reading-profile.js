@@ -1,4 +1,5 @@
 'use strict';
+const {borrowEvents}=require('./book-loan-history-admin');
 
 // Student-only reading overview, built from persisted reading answers and
 // current loan records. Old circulation logs are retained only in a bounded
@@ -117,7 +118,7 @@ function buildStudentReadingProfile(db, studentId, { page = 0, pageSize = 50, no
   // Historic checkout without a saved Ja/Nee record: keep it visible as
   // "Niet geregistreerd". Match records by loan start and exact copy ID
   // so completed periods are not incorrectly shown twice.
-  const checkouts = (db.history || []).filter(x =>
+  const checkouts = borrowEvents(db).filter(x =>
     x && x.studentId === studentId && x.type === 'check_out' && x.bookId);
   for (const log of checkouts) {
     const known = entries.some(entry => entry.bookId === log.bookId &&
