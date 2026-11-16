@@ -1616,10 +1616,10 @@
             const suggestions=allSuggestions.filter(option=>
               typeof option.editionIsbn==='string'
               &&/^97[89][0-9]{10}$/.test(option.editionIsbn));
-            if(!source.book?.editionIsbn){
-              const raw=source.identifierAnalysis?.explicit?.raw
-                ||source.identifierAnalysis?.legacy?.raw
-                ||source.identifierAnalysis?.ambiguous?.raw||'';
+            if(!source?.book?.editionIsbn){
+              const raw=source?.identifierAnalysis?.explicit?.raw
+                ||source?.identifierAnalysis?.legacy?.raw
+                ||source?.identifierAnalysis?.ambiguous?.raw||'';
               const identifierHint=make('p','bb-guide__count-note',
                 raw?'In Excel staat '+raw+'. Dit is nog geen bevestigd ISBN '
                   +'van deze editie.'
