@@ -133,4 +133,34 @@ assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
   assert.equal(active.examReadingLists.length,1);
 }
 
+
+// A deleted original copy is no longer available in the stock table. Its
+// edition-wide exam record still identifies the title, so another valid
+// completed reading or active loan of that edition must retain the entry.
+{
+  const isbn='9780306406157';
+  const active={
+    students:[{id:'s',name:'Student',borrowedBooks:[{bookId:'b'}]}],
+    books:[{id:'b',title:'Titel',editionIsbn:isbn,
+      status:'borrowed',borrowedBy:'s'}],
+    history:[{id:'bad',type:'check_out',bookId:'deleted-a',studentId:'s',
+      timestamp:'2026-09-01'}],
+    bookLoanEvents:[],bookLoanPeriods:[],
+    readingRecords:[{id:'finished-b',subjectType:'student',subjectId:'s',
+      bookId:'b',finished:true,editionKey:'isbn13||'+isbn}],
+    examReadingLists:[{id:'exam',studentId:'s',bookId:'deleted-a',
+      editionKey:'isbn13||'+isbn,addedManually:false}],
+  };
+  const historical=searchHistory(active,{student:'Student'})
+    .find(item=>item.bookId==='deleted-a');
+  assert.ok(historical);
+  const removed=removeFalseHistory(active,admin,{studentId:'s',
+    bookId:'deleted-a',expectedFingerprint:historical.fingerprint,confirm:true});
+  assert.equal(removed.ok,true);
+  assert.equal(removed.examEntriesRemoved,0);
+  assert.equal(active.examReadingLists.length,1);
+  assert.equal(active.readingRecords.length,1);
+  assert.equal(active.books[0].borrowedBy,'s');
+}
+
 console.log('Durable circulation history, admin deletion and preservation: OK');
