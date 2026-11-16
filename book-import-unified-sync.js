@@ -282,6 +282,20 @@ function withMissingExcelLoans(source,db,enabled=false,assignmentDb=db){
   }
   return {...source,rows,preferredCopyByRow};
 }
+// Restore the final metadata for deferred synthetic loan-review rows, while
+// retaining their preview row indices and selected physical copy IDs.
+// A title/author update in the same import must not make the task unresolvable.
+function refreshDeferredSnapshotRows(rows,differences,books) {
+  const ids=new Map((differences||[]).filter(d=>d.bookId
+    &&Number.isSafeInteger(d.rowIndex)).map(d=>[d.rowIndex,d.bookId]));
+  const copies=new Map((books||[]).map(copy=>[copy.id,copy]));
+  return (rows||[]).map(row=>{
+    if(!row.missingFromExcel)return row;
+    const copy=copies.get(ids.get(row.index));
+    if(!copy)return row;
+    return {...row,book:{...row.book,title:copy.title,author:copy.author}};
+  });
+}
 function projectCopies(analysis,inventory,parts,db,effectiveIdentityUpdates=new Set()){
   const copies=[];
   for(const addition of inventory.proposedAdds){
@@ -948,5 +962,5 @@ module.exports={
   DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
   shouldApplyMetadataToCreatedCopy,buildUnifiedBookImport,actualAssignmentPreview,
-  rebaseStaleAssignmentChoices,withMissingExcelLoans,
+  rebaseStaleAssignmentChoices,withMissingExcelLoans,refreshDeferredSnapshotRows,
 };
