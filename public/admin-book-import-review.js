@@ -1289,10 +1289,16 @@
             guidedStep=2;
           }
           storeGuidedPosition();
-          setNotice(current.readyToApply
-            ?'Alle controles zijn afgerond. Bekijk de eindcontrole.'
-            :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
-              +'Je kunt verdergaan bij het boek waar je gebleven was.');
+          const reconciled=Number(response.reconciledAssignmentChoices)||0;
+          setNotice(reconciled
+            ?'Je boekcorrecties zijn opgeslagen. '+reconciled
+              +' verouderde keuze(s) voor uitlening of locatie zijn veilig '
+              +'opnieuw beoordeeld. Controleer eventuele openstaande '
+              +'administratieve punten in het eindoverzicht.'
+            :current.readyToApply
+              ?'Alle controles zijn afgerond. Bekijk de eindcontrole.'
+              :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
+                +'Je kunt verdergaan bij het boek waar je gebleven was.');
         },'De keuzes worden opgeslagen en veilig opnieuw berekend…');
       };
       const explain=(host,code)=>{
