@@ -1410,4 +1410,31 @@ assert.equal(normalizeParts(undefined).value.books,true);
     'A matching ISBN-only borrower row represents the existing physical loan');
 }
 
+
+// A complete snapshot that adds a new physical copy must retain the exact
+// reviewed synthetic row for Alice's missing loan. Reconstructing against
+// old stock would wrongly allocate Bob's loan to Alice's copy instead.
+{
+  const current=db();
+  current.books=[current.books[0]];
+  const result=plan([
+    source(0,loan('tim','Tim Leerling'),{barcode:''}),
+    source(1,{},{barcode:''}),
+  ],current,{
+    parts:parts({books:true,loans:true}),
+    loanHistoryMode:'correct',fullLoanSnapshot:true,
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.newCopies,1);
+  const alice=result.assignments.differences.find(d=>d.missingFromSnapshot);
+  assert.ok(alice,'Existing Alice loan must be checked against new stock');
+  assert.equal(alice.bookId,'copy-1');
+  const row=result.reviewedAssignmentRows.find(r=>r.index===alice.rowIndex);
+  assert.ok(row,'Deferred task source must be the exact reviewed synthetic row');
+  assert.equal(row.missingFromExcel,true);
+  assert.equal(row.book.title,'Oorlogswinter');
+  assert.equal(result.assignments.differences.find(d=>d.after?.id==='tim')
+    ?.bookId.startsWith('virtual:'),true);
+}
+
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
