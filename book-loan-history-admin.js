@@ -4,6 +4,8 @@
 // wrong historical student-book relationships. Current live loans are never
 // touched by these operations.
 const crypto = require('node:crypto');
+const {noteLoanActivity,circulationRevision}=require('./book-import-followups');
+const {persistExcelLoanReceipts}=require('./book-import-loan-migration');
 const norm = x => String(x || '').normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
 const eventTypes = new Set(['check_out','check_in','check_out_class','check_in_class']);
 function borrowEvents(db){
@@ -70,6 +72,80 @@ function fingerprint(group){
     group.periods.map(x=>x.id).sort(),
     group.exams.map(x=>x.id).sort(),
   ])).digest('hex');
+}
+function activeFingerprint(db,copy){
+  return crypto.createHash('sha256').update(JSON.stringify([
+    copy.id,copy.status,copy.borrowedBy||'',
+    copy.borrowedByClassId||'',copy.borrowedAt||'',copy.dueDate||'',
+    circulationRevision(db,copy.id),
+  ])).digest('hex');
+}
+function listCurrentLoans(db,{borrower='',book='',limit=100}={}){
+  const people=new Map((db.students||[]).map(item=>[item.id,item]));
+  const classes=new Map((db.classes||[]).map(item=>[item.id,item]));
+  const owner=norm(borrower),title=norm(book);
+  const current=[];
+  for(const copy of db.books||[]){
+    if(copy.status!=='borrowed')continue;
+    const type=copy.borrowedBy?'student':copy.borrowedByClassId?'class':null;
+    if(!type)continue;
+    const holder=type==='student'?people.get(copy.borrowedBy)
+      :classes.get(copy.borrowedByClassId);
+    const name=String(holder?.name||'Onbekende lener');
+    if(owner&&!norm(name).includes(owner))continue;
+    if(title&&!norm(copy.title).includes(title))continue;
+    current.push({
+      bookId:copy.id,title:copy.title||'',author:copy.author||'',
+      barcode:copy.barcode||'',borrowerType:type,
+      borrowerId:type==='student'?copy.borrowedBy:copy.borrowedByClassId,
+      borrowerName:name,borrowedAt:copy.borrowedAt||null,
+      fingerprint:activeFingerprint(db,copy),
+    });
+  }
+  return current.sort((a,b)=>a.borrowerName.localeCompare(b.borrowerName,'nl')
+    ||a.title.localeCompare(b.title,'nl')).slice(0,Math.max(1,Math.min(limit,250)));
+}
+function removeFalseCurrentLoan(db,actor,input,now=new Date().toISOString()){
+  if(actor?.role!=='admin')return {ok:false,error:'forbidden'};
+  if(input?.confirm!==true||!input.bookId||!input.borrowerId
+    ||!['student','class'].includes(input.borrowerType)
+    ||typeof input.expectedFingerprint!=='string')
+    return {ok:false,error:'invalid_request'};
+  const copy=(db.books||[]).find(book=>book.id===input.bookId);
+  if(!copy||copy.status!=='borrowed')
+    return {ok:false,error:'loan_not_active'};
+  const actualType=copy.borrowedBy?'student':copy.borrowedByClassId?'class':null;
+  const actualId=actualType==='student'?copy.borrowedBy:copy.borrowedByClassId;
+  if(actualType!==input.borrowerType||actualId!==input.borrowerId
+    ||activeFingerprint(db,copy)!==input.expectedFingerprint)
+    return {ok:false,error:'loan_changed'};
+  if(actualType==='student'){
+    const student=(db.students||[]).find(item=>item.id===actualId);
+    if(!student||!Array.isArray(student.borrowedBooks)
+      ||!student.borrowedBooks.some(item=>
+        (typeof item==='string'?item:item?.bookId)===copy.id))
+      return {ok:false,error:'student_record_mismatch'};
+    student.borrowedBooks=student.borrowedBooks.filter(item=>
+      (typeof item==='string'?item:item?.bookId)!==copy.id);
+  }
+  persistExcelLoanReceipts(db,[{
+    bookId:copy.id,borrower:{type:actualType,id:actualId},
+  }]);
+  copy.status='available';
+  copy.borrowedBy=null;
+  copy.borrowedByClassId=null;
+  copy.borrowedAt=null;
+  copy.dueDate=null;
+  noteLoanActivity(db,copy.id);
+  if(!Array.isArray(db.bookLoanCurrentCorrectionAudit))
+    db.bookLoanCurrentCorrectionAudit=[];
+  db.bookLoanCurrentCorrectionAudit.push({
+    id:crypto.randomUUID(),bookId:copy.id,borrowerId:actualId,
+    borrowerType:actualType,performedBy:actor.id,at:now,
+    reason:'incorrect_current_loan',
+  });
+  return {ok:true,bookId:copy.id,activeLoanRemoved:true,
+    historyUnchanged:true};
 }
 function searchHistory(db,{student='',book='',limit=100}={}){
   const studentQuery=norm(student),bookQuery=norm(book);
@@ -164,4 +240,4 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
     examEntriesRemoved:examIds.size,activeLoanUnchanged:true};
 }
 module.exports={appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
-  removeFalseHistory,fingerprint};
+  removeFalseHistory,fingerprint,listCurrentLoans,removeFalseCurrentLoan};
