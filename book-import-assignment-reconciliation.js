@@ -326,9 +326,15 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     // should be administratively returned. It needs classification first.
     const classContextOnly = Array.isArray(info.classContext) && info.classContext.length
       && !info.studentLoan && !info.classLoan;
+    // A complete, explicitly confirmed snapshot can propose replacing a
+    // mistaken class loan with a permanent classroom location. Never
+    // infer a return from a partial file or an empty location cell.
+    const classLoanToFixed=options.reviewAllBlankLoans===true
+      &&info.fixedLocation?.status==='resolved'
+      &&!info.studentLoan&&!info.classLoan&&current.type==='class';
     const emptiedExcelLoan=options.reviewMissingLoans===true
       &&!info.studentLoan&&!info.classLoan&&current.type!=='none'
-      &&wasPreviouslyImportedLoan(copy);
+      &&(wasPreviouslyImportedLoan(copy)||classLoanToFixed);
     if((info.studentLoan||info.classLoan||emptiedExcelLoan) && !classContextOnly
       && (current.type!==desired.type || current.id!==desired.id)) {
       if(current.type!=='none'||desired.type!=='none') {
@@ -346,7 +352,12 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
           blankSource:desired.type==='none',
           previouslyRecordedInExcel:emptiedExcelLoan,
           missingFromSnapshot:row.missingFromExcel===true,
-          description:row.missingFromExcel===true
+          classLoanToFixed,
+          description:classLoanToFixed
+            ?'Excel geeft dit boek een vaste klaslocatie in plaats van een klasuitlening. '
+              +'Controleer of de foutieve klasuitlening moet vervallen. '
+              +'Dit is geen geregistreerde inlevering.'
+            :row.missingFromExcel===true
             ?'Dit boek staat nog als uitgeleend, maar ontbreekt volledig '
               +'in de aangeleverde volledige actuele uitleenlijst. '
               +'Controleer of het boek is ingeleverd of de registratie fout was.'
@@ -384,11 +395,22 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     }else{
       const old=String(copy.fixedLocation||'').trim();
       const next=String(location.value||'').trim();
-      if(location.provided && old!==next){
+      const classFixedToLoan=options.reviewAllBlankLoans===true
+        &&info.classLoan&&info.classLoan.status==='matched'
+        &&!info.fixedLocation&&Boolean(old);
+      if((location.provided && old!==next)||classFixedToLoan){
         differences.push({...base,id:row.index+':location',kind:'location',
-          before:old,after:next,blankSource:!location.provided,reason:'',
-          description:location.provided?'Excel vermeldt een andere vaste plek.'
-            :'Excel vermeldt geen vaste plek. Dit bewijst niet dat de plek is vervallen.'});
+          before:old,after:classFixedToLoan?'':next,
+          blankSource:classFixedToLoan||!location.provided,reason:'',
+          classFixedToLoan,requiresLoanCorrection:classLoanToFixed,
+          description:classFixedToLoan
+            ?'Excel vermeldt een klasuitlening, maar dit exemplaar heeft ook '
+              +'een vaste klaslocatie. Controleer of de oude vaste locatie '
+              +'foutief was en verwijderd moet worden.'
+            :classLoanToFixed
+              ?'Excel vermeldt een vaste klaslocatie. Controleer dit samen '
+                +'met de bestaande klasuitlening, voordat je bevestigt.'
+              :'Excel vermeldt een andere vaste plek.'});
       }
     }
   }
@@ -411,7 +433,7 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
   for(const d of differences) {
     const explicitlySelected=selected.get(d.id);
     const automatic=!explicitlySelected && (d.kind==='loan'||d.kind==='location')
-      && !d.blankSource && !d.reason;
+      && !d.blankSource && !d.reason && !d.requiresLoanCorrection;
     // If the underlying source row has a genuine identity/borrower
     // conflict, there is no actionable location/loan difference yet.
     // Do not ask the teacher to compare two invented "no location" values.
