@@ -4028,7 +4028,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           clearInterval(progressPoll);
         }
         rememberResponse(payload);
-        setNotice('Preview gereed. De bibliotheek is nog niet gewijzigd.');
+        const reusedFields=Number(payload.remembered?.fieldsReused||0);
+        const reusedMetadata=Number(payload.decisions?.summary?.reusedPreviousMetadata||0);
+        setNotice(reusedFields||reusedMetadata
+          ?'Preview gereed. '+(reusedFields+reusedMetadata)
+            +' eerdere goedgekeurde boekkeuzes herkend en veilig overgenomen. '
+            +'Je kunt de keuzes nog controleren. De bibliotheek is nog niet gewijzigd.'
+          :'Preview gereed. De bibliotheek is nog niet gewijzigd.');
       }, 'Het Excelbestand wordt gecontroleerd…').finally(()=>{
         updateSetupProgress(null);
       });
