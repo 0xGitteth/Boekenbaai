@@ -275,16 +275,19 @@ async function run(){
 
     // A selected Tags column must never import the derived "strip" tag
     // from Examenmateriaal, including after a human review correction.
-    for (const [correction,expected] of [
+    for (const [index,[correction,expected]] of [
       [{tags:'mysterie'},['mysterie']],
       [{tags:'fantasie',examMaterial:'Strip'},['fantasie']],
-    ]) {
+    ].entries()) {
+      // A repeat of the exact same original row now reuses its previously
+      // approved correction; use distinct source tags for independent tests.
+      const originalTag=index===0?'avontuur':'expeditie';
       const tagsOnly=await start([
-        old('',{Tags:'avontuur',Examenmateriaal:'Strip'}),
+        old('',{Tags:originalTag,Examenmateriaal:'Strip'}),
       ],parts({fields:{tags:true}}));
       assert.equal(tagsOnly.status,201,JSON.stringify(tagsOnly.data));
       assert.deepEqual(tagsOnly.data.decisions.metadata.updates[0].value,
-        ['avontuur'],'Initial selected tags must exclude derived strip');
+        [originalTag],'Initial selected tags must exclude derived strip');
       const correctedTags=await call(
         '/api/admin/book-import-stages/'+tagsOnly.data.id+'/review',token,{
         revision:tagsOnly.data.revision,
