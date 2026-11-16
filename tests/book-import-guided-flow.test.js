@@ -25,6 +25,13 @@ const {analyzeReviewedImport}=require('../book-import-review');
   });
   const analysis=await analyzeReviewedImport(original);
   assert.equal(analysis.rows[0].sourceRowNumber,21);
+  const actualProgress=[];
+  await analyzeReviewedImport(original,[],{
+    onRowProgress:({completed,total})=>
+      actualProgress.push({completed,total}),
+  });
+  assert.deepEqual(actualProgress,[{completed:1,total:1}],
+    'The server must report actual completed rows, not an estimated timer');
   const store=createImportStageStore(config);
   const created=store.create({
     ownerId:'administrator',sourceRows:original,analysis,
@@ -215,6 +222,26 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Cancel actions must have lower visual emphasis than confirmation');
   assert.ok(css.includes('.bb-review--active'),
     'The active import should not have multiple nested framing borders');
+  assert.ok(ui.includes('Mijn boek heet: '+''+''), 
+    'Confirmed ISBN titles need an explicit suggested-title action');
+  assert.ok(ui.includes('Mijn boek heeft de Excel-titel'),
+    'Choosing the printed Excel title must be possible');
+  assert.ok(ui.includes('const pendingMetadata=group.metadata.filter('),
+    'One confirmed title choice should not create a duplicate metadata decision');
+  assert.ok(ui.includes('void recheck();')&&ui.includes('Overslaan ongedaan maken'),
+    'Skipping a book must recalculate the review queue');
+  assert.ok(ui.includes("updateSetupProgress('analyzing',completed,total)"),
+    'Setup must use real server row counts');
+  assert.ok(ui.includes("const progressPoll=setInterval(async()=>"),
+    'Setup must continue polling while the server is analyzing');
+  assert.ok(ui.includes("file.addEventListener('change',()=>"),
+    'A new file must clear stale cancellation notices');
+  assert.ok(ui.includes('draftSaveIssue='),
+    'Failed autosaves must show persistent actionable feedback');
+  assert.ok(server.includes('progress:activeStage.progress||null'),
+    'Active import must expose only safe completed-row progress');
+  assert.ok(server.includes('onRowProgress:({completed,total})=>'),
+    'Server analysis must update per-row progress');
   assert.ok(server.includes('bookImportStageStore.saveDraft('),
     'Autosave must be stored server-side, never just in localStorage');
   assert.ok(server.includes('bookImportDeferredBookChecks'),
