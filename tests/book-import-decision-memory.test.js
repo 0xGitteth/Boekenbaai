@@ -1,6 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {sourceIdentity,safeRowReplays,recordBookReviewChoices}=require('../book-import-decision-memory');
+const {sourceIdentity,safeRowReplays,recordBookReviewChoices,
+  recordMetadataReviewChoices}=require('../book-import-decision-memory');
 const ISBN='9780306406157';
 const initial={
   'Titel':'Ravelijn','Auteur':'Paul van Loon',
@@ -61,4 +62,13 @@ recordBookReviewChoices(contradictory,[initial,{...initial}],[
 ],{rows:[corrected.rows[0],corrected.rows[0]]},'same-batch','2026-11-16T20:02:00Z');
 assert.equal(contradictory.bookImportDecisionMemory.length,0,
   'Conflicting choices for indistinguishable physical copies must not be learned');
+const metadataOnly={books:[db.books[0]]};
+assert.equal(recordMetadataReviewChoices(metadataOnly,[{
+  isbn:ISBN,field:'title',confidence:'manual',
+  action:'keep',excel:'Ravelijn',after:'Raveleijn',
+},{
+  isbn:ISBN,field:'loan',confidence:'manual',after:'Dex',excel:'Lisa',
+}], 'meta-1','2026-11-16T22:00:00Z'),1);
+assert.deepEqual(metadataOnly.bookImportManualMetadataMemory.map(x=>x.field),
+  ['title'],'No pupil/loan decisions may enter durable metadata memory');
 console.log('Durable book import memory: reuse, changed source, post-edit, skip, privacy and ambiguity OK');
