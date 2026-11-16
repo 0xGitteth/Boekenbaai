@@ -7,6 +7,37 @@ const {createImportStageStore}=require('../book-import-stage');
 const {analyzeReviewedImport}=require('../book-import-review');
 
 (async()=>{
+  const {pathToFileURL}=require('node:url');
+  const {deferredAdministrativeRows,requiresBookReview,
+    countUnresolvedBookWarnings}=await import(pathToFileURL(
+      path.resolve(__dirname,'../public/admin-book-import-queue.mjs')));
+  const deferred=deferredAdministrativeRows([
+    {rowIndex:0,kind:'issue',autoDeferred:true,choice:'later'},
+    {rowIndex:1,kind:'issue',autoDeferred:true,choice:'later'},
+    {rowIndex:3,kind:'loan',choice:'pending'},
+  ]);
+  assert.deepEqual([...deferred],[0,1]);
+  const adminIssue={code:'student_loan_unmatched',severity:'conflict'};
+  const classIssue={code:'class_loan_unmatched',severity:'conflict'};
+  const isbnIssue={code:'invalid_or_unrecognized_isbn',severity:'conflict'};
+  const legacyIssue={code:'possible_existing_book_without_isbn',
+    severity:'conflict'};
+  assert.equal(requiresBookReview(adminIssue,0,deferred),false,
+    'A safely deferred student match must not create a dead-end book card');
+  assert.equal(requiresBookReview(classIssue,1,deferred),false);
+  assert.equal(requiresBookReview(adminIssue,2,deferred),true,
+    'Unknown, nondeferred source conflicts must never be hidden');
+  assert.equal(requiresBookReview(isbnIssue,0,deferred),true,
+    'An ISBN conflict must remain visible even on a row with a deferred loan');
+  assert.equal(requiresBookReview(legacyIssue,0,deferred),true,
+    'A potential physical duplicate must never be silently imported');
+  const shown=countUnresolvedBookWarnings([
+    {index:0,issues:[adminIssue,isbnIssue]},
+    {index:1,issues:[classIssue]},
+    {index:2,issues:[legacyIssue]},
+  ],deferred);
+  assert.equal(shown,2,
+    'Only two physically actionable conflicts need book-review acknowledgment');
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'boekenbaai-guided-'));
   const draftFile=path.join(temp,'active-private-import.json');
   let clock=1730000000000;
