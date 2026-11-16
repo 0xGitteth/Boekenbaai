@@ -6,6 +6,7 @@
 const crypto = require('node:crypto');
 const {noteLoanActivity,circulationRevision}=require('./book-import-followups');
 const {persistExcelLoanReceipts}=require('./book-import-loan-migration');
+const {canonicalizeBookIsbn13}=require('./book-edition-core');
 const norm = x => String(x || '').normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
 const eventTypes = new Set(['check_out','check_in','check_out_class','check_in_class']);
 function borrowEvents(db){
@@ -217,7 +218,25 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
   const logIds=new Set(group.logs.map(item=>item.id));
   const readingIds=new Set(group.readings.map(item=>item.id));
   const periodIds=new Set(group.periods.map(item=>item.id));
-  const examIds=new Set(group.exams.map(item=>item.id));
+  // Exam entries are edition-wide, even if their bookId still points to
+  // the first physical copy that created the entry. A later completed
+  // reading of another copy must survive deletion of this false history.
+  const booksById=new Map((db.books||[]).map(copy=>[copy.id,copy]));
+  const edition=copy=>canonicalizeBookIsbn13(copy?.editionIsbn)
+    ||canonicalizeBookIsbn13(copy?.metadataIsbn)
+    ||canonicalizeBookIsbn13(copy?.isbn13)
+    ||canonicalizeBookIsbn13(copy?.barcode);
+  const removedEdition=edition(booksById.get(bookId));
+  const retainedReading=(db.readingRecords||[]).some(record=>
+    record.subjectType==='student'&&record.subjectId===studentId
+    &&record.finished===true&&!readingIds.has(record.id)
+    &&removedEdition&&edition(booksById.get(record.bookId))===removedEdition);
+  const retainedCurrentLoan=(db.books||[]).some(copy=>
+    copy.id!==bookId&&copy.status==='borrowed'
+    &&copy.borrowedBy===studentId&&removedEdition
+    &&edition(copy)===removedEdition);
+  const examIds=retainedReading||retainedCurrentLoan
+    ?new Set():new Set(group.exams.map(item=>item.id));
   db.history=(db.history||[]).filter(item=>!logIds.has(item.id));
   db.bookLoanEvents=(db.bookLoanEvents||[]).filter(item=>!logIds.has(item.id));
   db.readingRecords=(db.readingRecords||[]).filter(item=>!readingIds.has(item.id));
