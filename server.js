@@ -5396,6 +5396,13 @@ async function handleApi(req, res, requestUrl) {
           message:'Selecteer welke onderdelen of kolommen je wilt synchroniseren.',
           error:selectedParts.error,
         });
+        const loanHistoryMode=mode==='unified_sync'&&selectedParts.value.loans
+          ?(body.loanHistoryMode===undefined?'correct':body.loanHistoryMode)
+          :null;
+        if(loanHistoryMode!==null
+          &&!['preserve','correct'].includes(loanHistoryMode))
+          return sendJson(res,400,{message:'Kies hoe de uitleenhistorie moet worden behandeld.',
+            error:'invalid_loan_history_mode'});
         if (mode === 'assignment_reconcile' && body.enrichIsbn === true) {
           return sendJson(res, 400, { message: 'Administratie corrigeren gebruikt geen externe boekverrijking.', error:'enrichment_not_allowed' });
         }
@@ -5455,7 +5462,7 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, syncParts:selectedParts.value, maxRows: 1500,
+          mode, syncParts:selectedParts.value,loanHistoryMode, maxRows: 1500,
           maxCopies: maxAnalyzedCopies,enrichIsbn,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
@@ -5492,7 +5499,8 @@ async function handleApi(req, res, requestUrl) {
         const latestDatabase = loadDb();
         analysis.decisions = mode === 'unified_sync'
           ? buildUnifiedBookImport(analysis,latestDatabase,{
-            parts:selectedParts.value,loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+            parts:selectedParts.value,loanHistoryMode,
+            loanReceipts:historicalExcelLoanReceipts(latestDatabase),
             existingFollowups:latestDatabase.bookImportFollowups,
           })
           : mode === 'assignment_reconcile'
@@ -5681,7 +5689,8 @@ async function handleApi(req, res, requestUrl) {
           let reviewedAssignmentChoices=assignments.values;
           let rebasedAssignmentCount=0;
           const unifiedParameters={
-            parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
+            parts:stage.options.syncParts,loanHistoryMode:stage.options.loanHistoryMode,
+            acceptWarnings:body.acceptWarnings,
             inventoryResolutions:choices.values,
             metadataResolutions:metadataChoices.values,
             loanReceipts:historicalExcelLoanReceipts(latestDatabase),
@@ -5822,7 +5831,8 @@ async function handleApi(req, res, requestUrl) {
             // by a second non-atomic administrative correction request.
             const isUnified=stage.options.mode==='unified_sync';
             const combined=isUnified?buildUnifiedBookImport(stage.analysis,database,{
-              parts:stage.options.syncParts,acceptWarnings:stage.acceptWarnings,
+              parts:stage.options.syncParts,loanHistoryMode:stage.options.loanHistoryMode,
+              acceptWarnings:stage.acceptWarnings,
               inventoryResolutions:stage.inventoryResolutions,
               assignmentResolutions:stage.assignmentResolutions,
               metadataResolutions:stage.metadataResolutions,
@@ -6137,7 +6147,8 @@ async function handleApi(req, res, requestUrl) {
               }
               const assignments=actualAssignmentPreview(combined.assignments,createdByRow);
               if(assignments.differences.length)
-                corrected=applyAssignmentPreview(database,assignments,user.id,now,batchId);
+                corrected=applyAssignmentPreview(database,assignments,user.id,now,batchId,
+                  {loanHistoryMode:stage.options.loanHistoryMode});
               if(assignments.acknowledgedLoans?.length){
                 // The source Excel also confirms loans that were already
                 // recorded correctly. Persist their receipts so that an old
@@ -6180,6 +6191,7 @@ async function handleApi(req, res, requestUrl) {
                   worksheetRows:item.worksheetRows||[],
                 }));
               report.selectedParts=combined.parts;
+              report.loanHistoryMode=stage.options.loanHistoryMode;
               report.deferredDifferences=deferredDifferences;
               report.fullyReviewed=deferredDifferences.length===0;
               report.corrections=corrected.audit;
