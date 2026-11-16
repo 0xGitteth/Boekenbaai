@@ -535,6 +535,15 @@
     let visibleMatchCards=5;
     let guidedStep=1; // 0 upload, 1 analysis overview, 2 review, 3 final
     let guidedIndex=0;
+    function selectGuidedSourceRow(group,selectedIndex){
+      if(!group)return null;
+      const groupRows=[...group.rows.values()]
+        .sort((a,b)=>a.sourceRowNumber-b.sourceRowNumber);
+      return groupRows.find(row=>row.index===selectedIndex)
+        ||groupRows.find(row=>Array.isArray(row.matchSuggestions)
+          &&row.matchSuggestions.length)
+        ||groupRows[0]||null;
+    }
     // Remember the physical worksheet row, not only a changing queue index.
     // A review may remove or reorder cards while the import is being checked.
     let guidedRecheckFocus=null;
@@ -1179,11 +1188,10 @@
         // Capture the card BEFORE the server rebuilds its queue. An ISBN
         // correction may change the group key, so the row index is stable.
         const reviewingBook=guidedStep===2?queue[guidedIndex]:null;
-        const selectedRowIndex=reviewingBook
-          ?(guidedSelectedRow.get(reviewingBook.key)
-            ??reviewingBook.rows.keys().next().value):null;
-        const focus=reviewingBook
-          ?{rowIndex:selectedRowIndex,index:guidedIndex}:null;
+        const currentSource=selectGuidedSourceRow(reviewingBook,
+          reviewingBook?guidedSelectedRow.get(reviewingBook.key):null);
+        const focus=currentSource
+          ?{rowIndex:currentSource.index,index:guidedIndex}:null;
         await run(async()=>{
           const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
             revision:stage.revision,acceptWarnings:warningsAccepted,
@@ -1283,11 +1291,8 @@
           const group=queue[guidedIndex];
           const groupRows=[...group.rows.values()]
             .sort((a,b)=>a.sourceRowNumber-b.sourceRowNumber);
-          const selectedRow=guidedSelectedRow.get(group.key);
-          const source=groupRows.find(row=>row.index===selectedRow)
-            ||groupRows.find(row=>Array.isArray(row.matchSuggestions)
-              &&row.matchSuggestions.length)
-            ||groupRows[0]||null;
+          const source=selectGuidedSourceRow(group,
+            guidedSelectedRow.get(group.key));
           const book=source?.book||{};
           const progressBar=make('div','bb-guide__meter');
           progressBar.setAttribute('role','progressbar');
