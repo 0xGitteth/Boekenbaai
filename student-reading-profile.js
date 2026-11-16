@@ -86,6 +86,25 @@ function buildStudentReadingProfile(db, studentId, { page = 0, pageSize = 50, no
       for (const tag of info.tags) genres.set(tag, (genres.get(tag) || 0) + 1);
     }
   }
+  // Completed import-reconciliation loan periods are historical loans,
+  // not confirmations that the pupil finished reading.
+  for(const period of db.bookLoanPeriods||[]){
+    if(period.studentId!==studentId||!period.bookId)continue;
+    const alreadyRecorded=completed.some(record=>
+      record.bookId===period.bookId
+      &&record.loanBorrowedAt&&period.borrowedAt
+      &&Math.abs(Date.parse(record.loanBorrowedAt)
+        -Date.parse(period.borrowedAt))<=120000);
+    if(alreadyRecorded)continue;
+    const info=metadata(byId.get(period.bookId));
+    entries.push({
+      id:'import-period:'+period.id,recordId:null,bookId:period.bookId,
+      kind:'historical',borrowedAt:period.borrowedAt||null,
+      returnedAt:period.returnedAt||null,
+      sortAt:period.returnedAt||period.borrowedAt||'',...info,
+    });
+    if(addWeekdays(weekdays,period.borrowedAt,period.returnedAt))timedLoans++;
+  }
   let selfReportedExternalReadTitles = 0;
   for (const item of db.examReadingLists || []) {
     if (!item || item.studentId !== studentId || item.externalSource !== true ||
