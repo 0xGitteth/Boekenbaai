@@ -186,6 +186,24 @@
       }finally{libraryExport.disabled=false;}
     });
     header.append(libraryExport);
+    // The same regular collection export is accessible from book management,
+    // even when there is no Excel import in progress.
+    const adminBooksHeader=document.querySelector(
+      '.admin-card--books .admin-card__heading');
+    if(adminBooksHeader&&!document.getElementById('admin-books-export')){
+      const manageExport=button('Collectie exporteren (.xlsx)',
+        'btn btn--secondary');
+      manageExport.id='admin-books-export';
+      manageExport.addEventListener('click',async()=>{
+        manageExport.disabled=true;
+        try{
+          downloadExcel(await request('/api/admin/books/export'));
+        }catch(error){
+          window.alert('Collectie exporteren mislukt: '+error.message);
+        }finally{manageExport.disabled=false;}
+      });
+      adminBooksHeader.append(manageExport);
+    }
     root.append(header);
     const steps=make('nav','bb-import__steps');
     steps.setAttribute('aria-label','Importstappen');
