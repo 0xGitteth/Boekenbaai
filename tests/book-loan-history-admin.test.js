@@ -1,6 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {appendDurableLoanEvent,borrowEvents,searchHistory,removeFalseHistory}=
+const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,
+  searchHistory,removeFalseHistory}=
   require('../book-loan-history-admin');
 const admin={role:'admin',id:'beheer'};
 const db={
@@ -23,6 +24,8 @@ const db={
     title:'Een boek',addedManually:true}],
 };
 assert.equal(appendDurableLoanEvent(db,db.history[0]),true);
+assert.equal(borrowCountEvents(db).filter(x=>x.type==='check_out').length,1,
+  'A preserved historical interval matching a logged checkout counts once');
 assert.equal(appendDurableLoanEvent(db,db.history[0]),false);
 assert.equal(borrowEvents(db).filter(x=>x.id==='h1').length,1);
 const candidates=searchHistory(db,{student:'leerling',book:'een'});
