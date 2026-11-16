@@ -17,6 +17,7 @@ const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
+const {safeRowReplays,recordBookReviewChoices}=require('./book-import-decision-memory');
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
 const { analyzeReviewedImport, buildReviewDecisions,
   normalizeCorrections } = require('./book-import-review');
@@ -5507,7 +5508,13 @@ async function handleApi(req, res, requestUrl) {
         reservation.stage.progress={
           completed:0,total:workbook.rows.length,phase:'analyzing',
         };
-        const analysis = await analyzeReviewedImport(workbook.rows, [], {
+        // Reuse only explicit bibliographic corrections from finalized imports.
+        // Never replay loans, class locations, physical copy choices or skips.
+        const remembered=mode==='unified_sync'||mode==='inventory_sync'||mode==='create'
+          ?safeRowReplays(database,workbook.rows)
+          :{corrections:[],fieldsReused:0,rowsReused:0};
+        const analysis = await analyzeReviewedImport(workbook.rows,
+          remembered.corrections, {
           ...options, existingBooks: database.books,
           students: database.students, classes: database.classes,
           acceptWarnings: false,
@@ -5544,6 +5551,10 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
             error: analysis.decisions.error });
         }
+        reservation.stage.corrections=remembered.corrections;
+        reservation.stage.remembered={
+          fieldsReused:remembered.fieldsReused,rowsReused:remembered.rowsReused,
+        };
         bookImportStageStore.activate(reservation.stage, {
           sourceRows: workbook.rows, options,
           workbook: { sheetName: workbook.sheetName, headers: workbook.headers },
@@ -6264,7 +6275,13 @@ async function handleApi(req, res, requestUrl) {
                 ?`Boeken gesynchroniseerd: ${createdCopies.length} exemplaren, ${corrected.loans} uitleningen, ${corrected.locations} locaties en ${metadataUpdated} boekgegevens bijgewerkt`
                 :`Voorraad vergeleken: ${createdCopies.length} exemplaren toegevoegd, ${restoredLoanEvents.length} bestaande uitleningen overgenomen, geen bestaande exemplaren verwijderd`,
             });
-            saveReviewedBookImportDb(database);
+            report.rememberedBookFields=stage.remembered?.fieldsReused||0;
+            report.learnedBookCorrections=recordBookReviewChoices(
+              database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
+            report.rememberedBookFields=stage.remembered?.fieldsReused||0;
+          report.learnedBookCorrections=recordBookReviewChoices(
+            database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
+          saveReviewedBookImportDb(database);
             scheduleCoverBackfill({ resetFailures: true });
             bookImportStageStore.finishApply(stage, {
               batchId,created:createdCopies.length,removed:0,
