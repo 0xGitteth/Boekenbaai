@@ -288,12 +288,21 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
   // Evaluate a complete batch of borrower replacements together. A pupil
   // can receive copy A when their existing copy B is being reassigned away
   // in the same confirmed batch, without fabricating intermediate returns.
-  const movesByCopy=new Map(found.filter(item=>!item.kind
-    &&(item.row.context?.studentLoan||item.row.context?.classLoan))
-    .map(item=>[item.copy.id,{
-      desired:desiredLoan(item.row,db),
-      action:selected.get(item.row.index+':loan')||'apply',
-    }]));
+  const movesByCopy=new Map(found.filter(item=>{
+    if(item.kind)return false;
+    const row=item.row;
+    const newBorrower=Boolean(row.context?.studentLoan||row.context?.classLoan);
+    // A missing/blank loan may release another copy of this same edition,
+    // but ONLY when the administrator explicitly approves that correction.
+    // Unselected blank cells and deferred decisions never count as releases.
+    const approvedRemoval=!newBorrower
+      &&selected.get(row.index+':loan')==='apply'
+      &&options.reviewMissingLoans===true&&missingFormerLoan(row);
+    return newBorrower||approvedRemoval;
+  }).map(item=>[item.copy.id,{
+    desired:desiredLoan(item.row,db),
+    action:selected.get(item.row.index+':loan')||'apply',
+  }]));
   const releasingCopy=(copy,studentId)=>{
     const move=movesByCopy.get(copy.id);
     return move&&move.action==='apply'&&!move.desired.error
