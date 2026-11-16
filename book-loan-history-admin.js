@@ -233,7 +233,10 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
       &&(db.readingRecords||[]).some(record=>
         record.subjectType==='student'&&record.subjectId===studentId
         &&record.finished===true&&!readingIds.has(record.id)
-        &&keyForReading(record,db)===editionKey);
+        &&(record.editionKey
+          ||(booksById.has(record.bookId)
+            ?keyForBook(booksById.get(record.bookId)):null)
+          ||keyForReading(record,db))===editionKey);
     const retainedCurrentLoan=Boolean(editionKey)
       &&(db.books||[]).some(copy=>copy.status==='borrowed'
         &&copy.borrowedBy===studentId
