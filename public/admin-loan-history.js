@@ -72,6 +72,7 @@ if(historyPanel){
         card.append(node('h4',item.title));
         card.append(node('p',item.studentName+' · '+(item.author||'')
           +' · '+item.historyEvents+' uitleengebeurtenissen · '
+          +item.importedPeriods+' geïmporteerde leenperiodes · '
           +item.readingRecords+' leesregistraties','hint'));
         if(item.activeLoan)card.append(node('p',
           'Dit boek is momenteel uitgeleend. De actuele uitlening blijft bestaan.',
@@ -93,7 +94,8 @@ if(historyPanel){
                 expectedFingerprint:item.fingerprint,confirm:true});
             status.textContent=outcome.eventsRemoved+
               ' historische gebeurtenissen en '+outcome.readingRecordsRemoved+
-              ' leesregistraties verwijderd. De actieve uitlening is ongewijzigd.';
+              ' leesregistraties en '+outcome.importedPeriodsRemoved+
+              ' geïmporteerde leenperiodes verwijderd. De actieve uitlening is ongewijzigd.';
             window.dispatchEvent(new Event('boekenbaai:loans-changed'));
             results.replaceChildren();
           }catch(error){status.textContent=error.message;}
