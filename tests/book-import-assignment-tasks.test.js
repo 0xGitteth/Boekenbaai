@@ -5,7 +5,7 @@ const {
   listDeferredAssignmentTasks,
   findTask, resolveDeferredAssignmentTask,
 } = require('../book-import-assignment-tasks');
-const { buildAssignmentPreview } = require('../book-import-assignment-reconciliation');
+const { buildAssignmentPreview, applyAssignmentPreview } = require('../book-import-assignment-reconciliation');
 const ISBN = '9780306406157';
 const admin = {id:'admin',role:'admin'};
 const teacher = {id:'teacher',role:'teacher'};
@@ -210,5 +210,47 @@ assert.equal(resolveDeferredAssignmentTask(shared,timTask,admin,
 assert.equal(shared.books[0].borrowedBy,'tim');
 assert.equal(shared.students[1].borrowedBooks[0].bookId,'copy-1');
 assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
+
+
+// A complete snapshot may correct a fixed location into a class loan.
+// Postponing the location removal must remain actionable from Taken
+// after the class checkout has already been corrected.
+{
+  const live=initial();
+  const copy=live.books[0];
+  copy.status='available';
+  copy.borrowedBy=null;
+  copy.borrowedAt=null;
+  copy.dueDate=null;
+  copy.fixedLocation='Klas A';
+  live.students[0].borrowedBooks=[];
+  const source=row({classLoan:{status:'matched',id:'a',name:'Klas A'}});
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true};
+  const suggested=buildAssignmentPreview({ok:true,rows:[source]},live,
+    [{id:'0:location',action:'later'}],options);
+  assert.equal(suggested.ok,true);
+  assert.equal(suggested.summary.readyToApply,true);
+  const location=suggested.differences.find(item=>item.kind==='location');
+  assert.equal(location?.classFixedToLoan,true);
+  const report={id:'location-review',mode:'assignment_reconcile',
+    fileName:'klassen.xlsx',importedAt:today,fullyReviewed:false,
+    deferredDifferences:[{id:location.id,status:'open',
+      kind:location.kind,bookId:location.bookId,
+      before:location.before,after:location.after}]};
+  live.bookImportReports.push(report);
+  applyAssignmentPreview(live,suggested,'admin',today,'batch-class',
+    {loanHistoryMode:'correct'});
+  const deferred=createDeferredAssignmentTasks(live,report,[source],
+    suggested.differences,today);
+  assert.equal(deferred.length,1);
+  assert.equal(live.books[0].borrowedByClassId,'a');
+  assert.equal(live.books[0].fixedLocation,'Klas A');
+  assert.equal(listDeferredAssignmentTasks(live).tasks[0].canApply,true);
+  const resolved=resolveDeferredAssignmentTask(live,deferred[0],admin,
+    {choice:'apply',revision:1,confirm:true});
+  assert.equal(resolved.ok,true);
+  assert.equal(live.books[0].borrowedByClassId,'a');
+  assert.equal(live.books[0].fixedLocation,null);
+}
 
 console.log('Deferred administrator tasks: security, persistent queue, safe resolution, stale loan and legacy records OK');
