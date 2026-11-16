@@ -1288,6 +1288,37 @@
               book.editionIsbn?'ISBN '+book.editionIsbn:
                 'ISBN ontbreekt of is ongeldig'));
           bookhead.append(cover,identity);card.append(bookhead);
+          // Material ISBN disagreements are shown next to the book, not
+          // buried in a long list of technical source warnings.
+          const visibleIdentityChecks=new Set();
+          for(const relatedRow of groupRows){
+            for(const issue of relatedRow.issues||[]){
+              if(!['metadata_author_conflict','metadata_title_conflict']
+                .includes(issue.code))continue;
+              const field=issue.code==='metadata_author_conflict'
+                ?'auteur':'titel';
+              const confirmed=issue.confirmedAuthor||issue.confirmedTitle||'';
+              const key=field+':'+confirmed;
+              if(visibleIdentityChecks.has(key))continue;
+              visibleIdentityChecks.add(key);
+              const alert=make('div','bb-guide__identity-conflict');
+              alert.append(make('strong','',
+                'Controleer de '+field+' bij dit ISBN'));
+              alert.append(make('p','',
+                'In Excel: '+safeText(field==='auteur'
+                  ?relatedRow.book?.author:relatedRow.book?.title)));
+              if(confirmed)
+                alert.append(make('p','',
+                  'Onafhankelijke ISBN-bronnen: '+confirmed));
+              if(issue.sources?.length)
+                alert.append(make('small','',
+                  'Bronnen: '+issue.sources.join(', ')));
+              alert.append(make('p','',
+                'Controleer de fysieke editie. Er wordt niets automatisch '
+                +'aan de bestaande auteur of titel veranderd.'));
+              card.append(alert);
+            }
+          }
 
           if(group.stock.length){
             const check=make('section','bb-guide__check');
@@ -1327,6 +1358,9 @@
                 proposed.title+' · Auteur: '+safeText(proposed.author)
                   +' · ISBN '+(proposed.editionIsbn||'ontbreekt')));
               check.append(compare);
+              if(proposed.sources?.length)
+                check.append(make('p','bb-guide__candidate-sources',
+                  'Gevonden via '+proposed.sources.join(' en ')));
               if(proposed.identityWarning)
                 check.append(make('p','bb-guide__attention',
                   'Let op: deze kandidaat heeft een afwijkende titel of '
