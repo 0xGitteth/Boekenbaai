@@ -152,6 +152,21 @@
     });
   }
 
+  function downloadExcel(payload){
+    if(!payload||typeof payload.file!=='string'||!payload.file)
+      throw Error('Geen Excelbestand ontvangen.');
+    const binary=atob(payload.file);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    const objectUrl=URL.createObjectURL(new Blob([bytes],{
+      type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }));
+    const link=document.createElement('a');
+    link.href=objectUrl;
+    link.download=payload.filename||'boekenbaai-export.xlsx';
+    link.click();
+    setTimeout(()=>URL.revokeObjectURL(objectUrl),2000);
+  }
   function init() {
     const imports = document.querySelector('.admin-card--imports .admin-card__content');
     if (!imports || document.getElementById('reviewed-import-panel')) return;
@@ -160,6 +175,35 @@
     const header = make('div', 'bb-review__header');
     header.append(make('h4', '', 'Boeken en administratie synchroniseren'));
     header.append(make('p', 'hint', 'Eén Excelbestand, één controle en één definitieve bevestiging. Kies precies wat je wilt bijwerken.'));
+    const libraryExport=button('Bestaande collectie exporteren (.xlsx)',
+      'btn btn--secondary');
+    libraryExport.addEventListener('click',async()=>{
+      libraryExport.disabled=true;
+      try{
+        downloadExcel(await request('/api/admin/books/export'));
+      }catch(error){
+        window.alert('De collectie kon niet worden geëxporteerd: '+error.message);
+      }finally{libraryExport.disabled=false;}
+    });
+    header.append(libraryExport);
+    // The same regular collection export is accessible from book management,
+    // even when there is no Excel import in progress.
+    const adminBooksHeader=document.querySelector(
+      '.admin-card--books .admin-card__heading');
+    if(adminBooksHeader&&!document.getElementById('admin-books-export')){
+      const manageExport=button('Collectie exporteren (.xlsx)',
+        'btn btn--secondary');
+      manageExport.id='admin-books-export';
+      manageExport.addEventListener('click',async()=>{
+        manageExport.disabled=true;
+        try{
+          downloadExcel(await request('/api/admin/books/export'));
+        }catch(error){
+          window.alert('Collectie exporteren mislukt: '+error.message);
+        }finally{manageExport.disabled=false;}
+      });
+      adminBooksHeader.append(manageExport);
+    }
     root.append(header);
     const steps=make('nav','bb-import__steps');
     steps.setAttribute('aria-label','Importstappen');
@@ -1289,10 +1333,16 @@
             guidedStep=2;
           }
           storeGuidedPosition();
-          setNotice(current.readyToApply
-            ?'Alle controles zijn afgerond. Bekijk de eindcontrole.'
-            :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
-              +'Je kunt verdergaan bij het boek waar je gebleven was.');
+          const reconciled=Number(response.reconciledAssignmentChoices)||0;
+          setNotice(reconciled
+            ?'Je boekcorrecties zijn opgeslagen. '+reconciled
+              +' verouderde keuze(s) voor uitlening of locatie zijn veilig '
+              +'opnieuw beoordeeld. Controleer eventuele openstaande '
+              +'administratieve punten in het eindoverzicht.'
+            :current.readyToApply
+              ?'Alle controles zijn afgerond. Bekijk de eindcontrole.'
+              :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
+                +'Je kunt verdergaan bij het boek waar je gebleven was.');
         },'De keuzes worden opgeslagen en veilig opnieuw berekend…');
       };
       const explain=(host,code)=>{
@@ -2009,6 +2059,27 @@
             ||!summary.readyToApply||hasChanges
             ||(summary.missingStockGroups&&!guidedMissingAcknowledged));
         }
+      }
+      if(stage?.status==='open'){
+        const exportDraft=addAction(footer,'Concept en correcties exporteren (.xlsx)',
+          async()=>{
+            exportDraft.disabled=true;
+            try{
+              downloadExcel(await request(rootPath+'/'+encodeURIComponent(stage.id)
+                +'/export',{
+                  revision:stage.revision,
+                  corrections:[...corrections.values()],
+                  inventoryResolutions:[...inventoryResolutions.values()],
+                  assignmentResolutions:[...assignmentResolutions.values()],
+                  metadataResolutions:[...metadataResolutions.values()],
+                }));
+            }catch(error){
+              setNotice('Concept exporteren mislukt: '+error.message);
+            }finally{exportDraft.disabled=false;}
+          });
+        exportDraft.title='Download de Excel met alle boekvelden, correcties, '
+          +'originele Excelrijen en administratieve keuzes. '
+          +'Dit is geen definitieve import.';
       }
       const cancel=addAction(footer,'Import annuleren',()=>{
         if(!window.confirm('Deze import annuleren? Er wordt niets '

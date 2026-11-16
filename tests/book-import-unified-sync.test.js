@@ -3,10 +3,108 @@ const assert=require('node:assert/strict');
 const {
   normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
-  shouldApplyMetadataToCreatedCopy,
+  shouldApplyMetadataToCreatedCopy,rebaseStaleAssignmentChoices,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
+const XLSX=require('xlsx');
+const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export');
+{
+  const committed=librarySheets({books:[{
+    id:'copy-1',title:'Testboek',author:'A Auteur',
+    editionIsbn:'9780306406157',barcode:'4711001',
+    fixedLocation:'SK BB',status:'borrowed',borrowedBy:'pupil-1',
+    pageCount:224,themes:['Vriendschap','School'],
+  }],students:[{id:'pupil-1',name:'Voorbeeld Leerling'}],classes:[]});
+  const bin=buildWorkbook(XLSX,committed);
+  const parsed=XLSX.read(bin,{type:'base64'});
+  const books=XLSX.utils.sheet_to_json(parsed.Sheets.Boeken);
+  assert.equal(books[0]['Vaste locatie'],'SK BB');
+  assert.equal(books[0]['Uitgeleend aan leerling'],'Voorbeeld Leerling');
+  assert.equal(books[0]['Naam leerling'],'Voorbeeld Leerling');
+  assert.equal(books[0]['Aantal'],1);
+  assert.ok(books[0]['Overige gegevens (JSON)'].includes('copy-1'));
+  assert.equal(books[0]["Thema's"],'Vriendschap; School');
+  const original={'Titel':'Foute titel','Auteur':'A Auteur',
+    'ISBN-nummer':'9780306406156','Vast in de klas van':'StructuurBB'};
+  const stage={
+    revision:1,fileName:'bibliotheek.xlsx',
+    sourceRows:[original],
+    analysis:{rows:[{
+      index:0,sourceRowNumber:85,book:{
+        title:'Foute titel',author:'A Auteur',
+        editionIsbn:'',quantity:{value:1},
+        themes:[],tags:[],
+      },context:{fixedLocation:{label:'SK BB',raw:'StructuurBB'}},
+    }]},
+  };
+  const snapshot=stageSheets(stage,{
+    corrections:[{index:0,fields:{
+      title:'Juiste titel',editionIsbn:ISBN,
+      classes:'StructuurBB',libraryPresence:'Ja',
+    }}],
+    assignmentResolutions:[{id:'0:location',action:'later'}],
+  });
+  const sheet=XLSX.read(buildWorkbook(XLSX,snapshot),{type:'base64'});
+  const draft=XLSX.utils.sheet_to_json(sheet.Sheets['Boeken concept']);
+  assert.equal(draft[0].Titel,'Juiste titel');
+  assert.equal(draft[0]['ISBN-nummer'],ISBN);
+  assert.equal(draft[0]['Vast in de klas van'],'StructuurBB');
+  assert.equal(draft[0]['Klassen'],'StructuurBB');
+  assert.equal(draft[0]['Aanwezig bieb'],'Ja');
+  assert.equal(draft[0].Importstatus,'Concept (nog niet geïmporteerd)');
+  assert.equal(XLSX.utils.sheet_to_json(
+    sheet.Sheets['Originele Excel'])[0].Titel,'Foute titel');
+  const admin=XLSX.utils.sheet_to_json(sheet.Sheets['Administratieve keuzes']);
+  assert.equal(admin[0].Keuze,'later');
+  assert.ok(sheet.Sheets.Toelichting);
+  const malicious=buildWorkbook(XLSX,[['Sheet',[
+    {Titel:'=HYPERLINK("https://evil.example","Klik")'}]]]);
+  const result=XLSX.read(malicious,{type:'base64'});
+  assert.equal(XLSX.utils.sheet_to_json(result.Sheets.Sheet)[0].Titel[0],"'",
+    'Untrusted spreadsheet text must never become an executable Excel formula');
+}
+
+{
+  const previous=[
+    {index:0,book:{editionIsbn:ISBN,title:'Mijn boek',author:'A'},
+      context:{fixedLocation:{label:'A'}}},
+    {index:1,book:{editionIsbn:ISBN,title:'Ander boek',author:'B'},context:{}},
+    {index:2,book:{editionIsbn:ISBN,title:'Derde boek',author:'C'},context:{}},
+  ];
+  const current=[
+    {...previous[0],book:{...previous[0].book,editionIsbn:SECOND}},
+    previous[1],previous[2],
+  ];
+  const differences=[
+    {id:'0:loan',rowIndex:0,kind:'loan'},
+    {id:'1:location',rowIndex:1,kind:'location'},
+    {id:'2:loan',rowIndex:2,kind:'loan'},
+  ];
+  const result=rebaseStaleAssignmentChoices([
+    {id:'0:location',action:'keep'},
+    {id:'1:location',action:'keep'},
+    {id:'2:loan',action:'later'},
+  ],previous,current,differences);
+  assert.deepEqual(result.removed,[{id:'0:location',action:'keep'}]);
+  assert.deepEqual(result.choices,[
+    {id:'1:location',action:'keep'},
+    {id:'2:loan',action:'later'},
+    {id:'0:loan',action:'later'},
+  ],'Keep unrelated explicit decisions; affected new loan changes must be postponed');
+  const changedSameId=rebaseStaleAssignmentChoices([
+    {id:'0:loan',action:'apply'}, {id:'1:location',action:'keep'},
+  ],previous,current,differences);
+  assert.deepEqual(changedSameId.choices,[
+    {id:'1:location',action:'keep'}, {id:'0:loan',action:'later'},
+  ],'A changed ISBN invalidates even the same loan ID; never auto-apply');
+  const unchanged=rebaseStaleAssignmentChoices([
+    {id:'1:location',action:'keep'},
+  ],previous,previous,differences);
+  assert.equal(unchanged.removed.length,0);
+  assert.deepEqual(unchanged.choices,[{id:'1:location',action:'keep'}]);
+}
+
 const source=(index,context={},extra={},provenance={})=>({
   index,sourceRowNumber:index+2,status:'ready',
   book:{title:'Oorlogswinter',author:'Jan Terlouw',

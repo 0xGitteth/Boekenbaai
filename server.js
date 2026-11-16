@@ -16,6 +16,7 @@ const { createFreeMetadataWorker } = require('./book-free-metadata-worker');
 const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
+const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
 const { analyzeReviewedImport, buildReviewDecisions,
   normalizeCorrections } = require('./book-import-review');
@@ -26,7 +27,8 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
-  actualAssignmentPreview, assignmentSource, shouldApplyMetadataToCreatedCopy } =
+  actualAssignmentPreview, assignmentSource, shouldApplyMetadataToCreatedCopy,
+  rebaseStaleAssignmentChoices } =
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
@@ -5258,6 +5260,19 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, freeMetadataWorker.status());
     }
 
+    // Administrator export uses the committed live database, not an old
+    // workbook. Never expose private borrower details to ordinary readers.
+    if(req.method==='GET'&&requestUrl.pathname==='/api/admin/books/export'){
+      if(!ensureRole(user,['admin']))
+        return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const XLSX=loadXlsx();
+      if(!XLSX)return sendJson(res,503,{message:'Excel-export niet beschikbaar.'});
+      return sendJson(res,200,{
+        filename:'boekenbaai-collectie.xlsx',
+        file:buildWorkbook(XLSX,librarySheets(loadDb())),
+      });
+    }
+
     // PR3 staged book import is separate from the legacy direct upload route.
     // The only authority for applying data is the server-owned, single-use
     // staging record; clients may send corrections, never finished book rows.
@@ -5290,7 +5305,7 @@ async function handleApi(req, res, requestUrl) {
           }));
         return sendJson(res,200,{items,count:items.length});
       }
-      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft))?$/);
+      const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft|export))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
         if (activeImportJobs.size > 0) {
           return sendJson(res, 409, { message: 'De oude boekimport is nog bezig. Rond die eerst af.', error: 'legacy_import_busy' });
@@ -5460,6 +5475,40 @@ async function handleApi(req, res, requestUrl) {
       if (req.method === 'GET' && !stageMatch[2]) {
         return sendJson(res, 200, importStageView(stage));
       }
+      if(req.method==='POST'&&stageMatch[2]==='export'){
+        if(stage.status!=='open')
+          return sendJson(res,409,{message:'Geen actief importconcept om te exporteren.'});
+        const body=await parseBody(req,24*1024*1024);
+        if(body.revision!==stage.revision)
+          return sendJson(res,409,{message:'De importversie is gewijzigd.',error:'stale_review'});
+        const validated=normalizeCorrections(
+          body.corrections??stage.draft?.corrections??stage.corrections,
+          stage.sourceRows.length);
+        const inventory=normalizeInventoryResolutions(
+          body.inventoryResolutions??stage.draft?.inventoryResolutions
+            ??stage.inventoryResolutions);
+        const assignment=normalizeAssignmentResolutions(
+          body.assignmentResolutions??stage.draft?.assignmentResolutions
+            ??stage.assignmentResolutions);
+        const metadata=normalizedMetadataChoice(
+          body.metadataResolutions??stage.draft?.metadataResolutions
+            ??stage.metadataResolutions);
+        if(!validated.ok||!inventory.ok||!assignment.ok||!metadata.ok)
+          return sendJson(res,400,{message:'Ongeldige exportkeuzes.'});
+        const XLSX=loadXlsx();
+        if(!XLSX)return sendJson(res,503,{message:'Excel-export niet beschikbaar.'});
+        return sendJson(res,200,{
+          filename:'boekenbaai-importconcept.xlsx',
+          file:buildWorkbook(XLSX,stageSheets(stage,{
+            corrections:[...validated.corrections].map(([index,fields])=>({
+              index,...fields,
+            })),
+            inventoryResolutions:inventory.values,
+            assignmentResolutions:assignment.values,
+            metadataResolutions:metadata.values,
+          })),
+        });
+      }
       if (req.method === 'POST' && stageMatch[2] === 'cancel') {
         const body = await parseBody(req, 10000);
         const cancelled = bookImportStageStore.cancel(stage, body.revision);
@@ -5569,13 +5618,18 @@ async function handleApi(req, res, requestUrl) {
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
           const latestDatabase = loadDb();
+          let reviewedAssignmentChoices=assignments.values;
+          let rebasedAssignmentCount=0;
+          const unifiedParameters={
+            parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
+            inventoryResolutions:choices.values,
+            metadataResolutions:metadataChoices.values,
+            loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+            existingFollowups:latestDatabase.bookImportFollowups,
+          };
           reviewed.decisions = stage.options.mode === 'unified_sync'
             ? buildUnifiedBookImport(reviewed,latestDatabase,{
-              parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
-              inventoryResolutions:choices.values,assignmentResolutions:assignments.values,
-              metadataResolutions:metadataChoices.values,
-              loanReceipts:historicalExcelLoanReceipts(latestDatabase),
-              existingFollowups:latestDatabase.bookImportFollowups,
+              ...unifiedParameters,assignmentResolutions:reviewedAssignmentChoices,
             })
             : stage.options.mode === 'assignment_reconcile'
             ? buildAssignmentPreview(reviewed, latestDatabase, assignments.values)
@@ -5590,13 +5644,40 @@ async function handleApi(req, res, requestUrl) {
               acceptWarnings: body.acceptWarnings,
               students: latestDatabase.students, classes: latestDatabase.classes,
             });
+          // This is a recoverable mismatch: a title/ISBN correction can
+          // remove a previously visible administrative difference. Rebuild
+          // against current differences, preserve valid explicit choices,
+          // and postpone affected changes instead of applying them silently.
+          // The original /apply path still verifies its own fresh preview.
+          if(stage.options.mode==='unified_sync'
+            &&reviewed.decisions.error==='stale_assignment_choice'){
+            const unselected=buildUnifiedBookImport(reviewed,latestDatabase,{
+              ...unifiedParameters,assignmentResolutions:[],
+            });
+            if(unselected.ok){
+              const rebased=rebaseStaleAssignmentChoices(
+                reviewedAssignmentChoices,stage.analysis?.rows,reviewed.rows,
+                unselected.assignments?.differences||[]);
+              const retry=buildUnifiedBookImport(reviewed,latestDatabase,{
+                ...unifiedParameters,assignmentResolutions:rebased.choices,
+              });
+              if(retry.ok){
+                reviewed.decisions=retry;
+                reviewedAssignmentChoices=rebased.choices;
+                rebasedAssignmentCount=rebased.removed.length;
+              }
+            }
+          }
           if (!reviewed.decisions.ok && ['inventory_sync','assignment_reconcile','unified_sync'].includes(stage.options.mode)) {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
           }
           bookImportStageStore.finishReview(stage, reviewed, body.corrections,
-            body.acceptWarnings, choices.values, assignments.values,metadataChoices.values);
-          return sendJson(res, 200, importStageView(stage));
+            body.acceptWarnings, choices.values, reviewedAssignmentChoices,metadataChoices.values);
+          return sendJson(res, 200, {
+            ...importStageView(stage),
+            ...(rebasedAssignmentCount?{reconciledAssignmentChoices:rebasedAssignmentCount}:{}),
+          });
         } finally {
           bookImportStageStore.abortReview(stage);
         }
