@@ -456,6 +456,25 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const adminCard=card('Administratie','Pas alleen de aangevinkte registraties aan.');
     adminCard.append(checkPart('loans','Uitleningen bijwerken',true),
       checkPart('locations','Vaste locaties bijwerken',true));
+    const loanHistoryLabel=make('label','bb-review__field');
+    loanHistoryLabel.append(make('span','',
+      'Wat wil je doen met leenhistorie bij Excelcorrecties?'));
+    const loanHistoryMode=make('select');
+    for(const [value,label] of [
+      ['preserve','Leenhistorie behouden: afgesloten uitleningen bewaren'],
+      ['correct','Alleen actuele uitleningen corrigeren: geen historische uitlening aanmaken'],
+    ]){
+      const option=make('option','',label);
+      option.value=value;loanHistoryMode.append(option);
+    }
+    loanHistoryMode.value='correct';
+    loanHistoryLabel.append(loanHistoryMode,
+      make('span','hint',
+        'Was een leerling eerder ingevuld en is het Excelveld nu leeg? '
+        +'Boekenbaai vraagt expliciet wat moet gebeuren. '
+        +'Leeg betekent nooit automatisch dat een boek is ingeleverd. '
+        +'Bestaande historische registraties worden niet automatisch gewist.'));
+    adminCard.append(loanHistoryLabel);
     parts.append(stockCard,adminCard);
     const metadataDetails=make('details','bb-import__columns');
     metadataDetails.append(make('summary','',
@@ -506,6 +525,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       metadataLabel.hidden=importMode.value==='reconcile'
         ||(unified&&!hasBookData);
       metadata.disabled=metadataLabel.hidden;
+      loanHistoryLabel.hidden=!unified||!partChecks.get('loans').checked;
     };
     importMode.addEventListener('change',refreshImportMode);
     for(const check of partChecks.values())check.addEventListener('change',refreshImportMode);
@@ -3969,7 +3989,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             mode: unified?'unified_sync'
               : importMode.value==='reconcile'?'assignment_reconcile'
               : syncMode.checked?'inventory_sync':'create',
-            ...(unified?{syncParts:selection}:{}),
+            ...(unified?{syncParts:selection,
+              ...(selection.loans?{loanHistoryMode:loanHistoryMode.value}:{})}:{}),
           });
         } catch (error) {
           await syncStage();
