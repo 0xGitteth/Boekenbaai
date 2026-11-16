@@ -204,7 +204,8 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
       ?{type:'student',id:copy.borrowedBy}
       :{type:'class',id:copy.borrowedByClassId};
     const key=excelLoanReceiptKey(copy.id,borrower);
-    return Boolean(key&&receipts.has(key));
+    return Boolean(options.reviewAllBlankLoans===true
+      ||(key&&receipts.has(key)));
   };
   const missingFormerLoan=row=>{
     if(options.reviewMissingLoans!==true||row.context?.studentLoan
@@ -344,7 +345,12 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
           reason:otherEditionBorrowed||conflictingCopy?'student_already_borrowed_edition':'',
           blankSource:desired.type==='none',
           previouslyRecordedInExcel:emptiedExcelLoan,
-          description:emptiedExcelLoan
+          missingFromSnapshot:row.missingFromExcel===true,
+          description:row.missingFromExcel===true
+            ?'Dit boek staat nog als uitgeleend, maar ontbreekt volledig '
+              +'in de aangeleverde volledige actuele uitleenlijst. '
+              +'Controleer of het boek is ingeleverd of de registratie fout was.'
+            :emptiedExcelLoan
             ?'Deze uitlening stond eerder in Excel en is nu leeg. '
               +'Kies bewust of het boek is teruggebracht, de oude registratie '
               +'fout was, of de bestaande uitlening behouden moet blijven.'
