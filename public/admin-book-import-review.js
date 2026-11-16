@@ -645,6 +645,7 @@
     let draftSaveIssue='';
     let draftSaveFailures=0;
     function updateGuidedSaveStatus(){
+      if(typeof results==='undefined')return;
       const status=results.querySelector('.bb-guide__save-state');
       if(!status)return;
       const unsaved=draftSaveInFlight||draftSavePending||Boolean(draftSaveTimer);
