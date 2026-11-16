@@ -61,6 +61,14 @@ assert.ok(preferenceWeights([{questionId:'curiosity-1',optionId:'secret'}])
   .get('mystery')>0);
 assert.equal(traitsForBook({title:'Zomaar',tags:[],description:''}).size,0,
   'Missing metadata must never be fabricated');
+assert.ok(traitsForBook({title:'X',themes:['Spanning']}).has('danger'),
+  'Canonical Spanning theme should remain relevant to tense situations');
+assert.equal(traitsForBook({title:'X',tags:['Transport']}).has('sport'),false,
+  'Sport may not match inside an unrelated word');
+assert.equal(traitsForBook({title:'X',themes:['Overleven']}).has('calm'),false,
+  'Overleven must never create a calm or everyday-life preference');
+assert.ok(traitsForBook({title:'X',tags:['Sporten']}).has('sport'),
+  'Real inflected words should still be recognized');
 assert.ok(scoreTraits(traitsForBook({title:'Het geheim',themes:['Mysterie']}),
   preferenceWeights([{questionId:'curiosity-1',optionId:'secret'}])).value>0);
 const books=rankBooks(example,{
