@@ -32,6 +32,7 @@ let failSuggest=false;
 let resetStatus=200;
 const invalidated=[];
 const suggestRequests=[];
+const questionRequests=[];
 const fetchStub=async (url,options={})=>{
   if(url==='/api/me')return loggedIn
     ? makeResponse(200,{id:'s',role:'student',firstName:'Sanne'})
@@ -44,6 +45,26 @@ const fetchStub=async (url,options={})=>{
   if(url==='/api/auth/student-pin/choice-end'){
     invalidated.push(JSON.parse(options.body).choiceGrant);
     return makeResponse(200,{closed:true});
+  }
+  if(url==='/api/auth/student-pin/choice-next'){
+    const payload=JSON.parse(options.body);
+    questionRequests.push(payload);
+    const n=payload.answers?.length||0;
+    const questions=[
+      {id:'curiosity-1',prompt:'Welke situatie maakt je nieuwsgierig?',
+        options:[{id:'secret',label:'Iemand ontdekt een geheim'},
+          {id:'real',label:'Iets dat echt gebeurd is'}]},
+      {id:'tension-1',prompt:'Wat wil je dan weten?',
+        options:[{id:'exciting',label:'Of het spannend wordt'},
+          {id:'quiet',label:'Wat de persoon voelt'}]},
+      {id:'pace-1',prompt:'Hoe wil je het meemaken?',
+        options:[{id:'fast',label:'Er gebeurt veel'},
+          {id:'any',label:'Maakt niet uit'}]},
+      {id:'style-1',prompt:'Wat volg je graag?',
+        options:[{id:'talk',label:'Gesprekken'},
+          {id:'facts',label:'Feiten'}]},
+    ];
+    return makeResponse(200,n>=4?{done:true}:{done:false,question:questions[n]});
   }
   if(url==='/api/auth/student-pin/choice-suggest'){
     suggestRequests.push(JSON.parse(options.body));
@@ -135,7 +156,10 @@ vm.runInNewContext(code,{
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
   actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat doe je graag in je vrije tijd?'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
+  assert.equal(questionRequests.at(-1).answers.length,0);
+  assert.ok(actions.children.some(x=>x.textContent==='Sla deze vraag over'));
 
   // Signed-in learners also get only the approved two main options. The
   // previously offered similar-books route remains available as an explicit
@@ -154,7 +178,8 @@ vm.runInNewContext(code,{
   assert.deepEqual(actions.children.map(x=>x.textContent),
     ['Ja, graag','Nee, liever iets anders']);
   actions.children[0].listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat doe je graag in je vrije tijd?'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
 
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
@@ -181,12 +206,25 @@ vm.runInNewContext(code,{
   assert.ok(actions.children.some(x=>x.textContent==='Andere richting'));
   actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
   failSuggest=false;
+  await new Promise(resolve=>setImmediate(resolve));
   actions.children.find(x=>x.textContent==='Iemand ontdekt een geheim').listeners.click();
-  actions.children.find(x=>x.textContent==='Spannend verhaal').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(questionRequests.at(-1).answers[0].questionId,'curiosity-1');
+  // Back must undo only the last answer, without erasing the entire chat.
+  actions.children.find(x=>x.textContent==='Vorige vraag').listeners.click();
+  assert.ok(actions.children.some(x=>x.textContent==='Iets dat echt gebeurd is'));
+  actions.children.find(x=>x.textContent==='Iets dat echt gebeurd is').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  actions.children.find(x=>x.textContent==='Of het spannend wordt').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
   actions.children.find(x=>x.textContent==='Maakt niet uit').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  actions.children.find(x=>x.textContent==='Gesprekken').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(suggestRequests.at(-1).choices.route,'new',
     'The fallback questionnaire must use the answered route, not surprise');
-  console.log('Choice chat: approved route text, reset recovery, fallback routing and privacy: OK');
+  assert.equal(suggestRequests.at(-1).choices.answers.length,4,
+    'Adaptive conversation submits the actual answered questions');
+  console.log('Choice chat: approved route, dynamic followups, back and privacy: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});
