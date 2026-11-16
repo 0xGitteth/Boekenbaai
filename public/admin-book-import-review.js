@@ -1375,7 +1375,13 @@
               }
               rowChoices.append(buttons);check.append(rowChoices);
             }
-            const suggestions=source?.matchSuggestions||[];
+            // A record without an ISBN may be a possible match, but it
+            // is not a selectable edition. Do not display it as another
+            // edition in the comparison.
+            const allSuggestions=source?.matchSuggestions||[];
+            const suggestions=allSuggestions.filter(option=>
+              typeof option.editionIsbn==='string'
+              &&/^97[89][0-9]{10}$/.test(option.editionIsbn));
             if(suggestions.length){
               const compare=make('div','bb-guide__compare');
               const raw=source.identifierAnalysis?.explicit?.raw
@@ -1420,6 +1426,11 @@
                   img.src=option.coverUrl;
                   img.alt='Omslag van ISBN '+option.editionIsbn;
                   img.loading='lazy';img.referrerPolicy='no-referrer';
+                  img.addEventListener('error',()=>{
+                    img.remove();
+                    cover.append(make('span','hint',
+                      'Geen betrouwbare omslag beschikbaar'));
+                  },{once:true});
                   cover.append(img);
                 }else cover.append(make('span','hint','Geen betrouwbare omslag'));
                 alt.append(cover,make('strong','',safeText(option.title)));
@@ -1460,6 +1471,12 @@
                 if(facts.length)check.append(make('p','hint',
                   facts.map(([name,value])=>name+': '+value).join(' · ')));
               }
+            }else if(allSuggestions.length){
+              check.append(make('p','bb-guide__attention',
+                'Er is een mogelijke bestaande match zonder geldig ISBN. '
+                +'Deze kan niet veilig als editie worden gekozen. '
+                +'Controleer het ISBN op het fysieke boek of corrigeer '
+                +'de bestaande registratie voordat je deze importeert.'));
             }
             for(const entry of group.stock){
               if(entry.existingCopies||entry.targetCopies)
