@@ -6117,10 +6117,7 @@ async function handleApi(req, res, requestUrl) {
             // indices after one correction would detach later follow-up
             // tasks from their original physical copy.
             const reviewedTaskSourceRows=isUnified
-              ?withMissingExcelLoans(
-                assignmentSource(stage.analysis,combined.parts,database),
-                database,stage.options.fullLoanSnapshot===true
-                  &&combined.parts.loans).rows:[];
+              ?combined.reviewedAssignmentRows:[];
             if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
