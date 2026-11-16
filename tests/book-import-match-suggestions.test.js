@@ -41,7 +41,7 @@ function row(extra={}){
   const duplicateEdition=bookMatchSuggestions(row({
     onlineMatchCandidates:[
       {title:'Mijn boek',author:'Jan Jansen',editionIsbn:ISBN,
-        publisher:'Testuitgever',publishedYear:'2024',pageCount:212,
+        publisher:'Testuitgever',publishedYear:2024,pageCount:212,
         coverUrl:'https://example.org/isbn-cover.jpg',sources:['Google Books']},
     ],
   }),current);
@@ -49,7 +49,8 @@ function row(extra={}){
     'One ISBN must be one edition option, even when multiple providers return it');
   assert.equal(duplicateEdition[0].publisher,'Testuitgever',
     'Useful evidence from multiple matching sources should be combined');
-  assert.equal(duplicateEdition[0].publishedYear,'2024');
+  assert.equal(duplicateEdition[0].publishedYear,'2024',
+    'Numeric year from the normalized metadata pipeline must be displayed');
   assert.equal(duplicateEdition[0].pageCount,212);
 
   const withoutInventory=bookMatchSuggestions(row({

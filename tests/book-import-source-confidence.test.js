@@ -18,6 +18,22 @@ assert.equal(equivalentAuthorName('Hinke van Abbema','Hinke Abbema'),false,
 assert.equal(equivalentAuthorName('Anna de Vries & Hinke van Abbema',
   'Anna van Abbema & Hinke de Vries'),false,
   'Author tokens must never be rearranged across coauthors');
+assert.equal(sourceConsensus(ISBN,'author',[
+  {source:'googlebooks',editionIsbn:ISBN,author:'Carry Slee'},
+  {source:'openlibrary',editionIsbn:ISBN,author:'Carrie Slee'},
+]).agreeing,2,
+'Previously tolerated author typos must still count as matching source votes');
+const wrongAuthor=decide({isbn:ISBN,field:'author',
+  excel:'Jan Jansen',current:'Jan Jansen',evidence:[
+    {source:'googlebooks',editionIsbn:ISBN,author:'Carry Slee'},
+    {source:'openlibrary',editionIsbn:ISBN,author:'Carrie Slee'},
+  ]});
+assert.equal(wrongAuthor.action,'excel',
+  'Source spelling suggestions must not overwrite a materially different Excel author');
+assert.equal(sourceConsensus(ISBN,'author',[
+  {source:'googlebooks',editionIsbn:ISBN,author:'Carry Slee'},
+  {source:'openlibrary',editionIsbn:ISBN,author:'Carrie Slee'},
+]).conflicting,false);
 const reorderedVotes=[
   {source:'bureau isbn',editionIsbn:ISBN,author:'Hinke van Abbema',
     title:'Door jou ben ik mij'},
