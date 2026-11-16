@@ -234,7 +234,7 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
       ||canonicalizeBookIsbn13(record.isbn)
       ||canonicalizeBookIsbn13(record.editionIsbn)
       ||canonicalizeBookIsbn13(record.metadataIsbn)
-      ||(/^isbn13\\|\\|[0-9]{13}$/.test(String(record.editionKey||''))
+      ||(/^isbn13\|\|[0-9]{13}$/.test(String(record.editionKey||''))
         ?canonicalizeBookIsbn13(String(record.editionKey).slice(8)):null)
       )===removedEdition);
   const retainedCurrentLoan=(db.books||[]).some(copy=>
