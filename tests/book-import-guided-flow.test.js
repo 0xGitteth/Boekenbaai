@@ -137,7 +137,7 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Manual correction must clear an earlier metadata keep override');
   // Server reanalysis can remove or reorder a card. Keep the user's
   // place by worksheet row, never restart the review at book 1.
-  const focusBegin=ui.indexOf('function resolveGuidedReviewIndex(');
+  const focusBegin=ui.indexOf('function selectGuidedSourceRow(');
   const focusEnd=ui.indexOf('    let guidedAlternativeRow=',focusBegin);
   assert.ok(focusBegin>=0&&focusEnd>focusBegin,
     'Guided review must implement stable position restoration');
