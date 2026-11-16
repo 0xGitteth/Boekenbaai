@@ -21,7 +21,9 @@ const db={
     {id:'r2',subjectType:'student',subjectId:'s1',
       bookId:'b2',finished:true}],
   examReadingLists:[{id:'manual',studentId:'s1',bookId:'b1',
-    title:'Een boek',addedManually:true}],
+    title:'Een boek',addedManually:true},
+    {id:'auto',studentId:'s1',bookId:'b1',
+      title:'Een boek',addedManually:false}],
 };
 assert.equal(appendDurableLoanEvent(db,db.history[0]),true);
 assert.equal(borrowCountEvents(db).filter(x=>x.type==='check_out').length,1,
@@ -51,8 +53,9 @@ assert.equal(db.history.length,0);
 assert.equal(db.bookLoanPeriods.length,0);
 assert.equal(db.readingRecords.length,1);
 assert.equal(db.students[0].borrowedBooks[0].bookId,'b2');
-assert.equal(db.examReadingLists.length,0,
-  'An explicitly deleted student-copy relationship includes its exam list entry');
+assert.equal(db.examReadingLists.length,1,
+  'A manually added exam title must not disappear during automatic history cleanup');
+assert.equal(db.examReadingLists[0].id,'manual');
 assert.equal(db.bookLoanHistoryDeletionAudit.length,1);
 assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
 console.log('Durable circulation history, admin deletion and preservation: OK');
