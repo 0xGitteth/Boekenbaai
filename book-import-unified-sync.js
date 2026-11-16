@@ -96,7 +96,7 @@ function issueAffectsSelection(issue,parts,domain){
   // the entire title + author pair.
   if(domain==='metadata'&&code==='metadata_title_conflict')
     return parts.fields?.title===true;
-  if(domain==='metadata'&&code==='author_sources_differ')
+  if(domain==='metadata'&&['author_sources_differ','metadata_author_conflict'].includes(code))
     return parts.fields?.author===true;
   if(LOAN_ISSUES.has(code))
     return domain==='assignment'&&parts.loans;
@@ -297,7 +297,7 @@ function metadataSourceSafe(row,field,acceptWarnings){
   // Preserve existing values without asking the teacher to decide on every
   // unrelated field; the disputed identity field alone remains actionable.
   if(row.unsafeIdentity || issues.some(issue=>issue.severity==='conflict'
-    &&['metadata_title_conflict','author_sources_differ'].includes(issue.code)))
+    &&['metadata_title_conflict','author_sources_differ','metadata_author_conflict','metadata_author_conflict'].includes(issue.code)))
     return false;
   // Legacy reviewed/test rows can carry a conservative warning status
   // without diagnostic objects. Do not silently accept such a warning.
@@ -335,7 +335,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
     // scoped to an unrelated field such as language or page count.
     const row={...scoped,unsafeIdentity:(original.issues||[]).some(issue=>
       issue.severity==='conflict'
-      &&['metadata_title_conflict','author_sources_differ'].includes(issue.code))};
+      &&['metadata_title_conflict','author_sources_differ','metadata_author_conflict','metadata_author_conflict'].includes(issue.code))};
     const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
     if(!isbn||row.status==='skipped'||!editions.has(isbn))continue;
     if(!groups.has(isbn))groups.set(isbn,[]);
@@ -447,7 +447,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       }
       const identityCodes=new Set([
         'conflicting_edition_isbns','edition_identity_conflict',
-        'metadata_title_conflict','author_sources_differ',
+        'metadata_title_conflict','author_sources_differ','metadata_author_conflict',
         'missing_valid_isbn','metadata_identifier_conflict',
       ]);
       const onlyThisField={books:false,loans:false,locations:false,
