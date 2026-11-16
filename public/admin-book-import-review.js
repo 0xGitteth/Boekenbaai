@@ -1726,16 +1726,36 @@
                 :'Administratieve koppeling'));
               if(diff.reason)explain(entry,diff.reason);
               const compare=make('div','bb-guide__compare');
-              const before=diff.kind==='loan'
-                ?diff.before?.name||'Niet uitgeleend'
-                :diff.before||'Geen vaste locatie';
-              const after=diff.kind==='loan'
-                ?diff.after?.name||'Geen nieuwe uitlening'
-                :diff.kind==='class_context'?'Klas '+safeText(diff.className)
-                  :diff.after||'Geen vaste locatie';
-              compare.append(makeLabeled('Boekenbaai',before),
-                makeLabeled('Excel',after));
-              entry.append(compare);
+              if(diff.kind==='issue'){
+                const context=[];
+                if(diff.excelFixedLocation)
+                  context.push('Vaste locatie: '+diff.excelFixedLocation);
+                if(diff.excelStudent)
+                  context.push('Leerling: '+diff.excelStudent);
+                if(diff.excelClass)
+                  context.push('Klas: '+diff.excelClass);
+                entry.append(make('p','bb-guide__reason',
+                  'De uitlening of vaste locatie kan nog niet worden '
+                  +'gekoppeld. De bestaande registratie blijft behouden.'));
+                if(context.length)entry.append(make('p','bb-guide__count-note',
+                  'In Excel: '+context.join(' · ')));
+                if(diff.sourceIssues?.length)
+                  entry.append(make('p','hint',
+                    'Te controleren brongegevens: '
+                      +diff.sourceIssues.map(code=>
+                        reasonNames[code]||issueNames[code]||code).join('; ')));
+              }else{
+                const before=diff.kind==='loan'
+                  ?diff.before?.name||'Niet uitgeleend'
+                  :diff.before||'Geen vaste locatie';
+                const after=diff.kind==='loan'
+                  ?diff.after?.name||'Geen nieuwe uitlening'
+                  :diff.kind==='class_context'?'Klas '+safeText(diff.className)
+                    :diff.after||'Geen vaste locatie';
+                compare.append(makeLabeled('Boekenbaai',before),
+                  makeLabeled('Excel',after));
+                entry.append(compare);
+              }
               const options=make('div','bb-guide__actions');
               const selected=assignmentResolutions.get(diff.id)?.action
                 ||diff.choice||'pending';
@@ -2014,6 +2034,34 @@
           +'en aanpassen ('+auto.length+')',auditing));
         const automaticAssignments=(assignments.differences||[])
           .filter(diff=>diff.automatic&&!diff.previouslyImported);
+        const deferredSource=automaticAssignments.filter(diff=>diff.autoDeferred);
+        if(deferredSource.length){
+          const attention=make('section','bb-guide__attention');
+          attention.append(make('strong','',
+            deferredSource.length+' administratieve koppeling(en) '
+            +'veilig uitgesteld'));
+          attention.append(make('p','',
+            'Deze Excelrijen hebben nog een bronconflict. De bijbehorende '
+            +'uitleningen en vaste locaties worden niet gewijzigd. '
+            +'Je boek- en ISBN-correcties kunnen wel worden opgeslagen. '
+            +'De oorspronkelijke gegevens blijven beschikbaar in de '
+            +'conceptexport.'));
+          const details=make('div','bb-guide__audit-list');
+          for(const diff of deferredSource){
+            const values=[
+              diff.excelFixedLocation
+                ?'Vaste plek: '+diff.excelFixedLocation:'',
+              diff.excelClass?'Klas: '+diff.excelClass:'',
+              diff.excelStudent?'Leerling: '+diff.excelStudent:'',
+            ].filter(Boolean);
+            details.append(make('p','bb-guide__count-note',
+              'Excelrij '+diff.worksheetRow+' · '+(diff.title||'Boek')
+              +(values.length?' · '+values.join(' · '):'')));
+          }
+          attention.append(makeDetail('Bekijk uitgestelde koppelingen',
+            details));
+          panel.append(attention);
+        }
         if(automaticAssignments.length){
           const list=make('div','bb-guide__audit-list');
           for(const diff of automaticAssignments){
@@ -2038,6 +2086,10 @@
               choose('Vaste plek','class_fixed');
               if(diff.classId&&!diff.hasExplicitLoan)
                 choose('Uitlening aan klas','class_loan');
+            }else if(diff.kind==='issue'){
+              line.append(make('span','hint',
+                'Niet automatisch aanpasbaar. De bestaande registratie '
+                +'blijft behouden.'));
             }else{
               choose('Excel overnemen','apply');
               choose('Bestaande behouden','keep');
