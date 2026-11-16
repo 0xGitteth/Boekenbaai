@@ -227,11 +227,13 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
     ||canonicalizeBookIsbn13(copy?.isbn13)
     ||canonicalizeBookIsbn13(copy?.barcode);
   const snapshotEdition=item=>{
-    const match=/^isbn13\\|\\|(\\d{13})$/.exec(String(item?.editionKey||''));
+    const key=String(item?.editionKey||'');
+    const storedIsbn=key.startsWith('isbn13||')
+      ?canonicalizeBookIsbn13(key.slice('isbn13||'.length)):null;
     return canonicalizeBookIsbn13(item?.editionIsbn)
       ||canonicalizeBookIsbn13(item?.metadataIsbn)
       ||canonicalizeBookIsbn13(item?.isbn)
-      ||(match?canonicalizeBookIsbn13(match[1]):null);
+      ||storedIsbn;
   };
   // Deleted copies remain identifiable via saved reading and exam entries.
   const removedEdition=edition(booksById.get(bookId))
