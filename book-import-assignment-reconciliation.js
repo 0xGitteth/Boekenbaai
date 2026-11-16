@@ -285,6 +285,20 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
     found.push({row,copy:located.copy});
   }
   const differences=found.filter(item=>item.kind==='issue');
+  // Evaluate a complete batch of borrower replacements together. A pupil
+  // can receive copy A when their existing copy B is being reassigned away
+  // in the same confirmed batch, without fabricating intermediate returns.
+  const movesByCopy=new Map(found.filter(item=>!item.kind
+    &&(item.row.context?.studentLoan||item.row.context?.classLoan))
+    .map(item=>[item.copy.id,{
+      desired:desiredLoan(item.row,db),
+      action:selected.get(item.row.index+':loan')||'apply',
+    }]));
+  const releasingCopy=(copy,studentId)=>{
+    const move=movesByCopy.get(copy.id);
+    return move&&move.action==='apply'&&!move.desired.error
+      &&(move.desired.type!=='student'||move.desired.id!==studentId);
+  };
   const acknowledgedLoans=[];
   for(const {row,copy} of found.filter(item=>!item.kind)) {
     const base={rowIndex:row.index,worksheetRow:row.sourceRowNumber,
@@ -342,10 +356,12 @@ function buildAssignmentPreview(analysis, db, input=[], options={}) {
           ? (db.students||[]).find(x=>x.id===desired.id) : null;
         const otherEditionBorrowed=claim&&(claim.borrowedBooks||[]).some(loan=>{
           const b=(db.books||[]).find(item=>item.id===borrowedId(loan));
-          return b && b.id!==copy.id && edition(b)===edition(copy);
+          return b && b.id!==copy.id && edition(b)===edition(copy)
+            && !releasingCopy(b,desired.id);
         });
         const conflictingCopy=(db.books||[]).some(b=>b.id!==copy.id
-          && edition(b)===edition(copy) && b.borrowedBy===desired.id && desired.type==='student');
+          && edition(b)===edition(copy) && b.borrowedBy===desired.id
+          && desired.type==='student'&&!releasingCopy(b,desired.id));
         differences.push({...base,id:row.index+':loan',kind:'loan',
           before:current,after:desired,
           reason:otherEditionBorrowed||conflictingCopy?'student_already_borrowed_edition':'',
