@@ -111,6 +111,9 @@ function stageSheets(stage,request){
       'Geleend door klas':field('classLoan',ctx.classLoan?.name
         ||ctx.studentClassHint?.label||''),
       'Naam leerling':field('studentLoan',ctx.studentLoan?.name||''),
+      'Klassen':field('classes',(ctx.classContext||[]).join('; ')),
+      'Aanwezig in bibliotheek':field('libraryPresence',
+        ctx.libraryPresence?.value||''),
     };
     return data;
   });
