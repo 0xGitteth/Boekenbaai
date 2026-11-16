@@ -1180,6 +1180,19 @@
         !item.automatic&&!item.previouslyImported);
       const manualMetadata=metadata.issues||[];
       const actionable=plan.actionableSourceIssues||[];
+      // These source warnings have already been safely deferred by the
+      // assignment planner. They do not need a book-identity decision.
+      // Keep them in the final administration summary, not in a dead-end
+      // card where the teacher cannot take any action.
+      const administrativeSourceCodes=new Set([
+        'student_loan_unmatched','student_loan_ambiguous',
+        'class_loan_unmatched','class_loan_ambiguous',
+        'fixed_location_needs_review',
+      ]);
+      const deferredAssignmentRows=new Set(
+        (assignments.differences||[]).filter(diff=>diff.autoDeferred
+          ||(diff.kind==='issue'&&diff.choice==='later'))
+          .map(diff=>diff.rowIndex));
       const books=new Map();
       const groupFor=(isbn,row)=>{
         const key=isbn||('row:'+row?.index);
@@ -1213,16 +1226,10 @@
       // An absent physical edition cannot receive an imported loan or
       // location. This is not a pending assignment decision, but the
       // omission must still be visible before a teacher confirms.
-      for(const missing of assignments.notInCollection||[]){
-        const source=rowByNumber.get(missing.rows?.[0]);
-        const group=groupFor(missing.editionIsbn
-          ||source?.book?.editionIsbn||'',source);
-        group.missingAssignments.push(missing);
-        for(const number of missing.rows||[]){
-          const row=rowByNumber.get(number);
-          if(row)group.rows.set(row.index,row);
-        }
-      }
+      // Missing-stock administration is reported in the final overview
+      // (summary.missingStockGroups), not as an unanswerable review card.
+      // An actual inventory/identity conflict still creates its own card.
+
       for(const issue of manualMetadata){
         const row=rowByNumber.get(issue.worksheetRows?.[0]);
         const group=groupFor(issue.isbn||'',row);
@@ -1237,9 +1244,11 @@
         if(!row)continue;
         // Informative source messages do not create new review cards.
         const exceptions=(item.issues||[]).filter(issue=>
-          issue.severity==='conflict'
-          ||issue.reviewLevel!=='informational'
-            &&issue.severity==='warning');
+          !(deferredAssignmentRows.has(row.index)
+            &&administrativeSourceCodes.has(issue.code))
+          &&(issue.severity==='conflict'
+            ||issue.reviewLevel!=='informational'
+              &&issue.severity==='warning'));
         if(!exceptions.length)continue;
         const group=groupFor(row.book?.editionIsbn||'',row);
         group.warnings.push(...exceptions);
@@ -1682,9 +1691,13 @@
                   toggleSkippedRow(corrections,skippedEdits,index,next);
                 warningsAccepted=false;
                 if(currentApplyButton)currentApplyButton.disabled=true;
-                // Skipping is a real reviewed decision; immediately
-                // recalculate it so the next outstanding book appears.
-                void recheck();
+                // Save the skip as a draft and continue immediately.
+                // The server recalculates the final queue only once when
+                // the teacher explicitly asks to review all choices.
+                scheduleGuidedDraftSave();
+                if(guidedIndex<queue.length-1)guidedIndex++;
+                storeGuidedPosition();
+                render();
               });
             check.append(actions);
             if(openEditor===source?.index&&source)
