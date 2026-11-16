@@ -107,7 +107,7 @@ function safeRowReplays(db,sourceRows){
 function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now){
   if(!Array.isArray(db.bookImportDecisionMemory))db.bookImportDecisionMemory=[];
   const ledger=db.bookImportDecisionMemory;
-  const seen=new Set();
+  const decisions=new Map();
   let recorded=0;
   for(const correction of corrections||[]){
     if(!Number.isSafeInteger(correction?.index)||correction.index<0
@@ -122,12 +122,22 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
       const fingerprint=rowFingerprint(row,field);
       if(!fingerprint||typeof value!=='string'||value.length>4000)continue;
       const unique=batchId+'|'+fingerprint;
-      if(seen.has(unique))continue;
-      seen.add(unique);
-      ledger.push({fingerprint,sourceIdentity:identity,field,
-        value,editionIsbn:edition,batchId,recordedAt:now});
-      recorded++;
+      const earlier=decisions.get(unique);
+      if(earlier&&earlier.value!==value){
+        decisions.set(unique,{conflict:true});
+        continue;
+      }
+      if(!earlier)decisions.set(unique,{
+        fingerprint,sourceIdentity:identity,field,
+        value,editionIsbn:edition,batchId,recordedAt:now,
+      });
     }
+  }
+  // Two physically indistinguishable rows with opposite corrections
+  // cannot be remembered safely. Keep neither, rather than guessing.
+  for(const candidate of decisions.values()){
+    if(candidate.conflict)continue;
+    ledger.push(candidate);recorded++;
   }
   // Bounded independent memory survives rotation of the short import reports.
   db.bookImportDecisionMemory=ledger.slice(-MAX_ITEMS);
