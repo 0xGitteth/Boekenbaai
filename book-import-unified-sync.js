@@ -564,7 +564,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         &&sameAccepted(field,current,prior.after)
         &&sameAccepted(field,next,prior.excel);
       const protectedField=!manualExcel&&!conflict&&!selected.has(id)
-        &&copies.every(copy=>
+        &&copies.some(copy=>
           copy.importProvenance?.fieldSources?.[field]?.sourceType==='manual');
       if(remembered||protectedField){
         automaticDecisions.push({
