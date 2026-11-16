@@ -26,6 +26,22 @@ function equivalentSpelling(a,b) {
   const left=comparison(a),right=comparison(b);
   return Boolean(left&&right&&left===right);
 }
+// Only reorderings of the exact same name tokens are considered equivalent.
+// This covers library-style "Abbema, Hinke van" / "Hinke van Abbema"
+// without treating distinct names or missing coauthors as equal.
+function equivalentAuthorName(a,b) {
+  if(equivalentSpelling(a,b))return true;
+  const tokens=value=>display(value).normalize('NFD')
+    .replace(/[\u0300-\u036f]/gu,'').toLocaleLowerCase('nl')
+    .match(/[\p{L}\p{N}]+/gu)||[];
+  const left=tokens(a),right=tokens(b);
+  return left.length>=2&&left.length===right.length
+    &&left.sort().every((word,index)=>word===right.sort()[index]);
+}
+function sameSourceValue(field,a,b){
+  return field==='author'?equivalentAuthorName(a,b)
+    :field==='title'?sameBookTitle(a,b):nearlySameBookText(a,b);
+}
 function independentVotes(isbn,field,entries) {
   if(!FIELDS.has(field)||!Array.isArray(entries))return [];
   const target=canonicalizeBookIsbn13(isbn);
@@ -52,8 +68,7 @@ function sourceConsensus(isbn,field,entries) {
     // Accent, spacing and punctuation variants are the same orthographic
     // claim. Two independent providers must not become opposing votes solely
     // because one writes "P.S." and another writes "PS".
-    const matching=[...groups.keys()].find(key=>(field==='title'
-      ?sameBookTitle(key,vote.value):nearlySameBookText(key,vote.value)));
+    const matching=[...groups.keys()].find(key=>sameSourceValue(field,key,vote.value));
     const key=matching||vote.value;
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(vote);
@@ -77,24 +92,24 @@ function decide({isbn,field,excel,current,evidence=[]}){
   if(!incoming||!FIELDS.has(field))return {...base,action:'excel',value:excel,
     reason:'Geselecteerde ingevulde Excelkolom'};
   if(consensus.value && consensus.agreeing>=2 && !consensus.conflicting
-    && nearlySameBookText(incoming,consensus.value)){
+    && sameSourceValue(field,incoming,consensus.value)){
     return {...base,confidence:'high',action:'source',
       value:consensus.value,authors:consensus.authors,
       reason:consensus.agreeing+' onafhankelijke ISBN-bronnen bevestigen dezelfde schrijfwijze'};
   }
   if(consensus.value && consensus.agreeing===1 &&!consensus.conflicting
-    &&nearlySameBookText(incoming,consensus.value)
-    &&(!old||nearlySameBookText(old,incoming))){
+    &&sameSourceValue(field,incoming,consensus.value)
+    &&(!old||sameSourceValue(field,old,incoming))){
     return {...base,action:'source',value:consensus.value,authors:consensus.authors,
       reason:'Eén ISBN-bron bevestigt een equivalente schrijfwijze'};
   }
   if(['title','author','publisher'].includes(field) && old
-    &&nearlySameBookText(incoming,old) &&incoming!==old){
+    &&sameSourceValue(field,incoming,old) &&incoming!==old){
     return {...base,action:'keep',value:old,
       reason:'Bestaande spelling behouden totdat onafhankelijke ISBN-bronnen een correctie bevestigen'};
   }
   if(['title','author','publisher'].includes(field) && old
-    &&!nearlySameBookText(incoming,old)){
+    &&!sameSourceValue(field,incoming,old)){
     return {...base,action:'keep',value:old,
       reason:'Bestaande titel of auteur behouden; inhoudelijk afwijkende schrijfwijze niet zeker'};
   }
@@ -103,4 +118,4 @@ function decide({isbn,field,excel,current,evidence=[]}){
       ?'Geen onafhankelijke bronovereenstemming, geldige Excelwaarde voorgesteld'
       :'Geen onafhankelijke bronnen geraadpleegd; geselecteerde Excelwaarde voorgesteld'};
 }
-module.exports={normalizeSource,comparison,equivalentSpelling,independentVotes,sourceConsensus,decide};
+module.exports={normalizeSource,comparison,equivalentSpelling,equivalentAuthorName,independentVotes,sourceConsensus,decide};
