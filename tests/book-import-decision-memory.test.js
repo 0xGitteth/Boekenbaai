@@ -1,7 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {sourceIdentity,safeRowReplays,recordBookReviewChoices,
-  recordMetadataReviewChoices}=require('../book-import-decision-memory');
+  recordMetadataReviewChoices,revalidateRememberedCorrections}
+  =require('../book-import-decision-memory');
 const ISBN='9780306406157';
 const initial={
   'Titel':'Ravelijn','Auteur':'Paul van Loon',
@@ -87,4 +88,68 @@ assert.equal(recordBookReviewChoices(schoolDb,[schoolRow],
 assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
   [{index:0,fields:{author:'Hinke van Abbema'}}],
   'Approved values from actual numeric-ISBN/split-author school sheets are reusable');
+
+// Codex P2: URLs with differently cased paths can point to different cover
+// images. A later manual correction must not be overwritten.
+{
+  const original={...initial,'Cover URL':'https://example.org/Cover.jpg'};
+  const coverDb={books:[{...db.books[0],coverUrl:'https://example.org/Cover.jpg'}]};
+  const fields=[{index:0,fields:{coverUrl:'https://example.org/Cover.jpg'}}];
+  assert.equal(recordBookReviewChoices(coverDb,[original],fields,corrected,
+    'cover-1','2026-11-16T20:00:00Z'),1);
+  assert.equal(safeRowReplays(coverDb,[original]).fieldsReused,1);
+  coverDb.books[0].coverUrl='https://example.org/cover.jpg';
+  assert.equal(safeRowReplays(coverDb,[original]).fieldsReused,0,
+    'Newer differently cased URL is a distinct manual choice');
+  coverDb.books[0].coverUrl='https://example.org/Cover.jpg';
+  assert.equal(safeRowReplays(coverDb,[{...original,
+    'Cover URL':'https://example.org/cover.jpg'}]).fieldsReused,0,
+    'A changed worksheet URL must not inherit an earlier approval');
+}
+// Codex P2: duplicated mapped columns must be included in the source
+// fingerprint even when the first cell has not changed.
+{
+  const source={...initial,Tags:'avontuur'};
+  const tagged={books:[{...db.books[0],tags:['mysterie']}]};
+  const correctedTags=[{index:0,fields:{tags:'mysterie'}}];
+  recordBookReviewChoices(tagged,[source],correctedTags,corrected,
+    'tags-1','2026-11-16T20:00:00Z');
+  assert.equal(safeRowReplays(tagged,[source]).fieldsReused,1);
+  assert.equal(safeRowReplays(tagged,[{...source,
+    Tags_1:'geschiedenis'}]).fieldsReused,0,
+    'Adding a second source tags column must invalidate the old permission');
+  assert.equal(safeRowReplays(tagged,[{...source,
+    Tags_1:'avontuur'}]).fieldsReused,0,
+    'Even an extra identical source column must be revalidated');
+  const authorSource={...initial};
+  const authors={books:[{...db.books[0],author:'Paul van Loon'}]};
+  recordBookReviewChoices(authors,[authorSource],
+    [{index:0,fields:{author:'Paul van Loon'}}],corrected,
+    'author-1','2026-11-16T20:00:00Z');
+  assert.equal(safeRowReplays(authors,[authorSource]).fieldsReused,1);
+  assert.equal(safeRowReplays(authors,[{...authorSource,
+    Auteur_1:'Andere auteur'}]).fieldsReused,0,
+    'A new conflicting author column is never hidden by an old correction');
+}
+// Codex P2: an inherited correction remains clearly distinguishable from a
+// subsequent genuine manual edit, including for a resumed import draft.
+{
+  const staged=remembered.corrections;
+  const edited={...db,books:[{...db.books[0],title:'Handmatig nieuwe titel'}]};
+  const rejected=revalidateRememberedCorrections(edited,source,staged,staged);
+  assert.equal(rejected.invalidated,1);
+  assert.deepEqual(rejected.corrections,[],
+    'Older approval is not consent to revert the updated library title');
+  const deliberate=revalidateRememberedCorrections(edited,source,[{
+    index:0,fields:{title:'Bewust nieuwe keuze',publisher:'Uitgever'},
+  }],staged);
+  assert.equal(deliberate.invalidated,0);
+  assert.deepEqual(deliberate.corrections,[{
+    index:0,fields:{title:'Bewust nieuwe keuze',publisher:'Uitgever'},
+  }],'A real review edit must be retained');
+  const stillValid=revalidateRememberedCorrections(db,source,staged,staged);
+  assert.equal(stillValid.invalidated,0);
+  assert.deepEqual(stillValid.corrections,staged);
+}
+
 console.log('Durable book import memory: reuse, changed source, post-edit, skip, privacy and ambiguity OK');
