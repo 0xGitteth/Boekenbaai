@@ -31,6 +31,8 @@ function equivalentSpelling(a,b) {
 // without treating distinct names or missing coauthors as equal.
 function equivalentAuthorName(a,b) {
   if(equivalentSpelling(a,b))return true;
+  // Do not transpose tokens across distinct coauthors.
+  if(/[;&]/.test(String(a))||/[;&]/.test(String(b)))return false;
   const tokens=value=>display(value).normalize('NFD')
     .replace(/[\u0300-\u036f]/gu,'').toLocaleLowerCase('nl')
     .match(/[\p{L}\p{N}]+/gu)||[];
