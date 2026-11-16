@@ -1613,7 +1613,9 @@
                   toggleSkippedRow(corrections,skippedEdits,index,next);
                 warningsAccepted=false;
                 if(currentApplyButton)currentApplyButton.disabled=true;
-                render();
+                // Skipping is a real reviewed decision; immediately
+                // recalculate it so the next outstanding book appears.
+                void recheck();
               });
             check.append(actions);
             if(openEditor===source?.index&&source)
@@ -1692,10 +1694,19 @@
             }
             card.append(section);
           }
-          if(group.metadata.length){
+          // The title/author identity choice above also resolves the
+          // matching metadata issue. Never ask the same question twice.
+          const pendingMetadata=group.metadata.filter(issue=>
+            !(issue.reason==='source_row_requires_review'
+              &&['title','author'].includes(issue.field)
+              &&groupRows.some(row=>(row.issues||[]).some(identity=>
+                identity.code===(issue.field==='title'
+                  ?'metadata_title_conflict':'metadata_author_conflict')
+                &&Boolean(identity.confirmedTitle||identity.confirmedAuthor)))));
+          if(pendingMetadata.length){
             const section=make('section','bb-guide__check');
             section.append(make('h5','','3. Boekgegevens'));
-            for(const issue of group.metadata){
+            for(const issue of pendingMetadata){
               const label=fieldDefs.find(([name])=>name===issue.field)?.[1]
                 ||issue.field;
               const entry=make('div','bb-guide__choice');
