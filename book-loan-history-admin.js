@@ -6,7 +6,7 @@
 const crypto = require('node:crypto');
 const {noteLoanActivity,circulationRevision}=require('./book-import-followups');
 const {persistExcelLoanReceipts}=require('./book-import-loan-migration');
-const {canonicalizeBookIsbn13}=require('./book-edition-core');
+const {keyForBook,keyForReading}=require('./personal-exam-reading-list');
 const norm = x => String(x || '').normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
 const eventTypes = new Set(['check_out','check_in','check_out_class','check_in_class']);
 function borrowEvents(db){
@@ -218,38 +218,28 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
   const logIds=new Set(group.logs.map(item=>item.id));
   const readingIds=new Set(group.readings.map(item=>item.id));
   const periodIds=new Set(group.periods.map(item=>item.id));
-  // Exam entries are edition-wide, even if their bookId still points to
-  // the first physical copy that created the entry. A later completed
-  // reading of another copy must survive deletion of this false history.
+  // Exam entries are edition-wide. A copy can be removed while an exam
+  // entry or a completed reading of that same edition remains valid.
+  // Reuse the actual edition identity used by the exam list, including
+  // legacy title/author keys for books without a valid ISBN.
   const booksById=new Map((db.books||[]).map(copy=>[copy.id,copy]));
-  const edition=copy=>canonicalizeBookIsbn13(copy?.editionIsbn)
-    ||canonicalizeBookIsbn13(copy?.metadataIsbn)
-    ||canonicalizeBookIsbn13(copy?.isbn13)
-    ||canonicalizeBookIsbn13(copy?.barcode);
-  const snapshotEdition=item=>{
-    const key=String(item?.editionKey||'');
-    const storedIsbn=key.startsWith('isbn13||')
-      ?canonicalizeBookIsbn13(key.slice('isbn13||'.length)):null;
-    return canonicalizeBookIsbn13(item?.editionIsbn)
-      ||canonicalizeBookIsbn13(item?.metadataIsbn)
-      ||canonicalizeBookIsbn13(item?.isbn)
-      ||storedIsbn;
-  };
-  // Deleted copies remain identifiable via saved reading and exam entries.
-  const removedEdition=edition(booksById.get(bookId))
-    ||group.exams.map(snapshotEdition).find(Boolean)
-    ||group.readings.map(snapshotEdition).find(Boolean);
-  const retainedReading=(db.readingRecords||[]).some(record=>
-    record.subjectType==='student'&&record.subjectId===studentId
-    &&record.finished===true&&!readingIds.has(record.id)
-    &&removedEdition&&(edition(booksById.get(record.bookId))
-      ||snapshotEdition(record))===removedEdition);
-  const retainedCurrentLoan=(db.books||[]).some(copy=>
-    copy.status==='borrowed'
-    &&copy.borrowedBy===studentId&&removedEdition
-    &&edition(copy)===removedEdition);
-  const examIds=retainedReading||retainedCurrentLoan
-    ?new Set():new Set(group.exams.map(item=>item.id));
+  const originalBook=booksById.get(bookId);
+  const examIds=new Set();
+  for(const entry of group.exams){
+    const editionKey=String(entry.editionKey||'')
+      ||(originalBook?keyForBook(originalBook):'')
+      ||keyForBook(entry);
+    const retainedReading=Boolean(editionKey)
+      &&(db.readingRecords||[]).some(record=>
+        record.subjectType==='student'&&record.subjectId===studentId
+        &&record.finished===true&&!readingIds.has(record.id)
+        &&keyForReading(record,db)===editionKey);
+    const retainedCurrentLoan=Boolean(editionKey)
+      &&(db.books||[]).some(copy=>copy.status==='borrowed'
+        &&copy.borrowedBy===studentId
+        &&keyForBook(copy)===editionKey);
+    if(!retainedReading&&!retainedCurrentLoan)examIds.add(entry.id);
+  }
   db.history=(db.history||[]).filter(item=>!logIds.has(item.id));
   db.bookLoanEvents=(db.bookLoanEvents||[]).filter(item=>!logIds.has(item.id));
   db.readingRecords=(db.readingRecords||[]).filter(item=>!readingIds.has(item.id));
