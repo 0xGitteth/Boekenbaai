@@ -28,6 +28,7 @@ const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
   actualAssignmentPreview, assignmentSource, withMissingExcelLoans,
+  refreshDeferredSnapshotRows,
   shouldApplyMetadataToCreatedCopy,
   rebaseStaleAssignmentChoices } =
   require('./book-import-unified-sync');
@@ -6233,7 +6234,8 @@ async function handleApi(req, res, requestUrl) {
               report.deferredDifferences=deferredDifferences;
               report.fullyReviewed=deferredDifferences.length===0;
               report.corrections=corrected.audit;
-              const savedTaskRows=reviewedTaskSourceRows;
+              const savedTaskRows=refreshDeferredSnapshotRows(
+                reviewedTaskSourceRows,assignments.differences,database.books);
               const tasks=createDeferredAssignmentTasks(database,report,savedTaskRows,
                 assignments.differences,now);
               report.deferredTaskIds=tasks.map(task=>task.id);
