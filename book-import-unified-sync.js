@@ -693,6 +693,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
 function buildUnifiedBookImport(analysis,db,{
   parts=DEFAULT_PARTS,acceptWarnings=false,inventoryResolutions=[],
   assignmentResolutions=[],metadataResolutions=[],loanReceipts=[],existingFollowups=[],
+  loanHistoryMode=null,
 }={}){
   if(!analysis?.ok||!Array.isArray(analysis.rows))return {ok:false,error:'invalid_review'};
   const configured=normalizeParts(parts);
@@ -733,7 +734,12 @@ function buildUnifiedBookImport(analysis,db,{
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
   const source=use.loans||use.locations
     ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
-  let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
+  const blankLoanReview={
+    reviewMissingLoans:use.loans&&['preserve','correct'].includes(loanHistoryMode),
+    loanReceipts,
+  };
+  let assignments=buildAssignmentPreview(source,assignmentDb,
+    assignmentChoices.values,blankLoanReview);
   if(!assignments.ok)return assignments;
   // A vague class name is not an instruction to relocate or lend a book.
   // Leave the existing registration intact by default and log that choice.
@@ -746,7 +752,7 @@ function buildUnifiedBookImport(analysis,db,{
     assignments=buildAssignmentPreview(source,assignmentDb,[
       ...assignmentChoices.values,
       ...implicitClassKeeps.map(item=>({id:item.id,action:'keep'})),
-    ]);
+    ],blankLoanReview);
     if(!assignments.ok)return assignments;
     const autoIds=new Set(implicitClassKeeps.map(item=>item.id));
     for(const diff of assignments.differences)if(autoIds.has(diff.id)){
@@ -776,7 +782,7 @@ function buildUnifiedBookImport(analysis,db,{
       ...assignmentChoices.values,
       ...implicitClassKeeps.map(diff=>({id:diff.id,action:'keep'})),
       ...previouslyImported.map(diff=>({id:diff.id,action:'keep'})),
-    ]);
+    ],blankLoanReview);
     if(!assignments.ok)return assignments;
     const ignored=new Set(previouslyImported.map(diff=>diff.id));
     const implicitIds=new Set(implicitClassKeeps.map(diff=>diff.id));
