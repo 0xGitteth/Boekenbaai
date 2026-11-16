@@ -613,6 +613,44 @@ assert.equal(preview(directory(),[row(0,'4711001',loanTo('tim','Tim Leerling'))]
   assert.equal(live.bookLoanPeriods?.length||0,0);
   assert.equal(live.history.length,1,'No fictitious checkout or check-in');
 }
+// The new workbook assigns the correct copy to Lisa and explicitly
+// removes her incorrect existing copy of the SAME ISBN. The release is
+// relevant only when that empty-field correction is confirmed in this batch.
+{
+  const live=directory();
+  live.books[0].status='available';
+  live.books[0].borrowedBy=null;
+  live.books[0].borrowedAt=null;
+  live.books[0].dueDate=null;
+  live.books[1].status='borrowed';
+  live.books[1].borrowedBy='lisa';
+  live.students[0].borrowedBooks=[{bookId:'copy-2'}];
+  const rows=[
+    row(0,'4711001',loanTo('lisa','Lisa Leerling')),
+    row(1,'4711002',{}),
+  ];
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true};
+  const unconfirmed=buildAssignmentPreview({ok:true,rows},live,
+    [],options);
+  assert.equal(unconfirmed.ok,true);
+  assert.equal(unconfirmed.differences.find(d=>d.id==='0:loan')?.reason,
+    'student_already_borrowed_edition');
+  const chosen=buildAssignmentPreview({ok:true,rows},live,[
+    {id:'0:loan',action:'apply'},
+    {id:'1:loan',action:'apply'},
+  ],options);
+  assert.equal(chosen.ok,true);
+  assert.equal(chosen.summary.readyToApply,true);
+  assert.equal(chosen.differences.find(d=>d.id==='0:loan')?.reason,'');
+  applyAssignmentPreview(live,chosen,'admin',now,'confirmed-replacement',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[0].status,'borrowed');
+  assert.equal(live.books[0].borrowedBy,'lisa');
+  assert.equal(live.books[1].status,'available');
+  assert.equal(live.books[1].borrowedBy,null);
+  assert.deepEqual(live.students[0].borrowedBooks.map(x=>x.bookId),['copy-1']);
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+}
 // An explicit permanent class location can replace an incorrect class
 // checkout only when the administrator confirms a complete loan snapshot.
 {
