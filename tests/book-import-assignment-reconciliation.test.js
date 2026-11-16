@@ -588,4 +588,85 @@ assert.equal(preview(allLent,[row(0,'',loanTo('tim','Tim Leerling'))])
 // A distinct physical barcode still identifies its exact individual copy.
 assert.equal(preview(directory(),[row(0,'4711001',loanTo('tim','Tim Leerling'))])
   .differences[0].bookId,'copy-1');
+
+// A corrected complete workbook swaps students between actual physical books.
+// The import must move the two links, not append two extra loans.
+{
+  const live=directory();
+  live.books[1].status='borrowed';
+  live.books[1].borrowedBy='tim';
+  live.students[1].borrowedBooks=[{bookId:'copy-2'}];
+  const corrected=[
+    row(0,'4711001',loanTo('tim','Tim Leerling')),
+    row(1,'4711002',loanTo('lisa','Lisa Leerling')),
+  ];
+  const plan=preview(live,corrected);
+  assert.equal(plan.ok,true);
+  assert.equal(plan.differences.length,2);
+  assert.equal(plan.differences.every(d=>d.kind==='loan'&&d.choice==='apply'),true);
+  applyAssignmentPreview(live,plan,'admin',now,'swapped-loans',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[0].borrowedBy,'tim');
+  assert.equal(live.books[1].borrowedBy,'lisa');
+  assert.deepEqual(live.students[0].borrowedBooks.map(x=>x.bookId),['copy-2']);
+  assert.deepEqual(live.students[1].borrowedBooks.map(x=>x.bookId),['copy-1']);
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+  assert.equal(live.history.length,1,'No fictitious checkout or check-in');
+}
+// An explicit permanent class location can replace an incorrect class
+// checkout only when the administrator confirms a complete loan snapshot.
+{
+  const live=directory();
+  live.books[0].status='borrowed';
+  live.books[0].borrowedBy=null;
+  live.books[0].borrowedByClassId='a';
+  live.students[0].borrowedBooks=[];
+  const rows=[row(0,'4711001',{fixedLocation:{status:'resolved',label:'Klas A'}})];
+  const partial=buildAssignmentPreview({ok:true,rows},live,[],{
+    reviewMissingLoans:true,loanReceipts:[],
+  });
+  assert.equal(partial.differences.some(x=>x.kind==='loan'),false);
+  const full=buildAssignmentPreview({ok:true,rows},live,[],{
+    reviewMissingLoans:true,reviewAllBlankLoans:true,
+  });
+  assert.equal(full.differences.length,2);
+  assert.equal(full.differences.every(x=>x.choice==='pending'),true);
+  assert.equal(full.differences.find(x=>x.kind==='loan').classLoanToFixed,true);
+  const decisions=full.differences.map(x=>({id:x.id,action:'apply'}));
+  const corrected=buildAssignmentPreview({ok:true,rows},live,decisions,{
+    reviewMissingLoans:true,reviewAllBlankLoans:true,
+  });
+  assert.equal(corrected.ok,true);
+  applyAssignmentPreview(live,corrected,'admin',now,'fixed-in-class',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[0].status,'available');
+  assert.equal(live.books[0].borrowedByClassId,null);
+  assert.equal(live.books[0].fixedLocation,'Klas A');
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+}
+// Conversely a class loan may replace an erroneously permanent location,
+// without automatically clearing the location on an incomplete workbook.
+{
+  const live=directory();
+  live.books[1].fixedLocation='Klas A';
+  const rows=[row(0,'4711002',classLoan('a','Klas A'))];
+  const partial=buildAssignmentPreview({ok:true,rows},live,[]);
+  assert.equal(partial.differences.filter(x=>x.kind==='location').length,0);
+  const full=buildAssignmentPreview({ok:true,rows},live,[],{
+    reviewMissingLoans:true,reviewAllBlankLoans:true,
+  });
+  const toRemove=full.differences.find(x=>x.kind==='location');
+  assert.equal(toRemove?.classFixedToLoan,true);
+  assert.equal(toRemove.choice,'pending');
+  const confirmed=buildAssignmentPreview({ok:true,rows},live,[
+    {id:toRemove.id,action:'apply'},
+  ],{reviewMissingLoans:true,reviewAllBlankLoans:true});
+  assert.equal(confirmed.ok,true);
+  applyAssignmentPreview(live,confirmed,'admin',now,'class-borrowing',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[1].status,'borrowed');
+  assert.equal(live.books[1].borrowedByClassId,'a');
+  assert.equal(live.books[1].fixedLocation,null);
+}
+
 console.log('Administrative assignment reconciliation: choices, metadata retention, identity and zero implicit deletions passed');
