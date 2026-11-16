@@ -135,6 +135,43 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Online enrichment of an unselected field must not offer a broken editor');
   assert.ok(ui.includes('metadataIssueId:item.id,'),
     'Manual correction must clear an earlier metadata keep override');
+  // Server reanalysis can remove or reorder a card. Keep the user's
+  // place by worksheet row, never restart the review at book 1.
+  const focusBegin=ui.indexOf('function selectGuidedSourceRow(');
+  const focusEnd=ui.indexOf('    let guidedAlternativeRow=',focusBegin);
+  assert.ok(focusBegin>=0&&focusEnd>focusBegin,
+    'Guided review must implement stable position restoration');
+  const focusHelpers=new Function(ui.slice(focusBegin,focusEnd)
+    +';return {resolveGuidedReviewIndex,selectGuidedSourceRow};')();
+  const resolveFocus=focusHelpers.resolveGuidedReviewIndex;
+  const groups=(...rows)=>rows.map((row,i)=>({
+    key:'book-'+i,rows:new Map([[row,true]]),
+  }));
+  assert.equal(resolveFocus(groups(10,20,30),{rowIndex:20,index:1},0),1,
+    'After server reanalysis stay on the same unresolved worksheet row');
+  assert.equal(resolveFocus(groups(30,10,20),{rowIndex:20,index:1},0),2,
+    'A reordered review queue must preserve the same physical book');
+  assert.equal(resolveFocus(groups(10,30),{rowIndex:20,index:1},0),1,
+    'Once a card is resolved move to the next outstanding slot');
+  assert.equal(resolveFocus(groups(10),{rowIndex:20,index:2},0),0,
+    'If the last card disappears show the nearest remaining card');
+  assert.equal(resolveFocus([], {rowIndex:20,index:1},0),0);
+  const groupedBook={key:'same-isbn',rows:new Map([
+    [4,{index:4,sourceRowNumber:31,matchSuggestions:[]}],
+    [7,{index:7,sourceRowNumber:57,matchSuggestions:[{editionIsbn:'9780306406157'}]}],
+  ])};
+  assert.equal(focusHelpers.selectGuidedSourceRow(groupedBook,null).index,7,
+    'Rechecks must anchor to the suggested worksheet row actually displayed');
+  assert.equal(focusHelpers.selectGuidedSourceRow(groupedBook,4).index,4,
+    'An explicitly selected worksheet row must take priority');
+  assert.ok(ui.includes('guidedRecheckFocus=focus'),
+    'Server review must remember the active book after success');
+  assert.ok(!ui.includes('guidedStep=2;guidedIndex=0;'),
+    'Rechecking decisions must not jump back to the first book');
+  assert.ok(ui.includes('if(selectCandidateForRow(source,candidate))void recheck()'),
+    'Canceling a candidate confirmation must not trigger reanalysis');
+  assert.ok(ui.includes('const suggestions=allSuggestions.filter(option=>'),
+    'An ISBN-less match must not appear as a selectable edition');
   assert.ok(ui.includes('guidedMissingAcknowledged'),
     'Missing loan and location editions must require explicit acknowledgement');
   assert.ok(ui.includes('for(const missing of assignments.notInCollection||[])'),

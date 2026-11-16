@@ -535,6 +535,29 @@
     let visibleMatchCards=5;
     let guidedStep=1; // 0 upload, 1 analysis overview, 2 review, 3 final
     let guidedIndex=0;
+    function selectGuidedSourceRow(group,selectedIndex){
+      if(!group)return null;
+      const groupRows=[...group.rows.values()]
+        .sort((a,b)=>a.sourceRowNumber-b.sourceRowNumber);
+      return groupRows.find(row=>row.index===selectedIndex)
+        ||groupRows.find(row=>Array.isArray(row.matchSuggestions)
+          &&row.matchSuggestions.length)
+        ||groupRows[0]||null;
+    }
+    // Remember the physical worksheet row, not only a changing queue index.
+    // A review may remove or reorder cards while the import is being checked.
+    let guidedRecheckFocus=null;
+    function resolveGuidedReviewIndex(queue,focus,index){
+      if(!queue.length)return 0;
+      if(focus){
+        const byRow=queue.findIndex(group=>group.rows.has(focus.rowIndex));
+        if(byRow>=0)return byRow;
+        // The previous book was resolved: stay at its old position so
+        // the next outstanding book appears, rather than jumping to book 1.
+        return Math.max(0,Math.min(focus.index,queue.length-1));
+      }
+      return Math.max(0,Math.min(index,queue.length-1));
+    }
     let guidedAlternativeRow=null;
     const candidateChangeHistory=new Map();
     const guidedSelectedRow=new Map();
@@ -867,11 +890,11 @@
     }
 
     function selectCandidateForRow(row,candidate){
-      if(!row||!candidate?.editionIsbn)return;
+      if(!row||!candidate?.editionIsbn)return false;
       if(candidate.identityWarning
         &&!window.confirm('De gevonden titel of auteur wijkt af van Excel. '
           +'Controleer op het fysieke boek of het echt deze editie is. '
-          +'Wil je deze titel, auteur en ISBN overnemen?'))return;
+          +'Wil je deze titel, auteur en ISBN overnemen?'))return false;
       const fields=corrections.get(row.index)?.fields||{};
       const previous=candidateChangeHistory.get(row.index);
       const original=previous?.original||{
@@ -897,6 +920,7 @@
         }
       }
       candidateChangeHistory.set(row.index,{original,lastApplied:nextApplied});
+      return true;
     }
 
     function updateInventoryResolution(isbn, keep) {
@@ -1103,6 +1127,11 @@
       const queue=[...books.values()].sort((a,b)=>priority(a)-priority(b)
         ||Math.min(...[...a.rows.values()].map(row=>row.sourceRowNumber))
           -Math.min(...[...b.rows.values()].map(row=>row.sourceRowNumber)));
+      if(guidedRecheckFocus){
+        guidedIndex=resolveGuidedReviewIndex(queue,guidedRecheckFocus,guidedIndex);
+        guidedRecheckFocus=null;
+        storeGuidedPosition();
+      }
       const safeText=value=>value===undefined||value===null||value===''
         ?'Niet ingevuld':String(value);
       const valueText=value=>value&&typeof value==='object'
@@ -1156,6 +1185,13 @@
       };
       const recheck=async()=>{
         if(draftSaveTimer){clearTimeout(draftSaveTimer);draftSaveTimer=null;}
+        // Capture the card BEFORE the server rebuilds its queue. An ISBN
+        // correction may change the group key, so the row index is stable.
+        const reviewingBook=guidedStep===2?queue[guidedIndex]:null;
+        const currentSource=selectGuidedSourceRow(reviewingBook,
+          reviewingBook?guidedSelectedRow.get(reviewingBook.key):null);
+        const focus=currentSource
+          ?{rowIndex:currentSource.index,index:guidedIndex}:null;
         await run(async()=>{
           const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
             revision:stage.revision,acceptWarnings:warningsAccepted,
@@ -1164,18 +1200,22 @@
             assignmentResolutions:[...assignmentResolutions.values()],
             metadataResolutions:[...metadataResolutions.values()],
           });
+          // Apply the focus only after a successful server review. Failed
+          // requests leave the existing stage, draft, and place untouched.
+          guidedRecheckFocus=focus;
           rememberResponse(response,true);
           const current=response.decisions?.summary||{};
           if(current.readyToApply){
-            guidedStep=3;guidedIndex=0;
+            guidedStep=3;
+            guidedRecheckFocus=null;
           }else{
-            guidedStep=2;guidedIndex=0;
+            guidedStep=2;
           }
           storeGuidedPosition();
           setNotice(current.readyToApply
             ?'Alle controles zijn afgerond. Bekijk de eindcontrole.'
             :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
-              +'Er zijn nog openstaande punten.');
+              +'Je kunt verdergaan bij het boek waar je gebleven was.');
         },'De keuzes worden opgeslagen en veilig opnieuw berekend…');
       };
       const explain=(host,code)=>{
@@ -1247,15 +1287,12 @@
             'Er zijn geen openstaande controles.'));
           addAction(footer,'Naar eindcontrole',()=>setGuidedStep(3,0),true);
         }else{
-          guidedIndex=Math.max(0,Math.min(guidedIndex,queue.length-1));
+          guidedIndex=resolveGuidedReviewIndex(queue,null,guidedIndex);
           const group=queue[guidedIndex];
           const groupRows=[...group.rows.values()]
             .sort((a,b)=>a.sourceRowNumber-b.sourceRowNumber);
-          const selectedRow=guidedSelectedRow.get(group.key);
-          const source=groupRows.find(row=>row.index===selectedRow)
-            ||groupRows.find(row=>Array.isArray(row.matchSuggestions)
-              &&row.matchSuggestions.length)
-            ||groupRows[0]||null;
+          const source=selectGuidedSourceRow(group,
+            guidedSelectedRow.get(group.key));
           const book=source?.book||{};
           const progressBar=make('div','bb-guide__meter');
           progressBar.setAttribute('role','progressbar');
@@ -1343,7 +1380,13 @@
               }
               rowChoices.append(buttons);check.append(rowChoices);
             }
-            const suggestions=source?.matchSuggestions||[];
+            // A record without an ISBN may be a possible match, but it
+            // is not a selectable edition. Do not display it as another
+            // edition in the comparison.
+            const allSuggestions=source?.matchSuggestions||[];
+            const suggestions=allSuggestions.filter(option=>
+              typeof option.editionIsbn==='string'
+              &&/^97[89][0-9]{10}$/.test(option.editionIsbn));
             if(suggestions.length){
               const compare=make('div','bb-guide__compare');
               const raw=source.identifierAnalysis?.explicit?.raw
@@ -1376,8 +1419,7 @@
               check.append(notice);
               const choose=(candidate)=>{
                 if(!candidate.editionIsbn)return;
-                selectCandidateForRow(source,candidate);
-                void recheck();
+                if(selectCandidateForRow(source,candidate))void recheck();
               };
               const alternatives=suggestions.slice(1).filter(option=>
                 option.editionIsbn!==proposed.editionIsbn);
@@ -1389,6 +1431,11 @@
                   img.src=option.coverUrl;
                   img.alt='Omslag van ISBN '+option.editionIsbn;
                   img.loading='lazy';img.referrerPolicy='no-referrer';
+                  img.addEventListener('error',()=>{
+                    img.remove();
+                    cover.append(make('span','hint',
+                      'Geen betrouwbare omslag beschikbaar'));
+                  },{once:true});
                   cover.append(img);
                 }else cover.append(make('span','hint','Geen betrouwbare omslag'));
                 alt.append(cover,make('strong','',safeText(option.title)));
@@ -1429,6 +1476,12 @@
                 if(facts.length)check.append(make('p','hint',
                   facts.map(([name,value])=>name+': '+value).join(' · ')));
               }
+            }else if(allSuggestions.length){
+              check.append(make('p','bb-guide__attention',
+                'Er is een mogelijke bestaande match zonder geldig ISBN. '
+                +'Deze kan niet veilig als editie worden gekozen. '
+                +'Controleer het ISBN op het fysieke boek of corrigeer '
+                +'de bestaande registratie voordat je deze importeert.'));
             }
             for(const entry of group.stock){
               if(entry.existingCopies||entry.targetCopies)
@@ -1810,7 +1863,7 @@
             +'aanpassen ('+automaticAssignments.length+')',list));
         }
         addAction(footer,'Diagnoseverslag downloaden',downloadCurrentDiagnosis);
-        addAction(footer,'Terug naar boeken',()=>setGuidedStep(2,0));
+        addAction(footer,'Terug naar boeken',()=>setGuidedStep(2,guidedIndex));
         if(hasChanges||!summary.readyToApply){
           const check=addAction(footer,'Keuzes opnieuw controleren',recheck,true);
           check.disabled=Boolean(remotePending||busy);
