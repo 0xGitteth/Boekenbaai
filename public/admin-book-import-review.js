@@ -1,4 +1,6 @@
 // Staged import UI: all displayed workbook text uses textContent, never HTML.
+import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarnings}
+  from './admin-book-import-queue.mjs';
 (() => {
   'use strict';
   const rootPath = '/api/admin/book-import-stages';
@@ -1217,19 +1219,10 @@
         !item.automatic&&!item.previouslyImported);
       const manualMetadata=metadata.issues||[];
       const actionable=plan.actionableSourceIssues||[];
-      // These source warnings have already been safely deferred by the
-      // assignment planner. They do not need a book-identity decision.
-      // Keep them in the final administration summary, not in a dead-end
-      // card where the teacher cannot take any action.
-      const administrativeSourceCodes=new Set([
-        'student_loan_unmatched','student_loan_ambiguous',
-        'class_loan_unmatched','class_loan_ambiguous',
-        'fixed_location_needs_review',
-      ]);
-      const deferredAssignmentRows=new Set(
-        (assignments.differences||[]).filter(diff=>diff.autoDeferred
-          ||(diff.kind==='issue'&&diff.choice==='later'))
-          .map(diff=>diff.rowIndex));
+      // Pending loan/class warnings with a server-confirmed safe deferral
+      // are tracked in administration, not shown as unanswerable book cards.
+      const deferredAssignmentRows=deferredAdministrativeRows(
+        assignments.differences||[]);
       const books=new Map();
       const groupFor=(isbn,row)=>{
         const key=isbn||('row:'+row?.index);
@@ -1281,11 +1274,7 @@
         if(!row)continue;
         // Informative source messages do not create new review cards.
         const exceptions=(item.issues||[]).filter(issue=>
-          !(deferredAssignmentRows.has(row.index)
-            &&administrativeSourceCodes.has(issue.code))
-          &&(issue.severity==='conflict'
-            ||issue.reviewLevel!=='informational'
-              &&issue.severity==='warning'));
+          requiresBookReview(issue,row.index,deferredAssignmentRows));
         if(!exceptions.length)continue;
         const group=groupFor(row.book?.editionIsbn||'',row);
         group.warnings.push(...exceptions);
@@ -2042,14 +2031,11 @@
           panel.append(make('p','bb-guide__attention',
             'Er staan nog controles open of er zijn keuzes die eerst '
             +'opnieuw moeten worden berekend.'));
-        // Administrative-only warnings that are already safely deferred
-        // are visible in the deferred-task section. They are not messages
-        // the teacher needs to acknowledge as a book identity decision.
-        const sourceWarnings=actionable.reduce((total,item)=>
-          total+(item.issues||[]).filter(issue=>
-            !(deferredAssignmentRows.has(item.index)
-              &&administrativeSourceCodes.has(issue.code))
-            &&(issue.severity==='warning'||issue.severity==='conflict')).length,0);
+        // Only issues actually presented for book review require a
+        // source-warning acknowledgement. Deferred administration is
+        // separately explained in the final overview.
+        const sourceWarnings=countUnresolvedBookWarnings(
+          actionable,deferredAssignmentRows);
         if(sourceWarnings){
           const accept=make('label','bb-guide__accept');
           const checkbox=make('input');checkbox.type='checkbox';
