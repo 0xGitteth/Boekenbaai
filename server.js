@@ -17,7 +17,8 @@ const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
-const {safeRowReplays,recordBookReviewChoices,recordMetadataReviewChoices}
+const {safeRowReplays,recordBookReviewChoices,recordMetadataReviewChoices,
+  revalidateRememberedCorrections}
   =require('./book-import-decision-memory');
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
 const { analyzeReviewedImport, buildReviewDecisions,
@@ -5532,6 +5533,16 @@ async function handleApi(req, res, requestUrl) {
         // Metadata lookups may take time. Check for books added during that
         // analysis just before publishing the ready/blocked decisions.
         const latestDatabase = loadDb();
+        const replayCheck=revalidateRememberedCorrections(
+          latestDatabase,workbook.rows,remembered.corrections,remembered.corrections);
+        // An asynchronous metadata lookup may have overlapped a newer manual
+        // edit. Do not publish a draft analyzed against now-invalid consent.
+        if(replayCheck.invalidated){
+          return sendJson(res,409,{
+            message:'De bibliotheek is tijdens de controle gewijzigd. Upload het bestand opnieuw zodat eerdere goedkeuringen veilig worden vergeleken.',
+            error:'remembered_review_stale',
+          });
+        }
         analysis.decisions = mode === 'unified_sync'
           ? buildUnifiedBookImport(analysis,latestDatabase,{
             parts:selectedParts.value,loanHistoryMode,fullLoanSnapshot,
@@ -5553,6 +5564,7 @@ async function handleApi(req, res, requestUrl) {
             error: analysis.decisions.error });
         }
         reservation.stage.corrections=remembered.corrections;
+        reservation.stage.rememberedCorrections=remembered.corrections;
         reservation.stage.remembered={
           fieldsReused:remembered.fieldsReused,rowsReused:remembered.rowsReused,
         };
@@ -5707,9 +5719,13 @@ async function handleApi(req, res, requestUrl) {
           // Authentication may have loaded an older snapshot while a large
           // review request was uploading. Review against the latest library.
           const database = loadDb();
+          const freshCorrections=revalidateRememberedCorrections(
+            database,stage.sourceRows,body.corrections,
+            stage.rememberedCorrections||[]);
           stage.progress={completed:0,total:stage.sourceRows.length,
             phase:'analyzing'};
-          const reviewed = await analyzeReviewedImport(stage.sourceRows, body.corrections, {
+          const reviewed = await analyzeReviewedImport(
+            stage.sourceRows,freshCorrections.corrections, {
             ...stage.options, existingBooks: database.books,
             students: database.students, classes: database.classes,
             acceptWarnings: body.acceptWarnings,
@@ -5723,8 +5739,18 @@ async function handleApi(req, res, requestUrl) {
             return sendJson(res, 400, { message: 'Een correctie is ongeldig.', error: reviewed.error, field: reviewed.field, index: reviewed.index });
           }
           includeDerivedThemesInImportPreview(reviewed);
-          // Recheck after any asynchronous lookups, not just after body upload.
+          // Recheck after asynchronous lookups too: a second book edit
+          // during ISBN resolution cannot reinstate revoked consent.
           const latestDatabase = loadDb();
+          const finalCheck=revalidateRememberedCorrections(
+            latestDatabase,stage.sourceRows,freshCorrections.corrections,
+            stage.rememberedCorrections||[]);
+          if(finalCheck.invalidated){
+            return sendJson(res,409,{
+              message:'Een boek is tijdens de controle aangepast. Controleer het importconcept opnieuw.',
+              error:'remembered_review_stale',
+            });
+          }
           let reviewedAssignmentChoices=assignments.values;
           let rebasedAssignmentCount=0;
           const unifiedParameters={
@@ -5781,10 +5807,13 @@ async function handleApi(req, res, requestUrl) {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
           }
-          bookImportStageStore.finishReview(stage, reviewed, body.corrections,
+          bookImportStageStore.finishReview(stage, reviewed,
+            freshCorrections.corrections,
             body.acceptWarnings, choices.values, reviewedAssignmentChoices,metadataChoices.values);
           return sendJson(res, 200, {
             ...importStageView(stage),
+            ...(freshCorrections.invalidated
+              ?{invalidatedRememberedChoices:freshCorrections.invalidated}:{}),
             ...(rebasedAssignmentCount?{reconciledAssignmentChoices:rebasedAssignmentCount}:{}),
           });
         } finally {
