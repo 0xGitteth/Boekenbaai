@@ -2217,9 +2217,10 @@ function createBookCard(template, book, folders, options = {}) {
     location.className = 'book-card__fixed-location';
     location.textContent = locationText;
     location.setAttribute('aria-label', locationText);
-    // Keep the location visible on all variants, not hidden inside themes.
-    (statusBadge?.parentElement || card.querySelector('.book-card__content') || card)
-      .append(location);
+    // Place location directly alongside availability, not after the
+    // content themes where it can disappear from compact card layouts.
+    if (statusBadge) statusBadge.insertAdjacentElement('afterend', location);
+    else (card.querySelector('.book-card__content') || card).prepend(location);
   }
 
   title.textContent = book.title;
