@@ -6168,9 +6168,12 @@ async function handleApi(req, res, requestUrl) {
                   book.importProvenance=book.importProvenance||{fieldSources:{}};
                   book.importProvenance.fieldSources=book.importProvenance.fieldSources||{};
                   book.importProvenance.fieldSources[update.field]=createFieldSource(
-                    update.chosenSource==='source'?'metadata':'excel',
+                    update.chosenSource==='source'?'metadata'
+                      :update.confidence==='manual'?'manual':'excel',
                     update.chosenSource==='source'
-                      ?'verified_isbn_source_consensus':'unified_import');
+                      ?'verified_isbn_source_consensus'
+                      :update.confidence==='manual'?'approved_book_import_correction'
+                        :'unified_import');
                   metadataUpdated++;
                 }
               }
