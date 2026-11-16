@@ -13,24 +13,39 @@ const FIELDS=new Set([
 const MAX_ITEMS=5000;
 const text=value=>String(value??'').normalize('NFKC').trim().replace(/\s+/g,' ');
 const norm=value=>text(value).toLocaleLowerCase('nl-NL');
-const mapped=row=>mapImportRow(row||{}).fields||{};
+const mapped=row=>mapImportRow(row||{});
 const digest=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+// Include *all* recognized source columns, not just the first Excel cell.
+// New, duplicate or contradictory source columns invalidate prior permission.
+// URL paths are case-sensitive; do not lowercase covers in the fingerprint.
+function fieldSources(mapping,field){
+  return (mapping.sources[field]||[]).map(entry=>[
+    text(entry.header).toLocaleLowerCase('nl-NL'),
+    field==='coverUrl'?text(entry.value):norm(entry.value),
+  ]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+}
 const sourceIdentity=row=>{
-  const f=mapped(row);
-  const title=norm(f.title),author=norm(f.author),
-    first=norm(f.authorFirst),last=norm(f.authorLast),
+  const m=mapped(row),f=m.fields;
+  const title=norm(f.title),
     isbn=norm(f.isbn),metadataIsbn=norm(f.metadataIsbn),
     ambiguous=norm(f.ambiguousIdentifier),barcode=norm(f.barcode);
   // An edition ISBN or a physical barcode and a title are required.
   // Blank identifiers never distinguish different physical copies.
   if(!title||!(isbn||metadataIsbn||ambiguous||barcode))return null;
-  return digest([title,author,first,last,isbn,metadataIsbn,ambiguous,barcode]);
+  return digest(['identity',...['title','author','authorFirst','authorLast',
+    'isbn','metadataIsbn','ambiguousIdentifier','barcode']
+    .map(field=>[field,fieldSources(m,field)])]);
 };
 function sourceValue(row,field){
-  const f=mapped(row);
-  if(field==='author')return [f.author,f.authorFirst,f.authorLast].map(norm).join('|');
-  if(field==='editionIsbn')return [f.isbn,f.metadataIsbn,f.ambiguousIdentifier].map(norm).join('|');
-  return norm(f[field]);
+  const m=mapped(row);
+  if(field==='author')return ['author','authorFirst','authorLast']
+    .map(part=>[part,fieldSources(m,part)]);
+  if(field==='editionIsbn')return ['isbn','metadataIsbn','ambiguousIdentifier']
+    .map(part=>[part,fieldSources(m,part)]);
+  return fieldSources(m,field);
+}
+function equalCurrent(field,a,b){
+  return field==='coverUrl'?text(a)===text(b):norm(a)===norm(b);
 }
 function rowFingerprint(row,field){
   const identity=sourceIdentity(row);
@@ -72,7 +87,7 @@ function safeRowReplays(db,sourceRows){
   }
   let recovered=0,books=0;
   for(let index=0;index<(sourceRows||[]).length;index++){
-    const row=sourceRows[index],fields={},f=mapped(row);
+    const row=sourceRows[index],fields={};
     const fingerprint=sourceIdentity(row);
     if(!fingerprint)continue;
     const matched=new Set();
@@ -86,8 +101,8 @@ function safeRowReplays(db,sourceRows){
       // approval, NEVER silently overwrite that newer decision.
       if(!candidates.every(book=>{
         const existing=currentValue(book,field);
-        return field==='editionIsbn'||norm(existing)===norm(item.value)
-          ||(field==='themes'&&norm((book.themes||[]).join('; '))===norm(item.value));
+        return field==='editionIsbn'||equalCurrent(field,existing,item.value)
+          ||(field==='themes'&&equalCurrent(field,(book.themes||[]).join('; '),item.value));
       }))continue;
       if(field==='editionIsbn'&&canonicalizeBookIsbn13(item.value)!==edition)
         continue;
