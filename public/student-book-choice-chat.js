@@ -9,9 +9,11 @@
   if(!button||!dialog||!log||!actions||!status||!closeButton)return;
 
   const seenInTab=new Set();
+  const recentQuestionsInTab=new Set();
   let active=false,epoch=0,grant='',personal=false,firstName='',previousFocus=null;
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
+  let currentQuestion=null,questionHistory=[];
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
     if(className)x.className=className;
@@ -81,6 +83,7 @@
     active=false;busy=false;personal=false;firstName='';
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
+    currentQuestion=null;questionHistory=[];
     shownInDialogue=new Set();
     if(oldGrant){
       // Invalidate on the server as well as forgetting the token in memory.
@@ -239,77 +242,78 @@
   }
   function answer(field,value){
     choices[field]=value;
-    if(field==='route') value==='surprise' ? showRecommendations() : askActivity();
-    else if(field==='activity')askDetail();
-    else if(field==='detail')askSituation();
-    else if(field==='situation')askMood();
-    else if(field==='mood')askLength();
-    else if(field==='length')showRecommendations();
+    if(field==='route'){
+      if(value==='surprise')showRecommendations();
+      else startExploration();
+    }
   }
-  function askActivity(){
-    currentStep='activity';
-    message('Wat doe je graag in je vrije tijd?');
-    options([
-      ['Gamen',()=>answer('activity','gaming')],
-      ['Films of series kijken',()=>answer('activity','film')],
-      ['Sporten',()=>answer('activity','sport')],
-      ['Muziek luisteren of maken',()=>answer('activity','music')],
-      ['Dieren of natuur',()=>answer('activity','nature')],
-      ['Iets anders',()=>answer('activity','other')],
-      ['Weet ik niet',()=>answer('activity','unknown')],
-    ]);
+  function startExploration(){
+    // A fresh question route never discards the last recommendation history:
+    // repeat avoidance continues to work after more than one conversation.
+    choices.answers=[];
+    questionHistory=[];
+    currentQuestion=null;
+    askAdaptiveQuestion();
   }
-  function askDetail(){
-    currentStep='detail';
-    const questions={
-      gaming:'Wat vind je leuk aan een game?',
-      film:'Wat vind je leuk aan een film of serie?',
-      sport:'Wat vind je leuk aan sporten?',
-      music:'Wat vind je leuk aan muziek?',
-      nature:'Wat vind je interessant aan dieren of de natuur?',
-      other:'Wat maakt een verhaal voor jou interessant?',
-      unknown:'Wat zou je in een verhaal willen ontdekken?',
-    };
-    message(questions[choices.activity]||questions.unknown);
+  function showQuestion(question){
+    currentQuestion=question;
+    currentStep='question';
+    recentQuestionsInTab.add(question.id);
+    message(question.prompt);
     options([
-      ['Actie en avontuur',()=>answer('detail','action')],
-      ['Raadsels oplossen',()=>answer('detail','puzzles')],
-      ['Mensen en hun keuzes',()=>answer('detail','people')],
-      ['Nieuwe werelden ontdekken',()=>answer('detail','worlds')],
-      ['Echte dingen leren',()=>answer('detail','facts')],
-      ['Maakt me niet uit',()=>answer('detail','none')],
+      ...(Array.isArray(question.options)?question.options:[]).map(option=>
+        [option.label,()=>recordAnswer(option.id)]),
+      ['Weet ik niet',()=>recordAnswer('skip')],
+      ['Sla deze vraag over',()=>recordAnswer('skip')],
+      ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
     ]);
+    notice('Vraag '+(questionHistory.length+1)+'. Je mag een vraag overslaan.');
   }
-  function askSituation(){
-    currentStep='situation';
-    message('Welke situatie maakt jou het meest nieuwsgierig naar wat er verder gebeurt?');
-    options([
-      ['Iemand ontdekt een geheim',()=>answer('situation','secret')],
-      ['Twee vrienden moeten iets moeilijks beslissen',()=>answer('situation','friends')],
-      ['Iemand krijgt een onverwachte kans',()=>answer('situation','chance')],
-      ['Je leest wat iemand echt heeft meegemaakt',()=>answer('situation','true')],
-      ['Geen van deze',()=>answer('situation','none')],
-    ]);
+  function recordAnswer(optionId){
+    if(!currentQuestion)return;
+    if(!Array.isArray(choices.answers))choices.answers=[];
+    choices.answers.push({questionId:currentQuestion.id,optionId});
+    questionHistory.push(currentQuestion);
+    currentQuestion=null;
+    askAdaptiveQuestion();
   }
-  function askMood(){
-    currentStep='mood';
-    message('Wat lijkt je leuk om te lezen?');
-    options([
-      ['Spannend verhaal',()=>answer('mood','exciting')],
-      ['Iets grappigs',()=>answer('mood','funny')],
-      ['Iets herkenbaars',()=>answer('mood','realistic')],
-      ['Fantasie en magie',()=>answer('mood','fantasy')],
-      ['Een waargebeurd verhaal',()=>answer('mood','true')],
-      ['Geen voorkeur',()=>answer('mood','none')],
-    ]);
+  function goBack(){
+    const previous=questionHistory.pop();
+    choices.answers?.pop();
+    if(previous)showQuestion(previous);
+    else finishIdentity();
   }
-  function askLength(){
-    currentStep='length';
-    message('Wil je liever een kort boek, of maakt de lengte je niet uit?');
-    options([
-      ['Liever niet te lang',()=>answer('length','short')],
-      ['Maakt niet uit',()=>answer('length','any')],
-    ]);
+  async function askAdaptiveQuestion(){
+    if(!active||busy)return;
+    busy=true;currentStep='question';
+    const marker=epoch;
+    notice('Een passende vervolgvraag kiezen…');
+    clearActions();
+    try{
+      const next=await api('/api/auth/student-pin/choice-next',{
+        answers:choices.answers||[],seed,
+        excludeQuestionIds:[...recentQuestionsInTab].slice(-100),
+      });
+      if(!active||marker!==epoch)return;
+      busy=false;
+      if(next.done||!next.question){
+        notice('');
+        showRecommendations();
+      }else{
+        showQuestion(next.question);
+      }
+    }catch(err){
+      if(!active||marker!==epoch)return;
+      busy=false;
+      notice(err.message||'De volgende vraag kon niet worden geladen.');
+      options([
+        ['Opnieuw proberen',askAdaptiveQuestion],
+        ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
+        ['Drie boeken bekijken',showRecommendations],
+      ]);
+    }finally{
+      if(active&&marker===epoch)busy=false;
+    }
   }
   function resultCard(item,catalogue){
     const card=el('article','bb-choice-chat__result');
@@ -330,7 +334,16 @@
     const open=el('button','btn btn--secondary','Bekijk boek');
     open.type='button';
     open.addEventListener('click',()=>openBook(item,open));
-    main.append(open);card.append(cover,main);
+    main.append(open);
+    const similar=el('button','btn btn--ghost','Meer zoals dit');
+    similar.type='button';
+    similar.addEventListener('click',()=>{
+      if(!active||busy)return;
+      message('Meer zoals '+item.title,'student');
+      choices={route:'similar',referenceBookId:item.bookId,answers:[]};
+      showRecommendations();
+    });
+    main.append(similar);card.append(cover,main);
     return card;
   }
   async function openBook(item,buttonElement){
@@ -415,7 +428,8 @@
         options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
       }else{
         notice(err.message);
-        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices.route='new';askSituation();}]]);
+        options([['Opnieuw proberen',()=>showRecommendations(extra)],
+          ['Andere richting',()=>{choices.route='new';startExploration();}]]);
       }
     }finally{busy=false;}
   }
@@ -424,8 +438,8 @@
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};askActivity();}]]
-        : [['Andere richting',()=>{choices.route='new';askSituation();}],
+        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};startExploration();}]]
+        : [['Andere vragen',()=>{choices.route='new';startExploration();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
@@ -437,6 +451,7 @@
           await api('/api/auth/student-pin/choice-reset',grant?{choiceGrant:grant}:{});
           if(!active||marker!==epoch)return;
           seenInTab.clear();shownInDialogue.clear();
+          recentQuestionsInTab.clear();
           message('Je eerdere aanbevelingen zijn gewist. We beginnen weer zonder eerdere voorstellen.');
           finishIdentity();
         }catch(err){
