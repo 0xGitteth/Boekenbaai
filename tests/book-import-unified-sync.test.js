@@ -6,6 +6,57 @@ const {
   shouldApplyMetadataToCreatedCopy,rebaseStaleAssignmentChoices,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
+const XLSX=require('xlsx');
+const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export');
+{
+  const committed=librarySheets({books:[{
+    id:'copy-1',title:'Testboek',author:'A Auteur',
+    editionIsbn:'9780306406157',barcode:'4711001',
+    fixedLocation:'SK BB',status:'borrowed',borrowedBy:'pupil-1',
+    pageCount:224,themes:['Vriendschap','School'],
+  }],students:[{id:'pupil-1',name:'Voorbeeld Leerling'}],classes:[]});
+  const bin=buildWorkbook(XLSX,committed);
+  const parsed=XLSX.read(bin,{type:'base64'});
+  const books=XLSX.utils.sheet_to_json(parsed.Sheets.Boeken);
+  assert.equal(books[0]['Vaste locatie'],'SK BB');
+  assert.equal(books[0]['Uitgeleend aan leerling'],'Voorbeeld Leerling');
+  assert.equal(books[0]["Thema's"],'Vriendschap; School');
+  const original={'Titel':'Foute titel','Auteur':'A Auteur',
+    'ISBN-nummer':'9780306406156','Vast in de klas van':'StructuurBB'};
+  const stage={
+    revision:1,fileName:'bibliotheek.xlsx',
+    sourceRows:[original],
+    analysis:{rows:[{
+      index:0,sourceRowNumber:85,book:{
+        title:'Foute titel',author:'A Auteur',
+        editionIsbn:'',quantity:{value:1},
+        themes:[],tags:[],
+      },context:{fixedLocation:{label:'SK BB',raw:'StructuurBB'}},
+    }]},
+  };
+  const snapshot=stageSheets(stage,{
+    corrections:[{index:0,fields:{
+      title:'Juiste titel',editionIsbn:ISBN,
+    }}],
+    assignmentResolutions:[{id:'0:location',action:'later'}],
+  });
+  const sheet=XLSX.read(buildWorkbook(XLSX,snapshot),{type:'base64'});
+  const draft=XLSX.utils.sheet_to_json(sheet.Sheets['Boeken concept']);
+  assert.equal(draft[0].Titel,'Juiste titel');
+  assert.equal(draft[0]['ISBN-nummer'],ISBN);
+  assert.equal(draft[0]['Vast in de klas van'],'StructuurBB');
+  assert.equal(draft[0].Importstatus,'Concept (nog niet geïmporteerd)');
+  assert.equal(XLSX.utils.sheet_to_json(
+    sheet.Sheets['Originele Excel'])[0].Titel,'Foute titel');
+  const admin=XLSX.utils.sheet_to_json(sheet.Sheets['Administratieve keuzes']);
+  assert.equal(admin[0].Keuze,'later');
+  assert.ok(sheet.Sheets.Toelichting);
+  const malicious=buildWorkbook(XLSX,[['Sheet',[
+    {Titel:'=HYPERLINK("https://evil.example","Klik")'}]]]);
+  const result=XLSX.read(malicious,{type:'base64'});
+  assert.equal(XLSX.utils.sheet_to_json(result.Sheets.Sheet)[0].Titel[0],"'",
+    'Untrusted spreadsheet text must never become an executable Excel formula');
+}
 const ISBN='9780306406157',SECOND='9780439554930';
 {
   const previous=[
