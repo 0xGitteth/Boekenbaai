@@ -6,6 +6,7 @@ const {
   shouldApplyMetadataToCreatedCopy,rebaseStaleAssignmentChoices,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
+const ISBN='9780306406157',SECOND='9780439554930';
 const XLSX=require('xlsx');
 const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export');
 {
@@ -57,7 +58,7 @@ const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export')
   assert.equal(XLSX.utils.sheet_to_json(result.Sheets.Sheet)[0].Titel[0],"'",
     'Untrusted spreadsheet text must never become an executable Excel formula');
 }
-const ISBN='9780306406157',SECOND='9780439554930';
+
 {
   const previous=[
     {index:0,book:{editionIsbn:ISBN,title:'Mijn boek',author:'A'},
