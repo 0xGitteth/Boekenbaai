@@ -89,4 +89,48 @@ assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
   assert.deepEqual(current.readingRecords.map(item=>item.id),['real']);
 }
 
+
+// Removing older false history cannot erase an exam-list entry when that
+// student currently has the same physical book on loan again.
+{
+  const isbn='9780306406157';
+  const active={
+    students:[{id:'s',name:'Student',borrowedBooks:[{bookId:'a'}]}],
+    books:[{id:'a',title:'Titel',editionIsbn:isbn,status:'borrowed',borrowedBy:'s'}],
+    history:[{id:'old',type:'check_out',bookId:'a',studentId:'s',
+      timestamp:'2026-09-01'}],
+    bookLoanEvents:[],bookLoanPeriods:[],readingRecords:[],
+    examReadingLists:[{id:'exam',studentId:'s',bookId:'a',addedManually:false}],
+  };
+  const historical=searchHistory(active,{student:'Student'})[0];
+  const removed=removeFalseHistory(active,admin,{studentId:'s',bookId:'a',
+    expectedFingerprint:historical.fingerprint,confirm:true});
+  assert.equal(removed.ok,true);
+  assert.equal(removed.examEntriesRemoved,0);
+  assert.equal(active.examReadingLists.length,1);
+  assert.equal(active.books[0].borrowedBy,'s');
+}
+// The second copy can have been removed from inventory. Its saved reading
+// editionKey still supports keeping the legitimate exam reading entry.
+{
+  const isbn='9780306406157';
+  const active={
+    students:[{id:'s',name:'Student',borrowedBooks:[]}],
+    books:[{id:'a',title:'Titel',editionIsbn:isbn}],
+    history:[{id:'bad',type:'check_out',bookId:'a',studentId:'s',
+      timestamp:'2026-09-01'}],
+    bookLoanEvents:[],bookLoanPeriods:[],
+    readingRecords:[{id:'real',subjectType:'student',subjectId:'s',
+      bookId:'deleted-copy',finished:true,editionKey:'isbn13||'+isbn}],
+    examReadingLists:[{id:'exam',studentId:'s',bookId:'a',addedManually:false}],
+  };
+  const historical=searchHistory(active,{student:'Student'})
+    .find(item=>item.bookId==='a');
+  const removed=removeFalseHistory(active,admin,{studentId:'s',bookId:'a',
+    expectedFingerprint:historical.fingerprint,confirm:true});
+  assert.equal(removed.ok,true);
+  assert.equal(removed.examEntriesRemoved,0);
+  assert.equal(active.examReadingLists.length,1);
+}
+
 console.log('Durable circulation history, admin deletion and preservation: OK');
