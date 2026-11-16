@@ -93,6 +93,23 @@ assert.match(mirroredCss,
   /body\[data-page="student"\] \.bb-student-content \{max-width:none;\}/,
   'The student content must be able to use all room beside the sidebar');
 
+// Both pages render book cards with the same location logic. Grouped
+// editions must distinguish a library copy from one stored in a classroom.
+const vm = require('node:vm');
+const startLocation = app.indexOf('function bookLocationSummary(');
+const endLocation = app.indexOf('// The choice helper reuses',startLocation);
+assert.ok(startLocation >= 0 && endLocation > startLocation);
+const locationSummary=vm.runInNewContext(
+  app.slice(startLocation,endLocation)+'\nbookLocationSummary;');
+assert.equal(locationSummary({copies:[{fixedLocation:null}]}),'');
+assert.equal(locationSummary({copies:[{fixedLocation:'SK BB'}]}),
+  'Vaste klaslocatie: SK BB');
+assert.match(locationSummary({copies:[{fixedLocation:null},
+  {fixedLocation:'Klas A'}]}),/1 van 2 exemplaren op vaste locatie: Klas A/);
+assert.match(app,/function createBookCard[\s\S]*?bookLocationSummary\(book\)/);
+assert.match(app,/function populateBookDetail[\s\S]*?bookLocationSummary\(book\)/);
+assert.match(read('public/styles.css'),/\.book-card__fixed-location/);
+
 execFileSync(process.execPath,[path.join(root,'scripts','sync-student-catalog-css.cjs'),'--check'],
   {cwd:root,stdio:'pipe'});
 console.log('Student library: shared advanced form, mirrored CSS sources, safe student actions OK.');
