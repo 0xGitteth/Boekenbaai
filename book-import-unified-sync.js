@@ -229,7 +229,7 @@ function assignmentSource(analysis,parts,db,inventory=null,effectiveIdentityUpda
     return {...row,book,context};
   })};
 }
-function withMissingExcelLoans(source,db,enabled=false){
+function withMissingExcelLoans(source,db,assignmentDb,enabled=false){
   if(!enabled)return {...source,preferredCopyByRow:{}};
   const rows=[...source.rows],preferredCopyByRow={};
   const borrowed=(db.books||[]).filter(copy=>
@@ -242,8 +242,8 @@ function withMissingExcelLoans(source,db,enabled=false){
       !==canonicalizeBookIsbn13(row.book?.editionIsbn)
       ?barcode:null;
   };
-  // First identify actual physical copies by individual barcode.
-  // One row of an ISBN edition must not hide several other borrowed copies.
+  // Concrete physical barcodes identify individual copies even on a row
+  // that deliberately has no borrower. They cannot hide sibling copies.
   for(const row of rows){
     const barcode=physicalBarcode(row);
     if(!barcode)continue;
@@ -252,30 +252,25 @@ function withMissingExcelLoans(source,db,enabled=false){
       &&existingEdition(copy)===canonicalizeBookIsbn13(row.book?.editionIsbn));
     if(matches.length===1)represented.add(matches[0].id);
   }
-  // ISBN-only rows cannot identify an individual copy. Allocate at most
-  // ONE unmatched borrowed copy per source row. A known student/class
-  // borrower takes priority, but never count the entire ISBN edition as
-  // represented by one row.
-  for(const row of rows){
-    if(physicalBarcode(row))continue;
-    const isbn=canonicalizeBookIsbn13(row.book?.editionIsbn);
-    if(!isbn)continue;
-    const available=borrowed.filter(copy=>
-      !represented.has(copy.id)&&existingEdition(copy)===isbn);
-    if(!available.length)continue;
-    const studentId=row.context?.studentLoan?.id;
-    const classId=row.context?.classLoan?.id;
-    const selected=available.find(copy=>
-      studentId&&copy.borrowedBy===studentId
-      ||classId&&copy.borrowedByClassId===classId)
-      ||available[0];
-    represented.add(selected.id);
+  // Use the *same* physical-copy allocation as the assignment planner.
+  // Allocating an arbitrary borrowed copy for an ISBN-only Excel row is
+  // incorrect when the planner selects a free copy for a new borrower.
+  const planned=buildAssignmentPreview(source,assignmentDb,[],{
+    reviewMissingLoans:false,reviewAllBlankLoans:false,
+  });
+  if(!planned.ok)return {...source,rows,preferredCopyByRow,
+    snapshotPlanningError:planned.error};
+  for(const match of planned.acknowledgedLoans||[]){
+    represented.add(match.bookId);
+  }
+  for(const diff of planned.differences||[]){
+    if(diff.bookId && diff.kind!=='issue')represented.add(diff.bookId);
   }
   let index=Math.max(-1,...rows.map(row=>row.index))+1;
   for(const copy of borrowed){
     if(represented.has(copy.id))continue;
     const isbn=existingEdition(copy);
-    if(!isbn)continue; // Cannot safely identify an edition without ISBN.
+    if(!isbn)continue;
     const i=index++;
     rows.push({
       index:i,sourceRowNumber:null,status:'ready',issues:[],
@@ -792,8 +787,9 @@ function buildUnifiedBookImport(analysis,db,{
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
   const originalSource=use.loans||use.locations
     ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
-  const source=withMissingExcelLoans(originalSource,db,
+  const source=withMissingExcelLoans(originalSource,db,assignmentDb,
     fullLoanSnapshot===true&&use.loans);
+  if(source.snapshotPlanningError)return {ok:false,error:source.snapshotPlanningError};
   const blankLoanReview={
     reviewMissingLoans:use.loans&&['preserve','correct'].includes(loanHistoryMode),
     reviewAllBlankLoans:use.loans&&fullLoanSnapshot===true,
