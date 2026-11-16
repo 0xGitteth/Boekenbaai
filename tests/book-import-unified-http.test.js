@@ -286,8 +286,14 @@ async function run(){
         old('',{Tags:originalTag,Examenmateriaal:'Strip'}),
       ],parts({fields:{tags:true}}));
       assert.equal(tagsOnly.status,201,JSON.stringify(tagsOnly.data));
-      assert.deepEqual(tagsOnly.data.decisions.metadata.updates[0].value,
-        [originalTag],'Initial selected tags must exclude derived strip');
+      if(index===0){
+        assert.deepEqual(tagsOnly.data.decisions.metadata.updates[0].value,
+          [originalTag],'Initial selected tags must exclude derived strip');
+      }else{
+        assert.equal(tagsOnly.data.decisions.metadata.updates.length,0,
+          'Previously approved Tags must not be overwritten by a new Excel');
+        assert.equal(tagsOnly.data.decisions.summary.reusedPreviousMetadata,1);
+      }
       const correctedTags=await call(
         '/api/admin/book-import-stages/'+tagsOnly.data.id+'/review',token,{
         revision:tagsOnly.data.revision,
