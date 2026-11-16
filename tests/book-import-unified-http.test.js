@@ -311,6 +311,19 @@ async function run(){
       const stored=readDb().books.find(book=>book.id==='copy-1');
       assert.deepEqual(stored.tags,expected,
         'The committed selected Tags field cannot include a cross-column tag');
+      if(index===0){
+        const again=await start([
+          old('',{Tags:originalTag,Examenmateriaal:'Strip'}),
+        ],parts({fields:{tags:true}}));
+        assert.equal(again.status,201,JSON.stringify(again.data));
+        assert.equal(again.data.remembered?.fieldsReused,1,
+          'The approved Tags correction must be replayed on the next upload');
+        assert.deepEqual(again.data.corrections,
+          [{index:0,fields:{tags:correction.tags}}],
+          'The remembered correction must be visible and editable in review');
+        assert.equal((await call('/api/admin/book-import-stages/'
+          +again.data.id+'/cancel',token,{revision:again.data.revision})).status,200);
+      }
       assert.equal(stored.borrowedBy,'lisa');
     }
 
