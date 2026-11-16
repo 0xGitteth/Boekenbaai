@@ -222,10 +222,10 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Cancel actions must have lower visual emphasis than confirmation');
   assert.ok(css.includes('.bb-review--active'),
     'The active import should not have multiple nested framing borders');
-  assert.ok(ui.includes('Mijn boek heet: '+''+''), 
-    'Confirmed ISBN titles need an explicit suggested-title action');
-  assert.ok(ui.includes('Mijn boek heeft de Excel-titel'),
-    'Choosing the printed Excel title must be possible');
+  assert.ok(ui.includes("'Op mijn boek staat deze '+label+': '+confirmed"),
+    'Confirmed ISBN titles and authors need explicit source-backed actions');
+  assert.ok(ui.includes("'De '+label+' uit Excel klopt'"),
+    'Choosing the printed Excel title or author must be possible');
   assert.ok(ui.includes('const pendingMetadata=group.metadata.filter('),
     'One confirmed title choice should not create a duplicate metadata decision');
   assert.ok(ui.includes('void recheck();')&&ui.includes('Overslaan ongedaan maken'),
