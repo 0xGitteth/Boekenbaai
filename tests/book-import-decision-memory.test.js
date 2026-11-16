@@ -71,4 +71,20 @@ assert.equal(recordMetadataReviewChoices(metadataOnly,[{
 }], 'meta-1','2026-11-16T22:00:00Z'),1);
 assert.deepEqual(metadataOnly.bookImportManualMetadataMemory.map(x=>x.field),
   ['title'],'No pupil/loan decisions may enter durable metadata memory');
+// The school's actual source uses separate author columns and numeric ISBNs,
+// while older saved copies may carry that ISBN only as their barcode.
+const schoolRow={'Achternaam schrijver':'Abbema, van',
+  'Voornaam schrijver':'Hinke','Titel':'Door jou ben ik mij',
+  'ISBN-nummer':9789043531788,Examenmateriaal:'Ja'};
+const schoolDb={books:[{
+  id:'book-school',title:'Door jou ben ik mij',author:'Hinke van Abbema',
+  barcode:'9789043531788',editionIsbn:'',metadataIsbn:'',
+}]};
+assert.equal(recordBookReviewChoices(schoolDb,[schoolRow],
+  [{index:0,fields:{author:'Hinke van Abbema'}}],
+  {rows:[{book:{editionIsbn:'9789043531788'}}]},
+  'school-1','2026-11-16T22:30:00Z'),1);
+assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
+  [{index:0,fields:{author:'Hinke van Abbema'}}],
+  'Approved values from actual numeric-ISBN/split-author school sheets are reusable');
 console.log('Durable book import memory: reuse, changed source, post-edit, skip, privacy and ambiguity OK');
