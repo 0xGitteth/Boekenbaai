@@ -135,6 +135,16 @@ const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export')
   assert.equal(remembered.metadata.updates.length,0,
     'A previously approved current value remains authoritative');
   assert.match(remembered.metadata.automaticDecisions[0].reason,/Eerdere goedgekeurde/);
+  const retainedBeyondReports={...current,bookImportReports:[],
+    bookImportManualMetadataMemory:[{
+      isbn:ISBN,field:'title',excel:'Oorlogswinter, druk 2',
+      after:'Oorlogswinter',
+    }]};
+  const durable=buildUnifiedBookImport(analyzed,retainedBeyondReports,
+    {parts:onlyTitle});
+  assert.equal(durable.summary.reusedPreviousMetadata,1,
+    'Explicit decisions remain usable after import reports have rotated');
+  assert.equal(durable.metadata.updates.length,0);
   const changedSource=JSON.parse(JSON.stringify(analyzed));
   changedSource.rows[0].book.title='Oorlogswinter andere editie';
   changedSource.rows[0].provenance.title.raw='Oorlogswinter andere editie';
