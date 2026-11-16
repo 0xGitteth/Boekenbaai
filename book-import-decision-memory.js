@@ -119,6 +119,37 @@ function safeRowReplays(db,sourceRows){
   }
   return {corrections:[...choices.values()],fieldsReused:recovered,rowsReused:books};
 }
+// A replayed correction is not new consent. When an administrator edits a
+// book while the Excel wizard is open, remove only the still-unchanged
+// automatic field. Explicitly modified wizard fields remain the teacher's
+// deliberate decision and are never silently discarded.
+function revalidateRememberedCorrections(db,sourceRows,submitted,initial){
+  const active=safeRowReplays(db,sourceRows).corrections;
+  const stillSafe=new Map(active.flatMap(row=>
+    Object.entries(row.fields||{}).map(([field,value])=>
+      [row.index+':'+field,value])));
+  const inherited=new Map((initial||[]).flatMap(row=>
+    Object.entries(row.fields||{}).map(([field,value])=>
+      [row.index+':'+field,value])));
+  let invalidated=0;
+  const corrections=[];
+  for(const item of submitted||[]){
+    if(!item||!Number.isSafeInteger(item.index)
+      ||item.index<0||item.index>=sourceRows.length)continue;
+    if(item.skip===true){corrections.push(item);continue;}
+    const fields={};
+    for(const [field,value] of Object.entries(item.fields||{})){
+      const id=item.index+':'+field;
+      if(inherited.has(id)&&inherited.get(id)===value
+        &&stillSafe.get(id)!==value){
+        invalidated++;continue;
+      }
+      fields[field]=value;
+    }
+    if(Object.keys(fields).length)corrections.push({...item,fields});
+  }
+  return {corrections,invalidated};
+}
 function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now){
   if(!Array.isArray(db.bookImportDecisionMemory))db.bookImportDecisionMemory=[];
   const ledger=db.bookImportDecisionMemory;
@@ -182,4 +213,5 @@ function recordMetadataReviewChoices(db,decisions,batchId,now){
 }
 
 module.exports={FIELDS,sourceIdentity,rowFingerprint,safeRowReplays,
-  recordBookReviewChoices,recordMetadataReviewChoices};
+  recordBookReviewChoices,recordMetadataReviewChoices,
+  revalidateRememberedCorrections};
