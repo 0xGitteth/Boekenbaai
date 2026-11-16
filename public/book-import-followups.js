@@ -73,7 +73,8 @@ if (panel) {
   function render() {
     list.replaceChildren();
     const count = (state.summary.open || 0)
-      + (roleIsAdmin() ? Number(panel.dataset.deferredCount || 0) : 0);
+      + (roleIsAdmin() ? Number(panel.dataset.deferredCount || 0)
+        + Number(panel.dataset.deferredBooksCount || 0) : 0);
     badge.hidden = count === 0;
     badge.textContent = String(count);
     const visible = state.tasks.filter((task) =>
@@ -214,6 +215,7 @@ if (panel) {
   });
   window.addEventListener('boekenbaai:staff-refresh', refresh);
   window.addEventListener('boekenbaai:assignment-tasks-changed', render);
+  window.addEventListener('boekenbaai:deferred-books-changed', render);
   window.addEventListener('boekenbaai:staff-auth-cleared', () => {
     serial++;
     state = { tasks: [], classes: [], students: [], summary: {} };
