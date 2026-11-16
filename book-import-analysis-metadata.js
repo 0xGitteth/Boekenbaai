@@ -562,11 +562,14 @@ function captureReviewMatchCandidates(row,result,{titleSearch=false}={}){
       editionIsbn:candidate.editionIsbn,title:candidate.title||'',
       author:candidate.author||'',coverUrl:candidate.coverUrl||'',
       publisher:candidate.publisher||'',language:candidate.language||'',
+      publishedYear:candidate.publishedYear||'',pageCount:candidate.pageCount||'',
       sources:[],
     });
     const value=grouped.get(key);
     if(!value.sources.includes(source))value.sources.push(source);
     if(!value.coverUrl&&candidate.coverUrl)value.coverUrl=candidate.coverUrl;
+    for(const field of ['publisher','publishedYear','pageCount','language'])
+      if(!value[field]&&candidate[field])value[field]=candidate[field];
   }
   if(titleSearch&&Array.isArray(result?.isbnSearchCandidates)){
     const isbns=[...new Set(result.isbnSearchCandidates
@@ -594,6 +597,8 @@ function captureReviewMatchCandidates(row,result,{titleSearch=false}={}){
       earlier.sources=[...new Set([...(earlier.sources||[]),
         ...(candidate.sources||[])])].slice(0,4);
       if(!earlier.coverUrl&&candidate.coverUrl)earlier.coverUrl=candidate.coverUrl;
+      for(const field of ['publisher','publishedYear','pageCount','language'])
+        if(!earlier[field]&&candidate[field])earlier[field]=candidate[field];
     }
   }
   row.onlineMatchCandidates=[...unique.values()].slice(0,12);
