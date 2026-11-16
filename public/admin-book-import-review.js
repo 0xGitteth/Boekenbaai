@@ -3189,7 +3189,7 @@
           .indexOf(document.activeElement) : -1;
       renderContents();
       if(typeof scheduleGuidedDraftSave==='function')scheduleGuidedDraftSave();
-      updateGuidedSaveStatus();
+      if(typeof updateGuidedSaveStatus==='function')updateGuidedSaveStatus();
       const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
       const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
       for (const list of updatedLists) {
