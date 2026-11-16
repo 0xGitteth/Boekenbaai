@@ -3,10 +3,50 @@ const assert=require('node:assert/strict');
 const {
   normalizeParts,virtualId,buildUnifiedBookImport,actualAssignmentPreview,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
-  shouldApplyMetadataToCreatedCopy,
+  shouldApplyMetadataToCreatedCopy,rebaseStaleAssignmentChoices,
 }=require('../book-import-unified-sync');
 const {excelLoanReceiptKey}=require('../book-import-loan-migration');
 const ISBN='9780306406157',SECOND='9780439554930';
+{
+  const previous=[
+    {index:0,book:{editionIsbn:ISBN,title:'Mijn boek',author:'A'},
+      context:{fixedLocation:{label:'A'}}},
+    {index:1,book:{editionIsbn:ISBN,title:'Ander boek',author:'B'},context:{}},
+    {index:2,book:{editionIsbn:ISBN,title:'Derde boek',author:'C'},context:{}},
+  ];
+  const current=[
+    {...previous[0],book:{...previous[0].book,editionIsbn:SECOND}},
+    previous[1],previous[2],
+  ];
+  const differences=[
+    {id:'0:loan',rowIndex:0,kind:'loan'},
+    {id:'1:location',rowIndex:1,kind:'location'},
+    {id:'2:loan',rowIndex:2,kind:'loan'},
+  ];
+  const result=rebaseStaleAssignmentChoices([
+    {id:'0:location',action:'keep'},
+    {id:'1:location',action:'keep'},
+    {id:'2:loan',action:'later'},
+  ],previous,current,differences);
+  assert.deepEqual(result.removed,[{id:'0:location',action:'keep'}]);
+  assert.deepEqual(result.choices,[
+    {id:'1:location',action:'keep'},
+    {id:'2:loan',action:'later'},
+    {id:'0:loan',action:'later'},
+  ],'Keep unrelated explicit decisions; affected new loan changes must be postponed');
+  const changedSameId=rebaseStaleAssignmentChoices([
+    {id:'0:loan',action:'apply'}, {id:'1:location',action:'keep'},
+  ],previous,current,differences);
+  assert.deepEqual(changedSameId.choices,[
+    {id:'1:location',action:'keep'}, {id:'0:loan',action:'later'},
+  ],'A changed ISBN invalidates even the same loan ID; never auto-apply');
+  const unchanged=rebaseStaleAssignmentChoices([
+    {id:'1:location',action:'keep'},
+  ],previous,previous,differences);
+  assert.equal(unchanged.removed.length,0);
+  assert.deepEqual(unchanged.choices,[{id:'1:location',action:'keep'}]);
+}
+
 const source=(index,context={},extra={},provenance={})=>({
   index,sourceRowNumber:index+2,status:'ready',
   book:{title:'Oorlogswinter',author:'Jan Terlouw',
