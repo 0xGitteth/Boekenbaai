@@ -1385,4 +1385,29 @@ assert.equal(normalizeParts(undefined).value.books,true);
   assert.equal(planResult.metadata.updates[0].enrichmentOnly,true,
     'The preview carries the fill-only constraint all the way to confirmation');
 }
+
+// A complete loan snapshot must use the same physical assignment as the
+// planner. An ISBN-only loan to Tim uses the free copy; Lisa's older loan
+// is absent from the snapshot and must be offered for review.
+{
+  const current=db();
+  const result=plan([source(0,loan('tim','Tim Leerling'))],current,{
+    parts:parts({loans:true}),loanHistoryMode:'correct',fullLoanSnapshot:true,
+  });
+  assert.equal(result.ok,true);
+  const changes=result.assignments.differences;
+  assert.equal(changes.find(item=>item.after?.id==='tim')?.bookId,'copy-2');
+  assert.equal(changes.find(item=>item.missingFromSnapshot)?.bookId,'copy-1');
+  assert.equal(current.books[0].borrowedBy,'lisa',
+    'A preview must never silently clear an existing loan');
+
+  const unchanged=plan([source(0,loan('lisa','Lisa Leerling'))],db(),{
+    parts:parts({loans:true}),loanHistoryMode:'correct',fullLoanSnapshot:true,
+  });
+  assert.equal(unchanged.ok,true);
+  assert.equal(unchanged.assignments.differences.some(item=>
+    item.missingFromSnapshot),false,
+    'A matching ISBN-only borrower row represents the existing physical loan');
+}
+
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
