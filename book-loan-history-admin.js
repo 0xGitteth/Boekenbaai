@@ -230,9 +230,12 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
   const retainedReading=(db.readingRecords||[]).some(record=>
     record.subjectType==='student'&&record.subjectId===studentId
     &&record.finished===true&&!readingIds.has(record.id)
-    &&removedEdition&&edition(booksById.get(record.bookId))===removedEdition);
+    &&removedEdition&&(edition(booksById.get(record.bookId))
+      ||canonicalizeBookIsbn13(record.editionKey)
+      ||canonicalizeBookIsbn13(record.editionIsbn)
+      ||canonicalizeBookIsbn13(record.metadataIsbn))===removedEdition);
   const retainedCurrentLoan=(db.books||[]).some(copy=>
-    copy.id!==bookId&&copy.status==='borrowed'
+    copy.status==='borrowed'
     &&copy.borrowedBy===studentId&&removedEdition
     &&edition(copy)===removedEdition);
   const examIds=retainedReading||retainedCurrentLoan
