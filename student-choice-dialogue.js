@@ -122,7 +122,7 @@ const QUESTIONS=[
 ];
 const ALL=new Map(QUESTIONS.map(q=>[q.id,q]));
 const TRAIT_WORDS={
-  mystery:['mysterie','geheim','detective','raadsel','spannend','thriller','onderzoek','mystery','clue'],
+  mystery:['spanning','mysterie','geheim','detective','raadsel','spannend','thriller','onderzoek','mystery','clue'],
   secrets:['geheim','liegen','bedrog','verdacht','verraden','verborgen','leugen','secret','mysterie'],
   puzzles:['raadsel','puzzel','onderzoek','detective','code','mysterie','riddle','enigma','speuren'],
   people:['leven','jongeren','mensen','persoon','personage','vriendschap','relaties','coming of age','identiteit'],
@@ -151,7 +151,7 @@ const TRAIT_WORDS={
   true:['waargebeurd','echt gebeurd','non fictie','biografie','documentair','memoires','autobiografie'],
   facts:['feiten','informatief','non fictie','wetenschap','educatief','kennis','achtergrond'],
   action:['actie','achtervolg','gevecht','snel','actievol','avontuur','ontsnappen'],
-  danger:['gevaar','spannend','thriller','horror','overleven','dreiging','angst'],
+  danger:['spanning','gevaar','spannend','thriller','horror','overleven','dreiging','angst'],
   survival:['overleven','overleving','ramp','gevaar','natuurgeweld','survival'],
   competition:['wedstrijd','competitie','kampioen','wedstrijdsport','winnen','toernooi','uitdaging'],
   sport:['sport','voetbal','basketbal','topsport','hardlopen','atletiek','skate','wedstrijd'],
@@ -164,20 +164,39 @@ const TRAIT_WORDS={
   dialogue:['gesprek','dialoog','chat','brieven','berichten','whatsapp'],
   setting:['wereld','landschap','omgeving','ruimte','beschrijving'],
 };
+// Word-boundary matching prevents 'sport' inside 'transport' and 'leven'
+// inside 'overleven'. Accept only known Dutch inflections, never arbitrary
+// substrings of a different word. This applies to ISBN source tags AND prose.
+const SUFFIXES=['e','en','s','es','t','d','de','den','er','ers','ster',
+  'ers','ste','sten','ing','ingen','ig','ige','igen','heid','heden',
+  'je','jes','tje','tjes','ief','ieve','ieven','elijk','elijke','elijken'];
+const corpus=raw=>{
+  const text=normalize(raw);
+  return {phrase:' '+text+' ',words:new Set(text.split(' ').filter(Boolean))};
+};
+function hasEvidence(source,keyword){
+  const value=normalize(keyword);
+  if(!value)return false;
+  if(value.includes(' '))return source.phrase.includes(' '+value+' ');
+  if(source.words.has(value))return true;
+  if(value.length<5)return false;
+  return SUFFIXES.some(suffix=>source.words.has(value+suffix));
+}
 function traitsForBook(book){
-  const curated=[...(book.themes||[]),...(book.manualThemes||[]),
-    ...(book.importedThemes||[]),...(book.tags||[]),...(book.enrichmentTags||[])].join(' ');
-  const copy=normalize(curated),description=normalize(book.description||''),
-    title=normalize(book.title||'');
+  const safe=value=>Array.isArray(value)?value:[];
+  const curated=[
+    ...safe(book.themes),...safe(book.manualThemes),...safe(book.importedThemes),
+    ...safe(book.tags),...safe(book.enrichmentTags),
+  ].join(' ');
+  const copy=corpus(curated),description=corpus(book.description||''),
+    title=corpus(book.title||'');
   const matched=new Map();
   for(const [trait,words] of Object.entries(TRAIT_WORDS)){
     let confidence=0;
     for(const word of words){
-      const w=normalize(word);
-      if(w.length<3)continue;
-      if(copy.includes(w))confidence=Math.max(confidence,3);
-      else if(description.includes(w))confidence=Math.max(confidence,1);
-      else if(title.includes(w))confidence=Math.max(confidence,0.7);
+      if(hasEvidence(copy,word))confidence=Math.max(confidence,3);
+      else if(hasEvidence(description,word))confidence=Math.max(confidence,1);
+      else if(hasEvidence(title,word))confidence=Math.max(confidence,0.7);
     }
     if(confidence)matched.set(trait,confidence);
   }
