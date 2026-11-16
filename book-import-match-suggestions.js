@@ -4,6 +4,7 @@
 // never bypass server-side edition, quantity, barcode or loan validation.
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
 const {sameBookTitle,nearlySameBookText,normalized}=require('./book-import-autonomy');
+const {equivalentAuthorName}=require('./book-import-source-confidence');
 const MAX_SUGGESTIONS=4;
 const safeText=value=>typeof value==='string'?value.trim():'';
 const goodIsbn=book=>canonicalizeBookIsbn13(book?.editionIsbn)
@@ -16,7 +17,8 @@ const validCover=value=>typeof value==='string'
 function identityCompatible(row,candidate){
   return Boolean(row?.title&&row?.author&&candidate?.title&&candidate?.author
     &&sameBookTitle(row.title,candidate.title)
-    &&nearlySameBookText(row.author,candidate.author));
+    &&(equivalentAuthorName(row.author,candidate.author)
+      ||nearlySameBookText(row.author,candidate.author)));
 }
 function titleKeys(value){
   const words=safeText(value).normalize('NFKD')
@@ -40,11 +42,14 @@ function buildMatchCandidateIndex(existingBooks=[]){
     const title=safeText(book.title),author=safeText(book.author);
     if(!title||!author)continue;
     const isbn=goodIsbn(book);
-    const key=JSON.stringify([isbn,title,author]);
+    const key=isbn||JSON.stringify([title,author]);
     let entry=groups.get(key);
     if(!entry){
       entry={origin:'existing',editionIsbn:isbn,title,author,
         coverUrl:validCover(book.coverUrl),publisher:safeText(book.publisher),
+        publishedYear:safeText(book.publishedYear||book.publicationYear),
+        pageCount:book.pageCount||book.pages||'',
+        format:safeText(book.format||book.binding),
         language:safeText(book.language),sources:[],copies:0};
       groups.set(key,entry);
     }
@@ -98,14 +103,18 @@ function bookMatchSuggestions(row,existingIndex=[]){
   const results=new Map();
   const put=candidate=>{
     if(!candidate.editionIsbn&&candidate.origin!=='existing')return;
-    const key=candidate.origin+':'+candidate.editionIsbn+':'
-      +candidate.title.toLocaleLowerCase('nl');
+    const key=candidate.editionIsbn||
+      candidate.origin+':'+candidate.title.toLocaleLowerCase('nl');
     const previous=results.get(key);
     if(!previous)results.set(key,candidate);
     else {
       previous.copies=Math.max(previous.copies||0,candidate.copies||0);
       previous.sources=[...new Set([...previous.sources,...candidate.sources])].slice(0,4);
       if(!previous.coverUrl&&candidate.coverUrl)previous.coverUrl=candidate.coverUrl;
+      for(const field of ['publisher','publishedYear','pageCount','format','language']){
+        if(!previous[field]&&candidate[field])previous[field]=candidate[field];
+      }
+      if(previous.origin==='online'&&candidate.origin==='existing')previous.origin='existing';
     }
   };
   for(const entry of indexedCandidates){
@@ -126,6 +135,9 @@ function bookMatchSuggestions(row,existingIndex=[]){
       author:safeText(suggestion.author||source.author),
       coverUrl:validCover(suggestion.coverUrl),
       publisher:safeText(suggestion.publisher),
+      publishedYear:safeText(suggestion.publishedYear),
+      pageCount:suggestion.pageCount||'',
+      format:safeText(suggestion.format),
       language:safeText(suggestion.language),
       sources:Array.isArray(suggestion.sources)
         ?suggestion.sources.map(safeText).filter(Boolean).slice(0,4):[],
