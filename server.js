@@ -17,7 +17,8 @@ const { createBraveWorker } = require('./book-brave-worker');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
-const {safeRowReplays,recordBookReviewChoices}=require('./book-import-decision-memory');
+const {safeRowReplays,recordBookReviewChoices,recordMetadataReviewChoices}
+  =require('./book-import-decision-memory');
 const { parseQuantity: parseExcelQuantity } = require('./book-import-analysis-values');
 const { analyzeReviewedImport, buildReviewDecisions,
   normalizeCorrections } = require('./book-import-review');
@@ -6281,6 +6282,8 @@ async function handleApi(req, res, requestUrl) {
             report.rememberedBookFields=stage.remembered?.fieldsReused||0;
             report.learnedBookCorrections=recordBookReviewChoices(
               database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
+            if(isUnified)report.learnedMetadataDecisions=recordMetadataReviewChoices(
+              database,combined.metadata.automaticDecisions,batchId,now);
             report.rememberedBookFields=stage.remembered?.fieldsReused||0;
           report.learnedBookCorrections=recordBookReviewChoices(
             database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
