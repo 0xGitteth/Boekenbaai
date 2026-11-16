@@ -1423,7 +1423,12 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           }
           storeGuidedPosition();
           const reconciled=Number(response.reconciledAssignmentChoices)||0;
-          setNotice(reconciled
+          const revoked=Number(response.invalidatedRememberedChoices)||0;
+          setNotice(revoked
+            ?revoked+' eerder onthouden boekkeuze(s) zijn niet opnieuw toegepast, '
+              +'omdat de bibliotheek inmiddels is gewijzigd. Je recentere '
+              +'boekgegevens zijn behouden. Controleer het nieuwe overzicht.'
+            :reconciled
             ?'Je boekcorrecties zijn opgeslagen. '+reconciled
               +' verouderde keuze(s) voor uitlening of locatie zijn veilig '
               +'opnieuw beoordeeld. Controleer eventuele openstaande '
