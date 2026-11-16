@@ -38,6 +38,7 @@ const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export')
   const snapshot=stageSheets(stage,{
     corrections:[{index:0,fields:{
       title:'Juiste titel',editionIsbn:ISBN,
+      classes:'StructuurBB',libraryPresence:'Ja',
     }}],
     assignmentResolutions:[{id:'0:location',action:'later'}],
   });
@@ -46,6 +47,8 @@ const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export')
   assert.equal(draft[0].Titel,'Juiste titel');
   assert.equal(draft[0]['ISBN-nummer'],ISBN);
   assert.equal(draft[0]['Vast in de klas van'],'StructuurBB');
+  assert.equal(draft[0]['Klassen'],'StructuurBB');
+  assert.equal(draft[0]['Aanwezig in bibliotheek'],'Ja');
   assert.equal(draft[0].Importstatus,'Concept (nog niet geïmporteerd)');
   assert.equal(XLSX.utils.sheet_to_json(
     sheet.Sheets['Originele Excel'])[0].Titel,'Foute titel');
