@@ -321,8 +321,35 @@ async function run(){
         assert.deepEqual(again.data.corrections,
           [{index:0,fields:{tags:correction.tags}}],
           'The remembered correction must be visible and editable in review');
+        // A catalogue edit while this wizard is open must revoke inherited
+        // consent, even if the browser resends the inherited correction.
+        const previousDb=readDb();
+        const changedDb=JSON.parse(JSON.stringify(previousDb));
+        for(const copy of changedDb.books.filter(b=>b.editionIsbn===ISBN)){
+          copy.tags=['nieuwe handmatige keuze'];
+          copy.importProvenance=copy.importProvenance||{fieldSources:{}};
+          copy.importProvenance.fieldSources=copy.importProvenance.fieldSources||{};
+          copy.importProvenance.fieldSources.tags={
+            sourceType:'manual',detail:'edited_during_review',
+          };
+        }
+        fs.writeFileSync(file,JSON.stringify(changedDb));
+        const afterEdit=await call(
+          '/api/admin/book-import-stages/'+again.data.id+'/review',token,{
+          revision:again.data.revision,
+          corrections:again.data.corrections,acceptWarnings:true,
+          inventoryResolutions:[],assignmentResolutions:[],
+          metadataResolutions:[],
+        });
+        assert.equal(afterEdit.status,200,JSON.stringify(afterEdit.data));
+        assert.equal(afterEdit.data.invalidatedRememberedChoices,1);
+        assert.deepEqual(afterEdit.data.corrections,[],
+          'A new catalogue edit invalidates a replayed correction in the wizard');
+        assert.equal(afterEdit.data.decisions.metadata.updates.length,0,
+          'A revoked approval must not plan an overwrite of new manual tags');
         assert.equal((await call('/api/admin/book-import-stages/'
-          +again.data.id+'/cancel',token,{revision:again.data.revision})).status,200);
+          +again.data.id+'/cancel',token,{revision:afterEdit.data.revision})).status,200);
+        fs.writeFileSync(file,JSON.stringify(previousDb));
       }
       assert.equal(stored.borrowedBy,'lisa');
     }
