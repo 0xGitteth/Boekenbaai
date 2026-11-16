@@ -24,6 +24,7 @@ function createImportStageStore({now=Date.now,createId=()=>crypto.randomUUID(),
     enrichIsbn:options?.enrichIsbn===true,
     loanHistoryMode:['preserve','correct'].includes(options?.loanHistoryMode)
       ?options.loanHistoryMode:null,
+    fullLoanSnapshot:options?.fullLoanSnapshot===true,
   });
   function persist(){
     if(!file)return;
