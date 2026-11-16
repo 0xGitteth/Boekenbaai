@@ -151,6 +151,33 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Edits during an in-flight save must trigger another save');
   assert.ok(ui.includes('if(open)editRow(sourceRow,editHost'),
     'The editor must reuse the existing validated correction flow');
+  // The screenshot-based simplification must remain coherent as more
+  // import features are added: one top-level stepper, no second nested one.
+  const wizard=ui.slice(ui.indexOf('function renderGuidedUnifiedSync()'),
+    ui.indexOf('function renderUnifiedSync()'));
+  assert.ok(wizard.length>1000);
+  assert.ok(!wizard.includes("make('div','bb-guide__progress')"),
+    'The guided wizard must not duplicate the visible step navigation');
+  assert.ok(!wizard.includes("make('div','bb-guide__step-label')"),
+    'The step counter is already expressed in the one top navigation');
+  assert.ok(ui.includes("const step=button(label,'bb-import__step')"),
+    'The remaining stepper must be interactive and accessible');
+  assert.ok(ui.includes('enrichmentExtra.hidden=activeImport'),
+    'Import enrichment settings must not interrupt an active review');
+  assert.ok(ui.includes("details.hidden=!new URLSearchParams"),
+    'The legacy direct-import form must stay out of the standard workflow');
+  assert.ok(ui.includes('header.querySelector(\'.hint\').hidden=activeImport'),
+    'Do not repeat the setup explanation during the active import');
+  assert.ok(wizard.includes('bb-guide__auto-note'),
+    'Automatic decisions should be a compact status, not a repeated card');
+  assert.ok(wizard.includes('bb-guide__identity-conflict'),
+    'Significant source disagreements must be visible on book cards');
+  assert.ok(wizard.includes('confirmedAuthor||issue.confirmedTitle'),
+    'Book cards must show authoritative titles and authors with provenance');
+  assert.ok(css.includes('.bb-guide__footer > .bb-guide__cancel'),
+    'Cancel actions must have lower visual emphasis than confirmation');
+  assert.ok(css.includes('.bb-review--active'),
+    'The active import should not have multiple nested framing borders');
   assert.ok(server.includes('bookImportStageStore.saveDraft('),
     'Autosave must be stored server-side, never just in localStorage');
   assert.ok(server.includes('bookImportDeferredBookChecks'),
