@@ -644,6 +644,18 @@
     let draftChangeGeneration=0;
     let draftSaveIssue='';
     let draftSaveFailures=0;
+    function updateGuidedSaveStatus(){
+      const status=results.querySelector('.bb-guide__save-state');
+      if(!status)return;
+      const unsaved=draftSaveInFlight||draftSavePending||Boolean(draftSaveTimer);
+      const message=draftSaveIssue
+        ||(unsaved?'De laatste keuzes worden opgeslagen…'
+          :stage?.draftPersisted
+            ?'Concept veilig opgeslagen · maximaal 24 uur beschikbaar':'');
+      status.textContent=message;
+      status.hidden=!message;
+      status.classList.toggle('bb-guide__attention',Boolean(draftSaveIssue));
+    }
     function scheduleGuidedDraftSave(){
       if(stage?.mode!=='unified_sync'||stage.status!=='open'
         ||remotePending||busy)return;
@@ -662,6 +674,7 @@
         draftSaveTimer=null;
         void flushGuidedDraft();
       },950);
+      updateGuidedSaveStatus();
     }
     async function flushGuidedDraft(){
       if(!stage||busy||remotePending||stage.status!=='open')return;
@@ -680,6 +693,7 @@
       const data=changes?snapshot:{revision,clear:true};
       draftSavePending=false;
       draftSaveInFlight=true;
+      updateGuidedSaveStatus();
       let cleared=false;
       let saveFailed=false;
       try{
@@ -710,6 +724,7 @@
         }
       }finally{
         draftSaveInFlight=false;
+        updateGuidedSaveStatus();
         if(draftSavePending||draftChangeGeneration!==generation){
           draftSavePending=false;
           scheduleGuidedDraftSave();
@@ -724,6 +739,7 @@
             },1500*draftSaveFailures);
           }
           setNotice(draftSaveIssue);
+          updateGuidedSaveStatus();
         }else if(cleared){
           // Rebuild the final action: confirmation is safe again once the
           // reverted draft has actually been removed on the server.
@@ -1207,16 +1223,9 @@
       top.append(make('h4','',guidedStep===1?'Analyse afgerond'
         :guidedStep===2?'Boeken controleren':'Import afronden'));
       panel.append(top);
-      if(draftSaveIssue){
-        panel.append(make('p','bb-guide__attention',draftSaveIssue));
-      }else if(stage.draftPersisted&&!draftSaveInFlight
-        &&!draftSavePending&&!draftSaveTimer){
-        const saved=make('p','bb-guide__saved hint',
-          'Concept veilig opgeslagen · maximaal 24 uur beschikbaar');
-        panel.append(saved);
-      }else if(draftSaveInFlight||draftSavePending||draftSaveTimer){
-        panel.append(make('p','hint','De laatste keuzes worden opgeslagen…'));
-      }
+      // One dedicated status element can be updated without re-rendering
+      // editor controls or accidentally scheduling another autosave.
+      panel.append(make('p','bb-guide__save-state hint'));
       if(guidedStep!==1){
         panel.append(make('p','bb-guide__intro',
           guidedStep===2
@@ -3179,6 +3188,7 @@
           .indexOf(document.activeElement) : -1;
       renderContents();
       if(typeof scheduleGuidedDraftSave==='function')scheduleGuidedDraftSave();
+      updateGuidedSaveStatus();
       const updatedLists = Array.from(results.querySelectorAll('.bb-review__rowlist'));
       const listFor = kind => updatedLists.find(list => (list.dataset.reviewList || '') === kind);
       for (const list of updatedLists) {
