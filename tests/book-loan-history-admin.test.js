@@ -58,4 +58,35 @@ assert.equal(db.examReadingLists.length,1,
 assert.equal(db.examReadingLists[0].id,'manual');
 assert.equal(db.bookLoanHistoryDeletionAudit.length,1);
 assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
+
+// Exam entries represent an edition, not the physical copy that first
+// created them. Removing a false history must retain another real reading.
+{
+  const edition='9780306406157';
+  const current={
+    students:[{id:'s1',name:'Leerling A',borrowedBooks:[]}],
+    books:[{id:'a',title:'Oorlogswinter',editionIsbn:edition},
+      {id:'b',title:'Oorlogswinter',editionIsbn:edition}],
+    history:[{id:'bad',type:'check_out',bookId:'a',
+      studentId:'s1',timestamp:'2026-10-12'}],
+    bookLoanEvents:[],bookLoanPeriods:[],
+    readingRecords:[
+      {id:'wrong',subjectType:'student',subjectId:'s1',bookId:'a',finished:true},
+      {id:'real',subjectType:'student',subjectId:'s1',bookId:'b',finished:true},
+    ],
+    examReadingLists:[{id:'exam',studentId:'s1',bookId:'a',
+      addedManually:false,title:'Oorlogswinter'}],
+  };
+  const entry=searchHistory(current,{student:'Leerling A',book:'Oorlogswinter'})
+    .find(item=>item.bookId==='a');
+  assert.ok(entry);
+  const result=removeFalseHistory(current,admin,{
+    studentId:'s1',bookId:'a',expectedFingerprint:entry.fingerprint,confirm:true,
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.examEntriesRemoved,0);
+  assert.equal(current.examReadingLists[0].id,'exam');
+  assert.deepEqual(current.readingRecords.map(item=>item.id),['real']);
+}
+
 console.log('Durable circulation history, admin deletion and preservation: OK');
