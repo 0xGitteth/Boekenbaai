@@ -212,8 +212,10 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'An ISBN-less match must not appear as a selectable edition');
   assert.ok(ui.includes('guidedMissingAcknowledged'),
     'Missing loan and location editions must require explicit acknowledgement');
-  assert.ok(ui.includes('for(const missing of assignments.notInCollection||[])'),
-    'Missing physical books must appear in the guided queue');
+  assert.ok(ui.includes('summary.missingStockGroups'),
+    'Missing physical books must be acknowledged in the final overview');
+  assert.ok(!ui.includes('for(const missing of assignments.notInCollection||[])'),
+    'An omitted physical book without an actionable choice must not clog the book queue');
   assert.ok(ui.includes('Niet overgenomen boeken'),
     'Final overview must count omitted loan/location books');
   assert.ok(ui.includes('Auteur: '+''), // Next assertions target the actual text.
@@ -259,8 +261,12 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Choosing the printed Excel title or author must be possible');
   assert.ok(ui.includes('const pendingMetadata=group.metadata.filter('),
     'One confirmed title choice should not create a duplicate metadata decision');
-  assert.ok(ui.includes('void recheck();')&&ui.includes('Overslaan ongedaan maken'),
-    'Skipping a book must recalculate the review queue');
+  assert.ok(ui.includes('scheduleGuidedDraftSave();')
+    &&ui.includes('Overslaan ongedaan maken'),
+    'Skipping a book must save a draft without triggering an expensive recheck');
+  assert.ok(ui.includes('showReviewProgress(active.progress)')
+    &&ui.includes('clearInterval(reviewingPoll)'),
+    'Recheck progress must use and stop polling the actual server row counts');
   assert.ok(ui.includes("updateSetupProgress('analyzing',completed,total)"),
     'Setup must use real server row counts');
   assert.ok(ui.includes("const progressPoll=setInterval(async()=>"),
