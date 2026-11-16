@@ -299,7 +299,9 @@
       busy=false;
       if(next.done||!next.question){
         notice('');
-        showRecommendations();
+        // Do not release the guard while the suggestion request is still
+        // pending: older cards must not start overlapping recommendations.
+        await showRecommendations();
       }else{
         showQuestion(next.question);
       }
