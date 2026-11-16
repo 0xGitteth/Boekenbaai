@@ -37,6 +37,45 @@ const preview=(db,rows,choices=[])=>buildAssignmentPreview({ok:true,rows},db,cho
 const loanTo=(id,name)=>({studentLoan:{status:'matched',id,name}});
 const classLoan=(id,name)=>({classLoan:{status:'matched',id,name}});
 const now='2026-11-12T12:00:00.000Z';
+const {excelLoanReceiptKey}=require('../book-import-loan-migration');
+
+// A previously imported Excel borrower disappearing from the next Excel
+// must be shown as a decision, never treated as a silent return.
+{
+  const proof=excelLoanReceiptKey('copy-1',{type:'student',id:'lisa'});
+  const source=row(0,'4711001');
+  const opts={reviewMissingLoans:true,loanReceipts:[proof]};
+  const newPreview=()=>buildAssignmentPreview({ok:true,rows:[source]},
+    directory(),[],opts);
+  const pending=newPreview();
+  assert.equal(pending.ok,true);
+  assert.equal(pending.differences.length,1);
+  assert.equal(pending.differences[0].kind,'loan');
+  assert.equal(pending.differences[0].previouslyRecordedInExcel,true);
+  assert.equal(pending.differences[0].choice,'pending');
+  assert.equal(pending.summary.readyToApply,false);
+  const noProof=buildAssignmentPreview({ok:true,rows:[source]},
+    directory(),[],{reviewMissingLoans:true,loanReceipts:[]});
+  assert.equal(noProof.differences.length,0,
+    'A blank field without a prior confirmed Excel loan is not a return');
+  const correction=buildAssignmentPreview({ok:true,rows:[source]},
+    directory(),[{id:'0:loan',action:'apply'}],opts);
+  const correctionDb=directory();
+  applyAssignmentPreview(correctionDb,correction,'admin',now,'import-1',
+    {loanHistoryMode:'correct'});
+  assert.equal(correctionDb.books[0].status,'available');
+  assert.equal(correctionDb.students[0].borrowedBooks.length,0);
+  assert.equal(correctionDb.bookLoanPeriods?.length||0,0);
+  const historyDb=directory();
+  applyAssignmentPreview(historyDb,correction,'admin',now,'import-2',
+    {loanHistoryMode:'preserve'});
+  assert.equal(historyDb.bookLoanPeriods.length,1);
+  assert.equal(historyDb.bookLoanPeriods[0].studentId,'lisa');
+  assert.equal(historyDb.bookLoanPeriods[0].source,'excel_reconciliation');
+  assert.equal(historyDb.readingRecords[0].finished,true,
+    'The import does not invent or alter a reading-completion answer');
+}
+
 
 // A source conflict must not fabricate a location comparison with two
 // empty values. Preserve actual Excel context and defer the unsafe link.
