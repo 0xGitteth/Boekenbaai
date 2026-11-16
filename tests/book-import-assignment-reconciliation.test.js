@@ -91,6 +91,35 @@ const {withMissingExcelLoans}=require('../book-import-unified-sync');
     ['dex-1','dex-2']);
   assert.equal(live.bookLoanPeriods?.length||0,0);
 }
+// Two copies sharing an ISBN require physical-barcode comparison; one
+// present row does not prove every borrowed physical copy is present.
+{
+  const live={
+    books:[
+      copy('copy-a','4711001',{status:'borrowed',borrowedBy:'lisa'}),
+      copy('copy-b','4711002',{status:'borrowed',borrowedBy:'tim'}),
+    ],
+    students:[
+      {id:'lisa',name:'Lisa',borrowedBooks:[{bookId:'copy-a'}]},
+      {id:'tim',name:'Tim',borrowedBooks:[{bookId:'copy-b'}]},
+    ],
+    classes:[],history:[],
+  };
+  const listed={ok:true,rows:[
+    row(0,'4711001',loanTo('lisa','Lisa')),
+  ]};
+  const missing=withMissingExcelLoans(listed,live,true);
+  assert.equal(missing.rows.length,2);
+  assert.equal(missing.preferredCopyByRow[1],'copy-b');
+  const preview=buildAssignmentPreview(missing,live,[],{
+    reviewAllBlankLoans:true,reviewMissingLoans:true,
+    loanReceipts:[],preferredCopyByRow:missing.preferredCopyByRow,
+  });
+  assert.equal(preview.ok,true);
+  assert.equal(preview.differences.length,1);
+  assert.equal(preview.differences[0].bookId,'copy-b');
+  assert.equal(preview.differences[0].choice,'pending');
+}
 
 
 // A previously imported Excel borrower disappearing from the next Excel
