@@ -5,7 +5,7 @@
 // touched by these operations.
 const crypto = require('node:crypto');
 const norm = x => String(x || '').normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
-const eventTypes = new Set(['check_out','check_in']);
+const eventTypes = new Set(['check_out','check_in','check_out_class','check_in_class']);
 function borrowEvents(db){
   const durable=Array.isArray(db.bookLoanEvents)?db.bookLoanEvents:[];
   const recent=Array.isArray(db.history)?db.history:[];
