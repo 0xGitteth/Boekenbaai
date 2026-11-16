@@ -8,6 +8,7 @@ const { buildAssignmentPreview, applyAssignmentPreview } =
   require('./book-import-assignment-reconciliation');
 const { circulationRevision, reportIsFullyReviewed } =
   require('./book-import-followups');
+const {excelLoanReceiptKey}=require('./book-import-loan-migration');
 
 const CLASS_CHOICES = new Set(['class_fixed', 'class_loan', 'class_unrelated']);
 const CLOSING_CHOICES = new Set(['keep', 'manual_done', 'class_unrelated']);
@@ -47,6 +48,7 @@ function createDeferredAssignmentTasks(db, report, rows, differences, now) {
       barcode: norm(diff.barcode || source?.book?.barcode),
       reason: norm(diff.reason), original: clone(diff),
       sourceRow: savedRow(source),
+      loanHistoryMode:report.loanHistoryMode==='preserve'?'preserve':'correct',
       status: 'open', revision: 1, createdAt: now,
       resolvedAt: null, resolvedBy: null, resolution: null,
     };
@@ -198,7 +200,18 @@ function correctionPreview(db, task, choice) {
   // Preserve the exact physical identity assigned during the original
   // multirow import. Replanning a single row without its siblings would
   // otherwise pick another available copy of the same shared ISBN.
-  const options={preferredCopyByRow:{0:task.bookId}};
+  const formerlyInExcel=task.kind==='loan'
+    &&task.original?.previouslyRecordedInExcel===true
+    &&task.original?.after?.type==='none';
+  const missingSnapshot=(formerlyInExcel
+    &&task.original?.missingFromSnapshot===true)
+    ||(task.kind==='location'&&task.original?.classFixedToLoan===true);
+  const borrower=task.original?.before;
+  const receipt=formerlyInExcel
+    ?excelLoanReceiptKey(task.bookId,borrower):null;
+  const options={preferredCopyByRow:{0:task.bookId},
+    ...(receipt?{reviewMissingLoans:true,loanReceipts:[receipt]}:{}),
+    ...(missingSnapshot?{reviewAllBlankLoans:true}:{})};
   const initial = buildAssignmentPreview({ ok:true, rows:[row] }, db, [], options);
   if (!initial.ok) return {ok:false,error:'review_no_longer_safe'};
   const diff = initial.differences.find(item =>
@@ -264,7 +277,8 @@ function resolveDeferredAssignmentTask(db, task, actor, payload, now=new Date().
     if (payload.confirm !== true) return {ok:false,error:'confirmation_required'};
     const plan=correctionPreview(db,task,choice);
     if(!plan.ok)return plan;
-    changed=applyAssignmentPreview(db,plan,actor.id,now,crypto.randomUUID());
+    changed=applyAssignmentPreview(db,plan,actor.id,now,crypto.randomUUID(),
+      {loanHistoryMode:task.loanHistoryMode==='preserve'?'preserve':'correct'});
     if(changed.applied !== 1)return {ok:false,error:'unsafe_correction'};
   }
   // A migrated legacy task is also persistent; only a virtual fallback

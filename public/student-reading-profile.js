@@ -63,7 +63,8 @@
   }
   function status(entry) {
     if (entry.kind === 'current') return ['Nog geleend', ''];
-    if (entry.kind === 'legacy') return ['Niet geregistreerd', ''];
+    if (entry.kind === 'legacy' || entry.kind === 'historical')
+      return ['Niet geregistreerd', ''];
     return entry.finished ? ['Uitgelezen', 'read'] : ['Niet uitgelezen', 'unread'];
   }
   function renderBook(entry) {

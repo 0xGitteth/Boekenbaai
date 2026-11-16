@@ -37,6 +37,128 @@ const preview=(db,rows,choices=[])=>buildAssignmentPreview({ok:true,rows},db,cho
 const loanTo=(id,name)=>({studentLoan:{status:'matched',id,name}});
 const classLoan=(id,name)=>({classLoan:{status:'matched',id,name}});
 const now='2026-11-12T12:00:00.000Z';
+const {excelLoanReceiptKey}=require('../book-import-loan-migration');
+const {withMissingExcelLoans}=require('../book-import-unified-sync');
+{
+  // Dex has three active books in Boekenbaai, but only two are present in
+  // a complete new Excel. The extra book must be a question, not an
+  // automatic return or an invented historical checkout.
+  const isbn2='9780439554930',isbn3='9780061120084';
+  const live={
+    books:[
+      copy('dex-1','47001',{metadataIsbn:ISBN,borrowedBy:'dex',status:'borrowed'}),
+      copy('dex-2','47002',{metadataIsbn:isbn2,borrowedBy:'dex',status:'borrowed',
+        title:'Tweede boek',author:'Auteur B'}),
+      copy('dex-3','47003',{metadataIsbn:isbn3,borrowedBy:'dex',status:'borrowed',
+        title:'Derde boek',author:'Auteur C'}),
+    ],
+    students:[{id:'dex',name:'Dex',borrowedBooks:[
+      {bookId:'dex-1'},{bookId:'dex-2'},{bookId:'dex-3'},
+    ]}],
+    classes:[],history:[],
+  };
+  const source={ok:true,rows:[
+    row(0,'47001',loanTo('dex','Dex')),
+    row(1,'47002',loanTo('dex','Dex'),{
+      editionIsbn:isbn2,title:'Tweede boek',author:'Auteur B',
+    }),
+  ]};
+  const partial=withMissingExcelLoans(source,live,false);
+  assert.equal(partial.rows.length,2,
+    'A partial Excel is not authoritative over unlisted loans');
+  const full=withMissingExcelLoans(source,live,true);
+  assert.equal(full.rows.length,3);
+  assert.equal(full.rows[2].missingFromExcel,true);
+  assert.equal(full.preferredCopyByRow[2],'dex-3');
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true,
+    loanReceipts:[],preferredCopyByRow:full.preferredCopyByRow};
+  const check=buildAssignmentPreview(full,live,[],options);
+  assert.equal(check.ok,true);
+  assert.equal(check.differences.length,1);
+  assert.equal(check.differences[0].bookId,'dex-3');
+  assert.equal(check.differences[0].missingFromSnapshot,true);
+  assert.equal(check.differences[0].choice,'pending');
+  assert.equal(live.books.filter(b=>b.status==='borrowed').length,3);
+  const chosen=buildAssignmentPreview(full,live,[
+    {id:check.differences[0].id,action:'apply'},
+  ],options);
+  assert.equal(chosen.ok,true);
+  assert.equal(chosen.summary.readyToApply,true);
+  applyAssignmentPreview(live,chosen,'admin',now,'dex-import',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books.filter(b=>b.status==='borrowed').length,2);
+  assert.deepEqual(live.students[0].borrowedBooks.map(x=>x.bookId),
+    ['dex-1','dex-2']);
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+}
+// Two copies sharing an ISBN require physical-barcode comparison; one
+// present row does not prove every borrowed physical copy is present.
+{
+  const live={
+    books:[
+      copy('copy-a','4711001',{status:'borrowed',borrowedBy:'lisa'}),
+      copy('copy-b','4711002',{status:'borrowed',borrowedBy:'tim'}),
+    ],
+    students:[
+      {id:'lisa',name:'Lisa',borrowedBooks:[{bookId:'copy-a'}]},
+      {id:'tim',name:'Tim',borrowedBooks:[{bookId:'copy-b'}]},
+    ],
+    classes:[],history:[],
+  };
+  const listed={ok:true,rows:[
+    row(0,'4711001',loanTo('lisa','Lisa')),
+  ]};
+  const missing=withMissingExcelLoans(listed,live,true);
+  assert.equal(missing.rows.length,2);
+  assert.equal(missing.preferredCopyByRow[1],'copy-b');
+  const preview=buildAssignmentPreview(missing,live,[],{
+    reviewAllBlankLoans:true,reviewMissingLoans:true,
+    loanReceipts:[],preferredCopyByRow:missing.preferredCopyByRow,
+  });
+  assert.equal(preview.ok,true);
+  assert.equal(preview.differences.length,1);
+  assert.equal(preview.differences[0].bookId,'copy-b');
+  assert.equal(preview.differences[0].choice,'pending');
+}
+
+
+// A previously imported Excel borrower disappearing from the next Excel
+// must be shown as a decision, never treated as a silent return.
+{
+  const proof=excelLoanReceiptKey('copy-1',{type:'student',id:'lisa'});
+  const source=row(0,'4711001');
+  const opts={reviewMissingLoans:true,loanReceipts:[proof]};
+  const newPreview=()=>buildAssignmentPreview({ok:true,rows:[source]},
+    directory(),[],opts);
+  const pending=newPreview();
+  assert.equal(pending.ok,true);
+  assert.equal(pending.differences.length,1);
+  assert.equal(pending.differences[0].kind,'loan');
+  assert.equal(pending.differences[0].previouslyRecordedInExcel,true);
+  assert.equal(pending.differences[0].choice,'pending');
+  assert.equal(pending.summary.readyToApply,false);
+  const noProof=buildAssignmentPreview({ok:true,rows:[source]},
+    directory(),[],{reviewMissingLoans:true,loanReceipts:[]});
+  assert.equal(noProof.differences.length,0,
+    'A blank field without a prior confirmed Excel loan is not a return');
+  const correction=buildAssignmentPreview({ok:true,rows:[source]},
+    directory(),[{id:'0:loan',action:'apply'}],opts);
+  const correctionDb=directory();
+  applyAssignmentPreview(correctionDb,correction,'admin',now,'import-1',
+    {loanHistoryMode:'correct'});
+  assert.equal(correctionDb.books[0].status,'available');
+  assert.equal(correctionDb.students[0].borrowedBooks.length,0);
+  assert.equal(correctionDb.bookLoanPeriods?.length||0,0);
+  const historyDb=directory();
+  applyAssignmentPreview(historyDb,correction,'admin',now,'import-2',
+    {loanHistoryMode:'preserve'});
+  assert.equal(historyDb.bookLoanPeriods.length,1);
+  assert.equal(historyDb.bookLoanPeriods[0].studentId,'lisa');
+  assert.equal(historyDb.bookLoanPeriods[0].source,'excel_reconciliation');
+  assert.equal(historyDb.readingRecords[0].finished,true,
+    'The import does not invent or alter a reading-completion answer');
+}
+
 
 // A source conflict must not fabricate a location comparison with two
 // empty values. Preserve actual Excel context and defer the unsafe link.
@@ -466,4 +588,123 @@ assert.equal(preview(allLent,[row(0,'',loanTo('tim','Tim Leerling'))])
 // A distinct physical barcode still identifies its exact individual copy.
 assert.equal(preview(directory(),[row(0,'4711001',loanTo('tim','Tim Leerling'))])
   .differences[0].bookId,'copy-1');
+
+// A corrected complete workbook swaps students between actual physical books.
+// The import must move the two links, not append two extra loans.
+{
+  const live=directory();
+  live.books[1].status='borrowed';
+  live.books[1].borrowedBy='tim';
+  live.students[1].borrowedBooks=[{bookId:'copy-2'}];
+  const corrected=[
+    row(0,'4711001',loanTo('tim','Tim Leerling')),
+    row(1,'4711002',loanTo('lisa','Lisa Leerling')),
+  ];
+  const plan=preview(live,corrected);
+  assert.equal(plan.ok,true);
+  assert.equal(plan.differences.length,2);
+  assert.equal(plan.differences.every(d=>d.kind==='loan'&&d.choice==='apply'),true);
+  applyAssignmentPreview(live,plan,'admin',now,'swapped-loans',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[0].borrowedBy,'tim');
+  assert.equal(live.books[1].borrowedBy,'lisa');
+  assert.deepEqual(live.students[0].borrowedBooks.map(x=>x.bookId),['copy-2']);
+  assert.deepEqual(live.students[1].borrowedBooks.map(x=>x.bookId),['copy-1']);
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+  assert.equal(live.history.length,1,'No fictitious checkout or check-in');
+}
+// The new workbook assigns the correct copy to Lisa and explicitly
+// removes her incorrect existing copy of the SAME ISBN. The release is
+// relevant only when that empty-field correction is confirmed in this batch.
+{
+  const live=directory();
+  live.books[0].status='available';
+  live.books[0].borrowedBy=null;
+  live.books[0].borrowedAt=null;
+  live.books[0].dueDate=null;
+  live.books[1].status='borrowed';
+  live.books[1].borrowedBy='lisa';
+  live.students[0].borrowedBooks=[{bookId:'copy-2'}];
+  const rows=[
+    row(0,'4711001',loanTo('lisa','Lisa Leerling')),
+    row(1,'4711002',{}),
+  ];
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true};
+  const unconfirmed=buildAssignmentPreview({ok:true,rows},live,
+    [],options);
+  assert.equal(unconfirmed.ok,true);
+  assert.equal(unconfirmed.differences.find(d=>d.id==='0:loan')?.reason,
+    'student_already_borrowed_edition');
+  const chosen=buildAssignmentPreview({ok:true,rows},live,[
+    {id:'0:loan',action:'apply'},
+    {id:'1:loan',action:'apply'},
+  ],options);
+  assert.equal(chosen.ok,true);
+  assert.equal(chosen.summary.readyToApply,true);
+  assert.equal(chosen.differences.find(d=>d.id==='0:loan')?.reason,'');
+  applyAssignmentPreview(live,chosen,'admin',now,'confirmed-replacement',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[0].status,'borrowed');
+  assert.equal(live.books[0].borrowedBy,'lisa');
+  assert.equal(live.books[1].status,'available');
+  assert.equal(live.books[1].borrowedBy,null);
+  assert.deepEqual(live.students[0].borrowedBooks.map(x=>x.bookId),['copy-1']);
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+}
+// An explicit permanent class location can replace an incorrect class
+// checkout only when the administrator confirms a complete loan snapshot.
+{
+  const live=directory();
+  live.books[0].status='borrowed';
+  live.books[0].borrowedBy=null;
+  live.books[0].borrowedByClassId='a';
+  live.students[0].borrowedBooks=[];
+  const rows=[row(0,'4711001',{fixedLocation:{status:'resolved',label:'Klas A'}})];
+  const partial=buildAssignmentPreview({ok:true,rows},live,[],{
+    reviewMissingLoans:true,loanReceipts:[],
+  });
+  assert.equal(partial.differences.some(x=>x.kind==='loan'),false);
+  const full=buildAssignmentPreview({ok:true,rows},live,[],{
+    reviewMissingLoans:true,reviewAllBlankLoans:true,
+  });
+  assert.equal(full.differences.length,2);
+  assert.equal(full.differences.every(x=>x.choice==='pending'),true);
+  assert.equal(full.differences.find(x=>x.kind==='loan').classLoanToFixed,true);
+  const decisions=full.differences.map(x=>({id:x.id,action:'apply'}));
+  const corrected=buildAssignmentPreview({ok:true,rows},live,decisions,{
+    reviewMissingLoans:true,reviewAllBlankLoans:true,
+  });
+  assert.equal(corrected.ok,true);
+  applyAssignmentPreview(live,corrected,'admin',now,'fixed-in-class',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[0].status,'available');
+  assert.equal(live.books[0].borrowedByClassId,null);
+  assert.equal(live.books[0].fixedLocation,'Klas A');
+  assert.equal(live.bookLoanPeriods?.length||0,0);
+}
+// Conversely a class loan may replace an erroneously permanent location,
+// without automatically clearing the location on an incomplete workbook.
+{
+  const live=directory();
+  live.books[1].fixedLocation='Klas A';
+  const rows=[row(0,'4711002',classLoan('a','Klas A'))];
+  const partial=buildAssignmentPreview({ok:true,rows},live,[]);
+  assert.equal(partial.differences.filter(x=>x.kind==='location').length,0);
+  const full=buildAssignmentPreview({ok:true,rows},live,[],{
+    reviewMissingLoans:true,reviewAllBlankLoans:true,
+  });
+  const toRemove=full.differences.find(x=>x.kind==='location');
+  assert.equal(toRemove?.classFixedToLoan,true);
+  assert.equal(toRemove.choice,'pending');
+  const confirmed=buildAssignmentPreview({ok:true,rows},live,[
+    {id:toRemove.id,action:'apply'},
+  ],{reviewMissingLoans:true,reviewAllBlankLoans:true});
+  assert.equal(confirmed.ok,true);
+  applyAssignmentPreview(live,confirmed,'admin',now,'class-borrowing',
+    {loanHistoryMode:'correct'});
+  assert.equal(live.books[1].status,'borrowed');
+  assert.equal(live.books[1].borrowedByClassId,'a');
+  assert.equal(live.books[1].fixedLocation,null);
+}
+
 console.log('Administrative assignment reconciliation: choices, metadata retention, identity and zero implicit deletions passed');

@@ -456,6 +456,36 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const adminCard=card('Administratie','Pas alleen de aangevinkte registraties aan.');
     adminCard.append(checkPart('loans','Uitleningen bijwerken',true),
       checkPart('locations','Vaste locaties bijwerken',true));
+    const loanHistoryLabel=make('label','bb-review__field');
+    loanHistoryLabel.append(make('span','',
+      'Wat wil je doen met leenhistorie bij Excelcorrecties?'));
+    const loanHistoryMode=make('select');
+    for(const [value,label] of [
+      ['preserve','Leenhistorie behouden: afgesloten uitleningen bewaren'],
+      ['correct','Alleen actuele uitleningen corrigeren: geen historische uitlening aanmaken'],
+    ]){
+      const option=make('option','',label);
+      option.value=value;loanHistoryMode.append(option);
+    }
+    loanHistoryMode.value='correct';
+    loanHistoryLabel.append(loanHistoryMode,
+      make('span','hint',
+        'Was een leerling eerder ingevuld en is het Excelveld nu leeg? '
+        +'Boekenbaai vraagt expliciet wat moet gebeuren. '
+        +'Leeg betekent nooit automatisch dat een boek is ingeleverd. '
+        +'Bestaande historische registraties worden niet automatisch gewist.'));
+    adminCard.append(loanHistoryLabel);
+    const completeLoansLabel=make('label','bb-review__check');
+    const completeLoans=make('input');
+    completeLoans.type='checkbox';
+    completeLoans.checked=false;
+    completeLoansLabel.append(completeLoans,make('span','',
+      'Dit Excelbestand bevat de volledige actuele uitleenlijst'));
+    adminCard.append(completeLoansLabel,make('p','hint',
+      'Alleen aanvinken als werkelijk alle huidige uitleningen in deze '
+      +'Excel staan. Boekenbaai toont dan ook boeken die nog als geleend '
+      +'staan maar helemaal niet meer in het bestand voorkomen. '
+      +'Je beslist per verschil; er wordt niets automatisch ingeleverd.'));
     parts.append(stockCard,adminCard);
     const metadataDetails=make('details','bb-import__columns');
     metadataDetails.append(make('summary','',
@@ -506,6 +536,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       metadataLabel.hidden=importMode.value==='reconcile'
         ||(unified&&!hasBookData);
       metadata.disabled=metadataLabel.hidden;
+      loanHistoryLabel.hidden=!unified||!partChecks.get('loans').checked;
+      completeLoansLabel.hidden=!unified||!partChecks.get('loans').checked;
+      if(completeLoansLabel.hidden)completeLoans.checked=false;
     };
     importMode.addEventListener('change',refreshImportMode);
     for(const check of partChecks.values())check.addEventListener('change',refreshImportMode);
@@ -1249,7 +1282,12 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           group.rows.set(row.index,row);
       }
       for(const diff of manualAssignments){
-        const row=rowByNumber.get(diff.worksheetRow);
+        const row=rowByNumber.get(diff.worksheetRow)
+          ||(diff.missingFromSnapshot?{
+            index:diff.rowIndex,sourceRowNumber:null,missingFromExcel:true,
+            book:{title:diff.title,author:diff.author,
+              editionIsbn:diff.editionIsbn,barcode:diff.barcode},
+          }:null);
         groupFor(diff.editionIsbn||row?.book?.editionIsbn||'',row)
           .assignments.push(diff);
       }
@@ -1283,8 +1321,10 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         :group.missingAssignments.length?1
           :group.assignments.length?2:group.metadata.length?3:4;
       const queue=[...books.values()].sort((a,b)=>priority(a)-priority(b)
-        ||Math.min(...[...a.rows.values()].map(row=>row.sourceRowNumber))
-          -Math.min(...[...b.rows.values()].map(row=>row.sourceRowNumber)));
+        ||Math.min(...[...a.rows.values()].map(row=>
+          Number.isInteger(row.sourceRowNumber)?row.sourceRowNumber:999999))
+          -Math.min(...[...b.rows.values()].map(row=>
+            Number.isInteger(row.sourceRowNumber)?row.sourceRowNumber:999999)));
       if(guidedRecheckFocus){
         guidedIndex=resolveGuidedReviewIndex(queue,guidedRecheckFocus,guidedIndex);
         guidedRecheckFocus=null;
@@ -1484,7 +1524,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           progressBar.append(progressFill);panel.append(progressBar);
           panel.append(make('p','bb-guide__counter',
             'Boek '+(guidedIndex+1)+' van '+queue.length
-            +' · Excelrij '+safeText(source?.sourceRowNumber)));
+            +(source?.missingFromExcel
+              ?' · Dit boek ontbreekt in de nieuwe Excel'
+              :' · Excelrij '+safeText(source?.sourceRowNumber))));
           const card=make('article','bb-guide__book');
           card.dataset.reviewRowKey='wizard:'+group.key;
           const bookhead=make('div','bb-guide__bookhead');
@@ -1812,6 +1854,12 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                 :diff.kind==='class_context'?'Klasvermelding'
                 :'Administratieve koppeling'));
               if(diff.reason)explain(entry,diff.reason);
+              if(diff.missingFromSnapshot)
+                entry.append(make('p','bb-guide__attention',
+                  'Dit boek staat nog als uitgeleend, maar komt niet '
+                  +'meer voor in je volledige actuele Excel-uitleenlijst. '
+                  +'Controleer of dit boek werkelijk is teruggebracht '
+                  +'of dat de eerdere registratie onjuist was.'));
               const compare=make('div','bb-guide__compare');
               if(diff.kind==='issue'){
                 const context=[];
@@ -3969,7 +4017,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             mode: unified?'unified_sync'
               : importMode.value==='reconcile'?'assignment_reconcile'
               : syncMode.checked?'inventory_sync':'create',
-            ...(unified?{syncParts:selection}:{}),
+            ...(unified?{syncParts:selection,
+              ...(selection.loans?{loanHistoryMode:loanHistoryMode.value,
+                fullLoanSnapshot:completeLoans.checked}:{})}:{}),
           });
         } catch (error) {
           await syncStage();

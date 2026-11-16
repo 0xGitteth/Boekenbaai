@@ -5,7 +5,8 @@ const {
   listDeferredAssignmentTasks,
   findTask, resolveDeferredAssignmentTask,
 } = require('../book-import-assignment-tasks');
-const { buildAssignmentPreview } = require('../book-import-assignment-reconciliation');
+const { buildAssignmentPreview, applyAssignmentPreview } = require('../book-import-assignment-reconciliation');
+const {refreshDeferredSnapshotRows}=require('../book-import-unified-sync');
 const ISBN = '9780306406157';
 const admin = {id:'admin',role:'admin'};
 const teacher = {id:'teacher',role:'teacher'};
@@ -210,5 +211,154 @@ assert.equal(resolveDeferredAssignmentTask(shared,timTask,admin,
 assert.equal(shared.books[0].borrowedBy,'tim');
 assert.equal(shared.students[1].borrowedBooks[0].bookId,'copy-1');
 assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
+
+
+// A complete snapshot may correct a fixed location into a class loan.
+// Postponing the location removal must remain actionable from Taken
+// after the class checkout has already been corrected.
+{
+  const live=initial();
+  const copy=live.books[0];
+  copy.status='available';
+  copy.borrowedBy=null;
+  copy.borrowedAt=null;
+  copy.dueDate=null;
+  copy.fixedLocation='Klas A';
+  live.students[0].borrowedBooks=[];
+  const source=row({classLoan:{status:'matched',id:'a',name:'Klas A'}});
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true};
+  const suggested=buildAssignmentPreview({ok:true,rows:[source]},live,
+    [{id:'0:location',action:'later'}],options);
+  assert.equal(suggested.ok,true);
+  assert.equal(suggested.summary.readyToApply,true);
+  const location=suggested.differences.find(item=>item.kind==='location');
+  assert.equal(location?.classFixedToLoan,true);
+  const report={id:'location-review',mode:'assignment_reconcile',
+    fileName:'klassen.xlsx',importedAt:today,fullyReviewed:false,
+    deferredDifferences:[{id:location.id,status:'open',
+      kind:location.kind,bookId:location.bookId,
+      before:location.before,after:location.after}]};
+  live.bookImportReports.push(report);
+  applyAssignmentPreview(live,suggested,'admin',today,'batch-class',
+    {loanHistoryMode:'correct'});
+  const deferred=createDeferredAssignmentTasks(live,report,[source],
+    suggested.differences,today);
+  assert.equal(deferred.length,1);
+  assert.equal(live.books[0].borrowedByClassId,'a');
+  assert.equal(live.books[0].fixedLocation,'Klas A');
+  assert.equal(listDeferredAssignmentTasks(live).tasks[0].canApply,true);
+  const resolved=resolveDeferredAssignmentTask(live,deferred[0],admin,
+    {choice:'apply',revision:1,confirm:true});
+  assert.equal(resolved.ok,true);
+  assert.equal(live.books[0].borrowedByClassId,'a');
+  assert.equal(live.books[0].fixedLocation,null);
+}
+
+
+// A title/author correction in the same unified import must not break
+// a deferred missing-loan task for the second physical copy.
+{
+  const live=initial();
+  live.books[0].title='Gecorrigeerde titel';
+  live.books[0].author='Nieuwe auteur';
+  const oldRow={...row({}),index:37,sourceRowNumber:null,
+    missingFromExcel:true};
+  const oldBook={...oldRow.book};
+  const updated=refreshDeferredSnapshotRows([oldRow],[
+    {rowIndex:37,bookId:'copy-1',kind:'loan',choice:'later'},
+  ],live.books);
+  assert.equal(oldRow.book.title,oldBook.title,
+    'The original reviewed snapshot remains immutable');
+  assert.equal(updated[0].index,37);
+  assert.equal(updated[0].book.title,'Gecorrigeerde titel');
+  assert.equal(updated[0].book.author,'Nieuwe auteur');
+  const options={reviewMissingLoans:true,reviewAllBlankLoans:true,
+    preferredCopyByRow:{37:'copy-1'}};
+  const preview=buildAssignmentPreview({ok:true,rows:updated},live,[
+    {id:'37:loan',action:'later'},
+  ],options);
+  assert.equal(preview.ok,true);
+  const difference=preview.differences.find(x=>x.id==='37:loan');
+  assert.ok(difference);
+  assert.equal(difference.missingFromSnapshot,true);
+  const report={id:'metadata-snapshot',mode:'unified_sync',
+    fileName:'gecorrigeerde-titels.xlsx',loanHistoryMode:'correct',
+    deferredDifferences:[{id:difference.id,status:'open'}],
+    importedAt:today,fullyReviewed:false};
+  live.bookImportReports.push(report);
+  const tasks=createDeferredAssignmentTasks(live,report,updated,
+    preview.differences,today);
+  assert.equal(tasks.length,1);
+  assert.equal(tasks[0].sourceRow.book.title,'Gecorrigeerde titel');
+  const applied=resolveDeferredAssignmentTask(live,tasks[0],admin,
+    {choice:'apply',revision:1,confirm:true});
+  assert.equal(applied.ok,true);
+  assert.equal(live.books[0].status,'available');
+}
+
+// A normal Excel row can also become stale when title/author metadata
+// is accepted in the same import. The saved task must use the final
+// physical copy metadata while preserving its loan/borrower decision.
+{
+  const live=initial();
+  const source=row({studentLoan:{status:'matched',id:'tim',name:'Tim Leerling'}});
+  const reviewed=buildAssignmentPreview({ok:true,rows:[source]},live,
+    [{id:'0:loan',action:'later'}]);
+  assert.equal(reviewed.ok,true);
+  const diff=reviewed.differences.find(item=>item.id==='0:loan');
+  assert.equal(diff?.choice,'later');
+  live.books[0].title='Oorlogs-winter';
+  live.books[0].author='J. Terlouw';
+  const originalTitle=source.book.title;
+  const taskRows=refreshDeferredSnapshotRows([source],
+    reviewed.differences,live.books);
+  assert.equal(source.book.title,originalTitle);
+  assert.equal(taskRows[0].book.title,'Oorlogs-winter');
+  assert.equal(taskRows[0].book.author,'J. Terlouw');
+  assert.equal(taskRows[0].index,source.index);
+  assert.equal(taskRows[0].context.studentLoan.id,'tim');
+  const report={
+    id:'regular-row-metadata',mode:'unified_sync',
+    fileName:'corrected.xlsx',loanHistoryMode:'correct',
+    importedAt:today,fullyReviewed:false,
+    deferredDifferences:[{id:diff.id,status:'open'}],
+  };
+  live.bookImportReports.push(report);
+  const [task]=createDeferredAssignmentTasks(live,report,
+    taskRows,reviewed.differences,today);
+  assert.ok(task);
+  assert.equal(task.sourceRow.book.title,'Oorlogs-winter');
+  const resolved=resolveDeferredAssignmentTask(live,task,admin,
+    {choice:'apply',revision:1,confirm:true});
+  assert.equal(resolved.ok,true);
+  assert.equal(live.books[0].borrowedBy,'tim');
+  assert.equal(live.bookImportAssignmentTasks[0].status,'completed');
+}
+// Fixed-location decisions from ordinary Excel rows must likewise remain
+// actionable after a combined metadata correction.
+{
+  const live=initial();
+  const source=row({fixedLocation:{status:'resolved',label:'Klas A'}});
+  const reviewed=buildAssignmentPreview({ok:true,rows:[source]},live,
+    [{id:'0:location',action:'later'}]);
+  assert.equal(reviewed.ok,true);
+  live.books[0].title='Oorlogs-winter';
+  live.books[0].author='J. Terlouw';
+  const taskRows=refreshDeferredSnapshotRows([source],
+    reviewed.differences,live.books);
+  const report={
+    id:'regular-location-metadata',mode:'unified_sync',
+    fileName:'corrected.xlsx',loanHistoryMode:'correct',
+    importedAt:today,fullyReviewed:false,
+    deferredDifferences:[{id:'0:location',status:'open'}],
+  };
+  live.bookImportReports.push(report);
+  const [task]=createDeferredAssignmentTasks(live,report,
+    taskRows,reviewed.differences,today);
+  const resolved=resolveDeferredAssignmentTask(live,task,admin,
+    {choice:'apply',revision:1,confirm:true});
+  assert.equal(resolved.ok,true);
+  assert.equal(live.books[0].fixedLocation,'Klas A');
+}
 
 console.log('Deferred administrator tasks: security, persistent queue, safe resolution, stale loan and legacy records OK');

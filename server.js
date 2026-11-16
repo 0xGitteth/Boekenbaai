@@ -27,7 +27,9 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
-  actualAssignmentPreview, assignmentSource, shouldApplyMetadataToCreatedCopy,
+  actualAssignmentPreview, assignmentSource, withMissingExcelLoans,
+  refreshDeferredSnapshotRows,
+  shouldApplyMetadataToCreatedCopy,
   rebaseStaleAssignmentChoices } =
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
@@ -67,6 +69,12 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
   listDeferredAssignmentTasks,
   findTask: findDeferredAssignmentTask,
   resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
+
+const {listDeferredBookTasks, resolveDeferredBookTask} =
+  require('./book-import-deferred-book-tasks');
+const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
+  removeFalseHistory,listCurrentLoans,removeFalseCurrentLoan} =
+  require('./book-loan-history-admin');
 
 let xlsxModule = null;
 
@@ -3411,11 +3419,15 @@ function parseBody(req, maxLength = 1e6) {
  * Wordt gebruikt voor check-ins/-outs en verwante gebeurtenissen.
  */
 function appendHistory(db, entry) {
-  db.history.unshift({
+  const event={
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     ...entry,
-  });
+  };
+  db.history.unshift(event);
+  // The activity feed remains compact. The actual circulation history
+  // must not vanish after the 201st unrelated event.
+  appendDurableLoanEvent(db,event);
   db.history = db.history.slice(0, 200);
 }
 
@@ -3424,7 +3436,7 @@ function appendHistory(db, entry) {
  * Filtert uitsluitend check-ins/-outs en sorteert op tijdstip.
  */
 function getStudentLoanHistory(db, studentId) {
-  const entries = Array.isArray(db.history) ? db.history : [];
+  const entries = borrowEvents(db);
   const loans = entries
     .filter((entry) =>
       entry &&
@@ -3445,7 +3457,7 @@ function getStudentLoanHistory(db, studentId) {
 }
 
 function getPublicLoanActivity(db, { limit = 12 } = {}) {
-  const entries = Array.isArray(db.history) ? db.history : [];
+  const entries = borrowEvents(db);
   const sanitized = entries
     .filter((entry) =>
       entry &&
@@ -4371,7 +4383,7 @@ async function handleApi(req, res, requestUrl) {
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
-      const borrowCounts = getBorrowCountsMap(db.history);
+      const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
       let books = db.books.map((book) => withBorrowCount(book, borrowCounts));
       const folder = requestUrl.searchParams.get('folder');
       const query = requestUrl.searchParams.get('query');
@@ -4442,7 +4454,7 @@ async function handleApi(req, res, requestUrl) {
       if (!book) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
-      const borrowCounts = getBorrowCountsMap(db.history);
+      const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
       const payload = withBorrowCount(book, borrowCounts);
       return sendJson(res, 200, sanitizeBookForResponse(payload));
     }
@@ -5014,6 +5026,73 @@ async function handleApi(req, res, requestUrl) {
       }
     }
 
+    // Correct an erroneous student-book history without modifying
+    // active circulation. Both reading records and activity counts are
+    // recalculated against the same permanent ledger.
+    const loanHistoryRoot='/api/admin/loan-history';
+    if(requestUrl.pathname===loanHistoryRoot
+      ||requestUrl.pathname===loanHistoryRoot+'/remove'
+      ||requestUrl.pathname===loanHistoryRoot+'/current'
+      ||requestUrl.pathname===loanHistoryRoot+'/current/remove'){
+      if(!ensureRole(user,['admin']))
+        return sendJson(res,user?403:401,{message:'Alleen voor beheerders.'});
+      if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot){
+        return sendJson(res,200,{items:searchHistory(getDb(),{
+          student:requestUrl.searchParams.get('student')||'',
+          book:requestUrl.searchParams.get('book')||'',limit:100})});
+      }
+      if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot+'/current'){
+        return sendJson(res,200,{items:listCurrentLoans(getDb(),{
+          borrower:requestUrl.searchParams.get('borrower')||'',
+          book:requestUrl.searchParams.get('book')||'',limit:100})});
+      }
+      if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/current/remove'){
+        const body=await parseBody(req,3000);
+        const database=loadDb();
+        const result=removeFalseCurrentLoan(database,user,body);
+        if(!result.ok)return sendJson(res,409,{
+          message:'De actuele uitlening is gewijzigd of kan niet veilig worden gecorrigeerd.',
+          error:result.error});
+        saveDb(database);
+        return sendJson(res,200,result);
+      }
+      if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/remove'){
+        const body=await parseBody(req,3000);
+        const database=loadDb();
+        const result=removeFalseHistory(database,user,body);
+        if(!result.ok)return sendJson(res,409,{
+          message:'De leenhistorie is veranderd of de verwijdering is ongeldig.',
+          error:result.error});
+        saveDb(database);
+        return sendJson(res,200,result);
+      }
+      return sendJson(res,405,{message:'Methode niet toegestaan.'});
+    }
+
+    // Physical book checks are independent, persistent admin tasks.
+    const deferredBookTaskRoot='/api/admin/book-import-book-tasks';
+    if(requestUrl.pathname===deferredBookTaskRoot
+      ||requestUrl.pathname.startsWith(deferredBookTaskRoot+'/')){
+      if(!ensureRole(user,['admin']))
+        return sendJson(res,user?403:401,{message:'Alleen voor beheerders.'});
+      if(req.method==='GET'&&requestUrl.pathname===deferredBookTaskRoot)
+        return sendJson(res,200,listDeferredBookTasks(getDb()));
+      const m=requestUrl.pathname.match(
+        /^\/api\/admin\/book-import-book-tasks\/([a-f0-9-]{32,36})\/resolve$/);
+      if(req.method==='POST'&&m){
+        const body=await parseBody(req,2000);
+        const database=loadDb();
+        const result=resolveDeferredBookTask(database,user,m[1],
+          body.revision,body.choice);
+        if(!result.ok)return sendJson(res,409,{message:
+          'Deze boekcontrole kan niet worden afgesloten. Vernieuw de takenlijst.',
+          error:result.error});
+        if(!result.unchanged)saveDb(database);
+        return sendJson(res,200,result);
+      }
+      return sendJson(res,405,{message:'Methode niet toegestaan.'});
+    }
+
     // Deferred administration checks are admin-only tasks. They have their
     // own durable collection, independent of the last 30 import reports.
     const assignmentTaskRoot = '/api/admin/book-import-assignment-tasks';
@@ -5337,6 +5416,19 @@ async function handleApi(req, res, requestUrl) {
           message:'Selecteer welke onderdelen of kolommen je wilt synchroniseren.',
           error:selectedParts.error,
         });
+        const fullLoanSnapshot=mode==='unified_sync'
+          &&selectedParts.value.loans&&body.fullLoanSnapshot===true;
+        if(body.fullLoanSnapshot!==undefined
+          &&typeof body.fullLoanSnapshot!=='boolean')
+          return sendJson(res,400,{message:'Ongeldige keuze voor volledige uitleenlijst.',
+            error:'invalid_full_loan_snapshot'});
+        const loanHistoryMode=mode==='unified_sync'&&selectedParts.value.loans
+          ?(body.loanHistoryMode===undefined?'correct':body.loanHistoryMode)
+          :null;
+        if(loanHistoryMode!==null
+          &&!['preserve','correct'].includes(loanHistoryMode))
+          return sendJson(res,400,{message:'Kies hoe de uitleenhistorie moet worden behandeld.',
+            error:'invalid_loan_history_mode'});
         if (mode === 'assignment_reconcile' && body.enrichIsbn === true) {
           return sendJson(res, 400, { message: 'Administratie corrigeren gebruikt geen externe boekverrijking.', error:'enrichment_not_allowed' });
         }
@@ -5396,7 +5488,8 @@ async function handleApi(req, res, requestUrl) {
           return cache.get(key);
         };
         const options = {
-          mode, syncParts:selectedParts.value, maxRows: 1500,
+          mode, syncParts:selectedParts.value,loanHistoryMode,
+          fullLoanSnapshot,maxRows: 1500,
           maxCopies: maxAnalyzedCopies,enrichIsbn,
           ...(lookupIsbn ? { lookupIsbn: (isbn) =>
             stageLookup(exactCache, retryableExact, isbn, () => lookupIsbn(isbn)) } : {}),
@@ -5433,7 +5526,8 @@ async function handleApi(req, res, requestUrl) {
         const latestDatabase = loadDb();
         analysis.decisions = mode === 'unified_sync'
           ? buildUnifiedBookImport(analysis,latestDatabase,{
-            parts:selectedParts.value,loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+            parts:selectedParts.value,loanHistoryMode,fullLoanSnapshot,
+            loanReceipts:historicalExcelLoanReceipts(latestDatabase),
             existingFollowups:latestDatabase.bookImportFollowups,
           })
           : mode === 'assignment_reconcile'
@@ -5622,7 +5716,9 @@ async function handleApi(req, res, requestUrl) {
           let reviewedAssignmentChoices=assignments.values;
           let rebasedAssignmentCount=0;
           const unifiedParameters={
-            parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
+            parts:stage.options.syncParts,loanHistoryMode:stage.options.loanHistoryMode,
+            fullLoanSnapshot:stage.options.fullLoanSnapshot,
+            acceptWarnings:body.acceptWarnings,
             inventoryResolutions:choices.values,
             metadataResolutions:metadataChoices.values,
             loanReceipts:historicalExcelLoanReceipts(latestDatabase),
@@ -5763,7 +5859,9 @@ async function handleApi(req, res, requestUrl) {
             // by a second non-atomic administrative correction request.
             const isUnified=stage.options.mode==='unified_sync';
             const combined=isUnified?buildUnifiedBookImport(stage.analysis,database,{
-              parts:stage.options.syncParts,acceptWarnings:stage.acceptWarnings,
+              parts:stage.options.syncParts,loanHistoryMode:stage.options.loanHistoryMode,
+              fullLoanSnapshot:stage.options.fullLoanSnapshot,
+              acceptWarnings:stage.acceptWarnings,
               inventoryResolutions:stage.inventoryResolutions,
               assignmentResolutions:stage.assignmentResolutions,
               metadataResolutions:stage.metadataResolutions,
@@ -6014,6 +6112,12 @@ async function handleApi(req, res, requestUrl) {
               inventoryResolutions: stage.inventoryResolutions,
               rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index),
             };
+            // Capture the exact reviewed source rows BEFORE applying any
+            // active-loan changes. Recomputing missing-loan synthetic row
+            // indices after one correction would detach later follow-up
+            // tasks from their original physical copy.
+            const reviewedTaskSourceRows=isUnified
+              ?combined.reviewedAssignmentRows:[];
             if (!Array.isArray(database.bookImportReports)) database.bookImportReports = [];
             database.bookImportReports.push(report);
             database.bookImportReports = database.bookImportReports.slice(-30);
@@ -6078,7 +6182,8 @@ async function handleApi(req, res, requestUrl) {
               }
               const assignments=actualAssignmentPreview(combined.assignments,createdByRow);
               if(assignments.differences.length)
-                corrected=applyAssignmentPreview(database,assignments,user.id,now,batchId);
+                corrected=applyAssignmentPreview(database,assignments,user.id,now,batchId,
+                  {loanHistoryMode:stage.options.loanHistoryMode});
               if(assignments.acknowledgedLoans?.length){
                 // The source Excel also confirms loans that were already
                 // recorded correctly. Persist their receipts so that an old
@@ -6121,10 +6226,13 @@ async function handleApi(req, res, requestUrl) {
                   worksheetRows:item.worksheetRows||[],
                 }));
               report.selectedParts=combined.parts;
+              report.loanHistoryMode=stage.options.loanHistoryMode;
+              report.fullLoanSnapshot=stage.options.fullLoanSnapshot;
               report.deferredDifferences=deferredDifferences;
               report.fullyReviewed=deferredDifferences.length===0;
               report.corrections=corrected.audit;
-              const savedTaskRows=assignmentSource(stage.analysis,combined.parts,database).rows;
+              const savedTaskRows=refreshDeferredSnapshotRows(
+                reviewedTaskSourceRows,assignments.differences,database.books);
               const tasks=createDeferredAssignmentTasks(database,report,savedTaskRows,
                 assignments.differences,now);
               report.deferredTaskIds=tasks.map(task=>task.id);

@@ -3052,3 +3052,24 @@ body.book-detail-open {
 .admin-cover-crop__preview img:active { cursor: grabbing; }
 .admin-cover-crop input[type='range'] { width: min(100%, 260px); }
 .admin-cover-crop__toggle { display: inline-flex; gap: .5rem; align-items: center; }
+
+
+/* Fixed classroom storage is distinct from whether a copy is on loan. */
+.book-card__fixed-location,
+.book-detail__fixed-location {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #e9f1fb;
+  color: #25476a;
+  border: 1px solid #bdcfe4;
+  font-size: 0.77rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.book-card__fixed-location { margin-top: 6px; }
+.book-detail__fixed-location { margin-top: 8px; margin-bottom: 8px; }

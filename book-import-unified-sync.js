@@ -229,6 +229,74 @@ function assignmentSource(analysis,parts,db,inventory=null,effectiveIdentityUpda
     return {...row,book,context};
   })};
 }
+function withMissingExcelLoans(source,db,enabled=false,assignmentDb=db){
+  if(!enabled)return {...source,preferredCopyByRow:{}};
+  const rows=[...source.rows],preferredCopyByRow={};
+  const borrowed=(db.books||[]).filter(copy=>
+    copy.status==='borrowed'&&(copy.borrowedBy||copy.borrowedByClassId));
+  const represented=new Set();
+  const normalizedBarcode=book=>String(book?.barcode||'').trim();
+  const physicalBarcode=row=>{
+    const barcode=normalizedBarcode(row.book);
+    return barcode&&canonicalizeBookIsbn13(barcode)
+      !==canonicalizeBookIsbn13(row.book?.editionIsbn)
+      ?barcode:null;
+  };
+  // Concrete physical barcodes identify individual copies even on a row
+  // that deliberately has no borrower. They cannot hide sibling copies.
+  for(const row of rows){
+    const barcode=physicalBarcode(row);
+    if(!barcode)continue;
+    const matches=borrowed.filter(copy=>
+      normalizedBarcode(copy)===barcode
+      &&existingEdition(copy)===canonicalizeBookIsbn13(row.book?.editionIsbn));
+    if(matches.length===1)represented.add(matches[0].id);
+  }
+  // Use the *same* physical-copy allocation as the assignment planner.
+  // Allocating an arbitrary borrowed copy for an ISBN-only Excel row is
+  // incorrect when the planner selects a free copy for a new borrower.
+  const planned=buildAssignmentPreview(source,assignmentDb,[],{
+    reviewMissingLoans:false,reviewAllBlankLoans:false,
+  });
+  if(!planned.ok)return {...source,rows,preferredCopyByRow,
+    snapshotPlanningError:planned.error};
+  for(const match of planned.acknowledgedLoans||[]){
+    represented.add(match.bookId);
+  }
+  for(const diff of planned.differences||[]){
+    if(diff.bookId && diff.kind!=='issue')represented.add(diff.bookId);
+  }
+  let index=Math.max(-1,...rows.map(row=>row.index))+1;
+  for(const copy of borrowed){
+    if(represented.has(copy.id))continue;
+    const isbn=existingEdition(copy);
+    if(!isbn)continue;
+    const i=index++;
+    rows.push({
+      index:i,sourceRowNumber:null,status:'ready',issues:[],
+      missingFromExcel:true,context:{},
+      book:{title:copy.title,author:copy.author,editionIsbn:isbn,
+        barcode:copy.barcode||'',quantity:{valid:true,value:1}},
+    });
+    preferredCopyByRow[i]=copy.id;
+  }
+  return {...source,rows,preferredCopyByRow};
+}
+// Persist the exact accepted post-import title/author for postponed tasks,
+// using the physical copy selected during review. Both ordinary Excel rows
+// and synthetic missing-loan rows may become stale after metadata updates.
+// Other source columns and the original worksheet index remain unchanged.
+function refreshDeferredSnapshotRows(rows,differences,books) {
+  const ids=new Map((differences||[]).filter(d=>d.choice==='later'
+    &&d.bookId && Number.isSafeInteger(d.rowIndex))
+    .map(d=>[d.rowIndex,d.bookId]));
+  const copies=new Map((books||[]).map(copy=>[copy.id,copy]));
+  return (rows||[]).map(row=>{
+    const copy=copies.get(ids.get(row.index));
+    if(!copy)return row;
+    return {...row,book:{...row.book,title:copy.title,author:copy.author}};
+  });
+}
 function projectCopies(analysis,inventory,parts,db,effectiveIdentityUpdates=new Set()){
   const copies=[];
   for(const addition of inventory.proposedAdds){
@@ -693,6 +761,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
 function buildUnifiedBookImport(analysis,db,{
   parts=DEFAULT_PARTS,acceptWarnings=false,inventoryResolutions=[],
   assignmentResolutions=[],metadataResolutions=[],loanReceipts=[],existingFollowups=[],
+  loanHistoryMode=null,fullLoanSnapshot=false,
 }={}){
   if(!analysis?.ok||!Array.isArray(analysis.rows))return {ok:false,error:'invalid_review'};
   const configured=normalizeParts(parts);
@@ -731,9 +800,18 @@ function buildUnifiedBookImport(analysis,db,{
   }else if(inventoryChoices.values.length)return {ok:false,error:'inventory_not_selected'};
   const projected=projectCopies(analysis,inventory,use,db,effectiveIdentityUpdates);
   const assignmentDb={...db,books:[...(db.books||[]),...projected]};
-  const source=use.loans||use.locations
+  const originalSource=use.loans||use.locations
     ?assignmentSource(analysis,use,db,inventory,effectiveIdentityUpdates):{...analysis,rows:[]};
-  let assignments=buildAssignmentPreview(source,assignmentDb,assignmentChoices.values);
+  const source=withMissingExcelLoans(originalSource,db,
+    fullLoanSnapshot===true&&use.loans,assignmentDb);
+  if(source.snapshotPlanningError)return {ok:false,error:source.snapshotPlanningError};
+  const blankLoanReview={
+    reviewMissingLoans:use.loans&&['preserve','correct'].includes(loanHistoryMode),
+    reviewAllBlankLoans:use.loans&&fullLoanSnapshot===true,
+    loanReceipts,preferredCopyByRow:source.preferredCopyByRow,
+  };
+  let assignments=buildAssignmentPreview(source,assignmentDb,
+    assignmentChoices.values,blankLoanReview);
   if(!assignments.ok)return assignments;
   // A vague class name is not an instruction to relocate or lend a book.
   // Leave the existing registration intact by default and log that choice.
@@ -746,7 +824,7 @@ function buildUnifiedBookImport(analysis,db,{
     assignments=buildAssignmentPreview(source,assignmentDb,[
       ...assignmentChoices.values,
       ...implicitClassKeeps.map(item=>({id:item.id,action:'keep'})),
-    ]);
+    ],blankLoanReview);
     if(!assignments.ok)return assignments;
     const autoIds=new Set(implicitClassKeeps.map(item=>item.id));
     for(const diff of assignments.differences)if(autoIds.has(diff.id)){
@@ -776,7 +854,7 @@ function buildUnifiedBookImport(analysis,db,{
       ...assignmentChoices.values,
       ...implicitClassKeeps.map(diff=>({id:diff.id,action:'keep'})),
       ...previouslyImported.map(diff=>({id:diff.id,action:'keep'})),
-    ]);
+    ],blankLoanReview);
     if(!assignments.ok)return assignments;
     const ignored=new Set(previouslyImported.map(diff=>diff.id));
     const implicitIds=new Set(implicitClassKeeps.map(diff=>diff.id));
@@ -796,7 +874,11 @@ function buildUnifiedBookImport(analysis,db,{
     // A review containing only automatic keep decisions is still worth
     // confirming, so the exact choices can be recorded in its import report.
     +metadata.summary.autoKept;
+  // Reuse exactly the reviewed rows, including synthetic missing-loan rows
+  // allocated against projected stock. Reconstructing against old stock loses
+  // rows when the same import creates physical copies.
   return {ok:true,parts:use,inventory,assignments,metadata,
+    reviewedAssignmentRows:source.rows,
     actionableSourceIssues:actionableSourceIssues(analysis,use),summary:{
     newCopies:inventory.summary.addCopies,
     proposedLoans:assignments.differences.filter(d=>d.kind==='loan'&&d.choice==='apply').length,
@@ -885,5 +967,5 @@ module.exports={
   DEFAULT_PARTS,METADATA_FIELDS,normalizeParts,virtualId,assignmentSource,
   normalizedMetadataChoice,issueAffectsSelection,actionableSourceIssues,
   shouldApplyMetadataToCreatedCopy,buildUnifiedBookImport,actualAssignmentPreview,
-  rebaseStaleAssignmentChoices,
+  rebaseStaleAssignmentChoices,withMissingExcelLoans,refreshDeferredSnapshotRows,
 };

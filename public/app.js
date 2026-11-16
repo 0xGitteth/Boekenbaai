@@ -1482,6 +1482,20 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
       statusValue === 'available' ? 'book-detail__status--available' : 'book-detail__status--borrowed'
     );
   }
+  if (state.status) {
+    const locationText = bookLocationSummary(book);
+    let location = state.status.parentElement?.querySelector('.book-detail__fixed-location');
+    if (locationText) {
+      if (!location) {
+        location = document.createElement('div');
+        location.className = 'book-detail__fixed-location';
+        state.status.insertAdjacentElement('afterend', location);
+      }
+      location.textContent = locationText;
+    } else if (location) {
+      location.remove();
+    }
+  }
   if (state.tags) {
     state.tags.innerHTML = '';
     for (const tag of book.themes || []) {
@@ -2026,6 +2040,24 @@ function groupBooksByTitleAuthor(books = []) {
   return result;
 }
 
+// Location and circulation are independent: an available copy with a
+// permanent classroom location is not on the library shelf.
+function bookLocationSummary(book) {
+  const copies = Array.isArray(book?.copies) ? book.copies : [book];
+  const fixed = copies.filter(copy => String(copy?.fixedLocation || '').trim());
+  if (!fixed.length) return '';
+  const locations = [...new Set(fixed.map(copy => String(copy.fixedLocation).trim()))];
+  if (copies.length === 1) return 'Vaste klaslocatie: ' + locations[0];
+  if (fixed.length === copies.length && locations.length === 1) {
+    return 'Alle exemplaren op vaste locatie: ' + locations[0];
+  }
+  if (locations.length === 1) {
+    return fixed.length + ' van ' + copies.length + ' exemplaren op vaste locatie: ' + locations[0];
+  }
+  return fixed.length + ' van ' + copies.length + ' exemplaren op vaste klaslocaties: '
+    + locations.join(', ');
+}
+
 // The choice helper reuses the existing catalogue book-detail UI.
 if (typeof window !== 'undefined') window.BoekenbaaiOpenBookDetail = openBookDetail;
 
@@ -2177,6 +2209,18 @@ function createBookCard(template, book, folders, options = {}) {
     statusBadge.classList.add(
       availableCopies > 0 ? 'book-card__status--available' : 'book-card__status--borrowed'
     );
+  }
+
+  const locationText = bookLocationSummary(book);
+  if (locationText) {
+    const location = document.createElement('div');
+    location.className = 'book-card__fixed-location';
+    location.textContent = locationText;
+    location.setAttribute('aria-label', locationText);
+    // Place location directly alongside availability, not after the
+    // content themes where it can disappear from compact card layouts.
+    if (statusBadge) statusBadge.insertAdjacentElement('afterend', location);
+    else (card.querySelector('.book-card__content') || card).prepend(location);
   }
 
   title.textContent = book.title;
