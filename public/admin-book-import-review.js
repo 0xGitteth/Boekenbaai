@@ -1,4 +1,6 @@
 // Staged import UI: all displayed workbook text uses textContent, never HTML.
+import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarnings}
+  from './admin-book-import-queue.mjs';
 (() => {
   'use strict';
   const rootPath = '/api/admin/book-import-stages';
@@ -71,6 +73,11 @@
     class_context_needs_review: 'Klas moet worden gecontroleerd',
     metadata_differs_from_excel: 'Metadata wijkt af van Excel',
     metadata_author_conflict: 'Twee onafhankelijke ISBN-bronnen bevestigen een andere auteur',
+    student_loan_unmatched: 'De leerling uit Excel is niet gevonden in Boekenbaai',
+    student_loan_ambiguous: 'De leerling uit Excel kan niet eenduidig worden gekoppeld',
+    class_loan_unmatched: 'De klas uit Excel is niet gevonden in Boekenbaai',
+    class_loan_ambiguous: 'De klas uit Excel kan niet eenduidig worden gekoppeld',
+    fixed_location_needs_review: 'De vaste klaslocatie is nog niet bevestigd',
   };
   const fieldDefs = [
     ['title', 'Titel'], ['author', 'Auteur'], ['editionIsbn', 'ISBN'],
@@ -541,6 +548,38 @@
           ?'Alle Excelrijen gecontroleerd. Het importvoorstel wordt samengesteld…'
           :'De analyse wordt gestart. De voortgang per boek verschijnt '
             +'zodra de server het Excelbestand heeft ingelezen.';
+      }
+    };
+    // The server reports real per-row review progress to /active.
+    // Display exactly that, without guessing at elapsed-time percentages.
+    const reviewProgress=make('section','bb-import__setup-progress');
+    reviewProgress.hidden=true;
+    reviewProgress.setAttribute('aria-label','Voortgang hercontrole');
+    const reviewProgressLabel=make('p','bb-import__setup-progress-label');
+    reviewProgressLabel.setAttribute('role','status');
+    const reviewProgressBar=make('progress','bb-import__setup-progress-meter');
+    reviewProgressBar.max=100;
+    reviewProgress.append(reviewProgressLabel,reviewProgressBar);
+    root.append(reviewProgress);
+    const showReviewProgress=(progress)=>{
+      reviewProgress.hidden=false;
+      if(progress?.phase==='finalizing'){
+        reviewProgressBar.removeAttribute('value');
+        reviewProgressLabel.textContent=
+          'Alle Excelrijen zijn gecontroleerd. Het voorstel wordt opnieuw samengesteld…';
+      }else if(progress?.phase==='analyzing'
+        &&Number.isInteger(progress.completed)
+        &&Number.isInteger(progress.total)&&progress.total>0){
+        const percent=Math.floor(100*progress.completed/progress.total);
+        reviewProgressBar.value=percent;
+        reviewProgressLabel.textContent='Boekgegevens controleren: '
+          +progress.completed+' van '+progress.total
+          +' Excelrijen verwerkt ('+percent+'%).';
+      }else{
+        reviewProgressBar.removeAttribute('value');
+        reviewProgressLabel.textContent=
+          'De hercontrole wordt gestart. De voortgang verschijnt zodra '
+          +'de server de eerste Excelrijen verwerkt.';
       }
     };
     const liveAlert = make('div', 'bb-review__live-alert');
@@ -1180,6 +1219,10 @@
         !item.automatic&&!item.previouslyImported);
       const manualMetadata=metadata.issues||[];
       const actionable=plan.actionableSourceIssues||[];
+      // Pending loan/class warnings with a server-confirmed safe deferral
+      // are tracked in administration, not shown as unanswerable book cards.
+      const deferredAssignmentRows=deferredAdministrativeRows(
+        assignments.differences||[]);
       const books=new Map();
       const groupFor=(isbn,row)=>{
         const key=isbn||('row:'+row?.index);
@@ -1213,16 +1256,10 @@
       // An absent physical edition cannot receive an imported loan or
       // location. This is not a pending assignment decision, but the
       // omission must still be visible before a teacher confirms.
-      for(const missing of assignments.notInCollection||[]){
-        const source=rowByNumber.get(missing.rows?.[0]);
-        const group=groupFor(missing.editionIsbn
-          ||source?.book?.editionIsbn||'',source);
-        group.missingAssignments.push(missing);
-        for(const number of missing.rows||[]){
-          const row=rowByNumber.get(number);
-          if(row)group.rows.set(row.index,row);
-        }
-      }
+      // Missing-stock administration is reported in the final overview
+      // (summary.missingStockGroups), not as an unanswerable review card.
+      // An actual inventory/identity conflict still creates its own card.
+
       for(const issue of manualMetadata){
         const row=rowByNumber.get(issue.worksheetRows?.[0]);
         const group=groupFor(issue.isbn||'',row);
@@ -1237,9 +1274,7 @@
         if(!row)continue;
         // Informative source messages do not create new review cards.
         const exceptions=(item.issues||[]).filter(issue=>
-          issue.severity==='conflict'
-          ||issue.reviewLevel!=='informational'
-            &&issue.severity==='warning');
+          requiresBookReview(issue,row.index,deferredAssignmentRows));
         if(!exceptions.length)continue;
         const group=groupFor(row.book?.editionIsbn||'',row);
         group.warnings.push(...exceptions);
@@ -1313,6 +1348,20 @@
           reviewingBook?guidedSelectedRow.get(reviewingBook.key):null);
         const focus=currentSource
           ?{rowIndex:currentSource.index,index:guidedIndex}:null;
+        showReviewProgress(null);
+        let reviewingPollBusy=false;
+        const reviewingPoll=setInterval(async()=>{
+          if(reviewingPollBusy||!reviewProgress.isConnected)return;
+          reviewingPollBusy=true;
+          try{
+            const active=(await request(rootPath+'/active')).stage;
+            if(active?.id===stage?.id&&active?.progress)
+              showReviewProgress(active.progress);
+          }catch{
+            // A temporary polling error must never interrupt the review.
+          }finally{reviewingPollBusy=false;}
+        },900);
+        try{
         await run(async()=>{
           const response=await request(rootPath+'/'+encodeURIComponent(stage.id)+'/review',{
             revision:stage.revision,acceptWarnings:warningsAccepted,
@@ -1344,6 +1393,10 @@
               :'De keuzes zijn opgeslagen en opnieuw gecontroleerd. '
                 +'Je kunt verdergaan bij het boek waar je gebleven was.');
         },'De keuzes worden opgeslagen en veilig opnieuw berekend…');
+        }finally{
+          clearInterval(reviewingPoll);
+          reviewProgress.hidden=true;
+        }
       };
       const explain=(host,code)=>{
         const text=reasonNames[code]||importErrorText[code]
@@ -1557,6 +1610,36 @@
             const suggestions=allSuggestions.filter(option=>
               typeof option.editionIsbn==='string'
               &&/^97[89][0-9]{10}$/.test(option.editionIsbn));
+            if(!source?.book?.editionIsbn){
+              const raw=source?.identifierAnalysis?.explicit?.raw
+                ||source?.identifierAnalysis?.legacy?.raw
+                ||source?.identifierAnalysis?.ambiguous?.raw||'';
+              const identifierHint=make('p','bb-guide__count-note',
+                raw?'In Excel staat '+raw+'. Dit is nog geen bevestigd ISBN '
+                  +'van deze editie.'
+                  :'In Excel ontbreekt een herkenbaar ISBN.');
+              check.append(identifierHint);
+            }
+            if(first.reason==='possible_existing_book_without_isbn'){
+              const legacy=make('div','bb-guide__identity-conflict');
+              legacy.append(make('strong','',
+                'Er bestaat mogelijk al een exemplaar zonder ISBN'));
+              legacy.append(make('p','',
+                'Dit kan hetzelfde fysieke boek zijn. Boekenbaai voegt '
+                +'geen tweede exemplaar toe zolang dit niet zeker is. '
+                +'De bestaande uitleningen blijven behouden.'));
+              if(first.legacyCandidateCopies)
+                legacy.append(make('p','hint',
+                  'Mogelijke bestaande exemplaren: '
+                  +first.legacyCandidateCopies+'.'));
+              legacy.append(make('p','',
+                'Heb je het ISBN van het fysieke boek al gecontroleerd? '
+                +'Voeg dat ISBN dan eerst toe aan het bestaande boek '
+                +'via Boeken beheren en controleer daarna deze import opnieuw. '
+                +'Kun je dat nu niet vaststellen, kies dan '
+                +'“Dit boek later controleren”.'));
+              check.append(legacy);
+            }
             if(suggestions.length){
               const compare=make('div','bb-guide__compare');
               const raw=source.identifierAnalysis?.explicit?.raw
@@ -1682,9 +1765,13 @@
                   toggleSkippedRow(corrections,skippedEdits,index,next);
                 warningsAccepted=false;
                 if(currentApplyButton)currentApplyButton.disabled=true;
-                // Skipping is a real reviewed decision; immediately
-                // recalculate it so the next outstanding book appears.
-                void recheck();
+                // Save the skip as a draft and continue immediately.
+                // The server recalculates the final queue only once when
+                // the teacher explicitly asks to review all choices.
+                scheduleGuidedDraftSave();
+                if(guidedIndex<queue.length-1)guidedIndex++;
+                storeGuidedPosition();
+                render();
               });
             check.append(actions);
             if(openEditor===source?.index&&source)
@@ -1944,9 +2031,11 @@
           panel.append(make('p','bb-guide__attention',
             'Er staan nog controles open of er zijn keuzes die eerst '
             +'opnieuw moeten worden berekend.'));
-        const sourceWarnings=actionable.reduce((total,item)=>
-          total+(item.issues||[]).filter(issue=>
-            issue.severity==='warning'||issue.severity==='conflict').length,0);
+        // Only issues actually presented for book review require a
+        // source-warning acknowledgement. Deferred administration is
+        // separately explained in the final overview.
+        const sourceWarnings=countUnresolvedBookWarnings(
+          actionable,deferredAssignmentRows);
         if(sourceWarnings){
           const accept=make('label','bb-guide__accept');
           const checkbox=make('input');checkbox.type='checkbox';
