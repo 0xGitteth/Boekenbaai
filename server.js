@@ -26,7 +26,8 @@ const { buildInventorySyncPreview, normalizeInventoryResolutions } = require('./
 const { normalizeResolutions: normalizeAssignmentResolutions,
   buildAssignmentPreview, applyAssignmentPreview } = require('./book-import-assignment-reconciliation');
 const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
-  actualAssignmentPreview, assignmentSource, shouldApplyMetadataToCreatedCopy } =
+  actualAssignmentPreview, assignmentSource, shouldApplyMetadataToCreatedCopy,
+  rebaseStaleAssignmentChoices } =
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
@@ -5569,13 +5570,18 @@ async function handleApi(req, res, requestUrl) {
           includeDerivedThemesInImportPreview(reviewed);
           // Recheck after any asynchronous lookups, not just after body upload.
           const latestDatabase = loadDb();
+          let reviewedAssignmentChoices=assignments.values;
+          let rebasedAssignmentCount=0;
+          const unifiedParameters={
+            parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
+            inventoryResolutions:choices.values,
+            metadataResolutions:metadataChoices.values,
+            loanReceipts:historicalExcelLoanReceipts(latestDatabase),
+            existingFollowups:latestDatabase.bookImportFollowups,
+          };
           reviewed.decisions = stage.options.mode === 'unified_sync'
             ? buildUnifiedBookImport(reviewed,latestDatabase,{
-              parts:stage.options.syncParts,acceptWarnings:body.acceptWarnings,
-              inventoryResolutions:choices.values,assignmentResolutions:assignments.values,
-              metadataResolutions:metadataChoices.values,
-              loanReceipts:historicalExcelLoanReceipts(latestDatabase),
-              existingFollowups:latestDatabase.bookImportFollowups,
+              ...unifiedParameters,assignmentResolutions:reviewedAssignmentChoices,
             })
             : stage.options.mode === 'assignment_reconcile'
             ? buildAssignmentPreview(reviewed, latestDatabase, assignments.values)
@@ -5590,13 +5596,40 @@ async function handleApi(req, res, requestUrl) {
               acceptWarnings: body.acceptWarnings,
               students: latestDatabase.students, classes: latestDatabase.classes,
             });
+          // This is a recoverable mismatch: a title/ISBN correction can
+          // remove a previously visible administrative difference. Rebuild
+          // against current differences, preserve valid explicit choices,
+          // and postpone affected changes instead of applying them silently.
+          // The original /apply path still verifies its own fresh preview.
+          if(stage.options.mode==='unified_sync'
+            &&reviewed.decisions.error==='stale_assignment_choice'){
+            const unselected=buildUnifiedBookImport(reviewed,latestDatabase,{
+              ...unifiedParameters,assignmentResolutions:[],
+            });
+            if(unselected.ok){
+              const rebased=rebaseStaleAssignmentChoices(
+                reviewedAssignmentChoices,stage.analysis?.rows,reviewed.rows,
+                unselected.assignments?.differences||[]);
+              const retry=buildUnifiedBookImport(reviewed,latestDatabase,{
+                ...unifiedParameters,assignmentResolutions:rebased.choices,
+              });
+              if(retry.ok){
+                reviewed.decisions=retry;
+                reviewedAssignmentChoices=rebased.choices;
+                rebasedAssignmentCount=rebased.removed.length;
+              }
+            }
+          }
           if (!reviewed.decisions.ok && ['inventory_sync','assignment_reconcile','unified_sync'].includes(stage.options.mode)) {
             return sendJson(res, 400, { message: 'Inventarisvergelijking kon niet worden uitgevoerd.',
               error: reviewed.decisions.error });
           }
           bookImportStageStore.finishReview(stage, reviewed, body.corrections,
-            body.acceptWarnings, choices.values, assignments.values,metadataChoices.values);
-          return sendJson(res, 200, importStageView(stage));
+            body.acceptWarnings, choices.values, reviewedAssignmentChoices,metadataChoices.values);
+          return sendJson(res, 200, {
+            ...importStageView(stage),
+            ...(rebasedAssignmentCount?{reconciledAssignmentChoices:rebasedAssignmentCount}:{}),
+          });
         } finally {
           bookImportStageStore.abortReview(stage);
         }
