@@ -873,11 +873,24 @@ function normalizeGroupKeyPart(value) {
   return String(value).trim();
 }
 
+function storedEditionKey(book) {
+  // A genuine edition identifier is stronger than a printed scan barcode.
+  // Older physical books may only have the edition ISBN in barcode.
+  return canonicalizeBookIsbn13(book?.editionIsbn)
+    ||canonicalizeBookIsbn13(book?.metadataIsbn)
+    ||canonicalizeBookIsbn13(book?.isbn13)
+    ||canonicalizeBookIsbn13(book?.barcode)||'';
+}
 function getBookGroupKey(book) {
   const title = normalizeGroupKeyPart(book?.title).toLowerCase();
   const author = normalizeGroupKeyPart(book?.author).toLowerCase();
-  const metadataIsbn = normalizeGroupKeyPart(book?.metadataIsbn).toLowerCase();
-  return `${title}||${author}||${metadataIsbn}`;
+  const edition = storedEditionKey(book);
+  // An ISBN identifies the edition, including editions by another publisher.
+  // Legacy books with missing/invalid ISBNs remain separated by publisher.
+  const identity = edition
+    ? 'isbn:'+edition
+    : 'publisher:'+normalizeGroupKeyPart(book?.publisher).toLowerCase();
+  return `${title}||${author}||${identity}`;
 }
 
 function pickRepresentativeBook(current, candidate) {
@@ -1775,6 +1788,8 @@ function getBookGroupComponents(book) {
     titleKey: normalizeGroupValue(book.title || ''),
     authorKey: normalizeGroupValue(book.author || ''),
     metadataIsbnKey: sanitizeIsbn(book.metadataIsbn),
+    editionKey: storedEditionKey(book),
+    publisherKey: normalizeGroupValue(book.publisher||''),
   };
 }
 
@@ -1787,6 +1802,8 @@ function createBarcodeGroupIdFromComponents(components) {
     components.titleKey || '',
     components.authorKey || '',
     components.metadataIsbnKey || '',
+    components.editionKey || '',
+    components.editionKey ? '' : components.publisherKey || '',
   ].join('|');
   const hash = crypto.createHash('sha1').update(base).digest('hex');
   return `grp_${components.barcode}_${hash}`;
@@ -1834,6 +1851,8 @@ function buildBarcodeGroups(db, normalizedBarcode) {
       components.titleKey || '',
       components.authorKey || '',
       components.metadataIsbnKey || '',
+      components.editionKey || '',
+      components.editionKey ? '' : components.publisherKey || '',
     ]);
     let group = groupsMap.get(key);
     if (!group) {
