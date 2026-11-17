@@ -1592,34 +1592,6 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.editButton.hidden = !isAdmin;
     state.editButton.disabled = !isAdmin;
   }
-  // Never silently edit the first physical copy when several copies share
-  // one ISBN edition. Preserve the explicitly selected copy ID and loan data.
-  state.actions?.querySelector('[data-book-copy-editor]')?.remove();
-  if(authUser?.role==='admin'&&copies.length>1&&state.actions){
-    const label=document.createElement('label');
-    label.dataset.bookCopyEditor='true';
-    label.className='book-detail__copy-editor';
-    label.textContent='Exemplaar bewerken ';
-    const select=document.createElement('select');
-    select.setAttribute('aria-label','Kies welk fysiek exemplaar je wilt bewerken');
-    for(const copy of copies){
-      const option=document.createElement('option');
-      option.value=copy.id;
-      option.textContent=[
-        copy.barcode||'Zonder barcode',
-        copy.publisher||'Uitgever onbekend',
-        copy.status==='borrowed'?'Uitgeleend':'Beschikbaar',
-        String(copy.id||'').slice(-8),
-      ].join(' · ');
-      select.append(option);
-    }
-    select.value=state.editBook?.id||copies[0]?.id||'';
-    select.addEventListener('change',()=>{
-      state.editBook=copies.find(copy=>copy.id===select.value)||copies[0];
-    });
-    label.append(select);
-    state.actions.insertBefore(label,state.editButton);
-  }
   const examAdd = document.getElementById('student-book-detail-exam-add');
   if (examAdd) {
     const eligible = pageType === 'student' && authUser?.role === 'student' &&
