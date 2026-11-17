@@ -83,7 +83,7 @@ assert.match(layoutCss,/\.admin-book-grid__metadata\s*\{[^}]*grid-column:\s*4;[^
   'Metadata-ISBN mag het nieuwe uitgave-ISBN op desktop niet overlappen.');
 assert.match(html,/id="book-detail-edit-copy"/,
   'De beheerder moet bij meerdere fysieke exemplaren het juiste exemplaar kiezen.');
-assert.match(app,/state\.editBook=selected/,
+assert.match(app,/bookDetailState\.editBook\s*=\s*selected/,
   'Een keuze voor het fysieke exemplaar moet doorwerken in de editactie.');
 
 assert.match(app, /adminBookCancelButton\?\.addEventListener\('click', \(event\) => \{[\s\S]*?resetAdminBookForm\(\)/,
