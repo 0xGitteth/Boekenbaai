@@ -146,7 +146,12 @@ doc={
 const win={addEventListener(type,fn){
   (events.get(type)??events.set(type,[]).get(type)).push(fn);
 }};
-class Observer{constructor(fn){this.fn=fn;}observe(){}disconnect(){}}
+const observers=[];
+class Observer{
+  constructor(fn){this.fn=fn;this.disconnected=false;observers.push(this);}
+  observe(){}
+  disconnect(){this.disconnected=true;}
+}
 vm.runInNewContext(code,{document:doc,window:win,MutationObserver:Observer,
   location:{hash:''},console},{timeout:2500});
 
@@ -162,7 +167,7 @@ const importButtons=importNav.children;
 assert.equal(importButtons.length,4);
 assert.equal(importsView.dataset.bbImportSection,'books');
 assert.equal(importButtons[0].getAttribute('aria-selected'),'true');
-assert.equal(students.classList.contains('bb-workspace-inactive'),true);
+assert.equal(students.parentNode.classList.contains('bb-workspace-inactive'),true);
 assert.equal(extra.hidden,false);
 importButtons[1].click();
 assert.equal(importsView.dataset.bbImportSection,'enrichment');
@@ -172,13 +177,35 @@ assert.equal(reviewed.parentNode,content);
 importButtons[2].click();
 assert.equal(importsView.dataset.bbImportSection,'students');
 assert.equal(studentForm.value,'ongewijzigd');
-assert.equal(students.classList.contains('bb-workspace-inactive'),false);
+assert.equal(students.parentNode.classList.contains('bb-workspace-inactive'),false);
 importButtons[2].focus();
 for(const fn of importNav.listeners.keydown||[])fn({key:'ArrowRight',preventDefault(){}});
 assert.equal(importsView.dataset.bbImportSection,'teachers',
   'Arrow navigation must activate the next accessible subpage');
 assert.equal(importButtons[3].getAttribute('aria-selected'),'true');
 assert.equal(importButtons[2].tabIndex,-1);
+
+// The production ParnasSys script mounts active student/teacher blocks after
+// DOMContentLoaded. Their original inputs are hidden but the *live* blocks
+// and their attached event handlers must become separate subpages.
+const syncContainer=e('div','school-sync__container');
+const activeStudent=e('section','school-sync__block');
+const activeTeacher=e('section','school-sync__block');
+const activeStudentHandler=()=>{};
+activeStudent.addEventListener('click',activeStudentHandler);
+syncContainer.append(activeStudent,activeTeacher);
+content.append(syncContainer);
+for(const observer of observers.filter(x=>!x.disconnected))observer.fn([]);
+assert.equal(activeStudent.parentNode.id,'bb-import-workspace-students');
+assert.equal(activeTeacher.parentNode.id,'bb-import-workspace-teachers');
+assert.equal(activeStudent.listeners.click[0],activeStudentHandler,
+  'Live ParnasSys handlers must not be replaced');
+assert.equal(students.hidden,true,'Old import form must stay hidden');
+assert.equal(teachers.hidden,true,'Old teacher form must stay hidden');
+assert.equal(syncContainer.hidden,true,'Empty original sync container must not take up space');
+importButtons[2].click();
+assert.equal(activeStudent.parentNode.classList.contains('bb-workspace-inactive'),false);
+assert.equal(activeTeacher.parentNode.classList.contains('bb-workspace-inactive'),true);
 
 const taskNav=tasksView.querySelector('.bb-workspace-tabs');
 const taskButtons=taskNav.children;
