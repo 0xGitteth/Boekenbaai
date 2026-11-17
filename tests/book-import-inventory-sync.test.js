@@ -20,6 +20,36 @@ const row = (index, amount = 1, extra = {}) => ({
 const preview = (rows, existing = [], options = {}) =>
   buildInventorySyncPreview({ ok: true, rows }, existing, options);
 
+// Regression against the imported school collection. The first upload may
+// enrich metadata; subsequent inventory sync must not block solely because
+// the *stored* author uses a catalogue surname-first representation.
+for(const [isbn,title,sourceAuthor,storedAuthor] of [
+  ['9789024598380',"Joann's weg naar zelfliefde",
+    'Joann van den Herik','Joann van den Herik'],
+  ['9780241562284','Diary Of A Wimpy Kid','Jeff Kinney','Kinney, Jeff'],
+  ['9789001558291','Familieziek: een roman in taferelen',
+    'Adriaan van Dis','Adriaan Dis, van'],
+]){
+  const incoming=row(0,1,{editionIsbn:isbn,title,author:sourceAuthor});
+  const current=book('physical-'+isbn,{editionIsbn:isbn,metadataIsbn:'',
+    barcode:isbn,title,author:storedAuthor});
+  const p=preview([incoming],[current]);
+  assert.equal(p.ok,true);
+  assert.equal(p.summary.blocked,0,
+    'An identical ISBN cannot be blocked for a rearranged author: '+title);
+  assert.equal(p.summary.addCopies,0,
+    'An existing physical copy cannot be duplicated: '+title);
+  assert.equal(p.rows[0].action,'unchanged',
+    'The existing physical copy remains untouched: '+title);
+}
+const conflictingAuthor=preview([
+  row(0,1,{title:'Diary Of A Wimpy Kid',author:'Jeff Kinney',
+    editionIsbn:'9780241562284'}),
+],[book('distinct-author',{title:'Diary Of A Wimpy Kid',
+  author:'Jane Kinney',editionIsbn:'9780241562284',metadataIsbn:''})]);
+assert.equal(conflictingAuthor.summary.blocked,1,
+  'A substantively different author must still block an inventory change');
+
 const unchanged = preview([row(0, 2)], [book('a'), book('b')]);
 assert.strictEqual(unchanged.ok, true);
 assert.strictEqual(unchanged.summary.addCopies, 0);
