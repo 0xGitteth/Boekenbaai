@@ -120,6 +120,11 @@ async function runIntegrationChecks() {
       localCoverUrl: '/api/covers/' + 'a'.repeat(64) + '.png',
       status: 'available',
     },
+    {id:'het-web-lijsters',title:'Het web',author:'Johan Heyink',
+      barcode:'9789001561330',publisher:'Jonge Lijsters',status:'available'},
+    {id:'het-web-holkema',title:'Het web',author:'Johan Heyink',
+      barcode:'9789026997471',editionIsbn:'9789026997471',
+      publisher:'Van Holkema & Warendorf',status:'available'},
   ]);
   // The stale asset must be real on disk. Otherwise the old backfill would
   // retry it anyway and fail to reproduce the regression Codex identified.
@@ -164,6 +169,37 @@ async function runIntegrationChecks() {
     });
     assert.strictEqual(postResponse.status, 201);
     assert.strictEqual(postResponse.body.book.coverUrl, '', 'POST with no image should not depend on an external source');
+
+    // Both editions of the physical school book "Het web" already exist.
+    // Correct only the Lijsters record; never delete/recreate the record or
+    // change the same-titled Van Holkema & Warendorf edition.
+    const invalidIsbn=await request('/api/books/het-web-lijsters',{
+      method:'PUT',headers:{'Content-Type':'application/json',
+        Authorization:`Bearer ${token}`},
+      body:JSON.stringify({barcode:'9789001561383',
+        editionIsbn:'9789001561330'}),
+    });
+    assert.strictEqual(invalidIsbn.status,400,
+      'A mathematically invalid edition ISBN must be rejected before any edit');
+    const fixed=await request('/api/books/het-web-lijsters',{
+      method:'PUT',headers:{'Content-Type':'application/json',
+        Authorization:`Bearer ${token}`},
+      body:JSON.stringify({barcode:'9789001561383',
+        editionIsbn:'9789001561383'}),
+    });
+    assert.strictEqual(fixed.status,200,JSON.stringify(fixed.body));
+    const afterEditionEdit=await request('/api/books');
+    assert.strictEqual(afterEditionEdit.body.filter(book=>book.title==='Het web').length,2,
+      'Correcting an existing copy must never silently create a third book');
+    const lijsters=afterEditionEdit.body.find(book=>book.id==='het-web-lijsters');
+    const holkema=afterEditionEdit.body.find(book=>book.id==='het-web-holkema');
+    assert.strictEqual(lijsters.barcode,'9789001561383');
+    assert.strictEqual(lijsters.editionIsbn,'9789001561383');
+    assert.strictEqual(holkema.barcode,'9789026997471');
+    assert.strictEqual(holkema.editionIsbn,'9789026997471');
+    assert.strictEqual(holkema.publisher,'Van Holkema & Warendorf');
+    assert.strictEqual(lijsters.status,'available');
+    assert.strictEqual(holkema.status,'available');
 
     const workbookBase64 = buildWorkbookBase64([
       {
@@ -267,6 +303,34 @@ function runRepresentativeChecks() {
   ]);
 
   assert.strictEqual(grouped[0].coverUrl, CANONICAL_URL, 'group representative should expose canonical effective cover URL');
+  const separateEditions=groupBooksByTitleAuthor([
+    {id:'lijsters',title:'Het web',author:'Johan Heyink',
+      barcode:'9789001561330',publisher:'Jonge Lijsters'},
+    {id:'holkema',title:'Het web',author:'Johan Heyink',
+      barcode:'9789026997471',publisher:'Van Holkema & Warendorf'},
+  ]);
+  assert.strictEqual(separateEditions.length,2,
+    'Two different publishers and physical ISBN editions must not share one book card');
+  assert.notStrictEqual(separateEditions[0].id,separateEditions[1].id);
+  assert.strictEqual(separateEditions[0].copies[0].id,'lijsters');
+  assert.strictEqual(separateEditions[1].copies[0].id,'holkema');
+  const nowCorrected=groupBooksByTitleAuthor([
+    {id:'lijsters',title:'Het web',author:'Johan Heyink',
+      editionIsbn:'9789001561383',barcode:'9789001561383',publisher:'Jonge Lijsters'},
+    {id:'holkema',title:'Het web',author:'Johan Heyink',
+      editionIsbn:'9789026997471',barcode:'9789026997471',
+      publisher:'Van Holkema & Warendorf'},
+  ]);
+  assert.strictEqual(nowCorrected.length,2);
+  assert.strictEqual(nowCorrected[0].editionIsbn,'9789001561383');
+  assert.strictEqual(nowCorrected[1].editionIsbn,'9789026997471');
+  const editionsUsingTen=groupBooksByTitleAuthor([
+    {id:'isbn10',title:'Same edition',author:'Author',barcode:'0306406152'},
+    {id:'isbn13',title:'Same edition',author:'Author',barcode:'9780306406157'},
+  ]);
+  assert.strictEqual(editionsUsingTen.length,1,
+    'ISBN-10 and equivalent ISBN-13 must describe the same edition');
+
 
   const legacyOnlyGroup = groupBooksByTitleAuthor([
     { id: 'legacy-only', title: 'T2', author: 'A2', metadataIsbn: '', coverUrl: LEGACY_ARCHIVE_URL, description: '' },
