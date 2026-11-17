@@ -264,6 +264,20 @@ function importStageView(stage) {
     };
   }
   const analysis = stage.analysis;
+  // Reviewed/skipped rows have an empty analyzed book for safety. Keep only
+  // their original non-sensitive title and Excel row number so the admin
+  // can identify and restore one skipped book after restarting the wizard.
+  const originalRows = stage.initialAnalysis?.rows || [];
+  const selectedCorrections = stage.draft?.corrections || stage.corrections || [];
+  const skippedRowLabels = (Array.isArray(selectedCorrections)
+    ? selectedCorrections : []).filter(change =>
+    change?.skip === true && Number.isInteger(change.index)
+      && change.index >= 0 && change.index < originalRows.length)
+    .map(change => ({
+      index:change.index,
+      title:String(originalRows[change.index]?.book?.title || '').slice(0,250),
+      sourceRowNumber:originalRows[change.index]?.sourceRowNumber || change.index + 2,
+    }));
   return {
     id: stage.id, status: stage.status, revision: stage.revision,
     mode: ['create','inventory_sync','assignment_reconcile','unified_sync'].includes(stage.options?.mode) ? stage.options.mode : 'create',
@@ -279,6 +293,7 @@ function importStageView(stage) {
     metadataResolutions: stage.options?.mode === 'unified_sync' ? stage.metadataResolutions : [],
     summary: analysis?.summary || null,
     rows: analysis?.rows || [],
+    skippedRowLabels,
     decisions: analysis?.decisions || null,
     columns: analysis?.columns || null,
   };
