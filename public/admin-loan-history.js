@@ -1,13 +1,15 @@
 'use strict';
 
 // Private admin tool; existing live loans are explicitly not affected.
-const historyPanel=document.getElementById('history-panel');
-if(historyPanel){
+// Administrative history correction belongs under Uitlenen, never in the
+// constrained 'Laatste activiteit' overview card.
+const loanPanel=document.getElementById('staff-loan-panel');
+if(loanPanel){
   const root=document.createElement('section');
   root.id='admin-loan-history-management';
-  root.className='panel__content';
+  root.className='panel__content bb-admin-loan-history-card';
   root.hidden=true;
-  historyPanel.append(root);
+  loanPanel.append(root);
   const cfg=(typeof import.meta!=='undefined'&&import.meta.env
     &&(import.meta.env.BOEKENBAAI_PUBLIC_API_BASE
       ||import.meta.env.VITE_BOEKENBAAI_API_BASE))||'';
@@ -114,7 +116,7 @@ if(historyPanel){
   }
   form.addEventListener('submit',e=>{e.preventDefault();void find();});
   async function visibleForAdmin(){
-    if(historyPanel.classList.contains('hidden')||
+    if(loanPanel.classList.contains('hidden')||
       !localStorage.getItem('boekenbaai_token'))return;
     try{
       const data=await request('/api/admin/loan-history?student=__none__');
@@ -122,7 +124,7 @@ if(historyPanel){
     }catch(error){if(error.status===401||error.status===403)root.hidden=true;}
   }
   new MutationObserver(()=>void visibleForAdmin())
-    .observe(historyPanel,{attributes:true,attributeFilter:['class']});
+    .observe(loanPanel,{attributes:true,attributeFilter:['class']});
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{root.hidden=true;});
   void visibleForAdmin();
 }
