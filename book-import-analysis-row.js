@@ -206,6 +206,24 @@ function mergeListSourceValues(mapped, field, fallback) {
   return merged;
 }
 
+// ParnasSys/older school sheets may store Dutch family names as
+// "Herik, van den" (surname followed by its particles after a comma).
+// Combine the two author columns into "Joann van den Herik" rather than
+// "Joann Herik, van den". Only reorder a suffix made exclusively of
+// recognized surname particles: never guess at "Jansen, Piet".
+const DUTCH_SURNAME_PARTICLES=new Set([
+  'van','de','den','der','ten','ter','te','het','op','aan','in','tot',"'t",
+]);
+function joinSplitAuthorName(first,last){
+  const fallback=[first,last].filter(Boolean).join(' ');
+  const parts=last.match(/^([^,]+),\s*([^,]+)$/u);
+  if(!parts)return fallback;
+  const surname=parts[1].trim(),particle=parts[2].trim();
+  if(!surname||!particle)return fallback;
+  const words=particle.toLocaleLowerCase('nl-NL').split(/\s+/u);
+  if(!words.every(word=>DUTCH_SURNAME_PARTICLES.has(word)))return fallback;
+  return [first,particle,surname].filter(Boolean).join(' ');
+}
 function normalizeBookFields(mapped, row) {
   const f = getDataFields(mapped);
   const blocked = blockingCollisionFields(mapped);
@@ -214,7 +232,7 @@ function normalizeBookFields(mapped, row) {
   const rawLast = blocked.has('authorLast') ? '' : normalizeBookIdentityText(f.authorLast);
   const first = isPlaceholderAuthor(rawFirst) ? '' : rawFirst;
   const last = isPlaceholderAuthor(rawLast) ? '' : rawLast;
-  const combined = normalizeAuthorList(undefined, [first, last].filter(Boolean).join(' '));
+  const combined = normalizeAuthorList(undefined, joinSplitAuthorName(first,last));
   let authors = directAuthor;
   if (!authors.length && combined.length) authors = combined;
   if (directAuthor.length && combined.length) {
