@@ -6,9 +6,13 @@ const identity = value => String(value || '').normalize('NFKD')
   .replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('nl-NL')
   .replace(/\s+/g,' ').trim();
 function editionGroupKey(item) {
+  // Never group two unresolved books without enough identity evidence.
+  const identifier=identity(item.editionIsbn || item.excelIdentifier);
+  const title=identity(item.title),author=identity(item.author);
+  if (!identifier || !title || !author)
+    return JSON.stringify(['unverified',item.id]);
   // Different ISBN editions must never be grouped as the same edition.
-  return JSON.stringify([identity(item.editionIsbn || item.excelIdentifier),
-    identity(item.title),identity(item.author)]);
+  return JSON.stringify([identifier,title,author]);
 }
 function inCurrentCollection(db,item) {
   const title=identity(item.title),author=identity(item.author);
