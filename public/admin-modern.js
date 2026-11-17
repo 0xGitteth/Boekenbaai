@@ -21,7 +21,15 @@
 
   async function api(url, options = {}) {
     const config = { method: 'GET', credentials: 'same-origin', ...options };
-    config.headers = { Accept: 'application/json', ...(options.headers || {}) };
+    // Book-import task APIs use the same bearer-authenticated staff session
+    // as the rest of the portal. Omitting this header made the overview show
+    // a false "could not be loaded" state while the Tasks page worked.
+    const token = localStorage.getItem('boekenbaai_token');
+    config.headers = {
+      Accept: 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...(options.headers || {}),
+    };
     if (options.body && typeof options.body !== 'string') {
       config.body = JSON.stringify(options.body);
       config.headers['Content-Type'] = 'application/json';

@@ -1440,3 +1440,26 @@ body.bb-admin-v31 #staff-loan-form .bb-teacher-v31-date-wrap #staff-loan-due {
 body.bb-admin-v31 #staff-loan-form .bb-teacher-v31-date-preview {
   display: none;
 }
+
+/* Reviewed admin workspace: ParnasSys panels remain distinct when their real
+   forms are moved into the student/teacher import tabs. */
+body.bb-admin-v31 #admin-dashboard .bb-workspace-people-pane {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-people-pane.bb-workspace-inactive {
+  display: none !important;
+}
+/* Former-student tasks are recreated by student-management.js. Filter them
+   with CSS rather than relying on one-time JavaScript references. */
+body.bb-admin-v31 #admin-dashboard
+  [data-admin-modern-view="tasks"][data-bb-task-section]:not([data-bb-task-section="accounts"])
+  #student-exit-tasks-panel {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard .bb-review__enrichment-action:not(:empty) {
+  margin: 10px 0 14px;
+  color: var(--bb-ink);
+  font-weight: 600;
+}

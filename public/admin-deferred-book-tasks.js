@@ -17,6 +17,9 @@ if(panel&&sibling){
   const root='/api/admin/book-import-book-tasks';
   let pending=false;
   let items=[];
+  // The queue refreshes every ten seconds. Preserve the administrator's
+  // expanded edition groups while new task data is rendered.
+  const expandedGroups=new Set();
   function elem(tag,label,cls){
     const node=document.createElement(tag);
     if(label!==undefined)node.textContent=label;
@@ -63,10 +66,19 @@ if(panel&&sibling){
     if(repeated)host.append(elem('p',
       repeated+' herhaalde controles voor dezelfde editie gegroepeerd. '
       +'Dit betekent niet dat de fysieke exemplaren gelijk zijn.','hint'));
-    for(const group of groups.values()){
+    // Drop keys for closed/completed groups; do not accumulate stale state.
+    for(const key of expandedGroups)if(!groups.has(key))expandedGroups.delete(key);
+    for(const [groupKey,group] of groups){
       let destination=host;
       if(group.length>1){
         const container=elem('details',undefined,'bb-deferred-book-group');
+        // Assign before the event handler to avoid the initial open toggle
+        // being mistaken for a user-initiated close.
+        container.open=expandedGroups.has(groupKey);
+        container.addEventListener('toggle',()=>{
+          if(container.open)expandedGroups.add(groupKey);
+          else expandedGroups.delete(groupKey);
+        });
         const summary=elem('summary',
           (group[0].title||'Onbekend boek')+' · '+group.length
           +' controles uit imports');
@@ -133,7 +145,7 @@ if(panel&&sibling){
   }).observe(panel,{attributes:true,attributeFilter:['class']});
   window.addEventListener('boekenbaai:staff-refresh',refresh);
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{
-    items=[];render();
+    items=[];expandedGroups.clear();render();
   });
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)void refresh();
