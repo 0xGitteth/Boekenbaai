@@ -375,13 +375,27 @@ function runRepresentativeChecks() {
   );
 
   const siblingCache = groupBooksByTitleAuthor([
-    { id: 'first', title: 'Cached edition', author: 'A', barcode: '9781234567889',
+    { id: 'first', title: 'Cached edition', author: 'A', editionIsbn:'9780306406157',
       coverUrl: 'https://covers.example.org/edition.png', localCoverUrl: '' },
-    { id: 'second', title: 'Cached edition', author: 'A', barcode: '9781234567890',
+    { id: 'second', title: 'Cached edition', author: 'A', editionIsbn:'9780306406157',
       coverUrl: 'https://covers.example.org/edition.png', localCoverUrl: '/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png' },
   ]);
   assert.strictEqual(siblingCache[0].localCoverUrl, '/api/covers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
-    'A representative without a local cover must reuse the cached image of its sibling');
+    'An image cache can be shared by physical copies of the same ISBN edition');
+
+  const noCrossEditionCache = groupBooksByTitleAuthor([
+    {id:'common1',title:'Different editions',author:'A',
+      editionIsbn:'9780306406157', coverUrl:'https://example.org/identical.jpg'},
+    {id:'common2',title:'Different editions',author:'A',
+      editionIsbn:'9780306406157', coverUrl:'https://example.org/identical.jpg'},
+    {id:'rare',title:'Different editions',author:'A',
+      editionIsbn:'9789026997471', coverUrl:'https://example.org/identical.jpg',
+      localCoverUrl:'/api/covers/'+'b'.repeat(64)+'.png'},
+  ]);
+  assert.strictEqual(noCrossEditionCache[0].editionIsbn,'9780306406157');
+  assert.strictEqual(noCrossEditionCache[0].localCoverUrl,'',
+    'A cached cover of another edition must never be assigned to the featured edition');
+
 }
 
 function runCleanupScriptChecks() {
