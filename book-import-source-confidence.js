@@ -3,7 +3,7 @@
 // Per-edition source comparison. A merged Google/OpenLibrary result counts as
 // zero independent votes. Only individual, matched provider replies qualify.
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
-const {nearlySameBookText,sameBookTitle}=require('./book-import-autonomy');
+const {nearlySameBookText,sameBookTitle,equivalentAuthorName}=require('./book-import-autonomy');
 const PROVIDERS=new Set(['bureau isbn','googlebooks','openlibrary','isbnbarcode.org']);
 function normalizeSource(value) {
   const text=typeof value==='string'?value.toLowerCase().trim():'';
@@ -29,17 +29,6 @@ function equivalentSpelling(a,b) {
 // Only reorderings of the exact same name tokens are considered equivalent.
 // This covers library-style "Abbema, Hinke van" / "Hinke van Abbema"
 // without treating distinct names or missing coauthors as equal.
-function equivalentAuthorName(a,b) {
-  if(equivalentSpelling(a,b))return true;
-  // Do not transpose tokens across distinct coauthors.
-  if(/[;&]/.test(String(a))||/[;&]/.test(String(b)))return false;
-  const tokens=value=>display(value).normalize('NFD')
-    .replace(/[\u0300-\u036f]/gu,'').toLocaleLowerCase('nl')
-    .match(/[\p{L}\p{N}]+/gu)||[];
-  const left=tokens(a),right=tokens(b);
-  return left.length>=2&&left.length===right.length
-    &&left.sort().every((word,index)=>word===right.sort()[index]);
-}
 function sameSourceValue(field,a,b){
   return field==='author'?(equivalentAuthorName(a,b)||nearlySameBookText(a,b))
     :field==='title'?sameBookTitle(a,b):nearlySameBookText(a,b);

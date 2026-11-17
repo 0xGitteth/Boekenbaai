@@ -156,9 +156,25 @@ function missingNamePrefixMatches(stored,desired){
     &&normalized(remainder)===normalized(desired)
     &&Boolean(normalized(desired));
 }
+// Existing editions and provider records can serialize a name as
+// "Kinney, Jeff", "Adriaan Dis, van", or "Jeff Kinney". Only the exact same
+// name tokens (with punctuation/accents normalized) may be rearranged.
+// Keep possible co-authors separate and require an independently matched
+// ISBN before this can establish physical book identity.
+function equivalentAuthorName(left,right){
+  const a=String(left??''),b=String(right??'');
+  // Punctuation-only placeholders are not author identities.
+  const nameA=normalized(a),nameB=normalized(b);
+  if(nameA&&nameA===nameB)return true;
+  if(/[;&]/u.test(a)||/[;&]/u.test(b))return false;
+  const wordsA=words(a),wordsB=words(b);
+  return wordsA.length>=2&&wordsA.length===wordsB.length
+    &&wordsA.sort().every((word,index)=>word===wordsB.sort()[index]);
+}
 function sameBookIdentity(a,b){
   return sameBookTitle(a?.title,b?.title)
-    &&(nearlySameBookText(a?.author,b?.author)
+    &&(equivalentAuthorName(a?.author,b?.author)
+      ||nearlySameBookText(a?.author,b?.author)
       ||missingNamePrefixMatches(a?.author,b?.author)
       ||missingNamePrefixMatches(b?.author,a?.author));
 }
@@ -168,5 +184,5 @@ function smallPageDifference(left,right){
   return Math.abs(a-b)<=Math.max(10,Math.ceil(Math.max(a,b)*0.05));
 }
 module.exports={normalized,nearlySameBookText,sameBookTitle,
-  hasConflictingEditionQualifiers,sameBookIdentity,missingNamePrefixMatches,
+  hasConflictingEditionQualifiers,sameBookIdentity,equivalentAuthorName,missingNamePrefixMatches,
   smallPageDifference};

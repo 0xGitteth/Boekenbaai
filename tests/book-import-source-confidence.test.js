@@ -11,6 +11,8 @@ const votes=[
 ];
 assert.equal(equivalentSpelling('Rene van Dijk','René van Dijk'),true);
 assert.equal(equivalentSpelling('Rene van Dijk','René van Dijk Jr.'),false);
+assert.equal(equivalentAuthorName('-','?'),false,
+  'Two punctuation-only placeholders are not independent matching sources');
 assert.equal(equivalentAuthorName('Hinke Abbema, van','Hinke van Abbema'),true);
 assert.equal(equivalentAuthorName('Hinke van Abbema','Hinke van Anders'),false);
 assert.equal(equivalentAuthorName('Hinke van Abbema','Hinke Abbema'),false,
