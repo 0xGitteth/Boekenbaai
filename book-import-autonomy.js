@@ -162,8 +162,8 @@ function missingNamePrefixMatches(stored,desired){
 // Keep possible co-authors separate and require an independently matched
 // ISBN before this can establish physical book identity.
 function equivalentAuthorName(left,right){
-  if(nearlySameBookText(left,right))return true;
   const a=String(left??''),b=String(right??'');
+  if(a&&b&&normalized(a)===normalized(b))return true;
   if(/[;&]/u.test(a)||/[;&]/u.test(b))return false;
   const wordsA=words(a),wordsB=words(b);
   return wordsA.length>=2&&wordsA.length===wordsB.length
@@ -172,6 +172,7 @@ function equivalentAuthorName(left,right){
 function sameBookIdentity(a,b){
   return sameBookTitle(a?.title,b?.title)
     &&(equivalentAuthorName(a?.author,b?.author)
+      ||nearlySameBookText(a?.author,b?.author)
       ||missingNamePrefixMatches(a?.author,b?.author)
       ||missingNamePrefixMatches(b?.author,a?.author));
 }
