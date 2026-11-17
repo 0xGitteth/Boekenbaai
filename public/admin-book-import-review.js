@@ -1383,6 +1383,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         return detail;
       };
       const recheck=async()=>{
+        let reviewSucceeded=false;
         if(draftSaveTimer){clearTimeout(draftSaveTimer);draftSaveTimer=null;}
         // Capture the card BEFORE the server rebuilds its queue. An ISBN
         // correction may change the group key, so the row index is stable.
@@ -1417,6 +1418,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           // requests leave the existing stage, draft, and place untouched.
           guidedRecheckFocus=focus;
           rememberResponse(response,true);
+          reviewSucceeded=true;
           const current=response.decisions?.summary||{};
           if(current.readyToApply){
             guidedStep=3;
@@ -1445,6 +1447,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           clearInterval(reviewingPoll);
           reviewProgress.hidden=true;
         }
+        return reviewSucceeded;
       };
       const explain=(host,code)=>{
         const text=reasonNames[code]||importErrorText[code]
@@ -2031,7 +2034,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               setGuidedStep(2,guidedIndex+1);
             },true);
           else addAction(nav,'Keuzes opslaan en opnieuw controleren',
-            recheck,true);
+            async()=>{
+              if(await recheck())setGuidedStep(3);
+            },true);
           panel.append(nav);
           addAction(footer,'Keuzes nu controleren',recheck);
           addAction(footer,'Naar eindoverzicht',()=>setGuidedStep(3));
