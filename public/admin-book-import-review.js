@@ -1,5 +1,6 @@
 // Staged import UI: all displayed workbook text uses textContent, never HTML.
-import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarnings}
+import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarnings,
+  unresolvedGuidedGroups}
   from './admin-book-import-queue.mjs';
 (() => {
   'use strict';
@@ -768,7 +769,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       const message=draftSaveIssue
         ||(unsaved?'De laatste keuzes worden opgeslagen…'
           :stage?.draftPersisted
-            ?'Concept veilig opgeslagen · maximaal 24 uur beschikbaar':'');
+            ?'Keuzes opgeslagen als concept, nog niet geïmporteerd · maximaal 24 uur beschikbaar':'');
       status.textContent=message;
       status.hidden=!message;
       status.classList.toggle('bb-guide__attention',Boolean(draftSaveIssue));
@@ -1334,8 +1335,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         ?'Niet ingevuld':String(value);
       const valueText=value=>value&&typeof value==='object'
         ?String(value.name||value.value||JSON.stringify(value)):safeText(value);
-      const countSkipped=rows.filter(row=>
-        corrections.get(row.index)?.skip).length;
+      const skippedRows=rows.filter(row=>corrections.get(row.index)?.skip);
+      const countSkipped=skippedRows.length;
+      const skippedLabels=new Map((stage.skippedRowLabels||[])
+        .map(label=>[label.index,label]));
+      const unresolvedGroups=unresolvedGuidedGroups(queue,
+        assignmentResolutions,metadataResolutions,
+        new Set(skippedRows.map(row=>row.index)));
       const hasChanges=hasUnreviewedChanges()||Boolean(stage.draft)
         ||draftSaveInFlight||draftSavePending||Boolean(draftSaveTimer);
       const panel=make('section','bb-guide');
@@ -1380,6 +1386,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         return detail;
       };
       const recheck=async()=>{
+        let reviewSucceeded=false;
         if(draftSaveTimer){clearTimeout(draftSaveTimer);draftSaveTimer=null;}
         // Capture the card BEFORE the server rebuilds its queue. An ISBN
         // correction may change the group key, so the row index is stable.
@@ -1414,6 +1421,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           // requests leave the existing stage, draft, and place untouched.
           guidedRecheckFocus=focus;
           rememberResponse(response,true);
+          reviewSucceeded=true;
           const current=response.decisions?.summary||{};
           if(current.readyToApply){
             guidedStep=3;
@@ -1442,6 +1450,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           clearInterval(reviewingPoll);
           reviewProgress.hidden=true;
         }
+        return reviewSucceeded;
       };
       const explain=(host,code)=>{
         const text=reasonNames[code]||importErrorText[code]
@@ -2028,7 +2037,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               setGuidedStep(2,guidedIndex+1);
             },true);
           else addAction(nav,'Keuzes opslaan en opnieuw controleren',
-            recheck,true);
+            async()=>{
+              if(await recheck())setGuidedStep(3);
+            },true);
           panel.append(nav);
           addAction(footer,'Keuzes nu controleren',recheck);
           addAction(footer,'Naar eindoverzicht',()=>setGuidedStep(3));
@@ -2039,8 +2050,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         note.append(make('strong','',pending
           ?pending+' onopgeloste punten':'De gecontroleerde import staat klaar'));
         note.append(make('p','',pending
-          ?'Werk de resterende boeken af of behoud bestaande gegevens. '
-            +'Boeken met een onzekere identiteit kun je voorlopig overslaan.'
+          ?'Je eerdere keuzes zijn in het concept bewaard. Hieronder staat '
+            +'welke controles nog niet zijn opgelost. Open alleen die controles '
+            +'of bereken je laatst gekozen besluiten opnieuw.'
           :'Deze aantallen zijn opnieuw door de server berekend. '
             +'Bij het bevestigen worden bestaande gegevens beschermd.'));
         panel.append(note);
@@ -2060,6 +2072,75 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           details.append(line);
         }
         panel.append(details);
+        if(pending){
+          const nextSteps=make('section','bb-guide__next-steps');
+          nextSteps.append(make('h5','','Welke controles staan nog open?'));
+          const types=[
+            [summary.blockedStock||0,'ISBN of voorraad'],
+            [summary.pendingAssignments||0,'Uitlening of vaste locatie'],
+            [summary.pendingMetadata||0,'Boekgegevens'],
+          ].filter(([count])=>count>0);
+          if(types.length)
+            nextSteps.append(make('p','bb-guide__pending-explanation',
+              types.map(([count,label])=>count+' × '+label).join(' · ')
+              +'. Dit zijn openstaande beslissingen, niet de boeken die je al hebt bekeken.'));
+          if(unresolvedGroups.length){
+            const list=make('div','bb-guide__pending-list');
+            for(const item of unresolvedGroups){
+              const entry=make('div','bb-guide__pending-item');
+              const summary=make('div','bb-guide__pending-item-info');
+              summary.append(make('strong','',item.title));
+              summary.append(make('span','',
+                item.reasons.join(' · ')
+                +(item.worksheetRows.length
+                  ?' · Excelrij '+item.worksheetRows.join(', '):'')));
+              entry.append(summary);
+              addAction(entry,'Open deze controle',()=>{
+                setGuidedStep(2,item.index);
+                results.querySelector('.bb-guide__book')
+                  ?.scrollIntoView({behavior:'smooth',block:'start'});
+              });
+              list.append(entry);
+            }
+            nextSteps.append(list);
+          }else{
+            nextSteps.append(make('p','bb-guide__pending-explanation',
+              'De openstaande keuzes zijn mogelijk al als concept geselecteerd, '
+              +'maar nog niet opnieuw door de server berekend. '
+              +'Klik op “Keuzes opnieuw controleren”.'));
+          }
+          panel.append(nextSteps);
+        }
+        if(skippedRows.length){
+          const skippedList=make('div','bb-guide__skipped-list');
+          skippedList.append(make('p','hint',
+            'Deze Excelrijen worden niet geïmporteerd. '
+            +'Ze zijn niet hetzelfde als afgeronde boekcontroles. '
+            +'Je kunt een rij opnieuw meenemen zonder opnieuw te uploaden.'));
+          for(const row of skippedRows){
+            const entry=make('div','bb-guide__pending-item');
+            const info=make('div','bb-guide__pending-item-info');
+            const original=skippedLabels.get(row.index);
+            info.append(make('strong','',row.book?.title||original?.title
+              ||'Titel ontbreekt in de importgegevens'));
+            const worksheetRow=original?.sourceRowNumber||row.sourceRowNumber;
+            info.append(make('span','',Number.isInteger(worksheetRow)
+              ?'Excelrij '+worksheetRow:'Excelrij onbekend'));
+            entry.append(info);
+            addAction(entry,'Rij opnieuw meenemen',()=>{
+              if(!window.confirm('Deze Excelrij wordt opnieuw ter controle '
+                +'aangeboden. Er wordt nog niets definitief geïmporteerd. Doorgaan?'))return;
+              toggleSkippedRow(corrections,skippedEdits,row.index,false);
+              warningsAccepted=false;
+              if(currentApplyButton)currentApplyButton.disabled=true;
+              scheduleGuidedDraftSave();
+              render();
+            });
+            skippedList.append(entry);
+          }
+          panel.append(makeDetail('Bekijk de '+skippedRows.length
+            +' overgeslagen Excelrijen',skippedList));
+        }
         if(summary.missingStockGroups){
           const omitted=make('div','bb-guide__attention');
           omitted.append(make('strong','',
@@ -2080,10 +2161,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           omitted.append(acknowledgement);
           panel.append(omitted);
         }
-        if(pending||hasChanges)
+        if(hasChanges)
           panel.append(make('p','bb-guide__attention',
-            'Er staan nog controles open of er zijn keuzes die eerst '
-            +'opnieuw moeten worden berekend.'));
+            'Je laatste keuzes zijn als concept opgeslagen, maar nog niet '
+            +'opnieuw berekend. Klik op “Keuzes opnieuw controleren”. '
+            +'Dit voert de import nog niet definitief uit.'));
         // Only issues actually presented for book review require a
         // source-warning acknowledgement. Deferred administration is
         // separately explained in the final overview.
