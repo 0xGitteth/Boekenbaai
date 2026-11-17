@@ -354,10 +354,13 @@ function resolveBookMetadataKey(book) {
   if (!book) return '';
   const source =
     book.representativeBook || (Array.isArray(book.copies) ? book.copies[0] : book) || book;
-  const metadataIsbn = normalizeBarcode(source.metadataIsbn || book.metadataIsbn);
-  if (metadataIsbn) {
-    return metadataIsbn;
-  }
+  // The physical scanning barcode can be an internal number. Once the
+  // edition ISBN is known, fetch the cover and description for that exact
+  // edition instead of querying the internal physical identifier.
+  const edition = catalogEditionIsbn(source.editionIsbn||book.editionIsbn);
+  if(edition)return edition;
+  const metadataIsbn = catalogEditionIsbn(source.metadataIsbn || book.metadataIsbn);
+  if(metadataIsbn)return metadataIsbn;
   return normalizeBarcode(source.barcode || book.barcode);
 }
 
