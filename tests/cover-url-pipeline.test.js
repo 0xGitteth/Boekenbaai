@@ -357,6 +357,16 @@ function runRepresentativeChecks() {
   ]);
   assert.strictEqual(distinctAuthors.length, 2,
     'Different works with the same title must remain separate');
+  const normalizedWork = groupBooksByTitleAuthor([
+    {id:'space-1',title:'Het  web',author:'Johan   Heyink',
+      editionIsbn:'9789001561383',status:'borrowed'},
+    {id:'space-2',title:'Ｈｅｔ web',author:'Johan Heyink',
+      editionIsbn:'9789026997471',status:'available'},
+  ]);
+  assert.strictEqual(normalizedWork.length, 1,
+    'Unicode compatibility and repeated whitespace must not discard a chooser edition');
+  assert.strictEqual(normalizedWork[0].totalCopies, 2);
+  assert.strictEqual(normalizedWork[0].availableCopies, 1);
   const editionsUsingTen=groupBooksByTitleAuthor([
     {id:'isbn10',title:'Same edition',author:'Author',barcode:'0306406152'},
     {id:'isbn13',title:'Same edition',author:'Author',barcode:'9780306406157'},
