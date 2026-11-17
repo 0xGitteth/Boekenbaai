@@ -33,6 +33,48 @@ module.exports = async function runCoreTests() {
   assert.deepStrictEqual(row.context.fixedLocation, { status: 'resolved', label: 'SK BB', source: 'ml_class_loan_rule' });
   assert.strictEqual(row.provenance.editionIsbn.raw, ISBN);
 
+  // Actual school worksheet row 112 (Joann): "Herik, van den" is a
+  // surname-first Dutch family name, not an author-identity conflict.
+  // The ISBN, title, and physical copy are independently established.
+  const joann=await analyzeBookImportRows([{
+    'Achternaam schrijver':'Herik, van den',
+    'Voornaam schrijver':'Joann',
+    Titel:"Joann's weg naar zelfliefde",
+    'ISBN-nummer':'9789024598380',
+  }],{mode:'unified_sync'});
+  assert.strictEqual(joann.ok,true);
+  assert.strictEqual(joann.rows[0].book.author,'Joann van den Herik');
+  assert.strictEqual(joann.rows[0].book.editionIsbn,'9789024598380');
+  assert.ok(!codes(joann.rows[0]).has('author_sources_differ'));
+  const {buildUnifiedBookImport}=require('../book-import-unified-sync');
+  const joannPreview=buildUnifiedBookImport(joann,{
+    books:[{id:'joann-copy',title:"Joann's weg naar zelfliefde",
+      author:'Joann van den Herik',editionIsbn:'9789024598380',
+      status:'available'}],
+    students:[],classes:[],
+  },{parts:{books:true,loans:false,locations:false,fields:{}}});
+  assert.strictEqual(joannPreview.ok,true);
+  assert.strictEqual(joannPreview.summary.blockedStock,0,
+    'An identical ISBN/title and Dutch surname prefix must not trigger stock review');
+  assert.strictEqual(joannPreview.summary.newCopies,0,
+    'A spelling normalization cannot create a duplicate physical book');
+
+  // The same rule should work for other names in this actual school Excel.
+  const hinke=await analyzeBookImportRows([{
+    'Achternaam schrijver':'Abbema, van',
+    'Voornaam schrijver':'Hinke',Titel:'Door jou ben ik mij',
+    'ISBN-nummer':'9789043531788',
+  }]);
+  assert.strictEqual(hinke.rows[0].book.author,'Hinke van Abbema');
+  // Do NOT reorder generic comma-separated name fragments that are not
+  // Dutch family-name prefixes. Those require an explicit review.
+  const unrelated=await analyzeBookImportRows([{
+    'Achternaam schrijver':'Bakker, Piet',
+    'Voornaam schrijver':'Rik',Titel:'Testboek',
+    'ISBN-nummer':ISBN,
+  }]);
+  assert.strictEqual(unrelated.rows[0].book.author,'Rik Bakker, Piet');
+
   // Unified stock snapshots must group by worksheet row rather than
   // allocating one normalized object for every existing physical copy.
   const compactUnified = await analyzeBookImportRows([{
