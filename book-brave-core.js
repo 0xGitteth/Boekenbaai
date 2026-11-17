@@ -220,7 +220,8 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     }
     if (!shouldQueryStep(job.step,books,failedCovers)) {job.step++;continue;}
     if (job.requestsReserved >= job.approval.maxRequests || usage.reserved >= cap
-      || (Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
+      || (usage.providerRemainingVerified === true
+        && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
       pauseActiveChunk(job,'budget_exhausted');return null;
     }
     const step=job.step++;
@@ -228,7 +229,8 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     // a resumed worker skips that specific step instead of accidentally
     // issuing (and potentially billing) the same search twice.
     usage.reserved++;
-    if(Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining>0)
+    if(usage.providerRemainingVerified===true
+      && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining>0)
       usage.providerRemaining--;
     job.requestsReserved++;job.updatedAt=now.toISOString();
     const representative=books[0];
