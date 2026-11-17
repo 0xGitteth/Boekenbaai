@@ -50,6 +50,11 @@ assert.equal(groupBooksByTitleAuthor(differentPublisher).length,2,
 assert.match(html,/id="admin-book-edition-isbn"/);
 assert.match(source,/adminBookEditionIsbn\.value = book\.editionIsbn \|\| ''/);
 assert.match(source,/editionIsbn: editionIsbnValue/);
-assert.match(source,/bookCopyEditor/);
+assert.match(source,/bookDetailState\.editCopySelector/,
+  'The physical-copy selector must update the selected record for editing');
+assert.match(html,/id="book-detail-edit-copy"/,
+  'The staff book detail view must offer a single copy picker');
+assert.doesNotMatch(source,/bookCopyEditor/,
+  'A second unsynchronized copy picker would risk editing a wrong copy');
 assert.match(source,/openBookDetail\(chosenBook\)/);
 console.log('Edition-aware catalog groups and administrator copy editing OK');
