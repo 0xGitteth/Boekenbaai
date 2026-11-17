@@ -1788,8 +1788,6 @@ function getBookGroupComponents(book) {
     titleKey: normalizeGroupValue(book.title || ''),
     authorKey: normalizeGroupValue(book.author || ''),
     metadataIsbnKey: sanitizeIsbn(book.metadataIsbn),
-    editionKey: storedEditionKey(book),
-    publisherKey: normalizeGroupValue(book.publisher||''),
   };
 }
 
@@ -1802,8 +1800,6 @@ function createBarcodeGroupIdFromComponents(components) {
     components.titleKey || '',
     components.authorKey || '',
     components.metadataIsbnKey || '',
-    components.editionKey || '',
-    components.editionKey ? '' : components.publisherKey || '',
   ].join('|');
   const hash = crypto.createHash('sha1').update(base).digest('hex');
   return `grp_${components.barcode}_${hash}`;
@@ -1851,8 +1847,6 @@ function buildBarcodeGroups(db, normalizedBarcode) {
       components.titleKey || '',
       components.authorKey || '',
       components.metadataIsbnKey || '',
-      components.editionKey || '',
-      components.editionKey ? '' : components.publisherKey || '',
     ]);
     let group = groupsMap.get(key);
     if (!group) {
