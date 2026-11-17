@@ -826,6 +826,7 @@ const bookDetailState = {
   addCopyButton: null,
   removeCopyButton: null,
   editButton: null,
+  editCopySelector: null,
   closeButtons: [],
   previousFocus: null,
   currentBookId: null,
@@ -883,6 +884,7 @@ function ensureBookDetailElements() {
     bookDetailState.importButton = bookDetailState.root.querySelector('[data-book-detail-import]');
     bookDetailState.importData = bookDetailState.root.querySelector('#book-detail-import-data');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
+    bookDetailState.editCopySelector = bookDetailState.root.querySelector('#book-detail-edit-copy');
     bookDetailState.closeButtons = Array.from(
       bookDetailState.root.querySelectorAll('[data-book-detail-close]')
     );
@@ -909,6 +911,13 @@ function ensureBookDetailElements() {
       };
       document.addEventListener('keydown', bookDetailState.handleEscape);
     }
+    bookDetailState.editCopySelector?.addEventListener('change',()=>{
+      const candidates=Array.isArray(bookDetailState.currentDetail?.copies)
+        ?bookDetailState.currentDetail.copies:[];
+      const selected=candidates.find(copy=>
+        copy.id===bookDetailState.editCopySelector.value);
+      if(selected)bookDetailState.editBook=selected;
+    });
     if (bookDetailState.editButton) {
       bookDetailState.editButton.addEventListener('click', () => {
         if (!bookDetailState.editBook) return;
@@ -1294,6 +1303,7 @@ function closeBookDetail() {
   state.previousFocus = null;
   state.currentBookId = null;
   state.editBook = null;
+  if(state.editCopySelector)state.editCopySelector.replaceChildren();
   state.currentGroupKey = null;
   state.currentDetail = null;
   state.currentImportInfo = null;
@@ -1425,6 +1435,25 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     ? book.availableCopies
     : Math.max(totalCopies - borrowedCopies, 0);
   state.editBook = copies[0] || book;
+  if(state.editCopySelector){
+    const control=state.editCopySelector;
+    const container=control.closest('.book-detail__copy-picker');
+    const canPick=authUser?.role==='admin'&&copies.length>1;
+    if(container)container.hidden=!canPick;
+    control.replaceChildren();
+    if(canPick){
+      copies.forEach((copy,index)=>{
+        const option=document.createElement('option');
+        option.value=copy.id;
+        const suffix=String(copy.id||'').slice(-8);
+        option.textContent='Exemplaar '+(index+1)+' · '+
+          (copy.barcode||'Geen barcode')+' · ID '+suffix+
+          (copy.status==='borrowed'?' (uitgeleend)':'');
+        control.append(option);
+      });
+      control.value=state.editBook.id;
+    }
+  }
   if (state.loading) {
     state.loading.hidden = true;
   }
@@ -4886,6 +4915,11 @@ function initStaffPage() {
             }
             const selectedCopy = chosenBook.representativeBook || chosenBook.copies?.[0];
             if (!selectedCopy) return;
+            // Tell the modern admin shell to show the relocated editor.
+            // Merely unhiding the legacy card does not reveal its Books tab.
+            document.dispatchEvent(new CustomEvent('boekenbaai:open-book-editor',{
+              detail:{bookId:selectedCopy.id},
+            }));
             const editor = document.querySelector('#admin-dashboard .admin-card--books');
             if (editor) editor.hidden = false;
             handleAdminBookSelection(selectedCopy);
