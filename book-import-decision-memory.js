@@ -83,32 +83,48 @@ function parsedApproval(field,book){
   if(value===null||value===undefined)return '';
   return String(value);
 }
-function safeRowReplays(db,sourceRows){
+function rememberedByFingerprint(db){
   const saved=Array.isArray(db?.bookImportDecisionMemory)
     ?db.bookImportDecisionMemory.slice(-MAX_ITEMS):[];
-  const choices=new Map();
-  // Explicit choices from the latest batch win, but contradictory choices
-  // for the same source within ONE batch are not safe to replay.
   const byKey=new Map();
+  // The most recent accepted decision wins. Contradictions inside a single
+  // batch cannot identify which physical book an approval concerns.
   for(const item of saved){
     if(!item||!FIELDS.has(item.field)||typeof item.fingerprint!=='string'
       ||!/^[a-f0-9]{64}$/.test(item.fingerprint)
       ||typeof item.value!=='string'||item.value.length>4000
       ||!canonicalizeBookIsbn13(item.editionIsbn))continue;
-    const key=item.fingerprint;
-    const old=byKey.get(key);
-    if(old&&old.batchId===item.batchId&&old.value!==item.value){
-      byKey.set(key,{conflict:true,batchId:item.batchId});
+    const old=byKey.get(item.fingerprint);
+    if(old?.batchId===item.batchId
+      &&(old.conflict||old.value!==item.value)){
+      byKey.set(item.fingerprint,{conflict:true,batchId:item.batchId});
       continue;
     }
-    byKey.set(key,item);
+    byKey.set(item.fingerprint,item);
   }
+  return byKey;
+}
+function copiesByEdition(db){
+  const editions=new Map();
+  // A single 5,000-copy library scan is far cheaper than filtering the
+  // entire collection for each of up to 1,500 Excel rows x 13 fields.
+  for(const book of db?.books||[]){
+    const isbn=editionOf(book);
+    if(!isbn)continue;
+    if(!editions.has(isbn))editions.set(isbn,[]);
+    editions.get(isbn).push(book);
+  }
+  return editions;
+}
+function safeRowReplays(db,sourceRows){
+  const byKey=rememberedByFingerprint(db);
+  const editions=copiesByEdition(db);
+  const choices=new Map();
   let recovered=0,books=0;
   for(let index=0;index<(sourceRows||[]).length;index++){
     const row=sourceRows[index],fields={};
     const fingerprint=sourceIdentity(row);
     if(!fingerprint)continue;
-    const matched=new Set();
     const isbnApproval=byKey.get(rowFingerprint(row,'editionIsbn'));
     // A later ISBN approval changes which edition *all* remembered fields
     // belong to. Never combine a title approved for A with a subsequent
@@ -122,10 +138,9 @@ function safeRowReplays(db,sourceRows){
       if(!item||item.conflict||item.sourceIdentity!==fingerprint)continue;
       const edition=item.editionIsbn;
       if(targetEdition&&edition!==targetEdition)continue;
-      const candidates=(db.books||[]).filter(book=>editionOf(book)===edition);
+      const candidates=editions.get(edition)||[];
       if(!candidates.length)continue;
-      // Existing physical data has priority. If edited after the earlier
-      // approval, NEVER silently overwrite that newer decision.
+      // A newer manual edit has precedence over an older approval.
       if(!candidates.every(book=>{
         const existing=currentValue(book,field);
         return field==='editionIsbn'
@@ -134,14 +149,11 @@ function safeRowReplays(db,sourceRows){
       }))continue;
       if(field==='editionIsbn'&&canonicalizeBookIsbn13(item.value)!==edition)
         continue;
-      // Never turn a barcode/quantity, a location or a loan from an old
-      // workbook into an operation against today's physical inventory.
       fields[field]=item.value;
-      matched.add(field);
+      recovered++;
     }
-    if(matched.size){
+    if(Object.keys(fields).length){
       choices.set(index,{index,fields});
-      recovered+=matched.size;
       books++;
     }
   }
@@ -159,6 +171,7 @@ function revalidateRememberedCorrections(db,sourceRows,submitted,initial){
   const inherited=new Map((initial||[]).flatMap(row=>
     Object.entries(row.fields||{}).map(([field,value])=>
       [row.index+':'+field,value])));
+  const originalApprovals=rememberedByFingerprint(db);
   let invalidated=0;
   const corrections=[];
   for(const item of submitted||[]){
@@ -166,10 +179,21 @@ function revalidateRememberedCorrections(db,sourceRows,submitted,initial){
       ||item.index<0||item.index>=sourceRows.length)continue;
     if(item.skip===true){corrections.push(item);continue;}
     const fields={};
+    const submittedEdition=Object.prototype.hasOwnProperty.call(
+      item.fields||{},'editionIsbn')
+      ?canonicalizeBookIsbn13(item.fields.editionIsbn):null;
     for(const [field,value] of Object.entries(item.fields||{})){
       const id=item.index+':'+field;
-      if(inherited.has(id)&&inherited.get(id)===value
-        &&stillSafe.get(id)!==value){
+      const automaticallyInherited=inherited.has(id)&&inherited.get(id)===value;
+      let invalidEdition=false;
+      if(automaticallyInherited&&submittedEdition&&field!=='editionIsbn'){
+        const approval=originalApprovals.get(
+          rowFingerprint(sourceRows[item.index],field));
+        invalidEdition=!approval||approval.conflict
+          ||approval.editionIsbn!==submittedEdition;
+      }
+      if(automaticallyInherited
+        &&(stillSafe.get(id)!==value||invalidEdition)){
         invalidated++;continue;
       }
       fields[field]=value;
