@@ -655,7 +655,10 @@
     // Preserve it when the admin layout moves the controls into two cards.
     const readingHistory = panel.querySelector('.reading-records');
     if (readingHistory) current.append(readingHistory);
+    const loanHistoryAdmin = panel.querySelector('#admin-loan-history-management');
     panel.replaceChildren(create, current);
+    // Keep the same private editor when the admin layout rearranges nodes.
+    if (loanHistoryAdmin) panel.append(loanHistoryAdmin);
   }
 
   function activateAdminLayout(active) {
