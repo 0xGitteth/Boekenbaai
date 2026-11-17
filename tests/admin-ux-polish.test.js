@@ -146,4 +146,29 @@ assert.match(
   'De primaire beheer-navigatie moet Importeren blijven noemen'
 );
 
+
+const { generateTeacherUsername } = require('../teacher-account-username');
+const staffHtml = fs.readFileSync(path.join(root, 'public', 'staff.html'), 'utf8');
+const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+assert.doesNotMatch(staffHtml, /id="admin-teacher-add-username"/,
+  'A hidden required username must not block the name-only teacher form');
+assert.doesNotMatch(app, /Vul naam en gebruikersnaam in\./,
+  'The form must not require a field that it does not display');
+assert.match(app, /const body = \{ name \};/,
+  'The frontend must send only the visible mandatory teacher name');
+assert.match(server, /generateTeacherUsername\(db, name, body\.username\)/,
+  'The server must generate a safe account username for name-only requests');
+assert.equal(generateTeacherUsername({users:[],students:[]},'Mark Hendriks'),
+  'mark.hendriks');
+assert.equal(generateTeacherUsername({
+  users:[{username:'mark.hendriks'}],
+  students:[{username:'mark.hendriks-2'}],
+},'Mark Hendriks'),'mark.hendriks-3',
+  'Teacher accounts cannot reuse student or existing teacher usernames');
+assert.equal(generateTeacherUsername({users:[],students:[]},'José van Dijk'),
+  'jose.van.dijk');
+assert.equal(generateTeacherUsername({users:[],students:[]},
+  'Mark Hendriks','custom.teacher'),'custom.teacher',
+  'Explicit usernames on existing API clients must remain supported');
+
 console.log('Admin UX polish regressietests geslaagd.');
