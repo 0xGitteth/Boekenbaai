@@ -1749,7 +1749,11 @@ async function openBookDetail(book) {
     groupedBooks.find((group) => group.id === groupKey) ||
     groupedBooks.find((group) => group.copies?.some((copy) => copy.id === detail.id)) ||
     null;
-  const groupedDetail = matchingGroup || groupBooksByTitleAuthor([detail])[0] || detail;
+  // Refresh the work presentation even when a chooser passes a physical-copy
+  // preference. The default cover must agree with the main catalog card.
+  const groupedDetail = providedGroup
+    ? (groupBooksByTitleAuthor(providedGroup.copies)[0] || providedGroup)
+    : matchingGroup || groupBooksByTitleAuthor([detail])[0] || detail;
   const metadataLookupKey = resolveBookMetadataKey(groupedDetail);
   const canLookupMetadata = authUser?.role === 'admin';
   let metadata = metadataLookupKey ? bookDetailState.metadataCache.get(metadataLookupKey) : null;
