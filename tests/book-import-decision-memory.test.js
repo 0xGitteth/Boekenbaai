@@ -195,4 +195,74 @@ assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
   }],'Never pair a remembered title for edition A with edition B');
 }
 
+// Codex P2: the wizard itself may change the ISBN after inheriting a title
+// that was only ever approved for the original edition.
+{
+  const raw={...initial,'ISBN-nummer':'9780306406156'};
+  const a='9780306406157',b='9780439554930';
+  const library={books:[
+    {...db.books[0],title:'Titel voor editie A',editionIsbn:a},
+    {...db.books[0],id:'book-b',title:'Titel voor editie B',editionIsbn:b},
+  ]};
+  recordBookReviewChoices(library,[raw],[{
+    index:0,fields:{editionIsbn:a,title:'Titel voor editie A'},
+  }],{rows:[{book:{...corrected.rows[0].book,
+    editionIsbn:a,title:'Titel voor editie A'}}]},
+  'wizard-a','2026-11-17T07:10:00Z');
+  const inherited=safeRowReplays(library,[raw]).corrections;
+  assert.deepEqual(inherited,[{
+    index:0,fields:{title:'Titel voor editie A',editionIsbn:a},
+  }]);
+  const submitted=[{index:0,fields:{
+    title:'Titel voor editie A',editionIsbn:b,
+  }}];
+  const checked=revalidateRememberedCorrections(
+    library,[raw],submitted,inherited);
+  assert.equal(checked.invalidated,1,
+    'Editing ISBN in a live draft invalidates the inherited old-edition title');
+  assert.deepEqual(checked.corrections,[{
+    index:0,fields:{editionIsbn:b},
+  }],'The explicit new ISBN choice itself must be retained');
+  const deliberate=revalidateRememberedCorrections(library,[raw],[{
+    index:0,fields:{editionIsbn:b,title:'Bewust nieuwe titel voor B'},
+  }],inherited);
+  assert.equal(deliberate.invalidated,0);
+  assert.deepEqual(deliberate.corrections[0].fields,{
+    editionIsbn:b,title:'Bewust nieuwe titel voor B',
+  },'A genuine title correction for the new edition remains authorized');
+}
+// A supported 1,500-row upload against a 5,000-book library must not scan
+// the entire collection separately for each remembered field.
+{
+  const {performance}=require('node:perf_hooks');
+  const checkDigit=base=>{
+    const digits=base.split('').map(Number);
+    const sum=digits.reduce((total,n,index)=>
+      total+n*(index%2===0?1:3),0);
+    return String((10-sum%10)%10);
+  };
+  const books=[],rows=[],memory=[];
+  for(let i=0;i<5000;i++){
+    const base=String(978000000000+i);
+    const isbn=base+checkDigit(base);
+    const title='Schoolboek '+i;
+    books.push({id:'copy-'+i,editionIsbn:isbn,title,author:'Auteur'});
+    if(i>=1500)continue;
+    const row={Titel:'Oude titel '+i,Auteur:'Auteur',
+      'ISBN-nummer':isbn};
+    rows.push(row);
+    memory.push({fingerprint:require('../book-import-decision-memory')
+      .rowFingerprint(row,'title'),
+      sourceIdentity:sourceIdentity(row),field:'title',
+      editionIsbn:isbn,value:title,approvedValue:title,batchId:'bulk'});
+  }
+  const started=performance.now();
+  const replay=safeRowReplays({books,bookImportDecisionMemory:memory},rows);
+  const durationMs=performance.now()-started;
+  assert.equal(replay.rowsReused,1500,
+    'The indexed replay still recognizes every valid row');
+  assert.ok(durationMs<5000,
+    'The ISBN index must prevent multi-second blocking scans: '+durationMs+'ms');
+}
+
 console.log('Durable book import memory: reuse, changed source, post-edit, skip, privacy and ambiguity OK');
