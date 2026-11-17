@@ -1988,10 +1988,13 @@ function catalogStoredEdition(book) {
 function getBookGroupKey(book) {
   const title = normalizeGroupKeyPart(book?.title).toLowerCase();
   const author = normalizeGroupKeyPart(book?.author).toLowerCase();
-  const edition = catalogStoredEdition(book);
-  const identity=edition?'isbn:'+edition
-    :'publisher:'+normalizeGroupKeyPart(book?.publisher).toLowerCase();
-  return `${title}||${author}||${identity}`;
+  return JSON.stringify([title, author]);
+}
+
+function getCatalogEditionKey(book) {
+  const isbn = catalogStoredEdition(book);
+  return isbn ? 'isbn:' + isbn
+    : 'publisher:' + normalizeGroupKeyPart(book?.publisher).toLocaleLowerCase('nl-NL');
 }
 
 function pickRepresentativeBook(current, candidate) {
@@ -2014,6 +2017,29 @@ function pickRepresentativeBook(current, candidate) {
   return current;
 }
 
+function groupCatalogEditions(copies) {
+  const groups = new Map();
+  for (const copy of Array.isArray(copies) ? copies : []) {
+    if (!copy) continue;
+    const key = getCatalogEditionKey(copy);
+    let edition = groups.get(key);
+    if (!edition) {
+      edition = { key, isbn: catalogStoredEdition(copy), publisher: copy.publisher || '',
+        copies: [], representativeBook: null, availableCopies: 0 };
+      groups.set(key, edition);
+    }
+    edition.copies.push(copy);
+    if (copy.status !== 'borrowed') edition.availableCopies++;
+    edition.representativeBook = pickRepresentativeBook(edition.representativeBook, copy);
+    if (!edition.publisher && copy.publisher) edition.publisher = copy.publisher;
+  }
+  const hasCover = edition => Boolean(normalizeRenderedCoverUrl(
+    edition.representativeBook?.localCoverUrl || edition.representativeBook?.coverUrl));
+  return [...groups.values()].sort((a, b) =>
+    b.copies.length - a.copies.length || Number(hasCover(b)) - Number(hasCover(a)) ||
+    a.key.localeCompare(b.key, 'nl'));
+}
+
 function groupBooksByTitleAuthor(books = []) {
   const groups = new Map();
 
@@ -2032,7 +2058,6 @@ function groupBooksByTitleAuthor(books = []) {
       representativeBook: null,
     };
     entry.copies.push(book);
-    entry.representativeBook = pickRepresentativeBook(entry.representativeBook, book);
     if (Array.isArray(book.tags)) {
       for (const tag of book.tags) {
         if (typeof tag === 'string' && tag.trim()) {
@@ -2058,7 +2083,11 @@ function groupBooksByTitleAuthor(books = []) {
     const totalCopies = value.copies.length;
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const availableCopies = totalCopies - borrowedCopies;
-    const representative = value.representativeBook || value.copies[0] || {};
+    const editions = groupCatalogEditions(value.copies);
+    // Show the cover of the most common edition with an available cover.
+    const featuredEdition = editions.find(edition =>
+      edition.representativeBook?.localCoverUrl || edition.representativeBook?.coverUrl) || editions[0];
+    const representative = featuredEdition?.representativeBook || value.copies[0] || {};
     // Prefer the local cover from a sibling with the same external source.
     // This also makes a newly imported copy usable before backfill finishes.
     const representativeCoverSource = normalizeRenderedCoverUrl(representative.coverUrl);
@@ -2090,6 +2119,7 @@ function groupBooksByTitleAuthor(books = []) {
       totalCopies,
       borrowedCopies,
       availableCopies,
+      editionCount: editions.length,
       copies: value.copies,
       representativeBook: representative,
     });
@@ -2283,11 +2313,10 @@ function createBookCard(template, book, folders, options = {}) {
 
   title.textContent = book.title;
   author.textContent = book.author;
-  if (options.catalogLayout && (book.publisher || book.editionIsbn)) {
-    const editionText=[
-      book.publisher || 'Uitgever onbekend',
-      book.editionIsbn?'ISBN '+book.editionIsbn:'',
-    ].filter(Boolean).join(' · ');
+  if (options.catalogLayout && (book.editionCount > 1 || book.publisher || book.editionIsbn)) {
+    const editionText = book.editionCount > 1 ? book.editionCount + ' verschillende uitgaven' :
+      [book.publisher || 'Uitgever onbekend', book.editionIsbn ? 'ISBN ' + book.editionIsbn : '']
+        .filter(Boolean).join(' · ');
     const editionLabel=appendTextElement(card.querySelector('.book-card__content'),
       'small',editionText,{className:'bb-cat-card-edition'});
     author.insertAdjacentElement('afterend',editionLabel);
