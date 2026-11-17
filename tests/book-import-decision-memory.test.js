@@ -154,6 +154,25 @@ assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
   assert.deepEqual(stillValid.corrections,staged);
 }
 
+// A saved draft normalizes surrounding whitespace on a correction. That
+// normalization is NOT an explicit new approval after a catalogue edit.
+{
+  const approved={books:[{...db.books[0]}]};
+  const original={...initial};
+  const analysis={rows:[{book:{...corrected.rows[0].book}}]};
+  recordBookReviewChoices(approved,[original],
+    [{index:0,fields:{title:'Raveleijn '}}],analysis,
+    'draft-trim','2026-11-17T07:30:00Z');
+  const auto=safeRowReplays(approved,[original]).corrections;
+  assert.equal(auto[0].fields.title,'Raveleijn ');
+  const savedDraft=[{index:0,fields:{title:'Raveleijn'}}];
+  approved.books[0].title='Nieuwere handmatige boektitel';
+  const checked=revalidateRememberedCorrections(approved,
+    [original],savedDraft,auto);
+  assert.equal(checked.invalidated,1,
+    'Trimmed draft corrections must not become new consent');
+  assert.deepEqual(checked.corrections,[]);
+}
 // The saved input is not necessarily the value stored in the library.
 // Language and list fields are parsed into canonical values at import time.
 {
@@ -231,6 +250,34 @@ assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
     editionIsbn:b,title:'Bewust nieuwe titel voor B',
   },'A genuine title correction for the new edition remains authorized');
 }
+// Contradictory confirmed corrections from indistinguishable physical
+// rows must revoke prior *saved* approvals, not merely ignore this batch.
+{
+  const raw={...initial,'ISBN-nummer':'9780306406156'};
+  const a=ISBN,b='9780439554930';
+  const library={books:[
+    {...db.books[0],editionIsbn:a,title:'Goedgekeurd A'},
+    {...db.books[0],id:'edition-b',editionIsbn:b,title:'Goedgekeurd B'},
+  ]};
+  const prior={rows:[{book:{...corrected.rows[0].book,
+    editionIsbn:a,title:'Goedgekeurd A'}}]};
+  recordBookReviewChoices(library,[raw],[{index:0,fields:{
+    editionIsbn:a,title:'Goedgekeurd A',
+  }}],prior,'first','2026-11-17T06:20:00Z');
+  assert.equal(safeRowReplays(library,[raw]).fieldsReused,2);
+  const ambiguousRows=[raw,{...raw}];
+  recordBookReviewChoices(library,ambiguousRows,[
+    {index:0,fields:{editionIsbn:a,title:'Goedgekeurd A'}},
+    {index:1,fields:{editionIsbn:b,title:'Goedgekeurd B'}},
+  ],{rows:[
+    {book:{editionIsbn:a,title:'Goedgekeurd A'}},
+    {book:{editionIsbn:b,title:'Goedgekeurd B'}},
+  ]},'ambiguous','2026-11-17T06:30:00Z');
+  assert.equal(library.bookImportDecisionMemory.length,0,
+    'Contradictory newer decisions invalidate the older saved approval');
+  assert.equal(safeRowReplays(library,ambiguousRows).fieldsReused,0,
+    'Later uploads must not return to a revoked book identity');
+}
 // A supported 1,500-row upload against a 5,000-book library must not scan
 // the entire collection separately for each remembered field.
 {
@@ -263,6 +310,21 @@ assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
     'The indexed replay still recognizes every valid row');
   assert.ok(durationMs<5000,
     'The ISBN index must prevent multi-second blocking scans: '+durationMs+'ms');
+  const changedRows=rows.map((row,index)=>({
+    index,fields:{title:'Schoolboek '+index},
+  }));
+  const confirmed={rows:rows.map((row,index)=>({
+    book:{editionIsbn:row['ISBN-nummer'],title:'Schoolboek '+index},
+  }))};
+  const library={books};
+  const writingStarted=performance.now();
+  const written=recordBookReviewChoices(library,rows,changedRows,
+    confirmed,'bulk-saved','2026-11-17T07:30:00Z');
+  const writingMs=performance.now()-writingStarted;
+  assert.equal(written,1500,
+    'Edition-indexed recording saves every valid approved field');
+  assert.ok(writingMs<5000,
+    'Recording cannot synchronously rescan 5,000 books per row: '+writingMs+'ms');
 }
 
 console.log('Durable book import memory: reuse, changed source, post-edit, skip, privacy and ambiguity OK');
