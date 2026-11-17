@@ -6313,10 +6313,7 @@ async function handleApi(req, res, requestUrl) {
               database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
             if(isUnified)report.learnedMetadataDecisions=recordMetadataReviewChoices(
               database,combined.metadata.automaticDecisions,batchId,now);
-            report.rememberedBookFields=stage.remembered?.fieldsReused||0;
-          report.learnedBookCorrections=recordBookReviewChoices(
-            database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
-          saveReviewedBookImportDb(database);
+            saveReviewedBookImportDb(database);
             scheduleCoverBackfill({ resetFailures: true });
             bookImportStageStore.finishApply(stage, {
               batchId,created:createdCopies.length,removed:0,
@@ -6483,6 +6480,13 @@ async function handleApi(req, res, requestUrl) {
             type: 'books_import_reviewed', performedBy: user.id,
             message: `Gecontroleerde boekimport: ${newCopies.length} exemplaren toegevoegd, ${importedLoanHistory.length} bestaande leningen overgenomen`,
           });
+          // Create-mode is the original reviewed upload workflow. Approved
+          // book-only corrections must become reusable there as well.
+          // Record only after the newly created physical copies exist and
+          // inside this same database transaction.
+          report.rememberedBookFields=stage.remembered?.fieldsReused||0;
+          report.learnedBookCorrections=recordBookReviewChoices(
+            database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
           saveReviewedBookImportDb(database);
             scheduleCoverBackfill({ resetFailures: true });
           const result = { batchId, created: newCopies.length,
