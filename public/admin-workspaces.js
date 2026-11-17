@@ -102,15 +102,45 @@
       extra.hidden=false;
     }
     content.append(enrichment);
-    students.id='bb-import-workspace-students';
-    teachers.id='bb-import-workspace-teachers';
+    // The full ParnasSys integration creates its own active sync blocks
+    // asynchronously and hides these original Excel forms. Give each tab a
+    // stable host, then move the actual active block (not a copy) into it.
+    const studentPane=make('section','bb-workspace-people-pane');
+    studentPane.id='bb-import-workspace-students';
+    const teacherPane=make('section','bb-workspace-people-pane');
+    teacherPane.id='bb-import-workspace-teachers';
+    studentPane.append(students);
+    teacherPane.append(teachers);
+    content.append(studentPane,teacherPane);
+
+    function attachActiveSchoolSync() {
+      const container=content.querySelector('.school-sync__container');
+      if(!container)return false;
+      const blocks=[...container.children].filter(node=>
+        node.classList?.contains('school-sync__block'));
+      if(blocks.length!==2)return false;
+      studentPane.append(blocks[0]);
+      teacherPane.append(blocks[1]);
+      students.hidden=true;
+      teachers.hidden=true;
+      container.hidden=true;
+      return true;
+    }
+    if(!attachActiveSchoolSync()) {
+      // The integration may initialize after this module. Observe until it
+      // mounts its two complete sections; retain their handlers and state.
+      const syncObserver=new MutationObserver(()=>{
+        if(attachActiveSchoolSync())syncObserver.disconnect();
+      });
+      syncObserver.observe(content,{childList:true,subtree:true});
+    }
     const oldBookImport=content.querySelector('.bb-review__legacy');
 
     const panes=new Map([
       ['books',[reviewed,...(oldBookImport?[oldBookImport]:[])]],
       ['enrichment',[enrichment]],
-      ['students',[students]],
-      ['teachers',[teachers]],
+      ['students',[studentPane]],
+      ['teachers',[teacherPane]],
     ]);
     // Identify all panes by property rather than relying on title text.
     for (const [id,nodes] of panes) {
@@ -143,7 +173,8 @@
     const view=$('#admin-dashboard [data-admin-modern-view="tasks"]');
     const bookHost=view?.querySelector('#bb-admin-v31-tasks');
     const bookPanel=$('#book-import-followups-panel');
-    if (!view||!bookHost||!bookPanel) return false;
+    if (!view||!bookHost||!bookPanel||!bookHost.contains(bookPanel))
+      return false;
     if (view.dataset.bbWorkspacesReady==='true') return true;
     const accountLinks=view.querySelector('.bb-admin-v31-task-actions')?.closest('.bb-admin-v31-card');
     if(accountLinks)accountLinks.classList.add('bb-workspace-account-links');
@@ -263,8 +294,9 @@
     const admin=$('#admin-dashboard [data-admin-modern-view="imports"]');
     if(!admin)return false;
     installPageDescriptions();
-    installTasks();
-    return installImports();
+    const tasksReady=installTasks();
+    const importsReady=installImports();
+    return tasksReady&&importsReady;
   }
   function start() {
     if(install())return;
