@@ -61,9 +61,27 @@ function currentValue(book,field){
   if(field==='editionIsbn')return editionOf(book);
   if(field==='examMaterial')return book.suitableForExamList?'ja':'nee';
   if(field==='easyReading')return book.easyReading?'ja':'nee';
-  if(field==='themes')return (book.manualThemes||book.themes||[]).join('; ');
+  if(field==='themes')return (
+    book.manualThemes?.length?book.manualThemes:book.themes||[]).join('; ');
   if(field==='tags')return (book.tags||[]).join('; ');
   return book[field];
+}
+// A teacher enters Excel-style strings, but the parser stores normalized
+// catalog values (e.g. 'Nederlands' becomes 'nl', and tags become an array).
+// Keep both representations: replay the original input, verify the parsed
+// value against the actual current library.
+function parsedApproval(field,book){
+  if(!book||typeof book!=='object')return null;
+  if(field==='editionIsbn')return canonicalizeBookIsbn13(book.editionIsbn)||null;
+  if(field==='examMaterial')return book.suitableForExamList?'ja':'nee';
+  if(field==='easyReading')return book.easyReading?'ja':'nee';
+  if(field==='themes')return (book.themes||book.manualThemes||[]).join('; ');
+  if(field==='tags')return (book.tags||[]).join('; ');
+  if(field==='author')return String(book.author||'');
+  if(!Object.prototype.hasOwnProperty.call(book,field))return null;
+  const value=book[field];
+  if(value===null||value===undefined)return '';
+  return String(value);
 }
 function safeRowReplays(db,sourceRows){
   const saved=Array.isArray(db?.bookImportDecisionMemory)
@@ -91,18 +109,28 @@ function safeRowReplays(db,sourceRows){
     const fingerprint=sourceIdentity(row);
     if(!fingerprint)continue;
     const matched=new Set();
+    const isbnApproval=byKey.get(rowFingerprint(row,'editionIsbn'));
+    // A later ISBN approval changes which edition *all* remembered fields
+    // belong to. Never combine a title approved for A with a subsequent
+    // corrected ISBN B on the same source row.
+    const targetEdition=isbnApproval?.sourceIdentity===fingerprint
+      &&!isbnApproval.conflict
+      ?canonicalizeBookIsbn13(isbnApproval.value):null;
+    if(isbnApproval?.conflict)continue;
     for(const field of FIELDS){
       const item=byKey.get(rowFingerprint(row,field));
       if(!item||item.conflict||item.sourceIdentity!==fingerprint)continue;
       const edition=item.editionIsbn;
+      if(targetEdition&&edition!==targetEdition)continue;
       const candidates=(db.books||[]).filter(book=>editionOf(book)===edition);
       if(!candidates.length)continue;
       // Existing physical data has priority. If edited after the earlier
       // approval, NEVER silently overwrite that newer decision.
       if(!candidates.every(book=>{
         const existing=currentValue(book,field);
-        return field==='editionIsbn'||equalCurrent(field,existing,item.value)
-          ||(field==='themes'&&equalCurrent(field,(book.themes||[]).join('; '),item.value));
+        return field==='editionIsbn'
+          ||equalCurrent(field,existing,
+            typeof item.approvedValue==='string'?item.approvedValue:item.value);
       }))continue;
       if(field==='editionIsbn'&&canonicalizeBookIsbn13(item.value)!==edition)
         continue;
@@ -167,6 +195,8 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
     for(const [field,value] of Object.entries(correction.fields)){
       const fingerprint=rowFingerprint(row,field);
       if(!fingerprint||typeof value!=='string'||value.length>4000)continue;
+      const approvedValue=parsedApproval(field,analyzed);
+      if(approvedValue===null)continue;
       const unique=batchId+'|'+fingerprint;
       const earlier=decisions.get(unique);
       if(earlier&&earlier.value!==value){
@@ -175,7 +205,7 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
       }
       if(!earlier)decisions.set(unique,{
         fingerprint,sourceIdentity:identity,field,
-        value,editionIsbn:edition,batchId,recordedAt:now,
+        value,approvedValue,editionIsbn:edition,batchId,recordedAt:now,
       });
     }
   }
