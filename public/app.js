@@ -1423,6 +1423,63 @@ function applyDisplayCoverCrop(image, value) {
     ? `translate(${(50 - crop.x) * (crop.zoom - 1)}%, ${(50 - crop.y) * (crop.zoom - 1)}%) scale(${crop.zoom})`
     : '';
 }
+
+// Keep each edition's actual publisher, ISBN, cover and stock visible
+// without changing the underlying physical book records.
+function renderBookEditionDetails(book) {
+  const state = ensureBookDetailElements();
+  const meta = state.content?.querySelector('.book-detail__meta');
+  if (!meta) return;
+  let panel = state.content.querySelector('.book-detail__editions');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.className = 'book-detail__editions';
+    panel.setAttribute('aria-label', 'Uitgaven van dit boek');
+    meta.insertAdjacentElement('afterend', panel);
+  }
+  panel.replaceChildren();
+  const editions = groupCatalogEditions(book?.copies || [book]);
+  panel.hidden = editions.length < 2;
+  if (panel.hidden) return;
+  appendTextElement(panel, 'h4', 'Uitgaven in de bibliotheek');
+  const list = appendElement(panel, 'div', { className: 'book-detail__edition-list' });
+  for (const edition of editions) {
+    const copy = edition.representativeBook || edition.copies[0];
+    const item = appendElement(list, 'article', { className: 'book-detail__edition' });
+    const cover = appendElement(item, 'div', { className: 'book-detail__edition-cover' });
+    const imageUrl = normalizeRenderedCoverUrl(copy.localCoverUrl || copy.coverUrl);
+    const externalUrl = normalizeRenderedCoverUrl(copy.coverUrl);
+    if (imageUrl) {
+      const image = document.createElement('img');
+      image.alt = 'Omslag van de uitgave van ' + (edition.publisher || 'onbekende uitgever');
+      image.loading = 'lazy';
+      applyDisplayCoverCrop(image, copy.coverCrop);
+      image.onerror = () => {
+        if (image.getAttribute('src') === imageUrl && externalUrl && imageUrl !== externalUrl) {
+          image.src = externalUrl;
+        } else {
+          image.remove();
+          appendTextElement(cover, 'span', 'Geen omslag');
+        }
+      };
+      image.src = imageUrl;
+      cover.append(image);
+    } else {
+      appendTextElement(cover, 'span', 'Geen omslag');
+    }
+    const details = appendElement(item, 'div', { className: 'book-detail__edition-info' });
+    appendTextElement(details, 'strong', edition.publisher || 'Uitgever onbekend');
+    appendTextElement(details, 'span', edition.isbn ? 'ISBN ' + edition.isbn : 'ISBN onbekend');
+    const pages = Number(copy.pageCount || copy.pages);
+    if (Number.isFinite(pages) && pages > 0) {
+      appendTextElement(details, 'span', Math.round(pages) + ' pagina’s');
+    }
+    appendTextElement(details, 'span', edition.availableCopies + ' van ' +
+      edition.copies.length + ' exemplaren beschikbaar',
+      { className: 'book-detail__edition-availability' });
+  }
+}
+
 function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
@@ -1450,7 +1507,9 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
         option.value=copy.id;
         const suffix=String(copy.id||'').slice(-8);
         option.textContent='Exemplaar '+(index+1)+' · '+
-          (copy.barcode||'Geen barcode')+' · ID '+suffix+
+          (copy.publisher||'Uitgever onbekend')+' · '+
+          (catalogStoredEdition(copy)||copy.barcode||'Geen ISBN')+
+          ' · ID '+suffix+
           (copy.status==='borrowed'?' (uitgeleend)':'');
         control.append(option);
       });
@@ -1551,8 +1610,12 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.descriptionExpanded = false;
     applyBookDetailDescriptionState();
   }
+  renderBookEditionDetails(book);
   if (state.metaPublisher) {
-    const manualPublisher = (representative.publisher || '').trim();
+    const publishers = new Set(copies.map(copy => String(copy.publisher || '').trim()).filter(Boolean));
+    const manualPublisher = publishers.size > 1
+      ? 'Meerdere uitgevers (zie uitgaven)'
+      : (representative.publisher || '').trim();
     const metadataPublisher = (metadata?.publisher || '').trim();
     state.metaPublisher.textContent = manualPublisher || metadataPublisher || 'Onbekend';
   }
@@ -1576,7 +1639,9 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.metaLanguage.textContent = manualLanguage || metadataLanguage || 'Onbekend';
   }
   if (state.metaBarcode) {
-    state.metaBarcode.textContent = representative.barcode || metadata?.barcode || '';
+    state.metaBarcode.textContent = groupCatalogEditions(copies).length > 1
+      ? 'Verschilt per uitgave'
+      : (representative.barcode || metadata?.barcode || '');
   }
   if (state.message) {
     state.message.textContent = metadataMessage || '';
