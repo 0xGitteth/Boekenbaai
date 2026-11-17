@@ -3078,3 +3078,46 @@ body.book-detail-open {
 }
 .book-card__fixed-location { margin-top: 6px; }
 .book-detail__fixed-location { margin-top: 8px; margin-bottom: 8px; }
+
+
+/* Multiple physical editions shown within one work detail dialog. */
+.book-detail__editions[hidden] { display: none; }
+.book-detail__editions { margin-top: 1.2rem; }
+.book-detail__editions h4 { margin: 0 0 .65rem; font-size: 1rem; }
+.book-detail__edition-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: .7rem;
+}
+.book-detail__edition {
+  display: flex;
+  gap: .75rem;
+  min-width: 0;
+  padding: .75rem;
+  border: 1px solid #d3deea;
+  border-radius: 12px;
+  background: #f7f9fc;
+}
+.book-detail__edition-cover {
+  display: grid;
+  place-items: center;
+  width: 78px;
+  aspect-ratio: 2 / 3;
+  flex: 0 0 78px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #e5eaf1;
+  color: #4b617a;
+  text-align: center;
+  font-size: .72rem;
+}
+.book-detail__edition-cover img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.book-detail__edition-info { display: flex; flex-direction: column; gap: .2rem; min-width: 0; overflow-wrap: anywhere; font-size: .83rem; }
+.book-detail__edition-info strong { font-size: .91rem; }
+.book-detail__edition-availability { margin-top: .2rem; font-weight: 700; color: #245e4b; }
+@media (max-width: 400px) {
+  .book-detail__edition { padding: .6rem; }
+  .book-detail__edition-cover { width: 65px; flex-basis: 65px; }
+}
+
+.book-detail__edition-action { align-self: flex-start; margin-top: .45rem; padding: .35rem .65rem; font-size: .78rem; white-space: normal; }

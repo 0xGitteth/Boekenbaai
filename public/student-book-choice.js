@@ -40,9 +40,7 @@
     const map = new Map();
     for (const book of books) {
       if (!book?.id || !book.title) continue;
-      const key = JSON.stringify([
-        normalized(book.title), normalized(book.author), normalized(book.editionIsbn || book.metadataIsbn),
-      ]);
+      const key = JSON.stringify([normalized(book.title), normalized(book.author)]);
       let item = map.get(key);
       if (!item) {
         item = {

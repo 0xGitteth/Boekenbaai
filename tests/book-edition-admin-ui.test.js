@@ -44,26 +44,35 @@ const original=[
   publisher:'Van Holkema & Warendorf',status:'available'},
 ];
 const previous=groupBooksByTitleAuthor(original);
-assert.equal(previous.length,2,
-  'Different publisher/ISBN editions of Het web have separate catalog cards');
-assert.deepEqual(previous.map(group=>group.copies.map(copy=>copy.id)),
-  [['lijsters'],['warendorf']]);
-assert.notEqual(getBookGroupKey(original[0]),getBookGroupKey(original[1]));
+assert.equal(previous.length,1,
+  'Different publishers of the same work must display as one catalog card');
+assert.deepEqual(previous[0].copies.map(copy=>copy.id),['lijsters','warendorf'],
+  'The two physical records must stay separate inside the work card');
+assert.equal(previous[0].editionCount,2);
+assert.equal(previous[0].availableCopies,1);
+assert.equal(previous[0].borrowedCopies,1);
+assert.equal(getBookGroupKey(original[0]),getBookGroupKey(original[1]));
 const corrected=structuredClone(original);
 corrected[0].editionIsbn='9789001561383';
 corrected[0].barcode='9789001561383';
-assert.equal(groupBooksByTitleAuthor(corrected).length,2,
-  'The corrected ISBN remains separate from the other physical edition');
+const correctedGroup=groupBooksByTitleAuthor(corrected);
+assert.equal(correctedGroup.length,1);
+assert.equal(correctedGroup[0].editionCount,2,
+  'Correcting one ISBN does not merge the physical editions or create a duplicate card');
+assert.equal(correctedGroup[0].copies[0].editionIsbn,'9789001561383');
+assert.equal(correctedGroup[0].copies[1].editionIsbn,'9789026997471');
 const sameEdition=[corrected[0],{
   ...corrected[0],id:'second-physical-copy',barcode:'COPY-105',
   status:'available',borrowedBy:null,
 }];
-assert.equal(groupBooksByTitleAuthor(sameEdition).length,1,
-  'Two genuine physical copies sharing an edition ISBN remain one edition');
+assert.equal(groupBooksByTitleAuthor(sameEdition).length,1);
+assert.equal(groupBooksByTitleAuthor(sameEdition)[0].editionCount,1,
+  'Two physical copies sharing the same ISBN are one edition');
 const differentPublisher=[{...original[0],barcode:'wrong1'},
   {...original[0],id:'second',barcode:'wrong2',publisher:'Ander huis'}];
-assert.equal(groupBooksByTitleAuthor(differentPublisher).length,2,
-  'Legacy items without an ISBN must be differentiated by their publisher');
+assert.equal(groupBooksByTitleAuthor(differentPublisher).length,1);
+assert.equal(groupBooksByTitleAuthor(differentPublisher)[0].editionCount,2,
+  'Unnumbered physical editions of one work stay distinguishable by publisher');
 assert.match(html,/id="admin-book-edition-isbn"/);
 assert.match(source,/adminBookEditionIsbn\.value = book\.editionIsbn \|\| ''/);
 assert.match(source,/editionIsbn: editionIsbnValue/);

@@ -345,9 +345,10 @@
       const copy=books.find(b=>b.id===item.bookId);
       if(!copy)throw Error('Dit boek is niet meer beschikbaar in de catalogus.');
       if(typeof window.BoekenbaaiOpenBookDetail!=='function')throw Error('De boekdetails zijn nog niet geladen.');
+      // Recommendations are already grouped by work (title + author).
+      // Show every edition of that work in the same detail dialog.
       const copies=books.filter(b=>normalized(b.title)===normalized(copy.title)
-        && normalized(b.author)===normalized(copy.author)
-        && normalized(b.editionIsbn||b.metadataIsbn)===normalized(copy.editionIsbn||copy.metadataIsbn));
+        && normalized(b.author)===normalized(copy.author));
       const preferred=copies.find(b=>b.status==='available'&&!b.borrowedBy&&!b.borrowedByClassId)||copy;
       const group={
         id:item.key,title:copy.title,author:copy.author,

@@ -1423,6 +1423,77 @@ function applyDisplayCoverCrop(image, value) {
     ? `translate(${(50 - crop.x) * (crop.zoom - 1)}%, ${(50 - crop.y) * (crop.zoom - 1)}%) scale(${crop.zoom})`
     : '';
 }
+
+// Keep each edition's actual publisher, ISBN, cover and stock visible
+// without changing the underlying physical book records.
+function renderBookEditionDetails(book) {
+  const state = ensureBookDetailElements();
+  const meta = state.content?.querySelector('.book-detail__meta');
+  if (!meta) return;
+  let panel = state.content.querySelector('.book-detail__editions');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.className = 'book-detail__editions';
+    panel.setAttribute('aria-label', 'Uitgaven van dit boek');
+    meta.insertAdjacentElement('afterend', panel);
+  }
+  panel.replaceChildren();
+  const editions = groupCatalogEditions(book?.copies || [book]);
+  panel.hidden = editions.length < 2;
+  if (panel.hidden) return;
+  appendTextElement(panel, 'h4', 'Uitgaven in de bibliotheek');
+  const list = appendElement(panel, 'div', { className: 'book-detail__edition-list' });
+  for (const edition of editions) {
+    const copy = edition.representativeBook || edition.copies[0];
+    const item = appendElement(list, 'article', { className: 'book-detail__edition' });
+    const cover = appendElement(item, 'div', { className: 'book-detail__edition-cover' });
+    const imageSource = normalizeRenderedCoverUrl(copy.coverUrl);
+    const siblingCache = edition.copies.find(other =>
+      normalizeRenderedCoverUrl(other.coverUrl) === imageSource && other.localCoverUrl);
+    const imageUrl = normalizeRenderedCoverUrl(
+      siblingCache?.localCoverUrl || copy.localCoverUrl || copy.coverUrl);
+    const externalUrl = normalizeRenderedCoverUrl(copy.coverUrl);
+    if (imageUrl) {
+      const image = document.createElement('img');
+      image.alt = 'Omslag van de uitgave van ' + (edition.publisher || 'onbekende uitgever');
+      image.loading = 'lazy';
+      applyDisplayCoverCrop(image, copy.coverCrop);
+      image.onerror = () => {
+        if (image.getAttribute('src') === imageUrl && externalUrl && imageUrl !== externalUrl) {
+          image.src = externalUrl;
+        } else {
+          image.remove();
+          appendTextElement(cover, 'span', 'Geen omslag');
+        }
+      };
+      image.src = imageUrl;
+      cover.append(image);
+    } else {
+      appendTextElement(cover, 'span', 'Geen omslag');
+    }
+    const details = appendElement(item, 'div', { className: 'book-detail__edition-info' });
+    appendTextElement(details, 'strong', edition.publisher || 'Uitgever onbekend');
+    appendTextElement(details, 'span', edition.isbn ? 'ISBN ' + edition.isbn : 'ISBN onbekend');
+    const pages = Number(copy.pageCount || copy.pages);
+    if (Number.isFinite(pages) && pages > 0) {
+      appendTextElement(details, 'span', Math.round(pages) + ' pagina’s');
+    }
+    appendTextElement(details, 'span', edition.availableCopies + ' van ' +
+      edition.copies.length + ' exemplaren beschikbaar',
+      { className: 'book-detail__edition-availability' });
+    // A multi-edition work requires an explicit physical-edition selection.
+    // Do not silently lend the first available, possibly mismatched, edition.
+    const availableCopy = edition.copies.find(other =>
+      other.id && other.status !== 'borrowed');
+    if (authUser?.role === 'student' && availableCopy && state.studentActionHandler) {
+      const choose = appendTextElement(details, 'button', 'Leen deze uitgave', {
+        type: 'button', className: 'btn btn--secondary book-detail__edition-action',
+      });
+      choose.addEventListener('click', () => state.studentActionHandler?.(availableCopy));
+    }
+  }
+}
+
 function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   const state = ensureBookDetailElements();
   if (!state.root) return;
@@ -1450,7 +1521,9 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
         option.value=copy.id;
         const suffix=String(copy.id||'').slice(-8);
         option.textContent='Exemplaar '+(index+1)+' · '+
-          (copy.barcode||'Geen barcode')+' · ID '+suffix+
+          (copy.publisher||'Uitgever onbekend')+' · '+
+          (catalogStoredEdition(copy)||copy.barcode||'Geen ISBN')+
+          ' · ID '+suffix+
           (copy.status==='borrowed'?' (uitgeleend)':'');
         control.append(option);
       });
@@ -1551,8 +1624,12 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.descriptionExpanded = false;
     applyBookDetailDescriptionState();
   }
+  renderBookEditionDetails(book);
   if (state.metaPublisher) {
-    const manualPublisher = (representative.publisher || '').trim();
+    const publishers = new Set(copies.map(copy => String(copy.publisher || '').trim()).filter(Boolean));
+    const manualPublisher = publishers.size > 1
+      ? 'Meerdere uitgevers (zie uitgaven)'
+      : (representative.publisher || '').trim();
     const metadataPublisher = (metadata?.publisher || '').trim();
     state.metaPublisher.textContent = manualPublisher || metadataPublisher || 'Onbekend';
   }
@@ -1576,7 +1653,9 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     state.metaLanguage.textContent = manualLanguage || metadataLanguage || 'Onbekend';
   }
   if (state.metaBarcode) {
-    state.metaBarcode.textContent = representative.barcode || metadata?.barcode || '';
+    state.metaBarcode.textContent = groupCatalogEditions(copies).length > 1
+      ? 'Verschilt per uitgave'
+      : (representative.barcode || metadata?.barcode || '');
   }
   if (state.message) {
     state.message.textContent = metadataMessage || '';
@@ -1618,8 +1697,9 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (studentAction) {
     const descriptor = pageType === 'student'
       ? resolveStudentBookAction(book, authUser) : null;
-    studentAction.hidden = !descriptor;
-    studentAction.disabled = !descriptor;
+    const chooseEdition = groupCatalogEditions(copies).length > 1 && descriptor?.type === 'borrow';
+    studentAction.hidden = !descriptor || chooseEdition;
+    studentAction.disabled = !descriptor || chooseEdition;
     if (descriptor) {
       studentAction.textContent = descriptor.label;
       studentAction.onclick = () => bookDetailState.studentActionHandler?.(book);
@@ -1684,7 +1764,11 @@ async function openBookDetail(book) {
     groupedBooks.find((group) => group.id === groupKey) ||
     groupedBooks.find((group) => group.copies?.some((copy) => copy.id === detail.id)) ||
     null;
-  const groupedDetail = matchingGroup || groupBooksByTitleAuthor([detail])[0] || detail;
+  // Refresh the work presentation even when a chooser passes a physical-copy
+  // preference. The default cover must agree with the main catalog card.
+  const groupedDetail = providedGroup
+    ? (groupBooksByTitleAuthor(providedGroup.copies)[0] || providedGroup)
+    : matchingGroup || groupBooksByTitleAuthor([detail])[0] || detail;
   const metadataLookupKey = resolveBookMetadataKey(groupedDetail);
   const canLookupMetadata = authUser?.role === 'admin';
   let metadata = metadataLookupKey ? bookDetailState.metadataCache.get(metadataLookupKey) : null;
@@ -1986,19 +2070,22 @@ function catalogStoredEdition(book) {
     ||catalogEditionIsbn(book?.barcode)||'';
 }
 function getBookGroupKey(book) {
-  const title = normalizeGroupKeyPart(book?.title).toLowerCase();
-  const author = normalizeGroupKeyPart(book?.author).toLowerCase();
-  const edition = catalogStoredEdition(book);
-  const identity=edition?'isbn:'+edition
-    :'publisher:'+normalizeGroupKeyPart(book?.publisher).toLowerCase();
-  return `${title}||${author}||${identity}`;
+  const normalizeWorkPart = value => normalizeGroupKeyPart(value)
+    .normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
+  return JSON.stringify([normalizeWorkPart(book?.title), normalizeWorkPart(book?.author)]);
+}
+
+function getCatalogEditionKey(book) {
+  const isbn = catalogStoredEdition(book);
+  return isbn ? 'isbn:' + isbn
+    : 'publisher:' + normalizeGroupKeyPart(book?.publisher).toLocaleLowerCase('nl-NL');
 }
 
 function pickRepresentativeBook(current, candidate) {
   if (!candidate) return current;
   if (!current) return candidate;
-  const currentCoverUrl = normalizeRenderedCoverUrl(current.coverUrl);
-  const candidateCoverUrl = normalizeRenderedCoverUrl(candidate.coverUrl);
+  const currentCoverUrl = normalizeRenderedCoverUrl(current.localCoverUrl || current.coverUrl);
+  const candidateCoverUrl = normalizeRenderedCoverUrl(candidate.localCoverUrl || candidate.coverUrl);
   const currentScore = (currentCoverUrl ? 2 : 0) + (current.description ? 1 : 0);
   const candidateScore = (candidateCoverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
   if (candidateScore > currentScore) {
@@ -2012,6 +2099,29 @@ function pickRepresentativeBook(current, candidate) {
     }
   }
   return current;
+}
+
+function groupCatalogEditions(copies) {
+  const groups = new Map();
+  for (const copy of Array.isArray(copies) ? copies : []) {
+    if (!copy) continue;
+    const key = getCatalogEditionKey(copy);
+    let edition = groups.get(key);
+    if (!edition) {
+      edition = { key, isbn: catalogStoredEdition(copy), publisher: copy.publisher || '',
+        copies: [], representativeBook: null, availableCopies: 0 };
+      groups.set(key, edition);
+    }
+    edition.copies.push(copy);
+    if (copy.status !== 'borrowed') edition.availableCopies++;
+    edition.representativeBook = pickRepresentativeBook(edition.representativeBook, copy);
+    if (!edition.publisher && copy.publisher) edition.publisher = copy.publisher;
+  }
+  const hasCover = edition => Boolean(normalizeRenderedCoverUrl(
+    edition.representativeBook?.localCoverUrl || edition.representativeBook?.coverUrl));
+  return [...groups.values()].sort((a, b) =>
+    b.copies.length - a.copies.length || Number(hasCover(b)) - Number(hasCover(a)) ||
+    a.key.localeCompare(b.key, 'nl'));
 }
 
 function groupBooksByTitleAuthor(books = []) {
@@ -2032,7 +2142,6 @@ function groupBooksByTitleAuthor(books = []) {
       representativeBook: null,
     };
     entry.copies.push(book);
-    entry.representativeBook = pickRepresentativeBook(entry.representativeBook, book);
     if (Array.isArray(book.tags)) {
       for (const tag of book.tags) {
         if (typeof tag === 'string' && tag.trim()) {
@@ -2058,12 +2167,18 @@ function groupBooksByTitleAuthor(books = []) {
     const totalCopies = value.copies.length;
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const availableCopies = totalCopies - borrowedCopies;
-    const representative = value.representativeBook || value.copies[0] || {};
+    const editions = groupCatalogEditions(value.copies);
+    // Show the cover of the most common edition with an available cover.
+    const featuredEdition = editions.find(edition =>
+      edition.representativeBook?.localCoverUrl || edition.representativeBook?.coverUrl) || editions[0];
+    const representative = featuredEdition?.representativeBook || value.copies[0] || {};
     // Prefer the local cover from a sibling with the same external source.
     // This also makes a newly imported copy usable before backfill finishes.
     const representativeCoverSource = normalizeRenderedCoverUrl(representative.coverUrl);
+    const representativeEditionKey = getCatalogEditionKey(representative);
     const cachedEditionCover = value.copies.find((copy) =>
-      normalizeRenderedCoverUrl(copy.coverUrl) === representativeCoverSource
+      getCatalogEditionKey(copy) === representativeEditionKey
+      && normalizeRenderedCoverUrl(copy.coverUrl) === representativeCoverSource
       && copy.localCoverUrl)?.localCoverUrl || representative.localCoverUrl || '';
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
@@ -2090,6 +2205,7 @@ function groupBooksByTitleAuthor(books = []) {
       totalCopies,
       borrowedCopies,
       availableCopies,
+      editionCount: editions.length,
       copies: value.copies,
       representativeBook: representative,
     });
@@ -2283,11 +2399,10 @@ function createBookCard(template, book, folders, options = {}) {
 
   title.textContent = book.title;
   author.textContent = book.author;
-  if (options.catalogLayout && (book.publisher || book.editionIsbn)) {
-    const editionText=[
-      book.publisher || 'Uitgever onbekend',
-      book.editionIsbn?'ISBN '+book.editionIsbn:'',
-    ].filter(Boolean).join(' · ');
+  if (options.catalogLayout && (book.editionCount > 1 || book.publisher || book.editionIsbn)) {
+    const editionText = book.editionCount > 1 ? book.editionCount + ' verschillende uitgaven' :
+      [book.publisher || 'Uitgever onbekend', book.editionIsbn ? 'ISBN ' + book.editionIsbn : '']
+        .filter(Boolean).join(' · ');
     const editionLabel=appendTextElement(card.querySelector('.book-card__content'),
       'small',editionText,{className:'bb-cat-card-edition'});
     author.insertAdjacentElement('afterend',editionLabel);
@@ -3621,10 +3736,12 @@ function initStudentPage() {
       },
       cardOptions: book => {
         const action = resolveStudentBookAction(book, authUser);
+        const chooseEdition = book.editionCount > 1 && action?.type === 'borrow';
+        if (chooseEdition) action.label = 'Kies uitgave';
         return {
           catalogLayout: true,
           studentActionLabel: action?.label || '',
-          onStudentAction: () => handleCardLoanAction(book),
+          onStudentAction: () => chooseEdition ? openBookDetail(book) : handleCardLoanAction(book),
         };
       },
     });
