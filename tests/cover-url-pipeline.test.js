@@ -195,6 +195,16 @@ async function runIntegrationChecks() {
     const holkema=afterEditionEdit.body.find(book=>book.id==='het-web-holkema');
     assert.strictEqual(lijsters.barcode,'9789001561383');
     assert.strictEqual(lijsters.editionIsbn,'9789001561383');
+    const wrongMetadata=await request('/api/books/het-web-lijsters',{
+      method:'PUT',headers:{'Content-Type':'application/json',
+        Authorization:`Bearer ${token}`},
+      body:JSON.stringify({metadataIsbn:'9789026997471'}),
+    });
+    assert.strictEqual(wrongMetadata.status,400,
+      'A metadata-only edit must not redirect one physical edition to another');
+    const checked=await request('/api/books');
+    assert.strictEqual(checked.body.find(b=>b.id==='het-web-lijsters').editionIsbn,
+      '9789001561383','Rejected metadata-only edit must preserve the correct edition');
     assert.strictEqual(holkema.barcode,'9789026997471');
     assert.strictEqual(holkema.editionIsbn,'9789026997471');
     assert.strictEqual(holkema.publisher,'Van Holkema & Warendorf');
