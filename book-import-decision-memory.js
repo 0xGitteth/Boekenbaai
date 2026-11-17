@@ -163,6 +163,12 @@ function safeRowReplays(db,sourceRows){
 // book while the Excel wizard is open, remove only the still-unchanged
 // automatic field. Explicitly modified wizard fields remain the teacher's
 // deliberate decision and are never silently discarded.
+// The draft endpoint trims user-entered values. Trimming an inherited
+// approval does not constitute fresh manual authorization.
+function equivalentCorrection(a,b){
+  return typeof a==='string'&&typeof b==='string'
+    ?a.trim()===b.trim():a===b;
+}
 function revalidateRememberedCorrections(db,sourceRows,submitted,initial){
   const active=safeRowReplays(db,sourceRows).corrections;
   const stillSafe=new Map(active.flatMap(row=>
@@ -184,7 +190,8 @@ function revalidateRememberedCorrections(db,sourceRows,submitted,initial){
       ?canonicalizeBookIsbn13(item.fields.editionIsbn):null;
     for(const [field,value] of Object.entries(item.fields||{})){
       const id=item.index+':'+field;
-      const automaticallyInherited=inherited.has(id)&&inherited.get(id)===value;
+      const automaticallyInherited=inherited.has(id)
+        &&equivalentCorrection(inherited.get(id),value);
       let invalidEdition=false;
       if(automaticallyInherited&&submittedEdition&&field!=='editionIsbn'){
         const approval=originalApprovals.get(
@@ -193,7 +200,7 @@ function revalidateRememberedCorrections(db,sourceRows,submitted,initial){
           ||approval.editionIsbn!==submittedEdition;
       }
       if(automaticallyInherited
-        &&(stillSafe.get(id)!==value||invalidEdition)){
+        &&(!equivalentCorrection(stillSafe.get(id),value)||invalidEdition)){
         invalidated++;continue;
       }
       fields[field]=value;
@@ -205,6 +212,7 @@ function revalidateRememberedCorrections(db,sourceRows,submitted,initial){
 function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now){
   if(!Array.isArray(db.bookImportDecisionMemory))db.bookImportDecisionMemory=[];
   const ledger=db.bookImportDecisionMemory;
+  const indexedCopies=copiesByEdition(db);
   const decisions=new Map();
   let recorded=0;
   for(const correction of corrections||[]){
@@ -216,7 +224,7 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
     const analyzed=analyzedRow?.book;
     const edition=canonicalizeBookIsbn13(analyzed?.editionIsbn)
       ||canonicalizeBookIsbn13(correction.fields.editionIsbn);
-    const copies=(db.books||[]).filter(book=>editionOf(book)===edition);
+    const copies=indexedCopies.get(edition)||[];
     if(!edition||!copies.length)continue;
     for(const [field,value] of Object.entries(correction.fields)){
       const fingerprint=rowFingerprint(row,field);
@@ -237,8 +245,9 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
       const approvedValue=String(actual[0]??'');
       const unique=batchId+'|'+fingerprint;
       const earlier=decisions.get(unique);
-      if(earlier&&earlier.value!==value){
-        decisions.set(unique,{conflict:true});
+      if(earlier&&(earlier.conflict||earlier.value!==value
+        ||earlier.editionIsbn!==edition)){
+        decisions.set(unique,{conflict:true,sourceIdentity:identity});
         continue;
       }
       if(!earlier)decisions.set(unique,{
@@ -247,14 +256,19 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
       });
     }
   }
-  // Two physically indistinguishable rows with opposite corrections
-  // cannot be remembered safely. Keep neither, rather than guessing.
+  // When indistinguishable source rows receive incompatible corrections
+  // in the same confirmed import, previous permissions for *all* fields
+  // of that source identity become unsafe. Revoke them, not just this batch.
+  const ambiguous=new Set([...decisions.values()]
+    .filter(candidate=>candidate.conflict)
+    .map(candidate=>candidate.sourceIdentity).filter(Boolean));
+  const safeLedger=ledger.filter(item=>!ambiguous.has(item.sourceIdentity));
   for(const candidate of decisions.values()){
-    if(candidate.conflict)continue;
-    ledger.push(candidate);recorded++;
+    if(candidate.conflict||ambiguous.has(candidate.sourceIdentity))continue;
+    safeLedger.push(candidate);recorded++;
   }
   // Bounded independent memory survives rotation of the short import reports.
-  db.bookImportDecisionMemory=ledger.slice(-MAX_ITEMS);
+  db.bookImportDecisionMemory=safeLedger.slice(-MAX_ITEMS);
   return recorded;
 }
 // Explicit Keep/Use Excel choices are edition-wide and may have no row
