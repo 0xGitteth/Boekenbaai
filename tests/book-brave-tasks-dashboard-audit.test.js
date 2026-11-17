@@ -98,4 +98,40 @@ assert.match(ui,/bb-deferred-book-group/);
 assert.match(ui,/destination\.append\(card\)/);
 assert.match(ui,/de oude taak is niet automatisch afgesloten/i);
 assert.match(braveUi,/usage\.legacyProviderRemaining === 0/);
-console.log('Brave quota safety, legacy recovery, task grouping and dashboard layout regressions: OK');
+// Follow-up to Codex PR #412/#413: live state must remain visible during
+// polling, including while the user expands a group to resolve a book.
+assert.match(ui,/const expandedGroups=new Set\(\)/);
+assert.match(ui,/container\.open=expandedGroups\.has\(groupKey\)/);
+assert.match(ui,/container\.addEventListener\('toggle'/);
+assert.match(ui,/expandedGroups\.clear\(\)/,
+  'Expanded task state must be removed upon logout');
+assert.match(braveUi,/const enrichmentActionNotice = make\('p', 'hint bb-review__enrichment-action'\)/);
+assert.match(braveUi,/enrichmentActionNotice\.textContent =\s*'Brave-onderzoek goedgekeurd/);
+assert.match(braveUi,/enrichmentActionNotice\.textContent =\s*error\.message \|\| 'Toestemming opslaan is mislukt/);
+assert.match(braveUi,/enrichmentActionNotice\.textContent =\s*'Collectiecontrole opgeslagen/);
+assert.match(style,/\[data-admin-modern-view="tasks"\]\[data-bb-task-section\]:not\(\[data-bb-task-section="accounts"\]\)[\s\S]*?#student-exit-tasks-panel/,
+  'Former-student identity details must be restricted to account tasks');
+const workspace=read('admin-workspaces.js');
+assert.match(workspace,/const studentPane=make\('section','bb-workspace-people-pane'\)/);
+assert.match(workspace,/studentPane\.append\(blocks\[0\]\)/);
+assert.match(workspace,/teacherPane\.append\(blocks\[1\]\)/);
+assert.match(workspace,/syncObserver\.observe\(content,\{childList:true,subtree:true\}\)/);
+
+// The dashboard API must supply the existing bearer staff session before
+// reading any of the three privileged task counters.
+const apiStart=admin.indexOf('  async function api(');
+const apiEnd=admin.indexOf('\n  function randomLegacyPassword(',apiStart);
+assert.ok(apiStart>0&&apiEnd>apiStart);
+const createApi=new Function('localStorage','fetch',admin.slice(apiStart,apiEnd)
+  +'\nreturn api;');
+let lastRequest;
+const api=createApi({getItem:key=>key==='boekenbaai_token'?'test-staff-token':null},
+  async (url,config)=>{
+    lastRequest={url,config};
+    return {ok:true,json:async()=>({summary:{open:3}})};
+  });
+api('/api/admin/book-import-book-tasks').then(payload=>{
+  assert.equal(payload.summary.open,3);
+  assert.equal(lastRequest.config.headers.Authorization,'Bearer test-staff-token');
+  console.log('Brave quota safety, persistent tasks, import tabs and dashboard auth: OK');
+}).catch(error=>{console.error(error);process.exitCode=1;});
