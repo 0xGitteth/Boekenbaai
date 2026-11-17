@@ -1447,7 +1447,11 @@ function renderBookEditionDetails(book) {
     const copy = edition.representativeBook || edition.copies[0];
     const item = appendElement(list, 'article', { className: 'book-detail__edition' });
     const cover = appendElement(item, 'div', { className: 'book-detail__edition-cover' });
-    const imageUrl = normalizeRenderedCoverUrl(copy.localCoverUrl || copy.coverUrl);
+    const imageSource = normalizeRenderedCoverUrl(copy.coverUrl);
+    const siblingCache = edition.copies.find(other =>
+      normalizeRenderedCoverUrl(other.coverUrl) === imageSource && other.localCoverUrl);
+    const imageUrl = normalizeRenderedCoverUrl(
+      siblingCache?.localCoverUrl || copy.localCoverUrl || copy.coverUrl);
     const externalUrl = normalizeRenderedCoverUrl(copy.coverUrl);
     if (imageUrl) {
       const image = document.createElement('img');
@@ -1477,6 +1481,16 @@ function renderBookEditionDetails(book) {
     appendTextElement(details, 'span', edition.availableCopies + ' van ' +
       edition.copies.length + ' exemplaren beschikbaar',
       { className: 'book-detail__edition-availability' });
+    // A multi-edition work requires an explicit physical-edition selection.
+    // Do not silently lend the first available, possibly mismatched, edition.
+    const availableCopy = edition.copies.find(other =>
+      other.id && other.status !== 'borrowed');
+    if (authUser?.role === 'student' && availableCopy && state.studentActionHandler) {
+      const choose = appendTextElement(details, 'button', 'Leen deze uitgave', {
+        type: 'button', className: 'btn btn--secondary book-detail__edition-action',
+      });
+      choose.addEventListener('click', () => state.studentActionHandler?.(availableCopy));
+    }
   }
 }
 
@@ -1683,8 +1697,9 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   if (studentAction) {
     const descriptor = pageType === 'student'
       ? resolveStudentBookAction(book, authUser) : null;
-    studentAction.hidden = !descriptor;
-    studentAction.disabled = !descriptor;
+    const chooseEdition = groupCatalogEditions(copies).length > 1 && descriptor?.type === 'borrow';
+    studentAction.hidden = !descriptor || chooseEdition;
+    studentAction.disabled = !descriptor || chooseEdition;
     if (descriptor) {
       studentAction.textContent = descriptor.label;
       studentAction.onclick = () => bookDetailState.studentActionHandler?.(book);
@@ -2055,9 +2070,9 @@ function catalogStoredEdition(book) {
     ||catalogEditionIsbn(book?.barcode)||'';
 }
 function getBookGroupKey(book) {
-  const title = normalizeGroupKeyPart(book?.title).toLowerCase();
-  const author = normalizeGroupKeyPart(book?.author).toLowerCase();
-  return JSON.stringify([title, author]);
+  const normalizeWorkPart = value => normalizeGroupKeyPart(value)
+    .normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
+  return JSON.stringify([normalizeWorkPart(book?.title), normalizeWorkPart(book?.author)]);
 }
 
 function getCatalogEditionKey(book) {
@@ -3721,10 +3736,12 @@ function initStudentPage() {
       },
       cardOptions: book => {
         const action = resolveStudentBookAction(book, authUser);
+        const chooseEdition = book.editionCount > 1 && action?.type === 'borrow';
+        if (chooseEdition) action.label = 'Kies uitgave';
         return {
           catalogLayout: true,
           studentActionLabel: action?.label || '',
-          onStudentAction: () => handleCardLoanAction(book),
+          onStudentAction: () => chooseEdition ? openBookDetail(book) : handleCardLoanAction(book),
         };
       },
     });
