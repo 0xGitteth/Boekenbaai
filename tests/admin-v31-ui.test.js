@@ -68,6 +68,17 @@ assert.match(js, /admin-book-cancel/,
   'Bewerken moet afbreekbaar blijven.');
 assert.match(js, /book-detail-edit/,
   'Bewerken vanuit boekdetails moet het juiste formulier openen.');
+assert.match(js,/boekenbaai:open-book-editor/,
+  'Bewerken op een compacte boekkaart moet het verplaatste beheerformulier openen.');
+assert.match(app,/new CustomEvent\('boekenbaai:open-book-editor'/,
+  'Het kaartformulier moet zijn originele fysieke exemplaar-ID behouden.');
+assert.match(html,/id="admin-book-edition-isbn"/,
+  'De beheerder moet het ISBN van de specifieke uitgave kunnen corrigeren.');
+assert.match(html,/id="book-detail-edit-copy"/,
+  'De beheerder moet bij meerdere fysieke exemplaren het juiste exemplaar kiezen.');
+assert.match(app,/state\.editBook=selected/,
+  'Een keuze voor het fysieke exemplaar moet doorwerken in de editactie.');
+
 assert.match(app, /adminBookCancelButton\?\.addEventListener\('click', \(event\) => \{[\s\S]*?resetAdminBookForm\(\)/,
   'Annuleren moet de volledige interne boekenformulierstatus resetten.');
 assert.match(app, /function resetAdminBookForm\(\)[\s\S]*?selectedBookId = null;/,
