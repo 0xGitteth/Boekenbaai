@@ -188,15 +188,29 @@ function recordBookReviewChoices(db,sourceRows,corrections,analysis,batchId,now)
       ||correction.index>=sourceRows.length||correction.skip===true)continue;
     const row=sourceRows[correction.index],identity=sourceIdentity(row);
     if(!identity||!correction.fields)continue;
-    const analyzed=analysis?.rows?.[correction.index]?.book;
+    const analyzedRow=analysis?.rows?.[correction.index];
+    const analyzed=analyzedRow?.book;
     const edition=canonicalizeBookIsbn13(analyzed?.editionIsbn)
       ||canonicalizeBookIsbn13(correction.fields.editionIsbn);
-    if(!edition||(db.books||[]).every(book=>editionOf(book)!==edition))continue;
+    const copies=(db.books||[]).filter(book=>editionOf(book)===edition);
+    if(!edition||!copies.length)continue;
     for(const [field,value] of Object.entries(correction.fields)){
       const fingerprint=rowFingerprint(row,field);
       if(!fingerprint||typeof value!=='string'||value.length>4000)continue;
-      const approvedValue=parsedApproval(field,analyzed);
-      if(approvedValue===null)continue;
+      const parsed=parsedApproval(field,analyzed);
+      if(parsed===null)continue;
+      const parsedCandidates=[parsed];
+      // Examenmateriaal: Strip may create a derived 'strip' tag, but a
+      // metadata-only Tags sync saves just the teacher's explicit tag list.
+      // Reuse whichever *actual committed representation* matches a known
+      // parsed result, never the unverified original string.
+      if(field==='tags'&&Array.isArray(analyzedRow?.provenance?.tags?.explicitValues))
+        parsedCandidates.push(analyzedRow.provenance.tags.explicitValues.join('; '));
+      const actual=copies.map(book=>currentValue(book,field));
+      if(!actual.every(item=>equalCurrent(field,item,actual[0]))
+        ||!parsedCandidates.some(item=>equalCurrent(field,actual[0],item)))
+        continue;
+      const approvedValue=String(actual[0]??'');
       const unique=batchId+'|'+fingerprint;
       const earlier=decisions.get(unique);
       if(earlier&&earlier.value!==value){
