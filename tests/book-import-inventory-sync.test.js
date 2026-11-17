@@ -35,7 +35,7 @@ for(const [isbn,title,sourceAuthor,storedAuthor] of [
     barcode:isbn,title,author:storedAuthor});
   const p=preview([incoming],[current]);
   assert.equal(p.ok,true);
-  assert.equal(p.summary.blocked,0,
+  assert.equal(p.summary.blockedEditions,0,
     'An identical ISBN cannot be blocked for a rearranged author: '+title);
   assert.equal(p.summary.addCopies,0,
     'An existing physical copy cannot be duplicated: '+title);
@@ -47,7 +47,7 @@ const conflictingAuthor=preview([
     editionIsbn:'9780241562284'}),
 ],[book('distinct-author',{title:'Diary Of A Wimpy Kid',
   author:'Jane Kinney',editionIsbn:'9780241562284',metadataIsbn:''})]);
-assert.equal(conflictingAuthor.summary.blocked,1,
+assert.equal(conflictingAuthor.summary.blockedEditions,1,
   'A substantively different author must still block an inventory change');
 
 const unchanged = preview([row(0, 2)], [book('a'), book('b')]);
