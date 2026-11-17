@@ -4516,6 +4516,16 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 400, { message: 'Voer een geldige barcode in' });
       }
       const metadataIsbn = sanitizeIsbn(body.metadataIsbn);
+      const enteredEditionIsbn=String(body.editionIsbn??'').trim();
+      const editionIsbn=enteredEditionIsbn
+        ?canonicalizeBookIsbn13(enteredEditionIsbn):(
+          canonicalizeBookIsbn13(metadataIsbn)
+          ||canonicalizeBookIsbn13(normalizedBarcode)||'');
+      if(enteredEditionIsbn&&!editionIsbn)
+        return sendJson(res,400,{message:'Het ISBN van deze uitgave is ongeldig.'});
+      if(enteredEditionIsbn&&canonicalizeBookIsbn13(metadataIsbn)
+        &&canonicalizeBookIsbn13(metadataIsbn)!==editionIsbn)
+        return sendJson(res,400,{message:'Intern ISBN en ISBN van de uitgave verwijzen naar verschillende edities. Corrigeer beide velden.'});
       const tags = parseMultiValueField(body.tags);
       const manualThemes = normalizeManualThemes(body.manualThemes);
       const publisher = normalizePublisher(body.publisher);
@@ -4539,6 +4549,7 @@ async function handleApi(req, res, requestUrl) {
         title: body.title,
         author: body.author,
         barcode: normalizedBarcode,
+        editionIsbn,
         metadataIsbn,
         description: body.description || '',
         suitableForExamList: Boolean(body.suitableForExamList),
@@ -4643,6 +4654,16 @@ async function handleApi(req, res, requestUrl) {
       const hasMetadataIsbn = Object.prototype.hasOwnProperty.call(body, 'metadataIsbn');
       const currentMetadataIsbn = sanitizeIsbn(book.metadataIsbn);
       const nextMetadataIsbn = hasMetadataIsbn ? sanitizeIsbn(body.metadataIsbn) : currentMetadataIsbn;
+      const hasEditionIsbn=Object.prototype.hasOwnProperty.call(body,'editionIsbn');
+      const enteredEdition=hasEditionIsbn?String(body.editionIsbn??'').trim():'';
+      const nextEditionIsbn=hasEditionIsbn
+        ?(enteredEdition?canonicalizeBookIsbn13(enteredEdition):'')
+        :book.editionIsbn||'';
+      if(hasEditionIsbn&&enteredEdition&&!nextEditionIsbn)
+        return sendJson(res,400,{message:'Het ISBN van deze uitgave is ongeldig.'});
+      if(hasEditionIsbn&&nextEditionIsbn&&canonicalizeBookIsbn13(nextMetadataIsbn)
+        &&canonicalizeBookIsbn13(nextMetadataIsbn)!==nextEditionIsbn)
+        return sendJson(res,400,{message:'Intern ISBN en ISBN van de uitgave verwijzen naar verschillende edities. Corrigeer beide velden.'});
       const hasPublisher = Object.prototype.hasOwnProperty.call(body, 'publisher');
       const hasPublishedYear =
         Object.prototype.hasOwnProperty.call(body, 'publishedYear') ||
@@ -4701,12 +4722,13 @@ async function handleApi(req, res, requestUrl) {
         ? cachedEditionCover
         : (hasCoverUrl ? preparedLocalCoverUrl : '');
       const previousManualValues=Object.fromEntries(
-        ['description','publisher','publishedYear','pageCount','coverUrl','tags']
+        ['title','author','barcode','editionIsbn','description','publisher','publishedYear','pageCount','coverUrl','tags']
           .map(field=>[field,book[field]]));
       Object.assign(book, {
         title: body.title ?? book.title,
         author: body.author ?? book.author,
         barcode: normalizedNewBarcode || '',
+        editionIsbn: nextEditionIsbn,
         metadataIsbn: nextMetadataIsbn,
         description: body.description ?? book.description,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
@@ -4729,7 +4751,7 @@ async function handleApi(req, res, requestUrl) {
         coverCrop: nextCoverCrop,
       });
       const changedManualFields = [];
-      for (const field of ['description','publisher','publishedYear','pageCount','coverUrl','tags']) {
+      for (const field of ['title','author','barcode','editionIsbn','description','publisher','publishedYear','pageCount','coverUrl','tags']) {
         if (JSON.stringify(previousManualValues[field]) !== JSON.stringify(book[field]))
           changedManualFields.push(field);
       }
