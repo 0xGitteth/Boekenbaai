@@ -135,7 +135,7 @@ vm.runInNewContext(code,{
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
   actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat doe je graag in je vrije tijd?'));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat zou jou nieuwsgierig maken naar een boek?'));
 
   // Signed-in learners also get only the approved two main options. The
   // previously offered similar-books route remains available as an explicit
@@ -154,7 +154,7 @@ vm.runInNewContext(code,{
   assert.deepEqual(actions.children.map(x=>x.textContent),
     ['Ja, graag','Nee, liever iets anders']);
   actions.children[0].listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat doe je graag in je vrije tijd?'));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat zou jou nieuwsgierig maken naar een boek?'));
 
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
@@ -171,8 +171,8 @@ vm.runInNewContext(code,{
     'A failed reset must restore the available chat actions');
   resetStatus=200;
 
-  // After surprise fails, "Andere richting" must use the answers rather
-  // than accidentally submitting the surprise route again.
+  // After surprise fails, "Andere richting" must restart the adaptive route
+  // rather than accidentally submitting the surprise route again.
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   failSuggest=true;
@@ -182,11 +182,78 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
   failSuggest=false;
   actions.children.find(x=>x.textContent==='Iemand ontdekt een geheim').listeners.click();
-  actions.children.find(x=>x.textContent==='Spannend verhaal').listeners.click();
-  actions.children.find(x=>x.textContent==='Maakt niet uit').listeners.click();
+  actions.children.find(x=>x.textContent==='Zelf aanwijzingen zoeken').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(suggestRequests.at(-1).choices.route,'new',
     'The fallback questionnaire must use the answered route, not surprise');
+
+  // Exercise all seven branches, including their distinct second questions.
+  // Each branch must submit only two meaningful answers, without mandatory
+  // hobby/genre/length repetitions.
+  const scenarios=[
+    ['Iemand ontdekt een geheim','secret',
+      'Wat maakt zo’n geheim voor jou interessant?','Zelf aanwijzingen zoeken','puzzles'],
+    ['Twee vrienden moeten iets moeilijks beslissen','friends',
+      'Wat zou je hierover willen lezen?','Een moeilijke keuze met gevolgen','choices'],
+    ['Iemand krijgt een onverwachte kans','chance',
+      'Wat zou je willen zien gebeuren?','Een reis naar een nieuwe plek','adventure'],
+    ['Je leest wat iemand echt heeft meegemaakt','true',
+      'Wat vind je interessant aan echte verhalen?','Wat er vroeger is gebeurd','history'],
+    ['Er gebeurt iets heel grappigs','funny',
+      'Wat voor grappig verhaal spreekt je aan?','Grappige situaties op school','schoolhumor'],
+    ['Iemand komt in een onbekende wereld terecht','worlds',
+      'Wat zou je in die wereld willen ontdekken?','De toekomst en technologie','scifi'],
+    ['Ik weet het nog niet','none',
+      'Waar heb je op dit moment het meest zin in?','Een verhaal over echte mensen','realistic'],
+  ];
+  loggedIn=false;failSuggest=false;
+  for(const [start,situation,question,detail,expectedDetail] of scenarios){
+    elements.get('student-choice-close').listeners.click();
+    await elements.get('student-help-choose').listeners.click();
+    actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
+    actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
+    assert.equal(log.children.at(-1).children[0].textContent,
+      'Wat zou jou nieuwsgierig maken naar een boek?');
+    const firstOptions=actions.children.map(x=>x.textContent);
+    assert.ok(firstOptions.includes(start));
+    actions.children.find(x=>x.textContent===start).listeners.click();
+    assert.equal(log.children.at(-1).children[0].textContent,question);
+    const secondOptions=actions.children.map(x=>x.textContent);
+    assert.ok(secondOptions.includes(detail));
+    assert.ok(!secondOptions.includes(start),
+      'An answered situation must not be repeated by the follow-up');
+    actions.children.find(x=>x.textContent===detail).listeners.click();
+    await new Promise(resolve=>setImmediate(resolve));
+    await new Promise(resolve=>setImmediate(resolve));
+    const submitted=suggestRequests.at(-1).choices;
+    assert.equal(submitted.route,'new');
+    assert.equal(submitted.situation,situation);
+    assert.equal(submitted.detail,expectedDetail);
+    assert.equal(submitted.mood,undefined,
+      'Do not ask a duplicate genre question');
+    assert.equal(submitted.activity,undefined,
+      'Do not ask irrelevant hobby questions');
+    assert.equal(submitted.length,undefined,
+      'Book length must be optional, not mandatory');
+  }
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
+  actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet het nog niet').listeners.click();
+  actions.children.find(x=>x.textContent==='Geen idee, verras me').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.at(-1).choices.route,'surprise',
+    'No preferences must lead to genuinely varied suggestions');
+  assert.equal(suggestRequests.at(-1).choices.situation,'none');
+
+  assert.ok(!code.includes('function askActivity()')&&!code.includes('function askMood()')
+    &&!code.includes('function askLength()'),
+    'Legacy fixed question sequence must be removed');
+  assert.ok(actions.children.some(x=>x.textContent==='Nog drie verrassingen'),
+    'No-preference flow must offer further random suggestions');
+
   console.log('Choice chat: approved route text, reset recovery, fallback routing and privacy: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});
