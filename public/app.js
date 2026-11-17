@@ -4343,7 +4343,6 @@ function initStaffPage() {
   const adminTeacherSearchInput = document.querySelector('#admin-teacher-search');
   const adminTeacherAddForm = document.querySelector('#admin-teacher-add-form');
   const adminTeacherAddName = document.querySelector('#admin-teacher-add-name');
-  const adminTeacherAddUsername = document.querySelector('#admin-teacher-add-username');
   const adminTeacherAddPassword = document.querySelector('#admin-teacher-add-password');
   const adminTeacherAddPasswordGenerateButton = document.querySelector(
     '#admin-teacher-add-password-generate'
@@ -7613,12 +7612,11 @@ function initStaffPage() {
       return;
     }
     const name = adminTeacherAddName?.value?.trim() || '';
-    const username = adminTeacherAddUsername?.value?.trim() || '';
     const temporaryPassword = adminTeacherAddPassword?.value?.trim() || '';
     const classId = adminTeacherAddClass?.value?.trim() || '';
-    if (!name || !username) {
+    if (!name) {
       if (adminTeacherAddMessage) {
-        adminTeacherAddMessage.textContent = 'Vul naam en gebruikersnaam in.';
+        adminTeacherAddMessage.textContent = 'Vul de naam van de docent in.';
       }
       return;
     }
@@ -7629,7 +7627,7 @@ function initStaffPage() {
       adminTeacherAddMessage.textContent = 'Docent wordt toegevoegd…';
     }
     try {
-      const body = { name, username };
+      const body = { name };
       if (temporaryPassword) {
         body.temporaryPassword = temporaryPassword;
       }
@@ -7641,11 +7639,12 @@ function initStaffPage() {
         body,
       });
       const teacherName = result?.teacher?.name || name;
+      const createdUsername = result?.teacher?.username || '';
       const passwordToShow = result?.temporaryPassword || temporaryPassword;
       if (adminTeacherAddMessage) {
-        adminTeacherAddMessage.textContent = passwordToShow
-          ? `${teacherName} is toegevoegd. Tijdelijk wachtwoord: ${passwordToShow}.`
-          : `${teacherName} is toegevoegd.`;
+        adminTeacherAddMessage.textContent = `${teacherName} is toegevoegd.`
+          + (createdUsername ? ` Gebruikersnaam: ${createdUsername}.` : '')
+          + (passwordToShow ? ` Tijdelijk wachtwoord: ${passwordToShow}.` : '');
       }
       adminTeacherAddForm.reset();
       renderAdminTeacherAddOptions();
