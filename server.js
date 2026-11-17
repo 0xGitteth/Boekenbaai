@@ -5,6 +5,7 @@ const { URL } = require('url');
 const crypto = require('crypto');
 const {studentHasLibraryData} = require('./student-exit-workflow');
 const {teacherHasData} = require('./teacher-exit-workflow');
+const {generateTeacherUsername} = require('./teacher-account-username');
 const {
   currentImportOwner, isImportOwnerConfirmedDead, sameImportOwner,
   isImportLeaseActive, IMPORT_HEARTBEAT_MS, IMPORT_LEASE_MS,
@@ -8235,12 +8236,12 @@ async function handleApi(req, res, requestUrl) {
       }
       const db = getDb();
       const body = await parseBody(req);
-      const name = (body.name || '').trim();
-      const username = (body.username || '').trim();
-      let temporaryPassword = (body.password || body.temporaryPassword || '').trim();
-      if (!name || !username) {
-        return sendJson(res, 400, { message: 'Naam en gebruikersnaam zijn verplicht' });
+      const name = String(body.name || '').trim();
+      if (!name) {
+        return sendJson(res, 400, { message: 'Vul de naam van de docent in.' });
       }
+      const username = generateTeacherUsername(db, name, body.username);
+      let temporaryPassword = (body.password || body.temporaryPassword || '').trim();
       if (isUsernameTaken(db, username)) {
         return sendJson(res, 409, { message: 'Deze gebruikersnaam is al in gebruik' });
       }
