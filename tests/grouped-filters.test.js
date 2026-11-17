@@ -87,4 +87,31 @@ assert.deepStrictEqual(
   'Auteur-sortering moet op achternaam plaatsvinden'
 );
 
+
+const loanAction = new Function([
+  extractBetween('function resolveStudentBookAction(', 'function initStudentPage('),
+  'return resolveStudentBookAction;',
+].join('\n'))();
+
+const differentEditions = {
+  title: 'Een lang en kort boek',
+  editionCount: 2,
+  copies: [
+    {id:'long-edition',pageCount:350,language:'nl',status:'available'},
+    {id:'short-edition',pageCount:100,language:'nl',status:'available'},
+  ],
+  availableCopies:2, borrowedCopies:0,
+};
+assert.equal(filterBooks([differentEditions],{pageRange:'0-150'}).length,1,
+  'Work remains visible when the short edition matches the page filter');
+assert.equal(loanAction(differentEditions.copies[1],{role:'student',borrowedBooks:[]}).bookId,
+  'short-edition','Selecting an edition must target its actual physical ID');
+assert.match(source,/const chooseEdition = book\.editionCount > 1 && action\?\.type === 'borrow'/,
+  'A multi-edition card must ask which edition to lend');
+assert.match(source,/chooseEdition \? openBookDetail\(book\) : handleCardLoanAction\(book\)/);
+assert.match(source,/state\.studentActionHandler\?\.\(availableCopy\)/,
+  'Each edition selection must lend a physical copy from that specific edition');
+assert.match(source,/studentAction\.hidden = !descriptor \|\| chooseEdition/,
+  'The generic detail button must not bypass explicit edition selection');
+
 console.log('Grouped filter tests passed');
