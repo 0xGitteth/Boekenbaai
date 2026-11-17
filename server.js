@@ -4655,7 +4655,8 @@ async function handleApi(req, res, requestUrl) {
         :book.editionIsbn||'';
       if(hasEditionIsbn&&enteredEdition&&!nextEditionIsbn)
         return sendJson(res,400,{message:'Het ISBN van deze uitgave is ongeldig.'});
-      if(hasEditionIsbn&&nextEditionIsbn&&canonicalizeBookIsbn13(nextMetadataIsbn)
+      if((hasEditionIsbn||hasMetadataIsbn)&&nextEditionIsbn
+        &&canonicalizeBookIsbn13(nextMetadataIsbn)
         &&canonicalizeBookIsbn13(nextMetadataIsbn)!==nextEditionIsbn)
         return sendJson(res,400,{message:'Intern ISBN en ISBN van de uitgave verwijzen naar verschillende edities. Corrigeer beide velden.'});
       const hasPublisher = Object.prototype.hasOwnProperty.call(body, 'publisher');
