@@ -279,6 +279,12 @@ function runFrontendChecks() {
     source.includes('const metadataCoverUrl = normalizeRenderedCoverUrl(extractMetadataCoverUrl(metadata));'),
     'populateBookDetail should normalize metadata cover URL'
   );
+  assert.ok(source.includes('function renderBookEditionDetails(book)'),
+    'Book details must list editions and their own covers');
+  assert.ok(source.includes('renderBookEditionDetails(book);'));
+  assert.ok(source.includes("editionCount: editions.length"),
+    'Catalog must expose the edition count');
+
 }
 
 function runRepresentativeChecks() {
@@ -313,27 +319,44 @@ function runRepresentativeChecks() {
   ]);
 
   assert.strictEqual(grouped[0].coverUrl, CANONICAL_URL, 'group representative should expose canonical effective cover URL');
-  const separateEditions=groupBooksByTitleAuthor([
-    {id:'lijsters',title:'Het web',author:'Johan Heyink',
-      barcode:'9789001561330',publisher:'Jonge Lijsters'},
-    {id:'holkema',title:'Het web',author:'Johan Heyink',
-      barcode:'9789026997471',publisher:'Van Holkema & Warendorf'},
+  const combinedEditions = groupBooksByTitleAuthor([
+    {id:'lijsters', title:'Het web', author:'Johan Heyink',
+      editionIsbn:'9789001561383', barcode:'9789001561383',
+      publisher:'Jonge Lijsters', coverUrl:'https://covers.example/lijsters.jpg', status:'available'},
+    {id:'holkema', title:'Het web', author:'Johan Heyink',
+      editionIsbn:'9789026997471', barcode:'9789026997471',
+      publisher:'Van Holkema & Warendorf', coverUrl:'https://covers.example/holkema.jpg', status:'available'},
   ]);
-  assert.strictEqual(separateEditions.length,2,
-    'Two different publishers and physical ISBN editions must not share one book card');
-  assert.notStrictEqual(separateEditions[0].id,separateEditions[1].id);
-  assert.strictEqual(separateEditions[0].copies[0].id,'lijsters');
-  assert.strictEqual(separateEditions[1].copies[0].id,'holkema');
-  const nowCorrected=groupBooksByTitleAuthor([
-    {id:'lijsters',title:'Het web',author:'Johan Heyink',
-      editionIsbn:'9789001561383',barcode:'9789001561383',publisher:'Jonge Lijsters'},
-    {id:'holkema',title:'Het web',author:'Johan Heyink',
-      editionIsbn:'9789026997471',barcode:'9789026997471',
-      publisher:'Van Holkema & Warendorf'},
+  assert.strictEqual(combinedEditions.length, 1, 'One work must have one catalog card');
+  assert.strictEqual(combinedEditions[0].editionCount, 2, 'Both ISBN editions remain identifiable');
+  assert.strictEqual(combinedEditions[0].totalCopies, 2);
+  assert.strictEqual(combinedEditions[0].availableCopies, 2);
+  assert.deepStrictEqual(new Set(combinedEditions[0].copies.map(b=>b.id)),
+    new Set(['lijsters','holkema']), 'Original physical IDs must remain separate');
+  assert.deepStrictEqual(new Set(combinedEditions[0].copies.map(b=>b.editionIsbn)),
+    new Set(['9789001561383','9789026997471']));
+
+  const majorityCover = groupBooksByTitleAuthor([
+    ...combinedEditions[0].copies,
+    {id:'lijsters-2', title:'Het web', author:'Johan Heyink',
+      editionIsbn:'9789001561383', barcode:'9789001561383',
+      publisher:'Jonge Lijsters', coverUrl:'https://covers.example/lijsters.jpg', status:'borrowed'},
   ]);
-  assert.strictEqual(nowCorrected.length,2);
-  assert.strictEqual(nowCorrected[0].editionIsbn,'9789001561383');
-  assert.strictEqual(nowCorrected[1].editionIsbn,'9789026997471');
+  assert.strictEqual(majorityCover.length, 1);
+  assert.strictEqual(majorityCover[0].editionCount, 2);
+  assert.strictEqual(majorityCover[0].totalCopies, 3);
+  assert.strictEqual(majorityCover[0].availableCopies, 2);
+  assert.strictEqual(majorityCover[0].coverUrl, 'https://covers.example/lijsters.jpg',
+    'Most common edition with a cover must supply the catalog cover');
+  assert.strictEqual(majorityCover[0].publisher, 'Jonge Lijsters',
+    'Displayed cover and publisher must be from the same edition');
+
+  const distinctAuthors = groupBooksByTitleAuthor([
+    {id:'a', title:'Het web', author:'Johan Heyink', editionIsbn:'9789001561383'},
+    {id:'b', title:'Het web', author:'Andere auteur', editionIsbn:'9789001561383'},
+  ]);
+  assert.strictEqual(distinctAuthors.length, 2,
+    'Different works with the same title must remain separate');
   const editionsUsingTen=groupBooksByTitleAuthor([
     {id:'isbn10',title:'Same edition',author:'Author',barcode:'0306406152'},
     {id:'isbn13',title:'Same edition',author:'Author',barcode:'9780306406157'},
