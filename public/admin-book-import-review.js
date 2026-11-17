@@ -261,6 +261,20 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     bravePanel.append(braveHeading, braveNotice, braveItems);
     enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
+    function bravePauseReason(code) {
+      const reasons = {
+        budget_exhausted: 'Het ingestelde zoekbudget is bereikt.',
+        payment_required: 'Brave heeft het verzoek geweigerd vanwege het betaaltegoed.',
+        rate_limited: 'Brave heeft de zoekopdracht tijdelijk begrensd (429).',
+        unauthorized: 'Brave accepteert de ingestelde API-sleutel niet (401/403).',
+        provider_error: 'Brave heeft een foutmelding teruggestuurd.',
+        request_error: 'De verbinding met Brave is mislukt.',
+        timeout: 'Het Brave-verzoek duurde te lang.',
+        month_changed: 'De maand is gewisseld; nieuwe toestemming is nodig.',
+        too_large: 'Het antwoord van Brave was te groot.',
+      };
+      return reasons[code] || 'Het onderzoek is onderbroken (' + (code || 'onbekend') + ').';
+    }
     async function refreshBrave() {
       if (braveRefreshing || !root.isConnected) return;
       braveRefreshing = true;
@@ -268,10 +282,15 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         const info = await request('/api/admin/book-enrichment/brave');
         const usage = info.usage || {};
         const remaining = Number(usage.available || 0);
+        const ownLimitReached = Number(usage.reserved || 0) >= Number(usage.cap || 900);
+        const providerLimitReached = usage.providerRemaining === 0;
         braveNotice.textContent = info.configured
-          ? 'Zoekbudget van Boekenbaai deze maand: ' + remaining
-            + ' verzoeken beschikbaar, ' + (usage.reserved || 0)
-            + ' gereserveerd (maximum ' + (usage.cap || 900) + ').'
+          ? 'Boekenbaai: ' + remaining + ' verzoeken beschikbaar, '
+            + (usage.reserved || 0) + ' geregistreerd (maandgrens: '
+            + (usage.cap || 900) + '). '
+            + (ownLimitReached ? 'De maandgrens van Boekenbaai is bereikt. ' : '')
+            + (providerLimitReached ? 'Brave meldt via de API dat het maandquotum op is. ' : '')
+            + 'Dit is niet hetzelfde als het geldtegoed in je Brave-account.'
           : 'Brave staat nog uit. Stel BOEKENBAAI_BRAVE_API_KEY in op de server. '
             + 'Openstaande importopdrachten blijven bewaard.';
         braveItems.replaceChildren();
@@ -300,9 +319,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               + job.reservedRequests + ' van maximaal ' + job.approvedMaxRequests
               + ' verzoeken gereserveerd. Je kunt deze pagina sluiten.';
           } else if (job.state === 'paused') {
-            details.textContent = 'Onderzoek gepauzeerd (' + (job.lastError || 'onbekende reden')
-              + '). Voortgang is bewaard. Je kunt later opnieuw toestemming geven '
-              + 'nadat het probleem is verholpen.';
+            details.textContent = 'Onderzoek gepauzeerd. ' + bravePauseReason(job.lastError)
+              + ' ' + job.completedWorks + ' titels afgerond. De voortgang is bewaard. '
+              + 'Na het oplossen van de oorzaak is opnieuw toestemming nodig.';
           } else {
             details.textContent = 'Zoekronde afgerond: ' + job.completedWorks + ' titels onderzocht. '
               + (job.withoutCover || 0) + ' titels hebben nog geen werkende omslaglink en '
@@ -370,6 +389,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       }
     }
     void refreshBrave();
+    enrichmentExtra.addEventListener('toggle', () => {
+      if (enrichmentExtra.open) void refreshBrave();
+    });
     const form = make('form', 'bb-review__upload');
     const fileLabel = make('label', '', 'Excelbestand (.xlsx of .xls)');
     const file = make('input');
@@ -4131,8 +4153,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     window.setInterval(syncStage, 1500);
     window.addEventListener('focus', syncStage);
     window.addEventListener('focus', refreshEnrichmentStatus);
-    window.addEventListener('focus', refreshBrave);
-    window.setInterval(refreshBrave, 10000);
+    window.addEventListener('focus', () => {
+      if (enrichmentExtra.open) void refreshBrave();
+    });
+    // One existing status timer, gated to the visible Brave panel.
+    window.setInterval(() => {
+      if (enrichmentExtra.open && !document.hidden) void refreshBrave();
+    }, 8000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) syncStage();
     });
