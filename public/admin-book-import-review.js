@@ -254,6 +254,12 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     // given after leaving the browser, after logging in again, or on another
     // day. The server owns all saved progress and budget checks.
     const bravePanel = make('section', 'bb-review__brave');
+    // Brave approval and collection-scan feedback belongs with the controls.
+    // Do not reuse the hidden Excel-import notice on the other subpage.
+    const enrichmentActionNotice = make('p', 'hint bb-review__enrichment-action');
+    enrichmentActionNotice.setAttribute('role', 'status');
+    enrichmentActionNotice.setAttribute('aria-live', 'polite');
+    enrichmentExtra.append(enrichmentActionNotice);
     const braveHeading = make('h4', '', 'Aanvullend zoeken op internet');
     const braveNotice = make('p', 'hint', 'De zoekvoortgang wordt geladen.');
     braveNotice.setAttribute('role', 'status');
@@ -351,9 +357,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                 await request('/api/admin/book-enrichment/brave/' + encodeURIComponent(job.id) + '/approve', {
                   confirm: true, maxRequests: job.possibleMaxRequests, month: usage.month,
                 });
-                setNotice('Brave-onderzoek goedgekeurd en opgeslagen. Je kunt dit scherm sluiten.');
+                enrichmentActionNotice.textContent =
+                  'Brave-onderzoek goedgekeurd en opgeslagen. Je kunt dit scherm sluiten.';
               } catch (error) {
-                setNotice(error.message || 'Toestemming opslaan is mislukt.');
+                enrichmentActionNotice.textContent =
+                  error.message || 'Toestemming opslaan is mislukt.';
               } finally {
                 void refreshEnrichmentStatus();
                 // Clear the refresh guard before reloading after an approval.
@@ -373,9 +381,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             scan.disabled = true;
             try {
               await request('/api/admin/book-enrichment/brave/scan', {confirm:true});
-              setNotice('Collectiecontrole opgeslagen. Je kunt later toestemming geven voor Brave.');
+              enrichmentActionNotice.textContent =
+                'Collectiecontrole opgeslagen. Je kunt later toestemming geven voor Brave.';
             } catch (error) {
-              setNotice(error.message || 'Collectiecontrole kon niet worden gestart.');
+              enrichmentActionNotice.textContent =
+                error.message || 'Collectiecontrole kon niet worden gestart.';
             } finally {
               scan.disabled = false;
               void refreshBrave();
