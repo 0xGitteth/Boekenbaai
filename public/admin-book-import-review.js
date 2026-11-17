@@ -389,15 +389,6 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       }
     }
     void refreshBrave();
-    // The long-running server job must be observable without refreshing the
-    // entire import page. Poll only while its enrichment section is open.
-    const bravePolling = window.setInterval(() => {
-      if (!root.isConnected) {
-        window.clearInterval(bravePolling);
-        return;
-      }
-      if (enrichmentExtra.open && !document.hidden) void refreshBrave();
-    }, 8000);
     enrichmentExtra.addEventListener('toggle', () => {
       if (enrichmentExtra.open) void refreshBrave();
     });
@@ -4162,8 +4153,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     window.setInterval(syncStage, 1500);
     window.addEventListener('focus', syncStage);
     window.addEventListener('focus', refreshEnrichmentStatus);
-    window.addEventListener('focus', refreshBrave);
-    window.setInterval(refreshBrave, 10000);
+    window.addEventListener('focus', () => {
+      if (enrichmentExtra.open) void refreshBrave();
+    });
+    // One existing status timer, gated to the visible Brave panel.
+    window.setInterval(() => {
+      if (enrichmentExtra.open && !document.hidden) void refreshBrave();
+    }, 8000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) syncStage();
     });
