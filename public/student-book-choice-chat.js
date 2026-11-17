@@ -237,79 +237,109 @@
       }
     });
   }
+  // A short adaptive route: the second question depends on what the pupil
+  // chose first. Do not ask the same genre preference in three ways.
+  const storyBeginnings=[
+    ['Iemand ontdekt een geheim','secret'],
+    ['Twee vrienden moeten iets moeilijks beslissen','friends'],
+    ['Iemand krijgt een onverwachte kans','chance'],
+    ['Je leest wat iemand echt heeft meegemaakt','true'],
+    ['Er gebeurt iets heel grappigs','funny'],
+    ['Iemand komt in een onbekende wereld terecht','worlds'],
+    ['Ik weet het nog niet','none'],
+  ];
+  const followups={
+    secret:{
+      question:'Wat maakt zo’n geheim voor jou interessant?',
+      answers:[
+        ['Zelf aanwijzingen zoeken','puzzles'],
+        ['Dat het steeds spannender wordt','tension'],
+        ['Wat het geheim met mensen doet','people'],
+        ['Maakt me niet uit','none'],
+      ],
+    },
+    friends:{
+      question:'Wat zou je hierover willen lezen?',
+      answers:[
+        ['Een vriendschap die verandert','relationships'],
+        ['Een moeilijke keuze met gevolgen','choices'],
+        ['Iets dat ook op school kan gebeuren','realistic'],
+        ['Maakt me niet uit','none'],
+      ],
+    },
+    chance:{
+      question:'Wat zou je willen zien gebeuren?',
+      answers:[
+        ['Een spannend avontuur','action'],
+        ['Een reis naar een nieuwe plek','adventure'],
+        ['Iemand die iets nieuws probeert','growth'],
+        ['Maakt me niet uit','none'],
+      ],
+    },
+    true:{
+      question:'Wat vind je interessant aan echte verhalen?',
+      answers:[
+        ['Hoe iemand iets moeilijks meemaakt','lives'],
+        ['Wat er vroeger is gebeurd','history'],
+        ['Hoe iets werkt of waarom iets gebeurt','facts'],
+        ['Maakt me niet uit','none'],
+      ],
+    },
+    funny:{
+      question:'Wat voor grappig verhaal spreekt je aan?',
+      answers:[
+        ['Grappige situaties op school','schoolhumor'],
+        ['Iemand bij wie alles misgaat','funny'],
+        ['Heel vreemde gebeurtenissen','absurd'],
+        ['Maakt me niet uit','none'],
+      ],
+    },
+    worlds:{
+      question:'Wat zou je in die wereld willen ontdekken?',
+      answers:[
+        ['Magie en bijzondere wezens','magic'],
+        ['De toekomst en technologie','scifi'],
+        ['Avonturen op onbekende plekken','adventure'],
+        ['Maakt me niet uit','none'],
+      ],
+    },
+    none:{
+      question:'Waar heb je op dit moment het meest zin in?',
+      answers:[
+        ['Iets spannends','tension'],
+        ['Iets grappigs','funny'],
+        ['Een verhaal over echte mensen','realistic'],
+        ['Een andere wereld','magic'],
+        ['Geen idee, verras me','none'],
+      ],
+    },
+  };
   function answer(field,value){
     choices[field]=value;
-    if(field==='route') value==='surprise' ? showRecommendations() : askActivity();
-    else if(field==='activity')askDetail();
-    else if(field==='detail')askSituation();
-    else if(field==='situation')askMood();
-    else if(field==='mood')askLength();
-    else if(field==='length')showRecommendations();
-  }
-  function askActivity(){
-    currentStep='activity';
-    message('Wat doe je graag in je vrije tijd?');
-    options([
-      ['Gamen',()=>answer('activity','gaming')],
-      ['Films of series kijken',()=>answer('activity','film')],
-      ['Sporten',()=>answer('activity','sport')],
-      ['Muziek luisteren of maken',()=>answer('activity','music')],
-      ['Dieren of natuur',()=>answer('activity','nature')],
-      ['Iets anders',()=>answer('activity','other')],
-      ['Weet ik niet',()=>answer('activity','unknown')],
-    ]);
-  }
-  function askDetail(){
-    currentStep='detail';
-    const questions={
-      gaming:'Wat vind je leuk aan een game?',
-      film:'Wat vind je leuk aan een film of serie?',
-      sport:'Wat vind je leuk aan sporten?',
-      music:'Wat vind je leuk aan muziek?',
-      nature:'Wat vind je interessant aan dieren of de natuur?',
-      other:'Wat maakt een verhaal voor jou interessant?',
-      unknown:'Wat zou je in een verhaal willen ontdekken?',
-    };
-    message(questions[choices.activity]||questions.unknown);
-    options([
-      ['Actie en avontuur',()=>answer('detail','action')],
-      ['Raadsels oplossen',()=>answer('detail','puzzles')],
-      ['Mensen en hun keuzes',()=>answer('detail','people')],
-      ['Nieuwe werelden ontdekken',()=>answer('detail','worlds')],
-      ['Echte dingen leren',()=>answer('detail','facts')],
-      ['Maakt me niet uit',()=>answer('detail','none')],
-    ]);
+    if(field==='route'){
+      if(value==='surprise')showRecommendations();
+      else askSituation();
+    }else if(field==='situation')askDetail();
+    else if(field==='detail'){
+      // When no preference is supplied at all, show a genuinely varied
+      // surprise selection rather than pretending it matches preferences.
+      if(choices.situation==='none'&&value==='none'&&choices.route==='new')
+        choices.route='surprise';
+      showRecommendations();
+    }
   }
   function askSituation(){
     currentStep='situation';
-    message('Welke situatie maakt jou het meest nieuwsgierig naar wat er verder gebeurt?');
-    options([
-      ['Iemand ontdekt een geheim',()=>answer('situation','secret')],
-      ['Twee vrienden moeten iets moeilijks beslissen',()=>answer('situation','friends')],
-      ['Iemand krijgt een onverwachte kans',()=>answer('situation','chance')],
-      ['Je leest wat iemand echt heeft meegemaakt',()=>answer('situation','true')],
-      ['Geen van deze',()=>answer('situation','none')],
-    ]);
+    message('Wat zou jou nieuwsgierig maken naar een boek?');
+    options(storyBeginnings.map(([label,value])=>
+      [label,()=>answer('situation',value)]));
   }
-  function askMood(){
-    currentStep='mood';
-    message('Wat lijkt je leuk om te lezen?');
-    options([
-      ['Spannend verhaal',()=>answer('mood','exciting')],
-      ['Iets grappigs',()=>answer('mood','funny')],
-      ['Iets herkenbaars',()=>answer('mood','realistic')],
-      ['Fantasie en magie',()=>answer('mood','fantasy')],
-      ['Een waargebeurd verhaal',()=>answer('mood','true')],
-      ['Geen voorkeur',()=>answer('mood','none')],
-    ]);
-  }
-  function askLength(){
-    currentStep='length';
-    message('Wil je liever een kort boek, of maakt de lengte je niet uit?');
-    options([
-      ['Liever niet te lang',()=>answer('length','short')],
-      ['Maakt niet uit',()=>answer('length','any')],
-    ]);
+  function askDetail(){
+    currentStep='detail';
+    const next=followups[choices.situation]||followups.none;
+    message(next.question);
+    options(next.answers.map(([label,value])=>
+      [label,()=>answer('detail',value)]));
   }
   function resultCard(item,catalogue){
     const card=el('article','bb-choice-chat__result');
@@ -416,7 +446,7 @@
         options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
       }else{
         notice(err.message);
-        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices.route='new';askSituation();}]]);
+        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices={route:'new'};askSituation();}]]);
       }
     }finally{busy=false;}
   }
@@ -425,8 +455,8 @@
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};askActivity();}]]
-        : [['Andere richting',()=>{choices.route='new';askSituation();}],
+        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};askSituation();}]]
+        : [['Andere richting',()=>{choices={route:'new'};askSituation();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
