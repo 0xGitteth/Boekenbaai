@@ -1,3 +1,4 @@
+const {buildTaskPreflight} = require('./task-preflight');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -74,7 +75,7 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
   findTask: findDeferredAssignmentTask,
   resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
 
-const {listDeferredBookTasks, resolveDeferredBookTask} =
+const {listDeferredBookTasks, resolveDeferredBookTask, retainDeferredBookChecks} =
   require('./book-import-deferred-book-tasks');
 const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
   removeFalseHistory,listCurrentLoans,removeFalseCurrentLoan} =
@@ -5109,6 +5110,16 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res,405,{message:'Methode niet toegestaan.'});
     }
 
+    // Read-only assessment: no correction, task closure or external lookup.
+    if (requestUrl.pathname === '/api/admin/task-preflight') {
+      if (!ensureRole(user, ['admin']))
+        return sendJson(res, user ? 403 : 401, {message:'Alleen voor beheerders.'});
+      if (req.method !== 'GET')
+        return sendJson(res, 405, {message:'De voorcontrole is uitsluitend lezend.'});
+      res.setHeader('Cache-Control', 'no-store');
+      return sendJson(res, 200, buildTaskPreflight(getDb()));
+    }
+
     // Physical book checks are independent, persistent admin tasks.
     const deferredBookTaskRoot='/api/admin/book-import-book-tasks';
     if(requestUrl.pathname===deferredBookTaskRoot
@@ -6157,23 +6168,18 @@ async function handleApi(req, res, requestUrl) {
                   author:String(book.author||'').slice(0,250),
                   excelIdentifier:String(rawIsbn).slice(0,100),
                   editionIsbn:String(book.editionIsbn||'').slice(0,20),
+                  sourceEvidence: {
+                    status: original?.status || 'unknown',
+                    issues: (original?.issues || []).map(issue => ({
+                      code: String(issue.code || '').slice(0,120),
+                      severity: String(issue.severity || '').slice(0,40),
+                    })),
+                  },
                   createdAt:now,status:'open',
                 };
               });
-            if(deferredBookChecks.length){
-              if(!Array.isArray(database.bookImportDeferredBookChecks))
-                database.bookImportDeferredBookChecks=[];
-              const deferred=database.bookImportDeferredBookChecks;
-              for(const candidate of deferredBookChecks){
-                const existing=deferred.find(item=>item.status==='open'
-                  &&item.fileName===candidate.fileName
-                  &&item.worksheetRow===candidate.worksheetRow
-                  &&item.title===candidate.title
-                  &&item.excelIdentifier===candidate.excelIdentifier);
-                if(!existing)deferred.push(candidate);
-              }
-              database.bookImportDeferredBookChecks=deferred.slice(-1500);
-            }
+            if(deferredBookChecks.length)
+              retainDeferredBookChecks(database,deferredBookChecks);
             const report = {
               id: batchId, createdBy: user.id, importedAt: now,
               mode: isUnified?'unified_sync':'inventory_sync', fileName: stage.fileName,

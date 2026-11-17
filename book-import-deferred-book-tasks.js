@@ -79,4 +79,16 @@ function resolveDeferredBookTask(db, actor, id, revision, choice,
   });
   return {ok:true,id:task.id,status:'completed'};
 }
-module.exports = {listDeferredBookTasks,resolveDeferredBookTask};
+function retainDeferredBookChecks(db, candidates) {
+  if (!Array.isArray(db.bookImportDeferredBookChecks)) db.bookImportDeferredBookChecks=[];
+  const fields=['batchId','worksheetRow','title','author','excelIdentifier','editionIsbn','bookId','barcode','sourceEvidence'];
+  for (const candidate of candidates) {
+    // Only repeated emission of the SAME source event can be suppressed.
+    // A filename/row/ISBN match in a later import is not physical identity.
+    const duplicate=candidate.batchId && Number.isSafeInteger(candidate.worksheetRow)
+      && db.bookImportDeferredBookChecks.some(item=>item.status==='open'
+        && fields.every(field=>JSON.stringify(item[field]??null)===JSON.stringify(candidate[field]??null)));
+    if(!duplicate) db.bookImportDeferredBookChecks.push(candidate);
+  }
+}
+module.exports = {listDeferredBookTasks,resolveDeferredBookTask,retainDeferredBookChecks};
