@@ -3,12 +3,14 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const code=fs.readFileSync(path.join(__dirname,'..','public','admin-book-import-review.js'),'utf8');
-assert.match(code,/const bravePolling = window\.setInterval\(\(\) => \{/,
+assert.match(code,/window\.setInterval\(\(\) => \{/,
   'Brave status must refresh automatically without a full page reload');
 assert.match(code,/if \(enrichmentExtra\.open && !document\.hidden\) void refreshBrave\(\);/,
   'Polling must run only while the relevant panel is open');
-assert.match(code,/window\.clearInterval\(bravePolling\)/,
-  'The status polling timer must stop when the import view is detached');
+assert.doesNotMatch(code,/window\.setInterval\(refreshBrave, 10000\)/,
+  'The former unconditional Brave timer must be replaced, not duplicated');
+assert.equal((code.match(/if \(enrichmentExtra\.open && !document\.hidden\) void refreshBrave\(\);/g)||[]).length,1,
+  'There must be a single guarded Brave status timer');
 assert.match(code,/enrichmentExtra\.addEventListener\('toggle'/,
   'Opening the panel must fetch a fresh status immediately');
 assert.match(code,/const ownLimitReached =/,
