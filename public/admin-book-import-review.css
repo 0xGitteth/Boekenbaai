@@ -625,3 +625,58 @@
 .bb-import__setup-progress-label{margin:0;font-weight:600;color:#102c5c}
 .bb-import__setup-progress-meter{display:block;width:100%;height:1rem;accent-color:#13366e}
 .bb-guide__correct-isbn{max-width:100%;white-space:normal;text-align:left}
+
+
+/* Final import review: explicitly list what remains and let admins
+   return to one outstanding book without repeating the entire wizard. */
+.bb-guide__next-steps {
+  display: grid;
+  gap: .8rem;
+  padding: clamp(.75rem,2vw,1rem);
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.bb-guide__next-steps h5 { margin: 0; font-size: 1rem; }
+.bb-guide__pending-explanation {
+  margin: 0;
+  font-size: .87rem;
+  line-height: 1.5;
+  color: var(--text-muted,var(--text));
+}
+.bb-guide__pending-list, .bb-guide__skipped-list {
+  display: grid;
+  gap: .6rem;
+  min-width: 0;
+}
+.bb-guide__skipped-list { max-height: 29rem; overflow-y: auto; }
+.bb-guide__pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .6rem 1rem;
+  min-width: 0;
+  padding: .75rem;
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  background: var(--accent-softer);
+}
+.bb-guide__pending-item-info {
+  display: flex;
+  flex: 1 1 200px;
+  min-width: 0;
+  flex-direction: column;
+  gap: .25rem;
+  overflow-wrap: anywhere;
+}
+.bb-guide__pending-item-info strong { font-size: .93rem; }
+.bb-guide__pending-item-info span {
+  font-size: .78rem;
+  line-height: 1.4;
+  color: var(--text-muted,var(--text));
+}
+.bb-guide__pending-item .btn { white-space: normal; }
+@media (max-width: 480px) {
+  .bb-guide__pending-item .btn { width: 100%; }
+}
