@@ -2065,8 +2065,8 @@ function getCatalogEditionKey(book) {
 function pickRepresentativeBook(current, candidate) {
   if (!candidate) return current;
   if (!current) return candidate;
-  const currentCoverUrl = normalizeRenderedCoverUrl(current.coverUrl);
-  const candidateCoverUrl = normalizeRenderedCoverUrl(candidate.coverUrl);
+  const currentCoverUrl = normalizeRenderedCoverUrl(current.localCoverUrl || current.coverUrl);
+  const candidateCoverUrl = normalizeRenderedCoverUrl(candidate.localCoverUrl || candidate.coverUrl);
   const currentScore = (currentCoverUrl ? 2 : 0) + (current.description ? 1 : 0);
   const candidateScore = (candidateCoverUrl ? 2 : 0) + (candidate.description ? 1 : 0);
   if (candidateScore > currentScore) {
