@@ -1423,7 +1423,12 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           }
           storeGuidedPosition();
           const reconciled=Number(response.reconciledAssignmentChoices)||0;
-          setNotice(reconciled
+          const revoked=Number(response.invalidatedRememberedChoices)||0;
+          setNotice(revoked
+            ?revoked+' eerder onthouden boekkeuze(s) zijn niet opnieuw toegepast, '
+              +'omdat de bibliotheek inmiddels is gewijzigd. Je recentere '
+              +'boekgegevens zijn behouden. Controleer het nieuwe overzicht.'
+            :reconciled
             ?'Je boekcorrecties zijn opgeslagen. '+reconciled
               +' verouderde keuze(s) voor uitlening of locatie zijn veilig '
               +'opnieuw beoordeeld. Controleer eventuele openstaande '
@@ -4028,7 +4033,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           clearInterval(progressPoll);
         }
         rememberResponse(payload);
-        setNotice('Preview gereed. De bibliotheek is nog niet gewijzigd.');
+        const reusedFields=Number(payload.remembered?.fieldsReused||0);
+        const reusedMetadata=Number(payload.decisions?.summary?.reusedPreviousMetadata||0);
+        setNotice(reusedFields||reusedMetadata
+          ?'Preview gereed. '+(reusedFields+reusedMetadata)
+            +' eerdere goedgekeurde boekkeuzes herkend en veilig overgenomen. '
+            +'Je kunt de keuzes nog controleren. De bibliotheek is nog niet gewijzigd.'
+          :'Preview gereed. De bibliotheek is nog niet gewijzigd.');
       }, 'Het Excelbestand wordt gecontroleerd…').finally(()=>{
         updateSetupProgress(null);
       });

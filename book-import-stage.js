@@ -271,6 +271,7 @@ function importStageView(stage) {
     expiresAt: new Date(stage.expiresAt).toISOString(),
     corrections: stage.corrections, acceptWarnings: stage.acceptWarnings,
     draftPersisted: stage.draftPersisted === true,
+    remembered: stage.remembered || {fieldsReused:0,rowsReused:0},
     draft: stage.draft || null,draftSavedAt:stage.draftSavedAt||null,
     syncParts: stage.options?.mode === 'unified_sync' ? stage.options.syncParts : null,
     inventoryResolutions: ['inventory_sync','unified_sync'].includes(stage.options?.mode) ? stage.inventoryResolutions : [],

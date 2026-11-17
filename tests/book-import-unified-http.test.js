@@ -275,16 +275,25 @@ async function run(){
 
     // A selected Tags column must never import the derived "strip" tag
     // from Examenmateriaal, including after a human review correction.
-    for (const [correction,expected] of [
+    for (const [index,[correction,expected]] of [
       [{tags:'mysterie'},['mysterie']],
       [{tags:'fantasie',examMaterial:'Strip'},['fantasie']],
-    ]) {
+    ].entries()) {
+      // A repeat of the exact same original row now reuses its previously
+      // approved correction; use distinct source tags for independent tests.
+      const originalTag=index===0?'avontuur':'expeditie';
       const tagsOnly=await start([
-        old('',{Tags:'avontuur',Examenmateriaal:'Strip'}),
+        old('',{Tags:originalTag,Examenmateriaal:'Strip'}),
       ],parts({fields:{tags:true}}));
       assert.equal(tagsOnly.status,201,JSON.stringify(tagsOnly.data));
-      assert.deepEqual(tagsOnly.data.decisions.metadata.updates[0].value,
-        ['avontuur'],'Initial selected tags must exclude derived strip');
+      const proposed=tagsOnly.data.decisions.metadata.updates;
+      if(proposed.length){
+        assert.deepEqual(proposed[0].value,[originalTag],
+          'Initial selected tags must exclude derived strip');
+      }else{
+        assert.ok(tagsOnly.data.decisions.summary.preservedMetadata>0,
+          'The new memory may safely preserve an earlier curated value');
+      }
       const correctedTags=await call(
         '/api/admin/book-import-stages/'+tagsOnly.data.id+'/review',token,{
         revision:tagsOnly.data.revision,
@@ -302,6 +311,46 @@ async function run(){
       const stored=readDb().books.find(book=>book.id==='copy-1');
       assert.deepEqual(stored.tags,expected,
         'The committed selected Tags field cannot include a cross-column tag');
+      if(index===0){
+        const again=await start([
+          old('',{Tags:originalTag,Examenmateriaal:'Strip'}),
+        ],parts({fields:{tags:true}}));
+        assert.equal(again.status,201,JSON.stringify(again.data));
+        assert.equal(again.data.remembered?.fieldsReused,1,
+          'The approved Tags correction must be replayed on the next upload');
+        assert.deepEqual(again.data.corrections,
+          [{index:0,fields:{tags:correction.tags}}],
+          'The remembered correction must be visible and editable in review');
+        // A catalogue edit while this wizard is open must revoke inherited
+        // consent, even if the browser resends the inherited correction.
+        const previousDb=readDb();
+        const changedDb=JSON.parse(JSON.stringify(previousDb));
+        for(const copy of changedDb.books.filter(b=>b.editionIsbn===ISBN)){
+          copy.tags=['nieuwe handmatige keuze'];
+          copy.importProvenance=copy.importProvenance||{fieldSources:{}};
+          copy.importProvenance.fieldSources=copy.importProvenance.fieldSources||{};
+          copy.importProvenance.fieldSources.tags={
+            sourceType:'manual',detail:'edited_during_review',
+          };
+        }
+        fs.writeFileSync(file,JSON.stringify(changedDb));
+        const afterEdit=await call(
+          '/api/admin/book-import-stages/'+again.data.id+'/review',token,{
+          revision:again.data.revision,
+          corrections:again.data.corrections,acceptWarnings:true,
+          inventoryResolutions:[],assignmentResolutions:[],
+          metadataResolutions:[],
+        });
+        assert.equal(afterEdit.status,200,JSON.stringify(afterEdit.data));
+        assert.equal(afterEdit.data.invalidatedRememberedChoices,1);
+        assert.deepEqual(afterEdit.data.corrections,[],
+          'A new catalogue edit invalidates a replayed correction in the wizard');
+        assert.equal(afterEdit.data.decisions.metadata.updates.length,0,
+          'A revoked approval must not plan an overwrite of new manual tags');
+        assert.equal((await call('/api/admin/book-import-stages/'
+          +again.data.id+'/cancel',token,{revision:afterEdit.data.revision})).status,200);
+        fs.writeFileSync(file,JSON.stringify(previousDb));
+      }
       assert.equal(stored.borrowedBy,'lisa');
     }
 
@@ -476,6 +525,45 @@ async function run(){
       parts({fields:{}}));
     assert.equal(noParts.status,400);
     assert.equal(noParts.data.error,'no_sync_parts_selected');
+    // P2: Ordinary create-mode imports must also teach the book decision
+    // ledger. Previously only inventory/unified mode did this.
+    const newCreateSource=[{
+      Titel:'Een onjuist getypte titel',Auteur:'Voorbeeld Schrijver',
+      'ISBN-nummer':'9780140328721',Aantal:1,
+    }];
+    const ordinary=await call('/api/admin/book-import-stages',token,{
+      mode:'create',fileName:'gewone-import.xlsx',enrichIsbn:false,
+      file:workbook(newCreateSource),
+    });
+    assert.equal(ordinary.status,201,JSON.stringify(ordinary.data));
+    const ordinaryReviewed=await call(
+      '/api/admin/book-import-stages/'+ordinary.data.id+'/review',token,{
+      revision:ordinary.data.revision,acceptWarnings:true,
+      corrections:[{index:0,fields:{title:'De juiste titel'}}],
+    });
+    assert.equal(ordinaryReviewed.status,200,JSON.stringify(ordinaryReviewed.data));
+    const ordinaryApplied=await call(
+      '/api/admin/book-import-stages/'+ordinaryReviewed.data.id+'/apply',token,{
+      revision:ordinaryReviewed.data.revision,confirm:true,
+    });
+    assert.equal(ordinaryApplied.status,200,JSON.stringify(ordinaryApplied.data));
+    assert.equal(readDb().books.some(book=>book.editionIsbn==='9780140328721'
+      &&book.title==='De juiste titel'),true);
+    assert.equal(ordinaryApplied.data.result.report.learnedBookCorrections,1,
+      'A confirmed ordinary import must persist its book-only correction');
+    const ordinaryRepeat=await call('/api/admin/book-import-stages',token,{
+      mode:'create',fileName:'gewone-import.xlsx',enrichIsbn:false,
+      file:workbook(newCreateSource),
+    });
+    assert.equal(ordinaryRepeat.status,201,JSON.stringify(ordinaryRepeat.data));
+    assert.deepEqual(ordinaryRepeat.data.corrections,
+      [{index:0,fields:{title:'De juiste titel'}}],
+      'A repeated ordinary Excel upload reuses its approved spelling');
+    assert.equal((await call('/api/admin/book-import-stages/'
+      +ordinaryRepeat.data.id+'/cancel',token,{
+      revision:ordinaryRepeat.data.revision,
+    })).status,200);
+
     console.log('Unified HTTP import: one atomic confirmation, selected fields, repeat, and no silent deletion OK');
   }finally{
     server.kill('SIGTERM');

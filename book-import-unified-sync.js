@@ -384,6 +384,21 @@ function metadataSourceSafe(row,field,acceptWarnings){
 }
 function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
   const selected=new Map(choices.map(c=>[c.id,c.action]));
+  // Even reports from BEFORE the new decision ledger retain these explicit
+  // source choices. Keep their approved existing values when the next sheet
+  // supplies the same ISBN and the same Excel value. Never replay a changed
+  // source or a value subsequently edited in the library.
+  const earlierManual=new Map();
+  for(const report of db.bookImportReports||[]){
+    for(const item of report?.automaticSourceDecisions||[]){
+      if(item?.confidence!=='manual'||!item.isbn||!item.field)continue;
+      earlierManual.set(item.isbn+':'+item.field,item);
+    }
+  }
+  for(const item of db.bookImportManualMetadataMemory||[]){
+    if(!item?.isbn||!item.field)continue;
+    earlierManual.set(item.isbn+':'+item.field,item);
+  }
   const editions=new Map();
   for(const book of db.books||[]){
     const isbn=existingEdition(book);
@@ -542,6 +557,33 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
         &&row.provenance[field].detail==='review_correction');
       const manualExcel=correctedByAdmin
         ||['apply','excel'].includes(selected.get(id));
+      const prior=earlierManual.get(id);
+      const sameAccepted=(field,value,source)=>
+        field==='author'
+          ?nearlySameBookText(String(value?.value||value||''),
+            String(source?.value||source||''))
+          :equal(value,source);
+      const remembered=prior&&!manualExcel&&!conflict
+        &&!selected.has(id)
+        &&sameAccepted(field,current,prior.after)
+        &&sameAccepted(field,next,prior.excel);
+      const protectedField=!manualExcel&&!conflict&&!selected.has(id)
+        &&copies.some(copy=>
+          copy.importProvenance?.fieldSources?.[field]?.sourceType==='manual');
+      if(remembered||protectedField){
+        automaticDecisions.push({
+          id,isbn,field,title:rows[0].book?.title,
+          action:'keep',confidence:'manual',reusedPrevious:true,
+          reason:remembered
+            ?'Eerdere goedgekeurde importkeuze herkend'
+            :'Eerder handmatig aangepast boekgegeven beschermd',
+          before:current,after:current,excel:next,
+          sources:prior?.sources||[],sourceCount:prior?.sourceCount||0,
+          canUseExcel:true,
+          worksheetRows:sourceRows.map(row=>row.sourceRowNumber),
+        });
+        continue;
+      }
       const decision=sourceConfidence.decide({
         isbn,field,excel:important?(field==='author'?next?.value:next):next,
         current, evidence:rows.flatMap(row=>row.sourceEvidence||[]),
@@ -756,6 +798,7 @@ function metadataPlan(analysis,db,parts,choices=[],acceptWarnings=false){
       autoHigh:automaticDecisions.filter(item=>item.confidence==='high').length,
       autoMedium:automaticDecisions.filter(item=>item.confidence==='medium').length,
       autoKept:automaticDecisions.filter(item=>item.action==='keep').length,
+      reusedPrevious:automaticDecisions.filter(item=>item.reusedPrevious===true).length,
       affectedCopies:new Set(updates.flatMap(update=>update.bookIds)).size}};
 }
 function buildUnifiedBookImport(analysis,db,{
@@ -887,6 +930,7 @@ function buildUnifiedBookImport(analysis,db,{
     confidentMetadata:metadata.summary.autoHigh,
     consideredMetadata:metadata.summary.autoMedium,
     preservedMetadata:metadata.summary.autoKept,
+    reusedPreviousMetadata:metadata.summary.reusedPrevious,
     affectedMetadataCopies:metadata.summary.affectedCopies,
     pending:assignments.summary.pending+inventory.summary.blockedEditions+metadata.summary.issues,
     blockedStock:inventory.summary.blockedEditions,pendingAssignments:assignments.summary.pending,

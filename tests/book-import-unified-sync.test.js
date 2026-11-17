@@ -105,6 +105,73 @@ const {buildWorkbook,librarySheets,stageSheets}=require('../book-import-export')
   assert.deepEqual(unchanged.choices,[{id:'1:location',action:'keep'}]);
 }
 
+// Manual decisions from old import reports remain useful for the CURRENT
+// recovery, even before the new durable memory has been populated.
+{
+  const current={
+    books:[{
+      id:'copy-1',title:'Oorlogswinter',author:'Jan Terlouw',
+      editionIsbn:ISBN,barcode:'4711001',status:'available',
+    }],
+    students:[],classes:[],
+    bookImportReports:[{
+      automaticSourceDecisions:[{
+        isbn:ISBN,field:'title',confidence:'manual',
+        excel:'Oorlogswinter, druk 2',after:'Oorlogswinter',
+      }],
+    }],
+  };
+  const analyzed={ok:true,rows:[{
+    index:0,sourceRowNumber:2,status:'ready',issues:[],
+    book:{title:'Oorlogswinter, druk 2',author:'Jan Terlouw',
+      editionIsbn:ISBN,quantity:{valid:true,value:1}},
+    provenance:{title:{source:'excel',raw:'Oorlogswinter, druk 2'}},
+    sourceEvidence:[],context:{},
+  }]};
+  const onlyTitle={books:false,loans:false,locations:false,fields:{title:true}};
+  const remembered=buildUnifiedBookImport(analyzed,current,{parts:onlyTitle});
+  assert.equal(remembered.ok,true);
+  assert.equal(remembered.summary.reusedPreviousMetadata,1);
+  assert.equal(remembered.metadata.updates.length,0,
+    'A previously approved current value remains authoritative');
+  assert.match(remembered.metadata.automaticDecisions[0].reason,/Eerdere goedgekeurde/);
+  const retainedBeyondReports={...current,bookImportReports:[],
+    bookImportManualMetadataMemory:[{
+      isbn:ISBN,field:'title',excel:'Oorlogswinter, druk 2',
+      after:'Oorlogswinter',
+    }]};
+  const durable=buildUnifiedBookImport(analyzed,retainedBeyondReports,
+    {parts:onlyTitle});
+  assert.equal(durable.summary.reusedPreviousMetadata,1,
+    'Explicit decisions remain usable after import reports have rotated');
+  assert.equal(durable.metadata.updates.length,0);
+  const changedSource=JSON.parse(JSON.stringify(analyzed));
+  changedSource.rows[0].book.title='Oorlogswinter andere editie';
+  changedSource.rows[0].provenance.title.raw='Oorlogswinter andere editie';
+  const changed=buildUnifiedBookImport(changedSource,current,{parts:onlyTitle});
+  assert.equal(changed.ok,true);
+  assert.equal(changed.summary.reusedPreviousMetadata,0,
+    'A materially changed Excel value cannot inherit an old approval');
+  const manuallyProtected={...current,
+    bookImportReports:[],books:[{
+      ...current.books[0],importProvenance:{
+        fieldSources:{title:{sourceType:'manual'}},
+      },
+    }],
+  };
+  const protectedPreview=buildUnifiedBookImport(analyzed,manuallyProtected,
+    {parts:onlyTitle});
+  assert.equal(protectedPreview.summary.reusedPreviousMetadata,1);
+  assert.equal(protectedPreview.metadata.updates.length,0);
+  const explicit=buildUnifiedBookImport(analyzed,manuallyProtected,{
+    parts:onlyTitle,metadataResolutions:[{id:ISBN+':title',action:'excel'}],
+  });
+  assert.equal(explicit.ok,true);
+  assert.equal(explicit.summary.reusedPreviousMetadata,0,
+    'Explicit present import override wins over a remembered decision');
+  assert.equal(explicit.metadata.updates.length,1);
+}
+
 const source=(index,context={},extra={},provenance={})=>({
   index,sourceRowNumber:index+2,status:'ready',
   book:{title:'Oorlogswinter',author:'Jan Terlouw',
