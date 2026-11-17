@@ -77,6 +77,35 @@ assert.equal(sameBookIdentity({title:'Haantjes',author:'nan Other Author'},
 assert.equal(sameBookIdentity({title:'Other title',author:'nan Kluun'},
   {title:'Haantjes',author:'Kluun'}),false,
   'Matching a placeholder surname never overrides the ISBN book title');
+// Actual school collection: the stored copy can use a library-style
+// surname-first author while the Excel uses the natural display order.
+// Only an independently verified identical ISBN may use this identity match.
+for(const [stored,source] of [
+  ['Kinney, Jeff','Jeff Kinney'],
+  ['Adriaan Dis, van','Adriaan van Dis'],
+  ['Joann Herik, van den','Joann van den Herik'],
+  ['Mieke Hooft, van','Mieke van Hooft'],
+  ['Eddy Ley, van der','Eddy van der Ley'],
+  ['Morris Groot, de','Morris de Groot'],
+]){
+  assert.equal(sameBookIdentity({title:'Same ISBN edition',author:stored},
+    {title:'Same ISBN edition',author:source}),true,
+    'One author must not become an ISBN stock conflict: '+stored);
+}
+for(const [stored,source] of [
+  ['Kinney, Jane','Jeff Kinney'],
+  ['Joann van den Herik','Joann van den Bakker'],
+  ['Jan van der Meer & Piet Visser','Jan Visser & Piet van der Meer'],
+  ['Wouter, Marijn Laumans, Schrijver','Wouter Laumans'],
+]){
+  assert.equal(sameBookIdentity({title:'Same ISBN edition',author:stored},
+    {title:'Same ISBN edition',author:source}),false,
+    'Different or multiply attributed authors must stay under review');
+}
+assert.equal(sameBookIdentity({title:'Other work',author:'Kinney, Jeff'},
+  {title:'Same ISBN edition',author:'Jeff Kinney'}),false,
+  'Exact author equivalence may not override a substantive title mismatch');
+
 assert.equal(smallPageDifference(210,214),true);
 assert.equal(smallPageDifference(210,240),false);
 assert.equal(smallPageDifference(null,240),false);
