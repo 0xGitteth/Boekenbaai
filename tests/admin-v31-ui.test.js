@@ -10,6 +10,7 @@ const js = fs.readFileSync(path.join(root, 'public/admin-modern.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'public/admin-modern.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'public/staff.html'), 'utf8');
+const layoutCss = fs.readFileSync(path.join(root, 'public/styles.css'), 'utf8');
 const staffLoans = fs.readFileSync(path.join(root, 'public/staff-loans.js'), 'utf8');
 const studentManagement = fs.readFileSync(path.join(root, 'public/student-management.js'), 'utf8');
 
@@ -68,6 +69,23 @@ assert.match(js, /admin-book-cancel/,
   'Bewerken moet afbreekbaar blijven.');
 assert.match(js, /book-detail-edit/,
   'Bewerken vanuit boekdetails moet het juiste formulier openen.');
+assert.match(js,/boekenbaai:open-book-editor/,
+  'Bewerken op een compacte boekkaart moet het verplaatste beheerformulier openen.');
+assert.match(app,/new CustomEvent\('boekenbaai:open-book-editor'/,
+  'Het kaartformulier moet zijn originele fysieke exemplaar-ID behouden.');
+assert.match(html,/id="admin-book-edition-isbn"/,
+  'De beheerder moet het ISBN van de specifieke uitgave kunnen corrigeren.');
+assert.match(html,/admin-book-grid__edition-isbn/,
+  'Uitgave-ISBN en intern metadata-ISBN moeten elk een eigen formulierpositie hebben.');
+assert.match(layoutCss,/\.admin-book-grid__edition-isbn\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*1;/,
+  'Uitgave-ISBN moet op desktop boven het metadata-ISBN staan.');
+assert.match(layoutCss,/\.admin-book-grid__metadata\s*\{[^}]*grid-column:\s*4;[^}]*grid-row:\s*2;/,
+  'Metadata-ISBN mag het nieuwe uitgave-ISBN op desktop niet overlappen.');
+assert.match(html,/id="book-detail-edit-copy"/,
+  'De beheerder moet bij meerdere fysieke exemplaren het juiste exemplaar kiezen.');
+assert.match(app,/bookDetailState\.editBook\s*=\s*selected/,
+  'Een keuze voor het fysieke exemplaar moet doorwerken in de editactie.');
+
 assert.match(app, /adminBookCancelButton\?\.addEventListener\('click', \(event\) => \{[\s\S]*?resetAdminBookForm\(\)/,
   'Annuleren moet de volledige interne boekenformulierstatus resetten.');
 assert.match(app, /function resetAdminBookForm\(\)[\s\S]*?selectedBookId = null;/,

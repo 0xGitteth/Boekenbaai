@@ -354,10 +354,13 @@ function resolveBookMetadataKey(book) {
   if (!book) return '';
   const source =
     book.representativeBook || (Array.isArray(book.copies) ? book.copies[0] : book) || book;
-  const metadataIsbn = normalizeBarcode(source.metadataIsbn || book.metadataIsbn);
-  if (metadataIsbn) {
-    return metadataIsbn;
-  }
+  // The physical scanning barcode can be an internal number. Once the
+  // edition ISBN is known, fetch the cover and description for that exact
+  // edition instead of querying the internal physical identifier.
+  const edition = catalogEditionIsbn(source.editionIsbn||book.editionIsbn);
+  if(edition)return edition;
+  const metadataIsbn = catalogEditionIsbn(source.metadataIsbn || book.metadataIsbn);
+  if(metadataIsbn)return metadataIsbn;
   return normalizeBarcode(source.barcode || book.barcode);
 }
 
@@ -826,6 +829,7 @@ const bookDetailState = {
   addCopyButton: null,
   removeCopyButton: null,
   editButton: null,
+  editCopySelector: null,
   closeButtons: [],
   previousFocus: null,
   currentBookId: null,
@@ -883,6 +887,7 @@ function ensureBookDetailElements() {
     bookDetailState.importButton = bookDetailState.root.querySelector('[data-book-detail-import]');
     bookDetailState.importData = bookDetailState.root.querySelector('#book-detail-import-data');
     bookDetailState.editButton = bookDetailState.root.querySelector('[data-book-detail-edit]');
+    bookDetailState.editCopySelector = bookDetailState.root.querySelector('#book-detail-edit-copy');
     bookDetailState.closeButtons = Array.from(
       bookDetailState.root.querySelectorAll('[data-book-detail-close]')
     );
@@ -909,6 +914,13 @@ function ensureBookDetailElements() {
       };
       document.addEventListener('keydown', bookDetailState.handleEscape);
     }
+    bookDetailState.editCopySelector?.addEventListener('change',()=>{
+      const candidates=Array.isArray(bookDetailState.currentDetail?.copies)
+        ?bookDetailState.currentDetail.copies:[];
+      const selected=candidates.find(copy=>
+        copy.id===bookDetailState.editCopySelector.value);
+      if(selected)bookDetailState.editBook=selected;
+    });
     if (bookDetailState.editButton) {
       bookDetailState.editButton.addEventListener('click', () => {
         if (!bookDetailState.editBook) return;
@@ -1294,6 +1306,7 @@ function closeBookDetail() {
   state.previousFocus = null;
   state.currentBookId = null;
   state.editBook = null;
+  if(state.editCopySelector)state.editCopySelector.replaceChildren();
   state.currentGroupKey = null;
   state.currentDetail = null;
   state.currentImportInfo = null;
@@ -1425,6 +1438,25 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
     ? book.availableCopies
     : Math.max(totalCopies - borrowedCopies, 0);
   state.editBook = copies[0] || book;
+  if(state.editCopySelector){
+    const control=state.editCopySelector;
+    const container=control.closest('.book-detail__copy-picker');
+    const canPick=authUser?.role==='admin'&&copies.length>1;
+    if(container)container.hidden=!canPick;
+    control.replaceChildren();
+    if(canPick){
+      copies.forEach((copy,index)=>{
+        const option=document.createElement('option');
+        option.value=copy.id;
+        const suffix=String(copy.id||'').slice(-8);
+        option.textContent='Exemplaar '+(index+1)+' · '+
+          (copy.barcode||'Geen barcode')+' · ID '+suffix+
+          (copy.status==='borrowed'?' (uitgeleend)':'');
+        control.append(option);
+      });
+      control.value=state.editBook.id;
+    }
+  }
   if (state.loading) {
     state.loading.hidden = true;
   }
@@ -1931,11 +1963,35 @@ function normalizeGroupKeyPart(value) {
   return String(value).trim();
 }
 
+function catalogEditionIsbn(value) {
+  let code=String(value??'').toUpperCase().replace(/[^0-9X]/g,'');
+  if(/^[0-9]{9}[0-9X]$/.test(code)){
+    const sum=[...code.slice(0,9)].reduce((n,d,i)=>
+      n+Number(d)*(10-i),0)+(code[9]==='X'?10:Number(code[9]));
+    if(sum%11!==0)return '';
+    code='978'+code.slice(0,9);
+    const checksum=[...code].reduce((n,d,i)=>
+      n+Number(d)*(i%2?3:1),0);
+    code+=String((10-checksum%10)%10);
+  }
+  if(!/^97[89][0-9]{10}$/.test(code))return '';
+  const sum=[...code.slice(0,12)].reduce((n,d,i)=>
+    n+Number(d)*(i%2?3:1),0);
+  return (10-sum%10)%10===Number(code[12])?code:'';
+}
+function catalogStoredEdition(book) {
+  return catalogEditionIsbn(book?.editionIsbn)
+    ||catalogEditionIsbn(book?.metadataIsbn)
+    ||catalogEditionIsbn(book?.isbn13)
+    ||catalogEditionIsbn(book?.barcode)||'';
+}
 function getBookGroupKey(book) {
   const title = normalizeGroupKeyPart(book?.title).toLowerCase();
   const author = normalizeGroupKeyPart(book?.author).toLowerCase();
-  const metadataIsbn = normalizeGroupKeyPart(book?.metadataIsbn).toLowerCase();
-  return `${title}||${author}||${metadataIsbn}`;
+  const edition = catalogStoredEdition(book);
+  const identity=edition?'isbn:'+edition
+    :'publisher:'+normalizeGroupKeyPart(book?.publisher).toLowerCase();
+  return `${title}||${author}||${identity}`;
 }
 
 function pickRepresentativeBook(current, candidate) {
@@ -2017,6 +2073,8 @@ function groupBooksByTitleAuthor(books = []) {
       title: value.title || representative.title || '',
       author: value.author || representative.author || '',
       metadataIsbn: representative.metadataIsbn || value.metadataIsbn || null,
+      editionIsbn: catalogStoredEdition(representative),
+      publisher: representative.publisher || '',
       description: representative.description || '',
       coverUrl: normalizeRenderedCoverUrl(representative.coverUrl),
       localCoverUrl: normalizeRenderedCoverUrl(cachedEditionCover),
@@ -2225,6 +2283,15 @@ function createBookCard(template, book, folders, options = {}) {
 
   title.textContent = book.title;
   author.textContent = book.author;
+  if (options.catalogLayout && (book.publisher || book.editionIsbn)) {
+    const editionText=[
+      book.publisher || 'Uitgever onbekend',
+      book.editionIsbn?'ISBN '+book.editionIsbn:'',
+    ].filter(Boolean).join(' · ');
+    const editionLabel=appendTextElement(card.querySelector('.book-card__content'),
+      'small',editionText,{className:'bb-cat-card-edition'});
+    author.insertAdjacentElement('afterend',editionLabel);
+  }
   if (options.catalogLayout) {
     // Staff card gets actual title metadata; never fabricated preview books.
     const body = card.querySelector('.book-card__content');
@@ -4115,6 +4182,7 @@ function initStaffPage() {
   const adminBookTitle = document.querySelector('#admin-book-title');
   const adminBookAuthor = document.querySelector('#admin-book-author');
   const adminBookBarcode = document.querySelector('#admin-book-barcode');
+  const adminBookEditionIsbn = document.querySelector('#admin-book-edition-isbn');
   const adminBookMetadataIsbn = document.querySelector('#admin-book-metadata-isbn');
   const adminBookLookupButton = document.querySelector('#admin-book-lookup');
   const adminBookLookupMessage = document.querySelector('#admin-book-lookup-message');
@@ -4824,8 +4892,18 @@ function initStaffPage() {
         catalogLayout:true,
         ...(authUser?.role === 'admin' ? {
           onEdit: (chosenBook) => {
+            if((chosenBook.copies||[]).length>1) {
+              // Never guess which borrowed/physical copy is to be changed.
+              openBookDetail(chosenBook);
+              return;
+            }
             const selectedCopy = chosenBook.representativeBook || chosenBook.copies?.[0];
             if (!selectedCopy) return;
+            // Tell the modern admin shell to show the relocated editor.
+            // Merely unhiding the legacy card does not reveal its Books tab.
+            document.dispatchEvent(new CustomEvent('boekenbaai:open-book-editor',{
+              detail:{bookId:selectedCopy.id},
+            }));
             const editor = document.querySelector('#admin-dashboard .admin-card--books');
             if (editor) editor.hidden = false;
             handleAdminBookSelection(selectedCopy);
@@ -5019,6 +5097,7 @@ function initStaffPage() {
     if (adminBookMetadataIsbn) {
       adminBookMetadataIsbn.value = '';
     }
+    if (adminBookEditionIsbn) adminBookEditionIsbn.value = '';
     adminBookRawTags = [];
     adminBookInitialThemeKeys = null;
     setSelectedAdminThemes([]);
@@ -5059,6 +5138,7 @@ function initStaffPage() {
       adminBookQuantity.value = '1';
     }
     updateAdminBookBarcode(book.barcode || '');
+    if (adminBookEditionIsbn) adminBookEditionIsbn.value = book.editionIsbn || '';
     updateAdminBookMetadataIsbnValue(book.metadataIsbn || '');
     if (adminBookDescription) {
       adminBookDescription.value = book.description || '';
@@ -8257,6 +8337,7 @@ function initStaffPage() {
     }
     const normalizedBarcode = normalizeBarcode(adminBookBarcode?.value);
     const metadataIsbnValue = normalizeBarcode(adminBookMetadataIsbn?.value);
+    const editionIsbnValue=normalizeBarcode(adminBookEditionIsbn?.value);
     const publisherValue = adminBookPublisher?.value?.trim() || '';
     const publishedYearValue = adminBookYear?.value?.trim() || '';
     const pageCountValue = adminBookPages?.value?.trim() || '';
@@ -8269,6 +8350,7 @@ function initStaffPage() {
       title: adminBookTitle.value.trim(),
       author: adminBookAuthor.value.trim(),
       barcode: normalizedBarcode,
+      editionIsbn: editionIsbnValue,
       metadataIsbn: metadataIsbnValue,
       suitableForExamList: Boolean(adminBookExam.checked),
       easyReading: Boolean(adminBookEasyReading?.checked),

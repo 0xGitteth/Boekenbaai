@@ -347,6 +347,16 @@
                   </div>
                   <p id="admin-book-lookup-message" class="hint" aria-live="polite"></p>
                 </div>
+                <div class="form-field admin-book-grid__edition-isbn">
+                  <label for="admin-book-edition-isbn">ISBN van deze uitgave</label>
+                  <input
+                    id="admin-book-edition-isbn"
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="Bijv. 9789001561383"
+                  />
+                  <p class="hint">Neem het ISBN over van dit fysieke boek. Twee uitgaven met dezelfde titel kunnen elk een eigen ISBN hebben.</p>
+                </div>
                 <div
                   class="form-field form-field--full admin-book-grid__barcode-results hidden"
                   id="admin-barcode-results-section"
@@ -1372,6 +1382,10 @@
         <div class="book-detail__footer">
           <p class="book-detail__message hint" id="book-detail-message" aria-live="polite"></p>
           <div class="book-detail__actions">
+            <label class="book-detail__copy-picker" for="book-detail-edit-copy" hidden>
+              Kies fysiek exemplaar
+              <select id="book-detail-edit-copy" aria-label="Kies het fysieke exemplaar dat je wilt wijzigen"></select>
+            </label>
             <button type="button" class="btn btn--ghost" data-book-detail-import hidden>
               Importgegevens
             </button>

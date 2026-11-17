@@ -745,6 +745,11 @@
     booksCard.hidden = true;
     const heading = make('div', { className: 'bb-admin-v31-editor-heading' });
     heading.append(make('h3', { text: 'Boek toevoegen of bewerken' }));
+    document.addEventListener('boekenbaai:open-book-editor',(event)=>{
+      if(!event.detail?.bookId)return;
+      // Open the relocated editor without resetting the selected book.
+      showBookEditor(false);
+    });
     const close = make('button', { className: 'btn btn--ghost', text: 'Annuleren', type: 'button' });
     close.addEventListener('click', () => {
       // Invoke the full app.js reset for *both* edit and create modes.

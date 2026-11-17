@@ -1123,9 +1123,14 @@ body[data-page='staff'] .teacher-actions {
     grid-row: 1 / span 2;
   }
 
+  .admin-book-grid__edition-isbn {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
   .admin-book-grid__metadata {
     grid-column: 4;
-    grid-row: 1 / span 2;
+    grid-row: 2;
   }
 
   .admin-book-grid__exam {
