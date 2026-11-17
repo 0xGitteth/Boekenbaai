@@ -58,3 +58,19 @@ retainDeferredBookChecks(db,[physical('repeated-emission',{batchId:'new-import'}
 assert.equal(db.bookImportDeferredBookChecks.length,1501,'Repeated event is suppressed');
 retainDeferredBookChecks(db,[physical('different-copy',{batchId:'new-import',bookId:'copy-2'})]);
 assert.equal(db.bookImportDeferredBookChecks.length,1502,'Different physical identity is retained');
+
+// Large backlog: catalog normalization must be linear, not tasks × books.
+let reads=0;
+const manyBooks=Array.from({length:2000},(_,i)=>({id:'copy-'+i,
+  get title(){reads++;return 'Titel '+i;},author:'Auteur',editionIsbn:ISBN_FOR_SCALE()}));
+function ISBN_FOR_SCALE(){return '9780306406157';}
+const large={books:manyBooks,bookImportDeferredBookChecks:Array.from({length:1600},(_,i)=>physical('large-'+i,{title:'Titel '+i,worksheetRow:i+1}))};
+const started=performance.now();const largeResult=buildTaskPreflight(large);
+assert.equal(largeResult.summary.open,1600);
+assert.ok(reads<=manyBooks.length*3,'Catalog fields must not be revisited for every task');
+console.log('Preflight scale: 1600 tasks / 2000 books in '+Math.round(performance.now()-started)+' ms; '+reads+' title reads');
+const commonEdition={books:Array.from({length:2000},(_,i)=>copy('same-'+i)),bookImportDeferredBookChecks:[physical('common')]};
+const commonResult=buildTaskPreflight(commonEdition).tasks[0];
+assert.equal(commonResult.current.matchingEditionCount,2000);
+assert.equal(commonResult.current.matchingBookIds.length,20);
+assert.equal(commonResult.current.candidateListTruncated,true);

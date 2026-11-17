@@ -20,11 +20,19 @@ function edition(book) {
     .map(canonicalizeBookIsbn13).filter(Boolean);
   return new Set(values).size === 1 ? values[0] : '';
 }
-function sameEdition(task, book) {
-  const isbn = canonicalizeBookIsbn13(task.editionIsbn);
-  return Boolean(isbn && isbn === edition(book) && folded(task.title)
-    && folded(task.title) === folded(book.title) && folded(task.author)
-    && folded(task.author) === folded(book.author));
+function editionKey(isbn, title, author) {
+  const t=folded(title),a=folded(author);
+  return isbn&&t&&a?JSON.stringify([isbn,t,a]):null;
+}
+function catalogIndex(books) {
+  const byEdition=new Map(),byId=new Map();
+  for(const book of books){
+    const key=editionKey(edition(book),book.title,book.author);
+    if(key){if(!byEdition.has(key))byEdition.set(key,[]);byEdition.get(key).push(book);}
+    if(!byId.has(book.id))byId.set(book.id,[]);
+    byId.get(book.id).push(book);
+  }
+  return {byEdition,byId};
 }
 function sourceKey(task, family) {
   const report = task.batchId || task.reportId;
@@ -38,10 +46,12 @@ function sourceKey(task, family) {
       task.bookId, task.kind, task.original, task.sourceRow ?? null, task.loanHistoryMode ?? null]);
   return null;
 }
-function assessTask(db, task, family) {
-  const books = list(db.books);
-  const matches = books.filter(book => sameEdition(task, book));
-  const copyMatches = task.bookId ? books.filter(book => book.id === task.bookId) : [];
+function assessTask(db, task, family, catalog) {
+  const key=editionKey(canonicalizeBookIsbn13(task.editionIsbn),task.title,task.author);
+  const matches=key?catalog.byEdition.get(key)||[]:[];
+  // Bound repeated evidence in the response even for very large edition groups.
+  const matchingIds=matches.slice(0,20).map(book=>book.id);
+  const copyMatches=task.bookId?catalog.byId.get(task.bookId)||[]:[];
   const copy = copyMatches.length === 1 ? copyMatches[0] : null;
   const result = {
     id: task.id, family, title: task.title || (family === 'accounts' ? 'Accountcontrole' : 'Boekcontrole'),
@@ -53,7 +63,7 @@ function assessTask(db, task, family) {
     explanation: 'De oorspronkelijke onzekerheid is niet aantoonbaar opgelost. Beoordeling blijft nodig.',
     evidence: [], proposedAction: null, requiresSeparateConfirmation: family !== 'metadata',
     current: {bookId: copy?.id || null, matchingEditionCount: matches.length,
-      matchingBookIds: matches.map(book => book.id)},
+      matchingBookIds: matchingIds, candidateListTruncated:matches.length>matchingIds.length},
     dependencies: {taskRevision: task.revision || 1,
       circulationRevision: copy ? circulationRevision(db, copy.id) : null},
   };
@@ -66,7 +76,7 @@ function assessTask(db, task, family) {
   });
   if (task.reason) result.evidence.push({type: 'original_reason', value: task.reason});
   if (matches.length) {
-    result.evidence.push({type: 'edition_match', isbn: canonicalizeBookIsbn13(task.editionIsbn), bookIds: matches.map(b => b.id)});
+    result.evidence.push({type: 'edition_match', isbn: canonicalizeBookIsbn13(task.editionIsbn), bookIds: matchingIds, totalMatches:matches.length});
     result.category = 'proposal';
     result.rule = 'edition_found_copy_unproven';
     result.explanation = 'Deze ISBN-editie staat in de collectie. Dat bewijst niet dat het oorspronkelijke exemplaar of bronconflict is hersteld.';
@@ -80,7 +90,7 @@ function assessTask(db, task, family) {
   if (copy && family === 'administration' && task.kind === 'location'
       && task.original && typeof task.original.after === 'string'
       && norm(task.original.after) && norm(copy.fixedLocation) === norm(task.original.after)
-      && sameEdition(task, copy)) {
+      && matches.includes(copy)) {
     result.category = 'proposal'; result.rule = 'location_target_present';
     result.explanation = 'De voorgestelde vaste locatie staat al bij het gekoppelde exemplaar. Controleer of hiermee de oorspronkelijke taak is afgehandeld.';
     result.evidence.push({type: 'current_location', value: copy.fixedLocation});
@@ -97,19 +107,21 @@ function assessTask(db, task, family) {
   return result;
 }
 function buildTaskPreflight(db) {
+  const catalog=catalogIndex(list(db.books));
+  const storedAssignments=new Map(list(db.bookImportAssignmentTasks).map(task=>[task.id,task]));
   const source = [
     ...list(db.bookImportDeferredBookChecks).filter(t => t?.status === 'open').map(t => [t, 'physical']),
     ...listDeferredAssignmentTasks(db).tasks.map(t => [
-      list(db.bookImportAssignmentTasks).find(stored => stored.id === t.id) || t, 'administration']),
+      storedAssignments.get(t.id) || t, 'administration']),
     ...list(db.bookImportFollowups).filter(t => t && !['completed','cancelled'].includes(t.status)).map(t => [t, 'classes']),
     ...['studentExitTasks','teacherExitTasks'].flatMap(key => list(db[key]).filter(t => t?.status === 'open').map(t => [{...t, kind:key}, 'accounts'])),
   ];
   const completedSources = new Map();
+  const auditKeys=new Set(list(db.bookImportDeferredBookTaskHistory).map(entry=>
+    JSON.stringify([entry.taskId,entry.action,entry.timestamp,entry.actorId])));
   for (const task of list(db.bookImportDeferredBookChecks)) {
     if (task?.status !== 'completed' || task.resolution !== 'manual_done' || !task.completedAt) continue;
-    const audit = list(db.bookImportDeferredBookTaskHistory).find(entry =>
-      entry.taskId === task.id && entry.action === 'manual_done'
-      && entry.timestamp === task.completedAt && entry.actorId === task.completedBy);
+    const audit = auditKeys.has(JSON.stringify([task.id,'manual_done',task.completedAt,task.completedBy]));
     const key = sourceKey(task, 'physical');
     if (key && audit && task.completedBy) completedSources.set(key, task);
   }
@@ -120,7 +132,7 @@ function buildTaskPreflight(db) {
     idCounts.set(key, (idCounts.get(key) || 0) + 1);
   }
   const tasks = source.map(([task, family]) => {
-    const result = assessTask(db, task, family);
+    const result = assessTask(db, task, family, catalog);
     const key = sourceKey(task, family);
     if (!task.id || idCounts.get(family + ':' + task.id) !== 1) {
       result.category = 'attention'; result.rule = 'invalid_task_identity';

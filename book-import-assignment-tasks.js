@@ -99,6 +99,7 @@ function migrateLegacyDeferredTasks(db) {
 }
 
 function listDeferredAssignmentTasks(db) {
+  const existingBookIds=new Set((db.books || []).map(book=>book.id));
   const stored = Array.isArray(db.bookImportAssignmentTasks)
     ? db.bookImportAssignmentTasks : [];
   const known = new Set(stored.map(task => reportKey(task.reportId, task.differenceId)));
@@ -135,8 +136,7 @@ function listDeferredAssignmentTasks(db) {
       beforeLocation: task.original?.beforeLocation ?? null,
       beforeLoan: task.original?.beforeLoan ?? null,
       createdAt: task.createdAt, revision: task.revision,
-      missingBook: Boolean(task.bookId && !(db.books || [])
-        .some(book => book.id === task.bookId)),
+      missingBook: Boolean(task.bookId && !existingBookIds.has(task.bookId)),
       canApply: Boolean(task.sourceRow && task.bookId
         && ['loan', 'location', 'class_context'].includes(task.kind)
         && !task.reason),
