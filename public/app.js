@@ -1989,10 +1989,19 @@ function normalizeGroupKeyPart(value) {
 }
 
 function catalogEditionIsbn(value) {
-  const code=String(value??'').replace(/[^0-9]/g,'');
+  let code=String(value??'').toUpperCase().replace(/[^0-9X]/g,'');
+  if(/^[0-9]{9}[0-9X]$/.test(code)){
+    const sum=[...code.slice(0,9)].reduce((n,d,i)=>
+      n+Number(d)*(10-i),0)+(code[9]==='X'?10:Number(code[9]));
+    if(sum%11!==0)return '';
+    code='978'+code.slice(0,9);
+    const checksum=[...code].reduce((n,d,i)=>
+      n+Number(d)*(i%2?3:1),0);
+    code+=String((10-checksum%10)%10);
+  }
   if(!/^97[89][0-9]{10}$/.test(code))return '';
-  let sum=0;
-  for(let i=0;i<12;i++)sum+=Number(code[i])*(i%2?3:1);
+  const sum=[...code.slice(0,12)].reduce((n,d,i)=>
+    n+Number(d)*(i%2?3:1),0);
   return (10-sum%10)%10===Number(code[12])?code:'';
 }
 function catalogStoredEdition(book) {
