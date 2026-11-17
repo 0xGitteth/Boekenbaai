@@ -1337,8 +1337,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         ?String(value.name||value.value||JSON.stringify(value)):safeText(value);
       const skippedRows=rows.filter(row=>corrections.get(row.index)?.skip);
       const countSkipped=skippedRows.length;
+      const skippedLabels=new Map((stage.skippedRowLabels||[])
+        .map(label=>[label.index,label]));
       const unresolvedGroups=unresolvedGuidedGroups(queue,
-        assignmentResolutions,metadataResolutions);
+        assignmentResolutions,metadataResolutions,
+        new Set(skippedRows.map(row=>row.index)));
       const hasChanges=hasUnreviewedChanges()||Boolean(stage.draft)
         ||draftSaveInFlight||draftSavePending||Boolean(draftSaveTimer);
       const panel=make('section','bb-guide');
@@ -2117,9 +2120,12 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           for(const row of skippedRows){
             const entry=make('div','bb-guide__pending-item');
             const info=make('div','bb-guide__pending-item-info');
-            info.append(make('strong','',row.book?.title||'Boek zonder titel'));
-            info.append(make('span','',Number.isInteger(row.sourceRowNumber)
-              ?'Excelrij '+row.sourceRowNumber:'Excelrij onbekend'));
+            const original=skippedLabels.get(row.index);
+            info.append(make('strong','',row.book?.title||original?.title
+              ||'Titel ontbreekt in de importgegevens'));
+            const worksheetRow=original?.sourceRowNumber||row.sourceRowNumber;
+            info.append(make('span','',Number.isInteger(worksheetRow)
+              ?'Excelrij '+worksheetRow:'Excelrij onbekend'));
             entry.append(info);
             addAction(entry,'Rij opnieuw meenemen',()=>{
               if(!window.confirm('Deze Excelrij wordt opnieuw ter controle '
