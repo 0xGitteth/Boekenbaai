@@ -163,7 +163,9 @@ function missingNamePrefixMatches(stored,desired){
 // ISBN before this can establish physical book identity.
 function equivalentAuthorName(left,right){
   const a=String(left??''),b=String(right??'');
-  if(a&&b&&normalized(a)===normalized(b))return true;
+  // Punctuation-only placeholders are not author identities.
+  const nameA=normalized(a),nameB=normalized(b);
+  if(nameA&&nameA===nameB)return true;
   if(/[;&]/u.test(a)||/[;&]/u.test(b))return false;
   const wordsA=words(a),wordsB=words(b);
   return wordsA.length>=2&&wordsA.length===wordsB.length
