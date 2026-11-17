@@ -12,7 +12,7 @@ const fakeHeaders=(policy,remaining)=>({headers:{get(name){
   if(name==='x-ratelimit-policy')return policy;
   if(name==='x-ratelimit-remaining')return remaining;
   return null;
-}});
+}}});
 
 // A short-window zero is not proof of zero MONTHLY credit.
 assert.equal(parseMonthlyRemaining(fakeHeaders('2;w=1, 50;w=60','0, 49')),null);
