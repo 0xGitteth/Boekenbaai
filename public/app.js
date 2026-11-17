@@ -2156,8 +2156,10 @@ function groupBooksByTitleAuthor(books = []) {
     // Prefer the local cover from a sibling with the same external source.
     // This also makes a newly imported copy usable before backfill finishes.
     const representativeCoverSource = normalizeRenderedCoverUrl(representative.coverUrl);
+    const representativeEditionKey = getCatalogEditionKey(representative);
     const cachedEditionCover = value.copies.find((copy) =>
-      normalizeRenderedCoverUrl(copy.coverUrl) === representativeCoverSource
+      getCatalogEditionKey(copy) === representativeEditionKey
+      && normalizeRenderedCoverUrl(copy.coverUrl) === representativeCoverSource
       && copy.localCoverUrl)?.localCoverUrl || representative.localCoverUrl || '';
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
