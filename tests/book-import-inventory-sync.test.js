@@ -50,6 +50,12 @@ const conflictingAuthor=preview([
 assert.equal(conflictingAuthor.summary.blockedEditions,1,
   'A substantively different author must still block an inventory change');
 
+const placeholders=preview([
+  row(0,2,{title:'Plausibel boek',author:'?',editionIsbn:ISBN}),
+],[book('unknown-author',{title:'Plausibel boek',author:'-',
+  editionIsbn:ISBN,metadataIsbn:''})]);
+assert.equal(placeholders.summary.blockedEditions,1,
+  'Different nonidentifiable authors must block new physical copies');
 const unchanged = preview([row(0, 2)], [book('a'), book('b')]);
 assert.strictEqual(unchanged.ok, true);
 assert.strictEqual(unchanged.summary.addCopies, 0);
