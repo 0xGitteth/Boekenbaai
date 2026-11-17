@@ -49,7 +49,32 @@ if(panel&&sibling){
       host.append(elem('p','Geen openstaande fysieke boekcontroles.','hint'));
       return;
     }
+    // Group repeat reports for the same edition rather than showing 29
+    // indistinguishable cards. Keep each source record and its own action:
+    // identical editions are not necessarily identical physical copies.
+    const groups=new Map();
     for(const task of items){
+      const key=task.sameEditionGroup||task.id;
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(task);
+    }
+    const repeated=[...groups.values()].reduce((total,group)=>
+      total+Math.max(0,group.length-1),0);
+    if(repeated)host.append(elem('p',
+      repeated+' herhaalde controles voor dezelfde editie gegroepeerd. '
+      +'Dit betekent niet dat de fysieke exemplaren gelijk zijn.','hint'));
+    for(const group of groups.values()){
+      let destination=host;
+      if(group.length>1){
+        const container=elem('details',undefined,'bb-deferred-book-group');
+        const summary=elem('summary',
+          (group[0].title||'Onbekend boek')+' · '+group.length
+          +' controles uit imports');
+        container.append(summary);
+        host.append(container);
+        destination=container;
+      }
+      for(const task of group){
       const card=elem('article',undefined,'class-card');
       card.append(elem('h4',task.title||'Onbekend boek'));
       card.append(elem('p',[
@@ -83,8 +108,13 @@ if(panel&&sibling){
       books.addEventListener('click',()=>{
         document.querySelector('[data-admin-modern-tab="books"]')?.click();
       });
+      if(task.possibleExistingEdition)card.append(elem('p',
+        'Een editie met dit ISBN en deze titel staat inmiddels in de collectie. '
+        +'Controleer eerst of dit het bedoelde fysieke exemplaar is; '
+        +'de oude taak is niet automatisch afgesloten.','hint'));
       card.append(button,books);
-      host.append(card);
+      destination.append(card);
+      }
     }
   }
   async function refresh(){

@@ -753,6 +753,40 @@ body.bb-admin-v31 #bb-admin-v31-settings > .panel {
   box-shadow: none;
 }
 
+/* Grouped imported checks remain separately actionable but do not repeat
+   long metadata and action buttons for every report in the default view. */
+body.bb-admin-v31 #book-import-deferred-books .bb-deferred-book-group {
+  min-width: 0;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--bb-line);
+  border-radius: 12px;
+  background: #f8fafd;
+}
+body.bb-admin-v31 #book-import-deferred-books .bb-deferred-book-group > summary {
+  cursor: pointer;
+  color: var(--bb-ink);
+  font-weight: 800;
+  padding: 6px;
+}
+body.bb-admin-v31 #book-import-deferred-books .bb-deferred-book-group .class-card {
+  margin-top: 10px;
+  min-width: 0;
+}
+/* The private history editor belongs only to Uitlenen. Never let it increase
+   the height of Laatste activiteit or overlap its scrollable log. */
+body.bb-admin-v31 #bb-admin-v31-loans #admin-loan-history-management:not([hidden]) {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+  padding: 24px 26px;
+  border: 1px solid var(--bb-line);
+  border-radius: 14px;
+  background: #fff;
+}
+body.bb-admin-v31 #bb-admin-v31-loans #admin-loan-history-management[hidden] {
+  display: none !important;
+}
 /* Beheer loans: use the original interactive form and current-loans list,
    but give them separate, purposeful cards rather than one sprawling panel. */
 body.bb-admin-v31 #bb-admin-v31-loans #staff-loan-panel:not(.hidden) {

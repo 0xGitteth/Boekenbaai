@@ -520,10 +520,26 @@
       if (data.pendingRequests) pending.push([`${data.pendingRequests} openstaande Google-koppelverzoeken`, 'people']);
       if (data.teachersUnlinked) pending.push([`${data.teachersUnlinked} docenten zonder schoolaccount`, 'people']);
       if (data.studentsUnlinked) pending.push([`${data.studentsUnlinked} leerlingen zonder schoolaccount`, 'people']);
+      // The old dashboard counted account requests only, although the Tasks
+      // page also contains persistent book/import checks. Read each admin
+      // queue separately, without changing its records or loan states.
+      const checks = await Promise.allSettled([
+        api('/api/staff/book-import-followups'),
+        api('/api/admin/book-import-assignment-tasks'),
+        api('/api/admin/book-import-book-tasks'),
+      ]);
+      if (checks.every(result => result.status === 'fulfilled')) {
+        const open = checks.reduce((total,result) =>
+          total + Math.max(0,Number(result.value?.summary?.open
+            ?? result.value?.tasks?.length ?? 0) || 0),0);
+        if (open) pending.push([open + ' openstaande boek- en importcontroles', 'tasks']);
+      } else {
+        pending.push(['Boekcontroles konden niet worden geladen', 'tasks']);
+      }
       const actionCard = actions.closest('.bb-admin-v31-card--actions');
       actionCard?.classList.toggle('bb-admin-v31-card--empty-actions', !pending.length);
       if (!pending.length) {
-        actions.append(make('p', { className: 'bb-admin-v31-empty-actions', text: 'Geen openstaande accountacties.' }));
+        actions.append(make('p', { className: 'bb-admin-v31-empty-actions', text: 'Geen openstaande account- of boekcontroles.' }));
       } else {
         for (const [label, target] of pending) {
           const row = make('button', { className: 'admin-modern__action-row', text: label, type: 'button' });
@@ -655,7 +671,10 @@
     // Preserve it when the admin layout moves the controls into two cards.
     const readingHistory = panel.querySelector('.reading-records');
     if (readingHistory) current.append(readingHistory);
+    const loanHistoryAdmin = panel.querySelector('#admin-loan-history-management');
     panel.replaceChildren(create, current);
+    // Keep the same private editor when the admin layout rearranges nodes.
+    if (loanHistoryAdmin) panel.append(loanHistoryAdmin);
   }
 
   function activateAdminLayout(active) {

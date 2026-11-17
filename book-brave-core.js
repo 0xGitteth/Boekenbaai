@@ -37,10 +37,18 @@ function currentUsage(db, now = new Date(), env = process.env) {
   const usage = db.braveUsage?.month === month ? db.braveUsage : {reserved:0,providerRemaining:null};
   const cap = monthlyCap(env);
   const reserved = Math.max(0, Number(usage.reserved) || 0);
-  const providerRemaining = Number.isSafeInteger(usage.providerRemaining)
+  // Older versions guessed a monthly value from the last response header.
+  // Their stored zeros are not reliable evidence that the month is exhausted.
+  // Only trust values explicitly parsed from a labelled monthly window.
+  const providerRemaining = usage.providerRemainingVerified === true
+    && Number.isSafeInteger(usage.providerRemaining)
     && usage.providerRemaining >= 0 ? usage.providerRemaining : null;
+  const legacyProviderRemaining = usage.providerRemainingVerified !== true
+    && Number.isSafeInteger(usage.providerRemaining)
+    ? usage.providerRemaining : null;
   return {month, cap, reserved, available:Math.max(0,Math.min(cap - reserved,
-    providerRemaining === null ? Infinity : providerRemaining)),providerRemaining};
+    providerRemaining === null ? Infinity : providerRemaining)),
+    providerRemaining, legacyProviderRemaining};
 }
 function bookWorks(db, job) {
   const ids = new Set(Array.isArray(job?.bookIds) ? job.bookIds : []);
@@ -212,7 +220,8 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     }
     if (!shouldQueryStep(job.step,books,failedCovers)) {job.step++;continue;}
     if (job.requestsReserved >= job.approval.maxRequests || usage.reserved >= cap
-      || (Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
+      || (usage.providerRemainingVerified === true
+        && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
       pauseActiveChunk(job,'budget_exhausted');return null;
     }
     const step=job.step++;
@@ -220,7 +229,8 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     // a resumed worker skips that specific step instead of accidentally
     // issuing (and potentially billing) the same search twice.
     usage.reserved++;
-    if(Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining>0)
+    if(usage.providerRemainingVerified===true
+      && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining>0)
       usage.providerRemaining--;
     job.requestsReserved++;job.updatedAt=now.toISOString();
     const representative=books[0];
@@ -232,18 +242,24 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
       isbn:isbnOf(representative)};
   }
 }
-function finishClaim(db,claim,{providerRemaining=null,error=null}={}) {
+function finishClaim(db,claim,{
+  providerRemaining=null, providerRemainingConfirmed=false, error=null,
+}={}) {
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.id===claim?.id);
   if (!job) return;
   if (job.inFlight?.key===claim.key && job.inFlight?.step===claim.step) job.inFlight=null;
-  if (Number.isSafeInteger(providerRemaining)&&providerRemaining>=0
+  if (providerRemainingConfirmed===true
+      && Number.isSafeInteger(providerRemaining) && providerRemaining>=0
       && db.braveUsage?.month===job.approval?.month) {
-    // Provider monthly remaining is an additional emergency upper bound,
-    // not a guarantee of remaining FREE monetary credit.
+    // Never carry forward an unverified value from an older deployment.
+    // Once verified, only lower the trusted monthly balance.
     db.braveUsage.providerRemaining=Math.min(
-      Number.isSafeInteger(db.braveUsage.providerRemaining) ? db.braveUsage.providerRemaining : Infinity,
+      db.braveUsage.providerRemainingVerified===true
+        && Number.isSafeInteger(db.braveUsage.providerRemaining)
+        ? db.braveUsage.providerRemaining : Infinity,
       providerRemaining);
+    db.braveUsage.providerRemainingVerified=true;
   }
   if (error) {
     // A provider outage must not silently consume the other approved

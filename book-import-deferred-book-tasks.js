@@ -2,6 +2,26 @@
 
 const crypto = require('node:crypto');
 
+const identity = value => String(value || '').normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('nl-NL')
+  .replace(/\s+/g,' ').trim();
+function editionGroupKey(item) {
+  // Never group two unresolved books without enough identity evidence.
+  const identifier=identity(item.editionIsbn || item.excelIdentifier);
+  const title=identity(item.title),author=identity(item.author);
+  if (!identifier || !title || !author)
+    return JSON.stringify(['unverified',item.id]);
+  // Different ISBN editions must never be grouped as the same edition.
+  return JSON.stringify([identifier,title,author]);
+}
+function inCurrentCollection(db,item) {
+  const title=identity(item.title),author=identity(item.author);
+  const isbn=identity(item.editionIsbn);
+  return Boolean(title && author && isbn && (db.books || []).some(book =>
+    identity(book.title)===title && identity(book.author)===author
+      && [book.metadataIsbn,book.barcode,book.isbn]
+        .some(candidate=>identity(candidate)===isbn)));
+}
 function listDeferredBookTasks(db) {
   const items = Array.isArray(db.bookImportDeferredBookChecks)
     ? db.bookImportDeferredBookChecks : [];
@@ -17,7 +37,23 @@ function listDeferredBookTasks(db) {
       kind: 'book_identity',
     }))
     .sort((a,b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-  return { tasks, summary: {open: tasks.length} };
+  const sameEditionCounts=new Map();
+  for(const task of tasks) {
+    const key=editionGroupKey(task);
+    sameEditionCounts.set(key,(sameEditionCounts.get(key)||0)+1);
+  }
+  for(const task of tasks) {
+    task.sameEditionGroup=editionGroupKey(task);
+    task.sameEditionCount=sameEditionCounts.get(task.sameEditionGroup)||1;
+    // This is a HINT, never proof that the original physical copy was
+    // identified. Do not auto-close tasks or edit book/loan data.
+    task.possibleExistingEdition=inCurrentCollection(db,task);
+  }
+  return { tasks, summary: {
+    open:tasks.length,
+    groups:sameEditionCounts.size,
+    repeatedChecks:tasks.length-sameEditionCounts.size,
+  } };
 }
 function resolveDeferredBookTask(db, actor, id, revision, choice,
   now = new Date().toISOString()) {

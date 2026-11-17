@@ -48,8 +48,11 @@ function parseMonthlyRemaining(response) {
   const windows=policy.split(',').map(p=>p.trim());
   const amounts=remaining.split(',').map(p=>Number(p.trim()));
   const monthly=windows.findIndex(x=>/w\s*=\s*(2592000|2628000|2678400|2[5-7]\d{5})/.test(x));
-  const index=monthly>=0?monthly:(amounts.length>=2?amounts.length-1:-1);
-  return index>=0&&Number.isSafeInteger(amounts[index])&&amounts[index]>=0?amounts[index]:null;
+  // Do not interpret an unlabelled short-window quota as monthly credits.
+  // Brave may return 0 for a one-second or one-minute bucket while the
+  // monthly allowance remains available. Unknown is safer than false zero.
+  return monthly>=0&&Number.isSafeInteger(amounts[monthly])&&amounts[monthly]>=0
+    ? amounts[monthly] : null;
 }
 function queryFor(step,target) {
   const title=cleaned(target.title,150).replace(/["\r\n]/g,'');
