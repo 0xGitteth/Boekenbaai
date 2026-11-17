@@ -140,7 +140,11 @@ function createBraveWorker({
           const updated=updateFromPages(db,claim,pages,{
             imageUrl,failedCovers:getFailedCovers(),
           });
-          finishClaim(db,claim,{providerRemaining:result.providerRemaining,error:bad});
+          finishClaim(db,claim,{
+            providerRemaining:result.providerRemaining,
+            providerRemainingConfirmed:Number.isSafeInteger(result.providerRemaining),
+            error:bad,
+          });
           return updated;
         });
         if(!outcome?.deferred)break;
