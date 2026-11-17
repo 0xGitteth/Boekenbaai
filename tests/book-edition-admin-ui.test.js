@@ -18,6 +18,23 @@ const factory=new Function([
   'return {getBookGroupKey,groupBooksByTitleAuthor};',
 ].join('\n'));
 const {getBookGroupKey,groupBooksByTitleAuthor}=factory();
+const resolveEditionMetadataKey=new Function([
+  "const normalizeBarcode=value=>String(value??'').replace(/[^0-9X]/gi,'');",
+  extract('function catalogEditionIsbn(', 'function catalogStoredEdition('),
+  extract('function resolveBookMetadataKey(', 'function generateTemporaryPassword('),
+  'return resolveBookMetadataKey;',
+].join('\n'))();
+assert.equal(resolveEditionMetadataKey({
+  barcode:'1001',editionIsbn:'9789001561383',metadataIsbn:'',
+}), '9789001561383',
+  'An internal barcode must not override the verified edition for metadata lookup');
+assert.equal(resolveEditionMetadataKey({
+  barcode:'1001',editionIsbn:'',metadataIsbn:'0306406152',
+}), '9780306406157','A valid metadata ISBN-10 must become ISBN-13');
+assert.equal(resolveEditionMetadataKey({
+  barcode:'9789026997471',editionIsbn:'',metadataIsbn:'',
+}), '9789026997471',
+  'Older physical books may still use the print barcode for metadata');
 const original=[
  {id:'lijsters',title:'Het web',author:'Johan Heyink',
   barcode:'9789001561330',editionIsbn:'',metadataIsbn:'',
