@@ -32,22 +32,33 @@ export function countUnresolvedBookWarnings(actionable,deferredRows){
  * Informational warnings and safely deferred administration are not blockers.
  * The count of book cards is intentionally independent of pending decisions.
  */
-export function unresolvedGuidedGroups(queue=[], assignmentChoices=new Map(),
-  metadataChoices=new Map()) {
+export function unresolvedGuidedGroups(queue=[],assignmentChoices=new Map(),
+  metadataChoices=new Map(),skippedRows=new Set()) {
   return queue.map((group,index)=>{
+    const rows=group.rows instanceof Map?[...group.rows.values()]:[];
+    const activeRows=rows.filter(row=>!skippedRows.has(row?.index));
+    // An explicit skip is not an outstanding decision while the new
+    // analysis is still being calculated. It remains separately reversible.
+    if(rows.length&&!activeRows.length)return null;
+    const activeIndexes=new Set(activeRows.map(row=>row.index));
+    const activeWorksheetRows=new Set(activeRows.map(row=>row.sourceRowNumber));
+    const relevantRow=rowIndex=>!Number.isInteger(rowIndex)
+      ||!rows.length||activeIndexes.has(rowIndex);
     const reasons=[];
-    if((group.stock||[]).some(item=>item.action==='blocked'))
+    if((group.stock||[]).some(item=>item.action==='blocked'
+      &&relevantRow(item.index)))
       reasons.push('ISBN of voorraad');
-    if((group.assignments||[]).some(item=>
-      (assignmentChoices.get(item.id)?.action||item.choice||'pending')==='pending'))
+    if((group.assignments||[]).some(item=>relevantRow(item.rowIndex)
+      &&(assignmentChoices.get(item.id)?.action||item.choice||'pending')==='pending'))
       reasons.push('Uitlening of vaste locatie');
     if((group.metadata||[]).some(item=>
-      !['keep','apply','excel'].includes(metadataChoices.get(item.id)?.action)))
+      (!Array.isArray(item.worksheetRows)||!item.worksheetRows.length
+        ||item.worksheetRows.some(number=>activeWorksheetRows.has(number)))
+      &&!['keep','apply','excel'].includes(metadataChoices.get(item.id)?.action)))
       reasons.push('Boekgegevens');
     if(!reasons.length)return null;
-    const rows=group.rows instanceof Map?[...group.rows.values()]:[];
-    const first=rows.find(row=>row?.book?.title)||rows[0];
-    const worksheetRows=[...new Set(rows.map(row=>row?.sourceRowNumber)
+    const first=activeRows.find(row=>row?.book?.title)||activeRows[0];
+    const worksheetRows=[...new Set(activeRows.map(row=>row?.sourceRowNumber)
       .filter(value=>Number.isInteger(value)))].sort((a,b)=>a-b);
     return {index,key:group.key,
       title:first?.book?.title||group.stock?.[0]?.title
