@@ -1,0 +1,255 @@
+/* Focused administrator workspaces. Scoped to the signed-in admin view.
+   Original handlers/forms stay mounted; only one subpage is visible. */
+body.bb-admin-v31 #admin-dashboard .bb-workspace-inactive {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #d4dfed;
+  border-radius: 14px;
+  background: #eaf0f8;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 145px;
+  min-height: 45px;
+  padding: 10px 13px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #254268;
+  background: transparent;
+  font: 700 .88rem/1.35 Nunito, sans-serif;
+  cursor: pointer;
+  text-align: center;
+  transition: background .15s ease, border-color .15s ease;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab:hover {
+  background: #f8fbff;
+  border-color: #d1deef;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab--active,
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab--active:hover {
+  color: #123465;
+  border-color: #c2d3e8;
+  background: #fff;
+  box-shadow: 0 1px 5px rgb(20 50 90 / 10%);
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab:focus-visible,
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-card:focus-visible {
+  outline: 3px solid #659bd3;
+  outline-offset: 2px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab-count {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #173b70;
+  background: #e4eefb;
+  font-size: .79rem;
+  font-variant-numeric: tabular-nums;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab-count[hidden] {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-description,
+body.bb-admin-v31 #admin-dashboard .bb-workspace-page-lead {
+  margin: 0;
+  color: #536d8f;
+  font: 500 .91rem/1.55 Nunito, sans-serif;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-description {
+  padding: 1px 3px 5px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-page-lead {
+  padding-top: 5px;
+}
+body.bb-admin-v31 #admin-dashboard [data-admin-modern-view="imports"] .admin-card--imports > .admin-card__header {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard [data-admin-modern-view="imports"] .admin-card--imports {
+  min-width: 0;
+}
+body.bb-admin-v31 #admin-dashboard [data-admin-modern-view="imports"] #admin-card-imports-content {
+  display: block;
+  min-width: 0;
+}
+body.bb-admin-v31 #admin-dashboard #admin-card-imports-content > [data-bb-import-pane] {
+  min-width: 0;
+}
+body.bb-admin-v31 #admin-dashboard #admin-card-imports-content > .admin-card__section--import {
+  margin: 0;
+}
+body.bb-admin-v31 #admin-dashboard #bb-import-workspace-enrichment {
+  border: 0;
+  padding: 0;
+}
+body.bb-admin-v31 #admin-dashboard #bb-import-workspace-enrichment .bb-import__extras {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 14px clamp(12px, 2vw, 24px);
+  border: 1px solid #d8e2ef;
+  border-radius: 12px;
+  background: #fff;
+}
+body.bb-admin-v31 #admin-dashboard #bb-import-workspace-enrichment .bb-import__extras[hidden] {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard #bb-import-workspace-enrichment .bb-import__extras > summary {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #143769;
+  cursor: pointer;
+}
+body.bb-admin-v31 #admin-dashboard #reviewed-import-panel {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+body.bb-admin-v31 #admin-dashboard #bb-import-workspace-students,
+body.bb-admin-v31 #admin-dashboard #bb-import-workspace-teachers {
+  max-width: 100%;
+  padding: clamp(16px, 2vw, 26px);
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-overview {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: clamp(17px, 2.3vw, 26px);
+  border: 1px solid #d6e0ed;
+  border-radius: 13px;
+  background: #fff;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-overview h3 {
+  margin: 0;
+  color: #16355c;
+  font-size: 1.11rem;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-overview > .hint {
+  margin: 0;
+  line-height: 1.55;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 102px;
+  padding: 17px;
+  border: 1px solid #dce5ef;
+  border-radius: 11px;
+  background: #f8fafd;
+  color: #18365e;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-card:hover {
+  background: #eff5fd;
+  border-color: #bfd2e9;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-card-head strong {
+  font-size: .95rem;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-card-count {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #e3eefb;
+  color: #183d70;
+  font-size: .82rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-task-card-desc {
+  color: #536d8f;
+  font-size: .86rem;
+  line-height: 1.5;
+}
+/* Tasks: retain the original queues, but only reveal the requested kind.
+   The admin-owned sections still refresh without hidden API mutations. */
+body.bb-admin-v31 #admin-dashboard [data-bb-task-section="physical"]
+  #book-import-followups-panel > :not(#book-import-deferred-books),
+body.bb-admin-v31 #admin-dashboard [data-bb-task-section="administration"]
+  #book-import-followups-panel > :not(#book-import-assignment-tasks) {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard [data-bb-task-section="classes"]
+  #book-import-assignment-tasks,
+body.bb-admin-v31 #admin-dashboard [data-bb-task-section="classes"]
+  #book-import-deferred-books {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard [data-bb-task-section="accounts"]
+  #book-import-followups-panel {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard #bb-admin-v31-tasks,
+body.bb-admin-v31 #admin-dashboard #book-import-followups-panel {
+  min-width: 0;
+}
+body.bb-admin-v31 #admin-dashboard [data-bb-task-section="physical"]
+  #bb-admin-v31-tasks > #book-import-followups-panel,
+body.bb-admin-v31 #admin-dashboard [data-bb-task-section="administration"]
+  #bb-admin-v31-tasks > #book-import-followups-panel {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+body.bb-admin-v31 #admin-dashboard #book-import-deferred-books,
+body.bb-admin-v31 #admin-dashboard #book-import-assignment-tasks {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-account-links {
+  border: 1px solid #d6e0ed;
+  border-radius: 13px;
+  padding: 20px;
+  background: #fff;
+}
+@media (max-width: 950px) {
+  body.bb-admin-v31 #admin-dashboard .bb-workspace-tab {
+    flex: 1 1 185px;
+  }
+}
+@media (max-width: 640px) {
+  body.bb-admin-v31 #admin-dashboard .bb-workspace-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    scroll-snap-type: x proximity;
+  }
+  body.bb-admin-v31 #admin-dashboard .bb-workspace-tab {
+    flex: 0 0 auto;
+    min-width: 150px;
+    scroll-snap-align: start;
+  }
+  body.bb-admin-v31 #admin-dashboard .bb-workspace-task-grid {
+    grid-template-columns: 1fr;
+  }
+  body.bb-admin-v31 #admin-dashboard #bb-import-workspace-students,
+  body.bb-admin-v31 #admin-dashboard #bb-import-workspace-teachers {
+    padding: 14px;
+  }
+}
