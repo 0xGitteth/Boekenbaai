@@ -157,7 +157,9 @@
       button('Leerlingen beheren', 'student', () => chooseAdmin('people','students')),
       button('Docenten beheren', 'teacher', () => chooseAdmin('people','teachers')),
       button('Klassen beheren', 'classes', () => chooseAdmin('classes')),
-      button('Uitlenen registreren', 'lending', () => chooseAdmin('loans'))
+      button('Uitlenen registreren', 'lending', () => chooseAdmin('loans')),
+      button('Openstaande taken', 'tasks', () => chooseAdmin('tasks')),
+      button('Excel importeren', 'import', () => chooseAdmin('imports'))
     );
     const activityTitle = activity.querySelector('h3');
     if (activityTitle) activityTitle.textContent = 'Laatste activiteit';

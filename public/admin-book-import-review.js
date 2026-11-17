@@ -3609,7 +3609,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         .includes(stage.status));
       root.classList.toggle('bb-review--active',activeImport);
       header.querySelector('.hint').hidden=activeImport;
-      enrichmentExtra.hidden=activeImport;
+      enrichmentExtra.hidden=activeImport
+        && !enrichmentExtra.closest('[data-bb-import-pane="enrichment"]');
       results.replaceChildren();
       deferredPanel.hidden=activeImport;
       form.hidden=activeImport;
