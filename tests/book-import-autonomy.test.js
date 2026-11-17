@@ -102,6 +102,9 @@ for(const [stored,source] of [
     {title:'Same ISBN edition',author:source}),false,
     'Different or multiply attributed authors must stay under review');
 }
+assert.equal(sameBookIdentity({title:'Zelfde titel',author:'-'},
+  {title:'Zelfde titel',author:'?'}),false,
+  'Punctuation-only placeholders must not become matching authors');
 assert.equal(sameBookIdentity({title:'Other work',author:'Kinney, Jeff'},
   {title:'Same ISBN edition',author:'Jeff Kinney'}),false,
   'Exact author equivalence may not override a substantive title mismatch');
