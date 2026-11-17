@@ -83,7 +83,7 @@ const schoolDb={books:[{
 }]};
 assert.equal(recordBookReviewChoices(schoolDb,[schoolRow],
   [{index:0,fields:{author:'Hinke van Abbema'}}],
-  {rows:[{book:{editionIsbn:'9789043531788'}}]},
+  {rows:[{book:{editionIsbn:'9789043531788',author:'Hinke van Abbema'}}]},
   'school-1','2026-11-16T22:30:00Z'),1);
 assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
   [{index:0,fields:{author:'Hinke van Abbema'}}],
@@ -95,7 +95,8 @@ assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
   const original={...initial,'Cover URL':'https://example.org/Cover.jpg'};
   const coverDb={books:[{...db.books[0],coverUrl:'https://example.org/Cover.jpg'}]};
   const fields=[{index:0,fields:{coverUrl:'https://example.org/Cover.jpg'}}];
-  assert.equal(recordBookReviewChoices(coverDb,[original],fields,corrected,
+  assert.equal(recordBookReviewChoices(coverDb,[original],fields,
+    {rows:[{book:{...corrected.rows[0].book,coverUrl:'https://example.org/Cover.jpg'}}]},
     'cover-1','2026-11-16T20:00:00Z'),1);
   assert.equal(safeRowReplays(coverDb,[original]).fieldsReused,1);
   coverDb.books[0].coverUrl='https://example.org/cover.jpg';
@@ -112,7 +113,8 @@ assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
   const source={...initial,Tags:'avontuur'};
   const tagged={books:[{...db.books[0],tags:['mysterie']}]};
   const correctedTags=[{index:0,fields:{tags:'mysterie'}}];
-  recordBookReviewChoices(tagged,[source],correctedTags,corrected,
+  recordBookReviewChoices(tagged,[source],correctedTags,
+    {rows:[{book:{...corrected.rows[0].book,tags:['mysterie']}}]},
     'tags-1','2026-11-16T20:00:00Z');
   assert.equal(safeRowReplays(tagged,[source]).fieldsReused,1);
   assert.equal(safeRowReplays(tagged,[{...source,
@@ -150,6 +152,47 @@ assert.deepEqual(safeRowReplays(schoolDb,[schoolRow]).corrections,
   const stillValid=revalidateRememberedCorrections(db,source,staged,staged);
   assert.equal(stillValid.invalidated,0);
   assert.deepEqual(stillValid.corrections,staged);
+}
+
+// The saved input is not necessarily the value stored in the library.
+// Language and list fields are parsed into canonical values at import time.
+{
+  const original={...initial,Taal:'Nederlands',Tags:'avontuur'};
+  const canonical={books:[{...db.books[0],language:'nl',
+    tags:['fantasie','mysterie']}]};
+  const rows=[{book:{...corrected.rows[0].book,
+    language:'nl',tags:['fantasie','mysterie']}}];
+  const saved=recordBookReviewChoices(canonical,[original],[{
+    index:0,fields:{language:'Nederlands',tags:'fantasie, mysterie'},
+  }],{rows},'canonical-1','2026-11-17T07:00:00Z');
+  assert.equal(saved,2);
+  assert.deepEqual(safeRowReplays(canonical,[original]).corrections,[{
+    index:0,fields:{language:'Nederlands',tags:'fantasie, mysterie'},
+  }],'The original correction must replay after catalog normalization');
+  canonical.books[0].language='en';
+  assert.deepEqual(safeRowReplays(canonical,[original]).corrections,[{
+    index:0,fields:{tags:'fantasie, mysterie'},
+  }],'A more recent manual language change must still be protected');
+}
+// Two successive ISBN choices for the same source row cannot combine a
+// title approved for edition A with a later ISBN correction to edition B.
+{
+  const raw={...initial,'ISBN-nummer':'9780306406156'};
+  const editionA={...db.books[0],title:'Correct voor A'};
+  const editionB={...db.books[0],id:'book-b',title:'Correct voor B',
+    editionIsbn:'9780439554930'};
+  const library={books:[editionA,editionB]};
+  recordBookReviewChoices(library,[raw],[{
+    index:0,fields:{editionIsbn:ISBN,title:'Correct voor A'},
+  }],{rows:[{book:{...corrected.rows[0].book,title:'Correct voor A',
+    editionIsbn:ISBN}}]},'edition-a','2026-11-16T22:00:00Z');
+  recordBookReviewChoices(library,[raw],[{
+    index:0,fields:{editionIsbn:'9780439554930'},
+  }],{rows:[{book:{...corrected.rows[0].book,title:'Correct voor B',
+    editionIsbn:'9780439554930'}}]},'edition-b','2026-11-17T06:00:00Z');
+  assert.deepEqual(safeRowReplays(library,[raw]).corrections,[{
+    index:0,fields:{editionIsbn:'9780439554930'},
+  }],'Never pair a remembered title for edition A with edition B');
 }
 
 console.log('Durable book import memory: reuse, changed source, post-edit, skip, privacy and ambiguity OK');
