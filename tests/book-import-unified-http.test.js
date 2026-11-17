@@ -525,6 +525,45 @@ async function run(){
       parts({fields:{}}));
     assert.equal(noParts.status,400);
     assert.equal(noParts.data.error,'no_sync_parts_selected');
+    // P2: Ordinary create-mode imports must also teach the book decision
+    // ledger. Previously only inventory/unified mode did this.
+    const newCreateSource=[{
+      Titel:'Een onjuist getypte titel',Auteur:'Voorbeeld Schrijver',
+      'ISBN-nummer':'9780140328721',Aantal:1,
+    }];
+    const ordinary=await call('/api/admin/book-import-stages',token,{
+      mode:'create',fileName:'gewone-import.xlsx',enrichIsbn:false,
+      file:workbook(newCreateSource),
+    });
+    assert.equal(ordinary.status,201,JSON.stringify(ordinary.data));
+    const ordinaryReviewed=await call(
+      '/api/admin/book-import-stages/'+ordinary.data.id+'/review',token,{
+      revision:ordinary.data.revision,acceptWarnings:true,
+      corrections:[{index:0,fields:{title:'De juiste titel'}}],
+    });
+    assert.equal(ordinaryReviewed.status,200,JSON.stringify(ordinaryReviewed.data));
+    const ordinaryApplied=await call(
+      '/api/admin/book-import-stages/'+ordinaryReviewed.data.id+'/apply',token,{
+      revision:ordinaryReviewed.data.revision,confirm:true,
+    });
+    assert.equal(ordinaryApplied.status,200,JSON.stringify(ordinaryApplied.data));
+    assert.equal(readDb().books.some(book=>book.editionIsbn==='9780140328721'
+      &&book.title==='De juiste titel'),true);
+    assert.equal(ordinaryApplied.data.result.report.learnedBookCorrections,1,
+      'A confirmed ordinary import must persist its book-only correction');
+    const ordinaryRepeat=await call('/api/admin/book-import-stages',token,{
+      mode:'create',fileName:'gewone-import.xlsx',enrichIsbn:false,
+      file:workbook(newCreateSource),
+    });
+    assert.equal(ordinaryRepeat.status,201,JSON.stringify(ordinaryRepeat.data));
+    assert.deepEqual(ordinaryRepeat.data.corrections,
+      [{index:0,fields:{title:'De juiste titel'}}],
+      'A repeated ordinary Excel upload reuses its approved spelling');
+    assert.equal((await call('/api/admin/book-import-stages/'
+      +ordinaryRepeat.data.id+'/cancel',token,{
+      revision:ordinaryRepeat.data.revision,
+    })).status,200);
+
     console.log('Unified HTTP import: one atomic confirmation, selected fields, repeat, and no silent deletion OK');
   }finally{
     server.kill('SIGTERM');
