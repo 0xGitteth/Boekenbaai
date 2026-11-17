@@ -3119,3 +3119,5 @@ body.book-detail-open {
   .book-detail__edition { padding: .6rem; }
   .book-detail__edition-cover { width: 65px; flex-basis: 65px; }
 }
+
+.book-detail__edition-action { align-self: flex-start; margin-top: .45rem; padding: .35rem .65rem; font-size: .78rem; white-space: normal; }
