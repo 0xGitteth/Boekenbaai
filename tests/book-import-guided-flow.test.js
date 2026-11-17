@@ -251,6 +251,10 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Final review must compute precisely which books still have pending actions');
   assert.ok(ui.includes('Open deze controle')&&ui.includes('setGuidedStep(2,item.index)'),
     'Every unresolved book needs direct navigation from the final overview');
+  assert.ok(ui.includes("if(await recheck())setGuidedStep(3)"),
+    'Finishing the last book must show the final unresolved checklist after a successful recheck');
+  assert.ok(ui.includes('return reviewSucceeded;'),
+    'A failed recheck must not navigate to a misleading completed state');
   assert.ok(ui.includes('Bekijk de '+'' ) && ui.includes('overgeslagen Excelrijen'),
     'Skipped rows must be explained separately from resolved review cards');
   assert.ok(ui.includes('toggleSkippedRow(corrections,skippedEdits,row.index,false)'),
