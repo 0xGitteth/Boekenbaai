@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const {createImportStageStore}=require('../book-import-stage');
+const {createImportStageStore,importStageView}=require('../book-import-stage');
 const {analyzeReviewedImport}=require('../book-import-review');
 
 (async()=>{
@@ -58,6 +58,28 @@ const {analyzeReviewedImport}=require('../book-import-review');
   assert.deepEqual(pendingGroups[0].worksheetRows,[23]);
   assert.deepEqual(pendingGroups.map(item=>item.reasons[0]),
     ['ISBN of voorraad','Uitlening of vaste locatie','Boekgegevens']);
+  const pendingExceptSkipped=unresolvedGuidedGroups([
+    {key:'skipped',stock:[{action:'blocked',index:0}],assignments:[],
+      metadata:[],rows:new Map([[0,{index:0,sourceRowNumber:23,
+        book:{title:'Later controleren'}}]])},
+    {key:'active',stock:[{action:'blocked',index:1}],assignments:[],
+      metadata:[],rows:new Map([[1,{index:1,sourceRowNumber:24,
+        book:{title:'Nog te beoordelen'}}]])},
+  ],new Map(),new Map(),new Set([0]));
+  assert.deepEqual(pendingExceptSkipped.map(item=>item.title),
+    ['Nog te beoordelen'],
+    'A locally skipped book must not appear in the outstanding-book index');
+  const mixedEdition=unresolvedGuidedGroups([{
+    key:'edition',rows:new Map([
+      [0,{index:0,sourceRowNumber:23,book:{title:'Later'}}],
+      [1,{index:1,sourceRowNumber:24,book:{title:'Actueel'}}],
+    ]),
+    stock:[{action:'blocked',index:0}],assignments:[{id:'1:loan',
+      rowIndex:1,choice:'pending'}],metadata:[],
+  }],new Map(),new Map(),new Set([0]));
+  assert.deepEqual(mixedEdition[0].reasons,['Uitlening of vaste locatie'],
+    'A skipped row must not impose its stock conflict on another row in the same edition');
+
   const chosenPending=unresolvedGuidedGroups([
     {key:'loan',stock:[],assignments:[{id:'2:loan',choice:'pending'}],
       metadata:[],rows:new Map()},
@@ -108,6 +130,17 @@ const {analyzeReviewedImport}=require('../book-import-review');
       'Stored worksheet with pupil names must remain private');
   assert.equal(fs.readFileSync(draftFile,'utf8').includes('Executable lookups'),false);
   const stage=created.stage;
+  const skippedStage={
+    ...stage,corrections:[{index:0,skip:true}],
+    analysis:{...stage.analysis,rows:stage.analysis.rows.map(row=>({...row,book:{}}))},
+  };
+  const visibleSkipped=importStageView(skippedStage);
+  assert.deepEqual(visibleSkipped.skippedRowLabels,
+    [{index:0,title:'Oorlogswinter',sourceRowNumber:21}],
+    'A skipped book must retain its original title in the authenticated stage view');
+  assert.deepEqual(visibleSkipped.rows[0].book,{},
+    'The skipped row must remain blank for inventory/loan planning');
+
   const pending={
     corrections:[{index:0,fields:{editionIsbn:'9780306406157'}}],
     acceptWarnings:true,
@@ -259,6 +292,10 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Skipped rows must be explained separately from resolved review cards');
   assert.ok(ui.includes('toggleSkippedRow(corrections,skippedEdits,row.index,false)'),
     'An administrator must be able to restore a skipped row without reimporting Excel');
+  assert.ok(ui.includes('const original=skippedLabels.get(row.index)'),
+    'The skipped list must display original titles after backend reanalysis');
+  assert.ok(ui.includes('new Set(skippedRows.map(row=>row.index))'),
+    'Draft skip choices must remove locally skipped books from outstanding checks');
   assert.ok(ui.includes('summary.pendingMetadata')&&ui.includes('summary.pendingAssignments')
     &&ui.includes('summary.blockedStock'),
     'Pending decisions must be identified by category rather than a mystery count');
