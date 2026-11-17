@@ -94,6 +94,40 @@ assert.equal(scarce.suggestions.length,3);
 assert.ok(scarce.suggestions.slice(0,2).every(x=>x.available>0),
   'Every available title must be selected before unavailable suggestions');
 
+
+// The second, situation-specific answer must affect the actual top result.
+// This is not just a conversational UI with unchanged recommendations.
+const adaptiveDb={books:[
+  {id:'a',title:'Het raadsel',author:'A',themes:['Detective','Mysterie'],pageCount:180,status:'available'},
+  {id:'b',title:'De gevolgen',author:'B',themes:['Psychische gezondheid','Identiteit'],pageCount:180,status:'available'},
+  {id:'c',title:'Magie in het bos',author:'C',themes:['Fantasy','Magie'],pageCount:220,status:'available'},
+  {id:'d',title:'De uitvinder',author:'D',themes:['Sciencefiction','Technologie'],pageCount:240,status:'available'},
+  {id:'e',title:'Lachen op school',author:'E',themes:['Humor','School & Opgroeien'],pageCount:120,status:'available'},
+  {id:'f',title:'Vroeger',author:'F',themes:['Geschiedenis','Oorlog'],pageCount:190,status:'available'},
+  {id:'g',title:'Een echte ervaring',author:'G',themes:['Waargebeurd','Biografie'],pageCount:180,status:'available'},
+]};
+const top=(situation,detail)=>rankBooks(adaptiveDb,{route:'new',situation,detail,seed:'fixed'})
+  .suggestions[0].title;
+assert.equal(top('secret','puzzles'),'Het raadsel');
+assert.equal(top('secret','people'),'De gevolgen',
+  'Changing the second answer must select a different book, even for the same first answer');
+assert.equal(top('worlds','magic'),'Magie in het bos');
+assert.equal(top('worlds','scifi'),'De uitvinder',
+  'Fantasy and science fiction interests must lead to different books');
+assert.equal(top('funny','schoolhumor'),'Lachen op school');
+assert.equal(top('true','history'),'Vroeger');
+assert.equal(top('true','lives'),'Een echte ervaring');
+assert.equal(top('friends','choices'),'De gevolgen');
+assert.equal(top('none','realistic'),'Lachen op school');
+assert.equal(top('none','none')!==undefined,true,
+  'Unknown choices must not block recommendations');
+assert.equal(rankBooks(adaptiveDb,{route:'new',situation:'secret',detail:'unsafe-value'})
+  .suggestions.length,3,
+  'Invalid input is neutralized and cannot break rankings');
+assert.ok(rankBooks(adaptiveDb,{route:'new',situation:'secret',detail:'puzzles'})
+  .suggestions[0].reason.includes('Detective'),
+  'Reasons should come from actual catalogue themes, not fabricated story descriptions');
+
 const empty=rankBooks({books:[]},{});
 assert.equal(empty.emptyCatalog,true);
 assert.equal(empty.suggestions.length,0);

@@ -8,25 +8,46 @@ const keyOf = book => JSON.stringify([norm(book.title), norm(book.author)]);
 const QUESTION_VALUES = Object.freeze({
   route: ['new','similar','surprise'],
   activity: ['gaming','film','sport','music','nature','other','unknown'],
-  situation: ['secret','friends','chance','true','none'],
+  situation: ['secret','friends','chance','true','funny','worlds','none'],
   mood: ['exciting','funny','realistic','fantasy','true','none'],
   length: ['short','any'],
-  detail: ['action','puzzles','people','worlds','facts','none'],
+  detail: ['action','puzzles','people','worlds','facts','tension',
+    'relationships','choices','realistic','adventure','growth','lives',
+    'history','schoolhumor','funny','absurd','magic','scifi','none'],
 });
 const THEME_HINTS = Object.freeze({
+  // First answer: broad story direction. Second answer: more specific
+  // interest, with a separate vocabulary. These are curated catalogue tags,
+  // not guesses from the pupil's hobbies or reading ability.
   secret: ['mysterie','geheim','detective','spanning','thriller'],
-  friends: ['vriendschap','vrienden','relaties','familie'],
-  chance: ['avontuur','actie','ontdekken','fantasy'],
-  true: ['waargebeurd','biografie','geschiedenis','non-fictie','non fictie'],
-  exciting: ['spanning','thriller','mysterie','actie','avontuur','horror'],
+  friends: ['vriendschap','relaties','familie','school','opgroeien'],
+  chance: ['avontuur','actie','ontdekken','identiteit'],
+  true: ['waargebeurd','biografie','geschiedenis','maatschappij','non-fictie','non fictie'],
   funny: ['humor','grappig','komedie'],
-  realistic: ['realistisch','school','vriendschap','familie','maatschappij','relaties'],
+  worlds: ['fantasy','fantasie','magie','sciencefiction','science fiction','sci-fi'],
+
+  puzzles: ['detective','mysterie','geheim','puzzel'],
+  tension: ['spanning','thriller','horror','mysterie'],
+  people: ['psychische gezondheid','relaties','familie','identiteit','vriendschap'],
+  relationships: ['vriendschap','relaties','familie'],
+  choices: ['identiteit','opgroeien','maatschappij','psychische gezondheid'],
+  realistic: ['school','opgroeien','familie','maatschappij','vriendschap'],
+  adventure: ['avontuur','actie','fantasy','ontdekken'],
+  growth: ['identiteit','opgroeien','vriendschap','maatschappij'],
+  lives: ['waargebeurd','biografie','maatschappij','psychische gezondheid'],
+  history: ['geschiedenis','oorlog','waargebeurd'],
+  facts: ['wetenschap','natuur','dieren','maatschappij','non-fictie','non fictie'],
+  schoolhumor: ['humor','school','opgroeien'],
+  absurd: ['humor','fantasy','fantasie'],
+  magic: ['fantasy','fantasie','magie'],
+  scifi: ['sciencefiction','science fiction','sci-fi','technologie','wetenschap'],
+
+  // Backwards compatibility for recommendations requested by an older client.
+  exciting: ['spanning','thriller','mysterie','actie','avontuur','horror'],
+  realisticMood: ['school','familie','vriendschap','maatschappij'],
   fantasy: ['fantasy','fantasie','magie','sciencefiction','science fiction','sci-fi'],
   action: ['actie','avontuur','spanning'],
-  puzzles: ['mysterie','detective','geheim','puzzel'],
-  people: ['vriendschap','relaties','familie','school'],
-  worlds: ['fantasy','fantasie','sciencefiction','science fiction','avontuur'],
-  facts: ['waargebeurd','biografie','geschiedenis','non-fictie','non fictie','wetenschap'],
+  worldsLegacy: ['fantasy','fantasie','sciencefiction','avontuur'],
 });
 function validateChoices(value) {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -150,18 +171,27 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const works = groupBooks(db);
   const alreadySeen = new Set([...seenKeys,...choice.excludeKeys]);
   const read = studentId ? readKeysAndThemes(db, studentId, works) : {readKeys:new Set(),themes:new Set()};
-  const hinted = [...new Set([...(THEME_HINTS[choice.situation]||[]),
-    ...(THEME_HINTS[choice.mood]||[]),...(THEME_HINTS[choice.detail]||[])])].map(norm);
+  const directionHints=(THEME_HINTS[choice.situation]||[]).map(norm);
+  const detailHints=(THEME_HINTS[choice.detail]||[]).map(norm);
+  const legacyMoodHints=(THEME_HINTS[choice.mood]||[]).map(norm);
+  const matchesTags=(themes,hints)=>themes.filter(theme=>
+    hints.some(h=>norm(theme).includes(h)));
   const candidates = [];
   for (const work of works) {
     if (!choice.allowRepeats && alreadySeen.has(work.key)) continue;
     // Confirmed reads are not recommendations for a new book; only compare
     // their curated themes when the learner explicitly asks for similarities.
     if (read.readKeys.has(work.key)) continue;
-    const matched = work.themes.filter(theme => hinted.some(h => norm(theme).includes(h)));
+    const directionMatches=matchesTags(work.themes,directionHints);
+    const detailMatches=matchesTags(work.themes,detailHints);
+    const moodMatches=matchesTags(work.themes,legacyMoodHints);
+    const matched=[...new Set([...detailMatches,...directionMatches,...moodMatches])];
     const familiar = choice.route === 'similar'
       ? work.themes.filter(theme => read.themes.has(norm(theme))) : [];
-    let score = matched.length * 12 + familiar.length * 5 + (work.available ? 3 : 0);
+    // The branch-specific second answer should change the recommendations;
+    // the first answer still sets the general direction.
+    let score = detailMatches.length * 17 + directionMatches.length * 9
+      + moodMatches.length * 4 + familiar.length * 6 + (work.available ? 3 : 0);
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
     // Free-time activity is deliberately not mapped to a book's genre.
     candidates.push({ work, matched, familiar, score, tiebreak: tie(work.key, choice.seed) });
