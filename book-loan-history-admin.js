@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const {noteLoanActivity,circulationRevision}=require('./book-import-followups');
 const {persistExcelLoanReceipts}=require('./book-import-loan-migration');
 const {keyForBook,keyForReading}=require('./personal-exam-reading-list');
+const {mayManageStudent}=require('./book-loan-policy');
 const norm = x => String(x || '').normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
 const eventTypes = new Set(['check_out','check_in','check_out_class','check_in_class']);
 function borrowEvents(db){
@@ -149,7 +150,7 @@ function removeFalseCurrentLoan(db,actor,input,now=new Date().toISOString()){
   return {ok:true,bookId:copy.id,activeLoanRemoved:true,
     historyUnchanged:true};
 }
-function searchHistory(db,{student='',book='',limit=100}={}){
+function searchHistory(db,{student='',book='',limit=100,actor=null}={}){
   const studentQuery=norm(student),bookQuery=norm(book);
   const students=new Map((db.students||[]).map(item=>[item.id,item]));
   const books=new Map((db.books||[]).map(item=>[item.id,item]));
@@ -185,6 +186,9 @@ function searchHistory(db,{student='',book='',limit=100}={}){
   const matches=[];
   for(const group of grouped.values()){
     const studentItem=students.get(group.studentId);
+    // Role-based filtering happens before sorting or applying the result
+    // limit; querying another pupil's name cannot reveal their history.
+    if(actor?.role==='teacher'&&!mayManageStudent(db,actor,studentItem))continue;
     const bookItem=books.get(group.bookId);
     const studentName=String(studentItem?.name||'Leerling niet meer aanwezig');
     const title=String(bookItem?.title
@@ -205,11 +209,17 @@ function searchHistory(db,{student='',book='',limit=100}={}){
     ||a.title.localeCompare(b.title,'nl')).slice(0,Math.max(1,Math.min(limit,250)));
 }
 function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
-  if(actor?.role!=='admin')return {ok:false,error:'forbidden'};
+  if(!['teacher','admin'].includes(actor?.role))return {ok:false,error:'forbidden'};
   const {studentId,bookId,expectedFingerprint,confirm}=input||{};
   if(typeof studentId!=='string'||typeof bookId!=='string'
     ||typeof expectedFingerprint!=='string'||confirm!==true)
     return {ok:false,error:'invalid_request'};
+  // Re-evaluate the current classroom roster at commit time. A teacher's
+  // previous access, a cached JWT class list, or a user-supplied student ID
+  // cannot authorize deleting another pupil's reading history.
+  const learner=(db.students||[]).find(item=>item.id===studentId);
+  if(actor.role==='teacher'&&!mayManageStudent(db,actor,learner))
+    return {ok:false,error:'forbidden'};
   const group=pair(db,studentId,bookId);
   if(!group.logs.length&&!group.readings.length&&!group.periods.length)
     return {ok:false,error:'no_history'};
