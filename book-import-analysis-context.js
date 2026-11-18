@@ -357,7 +357,9 @@ function applyContext(mapped, row, options) {
   if (hasRealStudentLoan) {
     const match = matchStudentWithClass(studentLoan, classLoan, options.students, options.classes);
     if (match.status === 'matched') {
-      row.context.studentLoan = { status: 'matched', ...match.matches[0], excelName:studentLoan };
+      row.context.studentLoan = { status: 'matched', ...match.matches[0],
+        ...(comparableText(studentLoan)!==comparableText(match.matches[0].name)
+          ?{excelName:studentLoan}:{}) };
       if(match.classHintOutdated)addIssue(row,'student_class_hint_outdated','info',{
         student:studentLoan,classHint:classLoan,
         matchedStudentId:match.matches[0].id,
