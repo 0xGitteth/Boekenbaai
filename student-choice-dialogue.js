@@ -221,6 +221,23 @@ function traitsForBook(book){
     TRAIT_CACHE.delete(TRAIT_CACHE.keys().next().value);
   return matched;
 }
+// Ranking visits all public works repeatedly across PIN sessions. Keep the
+// complete content-addressed profile snapshot so catalogs larger than the
+// individual trait cache do not recompute every book on each request.
+const RANK_PROFILE_CACHE=new Map();
+function profilesForWorks(works){
+  const list=Array.isArray(works)?works:[];
+  const digest=crypto.createHash('sha256').update(JSON.stringify(
+    list.map(work=>[work.key,work.themes,work.tags,work.description])
+  )).digest('hex');
+  const found=RANK_PROFILE_CACHE.get(digest);
+  if(found)return found;
+  const profiles=new Map(list.map(work=>[work.key,traitsForBook(work)]));
+  RANK_PROFILE_CACHE.set(digest,profiles);
+  if(RANK_PROFILE_CACHE.size>2)
+    RANK_PROFILE_CACHE.delete(RANK_PROFILE_CACHE.keys().next().value);
+  return profiles;
+}
 function validatedAnswers(input){
   if(!Array.isArray(input))return [];
   const result=[],seen=new Set();
@@ -342,4 +359,4 @@ function selection(db,{answers=[],excludeQuestionIds=[],seed='',route='new'}={})
     confident:false};
 }
 module.exports={QUESTIONS,traitsForBook,validatedAnswers,preferenceWeights,
-  scoreTraits,selection};
+  scoreTraits,selection,profilesForWorks};
