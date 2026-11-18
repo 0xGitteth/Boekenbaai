@@ -115,6 +115,7 @@ function loanEvidence(book, referenceOwners, students, classes) {
   }));
   const conflicts=(
     (book.status==='available'&&isUnavailable(book,referenceOwners))
+    ||(book.status==='borrowed'&&!borrower&&holderIds.length===0)
     ||(book.borrowedBy&&(
       holderIds.length!==1||holderIds[0]!==book.borrowedBy))
     ||(book.borrowedByClassId&&holderIds.length>0)
@@ -148,7 +149,7 @@ function sourceEvidence(task) {
         ?ctx.classContext.join(', '):'')||'',
     excelFixedLocation:diff.excelFixedLocation||
       ctx.fixedLocation?.raw||ctx.fixedLocation?.label||'',
-    excelBarcode:row?.book?.barcode||task.barcode||'',
+    excelBarcode:row ?(row.book?.barcode||''):(task.original?.excelBarcode||''),
     excelEditionIsbn:row?.book?.editionIsbn||task.editionIsbn||'',
     missingFromSnapshot:diff.missingFromSnapshot===true,
   };
