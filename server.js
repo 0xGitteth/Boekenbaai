@@ -4110,11 +4110,14 @@ async function handleApi(req, res, requestUrl) {
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/status') {
       const db = getDb();
-      const groupedBooks = groupBooksByTitleAuthor(db.books);
+      const studentClaims=claimIndex(db);
+      const visibleBooks=db.books.filter(book=>user?.role==='admin'||!bookIsHidden(book))
+        .map(book=>({...book,status:displayedBorrowed(book,studentClaims)?'borrowed':book.status}));
+      const groupedBooks = groupBooksByTitleAuthor(visibleBooks);
       const totalBooks = groupedBooks.reduce((sum, group) => sum + group.totalCopies, 0);
       const borrowedBooks = groupedBooks.reduce((sum, group) => sum + group.borrowedCopies, 0);
       const availableBooks = groupedBooks.reduce((sum, group) => sum + group.availableCopies, 0);
-      const examListBooks = db.books.filter((book) => book.suitableForExamList).length;
+      const examListBooks = visibleBooks.filter((book) => book.suitableForExamList).length;
       return sendJson(res, 200, {
         totalBooks,
         borrowedBooks,
