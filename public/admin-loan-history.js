@@ -60,6 +60,7 @@ if(loanPanel){
   // Removing a wrong *current* link is administrator-only. The server
   // checks the exact physical copy, original borrower and a fresh revision.
   const currentSection=node('section',undefined,'bb-admin-loan-correction');
+  currentSection.hidden=true; // Show only after the admin permission probe.
   const currentTitle=node('h4','Foutieve actuele uitlening corrigeren');
   const currentNote=node('p','Alleen voor beheerders. Verwijdert de onjuiste '
     +'actuele koppeling zonder een inlevering of leesantwoord vast te leggen. '
