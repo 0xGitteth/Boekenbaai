@@ -71,7 +71,6 @@ const NUANCE_HINTS=Object.freeze({
   ],
   "tech_secret": [
     "technologie",
-    "mysterie",
     "sciencefiction"
   ],
   "horror": [
@@ -577,7 +576,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       ? work.themes.filter(theme => read.themes.has(norm(theme))) : [];
     // The branch-specific second answer should change the recommendations;
     // the first answer still sets the general direction.
-    let score = nuanceMatches.length * 24 + detailMatches.length * 17
+    let score = nuanceMatches.length * 32 + detailMatches.length * 17
       + lensMatches.length * 11 + directionMatches.length * 9
       + moodMatches.length * 4 + familiar.length * 6 + (work.available ? 3 : 0);
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
