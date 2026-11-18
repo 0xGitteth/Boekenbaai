@@ -107,6 +107,19 @@ const book=(title,overrides={})=>({
   });
   assert.equal(ambiguous.rows[0].status,'conflict');
   assert.equal(ambiguous.rows[0].context.studentLoan.status,'ambiguous');
+  // A first name initially identified within a class may not be silently
+  // upgraded to the canonical full name when the pupil later moves class.
+  // Revalidation must still use the exact source cell "Dex".
+  assert.equal(a[3].context.studentLoan.excelName,'Dex');
+  const movedDex=students.map(person=>person.id==='dex-other'
+    ?{...person,classIds:['skbb']}:person);
+  const movedClasses=classes.map(klass=>klass.id==='obkt'
+    ?{...klass,studentIds:['nena']}:klass.id==='skbb'
+      ?{...klass,studentIds:[...klass.studentIds,'dex-other']}:klass);
+  assert.equal(resolveReviewedLoan(a[3],{
+    students:movedDex,classes:movedClasses,
+  }).ok,false,'A stale first-name-only match must not become a loan');
+
   const sameFullName=[
     {id:'same-1',name:'Sam Smith',firstName:'Sam',active:true,classIds:['skbb']},
     {id:'same-2',name:'Sam Smith',firstName:'Sam',active:true,classIds:['obkt']},
