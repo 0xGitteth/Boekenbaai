@@ -83,6 +83,8 @@ const {listDeferredBookTasks, resolveDeferredBookTask, retainDeferredBookChecks}
 const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
   removeFalseHistory,listCurrentLoans,removeFalseCurrentLoan} =
   require('./book-loan-history-admin');
+const {listCandidates:continuousLoanCandidates,correctContinuousLoan} =
+  require('./book-loan-event-correction');
 
 let xlsxModule = null;
 
@@ -5137,13 +5139,17 @@ async function handleApi(req, res, requestUrl) {
     if(requestUrl.pathname===loanHistoryRoot
       ||requestUrl.pathname===loanHistoryRoot+'/remove'
       ||requestUrl.pathname===loanHistoryRoot+'/current'
-      ||requestUrl.pathname===loanHistoryRoot+'/current/remove'){
+      ||requestUrl.pathname===loanHistoryRoot+'/current/remove'
+      ||requestUrl.pathname===loanHistoryRoot+'/continuity'
+      ||requestUrl.pathname===loanHistoryRoot+'/continuity/correct'){
       // History: the relevant teacher's own students or an administrator.
       // Undoing a *current* loan remains exclusively administrator-only.
       if(!ensureRole(user,['teacher','admin']))
         return sendJson(res,user?403:401,{message:'Alleen voor medewerkers.'});
       if((requestUrl.pathname===loanHistoryRoot+'/current'
-        ||requestUrl.pathname===loanHistoryRoot+'/current/remove')
+        ||requestUrl.pathname===loanHistoryRoot+'/current/remove'
+        ||requestUrl.pathname===loanHistoryRoot+'/continuity'
+        ||requestUrl.pathname===loanHistoryRoot+'/continuity/correct')
         &&user.role!=='admin')
         return sendJson(res,403,{message:'Alleen beheerders mogen actuele uitleningen corrigeren.'});
       res.setHeader('Cache-Control','no-store');
@@ -5159,6 +5165,44 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res,200,{items:listCurrentLoans(getDb(),{
           borrower:requestUrl.searchParams.get('borrower')||'',
           book:requestUrl.searchParams.get('book')||'',limit:100})});
+      }
+      if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot+'/continuity'){
+        return sendJson(res,200,{items:continuousLoanCandidates(getDb(),{
+          borrower:requestUrl.searchParams.get('borrower')||'',
+          book:requestUrl.searchParams.get('book')||'',limit:60})});
+      }
+      if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/continuity/correct'){
+        const body=await parseBody(req,3000);
+        let result=null;
+        try{
+          await mutateJsonLockedAsync({
+            lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:2500,
+            read:()=>loadDb(),
+            mutate:latest=>{
+              const administrator=(latest.users||[]).find(entry=>entry.id===user.id
+                &&entry.role==='admin'&&entry.active!==false
+                &&entry.isActive!==false&&entry.disabled!==true
+                &&entry.status!=='inactive');
+              if(!administrator){
+                result={ok:false,error:'admin_inactive'};
+                return false;
+              }
+              result=correctContinuousLoan(latest,administrator,body);
+              if(!result.ok)return false;
+              assertReviewedImportNotLost(latest);
+              return latest;
+            },
+          });
+        }catch(error){
+          if(error?.code==='DATABASE_WRITE_BUSY')return sendJson(res,409,{
+            message:'De uitleenadministratie wordt gewijzigd. Zoek de registratie opnieuw.',
+            error:'write_busy'});
+          throw error;
+        }
+        if(!result?.ok)return sendJson(res,result?.error==='forbidden'?403:409,{
+          message:'Deze leenperiode kan niet veilig worden samengevoegd. Controleer de registratie opnieuw.',
+          error:result?.error||'unknown'});
+        return sendJson(res,200,result);
       }
       if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/current/remove'){
         const body=await parseBody(req,3000);

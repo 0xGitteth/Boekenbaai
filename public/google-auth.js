@@ -324,7 +324,7 @@
     if(!existing || document.body?.dataset.page!=='staff')return;
     try {
       const data=await apiFetch('/api/auth/google/manage');
-      if(data.role!=='teacher'||!existing.isConnected)return;
+      if(!['teacher','admin'].includes(data.role)||!existing.isConnected)return;
       const fresh=createTeacherGoogleRequests(data);
       // Replace the whole node so approval handlers reference the live list.
       existing.replaceWith(fresh);
@@ -471,6 +471,18 @@
       (host.querySelector('[data-teacher-view="tasks"]')||host).append(requestsPanel);
       (host.querySelector('[data-teacher-view="account"]')||host).append(panel);
     }else{
+      // The student requests are TASKS, not a subsection of the pupils'
+      // directory or teacher account-email editor. Keep a permanent panel
+      // even after the final request is approved.
+      const requestPanel=makeElement('section',{
+        className:'panel google-manage--requests'
+      });
+      requestPanel.id='admin-student-link-request-panel';
+      const requests=panel.querySelector('#teacher-google-link-requests');
+      if(requests)requestPanel.append(requests);
+      const requestHost=document.getElementById('admin-student-link-requests-host')
+        ||document.getElementById('admin-modern-google-host')||host;
+      requestHost.append(requestPanel);
       (document.getElementById('admin-modern-google-host')||host).append(panel);
     }
   }

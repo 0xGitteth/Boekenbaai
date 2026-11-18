@@ -186,6 +186,12 @@
     const existingLink=view.querySelector('#admin-staff-link-requests');
     if(existingLink)linkHost.append(existingLink);
     view.append(linkHost);
+    const studentLinkHost=make('section','bb-workspace-google-requests');
+    studentLinkHost.id='admin-student-link-requests-host';
+    const priorStudentLinks=view.querySelector('#admin-student-link-request-panel')
+      ||$('#admin-modern-google-host #admin-student-link-request-panel');
+    if(priorStudentLinks)studentLinkHost.append(priorStudentLinks);
+    view.append(studentLinkHost);
 
     const entries=[
       {id:'overview',label:'Overzicht',panel:'bb-workspace-task-overview'},
@@ -252,6 +258,7 @@
       setInactive(teacherExit,id!=='accounts');
       setInactive(accountLinks,id!=='accounts');
       setInactive(linkHost,id!=='accounts');
+      setInactive(studentLinkHost,id!=='accounts');
       const explanations={
         overview:'Kies het soort controle. Je ziet alleen de bijbehorende taken.',
         physical:'Controleer fysieke exemplaren. Gelijke edities blijven afzonderlijke taken.',
