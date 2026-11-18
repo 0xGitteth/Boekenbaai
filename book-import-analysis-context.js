@@ -219,9 +219,17 @@ function matchStudentWithClass(value, classHint, students, classes) {
   const typed=valueText(value).trim();
   const fullName=typed.split(/\s+/).filter(Boolean).length>=2
     &&/[\p{L}]/u.test(typed);
-  if(fullName){
+  if(fullName&&Array.isArray(classes)&&classes.length){
+    // A current, independently confirmed classroom membership is mandatory.
+    // With no class directory we cannot distinguish an old class from a
+    // corrupted or incomplete import source.
+    const inCurrentClass=person=>classes.some(klass=>
+      (Array.isArray(person.classIds)&&person.classIds.includes(klass.id))
+      ||person.classId===klass.id
+      ||(Array.isArray(klass.studentIds)&&klass.studentIds.includes(person.id)));
     const candidates=(Array.isArray(students)?students:[]).filter(person=>
       person?.active!==false&&person?.status!=='inactive'
+      &&inCurrentClass(person)
       &&safeEntityNames(person).some(name=>comparableText(name)===comparableText(typed)))
       .map(person=>({id:jsonSafeIdentifier(person.id),
         name:safeEntityNames(person)[0]||typed}))
