@@ -105,6 +105,7 @@
     class_loan_ambiguous:'De genoemde uitleenklas kan meerdere klassen bedoelen.',
     student_loan_unmatched:'De genoemde leerling kan niet gevonden worden.',
     student_loan_ambiguous:'De leerlingnaam hoort mogelijk bij meerdere accounts.',
+    student_class_hint_outdated:'De leerling is uniek herkend aan de volledige naam, maar de Excelklas wijkt af van de huidige klaskoppeling.',
     class_context_requires_classification:'Geef aan of de klasvermelding een vaste plek of een uitlening betekent.',
     fixed_location_needs_manual_identification:'De vaste plek kan niet eenduidig worden bepaald.',
     location_context_requires_followup:'Het fysieke boek of de vaste klaslocatie kan niet veilig worden gekoppeld.',

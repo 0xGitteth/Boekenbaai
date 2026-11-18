@@ -206,14 +206,41 @@ function candidateStudentInClass(name, student, classId, classes) {
 function matchStudentWithClass(value, classHint, students, classes) {
   if (!classHint) return matchEntityByName(value, students);
   const group = matchClassByName(classHint, classes);
-  if (group.status !== 'matched') return { status: group.status, matches: [], classMatch: group };
-  const matches = (Array.isArray(students) ? students : []).filter(person =>
-    candidateStudentInClass(value, person, group.matches[0].id, classes))
+  const matches = group.status==='matched'?(Array.isArray(students)?students:[])
+    .filter(person => candidateStudentInClass(value, person, group.matches[0].id, classes))
     .map(person => ({ id: jsonSafeIdentifier(person.id),
       name: safeEntityNames(person)[0] || valueText(value) }))
-    .filter(person => person.id);
-  if (matches.length === 1) return { status: 'matched', matches, classMatch: group };
-  return { status: matches.length ? 'ambiguous' : 'unmatched', matches, classMatch: group };
+    .filter(person => person.id):[];
+  if(matches.length===1)return {status:'matched',matches,classMatch:group};
+  if(matches.length>1)return {status:'ambiguous',matches,classMatch:group};
+  // Older Excel files can refer to last year's class. A class mismatch is
+  // insufficient reason to discard a *unique, complete* pupil name.
+  // Never use this fallback for first-name-only imports or duplicate names.
+  const typed=valueText(value).trim();
+  const fullName=typed.split(/\s+/).filter(Boolean).length>=2
+    &&/[\p{L}]/u.test(typed);
+  if(fullName&&Array.isArray(classes)&&classes.length){
+    // A current, independently confirmed classroom membership is mandatory.
+    // With no class directory we cannot distinguish an old class from a
+    // corrupted or incomplete import source.
+    const inCurrentClass=person=>classes.some(klass=>
+      (Array.isArray(person.classIds)&&person.classIds.includes(klass.id))
+      ||person.classId===klass.id
+      ||(Array.isArray(klass.studentIds)&&klass.studentIds.includes(person.id)));
+    const candidates=(Array.isArray(students)?students:[]).filter(person=>
+      person?.active!==false&&person?.status!=='inactive'
+      &&inCurrentClass(person)
+      &&safeEntityNames(person).some(name=>comparableText(name)===comparableText(typed)))
+      .map(person=>({id:jsonSafeIdentifier(person.id),
+        name:safeEntityNames(person)[0]||typed}))
+      .filter(person=>person.id);
+    if(candidates.length===1)return {status:'matched',matches:candidates,
+      classMatch:group,classHintOutdated:true};
+    if(candidates.length>1)return {status:'ambiguous',matches:candidates,
+      classMatch:group};
+  }
+  return {status:group.status==='matched'?'unmatched':group.status,
+    matches:[],classMatch:group};
 }
 
 function applyContext(mapped, row, options) {
@@ -329,8 +356,15 @@ function applyContext(mapped, row, options) {
   }
   if (hasRealStudentLoan) {
     const match = matchStudentWithClass(studentLoan, classLoan, options.students, options.classes);
-    if (match.status === 'matched') row.context.studentLoan = { status: 'matched', ...match.matches[0] };
-    else {
+    if (match.status === 'matched') {
+      row.context.studentLoan = { status: 'matched', ...match.matches[0],
+        ...(comparableText(studentLoan)!==comparableText(match.matches[0].name)
+          ?{excelName:studentLoan}:{}) };
+      if(match.classHintOutdated)addIssue(row,'student_class_hint_outdated','info',{
+        student:studentLoan,classHint:classLoan,
+        matchedStudentId:match.matches[0].id,
+      });
+    } else {
       row.context.studentLoan = { status: match.status, name: studentLoan };
       addIssue(row, match.status === 'ambiguous' ? 'student_loan_ambiguous' : 'student_loan_unmatched', 'conflict', {
         value: studentLoan, classHint: classLoan || null,

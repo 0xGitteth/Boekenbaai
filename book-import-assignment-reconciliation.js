@@ -76,7 +76,8 @@ function desiredLoan(row, db) {
     const item=student||klass, type=student?'student':'class';
     const candidates=type==='student'?db.students:db.classes;
     const matched=type==='student'&&c.studentClassHint
-      ? matchStudentWithClass(item.name,c.studentClassHint.label,db.students||[],db.classes||[])
+      ? matchStudentWithClass(item.excelName||item.name,
+        c.studentClassHint.label,db.students||[],db.classes||[])
       : matchEntityByName(item.name,candidates);
     if(item.status!=='matched' || matched.status!=='matched'
       || matched.matches[0].id!==item.id)

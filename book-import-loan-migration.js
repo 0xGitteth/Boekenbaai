@@ -26,7 +26,8 @@ function resolveReviewedLoan(row, { students = [], classes = [] } = {}) {
   const kind = studentLoan ? 'student' : 'class';
   const directory = kind === 'student' ? students : classes;
   const actual = kind === 'student' && context.studentClassHint
-    ? matchStudentWithClass(desired.name, context.studentClassHint.label, students, classes)
+    ? matchStudentWithClass(desired.excelName||desired.name,
+      context.studentClassHint.label, students, classes)
     : matchEntityByName(desired.name, directory);
   if (actual.status !== 'matched' || actual.matches[0].id !== desired.id) {
     return { ok: false, error: 'loan_borrower_changed' };

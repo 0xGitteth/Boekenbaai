@@ -107,6 +107,19 @@ const book=(title,overrides={})=>({
   });
   assert.equal(ambiguous.rows[0].status,'conflict');
   assert.equal(ambiguous.rows[0].context.studentLoan.status,'ambiguous');
+  // A first name initially identified within a class may not be silently
+  // upgraded to the canonical full name when the pupil later moves class.
+  // Revalidation must still use the exact source cell "Dex".
+  assert.equal(a[3].context.studentLoan.excelName,'Dex');
+  const movedDex=students.map(person=>person.id==='dex-other'
+    ?{...person,classIds:['skbb']}:person);
+  const movedClasses=classes.map(klass=>klass.id==='obkt'
+    ?{...klass,studentIds:['nena']}:klass.id==='skbb'
+      ?{...klass,studentIds:[...klass.studentIds,'dex-other']}:klass);
+  assert.equal(resolveReviewedLoan(a[3],{
+    students:movedDex,classes:movedClasses,
+  }).ok,false,'A stale first-name-only match must not become a loan');
+
   const sameFullName=[
     {id:'same-1',name:'Sam Smith',firstName:'Sam',active:true,classIds:['skbb']},
     {id:'same-2',name:'Sam Smith',firstName:'Sam',active:true,classIds:['obkt']},
@@ -121,6 +134,44 @@ const book=(title,overrides={})=>({
     'A global full-name collision must not block a class-qualified loan');
   assert.equal(sameAnalysis.rows[0].context.classLoan,undefined);
 
+  // A current pupil may have moved class since the Excel was created.
+  // Real uploaded workbook: row 234, H@CK het instituut, Rik Meerhoff,
+  // old BK4 class label. The unique full name must not be silently dropped.
+  const newClass={id:'current-t4',name:'VMBO theoretisch 4',studentIds:['rik']};
+  const oldClass={id:'old-bk4',name:'VMBO basis-kader 4',studentIds:[]};
+  const rik={id:'rik',name:'Rik Meerhoff',firstName:'Rik',
+    lastName:'Meerhoff',active:true,classIds:['current-t4'],borrowedBooks:[]};
+  const bookRik={
+    'Achternaam schrijver':'Mous','Voornaam schrijver':'Mirjam',
+    Titel:'H@CK het instituut ','ISBN-nummer':9789000366293,
+    'Geleend door klas':'BK4','naam leerling':'Rik Meerhoff',
+    Kolom1:'gaat van de lijst',
+  };
+  const rikImport=await analyzeBookImportRows([bookRik],{
+    students:[rik],classes:[newClass,oldClass],lookupIsbn:async()=>null,
+    lookupTitleAuthor:async()=>null,
+  });
+  assert.equal(rikImport.rows[0].context.studentLoan.id,'rik',
+    'A uniquely identified full name must survive an outdated class hint');
+  assert.ok(rikImport.rows[0].issues.some(issue=>
+    issue.code==='student_class_hint_outdated'),
+    'Warn that the Excel class and the current class differ');
+  assert.equal(rikImport.rows[0].context.excludeFromSchoolCollection,undefined,
+    'An unknown Excel note must not delete the book');
+  assert.deepEqual(resolveReviewedLoan(rikImport.rows[0],{
+    students:[rik],classes:[newClass,oldClass],
+  }).borrower,{type:'student',id:'rik',name:'Rik Meerhoff'});
+  const unsafeShort=await analyzeBookImportRows([book('Onzekere voornaam',{
+    'Geleend door klas':'BK4','naam leerling':'Rik',
+  })],{students:[rik],classes:[newClass,oldClass]});
+  assert.notEqual(unsafeShort.rows[0].context.studentLoan.status,'matched',
+    'A class mismatch cannot be bypassed with only a first name');
+  const duplicateFull=await analyzeBookImportRows([book('Twee dezelfde namen',{
+    'Geleend door klas':'BK4','naam leerling':'Rik Meerhoff',
+  })],{students:[rik,{...rik,id:'rik-other'}],classes:[newClass,oldClass]});
+  assert.equal(duplicateFull.rows[0].context.studentLoan.status,'ambiguous',
+    'Duplicate full names must not create an automatic loan');
+  
   // Ensure the editor exposes the filled source fields rather than blank
   // boxes that could trick staff into clearing or overwriting valid context.
   const fs=require('node:fs'),path=require('node:path');
