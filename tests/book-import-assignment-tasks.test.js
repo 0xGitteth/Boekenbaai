@@ -361,4 +361,65 @@ assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
   assert.equal(live.books[0].fixedLocation,'Klas A');
 }
 
+
+// A postponed import task must show the original Excel evidence next to
+// current stored book and borrower evidence without altering either.
+{
+  const live=initial();
+  const source=row({studentLoan:{status:'matched',id:'tim',name:'Tim Leerling'}});
+  const task=defer(live,source,'Keuzelijst bibliotheek (2).xlsx');
+  const serializedBefore=JSON.stringify(live);
+  const entry=listDeferredAssignmentTasks(live).tasks[0];
+  assert.equal(entry.reportId,task.reportId);
+  assert.equal(entry.differenceId,task.differenceId);
+  assert.equal(entry.physicalIdentity.status,'linked');
+  assert.equal(entry.physicalIdentity.bookId,'copy-1');
+  assert.equal(entry.sourceEvidence.excelStudent,'Tim Leerling');
+  assert.equal(entry.sourceEvidence.excelEditionIsbn,ISBN);
+  assert.equal(entry.currentBook.bookId,'copy-1');
+  assert.equal(entry.currentBook.borrower.name,'Lisa Leerling');
+  assert.equal(entry.currentBook.effectiveStatus,'borrowed');
+  assert.equal(entry.currentBook.studentLoanReferences[0].name,'Lisa Leerling');
+  assert.equal(JSON.stringify(live),serializedBefore,
+    'Admin-only evidence must be built without writing records');
+  // A changed current status is shown honestly rather than silently fixed.
+  live.books[0].status='available';
+  assert.equal(listDeferredAssignmentTasks(live).tasks[0].currentBook.conflictingEvidence,true);
+  assert.equal(listDeferredAssignmentTasks(live).tasks[0].currentBook.effectiveStatus,'borrowed');
+}
+// A generic source conflict must retain the specific recorded diagnostic,
+// even when no reliable physical book identity was recorded.
+{
+  const live=initial();
+  const task={
+    id:'source-issue',reportId:'report-original',differenceId:'12:issue',
+    fileName:'Keuzelijst bibliotheek (1).xlsx',worksheetRow:13,
+    title:'Oorlogswinter',author:'Jan Terlouw',editionIsbn:ISBN,
+    bookId:null,kind:'issue',reason:'source_row_requires_review',
+    status:'open',revision:1,legacy:false,
+    original:{sourceStatus:'skipped',sourceIssues:['conflicting_loan_context'],
+      excelStudent:'Lisa Leerling',excelClass:'Klas A',excelFixedLocation:'Bovenbouw'},
+    sourceRow:null,
+  };
+  live.bookImportAssignmentTasks.push(task);
+  const entry=listDeferredAssignmentTasks(live).tasks[0];
+  assert.equal(entry.sourceEvidence.issueCodes[0],'conflicting_loan_context');
+  assert.equal(entry.sourceEvidence.excelClass,'Klas A');
+  assert.equal(entry.sourceEvidence.rowAvailable,false);
+  assert.equal(entry.physicalIdentity.status,'no_physical_reference');
+  assert.equal(entry.physicalIdentity.matchingEditionCount,1);
+  assert.equal(entry.currentBook,null);
+  assert.equal(entry.canApply,false);
+  assert.equal(live.bookImportAssignmentTasks[0].status,'open');
+}
+// Duplicate internal IDs must never make an unverified loan mutation available.
+{
+  const live=initial();
+  defer(live,row({studentLoan:{status:'matched',id:'tim',name:'Tim Leerling'}}));
+  live.books.push({...live.books[0]});
+  const task=listDeferredAssignmentTasks(live).tasks[0];
+  assert.equal(task.physicalIdentity.status,'ambiguous');
+  assert.equal(task.canApply,false);
+}
+
 console.log('Deferred administrator tasks: security, persistent queue, safe resolution, stale loan and legacy records OK');
