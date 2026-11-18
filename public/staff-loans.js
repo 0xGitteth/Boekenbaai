@@ -53,7 +53,8 @@ if (panel) {
   }
   function showBooks() {
     const selected = book.value;
-    const available = state.books.filter((item) => item.status !== 'borrowed');
+    const available = state.books.filter((item) =>
+      item.status !== 'borrowed' && item.catalogHidden !== true);
     const query = String(bookSearch?.value || '').trim().toLocaleLowerCase('nl-NL');
     const copies = query ? available.filter((copy) => [
       copy.title, copy.author, copy.barcode, copy.id, copy.fixedLocation
@@ -101,7 +102,8 @@ if (panel) {
     copyHint.hidden = !copyHint.textContent;
   }
   function showCopyHint() {
-    const available = state.books.filter((item) => item.status !== 'borrowed');
+    const available = state.books.filter((item) =>
+      item.status !== 'borrowed' && item.catalogHidden !== true);
     const barcodeCounts = new Map();
     for (const copy of available) {
       const code = String(copy.barcode || '').trim();
