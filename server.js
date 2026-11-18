@@ -1502,7 +1502,7 @@ function getAuthenticatedUser(req, getDb) {
       role: 'student',
       grade: student.grade || '',
       borrowedBooks: student.borrowedBooks,
-      classIds: student.classIds,
+      classIds: studentClassIds(db,student),
       username: student.username,
       token,
     };
@@ -4093,7 +4093,7 @@ async function handleApi(req, res, requestUrl) {
           grade: student.grade || '',
           examReadingEligible: examReadingAccess(db, student).eligible,
           borrowedBooks: student.borrowedBooks || [],
-          classIds: student.classIds || [],
+          classIds: studentClassIds(db,student),
           username: student.username || '',
           mustChangePassword: Boolean(student.mustChangePassword),
         });
