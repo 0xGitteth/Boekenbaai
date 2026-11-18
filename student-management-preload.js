@@ -226,11 +226,7 @@ function managedClassIds(db, user) {
 }
 
 function studentClassIds(db, student) {
-  const ids = new Set(Array.isArray(student?.classIds) ? student.classIds.filter(Boolean) : []);
-  for (const klass of db.classes) {
-    if (Array.isArray(klass?.studentIds) && klass.studentIds.includes(student?.id)) ids.add(klass.id);
-  }
-  return Array.from(ids);
+  return require('./student-current-classes').currentStudentClassIds(db,student);
 }
 
 function classNames(db, ids) {
