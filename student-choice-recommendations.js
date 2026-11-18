@@ -3,6 +3,7 @@
 // Chat recommendations use only curated catalogue themes. No inference
 // from an activity (gaming/sport) to a book genre without further answers.
 const crypto = require('node:crypto');
+const dialogue=require('./student-choice-dialogue');
 const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity');
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
 const keyOf = book => JSON.stringify([norm(book.title), norm(book.author)]);
@@ -435,6 +436,9 @@ function validateChoices(value) {
   for (const [field, values] of Object.entries(QUESTION_VALUES)) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
+  result.answers=dialogue.validatedAnswers(input.answers);
+  result.referenceBookId=typeof input.referenceBookId==='string'&&input.route==='similar'
+    ?input.referenceBookId.slice(0,128):'';
   result.nuance=Object.hasOwn(NUANCE_HINTS,input.nuance)?input.nuance:'none';
   result.lens=Object.hasOwn(LENS_HINTS,input.lens)?input.lens:'none';
   result.allowRepeats = input.allowRepeats === true;
@@ -456,7 +460,7 @@ function groupBooks(db) {
     if (!work) {
       work = { key, title: String(book.title).slice(0, 300),
         author: String(book.author || '').slice(0, 300),
-        themes: [], pages: null, available: 0, total: 0,
+        themes: [], tags: [], description:'', pages: null, available: 0, total: 0,
         bookId: book.id, easyReading: false };
       map.set(key, work);
     }
@@ -466,6 +470,13 @@ function groupBooks(db) {
       work.bookId = book.id;
     }
     work.easyReading ||= book.easyReading === true;
+    if(!work.description&&typeof book.description==='string')
+      work.description=book.description.slice(0,2000);
+    for(const tag of [...(Array.isArray(book.tags)?book.tags:[]),
+      ...(Array.isArray(book.enrichmentTags)?book.enrichmentTags:[])]){
+      if(typeof tag==='string'&&tag.trim()&&!work.tags.includes(tag.trim()))
+        work.tags.push(tag.trim().slice(0,100));
+    }
     const n = Number(book.pageCount || book.pages);
     if (Number.isInteger(n) && n > 0 && !work.pages) work.pages = n;
     for (const theme of Array.isArray(book.themes) ? book.themes : []) {
@@ -559,6 +570,28 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const legacyMoodHints=(THEME_HINTS[choice.mood]||[]).map(norm);
   const matchesTags=(themes,hints)=>themes.filter(theme=>
     hints.some(h=>norm(theme).includes(h)));
+  const weights=dialogue.preferenceWeights(choice.answers);
+  const reference=choice.referenceBookId
+    ?(db.books||[]).find(book=>book.id===choice.referenceBookId&&!isHidden(book)):null;
+  // Similarity MUST use the pooled work, not whichever physical copy had a
+  // cover or was last available. Different editions can vary in enrichment.
+  const anchor=reference?works.find(work=>work.key===keyOf(reference)):null;
+  const anchorTraits=anchor?dialogue.traitsForBook(anchor):new Map();
+  const traitLabels={
+    mystery:'geheimen of raadsels',secrets:'een geheim',puzzles:'onderzoek en aanwijzingen',
+    people:'de keuzes van mensen',relationships:'relaties',friendship:'vriendschap',
+    family:'familie',empathy:'gevoelens',growth:'persoonlijke ontwikkeling',
+    outsider:'erbij willen horen',team:'samenwerking',realistic:'herkenbare situaties',
+    school:'school',urban:'het leven in de stad',nature:'natuur',
+    animals:'dieren',adventure:'avontuur',discovery:'ontdekkingen',
+    unusual:'ongewone gebeurtenissen',fantasy:'fantasie',magic:'magie',
+    science:'wetenschap',technology:'techniek',history:'geschiedenis',
+    true:'waargebeurde gebeurtenissen',facts:'echte informatie',action:'actie',
+    danger:'spannende gebeurtenissen',survival:'overleven',competition:'wedstrijd',
+    sport:'sport',challenge:'een uitdaging',justice:'rechtvaardigheid',humor:'humor',
+    calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
+    setting:'de omgeving',
+  };
   const candidates = [];
   for (const work of works) {
     if (!choice.allowRepeats && alreadySeen.has(work.key)) continue;
@@ -579,9 +612,22 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     let score = nuanceMatches.length * 32 + detailMatches.length * 17
       + lensMatches.length * 11 + directionMatches.length * 9
       + moodMatches.length * 4 + familiar.length * 6 + (work.available ? 3 : 0);
+    const traits=dialogue.traitsForBook(work);
+    const matchedDialogue=dialogue.scoreTraits(traits,weights);
+    score+=matchedDialogue.value*3;
+    let matchedAnchor=0;
+    if(anchorTraits.size&&choice.referenceBookId){
+      for(const [trait,evidence] of anchorTraits){
+        if(traits.has(trait)){
+          matchedAnchor++;
+          score+=Math.min(evidence,traits.get(trait))*2;
+        }
+      }
+    }
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
     // Free-time activity is deliberately not mapped to a book's genre.
-    candidates.push({ work, matched, familiar, score, tiebreak: tie(work.key, choice.seed) });
+    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,
+      score, tiebreak: tie(work.key, choice.seed) });
   }
   candidates.sort((a,b) => b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
@@ -590,10 +636,15 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     ? surpriseBooks(db,candidates,count)
     : candidates.slice(0,count);
   return {
-    suggestions: picked.map(({work,matched,familiar,surpriseReason})=>({
+    suggestions: picked.map(({work,matched,familiar,matchedDialogue,matchedAnchor,surpriseReason})=>({
       key:work.key,bookId:work.bookId,title:work.title,author:work.author,
       available:work.available,total:work.total,
-      reason:surpriseReason || (matched.length ? 'Thema: '+matched.slice(0,2).join(', ')
+      reason:surpriseReason || (matchedDialogue?.matched?.length
+        ?'Dit boek sluit aan bij je interesse in '
+          +matchedDialogue.matched.slice(0,2).map(t=>traitLabels[t]||t).join(' en ')
+        : choice.referenceBookId&&matchedAnchor>0
+          ?'Dit boek heeft kenmerken die aansluiten bij het door jou gekozen boek'
+        : matched.length ? 'Thema: '+matched.slice(0,2).join(', ')
         : familiar.length ? 'Sluit aan bij een thema dat je eerder hebt gelezen: '+familiar[0]
           : choice.length==='short' && work.pages && work.pages<=180
             ? work.pages+' pagina’s' : 'Een ander boek uit de bibliotheek'),
