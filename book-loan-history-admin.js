@@ -70,10 +70,15 @@ function pair(db,studentId,bookId){
 }
 function fingerprint(group){
   return crypto.createHash('sha256').update(JSON.stringify([
-    group.logs.map(x=>x.id).sort(),
-    group.readings.map(x=>x.id).sort(),
-    group.periods.map(x=>x.id).sort(),
-    group.exams.map(x=>x.id).sort(),
+    group.logs.map(x=>[x.id,x.type,x.timestamp||'']).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))),
+    // Include the pupil's current reading answer and revision. A correction
+    // made by a pupil after the teacher searched must invalidate deletion.
+    group.readings.map(x=>[x.id,x.revision||1,x.finished,x.updatedAt||''])
+      .sort((a,b)=>String(a[0]).localeCompare(String(b[0]))),
+    group.periods.map(x=>[x.id,x.borrowedAt||'',x.returnedAt||''])
+      .sort((a,b)=>String(a[0]).localeCompare(String(b[0]))),
+    group.exams.map(x=>[x.id,x.revision||1,x.manualStatus||'',x.status||''])
+      .sort((a,b)=>String(a[0]).localeCompare(String(b[0]))),
   ])).digest('hex');
 }
 function activeFingerprint(db,copy){
