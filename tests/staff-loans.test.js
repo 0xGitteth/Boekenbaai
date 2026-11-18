@@ -379,6 +379,23 @@ async function run() {
     assert.strictEqual((await call('/api/admin/loan-history/current/remove',
       teacherA,{bookId:'book-student',confirm:true},'POST')).status,403);
     assert.strictEqual((await call('/api/admin/loan-history/current', admin)).status,200);
+    // Expanding destructive access from administrators to teachers must not
+    // accept a request originating from a different website.
+    for (const route of ['/api/admin/loan-history/remove',
+      '/api/admin/loan-history/current/remove']) {
+      const crossSite = await fetch(BASE + route, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + admin,
+          Origin: 'https://wrong-site.example',
+          'Sec-Fetch-Site': 'cross-site',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ confirm: true }),
+      });
+      assert.strictEqual(crossSite.status, 403,
+        'A cross-site request must never be allowed to correct circulation');
+    }
     const scopedA=await call('/api/admin/loan-history',teacherA);
     const scopedB=await call('/api/admin/loan-history',teacherB);
     assert.strictEqual(scopedA.status,200);
