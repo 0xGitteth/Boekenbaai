@@ -5173,12 +5173,35 @@ async function handleApi(req, res, requestUrl) {
       }
       if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/continuity/correct'){
         const body=await parseBody(req,3000);
-        const database=loadDb();
-        const result=correctContinuousLoan(database,user,body);
-        if(!result.ok)return sendJson(res,result.error==='forbidden'?403:409,{
+        let result=null;
+        try{
+          await mutateJsonLockedAsync({
+            lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:2500,
+            read:()=>loadDb(),
+            mutate:latest=>{
+              const administrator=(latest.users||[]).find(entry=>entry.id===user.id
+                &&entry.role==='admin'&&entry.active!==false
+                &&entry.isActive!==false&&entry.disabled!==true
+                &&entry.status!=='inactive');
+              if(!administrator){
+                result={ok:false,error:'admin_inactive'};
+                return false;
+              }
+              result=correctContinuousLoan(latest,administrator,body);
+              if(!result.ok)return false;
+              assertReviewedImportNotLost(latest);
+              return latest;
+            },
+          });
+        }catch(error){
+          if(error?.code==='DATABASE_WRITE_BUSY')return sendJson(res,409,{
+            message:'De uitleenadministratie wordt gewijzigd. Zoek de registratie opnieuw.',
+            error:'write_busy'});
+          throw error;
+        }
+        if(!result?.ok)return sendJson(res,result?.error==='forbidden'?403:409,{
           message:'Deze leenperiode kan niet veilig worden samengevoegd. Controleer de registratie opnieuw.',
-          error:result.error});
-        saveDb(database);
+          error:result?.error||'unknown'});
         return sendJson(res,200,result);
       }
       if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/current/remove'){
