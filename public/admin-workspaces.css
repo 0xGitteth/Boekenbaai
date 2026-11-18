@@ -253,3 +253,54 @@ body.bb-admin-v31 #admin-dashboard .bb-workspace-account-links {
     padding: 14px;
   }
 }
+
+/* Safe, scoped task-only cleanup in the management preflight. */
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight__actions button {
+  min-height: 40px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight__actions button[hidden] {
+  display: none !important;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight__choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid #cad9e9;
+  border-radius: 9px;
+  background: #f1f7fe;
+  cursor: pointer;
+  font-weight: 700;
+  margin-block: 12px;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight__choice input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight > div > details {
+  margin-block: 10px;
+  border: 1px solid #dde6f1;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight > div > details > summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+body.bb-admin-v31 #admin-dashboard .bb-task-preflight .class-card {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}

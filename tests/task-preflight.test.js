@@ -13,7 +13,8 @@ assert.equal(preview.summary.proposal,2);
 assert.equal(preview.tasks[0].current.matchingEditionCount,2);
 assert.equal(preview.writesAllowed,false);
 assert.equal(preview.summary.automaticallyResolved,0);
-db={books:[copy('a')],bookImportDeferredBookChecks:[physical('t1'),physical('t2')]};
+db={books:[copy('a')],bookImportDeferredBookChecks:[
+  physical('t1',{bookId:'a'}),physical('t2',{bookId:'a'})]};
 assert.equal(buildTaskPreflight(db).tasks[1].duplicateOf,'t1');
 assert.equal(buildTaskPreflight(db).summary.automatic_candidate,1);
 for(const change of [{worksheetRow:8},{editionIsbn:'9789025873974'},{author:'Andere auteur'},{sourceEvidence:{issues:[{code:'conflict'}]}},{batchId:null},{bookId:'different-copy'},{barcode:'physical-2'}]){
@@ -44,8 +45,8 @@ db={bookImportDeferredBookChecks:Array.from({length:1600},(_,i)=>physical('t'+i,
 assert.equal(buildTaskPreflight(db).summary.open,1600,'All historical open tasks are assessed');
 console.log('Task preflight: immutable input, duplicate events, distinct copies, stale circulation and uncertain evidence OK');
 
-const done=physical('done',{status:'completed',resolution:'manual_done',completedBy:'admin',completedAt:'2026-11-17T00:00:00Z'});
-db={bookImportDeferredBookChecks:[done,physical('open')],bookImportDeferredBookTaskHistory:[{taskId:'done',action:'manual_done',actorId:'admin',timestamp:done.completedAt}]};
+const done=physical('done',{bookId:'a',status:'completed',resolution:'manual_done',completedBy:'admin',completedAt:'2026-11-17T00:00:00Z'});
+db={books:[copy('a')],bookImportDeferredBookChecks:[done,physical('open',{bookId:'a'})],bookImportDeferredBookTaskHistory:[{taskId:'done',action:'manual_done',actorId:'admin',timestamp:done.completedAt}]};
 assert.equal(buildTaskPreflight(db).tasks[0].rule,'source_event_already_reviewed');
 db.bookImportDeferredBookTaskHistory=[];
 assert.equal(buildTaskPreflight(db).summary.automatic_candidate,0,'Completion without audit proof is insufficient');
@@ -74,3 +75,16 @@ const commonResult=buildTaskPreflight(commonEdition).tasks[0];
 assert.equal(commonResult.current.matchingEditionCount,2000);
 assert.equal(commonResult.current.matchingBookIds.length,20);
 assert.equal(commonResult.current.candidateListTruncated,true);
+
+// Postponed book-import rows have no physical copy ID yet. They still
+// represent a single source event and repeated notices can be deduplicated.
+const postponed={books:[copy('a')],bookImportDeferredBookChecks:[
+  physical('source-a'),physical('source-b')]};
+const sameRow=buildTaskPreflight(postponed);
+assert.equal(sameRow.summary.automatic_candidate,1,
+  'Exactly the same batch, worksheet row and content may deduplicate its notification');
+assert.equal(sameRow.tasks[1].rule,'duplicate_source_event');
+postponed.bookImportDeferredBookChecks[1].batchId=null;
+const uncertain=buildTaskPreflight(postponed);
+assert.equal(uncertain.summary.automatic_candidate,0,
+  'Missing import identity cannot authorize safe notification closure');

@@ -1,4 +1,5 @@
 const {buildTaskPreflight} = require('./task-preflight');
+const {applySafeTaskClosures} = require('./task-auto-closure');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -5110,14 +5111,62 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res,405,{message:'Methode niet toegestaan.'});
     }
 
-    // Read-only assessment: no correction, task closure or external lookup.
-    if (requestUrl.pathname === '/api/admin/task-preflight') {
+    // Task control is admin-only. The preview stays GET-only. The separate
+    // execution route can close *only* verified duplicate notifications after
+    // explicit, scoped consent, checked again under the shared DB write lock.
+    const preflightRoot='/api/admin/task-preflight';
+    if ([preflightRoot,preflightRoot+'/history',
+      preflightRoot+'/execute'].includes(requestUrl.pathname)) {
       if (!ensureRole(user, ['admin']))
         return sendJson(res, user ? 403 : 401, {message:'Alleen voor beheerders.'});
-      if (req.method !== 'GET')
-        return sendJson(res, 405, {message:'De voorcontrole is uitsluitend lezend.'});
-      res.setHeader('Cache-Control', 'no-store');
-      return sendJson(res, 200, buildTaskPreflight(getDb()));
+      res.setHeader('Cache-Control','no-store');
+      if (req.method==='GET'&&requestUrl.pathname===preflightRoot)
+        return sendJson(res,200,buildTaskPreflight(getDb()));
+      if (req.method==='GET'&&requestUrl.pathname===preflightRoot+'/history') {
+        const history=getDb().taskAutoClosureHistory||[];
+        return sendJson(res,200,{total:history.length,
+          entries:history.slice(-50).reverse().map(item=>({
+            taskId:item.taskId,retainedTaskId:item.retainedTaskId,
+            rule:item.rule,at:item.at,operationId:item.operationId,
+          }))});
+      }
+      if (req.method==='POST'&&requestUrl.pathname===preflightRoot+'/execute') {
+        const body=await parseBody(req,12000);
+        let result=null;
+        try{
+          await mutateJsonLockedAsync({
+            lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:2500,
+            read:()=>loadDb(),
+            mutate:latest=>{
+              const administrator=(latest.users||[]).find(entry=>entry.id===user.id
+                &&entry.role==='admin'&&entry.active!==false
+                &&entry.isActive!==false&&entry.disabled!==true
+                &&entry.status!=='inactive');
+              if(!administrator){
+                result={ok:false,error:'admin_inactive'};
+                return false;
+              }
+              result=applySafeTaskClosures(latest,administrator,body);
+              if(!result.ok||result.replayed)return false;
+              assertReviewedImportNotLost(latest);
+              return latest;
+            },
+          });
+        }catch(error){
+          if(error?.code==='DATABASE_WRITE_BUSY')return sendJson(res,409,{
+            message:'Boekenbaai verwerkt een andere wijziging. Controleer de taken opnieuw.',
+            error:'write_busy'});
+          throw error;
+        }
+        if(!result?.ok)return sendJson(res,
+          result?.error==='invalid_confirmation'?400:409,{
+            message:'De taken zijn veranderd of de afsluiting is niet aantoonbaar veilig. '
+              +'Voer de voorcontrole opnieuw uit.',
+            error:result?.error||'unknown',taskId:result?.taskId||null,
+          });
+        return sendJson(res,200,result);
+      }
+      return sendJson(res,405,{message:'Methode niet toegestaan.'});
     }
 
     // Physical book checks are independent, persistent admin tasks.
