@@ -133,7 +133,7 @@ async function stop(){
     assert.equal(secondQuestion.status,200);
     assert.notEqual(secondQuestion.body.question?.id,nextQuestion.body.question.id,
       'Adaptive questions must not repeat the already answered one');
-    assert.equal(readDb().studentChoiceSeen.length,0,
+    assert.equal((readDb().studentChoiceSeen||[]).length,0,
       'Selecting questions does not persist a pupil recommendation history');
     const rawTags=await suggest({route:'new',mood:'funny',seed:'derived'});
     assert.equal(rawTags.status,200);
