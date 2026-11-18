@@ -380,12 +380,20 @@ assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
   assert.equal(entry.currentBook.borrower.name,'Lisa Leerling');
   assert.equal(entry.currentBook.effectiveStatus,'borrowed');
   assert.equal(entry.currentBook.studentLoanReferences[0].name,'Lisa Leerling');
+  assert.equal(entry.sourceEvidence.excelBarcode,'',
+    'No Excel barcode must never be replaced with a catalogue barcode');
   assert.equal(JSON.stringify(live),serializedBefore,
     'Admin-only evidence must be built without writing records');
   // A changed current status is shown honestly rather than silently fixed.
   live.books[0].status='available';
   assert.equal(listDeferredAssignmentTasks(live).tasks[0].currentBook.conflictingEvidence,true);
   assert.equal(listDeferredAssignmentTasks(live).tasks[0].currentBook.effectiveStatus,'borrowed');
+  // A borrowed status without ANY borrower evidence is also inconsistent.
+  live.books[0].borrowedBy=null;
+  live.students[0].borrowedBooks=[];
+  const orphan=listDeferredAssignmentTasks(live).tasks[0];
+  assert.equal(orphan.currentBook.conflictingEvidence,true);
+  assert.equal(orphan.currentBook.storedStatus,'available');
 }
 // A generic source conflict must retain the specific recorded diagnostic,
 // even when no reliable physical book identity was recorded.
