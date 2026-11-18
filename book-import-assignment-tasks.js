@@ -100,11 +100,9 @@ function migrateLegacyDeferredTasks(db) {
 }
 
 
-function loanEvidence(db, book, referenceOwners) {
+function loanEvidence(book, referenceOwners, students, classes) {
   if (!book) return null;
   const holderIds=[...(referenceOwners.get(book.id)||[])];
-  const students=new Map((db.students||[]).map(student=>[student.id,student]));
-  const classes=new Map((db.classes||[]).map(klass=>[klass.id,klass]));
   const borrower=book.borrowedByClassId
     ?{type:'class',id:book.borrowedByClassId,
       name:classes.get(book.borrowedByClassId)?.name||'Onbekende klas'}
@@ -155,17 +153,19 @@ function sourceEvidence(task) {
     missingFromSnapshot:diff.missingFromSnapshot===true,
   };
 }
-function copyIdentity(db, task, booksById) {
+const editionIdentity=(title,author,isbn)=>JSON.stringify([
+  norm(title).toLocaleLowerCase('nl-NL'),
+  norm(author).toLocaleLowerCase('nl-NL'),
+  norm(isbn).replace(/[^0-9X]/gi,''),
+]);
+function copyIdentity(task, booksById, editionCounts) {
   const matches=task.bookId ?(booksById.get(task.bookId)||[]):[];
   const isbn=norm(task.editionIsbn).replace(/[^0-9X]/gi,'');
   const title=norm(task.title).toLocaleLowerCase('nl-NL');
   const author=norm(task.author).toLocaleLowerCase('nl-NL');
   // Edition evidence is a clue, never proof of a physical-copy identity.
-  const editionCount=isbn&&title&&author?(db.books||[]).filter(book=>
-    norm(book.title).toLocaleLowerCase('nl-NL')===title
-    &&norm(book.author).toLocaleLowerCase('nl-NL')===author
-    &&[book.editionIsbn,book.metadataIsbn,book.isbn]
-      .some(v=>norm(v).replace(/[^0-9X]/gi,'')===isbn)).length:0;
+  const editionCount=isbn&&title&&author
+    ?editionCounts.get(editionIdentity(title,author,isbn))||0:0;
   return {
     status:task.bookId?(matches.length===1?'linked':
       matches.length===0?'missing':'ambiguous'):'no_physical_reference',
@@ -183,6 +183,17 @@ function listDeferredAssignmentTasks(db) {
     booksById.get(book.id).push(book);
   }
   const referenceOwners=studentLoanIds(db);
+  const studentsById=new Map((db.students||[]).map(student=>[student.id,student]));
+  const classesById=new Map((db.classes||[]).map(klass=>[klass.id,klass]));
+  const editionCounts=new Map();
+  for(const book of db.books||[]){
+    const isbns=new Set([book.editionIsbn,book.metadataIsbn,book.isbn]
+      .map(v=>norm(v).replace(/[^0-9X]/gi,'')).filter(Boolean));
+    for(const isbn of isbns){
+      const key=editionIdentity(book.title,book.author,isbn);
+      editionCounts.set(key,(editionCounts.get(key)||0)+1);
+    }
+  }
   const stored = Array.isArray(db.bookImportAssignmentTasks)
     ? db.bookImportAssignmentTasks : [];
   const known = new Set(stored.map(task => reportKey(task.reportId, task.differenceId)));
@@ -226,9 +237,10 @@ function listDeferredAssignmentTasks(db) {
         && !task.reason),
       legacy: task.legacy === true,
       sourceEvidence:sourceEvidence(task),
-      physicalIdentity:copyIdentity(db,task,booksById),
+      physicalIdentity:copyIdentity(task,booksById,editionCounts),
       currentBook:booksById.get(task.bookId)?.length===1
-        ?loanEvidence(db,booksById.get(task.bookId)[0],referenceOwners):null,
+        ?loanEvidence(booksById.get(task.bookId)[0],referenceOwners,
+          studentsById,classesById):null,
     }))
     .sort((a,b)=>norm(a.createdAt).localeCompare(norm(b.createdAt)));
   return { tasks, summary: { open: tasks.length } };
