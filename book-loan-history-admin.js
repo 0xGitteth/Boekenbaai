@@ -7,7 +7,17 @@ const crypto = require('node:crypto');
 const {noteLoanActivity,circulationRevision}=require('./book-import-followups');
 const {persistExcelLoanReceipts}=require('./book-import-loan-migration');
 const {keyForBook,keyForReading}=require('./personal-exam-reading-list');
-const {mayManageStudent}=require('./book-loan-policy');
+// For destructive corrections require a verified CURRENT roster entry.
+// Older student.classIds values may be stale after a class move, and must
+// never authorize removal from a different teacher's pupil history.
+function mayCorrectHistory(db,actor,student){
+  if(!actor||!student)return false;
+  if(actor.role==='admin')return true;
+  if(actor.role!=='teacher')return false;
+  return (db.classes||[]).some(klass=>
+    (klass.teacherIds||[]).includes(actor.id)
+    &&(klass.studentIds||[]).includes(student.id));
+}
 const norm = x => String(x || '').normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
 const eventTypes = new Set(['check_out','check_in','check_out_class','check_in_class']);
 function borrowEvents(db){
@@ -119,9 +129,23 @@ function removeFalseCurrentLoan(db,actor,input,now=new Date().toISOString()){
     ||!['student','class'].includes(input.borrowerType)
     ||typeof input.expectedFingerprint!=='string')
     return {ok:false,error:'invalid_request'};
-  const copy=(db.books||[]).find(book=>book.id===input.bookId);
-  if(!copy||copy.status!=='borrowed')
-    return {ok:false,error:'loan_not_active'};
+  const copies=(db.books||[]).filter(book=>book.id===input.bookId);
+  if(copies.length!==1)return {ok:false,error:'ambiguous_copy'};
+  const copy=copies[0];
+  if(copy.status!=='borrowed')return {ok:false,error:'loan_not_active'};
+  // Even a correctly identified physical ID may appear on several student
+  // borrowedBooks lists because of a previous import error. Releasing such a
+  // book would expose an actually unavailable copy to new borrowers.
+  const references=(db.students||[]).flatMap(student=>
+    (Array.isArray(student.borrowedBooks)?student.borrowedBooks:[])
+      .filter(item=>(typeof item==='string'?item:item?.bookId)===copy.id)
+      .map(()=>student.id));
+  if(copy.borrowedBy&&copy.borrowedByClassId)
+    return {ok:false,error:'ambiguous_borrower'};
+  const expectedReferences=input.borrowerType==='student'?[input.borrowerId]:[];
+  if(references.length!==expectedReferences.length
+    ||references.some((id,i)=>id!==expectedReferences[i]))
+    return {ok:false,error:'student_record_mismatch'};
   const actualType=copy.borrowedBy?'student':copy.borrowedByClassId?'class':null;
   const actualId=actualType==='student'?copy.borrowedBy:copy.borrowedByClassId;
   if(actualType!==input.borrowerType||actualId!==input.borrowerId
@@ -193,7 +217,7 @@ function searchHistory(db,{student='',book='',limit=100,actor=null}={}){
     const studentItem=students.get(group.studentId);
     // Role-based filtering happens before sorting or applying the result
     // limit; querying another pupil's name cannot reveal their history.
-    if(actor?.role==='teacher'&&!mayManageStudent(db,actor,studentItem))continue;
+    if(actor?.role==='teacher'&&!mayCorrectHistory(db,actor,studentItem))continue;
     const bookItem=books.get(group.bookId);
     const studentName=String(studentItem?.name||'Leerling niet meer aanwezig');
     const title=String(bookItem?.title
@@ -223,7 +247,7 @@ function removeFalseHistory(db,actor,input,now=new Date().toISOString()){
   // previous access, a cached JWT class list, or a user-supplied student ID
   // cannot authorize deleting another pupil's reading history.
   const learner=(db.students||[]).find(item=>item.id===studentId);
-  if(actor.role==='teacher'&&!mayManageStudent(db,actor,learner))
+  if(actor.role==='teacher'&&!mayCorrectHistory(db,actor,learner))
     return {ok:false,error:'forbidden'};
   const group=pair(db,studentId,bookId);
   if(!group.logs.length&&!group.readings.length&&!group.periods.length)
