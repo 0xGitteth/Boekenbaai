@@ -5,6 +5,7 @@ const path = require('node:path');
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const html = read('public/staff.html');
 const admin = read('public/admin-assignment-tasks.js');
+const importView=read('public/admin-book-import-review.js');
 const followups = read('public/book-import-followups.js');
 const server = read('server.js');
 
@@ -30,4 +31,15 @@ assert.match(followups, /deferredCount/);
 assert.match(followups, /boekenbaai:assignment-tasks-changed/);
 assert.doesNotMatch(admin, /innerHTML\s*=/,
   'Untrusted spreadsheet text must be inserted only as textContent');
+assert.match(admin,/function evidencePanel\(task\)/);
+assert.match(admin,/task\.sourceEvidence/);
+assert.match(admin,/task\.currentBook/);
+assert.match(admin,/task\.physicalIdentity/);
+assert.match(admin,/Overeenkomende ISBN-edities/);
+assert.match(importView,/deferredPanel\.addEventListener\('toggle'/);
+assert.match(importView,/boekenbaai:staff-refresh/);
+assert.match(importView,/Opnieuw laden/);
+assert.match(importView,/Laatst bewaarde importverslagen/);
+assert.match(importView,/Promise\.allSettled/);
+assert.doesNotMatch(importView,/deferredList\.innerHTML/);
 console.log('Deferred administrative task UI: mounting, review actions and safe text rendering OK');

@@ -5535,17 +5535,20 @@ async function handleApi(req, res, requestUrl) {
         });
       }
       if(req.method==='GET' &&requestUrl.pathname===stageRoot+'/deferred'){
-        const database=loadDb();
-        const items=(Array.isArray(database.bookImportDeferredBookChecks)
+        // Read the same consistent snapshot as the Tasks screens. A partial
+        // preview must never write, migrate or truncate physical task history.
+        const database=getDb();
+        const open=(Array.isArray(database.bookImportDeferredBookChecks)
           ?database.bookImportDeferredBookChecks:[])
-          .filter(item=>item.status==='open').slice(-500).reverse()
-          .map(item=>({
-            id:item.id,fileName:item.fileName,worksheetRow:item.worksheetRow,
-            title:item.title,author:item.author,
-            excelIdentifier:item.excelIdentifier,
-            editionIsbn:item.editionIsbn,createdAt:item.createdAt,
-          }));
-        return sendJson(res,200,{items,count:items.length});
+          .filter(item=>item?.status==='open');
+        const items=open.slice(-500).reverse().map(item=>({
+          id:item.id,fileName:item.fileName,worksheetRow:item.worksheetRow,
+          title:item.title,author:item.author,
+          excelIdentifier:item.excelIdentifier,
+          editionIsbn:item.editionIsbn,createdAt:item.createdAt,
+        }));
+        res.setHeader('Cache-Control','no-store');
+        return sendJson(res,200,{items,count:open.length,shown:items.length});
       }
       const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft|export))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {

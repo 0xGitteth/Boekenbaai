@@ -663,12 +663,36 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const deferredList=make('div','bb-guide__deferred-list');
     deferredPanel.append(deferredSummary,deferredList);
     root.append(deferredPanel);
+    let deferredRefreshSerial=0;
     async function refreshDeferred(){
+      const serial=++deferredRefreshSerial;
       try{
-        const data=await request(rootPath+'/deferred');
+        const [deferredResult,reportResult]=await Promise.allSettled([
+          request(rootPath+'/deferred'),request('/api/admin/book-import-reports'),
+        ]);
+        if(serial!==deferredRefreshSerial)return;
+        if(deferredResult.status!=='fulfilled')throw deferredResult.reason;
+        const data=deferredResult.value;
         const items=Array.isArray(data.items)?data.items:[];
-        deferredSummary.textContent='Eerder uitgestelde boeken ('+items.length+')';
+        deferredSummary.textContent='Eerder uitgestelde boeken ('+(data.count??items.length)+')';
         deferredList.replaceChildren();
+        if(reportResult.status==='fulfilled'){
+          const reports=Array.isArray(reportResult.value.reports)
+            ?reportResult.value.reports:[];
+          const heading=make('p','hint',reports.length
+            ?'Laatst bewaarde importverslagen (dit bewijst niet dat elke Exceluitlening is overgenomen):'
+            :'Geen bewaarde importverslagen beschikbaar.');
+          deferredList.append(heading);
+          for(const report of reports.slice(0,5)){
+            const imported=report.importedAt
+              ?new Date(report.importedAt).toLocaleString('nl-NL'):'';
+            deferredList.append(make('p','hint',
+              (report.fileName||'Bestandsnaam onbekend')
+              +(imported?' · '+imported:'')));
+          }
+        }else deferredList.append(make('p','hint',
+          'De importverslagen konden niet worden opgehaald. '
+          +'De fysieke taken staan hieronder apart.'));
         if(!items.length){
           deferredList.append(make('p','hint',
             'Er zijn nog geen boeken uitgesteld.'));
@@ -689,12 +713,26 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }
         if(items.length>40)deferredList.append(make('p','hint',
           'Getoond: 40 van '+items.length+' uitgestelde boeken.'));
-      }catch{
-        deferredSummary.textContent='Eerder uitgestelde boeken';
+      }catch(error){
+        if(serial!==deferredRefreshSerial)return;
+        deferredSummary.textContent='Eerder uitgestelde boeken (laden mislukt)';
         deferredList.replaceChildren(make('p','hint',
-          'Het overzicht kon niet worden geladen.'));
+          'Het overzicht kon niet worden geladen: '
+          +(error?.message||'onbekende fout')+'.'));
+        const retry=button('Opnieuw laden','btn btn--secondary');
+        retry.addEventListener('click',()=>void refreshDeferred());
+        deferredList.append(retry);
       }
     }
+    // This module can mount before staff signs in. The initial 401 must
+    // not remain stuck after login or reopening the import tab.
+    deferredPanel.addEventListener('toggle',()=>{
+      if(deferredPanel.open)void refreshDeferred();
+    });
+    window.addEventListener('boekenbaai:staff-refresh',()=>void refreshDeferred());
+    window.addEventListener('focus',()=>{
+      if(deferredPanel.open)void refreshDeferred();
+    });
     imports.insertBefore(root, imports.firstChild);
 
     const oldSection = imports.querySelector('#book-import-form')?.closest('.admin-card__section');

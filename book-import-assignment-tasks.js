@@ -9,6 +9,7 @@ const { buildAssignmentPreview, applyAssignmentPreview } =
 const { circulationRevision, reportIsFullyReviewed } =
   require('./book-import-followups');
 const {excelLoanReceiptKey}=require('./book-import-loan-migration');
+const {studentLoanIds,isUnavailable}=require('./book-catalog-integrity');
 
 const CLASS_CHOICES = new Set(['class_fixed', 'class_loan', 'class_unrelated']);
 const CLOSING_CHOICES = new Set(['keep', 'manual_done', 'class_unrelated']);
@@ -98,8 +99,102 @@ function migrateLegacyDeferredTasks(db) {
   return migrated;
 }
 
+
+function loanEvidence(book, referenceOwners, students, classes) {
+  if (!book) return null;
+  const holderIds=[...(referenceOwners.get(book.id)||[])];
+  const borrower=book.borrowedByClassId
+    ?{type:'class',id:book.borrowedByClassId,
+      name:classes.get(book.borrowedByClassId)?.name||'Onbekende klas'}
+    :book.borrowedBy
+      ?{type:'student',id:book.borrowedBy,
+        name:students.get(book.borrowedBy)?.name||'Onbekende leerling'}
+      :null;
+  const holders=holderIds.map(id=>({
+    id,name:students.get(id)?.name||'Onbekende leerling',
+  }));
+  const conflicts=(
+    (book.status==='available'&&isUnavailable(book,referenceOwners))
+    ||(book.status==='borrowed'&&!borrower&&holderIds.length===0)
+    ||(book.borrowedBy&&(
+      holderIds.length!==1||holderIds[0]!==book.borrowedBy))
+    ||(book.borrowedByClassId&&holderIds.length>0)
+    ||(holderIds.length>1)
+  );
+  return {
+    bookId:book.id,title:book.title||'',barcode:book.barcode||'',
+    editionIsbn:book.editionIsbn||book.metadataIsbn||'',
+    fixedLocation:book.fixedLocation||'',
+    storedStatus:book.status||'available',
+    effectiveStatus:isUnavailable(book,referenceOwners)?'borrowed':'available',
+    borrower,studentLoanReferences:holders,conflictingEvidence:Boolean(conflicts),
+  };
+}
+function sourceEvidence(task) {
+  const row=task.sourceRow;
+  const diff=task.original||{};
+  const ctx=row?.context||{};
+  const explicitIssues=Array.isArray(diff.sourceIssues)
+    ?diff.sourceIssues.filter(x=>typeof x==='string').slice(0,20):[];
+  return {
+    status:diff.sourceStatus||row?.status||'unknown',
+    issueCodes:explicitIssues,
+    originalReason:task.reason||'',
+    description:typeof diff.description==='string'
+      ?diff.description.slice(0,500):'',
+    rowAvailable:Boolean(row),
+    excelStudent:diff.excelStudent||ctx.studentLoan?.name||'',
+    excelClass:diff.excelClass||ctx.classLoan?.name||
+      ctx.studentClassHint?.label||(Array.isArray(ctx.classContext)
+        ?ctx.classContext.join(', '):'')||'',
+    excelFixedLocation:diff.excelFixedLocation||
+      ctx.fixedLocation?.raw||ctx.fixedLocation?.label||'',
+    excelBarcode:row ?(row.book?.barcode||''):(task.original?.excelBarcode||''),
+    excelEditionIsbn:row?.book?.editionIsbn||task.editionIsbn||'',
+    missingFromSnapshot:diff.missingFromSnapshot===true,
+  };
+}
+const editionIdentity=(title,author,isbn)=>JSON.stringify([
+  norm(title).toLocaleLowerCase('nl-NL'),
+  norm(author).toLocaleLowerCase('nl-NL'),
+  norm(isbn).replace(/[^0-9X]/gi,''),
+]);
+function copyIdentity(task, booksById, editionCounts) {
+  const matches=task.bookId ?(booksById.get(task.bookId)||[]):[];
+  const isbn=norm(task.editionIsbn).replace(/[^0-9X]/gi,'');
+  const title=norm(task.title).toLocaleLowerCase('nl-NL');
+  const author=norm(task.author).toLocaleLowerCase('nl-NL');
+  // Edition evidence is a clue, never proof of a physical-copy identity.
+  const editionCount=isbn&&title&&author
+    ?editionCounts.get(editionIdentity(title,author,isbn))||0:0;
+  return {
+    status:task.bookId?(matches.length===1?'linked':
+      matches.length===0?'missing':'ambiguous'):'no_physical_reference',
+    bookId:task.bookId||null, matchingEditionCount:editionCount,
+    // No candidate is automatically treated as the missing physical copy.
+    requiresPhysicalReview:matches.length!==1,
+  };
+}
+
 function listDeferredAssignmentTasks(db) {
   const existingBookIds=new Set((db.books || []).map(book=>book.id));
+  const booksById=new Map();
+  for(const book of db.books||[]) {
+    if(!booksById.has(book.id))booksById.set(book.id,[]);
+    booksById.get(book.id).push(book);
+  }
+  const referenceOwners=studentLoanIds(db);
+  const studentsById=new Map((db.students||[]).map(student=>[student.id,student]));
+  const classesById=new Map((db.classes||[]).map(klass=>[klass.id,klass]));
+  const editionCounts=new Map();
+  for(const book of db.books||[]){
+    const isbns=new Set([book.editionIsbn,book.metadataIsbn,book.isbn]
+      .map(v=>norm(v).replace(/[^0-9X]/gi,'')).filter(Boolean));
+    for(const isbn of isbns){
+      const key=editionIdentity(book.title,book.author,isbn);
+      editionCounts.set(key,(editionCounts.get(key)||0)+1);
+    }
+  }
   const stored = Array.isArray(db.bookImportAssignmentTasks)
     ? db.bookImportAssignmentTasks : [];
   const known = new Set(stored.map(task => reportKey(task.reportId, task.differenceId)));
@@ -123,7 +218,7 @@ function listDeferredAssignmentTasks(db) {
       })));
   const tasks = [...stored.filter(task => task?.status === 'open'), ...legacy]
     .map(task => ({
-      id: task.id, reportId: task.reportId,
+      id: task.id, reportId: task.reportId, differenceId: task.differenceId,
       worksheetRow: task.worksheetRow,
       fileName: task.fileName, kind: task.kind,
       bookId: task.bookId, title: task.title, author: task.author,
@@ -138,9 +233,15 @@ function listDeferredAssignmentTasks(db) {
       createdAt: task.createdAt, revision: task.revision,
       missingBook: Boolean(task.bookId && !existingBookIds.has(task.bookId)),
       canApply: Boolean(task.sourceRow && task.bookId
+        && booksById.get(task.bookId)?.length===1
         && ['loan', 'location', 'class_context'].includes(task.kind)
         && !task.reason),
       legacy: task.legacy === true,
+      sourceEvidence:sourceEvidence(task),
+      physicalIdentity:copyIdentity(task,booksById,editionCounts),
+      currentBook:booksById.get(task.bookId)?.length===1
+        ?loanEvidence(booksById.get(task.bookId)[0],referenceOwners,
+          studentsById,classesById):null,
     }))
     .sort((a,b)=>norm(a.createdAt).localeCompare(norm(b.createdAt)));
   return { tasks, summary: { open: tasks.length } };
