@@ -5147,6 +5147,9 @@ async function handleApi(req, res, requestUrl) {
         &&user.role!=='admin')
         return sendJson(res,403,{message:'Alleen beheerders mogen actuele uitleningen corrigeren.'});
       res.setHeader('Cache-Control','no-store');
+      if(req.method==='POST'&&!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req,process.env.BOEKENBAAI_PUBLIC_URL||'')))
+        return sendJson(res,403,{message:'Ongeldige aanvraagherkomst.'});
       if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot){
         return sendJson(res,200,{items:searchHistory(getDb(),{
           student:requestUrl.searchParams.get('student')||'',
