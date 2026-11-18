@@ -437,7 +437,7 @@ function validateChoices(value) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
   result.answers=dialogue.validatedAnswers(input.answers);
-  result.referenceBookId=typeof input.referenceBookId==='string'&&input.route==='similar'
+  result.referenceBookId=typeof input.referenceBookId==='string'&&input.route!=='surprise'
     ?input.referenceBookId.slice(0,128):'';
   result.nuance=Object.hasOwn(NUANCE_HINTS,input.nuance)?input.nuance:'none';
   result.lens=Object.hasOwn(LENS_HINTS,input.lens)?input.lens:'none';
@@ -460,7 +460,8 @@ function groupBooks(db) {
     if (!work) {
       work = { key, title: String(book.title).slice(0, 300),
         author: String(book.author || '').slice(0, 300),
-        themes: [], tags: [], description:'', pages: null, available: 0, total: 0,
+        themes: [], tags: [], description:'', sourceDescriptions: [],
+        pages: null, available: 0, total: 0,
         bookId: book.id, easyReading: false };
       map.set(key, work);
     }
@@ -470,8 +471,10 @@ function groupBooks(db) {
       work.bookId = book.id;
     }
     work.easyReading ||= book.easyReading === true;
-    if(!work.description&&typeof book.description==='string')
-      work.description=book.description.slice(0,2000);
+    if(typeof book.description==='string'&&book.description.trim()){
+      const excerpt=book.description.trim().slice(0,2000);
+      if(!work.sourceDescriptions.includes(excerpt))work.sourceDescriptions.push(excerpt);
+    }
     for(const tag of [...(Array.isArray(book.tags)?book.tags:[]),
       ...(Array.isArray(book.enrichmentTags)?book.enrichmentTags:[])]){
       if(typeof tag==='string'&&tag.trim()&&!work.tags.includes(tag.trim()))
@@ -485,7 +488,14 @@ function groupBooks(db) {
       }
     }
   }
-  return [...map.values()];
+  const works=[...map.values()];
+  for(const work of works){
+    // Every physical edition can contain independent, verified descriptive
+    // evidence. Ranking must see the same union as question selection.
+    work.description=work.sourceDescriptions.join('\n');
+    delete work.sourceDescriptions;
+  }
+  return works;
 }
 function readKeysAndThemes(db, studentId, works) {
   const byCopy = new Map((db.books || []).map(b=>[b.id,keyOf(b)]));
@@ -576,7 +586,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   // Similarity MUST use the pooled work, not whichever physical copy had a
   // cover or was last available. Different editions can vary in enrichment.
   const anchor=reference?works.find(work=>work.key===keyOf(reference)):null;
-  const anchorTraits=anchor?dialogue.traitsForBook(anchor):new Map();
+  const workTraits=dialogue.profilesForWorks(works);
+  const anchorTraits=anchor?workTraits.get(anchor.key)||new Map():new Map();
   const traitLabels={
     mystery:'geheimen of raadsels',secrets:'een geheim',puzzles:'onderzoek en aanwijzingen',
     people:'de keuzes van mensen',relationships:'relaties',friendship:'vriendschap',
@@ -612,7 +623,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     let score = nuanceMatches.length * 32 + detailMatches.length * 17
       + lensMatches.length * 11 + directionMatches.length * 9
       + moodMatches.length * 4 + familiar.length * 6 + (work.available ? 3 : 0);
-    const traits=dialogue.traitsForBook(work);
+    const traits=workTraits.get(work.key)||new Map();
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
     let matchedAnchor=0;
@@ -629,7 +640,12 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,
       score, tiebreak: tie(work.key, choice.seed) });
   }
-  candidates.sort((a,b) => b.score-a.score || b.tiebreak-a.tiebreak ||
+  candidates.sort((a,b) =>
+    // When asking for books like a chosen reference, offer real matches
+    // before unrelated fallback titles, even with reading-history consent.
+    (anchorTraits.size&&choice.referenceBookId
+      ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
+    ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
   const count=Math.max(1,Math.min(3,limit));
   const picked=choice.route==='surprise'
