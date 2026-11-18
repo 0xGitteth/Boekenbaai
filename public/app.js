@@ -1524,7 +1524,8 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
           (copy.publisher||'Uitgever onbekend')+' · '+
           (catalogStoredEdition(copy)||copy.barcode||'Geen ISBN')+
           ' · ID '+suffix+
-          (copy.status==='borrowed'?' (uitgeleend)':'');
+          (copy.catalogHidden===true?' (uitgeschakeld)'
+            :copy.status==='borrowed'?' (uitgeleend)':'');
         control.append(option);
       });
       control.value=state.editBook.id;
@@ -1577,10 +1578,11 @@ function populateBookDetail(book, metadata, { metadataMessage = '' } = {}) {
   }
   if (state.status) {
     const statusValue = availableCopies > 0 ? 'available' : 'borrowed';
+    const allHidden=authUser?.role==='admin'&&copies.every(copy=>copy.catalogHidden===true);
     const statusText =
       statusValue === 'available'
         ? `Beschikbaar (${availableCopies}/${totalCopies})`
-        : 'Uitgeleend';
+        : allHidden?'Uitgeschakeld':'Uitgeleend of uitgeschakeld';
     state.status.textContent = statusText;
     state.status.classList.remove('book-detail__status--available', 'book-detail__status--borrowed');
     state.status.classList.add(
@@ -2379,7 +2381,9 @@ function createBookCard(template, book, folders, options = {}) {
       statusText = `${availableCopies}/${totalCopies} beschikbaar`;
     }
     if (availableCopies <= 0) {
-      statusText = 'Uitgeleend';
+      const allHidden=authUser?.role==='admin'
+        &&(book.copies||[book]).every(copy=>copy.catalogHidden===true);
+      statusText=allHidden?'Uitgeschakeld':'Uitgeleend of uitgeschakeld';
     }
     statusBadge.textContent = statusText;
     statusBadge.classList.add(
