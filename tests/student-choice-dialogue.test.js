@@ -50,6 +50,24 @@ for(let i=0;i<192;i++){
 }
 assert.ok(routes.size>45,
   'Different sessions should not use one fixed questionnaire');
+// Manual theme choices take precedence over outdated imported themes
+// throughout the dialogue AND the grouped recommendation engine.
+const {attachDerivedThemeFields}=require('../book-theme-normalization');
+const themeOverride=attachDerivedThemeFields({
+  id:'override',title:'Sport op school',author:'A',
+  status:'available',manualThemes:['Sport'],importedThemes:['Detective'],
+  tags:[],description:'',
+});
+assert.ok(traitsForBook(themeOverride).has('sport'));
+assert.equal(traitsForBook(themeOverride).has('mystery'),false,
+  'An overridden imported detective theme must not influence questions');
+assert.equal(traitsForBook(themeOverride).has('puzzles'),false);
+const sameWork=require('../student-choice-recommendations')
+  .groupBooks({books:[themeOverride]})[0];
+assert.deepEqual([...traitsForBook(sameWork).keys()].sort(),
+  [...traitsForBook(themeOverride).keys()].sort(),
+  'Question selection and grouped recommendations must share theme evidence');
+
 const q=QUESTIONS[0];
 assert.deepEqual(validatedAnswers([
   {questionId:q.id,optionId:q.options[0].id},
