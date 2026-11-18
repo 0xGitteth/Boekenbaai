@@ -157,6 +157,24 @@ function buildTaskPreflight(db) {
       // Even task-only cleanup stays preview-only until category/scope approval.
       result.requiresSeparateConfirmation = true;
     } else if (key) seen.set(key, task.id);
+    // Skipped Excel rows create one task per source row, often before ANY
+    // physical copy ID exists. Two messages with the exact SAME batch,
+    // worksheet row, content and diagnostics are duplicate notifications,
+    // not two verified physical copies. Never infer duplicate copies from
+    // matching ISBNs across different source events.
+    if (family === 'physical' && result.category === 'automatic_candidate') {
+      const referenced = task.bookId ? catalog.byId.get(task.bookId) || [] : [];
+      if (!task.batchId || !Number.isSafeInteger(task.worksheetRow)
+        || task.worksheetRow < 1 || (task.bookId && referenced.length !== 1)) {
+        result.category = 'proposal';
+        result.rule = 'source_notification_identity_unproven';
+        result.explanation = 'Deze meldingen lijken overeen te komen, maar de '
+          + 'oorspronkelijke import en Excelrij of de opgegeven fysieke '
+          + 'boekidentiteit zijn niet betrouwbaar vastgesteld.';
+        result.proposedAction = 'Controleer eerst de oorspronkelijke importmelding.';
+        result.requiresSeparateConfirmation = true;
+      }
+    }
     return result;
   });
   const counts = {automatic_candidate:0, proposal:0, attention:0};
@@ -168,7 +186,11 @@ function buildTaskPreflight(db) {
     coverage:{included:['physical','administration','classes','studentExitTasks','teacherExitTasks'],
       excluded:['Google-koppelverzoeken en andere accountverzoeken uit de aparte authenticatieopslag'],
       externalResearchPerformed:false},
-    summary:{open:tasks.length, ...counts, automaticallyResolved:0,
-      uniqueSourceEvents:tasks.length-counts.automatic_candidate}, tasks};
+    summary:{open:tasks.length, ...counts,
+      automaticallyResolved:list(db.taskAutoClosureHistory).length,
+      uniqueSourceEvents:tasks.length-counts.automatic_candidate},
+    recentAutoResolutions:list(db.taskAutoClosureHistory).slice(-15).reverse()
+      .map(item=>({taskId:item.taskId,retainedTaskId:item.retainedTaskId,
+        rule:item.rule,at:item.at})),tasks};
 }
 module.exports = {buildTaskPreflight};
