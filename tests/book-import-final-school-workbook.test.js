@@ -128,12 +128,12 @@ const book=(title,overrides={})=>({
   const oldClass={id:'old-bk4',name:'VMBO basis-kader 4',studentIds:[]};
   const rik={id:'rik',name:'Rik Meerhoff',firstName:'Rik',
     lastName:'Meerhoff',active:true,classIds:['current-t4'],borrowedBooks:[]};
-  const bookRik=book('H@CK het instituut ',{
+  const bookRik={
     'Achternaam schrijver':'Mous','Voornaam schrijver':'Mirjam',
-    'ISBN-nummer':9789000366293,
+    Titel:'H@CK het instituut ','ISBN-nummer':9789000366293,
     'Geleend door klas':'BK4','naam leerling':'Rik Meerhoff',
     Kolom1:'gaat van de lijst',
-  });
+  };
   const rikImport=await analyzeBookImportRows([bookRik],{
     students:[rik],classes:[newClass,oldClass],lookupIsbn:async()=>null,
     lookupTitleAuthor:async()=>null,
