@@ -345,7 +345,11 @@
     similar.addEventListener('click',()=>{
       if(!active||busy)return;
       message('Meer zoals '+item.title,'student');
-      choices={route:'similar',referenceBookId:item.bookId,answers:[]};
+      // Reference similarity is distinct from the learner's earlier
+      // consent to include their personal reading history.
+      const includeHistory=choices.route==='similar';
+      choices={route:includeHistory?'similar':'new',
+        referenceBookId:item.bookId,answers:[]};
       void showRecommendations();
     });
     main.append(similar);card.append(cover,main);
