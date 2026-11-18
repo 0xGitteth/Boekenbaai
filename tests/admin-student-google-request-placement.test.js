@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path');
+const read=name=>fs.readFileSync(path.join(__dirname,'..',name),'utf8');
+const auth=read('public/google-auth.js');
+const tasks=read('public/admin-workspaces.js');
+const modern=read('public/admin-modern.js');
+const staff=read('public/staff-google-link.js');
+const backend=read('google-auth-runtime-preload.js');
+// Requests are still provided with the same staff permission checks. This is
+// a DOM relocation, not a new public endpoint or an alternate approval route.
+assert.match(backend,/function pendingRequestsForStaff\(db, store, user\)/);
+assert.match(backend,/core\.canStaffManageStudent\(db, user, request\.studentId\)/);
+assert.match(auth,/requestPanel\.id='admin-student-link-request-panel'/);
+assert.match(auth,/requestHost\.append\(requestPanel\)/);
+assert.match(tasks,/studentLinkHost\.id='admin-student-link-requests-host'/);
+assert.match(tasks,/setInactive\(studentLinkHost,id!=='accounts'\)/);
+assert.match(modern,/taskHost&&requests&&!taskHost\.contains\(requests\)/);
+assert.match(auth,/className:'hint',text:'Geen openstaande koppelverzoeken\.'/);
+assert.match(auth,/\['teacher','admin'\]\.includes\(data\.role\)/);
+assert.match(staff,/Geen openstaande koppelverzoeken\./);
+assert.match(modern,/\['Leerlingen beheren', 'students'\]/);
+assert.doesNotMatch(modern,/Leerling- en klasverzoeken openen/);
+console.log('Permanent teacher and admin Google request placement: OK');
