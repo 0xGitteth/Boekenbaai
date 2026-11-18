@@ -30,9 +30,17 @@ function normalizeDueDate(value) {
   if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) return { ok: false };
   return { ok: true, value };
 }
+function bookIsBorrowed(book) {
+  return Boolean(book&&(book.status==='borrowed'||book.borrowedBy||book.borrowedByClassId));
+}
+function bookIsHidden(book) {
+  return book?.catalogHidden===true;
+}
 function publicBook(book) {
   if (!book || typeof book !== 'object') return book;
-  const safe = { ...book };
+  // Never advertise an assigned copy as available, even if an old Excel
+  // import left status='available'. This does NOT rewrite the loan ledger.
+  const safe = { ...book, status:bookIsBorrowed(book)?'borrowed':book.status };
   // Status remains public; identity, class ownership, loan dates and source
   // fields are restricted to dedicated staff/own-student endpoints.
   for (const field of ['borrowedBy', 'borrowedByClassId', 'borrowedAt',
@@ -41,4 +49,4 @@ function publicBook(book) {
   return safe;
 }
 module.exports = { ownClassIds, mayManageClass, studentClassIds, mayManageStudent,
-  normalizeDueDate, publicBook };
+  normalizeDueDate, publicBook, bookIsBorrowed, bookIsHidden };
