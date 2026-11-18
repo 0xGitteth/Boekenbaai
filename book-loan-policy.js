@@ -1,4 +1,5 @@
 'use strict';
+const {currentStudentClassIds}=require('./student-current-classes');
 
 // PR5: all permissions are evaluated against the CURRENT class membership,
 // never a client-supplied list of class or student IDs.
@@ -14,12 +15,7 @@ function mayManageClass(db, user, classId) {
   return user.role === 'teacher' && ownClassIds(db, user).includes(classId);
 }
 function studentClassIds(db, student) {
-  if (!student) return [];
-  const ids = new Set(Array.isArray(student.classIds) ? student.classIds : []);
-  for (const klass of db.classes || []) {
-    if (Array.isArray(klass?.studentIds) && klass.studentIds.includes(student.id)) ids.add(klass.id);
-  }
-  return [...ids];
+  return currentStudentClassIds(db,student);
 }
 function mayManageStudent(db, user, student) {
   if (!student || !user) return false;
