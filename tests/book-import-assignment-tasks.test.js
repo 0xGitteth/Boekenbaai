@@ -367,6 +367,8 @@ assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
 {
   const live=initial();
   const source=row({studentLoan:{status:'matched',id:'tim',name:'Tim Leerling'}});
+  // The actual source row has an empty barcode; ISBN resolves one saved copy.
+  source.book.barcode='';
   const task=defer(live,source,'Keuzelijst bibliotheek (2).xlsx');
   const serializedBefore=JSON.stringify(live);
   const entry=listDeferredAssignmentTasks(live).tasks[0];
