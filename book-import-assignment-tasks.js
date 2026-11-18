@@ -9,6 +9,7 @@ const { buildAssignmentPreview, applyAssignmentPreview } =
 const { circulationRevision, reportIsFullyReviewed } =
   require('./book-import-followups');
 const {excelLoanReceiptKey}=require('./book-import-loan-migration');
+const {studentLoanIds,isUnavailable}=require('./book-catalog-integrity');
 
 const CLASS_CHOICES = new Set(['class_fixed', 'class_loan', 'class_unrelated']);
 const CLOSING_CHOICES = new Set(['keep', 'manual_done', 'class_unrelated']);
@@ -98,8 +99,89 @@ function migrateLegacyDeferredTasks(db) {
   return migrated;
 }
 
+
+function loanEvidence(db, book, referenceOwners) {
+  if (!book) return null;
+  const holderIds=[...(referenceOwners.get(book.id)||[])];
+  const students=new Map((db.students||[]).map(student=>[student.id,student]));
+  const classes=new Map((db.classes||[]).map(klass=>[klass.id,klass]));
+  const borrower=book.borrowedByClassId
+    ?{type:'class',id:book.borrowedByClassId,
+      name:classes.get(book.borrowedByClassId)?.name||'Onbekende klas'}
+    :book.borrowedBy
+      ?{type:'student',id:book.borrowedBy,
+        name:students.get(book.borrowedBy)?.name||'Onbekende leerling'}
+      :null;
+  const holders=holderIds.map(id=>({
+    id,name:students.get(id)?.name||'Onbekende leerling',
+  }));
+  const conflicts=(
+    (book.status==='available'&&isUnavailable(book,referenceOwners))
+    ||(book.borrowedBy&&(
+      holderIds.length!==1||holderIds[0]!==book.borrowedBy))
+    ||(book.borrowedByClassId&&holderIds.length>0)
+    ||(holderIds.length>1)
+  );
+  return {
+    bookId:book.id,title:book.title||'',barcode:book.barcode||'',
+    editionIsbn:book.editionIsbn||book.metadataIsbn||'',
+    fixedLocation:book.fixedLocation||'',
+    storedStatus:book.status||'available',
+    effectiveStatus:isUnavailable(book,referenceOwners)?'borrowed':'available',
+    borrower,studentLoanReferences:holders,conflictingEvidence:Boolean(conflicts),
+  };
+}
+function sourceEvidence(task) {
+  const row=task.sourceRow;
+  const diff=task.original||{};
+  const ctx=row?.context||{};
+  const explicitIssues=Array.isArray(diff.sourceIssues)
+    ?diff.sourceIssues.filter(x=>typeof x==='string').slice(0,20):[];
+  return {
+    status:diff.sourceStatus||row?.status||'unknown',
+    issueCodes:explicitIssues,
+    originalReason:task.reason||'',
+    description:typeof diff.description==='string'
+      ?diff.description.slice(0,500):'',
+    rowAvailable:Boolean(row),
+    excelStudent:diff.excelStudent||ctx.studentLoan?.name||'',
+    excelClass:diff.excelClass||ctx.classLoan?.name||
+      ctx.studentClassHint?.label||(ctx.classContext||[]).join(', ')||'',
+    excelFixedLocation:diff.excelFixedLocation||
+      ctx.fixedLocation?.raw||ctx.fixedLocation?.label||'',
+    excelBarcode:row?.book?.barcode||task.barcode||'',
+    excelEditionIsbn:row?.book?.editionIsbn||task.editionIsbn||'',
+    missingFromSnapshot:diff.missingFromSnapshot===true,
+  };
+}
+function copyIdentity(db, task, booksById) {
+  const matches=task.bookId ?(booksById.get(task.bookId)||[]):[];
+  const isbn=norm(task.editionIsbn).replace(/[^0-9X]/gi,'');
+  const title=norm(task.title).toLocaleLowerCase('nl-NL');
+  const author=norm(task.author).toLocaleLowerCase('nl-NL');
+  // Edition evidence is a clue, never proof of a physical-copy identity.
+  const editionCount=isbn&&title&&author?(db.books||[]).filter(book=>
+    norm(book.title).toLocaleLowerCase('nl-NL')===title
+    &&norm(book.author).toLocaleLowerCase('nl-NL')===author
+    &&[book.editionIsbn,book.metadataIsbn,book.isbn]
+      .some(v=>norm(v).replace(/[^0-9X]/gi,'')===isbn)).length:0;
+  return {
+    status:task.bookId?(matches.length===1?'linked':
+      matches.length===0?'missing':'ambiguous'):'no_physical_reference',
+    bookId:task.bookId||null, matchingEditionCount:editionCount,
+    // No candidate is automatically treated as the missing physical copy.
+    requiresPhysicalReview:matches.length!==1,
+  };
+}
+
 function listDeferredAssignmentTasks(db) {
   const existingBookIds=new Set((db.books || []).map(book=>book.id));
+  const booksById=new Map();
+  for(const book of db.books||[]) {
+    if(!booksById.has(book.id))booksById.set(book.id,[]);
+    booksById.get(book.id).push(book);
+  }
+  const referenceOwners=studentLoanIds(db);
   const stored = Array.isArray(db.bookImportAssignmentTasks)
     ? db.bookImportAssignmentTasks : [];
   const known = new Set(stored.map(task => reportKey(task.reportId, task.differenceId)));
@@ -141,6 +223,10 @@ function listDeferredAssignmentTasks(db) {
         && ['loan', 'location', 'class_context'].includes(task.kind)
         && !task.reason),
       legacy: task.legacy === true,
+      sourceEvidence:sourceEvidence(task),
+      physicalIdentity:copyIdentity(db,task,booksById),
+      currentBook:booksById.get(task.bookId)?.length===1
+        ?loanEvidence(db,booksById.get(task.bookId)[0],referenceOwners):null,
     }))
     .sort((a,b)=>norm(a.createdAt).localeCompare(norm(b.createdAt)));
   return { tasks, summary: { open: tasks.length } };
