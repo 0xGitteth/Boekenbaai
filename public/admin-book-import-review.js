@@ -667,11 +667,32 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     async function refreshDeferred(){
       const serial=++deferredRefreshSerial;
       try{
-        const data=await request(rootPath+'/deferred');
+        const [deferredResult,reportResult]=await Promise.allSettled([
+          request(rootPath+'/deferred'),request('/api/admin/book-import-reports'),
+        ]);
         if(serial!==deferredRefreshSerial)return;
+        if(deferredResult.status!=='fulfilled')throw deferredResult.reason;
+        const data=deferredResult.value;
         const items=Array.isArray(data.items)?data.items:[];
         deferredSummary.textContent='Eerder uitgestelde boeken ('+(data.count??items.length)+')';
         deferredList.replaceChildren();
+        if(reportResult.status==='fulfilled'){
+          const reports=Array.isArray(reportResult.value.reports)
+            ?reportResult.value.reports:[];
+          const heading=make('p','hint',reports.length
+            ?'Laatst bewaarde importverslagen (dit bewijst niet dat elke Exceluitlening is overgenomen):'
+            :'Geen bewaarde importverslagen beschikbaar.');
+          deferredList.append(heading);
+          for(const report of reports.slice(0,5)){
+            const imported=report.importedAt
+              ?new Date(report.importedAt).toLocaleString('nl-NL'):'';
+            deferredList.append(make('p','hint',
+              (report.fileName||'Bestandsnaam onbekend')
+              +(imported?' · '+imported:'')));
+          }
+        }else deferredList.append(make('p','hint',
+          'De importverslagen konden niet worden opgehaald. '
+          +'De fysieke taken staan hieronder apart.'));
         if(!items.length){
           deferredList.append(make('p','hint',
             'Er zijn nog geen boeken uitgesteld.'));
