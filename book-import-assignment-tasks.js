@@ -206,7 +206,7 @@ function listDeferredAssignmentTasks(db) {
       })));
   const tasks = [...stored.filter(task => task?.status === 'open'), ...legacy]
     .map(task => ({
-      id: task.id, reportId: task.reportId,
+      id: task.id, reportId: task.reportId, differenceId: task.differenceId,
       worksheetRow: task.worksheetRow,
       fileName: task.fileName, kind: task.kind,
       bookId: task.bookId, title: task.title, author: task.author,
