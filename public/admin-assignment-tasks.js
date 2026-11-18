@@ -82,6 +82,67 @@ if (panel && host) {
     ];
     return [reasons[task.reason] || 'Handmatige controle vereist: ' + (task.reason || 'Onbekend')];
   }
+  // Display original-source evidence separately from current registration.
+  // Every value is inserted as text, never interpreted as HTML.
+  function evidencePanel(task) {
+    const box = el('details', null, 'bb-assignment-task-evidence');
+    box.open = task.kind==='issue'||task.physicalIdentity?.status!=='linked';
+    box.append(el('summary','Excelbron en actuele boekregistratie'));
+    const source = task.sourceEvidence||{};
+    const sourceRows = [
+      'Importbestand: '+(task.fileName||'Onbekend')
+        +' · Excelrij: '+(task.worksheetRow||'Niet bekend'),
+      'Importtaak: '+(task.reportId||'Onbekend')
+        +' · Verschil: '+(task.differenceId||'Onbekend'),
+      'Oorspronkelijke probleemcode: '+(source.originalReason||task.reason||'Niet vastgelegd'),
+      source.issueCodes?.length
+        ?'Excelcontroles: '+source.issueCodes.join(', '):'',
+      source.description?'Toelichting bij import: '+source.description:'',
+      'Excel ISBN: '+(source.excelEditionIsbn||task.editionIsbn||'Niet ingevuld')
+        +' · Barcode: '+(source.excelBarcode||task.barcode||'Niet ingevuld'),
+      'Excel leerling: '+(source.excelStudent||'Niet ingevuld'),
+      'Excel klas: '+(source.excelClass||'Niet ingevuld'),
+      'Excel vaste locatie: '+(source.excelFixedLocation||'Niet ingevuld'),
+      source.missingFromSnapshot
+        ?'Het boek ontbrak in het opgegeven volledige Excel-uitleenoverzicht. '
+          +'Dit bewijst geen inlevering.':'',
+    ];
+    box.append(el('h5','Oorspronkelijke Excelgegevens'));
+    for(const text of sourceRows.filter(Boolean)) box.append(el('p',text,'hint'));
+    if(source.rowAvailable===false)box.append(el('p',
+      'De volledige bronrij is niet meer opgeslagen. '
+      +'Bekijk het oorspronkelijke Excelbestand voordat je de taak afsluit.',
+      'hint'));
+    const identity=task.physicalIdentity||{};
+    box.append(el('h5','Fysiek exemplaar en actuele gegevens'));
+    box.append(el('p','Intern exemplaar-ID: '+(identity.bookId||'Niet vastgesteld')
+      +' · Overeenkomende ISBN-edities: '+(identity.matchingEditionCount??'Onbekend'),'hint'));
+    if(identity.status!=='linked')box.append(el('p',
+      'De oorspronkelijke taak is niet aan precies één bestaand fysiek exemplaar '
+      +'gekoppeld. Een overeenkomstige ISBN-editie is geen bewijs welk exemplaar '
+      +'bedoeld wordt. Niet automatisch corrigeren.','hint'));
+    const now=task.currentBook;
+    if(now){
+      box.append(el('p','Actuele titel: '+(now.title||'Onbekend')
+        +' · Barcode: '+(now.barcode||'Niet geregistreerd'),'hint'));
+      box.append(el('p','Opgeslagen status: '+now.storedStatus
+        +' · Status op basis van alle uitleenverwijzingen: '+now.effectiveStatus,'hint'));
+      box.append(el('p','Actuele uitlening: '+(now.borrower
+        ?loanText(now.borrower):'Geen lener aan dit exemplaar gekoppeld'),'hint'));
+      box.append(el('p','Leerlinguitleenlijsten: '+
+        (now.studentLoanReferences?.length
+          ?now.studentLoanReferences.map(v=>v.name).join(', ')
+          :'Geen verwijzingen gevonden'),'hint'));
+      box.append(el('p','Actuele vaste locatie: '+
+        (now.fixedLocation||'Niet geregistreerd'),'hint'));
+      if(now.conflictingEvidence)box.append(el('p',
+        'Let op: de opgeslagen status en/of de uitleenverwijzingen '
+        +'zijn niet met elkaar in overeenstemming. Eerst beoordelen.',
+        'hint'));
+    }
+    return box;
+  }
+
   function render() {
     host.replaceChildren();
     host.hidden = !administrator;
@@ -113,6 +174,7 @@ if (panel && host) {
       ].filter(Boolean).join(' · ');
       card.append(el('p', meta, 'hint'));
       for (const text of details(task)) card.append(el('p', text, 'hint'));
+      card.append(evidencePanel(task));
       if (task.missingBook) card.append(el('p',
         'Dit exemplaar is niet meer aanwezig. Er kan geen correctie worden toegepast.', 'hint'));
       if (task.legacy) card.append(el('p',
@@ -123,7 +185,8 @@ if (panel && host) {
       const choice = document.createElement('select');
       choice.required = true;
       option(choice, '', 'Kies een beslissing');
-      if (task.canApply && !task.missingBook) {
+      if (task.canApply && !task.missingBook
+        && task.physicalIdentity?.status==='linked') {
         if (task.kind === 'loan') option(choice, 'apply',
           'Uitlening administratief corrigeren volgens Excel');
         if (task.kind === 'location') option(choice, 'apply',
