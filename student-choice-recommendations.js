@@ -3,6 +3,7 @@
 // Chat recommendations use only curated catalogue themes. No inference
 // from an activity (gaming/sport) to a book genre without further answers.
 const crypto = require('node:crypto');
+const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity');
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
 const keyOf = book => JSON.stringify([norm(book.title), norm(book.author)]);
 const QUESTION_VALUES = Object.freeze({
@@ -49,6 +50,384 @@ const THEME_HINTS = Object.freeze({
   action: ['actie','avontuur','spanning'],
   worldsLegacy: ['fantasy','fantasie','sciencefiction','avontuur'],
 });
+// A third and fourth answer add concrete catalogue-theme evidence.
+// Unknown answers are ignored. No free-form input becomes a ranking instruction.
+const NUANCE_HINTS=Object.freeze({
+  "crime": [
+    "detective",
+    "misdaad",
+    "mysterie",
+    "thriller"
+  ],
+  "hidden_history": [
+    "geschiedenis",
+    "geheim",
+    "mysterie"
+  ],
+  "school_secret": [
+    "school",
+    "geheim",
+    "mysterie"
+  ],
+  "tech_secret": [
+    "technologie",
+    "mysterie",
+    "sciencefiction"
+  ],
+  "horror": [
+    "horror",
+    "griezel",
+    "spanning"
+  ],
+  "chase": [
+    "actie",
+    "spanning",
+    "achtervolging",
+    "avontuur"
+  ],
+  "psychological": [
+    "psychische gezondheid",
+    "thriller",
+    "mysterie",
+    "identiteit"
+  ],
+  "survival": [
+    "overleven",
+    "avontuur",
+    "waargebeurd",
+    "spanning"
+  ],
+  "family": [
+    "familie",
+    "relaties",
+    "thuis"
+  ],
+  "identity": [
+    "identiteit",
+    "opgroeien",
+    "zelfvertrouwen"
+  ],
+  "friendship": [
+    "vriendschap",
+    "vrienden",
+    "relaties"
+  ],
+  "bullying": [
+    "pesten",
+    "school",
+    "vriendschap"
+  ],
+  "romance": [
+    "liefde",
+    "romantiek",
+    "verliefd"
+  ],
+  "conflict": [
+    "ruzie",
+    "relaties",
+    "vriendschap",
+    "familie"
+  ],
+  "justice": [
+    "maatschappij",
+    "rechtvaardigheid",
+    "discriminatie",
+    "ongelijkheid"
+  ],
+  "future": [
+    "toekomst",
+    "sciencefiction",
+    "opgroeien",
+    "identiteit"
+  ],
+  "school": [
+    "school",
+    "opgroeien",
+    "leerlingen"
+  ],
+  "society": [
+    "maatschappij",
+    "politiek",
+    "samenleving"
+  ],
+  "sports": [
+    "sport",
+    "voetbal",
+    "wedstrijd"
+  ],
+  "travel": [
+    "reis",
+    "avontuur",
+    "ontdekken"
+  ],
+  "nature": [
+    "natuur",
+    "dieren",
+    "buiten"
+  ],
+  "danger": [
+    "spanning",
+    "gevaar",
+    "avontuur",
+    "actie"
+  ],
+  "quest": [
+    "avontuur",
+    "zoektocht",
+    "ontdekken"
+  ],
+  "competition": [
+    "wedstrijd",
+    "sport",
+    "uitdaging"
+  ],
+  "rescue": [
+    "actie",
+    "redding",
+    "avontuur"
+  ],
+  "confidence": [
+    "zelfvertrouwen",
+    "opgroeien",
+    "identiteit"
+  ],
+  "biography": [
+    "biografie",
+    "waargebeurd",
+    "levensverhaal"
+  ],
+  "inspiration": [
+    "biografie",
+    "opgroeien",
+    "waargebeurd"
+  ],
+  "war": [
+    "oorlog",
+    "geschiedenis",
+    "waargebeurd"
+  ],
+  "ancient": [
+    "geschiedenis",
+    "oudheid",
+    "verleden"
+  ],
+  "true_crime": [
+    "misdaad",
+    "waargebeurd",
+    "detective"
+  ],
+  "historical_life": [
+    "geschiedenis",
+    "biografie",
+    "waargebeurd"
+  ],
+  "science": [
+    "wetenschap",
+    "onderzoek",
+    "non-fictie",
+    "non fictie"
+  ],
+  "animals": [
+    "dieren",
+    "natuur"
+  ],
+  "technology": [
+    "technologie",
+    "computer",
+    "wetenschap",
+    "sciencefiction"
+  ],
+  "earth": [
+    "aarde",
+    "natuur",
+    "milieu",
+    "wetenschap"
+  ],
+  "awkward_school": [
+    "school",
+    "humor",
+    "opgroeien"
+  ],
+  "pranks": [
+    "humor",
+    "grappig",
+    "school"
+  ],
+  "friends_humor": [
+    "humor",
+    "vriendschap"
+  ],
+  "strange_school": [
+    "humor",
+    "school",
+    "fantasy"
+  ],
+  "awkward": [
+    "humor",
+    "opgroeien",
+    "grappig"
+  ],
+  "absurd_humor": [
+    "humor",
+    "komedie",
+    "fantasy"
+  ],
+  "magic_humor": [
+    "humor",
+    "magie",
+    "fantasy"
+  ],
+  "sci_fi_humor": [
+    "humor",
+    "sciencefiction",
+    "technologie"
+  ],
+  "strange": [
+    "fantasy",
+    "fantasie",
+    "humor"
+  ],
+  "imagination": [
+    "fantasie",
+    "fantasy",
+    "magie"
+  ],
+  "creatures": [
+    "fantasy",
+    "magische wezens",
+    "dieren"
+  ],
+  "spells": [
+    "magie",
+    "tovenarij",
+    "fantasy"
+  ],
+  "myth": [
+    "mythologie",
+    "legende",
+    "fantasy"
+  ],
+  "magical_quest": [
+    "avontuur",
+    "magie",
+    "fantasy"
+  ],
+  "robots": [
+    "robots",
+    "technologie",
+    "sciencefiction"
+  ],
+  "space": [
+    "ruimtevaart",
+    "heelal",
+    "sciencefiction"
+  ],
+  "dystopia": [
+    "dystopie",
+    "sciencefiction",
+    "maatschappij"
+  ],
+  "invention": [
+    "uitvinden",
+    "technologie",
+    "sciencefiction",
+    "wetenschap"
+  ],
+  "fantasy_world": [
+    "fantasy",
+    "fantasie",
+    "magie"
+  ],
+  "future_world": [
+    "sciencefiction",
+    "toekomst",
+    "technologie"
+  ],
+  "lost_world": [
+    "avontuur",
+    "mysterie",
+    "ontdekken"
+  ],
+  "nature_world": [
+    "natuur",
+    "avontuur",
+    "dieren"
+  ],
+  "none": []
+});
+const LENS_HINTS=Object.freeze({
+  "school": [
+    "school",
+    "opgroeien"
+  ],
+  "detective": [
+    "detective",
+    "mysterie"
+  ],
+  "family": [
+    "familie",
+    "relaties"
+  ],
+  "technology": [
+    "technologie",
+    "sciencefiction"
+  ],
+  "sports": [
+    "sport",
+    "wedstrijd"
+  ],
+  "adventure": [
+    "avontuur",
+    "ontdekken"
+  ],
+  "creative": [
+    "muziek",
+    "kunst",
+    "creatief"
+  ],
+  "identity": [
+    "identiteit",
+    "opgroeien"
+  ],
+  "biography": [
+    "biografie",
+    "waargebeurd"
+  ],
+  "history": [
+    "geschiedenis",
+    "oorlog"
+  ],
+  "nature": [
+    "natuur",
+    "dieren"
+  ],
+  "science": [
+    "wetenschap",
+    "technologie"
+  ],
+  "magic": [
+    "fantasy",
+    "magie"
+  ],
+  "society": [
+    "maatschappij",
+    "dystopie"
+  ],
+  "tension": [
+    "spanning",
+    "thriller"
+  ],
+  "relationships": [
+    "vriendschap",
+    "relaties"
+  ],
+  "humor": [
+    "humor",
+    "grappig"
+  ],
+  "none": []
+});
+
 function validateChoices(value) {
   const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const result = {};
@@ -57,19 +436,22 @@ function validateChoices(value) {
   for (const [field, values] of Object.entries(QUESTION_VALUES)) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
+  result.nuance=Object.hasOwn(NUANCE_HINTS,input.nuance)?input.nuance:'none';
+  result.lens=Object.hasOwn(LENS_HINTS,input.lens)?input.lens:'none';
   result.allowRepeats = input.allowRepeats === true;
   result.seed = typeof input.seed === 'string' ? input.seed.slice(0, 50) : '';
   result.excludeKeys = Array.isArray(input.excludeKeys)
     ? input.excludeKeys.filter(x => typeof x === 'string' && x.length <= 400).slice(0, 200) : [];
   return result;
 }
-function available(book) {
-  return book.status === 'available' && !book.borrowedBy && !book.borrowedByClassId;
+function available(book,loanOwners) {
+  return !isUnavailable(book,loanOwners) && !isHidden(book);
 }
 function groupBooks(db) {
   const map = new Map();
+  const loanOwners=studentLoanIds(db);
   for (const book of db.books || []) {
-    if (!book || !book.id || book.catalogHidden===true || !norm(book.title)) continue;
+    if (!book || !book.id || isHidden(book) || !norm(book.title)) continue;
     const key = keyOf(book);
     let work = map.get(key);
     if (!work) {
@@ -80,7 +462,7 @@ function groupBooks(db) {
       map.set(key, work);
     }
     work.total++;
-    if (available(book)) {
+    if (available(book,loanOwners)) {
       work.available++;
       work.bookId = book.id;
     }
@@ -173,6 +555,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const read = studentId ? readKeysAndThemes(db, studentId, works) : {readKeys:new Set(),themes:new Set()};
   const directionHints=(THEME_HINTS[choice.situation]||[]).map(norm);
   const detailHints=(THEME_HINTS[choice.detail]||[]).map(norm);
+  const nuanceHints=(NUANCE_HINTS[choice.nuance]||[]).map(norm);
+  const lensHints=(LENS_HINTS[choice.lens]||[]).map(norm);
   const legacyMoodHints=(THEME_HINTS[choice.mood]||[]).map(norm);
   const matchesTags=(themes,hints)=>themes.filter(theme=>
     hints.some(h=>norm(theme).includes(h)));
@@ -185,12 +569,16 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     const directionMatches=matchesTags(work.themes,directionHints);
     const detailMatches=matchesTags(work.themes,detailHints);
     const moodMatches=matchesTags(work.themes,legacyMoodHints);
-    const matched=[...new Set([...detailMatches,...directionMatches,...moodMatches])];
+    const nuanceMatches=matchesTags(work.themes,nuanceHints);
+    const lensMatches=matchesTags(work.themes,lensHints);
+    const matched=[...new Set([...nuanceMatches,...detailMatches,
+      ...lensMatches,...directionMatches,...moodMatches])];
     const familiar = choice.route === 'similar'
       ? work.themes.filter(theme => read.themes.has(norm(theme))) : [];
     // The branch-specific second answer should change the recommendations;
     // the first answer still sets the general direction.
-    let score = detailMatches.length * 17 + directionMatches.length * 9
+    let score = nuanceMatches.length * 24 + detailMatches.length * 17
+      + lensMatches.length * 11 + directionMatches.length * 9
       + moodMatches.length * 4 + familiar.length * 6 + (work.available ? 3 : 0);
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
     // Free-time activity is deliberately not mapped to a book's genre.
