@@ -389,11 +389,12 @@ assert.equal(shared.students[2].borrowedBooks[0].bookId,'copy-2');
   assert.equal(listDeferredAssignmentTasks(live).tasks[0].currentBook.conflictingEvidence,true);
   assert.equal(listDeferredAssignmentTasks(live).tasks[0].currentBook.effectiveStatus,'borrowed');
   // A borrowed status without ANY borrower evidence is also inconsistent.
+  live.books[0].status='borrowed';
   live.books[0].borrowedBy=null;
   live.students[0].borrowedBooks=[];
   const orphan=listDeferredAssignmentTasks(live).tasks[0];
   assert.equal(orphan.currentBook.conflictingEvidence,true);
-  assert.equal(orphan.currentBook.storedStatus,'available');
+  assert.equal(orphan.currentBook.storedStatus,'borrowed');
 }
 // A generic source conflict must retain the specific recorded diagnostic,
 // even when no reliable physical book identity was recorded.
