@@ -200,9 +200,14 @@ function traitsForBook(book){
   const cached=TRAIT_CACHE.get(key);
   if(cached)return new Map(cached);
 
+  // Use the same effective theme precedence as attachDerivedThemeFields:
+  // explicit manual themes override imported ones, and an explicit empty
+  // theme list remains empty. Never revive obsolete imported theme labels.
+  const effectiveThemes=Array.isArray(book.themes)?book.themes
+    :safe(book.manualThemes).length?safe(book.manualThemes)
+      :safe(book.importedThemes);
   const curated=[
-    ...safe(book.themes),...safe(book.manualThemes),...safe(book.importedThemes),
-    ...safe(book.tags),...safe(book.enrichmentTags),
+    ...effectiveThemes,...safe(book.tags),...safe(book.enrichmentTags),
   ].join(' ');
   const copy=corpus(curated),description=corpus(book.description||''),
     title=corpus(book.title||'');
