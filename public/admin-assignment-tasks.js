@@ -99,7 +99,7 @@ if (panel && host) {
         ?'Excelcontroles: '+source.issueCodes.join(', '):'',
       source.description?'Toelichting bij import: '+source.description:'',
       'Excel ISBN: '+(source.excelEditionIsbn||task.editionIsbn||'Niet ingevuld')
-        +' · Barcode: '+(source.excelBarcode||task.barcode||'Niet ingevuld'),
+        +' · Barcode: '+(source.excelBarcode||'Niet ingevuld'),
       'Excel leerling: '+(source.excelStudent||'Niet ingevuld'),
       'Excel klas: '+(source.excelClass||'Niet ingevuld'),
       'Excel vaste locatie: '+(source.excelFixedLocation||'Niet ingevuld'),
