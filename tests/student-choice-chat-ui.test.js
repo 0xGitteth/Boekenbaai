@@ -171,6 +171,15 @@ vm.runInNewContext(code,{
     'A failed reset must restore the available chat actions');
   resetStatus=200;
 
+  function finishDeeperQuestions() {
+    const nuance=actions.children.find(x=>x.textContent!=='Laat nu drie boeken zien');
+    assert.ok(nuance,'Follow-up must offer a specific question and a skip option');
+    nuance.listeners.click();
+    const lens=actions.children.find(x=>x.textContent!=='Laat nu drie boeken zien');
+    assert.ok(lens,'A fourth situational question must follow the previous answer');
+    lens.listeners.click();
+  }
+
   // After surprise fails, "Andere richting" must restart the adaptive route
   // rather than accidentally submitting the surprise route again.
   elements.get('student-choice-close').listeners.click();
@@ -183,14 +192,15 @@ vm.runInNewContext(code,{
   failSuggest=false;
   actions.children.find(x=>x.textContent==='Iemand ontdekt een geheim').listeners.click();
   actions.children.find(x=>x.textContent==='Zelf aanwijzingen zoeken').listeners.click();
+  assert.ok(actions.children.some(x=>x.textContent==='Laat nu drie boeken zien'));
+  finishDeeperQuestions();
   await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(suggestRequests.at(-1).choices.route,'new',
     'The fallback questionnaire must use the answered route, not surprise');
 
-  // Exercise all seven branches, including their distinct second questions.
-  // Each branch must submit only two meaningful answers, without mandatory
-  // hobby/genre/length repetitions.
+  // Exercise all seven branches. The third and fourth questions depend on
+  // earlier answers, with an option to see books after two questions.
   const scenarios=[
     ['Iemand ontdekt een geheim','secret',
       'Wat maakt zo’n geheim voor jou interessant?','Zelf aanwijzingen zoeken','puzzles'],
@@ -224,12 +234,21 @@ vm.runInNewContext(code,{
     assert.ok(!secondOptions.includes(start),
       'An answered situation must not be repeated by the follow-up');
     actions.children.find(x=>x.textContent===detail).listeners.click();
+    assert.ok(actions.children.some(x=>x.textContent==='Laat nu drie boeken zien'),
+      'Pupils can stop the discovery questions early');
+    const thirdQuestion=log.children.at(-1).children[0].textContent;
+    assert.ok(thirdQuestion.length>10);
+    finishDeeperQuestions();
     await new Promise(resolve=>setImmediate(resolve));
     await new Promise(resolve=>setImmediate(resolve));
     const submitted=suggestRequests.at(-1).choices;
     assert.equal(submitted.route,'new');
     assert.equal(submitted.situation,situation);
     assert.equal(submitted.detail,expectedDetail);
+    assert.ok(submitted.nuance && submitted.nuance!=='none',
+      'The specific follow-up answer must be submitted');
+    assert.ok(submitted.lens && submitted.lens!=='none',
+      'The fourth answer must contribute an additional preference');
     assert.equal(submitted.mood,undefined,
       'Do not ask a duplicate genre question');
     assert.equal(submitted.activity,undefined,
