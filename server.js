@@ -5171,8 +5171,10 @@ async function handleApi(req, res, requestUrl) {
         const body=await parseBody(req,3000);
         const database=loadDb();
         const result=removeFalseHistory(database,user,body);
-        if(!result.ok)return sendJson(res,409,{
-          message:'De leenhistorie is veranderd of de verwijdering is ongeldig.',
+        if(!result.ok)return sendJson(res,result.error==='forbidden'?403:409,{
+          message:result.error==='forbidden'
+            ?'Je mag alleen de leenhistorie van je eigen leerlingen wijzigen.'
+            :'De leenhistorie is veranderd of de verwijdering is ongeldig.',
           error:result.error});
         saveDb(database);
         return sendJson(res,200,result);
