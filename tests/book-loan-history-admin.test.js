@@ -39,8 +39,19 @@ assert.equal(removeFalseHistory(db,{role:'teacher',id:'t'},{
 assert.equal(removeFalseHistory(db,admin,{
   studentId:'s1',bookId:'b1',expectedFingerprint:'stale',confirm:true
 }).error,'history_changed');
-const cleaned=removeFalseHistory(db,admin,{
+// A pupil may have changed Ja/Nee after staff loaded the search results.
+// Never erase the newer answer using an old confirmation token.
+db.readingRecords[0].finished=false;
+db.readingRecords[0].revision=2;
+db.readingRecords[0].updatedAt='2026-11-18T12:30:00.000Z';
+assert.equal(removeFalseHistory(db,admin,{
   studentId:'s1',bookId:'b1',expectedFingerprint:candidates[0].fingerprint,
+  confirm:true,
+}).error,'history_changed',
+'An updated pupil reading answer must invalidate a stale deletion');
+const newest=searchHistory(db,{student:'leerling',book:'een'})[0];
+const cleaned=removeFalseHistory(db,admin,{
+  studentId:'s1',bookId:'b1',expectedFingerprint:newest.fingerprint,
   confirm:true,
 });
 assert.equal(cleaned.ok,true);
