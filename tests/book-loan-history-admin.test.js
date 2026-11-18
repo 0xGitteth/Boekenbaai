@@ -301,4 +301,22 @@ assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
   assert.equal(original.history.filter(item=>item.type==='check_in').length,0);
 }
 
+// Both corrective actions must be visible as DIFFERENT workflows in the
+// same staff lending area, including the exact physical ID and confirmation.
+{
+  const fs=require('node:fs'),path=require('node:path');
+  const ui=fs.readFileSync(path.join(__dirname,'..',
+    'public/admin-loan-history.js'),'utf8');
+  assert.match(ui,/Foutieve actuele uitlening corrigeren/);
+  assert.match(ui,/Foutieve leenhistorie corrigeren/);
+  assert.match(ui,/Exemplaar-ID: /);
+  assert.match(ui,/expectedFingerprint:loan\.fingerprint,confirm:true/);
+  assert.match(ui,/activeLoanRemoved/);
+  assert.match(ui,/boekenbaai:staff-refresh/);
+  assert.match(ui,/currentSection\.hidden/);
+  const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
+  assert.match(server,/user\.role!=='admin'/);
+  assert.match(server,/limit:100,actor:user/);
+}
+
 console.log('Durable circulation history, admin deletion and preservation: OK');
