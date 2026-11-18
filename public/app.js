@@ -2113,7 +2113,7 @@ function groupCatalogEditions(copies) {
       groups.set(key, edition);
     }
     edition.copies.push(copy);
-    if (copy.status !== 'borrowed') edition.availableCopies++;
+    if (copy.status !== 'borrowed' && copy.catalogHidden!==true) edition.availableCopies++;
     edition.representativeBook = pickRepresentativeBook(edition.representativeBook, copy);
     if (!edition.publisher && copy.publisher) edition.publisher = copy.publisher;
   }
@@ -2166,7 +2166,9 @@ function groupBooksByTitleAuthor(books = []) {
   for (const value of groups.values()) {
     const totalCopies = value.copies.length;
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
-    const availableCopies = totalCopies - borrowedCopies;
+    const hiddenCopies = value.copies.filter((copy)=>copy.catalogHidden===true).length;
+    const availableCopies = value.copies.filter(copy=>
+      copy.status!=='borrowed' && copy.catalogHidden!==true).length;
     const editions = groupCatalogEditions(value.copies);
     // Show the cover of the most common edition with an available cover.
     const featuredEdition = editions.find(edition =>
@@ -2204,6 +2206,7 @@ function groupBooksByTitleAuthor(books = []) {
       borrowCount: value.copies.reduce((total, copy) => total + (copy.borrowCount || 0), 0),
       totalCopies,
       borrowedCopies,
+      hiddenCopies,
       availableCopies,
       editionCount: editions.length,
       copies: value.copies,
@@ -2377,7 +2380,12 @@ function createBookCard(template, book, folders, options = {}) {
       statusText = `${availableCopies}/${totalCopies} beschikbaar`;
     }
     if (availableCopies <= 0) {
-      statusText = 'Uitgeleend';
+      const hiddenCopies=Number(book.hiddenCopies)||0;
+      statusText = hiddenCopies===totalCopies
+        ? 'Vermist / uitgeschakeld'
+        : hiddenCopies>0
+          ? 'Geen exemplaren beschikbaar (deels vermist)'
+          : 'Uitgeleend';
     }
     statusBadge.textContent = statusText;
     statusBadge.classList.add(
@@ -3227,7 +3235,8 @@ function resolveStudentBookAction(book, user) {
     : []);
   const mine = copies.find(copy => ownedIds.has(copy.id));
   if (mine) return { label: 'Boek terugbrengen', type: 'return', bookId: mine.id };
-  const available = copies.find(copy => copy?.id && copy.status !== 'borrowed');
+  const available = copies.find(copy => copy?.id && copy.status !== 'borrowed'
+    && copy.catalogHidden!==true);
   if (!available) return null;
   return isStudent
     ? { label: 'Boek lenen', type: 'borrow', bookId: available.id }
@@ -3513,10 +3522,11 @@ function initStudentPage() {
     if (!group || !Array.isArray(group.books)) {
       return;
     }
-    const availableCopies = group.books.filter((book) => book.status !== 'borrowed').length;
+    const availableCopies = group.books.filter((book) => book.status !== 'borrowed'
+      && book.catalogHidden!==true).length;
     group.totalCopies = group.books.length;
     group.availableCopies = availableCopies;
-    group.borrowed = group.totalCopies - group.availableCopies;
+    group.borrowed = group.books.filter(book=>book.status==='borrowed').length;
   }
 
   function applyBookUpdateToSelection(updatedBook) {
@@ -3554,7 +3564,8 @@ function initStudentPage() {
     if (!group || !Array.isArray(group.books)) {
       return null;
     }
-    return group.books.find((book) => book.status !== 'borrowed') || null;
+    return group.books.find((book) => book.status !== 'borrowed'
+      && book.catalogHidden!==true) || null;
   }
 
   function findBorrowedBookForStudent(group) {
@@ -3788,7 +3799,10 @@ function initStudentPage() {
     }
     try {
       allBooks = await fetchJson('/api/books');
-      groupedBooks = groupBooksByTitleAuthor(allBooks);
+      // The owner's missing loan remains in allBooks for their personal list,
+      // but must never appear in catalog search or general discovery.
+      groupedBooks = groupBooksByTitleAuthor(allBooks.filter(book=>
+        book.personalLoanOnly!==true && book.catalogHidden!==true));
       updateAvailableThemes();
       renderLanguageOptions();
       updatePageFilterRange();
@@ -4308,6 +4322,7 @@ function initStaffPage() {
   const adminBookQuantity = document.querySelector('#admin-book-quantity');
   const adminBookExam = document.querySelector('#admin-book-exam');
   const adminBookEasyReading = document.querySelector('#admin-book-easy-reading');
+  const adminBookCatalogHidden = document.querySelector('#admin-book-catalog-hidden');
   const adminBookDescription = document.querySelector('#admin-book-description');
   const adminBookPublisher = document.querySelector('#admin-book-publisher');
   const adminBookYear = document.querySelector('#admin-book-year');
@@ -5303,6 +5318,9 @@ function initStaffPage() {
     }
     if (adminBookEasyReading) {
       adminBookEasyReading.checked = Boolean(book.easyReading);
+    }
+    if (adminBookCatalogHidden) {
+      adminBookCatalogHidden.checked = book.catalogHidden===true;
     }
     if (adminBookSubmitButton) {
       adminBookSubmitButton.textContent = 'Boek bijwerken';
@@ -8470,6 +8488,7 @@ function initStaffPage() {
       metadataIsbn: metadataIsbnValue,
       suitableForExamList: Boolean(adminBookExam.checked),
       easyReading: Boolean(adminBookEasyReading?.checked),
+      catalogHidden: Boolean(adminBookCatalogHidden?.checked),
       description: adminBookDescription.value.trim(),
       publisher: publisherValue,
       publishedYear: publishedYearValue || null,

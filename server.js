@@ -42,6 +42,8 @@ const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
+const {studentLoanIds,isUnavailable,isHidden,readStatus,
+  catalogProjection,availabilityConflicts,selectAvailableCopy}=require('./book-catalog-integrity');
 const { createReturnReadingRecord, mayViewReadingRecord, publicReadingRecord,
   amendReadingRecord } = require('./reading-completion-core');
 const {
@@ -824,6 +826,7 @@ function ensureBookShape(book) {
   }
   safeBook.suitableForExamList = Boolean(source.suitableForExamList);
   safeBook.easyReading = Boolean(source.easyReading);
+  safeBook.catalogHidden = source.catalogHidden === true;
   safeBook.status = typeof source.status === 'string' ? source.status : 'available';
   safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
   safeBook.borrowedByClassId = typeof source.borrowedByClassId === 'string'
@@ -856,12 +859,14 @@ function sanitizeBookForResponse(book) {
   return publicBook(book);
 }
 
-function createBookCopyFromTemplate(template) {
+function createBookCopyFromTemplate(template, { preserveHidden = false } = {}) {
   const base = ensureBookShape(template);
   return {
     ...base,
     id: crypto.randomUUID(),
     status: 'available',
+    // An added physical copy has not been reported missing merely because its template was.
+    catalogHidden: preserveHidden && template.catalogHidden === true,
     borrowedBy: null,
     borrowedByClassId: null,
     borrowedAt: null,
@@ -1911,25 +1916,25 @@ function findBarcodeGroupById(db, groupId) {
 }
 
 function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false,
-  studentId = null, classId = null } = {}) {
+  studentId = null, classId = null, loanOwners = new Map() } = {}) {
   if (!group) {
     return null;
   }
   const books = Array.isArray(group.books) ? group.books : [];
   if (requireAvailable) {
-    return books.find((book) => book.status !== 'borrowed') || null;
+    return selectAvailableCopy(books, loanOwners);
   }
   if (mustBeBorrowed) {
     if (classId) {
-      return books.find((book) => book.status === 'borrowed'
+      return books.find((book) => isUnavailable(book, loanOwners)
         && book.borrowedByClassId === classId && !book.borrowedBy) || null;
     }
     if (studentId) {
       // Never fall back to a different person's borrowed book.
-      return books.find((book) => book.status === 'borrowed'
+      return books.find((book) => isUnavailable(book, loanOwners)
         && book.borrowedBy === studentId && !book.borrowedByClassId) || null;
     }
-    return books.find((book) => book.status === 'borrowed') || null;
+    return books.find((book) => isUnavailable(book, loanOwners)) || null;
   }
   if (studentId) {
     const owned = books.find((book) => book.borrowedBy === studentId);
@@ -1968,6 +1973,7 @@ function resolveBookSelection(db, identifier, options = {}) {
     classId = null,
   } = options;
 
+  const loanOwners = studentLoanIds(db);
   const normalizedIdentifier = typeof identifier === 'string' ? identifier.trim() : '';
   const candidateIds = Array.from(new Set([normalizedIdentifier, body.bookId])).filter(Boolean);
   for (const candidate of candidateIds) {
@@ -1975,10 +1981,10 @@ function resolveBookSelection(db, identifier, options = {}) {
     if (!book) {
       continue;
     }
-    if (requireAvailable && book.status === 'borrowed') {
-      return { error: 'Boek is al uitgeleend', statusCode: 400 };
+    if (requireAvailable && (isUnavailable(book,loanOwners)||isHidden(book))) {
+      return { error: 'Boek is uitgeleend of tijdelijk niet beschikbaar', statusCode: 400 };
     }
-    if (mustBeBorrowed && book.status !== 'borrowed') {
+    if (mustBeBorrowed && !isUnavailable(book, loanOwners)) {
       return { error: 'Dit exemplaar is al beschikbaar', statusCode: 400 };
     }
     const group = getGroupForBook(db, book);
@@ -1993,7 +1999,7 @@ function resolveBookSelection(db, identifier, options = {}) {
     if (!group) {
       continue;
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners });
     if (!book) {
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
@@ -2044,7 +2050,7 @@ function resolveBookSelection(db, identifier, options = {}) {
         };
       }
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners });
     if (!book) {
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
@@ -4092,7 +4098,7 @@ async function handleApi(req, res, requestUrl) {
           grade: student.grade || '',
           examReadingEligible: examReadingAccess(db, student).eligible,
           borrowedBooks: student.borrowedBooks || [],
-          classIds: student.classIds || [],
+          classIds: studentClassIds(db, student),
           username: student.username || '',
           mustChangePassword: Boolean(student.mustChangePassword),
         });
@@ -4107,7 +4113,10 @@ async function handleApi(req, res, requestUrl) {
 
     if (req.method === 'GET' && requestUrl.pathname === '/api/status') {
       const db = getDb();
-      const groupedBooks = groupBooksByTitleAuthor(db.books);
+      const owners=studentLoanIds(db);
+      const groupedBooks = groupBooksByTitleAuthor(db.books
+        .filter(book=>!isHidden(book))
+        .map(book=>catalogProjection(book,owners)));
       const totalBooks = groupedBooks.reduce((sum, group) => sum + group.totalCopies, 0);
       const borrowedBooks = groupedBooks.reduce((sum, group) => sum + group.borrowedCopies, 0);
       const availableBooks = groupedBooks.reduce((sum, group) => sum + group.availableCopies, 0);
@@ -4375,21 +4384,32 @@ async function handleApi(req, res, requestUrl) {
           classIds: studentClassIds(db, student).filter((id) => allowedSet.has(id)),
           active: student.active !== false && student.status !== 'inactive' }));
       const allowedStudents = new Map(students.map((student) => [student.id, student]));
-      const books = db.books.map((book) => ({
+      const loanOwners=studentLoanIds(db);
+      const books = db.books.filter(book=>user.role==='admin'||!isHidden(book))
+        .map((book) => ({
         id: book.id, title: book.title, author: book.author, barcode: book.barcode,
-        status: book.status, fixedLocation: book.fixedLocation || null,
+        status: readStatus(book,loanOwners), catalogHidden: isHidden(book),
+        fixedLocation: book.fixedLocation || null,
         editionKey: examEditionKey(book),
         editionIsbn: book.editionIsbn || null,
         metadataIsbn: book.metadataIsbn || null,
         publishedYear: book.publishedYear || null,
       }));
-      const loans = db.books.filter((book) => book.status === 'borrowed')
+      const loans = db.books.filter(book=>isUnavailable(book,loanOwners))
         .map((book) => {
+          const referenced=[...(loanOwners.get(book.id)||[])];
+          const studentId=book.borrowedBy||(
+            referenced.length===1?referenced[0]:null);
           const borrower = book.borrowedByClassId
             ? classes.find((klass) => klass.id === book.borrowedByClassId)
-            : allowedStudents.get(book.borrowedBy);
+            : allowedStudents.get(studentId);
           if (!borrower) return null;
+          const verifiedStudentLoan = book.borrowedByClassId || (
+            book.borrowedBy === borrower.id &&
+            (db.students || []).some(student=>student.id===borrower.id &&
+              (student.borrowedBooks||[]).some(item=>item.bookId===book.id)));
           return {
+            requiresReconciliation: !verifiedStudentLoan,
             bookId: book.id, title: book.title, author: book.author, barcode: book.barcode,
             borrowerType: book.borrowedByClassId ? 'class' : 'student',
             borrowerId: borrower.id, borrowerName: borrower.name,
@@ -4400,10 +4420,38 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, { classes, students, books, loans });
     }
 
+    // Read-only administrator diagnostics. This reports conflicting status
+    // and borrower evidence, including any deferred loan-import tasks, but
+    // never writes a loan or guesses the correct historic borrower.
+    if(req.method==='GET'&&requestUrl.pathname==='/api/admin/catalog-integrity'){
+      if(!ensureRole(user,['admin']))
+        return sendJson(res,user?403:401,{message:'Alleen voor beheerders.'});
+      const db=getDb();
+      const conflicts=availabilityConflicts(db);
+      const pending=listDeferredAssignmentTasks(db).tasks
+        .filter(task=>task.kind==='loan').map(task=>({
+          id:task.id,bookId:task.bookId||null,reason:task.reason||null,
+          requiresReview:true,
+        }));
+      res.setHeader('Cache-Control','no-store');
+      return sendJson(res,200,{conflicts,total:conflicts.length,
+        pendingLoanImportTasks:pending,pendingLoanTaskCount:pending.length});
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
-      let books = db.books.map((book) => withBorrowCount(book, borrowCounts));
+      const loanOwners=studentLoanIds(db);
+      const ownStudent=user?.role==='student'
+        ?(db.students||[]).find(student=>student.id===user.id):null;
+      const ownBookIds=new Set((ownStudent?.borrowedBooks||[])
+        .map(item=>typeof item==='string'?item:item?.bookId).filter(Boolean));
+      let books = db.books.filter(book=>user?.role==='admin'||!isHidden(book)
+          ||ownBookIds.has(book.id))
+        .map(book=>({
+          ...withBorrowCount(catalogProjection(book,loanOwners),borrowCounts),
+          personalLoanOnly:user?.role==='student'&&isHidden(book),
+        }));
       const folder = requestUrl.searchParams.get('folder');
       const query = requestUrl.searchParams.get('query');
       if (folder) {
@@ -4432,7 +4480,8 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Alleen beheerders kunnen boeken verwijderen' });
       }
       const db = getDb();
-      const borrowedBooks = db.books.filter((book) => book.status === 'borrowed');
+      const bulkLoanOwners=studentLoanIds(db);
+      const borrowedBooks = db.books.filter(book=>isUnavailable(book,bulkLoanOwners));
       if (borrowedBooks.length) {
         return sendJson(res, 400, {
           message: 'Lever eerst alle uitgeleende boeken in voordat je de bibliotheek leegt.',
@@ -4474,7 +4523,13 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
-      const payload = withBorrowCount(book, borrowCounts);
+      const ownStudent=user?.role==='student'
+        ?(db.students||[]).find(student=>student.id===user.id):null;
+      const isOwnLoan=(ownStudent?.borrowedBooks||[])
+        .some(item=>(typeof item==='string'?item:item?.bookId)===book.id);
+      if(user?.role!=='admin'&&isHidden(book)&&!isOwnLoan)
+        return sendJson(res,404,{message:'Boek niet gevonden'});
+      const payload = withBorrowCount(catalogProjection(book,studentLoanIds(db)), borrowCounts);
       return sendJson(res, 200, sanitizeBookForResponse(payload));
     }
 
@@ -4551,6 +4606,7 @@ async function handleApi(req, res, requestUrl) {
         description: body.description || '',
         suitableForExamList: Boolean(body.suitableForExamList),
         easyReading: Boolean(body.easyReading),
+        catalogHidden: body.catalogHidden===true,
         tags,
         manualThemes,
         coverColor,
@@ -4576,7 +4632,7 @@ async function handleApi(req, res, requestUrl) {
       const quantity = parseQuantityInput(body.quantity, { defaultValue: 1 });
       const createdBooks = [];
       for (let i = 0; i < quantity; i += 1) {
-        const copy = createBookCopyFromTemplate(baseBook);
+        const copy = createBookCopyFromTemplate(baseBook, { preserveHidden: true });
         createdBooks.push(copy);
       }
       db.books.push(...createdBooks);
@@ -4731,6 +4787,8 @@ async function handleApi(req, res, requestUrl) {
         description: body.description ?? book.description,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
         easyReading: body.easyReading ?? book.easyReading,
+        catalogHidden: typeof body.catalogHidden==='boolean'
+          ?body.catalogHidden:book.catalogHidden===true,
         tags: nextTags,
         manualThemes: nextManualThemes,
         // An explicit theme edit supersedes metadata imported earlier.
@@ -4789,7 +4847,9 @@ async function handleApi(req, res, requestUrl) {
         } else {
           const removeCount = Math.abs(quantityChange);
           const preferredRemoveId = typeof body.removeCopyId === 'string' ? body.removeCopyId : book.id;
-          const removableCopies = groupCopies.filter((entry) => entry.status !== 'borrowed');
+          const loanOwners = studentLoanIds(db);
+          const removableCopies = groupCopies.filter(entry =>
+            !isUnavailable(entry, loanOwners) && !isHidden(entry));
           if (removableCopies.length < removeCount) {
             return sendJson(res, 400, {
               message: 'Er zijn niet genoeg beschikbare exemplaren om te verwijderen.',
@@ -4826,7 +4886,9 @@ async function handleApi(req, res, requestUrl) {
       Object.assign(book, attachDerivedThemeFields(book));
       const currentGroup = getGroupForBook(db, book);
       const totalCopies = currentGroup?.books?.length ?? null;
-      const availableCopies = currentGroup?.books?.filter((entry) => entry.status !== 'borrowed').length ?? null;
+      const currentLoanOwners = studentLoanIds(db);
+      const availableCopies = currentGroup?.books?.filter(entry =>
+        !isUnavailable(entry, currentLoanOwners) && !isHidden(entry)).length ?? null;
       const historyParts = [`${book.title} is bijgewerkt`];
       if (createdCopies.length) {
         historyParts.push(`+${createdCopies.length} exemplaren`);
@@ -7934,7 +7996,9 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
       const target = db.books[index];
-      if (target.status === 'borrowed') {
+      // Old imports can leave status='available' while a pupil still has this copy.
+      // Never destroy an active student loan reference during book deletion.
+      if (isUnavailable(target, studentLoanIds(db))) {
         return sendJson(res, 400, {
           message: 'Lever dit exemplaar eerst in voordat je het verwijdert.',
         });
@@ -7961,7 +8025,8 @@ async function handleApi(req, res, requestUrl) {
             ? 'Exemplaar verwijderd. De titel blijft beschikbaar via andere exemplaren.'
             : 'Titel en laatste exemplaar verwijderd.',
         remainingCopies: remainingCopies.length,
-        availableCopies: remainingCopies.filter((entry) => entry.status !== 'borrowed').length,
+        availableCopies: remainingCopies.filter(entry =>
+          !isUnavailable(entry, studentLoanIds(db)) && !isHidden(entry)).length,
       });
     }
 
@@ -8038,8 +8103,10 @@ async function handleApi(req, res, requestUrl) {
         // the route ID is gone. A PIN grant must NEVER select another copy.
         return sendJson(res, 409, { message: 'Dit exemplaar is niet meer beschikbaar. Scan opnieuw.' });
       }
-      if (book.status === 'borrowed' || book.borrowedBy || book.borrowedByClassId) {
-        return sendJson(res, 409, { message: 'Dit exemplaar is al uitgeleend.' });
+      if (isUnavailable(book,studentLoanIds(db)) || isHidden(book)) {
+        return sendJson(res, 409, { message: isHidden(book)
+          ?'Dit exemplaar is door Beheer tijdelijk uitgeschakeld.'
+          :'Dit exemplaar is al uitgeleend of heeft een nog te controleren uitleenregistratie.' });
       }
       if (student) {
         if (!Array.isArray(student.borrowedBooks)) student.borrowedBooks = [];
@@ -8177,11 +8244,18 @@ async function handleApi(req, res, requestUrl) {
       if (!normalizedBarcode) {
         return sendJson(res, 400, { message: 'Ongeldige barcode opgegeven' });
       }
-      const grouping = buildBarcodeGroups(db, normalizedBarcode);
-      if (!grouping.groups.length) {
-        return sendJson(res, 404, { message: 'Geen boek gevonden met deze barcode' });
-      }
-      return sendJson(res, 200, sanitizeBarcodeGroupsForResponse(grouping));
+      const loanOwners=studentLoanIds(db);
+      const groups=buildBarcodeGroups(db, normalizedBarcode).groups
+        .map(group=>{
+          const books=group.books
+            .filter(book=>user?.role==='admin'||!isHidden(book))
+            .map(book=>catalogProjection(book,loanOwners));
+          return {...group,books,totalCopies:books.length,
+            availableCopies:books.filter(book=>book.status==='available'&&!isHidden(book)).length,
+            borrowed:books.filter(book=>book.status==='borrowed').length};
+        }).filter(group=>group.books.length);
+      if(!groups.length)return sendJson(res,404,{message:'Geen boek gevonden met deze barcode'});
+      return sendJson(res,200,sanitizeBarcodeGroupsForResponse({barcode:normalizedBarcode,groups}));
     }
 
     const isbnLookupMatch = requestUrl.pathname.match(/^\/api\/isbn\/([\w-]+)$/i);

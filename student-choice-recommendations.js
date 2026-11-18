@@ -69,7 +69,7 @@ function available(book) {
 function groupBooks(db) {
   const map = new Map();
   for (const book of db.books || []) {
-    if (!book || !book.id || !norm(book.title)) continue;
+    if (!book || !book.id || book.catalogHidden===true || !norm(book.title)) continue;
     const key = keyOf(book);
     let work = map.get(key);
     if (!work) {

@@ -146,8 +146,8 @@
       try {
         await api(`/api/auth/google/staff-link-requests/${encodeURIComponent(request.id)}/${action}`, { method: 'POST' });
         row.remove();
-        const container = document.querySelector('#admin-staff-link-requests');
-        if (container && !container.querySelector('.staff-link-request')) container.remove();
+        // Keep the section and empty state visible after the last decision.
+        await renderAdminRequests();
       } catch (error) {
         approve.disabled = false;
         deny.disabled = false;
@@ -163,7 +163,8 @@
 
   async function renderAdminRequests() {
     const dashboard = document.querySelector('#admin-dashboard');
-    const host = document.querySelector('#admin-modern-google-host');
+    const taskView=dashboard?.querySelector('[data-admin-modern-view="tasks"]');
+    const host = document.querySelector('#admin-staff-link-requests-host')||taskView;
     if (!dashboard || dashboard.classList.contains('hidden') || !host) return;
     let payload;
     try {
@@ -172,21 +173,31 @@
       return;
     }
 
-    document.querySelector('#admin-staff-link-requests')?.remove();
-    if (!payload.requests?.length) return;
-    const section = make('section', {
-      className: 'panel student-management__section student-management__attention',
-    });
-    section.id = 'admin-staff-link-requests';
-    section.append(
-      make('h4', { text: `Docentaccounts goedkeuren (${payload.requests.length})` }),
+    let section = document.querySelector('#admin-staff-link-requests');
+    if (!section) {
+      section = make('section', {
+        className: 'panel student-management__section',
+      });
+      section.id = 'admin-staff-link-requests';
+      host.prepend(section);
+    }
+    section.replaceChildren(
+      make('h4', { text: `Docentaccounts goedkeuren (${payload.requests?.length||0})` }),
       make('p', {
         className: 'hint',
-        text: 'Deze medewerkers hebben zelf hun naam gekozen en daarna met hun Koraal Google-account ingelogd. Controleer de koppeling één keer.',
+        text: 'Controleer nieuwe verzoeken om een Koraal Google-account aan een docentaccount te koppelen.',
       })
     );
-    payload.requests.forEach((request) => section.append(requestCard(request)));
-    host.prepend(section);
+    if (payload.requests?.length) {
+      section.classList.add('student-management__attention');
+      payload.requests.forEach((request) => section.append(requestCard(request)));
+    } else {
+      section.classList.remove('student-management__attention');
+      section.append(make('p', {className:'hint',text:'Geen openstaande koppelverzoeken.'}));
+    }
+    window.dispatchEvent(new CustomEvent('boekenbaai:staff-link-requests-updated',{
+      detail:{count:payload.requests?.length||0}
+    }));
   }
 
   function installAdminObserver() {

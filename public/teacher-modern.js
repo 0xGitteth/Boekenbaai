@@ -106,6 +106,7 @@
       taskSummary.status = 'loading';
       renderMentorTasks();
       window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
+      window.dispatchEvent(new Event('boekenbaai:google-link-requests-refresh'));
       window.dispatchEvent(new Event('boekenbaai:reading-alerts-refresh'));
     }
     if (next === 'catalog') {
@@ -244,6 +245,8 @@
     renderMentorTasks();
     installLoanDuePreview();
     place(document.getElementById('book-import-mail-preferences-panel'), account);
+    place(dashboard.querySelector('#teacher-google-link-request-panel'), tasks);
+    place(dashboard.querySelector('.google-manage:not(.google-manage--requests)'), account);
     place(document.getElementById('history-panel'), recent);
   }
   function setIdentity(teacher) {
@@ -342,6 +345,13 @@
           (entry.count === 1 ? ' verzoek' : ' verzoeken')));
       button.append(details, el('span', 'bb-teacher-v31-row-open', 'Behandelen'));
       button.addEventListener('click', () => {
+        if(entry.title==='Google-koppelverzoeken'){
+          setPage('tasks');
+          document.getElementById('teacher-google-link-requests')?.scrollIntoView({
+            behavior:'smooth',block:'center'
+          });
+          return;
+        }
         setPage('classes');
         window.dispatchEvent(new CustomEvent('boekenbaai:mentor-select-class',
           { detail: { classId: entry.classId } }));
@@ -525,6 +535,18 @@
       if (admin.classList.contains('hidden')) setIdentity(false);
     }
   }
+  // Google-auth initializes asynchronously. If it finished before the
+  // teacher shell existed, move its live request/account controls afterward.
+  const lateGoogle=new MutationObserver(()=>{
+    if(!ready||!active)return;
+    const requests=dashboard.querySelector('#teacher-google-link-request-panel');
+    if(requests&&panels.tasks&&!panels.tasks.contains(requests))
+      place(requests,panels.tasks);
+    const settings=dashboard.querySelector('.google-manage:not(.google-manage--requests)');
+    if(settings&&panels.account&&!panels.account.contains(settings))
+      place(settings,panels.account);
+  });
+  lateGoogle.observe(dashboard,{childList:true,subtree:true});
   const watcher = new MutationObserver(sync);
   watcher.observe(dashboard, { attributes: true, attributeFilter: ['class'] });
   watcher.observe(admin, { attributes: true, attributeFilter: ['class'] });
