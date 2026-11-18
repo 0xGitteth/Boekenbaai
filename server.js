@@ -39,7 +39,7 @@ const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
-  normalizeDueDate, publicBook } = require('./book-loan-policy');
+  normalizeDueDate, publicBook, bookIsBorrowed, bookIsHidden } = require('./book-loan-policy');
 const { createReturnReadingRecord, mayViewReadingRecord, publicReadingRecord,
   amendReadingRecord } = require('./reading-completion-core');
 const {
@@ -822,6 +822,7 @@ function ensureBookShape(book) {
   }
   safeBook.suitableForExamList = Boolean(source.suitableForExamList);
   safeBook.easyReading = Boolean(source.easyReading);
+  safeBook.catalogHidden = source.catalogHidden === true;
   safeBook.status = typeof source.status === 'string' ? source.status : 'available';
   safeBook.borrowedBy = typeof source.borrowedBy === 'string' ? source.borrowedBy : null;
   safeBook.borrowedByClassId = typeof source.borrowedByClassId === 'string'
@@ -1049,7 +1050,9 @@ function withBorrowCount(book, borrowCounts) {
   }
   const bookId = typeof book.id === 'string' ? book.id : book.id != null ? String(book.id) : '';
   const borrowCount = bookId && borrowCounts instanceof Map ? borrowCounts.get(bookId) || 0 : 0;
-  return attachDerivedThemeFields({ ...book, borrowCount });
+  return attachDerivedThemeFields({ ...book,
+    status: bookIsBorrowed(book) ? 'borrowed' : book.status,
+    borrowCount });
 }
 
 
@@ -4373,15 +4376,18 @@ async function handleApi(req, res, requestUrl) {
           classIds: studentClassIds(db, student).filter((id) => allowedSet.has(id)),
           active: student.active !== false && student.status !== 'inactive' }));
       const allowedStudents = new Map(students.map((student) => [student.id, student]));
-      const books = db.books.map((book) => ({
+      const books = db.books.filter(book => user.role === 'admin' || !bookIsHidden(book))
+        .map((book) => ({
         id: book.id, title: book.title, author: book.author, barcode: book.barcode,
-        status: book.status, fixedLocation: book.fixedLocation || null,
+        status: bookIsBorrowed(book) ? 'borrowed' : book.status,
+        catalogHidden: bookIsHidden(book),
+        fixedLocation: book.fixedLocation || null,
         editionKey: examEditionKey(book),
         editionIsbn: book.editionIsbn || null,
         metadataIsbn: book.metadataIsbn || null,
         publishedYear: book.publishedYear || null,
       }));
-      const loans = db.books.filter((book) => book.status === 'borrowed')
+      const loans = db.books.filter(bookIsBorrowed)
         .map((book) => {
           const borrower = book.borrowedByClassId
             ? classes.find((klass) => klass.id === book.borrowedByClassId)
@@ -4401,7 +4407,8 @@ async function handleApi(req, res, requestUrl) {
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
-      let books = db.books.map((book) => withBorrowCount(book, borrowCounts));
+      let books = db.books.filter(book => user?.role === 'admin' || !bookIsHidden(book))
+        .map((book) => withBorrowCount(book, borrowCounts));
       const folder = requestUrl.searchParams.get('folder');
       const query = requestUrl.searchParams.get('query');
       if (folder) {
@@ -4468,7 +4475,7 @@ async function handleApi(req, res, requestUrl) {
     if (bookIdMatch && req.method === 'GET') {
       const db = getDb();
       const book = findBookById(db, bookIdMatch[1]);
-      if (!book) {
+      if (!book || (bookIsHidden(book) && user?.role !== 'admin')) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
@@ -4549,6 +4556,7 @@ async function handleApi(req, res, requestUrl) {
         description: body.description || '',
         suitableForExamList: Boolean(body.suitableForExamList),
         easyReading: Boolean(body.easyReading),
+        catalogHidden: body.catalogHidden === true,
         tags,
         manualThemes,
         coverColor,
@@ -4729,6 +4737,8 @@ async function handleApi(req, res, requestUrl) {
         description: body.description ?? book.description,
         suitableForExamList: body.suitableForExamList ?? book.suitableForExamList,
         easyReading: body.easyReading ?? book.easyReading,
+        catalogHidden: typeof body.catalogHidden === 'boolean'
+          ? body.catalogHidden : book.catalogHidden === true,
         tags: nextTags,
         manualThemes: nextManualThemes,
         // An explicit theme edit supersedes metadata imported earlier.
@@ -7983,7 +7993,10 @@ async function handleApi(req, res, requestUrl) {
         // the route ID is gone. A PIN grant must NEVER select another copy.
         return sendJson(res, 409, { message: 'Dit exemplaar is niet meer beschikbaar. Scan opnieuw.' });
       }
-      if (book.status === 'borrowed' || book.borrowedBy || book.borrowedByClassId) {
+      if (bookIsHidden(book)) {
+        return sendJson(res, 409, { message: 'Dit exemplaar staat tijdelijk uitgeschakeld in Beheer.' });
+      }
+      if (bookIsBorrowed(book)) {
         return sendJson(res, 409, { message: 'Dit exemplaar is al uitgeleend.' });
       }
       if (student) {
@@ -8122,7 +8135,8 @@ async function handleApi(req, res, requestUrl) {
       if (!normalizedBarcode) {
         return sendJson(res, 400, { message: 'Ongeldige barcode opgegeven' });
       }
-      const grouping = buildBarcodeGroups(db, normalizedBarcode);
+      const grouping = buildBarcodeGroups(user?.role === 'admin' ? db
+        : { ...db, books: db.books.filter(book => !bookIsHidden(book)) }, normalizedBarcode);
       if (!grouping.groups.length) {
         return sendJson(res, 404, { message: 'Geen boek gevonden met deze barcode' });
       }
