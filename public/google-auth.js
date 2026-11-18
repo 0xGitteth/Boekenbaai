@@ -326,7 +326,8 @@
       const data=await apiFetch('/api/auth/google/manage');
       if(data.role!=='teacher'||!existing.isConnected)return;
       const fresh=createTeacherGoogleRequests(data);
-      existing.replaceChildren(...Array.from(fresh.childNodes));
+      // Replace the whole node so approval handlers reference the live list.
+      existing.replaceWith(fresh);
     } catch(_){
       // Retain previous controls if the server is temporarily unavailable.
     }
