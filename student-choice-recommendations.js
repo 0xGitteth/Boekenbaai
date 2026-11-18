@@ -64,12 +64,13 @@ function validateChoices(value) {
   return result;
 }
 function available(book) {
-  return book.status === 'available' && !book.borrowedBy && !book.borrowedByClassId;
+  return book.catalogHidden !== true
+    && book.status === 'available' && !book.borrowedBy && !book.borrowedByClassId;
 }
 function groupBooks(db) {
   const map = new Map();
   for (const book of db.books || []) {
-    if (!book || !book.id || !norm(book.title)) continue;
+    if (!book || book.catalogHidden === true || !book.id || !norm(book.title)) continue;
     const key = keyOf(book);
     let work = map.get(key);
     if (!work) {
