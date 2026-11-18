@@ -128,6 +128,44 @@ assert.ok(rankBooks(adaptiveDb,{route:'new',situation:'secret',detail:'puzzles'}
   .suggestions[0].reason.includes('Detective'),
   'Reasons should come from actual catalogue themes, not fabricated story descriptions');
 
+
+// The third answer must measurably influence rank, not just chat wording.
+const nuanceCrime=rankBooks(adaptiveDb,{
+  route:'new',situation:'secret',detail:'puzzles',nuance:'crime',seed:'deep',
+}).suggestions[0].title;
+const nuanceTechnology=rankBooks(adaptiveDb,{
+  route:'new',situation:'secret',detail:'puzzles',nuance:'tech_secret',seed:'deep',
+}).suggestions[0].title;
+assert.equal(nuanceCrime,'Het raadsel');
+assert.equal(nuanceTechnology,'De uitvinder',
+  'Different third answers must produce different recommendations');
+const lensScience=rankBooks(adaptiveDb,{
+  route:'new',situation:'none',detail:'none',nuance:'none',lens:'science',seed:'deep',
+}).suggestions[0].title;
+assert.equal(lensScience,'De uitvinder',
+  'Fourth-answer perspective must influence the same neutral starting choices');
+const invalidDeep=rankBooks(adaptiveDb,{
+  route:'new',situation:'none',detail:'none',nuance:'untrusted',lens:'untrusted',
+});
+assert.equal(invalidDeep.suggestions.length,3,'Unknown deep answers stay neutral');
+const borrowedByReference={
+  books:[
+    {id:'loan',title:'Al geleend',author:'A',themes:['Detective'],
+      status:'available',borrowedBy:null,borrowedByClassId:null},
+    {id:'missing',title:'Vermist',author:'B',themes:['Detective'],
+      status:'available',catalogHidden:true},
+    {id:'free',title:'Wel beschikbaar',author:'C',themes:['Detective'],
+      status:'available'},
+  ],
+  students:[{id:'borrower',borrowedBooks:[{bookId:'loan'}]}],
+};
+const observed=groupBooks(borrowedByReference);
+assert.equal(observed.find(x=>x.title==='Al geleend').available,0,
+  'Stale book status must not produce a false available recommendation');
+assert.equal(observed.some(x=>x.title==='Vermist'),false,
+  'Hidden copies must not be suggested');
+assert.equal(observed.find(x=>x.title==='Wel beschikbaar').available,1);
+
 const empty=rankBooks({books:[]},{});
 assert.equal(empty.emptyCatalog,true);
 assert.equal(empty.suggestions.length,0);

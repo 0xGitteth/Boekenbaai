@@ -69,7 +69,7 @@ assert.match(staff,/id="admin-book-catalog-hidden"/);
 assert.doesNotMatch(staff,/src="admin-catalog-integrity\.js"/);
 assert.match(app,/adminBookCatalogHidden\.checked = book\.catalogHidden===true/);
 assert.match(app,/catalogHidden: Boolean\(adminBookCatalogHidden\?\.checked\)/);
-assert.match(read('student-choice-recommendations.js'),/book\.catalogHidden===true/);
+assert.match(read('student-choice-recommendations.js'),/isHidden\(book\)/);
 assert.match(teacherGoogle,/Geen openstaande koppelverzoeken/);
 assert.match(teacherGoogle,/teacher-google-link-request-panel/);
 assert.match(teacherGoogle,/\[data-teacher-view="account"\]/);
