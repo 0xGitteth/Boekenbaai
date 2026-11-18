@@ -40,6 +40,8 @@ const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook, bookIsBorrowed, bookIsHidden } = require('./book-loan-policy');
+const {claimIndex,displayedBorrowed,inventoryDiagnostics}
+  = require('./book-inventory-consistency');
 const { createReturnReadingRecord, mayViewReadingRecord, publicReadingRecord,
   amendReadingRecord } = require('./reading-completion-core');
 const {
@@ -1044,14 +1046,14 @@ function getBorrowCountsMap(historyEntries) {
   return counts;
 }
 
-function withBorrowCount(book, borrowCounts) {
+function withBorrowCount(book, borrowCounts, studentClaims = null) {
   if (!book) {
     return book;
   }
   const bookId = typeof book.id === 'string' ? book.id : book.id != null ? String(book.id) : '';
   const borrowCount = bookId && borrowCounts instanceof Map ? borrowCounts.get(bookId) || 0 : 0;
   return attachDerivedThemeFields({ ...book,
-    status: bookIsBorrowed(book) ? 'borrowed' : book.status,
+    status: displayedBorrowed(book, studentClaims) ? 'borrowed' : book.status,
     borrowCount });
 }
 
@@ -4376,10 +4378,11 @@ async function handleApi(req, res, requestUrl) {
           classIds: studentClassIds(db, student).filter((id) => allowedSet.has(id)),
           active: student.active !== false && student.status !== 'inactive' }));
       const allowedStudents = new Map(students.map((student) => [student.id, student]));
+      const claims=claimIndex(db);
       const books = db.books.filter(book => user.role === 'admin' || !bookIsHidden(book))
         .map((book) => ({
         id: book.id, title: book.title, author: book.author, barcode: book.barcode,
-        status: bookIsBorrowed(book) ? 'borrowed' : book.status,
+        status: displayedBorrowed(book,claims) ? 'borrowed' : book.status,
         catalogHidden: bookIsHidden(book),
         fixedLocation: book.fixedLocation || null,
         editionKey: examEditionKey(book),
@@ -4404,11 +4407,19 @@ async function handleApi(req, res, requestUrl) {
       return sendJson(res, 200, { classes, students, books, loans });
     }
 
+    if (req.method === 'GET' && requestUrl.pathname === '/api/admin/inventory-consistency') {
+      if (!ensureRole(user,['admin']))
+        return sendJson(res,user?403:401,{message:'Alleen beheerders mogen uitleenconflicten bekijken.'});
+      res.setHeader('Cache-Control','no-store');
+      return sendJson(res,200,inventoryDiagnostics(getDb()));
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
+      const studentClaims=claimIndex(db);
       let books = db.books.filter(book => user?.role === 'admin' || !bookIsHidden(book))
-        .map((book) => withBorrowCount(book, borrowCounts));
+        .map((book) => withBorrowCount(book, borrowCounts, studentClaims));
       const folder = requestUrl.searchParams.get('folder');
       const query = requestUrl.searchParams.get('query');
       if (folder) {
@@ -4479,7 +4490,7 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 404, { message: 'Boek niet gevonden' });
       }
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
-      const payload = withBorrowCount(book, borrowCounts);
+      const payload = withBorrowCount(book, borrowCounts, claimIndex(db));
       return sendJson(res, 200, sanitizeBookForResponse(payload));
     }
 
@@ -7996,8 +8007,8 @@ async function handleApi(req, res, requestUrl) {
       if (bookIsHidden(book)) {
         return sendJson(res, 409, { message: 'Dit exemplaar staat tijdelijk uitgeschakeld in Beheer.' });
       }
-      if (bookIsBorrowed(book)) {
-        return sendJson(res, 409, { message: 'Dit exemplaar is al uitgeleend.' });
+      if (displayedBorrowed(book,claimIndex(db))) {
+        return sendJson(res, 409, { message: 'Dit exemplaar staat bij een leerling of klas als geleend geregistreerd. Controleer de uitlening in Beheer.' });
       }
       if (student) {
         if (!Array.isArray(student.borrowedBooks)) student.borrowedBooks = [];
