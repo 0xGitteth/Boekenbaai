@@ -170,4 +170,62 @@ const empty=rankBooks({books:[]},{});
 assert.equal(empty.emptyCatalog,true);
 assert.equal(empty.suggestions.length,0);
 assert.equal(keyOf(db.books[0]),keyOf(db.books[1]));
+
+// Physical editions can have distinct nonempty blurbs. Their pooled work
+// must retain *all* substantiated traits independent of copy order.
+{
+  const copies=[
+    {id:'plain-copy',title:'Het raadselhuis',author:'Schrijver',
+      description:'Een verhaal over het leven van een scholier.',status:'available'},
+    {id:'detective-copy',title:'Het raadselhuis',author:'Schrijver',
+      description:'Een detective volgt aanwijzingen over een geheim.',
+      status:'available'},
+  ];
+  const pooled=groupBooks({books:copies})[0];
+  assert.match(pooled.description,/leven van een scholier/);
+  assert.match(pooled.description,/detective volgt aanwijzingen/);
+  const backwards=groupBooks({books:[...copies].reverse()})[0];
+  const dialogue=require('../student-choice-dialogue');
+  assert.deepEqual(
+    [...dialogue.traitsForBook(pooled).entries()].sort(),
+    [...dialogue.traitsForBook(backwards).entries()].sort(),
+    'Recommendation traits must not depend on physical-copy order');
+  const cached=dialogue.profilesForWorks([pooled]);
+  assert.strictEqual(cached,dialogue.profilesForWorks([pooled]),
+    'Stable catalogue work traits must reuse one content-addressed snapshot');
+  assert.notStrictEqual(cached,dialogue.profilesForWorks([{
+    ...pooled,description:'Een kookboek over gezonde recepten',
+  }]),'Changed catalogue metadata must invalidate the old profile snapshot');
+}
+// Choosing "Meer zoals dit" is not permission to mine reading history.
+// The separate, explicitly consented 'similar' route may still use history.
+{
+  const reference={id:'ref',title:'Het kampioenschap',author:'A',
+    status:'available',themes:['Sport']};
+  const like={id:'like',title:'Een sportwedstrijd',author:'B',
+    status:'available',themes:['Sport','Competitie']};
+  const unrelated=[0,1,2,3].map(i=>({
+    id:'family-'+i,title:'Gezinsverhaal '+i,author:'C',
+    status:'available',themes:['Familie','Humor','Vriendschap'],
+  }));
+  const db2={books:[reference,like,...unrelated,{
+    id:'finished',title:'Ooit gelezen',author:'D',status:'available',
+    themes:['Familie','Humor','Vriendschap'],
+  }],
+    students:[{id:'reader',borrowedBooks:[]}],
+    readingRecords:[{subjectType:'student',subjectId:'reader',
+      bookId:'finished',finished:true}]};
+  const withoutConsent=rankBooks(db2,{
+    route:'new',referenceBookId:'ref',excludeKeys:[keyOf(reference)],
+  },{studentId:'reader'});
+  assert.equal(withoutConsent.suggestions[0].bookId,'like',
+    'Actually shared sport traits outrank unrelated historical interests');
+  assert.ok(withoutConsent.suggestions.every(item=>
+    !/eerder hebt gelezen/.test(item.reason)),
+    'The independent reference action may not claim consent to reading history');
+  assert.ok(withoutConsent.suggestions.some(item=>
+    /ander boek uit de bibliotheek/.test(item.reason.toLowerCase())),
+    'Unrelated fallbacks must not falsely claim they match the chosen reference');
+}
+
 console.log('Choice rankings, read signal scoping, anti-repeat and empty catalogue tests passed.');
