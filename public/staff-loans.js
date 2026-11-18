@@ -53,7 +53,8 @@ if (panel) {
   }
   function showBooks() {
     const selected = book.value;
-    const available = state.books.filter((item) => item.status !== 'borrowed');
+    const available = state.books.filter((item) => item.status !== 'borrowed'
+      && item.catalogHidden!==true);
     const query = String(bookSearch?.value || '').trim().toLocaleLowerCase('nl-NL');
     const copies = query ? available.filter((copy) => [
       copy.title, copy.author, copy.barcode, copy.id, copy.fixedLocation
@@ -101,7 +102,8 @@ if (panel) {
     copyHint.hidden = !copyHint.textContent;
   }
   function showCopyHint() {
-    const available = state.books.filter((item) => item.status !== 'borrowed');
+    const available = state.books.filter((item) => item.status !== 'borrowed'
+      && item.catalogHidden!==true);
     const barcodeCounts = new Map();
     for (const copy of available) {
       const code = String(copy.barcode || '').trim();
@@ -150,6 +152,14 @@ if (panel) {
         loan.fixedLocation ? 'Vaste locatie: ' + loan.fixedLocation : '']
         .filter(Boolean).join(' · ');
       entry.append(info);
+      if (loan.requiresReconciliation) {
+        const warning = document.createElement('p');
+        warning.className = 'hint';
+        warning.textContent = 'Uitleengegevens spreken elkaar tegen. Controleer dit onder Beheer > Taken voordat dit exemplaar kan worden ingenomen.';
+        entry.append(warning);
+        output.append(entry);
+        continue;
+      }
       const returnButton = document.createElement('button');
       returnButton.type = 'button';
       returnButton.className = 'btn btn--secondary';

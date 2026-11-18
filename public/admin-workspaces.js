@@ -179,6 +179,13 @@
     const accountLinks=view.querySelector('.bb-admin-v31-task-actions')?.closest('.bb-admin-v31-card');
     if(accountLinks)accountLinks.classList.add('bb-workspace-account-links');
     const teacherExit=view.querySelector('#teacher-exit-tasks-panel');
+    const linkHost=make('section','bb-workspace-google-requests');
+    linkHost.id='admin-staff-link-requests-host';
+    // Keep the request card mounted permanently on the Accounts tab, even
+    // when its asynchronous initial load ran before this navigation module.
+    const existingLink=view.querySelector('#admin-staff-link-requests');
+    if(existingLink)linkHost.append(existingLink);
+    view.append(linkHost);
 
     const entries=[
       {id:'overview',label:'Overzicht',panel:'bb-workspace-task-overview'},
@@ -244,6 +251,7 @@
       setInactive(bookHost,id==='overview');
       setInactive(teacherExit,id!=='accounts');
       setInactive(accountLinks,id!=='accounts');
+      setInactive(linkHost,id!=='accounts');
       const explanations={
         overview:'Kies het soort controle. Je ziet alleen de bijbehorende taken.',
         physical:'Controleer fysieke exemplaren. Gelijke edities blijven afzonderlijke taken.',

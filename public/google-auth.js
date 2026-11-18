@@ -264,6 +264,77 @@
     return `${entry.name || 'Onbekend'}${suffix}`;
   }
 
+  function createTeacherGoogleRequests(data) {
+    const requests = makeElement('div', { className: 'google-manage__section' });
+    requests.id='teacher-google-link-requests';
+    requests.append(makeElement('h4', { text: 'Openstaande koppelverzoeken' }));
+    if(!data.requests?.length)requests.append(makeElement('p',{
+      className:'hint',text:'Geen openstaande koppelverzoeken.'
+    }));
+    for (const request of data.requests || []) {
+      const row = makeElement('div', { className: 'google-manage__request' });
+      const info = makeElement('div');
+      info.append(
+        makeElement('strong', { text: request.studentName }),
+        makeElement('span', {
+          text: `${(request.classNames || []).join(', ') || 'Geen klas'} · ${request.email}`,
+        })
+      );
+      const actions = makeElement('div', { className: 'google-manage__actions' });
+      const approve = makeElement('button', {
+        type: 'button',
+        className: 'btn btn--secondary',
+        text: 'Goedkeuren',
+      });
+      const deny = makeElement('button', {
+        type: 'button',
+        className: 'btn btn--ghost',
+        text: 'Afwijzen',
+      });
+      const act = async (action) => {
+        approve.disabled = true;
+        deny.disabled = true;
+        try {
+          await apiFetch(`/api/auth/google/link-requests/${request.id}/${action}`, {
+            method: 'POST',
+          });
+          row.remove();
+          if (!requests.querySelector('.google-manage__request')) {
+            requests.append(makeElement('p', {
+              className:'hint',text:'Geen openstaande koppelverzoeken.'
+            }));
+          }
+        } catch (error) {
+          approve.disabled = false;
+          deny.disabled = false;
+          window.alert(error.message);
+        }
+      };
+      approve.addEventListener('click', () => act('approve'));
+      deny.addEventListener('click', () => act('deny'));
+      actions.append(approve, deny);
+      row.append(info, actions);
+      requests.append(row);
+    }
+    return requests;
+  }
+
+  async function refreshTeacherGoogleRequests() {
+    const existing=document.getElementById('teacher-google-link-requests');
+    if(!existing || document.body?.dataset.page!=='staff')return;
+    try {
+      const data=await apiFetch('/api/auth/google/manage');
+      if(data.role!=='teacher'||!existing.isConnected)return;
+      const fresh=createTeacherGoogleRequests(data);
+      // Replace the whole node so approval handlers reference the live list.
+      existing.replaceWith(fresh);
+    } catch(_){
+      // Retain previous controls if the server is temporarily unavailable.
+    }
+  }
+  window.addEventListener('boekenbaai:google-link-requests-refresh',
+    ()=>void refreshTeacherGoogleRequests());
+
   async function renderManagePanel() {
     // Accountbeheer behoort uitsluitend tot het staffportaal. Een medewerker
     // kan dezelfde sessie op de openbare leerlingpagina hebben, maar daar
@@ -291,52 +362,7 @@
     header.append(headerText);
     panel.append(header);
 
-    if (data.requests?.length) {
-      const requests = makeElement('div', { className: 'google-manage__section' });
-      requests.append(makeElement('h4', { text: 'Openstaande koppelverzoeken' }));
-      for (const request of data.requests) {
-        const row = makeElement('div', { className: 'google-manage__request' });
-        const info = makeElement('div');
-        info.append(
-          makeElement('strong', { text: request.studentName }),
-          makeElement('span', {
-            text: `${(request.classNames || []).join(', ') || 'Geen klas'} · ${request.email}`,
-          })
-        );
-        const actions = makeElement('div', { className: 'google-manage__actions' });
-        const approve = makeElement('button', {
-          type: 'button',
-          className: 'btn btn--secondary',
-          text: 'Goedkeuren',
-        });
-        const deny = makeElement('button', {
-          type: 'button',
-          className: 'btn btn--ghost',
-          text: 'Afwijzen',
-        });
-        const act = async (action) => {
-          approve.disabled = true;
-          deny.disabled = true;
-          try {
-            await apiFetch(`/api/auth/google/link-requests/${request.id}/${action}`, {
-              method: 'POST',
-            });
-            row.remove();
-            if (!requests.querySelector('.google-manage__request')) requests.remove();
-          } catch (error) {
-            approve.disabled = false;
-            deny.disabled = false;
-            window.alert(error.message);
-          }
-        };
-        approve.addEventListener('click', () => act('approve'));
-        deny.addEventListener('click', () => act('deny'));
-        actions.append(approve, deny);
-        row.append(info, actions);
-        requests.append(row);
-      }
-      panel.append(requests);
-    }
+    panel.append(createTeacherGoogleRequests(data));
 
     const studentSection = makeElement('div', { className: 'google-manage__section' });
     studentSection.append(makeElement('h4', { text: 'Schoolmailadres van een leerling' }));
@@ -430,7 +456,23 @@
       panel.append(staffSection);
     }
 
-    host.append(panel);
+    // Keep the current live controls and handlers; only mount them in the
+    // correct portal section. The async Google request can finish after the
+    // teacher layout has already been initialized.
+    if(data.role==='teacher'){
+      // Requests are actionable tasks. Editing pupils' Google email settings
+      // is account management; keep those controls on My account instead.
+      const requestsPanel=makeElement('section',{
+        className:'google-manage google-manage--requests panel'
+      });
+      requestsPanel.id='teacher-google-link-request-panel';
+      const requests=panel.querySelector('#teacher-google-link-requests');
+      if(requests)requestsPanel.append(requests);
+      (host.querySelector('[data-teacher-view="tasks"]')||host).append(requestsPanel);
+      (host.querySelector('[data-teacher-view="account"]')||host).append(panel);
+    }else{
+      (document.getElementById('admin-modern-google-host')||host).append(panel);
+    }
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
