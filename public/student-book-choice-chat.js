@@ -9,9 +9,11 @@
   if(!button||!dialog||!log||!actions||!status||!closeButton)return;
 
   const seenInTab=new Set();
+  const recentQuestionsInTab=new Set();
   let active=false,epoch=0,grant='',personal=false,firstName='',previousFocus=null;
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
+  let currentQuestion=null,questionHistory=[];
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
     if(className)x.className=className;
@@ -81,6 +83,7 @@
     active=false;busy=false;personal=false;firstName='';
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
+    currentQuestion=null;questionHistory=[];
     shownInDialogue=new Set();
     if(oldGrant){
       // Invalidate on the server as well as forgetting the token in memory.
@@ -237,784 +240,85 @@
       }
     });
   }
-  // A short adaptive route: the second question depends on what the pupil
-  // chose first. Do not ask the same genre preference in three ways.
-  const storyBeginnings=[
-    ['Iemand ontdekt een geheim','secret'],
-    ['Twee vrienden moeten iets moeilijks beslissen','friends'],
-    ['Iemand krijgt een onverwachte kans','chance'],
-    ['Je leest wat iemand echt heeft meegemaakt','true'],
-    ['Er gebeurt iets heel grappigs','funny'],
-    ['Iemand komt in een onbekende wereld terecht','worlds'],
-    ['Ik weet het nog niet','none'],
-  ];
-  const followups={
-    secret:{
-      question:'Wat maakt zo’n geheim voor jou interessant?',
-      answers:[
-        ['Zelf aanwijzingen zoeken','puzzles'],
-        ['Dat het steeds spannender wordt','tension'],
-        ['Wat het geheim met mensen doet','people'],
-        ['Maakt me niet uit','none'],
-      ],
-    },
-    friends:{
-      question:'Wat zou je hierover willen lezen?',
-      answers:[
-        ['Een vriendschap die verandert','relationships'],
-        ['Een moeilijke keuze met gevolgen','choices'],
-        ['Iets dat ook op school kan gebeuren','realistic'],
-        ['Maakt me niet uit','none'],
-      ],
-    },
-    chance:{
-      question:'Wat zou je willen zien gebeuren?',
-      answers:[
-        ['Een spannend avontuur','action'],
-        ['Een reis naar een nieuwe plek','adventure'],
-        ['Iemand die iets nieuws probeert','growth'],
-        ['Maakt me niet uit','none'],
-      ],
-    },
-    true:{
-      question:'Wat vind je interessant aan echte verhalen?',
-      answers:[
-        ['Hoe iemand iets moeilijks meemaakt','lives'],
-        ['Wat er vroeger is gebeurd','history'],
-        ['Hoe iets werkt of waarom iets gebeurt','facts'],
-        ['Maakt me niet uit','none'],
-      ],
-    },
-    funny:{
-      question:'Wat voor grappig verhaal spreekt je aan?',
-      answers:[
-        ['Grappige situaties op school','schoolhumor'],
-        ['Iemand bij wie alles misgaat','funny'],
-        ['Heel vreemde gebeurtenissen','absurd'],
-        ['Maakt me niet uit','none'],
-      ],
-    },
-    worlds:{
-      question:'Wat zou je in die wereld willen ontdekken?',
-      answers:[
-        ['Magie en bijzondere wezens','magic'],
-        ['De toekomst en technologie','scifi'],
-        ['Avonturen op onbekende plekken','adventure'],
-        ['Maakt me niet uit','none'],
-      ],
-    },
-    none:{
-      question:'Waar heb je op dit moment het meest zin in?',
-      answers:[
-        ['Iets spannends','tension'],
-        ['Iets grappigs','funny'],
-        ['Een verhaal over echte mensen','realistic'],
-        ['Een andere wereld','magic'],
-        ['Geen idee, verras me','none'],
-      ],
-    },
-  };
-  // Additional adaptive branches: the next question follows the previous
-  // answer. Four relevant answers are the maximum; results may be shown sooner.
-  const nuanceQuestions={
-  "puzzles": {
-    "question": "Welk soort raadsel lijkt je leuk?",
-    "answers": [
-      [
-        "Een misdaad onderzoeken",
-        "crime"
-      ],
-      [
-        "Een geheim uit het verleden",
-        "hidden_history"
-      ],
-      [
-        "Een geheim op school",
-        "school_secret"
-      ],
-      [
-        "Een mysterie met technologie",
-        "tech_secret"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "tension": {
-    "question": "Waar komt de spanning vandaan?",
-    "answers": [
-      [
-        "Iets engs dat je niet begrijpt",
-        "horror"
-      ],
-      [
-        "Een achtervolging of gevaar",
-        "chase"
-      ],
-      [
-        "Wat iemand denkt of verbergt",
-        "psychological"
-      ],
-      [
-        "Iemand die moet overleven",
-        "survival"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "people": {
-    "question": "Over welke mensen wil je meer weten?",
-    "answers": [
-      [
-        "Mensen binnen een gezin",
-        "family"
-      ],
-      [
-        "Iemand die zichzelf leert kennen",
-        "identity"
-      ],
-      [
-        "Vrienden die elkaar helpen",
-        "friendship"
-      ],
-      [
-        "Jongeren die gepest worden",
-        "bullying"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "relationships": {
-    "question": "Welke relatie vind je interessant?",
-    "answers": [
-      [
-        "Een hechte vriendschap",
-        "friendship"
-      ],
-      [
-        "Verliefd worden",
-        "romance"
-      ],
-      [
-        "Gezinsleden die botsen",
-        "family"
-      ],
-      [
-        "Een ruzie die opgelost moet worden",
-        "conflict"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "choices": {
-    "question": "Waarover moet iemand iets moeilijks beslissen?",
-    "answers": [
-      [
-        "Wat eerlijk of oneerlijk is",
-        "justice"
-      ],
-      [
-        "Iets dat thuis gebeurt",
-        "family"
-      ],
-      [
-        "Wie die persoon wil zijn",
-        "identity"
-      ],
-      [
-        "De toekomst van die persoon",
-        "future"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "realistic": {
-    "question": "Waar speelt het verhaal zich af?",
-    "answers": [
-      [
-        "Op school",
-        "school"
-      ],
-      [
-        "Thuis in een gezin",
-        "family"
-      ],
-      [
-        "In de samenleving",
-        "society"
-      ],
-      [
-        "Bij een sportclub",
-        "sports"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "adventure": {
-    "question": "Wat voor avontuur spreekt je aan?",
-    "answers": [
-      [
-        "Op reis naar een andere plek",
-        "travel"
-      ],
-      [
-        "Buiten in de natuur",
-        "nature"
-      ],
-      [
-        "Met gevaar en spanning",
-        "danger"
-      ],
-      [
-        "Op zoek naar iets bijzonders",
-        "quest"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "action": {
-    "question": "Wat voor actie wil je lezen?",
-    "answers": [
-      [
-        "Een spannende wedstrijd",
-        "competition"
-      ],
-      [
-        "Een sportieve uitdaging",
-        "sports"
-      ],
-      [
-        "Een achtervolging",
-        "chase"
-      ],
-      [
-        "Iemand moet worden gered",
-        "rescue"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "growth": {
-    "question": "Wat probeert iemand te bereiken?",
-    "answers": [
-      [
-        "Meer zelfvertrouwen krijgen",
-        "confidence"
-      ],
-      [
-        "Ontdekken wie die is",
-        "identity"
-      ],
-      [
-        "Een wedstrijd winnen",
-        "competition"
-      ],
-      [
-        "Nieuwe vrienden maken",
-        "friendship"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "lives": {
-    "question": "Welk echt verhaal spreekt je aan?",
-    "answers": [
-      [
-        "Het leven van een bekend persoon",
-        "biography"
-      ],
-      [
-        "Iemand die iets moeilijks overleeft",
-        "survival"
-      ],
-      [
-        "Ongelijkheid of onrecht",
-        "justice"
-      ],
-      [
-        "Iemand die iets bijzonders bereikt",
-        "inspiration"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "history": {
-    "question": "Wat uit het verleden trekt je aandacht?",
-    "answers": [
-      [
-        "De oorlog",
-        "war"
-      ],
-      [
-        "Heel lang geleden",
-        "ancient"
-      ],
-      [
-        "Een waargebeurde misdaad",
-        "true_crime"
-      ],
-      [
-        "Hoe mensen vroeger leefden",
-        "historical_life"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "facts": {
-    "question": "Waar wil je iets over leren?",
-    "answers": [
-      [
-        "Wetenschap en uitvindingen",
-        "science"
-      ],
-      [
-        "Dieren en hun gedrag",
-        "animals"
-      ],
-      [
-        "Computers en technologie",
-        "technology"
-      ],
-      [
-        "De aarde en de natuur",
-        "earth"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "schoolhumor": {
-    "question": "Welke grap op school spreekt je aan?",
-    "answers": [
-      [
-        "Een gênant moment",
-        "awkward_school"
-      ],
-      [
-        "Een grap die verkeerd afloopt",
-        "pranks"
-      ],
-      [
-        "Grappige dingen met vrienden",
-        "friends_humor"
-      ],
-      [
-        "Heel vreemde schooldagen",
-        "strange_school"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "funny": {
-    "question": "Wanneer mag je lachen?",
-    "answers": [
-      [
-        "Als iemand iets ongemakkelijks meemaakt",
-        "awkward"
-      ],
-      [
-        "Als een plan helemaal mislukt",
-        "pranks"
-      ],
-      [
-        "Als er iets heel vreemds gebeurt",
-        "absurd_humor"
-      ],
-      [
-        "Als dieren iets grappigs doen",
-        "animals"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "absurd": {
-    "question": "Welke vreemde gebeurtenis lijkt je leuk?",
-    "answers": [
-      [
-        "Magie die verkeerd gaat",
-        "magic_humor"
-      ],
-      [
-        "Een rare toekomst",
-        "sci_fi_humor"
-      ],
-      [
-        "Dingen die onmogelijk lijken",
-        "strange"
-      ],
-      [
-        "Een wereld vol fantasie",
-        "imagination"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "magic": {
-    "question": "Wat wil je in een magische wereld tegenkomen?",
-    "answers": [
-      [
-        "Bijzondere wezens",
-        "creatures"
-      ],
-      [
-        "Toverspreuken en krachten",
-        "spells"
-      ],
-      [
-        "Oude verhalen en mythen",
-        "myth"
-      ],
-      [
-        "Een gevaarlijke zoektocht",
-        "magical_quest"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "scifi": {
-    "question": "Welk idee over de toekomst spreekt je aan?",
-    "answers": [
-      [
-        "Robots en kunstmatige intelligentie",
-        "robots"
-      ],
-      [
-        "Reizen door de ruimte",
-        "space"
-      ],
-      [
-        "Een wereld met strenge regels",
-        "dystopia"
-      ],
-      [
-        "Nieuwe uitvindingen",
-        "invention"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "worlds": {
-    "question": "Welke onbekende plek wil je verkennen?",
-    "answers": [
-      [
-        "Een wereld met magie",
-        "fantasy_world"
-      ],
-      [
-        "Een wereld in de toekomst",
-        "future_world"
-      ],
-      [
-        "Een verdwenen stad of gebied",
-        "lost_world"
-      ],
-      [
-        "Een onbekend natuurgebied",
-        "nature_world"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "none": {
-    "question": "Zit er toch iets tussen dat je nieuwsgierig maakt?",
-    "answers": [
-      [
-        "Een mysterie",
-        "crime"
-      ],
-      [
-        "Iets grappigs",
-        "absurd_humor"
-      ],
-      [
-        "Dieren of natuur",
-        "animals"
-      ],
-      [
-        "Een avontuur",
-        "quest"
-      ],
-      [
-        "Geen van deze",
-        "none"
-      ]
-    ]
-  }
-};
-  const perspectiveQuestions={
-  "secret": {
-    "question": "Vanuit wie zou je het geheim willen ontdekken?",
-    "answers": [
-      [
-        "Een leerling",
-        "school"
-      ],
-      [
-        "Een onderzoeker",
-        "detective"
-      ],
-      [
-        "Iemand uit een gezin",
-        "family"
-      ],
-      [
-        "Iemand die met technologie werkt",
-        "technology"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "friends": {
-    "question": "Waar spelen de gebeurtenissen zich af?",
-    "answers": [
-      [
-        "Op school",
-        "school"
-      ],
-      [
-        "Thuis",
-        "family"
-      ],
-      [
-        "Bij een sportclub",
-        "sports"
-      ],
-      [
-        "Op een onbekende plek",
-        "adventure"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "chance": {
-    "question": "Wie krijgt die bijzondere kans?",
-    "answers": [
-      [
-        "Een sporter",
-        "sports"
-      ],
-      [
-        "Een kunstenaar of muzikant",
-        "creative"
-      ],
-      [
-        "Een ontdekkingsreiziger",
-        "adventure"
-      ],
-      [
-        "Een gewone jongere",
-        "identity"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "true": {
-    "question": "Waar gaat het echte verhaal over?",
-    "answers": [
-      [
-        "Een persoon en diens leven",
-        "biography"
-      ],
-      [
-        "Een gebeurtenis uit het verleden",
-        "history"
-      ],
-      [
-        "De wereld en de natuur",
-        "nature"
-      ],
-      [
-        "Wetenschap of uitvindingen",
-        "science"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "funny": {
-    "question": "Waar spelen de grappige dingen zich af?",
-    "answers": [
-      [
-        "Op school",
-        "school"
-      ],
-      [
-        "In een gezin",
-        "family"
-      ],
-      [
-        "Tijdens een reis",
-        "adventure"
-      ],
-      [
-        "In een fantasiewereld",
-        "magic"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "worlds": {
-    "question": "Welke omgeving wil je ontdekken?",
-    "answers": [
-      [
-        "Een magische wereld",
-        "magic"
-      ],
-      [
-        "Een stad in de toekomst",
-        "technology"
-      ],
-      [
-        "Een onbekend natuurgebied",
-        "nature"
-      ],
-      [
-        "Een gevaarlijke samenleving",
-        "society"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  },
-  "none": {
-    "question": "Wat vind je het belangrijkst in een boek?",
-    "answers": [
-      [
-        "Spannende gebeurtenissen",
-        "tension"
-      ],
-      [
-        "Interessante mensen",
-        "relationships"
-      ],
-      [
-        "Nieuwe dingen leren",
-        "science"
-      ],
-      [
-        "Humor",
-        "humor"
-      ],
-      [
-        "Maakt niet uit",
-        "none"
-      ]
-    ]
-  }
-};
-  function askNuance(){
-    currentStep='nuance';
-    const next=nuanceQuestions[choices.detail]||nuanceQuestions.none;
-    message(next.question);
-    options([
-      ...next.answers.map(([label,value])=>[label,()=>answer('nuance',value)]),
-      ['Laat nu drie boeken zien',()=>showRecommendations()],
-    ]);
-  }
-  function askPerspective(){
-    currentStep='lens';
-    const next=perspectiveQuestions[choices.situation]||perspectiveQuestions.none;
-    message(next.question);
-    options([
-      ...next.answers.map(([label,value])=>[label,()=>answer('lens',value)]),
-      ['Laat nu drie boeken zien',()=>showRecommendations()],
-    ]);
-  }
+  // The real public catalogue determines each next question.
+  // Book preferences are based on answers, not inferred from hobbies.
   function answer(field,value){
     choices[field]=value;
     if(field==='route'){
-      if(value==='surprise')showRecommendations();
-      else askSituation();
-    }else if(field==='situation')askDetail();
-    else if(field==='detail'){
-      // No preference supplied: offer a genuinely random selection.
-      if(choices.situation==='none'&&value==='none'&&choices.route==='new'){
-        choices.route='surprise';
-        showRecommendations();
-      }else askNuance();
-    }else if(field==='nuance')askPerspective();
-    else if(field==='lens')showRecommendations();
+      if(value==='surprise')void showRecommendations();
+      else startExploration();
+    }
   }
-  function askSituation(){
-    currentStep='situation';
-    message('Wat zou jou nieuwsgierig maken naar een boek?');
-    options(storyBeginnings.map(([label,value])=>
-      [label,()=>answer('situation',value)]));
+  function startExploration(){
+    choices.answers=[];
+    // A fresh route must never be biased by an earlier reference book.
+    delete choices.referenceBookId;
+    questionHistory=[];
+    currentQuestion=null;
+    void askAdaptiveQuestion();
   }
-  function askDetail(){
-    currentStep='detail';
-    const next=followups[choices.situation]||followups.none;
-    message(next.question);
-    options(next.answers.map(([label,value])=>
-      [label,()=>answer('detail',value)]));
+  function showQuestion(question){
+    currentQuestion=question;
+    currentStep='question';
+    recentQuestionsInTab.add(question.id);
+    message(question.prompt);
+    options([
+      ...(Array.isArray(question.options)?question.options:[]).map(option=>
+        [option.label,()=>recordAnswer(option.id)]),
+      ['Weet ik niet',()=>recordAnswer('skip')],
+      ['Sla deze vraag over',()=>recordAnswer('skip')],
+      ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
+      ['Laat nu drie boeken zien',()=>void showRecommendations()],
+    ]);
+    notice('Vraag '+(questionHistory.length+1)+'. Je mag een vraag overslaan.');
+  }
+  function recordAnswer(optionId){
+    if(!currentQuestion)return;
+    if(!Array.isArray(choices.answers))choices.answers=[];
+    choices.answers.push({questionId:currentQuestion.id,optionId});
+    questionHistory.push(currentQuestion);
+    currentQuestion=null;
+    void askAdaptiveQuestion();
+  }
+  function goBack(){
+    const previous=questionHistory.pop();
+    choices.answers?.pop();
+    if(previous)showQuestion(previous);
+    else startExploration();
+  }
+  async function askAdaptiveQuestion(){
+    if(!active||busy)return;
+    busy=true;currentStep='question';
+    const marker=epoch;
+    let delegated=false;
+    notice('Een passende vervolgvraag kiezen…');
+    clearActions();
+    try{
+      const next=await api('/api/auth/student-pin/choice-next',{
+        answers:choices.answers||[],seed,
+        excludeQuestionIds:[...recentQuestionsInTab].slice(-100),
+      });
+      if(!active||marker!==epoch)return;
+      if(next.done||!next.question){
+        busy=false;
+        delegated=true;
+        await showRecommendations();
+      }else{
+        busy=false;
+        showQuestion(next.question);
+      }
+    }catch(err){
+      if(!active||marker!==epoch)return;
+      if(delegated)return; // suggestion request provides its own error options
+      notice(err.message||'De volgende vraag kon niet worden geladen.');
+      options([
+        ['Opnieuw proberen',()=>void askAdaptiveQuestion()],
+        ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
+        ['Drie boeken bekijken',()=>void showRecommendations()],
+      ]);
+    }finally{
+      if(active&&marker===epoch&&!delegated)busy=false;
+    }
   }
   function resultCard(item,catalogue){
     const card=el('article','bb-choice-chat__result');
@@ -1035,7 +339,20 @@
     const open=el('button','btn btn--secondary','Bekijk boek');
     open.type='button';
     open.addEventListener('click',()=>openBook(item,open));
-    main.append(open);card.append(cover,main);
+    main.append(open);
+    const similar=el('button','btn btn--ghost','Meer zoals dit');
+    similar.type='button';
+    similar.addEventListener('click',()=>{
+      if(!active||busy)return;
+      message('Meer zoals '+item.title,'student');
+      // Reference similarity is distinct from the learner's earlier
+      // consent to include their personal reading history.
+      const includeHistory=choices.route==='similar';
+      choices={route:includeHistory?'similar':'new',
+        referenceBookId:item.bookId,answers:[]};
+      void showRecommendations();
+    });
+    main.append(similar);card.append(cover,main);
     return card;
   }
   async function openBook(item,buttonElement){
@@ -1121,7 +438,7 @@
         options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
       }else{
         notice(err.message);
-        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices={route:'new'};askSituation();}]]);
+        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices={route:'new'};startExploration();}]]);
       }
     }finally{busy=false;}
   }
@@ -1130,8 +447,8 @@
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};askSituation();}]]
-        : [['Andere richting',()=>{choices={route:'new'};askSituation();}],
+        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};startExploration();}]]
+        : [['Andere richting',()=>{choices={route:'new'};startExploration();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
@@ -1142,7 +459,7 @@
         try{
           await api('/api/auth/student-pin/choice-reset',grant?{choiceGrant:grant}:{});
           if(!active||marker!==epoch)return;
-          seenInTab.clear();shownInDialogue.clear();
+          seenInTab.clear();shownInDialogue.clear();recentQuestionsInTab.clear();
           message('Je eerdere aanbevelingen zijn gewist. We beginnen weer zonder eerdere voorstellen.');
           finishIdentity();
         }catch(err){

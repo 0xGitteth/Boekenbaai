@@ -111,6 +111,30 @@ async function stop(){
     assert.ok(/^[\w-]{32,}$/.test(grant));
     assert.notEqual((await request('/api/me',undefined,grant)).status,200,
       'Recommendation grant may never authenticate a student session');
+    // Question selection must be public, read-only and never expose private
+    // pupil data or require a PIN just to browse interests.
+    const nextQuestion=await request('/api/auth/student-pin/choice-next',{
+      answers:[],seed:'choice-exploration',
+    });
+    assert.equal(nextQuestion.status,200,JSON.stringify(nextQuestion.body));
+    assert.equal(typeof nextQuestion.body.question?.id,'string');
+    assert.ok(nextQuestion.body.question.options.length>=3);
+    assert.equal(nextQuestion.body.question.borrowedBy,undefined);
+    assert.equal((await request('/api/auth/student-pin/choice-next',{
+      answers:[],seed:'choice-exploration',
+    },'','https://other.invalid')).status,403,
+    'Cross-site adaptive requests must fail the same-origin check');
+    const secondQuestion=await request('/api/auth/student-pin/choice-next',{
+      seed:'choice-exploration',answers:[{
+        questionId:nextQuestion.body.question.id,
+        optionId:nextQuestion.body.question.options[0].id,
+      }],
+    });
+    assert.equal(secondQuestion.status,200);
+    assert.notEqual(secondQuestion.body.question?.id,nextQuestion.body.question.id,
+      'Adaptive questions must not repeat the already answered one');
+    assert.equal((readDb().studentChoiceSeen||[]).length,0,
+      'Selecting questions does not persist a pupil recommendation history');
     const rawTags=await suggest({route:'new',mood:'funny',seed:'derived'});
     assert.equal(rawTags.status,200);
     assert.equal(rawTags.body.suggestions[0].bookId,'book-11',

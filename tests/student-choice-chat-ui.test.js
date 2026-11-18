@@ -30,8 +30,10 @@ let resolvePin;
 let loggedIn=false;
 let failSuggest=false;
 let resetStatus=200;
+let holdSuggestions=false,releaseSuggestion=null;
 const invalidated=[];
 const suggestRequests=[];
+const questionRequests=[];
 const fetchStub=async (url,options={})=>{
   if(url==='/api/me')return loggedIn
     ? makeResponse(200,{id:'s',role:'student',firstName:'Sanne'})
@@ -45,13 +47,35 @@ const fetchStub=async (url,options={})=>{
     invalidated.push(JSON.parse(options.body).choiceGrant);
     return makeResponse(200,{closed:true});
   }
+  if(url==='/api/auth/student-pin/choice-next'){
+    const payload=JSON.parse(options.body);
+    questionRequests.push(payload);
+    const n=payload.answers?.length||0;
+    const questions=[
+      {id:'curiosity-1',prompt:'Welke situatie maakt je nieuwsgierig?',
+        options:[{id:'secret',label:'Iemand ontdekt een geheim'},
+          {id:'real',label:'Iets dat echt gebeurd is'}]},
+      {id:'tension-1',prompt:'Wat wil je dan weten?',
+        options:[{id:'exciting',label:'Of het spannend wordt'},
+          {id:'quiet',label:'Wat de persoon voelt'}]},
+      {id:'pace-1',prompt:'Hoe wil je het meemaken?',
+        options:[{id:'fast',label:'Er gebeurt veel'},
+          {id:'any',label:'Maakt niet uit'}]},
+      {id:'style-1',prompt:'Wat volg je graag?',
+        options:[{id:'talk',label:'Gesprekken'},
+          {id:'facts',label:'Feiten'}]},
+    ];
+    return makeResponse(200,n>=4?{done:true}:{done:false,question:questions[n]});
+  }
   if(url==='/api/auth/student-pin/choice-suggest'){
     suggestRequests.push(JSON.parse(options.body));
     if(failSuggest)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
-    return makeResponse(200,{suggestions:[1,2,3].map(i=>({
+    const result=makeResponse(200,{suggestions:[1,2,3].map(i=>({
       key:String(i),bookId:'book-'+i,title:'Titel '+i,author:'Auteur',
       reason:'Een willekeurige keuze uit de bibliotheek',available:1,
     }))});
+    if(holdSuggestions)return new Promise(resolve=>{releaseSuggestion=()=>resolve(result);});
+    return result;
   }
   if(url==='/api/auth/student-pin/choice-reset')
     return makeResponse(resetStatus,resetStatus===200?{ok:true}:{message:'Wissen mislukt'});
@@ -135,7 +159,10 @@ vm.runInNewContext(code,{
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
   actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat zou jou nieuwsgierig maken naar een boek?'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
+  assert.equal(questionRequests.at(-1).answers.length,0);
+  assert.ok(actions.children.some(x=>x.textContent==='Sla deze vraag over'));
 
   // Signed-in learners also get only the approved two main options. The
   // previously offered similar-books route remains available as an explicit
@@ -154,7 +181,8 @@ vm.runInNewContext(code,{
   assert.deepEqual(actions.children.map(x=>x.textContent),
     ['Ja, graag','Nee, liever iets anders']);
   actions.children[0].listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Wat zou jou nieuwsgierig maken naar een boek?'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
 
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
@@ -171,17 +199,8 @@ vm.runInNewContext(code,{
     'A failed reset must restore the available chat actions');
   resetStatus=200;
 
-  function finishDeeperQuestions() {
-    const nuance=actions.children.find(x=>x.textContent!=='Laat nu drie boeken zien');
-    assert.ok(nuance,'Follow-up must offer a specific question and a skip option');
-    nuance.listeners.click();
-    const lens=actions.children.find(x=>x.textContent!=='Laat nu drie boeken zien');
-    assert.ok(lens,'A fourth situational question must follow the previous answer');
-    lens.listeners.click();
-  }
-
-  // After surprise fails, "Andere richting" must restart the adaptive route
-  // rather than accidentally submitting the surprise route again.
+  // After surprise fails, "Andere richting" must use the answers rather
+  // than accidentally submitting the surprise route again.
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   failSuggest=true;
@@ -190,89 +209,54 @@ vm.runInNewContext(code,{
   assert.ok(actions.children.some(x=>x.textContent==='Andere richting'));
   actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
   failSuggest=false;
+  await new Promise(resolve=>setImmediate(resolve));
   actions.children.find(x=>x.textContent==='Iemand ontdekt een geheim').listeners.click();
-  actions.children.find(x=>x.textContent==='Zelf aanwijzingen zoeken').listeners.click();
-  assert.ok(actions.children.some(x=>x.textContent==='Laat nu drie boeken zien'));
-  finishDeeperQuestions();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(questionRequests.at(-1).answers[0].questionId,'curiosity-1');
+  // Back must undo only the last answer, without erasing the entire chat.
+  actions.children.find(x=>x.textContent==='Vorige vraag').listeners.click();
+  assert.ok(actions.children.some(x=>x.textContent==='Iets dat echt gebeurd is'));
+  actions.children.find(x=>x.textContent==='Iets dat echt gebeurd is').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  actions.children.find(x=>x.textContent==='Of het spannend wordt').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  actions.children.find(x=>x.textContent==='Maakt niet uit').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  actions.children.find(x=>x.textContent==='Gesprekken').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(suggestRequests.at(-1).choices.route,'new',
     'The fallback questionnaire must use the answered route, not surprise');
-
-  // Exercise all seven branches. The third and fourth questions depend on
-  // earlier answers, with an option to see books after two questions.
-  const scenarios=[
-    ['Iemand ontdekt een geheim','secret',
-      'Wat maakt zo’n geheim voor jou interessant?','Zelf aanwijzingen zoeken','puzzles'],
-    ['Twee vrienden moeten iets moeilijks beslissen','friends',
-      'Wat zou je hierover willen lezen?','Een moeilijke keuze met gevolgen','choices'],
-    ['Iemand krijgt een onverwachte kans','chance',
-      'Wat zou je willen zien gebeuren?','Een reis naar een nieuwe plek','adventure'],
-    ['Je leest wat iemand echt heeft meegemaakt','true',
-      'Wat vind je interessant aan echte verhalen?','Wat er vroeger is gebeurd','history'],
-    ['Er gebeurt iets heel grappigs','funny',
-      'Wat voor grappig verhaal spreekt je aan?','Grappige situaties op school','schoolhumor'],
-    ['Iemand komt in een onbekende wereld terecht','worlds',
-      'Wat zou je in die wereld willen ontdekken?','De toekomst en technologie','scifi'],
-    ['Ik weet het nog niet','none',
-      'Waar heb je op dit moment het meest zin in?','Een verhaal over echte mensen','realistic'],
-  ];
-  loggedIn=false;failSuggest=false;
-  for(const [start,situation,question,detail,expectedDetail] of scenarios){
-    elements.get('student-choice-close').listeners.click();
-    await elements.get('student-help-choose').listeners.click();
-    actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
-    actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
-    assert.equal(log.children.at(-1).children[0].textContent,
-      'Wat zou jou nieuwsgierig maken naar een boek?');
-    const firstOptions=actions.children.map(x=>x.textContent);
-    assert.ok(firstOptions.includes(start));
-    actions.children.find(x=>x.textContent===start).listeners.click();
-    assert.equal(log.children.at(-1).children[0].textContent,question);
-    const secondOptions=actions.children.map(x=>x.textContent);
-    assert.ok(secondOptions.includes(detail));
-    assert.ok(!secondOptions.includes(start),
-      'An answered situation must not be repeated by the follow-up');
-    actions.children.find(x=>x.textContent===detail).listeners.click();
-    assert.ok(actions.children.some(x=>x.textContent==='Laat nu drie boeken zien'),
-      'Pupils can stop the discovery questions early');
-    const thirdQuestion=log.children.at(-1).children[0].textContent;
-    assert.ok(thirdQuestion.length>10);
-    finishDeeperQuestions();
+  assert.equal(suggestRequests.at(-1).choices.answers.length,4,
+    'Adaptive conversation submits the actual answered questions');
+  // An older suggestion card must not start a second request while the
+  // next adaptive recommendation is still loading.
+  const deepFind=(root,label)=>{
+    if(root?.textContent===label&&root?.tag==='button')return root;
+    for(const child of root?.children||[]){
+      const found=deepFind(child,label);
+      if(found)return found;
+    }
+    return null;
+  };
+  const existingCard=deepFind(log,'Meer zoals dit');
+  assert.ok(existingCard,'Earlier results remain visible in the dialogue');
+  actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  for(const choice of ['Iemand ontdekt een geheim','Of het spannend wordt',
+    'Maakt niet uit','Gesprekken']){
+    if(choice==='Gesprekken')holdSuggestions=true;
+    actions.children.find(x=>x.textContent===choice).listeners.click();
     await new Promise(resolve=>setImmediate(resolve));
-    await new Promise(resolve=>setImmediate(resolve));
-    const submitted=suggestRequests.at(-1).choices;
-    assert.equal(submitted.route,'new');
-    assert.equal(submitted.situation,situation);
-    assert.equal(submitted.detail,expectedDetail);
-    assert.ok(submitted.nuance && submitted.nuance!=='none',
-      'The specific follow-up answer must be submitted');
-    assert.ok(submitted.lens && submitted.lens!=='none',
-      'The fourth answer must contribute an additional preference');
-    assert.equal(submitted.mood,undefined,
-      'Do not ask a duplicate genre question');
-    assert.equal(submitted.activity,undefined,
-      'Do not ask irrelevant hobby questions');
-    assert.equal(submitted.length,undefined,
-      'Book length must be optional, not mandatory');
   }
-  elements.get('student-choice-close').listeners.click();
-  await elements.get('student-help-choose').listeners.click();
-  actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
-  actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
-  actions.children.find(x=>x.textContent==='Ik weet het nog niet').listeners.click();
-  actions.children.find(x=>x.textContent==='Geen idee, verras me').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(releaseSuggestion,'Deferred recommendation request must be pending');
+  const countBefore=suggestRequests.length;
+  existingCard.listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(suggestRequests.at(-1).choices.route,'surprise',
-    'No preferences must lead to genuinely varied suggestions');
-  assert.equal(suggestRequests.at(-1).choices.situation,'none');
-
-  assert.ok(!code.includes('function askActivity()')&&!code.includes('function askMood()')
-    &&!code.includes('function askLength()'),
-    'Legacy fixed question sequence must be removed');
-  assert.ok(actions.children.some(x=>x.textContent==='Nog drie verrassingen'),
-    'No-preference flow must offer further random suggestions');
-
-  console.log('Choice chat: approved route text, reset recovery, fallback routing and privacy: OK');
+  assert.equal(suggestRequests.length,countBefore,
+    'Busy guard prevents overlapping suggestions from old cards');
+  holdSuggestions=false;releaseSuggestion();releaseSuggestion=null;
+  await new Promise(resolve=>setImmediate(resolve));
+  console.log('Choice chat: approved route, dynamic followups, back and privacy: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});
