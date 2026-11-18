@@ -2165,8 +2165,10 @@ function groupBooksByTitleAuthor(books = []) {
   const result = [];
   for (const value of groups.values()) {
     const totalCopies = value.copies.length;
-    const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
-    const availableCopies = totalCopies - borrowedCopies;
+    const borrowedCopies = value.copies.filter((copy) =>
+      copy.status === 'borrowed').length;
+    const availableCopies = value.copies.filter((copy) =>
+      copy.catalogHidden !== true && copy.status !== 'borrowed').length;
     const editions = groupCatalogEditions(value.copies);
     // Show the cover of the most common edition with an available cover.
     const featuredEdition = editions.find(edition =>
@@ -3513,7 +3515,8 @@ function initStudentPage() {
     if (!group || !Array.isArray(group.books)) {
       return;
     }
-    const availableCopies = group.books.filter((book) => book.status !== 'borrowed').length;
+    const availableCopies = group.books.filter((book) =>
+      book.catalogHidden !== true && book.status !== 'borrowed').length;
     group.totalCopies = group.books.length;
     group.availableCopies = availableCopies;
     group.borrowed = group.totalCopies - group.availableCopies;
@@ -4308,6 +4311,7 @@ function initStaffPage() {
   const adminBookQuantity = document.querySelector('#admin-book-quantity');
   const adminBookExam = document.querySelector('#admin-book-exam');
   const adminBookEasyReading = document.querySelector('#admin-book-easy-reading');
+  const adminBookCatalogHidden = document.querySelector('#admin-book-catalog-hidden');
   const adminBookDescription = document.querySelector('#admin-book-description');
   const adminBookPublisher = document.querySelector('#admin-book-publisher');
   const adminBookYear = document.querySelector('#admin-book-year');
@@ -5303,6 +5307,9 @@ function initStaffPage() {
     }
     if (adminBookEasyReading) {
       adminBookEasyReading.checked = Boolean(book.easyReading);
+    }
+    if (adminBookCatalogHidden) {
+      adminBookCatalogHidden.checked = book.catalogHidden === true;
     }
     if (adminBookSubmitButton) {
       adminBookSubmitButton.textContent = 'Boek bijwerken';
@@ -8470,6 +8477,7 @@ function initStaffPage() {
       metadataIsbn: metadataIsbnValue,
       suitableForExamList: Boolean(adminBookExam.checked),
       easyReading: Boolean(adminBookEasyReading?.checked),
+      catalogHidden: Boolean(adminBookCatalogHidden?.checked),
       description: adminBookDescription.value.trim(),
       publisher: publisherValue,
       publishedYear: publishedYearValue || null,
