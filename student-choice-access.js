@@ -8,6 +8,7 @@ const security=require('./google-auth-security-core');
 const pins=require('./student-pin-core');
 const {readJsonSnapshot,mutateJsonLockedAsync}=require('./database-write-coordinator');
 const {rankBooks}=require('./student-choice-recommendations');
+const dialogue=require('./student-choice-dialogue');
 const {attachDerivedThemeFields}=require('./book-theme-normalization');
 const DATA_PATH=process.env.BOEKENBAAI_DATA_PATH
   ? path.resolve(__dirname,process.env.BOEKENBAAI_DATA_PATH) : path.join(__dirname,'data','db.json');
@@ -139,6 +140,13 @@ async function suggestions({grant,sessionToken,choices,anonymous=false}){
     }});
   return result;
 }
+function nextQuestion({answers=[],seed='',excludeQuestionIds=[]}={}){
+  // No reader identity is needed. The question engine sees only normalized
+  // public catalogue metadata and never reveals lending or private records.
+  const db=loadDb();
+  const books=(db.books||[]).map(attachDerivedThemeFields);
+  return dialogue.selection({books},{answers,seed,excludeQuestionIds});
+}
 async function clearHistory({grant,sessionToken}){
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
@@ -158,4 +166,4 @@ async function closeChoice(grant){
       return auth;
     }});
 }
-module.exports={startChoice,resolveChoice,suggestions,clearHistory,closeChoice,firstName,TTL};
+module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,firstName,TTL};
