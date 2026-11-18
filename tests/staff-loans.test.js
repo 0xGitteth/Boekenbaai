@@ -364,6 +364,80 @@ async function run() {
     assert.strictEqual(after.books.find((item) => item.id === 'book-class').fixedLocation, 'SK BB');
     assert.ok(after.history.some((event) => event.type === 'check_in_class'));
     assert.strictEqual((await call('/api/staff/loans', admin)).status, 200);
+    // Both staff screens share one ledger. Teachers may correct historical
+    // relationships only for their CURRENT class roster, not other pupils.
+    const correctionDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    correctionDb.history.push(
+      {id:'teacher-history-a',type:'check_out',studentId:'stu-a',
+        bookId:'book-student',timestamp:'2026-03-15T12:00:00.000Z'},
+      {id:'teacher-history-b',type:'check_out',studentId:'stu-b',
+        bookId:'book-other',timestamp:'2026-03-16T12:00:00.000Z'});
+    fs.writeFileSync(dbPath, JSON.stringify(correctionDb));
+    assert.strictEqual((await call('/api/admin/loan-history', studentA)).status,403);
+    assert.strictEqual((await call('/api/admin/loan-history/current', teacherA)).status,403,
+      'Teachers cannot cancel live loans even after gaining history access');
+    assert.strictEqual((await call('/api/admin/loan-history/current/remove',
+      teacherA,{bookId:'book-student',confirm:true},'POST')).status,403);
+    assert.strictEqual((await call('/api/admin/loan-history/current', admin)).status,200);
+    // Expanding destructive access from administrators to teachers must not
+    // accept a request originating from a different website.
+    for (const route of ['/api/admin/loan-history/remove',
+      '/api/admin/loan-history/current/remove']) {
+      const crossSite = await fetch(BASE + route, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + admin,
+          Origin: 'https://wrong-site.example',
+          'Sec-Fetch-Site': 'cross-site',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ confirm: true }),
+      });
+      assert.strictEqual(crossSite.status, 403,
+        'A cross-site request must never be allowed to correct circulation');
+    }
+    const scopedA=await call('/api/admin/loan-history',teacherA);
+    const scopedB=await call('/api/admin/loan-history',teacherB);
+    assert.strictEqual(scopedA.status,200);
+    assert.strictEqual(scopedB.status,200);
+    assert.ok(scopedA.body.items.length>0);
+    assert.ok(scopedB.body.items.length>0);
+    assert.ok(scopedA.body.items.every(row=>row.studentId==='stu-a'),
+      'No other pupil or class is exposed to teacher A');
+    assert.ok(scopedB.body.items.every(row=>row.studentId==='stu-b'),
+      'No pupil from another roster is exposed to teacher B');
+    assert.deepStrictEqual((await call(
+      '/api/admin/loan-history?student=Leerling%20B',teacherA)).body.items,[]);
+    const owned=scopedA.body.items.find(row=>row.bookId==='book-student');
+    assert.ok(owned);
+    const correction={studentId:'stu-a',bookId:'book-student',
+      expectedFingerprint:owned.fingerprint,confirm:true};
+    const beforeForbidden=fs.readFileSync(dbPath,'utf8');
+    assert.strictEqual((await call('/api/admin/loan-history/remove',
+      teacherB,correction,'POST')).status,403,
+      'Teacher B cannot bypass current class scope by sending a student ID');
+    assert.strictEqual(fs.readFileSync(dbPath,'utf8'),beforeForbidden,
+      'Forbidden mutation must never write to the database');
+    assert.strictEqual((await call('/api/admin/loan-history/remove',teacherA,{
+      ...correction,expectedFingerprint:'old'},'POST')).status,409,
+      'History corrections are revision-checked');
+    const removedByMentor=await call('/api/admin/loan-history/remove',
+      teacherA,correction,'POST');
+    assert.strictEqual(removedByMentor.status,200,JSON.stringify(removedByMentor.body));
+    assert.strictEqual(removedByMentor.body.activeLoanUnchanged,true);
+    const afterCorrection=JSON.parse(fs.readFileSync(dbPath,'utf8'));
+    assert.ok(afterCorrection.bookLoanHistoryDeletionAudit.some(row=>
+      row.performedBy==='teacher-a'&&row.studentId==='stu-a'));
+    assert.ok(afterCorrection.history.some(row=>row.id==='teacher-history-b'));
+    assert.ok(!afterCorrection.history.some(row=>row.id==='teacher-history-a'));
+    // A removed class assignment takes effect immediately; old tokens and
+    // initial GET rights never authorize edits after revocation.
+    afterCorrection.classes.find(c=>c.id==='class-a').teacherIds=[];
+    fs.writeFileSync(dbPath,JSON.stringify(afterCorrection));
+    assert.deepStrictEqual((await call('/api/admin/loan-history',teacherA)).body.items,[]);
+    assert.strictEqual((await call('/api/admin/loan-history/remove',
+      teacherA,correction,'POST')).status,403);
+
     const deletedClass = await call('/api/classes/class-a', admin, undefined, 'DELETE');
     assert.strictEqual(deletedClass.status, 200,
       'The admin can delete a class AFTER its active loans have been returned');

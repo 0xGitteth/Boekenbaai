@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,
-  searchHistory,removeFalseHistory}=
+  searchHistory,removeFalseHistory,listCurrentLoans,removeFalseCurrentLoan}=
   require('../book-loan-history-admin');
 const admin={role:'admin',id:'beheer'};
 const db={
@@ -39,8 +39,19 @@ assert.equal(removeFalseHistory(db,{role:'teacher',id:'t'},{
 assert.equal(removeFalseHistory(db,admin,{
   studentId:'s1',bookId:'b1',expectedFingerprint:'stale',confirm:true
 }).error,'history_changed');
-const cleaned=removeFalseHistory(db,admin,{
+// A pupil may have changed Ja/Nee after staff loaded the search results.
+// Never erase the newer answer using an old confirmation token.
+db.readingRecords[0].finished=false;
+db.readingRecords[0].revision=2;
+db.readingRecords[0].updatedAt='2026-11-18T12:30:00.000Z';
+assert.equal(removeFalseHistory(db,admin,{
   studentId:'s1',bookId:'b1',expectedFingerprint:candidates[0].fingerprint,
+  confirm:true,
+}).error,'history_changed',
+'An updated pupil reading answer must invalidate a stale deletion');
+const newest=searchHistory(db,{student:'leerling',book:'een'})[0];
+const cleaned=removeFalseHistory(db,admin,{
+  studentId:'s1',bookId:'b1',expectedFingerprint:newest.fingerprint,
   confirm:true,
 });
 assert.equal(cleaned.ok,true);
@@ -202,6 +213,159 @@ assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
     assert.equal(current.readingRecords.length,1);
     assert.equal(current.books.find(copy=>copy.id==='noisbn-b').borrowedBy,'s');
   }
+}
+
+
+// Teachers may correct only history of pupils in their *current* class.
+{
+  const scoped={
+    classes:[
+      {id:'class-a',teacherIds:['mentor-a'],studentIds:['sa']},
+      {id:'class-b',teacherIds:['mentor-b'],studentIds:['sb']},
+    ],
+    students:[
+      {id:'sa',name:'Leerling A',borrowedBooks:[],classIds:['class-b']},
+      {id:'sb',name:'Leerling B',borrowedBooks:[],classIds:['class-b']},
+    ],
+    books:[{id:'a',title:'Boek A'},{id:'b',title:'Boek B'}],
+    history:[
+      {id:'ha',type:'check_out',bookId:'a',studentId:'sa'},
+      {id:'hb',type:'check_out',bookId:'b',studentId:'sb'},
+    ],
+    bookLoanEvents:[],bookLoanPeriods:[],readingRecords:[],examReadingLists:[],
+  };
+  const mentorA={role:'teacher',id:'mentor-a'};
+  const mentorB={role:'teacher',id:'mentor-b'};
+  const own=searchHistory(scoped,{actor:mentorA});
+  assert.deepEqual(own.map(item=>item.studentId),['sa'],
+    'The current class roster wins over a stale student.classIds array');
+  assert.deepEqual(searchHistory(scoped,{actor:mentorB}).map(item=>item.studentId),['sb']);
+  assert.equal(searchHistory(scoped,{actor:{role:'admin',id:'admin'}}).length,2);
+  // A learner removed from every live class roster does not remain under
+  // the old teacher just because a legacy student.classIds field says so.
+  scoped.students.push({
+    id:'orphan',name:'Verplaatste Leerling',classIds:['class-a'],
+    borrowedBooks:[],
+  });
+  scoped.history.push({
+    id:'horphan',type:'check_out',studentId:'orphan',bookId:'a',
+  });
+  assert.deepEqual(searchHistory(scoped,{actor:mentorA}).map(x=>x.studentId),['sa']);
+  const orphan=searchHistory(scoped,{actor:admin})
+    .find(x=>x.studentId==='orphan');
+  assert.equal(removeFalseHistory(scoped,mentorA,{
+    studentId:'orphan',bookId:'a',expectedFingerprint:orphan.fingerprint,
+    confirm:true,
+  }).error,'forbidden');
+  // Continue the original two-learner scenario without changing its counts.
+  scoped.students.pop();
+  scoped.history.pop();
+  const forbidden=removeFalseHistory(scoped,mentorA,{
+    studentId:'sb',bookId:'b',expectedFingerprint:searchHistory(scoped)
+      .find(item=>item.bookId==='b').fingerprint,confirm:true});
+  assert.equal(forbidden.error,'forbidden');
+  assert.equal(scoped.history.length,2,'An unauthorized attempt changes nothing');
+  const removed=removeFalseHistory(scoped,mentorA,{
+    studentId:'sa',bookId:'a',expectedFingerprint:own[0].fingerprint,confirm:true});
+  assert.equal(removed.ok,true);
+  assert.equal(scoped.history.length,1);
+  assert.equal(scoped.history[0].studentId,'sb');
+  assert.equal(scoped.bookLoanHistoryDeletionAudit[0].performedBy,'mentor-a');
+  // Permission revocation must immediately revoke access.
+  scoped.classes[0].teacherIds=[];
+  assert.deepEqual(searchHistory(scoped,{actor:mentorA}),[]);
+  assert.equal(removeFalseHistory(scoped,mentorA,{
+    studentId:'sa',bookId:'a',expectedFingerprint:own[0].fingerprint,confirm:true,
+  }).error,'forbidden');
+}
+
+// The real Dex scenario: two different titles and physical ISBNs are both
+// actively linked. Cancelling the wrong title must not pretend a return
+// happened, delete reading records or alter either legitimate active loan.
+{
+  const wrong={id:'pizzamaffia-a',title:'Pizzamaffia',
+    barcode:'9789048849468',status:'borrowed',borrowedBy:'dex',
+    borrowedByClassId:null,borrowedAt:'2026-11-10'};
+  const right={id:'slaat-door',title:'Pizzamaffia slaat door',
+    barcode:'9789048848447',status:'borrowed',borrowedBy:'dex',
+    borrowedByClassId:null,borrowedAt:'2026-11-11'};
+  const other={id:'stamppot',title:'Stamppot met kogels',
+    status:'borrowed',borrowedBy:'dex'};
+  const original={
+    books:[wrong,right,other],
+    students:[{id:'dex',name:'Dex Rombouts',borrowedBooks:[
+      {bookId:wrong.id},{bookId:right.id},{bookId:other.id}]}],
+    classes:[],history:[{id:'original-checkout',type:'check_out',
+      bookId:wrong.id,studentId:'dex'}],
+    bookLoanEvents:[],bookLoanPeriods:[],
+    readingRecords:[{id:'finished-correct',subjectType:'student',
+      subjectId:'dex',bookId:right.id,finished:true}],
+  };
+  const beforeHistory=JSON.stringify(original.history);
+  const beforeReadings=JSON.stringify(original.readingRecords);
+  const find=listCurrentLoans(original,{borrower:'Dex',book:'Pizzamaffia'});
+  const wrongEntry=find.find(item=>item.bookId===wrong.id);
+  assert.ok(wrongEntry);
+  assert.equal(removeFalseCurrentLoan(original,{role:'teacher',id:'mentor'},{
+    bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
+    expectedFingerprint:wrongEntry.fingerprint,confirm:true,
+  }).error,'forbidden');
+  assert.equal(removeFalseCurrentLoan(original,admin,{
+    bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
+    expectedFingerprint:'old',confirm:true,
+  }).error,'loan_changed');
+  // Duplicate physical IDs or another pupil's student-loan reference must
+  // never release a copy as available.
+  original.books.push({...wrong});
+  assert.equal(removeFalseCurrentLoan(original,admin,{
+    bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
+    expectedFingerprint:wrongEntry.fingerprint,confirm:true,
+  }).error,'ambiguous_copy');
+  original.books.pop();
+  original.students.push({
+    id:'other',name:'Andere leerling',
+    borrowedBooks:[{bookId:wrong.id}],
+  });
+  assert.equal(removeFalseCurrentLoan(original,admin,{
+    bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
+    expectedFingerprint:wrongEntry.fingerprint,confirm:true,
+  }).error,'student_record_mismatch');
+  assert.equal(wrong.status,'borrowed');
+  assert.equal(original.bookLoanCurrentCorrectionAudit,undefined);
+  original.students.pop();
+  const removed=removeFalseCurrentLoan(original,admin,{
+    bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
+    expectedFingerprint:wrongEntry.fingerprint,confirm:true,
+  });
+  assert.equal(removed.ok,true);
+  assert.equal(wrong.status,'available');
+  assert.equal(wrong.borrowedBy,null);
+  assert.deepEqual(original.students[0].borrowedBooks.map(item=>item.bookId),
+    [right.id,other.id]);
+  assert.equal(right.status,'borrowed');
+  assert.equal(other.status,'borrowed');
+  assert.equal(JSON.stringify(original.history),beforeHistory);
+  assert.equal(JSON.stringify(original.readingRecords),beforeReadings);
+  assert.equal(original.bookLoanCurrentCorrectionAudit.length,1);
+  assert.equal(original.history.filter(item=>item.type==='check_in').length,0);
+}
+
+// Both corrective actions must be visible as DIFFERENT workflows in the
+// same staff lending area, including the exact physical ID and confirmation.
+{
+  const fs=require('node:fs'),path=require('node:path');
+  const ui=fs.readFileSync(path.join(__dirname,'..',
+    'public/admin-loan-history.js'),'utf8');
+  assert.match(ui,/Foutieve actuele uitlening corrigeren/);
+  assert.match(ui,/Foutieve leenhistorie corrigeren/);
+  assert.match(ui,/Exemplaar-ID: /);
+  assert.match(ui,/expectedFingerprint:loan\.fingerprint,confirm:true/);
+  assert.match(ui,/activeLoanRemoved/);
+  assert.match(ui,/boekenbaai:staff-refresh/);
+  assert.match(ui,/currentSection\.hidden/);
+  const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
+  assert.match(server,/user\.role!=='admin'/);
+  assert.match(server,/limit:100,actor:user/);
 }
 
 console.log('Durable circulation history, admin deletion and preservation: OK');

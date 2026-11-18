@@ -5138,12 +5138,22 @@ async function handleApi(req, res, requestUrl) {
       ||requestUrl.pathname===loanHistoryRoot+'/remove'
       ||requestUrl.pathname===loanHistoryRoot+'/current'
       ||requestUrl.pathname===loanHistoryRoot+'/current/remove'){
-      if(!ensureRole(user,['admin']))
-        return sendJson(res,user?403:401,{message:'Alleen voor beheerders.'});
+      // History: the relevant teacher's own students or an administrator.
+      // Undoing a *current* loan remains exclusively administrator-only.
+      if(!ensureRole(user,['teacher','admin']))
+        return sendJson(res,user?403:401,{message:'Alleen voor medewerkers.'});
+      if((requestUrl.pathname===loanHistoryRoot+'/current'
+        ||requestUrl.pathname===loanHistoryRoot+'/current/remove')
+        &&user.role!=='admin')
+        return sendJson(res,403,{message:'Alleen beheerders mogen actuele uitleningen corrigeren.'});
+      res.setHeader('Cache-Control','no-store');
+      if(req.method==='POST'&&!authSecurityForPin.isSameOriginMutation(req,
+        authSecurityForPin.getExpectedOrigin(req,process.env.BOEKENBAAI_PUBLIC_URL||'')))
+        return sendJson(res,403,{message:'Ongeldige aanvraagherkomst.'});
       if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot){
         return sendJson(res,200,{items:searchHistory(getDb(),{
           student:requestUrl.searchParams.get('student')||'',
-          book:requestUrl.searchParams.get('book')||'',limit:100})});
+          book:requestUrl.searchParams.get('book')||'',limit:100,actor:user})});
       }
       if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot+'/current'){
         return sendJson(res,200,{items:listCurrentLoans(getDb(),{
@@ -5164,8 +5174,10 @@ async function handleApi(req, res, requestUrl) {
         const body=await parseBody(req,3000);
         const database=loadDb();
         const result=removeFalseHistory(database,user,body);
-        if(!result.ok)return sendJson(res,409,{
-          message:'De leenhistorie is veranderd of de verwijdering is ongeldig.',
+        if(!result.ok)return sendJson(res,result.error==='forbidden'?403:409,{
+          message:result.error==='forbidden'
+            ?'Je mag alleen de leenhistorie van je eigen leerlingen wijzigen.'
+            :'De leenhistorie is veranderd of de verwijdering is ongeldig.',
           error:result.error});
         saveDb(database);
         return sendJson(res,200,result);
