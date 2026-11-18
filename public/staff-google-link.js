@@ -146,8 +146,8 @@
       try {
         await api(`/api/auth/google/staff-link-requests/${encodeURIComponent(request.id)}/${action}`, { method: 'POST' });
         row.remove();
-        const container = document.querySelector('#admin-staff-link-requests');
-        if (container && !container.querySelector('.staff-link-request')) container.remove();
+        // Keep the request area visible even when its final item is approved.
+        await renderAdminRequests();
       } catch (error) {
         approve.disabled = false;
         deny.disabled = false;
@@ -169,24 +169,32 @@
     try {
       payload = await api('/api/auth/google/staff-link-requests');
     } catch (error) {
+      const section=document.querySelector('#admin-staff-link-requests');
+      if (section) section.append(make('p',{
+        className:'hint',text:'Koppelverzoeken konden niet worden geladen.',
+      }));
       return;
     }
 
-    document.querySelector('#admin-staff-link-requests')?.remove();
-    if (!payload.requests?.length) return;
-    const section = make('section', {
-      className: 'panel student-management__section student-management__attention',
-    });
-    section.id = 'admin-staff-link-requests';
-    section.append(
-      make('h4', { text: `Docentaccounts goedkeuren (${payload.requests.length})` }),
-      make('p', {
-        className: 'hint',
-        text: 'Deze medewerkers hebben zelf hun naam gekozen en daarna met hun Koraal Google-account ingelogd. Controleer de koppeling één keer.',
+    let section = document.querySelector('#admin-staff-link-requests');
+    if (!section) {
+      section = make('section', {
+        className: 'panel student-management__section',
+      });
+      section.id = 'admin-staff-link-requests';
+      host.prepend(section);
+    }
+    section.replaceChildren(
+      make('h4', { text: `Docentaccounts koppelen (${payload.requests?.length || 0})` }),
+      make('p', { className: 'hint',
+        text: 'Hier staan de verzoeken om een Koraal Google-account aan een docentaccount te koppelen.',
       })
     );
-    payload.requests.forEach((request) => section.append(requestCard(request)));
-    host.prepend(section);
+    if (!payload.requests?.length) {
+      section.append(make('p', {className:'hint',text:'Geen openstaande koppelverzoeken.'}));
+    } else {
+      payload.requests.forEach(request => section.append(requestCard(request)));
+    }
   }
 
   function installAdminObserver() {
