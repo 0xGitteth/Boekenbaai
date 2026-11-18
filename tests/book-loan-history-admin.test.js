@@ -241,6 +241,25 @@ assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
     'The current class roster wins over a stale student.classIds array');
   assert.deepEqual(searchHistory(scoped,{actor:mentorB}).map(item=>item.studentId),['sb']);
   assert.equal(searchHistory(scoped,{actor:{role:'admin',id:'admin'}}).length,2);
+  // A learner removed from every live class roster does not remain under
+  // the old teacher just because a legacy student.classIds field says so.
+  scoped.students.push({
+    id:'orphan',name:'Verplaatste Leerling',classIds:['class-a'],
+    borrowedBooks:[],
+  });
+  scoped.history.push({
+    id:'horphan',type:'check_out',studentId:'orphan',bookId:'a',
+  });
+  assert.deepEqual(searchHistory(scoped,{actor:mentorA}).map(x=>x.studentId),['sa']);
+  const orphan=searchHistory(scoped,{actor:admin})
+    .find(x=>x.studentId==='orphan');
+  assert.equal(removeFalseHistory(scoped,mentorA,{
+    studentId:'orphan',bookId:'a',expectedFingerprint:orphan.fingerprint,
+    confirm:true,
+  }).error,'forbidden');
+  // Continue the original two-learner scenario without changing its counts.
+  scoped.students.pop();
+  scoped.history.pop();
   const forbidden=removeFalseHistory(scoped,mentorA,{
     studentId:'sb',bookId:'b',expectedFingerprint:searchHistory(scoped)
       .find(item=>item.bookId==='b').fingerprint,confirm:true});
@@ -295,6 +314,25 @@ assert.equal(searchHistory(db,{student:'Leerling A',book:'Een boek'}).length,0);
     bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
     expectedFingerprint:'old',confirm:true,
   }).error,'loan_changed');
+  // Duplicate physical IDs or another pupil's student-loan reference must
+  // never release a copy as available.
+  original.books.push({...wrong});
+  assert.equal(removeFalseCurrentLoan(original,admin,{
+    bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
+    expectedFingerprint:wrongEntry.fingerprint,confirm:true,
+  }).error,'ambiguous_copy');
+  original.books.pop();
+  original.students.push({
+    id:'other',name:'Andere leerling',
+    borrowedBooks:[{bookId:wrong.id}],
+  });
+  assert.equal(removeFalseCurrentLoan(original,admin,{
+    bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
+    expectedFingerprint:wrongEntry.fingerprint,confirm:true,
+  }).error,'student_record_mismatch');
+  assert.equal(wrong.status,'borrowed');
+  assert.equal(original.bookLoanCurrentCorrectionAudit,undefined);
+  original.students.pop();
   const removed=removeFalseCurrentLoan(original,admin,{
     bookId:wrong.id,borrowerId:'dex',borrowerType:'student',
     expectedFingerprint:wrongEntry.fingerprint,confirm:true,
