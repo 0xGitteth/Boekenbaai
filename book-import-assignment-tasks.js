@@ -146,7 +146,8 @@ function sourceEvidence(task) {
     rowAvailable:Boolean(row),
     excelStudent:diff.excelStudent||ctx.studentLoan?.name||'',
     excelClass:diff.excelClass||ctx.classLoan?.name||
-      ctx.studentClassHint?.label||(ctx.classContext||[]).join(', ')||'',
+      ctx.studentClassHint?.label||(Array.isArray(ctx.classContext)
+        ?ctx.classContext.join(', '):'')||'',
     excelFixedLocation:diff.excelFixedLocation||
       ctx.fixedLocation?.raw||ctx.fixedLocation?.label||'',
     excelBarcode:row?.book?.barcode||task.barcode||'',
@@ -220,6 +221,7 @@ function listDeferredAssignmentTasks(db) {
       createdAt: task.createdAt, revision: task.revision,
       missingBook: Boolean(task.bookId && !existingBookIds.has(task.bookId)),
       canApply: Boolean(task.sourceRow && task.bookId
+        && booksById.get(task.bookId)?.length===1
         && ['loan', 'location', 'class_context'].includes(task.kind)
         && !task.reason),
       legacy: task.legacy === true,
