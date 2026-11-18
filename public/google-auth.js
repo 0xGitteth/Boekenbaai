@@ -291,9 +291,15 @@
     header.append(headerText);
     panel.append(header);
 
+    const requests = makeElement('div', { className: 'google-manage__section' });
+    requests.id = 'teacher-google-link-requests';
+    requests.append(makeElement('h4', {
+      text: 'Google-koppelverzoeken (' + (data.requests?.length || 0) + ')',
+    }));
+    if (!data.requests?.length) requests.append(makeElement('p', {
+      className:'hint',text:'Geen openstaande koppelverzoeken.',
+    }));
     if (data.requests?.length) {
-      const requests = makeElement('div', { className: 'google-manage__section' });
-      requests.append(makeElement('h4', { text: 'Openstaande koppelverzoeken' }));
       for (const request of data.requests) {
         const row = makeElement('div', { className: 'google-manage__request' });
         const info = makeElement('div');
@@ -322,7 +328,16 @@
               method: 'POST',
             });
             row.remove();
-            if (!requests.querySelector('.google-manage__request')) requests.remove();
+            if (!requests.querySelector('.google-manage__request')) {
+              requests.querySelector('h4').textContent='Google-koppelverzoeken (0)';
+              requests.append(makeElement('p',{
+                className:'hint',text:'Geen openstaande koppelverzoeken.',
+              }));
+            } else {
+              requests.querySelector('h4').textContent='Google-koppelverzoeken ('
+                +requests.querySelectorAll('.google-manage__request').length+')';
+            }
+            window.dispatchEvent(new Event('boekenbaai:mentor-tasks-refresh'));
           } catch (error) {
             approve.disabled = false;
             deny.disabled = false;
@@ -335,7 +350,20 @@
         row.append(info, actions);
         requests.append(row);
       }
-      panel.append(requests);
+    }
+    // The live mentor requests must always be visible under Taken. Account
+    // email setup belongs under Mijn account and should not interrupt tasks.
+    function placeRequests() {
+      const tasks=document.querySelector('[data-teacher-view="tasks"]');
+      if (!tasks) return false;
+      if (requests.parentNode!==tasks) tasks.prepend(requests);
+      return true;
+    }
+    if (!placeRequests()) {
+      const watcher=new MutationObserver(()=>{
+        if(placeRequests())watcher.disconnect();
+      });
+      watcher.observe(host,{childList:true,subtree:true});
     }
 
     const studentSection = makeElement('div', { className: 'google-manage__section' });
@@ -430,7 +458,18 @@
       panel.append(staffSection);
     }
 
-    host.append(panel);
+    // The base panel only contains account configuration. The teacher
+    // layout may not be ready yet when the Google API returns.
+    const account=document.querySelector('[data-teacher-view="account"]');
+    if(account)account.append(panel);
+    else {
+      host.append(panel);
+      const watcher=new MutationObserver(()=>{
+        const target=document.querySelector('[data-teacher-view="account"]');
+        if(target){target.append(panel);watcher.disconnect();}
+      });
+      watcher.observe(host,{childList:true,subtree:true});
+    }
   }
 
   document.addEventListener('DOMContentLoaded', async () => {
