@@ -137,7 +137,8 @@ function resolveDeferredBookTask(db, actor, id, revision, choice,
 }
 function retainDeferredBookChecks(db, candidates) {
   if (!Array.isArray(db.bookImportDeferredBookChecks)) db.bookImportDeferredBookChecks=[];
-  const fields=['batchId','worksheetRow','title','author','excelIdentifier','editionIsbn','bookId','barcode','sourceEvidence'];
+  const fields=['batchId','worksheetRow','title','author','excelIdentifier','editionIsbn',
+    'bookId','barcode','sourcePrintedBarcode','sourceQuantity','sourceEvidence'];
   for (const candidate of candidates) {
     // Only repeated emission of the SAME source event can be suppressed.
     // A filename/row/ISBN match in a later import is not physical identity.
