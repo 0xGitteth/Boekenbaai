@@ -69,6 +69,11 @@ function inspect(db,studentId,bookId){
   const claimedAt=time(reading.loanBorrowedAt);
   const latestCheckout=[...prior].reverse().find(e=>
     e.type==='check_out'&&e.studentId===studentId&&!e.classId);
+  // If a checkout event exists, it must agree with the immutable return record.
+  // Only the absence of such an event permits the imported-loan fallback.
+  if(latestCheckout&&Number.isFinite(claimedAt)
+    &&!close(latestCheckout.timestamp,reading.loanBorrowedAt))
+    return stop('original_conflict');
   const originalAt=Number.isFinite(claimedAt)&&claimedAt<time(returned.timestamp)
     ?reading.loanBorrowedAt
     :latestCheckout?.timestamp;
