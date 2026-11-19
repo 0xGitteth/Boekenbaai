@@ -8,7 +8,8 @@
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
 const {normalized,equivalentAuthorName}=require('./book-import-autonomy');
 
-const accepted=new Set(['unchanged','reconciled','add_copies','combined']);
+const accepted=new Set(['unchanged','reconciled','add_copies','combined',
+  'created','copies_added','loan_restored']);
 const list=value=>Array.isArray(value)?value:[];
 const text=value=>String(value||'').trim();
 function filename(value){
@@ -32,43 +33,76 @@ function distinctReportAfter(report,task){
 function sourceRows(report){
   return list(report?.rows).filter(row=>row&&Number.isSafeInteger(row.worksheetRow));
 }
-function latestImportForTask(db,task){
-  if(!filename(task?.fileName)||!Number.isSafeInteger(task?.worksheetRow)
-    ||!text(task?.title))return null;
-  const matches=[];
+// An index is built once for a whole task list/preflight. Without it,
+// thousands of historical tasks each scanned every row in 30 imports on the
+// server event loop. Never cache the index across database revisions.
+function buildImportReportIndex(db){
+  const byRow=new Map(),byEdition=new Map(),byBarcode=new Map(),byIdentifier=new Map();
+  const append=(map,key,value)=>{
+    if(!key)return;
+    if(!map.has(key))map.set(key,[]);
+    map.get(key).push(value);
+  };
   for(const report of list(db?.bookImportReports)){
-    if(!distinctReportAfter(report,task))continue;
+    if(!report?.id||!report.importedAt)continue;
+    const file=filename(report.fileName);
     for(const row of sourceRows(report)){
-      if(title(row.title)!==title(task.title))continue;
-      const sameSourceRow=filename(report.fileName)===filename(task.fileName)
-        &&row.worksheetRow===task.worksheetRow;
-      const taskIsbn=canonicalizeBookIsbn13(task.editionIsbn);
-      const exactEdition=Boolean(taskIsbn
-        &&taskIsbn===canonicalizeBookIsbn13(row.editionIsbn));
-      const barcodeAndAuthor=Boolean(task.sourcePrintedBarcode
-        &&row.sourcePrintedBarcode
-        &&barcode(task.sourcePrintedBarcode)===barcode(row.sourcePrintedBarcode)
-        &&row.author&&equivalentAuthorName(task.author,row.author));
-      const exactRawAndAuthor=Boolean(task.excelIdentifier
-        &&row.sourceIdentifier
-        &&barcode(task.excelIdentifier)===barcode(row.sourceIdentifier)
-        &&row.author&&equivalentAuthorName(task.author,row.author));
-      // Across DIFFERENT workbook versions only match an exact edition,
-      // a printed physical barcode or a matching explicit source identifier.
-      // Similar titles on their own never establish continuity.
-      if(!sameSourceRow&&!exactEdition&&!barcodeAndAuthor&&!exactRawAndAuthor)
-        continue;
-      // Legacy reports do not have the author or original quantity. Their
-      // row status is only an indication of later work, not proof of a copy.
-      const authorConfirmed=Boolean(row.author&&equivalentAuthorName(row.author,task.author));
-      const sourceIdentifierConfirmed=Boolean(row.sourceIdentifier
-        &&barcode(row.sourceIdentifier)===barcode(task.excelIdentifier));
-      matches.push({reportId:report.id,at:report.importedAt,
-        rowStatus:row.status,authorConfirmed,sourceIdentifierConfirmed,
-        sameSourceRow,exactEdition,
-        hasPhysicalEvidence:Boolean(row.sourcePrintedBarcode
-          &&row.sourceQuantity===1&&row.editionIsbn)});
+      const t=title(row.title);
+      if(!t)continue;
+      const ref={report,row};
+      if(file)append(byRow,JSON.stringify([file,row.worksheetRow,t]),ref);
+      const isbn=canonicalizeBookIsbn13(row.editionIsbn);
+      if(isbn)append(byEdition,JSON.stringify([t,isbn]),ref);
+      const printed=barcode(row.sourcePrintedBarcode);
+      if(printed)append(byBarcode,JSON.stringify([t,printed]),ref);
+      const identifier=barcode(row.sourceIdentifier);
+      if(identifier)append(byIdentifier,JSON.stringify([t,identifier]),ref);
     }
+  }
+  return {byRow,byEdition,byBarcode,byIdentifier};
+}
+function latestImportForTask(db,task,reportIndex=null){
+  const file=filename(task?.fileName);
+  const t=title(task?.title);
+  if(!t||!task?.batchId&&!task?.reportId)return null;
+  const idx=reportIndex||buildImportReportIndex(db);
+  const records=new Map();
+  const add=items=>{for(const ref of items||[]){
+    records.set(JSON.stringify([ref.report.id,ref.row.worksheetRow]),ref);
+  }};
+  if(file&&Number.isSafeInteger(task.worksheetRow))
+    add(idx.byRow.get(JSON.stringify([file,task.worksheetRow,t])));
+  const isbn=canonicalizeBookIsbn13(task.editionIsbn);
+  if(isbn)add(idx.byEdition.get(JSON.stringify([t,isbn])));
+  const printed=barcode(task.sourcePrintedBarcode);
+  if(printed)add(idx.byBarcode.get(JSON.stringify([t,printed])));
+  const originalIdentifier=barcode(task.excelIdentifier);
+  if(originalIdentifier)add(idx.byIdentifier.get(JSON.stringify([t,originalIdentifier])));
+  const matches=[];
+  for(const {report,row} of records.values()){
+    if(!distinctReportAfter(report,task))continue;
+    const sameSourceRow=filename(report.fileName)===file
+      &&row.worksheetRow===task.worksheetRow;
+    if(!sameSourceRow&&row.author
+      &&!equivalentAuthorName(row.author,task.author))continue;
+    const exactEdition=Boolean(isbn
+      &&isbn===canonicalizeBookIsbn13(row.editionIsbn));
+    const barcodeAndAuthor=Boolean(printed
+      &&printed===barcode(row.sourcePrintedBarcode)
+      &&row.author&&equivalentAuthorName(task.author,row.author));
+    const exactRawAndAuthor=Boolean(originalIdentifier
+      &&originalIdentifier===barcode(row.sourceIdentifier)
+      &&row.author&&equivalentAuthorName(task.author,row.author));
+    if(!sameSourceRow&&!exactEdition&&!barcodeAndAuthor&&!exactRawAndAuthor)
+      continue;
+    const authorConfirmed=Boolean(row.author&&equivalentAuthorName(row.author,task.author));
+    const sourceIdentifierConfirmed=Boolean(row.sourceIdentifier
+      &&barcode(row.sourceIdentifier)===originalIdentifier);
+    matches.push({reportId:report.id,at:report.importedAt,
+      rowStatus:row.status,authorConfirmed,sourceIdentifierConfirmed,
+      sameSourceRow,exactEdition,
+      hasPhysicalEvidence:Boolean(row.sourcePrintedBarcode
+        &&row.sourceQuantity===1&&row.editionIsbn)});
   }
   matches.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
   return matches[0]||null;
@@ -149,5 +183,5 @@ function closeTasksProvenByImport(db,report,{actorId='system:import',
   }
   return {closed:decisions.length,taskIds:decisions.map(x=>x.task.id)};
 }
-module.exports={latestImportForTask,findNewerProof,closeTasksProvenByImport,
+module.exports={buildImportReportIndex,latestImportForTask,findNewerProof,closeTasksProvenByImport,
   confirmedNewerImport};
