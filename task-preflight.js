@@ -76,24 +76,6 @@ function assessTask(db, task, family, catalog) {
     type: 'original_diagnostics', value: task.sourceEvidence.issues,
   });
   if (task.reason) result.evidence.push({type: 'original_reason', value: task.reason});
-  if(family==='physical'){
-    const later=latestImportForTask(db,task);
-    if(later){
-      result.current.newerImport=later;
-      result.evidence.push({type:'later_import_review',value:later});
-      // Repeated source rows are informative, but do not prove the physical
-      // copy or its quantity. No automatic-candidate classification here.
-      if(later.authorConfirmed&&later.sourceIdentifierConfirmed
-        &&['unchanged','reconciled','add_copies','combined'].includes(later.rowStatus)){
-        result.category='proposal';
-        result.rule='newer_import_still_needs_copy_proof';
-        result.explanation='Een latere import heeft dezelfde bronrij verwerkt, '
-          +'maar de fysieke exemplaarkoppeling is nog niet bewezen.';
-        result.proposedAction='Controleer het fysieke exemplaar-ID, het '
-          +'oorspronkelijke aantal en eventuele uitlening voordat de taak sluit.';
-      }
-    }
-  }
   if (matches.length) {
     result.evidence.push({type: 'edition_match', isbn: canonicalizeBookIsbn13(task.editionIsbn), bookIds: matchingIds, totalMatches:matches.length});
     result.category = 'proposal';
@@ -122,6 +104,26 @@ function assessTask(db, task, family, catalog) {
     result.category = 'attention'; result.rule = 'later_circulation_activity';
     result.explanation = 'Na deze import is de uitleenregistratie veranderd. De oude keuze mag niet automatisch worden uitgevoerd.';
     result.proposedAction = 'Beoordeel de actuele uitleenregistratie opnieuw.';
+  }
+  if(family==='physical'){
+    const later=latestImportForTask(db,task);
+    if(later){
+      result.current.newerImport=later;
+      result.evidence.push({type:'later_import_review',value:later});
+      // Repeated source rows are informative, but do not prove the physical
+      // copy or its quantity. No automatic-candidate classification here.
+      if(result.rule!=='later_circulation_activity'
+        &&result.rule!=='missing_or_ambiguous_copy'
+        &&later.authorConfirmed&&later.sourceIdentifierConfirmed
+        &&['unchanged','reconciled','add_copies','combined'].includes(later.rowStatus)){
+        result.category='proposal';
+        result.rule='newer_import_still_needs_copy_proof';
+        result.explanation='Een latere import heeft dezelfde bronrij verwerkt, '
+          +'maar de fysieke exemplaarkoppeling is nog niet bewezen.';
+        result.proposedAction='Controleer het fysieke exemplaar-ID, het '
+          +'oorspronkelijke aantal en eventuele uitlening voordat de taak sluit.';
+      }
+    }
   }
   return result;
 }
