@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const {canonicalizeBookIsbn13}=require('./book-edition-core');
+const {sameBookIdentity}=require('./book-import-autonomy');
 
 const identity = value => String(value || '').normalize('NFKD')
   .replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('nl-NL')
@@ -21,6 +23,26 @@ function inCurrentCollection(db,item) {
     identity(book.title)===title && identity(book.author)===author
       && [book.metadataIsbn,book.barcode,book.isbn]
         .some(candidate=>identity(candidate)===isbn)));
+}
+// Show likely existing records to an administrator, never treat them as proof
+// that the skipped worksheet row is the same physical copy.
+function matchingCatalogBooks(db,item){
+  const wantedIsbn=canonicalizeBookIsbn13(item.editionIsbn);
+  return (db.books||[]).filter(book=>{
+    if(!book?.id||!sameBookIdentity(item,book))return false;
+    if(!wantedIsbn)return true;
+    const known=[book.editionIsbn,book.metadataIsbn,book.isbn,book.isbn13]
+      .map(canonicalizeBookIsbn13).filter(Boolean);
+    return known.length>0&&known.every(value=>value===wantedIsbn);
+  });
+}
+function candidateSummary(book){
+  return {id:book.id,title:String(book.title||'').slice(0,220),
+    author:String(book.author||'').slice(0,180),
+    publisher:String(book.publisher||'').slice(0,120),
+    isbn:[book.editionIsbn,book.metadataIsbn,book.isbn,book.isbn13]
+      .map(canonicalizeBookIsbn13).find(Boolean)||'',
+    barcode:String(book.barcode||'').slice(0,80)};
 }
 function listDeferredBookTasks(db) {
   const items = Array.isArray(db.bookImportDeferredBookChecks)
@@ -48,6 +70,12 @@ function listDeferredBookTasks(db) {
     // This is a HINT, never proof that the original physical copy was
     // identified. Do not auto-close tasks or edit book/loan data.
     task.possibleExistingEdition=inCurrentCollection(db,task);
+    const candidates=matchingCatalogBooks(db,task);
+    task.catalogCandidateCount=candidates.length;
+    task.catalogCandidates=candidates.slice(0,20).map(candidateSummary);
+    task.needsAdministrativeReview=candidates.length>0;
+    // Candidates are suggestions only. Source-row quantities, edition and
+    // current circulation still require review before choosing a copy.
   }
   return { tasks, summary: {
     open:tasks.length,
@@ -56,9 +84,9 @@ function listDeferredBookTasks(db) {
   } };
 }
 function resolveDeferredBookTask(db, actor, id, revision, choice,
-  now = new Date().toISOString()) {
+  now = new Date().toISOString(), details = {}) {
   if (actor?.role !== 'admin') return {ok:false,error:'forbidden'};
-  if (!['manual_done','keep_deferred'].includes(choice)
+  if (!['manual_done','keep_deferred','administrative_done'].includes(choice)
     || !Number.isSafeInteger(revision)) return {ok:false,error:'invalid_choice'};
   const task = (db.bookImportDeferredBookChecks || [])
     .find(item => item.id === id && item.status === 'open');
@@ -66,16 +94,40 @@ function resolveDeferredBookTask(db, actor, id, revision, choice,
   const current = Number.isSafeInteger(task.revision) ? task.revision : 1;
   if (revision !== current) return {ok:false,error:'stale_choice'};
   if (choice === 'keep_deferred') return {ok:true,unchanged:true};
+  let administrativeEvidence=null;
+  if(choice==='administrative_done'){
+    const reason=details?.reason;
+    const note=typeof details?.evidenceNote==='string'
+      ?details.evidenceNote.trim():'';
+    const bookId=details?.bookId;
+    if(details?.confirmed!==true || ![
+      'catalog_registration_verified','source_identifier_corrected',
+      'earlier_import_reconciled',
+    ].includes(reason) || note.length<20 || note.length>800
+      || typeof bookId!=='string'||!bookId)
+      return {ok:false,error:'administrative_evidence_required'};
+    const matches=matchingCatalogBooks(db,task)
+      .filter(book=>book.id===bookId);
+    if(matches.length!==1 || (db.books||[]).filter(book=>book.id===bookId).length!==1)
+      return {ok:false,error:'catalog_copy_not_proven'};
+    const book=matches[0];
+    administrativeEvidence={
+      reason,bookId,evidenceNote:note,
+      catalogSnapshot:candidateSummary(book),
+    };
+  }
   task.status = 'completed';
   task.revision = current + 1;
   task.completedAt = now;
   task.completedBy = actor.id;
-  task.resolution = 'manual_done';
+  task.resolution = choice;
+  if(administrativeEvidence)task.administrativeEvidence=administrativeEvidence;
   if (!Array.isArray(db.bookImportDeferredBookTaskHistory))
     db.bookImportDeferredBookTaskHistory = [];
   db.bookImportDeferredBookTaskHistory.push({
-    id: crypto.randomUUID(), taskId: task.id, action: 'manual_done',
+    id: crypto.randomUUID(), taskId: task.id, action: choice,
     actorId: actor.id, timestamp: now,
+    ...(administrativeEvidence ? {administrativeEvidence} : {}),
   });
   return {ok:true,id:task.id,status:'completed'};
 }

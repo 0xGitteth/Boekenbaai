@@ -20,6 +20,9 @@ if(panel&&sibling){
   // The queue refreshes every ten seconds. Preserve the administrator's
   // expanded edition groups while new task data is rendered.
   const expandedGroups=new Set();
+  // Keep unfinished administrative evidence even when the ten-second status
+  // poll rebuilds the cards. A revised/closed task never reuses a stale draft.
+  const administrativeDrafts=new Map();
   function elem(tag,label,cls){
     const node=document.createElement(tag);
     if(label!==undefined)node.textContent=label;
@@ -40,16 +43,20 @@ if(panel&&sibling){
     return data;
   }
   function render(){
+    const current=new Set(items.map(task=>task.id+':'+task.revision));
+    for(const [id,draft] of administrativeDrafts)
+      if(!current.has(id+':'+draft.revision))administrativeDrafts.delete(id);
     host.replaceChildren();
     panel.dataset.deferredBooksCount=String(items.length);
     window.dispatchEvent(new Event('boekenbaai:deferred-books-changed'));
-    host.append(elem('h3','Boeken nog fysiek controleren'
+    host.append(elem('h3','Openstaande boek- en importcontroles'
       +(items.length?' ('+items.length+')':'')));
-    host.append(elem('p','Controleer deze boeken later aan de hand van '
-      +'het exemplaar op school. Een onduidelijk ISBN wordt niet automatisch '
-      +'toegevoegd. Je kunt elke taak afzonderlijk afsluiten.', 'hint'));
+    host.append(elem('p','Niet iedere openstaande importmelding vereist een fysieke controle. '
+      +'Je kunt aantoonbaar opgeloste verschillen administratief afhandelen; '
+      +'onzekere exemplaren blijven open. Er worden geen boek- of uitleengegevens '
+      +'gewijzigd bij het afsluiten van een melding.', 'hint'));
     if(!items.length){
-      host.append(elem('p','Geen openstaande fysieke boekcontroles.','hint'));
+      host.append(elem('p','Geen openstaande boek- of importcontroles.','hint'));
       return;
     }
     // Group repeat reports for the same edition rather than showing 29
@@ -124,7 +131,106 @@ if(panel&&sibling){
         'Een editie met dit ISBN en deze titel staat inmiddels in de collectie. '
         +'Controleer eerst of dit het bedoelde fysieke exemplaar is; '
         +'de oude taak is niet automatisch afgesloten.','hint'));
-      card.append(button,books);
+      // Administrative resolution is explicitly different from observing a
+      // physical copy. The server verifies the selected current catalogue ID,
+      // revision, title/author identity and (when known) exact edition ISBN.
+      if(Array.isArray(task.catalogCandidates)&&task.catalogCandidates.length){
+        const adminDetails=elem('details',undefined,'bb-deferred-administrative');
+        const draft=administrativeDrafts.get(task.id) || {
+          revision:task.revision,bookId:'',manualId:'',reason:'',
+          evidenceNote:'',expanded:false,
+        };
+        adminDetails.open=draft.expanded===true;
+        // Preserve typed values immediately; render() runs repeatedly.
+        const saveDraft=()=>administrativeDrafts.set(task.id,{
+          revision:task.revision,
+          bookId:copySelect.value,manualId:manualId?.value||'',
+          reason:reasonSelect.value,evidenceNote:note.value,
+          expanded:adminDetails.open,
+        });
+        adminDetails.addEventListener('toggle',saveDraft);
+        adminDetails.append(elem('summary',
+          'Administratief opgelost via bestaande registratie'));
+        adminDetails.append(elem('p',
+          'Gebruik dit alleen als de oorspronkelijke Excelrij en het juiste '
+          +'bestaande exemplaar aantoonbaar zijn gekoppeld. Bij meerdere '
+          +'exemplaren moet ook de hoeveelheid en uitlening zijn gecontroleerd. '
+          +'Dit legt geen fysieke controle vast.','hint'));
+        const copySelect=elem('select');
+        copySelect.setAttribute('aria-label','Gekoppeld bestaand exemplaar');
+        const empty=elem('option','Kies het gecontroleerde exemplaar');
+        empty.value='';copySelect.append(empty);
+        for(const copy of task.catalogCandidates){
+          const option=elem('option',[copy.title,copy.publisher,
+            copy.isbn?'ISBN '+copy.isbn:'',
+            copy.barcode?'barcode '+copy.barcode:'',
+            'ID '+copy.id].filter(Boolean).join(' · '));
+          option.value=copy.id;copySelect.append(option);
+        }
+        copySelect.value=draft.bookId||'';
+        copySelect.addEventListener('change',saveDraft);
+        let manualId=null;
+        if(task.catalogCandidateCount>task.catalogCandidates.length){
+          adminDetails.append(elem('p','Er zijn meer dan 20 passende exemplaren. '
+            +'Vul voor een niet-getoond exemplaar het exacte ID in dat je '
+            +'onder Boeken hebt gecontroleerd. De server verifieert dat ID.', 'hint'));
+          manualId=elem('input');
+          manualId.type='text';manualId.maxLength=128;
+          manualId.placeholder='Exact exemplaar-ID uit Boeken (indien niet in lijst)';
+          manualId.setAttribute('aria-label','Handmatig gecontroleerd exemplaar-ID');
+          manualId.value=draft.manualId||'';
+          manualId.addEventListener('input',saveDraft);
+          adminDetails.append(manualId);
+        }
+        const reasonSelect=elem('select');
+        reasonSelect.setAttribute('aria-label','Reden administratieve afhandeling');
+        for(const [value,label] of [
+          ['','Kies een reden'],
+          ['catalog_registration_verified','Bestaande registratie bevestigd'],
+          ['source_identifier_corrected','Afwijkend Excelnummer verklaard'],
+          ['earlier_import_reconciled','Eerdere import al verwerkt'],
+        ]){
+          const option=elem('option',label);option.value=value;
+          reasonSelect.append(option);
+        }
+        reasonSelect.value=draft.reason||'';
+        reasonSelect.addEventListener('change',saveDraft);
+        const note=elem('textarea');
+        note.rows=3;note.maxLength=800;
+        note.placeholder='Welk bewijs uit Excel, importverslag of boekgegevens '
+          +'bevestigt dit exemplaar? Vermeld bij meerdere exemplaren de telling.';
+        note.setAttribute('aria-label','Onderbouwing administratieve afhandeling');
+        note.value=draft.evidenceNote||'';
+        note.addEventListener('input',saveDraft);
+        const closeAdmin=elem('button','Administratief afhandelen',
+          'btn btn--secondary');
+        closeAdmin.type='button';closeAdmin.disabled=pending;
+        closeAdmin.addEventListener('click',async()=>{
+          const evidenceNote=note.value.trim();
+          const bookId=(manualId?.value||'').trim()||copySelect.value;
+          if(pending||!bookId||!reasonSelect.value||evidenceNote.length<20){
+            card.append(elem('p','Kies een exemplaar en reden, en geef een '
+              +'onderbouwing van minimaal 20 tekens.','hint'));return;
+          }
+          if(!window.confirm('Is deze Excelrij aantoonbaar met het gekozen '
+            +'exemplaar vergeleken en is ook een eventuele dubbele of '
+            +'uitgeleende registratie nagekeken? Alleen de taak wordt '
+            +'administratief afgesloten; er is geen fysieke controle vastgelegd.'))
+            return;
+          pending=true;closeAdmin.disabled=true;
+          try{
+            await request(root+'/'+encodeURIComponent(task.id)+'/resolve',
+              'POST',{revision:task.revision,choice:'administrative_done',
+                bookId,reason:reasonSelect.value,
+                evidenceNote,confirmed:true});
+            await refresh();
+          }catch(error){card.append(elem('p',error.message,'hint'));}
+          finally{pending=false;closeAdmin.disabled=false;}
+        });
+        adminDetails.append(copySelect,reasonSelect,note,closeAdmin);
+        card.append(adminDetails);
+      }
+            card.append(button,books);
       destination.append(card);
       }
     }
@@ -145,7 +251,7 @@ if(panel&&sibling){
   }).observe(panel,{attributes:true,attributeFilter:['class']});
   window.addEventListener('boekenbaai:staff-refresh',refresh);
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{
-    items=[];expandedGroups.clear();render();
+    items=[];expandedGroups.clear();administrativeDrafts.clear();render();
   });
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)void refresh();

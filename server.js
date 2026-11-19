@@ -5301,7 +5301,7 @@ async function handleApi(req, res, requestUrl) {
         const body=await parseBody(req,2000);
         const database=loadDb();
         const result=resolveDeferredBookTask(database,user,m[1],
-          body.revision,body.choice);
+          body.revision,body.choice,undefined,body);
         if(!result.ok)return sendJson(res,409,{message:
           'Deze boekcontrole kan niet worden afgesloten. Vernieuw de takenlijst.',
           error:result.error});
