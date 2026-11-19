@@ -200,6 +200,79 @@
     }));
   }
 
+
+  // Unlike the account-management Google panel, this task list initializes
+  // when the administrator actually logs in. The old panel was fetched only
+  // on DOMContentLoaded, often before an authorized session existed.
+  let studentRequestsBusy=false;
+  async function renderAdminStudentRequests(){
+    const dashboard=document.querySelector('#admin-dashboard');
+    const host=document.getElementById('admin-student-link-requests-host');
+    if(!dashboard||dashboard.classList.contains('hidden')||!host
+      ||studentRequestsBusy)return;
+    studentRequestsBusy=true;
+    try{
+      const data=await api('/api/auth/google/manage');
+      if(dashboard.classList.contains('hidden')||!host.isConnected)return;
+      if(data.role!=='admin')return;
+      const requests=Array.isArray(data.requests)?data.requests:[];
+      const section=make('section',{
+        className:'panel student-management__section',
+      });
+      section.id='admin-student-link-request-panel';
+      section.append(make('h4',{text:'Leerlingaccounts goedkeuren ('+requests.length+')'}));
+      section.append(make('p',{className:'hint',
+        text:'Verzoeken om een Google-schoolaccount aan een leerlingaccount te koppelen.',
+      }));
+      if(requests.length)section.classList.add('student-management__attention');
+      for(const request of requests){
+        const row=make('article',{className:'student-management__request'});
+        const info=make('div',{className:'student-management__request-info'});
+        info.append(make('strong',{text:request.studentName||'Onbekende leerling'}));
+        info.append(make('span',{text:(request.classNames||[]).join(', ')
+          +' · Google: '+(request.googleName||'naam onbekend')
+          +' · '+(request.email||'geen e-mailadres')}));
+        const actions=make('div',{className:'student-management__row-actions'});
+        const approve=make('button',{
+          className:'btn btn--secondary',text:'Goedkeuren',type:'button'});
+        const deny=make('button',{
+          className:'btn btn--ghost',text:'Afwijzen',type:'button'});
+        async function decide(action){
+          if(action==='approve'&&!window.confirm(
+            'Koppel het Google-account '+(request.email||'')
+            +' aan leerling '+(request.studentName||'')+'? '
+            +'Controleer identiteit en klas voordat je goedkeurt.'))return;
+          approve.disabled=true;deny.disabled=true;
+          try{
+            await api('/api/auth/google/link-requests/'
+              +encodeURIComponent(request.id)+'/'+action,{method:'POST'});
+            row.remove();
+            await renderAdminStudentRequests();
+          }catch(error){
+            approve.disabled=false;deny.disabled=false;
+            window.alert(error.message);
+          }
+        }
+        approve.addEventListener('click',()=>void decide('approve'));
+        deny.addEventListener('click',()=>void decide('deny'));
+        actions.append(approve,deny);
+        row.append(info,actions);
+        section.append(row);
+      }
+      if(!requests.length)section.append(make('p',{
+        className:'hint',text:'Geen openstaande leerlingkoppelverzoeken.',
+      }));
+      host.replaceChildren(section);
+    }catch(error){
+      if(!dashboard.classList.contains('hidden')){
+        const status=make('p',{
+          className:'hint',text:'Leerlingkoppelverzoeken konden niet worden geladen: '
+            +error.message,
+        });
+        host.replaceChildren(status);
+      }
+    }finally{studentRequestsBusy=false;}
+  }
   function installAdminObserver() {
     const dashboard = document.querySelector('#admin-dashboard');
     if (!dashboard) return;
@@ -207,16 +280,24 @@
       if (dashboard.classList.contains('hidden')) {
         window.clearInterval(adminRefreshTimer);
         adminRefreshTimer = null;
+        document.getElementById('admin-student-link-requests-host')?.replaceChildren();
         return;
       }
-      renderAdminRequests();
-      if (!adminRefreshTimer) adminRefreshTimer = window.setInterval(renderAdminRequests, 15000);
+      void renderAdminRequests();
+      void renderAdminStudentRequests();
+      if (!adminRefreshTimer) adminRefreshTimer = window.setInterval(()=>{
+        void renderAdminRequests();
+        void renderAdminStudentRequests();
+      },15000);
     };
     refresh();
     const observer = new MutationObserver(refresh);
     observer.observe(dashboard, { attributes: true, attributeFilter: ['class'] });
   }
 
+  window.addEventListener('boekenbaai:staff-refresh',()=>{
+    void renderAdminStudentRequests();
+  });
   document.addEventListener('DOMContentLoaded', () => {
     installStaffPendingPanel();
     installAdminObserver();
