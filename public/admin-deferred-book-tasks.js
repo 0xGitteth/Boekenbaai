@@ -43,13 +43,14 @@ if(panel&&sibling){
     host.replaceChildren();
     panel.dataset.deferredBooksCount=String(items.length);
     window.dispatchEvent(new Event('boekenbaai:deferred-books-changed'));
-    host.append(elem('h3','Boeken nog fysiek controleren'
+    host.append(elem('h3','Openstaande boek- en importcontroles'
       +(items.length?' ('+items.length+')':'')));
-    host.append(elem('p','Controleer deze boeken later aan de hand van '
-      +'het exemplaar op school. Een onduidelijk ISBN wordt niet automatisch '
-      +'toegevoegd. Je kunt elke taak afzonderlijk afsluiten.', 'hint'));
+    host.append(elem('p','Niet iedere openstaande importmelding vereist een fysieke controle. '
+      +'Je kunt aantoonbaar opgeloste verschillen administratief afhandelen; '
+      +'onzekere exemplaren blijven open. Er worden geen boek- of uitleengegevens '
+      +'gewijzigd bij het afsluiten van een melding.', 'hint'));
     if(!items.length){
-      host.append(elem('p','Geen openstaande fysieke boekcontroles.','hint'));
+      host.append(elem('p','Geen openstaande boek- of importcontroles.','hint'));
       return;
     }
     // Group repeat reports for the same edition rather than showing 29
@@ -124,7 +125,76 @@ if(panel&&sibling){
         'Een editie met dit ISBN en deze titel staat inmiddels in de collectie. '
         +'Controleer eerst of dit het bedoelde fysieke exemplaar is; '
         +'de oude taak is niet automatisch afgesloten.','hint'));
-      card.append(button,books);
+      // Administrative resolution is explicitly different from observing a
+      // physical copy. The server verifies the selected current catalogue ID,
+      // revision, title/author identity and (when known) exact edition ISBN.
+      if(Array.isArray(task.catalogCandidates)&&task.catalogCandidates.length){
+        const adminDetails=elem('details',undefined,'bb-deferred-administrative');
+        adminDetails.append(elem('summary',
+          'Administratief opgelost via bestaande registratie'));
+        adminDetails.append(elem('p',
+          'Gebruik dit alleen als de oorspronkelijke Excelrij en het juiste '
+          +'bestaande exemplaar aantoonbaar zijn gekoppeld. Bij meerdere '
+          +'exemplaren moet ook de hoeveelheid en uitlening zijn gecontroleerd. '
+          +'Dit legt geen fysieke controle vast.','hint'));
+        const copySelect=elem('select');
+        copySelect.setAttribute('aria-label','Gekoppeld bestaand exemplaar');
+        const empty=elem('option','Kies het gecontroleerde exemplaar');
+        empty.value='';copySelect.append(empty);
+        for(const copy of task.catalogCandidates){
+          const option=elem('option',[copy.title,copy.publisher,
+            copy.isbn?'ISBN '+copy.isbn:'',
+            copy.barcode?'barcode '+copy.barcode:'',
+            'ID '+copy.id].filter(Boolean).join(' · '));
+          option.value=copy.id;copySelect.append(option);
+        }
+        const reasonSelect=elem('select');
+        reasonSelect.setAttribute('aria-label','Reden administratieve afhandeling');
+        for(const [value,label] of [
+          ['','Kies een reden'],
+          ['catalog_registration_verified','Bestaande registratie bevestigd'],
+          ['source_identifier_corrected','Afwijkend Excelnummer verklaard'],
+          ['earlier_import_reconciled','Eerdere import al verwerkt'],
+        ]){
+          const option=elem('option',label);option.value=value;
+          reasonSelect.append(option);
+        }
+        const note=elem('textarea');
+        note.rows=3;note.maxLength=800;
+        note.placeholder='Welk bewijs uit Excel, importverslag of boekgegevens '
+          +'bevestigt dit exemplaar? Vermeld bij meerdere exemplaren de telling.';
+        note.setAttribute('aria-label','Onderbouwing administratieve afhandeling');
+        const closeAdmin=elem('button','Administratief afhandelen',
+          'btn btn--secondary');
+        closeAdmin.type='button';closeAdmin.disabled=pending;
+        closeAdmin.addEventListener('click',async()=>{
+          const evidenceNote=note.value.trim();
+          if(pending||!copySelect.value||!reasonSelect.value||evidenceNote.length<20){
+            card.append(elem('p','Kies een exemplaar en reden, en geef een '
+              +'onderbouwing van minimaal 20 tekens.','hint'));return;
+          }
+          if(!window.confirm('Is deze Excelrij aantoonbaar met het gekozen '
+            +'exemplaar vergeleken en is ook een eventuele dubbele of '
+            +'uitgeleende registratie nagekeken? Alleen de taak wordt '
+            +'administratief afgesloten; er is geen fysieke controle vastgelegd.'))
+            return;
+          pending=true;closeAdmin.disabled=true;
+          try{
+            await request(root+'/'+encodeURIComponent(task.id)+'/resolve',
+              'POST',{revision:task.revision,choice:'administrative_done',
+                bookId:copySelect.value,reason:reasonSelect.value,
+                evidenceNote,confirmed:true});
+            await refresh();
+          }catch(error){card.append(elem('p',error.message,'hint'));}
+          finally{pending=false;closeAdmin.disabled=false;}
+        });
+        adminDetails.append(copySelect,reasonSelect,note,closeAdmin);
+        if(task.catalogCandidateCount>task.catalogCandidates.length)
+          adminDetails.append(elem('p','Er zijn meer mogelijke exemplaren. '
+            +'Vergelijk die eerst onder Boeken.','hint'));
+        card.append(adminDetails);
+      }
+            card.append(button,books);
       destination.append(card);
       }
     }
