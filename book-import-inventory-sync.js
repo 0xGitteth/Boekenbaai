@@ -161,8 +161,12 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
           .filter(book=>!existing.includes(book))
           .map(book=>[book.id||book.barcode,book]))
     )).values()];
-    if(correctedSourceCopies.length)
+    if(correctedSourceCopies.length){
       block('corrected_isbn_matches_original_copy');
+      // This is the actionable reason even if a less precise title-only
+      // or ISBN-missing warning was already detected for this group.
+      reason='corrected_isbn_matches_original_copy';
+    }
     // Expose only safe catalogue identity fields to authenticated managers,
     // never physical IDs, borrower names, active loan history or class IDs.
     const summarizeIdentity=book=>({
