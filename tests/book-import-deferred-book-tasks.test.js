@@ -141,6 +141,8 @@ assert.equal(history[0].resolution,'administrative_done');
 
 const deferredUi=require('node:fs').readFileSync(
   require('node:path').join(__dirname,'../public/admin-deferred-book-tasks.js'),'utf8');
+assert.match(deferredUi,/history\.open=historyExpanded/,
+  'Previously opened resolution history must survive automatic refresh');
 assert.match(deferredUi,/historyHost.append\(history\)/,
   'Administrative evidence must be visible after resolution');
 assert.match(deferredUi,/pending=false;\s*await refresh\(\)/,
