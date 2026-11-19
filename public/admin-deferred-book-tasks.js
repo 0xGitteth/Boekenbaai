@@ -151,6 +151,7 @@ if(panel&&sibling){
           await request(root+'/'+encodeURIComponent(task.id)+'/resolve',
             'POST',{revision:task.revision,choice:'manual_done'});
           pending=false;
+          window.dispatchEvent(new Event('boekenbaai:book-task-resolved'));
           await refresh();
         }catch(error){
           const message=elem('p',error.message,'hint');
@@ -273,6 +274,7 @@ if(panel&&sibling){
                 bookId,reason:reasonSelect.value,
                 evidenceNote,confirmed:true});
             pending=false;
+            window.dispatchEvent(new Event('boekenbaai:book-task-resolved'));
             await refresh();
           }catch(error){card.append(elem('p',error.message,'hint'));}
           finally{pending=false;closeAdmin.disabled=false;}
