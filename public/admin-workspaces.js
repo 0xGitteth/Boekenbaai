@@ -191,6 +191,13 @@
     const priorStudentLinks=view.querySelector('#admin-student-link-request-panel')
       ||$('#admin-modern-google-host #admin-student-link-request-panel');
     if(priorStudentLinks)studentLinkHost.append(priorStudentLinks);
+    else{
+      const placeholder=make('section','panel student-management__section');
+      placeholder.id='admin-student-link-request-panel';
+      placeholder.append(make('h4','', 'Leerlingaccounts goedkeuren'));
+      placeholder.append(make('p','hint','Leerlingkoppelverzoeken laden…'));
+      studentLinkHost.append(placeholder);
+    }
     view.append(studentLinkHost);
 
     const entries=[
