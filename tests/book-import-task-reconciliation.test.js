@@ -134,6 +134,17 @@ assert.equal(latestImportForTask(db,db.bookImportDeferredBookChecks[0]).sourceId
 assert.equal(buildTaskPreflight(db).tasks[0].rule,'newer_import_still_needs_copy_proof');
 assert.equal(buildTaskPreflight(db).summary.automatic_candidate,0,
   'Preflight itself does not modify tasks until an import actually commits');
+const crossFile=makeDb({bookImportReports:[freshReport()]});
+assert.equal(latestImportForTask(crossFile,
+  crossFile.bookImportDeferredBookChecks[0]).exactEdition,true,
+  'A later workbook with the same title and ISBN is relevant history, not copy proof');
+const crossedWithoutIdentifiers=makeDb({bookImportReports:[freshReport({
+  rows:[{worksheetRow:60,title:'Voorbeeldboek',editionIsbn:'',
+    status:'unchanged',sourceIdentifier:'',sourcePrintedBarcode:''}],
+})]});
+assert.equal(latestImportForTask(crossedWithoutIdentifiers,
+  crossedWithoutIdentifiers.bookImportDeferredBookChecks[0]),null,
+  'A similar title on another workbook is not sufficient historical evidence');
 
 // Check server wiring, including source proof persisted before a report is
 // added, and the atomic closure before saveReviewedBookImportDb.
