@@ -104,6 +104,47 @@ reject(d=>{d.bookLoanEvents.push({id:'extra',bookId:'copy-a',type:'check_in',
 reject(d=>{d.examReadingLists[0].autoLoanBorrowedAt=originalAt;},
   'Unrelated exam current-period marker');
 
+// Older Excel loan imports may have retained only the return's immutable
+// loanBorrowedAt field rather than a check_out event. It is sufficient evidence
+// for the original start date without fabricating a historical checkout.
+{
+  const imported=fixture();
+  imported.bookLoanEvents=imported.bookLoanEvents.filter(x=>x.id!=='loan-a');
+  const original=JSON.stringify(imported);
+  const choices=listCandidates(imported,{borrower:'Dex',book:'Pizzamaffia slaat door'});
+  assert.equal(choices.length,1);
+  assert.equal(choices[0].canCorrect,true);
+  assert.equal(choices[0].originalCheckoutLogged,false);
+  assert.equal(JSON.stringify(imported),original,'Diagnosis must be strictly read-only');
+  assert.equal(correctContinuousLoan(imported,admin,confirm(choices[0])).ok,true);
+  assert.equal(imported.books[0].borrowedAt,originalAt);
+  assert.equal(imported.bookLoanEvents.length,0,
+    'The correction must not invent a missing historical checkout');
+}
+{
+  const unknown=fixture();
+  unknown.bookLoanEvents=unknown.bookLoanEvents.filter(x=>x.id!=='loan-a');
+  unknown.readingRecords[0].loanBorrowedAt=null;
+  const items=listCandidates(unknown,{borrower:'Dex',book:'Pizzamaffia'});
+  assert.equal(items.length,1);
+  assert.equal(items[0].canCorrect,false);
+  assert.equal(items[0].reason,'original_unknown');
+  assert.match(items[0].errorMessage,/oorspronkelijke uitleendatum/);
+}
+{
+  const changed=fixture();
+  changed.readingRecords[0].revision=2;
+  const items=listCandidates(changed,{borrower:'Dex',book:'Pizzamaffia'});
+  assert.equal(items[0].canCorrect,false);
+  assert.equal(items[0].reason,'reading_changed');
+}
+{
+  const occupied=fixture();
+  occupied.students.push({id:'another',borrowedBooks:[
+    {bookId:'copy-a',borrowedAt:reissuedAt}]});
+  assert.equal(listCandidates(occupied,{borrower:'Dex'})[0].reason,
+    'borrower_conflict');
+}
 const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
 const ui=fs.readFileSync(path.join(__dirname,'..','public/admin-loan-history.js'),'utf8');
 assert.match(server,/loanHistoryRoot\+'\/continuity\/correct'/);
