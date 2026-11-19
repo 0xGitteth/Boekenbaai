@@ -70,7 +70,8 @@ const many={
     metadataIsbn:'9780582401983',
   })),
   bookImportDeferredBookChecks:[{id:'many',title:'Matilda',
-    author:'Roald Dahl',status:'open',revision:1}],
+    author:'Roald Dahl',excelIdentifier:'9780582401983',
+    status:'open',revision:1}],
 };
 const manyTask=listDeferredBookTasks(many).tasks[0];
 assert.equal(manyTask.catalogCandidateCount,23);
