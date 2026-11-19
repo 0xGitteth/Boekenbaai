@@ -46,7 +46,7 @@ function candidateMatches(db,item){
   for(const book of db.books||[]){
     if(!book?.id||!sameBookTitle(item.title,book.title))continue;
     const fields=[book.editionIsbn,book.metadataIsbn,book.isbn,book.isbn13];
-    const isbnFields=fields.map(normalizedSourceIsbn).filter(Boolean);
+    const isbnFields=[...fields,book.barcode].map(normalizedSourceIsbn).filter(Boolean);
     if(taskEdition&&isbnFields.some(value=>value!==taskEdition))continue;
     const sourceIsbnMatch=Boolean(wantedIsbn
       &&[...fields,book.barcode].some(value=>normalizedSourceIsbn(value)===wantedIsbn));
