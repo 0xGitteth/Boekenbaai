@@ -10,7 +10,7 @@ if(panel&&sibling){
   sibling.after(host);
   const historyHost=document.createElement('section');
   historyHost.id='book-import-completed-history';
-  host.after(historyHost);
+  // Keep the history inside the same task workspace panel as the open list.
   const configured=(typeof import.meta!=='undefined'&&import.meta.env
     &&(import.meta.env.BOEKENBAAI_PUBLIC_API_BASE
       ||import.meta.env.VITE_BOEKENBAAI_API_BASE))||'';
@@ -81,6 +81,7 @@ if(panel&&sibling){
     window.dispatchEvent(new Event('boekenbaai:deferred-books-changed'));
     host.append(elem('h3','Openstaande boek- en importcontroles'
       +(items.length?' ('+items.length+')':'')));
+    host.append(historyHost);
     host.append(elem('p','Niet iedere openstaande importmelding vereist een fysieke controle. '
       +'Je kunt aantoonbaar opgeloste verschillen administratief afhandelen; '
       +'onzekere exemplaren blijven open. Er worden geen boek- of uitleengegevens '
