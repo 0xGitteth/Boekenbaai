@@ -1504,4 +1504,35 @@ assert.equal(normalizeParts(undefined).value.books,true);
     ?.bookId.startsWith('unified-preview-copy:'),true);
 }
 
+// The unified import must use the ORIGINAL Excel barcode retained when the
+// administrator changes an ISBN. Neither a physical copy nor its current
+// loan may be manufactured or reassigned by an in-review correction.
+{
+  const current=db();
+  current.books=[{
+    id:'mocro-old',title:'Mocro Maffia',author:'Wouter Laumans',
+    editionIsbn:'',metadataIsbn:'',barcode:'97848819348',
+    status:'borrowed',borrowedBy:'lisa',borrowedByClassId:null,
+  }];
+  const record=source(0,{},{title:'Mocro Maffia',
+    author:'Wouter Laumans en Marijn Schrijver',
+    editionIsbn:'9789048819348',metadataIsbn:'9789048819348',
+  });
+  record.reviewedOriginalIdentifiers=['97848819348'];
+  const original=JSON.stringify(current);
+  const blocked=plan([record],current,{parts:parts({books:true})});
+  assert.equal(blocked.ok,true);
+  assert.equal(blocked.inventory.summary.addCopies,0);
+  assert.equal(blocked.summary.newCopies,0);
+  assert.equal(blocked.inventory.rows[0].reason,
+    'corrected_isbn_matches_original_copy');
+  assert.equal(blocked.summary.readyToApply,false);
+  assert.equal(JSON.stringify(current),original,
+    'The existing physical copy and its borrower must remain unchanged');
+  const skip=plan([record],{...current,books:[]},{parts:parts({books:true})});
+  assert.equal(skip.ok,true);
+  assert.equal(skip.inventory.summary.addCopies,1,
+    'A genuinely new corrected ISBN remains importable without an old copy');
+}
+
 console.log('Unified import: independent checkboxes, virtual copies, metadata and no implicit deletions OK');
