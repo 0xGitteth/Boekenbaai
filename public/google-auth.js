@@ -471,18 +471,10 @@
       (host.querySelector('[data-teacher-view="tasks"]')||host).append(requestsPanel);
       (host.querySelector('[data-teacher-view="account"]')||host).append(panel);
     }else{
-      // The student requests are TASKS, not a subsection of the pupils'
-      // directory or teacher account-email editor. Keep a permanent panel
-      // even after the final request is approved.
-      const requestPanel=makeElement('section',{
-        className:'panel google-manage--requests'
-      });
-      requestPanel.id='admin-student-link-request-panel';
-      const requests=panel.querySelector('#teacher-google-link-requests');
-      if(requests)requestPanel.append(requests);
-      const requestHost=document.getElementById('admin-student-link-requests-host')
-        ||document.getElementById('admin-modern-google-host')||host;
-      requestHost.append(requestPanel);
+      // Pupil approval requests have a separate, authenticated lifecycle
+      // under Beheer > Taken > Accounts en vertrek. Do not create a second
+      // list here or move the request section into Personen.
+      panel.querySelector('#teacher-google-link-requests')?.remove();
       (document.getElementById('admin-modern-google-host')||host).append(panel);
     }
   }
