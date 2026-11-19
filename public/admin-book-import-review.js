@@ -295,7 +295,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             + (usage.reserved || 0) + ' geregistreerd (maandgrens: '
             + (usage.cap || 900) + '). '
             + (ownLimitReached ? 'De maandgrens van Boekenbaai is bereikt. ' : '')
-            + (providerLimitReached ? 'Brave meldt via de API dat het maandquotum op is. ' : '')
+            + (providerLimitReached ? 'Boekenbaai heeft een maandrestwaarde van nul opgeslagen; zonder de oorspronkelijke headers is niet zeker dat Brave dit heeft bevestigd. ' : '')
             + (usage.legacyProviderRemaining === 0
               ? 'Een eerdere versie heeft nul zoekbudget opgeslagen zonder betrouwbare maandbron; '
                 + 'die waarde wordt niet meer als maandlimiet gebruikt. Een gepauzeerde taak '
