@@ -23,7 +23,8 @@ function sameIdentity(a,b){
     &&title(a?.author)&&equivalentAuthorName(a.author,b?.author));
 }
 function distinctReportAfter(report,task){
-  if(!report?.id||!task?.batchId||report.id===task.batchId)return false;
+  const sourceReport=task?.batchId||task?.reportId;
+  if(!report?.id||!sourceReport||report.id===sourceReport)return false;
   const old=Date.parse(task.createdAt||'');
   const later=Date.parse(report.importedAt||'');
   return Number.isFinite(old)&&Number.isFinite(later)&&later>old;
