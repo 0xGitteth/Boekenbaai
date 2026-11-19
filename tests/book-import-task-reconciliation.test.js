@@ -62,6 +62,15 @@ function neverClose(name,change){
   assert.equal(result.closed,0,name);
   assert.equal(JSON.stringify(data),before,name+' must be read-only when unproven');
 }
+neverClose('An ISBN barcode is an edition ID, not physical copy proof',db=>{
+  db.bookImportDeferredBookChecks[0].sourcePrintedBarcode=isbn;
+  db.books[0].barcode=isbn;
+});
+neverClose('One ISBN barcode among two copies cannot prove which one was in Excel',db=>{
+  db.bookImportDeferredBookChecks[0].sourcePrintedBarcode=isbn;
+  db.books[0].barcode=isbn;
+  db.books.push(copy({id:'second',barcode:'10000086071'}));
+});
 neverClose('A title+ISBN without a printed barcode is not a physical copy',db=>{
   db.bookImportDeferredBookChecks[0].sourcePrintedBarcode='';
 });
