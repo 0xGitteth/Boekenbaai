@@ -149,6 +149,24 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     const legacyCandidates=!existing.length
       ?(inventory.unidentifiedTitles.get(fingerprint)||[]):[];
     if(legacyCandidates.length)block('possible_existing_book_without_isbn');
+    // ISBN corrections do not create physical copies. An older catalogue
+    // record may still carry the ORIGINAL XLSX identifier as its barcode,
+    // while the corrected ISBN is treated as a brand-new edition. Match the
+    // original source values BEFORE ever proposing additions. Do not rewrite
+    // the old copy's edition or circulation without a separate approval.
+    const correctedSourceCopies=[...new Map(rows.flatMap(row=>
+      (Array.isArray(row.reviewedOriginalIdentifiers)
+        ?row.reviewedOriginalIdentifiers.slice(0,12):[])
+        .flatMap(raw=>(inventory.barcodes.get(normalizeRuntimeBarcode(raw))||[])
+          .filter(book=>!existing.includes(book))
+          .map(book=>[book.id||book.barcode,book]))
+    )).values()];
+    if(correctedSourceCopies.length){
+      block('corrected_isbn_matches_original_copy');
+      // This is the actionable reason even if a less precise title-only
+      // or ISBN-missing warning was already detected for this group.
+      reason='corrected_isbn_matches_original_copy';
+    }
     // Expose only safe catalogue identity fields to authenticated managers,
     // never physical IDs, borrower names, active loan history or class IDs.
     const summarizeIdentity=book=>({
@@ -161,6 +179,7 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
     })).values()].slice(0,6);
     const existingIdentitySamples=uniqueIdentities(existing);
     const legacyIdentitySamples=uniqueIdentities(legacyCandidates);
+    const correctedSourceIdentitySamples=uniqueIdentities(correctedSourceCopies);
     // A missing title/author was rejected above before any fuzzy comparison
     // so the administrator sees the actionable source error first.
     let target = 0;
@@ -381,6 +400,9 @@ function buildInventorySyncPreview(analysis, existingBooks = [], {
         ?existingIdentitySamples:[],
       legacyIdentitySamples:blockers.has('possible_existing_book_without_isbn')
         ?legacyIdentitySamples:[],
+      correctedSourceIdentitySamples:blockers.has('corrected_isbn_matches_original_copy')
+        ?correctedSourceIdentitySamples:[],
+      correctedSourceCandidateCopies:correctedSourceCopies.length,
       legacyCandidateCopies:legacyCandidates.length,
       resolution: keepExisting ? 'keep_existing' : null };
     if (!reason && !keepExisting) {
