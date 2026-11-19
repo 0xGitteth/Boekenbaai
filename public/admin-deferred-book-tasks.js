@@ -8,6 +8,9 @@ if(panel&&sibling){
   const host=document.createElement('section');
   host.id='book-import-deferred-books';
   sibling.after(host);
+  const historyHost=document.createElement('section');
+  historyHost.id='book-import-completed-history';
+  host.after(historyHost);
   const configured=(typeof import.meta!=='undefined'&&import.meta.env
     &&(import.meta.env.BOEKENBAAI_PUBLIC_API_BASE
       ||import.meta.env.VITE_BOEKENBAAI_API_BASE))||'';
@@ -17,6 +20,7 @@ if(panel&&sibling){
   const root='/api/admin/book-import-book-tasks';
   let pending=false;
   let items=[];
+  let recentResolutions=[];
   // The queue refreshes every ten seconds. Preserve the administrator's
   // expanded edition groups while new task data is rendered.
   const expandedGroups=new Set();
@@ -47,6 +51,32 @@ if(panel&&sibling){
     for(const [id,draft] of administrativeDrafts)
       if(!current.has(id+':'+draft.revision))administrativeDrafts.delete(id);
     host.replaceChildren();
+    historyHost.replaceChildren();
+    if(recentResolutions.length){
+      const history=elem('details',undefined,'bb-deferred-book-history');
+      history.append(elem('summary',
+        'Recent afgehandelde boek- en importmeldingen ('+recentResolutions.length+')'));
+      for(const record of recentResolutions){
+        const row=elem('article',undefined,'class-card');
+        row.append(elem('h4',record.title||'Onbekend boek'));
+        const action=record.resolution==='administrative_done'
+          ?'Administratief opgelost'
+          :record.resolution==='manual_done'
+          ?'Fysiek gecontroleerd':'Automatisch herbeoordeeld';
+        row.append(elem('p',[action,
+          record.fileName?'Import: '+record.fileName:'',
+          record.worksheetRow?'Excelrij: '+record.worksheetRow:'',
+          record.bookId?'Exemplaar-ID: '+record.bookId:'',
+          record.completedAt?'Afgehandeld: '+record.completedAt:'',
+        ].filter(Boolean).join(' · '),'hint'));
+        if(record.evidenceNote)
+          row.append(elem('p','Onderbouwing: '+record.evidenceNote,'hint'));
+        if(record.proofReportId)
+          row.append(elem('p','Bewezen met import '+record.proofReportId,'hint'));
+        history.append(row);
+      }
+      historyHost.append(history);
+    }
     panel.dataset.deferredBooksCount=String(items.length);
     window.dispatchEvent(new Event('boekenbaai:deferred-books-changed'));
     host.append(elem('h3','Openstaande boek- en importcontroles'
@@ -116,6 +146,7 @@ if(panel&&sibling){
         try{
           await request(root+'/'+encodeURIComponent(task.id)+'/resolve',
             'POST',{revision:task.revision,choice:'manual_done'});
+          pending=false;
           await refresh();
         }catch(error){
           const message=elem('p',error.message,'hint');
@@ -176,6 +207,8 @@ if(panel&&sibling){
           const option=elem('option',[copy.title,copy.publisher,
             copy.isbn?'ISBN '+copy.isbn:'',
             copy.barcode?'barcode '+copy.barcode:'',
+            copy.matchReason==='source_barcode_exact'?'Excelbarcode herkend':'',
+            copy.authorMatches===false?'Auteur nog vergelijken':'',
             'ID '+copy.id].filter(Boolean).join(' · '));
           option.value=copy.id;copySelect.append(option);
         }
@@ -235,6 +268,7 @@ if(panel&&sibling){
               'POST',{revision:task.revision,choice:'administrative_done',
                 bookId,reason:reasonSelect.value,
                 evidenceNote,confirmed:true});
+            pending=false;
             await refresh();
           }catch(error){card.append(elem('p',error.message,'hint'));}
           finally{pending=false;closeAdmin.disabled=false;}
@@ -253,6 +287,8 @@ if(panel&&sibling){
     try{
       const result=await request(root);
       items=Array.isArray(result.tasks)?result.tasks:[];
+      recentResolutions=Array.isArray(result.recentResolutions)
+        ?result.recentResolutions:[];
       render();
     }catch(error){
       if(error.message==='Meld je opnieuw aan.')return;
@@ -263,7 +299,8 @@ if(panel&&sibling){
   }).observe(panel,{attributes:true,attributeFilter:['class']});
   window.addEventListener('boekenbaai:staff-refresh',refresh);
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{
-    items=[];expandedGroups.clear();administrativeDrafts.clear();render();
+    items=[];recentResolutions=[];
+    expandedGroups.clear();administrativeDrafts.clear();render();
   });
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)void refresh();
