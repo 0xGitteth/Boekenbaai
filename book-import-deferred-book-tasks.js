@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
 const {sameBookIdentity}=require('./book-import-autonomy');
+const {latestImportForTask}=require('./book-import-task-reconciliation');
 
 const identity = value => String(value || '').normalize('NFKD')
   .replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('nl-NL')
@@ -74,6 +75,9 @@ function listDeferredBookTasks(db) {
     task.catalogCandidateCount=candidates.length;
     task.catalogCandidates=candidates.slice(0,20).map(candidateSummary);
     task.needsAdministrativeReview=candidates.length>0;
+    // A newer import is a diagnostic hint, never evidence on its own that
+    // the skipped physical item was identified or that a loan ended.
+    task.newerImport=latestImportForTask(db,task);
     // Candidates are suggestions only. Source-row quantities, edition and
     // current circulation still require review before choosing a copy.
   }
