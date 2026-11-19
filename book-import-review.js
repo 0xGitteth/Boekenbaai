@@ -4,7 +4,7 @@
 // worksheet rows and re-run through PR2; clients cannot supply analyzed results
 // or copy lists to the persistence layer.
 const { analyzeBookImportRows } = require('./book-import-analysis');
-const { mapImportRow, safeRowEntries, isBlankCellValue } = require('./book-import-workbook');
+const { mapImportRow, safeRowEntries, isBlankCellValue, scalarCellText } = require('./book-import-workbook');
 const { analyzeIdentifier, looksLikeIsbnCandidate, normalizeRuntimeBarcode } = require('./book-import-analysis-values');
 const { canonicalizeBookIsbn13, normalizeBookIdentityComparable } = require('./book-edition-core');
 const { inspectReviewedLoans } = require('./book-import-loan-migration');
@@ -313,6 +313,27 @@ async function analyzeReviewedImport(sourceRows, corrections = [], options = {})
     ...options, correctedMetadataFieldsByRow,
   });
   if (!analysis.ok) return analysis;
+  // Preserve the ORIGINAL worksheet identifiers only when the administrator
+  // edits the edition ISBN. The corrected analysis alone would otherwise
+  // forget a barcode attached to an older, already registered physical copy.
+  // These are warnings for inventory matching, never authorizations to
+  // reassign or modify a copy. Source comes from the server's original XLSX.
+  for(const [index,entry] of normalized.corrections){
+    if(entry.skip || !Object.prototype.hasOwnProperty.call(entry.fields,'editionIsbn')
+      ||!analysis.rows[index]||analysis.rows[index].status==='skipped')continue;
+    const originals=mapImportRow(sourceRows[index]).sources;
+    const correctedBarcode=normalizeRuntimeBarcode(entry.fields.editionIsbn);
+    const originalIdentifiers=[...new Set(
+      ['isbn','metadataIsbn','ambiguousIdentifier','barcode']
+        .flatMap(field=>originals[field]||[])
+        .map(cell=>scalarCellText(cell.value).trim().slice(0,100))
+        .filter(Boolean)
+        .filter(value=>normalizeRuntimeBarcode(value)
+          &&normalizeRuntimeBarcode(value)!==correctedBarcode)
+    )].slice(0,12);
+    if(originalIdentifiers.length)
+      analysis.rows[index].reviewedOriginalIdentifiers=originalIdentifiers;
+  }
   // Working rows contain synthetic Excel columns for editor changes. Correct
   // their provenance AFTER analyzing the rows so the persisted report never
   // mistakes an administrator decision for original workbook data.
