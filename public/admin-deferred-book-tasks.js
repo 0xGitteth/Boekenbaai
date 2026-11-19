@@ -21,6 +21,7 @@ if(panel&&sibling){
   let pending=false;
   let items=[];
   let recentResolutions=[];
+  let historyExpanded=false;
   // The queue refreshes every ten seconds. Preserve the administrator's
   // expanded edition groups while new task data is rendered.
   const expandedGroups=new Set();
@@ -54,6 +55,8 @@ if(panel&&sibling){
     historyHost.replaceChildren();
     if(recentResolutions.length){
       const history=elem('details',undefined,'bb-deferred-book-history');
+      history.open=historyExpanded;
+      history.addEventListener('toggle',()=>{historyExpanded=history.open;});
       history.append(elem('summary',
         'Recent afgehandelde boek- en importmeldingen ('+recentResolutions.length+')'));
       for(const record of recentResolutions){
