@@ -78,7 +78,8 @@ const browser={
 const source=fs.readFileSync(path.join(__dirname,'..',
   'public/staff-google-link.js'),'utf8');
 vm.runInNewContext(source,{window:browser,document:doc,
-  MutationObserver:Observer,URLSearchParams,fetch,console},{
+  MutationObserver:Observer,URLSearchParams,fetch,console,
+  CustomEvent:class CustomEvent{constructor(name,data){this.type=name;this.detail=data?.detail;}}},{
   filename:'staff-google-link.js'});
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
