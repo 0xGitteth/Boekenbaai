@@ -674,7 +674,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         if(deferredResult.status!=='fulfilled')throw deferredResult.reason;
         const data=deferredResult.value;
         const items=Array.isArray(data.items)?data.items:[];
-        deferredSummary.textContent='Eerder uitgestelde boeken ('+(data.count??items.length)+')';
+        const resolvedItems=Array.isArray(data.resolvedItems)?data.resolvedItems:[];
+        const openCount=data.count??items.length;
+        const resolvedCount=data.resolvedCount??resolvedItems.length;
+        deferredSummary.textContent='Eerder uitgestelde boeken · open: '
+          +openCount+' · afgehandeld: '+resolvedCount;
         deferredList.replaceChildren();
         if(reportResult.status==='fulfilled'){
           const reports=Array.isArray(reportResult.value.reports)
@@ -693,26 +697,63 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }else deferredList.append(make('p','hint',
           'De importverslagen konden niet worden opgehaald. '
           +'De fysieke taken staan hieronder apart.'));
-        if(!items.length){
+        if(!items.length&&!resolvedItems.length){
           deferredList.append(make('p','hint',
-            'Er zijn nog geen boeken uitgesteld.'));
+            'Er zijn geen bewaarde uitgestelde boekmeldingen.'));
           return;
         }
-        deferredList.append(make('p','hint',
-          'Deze boeken zijn niet geïmporteerd. De oorspronkelijke Excel blijft '
-          +'nodig om ze later met een gecontroleerd ISBN toe te voegen.'));
-        for(const item of items.slice(0,40)){
-          const line=make('div','bb-guide__deferred-entry');
-          line.append(make('strong','',item.title||'Onbekend boek'),
-            make('span','',item.author||'Auteur onbekend'),
-            make('small','',
-              'Excelrij '+item.worksheetRow+' · Code '
-              +(item.excelIdentifier||'ontbreekt')
-              +' · Bestand '+(item.fileName||'onbekend')));
-          deferredList.append(line);
+        if(items.length){
+          deferredList.append(make('p','hint',
+            'Nog open ('+openCount+'): dit zijn onopgeloste bronmeldingen, '
+            +'niet automatisch ontbrekende fysieke boeken.'));
+          for(const item of items.slice(0,40)){
+            const line=make('div','bb-guide__deferred-entry');
+            line.append(make('strong','',item.title||'Onbekend boek'),
+              make('span','','Status: nog te beoordelen'),
+              make('span','',item.author||'Auteur onbekend'),
+              make('small','',
+                'Excelrij '+item.worksheetRow+' · Code '
+                +(item.excelIdentifier||'ontbreekt')
+                +' · Bestand '+(item.fileName||'onbekend')));
+            deferredList.append(line);
+          }
+          if(openCount>40)deferredList.append(make('p','hint',
+            'Getoond: 40 van '+openCount+' openstaande bronmeldingen.'));
+        }else deferredList.append(make('p','hint',
+          'Er staan geen uitgestelde boekmeldingen meer open.'));
+        if(resolvedItems.length){
+          deferredList.append(make('h4','',
+            'Historisch uitgesteld, later afgehandeld ('+resolvedCount+')'));
+          deferredList.append(make('p','hint',
+            'De oorspronkelijke Excelrij blijft als importgeschiedenis '
+            +'bewaard. Een afgesloten melding betekent niet dat een '
+            +'extra fysiek exemplaar is toegevoegd.'));
+          for(const item of resolvedItems.slice(0,40)){
+            const line=make('div','bb-guide__deferred-entry');
+            const label=item.resolution==='administrative_done'
+              ?'Administratief afgehandeld'
+              :item.resolution==='manual_done'
+                ?'Fysiek gecontroleerd'
+                :item.resolution==='auto_newer_import_verified_copy'
+                  ?'Automatisch afgehandeld na bewezen latere import'
+                  :'Afgehandeld (type niet bekend)';
+            line.append(make('strong','',item.title||'Onbekend boek'),
+              make('span','',label),
+              make('small','',
+                'Excelrij '+item.worksheetRow+' · Code '
+                +(item.excelIdentifier||'ontbreekt')
+                +' · Bestand '+(item.fileName||'onbekend')));
+            if(item.bookId)line.append(make('small','',
+              'Gekoppeld bestaand exemplaar: '+item.bookId));
+            if(item.evidenceNote)line.append(make('p','hint',
+              'Onderbouwing: '+item.evidenceNote));
+            if(item.completedAt)line.append(make('small','',
+              'Afgehandeld: '+new Date(item.completedAt).toLocaleString('nl-NL')));
+            deferredList.append(line);
+          }
+          if(resolvedCount>40)deferredList.append(make('p','hint',
+            'Getoond: 40 van '+resolvedCount+' afgehandelde bronmeldingen.'));
         }
-        if(items.length>40)deferredList.append(make('p','hint',
-          'Getoond: 40 van '+items.length+' uitgestelde boeken.'));
       }catch(error){
         if(serial!==deferredRefreshSerial)return;
         deferredSummary.textContent='Eerder uitgestelde boeken (laden mislukt)';
@@ -730,6 +771,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       if(deferredPanel.open)void refreshDeferred();
     });
     window.addEventListener('boekenbaai:staff-refresh',()=>void refreshDeferred());
+    // Closing a book task on the Tasks tab must update an already-open
+    // history panel immediately, without uploading or reimporting Excel.
+    window.addEventListener('boekenbaai:book-task-resolved',()=>{
+      if(deferredPanel.open)void refreshDeferred();
+    });
     window.addEventListener('focus',()=>{
       if(deferredPanel.open)void refreshDeferred();
     });
