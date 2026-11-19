@@ -41,7 +41,8 @@ function sourceKey(task, family) {
   // Cross-import row numbers and ISBNs cannot establish physical identity.
   if (family === 'physical') return digest([family, report, task.worksheetRow,
     task.title, task.author, task.excelIdentifier, task.editionIsbn, task.bookId ?? null,
-    task.barcode ?? null, task.sourceEvidence ?? null]);
+    task.barcode ?? null, task.sourcePrintedBarcode ?? null,
+    task.sourceQuantity ?? null, task.sourceEvidence ?? null]);
   if (family === 'administration' && task.differenceId && task.original)
     return digest([family, report, task.differenceId, task.worksheetRow,
       task.bookId, task.kind, task.original, task.sourceRow ?? null, task.loanHistoryMode ?? null]);
