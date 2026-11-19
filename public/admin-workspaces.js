@@ -202,7 +202,7 @@
 
     const entries=[
       {id:'overview',label:'Overzicht',panel:'bb-workspace-task-overview'},
-      {id:'physical',label:'Fysieke boeken',panel:'book-import-deferred-books',count:true},
+      {id:'physical',label:'Boekmeldingen',panel:'book-import-deferred-books',count:true},
       {id:'administration',label:'Administratie',panel:'book-import-assignment-tasks',count:true},
       {id:'classes',label:'Klascontroles',panel:'book-import-followups-list',count:true},
       {id:'accounts',label:'Accounts en vertrek',panel:'teacher-exit-tasks-panel'},
@@ -223,7 +223,7 @@
     const grid=make('div','bb-workspace-task-grid');
     const summaryNodes=new Map();
     for (const [id,title,description] of [
-      ['physical','Fysieke boeken','Onduidelijke exemplaren of ISBN-uitgaven controleren.'],
+      ['physical','Boekmeldingen','Openstaande boek- en importcontroles.'],
       ['administration','Administratie','Uitleningen, vaste plekken en importconflicten beoordelen.'],
       ['classes','Klascontroles','Door een klas of mentor te bevestigen boekregistraties.'],
       ['accounts','Accounts en vertrek','Schoolaccounts, koppelingen en uitdiensttredingen.'],
@@ -268,7 +268,7 @@
       setInactive(studentLinkHost,id!=='accounts');
       const explanations={
         overview:'Kies het soort controle. Je ziet alleen de bijbehorende taken.',
-        physical:'Controleer fysieke exemplaren. Gelijke edities blijven afzonderlijke taken.',
+        physical:'Beoordeel oude boek- en importmeldingen. Niet elke melding vraagt fysieke controle.',
         administration:'Beoordeel uitleningen, locaties en niet herkende koppelingen.',
         classes:'Controles die horen bij boeken van een klas of mentor.',
         accounts:'Openstaande accountverzoeken en taken rond vertrekkende medewerkers of leerlingen.',
