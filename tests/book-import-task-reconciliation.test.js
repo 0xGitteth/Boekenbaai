@@ -134,6 +134,14 @@ assert.equal(latestImportForTask(db,db.bookImportDeferredBookChecks[0]).sourceId
 assert.equal(buildTaskPreflight(db).tasks[0].rule,'newer_import_still_needs_copy_proof');
 assert.equal(buildTaskPreflight(db).summary.automatic_candidate,0,
   'Preflight itself does not modify tasks until an import actually commits');
+for(const status of ['created','copies_added','loan_restored']){
+  const dbForStatus=makeDb();
+  const reportForStatus=freshReport({
+    rows:[{...freshReport().rows[0],status}],
+  });
+  assert.equal(closeTasksProvenByImport(dbForStatus,reportForStatus).closed,1,
+    'A proven '+status+' row must also be considered completed');
+}
 const crossFile=makeDb({bookImportReports:[freshReport()]});
 assert.equal(latestImportForTask(crossFile,
   crossFile.bookImportDeferredBookChecks[0]).exactEdition,true,
@@ -154,3 +162,28 @@ assert.match(server,/sourcePrintedBarcode:String\(book\.barcode/);
 assert.match(server,/report\.autoClosedEarlierBookChecks=closeTasksProvenByImport\(/);
 assert.match(server,/report\.autoClosedEarlierBookChecks=[\s\S]*?saveReviewedBookImportDb\(database\)/);
 console.log('Later imports recheck old notifications: unique physical evidence, uncertain history, no book/loan edits OK');
+
+ // Index each retained report only once per assessment even for large
+ // backlogs, so opening Tasks cannot freeze the server's event loop.
+let rowReads=0;
+const reports=Array.from({length:30},(_,n)=>({
+  id:'batch-'+n,fileName:'Keuzelijst bibliotheek (1).xlsx',
+  importedAt:'2026-11-17T10:00:00.000Z',
+  rows:Array.from({length:2000},(_,i)=>({
+    worksheetRow:i+1,
+    get title(){rowReads++;return 'Onbekende titel '+i;},
+    author:'Auteur',editionIsbn:'',status:'unchanged',
+  })),
+}));
+const backlog=makeDb({
+  bookImportReports:reports,
+  bookImportDeferredBookChecks:Array.from({length:1600},(_,i)=>oldTask({
+    id:'task-'+i,worksheetRow:i+1,title:'Onbekende titel '+i,
+    sourcePrintedBarcode:'',editionIsbn:'',excelIdentifier:'',
+  })),
+});
+const indexed=buildTaskPreflight(backlog);
+assert.equal(indexed.summary.open,1600);
+assert.ok(rowReads<=120000,
+  'The lookup must not rescan every imported row for each old task');
+console.log('Indexed historical import lookup: '+rowReads+' title reads over 60000 rows');
