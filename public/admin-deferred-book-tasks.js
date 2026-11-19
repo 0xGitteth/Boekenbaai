@@ -20,6 +20,9 @@ if(panel&&sibling){
   // The queue refreshes every ten seconds. Preserve the administrator's
   // expanded edition groups while new task data is rendered.
   const expandedGroups=new Set();
+  // Keep unfinished administrative evidence even when the ten-second status
+  // poll rebuilds the cards. A revised/closed task never reuses a stale draft.
+  const administrativeDrafts=new Map();
   function elem(tag,label,cls){
     const node=document.createElement(tag);
     if(label!==undefined)node.textContent=label;
@@ -40,6 +43,9 @@ if(panel&&sibling){
     return data;
   }
   function render(){
+    const current=new Set(items.map(task=>task.id+':'+task.revision));
+    for(const [id,draft] of administrativeDrafts)
+      if(!current.has(id+':'+draft.revision))administrativeDrafts.delete(id);
     host.replaceChildren();
     panel.dataset.deferredBooksCount=String(items.length);
     window.dispatchEvent(new Event('boekenbaai:deferred-books-changed'));
@@ -130,6 +136,19 @@ if(panel&&sibling){
       // revision, title/author identity and (when known) exact edition ISBN.
       if(Array.isArray(task.catalogCandidates)&&task.catalogCandidates.length){
         const adminDetails=elem('details',undefined,'bb-deferred-administrative');
+        const draft=administrativeDrafts.get(task.id) || {
+          revision:task.revision,bookId:'',manualId:'',reason:'',
+          evidenceNote:'',expanded:false,
+        };
+        adminDetails.open=draft.expanded===true;
+        // Preserve typed values immediately; render() runs repeatedly.
+        const saveDraft=()=>administrativeDrafts.set(task.id,{
+          revision:task.revision,
+          bookId:copySelect.value,manualId:manualId?.value||'',
+          reason:reasonSelect.value,evidenceNote:note.value,
+          expanded:adminDetails.open,
+        });
+        adminDetails.addEventListener('toggle',saveDraft);
         adminDetails.append(elem('summary',
           'Administratief opgelost via bestaande registratie'));
         adminDetails.append(elem('p',
@@ -148,6 +167,21 @@ if(panel&&sibling){
             'ID '+copy.id].filter(Boolean).join(' · '));
           option.value=copy.id;copySelect.append(option);
         }
+        copySelect.value=draft.bookId||'';
+        copySelect.addEventListener('change',saveDraft);
+        let manualId=null;
+        if(task.catalogCandidateCount>task.catalogCandidates.length){
+          adminDetails.append(elem('p','Er zijn meer dan 20 passende exemplaren. '
+            +'Vul voor een niet-getoond exemplaar het exacte ID in dat je '
+            +'onder Boeken hebt gecontroleerd. De server verifieert dat ID.', 'hint'));
+          manualId=elem('input');
+          manualId.type='text';manualId.maxLength=128;
+          manualId.placeholder='Exact exemplaar-ID uit Boeken (indien niet in lijst)';
+          manualId.setAttribute('aria-label','Handmatig gecontroleerd exemplaar-ID');
+          manualId.value=draft.manualId||'';
+          manualId.addEventListener('input',saveDraft);
+          adminDetails.append(manualId);
+        }
         const reasonSelect=elem('select');
         reasonSelect.setAttribute('aria-label','Reden administratieve afhandeling');
         for(const [value,label] of [
@@ -159,17 +193,22 @@ if(panel&&sibling){
           const option=elem('option',label);option.value=value;
           reasonSelect.append(option);
         }
+        reasonSelect.value=draft.reason||'';
+        reasonSelect.addEventListener('change',saveDraft);
         const note=elem('textarea');
         note.rows=3;note.maxLength=800;
         note.placeholder='Welk bewijs uit Excel, importverslag of boekgegevens '
           +'bevestigt dit exemplaar? Vermeld bij meerdere exemplaren de telling.';
         note.setAttribute('aria-label','Onderbouwing administratieve afhandeling');
+        note.value=draft.evidenceNote||'';
+        note.addEventListener('input',saveDraft);
         const closeAdmin=elem('button','Administratief afhandelen',
           'btn btn--secondary');
         closeAdmin.type='button';closeAdmin.disabled=pending;
         closeAdmin.addEventListener('click',async()=>{
           const evidenceNote=note.value.trim();
-          if(pending||!copySelect.value||!reasonSelect.value||evidenceNote.length<20){
+          const bookId=(manualId?.value||'').trim()||copySelect.value;
+          if(pending||!bookId||!reasonSelect.value||evidenceNote.length<20){
             card.append(elem('p','Kies een exemplaar en reden, en geef een '
               +'onderbouwing van minimaal 20 tekens.','hint'));return;
           }
@@ -182,16 +221,13 @@ if(panel&&sibling){
           try{
             await request(root+'/'+encodeURIComponent(task.id)+'/resolve',
               'POST',{revision:task.revision,choice:'administrative_done',
-                bookId:copySelect.value,reason:reasonSelect.value,
+                bookId,reason:reasonSelect.value,
                 evidenceNote,confirmed:true});
             await refresh();
           }catch(error){card.append(elem('p',error.message,'hint'));}
           finally{pending=false;closeAdmin.disabled=false;}
         });
         adminDetails.append(copySelect,reasonSelect,note,closeAdmin);
-        if(task.catalogCandidateCount>task.catalogCandidates.length)
-          adminDetails.append(elem('p','Er zijn meer mogelijke exemplaren. '
-            +'Vergelijk die eerst onder Boeken.','hint'));
         card.append(adminDetails);
       }
             card.append(button,books);
@@ -215,7 +251,7 @@ if(panel&&sibling){
   }).observe(panel,{attributes:true,attributeFilter:['class']});
   window.addEventListener('boekenbaai:staff-refresh',refresh);
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{
-    items=[];expandedGroups.clear();render();
+    items=[];expandedGroups.clear();administrativeDrafts.clear();render();
   });
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)void refresh();
