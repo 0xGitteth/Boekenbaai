@@ -113,6 +113,10 @@ function exactCurrentCopy(db,task,row){
   if(!printed||printed!==barcode(row.sourcePrintedBarcode))return null;
   const taskIsbn=canonicalizeBookIsbn13(task.editionIsbn);
   const rowIsbn=canonicalizeBookIsbn13(row.editionIsbn);
+  // An ISBN is an EDITION identifier, not a physical copy barcode.
+  // Even one copy currently bearing that barcode does not establish which
+  // copy a previously skipped source row represented.
+  if(canonicalizeBookIsbn13(printed))return null;
   if(!taskIsbn||rowIsbn!==taskIsbn||!sameIdentity(task,row))return null;
   // The source barcode must appear on precisely one current physical copy.
   const copies=list(db.books).filter(copy=>barcode(copy?.barcode)===printed);
