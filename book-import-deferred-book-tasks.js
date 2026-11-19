@@ -180,6 +180,34 @@ function resolveDeferredBookTask(db, actor, id, revision, choice,
   });
   return {ok:true,id:task.id,status:'completed'};
 }
+// A historical import row remains in the audit even after its task is
+// resolved. Keep this read-only view distinct from currently open tasks.
+function listDeferredImportHistory(db,limit=500){
+  const rows=Array.isArray(db?.bookImportDeferredBookChecks)
+    ?db.bookImportDeferredBookChecks.filter(Boolean):[];
+  const open=rows.filter(item=>item.status==='open');
+  const completed=rows.filter(item=>item.status==='completed');
+  const common=item=>({
+    id:item.id,fileName:item.fileName||'',worksheetRow:item.worksheetRow,
+    title:item.title||'',author:item.author||'',
+    excelIdentifier:item.excelIdentifier||'',
+    editionIsbn:item.editionIsbn||'',createdAt:item.createdAt||null,
+  });
+  const limitSafe=Number.isSafeInteger(limit)&&limit>=1?Math.min(limit,500):500;
+  const items=open.slice(-limitSafe).reverse().map(common);
+  const resolvedItems=[...completed].sort((a,b)=>
+    String(b.completedAt||'').localeCompare(String(a.completedAt||'')))
+    .slice(0,limitSafe).map(item=>({
+      ...common(item),status:'completed',resolution:item.resolution||null,
+      completedAt:item.completedAt||null,
+      bookId:item.administrativeEvidence?.bookId
+        ||item.newerImportEvidence?.bookId||null,
+      evidenceNote:String(item.administrativeEvidence?.evidenceNote||'').slice(0,800),
+      proofReportId:item.newerImportEvidence?.reportId||null,
+    }));
+  return {items,count:open.length,shown:items.length,
+    resolvedItems,resolvedCount:completed.length,resolvedShown:resolvedItems.length};
+}
 function retainDeferredBookChecks(db, candidates) {
   if (!Array.isArray(db.bookImportDeferredBookChecks)) db.bookImportDeferredBookChecks=[];
   const fields=['batchId','worksheetRow','title','author','excelIdentifier','editionIsbn',
@@ -193,4 +221,5 @@ function retainDeferredBookChecks(db, candidates) {
     if(!duplicate) db.bookImportDeferredBookChecks.push(candidate);
   }
 }
-module.exports = {listDeferredBookTasks,resolveDeferredBookTask,retainDeferredBookChecks};
+module.exports = {listDeferredBookTasks,resolveDeferredBookTask,retainDeferredBookChecks,
+  listDeferredImportHistory};
