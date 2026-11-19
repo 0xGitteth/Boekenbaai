@@ -80,6 +80,7 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
 
 const {listDeferredBookTasks, resolveDeferredBookTask, retainDeferredBookChecks} =
   require('./book-import-deferred-book-tasks');
+const {closeTasksProvenByImport} = require('./book-import-task-reconciliation');
 const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
   removeFalseHistory,listCurrentLoans,removeFalseCurrentLoan} =
   require('./book-loan-history-admin');
@@ -6338,6 +6339,11 @@ async function handleApi(req, res, requestUrl) {
                   author:String(book.author||'').slice(0,250),
                   excelIdentifier:String(rawIsbn).slice(0,100),
                   editionIsbn:String(book.editionIsbn||'').slice(0,20),
+                  // Captured BEFORE approval changes; prevents new imports
+                  // from being linked to an unproven old physical copy.
+                  sourceQuantity:book.quantity?.valid===true
+                    ?book.quantity.value:null,
+                  sourcePrintedBarcode:String(book.barcode||'').trim().slice(0,100),
                   sourceEvidence: {
                     status: original?.status || 'unknown',
                     issues: (original?.issues || []).map(issue => ({
@@ -6364,7 +6370,19 @@ async function handleApi(req, res, requestUrl) {
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
               omittedEditions: fresh.omittedEditions,
               inventoryResolutions: stage.inventoryResolutions,
-              rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index),
+              rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index)
+                .map(item=>{
+                  const source=stage.analysis.rows[item.index];
+                  const book=source?.book||{};
+                  const sourceIdentifier=source?.identifierAnalysis?.explicit?.raw
+                    ||source?.identifierAnalysis?.legacy?.raw
+                    ||source?.identifierAnalysis?.ambiguous?.raw||'';
+                  return {...item,author:String(book.author||'').slice(0,250),
+                    sourceIdentifier:String(sourceIdentifier).slice(0,100),
+                    sourcePrintedBarcode:String(book.barcode||'').trim().slice(0,100),
+                    sourceQuantity:book.quantity?.valid===true
+                      ?book.quantity.value:null};
+                }),
             };
             // Capture the exact reviewed source rows BEFORE applying any
             // active-loan changes. Recomputing missing-loan synthetic row
@@ -6526,6 +6544,11 @@ async function handleApi(req, res, requestUrl) {
               database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
             if(isUnified)report.learnedMetadataDecisions=recordMetadataReviewChoices(
               database,combined.metadata.automaticDecisions,batchId,now);
+            // Recheck old task snapshots against the newly COMMITTED
+            // inventory and uniquely identified physical source rows.
+            // Only task metadata is closed; physical copies and loans remain.
+            report.autoClosedEarlierBookChecks=closeTasksProvenByImport(
+              database,report,{actorId:user.id,now});
             saveReviewedBookImportDb(database);
             scheduleCoverBackfill({ resetFailures: true });
             bookImportStageStore.finishApply(stage, {
