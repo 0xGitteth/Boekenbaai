@@ -96,6 +96,8 @@ reject(d=>{d.bookLoanEvents[2].studentId='other';},'Recheckout of different pupi
 reject(d=>{d.readingRecords[0].revision=2;},'Edited reading must be retained');
 reject(d=>{d.readingRecords.push({...d.readingRecords[0],id:'second'});},'Ambiguous reading record');
 reject(d=>{d.readingRecords[0].loanBorrowedAt=reissuedAt;},'Reading references another loan');
+reject(d=>{d.readingRecords[0].loanBorrowedAt='2026-11-17T09:00:00.000Z';},
+  'Recorded checkout contradicts claimed original start');
 reject(d=>{d.bookLoanPeriods.push({id:'p',studentId:'dex',bookId:'copy-a',
   borrowedAt:originalAt,returnedAt:returnedAt});},'Imported period may be genuine');
 reject(d=>{d.bookLoanEvents.push({id:'extra',bookId:'copy-a',type:'check_in',
