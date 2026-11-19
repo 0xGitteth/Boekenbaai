@@ -17,7 +17,8 @@ db={books:[copy('a')],bookImportDeferredBookChecks:[
   physical('t1',{bookId:'a'}),physical('t2',{bookId:'a'})]};
 assert.equal(buildTaskPreflight(db).tasks[1].duplicateOf,'t1');
 assert.equal(buildTaskPreflight(db).summary.automatic_candidate,1);
-for(const change of [{worksheetRow:8},{editionIsbn:'9789025873974'},{author:'Andere auteur'},{sourceEvidence:{issues:[{code:'conflict'}]}},{batchId:null},{bookId:'different-copy'},{barcode:'physical-2'}]){
+for(const change of [{worksheetRow:8},{editionIsbn:'9789025873974'},{author:'Andere auteur'},{sourceEvidence:{issues:[{code:'conflict'}]}},{batchId:null},{bookId:'different-copy'},{barcode:'physical-2'},
+  {sourcePrintedBarcode:'physical-3'},{sourceQuantity:2}]){
   db.bookImportDeferredBookChecks=[physical('t1'),physical('t2',change)];
   assert.equal(buildTaskPreflight(db).summary.automatic_candidate,0,JSON.stringify(change));
 }
