@@ -167,15 +167,24 @@ if(loanPanel){
       const data=await request('/api/admin/loan-history/continuity?'+query);
       const items=Array.isArray(data.items)?data.items:[];
       continuityStatus.textContent=items.length
-        ?items.length+' mogelijk foutieve leenreeksen gevonden.'
-        :'Geen veilig herkenbare leenreeks gevonden. Verwijder niet de volledige historie.';
+        ?items.filter(item=>item.canCorrect).length+' mogelijke correcties, '
+          +items.filter(item=>!item.canCorrect).length+' geblokkeerde registraties.'
+        :'Geen actuele uitleningen gevonden voor deze zoekopdracht.';
       for(const item of items){
         const card=node('article',undefined,'class-card');
         const format=value=>new Date(value).toLocaleString('nl-NL');
         card.append(node('h4',item.title));
         card.append(node('p',item.studentName
-          +' · Exemplaar-ID: '+item.bookId
-          +' · Oorspronkelijk geleend: '+format(item.originalCheckoutAt)
+          +' · Exemplaar-ID: '+item.bookId,'hint'));
+        if(!item.canCorrect){
+          card.append(node('p','Niet automatisch te corrigeren: '
+            +(item.errorMessage||'Onvoldoende bewijs.')
+            +' Controleer de brongegevens; gebruik niet de brede historie-verwijdering.','hint'));
+          continuityResults.append(card);
+          continue;
+        }
+        card.append(node('p','Oorspronkelijk geleend: '+format(item.originalCheckoutAt)
+          +(item.originalCheckoutLogged?' (logboek)':' (vastgelegd bij inlevering)')
           +' · Inlevering: '+format(item.incorrectReturnAt)
           +' · Opnieuw geleend: '+format(item.recheckoutAt),'hint'));
         const fix=node('button','Corrigeer deze foutieve inlevering en heruitlening',

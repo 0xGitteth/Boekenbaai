@@ -11,9 +11,15 @@ const backend=read('google-auth-runtime-preload.js');
 // a DOM relocation, not a new public endpoint or an alternate approval route.
 assert.match(backend,/function pendingRequestsForStaff\(db, store, user\)/);
 assert.match(backend,/core\.canStaffManageStudent\(db, user, request\.studentId\)/);
-assert.match(auth,/requestPanel\.id='admin-student-link-request-panel'/);
-assert.match(auth,/requestHost\.append\(requestPanel\)/);
+assert.match(staff,/section\.id='admin-student-link-request-panel'/);
+assert.match(staff,/await api\('\/api\/auth\/google\/manage'\)/);
+assert.match(staff,/renderAdminStudentRequests\(\)/);
+assert.match(staff,/Geen openstaande leerlingkoppelverzoeken\./);
+assert.match(staff,/google\/link-requests\//);
+assert.match(auth,/panel\.querySelector\('#teacher-google-link-requests'\)\?\.remove\(\)/);
 assert.match(tasks,/studentLinkHost\.id='admin-student-link-requests-host'/);
+assert.match(tasks,/Leerlingaccounts goedkeuren/);
+assert.match(tasks,/Leerlingkoppelverzoeken laden/);
 assert.match(tasks,/setInactive\(studentLinkHost,id!=='accounts'\)/);
 assert.match(modern,/taskHost&&requests&&!taskHost\.contains\(requests\)/);
 assert.match(auth,/className:'hint',text:'Geen openstaande koppelverzoeken\.'/);
