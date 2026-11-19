@@ -43,16 +43,23 @@ function matchTitleAuthor(target,candidate,context='') {
     ||normalize(String(context).slice(0,18000)).includes(surname);
 }
 function parseMonthlyRemaining(response) {
-  const policy=String(response?.headers?.get?.('x-ratelimit-policy')||'');
-  const remaining=String(response?.headers?.get?.('x-ratelimit-remaining')||'');
+  const policy=response?.headers?.get?.('x-ratelimit-policy');
+  const remaining=response?.headers?.get?.('x-ratelimit-remaining');
+  // Missing or empty header fields must NEVER become a confirmed zero.
+  // Number('') is 0; accepting it could freeze every approved search.
+  if(typeof policy!=='string'||!policy.trim()
+    ||typeof remaining!=='string'||!remaining.trim())return null;
   const windows=policy.split(',').map(p=>p.trim());
-  const amounts=remaining.split(',').map(p=>Number(p.trim()));
-  const monthly=windows.findIndex(x=>/w\s*=\s*(2592000|2628000|2678400|2[5-7]\d{5})/.test(x));
-  // Do not interpret an unlabelled short-window quota as monthly credits.
-  // Brave may return 0 for a one-second or one-minute bucket while the
-  // monthly allowance remains available. Unknown is safer than false zero.
-  return monthly>=0&&Number.isSafeInteger(amounts[monthly])&&amounts[monthly]>=0
-    ? amounts[monthly] : null;
+  const amounts=remaining.split(',').map(p=>p.trim());
+  if(windows.length!==amounts.length)return null;
+  const monthly=windows.map((window,index)=>
+    /(?:^|;)\s*w\s*=\s*(?:2592000|2628000|2678400|2[5-7]\d{5})(?:\s*;|$)/.test(window)
+      ?index:-1).filter(index=>index!==-1);
+  // The only admissible evidence is ONE explicitly labelled monthly bucket
+  // with a complete non-negative decimal integer at the SAME position.
+  if(monthly.length!==1||!/^\d+$/.test(amounts[monthly[0]]))return null;
+  const value=Number(amounts[monthly[0]]);
+  return Number.isSafeInteger(value)?value:null;
 }
 function queryFor(step,target) {
   const title=cleaned(target.title,150).replace(/["\r\n]/g,'');

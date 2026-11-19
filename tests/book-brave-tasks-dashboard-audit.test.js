@@ -19,6 +19,21 @@ assert.equal(parseMonthlyRemaining(fakeHeaders('2;w=1, 50;w=60','0, 49')),null);
 assert.equal(parseMonthlyRemaining(fakeHeaders('2;w=1, 900;w=2592000','0, 899')),899);
 assert.equal(parseMonthlyRemaining(fakeHeaders('2;w=1, 900;w=2592000','1, 0')),0);
 assert.equal(parseMonthlyRemaining(fakeHeaders('', '0, 500')),null);
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000',null)),null,
+  'A missing remaining header cannot prove that the month has zero requests left');
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','')),null);
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000',' ')),null);
+assert.equal(parseMonthlyRemaining(fakeHeaders('1;w=1, 900;w=2592000','1, ')),null,
+  'An empty monthly field is not a confirmed zero');
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','0')),0,
+  'A complete explicit monthly zero must still be honored');
+assert.equal(parseMonthlyRemaining(fakeHeaders('1;w=1, 900;w=2592000','1')),null,
+  'Misaligned policy and remaining buckets are not reliable evidence');
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','0x0')),null);
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','-1')),null);
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','1e2')),null);
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','900.0')),null);
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','900, 1')),null);
 
 const env={BOEKENBAAI_BRAVE_MONTHLY_CAP:'12'};
 const now=new Date('2026-11-17T12:00:00Z');
@@ -98,6 +113,8 @@ assert.match(ui,/bb-deferred-book-group/);
 assert.match(ui,/destination\.append\(card\)/);
 assert.match(ui,/de oude taak is niet automatisch afgesloten/i);
 assert.match(braveUi,/usage\.legacyProviderRemaining === 0/);
+assert.match(braveUi,/zonder de oorspronkelijke headers is niet zeker/,
+  'A stored zero must not be presented as conclusive evidence from Brave itself');
 // Follow-up to Codex PR #412/#413: live state must remain visible during
 // polling, including while the user expands a group to resolve a book.
 assert.match(ui,/const expandedGroups=new Set\(\)/);
