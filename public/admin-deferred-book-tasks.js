@@ -127,6 +127,18 @@ if(panel&&sibling){
       books.addEventListener('click',()=>{
         document.querySelector('[data-admin-modern-tab="books"]')?.click();
       });
+      if(task.newerImport){
+        const last=task.newerImport;
+        const date=String(last.at||'').slice(0,10);
+        const evidence=last.authorConfirmed&&last.sourceIdentifierConfirmed
+          ?'De latere import herkent dezelfde brongegevens.'
+          :'De latere import heeft een rij met deze titel; de oorspronkelijke '
+            +'identiteit is nog niet bevestigd.';
+        card.append(elem('p','Latere import '+date
+          +' · resultaat: '+String(last.rowStatus||'onbekend')+'. '
+          +evidence+' Dit is geen bewijs van een fysiek exemplaar of '
+          +'uitlening en sluit de oude taak niet automatisch af.','hint'));
+      }
       if(task.possibleExistingEdition)card.append(elem('p',
         'Een editie met dit ISBN en deze titel staat inmiddels in de collectie. '
         +'Controleer eerst of dit het bedoelde fysieke exemplaar is; '
