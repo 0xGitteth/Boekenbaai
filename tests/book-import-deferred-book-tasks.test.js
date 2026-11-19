@@ -64,6 +64,29 @@ const duplicateId={
 assert.equal(resolveDeferredBookTask(duplicateId,admin,'source-copy',1,
   'administrative_done',undefined,{...evidence,bookId:'duplicate-copy'}).ok,false,
   'An ambiguous or duplicated physical ID must never be accepted');
+const many={
+  books:Array.from({length:23},(_,i)=>({
+    id:'copy-'+i,title:'Matilda',author:'Roald Dahl',
+    metadataIsbn:'9780582401983',
+  })),
+  bookImportDeferredBookChecks:[{id:'many',title:'Matilda',
+    author:'Roald Dahl',status:'open',revision:1}],
+};
+const manyTask=listDeferredBookTasks(many).tasks[0];
+assert.equal(manyTask.catalogCandidateCount,23);
+assert.equal(manyTask.catalogCandidates.length,20);
+assert.equal(resolveDeferredBookTask(many,admin,'many',1,
+  'administrative_done',undefined,{...evidence,bookId:'copy-22'}).ok,true,
+  'A verified matching copy outside the preview page must be accepted by ID');
+const deferredUi=require('node:fs').readFileSync(
+  require('node:path').join(__dirname,'../public/admin-deferred-book-tasks.js'),'utf8');
+assert.match(deferredUi,/administrativeDrafts=new Map\(\)/,
+  'Administrative form drafts must survive polling');
+assert.match(deferredUi,/note\.addEventListener\('input',saveDraft\)/);
+assert.match(deferredUi,/adminDetails\.open=draft\.expanded===true/);
+assert.match(deferredUi,/manualId\.addEventListener\('input',saveDraft\)/);
+assert.match(deferredUi,/const bookId=\(manualId\?\.value/,
+  'There must be a UI route to choose an overflow candidate by exact ID');
 assert.equal(resolveDeferredBookTask(db,admin,'first',1,'manual_done').ok,true);
 assert.equal(listDeferredBookTasks(db).summary.open,1);
 assert.equal(db.bookImportDeferredBookChecks[0].revision,2);
