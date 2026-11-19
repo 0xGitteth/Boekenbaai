@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
 const {sameBookIdentity}=require('./book-import-autonomy');
+const {buildImportReportIndex,latestImportForTask}=require('./book-import-task-reconciliation');
 
 const identity = value => String(value || '').normalize('NFKD')
   .replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('nl-NL')
@@ -45,6 +46,7 @@ function candidateSummary(book){
     barcode:String(book.barcode||'').slice(0,80)};
 }
 function listDeferredBookTasks(db) {
+  const reportIndex=buildImportReportIndex(db);
   const items = Array.isArray(db.bookImportDeferredBookChecks)
     ? db.bookImportDeferredBookChecks : [];
   const tasks = items.filter(item => item && item.status === 'open')
@@ -74,6 +76,9 @@ function listDeferredBookTasks(db) {
     task.catalogCandidateCount=candidates.length;
     task.catalogCandidates=candidates.slice(0,20).map(candidateSummary);
     task.needsAdministrativeReview=candidates.length>0;
+    // A newer import is a diagnostic hint, never evidence on its own that
+    // the skipped physical item was identified or that a loan ended.
+    task.newerImport=latestImportForTask(db,task,reportIndex);
     // Candidates are suggestions only. Source-row quantities, edition and
     // current circulation still require review before choosing a copy.
   }
@@ -133,7 +138,8 @@ function resolveDeferredBookTask(db, actor, id, revision, choice,
 }
 function retainDeferredBookChecks(db, candidates) {
   if (!Array.isArray(db.bookImportDeferredBookChecks)) db.bookImportDeferredBookChecks=[];
-  const fields=['batchId','worksheetRow','title','author','excelIdentifier','editionIsbn','bookId','barcode','sourceEvidence'];
+  const fields=['batchId','worksheetRow','title','author','excelIdentifier','editionIsbn',
+    'bookId','barcode','sourcePrintedBarcode','sourceQuantity','sourceEvidence'];
   for (const candidate of candidates) {
     // Only repeated emission of the SAME source event can be suppressed.
     // A filename/row/ISBN match in a later import is not physical identity.
