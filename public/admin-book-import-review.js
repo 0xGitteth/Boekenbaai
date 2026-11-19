@@ -34,6 +34,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
     missing_title_or_author: 'Titel en auteur zijn verplicht bij het toevoegen van boeken. Corrigeer deze gegevens of sla de rij over.',
     possible_existing_book_without_isbn: 'Er staat al een boek met dezelfde titel en auteur maar zonder herkenbaar ISBN. Voeg eerst het juiste ISBN toe aan het bestaande boek om duplicaten te voorkomen.',
+    corrected_isbn_matches_original_copy: 'Het oorspronkelijke Excelnummer hoort al bij een bestaand exemplaar. De nieuwe ISBN-correctie kan hetzelfde fysieke boek betreffen. Controleer de bestaande registratie en de uitlening voordat je een extra exemplaar toevoegt. Deze import voegt dit boek niet automatisch toe.',
     ambiguous_unlabelled_copy_metadata: 'Er bestaan al exemplaren van dit ISBN, maar verschillende Excelrijen zonder fysieke barcode hebben afwijkende boekgegevens. Corrigeer de gegevens of geef exemplaren individuele barcodes om te voorkomen dat verkeerde metadata wordt gekoppeld.',
     unmatched_physical_copies: 'De extra exemplaren kunnen niet veilig aan de juiste Excelrijen worden gekoppeld. Controleer de aantallen en fysieke barcodes.',
     source_needs_review: 'Controleer de invoer en accepteer eventuele waarschuwingen.',
@@ -1332,6 +1333,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               addCopies:decision.addCopies,
               existingIdentitySamples:decision.existingIdentitySamples||[],
               legacyIdentitySamples:decision.legacyIdentitySamples||[],
+              correctedSourceIdentitySamples:decision.correctedSourceIdentitySamples||[],
               legacyCandidateCopies:decision.legacyCandidateCopies||0,
             }:null,
           };
@@ -1919,7 +1921,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                   +' · Volgens Excel: '+(entry.targetCopies||0)
                   +' · Uitgeleend: '+(entry.borrowedCopies||0)));
               for(const existing of (entry.existingIdentitySamples||[])
-                .concat(entry.legacyIdentitySamples||[]).slice(0,3))
+                .concat(entry.legacyIdentitySamples||[])
+                .concat(entry.correctedSourceIdentitySamples||[]).slice(0,3))
                 check.append(make('p','hint','Bestaand boek: '
                   +existing.title+' · '+existing.author));
             }
@@ -3138,6 +3141,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           for(const existing of item.legacyIdentitySamples||[]){
             card.append(make('p','hint',
               'Bestaand zonder ISBN: '+existing.title+' · '+existing.author));
+          }
+        }
+        if(reasons.includes('corrected_isbn_matches_original_copy')){
+          for(const existing of item.correctedSourceIdentitySamples||[]){
+            card.append(make('p','hint',
+              'Oorspronkelijke Excelcode staat bij: '
+              +existing.title+' · '+existing.author));
           }
         }
         if(reasons.includes('source_needs_review')&&source){
