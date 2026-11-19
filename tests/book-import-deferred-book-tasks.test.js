@@ -145,8 +145,8 @@ assert.match(deferredUi,/history\.open=historyExpanded/,
   'Previously opened resolution history must survive automatic refresh');
 assert.match(deferredUi,/historyHost.append\(history\)/,
   'Administrative evidence must be visible after resolution');
-assert.match(deferredUi,/pending=false;\s*await refresh\(\)/,
-  'Action buttons must not be rebuilt in a disabled state after success');
+assert.match(deferredUi,/pending=false;\s*window\.dispatchEvent\(new Event\('boekenbaai:book-task-resolved'\)\);\s*await refresh\(\)/,
+  'Successful completion must release pending, refresh import history and then refresh the task cards');
 assert.match(deferredUi,/administrativeDrafts=new Map\(\)/,
   'Administrative form drafts must survive polling');
 assert.match(deferredUi,/note\.addEventListener\('input',saveDraft\)/);
