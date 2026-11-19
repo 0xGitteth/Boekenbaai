@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {listDeferredBookTasks,resolveDeferredBookTask}=
-  require('../book-import-deferred-book-tasks');
+const {listDeferredBookTasks,resolveDeferredBookTask,
+  listDeferredImportHistory}=require('../book-import-deferred-book-tasks');
 const admin={role:'admin',id:'admin-1'};
 const db={bookImportDeferredBookChecks:[
   {id:'first',batchId:'b1',fileName:'bibliotheek.xlsx',
@@ -159,4 +159,57 @@ assert.equal(listDeferredBookTasks(db).summary.open,1);
 assert.equal(db.bookImportDeferredBookChecks[0].revision,2);
 assert.equal(db.bookImportDeferredBookTaskHistory.length,1);
 assert.equal(resolveDeferredBookTask(db,admin,'first',1,'manual_done').ok,false);
+// Old source rows must remain auditable after being marked complete,
+// with separate CURRENT counts and the precise administrative evidence.
+const auditDb={bookImportDeferredBookChecks:[
+  {id:'open-1',status:'open',title:'Lucky Luke',
+    fileName:'eerste.xlsx',worksheetRow:78,excelIdentifier:'631700264'},
+  {id:'completed-1',status:'completed',resolution:'administrative_done',
+    title:'Het zwarte gat',fileName:'eerste.xlsx',worksheetRow:75,
+    excelIdentifier:'9789663058674',completedAt:'2026-11-19T12:30:00Z',
+    administrativeEvidence:{bookId:'copy-1',evidenceNote:
+      'Excelrij 75 verwijst naar de bestaande catalogusbarcode.'}},
+  {id:'completed-2',status:'completed',resolution:'auto_newer_import_verified_copy',
+    title:'Het web',fileName:'tweede.xlsx',worksheetRow:114,
+    completedAt:'2026-11-19T14:00:00Z',newerImportEvidence:{
+      reportId:'batch-later',bookId:'copy-2'}},
+  {id:'completed-3',status:'completed',resolution:'manual_done',
+    title:'Zat',completedAt:'2026-11-18T14:00:00Z'},
+]};
+const snapshot=JSON.stringify(auditDb);
+const audit=listDeferredImportHistory(auditDb);
+assert.equal(JSON.stringify(auditDb),snapshot,
+  'Import history must be a read-only projection');
+assert.equal(audit.count,1);
+assert.equal(audit.resolvedCount,3);
+assert.equal(audit.shown,1);
+assert.equal(audit.resolvedShown,3);
+assert.equal(audit.items[0].id,'open-1');
+assert.deepEqual(audit.resolvedItems.map(item=>item.id),
+  ['completed-2','completed-1','completed-3'],
+  'Completed source rows are sorted newest first');
+assert.equal(audit.resolvedItems[1].bookId,'copy-1');
+assert.equal(audit.resolvedItems[1].evidenceNote,
+  'Excelrij 75 verwijst naar de bestaande catalogusbarcode.');
+assert.equal(audit.resolvedItems[0].proofReportId,'batch-later');
+assert.equal(audit.resolvedItems[2].resolution,'manual_done');
+const capped=listDeferredImportHistory(auditDb,1);
+assert.equal(capped.count,1);
+assert.equal(capped.resolvedCount,3);
+assert.equal(capped.resolvedItems.length,1);
+const uiSource=require('node:fs').readFileSync(
+  require('node:path').join(__dirname,'../public/admin-book-import-review.js'),'utf8');
+const tasksSource=require('node:fs').readFileSync(
+  require('node:path').join(__dirname,'../public/admin-deferred-book-tasks.js'),'utf8');
+const serverSource=require('node:fs').readFileSync(
+  require('node:path').join(__dirname,'../server.js'),'utf8');
+assert.match(serverSource,/listDeferredImportHistory\(getDb\(\)\)/);
+assert.match(uiSource,/const resolvedItems=Array\.isArray\(data\.resolvedItems\)/);
+assert.match(uiSource,/Historisch uitgesteld, later afgehandeld/);
+assert.match(uiSource,/book-task-resolved/);
+assert.doesNotMatch(uiSource,/Deze boeken zijn niet geïmporteerd\./,
+  'A historical source warning must not assert a book is still missing');
+assert.equal((tasksSource.match(/dispatchEvent\(new Event\('boekenbaai:book-task-resolved'\)\)/g)||[]).length,2,
+  'Both real resolution actions notify the import history view');
+
 console.log('Persistent postponed book tasks: OK');
