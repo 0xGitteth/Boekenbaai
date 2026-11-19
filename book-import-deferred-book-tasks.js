@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const {canonicalizeBookIsbn13}=require('./book-edition-core');
-const {sameBookIdentity}=require('./book-import-autonomy');
+const {sameBookIdentity,sameBookTitle}=require('./book-import-autonomy');
 const {buildImportReportIndex,latestImportForTask}=require('./book-import-task-reconciliation');
 
 const identity = value => String(value || '').normalize('NFKD')
@@ -25,17 +25,45 @@ function inCurrentCollection(db,item) {
       && [book.metadataIsbn,book.barcode,book.isbn]
         .some(candidate=>identity(candidate)===isbn)));
 }
-// Show likely existing records to an administrator, never treat them as proof
-// that the skipped worksheet row is the same physical copy.
+// Candidate identification is for human review, NEVER automatic closure.
+// Historical Excel values may be an ISBN (including a leading zero dropped
+// by Excel) or a local barcode. Search both without inventing an edition.
+const compactIdentifier=value=>String(value??'').normalize('NFKC')
+  .replace(/[\s-]+/g,'').toUpperCase();
+function normalizedSourceIsbn(value){
+  const direct=canonicalizeBookIsbn13(value);
+  if(direct)return direct;
+  const text=compactIdentifier(value);
+  return /^\d{9}$/.test(text)
+    ?canonicalizeBookIsbn13('0'+text):'';
+}
+function candidateMatches(db,item){
+  const source=compactIdentifier(item.excelIdentifier);
+  const wantedIsbn=normalizedSourceIsbn(item.editionIsbn)
+    ||normalizedSourceIsbn(item.excelIdentifier);
+  const taskEdition=normalizedSourceIsbn(item.editionIsbn);
+  const results=[];
+  for(const book of db.books||[]){
+    if(!book?.id||!sameBookTitle(item.title,book.title))continue;
+    const fields=[book.editionIsbn,book.metadataIsbn,book.isbn,book.isbn13];
+    const isbnFields=[...fields,book.barcode].map(normalizedSourceIsbn).filter(Boolean);
+    if(taskEdition&&isbnFields.some(value=>value!==taskEdition))continue;
+    const sourceIsbnMatch=Boolean(wantedIsbn
+      &&[...fields,book.barcode].some(value=>normalizedSourceIsbn(value)===wantedIsbn));
+    const rawBarcodeMatch=Boolean(source&&compactIdentifier(book.barcode)===source);
+    // Don't make title-only or author-only candidates actionable.
+    if(!sourceIsbnMatch&&!rawBarcodeMatch)continue;
+    // A conflicting confirmed edition must not be hidden by a matching
+    // barcode on a different physical edition.
+    if(wantedIsbn&&isbnFields.some(value=>value!==wantedIsbn))continue;
+    results.push({book,matchReason:sourceIsbnMatch
+      ?'isbn_exact':'source_barcode_exact',
+      authorMatches:sameBookIdentity(item,book)});
+  }
+  return results;
+}
 function matchingCatalogBooks(db,item){
-  const wantedIsbn=canonicalizeBookIsbn13(item.editionIsbn);
-  return (db.books||[]).filter(book=>{
-    if(!book?.id||!sameBookIdentity(item,book))return false;
-    if(!wantedIsbn)return true;
-    const known=[book.editionIsbn,book.metadataIsbn,book.isbn,book.isbn13]
-      .map(canonicalizeBookIsbn13).filter(Boolean);
-    return known.length>0&&known.every(value=>value===wantedIsbn);
-  });
+  return candidateMatches(db,item).map(candidate=>candidate.book);
 }
 function candidateSummary(book){
   return {id:book.id,title:String(book.title||'').slice(0,220),
@@ -72,9 +100,11 @@ function listDeferredBookTasks(db) {
     // This is a HINT, never proof that the original physical copy was
     // identified. Do not auto-close tasks or edit book/loan data.
     task.possibleExistingEdition=inCurrentCollection(db,task);
-    const candidates=matchingCatalogBooks(db,task);
+    const candidates=candidateMatches(db,task);
     task.catalogCandidateCount=candidates.length;
-    task.catalogCandidates=candidates.slice(0,20).map(candidateSummary);
+    task.catalogCandidates=candidates.slice(0,20).map(({book,matchReason,authorMatches})=>({
+      ...candidateSummary(book),matchReason,authorMatches,
+    }));
     task.needsAdministrativeReview=candidates.length>0;
     // A newer import is a diagnostic hint, never evidence on its own that
     // the skipped physical item was identified or that a loan ended.
@@ -82,7 +112,21 @@ function listDeferredBookTasks(db) {
     // Candidates are suggestions only. Source-row quantities, edition and
     // current circulation still require review before choosing a copy.
   }
-  return { tasks, summary: {
+  const recentResolutions=items.filter(item=>item&&item.status==='completed'
+    &&['administrative_done','auto_newer_import_verified_copy',
+      'manual_done'].includes(item.resolution))
+    .sort((a,b)=>String(b.completedAt||'').localeCompare(String(a.completedAt||'')))
+    .slice(0,30).map(item=>({
+      id:item.id,title:item.title||'',fileName:item.fileName||'',
+      worksheetRow:item.worksheetRow||null,
+      resolution:item.resolution,completedAt:item.completedAt||null,
+      completedBy:item.completedBy||null,
+      evidenceNote:String(item.administrativeEvidence?.evidenceNote||'').slice(0,800),
+      bookId:item.administrativeEvidence?.bookId
+        ||item.newerImportEvidence?.bookId||null,
+      proofReportId:item.newerImportEvidence?.reportId||null,
+    }));
+  return { tasks, recentResolutions,summary: {
     open:tasks.length,
     groups:sameEditionCounts.size,
     repeatedChecks:tasks.length-sameEditionCounts.size,
