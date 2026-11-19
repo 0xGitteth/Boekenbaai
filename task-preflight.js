@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const {canonicalizeBookIsbn13} = require('./book-edition-core');
 const {listDeferredAssignmentTasks} = require('./book-import-assignment-tasks');
 const {circulationRevision} = require('./book-import-followups');
+const {latestImportForTask} = require('./book-import-task-reconciliation');
 const list = value => Array.isArray(value) ? value : [];
 const norm = value => String(value ?? '').trim();
 const folded = value => norm(value).normalize('NFKC').toLocaleLowerCase('nl-NL').replace(/\s+/g, ' ');
@@ -75,6 +76,24 @@ function assessTask(db, task, family, catalog) {
     type: 'original_diagnostics', value: task.sourceEvidence.issues,
   });
   if (task.reason) result.evidence.push({type: 'original_reason', value: task.reason});
+  if(family==='physical'){
+    const later=latestImportForTask(db,task);
+    if(later){
+      result.current.newerImport=later;
+      result.evidence.push({type:'later_import_review',value:later});
+      // Repeated source rows are informative, but do not prove the physical
+      // copy or its quantity. No automatic-candidate classification here.
+      if(later.authorConfirmed&&later.sourceIdentifierConfirmed
+        &&['unchanged','reconciled','add_copies','combined'].includes(later.rowStatus)){
+        result.category='proposal';
+        result.rule='newer_import_still_needs_copy_proof';
+        result.explanation='Een latere import heeft dezelfde bronrij verwerkt, '
+          +'maar de fysieke exemplaarkoppeling is nog niet bewezen.';
+        result.proposedAction='Controleer het fysieke exemplaar-ID, het '
+          +'oorspronkelijke aantal en eventuele uitlening voordat de taak sluit.';
+      }
+    }
+  }
   if (matches.length) {
     result.evidence.push({type: 'edition_match', isbn: canonicalizeBookIsbn13(task.editionIsbn), bookIds: matchingIds, totalMatches:matches.length});
     result.category = 'proposal';
@@ -182,6 +201,8 @@ function buildTaskPreflight(db) {
   // Recomputed from live data on every read. Hash is not an authorization token.
   return {version:1, mode:'preview', writesAllowed:false,
     fingerprint:digest({tasks:source, books:db.books || [], counters:db.bookImportLoanActivityCounters || {},
+      reports:list(db.bookImportReports).map(r=>({
+        id:r.id,importedAt:r.importedAt,fileName:r.fileName,rows:r.rows})),
       students:db.students || [], classes:db.classes || []}),
     coverage:{included:['physical','administration','classes','studentExitTasks','teacherExitTasks'],
       excluded:['Google-koppelverzoeken en andere accountverzoeken uit de aparte authenticatieopslag'],
