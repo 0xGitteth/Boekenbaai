@@ -65,6 +65,7 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   acquireFileLock } = require('./book-import-reminder-mail');
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
+const {dispatchReservationMail}=require('./book-reservation-mail');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
   withDatabaseWriteLock, mutateJsonLocked, mutateJsonLockedAsync } = require('./database-write-coordinator');
 const { finishLegacyImportJob: persistLegacyImportStatus } =
@@ -8367,6 +8368,9 @@ async function handleApi(req, res, requestUrl) {
         message: `Klas ${klass.name} heeft ${book.title} teruggebracht`,
       });
       saveDb(db);
+      // Email runs independently; the persisted 'ready' status is also
+      // available through the pupil/mentor login when email is unavailable.
+      setImmediate(()=>{void startImportMailWorker();});
       return sendJson(res, 200, {
         book: sanitizeBookForResponse(book),
         readingRecord: publicReadingRecord(db, readingRecord, user),
@@ -9947,6 +9951,7 @@ async function tickImportReminders() {
       ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
       : DATA_PATH + '.auth.json';
     const snapshot = loadDb();
+    if(reservationQueue.reconcile(snapshot))saveDb(snapshot);
     const links = readSchoolLinks(authPath);
     const folder = DATA_PATH + '.import-mail-receipts';
     const currentState = () => ({ db: loadDb(), links: readSchoolLinks(authPath) });
@@ -9956,10 +9961,14 @@ async function tickImportReminders() {
     const actions = shuttingDown ? { claimed: 0, accepted: 0, failed: 0 }
       : await dispatchActions({ db: snapshot, links, folder,
         currentState, shouldStop });
-    if (stats.claimed || actions.claimed) console.log('Boekenbaai-mailmeldingen verwerkt:', {
-      accepted: stats.accepted + actions.accepted,
-      failed: stats.failed + actions.failed,
-    });
+    const bookings = shuttingDown ? {claimed:0,accepted:0,failed:0}
+      : await dispatchReservationMail({db:snapshot,links,folder,
+        currentState,shouldStop});
+    if (stats.claimed || actions.claimed || bookings.claimed)
+      console.log('Boekenbaai-mailmeldingen verwerkt:', {
+        accepted: stats.accepted + actions.accepted + bookings.accepted,
+        failed: stats.failed + actions.failed + bookings.failed,
+      });
   } catch (error) {
     console.error('Importherinneringen controleren mislukt:',
       error.code || 'worker_error');
