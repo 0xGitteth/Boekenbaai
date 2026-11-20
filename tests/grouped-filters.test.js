@@ -127,8 +127,8 @@ assert.equal(loanAction(differentEditions.copies[1],{role:'student',borrowedBook
 assert.match(source,/const chooseEdition = book\.editionCount > 1 && action\?\.type === 'borrow'/,
   'A multi-edition card must ask which edition to lend');
 assert.match(source,/chooseEdition \? openBookDetail\(book\) : handleCardLoanAction\(book\)/);
-assert.match(source,/state\.studentActionHandler\?\.\(availableCopy\)/,
-  'Each edition selection must lend a physical copy from that specific edition');
+assert.match(source,/availableCopy\|\|edition\.copies\[0\],\{reserveEdition:!availableCopy\}/,
+  'Edition selection must borrow the available copy or reserve that specific edition');
 assert.match(source,/studentAction\.hidden = !descriptor \|\| chooseEdition/,
   'The generic detail button must not bypass explicit edition selection');
 
