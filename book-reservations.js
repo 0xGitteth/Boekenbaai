@@ -142,8 +142,9 @@ function create(db,{studentId,bookId,specificEdition=false,now=Date.now()}){
   if((student.borrowedBooks||[]).some(entry=>
     candidateBooks(db,book).some(copy=>copy.id===(entry?.bookId||entry))))
     return {ok:false,status:409,message:'Je hebt deze titel al geleend.'};
-  const existing=activeQueue(db,key).find(x=>x.studentId===studentId
-    &&x.editionKey===edition);
+  // One active reservation per student and work, even when editions differ.
+  // Prevents claiming two different copies from the same waitlist.
+  const existing=activeQueue(db,key).find(x=>x.studentId===studentId);
   if(existing)return {ok:true,created:false,reservation:publicReservation(db,existing)};
   const copies=candidateBooks(db,book,edition);
   if(copies.some(copy=>availableTo(db,copy,studentId,now)))
