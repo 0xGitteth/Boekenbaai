@@ -81,6 +81,10 @@ const db=()=>({
     'The borrowed edition may be reserved while a different edition is free');
   assert.equal(reservation.forStudent(data,'s1')[0].editionKey,
     'isbn:9789048849178');
+  assert.equal(reservation.create(data,{studentId:'s1',bookId:'b2',
+    now:NOW+1}).created,false,
+    'The same student cannot reserve a work twice by switching editions');
+  assert.equal(data.bookReservations.length,1);
   assert.equal(reservation.reconcile(data,NOW+3000),false,
     'A different edition must not notify an edition-specific waiting student');
   data.books[0].status='available';data.books[0].borrowedBy=null;
