@@ -2072,7 +2072,11 @@ function catalogStoredEdition(book) {
 function getBookGroupKey(book) {
   const normalizeWorkPart = value => normalizeGroupKeyPart(value)
     .normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
-  return JSON.stringify([normalizeWorkPart(book?.title), normalizeWorkPart(book?.author)]);
+  // The same author's name sometimes ends with a stray period in imported
+  // metadata (e.g. 'Carry Slee.' versus 'Carry Slee'). This must not split
+  // physical editions into different work cards. Edition ISBNs remain on copies.
+  const author = normalizeWorkPart(book?.author).replace(/[.,;:!?\s]+$/g, '');
+  return JSON.stringify([normalizeWorkPart(book?.title), author]);
 }
 
 function getCatalogEditionKey(book) {
@@ -2704,25 +2708,11 @@ function filterBooks(allBooks, {
       return normalizedThemes.every((theme) => tagKeys.includes(theme));
     });
   }
-  if (query) {
-    const term = query.toLowerCase();
-    list = list.filter((book) => {
-      const haystack = [
-        book.title,
-        book.author,
-        book.description,
-        resolveBookLanguage(book),
-        resolveBookPageCount(book) ? String(resolveBookPageCount(book)) : '',
-        book.barcode,
-        ...(book.themes || []),
-        ...(book.tags || []),
-        ...(Array.isArray(book.copies) ? book.copies.map((copy) => copy.barcode) : []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(term);
-    });
+  if (query && query.trim()) {
+    const term = query.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+    list = list.filter((book) => [book.title, book.author].some(value =>
+      String(value || '').normalize('NFKC')
+        .toLocaleLowerCase('nl-NL').includes(term)));
   }
   return list;
 }
