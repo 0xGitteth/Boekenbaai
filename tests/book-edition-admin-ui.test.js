@@ -68,6 +68,26 @@ const sameEdition=[corrected[0],{
 assert.equal(groupBooksByTitleAuthor(sameEdition).length,1);
 assert.equal(groupBooksByTitleAuthor(sameEdition)[0].editionCount,1,
   'Two physical copies sharing the same ISBN are one edition');
+const spellingVariants=[
+  {id:'spijt-1',title:'Spijt!',author:'Carry Slee.',
+    publisher:'Van Holkema & Warendorf',editionIsbn:'9789026988646',
+    barcode:'9789026988646',status:'borrowed'},
+  {id:'spijt-2',title:'Spijt!',author:'Carry Slee',
+    publisher:'Overamstel Uitgevers',editionIsbn:'9789048849178',
+    barcode:'9789048849178',status:'available'},
+];
+const sameWork=groupBooksByTitleAuthor(spellingVariants);
+assert.equal(sameWork.length,1,
+  'An author trailing full stop must not split different editions of Spijt!');
+assert.equal(sameWork[0].editionCount,2,
+  'Both original editions remain individually selectable');
+assert.equal(sameWork[0].totalCopies,2);
+assert.equal(sameWork[0].availableCopies,1);
+assert.deepEqual(sameWork[0].copies.map(x=>x.id),['spijt-1','spijt-2']);
+assert.equal(getBookGroupKey(spellingVariants[0]),getBookGroupKey(spellingVariants[1]));
+assert.equal(groupBooksByTitleAuthor([
+  spellingVariants[0],{...spellingVariants[1],author:'Andere schrijver'}
+]).length,2,'Different authors must never be merged by a shared title');
 const differentPublisher=[{...original[0],barcode:'wrong1'},
   {...original[0],id:'second',barcode:'wrong2',publisher:'Ander huis'}];
 assert.equal(groupBooksByTitleAuthor(differentPublisher).length,1);
