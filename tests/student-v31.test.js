@@ -128,10 +128,15 @@ assert.deepEqual(JSON.parse(JSON.stringify(decide(group,{
 assert.deepEqual(JSON.parse(JSON.stringify(decide(group,{
   role:'student',borrowedBooks:[]
 }))),{label:'Boek lenen',type:'borrow',bookId:'copy2'});
-assert.equal(decide({id:'x',copies:[{id:'copy1',status:'borrowed'}]},null),null);
-assert.equal(decide({id:'x',copies:[{id:'copy1',status:'borrowed'}]},{
-  role:'student',borrowedBooks:[]
-}),null,'Never offer to borrow someone else’s copy');
+assert.deepEqual(JSON.parse(JSON.stringify(decide({
+  id:'x',copies:[{id:'copy1',status:'borrowed'}],
+},null))),{label:'Inloggen om te reserveren',type:'login',bookId:null},
+  'Unavailable cards retain a login action with equal button height');
+assert.deepEqual(JSON.parse(JSON.stringify(decide({
+  id:'x',copies:[{id:'copy1',status:'borrowed'}],
+},{role:'student',borrowedBooks:[]}))),
+  {label:'Reserveren',type:'reserve',bookId:'copy1'},
+  'Unavailable cards offer reservations but never claim the book is lendable');
 assert.equal(decide(null,null),null);
 
 console.log('Leerlingportaal v3.1: structuur, privacy, rollen, barcode en leenacties OK.');
