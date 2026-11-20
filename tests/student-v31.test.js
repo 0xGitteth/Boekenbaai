@@ -87,8 +87,7 @@ assert.match(app,/cardOptions: book => \{/,
   'Student cards reuse the existing production catalogue rendering');
 assert.match(app,/options\.studentActionLabel && typeof options\.onStudentAction === 'function'/);
 assert.match(app,/bookDetailState\.studentActionHandler = handleCardLoanAction/);
-assert.match(app,/function handleCardLoanAction\(book,\{reserveEdition=false\}=\{\}\)/,
-  'Student action supports explicit edition-specific reservations');
+assert.match(app,/function handleCardLoanAction\(book\)/);
 assert.match(app,/if \(action\.type === 'login'\) \{/);
 assert.match(app,/if \(studentLoanInProgress \|\| !action\.bookId \|\| authUser\?\.role !== 'student'\) return;/,
   'Only an authenticated student can initiate a loan from the new card');
@@ -128,15 +127,10 @@ assert.deepEqual(JSON.parse(JSON.stringify(decide(group,{
 assert.deepEqual(JSON.parse(JSON.stringify(decide(group,{
   role:'student',borrowedBooks:[]
 }))),{label:'Boek lenen',type:'borrow',bookId:'copy2'});
-assert.deepEqual(JSON.parse(JSON.stringify(decide({
-  id:'x',copies:[{id:'copy1',status:'borrowed'}],
-},null))),{label:'Inloggen om te reserveren',type:'login',bookId:null},
-  'Unavailable cards retain a login action with equal button height');
-assert.deepEqual(JSON.parse(JSON.stringify(decide({
-  id:'x',copies:[{id:'copy1',status:'borrowed'}],
-},{role:'student',borrowedBooks:[]}))),
-  {label:'Reserveren',type:'reserve',bookId:'copy1'},
-  'Unavailable cards offer reservations but never claim the book is lendable');
+assert.equal(decide({id:'x',copies:[{id:'copy1',status:'borrowed'}]},null),null);
+assert.equal(decide({id:'x',copies:[{id:'copy1',status:'borrowed'}]},{
+  role:'student',borrowedBooks:[]
+}),null,'Never offer to borrow someone else’s copy');
 assert.equal(decide(null,null),null);
 
 console.log('Leerlingportaal v3.1: structuur, privacy, rollen, barcode en leenacties OK.');

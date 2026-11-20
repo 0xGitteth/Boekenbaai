@@ -44,7 +44,6 @@ const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 const {studentLoanIds,isUnavailable,isHidden,readStatus,
   catalogProjection,availabilityConflicts,selectAvailableCopy}=require('./book-catalog-integrity');
-const reservationQueue=require('./book-reservations');
 const { createReturnReadingRecord, mayViewReadingRecord, publicReadingRecord,
   amendReadingRecord } = require('./reading-completion-core');
 const {
@@ -65,7 +64,6 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   acquireFileLock } = require('./book-import-reminder-mail');
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
-const {dispatchReservationMail}=require('./book-reservation-mail');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
   withDatabaseWriteLock, mutateJsonLocked, mutateJsonLockedAsync } = require('./database-write-coordinator');
 const { finishLegacyImportJob: persistLegacyImportStatus } =
@@ -1448,7 +1446,6 @@ function loadDb() {
   if (!Array.isArray(data.readingRecords)) data.readingRecords = [];
   if (!Array.isArray(data.importJobs)) data.importJobs = [];
   if (!Array.isArray(data.bookImportFollowups)) data.bookImportFollowups = [];
-  if (!Array.isArray(data.bookReservations)) data.bookReservations = [];
   if (!Array.isArray(data.bookImportAssignmentTasks)) data.bookImportAssignmentTasks = [];
   // Preserve pre-upgrade postponed corrections before another import trims
   // their original source report. This is saved with the next database write.
@@ -4444,53 +4441,6 @@ async function handleApi(req, res, requestUrl) {
         pendingLoanImportTasks:pending,pendingLoanTaskCount:pending.length});
     }
 
-    // Authenticated per-work and per-edition reservation queue. Only the
-    // student can see or cancel their own position. Teachers see readiness
-    // alerts solely for pupils currently assigned to their classes.
-    if (requestUrl.pathname === '/api/book-reservations' && req.method === 'GET') {
-      if (!user) return sendJson(res,401,{message:'Log eerst in.'});
-      const db=loadDb();
-      if (reservationQueue.reconcile(db)) saveDb(db);
-      res.setHeader('Cache-Control','no-store');
-      return sendJson(res,200,{
-        reservations:user.role==='student'
-          ?reservationQueue.forStudent(db,user.id):[],
-        mentorAlerts:user.role==='teacher'
-          ?reservationQueue.forTeacher(db,user):[],
-      });
-    }
-    if (requestUrl.pathname === '/api/book-reservations' && req.method === 'POST') {
-      if (user?.role!=='student') return sendJson(res,403,{
-        message:'Alleen leerlingen kunnen reserveren.'});
-      const body=await parseBody(req);
-      const db=loadDb();
-      const outcome=reservationQueue.create(db,{
-        studentId:user.id,bookId:String(body.bookId||'').slice(0,100),
-        specificEdition:body.specificEdition===true,
-      });
-      if(!outcome.ok)return sendJson(res,outcome.status||409,{message:outcome.message});
-      if(outcome.created) {
-        appendHistory(db,{type:'book_reserved',
-          studentId:user.id,bookId:String(body.bookId||'').slice(0,100),
-          message:'Boekreservering geplaatst'});
-        saveDb(db);
-      }
-      return sendJson(res,200,outcome);
-    }
-    const cancelReservationMatch=requestUrl.pathname.match(
-      /^\/api\/book-reservations\/([\w-]+)$/);
-    if(cancelReservationMatch && req.method==='DELETE'){
-      if(user?.role!=='student')return sendJson(res,403,{
-        message:'Alleen leerlingen kunnen eigen reserveringen annuleren.'});
-      const db=loadDb();
-      const outcome=reservationQueue.cancel(db,user.id,cancelReservationMatch[1]);
-      if(!outcome.ok)return sendJson(res,outcome.status||404,{message:outcome.message});
-      appendHistory(db,{type:'book_reservation_cancelled',studentId:user.id,
-        message:'Boekreservering geannuleerd'});
-      saveDb(db);
-      return sendJson(res,200,{ok:true});
-    }
-
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
@@ -4503,9 +4453,6 @@ async function handleApi(req, res, requestUrl) {
           ||ownBookIds.has(book.id))
         .map(book=>({
           ...withBorrowCount(catalogProjection(book,loanOwners),borrowCounts),
-          reservationHeld:Boolean(reservationQueue.holdFor(db,book.id)),
-          reservationMine:user?.role==='student'
-            &&reservationQueue.readyFor(db,book,user.id),
           personalLoanOnly:user?.role==='student'&&isHidden(book),
         }));
       const folder = requestUrl.searchParams.get('folder');
@@ -8221,10 +8168,6 @@ async function handleApi(req, res, requestUrl) {
       }
       const dueDate = normalizeDueDate(body.dueDate);
       if (!dueDate.ok) return sendJson(res, 400, { message: 'Ongeldige inleverdatum.' });
-      // Expired holds and newly available copies are reconciled before
-      // choosing a physical book. The reservation is enforced again after
-      // the real selected copy has been identified.
-      reservationQueue.reconcile(db);
       const selection = resolveBookSelection(db, checkoutMatch[1], {
         body, requireAvailable: true, studentId: student?.id || null,
       });
@@ -8246,9 +8189,6 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 400, { message: 'Deze leerling heeft al een exemplaar van deze titel.' });
         }
       }
-      const reservationChoice=reservationQueue.onCheckout(db,book,student?.id||null);
-      if(!reservationChoice.ok)return sendJson(res,reservationChoice.status,{
-        message:reservationChoice.message});
       const now = new Date().toISOString();
       noteLoanActivity(db, book.id);
       book.status = 'borrowed';
@@ -8257,7 +8197,6 @@ async function handleApi(req, res, requestUrl) {
       book.borrowedAt = now;
       book.dueDate = dueDate.value;
       if (student) student.borrowedBooks.push({ bookId: book.id, borrowedAt: now, dueDate: dueDate.value });
-      reservationQueue.afterCheckout(db,reservationChoice.release);
       if (student && book.suitableForExamList === true && examReadingAccess(db, student).eligible) {
         // An eligible pupil's current exam loan is visible as "Aan het lezen"
         // before the compulsory Ja/Nee answer at check-in.
@@ -8359,7 +8298,6 @@ async function handleApi(req, res, requestUrl) {
       book.borrowedAt = null;
       book.dueDate = null;
       if (student) student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== book.id);
-      reservationQueue.reconcile(db);
       appendHistory(db, student ? {
         type: 'check_in', bookId: book.id, studentId: student.id, performedBy: user.id,
         message: `${student.name} heeft ${book.title} teruggebracht`,
@@ -8368,9 +8306,6 @@ async function handleApi(req, res, requestUrl) {
         message: `Klas ${klass.name} heeft ${book.title} teruggebracht`,
       });
       saveDb(db);
-      // Email runs independently; the persisted 'ready' status is also
-      // available through the pupil/mentor login when email is unavailable.
-      setImmediate(()=>{void startImportMailWorker();});
       return sendJson(res, 200, {
         book: sanitizeBookForResponse(book),
         readingRecord: publicReadingRecord(db, readingRecord, user),
@@ -9951,7 +9886,6 @@ async function tickImportReminders() {
       ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
       : DATA_PATH + '.auth.json';
     const snapshot = loadDb();
-    if(reservationQueue.reconcile(snapshot))saveDb(snapshot);
     const links = readSchoolLinks(authPath);
     const folder = DATA_PATH + '.import-mail-receipts';
     const currentState = () => ({ db: loadDb(), links: readSchoolLinks(authPath) });
@@ -9961,14 +9895,10 @@ async function tickImportReminders() {
     const actions = shuttingDown ? { claimed: 0, accepted: 0, failed: 0 }
       : await dispatchActions({ db: snapshot, links, folder,
         currentState, shouldStop });
-    const bookings = shuttingDown ? {claimed:0,accepted:0,failed:0}
-      : await dispatchReservationMail({db:snapshot,links,folder,
-        currentState,shouldStop});
-    if (stats.claimed || actions.claimed || bookings.claimed)
-      console.log('Boekenbaai-mailmeldingen verwerkt:', {
-        accepted: stats.accepted + actions.accepted + bookings.accepted,
-        failed: stats.failed + actions.failed + bookings.failed,
-      });
+    if (stats.claimed || actions.claimed) console.log('Boekenbaai-mailmeldingen verwerkt:', {
+      accepted: stats.accepted + actions.accepted,
+      failed: stats.failed + actions.failed,
+    });
   } catch (error) {
     console.error('Importherinneringen controleren mislukt:',
       error.code || 'worker_error');
