@@ -87,7 +87,8 @@ assert.match(app,/cardOptions: book => \{/,
   'Student cards reuse the existing production catalogue rendering');
 assert.match(app,/options\.studentActionLabel && typeof options\.onStudentAction === 'function'/);
 assert.match(app,/bookDetailState\.studentActionHandler = handleCardLoanAction/);
-assert.match(app,/function handleCardLoanAction\(book\)/);
+assert.match(app,/function handleCardLoanAction\(book,\{reserveEdition=false\}=\{\}\)/,
+  'Student action supports explicit edition-specific reservations');
 assert.match(app,/if \(action\.type === 'login'\) \{/);
 assert.match(app,/if \(studentLoanInProgress \|\| !action\.bookId \|\| authUser\?\.role !== 'student'\) return;/,
   'Only an authenticated student can initiate a loan from the new card');
