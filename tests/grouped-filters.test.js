@@ -62,6 +62,24 @@ assert.strictEqual(
 );
 
 
+// The global catalogue search is intentionally restricted to work titles and
+// author names, not descriptions, themes, barcodes or other metadata.
+const keywordOnly=[{
+  id:'ctrl-a',title:'CTRL-A',author:'Juultje Nieuwenhof',
+  description:'Een verhaal over spijt en twijfel',themes:['Spijt'],
+  tags:['spijt'],barcode:'spijt',copies:[{barcode:'spijt'}],
+},{
+  id:'spijt',title:'Spijt!',author:'Carry Slee',
+  description:'',themes:[],copies:[{barcode:'none'}],
+}];
+assert.deepStrictEqual(filterBooks(keywordOnly,{query:'spijt'}).map(x=>x.id),
+  ['spijt'],'Text only in metadata must not make a book match a title query');
+assert.deepStrictEqual(filterBooks(keywordOnly,{query:'nieuwenhof'}).map(x=>x.id),
+  ['ctrl-a'],'Author search still works');
+assert.deepStrictEqual(filterBooks(keywordOnly,{query:'SPiJT'}).map(x=>x.id),
+  ['spijt'],'Title search should ignore case');
+assert.equal(filterBooks(keywordOnly,{query:'   '}).length,2);
+
 assert.strictEqual(
   filterBooks([groupedBook], { selectedThemes: new Set(['avontuur']) }).length,
   1,
