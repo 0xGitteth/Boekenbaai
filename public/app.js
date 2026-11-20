@@ -1483,13 +1483,16 @@ function renderBookEditionDetails(book) {
       { className: 'book-detail__edition-availability' });
     // A multi-edition work requires an explicit physical-edition selection.
     // Do not silently lend the first available, possibly mismatched, edition.
-    const availableCopy = edition.copies.find(other =>
-      other.id && other.status !== 'borrowed');
-    if (authUser?.role === 'student' && availableCopy && state.studentActionHandler) {
-      const choose = appendTextElement(details, 'button', 'Leen deze uitgave', {
-        type: 'button', className: 'btn btn--secondary book-detail__edition-action',
-      });
-      choose.addEventListener('click', () => state.studentActionHandler?.(availableCopy));
+    const availableCopy = edition.copies.find(other => other.id
+      &&other.status !== 'borrowed'&&other.catalogHidden!==true
+      &&(!other.reservationHeld||other.reservationMine));
+    if (authUser?.role === 'student' && state.studentActionHandler) {
+      const choose = appendTextElement(details,'button',availableCopy
+        ?'Leen deze uitgave':'Reserveer deze uitgave',{
+          type:'button',className:'btn btn--secondary book-detail__edition-action',
+        });
+      choose.addEventListener('click',()=>state.studentActionHandler?.(
+        availableCopy||edition.copies[0],{reserveEdition:!availableCopy}));
     }
   }
 }
@@ -2117,7 +2120,8 @@ function groupCatalogEditions(copies) {
       groups.set(key, edition);
     }
     edition.copies.push(copy);
-    if (copy.status !== 'borrowed' && copy.catalogHidden!==true) edition.availableCopies++;
+    if (copy.status !== 'borrowed' && copy.catalogHidden!==true
+      &&(!copy.reservationHeld||copy.reservationMine)) edition.availableCopies++;
     edition.representativeBook = pickRepresentativeBook(edition.representativeBook, copy);
     if (!edition.publisher && copy.publisher) edition.publisher = copy.publisher;
   }
@@ -2172,7 +2176,8 @@ function groupBooksByTitleAuthor(books = []) {
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const hiddenCopies = value.copies.filter((copy)=>copy.catalogHidden===true).length;
     const availableCopies = value.copies.filter(copy=>
-      copy.status!=='borrowed' && copy.catalogHidden!==true).length;
+      copy.status!=='borrowed' && copy.catalogHidden!==true
+      &&(!copy.reservationHeld||copy.reservationMine)).length;
     const editions = groupCatalogEditions(value.copies);
     // Show the cover of the most common edition with an available cover.
     const featuredEdition = editions.find(edition =>
@@ -3226,8 +3231,10 @@ function resolveStudentBookAction(book, user) {
   const mine = copies.find(copy => ownedIds.has(copy.id));
   if (mine) return { label: 'Boek terugbrengen', type: 'return', bookId: mine.id };
   const available = copies.find(copy => copy?.id && copy.status !== 'borrowed'
-    && copy.catalogHidden!==true);
-  if (!available) return null;
+    &&copy.catalogHidden!==true&&(!copy.reservationHeld||copy.reservationMine));
+  if (!available) return isStudent
+    ? {label:'Reserveren',type:'reserve',bookId:copies.find(x=>x?.id)?.id||null}
+    : {label:'Inloggen om te reserveren',type:'login',bookId:null};
   return isStudent
     ? { label: 'Boek lenen', type: 'borrow', bookId: available.id }
     : { label: 'Inloggen om te lenen', type: 'login', bookId: null };
@@ -3973,7 +3980,7 @@ function initStudentPage() {
 
 
   let studentLoanInProgress = false;
-  async function handleCardLoanAction(book) {
+  async function handleCardLoanAction(book,{reserveEdition=false}={}) {
     const action = resolveStudentBookAction(book, authUser);
     if (!action) return;
     if (action.type === 'login') {
@@ -3985,6 +3992,18 @@ function initStudentPage() {
     studentLoanInProgress = true;
     if (studentActionMessage) studentActionMessage.textContent = 'Boek wordt verwerkt…';
     try {
+      if(action.type==='reserve'){
+        const created=await fetchJson('/api/book-reservations',{
+          method:'POST',body:{bookId:action.bookId,specificEdition:reserveEdition},
+        });
+        closeBookDetail();
+        window.dispatchEvent(new Event('boekenbaai:reservations-changed'));
+        await refreshData();
+        if(studentActionMessage)studentActionMessage.textContent=created.created
+          ?'Reservering geplaatst. Je krijgt bericht zodra het boek beschikbaar is.'
+          :'Je staat al op de wachtlijst voor dit boek.';
+        return;
+      }
       const operation = action.type === 'return' ? 'check-in' : 'check-out';
       const finished = operation === 'check-in'
         ? await window.BoekenbaaiReadCompletion?.ask(book?.title || 'Dit boek')
@@ -3996,6 +4015,7 @@ function initStudentPage() {
         method: 'POST', body: operation === 'check-in' ? { finished } : {},
       });
       if (operation === 'check-in') window.dispatchEvent(new Event('boekenbaai:reading-record-created'));
+      window.dispatchEvent(new Event('boekenbaai:reservations-changed'));
       closeBookDetail();
       await refreshData();
       if (studentActionMessage) studentActionMessage.textContent = action.type === 'return'
