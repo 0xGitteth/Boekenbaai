@@ -4187,6 +4187,9 @@ function initStudentPage() {
   });
 
   searchInput?.addEventListener('input', renderBooks);
+  window.addEventListener('boekenbaai:reservations-changed',()=>{
+    if(authUser?.role==='student')void loadBooks().catch(()=>{});
+  });
   studentFilterToggle?.addEventListener('click', () => {
     if (catalogAdvanced) catalogAdvanced.open = !catalogAdvanced.open;
   });
