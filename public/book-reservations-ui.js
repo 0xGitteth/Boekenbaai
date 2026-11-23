@@ -1,7 +1,8 @@
 'use strict';
 
 // Student reservation inbox and mentor readiness alerts. Personal queue data
-// is fetched only with the active session token and is never cached locally.
+// is fetched using either the active same-origin session cookie or a bearer
+// token, and is never cached locally.
 const page=document.body?.dataset.page;
 const student=page==='student';
 const host=document.querySelector(student?'#student-profile-view':'#teacher-dashboard');
@@ -26,8 +27,18 @@ if(host){
   list.className='bb-reservations-list';
   list.setAttribute('aria-live','polite');
   panel.append(list);
-  let currentToken='';
   let inFlight=false;
+  let generation=0;
+  let queuedRefresh=false;
+  const authHeaders=()=>{
+    const token=localStorage.getItem('boekenbaai_token')||'';
+    return token?{Authorization:'Bearer '+token}:{};
+  };
+  function clearPersonalData(){
+    generation++;
+    panel.hidden=true;
+    list.replaceChildren();
+  }
   function add(tag,text,parent=list,cls=''){
     const node=document.createElement(tag);
     if(cls)node.className=cls;
@@ -73,10 +84,8 @@ if(host){
         cancel.addEventListener('click',async()=>{
           cancel.disabled=true;
           try{
-            const token=localStorage.getItem('boekenbaai_token')||'';
             const response=await fetch('/api/book-reservations/'+encodeURIComponent(item.id),{
-              method:'DELETE',headers:{Authorization:'Bearer '+token},
-              credentials:'same-origin',
+              method:'DELETE',headers:authHeaders(),credentials:'same-origin',
             });
             if(!response.ok)throw Error((await response.json()).message||'Annuleren mislukt.');
             window.dispatchEvent(new Event('boekenbaai:reservations-changed'));
@@ -94,28 +103,42 @@ if(host){
     }
   }
   async function refresh(){
+    const requestGeneration=++generation;
+    if(inFlight){queuedRefresh=true;return;}
+    inFlight=true;
     const token=localStorage.getItem('boekenbaai_token')||'';
-    if(!token){currentToken='';list.replaceChildren();panel.hidden=true;return;}
-    if(inFlight)return;
-    inFlight=true;currentToken=token;
     try{
       const response=await fetch('/api/book-reservations',{
-        headers:{Authorization:'Bearer '+token},credentials:'same-origin',
-        cache:'no-store',
+        headers:authHeaders(),credentials:'same-origin',cache:'no-store',
       });
-      if(!response.ok){if([401,403].includes(response.status)){
-        panel.hidden=true;list.replaceChildren();}return;}
+      if(requestGeneration!==generation
+        ||(localStorage.getItem('boekenbaai_token')||'')!==token)return;
+      if(!response.ok){
+        if([401,403].includes(response.status))clearPersonalData();
+        return;
+      }
       const result=await response.json();
-      if(localStorage.getItem('boekenbaai_token')!==token)return;
+      // A user may have signed out or switched accounts while decoding JSON.
+      if(requestGeneration!==generation
+        ||(localStorage.getItem('boekenbaai_token')||'')!==token)return;
       render(student?(result.reservations||[]):(result.mentorAlerts||[]));
-    }catch(_){ /* Retain the last known in-app message when offline. */ }
-    finally{inFlight=false;}
+    }catch(_){ /* Keep the current user's message when the network is offline. */ }
+    finally{
+      inFlight=false;
+      if(queuedRefresh){queuedRefresh=false;void refresh();}
+    }
   }
   window.addEventListener('boekenbaai:student-auth-validated',()=>void refresh());
   window.addEventListener('boekenbaai:staff-refresh',()=>void refresh());
   window.addEventListener('boekenbaai:reservations-changed',()=>void refresh());
+  window.addEventListener('boekenbaai:student-auth-pending',()=>{
+    clearPersonalData();
+  });
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{
-    panel.hidden=true;list.replaceChildren();currentToken='';
+    clearPersonalData();
+  });
+  window.addEventListener('storage',event=>{
+    if(event.key==='boekenbaai_token'){clearPersonalData();void refresh();}
   });
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)void refresh();
