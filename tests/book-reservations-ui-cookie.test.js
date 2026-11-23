@@ -54,7 +54,7 @@ async function flush(){await new Promise(resolve=>setImmediate(resolve));}
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0].options.headers)),{},
     'A browser cookie session must work without a local bearer token');
   assert.equal(calls[0].options.credentials,'same-origin');
-  const panel=host.children.find(n=>n.id==='bb-reservations-panel');
+  const panel=heading.children.find(n=>n.id==='bb-reservations-panel');
   assert.equal(panel.hidden,false);
   const list=panel.children.find(n=>n.className==='bb-reservations-list');
   assert.equal(list.children.length,1);
