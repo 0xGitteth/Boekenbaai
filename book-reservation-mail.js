@@ -19,7 +19,10 @@ function recipientMessages(db,links,domain='koraaledu.nl'){
     const student=activeStudent(booking.studentId);
     if(!student)continue;
     const link=auth.findLinkByAccount(links,'student',student.id);
-    const studentEmail=auth.isAllowedSchoolEmail(link?.email,domain)
+    // A provisional, unverified school-address link is not enough to send
+    // personal reservation details about a minor. A verified Google subject
+    // must be tied to the pupil account; in-app alerts remain available.
+    const studentEmail=link?.sub&&auth.isAllowedSchoolEmail(link.email,domain)
       ?mail.validEmail(link.email):'';
     const readyId=booking.id+':'+booking.readyAt;
     if(studentEmail)recipients.push({
