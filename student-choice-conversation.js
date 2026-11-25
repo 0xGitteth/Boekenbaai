@@ -269,6 +269,12 @@ function analyze(text,rawContext={},books=[]){
   if(alias)direct={...validateSignals({prefer:[alias[1]]}),recognized:true,clarify:false};
  }
  if(selected?.length)length=selected.length;
+ // Resolve a pronoun only in an animal context, and explicitly confirm
+ // the resulting exclusion in the UI. Do not generalize to human loss.
+ if(!selected&&/\b(?:ik wil niet dat|ik wil liever niet dat|ik wil geen verhaal waarin)\s+(?:(?:die|het dier|de hond|de kat|een dier|een hond|een kat|mijn hond|mijn kat)\s+(?:doodgaat|dood gaat|sterft|overlijdt))\b/.test(value)
+  &&(current.prefer.includes('animals')||/\b(?:dier|hond|kat)\b/.test(value))){
+  direct={...validateSignals({prefer:direct.prefer,avoid:[...(direct.avoid||[]),'animalLoss']}),recognized:true,clarify:false};
+ }
  const delta=validateSignals(direct);
  const updated=merged(current,delta);
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
