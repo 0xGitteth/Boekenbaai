@@ -324,29 +324,36 @@
     adviceQuestion=question;
     clearActions();
     const form=el('form','bb-choice-chat__free bb-choice-chat__free--answer');
-    const label=el('label','','Jouw antwoord');
+    const label=el('label','bb-choice-chat__sr-only','Jouw antwoord');
     label.setAttribute('for','bb-choice-free-text');
-    const input=el('textarea');input.id='bb-choice-free-text';input.maxLength=500;input.rows=2;
-    input.placeholder='Typ je antwoord';input.required=true;
+    const input=el('textarea');input.id='bb-choice-free-text';input.maxLength=500;input.rows=1;
+    input.placeholder='Typ je antwoord…';input.required=true;
     const submit=el('button','btn btn--primary','Verstuur');submit.type='submit';
-    const help=el('button','btn btn--secondary','Ik weet het niet / geef voorbeelden');help.type='button';
-    help.addEventListener('click',()=>{
-      if(!active||busy)return;
-      if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');
-    });
-    form.append(label,input,submit,help);
+    const suggestions=el('div','bb-choice-chat__suggestions');
+    suggestions.setAttribute('role','group');suggestions.setAttribute('aria-label','Hulp bij je antwoord');
+    const marker=epoch;
+    const suggest=(label,callback)=>{
+      const item=el('button','bb-choice-chat__suggestion',label);item.type='button';
+      item.addEventListener('click',()=>{if(active&&!busy&&marker===epoch)callback();});
+      suggestions.append(item);
+    };
+    suggest('Geef voorbeelden',()=>{if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');});
     if(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length){
-      const skip=el('button','btn btn--secondary','Toon boeken met wat je nu weet');skip.type='button';
-      skip.addEventListener('click',()=>{if(active&&!busy)void showRecommendations();});form.append(skip);
+      suggest('Laat boeken zien',()=>void showRecommendations());
     }
-    const correct=el('button','btn btn--secondary','Ik wil opnieuw beginnen');correct.type='button';
-    correct.addEventListener('click',()=>{if(active&&!busy){choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);}});
-    form.append(correct);
-    const bookSearch=el('button','btn btn--secondary','Ik ken een boek dat ik leuk vind');bookSearch.type='button';
-    bookSearch.addEventListener('click',()=>{if(active&&!busy)showReferenceSearch('','',true);});form.append(bookSearch);
+    suggest('Ik ken een leuk boek',()=>showReferenceSearch('','',true));
+    suggest('Liever kiezen uit antwoorden',beginInterests);
+    suggest('Opnieuw beginnen',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);});
+    form.append(suggestions,label,input,submit);
     actions.append(form);input.focus({preventScroll:true});
     if(explicitNavigation)scrollLatest(true);else scheduleLatest();
-    form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
+    const send=()=>{if(active&&!busy&&marker===epoch)return submitAdvice(input.value.trim());};
+    form.addEventListener('submit',event=>{event.preventDefault();return send();});
+    input.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'||event.shiftKey||event.isComposing||event.keyCode===229)return;
+      event.preventDefault();
+      return send();
+    });
   }
   function showReferenceSearch(initialTitle='',initialAuthor='',explicitNavigation=false){
     if(!active||busy)return;
@@ -447,13 +454,11 @@
     ]);
   }
   function offerGeneral(){
-    message('Wil je ontdekken wat je leuk vindt of zal ik je drie boeken voorstellen?');
+    message('Weet je al wat je graag wilt lezen, of zullen we samen iets zoeken? Ik kan je ook verrassen!');
     currentStep='route';
     options([
-      ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
-      ['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice('free-time');offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
-      ['Ik ken een boek dat ik leuk vind',()=>showReferenceSearch()],
-      ['Liever alleen kiezen uit antwoorden',beginInterests],
+      ['Ik weet wat ik zoek',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
+      ['Help me ontdekken',()=>{choices={route:'new'};freshAdvice('free-time');offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }

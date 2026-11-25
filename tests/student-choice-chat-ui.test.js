@@ -162,7 +162,7 @@ vm.runInNewContext(code,{
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(actions.children.some(x=>x.textContent==='Vertel zelf wat je zoekt'));
+  assert.deepEqual(actions.children.map(x=>x.textContent),['Ik weet wat ik zoek','Help me ontdekken','Laat me drie boeken zien']);
   actions.children.find(x=>x.textContent==='Laat me drie boeken zien').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(suggestRequests.at(-1).anonymous,true);
@@ -174,18 +174,19 @@ vm.runInNewContext(code,{
   assert.deepEqual(actions.children.map(x=>x.textContent),
     ['Ja, graag','Nee, iets nieuws ontdekken','Laat me drie boeken zien']);
   actions.children[1].listeners.click();
-  actions.children.find(x=>x.textContent==='Liever alleen kiezen uit antwoorden').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
+  actions.children[0].children[0].children.find(x=>x.textContent==='Liever kiezen uit antwoorden').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children[0].listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   // Explicit navigation from history must reveal a taller reference form.
   viewport.scrollTop=80;viewport.listeners.scroll();
   dock.offsetHeight=600;dock.getBoundingClientRect=()=>({top:300});
-  actions.children[0].children.find(x=>x.textContent==='Ik ken een boek dat ik leuk vind').listeners.click();
+  actions.children[0].children[0].children.find(x=>x.textContent==='Ik ken een leuk boek').listeners.click();
   assert.equal(dock.attrs['data-long'],'true');
   assert.equal(viewport.scrollTop,300,'Explicit form change reveals the reference controls');
   dock.offsetHeight=120;
@@ -200,12 +201,21 @@ vm.runInNewContext(code,{
   assert.equal(viewport.scrollTop,131,'Passive updates preserve keyboard history position');
   const free=actions.children[0];
   assert.equal(free.tag,'form');
-  free.children[1].value='Een mysterie zonder moord';
-  await free.listeners.submit({preventDefault(){}});
+  assert.equal(free.children[0].className,'bb-choice-chat__suggestions');
+  assert.equal(free.children[2].tag,'textarea');
+  assert.equal(free.children[3].type,'submit');
+  free.children[2].value='Een mysterie zonder moord';
+  let prevented=false;
+  free.children[2].listeners.keydown({key:'Enter',shiftKey:true,preventDefault(){prevented=true;}});
+  assert.equal(prevented,false,'Shift+Enter keeps a newline');
+  free.children[2].listeners.keydown({key:'Enter',isComposing:true,preventDefault(){prevented=true;}});
+  assert.equal(prevented,false,'Enter during composition is not submitted');
+  await free.children[2].listeners.keydown({key:'Enter',preventDefault(){prevented=true;}});
+  assert.equal(prevented,true,'Enter sends the response');
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
   actions.children.find(x=>x.textContent==='Ja, ga verder').listeners.click();
   assert.equal(actions.children[0].tag,'form','Confirming an exclusion must lead to a real follow-up');
-  actions.children[0].children.find(x=>x.textContent==='Toon boeken met wat je nu weet').listeners.click();
+  actions.children[0].children[0].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:['murder']});
   assert.equal(suggestRequests.at(-1).choices.useReadingHistory,true);
@@ -215,11 +225,11 @@ vm.runInNewContext(code,{
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
-  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   async function submitOpen(value){
     const form=actions.children[0];
     assert.equal(form.tag,'form');
-    form.children[1].value=value;
+    form.children[2].value=value;
     await form.listeners.submit({preventDefault(){}});
   }
   const countBeforeOpen=suggestRequests.length;
@@ -248,7 +258,7 @@ vm.runInNewContext(code,{
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
-  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   await submitOpen('Een realistisch mysterie met aanwijzingen');
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(new Set(suggestRequests.at(-1).choices.openSignals.prefer),new Set(['mystery','puzzles','realistic']));

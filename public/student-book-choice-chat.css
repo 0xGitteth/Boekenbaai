@@ -70,8 +70,8 @@
 }
 .bb-choice-chat__actions {
   flex:0 0 auto;
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
+  display:flex;
+  flex-wrap:wrap;
   gap:7px;
   padding:10px 2px 2px;
   border-top:1px solid #e5edf6;
@@ -93,6 +93,7 @@
   font:inherit;font-size:.9rem;font-weight:700;line-height:1.4;
   cursor:pointer;
 }
+.bb-choice-chat__option{flex:1 1 calc(33.333% - 7px);}
 .bb-choice-chat__option:hover,
 .bb-choice-chat__match:hover {background:#e8f3ff;border-color:#92b8de;}
 .bb-choice-chat__actions:has(.bb-choice-chat__pin){display:block;}
@@ -177,7 +178,7 @@
 .bb-choice--chat :focus-visible{outline:3px solid #6aa1dc;outline-offset:2px;}
 @media(max-width:540px){
   .bb-choice--chat{width:96vw;padding:12px;height:93dvh;max-height:93dvh;}
-  .bb-choice-chat__actions{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .bb-choice-chat__option{flex-basis:calc(50% - 7px);}
   .bb-choice--chat .bb-choice__header p{font-size:.78rem;}
   .bb-choice-chat__matches{grid-template-columns:minmax(0,1fr);}
   .bb-choice-chat__result{grid-template-columns:69px minmax(0,1fr);}
@@ -185,30 +186,55 @@
 }
 @media(prefers-reduced-motion:reduce){.bb-choice--chat *{scroll-behavior:auto;}}
 
-.bb-choice-chat__free{grid-column:1/-1;display:grid;gap:7px;min-width:0;}
+.bb-choice-chat__free{width:100%;display:grid;gap:7px;min-width:0;}
 .bb-choice-chat__free label{font-size:.82rem;font-weight:700;}
 .bb-choice-chat__free input,.bb-choice-chat__free textarea{box-sizing:border-box;width:100%;min-width:0;min-height:44px;border:1px solid #bfcfe2;border-radius:10px;padding:9px 11px;font:inherit;color:#19345d;background:#fff;}
 .bb-choice-chat__free textarea{height:58px;resize:none;overflow-y:auto;scrollbar-width:none;}
+.bb-choice-chat__dock{display:flex;flex-direction:column;}
+.bb-choice-chat__status{order:-1;margin:0 2px 5px;}
+.bb-choice-chat__status:empty{margin:0;}
+.bb-choice-chat__sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
 #student-choice-dialog .bb-choice-chat__free--answer{
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:minmax(0,1fr) auto;
   align-items:stretch;
 }
-#student-choice-dialog .bb-choice-chat__free--answer > label{grid-column:1/-1;}
-#student-choice-dialog .bb-choice-chat__free--answer > textarea{grid-column:span 3;}
-#student-choice-dialog .bb-choice-chat__free--answer > .btn{
-  width:auto;min-width:0;min-height:44px;margin:0;padding:8px 10px;
-  border-radius:9px;font-size:.82rem;line-height:1.3;white-space:normal;
-  text-align:center;justify-content:center;overflow-wrap:anywhere;
+.bb-choice-chat__suggestions{
+  grid-column:1/-1;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:2px 12px;
+  padding:0 2px 3px;
 }
-#student-choice-dialog .bb-choice-chat__free--answer > .btn--primary{grid-column:span 1;align-self:stretch;}
-#student-choice-dialog .bb-choice-chat__free--answer > .btn--secondary{
-  grid-column:span 2;
-  border:1px solid #c8d9eb;background:#f7faff;color:#264d78;
+#student-choice-dialog .bb-choice-chat__suggestion{
+  appearance:none;
+  background:transparent;
+  border:0;
+  color:#365e89;
+  padding:5px 2px;
+  min-height:30px;
+  font:inherit;
+  font-size:.82rem;
+  text-align:left;
+  text-decoration:underline;
+  text-underline-offset:3px;
+  cursor:pointer;
 }
-#student-choice-dialog .bb-choice-chat__free--answer > .btn--secondary:hover{background:#e8f3ff;border-color:#92b8de;}
+#student-choice-dialog .bb-choice-chat__suggestion:hover{color:#173a68;}
+#student-choice-dialog .bb-choice-chat__free--answer > textarea{grid-column:1;height:46px;min-height:46px;}
+#student-choice-dialog .bb-choice-chat__free--answer > .btn--primary{
+  grid-column:2;
+  width:auto;
+  min-width:0;
+  min-height:46px;
+  margin:0;
+  padding:8px 18px;
+  border-radius:10px;
+  font-size:.9rem;
+  white-space:nowrap;
+}
 @media(max-width:360px){
-  #student-choice-dialog .bb-choice-chat__free--answer > textarea{grid-column:span 2;}
-  #student-choice-dialog .bb-choice-chat__free--answer > .btn--primary{grid-column:span 2;}
+  #student-choice-dialog .bb-choice-chat__free--answer > .btn--primary{padding-inline:10px;}
 }
 @media(max-height:450px){
   .bb-choice--chat .bb-choice__header p{display:none;}
