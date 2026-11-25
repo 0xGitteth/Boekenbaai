@@ -442,7 +442,8 @@ function validateChoices(value) {
   }
   result.answers=dialogue.validatedAnswers(input.answers);
   result.openSignals=validateSignals(input.openSignals);
-  if(result.route==='surprise')result.openSignals.prefer=[];
+  result.discoverySample=input.discoverySample===true&&result.route==='surprise';
+  if(result.route==='surprise'&&!result.discoverySample)result.openSignals.prefer=[];
   result.useReadingHistory=input.useReadingHistory!==false;
   result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
   result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
@@ -578,6 +579,21 @@ function surpriseBooks(db, candidates, limit) {
   }
   return selected.slice(0,limit);
 }
+// A short feedback sample deliberately covers different catalogue subjects.
+function discoverySample(candidates,profiles,choice,count){
+  const roots=['crime','mystery','relationships','friendship','identity','sport','animals','nature','history','science','technology','fantasy','art','music','cultures','cooking','gaming','health','economics','society','humor','true'];
+  const subjects=key=>new Set(roots.filter(t=>profiles.get(key)?.has(t)));
+  const previous=choice.excludeKeys.slice(-18).map(subjects).filter(x=>x.size);
+  const picked=[],remaining=candidates.slice();
+  while(picked.length<count&&remaining.length){
+    const diversity=item=>{const a=subjects(item.work.key);return previous.length?Math.min(...previous.map(b=>1-[...a].filter(x=>b.has(x)).length/Math.max(1,new Set([...a,...b]).size))):0;};
+    remaining.sort((a,b)=>Number(b.work.available>0)-Number(a.work.available>0)
+      ||(!picked.length&&choice.openSignals.prefer.length?b.specificMatches-a.specificMatches||b.openMatches-a.openMatches:0)
+      ||diversity(b)-diversity(a)||a.tiebreak-b.tiebreak);
+    const item=remaining.shift();picked.push({...item,surpriseReason:'Een boek om te ontdekken wat je aanspreekt'});previous.push(subjects(item.work.key));
+  }
+  return picked;
+}
 function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {}) {
   const choice = validateChoices(input);
   const works = groupBooks(db);
@@ -650,7 +666,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
     const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
     const specificMatches=choice.openSignals.prefer.filter(trait=>Object.hasOwn(SUBTOPICS,trait)&&traits.has(trait)).length;
-    if(choice.openSignals.prefer.length&&!openMatches)continue;
+    if(choice.openSignals.prefer.length&&!openMatches&&!choice.discoverySample)continue;
     const explicitMatch=explicitTraits.reduce((sum,t)=>sum+(traits.get(t)||0),0);
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
@@ -680,7 +696,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
   const count=Math.max(1,Math.min(3,limit));
-  const picked=choice.route==='surprise'
+  const picked=choice.discoverySample?discoverySample(candidates,workTraits,choice,count):choice.route==='surprise'
     ? surpriseBooks(db,candidates,count)
     : candidates.slice(0,count);
   return {

@@ -152,7 +152,7 @@ async function interpretAnswer({grant,sessionToken,guest,expectedStudentId,text,
    if(outcome.kind==='normal'){
      const recent=consent===true&&access.identity?pastQuestions(db,access.identity.studentId):[];
      const safe=conversation.cleanContext(context);
-     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',optionIds:Array.isArray(context?.optionIds)?context.optionIds.filter(x=>typeof x==='string').slice(0,24):undefined,navigation:['questions','examples','menu','topics'].includes(context?.navigation)?context.navigation:undefined,recent:[...safe.recent,...recent].slice(-40)};
+     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',optionIds:Array.isArray(context?.optionIds)?context.optionIds.filter(x=>typeof x==='string').slice(0,24):undefined,navigation:['questions','examples','menu','topics','book-feedback'].includes(context?.navigation)?context.navigation:undefined,bookVotes:Array.isArray(context?.bookVotes)?context.bookVotes.slice(0,8):undefined,recent:[...safe.recent,...recent].slice(-40)};
      result={...conversation.analyze(text,ctx,(db.books||[]).map(attachDerivedThemeFields)),moderation:'normal'};
    }else result={moderation:outcome.kind,guest:!access.identity};
    return access.identity&&outcome.changed?db:false;
@@ -251,7 +251,7 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
     mutate:db=>{
       const verified=choiceAccess(db,{grant,sessionToken,guest,expectedStudentId}).identity;
       // Declining personal advice does not disable account-level moderation.
-      const identity=anonymous?null:verified;
+      const identity=anonymous||choices?.discoverySample===true?null:verified;
       // Match public catalogue GET normalization. Raw imported tags are
       // not curator-approved themes until these shared rules are applied.
       const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};

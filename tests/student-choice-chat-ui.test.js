@@ -180,7 +180,7 @@ vm.runInNewContext(code,{
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb je op een van de volgende vragen')));
   assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);
   const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
-  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet','Kies een andere vraag']);
+  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet','Kies een andere vraag','Ontdek met boeken']);
   const example=actions.children.find(x=>x.className==='bb-choice-chat__option'&&/andere mensen/i.test(x.textContent));
   assert.ok(example);example.listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
@@ -290,6 +290,21 @@ vm.runInNewContext(code,{
   assert.deepEqual(new Set(suggestRequests.at(-1).choices.openSignals.prefer),new Set(['mystery','puzzles','realistic']));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals.avoid,[]);
 
+  // Switch from the ongoing question into real book feedback and back without
+  // losing the earlier answer or writing a discovery suggestion history.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Help me ontdekken').listeners.click();
+  assert.match(log.children.at(-1).children[0].textContent,/Wat vind je leuk of interessant/);
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Ontdek met boeken').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.at(-1).anonymous,true);
+  assert.equal(suggestRequests.at(-1).choices.discoverySample,true);
+  actions.children.find(x=>x.textContent==='♥ Lijkt me leuk').listeners.click();
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('2 van 6')));
+  actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Terug naar vorige vraag').listeners.click();
+  assert.equal(actions.children[0].tag,'form');
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
   elements.get('student-choice-close').listeners.click();

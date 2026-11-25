@@ -332,3 +332,9 @@
 .bb-choice-chat__actions:has(> .bb-choice-chat__option:nth-child(4):nth-last-child(2)):has(> .bb-choice-chat__suggestions) > .bb-choice-chat__option{
   flex-basis:calc(50% - 7px);
 }
+
+/* Multi-interest selection and simple catalogue feedback, without swipe gestures. */
+#student-choice-dialog .bb-choice-chat__option[aria-pressed="true"]{background:#d9eaf9;border-color:#467bae;box-shadow:inset 0 0 0 1px #467bae;color:#173a68;}
+#student-choice-dialog .bb-choice-chat__option[data-book-vote="like"]{color:#246b46;border-color:#8fc9ac;background:#e9f6ee;}
+#student-choice-dialog .bb-choice-chat__option[data-book-vote="maybe"]{color:#795b1f;border-color:#d9c48e;background:#fff8e5;}
+#student-choice-dialog .bb-choice-chat__option[data-book-vote="dislike"]{color:#9a3434;border-color:#dfaaaa;background:#fff0ef;}

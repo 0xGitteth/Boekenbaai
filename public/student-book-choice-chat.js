@@ -80,6 +80,7 @@
   let currentQuestion=null,questionHistory=[],readingConsent=false;
   let adviceContext=null,adviceQuestion=null,choiceMode=false;
   const recentAdviceQuestions=new Set();
+  let discoverySeen=new Set(),discoveryVotes=[],discoveryQueue=[],discoveryCatalogue=[],discoveryActive=false;
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
     if(className)x.className=className;
@@ -251,7 +252,7 @@
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
     currentQuestion=null;questionHistory=[];adviceContext=null;adviceQuestion=null;choiceMode=false;
-    shownInDialogue=new Set();
+    shownInDialogue=new Set();discoverySeen=new Set();discoveryVotes=[];discoveryQueue=[];discoveryCatalogue=[];discoveryActive=false;
     if(oldGrant){
       // Invalidate on the server as well as forgetting the token in memory.
       api('/api/auth/student-pin/choice-end',{choiceGrant:oldGrant}).catch(()=>{});
@@ -296,7 +297,10 @@
       button.addEventListener('click',()=>{if(!active||busy)return;if(selected.has(option.id))selected.delete(option.id);else selected.add(option.id);button.setAttribute('aria-pressed',String(selected.has(option.id)));submit.disabled=!selected.size;});actions.append(button);
     }
     submit.addEventListener('click',()=>{if(!active||busy||!selected.size)return;const picked=choicesForQuestion.filter(o=>selected.has(o.id));void submitAdvice(picked.map(o=>o.label).join(', '),undefined,false,{optionIds:picked.map(o=>o.id)});});actions.append(submit);
-    const back=el('button','btn btn--ghost','Terug');back.type='button';back.addEventListener('click',()=>showAdviceExamples(q,true));actions.append(back);scheduleLatest(true);
+    const back=el('button','btn btn--ghost','Zelf antwoorden');back.type='button';back.addEventListener('click',()=>{choiceMode=false;offerOpenAnswer('',q,true);});actions.append(back);
+    const all=el('button','btn btn--ghost','Allemaal');all.type='button';all.addEventListener('click',()=>void submitAdvice('Allemaal','both'));actions.append(all);
+    const other=el('button','btn btn--ghost','Liever iets anders');other.type='button';other.addEventListener('click',()=>void submitAdvice('Liever iets anders','other'));actions.append(other);
+    actions.append(suggestionShelf([['Kies een andere vraag',()=>void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'})],['Ontdek met boeken',startBookDiscovery]]));scheduleLatest(true);
   }
   function showAdviceExamples(q,promptAlreadyVisible=false){
     adviceQuestion=q||adviceQuestion;
@@ -306,6 +310,7 @@
     options(items,[...(adviceQuestion.multiple?[['Kies meerdere',()=>showMultiple(adviceQuestion)]]:[]),[choiceMode?'Zelf antwoorden':'Iets anders',()=>{choiceMode=false;offerOpenAnswer('Vertel maar.',adviceQuestion,true);}],
       ['Weet ik nog steeds niet',()=>void submitAdvice('Weet ik niet',undefined,true)],
       ['Kies een andere vraag',()=>{choiceMode=true;void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});}],
+      ['Ontdek met boeken',startBookDiscovery],
       ...(adviceContext?.current==='discover-topics'?[['Meer onderwerpen bekijken',()=>void submitAdvice('Meer onderwerpen bekijken',undefined,true,{navigation:'topics'})]]:[]),
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
@@ -320,7 +325,8 @@
       message('Bedoel je een boek met die titel? Ik kan kijken of ik het herken.');
       showReferenceSearch(plan.title);
     }else if(plan.kind==='question'){
-      if(choiceMode&&plan.question?.options?.length){message(plan.question.prompt);showAdviceExamples(plan.question,true);}
+      if(plan.question?.multiple){adviceQuestion=plan.question;message(plan.question.prompt);showMultiple(plan.question);}
+      else if(choiceMode&&plan.question?.options?.length){message(plan.question.prompt);showAdviceExamples(plan.question,true);}
       else offerOpenAnswer(plan.question.prompt,plan.question);
     }else if(plan.kind==='recommend'){
       message('Eens kijken wat we voor je in de kast hebben! 📚');
@@ -329,6 +335,7 @@
       const noPreference=!choices.openSignals?.prefer?.length&&!choices.openSignals?.avoid?.length&&!choices.referenceBookId&&!choices.externalRef&&choices.length!=='short'&&!choices.answers?.length;
       message(noPreference?'Zal ik je gewoon drie verschillende boeken laten zien?':'Zal ik alvast een paar boeken voor je zoeken? 📚');
       options([[noPreference?'Laat me drie boeken zien':'Toon boeken met wat je nu weet',()=>{if(noPreference)choices.route='surprise';void showRecommendations();}],
+        ['Ontdek met boeken',startBookDiscovery],
         ['Ontdek meer interesses',()=>{void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});} ]]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
@@ -386,6 +393,7 @@
     items.push(['Ik ken een leuk boek',()=>showReferenceSearch('','',true)],
       ['Stel me meerkeuzevragen',beginInterests],
       ['Kies een andere vraag',()=>{choiceMode=true;void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});}],
+      ['Ontdek met boeken',startBookDiscovery],
       ['Opnieuw beginnen',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);}]);
     const suggestions=suggestionShelf(items);
     form.append(suggestions,label,input,submit);
@@ -750,7 +758,51 @@
       if(active&&marker===epoch&&!delegated)busy=false;
     }
   }
-  function resultCard(item,catalogue){
+  function resumeDiscovery(){
+    discoveryActive=false;
+    if(choiceMode&&adviceQuestion?.options?.length)showAdviceExamples(adviceQuestion,true);
+    else if(adviceQuestion||adviceContext?.current)offerOpenAnswer('',adviceQuestion,true);
+    else void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});
+  }
+  function finishBookDiscovery(){
+    discoveryActive=false;const votes=discoveryVotes.slice();discoveryVotes=[];discoveryQueue=[];
+    if(!votes.length){resumeDiscovery();return;}
+    void submitAdvice('Verder met deze boeken',undefined,true,{navigation:'book-feedback',bookVotes:votes});
+  }
+  function startBookDiscovery(){
+    if(!active||busy)return;
+    discoveryActive=true;
+    message('Ik laat je verschillende boeken uit de bibliotheek zien. Geef aan wat je aanspreekt.');
+    void nextDiscoveryBook();
+  }
+  async function nextDiscoveryBook(){
+    if(!active||busy||!discoveryActive)return;
+    if(discoveryVotes.length>=6){finishBookDiscovery();return;}
+    const marker=epoch;
+    if(!discoveryQueue.length){
+      busy=true;clearActions();notice('Verschillende boeken zoeken…');
+      try{
+        const result=await api('/api/auth/student-pin/choice-suggest',{...(grant?{choiceGrant:grant}:{}),anonymous:true,choices:{route:'surprise',discoverySample:true,useReadingHistory:false,seed,openSignals:choices.openSignals||{prefer:[],avoid:[]},excludeKeys:[...new Set([...shownInDialogue,...discoverySeen])].slice(-180)}});
+        if(!active||marker!==epoch)return;
+        discoveryQueue=(result.suggestions||[]).filter(b=>!discoverySeen.has(b.key));
+        const catalogue=await api('/api/books');
+        if(!active||marker!==epoch)return;
+        discoveryCatalogue=Array.isArray(catalogue)?catalogue:[];
+        busy=false;notice('');
+      }catch(err){if(!active||marker!==epoch)return;busy=false;notice(err.message||'Boeken konden niet worden geladen.');options([['Opnieuw proberen',()=>void nextDiscoveryBook()],['Verder met het gesprek',resumeDiscovery]]);return;}
+    }
+    if(!active||marker!==epoch||!discoveryActive)return;
+    const book=discoveryQueue.shift();
+    if(!book){finishBookDiscovery();return;}
+    discoverySeen.add(book.key);
+    const bubble=message('Lijkt dit boek je iets? ('+(discoveryVotes.length+1)+' van 6)');
+    bubble.append(resultCard(book,discoveryCatalogue,true));
+    const rate=vote=>{if(!discoveryActive)return;discoveryVotes.push({bookId:book.bookId,vote});void nextDiscoveryBook();};
+    options([['✕ Niets voor mij',()=>rate('dislike')],['? Misschien',()=>rate('maybe')],['♥ Lijkt me leuk',()=>rate('like')]],
+      [['Verder met deze boeken',finishBookDiscovery],['Terug naar vorige vraag',resumeDiscovery]]);
+    const buttons=actions.children;for(let i=0;i<3;i++)buttons[i]?.setAttribute('data-book-vote',['dislike','maybe','like'][i]);
+  }
+  function resultCard(item,catalogue,discovery=false){
     const card=el('article','bb-choice-chat__result');
     const cover=el('div','bb-choice-chat__cover');
     const representative=catalogue.find(b=>b.id===item.bookId);
@@ -764,8 +816,9 @@
     const main=el('div','bb-choice-chat__result-copy');
     main.append(el('strong','',item.title));
     main.append(el('small','',item.author||'Auteur onbekend'));
-    main.append(el('p','',item.reason));
+    main.append(el('p','',discovery?String(representative?.description||'Geen beschrijving beschikbaar.').slice(0,500):item.reason));
     main.append(el('small','',item.available>0?item.available+' beschikbaar':'Momenteel niet beschikbaar'));
+    if(discovery){card.append(cover,main);return card;}
     const open=el('button','btn btn--secondary','Bekijk boek');
     open.type='button';
     open.addEventListener('click',()=>openBook(item,open));
@@ -884,7 +937,9 @@
         : [['Andere richting',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'new',openSignals:{prefer:[],avoid}};freshAdvice('more-interests');offerOpenAnswer('Oké! Over iets anders dan. Wat vind je nog meer interessant?',null,true);}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'surprise',openSignals:{prefer:[],avoid}};showRecommendations();}]]),
-      ['Vertel wat je anders wilt',()=>{freshAdvice('feedback');offerOpenAnswer('Wat vind je minder leuk aan deze boeken?',null,true);}],
+      ['Vertel wat je anders wilt',()=>{adviceContext={...(adviceContext||{}),current:'feedback',uncertain:0};adviceQuestion=null;offerOpenAnswer('Wat vind je minder leuk aan deze boeken?',null,true);}],
+      ['Ontdek met boeken',startBookDiscovery],
+      ['Kies een andere vraag',()=>void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'})],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Helemaal goed! We beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
