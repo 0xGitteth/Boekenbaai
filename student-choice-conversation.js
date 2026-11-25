@@ -216,7 +216,7 @@ function questionForContext(c){
   const options=hobbies.map((t,i)=>({id:String(i),label:names[i],prefer:[t],length:''}));
   if(hobbies.length>1)options.push({id:'both',label:hobbies.length===2?'Allebei':'Meerdere daarvan',prefer:hobbies,length:''});
   options.push({id:'other',label:'Liever iets anders',prefer:[],length:''});
-  return {...q,prompt:hobbies.length===2?'Zou je ook iets over '+names.map(n=>n.toLocaleLowerCase('nl-NL')).join(' of ')+' willen lezen, of liever iets anders?':hobbies.length===1?'Zou je ook iets over '+names[0].toLocaleLowerCase('nl-NL')+' willen lezen, of liever iets anders?':q.prompt,options};
+  return {...q,prompt:hobbies.length===2?'Zou je ook iets over '+names.map(n=>n.toLocaleLowerCase('nl-NL')).join(' of ')+' willen lezen?':hobbies.length===1?'Zou je daar ook iets over willen lezen?':'Zou je over een van deze dingen ook willen lezen?',options};
  }
  if(q.id!=='media-interest')return q;
  const options=c.hypothesis.slice(0,7).map((key,i)=>({id:String(i),label:LABELS[key]||key,prefer:[key],length:''}));
@@ -346,7 +346,10 @@ function analyze(text,rawContext={},books=[]){
   input='sport kijken';correction=true;
  }
  let direct=selected?{...validateSignals({prefer:selected.prefer}),recognized:true,clarify:false}:interpret(input);
- if(c.current==='hobby-focus'&&!selected&&/^(?:ja|ja graag|allebei|beide|allemaal)$/.test(value))direct={...validateSignals({prefer:c.hobbies}),recognized:true,clarify:false};
+ if(c.current==='hobby-focus'&&!selected&&/^(?:ja|ja graag|zeker|jawel)$/.test(value)&&c.hobbies.length>1){
+  return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'examples',reaction:'Leuk! Waar zou je dan het liefst over lezen?',question:{...questionView(q),examples:'Kies gerust wat bij je past.'},context:c}};
+ }
+ if(c.current==='hobby-focus'&&!selected&&/^(?:ja|ja graag|zeker|jawel|allebei|beide|allemaal)$/.test(value))direct={...validateSignals({prefer:c.hobbies}),recognized:true,clarify:false};
  // Exact short contextual responses can be resolved without guessing.
  if(!selected&&!direct.recognized&&!direct.avoid?.length){
   const alias=(contextualAliases[c.current]||[]).find(([phrase])=>normalize(phrase)===value);
@@ -371,7 +374,7 @@ function analyze(text,rawContext={},books=[]){
  if(c.current==='free-time'&&!notReader&&!media.length&&!anchor&&delta.prefer.length&&!delta.avoid.length){
   const detailed=delta.prefer.filter(t=>!delta.prefer.some(k=>SUBTOPICS[k]===t));
   const ctx={...next,signals:current,hobbies:detailed.slice(0,6),current:'hobby-focus'};
-  return {...envelope,advice:{kind:'question',reaction:'',question:questionView(questionForContext(ctx)),context:ctx}};
+  return {...envelope,advice:{kind:'question',reaction:'Oh, leuk!',question:questionView(questionForContext(ctx)),context:ctx}};
  }
  if((decline&&!delta.prefer.length&&!delta.avoid.length)||(c.current==='hobby-focus'&&selected?.id==='other')){
   const ctx={...next,signals:current,hobbies:[],hypothesis:[],uncertain:0};
