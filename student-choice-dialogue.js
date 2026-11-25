@@ -165,7 +165,13 @@ const TRAIT_WORDS={
   balanced:['avontuur','realistisch','vriendschap'],
   dialogue:['gesprek','dialoog','chat','brieven','berichten','whatsapp'],
   setting:['wereld','landschap','omgeving','ruimte','beschrijving'],
+  twist:['plotwending','plot twist','plottwist','verrassend einde','onverwacht einde','onverwachte wending','onvoorspelbaar','twist'],
+  slow:['langzaam opgebouwde spanning','spanning bouwt langzaam op','sluimerende spanning','psychologische spanning','slow burn'],
+  murder:['moord','moorden','moordenaar','vermoord','vermoorden'],
+  horror:['horror','griezel','griezelen','griezelig','eng'],
 };
+const {THEMES}=require('./student-choice-themes');
+for(const [key,[,,terms]] of Object.entries(THEMES))TRAIT_WORDS[key]=[...(TRAIT_WORDS[key]||[]),...terms];
 // Word-boundary matching prevents 'sport' inside 'transport' and 'leven'
 // inside 'overleven'. Accept only known Dutch inflections, never arbitrary
 // substrings of a different word. This applies to ISBN source tags AND prose.

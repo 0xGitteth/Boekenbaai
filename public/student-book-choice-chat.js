@@ -11,9 +11,12 @@
   const seenInTab=new Set();
   const recentQuestionsInTab=new Set();
   let active=false,epoch=0,grant='',personal=false,firstName='',previousFocus=null;
+  let openingToken='',openingStudentId=null;
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
-  let currentQuestion=null,questionHistory=[];
+  let currentQuestion=null,questionHistory=[],readingConsent=false;
+  let adviceContext=null,adviceQuestion=null;
+  const recentAdviceQuestions=new Set();
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
     if(className)x.className=className;
@@ -29,22 +32,91 @@
   function token(){
     try{return window.localStorage.getItem('boekenbaai_token')||'';}catch(_){return '';}
   }
-  async function api(path,body,signal){
-    const userToken=token();
+  function accountChanged(){
+    if(active){seenInTab.clear();recentQuestionsInTab.clear();recentAdviceQuestions.clear();close();}
+    const err=Error('Je account is gewijzigd. Open Help me kiezen opnieuw.');
+    err.status=409;err.code='CHOICE_ACCOUNT_CHANGED';return err;
+  }
+  function headersFor(userToken,body){
     const headers={Accept:'application/json'};
-    if(userToken && userToken!=='cookie')headers.Authorization='Bearer '+userToken;
+    if(userToken&&userToken!=='cookie')headers.Authorization='Bearer '+userToken;
     if(body!==undefined)headers['Content-Type']='application/json';
+    return headers;
+  }
+  async function verifyOpeningAccount(marker){
+    if(!active||marker!==epoch)return;
+    if(token()!==openingToken)throw accountChanged();
+    // A cookie-only account switch does not necessarily fire a storage event.
+    // Recheck the actual current session before rendering a personal response.
+    if(openingStudentId&&!grant){
+      const response=await fetch(apiUrl('/api/me'),{
+        credentials:'same-origin',cache:'no-store',headers:headersFor(openingToken)
+      });
+      const me=await response.json().catch(()=>({}));
+      if(!active||marker!==epoch)return;
+      if(token()!==openingToken||!response.ok||me.role!=='student'||me.id!==openingStudentId)
+        throw accountChanged();
+    }
+  }
+  async function api(path,body,signal){
+    const cleanup=path==='/api/auth/student-pin/choice-end';
+    const marker=epoch;
+    if(!cleanup&&active&&token()!==openingToken)throw accountChanged();
+    const userToken=cleanup?'':openingToken;
+    const bound=path.startsWith('/api/auth/student-pin/choice-')&&body!==undefined
+      &&!cleanup&&path!=='/api/auth/student-pin/choice-begin';
+    const payload=bound?{...body,expectedStudentId:openingStudentId}:body;
     const response=await fetch(apiUrl(path),{
-      method:body===undefined?'GET':'POST',credentials:'same-origin',
-      signal,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),
+      method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',
+      signal,headers:headersFor(userToken,body),...(body===undefined?{}:{body:JSON.stringify(payload)}),
     });
     const data=await response.json().catch(()=>({}));
+    // A late PIN grant still needs to be revoked by its original caller.
+    if(!cleanup&&(!active||marker!==epoch))return data;
+    if(!cleanup&&token()!==openingToken){
+      if(path==='/api/auth/student-pin/choice-begin'&&data.grant){
+        api('/api/auth/student-pin/choice-end',{choiceGrant:data.grant}).catch(()=>{});
+      }
+      throw accountChanged();
+    }
     if(!response.ok){
       const error=Error(data.message||'Er is iets misgegaan.');
       error.status=response.status;
+      if(!cleanup&&active&&marker===epoch){
+        if(data.code==='CHOICE_ACCOUNT_CHANGED'||(openingStudentId&&response.status===401))throw accountChanged();
+        if(response.status===423){
+          if(data.code==='CHOICE_BLOCKED')showBlocked();
+          else if(data.code==='CHOICE_GUEST_PAUSED')showGuestPaused();
+        }
+      }
       throw error;
     }
+    if(!cleanup&&path!=='/api/me'&&path!=='/api/auth/student-pin/choice-begin')await verifyOpeningAccount(marker);
     return data;
+  }
+  function showBlocked(){
+    resetSession();
+    message('Help me kiezen is geblokkeerd. Vraag je mentor om de functie weer open te zetten.');
+    clearActions();
+  }
+  function showGuestPaused(){
+    resetSession();active=true;openingToken=token();
+    message('Dit gesprek is gestopt. Over vijf minuten kun je weer zonder inloggen beginnen. Je kunt ook met je eigen PIN inloggen.');
+    options([['Inloggen met mijn PIN',showPin]]);
+  }
+  async function startGuest(){
+    if(!active||busy)return;
+    const marker=epoch;
+    busy=true;personal=false;firstName='';grant='';openingStudentId=null;
+    try{
+      await api('/api/auth/student-pin/choice-status',{});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');finishIdentity();
+    }catch(err){
+      if(!active||marker!==epoch)return;
+      busy=false;notice(err.message);
+      options([['Opnieuw proberen',startGuest],['Inloggen',showPin]]);
+    }finally{if(active&&marker===epoch)busy=false;}
   }
   function clearActions(){actions.replaceChildren();}
   function message(text,who='assistant'){
@@ -56,12 +128,13 @@
   }
   function notice(text){status.textContent=text||'';}
   function options(items){
+    const marker=epoch;
     clearActions();
     for(const [label,callback] of items){
       const x=el('button','bb-choice-chat__option',label);
       x.type='button';
       x.addEventListener('click',()=>{
-        if(!active||busy)return;
+        if(!active||busy||marker!==epoch)return;
         message(label,'student');
         clearActions();
         notice('');
@@ -80,10 +153,11 @@
     clearTimeout(searchTimer);
     searchController?.abort();
     searchController=null;searchTimer=null;
-    active=false;busy=false;personal=false;firstName='';
+    active=false;busy=false;personal=false;firstName='';readingConsent=false;
+    openingStudentId=null;openingToken='';
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
-    currentQuestion=null;questionHistory=[];
+    currentQuestion=null;questionHistory=[];adviceContext=null;adviceQuestion=null;
     shownInDialogue=new Set();
     if(oldGrant){
       // Invalidate on the server as well as forgetting the token in memory.
@@ -92,31 +166,275 @@
     log.replaceChildren();clearActions();notice('');
   }
   function beginInterests(){
-    if(!personal){
-      answer('route','new');
+    answer('route','new');
+  }
+  // The server selects the next open question and supplies corresponding
+  // example choices. Only normalized preferences and question IDs are retained.
+  function freshAdvice(current='opening'){
+    adviceContext={current};adviceQuestion=null;
+  }
+  function advicePayload(optionId){
+    return {...(adviceContext||{}),signals:choices.openSignals||{prefer:[],avoid:[]},
+      length:choices.length||'any',seed,recent:[...recentAdviceQuestions].slice(-30),
+      ...(optionId===undefined?{}:{optionId})};
+  }
+  function applyAdvice(plan){
+    adviceContext=plan.context;
+    if(plan.clearReference){delete choices.referenceBookId;delete choices.referencePreference;delete choices.externalRef;}
+    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,
+      questionIds:[...new Set([...(plan.context.used||[]),...(plan.kind==='question'?[plan.context.current]:[])])]};
+    if(plan.context.current&&plan.kind==='question'){
+      recentAdviceQuestions.add(plan.context.current);
+      if(recentAdviceQuestions.size>20)recentAdviceQuestions.delete(recentAdviceQuestions.values().next().value);
+    }
+  }
+  function showAdviceExamples(q){
+    adviceQuestion=q||adviceQuestion;
+    if(!adviceQuestion){offerOpenAnswer('');return;}
+    message(adviceQuestion.examples||'Misschien helpt het als ik een paar voorbeelden geef.');
+    const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
+    options([...items,['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
+      ['Weet ik nog steeds niet',()=>{message('Geen probleem. Dan bekijken we een andere richting.');startExploration();}],
+      ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
+  }
+  function continueAdvice(plan){
+    applyAdvice(plan);
+    if(plan.reaction)message(plan.reaction);
+    if(plan.reference?.bookId){
+      chooseBookReference(plan.reference);
       return;
     }
-    // Let the learner decide whether past reading is relevant, rather than
-    // interpreting every finished book as a book they enjoyed.
-    message('Wil je ook tips die lijken op boeken die je eerder hebt gelezen?');
+    if(plan.kind==='book-search'){
+      message('Bedoel je een boek met die titel? Ik kan kijken of ik het herken.');
+      showReferenceSearch(plan.title);
+    }else if(plan.kind==='question'){
+      offerOpenAnswer(plan.question.prompt,plan.question);
+    }else if(plan.kind==='recommend'){
+      message('Ik denk dat ik genoeg weet om een paar boeken voor je uit te zoeken.');
+      void showRecommendations();
+    }else if(plan.kind==='offer'){
+      message('Ik weet al iets over wat je zoekt. Zal ik daarmee een paar boeken voorstellen?');
+      options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],
+        ['Ontdek meer interesses',startExploration]]);
+    }else if(plan.kind==='examples'){
+      showAdviceExamples(plan.question);
+    }else{
+      adviceQuestion=plan.question||adviceQuestion;
+      message('Ik weet nog niet precies wat je bedoelt. Kun je het anders uitleggen?');
+      offerOpenAnswer('',adviceQuestion);
+    }
+  }
+  async function submitAdvice(value,optionId,alreadyShown=false){
+    if(!active||busy||!value.trim())return;
+    if(!alreadyShown)message(value,'student');
+    clearActions();busy=true;const marker=epoch;notice('Je antwoord bekijken…');
+    try{
+      const result=await api('/api/auth/student-pin/choice-interpret',{text:value.slice(0,500),
+        context:advicePayload(optionId),consent:readingConsent,...(grant?{choiceGrant:grant}:{})});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      if(result.moderation==='redirect'||result.moderation==='warning'){
+        message(result.moderation==='warning'
+          ?result.guest
+            ?'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, stop ik dit gesprek.'
+            :'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, blokkeer ik deze functie. Je mentor moet hem dan weer openzetten.'
+          :'Dit helpt me nog niet om een boek voor je te zoeken. Vertel iets over wat je graag leest.');
+        offerOpenAnswer('',adviceQuestion);
+        return;
+      }
+      const plan=result.advice;
+      if(!plan){throw Error('De keuzehulp kon geen vervolgvraag bepalen.');}
+      if(result.avoid?.length){
+        const labels=result.avoid.map(t=>result.labels?.[t]||t).join(', ');
+        message('Je wilt '+labels+' liever vermijden. Klopt dat?');
+        options([['Ja, ga verder',()=>continueAdvice(plan)],
+          ['Pas mijn antwoord aan',()=>offerOpenAnswer('Vertel het nog eens in je eigen woorden.',adviceQuestion)]]);
+      }else continueAdvice(plan);
+    }catch(err){
+      if(!active||marker!==epoch)return;
+      busy=false;notice(err.message||'Je antwoord kon niet worden verwerkt.');
+      options([['Opnieuw proberen',()=>offerOpenAnswer('',adviceQuestion)],['Kies liever uit antwoorden',startExploration]]);
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
+  function offerOpenAnswer(prompt='Waar lees je graag over?',question=null){
+    if(prompt)message(prompt);
+    adviceQuestion=question;
+    clearActions();
+    const form=el('form','bb-choice-chat__free');
+    const label=el('label','','Jouw antwoord');
+    label.setAttribute('for','bb-choice-free-text');
+    const input=el('textarea');input.id='bb-choice-free-text';input.maxLength=500;input.rows=3;
+    input.placeholder='Typ je antwoord';input.required=true;
+    const submit=el('button','btn btn--primary','Verstuur');submit.type='submit';
+    const help=el('button','btn btn--secondary','Ik weet het niet / geef voorbeelden');help.type='button';
+    help.addEventListener('click',()=>{
+      if(!active||busy)return;
+      if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');
+    });
+    form.append(label,input,submit,help);
+    if(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length){
+      const skip=el('button','btn btn--secondary','Toon boeken met wat je nu weet');skip.type='button';
+      skip.addEventListener('click',()=>{if(active&&!busy)void showRecommendations();});form.append(skip);
+    }
+    const correct=el('button','btn btn--secondary','Ik wil opnieuw beginnen');correct.type='button';
+    correct.addEventListener('click',()=>{if(active&&!busy){choices={route:'new'};freshAdvice();offerOpenAnswer();}});
+    form.append(correct);
+    const bookSearch=el('button','btn btn--secondary','Ik ken een boek dat ik leuk vind');bookSearch.type='button';
+    bookSearch.addEventListener('click',()=>{if(active&&!busy)showReferenceSearch();});form.append(bookSearch);
+    actions.append(form);input.focus();
+    form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
+  }
+  function showReferenceSearch(initialTitle='',initialAuthor=''){
+    if(!active||busy)return;
+    clearActions();
+    const form=el('form','bb-choice-chat__free');
+    const label=el('label','','Titel of ISBN');const title=el('input');title.type='text';title.value=initialTitle||'';title.maxLength=120;title.required=true;
+    const authorLabel=el('label','','Auteur (als je die weet)');const author=el('input');author.type='text';author.maxLength=90;author.value=initialAuthor||'';
+    const submit=el('button','btn btn--primary','Zoek in de schoolbibliotheek');submit.type='submit';
+    const back=el('button','btn btn--secondary','Verder met het gesprek');back.type='button';
+    back.addEventListener('click',()=>offerOpenAnswer('',adviceQuestion));
+    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus();
+    form.addEventListener('submit',event=>{event.preventDefault();void findReference({title:title.value.trim(),author:author.value.trim()},false);});
+  }
+  async function findReference(query,external){
+    if(!active||busy)return;
+    busy=true;clearActions();const marker=epoch;notice('Boektitel zoeken…');
+    try{
+      const result=await api('/api/auth/student-pin/choice-reference',{...query,external,...(grant?{choiceGrant:grant}:{})});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      const matches=Array.isArray(result.matches)?result.matches:[];
+      if(matches.length)message('Bedoel je een van deze boeken?');
+      else message(result.status==='invalid'?'Vul alleen een boektitel, ISBN en eventueel de auteur in.':result.status==='unavailable'||result.status==='busy'?'Ik kan de externe boekenbron nu niet bereiken.':'Ik heb geen passend boek gevonden.');
+      options([
+        ...matches.map(book=>[book.title+(book.author?' · '+book.author:'')+' ('+book.source+')',()=>chooseBookReference(book)]),
+        ...(!external?[['Zoek ook buiten school (Google Books / Open Library)',()=>{
+          message('Ik zoek alleen met de ingevulde titel en auteur, zonder je naam of gespreksgegevens.');
+          void findReference(query,true);
+        }]]:[]),
+        ['Titel of auteur aanpassen',()=>showReferenceSearch(query.title,query.author)],
+        ['Verder zonder boekherkenning',()=>{message('Vertel gerust wat je leuk vond aan dat boek.');offerOpenAnswer('',adviceQuestion);}],
+      ]);
+    }catch(err){
+      if(!active||marker!==epoch)return;busy=false;notice(err.message);
+      options([['Opnieuw proberen',()=>void findReference(query,external)],['Verder zonder boekherkenning',()=>offerOpenAnswer('',adviceQuestion)]]);
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
+  function chooseBookReference(book){
+    if(!active||busy)return;
+    message('Wil je een boek dat lijkt op '+book.title+' of wil je kijken of er een volgend deel is?');
     options([
-      ['Ja, graag',()=>answer('route','similar')],
-      ['Nee, liever iets anders',()=>answer('route','new')],
+      ['Een boek dat erop lijkt',()=>useBookReference(book)],
+      ['Kijk of er een volgend deel is',()=>void inspectSeries(book)],
+      ['Toch iets anders',()=>offerOpenAnswer('',adviceQuestion)],
     ]);
   }
-  function finishIdentity(){
-    message((personal&&firstName ? 'Hoi '+firstName+'! ' : '') +
-      'Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?');
+  function useBookReference(book){
+    choices={...choices,route:'new',referenceBookId:book.bookId||'',externalRef:book.externalRef||'',answers:[]};
+    freshAdvice('book-interest');
+    offerOpenAnswer('Wat vond je leuk aan '+book.title+'?');
+  }
+  async function inspectSeries(book,readPart){
+    if(!active||busy)return;
+    busy=true;clearActions();const marker=epoch;notice('Serie controleren…');
+    try{
+      const result=await api('/api/auth/student-pin/choice-series',{
+        ...(book.bookId?{bookId:book.bookId}:{externalRef:book.externalRef}),readPart,consent:readingConsent,
+        signals:choices.openSignals,...(grant?{choiceGrant:grant}:{})});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      if(!result.series){
+        message('Ik kan voor dit boek geen betrouwbare serievolgorde vaststellen.');
+        options([['Zoek een vergelijkbaar boek',()=>useBookReference(book)],['Verder met interesses',()=>offerOpenAnswer('',adviceQuestion)]]);return;
+      }
+      if(result.status==='found'&&result.suggestion){
+        message('Dit is het volgende deel in '+result.series.name+'.');
+        const list=await api('/api/books');
+        if(!active||marker!==epoch)return;
+        const block=message('Dit boek staat in onze bibliotheek:');
+        block.append(resultCard(result.suggestion,Array.isArray(list)?list:[]));
+        options([['Zoek ook andere boeken',()=>useBookReference(book)],['Controleer een ander deel',()=>void inspectSeries(book)]]);return;
+      }
+      if(result.status==='not_in_collection')message('Het volgende deel is '+result.target.title+'. Dat staat niet in onze bibliotheek.');
+      if(result.status==='already_read')message('Dit volgende deel staat al als uitgelezen in je leesgeschiedenis.');
+      if(result.status==='excluded')message('Het volgende deel bevat mogelijk een onderwerp dat je liever vermijdt.');
+      if(result.status==='last_known')message('Ik heb geen betrouwbaar vastgesteld volgend deel bij dit deel.');
+      if(!result.status){
+        message('Welk deel van '+result.series.name+' heb je als laatste uitgelezen?');
+        const read=new Set(result.readParts||[]);
+        options([...result.series.parts.map(p=>['Deel '+p.number+': '+p.title+(read.has(p.number)?' (uitgelezen)':''),()=>void inspectSeries(book,p.number)]),
+          ['Weet ik niet',()=>useBookReference(book)],['Ik zoek liever iets anders',()=>offerOpenAnswer('',adviceQuestion)]]);
+      }else options([['Controleer een ander deel',()=>void inspectSeries(book)],['Zoek een vergelijkbaar boek',()=>useBookReference(book)]]);
+    }catch(err){
+      if(!active||marker!==epoch)return;busy=false;notice(err.message);
+      options([['Opnieuw proberen',()=>void inspectSeries(book,readPart)],['Zoek een vergelijkbaar boek',()=>useBookReference(book)]]);
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
+  function selectReference(book,read){
+    chooseBookReference(book);
+  }
+  function offerFavorites(items){
+    if(!items.length){offerGeneral();return;}
+    message('Je hebt deze boeken bewaard voor later. Welk boek spreekt je nu aan?');
+    options([
+      ...items.map(book=>[book.title+(book.author?' · '+book.author:''),()=>selectReference(book,false)]),
+      ['Iets anders zoeken',offerGeneral],['Laat me drie boeken zien',()=>answer('route','surprise')],
+    ]);
+  }
+  function offerGeneral(){
+    message('Wil je ontdekken wat je leuk vindt of zal ik je drie boeken voorstellen?');
     currentStep='route';
     options([
-      ['Ontdek mijn interesses',beginInterests],
+      ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
+      ['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice('free-time');offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
+      ['Ik ken een boek dat ik leuk vind',()=>showReferenceSearch()],
+      ['Liever alleen kiezen uit antwoorden',beginInterests],
+      ['Laat me drie boeken zien',()=>answer('route','surprise')],
+    ]);
+  }
+  async function loadPersonalContext(){
+    if(!active||busy)return;
+    readingConsent=true;busy=true;const marker=epoch;
+    notice('Je eigen leesgegevens ophalen…');
+    try{
+      const context=await api('/api/auth/student-pin/choice-context',{
+        consent:true,...(grant?{choiceGrant:grant}:{})
+      });
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      const favorites=Array.isArray(context.favorites)?context.favorites:[];
+      if(context.recent){
+        const book=context.recent;
+        message('Je hebt '+book.title+' uitgelezen. Vond je dat een leuk boek?');
+        options([
+          ['Ja',()=>selectReference(book,true)],
+          ['Nee',()=>offerFavorites(favorites)],
+          ['Weet ik niet',()=>offerFavorites(favorites)],
+          ['Ik wil iets heel anders',offerGeneral],
+        ]);
+      }else offerFavorites(favorites);
+    }catch(error){
+      if(!active||marker!==epoch)return;
+      readingConsent=false;busy=false;
+      notice('Je leesgegevens konden niet worden geladen. Je kunt zonder deze gegevens verder.');
+      offerGeneral();
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
+  function finishIdentity(){
+    readingConsent=false;
+    choices={};freshAdvice();
+    if(!personal){offerGeneral();return;}
+    message((firstName?'Hoi '+firstName+'! ':'')+'Mag ik rekening houden met de boeken die je eerder hebt uitgelezen of bewaard?');
+    options([
+      ['Ja, graag',()=>void loadPersonalContext()],
+      ['Nee, iets nieuws ontdekken',offerGeneral],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }
   async function begin(){
     previousFocus=document.activeElement;
     resetSession();
-    active=true;seed=Math.random().toString(36).slice(2)+Date.now().toString(36);
+    active=true;openingToken=token();seed=Math.random().toString(36).slice(2)+Date.now().toString(36);
     dialog.showModal();
     notice('Controleren of je al ingelogd bent…');
     const marker=epoch;
@@ -124,6 +442,9 @@
       const me=await api('/api/me');
       if(!active||marker!==epoch)return;
       if(me?.role==='student'&&me.id){
+        openingStudentId=me.id;
+        await api('/api/auth/student-pin/choice-status',{});
+        if(!active||marker!==epoch)return;
         personal=true;firstName=username(me);
         notice('');
         finishIdentity();
@@ -133,10 +454,7 @@
     if(!active||marker!==epoch)return;
     notice('');
     message('Hoi! Ik help je een boek te vinden. Log in voor persoonlijke tips, of ga zonder inloggen verder.');
-    options([
-      ['Inloggen',showPin],
-      ['Zonder inloggen',()=>{personal=false;finishIdentity();}],
-    ]);
+    options([['Inloggen',showPin],['Zonder inloggen',startGuest]]);
   }
   function showPin(){
     currentStep='pin';
@@ -156,7 +474,7 @@
     pin.pattern='[0-9]{6}';pin.maxLength=6;pin.minLength=6;pin.required=true;
     const submit=el('button','btn','Inloggen');
     submit.type='submit';
-    const other=el('button','btn btn--ghost','Zonder inloggen');
+    const other=el('button','btn btn--ghost','Annuleren');
     other.type='button';
     const google=el('button','btn btn--ghost','Inloggen met Google');
     google.type='button';
@@ -201,14 +519,7 @@
       },200);
     });
     other.addEventListener('click',()=>{
-      // A pending successful PIN response must never reactivate personal
-      // mode after the learner explicitly chose anonymous recommendations.
-      epoch++;
-      clearSearch();
-      pin.value='';selected='';busy=false;personal=false;firstName='';
-      grant='';
-      message('Zonder inloggen','student');
-      finishIdentity();
+      pin.value='';clearSearch();close();
     });
     google.addEventListener('click',()=>{
       clearSearch();close();
@@ -230,7 +541,7 @@
           return;
         }
         clearSearch();
-        grant=result.grant;personal=true;firstName=username(result);
+        grant=result.grant;openingStudentId=selected;personal=true;firstName=username(result);
         clearActions();notice('');
         finishIdentity();
       }catch(err){
@@ -250,9 +561,14 @@
     }
   }
   function startExploration(){
+    choices.route='new';
     choices.answers=[];
     // A fresh route must never be biased by an earlier reference book.
     delete choices.referenceBookId;
+    delete choices.referencePreference;
+    delete choices.externalRef;
+    freshAdvice();
+    // Confirmed free-text preferences stay in effect when switching answer modes.
     questionHistory=[];
     currentQuestion=null;
     void askAdaptiveQuestion();
@@ -267,6 +583,7 @@
         [option.label,()=>recordAnswer(option.id)]),
       ['Weet ik niet',()=>recordAnswer('skip')],
       ['Sla deze vraag over',()=>recordAnswer('skip')],
+      ['Ik wil zelf antwoord geven',()=>offerOpenAnswer('Vertel wat voor jou belangrijk is.')],
       ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
       ['Laat nu drie boeken zien',()=>void showRecommendations()],
     ]);
@@ -295,7 +612,7 @@
     clearActions();
     try{
       const next=await api('/api/auth/student-pin/choice-next',{
-        answers:choices.answers||[],seed,
+        ...(grant?{choiceGrant:grant}:{}),answers:choices.answers||[],seed,
         excludeQuestionIds:[...recentQuestionsInTab].slice(-100),
       });
       if(!active||marker!==epoch)return;
@@ -349,7 +666,7 @@
       // consent to include their personal reading history.
       const includeHistory=choices.route==='similar';
       choices={route:includeHistory?'similar':'new',
-        referenceBookId:item.bookId,answers:[]};
+        referenceBookId:item.bookId,answers:[],...(choices.openSignals?{openSignals:choices.openSignals}:{})};
       void showRecommendations();
     });
     main.append(similar);card.append(cover,main);
@@ -369,8 +686,9 @@
       if(typeof window.BoekenbaaiOpenBookDetail!=='function')throw Error('De boekdetails zijn nog niet geladen.');
       // Recommendations are already grouped by work (title + author).
       // Show every edition of that work in the same detail dialog.
-      const copies=books.filter(b=>normalized(b.title)===normalized(copy.title)
-        && normalized(b.author)===normalized(copy.author));
+      const authorKey=b=>normalized(b.author).replace(/[.,;:!?\s]+$/g,'');
+      const copies=books.filter(b=>b.catalogHidden!==true&&b.personalLoanOnly!==true
+        &&normalized(b.title)===normalized(copy.title)&&authorKey(b)===authorKey(copy));
       const preferred=copies.find(b=>b.status==='available'&&!b.borrowedBy&&!b.borrowedByClassId)||copy;
       const group={
         id:item.key,title:copy.title,author:copy.author,
@@ -395,7 +713,7 @@
     busy=true;currentStep='results';
     const marker=epoch;notice('Boeken zoeken…');clearActions();
     const submitted={
-      ...choices,seed,excludeKeys:[...(!personal?seenInTab:[]),...shownInDialogue].slice(-130),
+      ...choices,useReadingHistory:readingConsent,seed,excludeKeys:[...(!personal?seenInTab:[]),...shownInDialogue].slice(-130),
       ...extra,
     };
     try{
@@ -427,30 +745,33 @@
       block.append(list);
       notice(choices.route==='surprise'
         ? 'Een afwisselende selectie uit de bibliotheek.'
-        : 'Deze tips zijn gebaseerd op je antwoorden.');
+        : choices.openSignals?.avoid?.length
+          ? 'Ik heb bekende ongewenste onderwerpen vermeden. De boekinformatie is niet altijd volledig.'
+          : 'Deze tips zijn gebaseerd op je antwoorden.');
       message('Zit er iets tussen?');
       followupButtons(false);
     }catch(err){
       if(!active||marker!==epoch)return;
       if(err.status===401&&grant){
         grant='';personal=false;firstName='';
-        message('Je persoonlijke sessie is verlopen. Je kunt opnieuw met je PIN aanmelden of zonder inloggen verder.');
-        options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
+        message('Je persoonlijke sessie is verlopen. Meld je opnieuw aan met je PIN of Google-schoolaccount.');
+        options([['Opnieuw met mijn PIN',showPin],['Opnieuw inloggen met Google',()=>{close();document.getElementById('student-nav-profile')?.click();}]]);
       }else{
         notice(err.message);
         options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices={route:'new'};startExploration();}]]);
       }
-    }finally{busy=false;}
+    }finally{if(active&&marker===epoch)busy=false;}
   }
   function followupButtons(exhausted){
     options([
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};startExploration();}]]
+        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer('Waar lees je graag over?');}]]
         : [['Andere richting',()=>{choices={route:'new'};startExploration();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
+      ['Vertel wat je anders wilt',()=>{freshAdvice('feedback');offerOpenAnswer('Wat spreekt je niet aan in deze voorstellen?');}],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
@@ -459,20 +780,20 @@
         try{
           await api('/api/auth/student-pin/choice-reset',grant?{choiceGrant:grant}:{});
           if(!active||marker!==epoch)return;
-          seenInTab.clear();shownInDialogue.clear();recentQuestionsInTab.clear();
+          seenInTab.clear();shownInDialogue.clear();recentQuestionsInTab.clear();recentAdviceQuestions.clear();
           message('Je eerdere aanbevelingen zijn gewist. We beginnen weer zonder eerdere voorstellen.');
           finishIdentity();
         }catch(err){
           if(!active||marker!==epoch)return;
           if(err.status===401&&grant){
             grant='';personal=false;firstName='';
-            message('Je persoonlijke sessie is verlopen. Je kunt opnieuw met je PIN aanmelden of zonder inloggen verder.');
-            options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
+            message('Je persoonlijke sessie is verlopen. Meld je opnieuw aan met je PIN of Google-schoolaccount.');
+            options([['Opnieuw met mijn PIN',showPin],['Opnieuw inloggen met Google',()=>{close();document.getElementById('student-nav-profile')?.click();}]]);
           }else{
             notice(err.message);
             followupButtons(false);
           }
-        }finally{busy=false;}
+        }finally{if(active&&marker===epoch)busy=false;}
       }]]:[]),
     ]);
   }
@@ -500,5 +821,20 @@
   });
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{
     if(active)close();
+  });
+  window.addEventListener('storage',event=>{
+    if(event.key==='boekenbaai_token'||event.key===null){
+      seenInTab.clear();recentQuestionsInTab.clear();recentAdviceQuestions.clear();
+      if(active)close();
+    }
+  });
+  // Never retain another pupil's private conversation on a hidden tab.
+  document.addEventListener('visibilitychange',()=>{
+    if(active&&document.visibilityState==='hidden'&&openingStudentId&&!grant)close();
+  });
+  window.addEventListener('focus',()=>{
+    if(!active)return;
+    const marker=epoch;
+    void verifyOpeningAccount(marker).catch(()=>{if(active&&marker===epoch)close();});
   });
 })();

@@ -8,6 +8,13 @@ const security=require('./google-auth-security-core');
 const pins=require('./student-pin-core');
 const {readJsonSnapshot,mutateJsonLockedAsync}=require('./database-write-coordinator');
 const {rankBooks}=require('./student-choice-recommendations');
+const {workKey}=require('./book-reservations');
+const moderation=require('./student-choice-moderation');
+const guestModeration=require('./student-choice-guest');
+const {interpret,LABELS}=require('./student-choice-open-text');
+const conversation=require('./student-choice-conversation');
+const references=require('./student-choice-reference');
+const series=require('./student-choice-series');
 const dialogue=require('./student-choice-dialogue');
 const {attachDerivedThemeFields}=require('./book-theme-normalization');
 const DATA_PATH=process.env.BOEKENBAAI_DATA_PATH
@@ -69,6 +76,7 @@ async function startChoice({studentId,pin}){
       if(!latest||latest.link.sub!==snapshot.link.sub||latest.cred.hash!==snapshot.cred.hash||
         pins.currentGeneration(latest.cred)!==pins.currentGeneration(snapshot.cred)||
         row.blockedUntil>Date.now())throw error('PIN of account is gewijzigd. Probeer opnieuw.',409);
+      if(moderation.state(loadDb(),studentId).blocked)throw blockedError();
       row.attempts=[];row.blockedUntil=0;row.updatedAt=Date.now();
       const old=Array.isArray(auth.studentChoiceGrants)?auth.studentChoiceGrants:[];
       // One active choice grant per student; a newer tablet invalidates an older one.
@@ -100,20 +108,150 @@ function resolveChoice(db,auth,{grant='',sessionToken=''}={}){
   }
   return null;
 }
+function blockedError(){
+ return Object.assign(error('Help me kiezen is geblokkeerd. Vraag je mentor om de functie weer open te zetten.',423),{code:'CHOICE_BLOCKED'});
+}
+function assertOpeningIdentity(credentials,identity){
+ // The assertion is never a credential. The actual identity is resolved
+ // from a validated session or PIN grant before any read/write/moderation.
+ const expected=credentials.expectedStudentId;
+ if((expected!==undefined&&expected!==(identity?.studentId||null))
+   ||(identity&&!credentials.grant&&typeof expected!=='string'))
+  throw Object.assign(error('Je account is gewijzigd. Open Help me kiezen opnieuw.',409),{code:'CHOICE_ACCOUNT_CHANGED'});
+}
+function requireChoice(db,credentials){
+ const identity=resolveChoice(db,loadAuth(),credentials);
+ assertOpeningIdentity(credentials,identity);
+ if(!identity)throw error('Log eerst in met je schoolaccount of PIN.',401);
+ if(moderation.state(db,identity.studentId).blocked)throw blockedError();
+ return identity;
+}
+// A valid pupil identity always takes precedence over anonymous mode.
+function choiceAccess(db,credentials){
+ const identity=resolveChoice(db,loadAuth(),credentials);
+ assertOpeningIdentity(credentials,identity);
+ if(identity){
+  if(moderation.state(db,identity.studentId).blocked)throw blockedError();
+  return {identity,guest:null};
+ }
+ if(typeof credentials.guest!=='function')throw error('Open de keuzehulp opnieuw.',401);
+ const guest=credentials.guest();
+ guestModeration.check(guest);
+ return {identity:null,guest};
+}
+function choiceStatus(credentials){
+ const db=loadDb(),access=choiceAccess(db,credentials);
+ return access.identity?{warned:moderation.state(db,access.identity.studentId).warned}:guestModeration.status(access.guest);
+}
+async function interpretAnswer({grant,sessionToken,guest,expectedStudentId,text,context,consent=false}){
+ let result;
+ await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
+  mutate:db=>{
+   const access=choiceAccess(db,{grant,sessionToken,guest,expectedStudentId});
+   const outcome=access.identity?moderation.apply(db,access.identity.studentId,text):guestModeration.apply(access.guest,text,db.books||[]);
+   if(outcome.kind==='normal'){
+     const recent=consent===true&&access.identity?pastQuestions(db,access.identity.studentId):[];
+     const safe=conversation.cleanContext(context);
+     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',recent:[...safe.recent,...recent].slice(-40)};
+     result={...conversation.analyze(text,ctx,(db.books||[]).map(attachDerivedThemeFields)),moderation:'normal'};
+   }else result={moderation:outcome.kind,guest:!access.identity};
+   return access.identity&&outcome.changed?db:false;
+  }});
+ // Throw only AFTER the transaction persists the block.
+ if(result.moderation==='blocked')throw blockedError();
+ return result;
+}
+async function lookupReference(credentials,query,external){
+ const db=loadDb();
+ choiceAccess(db,credentials);
+ // Only a dedicated, explicitly submitted bibliographic form is forwarded.
+ // Never pass authentication, conversation context or reading history.
+ const result=await references.lookup(db,query,{external:external===true});
+ choiceAccess(loadDb(),credentials);
+ return result;
+}
+function seriesReference(credentials,{bookId,externalRef,readPart,consent,signals}={}){
+ const db=loadDb(),access=choiceAccess(db,credentials);
+ const book=typeof bookId==='string'?(db.books||[]).find(b=>b.id===bookId&&b.catalogHidden!==true&&b.personalLoanOnly!==true):references.getReference(externalRef);
+ if(!book)return {series:null};
+ const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
+ return series.nextPart(catalogue,book,readPart,access.identity?.studentId||'',consent===true,signals);
+}
+function mentorContext(db,sessionToken,id){
+ const checked=sessionToken?security.validatePersistedSession(loadAuth(),sessionToken,db):null;
+ if(!checked?.valid||checked.session?.type!=='staff'||!moderation.mayUnlock(db,checked.account,id))
+  throw error('Alleen een huidige mentor mag deze keuzehulp beheren.',403);
+ return checked.account;
+}
+function mentorStatus({sessionToken,studentId}){
+ const db=loadDb();
+ mentorContext(db,sessionToken,studentId);
+ const {blocked,warned,reason,updatedAt}=moderation.state(db,studentId);
+ return {blocked,warned,reason,updatedAt};
+}
+async function mentorUnlock({sessionToken,studentId}){
+ let result;
+ await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
+  mutate:db=>{
+   const actor=mentorContext(db,sessionToken,studentId);
+   result=moderation.unlock(db,actor,studentId);
+   if(result.status!==200)throw error('Geen toestemming.',403);
+   return result.changed?db:false;
+  }});
+ return {blocked:false,warned:false};
+}
+// The context request is explicit, read-only and restricted to a single
+// student's validated choice grant or full session. Only public catalogue
+// works are returned. Favorites indicate interest, not reading or liking.
+function personalContext({grant,sessionToken,expectedStudentId}){
+  const db=loadDb();
+  const identity=requireChoice(db,{grant,sessionToken,expectedStudentId});
+  const publicBooks=(db.books||[]).filter(b=>b?.id&&b.catalogHidden!==true&&b.personalLoanOnly!==true);
+  const byId=new Map(publicBooks.map(b=>[b.id,b]));
+  const byKey=new Map(publicBooks.map(b=>[workKey(b),b]));
+  const project=b=>({bookId:b.id,title:String(b.title||'').slice(0,300),author:String(b.author||'').slice(0,300)});
+  const records=(db.readingRecords||[]).filter(r=>r?.subjectType==='student'
+    &&r.subjectId===identity.studentId&&r.finished===true
+    &&Number.isFinite(Date.parse(r.reportedAt)))
+    .sort((a,b)=>Date.parse(b.reportedAt)-Date.parse(a.reportedAt));
+  let recent=null;
+  for(const r of records){
+    const book=byId.get(r.bookId);
+    if(book&&(!r.title||workKey(r)===workKey(book))){
+      recent=project(book);break;
+    }
+  }
+  const favorites=[];
+  const seen=new Set();
+  for(const entry of db.studentFavorites||[]){
+    if(entry?.studentId!==identity.studentId||seen.has(entry.key))continue;
+    const book=byKey.get(entry.key);
+    if(book){favorites.push(project(book));seen.add(entry.key);}
+    if(favorites.length>=5)break;
+  }
+  return {recent,favorites};
+}
 const RECENT_DAYS=90;
+function pastQuestions(db,id){
+ const row=(db.studentChoiceSeen||[]).find(x=>x.studentId===id);
+ if(!row||!Number.isFinite(Date.parse(row.updatedAt))||Date.parse(row.updatedAt)<Date.now()-RECENT_DAYS*86400000)return [];
+ return conversation.cleanContext({recent:row.questionIds}).recent;
+}
 function pastKeys(db,studentId){
   const entry=(db.studentChoiceSeen||[]).find(x=>x.studentId===studentId);
   if(!entry||!Number.isFinite(Date.parse(entry.updatedAt))||
     Date.parse(entry.updatedAt)<Date.now()-RECENT_DAYS*86400000)return [];
   return Array.isArray(entry.keys)?entry.keys.filter(x=>typeof x==='string').slice(-240):[];
 }
-async function suggestions({grant,sessionToken,choices,anonymous=false}){
+async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,anonymous=false}){
   // Authentication is rechecked inside the atomic DB transaction. We
   // serialize reading/updating recommendation history across server workers.
   let result;
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
-      const identity=anonymous?null:resolveChoice(db,loadAuth(),{grant,sessionToken});
+      const verified=choiceAccess(db,{grant,sessionToken,guest,expectedStudentId}).identity;
+      // Declining personal advice does not disable account-level moderation.
+      const identity=anonymous?null:verified;
       // Match public catalogue GET normalization. Raw imported tags are
       // not curator-approved themes until these shared rules are applied.
       const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
@@ -126,6 +264,8 @@ async function suggestions({grant,sessionToken,choices,anonymous=false}){
       if(identity&&result.suggestions.length){
         if(!Array.isArray(db.studentChoiceSeen))db.studentChoiceSeen=[];
         const prior=pastKeys(db,identity.studentId);
+        const priorQuestions=pastQuestions(db,identity.studentId);
+        const newQuestions=choices?.useReadingHistory===true?conversation.cleanContext({used:choices.questionIds}).used:[];
         db.studentChoiceSeen=db.studentChoiceSeen.filter(x=>
           x.studentId!==identity.studentId &&
           Number.isFinite(Date.parse(x.updatedAt)) &&
@@ -133,6 +273,7 @@ async function suggestions({grant,sessionToken,choices,anonymous=false}){
         const keys=[...prior,...result.suggestions.map(x=>x.key)];
         db.studentChoiceSeen.push({
           studentId:identity.studentId,keys:[...new Set(keys)].slice(-240),
+          questionIds:[...new Set([...priorQuestions,...newQuestions])].slice(-40),
           updatedAt:new Date().toISOString(),
         });
       }
@@ -140,18 +281,17 @@ async function suggestions({grant,sessionToken,choices,anonymous=false}){
     }});
   return result;
 }
-function nextQuestion({answers=[],seed='',excludeQuestionIds=[]}={}){
-  // No reader identity is needed. The question engine sees only normalized
-  // public catalogue metadata and never reveals lending or private records.
+function nextQuestion({grant,sessionToken,guest,expectedStudentId,answers=[],seed='',excludeQuestionIds=[]}={}){
   const db=loadDb();
+  choiceAccess(db,{grant,sessionToken,guest,expectedStudentId});
+  // Question selection itself still sees public metadata only.
   const books=(db.books||[]).map(attachDerivedThemeFields);
   return dialogue.selection({books},{answers,seed,excludeQuestionIds});
 }
-async function clearHistory({grant,sessionToken}){
+async function clearHistory({grant,sessionToken,expectedStudentId}){
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
-      const identity=resolveChoice(db,loadAuth(),{grant,sessionToken});
-      if(!identity)throw error('Log in voor persoonlijke aanbevelingen.',401);
+      const identity=requireChoice(db,{grant,sessionToken,expectedStudentId});
       db.studentChoiceSeen=(db.studentChoiceSeen||[]).filter(x=>x.studentId!==identity.studentId);
       return db;
     }});
@@ -166,4 +306,4 @@ async function closeChoice(grant){
       return auth;
     }});
 }
-module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,firstName,TTL};
+module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,personalContext,choiceStatus,interpretAnswer,mentorStatus,mentorUnlock,lookupReference,seriesReference,firstName,TTL};

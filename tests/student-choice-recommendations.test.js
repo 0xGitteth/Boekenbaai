@@ -229,3 +229,17 @@ assert.equal(keyOf(db.books[0]),keyOf(db.books[1]));
 }
 
 console.log('Choice rankings, read signal scoping, anti-repeat and empty catalogue tests passed.');
+
+// Explicit interest outweighs generic anchor overlap, and open answers
+// do not silently replace a known requested exclusion with random books.
+const openDb={books:[
+ book('ref','Drakenwereld',['Fantasy']),
+ book('fant1','Andere wereld',['Fantasy']),
+ book('fant2','Magische reis',['Fantasy']),
+ book('science','De wetenschap',['Wetenschap','Informatief']),
+ book('myst','Het raadsel',['Mysterie','Detective']),
+ {...book('crime','De misdaad',['Mysterie']),description:'Een moord in de stad.'},
+]};
+assert.equal(rankBooks(openDb,{route:'new',referenceBookId:'ref',referencePreference:'informatie'}).suggestions[0].bookId,'science');
+const open=rankBooks(openDb,{route:'new',openSignals:{prefer:['mystery'],avoid:['murder']}});
+assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);

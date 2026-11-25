@@ -6,7 +6,10 @@ const crypto = require('node:crypto');
 const dialogue=require('./student-choice-dialogue');
 const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity');
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
-const keyOf = book => JSON.stringify([norm(book.title), norm(book.author)]);
+const {workKey}=require('./book-reservations');
+const {validateSignals}=require('./student-choice-open-text');
+const externalReferences=require('./student-choice-reference');
+const keyOf = book => workKey(book);
 const QUESTION_VALUES = Object.freeze({
   route: ['new','similar','surprise'],
   activity: ['gaming','film','sport','music','nature','other','unknown'],
@@ -437,6 +440,11 @@ function validateChoices(value) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
   result.answers=dialogue.validatedAnswers(input.answers);
+  result.openSignals=result.route==='surprise'?{prefer:[],avoid:[]}:validateSignals(input.openSignals);
+  result.useReadingHistory=input.useReadingHistory!==false;
+  result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
+  result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
+    ?input.referencePreference:'';
   result.referenceBookId=typeof input.referenceBookId==='string'&&input.route!=='surprise'
     ?input.referenceBookId.slice(0,128):'';
   result.nuance=Object.hasOwn(NUANCE_HINTS,input.nuance)?input.nuance:'none';
@@ -454,7 +462,7 @@ function groupBooks(db) {
   const map = new Map();
   const loanOwners=studentLoanIds(db);
   for (const book of db.books || []) {
-    if (!book || !book.id || isHidden(book) || !norm(book.title)) continue;
+    if (!book || !book.id || isHidden(book) || book.personalLoanOnly===true || !norm(book.title)) continue;
     const key = keyOf(book);
     let work = map.get(key);
     if (!work) {
@@ -572,7 +580,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const choice = validateChoices(input);
   const works = groupBooks(db);
   const alreadySeen = new Set([...seenKeys,...choice.excludeKeys]);
-  const read = studentId ? readKeysAndThemes(db, studentId, works) : {readKeys:new Set(),themes:new Set()};
+  const read = studentId && choice.useReadingHistory ? readKeysAndThemes(db, studentId, works) : {readKeys:new Set(),themes:new Set()};
   const directionHints=(THEME_HINTS[choice.situation]||[]).map(norm);
   const detailHints=(THEME_HINTS[choice.detail]||[]).map(norm);
   const nuanceHints=(NUANCE_HINTS[choice.nuance]||[]).map(norm);
@@ -581,14 +589,25 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const matchesTags=(themes,hints)=>themes.filter(theme=>
     hints.some(h=>norm(theme).includes(h)));
   const weights=dialogue.preferenceWeights(choice.answers);
+  const referencePreferences={
+    spanning:['mystery','danger','action'],personages:['people','relationships','friendship','growth'],
+    wereld:['setting','fantasy','discovery','adventure'],tempo:['fast','action'],
+    sfeer:['calm','humor','unusual'],informatie:['facts','true','science','history'],
+  };
+  const explicitTraits=referencePreferences[choice.referencePreference]||[];
+  for(const trait of explicitTraits)weights.set(trait,(weights.get(trait)||0)+2);
+  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+3);
   const reference=choice.referenceBookId
     ?(db.books||[]).find(book=>book.id===choice.referenceBookId&&!isHidden(book)):null;
   // Similarity MUST use the pooled work, not whichever physical copy had a
   // cover or was last available. Different editions can vary in enrichment.
   const anchor=reference?works.find(work=>work.key===keyOf(reference)):null;
   const workTraits=dialogue.profilesForWorks(works);
-  const anchorTraits=anchor?workTraits.get(anchor.key)||new Map():new Map();
+  const outside=!anchor&&choice.externalRef?externalReferences.getReference(choice.externalRef):null;
+  const anchorTraits=anchor?workTraits.get(anchor.key)||new Map():outside?dialogue.traitsForBook(outside):new Map();
+  const referenceKey=anchor?.key||(outside?keyOf(outside):'');
   const traitLabels={
+    ...require('./student-choice-open-text').LABELS,
     mystery:'geheimen of raadsels',secrets:'een geheim',puzzles:'onderzoek en aanwijzingen',
     people:'de keuzes van mensen',relationships:'relaties',friendship:'vriendschap',
     family:'familie',empathy:'gevoelens',growth:'persoonlijke ontwikkeling',
@@ -601,14 +620,14 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     danger:'spannende gebeurtenissen',survival:'overleven',competition:'wedstrijd',
     sport:'sport',challenge:'een uitdaging',justice:'rechtvaardigheid',humor:'humor',
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
-    setting:'de omgeving',
+    setting:'de omgeving',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',murder:'misdaad met moord',horror:'griezelverhalen',
   };
   const candidates = [];
   for (const work of works) {
     if (!choice.allowRepeats && alreadySeen.has(work.key)) continue;
     // Confirmed reads are not recommendations for a new book; only compare
     // their curated themes when the learner explicitly asks for similarities.
-    if (read.readKeys.has(work.key)) continue;
+    if (read.readKeys.has(work.key)||referenceKey===work.key) continue;
     const directionMatches=matchesTags(work.themes,directionHints);
     const detailMatches=matchesTags(work.themes,detailHints);
     const moodMatches=matchesTags(work.themes,legacyMoodHints);
@@ -624,10 +643,16 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       + lensMatches.length * 11 + directionMatches.length * 9
       + moodMatches.length * 4 + familiar.length * 6 + (work.available ? 3 : 0);
     const traits=workTraits.get(work.key)||new Map();
+    // Exclude known contraindications; absence of a metadata signal is
+    // not evidence that a book is free of that subject.
+    if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
+    const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
+    if(choice.openSignals.prefer.length&&!openMatches)continue;
+    const explicitMatch=explicitTraits.reduce((sum,t)=>sum+(traits.get(t)||0),0);
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
     let matchedAnchor=0;
-    if(anchorTraits.size&&choice.referenceBookId){
+    if(anchorTraits.size&&(choice.referenceBookId||outside)){
       for(const [trait,evidence] of anchorTraits){
         if(traits.has(trait)){
           matchedAnchor++;
@@ -635,15 +660,18 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
         }
       }
     }
-    if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
+    if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 14 : -12;
     // Free-time activity is deliberately not mapped to a book's genre.
-    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,
+    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,explicitMatch,openMatches,
       score, tiebreak: tie(work.key, choice.seed) });
   }
   candidates.sort((a,b) =>
     // When asking for books like a chosen reference, offer real matches
     // before unrelated fallback titles, even with reading-history consent.
-    (anchorTraits.size&&choice.referenceBookId
+    (choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
+    || (b.openMatches-a.openMatches)
+    || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
+    || (anchorTraits.size&&(choice.referenceBookId||outside)
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
@@ -658,7 +686,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       reason:surpriseReason || (matchedDialogue?.matched?.length
         ?'Dit boek sluit aan bij je interesse in '
           +matchedDialogue.matched.slice(0,2).map(t=>traitLabels[t]||t).join(' en ')
-        : choice.referenceBookId&&matchedAnchor>0
+        : (choice.referenceBookId||outside)&&matchedAnchor>0
           ?'Dit boek heeft kenmerken die aansluiten bij het door jou gekozen boek'
         : matched.length ? 'Thema: '+matched.slice(0,2).join(', ')
         : familiar.length ? 'Sluit aan bij een thema dat je eerder hebt gelezen: '+familiar[0]

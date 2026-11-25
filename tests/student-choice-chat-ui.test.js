@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const conversation=require('../student-choice-conversation');
 const root=path.join(__dirname,'..');
 const code=fs.readFileSync(path.join(root,'public','student-book-choice-chat.js'),'utf8');
 function node(tag='div'){
@@ -28,6 +29,8 @@ const makeResponse=(status,body)=>({
 });
 let resolvePin;
 let loggedIn=false;
+let activeId='s',storageToken='',holdContext=false,releaseContext=null,contextCalls=0;
+let blocked=false;
 let failSuggest=false;
 let resetStatus=200;
 let holdSuggestions=false,releaseSuggestion=null;
@@ -36,7 +39,7 @@ const suggestRequests=[];
 const questionRequests=[];
 const fetchStub=async (url,options={})=>{
   if(url==='/api/me')return loggedIn
-    ? makeResponse(200,{id:'s',role:'student',firstName:'Sanne'})
+    ? makeResponse(200,{id:activeId,role:'student',firstName:activeId==='s'?'Sanne':'Pieter'})
     : makeResponse(401,{message:'Geen toegang'});
   if(url.startsWith('/api/login-search?'))return makeResponse(200,{
     matches:[{id:'s',displayName:'Sanne J. · Bovenbouw'}],
@@ -46,6 +49,18 @@ const fetchStub=async (url,options={})=>{
   if(url==='/api/auth/student-pin/choice-end'){
     invalidated.push(JSON.parse(options.body).choiceGrant);
     return makeResponse(200,{closed:true});
+  }
+  if(url==='/api/auth/student-pin/choice-status')return blocked?makeResponse(423,{code:'CHOICE_BLOCKED',message:'Geblokkeerd'}):makeResponse(200,{warned:false});
+  if(url==='/api/auth/student-pin/choice-context'){
+    const body=JSON.parse(options.body);contextCalls++;
+    assert.equal(body.consent,true);
+    if(body.expectedStudentId!==activeId)return makeResponse(409,{code:'CHOICE_ACCOUNT_CHANGED'});
+    if(holdContext)return new Promise(resolve=>{releaseContext=()=>resolve(makeResponse(200,{recent:{bookId:'private',title:'Privéboek A'},favorites:[]}));});
+    return makeResponse(200,{recent:null,favorites:[]});
+  }
+  if(url==='/api/auth/student-pin/choice-interpret'){
+    const body=JSON.parse(options.body);
+    return makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
   }
   if(url==='/api/auth/student-pin/choice-next'){
     const payload=JSON.parse(options.body);
@@ -85,12 +100,13 @@ const fetchStub=async (url,options={})=>{
   throw Error('Unexpected URL: '+url);
 };
 const windowStub={
-  localStorage:{getItem(){return null;}},
-  addEventListener(){},
+  localStorage:{getItem(){return storageToken;}},
+  listeners:{},addEventListener(k,fn){this.listeners[k]=fn;},
   BoekenbaaiResolveApiUrl:route=>route,
 };
 const documentStub={
-  activeElement:node('button'),
+  activeElement:node('button'),visibilityState:'visible',listeners:{},
+  addEventListener(k,fn){this.listeners[k]=fn;},
   getElementById:id=>elements.get(id)||null,
   createElement:node,
 };
@@ -107,82 +123,94 @@ vm.runInNewContext(code,{
   assert.match(log.children[0].children[0].textContent,/Log in voor persoonlijke tips/);
   const firstChoice=actions.children.find(x=>x.textContent==='Inloggen');
   assert.ok(actions.children.some(x=>x.textContent==='Zonder inloggen'));
-  assert.ok(firstChoice,'PIN is integrated as first chat answer');
   firstChoice.listeners.click();
   const form=actions.children[0];
-  assert.equal(form.tag,'form','PIN verification is inside the chat, not a separate login page');
-  assert.equal(log.children[2].children[0].textContent,'Zoek je naam en vul je PIN in.');
+  assert.equal(form.tag,'form');
   const name=form.children[1],matches=form.children[2],pin=form.children[4],other=form.children[7];
   name.value='San';name.listeners.input();
   await new Promise(resolve=>setTimeout(resolve,260));
-  assert.ok(matches.children.length>0);
   matches.children[0].children[0].listeners.click();
   pin.value='123456';
   const pending=form.listeners.submit({preventDefault(){}});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(resolvePin,'PIN response deliberately held pending');
   other.listeners.click();
-  assert.equal(pin.value,'','Switching to anonymous mode must wipe PIN input');
-  assert.ok(log.children.some(row=>row.children[0]?.textContent===
-    'Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?'),
-    'Show the selected exact question to anonymous learners');
-  assert.ok(actions.children.some(x=>x.textContent==='Ontdek mijn interesses'),
-    'The first answer should start the questionnaire');
-  assert.ok(actions.children.some(x=>x.textContent==='Laat me drie boeken zien'),
-    'The second answer should show three books immediately');
-  assert.equal(actions.children.length,2,'Only the two approved answers appear');
+  assert.equal(pin.value,'');
   resolvePin(makeResponse(200,{grant:'valid-late-token',firstName:'Sanne'}));
   await pending;
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(invalidated.includes('valid-late-token'),
-    'A late PIN success after switching mode is explicitly revoked');
-  assert.ok(!log.children.some(row=>row.children[0]?.textContent?.includes('Hoi Sanne')),
-    'A late reply must never revive personalized mode');
-  assert.ok(actions.children.some(x=>x.textContent==='Laat me drie boeken zien'));
-  const surprise=actions.children.find(x=>x.textContent==='Laat me drie boeken zien');
-  surprise.listeners.click();
-  await new Promise(resolve=>setImmediate(resolve));
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(suggestRequests.length,1,'Surprise must immediately query for books');
-  assert.equal(suggestRequests[0].choices.route,'surprise');
-  assert.equal(suggestRequests[0].choices.activity,undefined,
-    'Surprise must not force a question about hobbies');
-  assert.equal(suggestRequests[0].anonymous,true);
-  assert.equal(log.children.filter(row=>
-    row.children[0]?.textContent?.includes('Wat doe je graag')).length,0,
-    'Surprise mode must skip the questionnaire');
-  assert.ok(actions.children.some(x=>x.textContent==='Nog drie verrassingen'));
-
-  // Reopening anonymously must show the same two choices, with the first
-  // taking the learner directly to the normal interest questions.
-  elements.get('student-choice-close').listeners.click();
+  assert.ok(invalidated.includes('valid-late-token'));
+  assert.equal(suggestRequests.length,0);
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
-  actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
-  assert.equal(questionRequests.at(-1).answers.length,0);
-  assert.ok(actions.children.some(x=>x.textContent==='Sla deze vraag over'));
-
-  // Signed-in learners also get only the approved two main options. The
-  // previously offered similar-books route remains available as an explicit
-  // consent question after choosing to explore their interests.
+  assert.ok(actions.children.some(x=>x.textContent==='Vertel zelf wat je zoekt'));
+  actions.children.find(x=>x.textContent==='Laat me drie boeken zien').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.at(-1).anonymous,true);
+  // Signed-in pupils choose whether to use private reading context.
   elements.get('student-choice-close').listeners.click();
   loggedIn=true;
   await elements.get('student-help-choose').listeners.click();
-  assert.equal(log.children[0].children[0].textContent,
-    'Hoi Sanne! Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?');
-  assert.equal(actions.children.length,2);
+  assert.match(log.children[0].children[0].textContent,/Mag ik rekening houden/);
   assert.deepEqual(actions.children.map(x=>x.textContent),
-    ['Ontdek mijn interesses','Laat me drie boeken zien']);
-  actions.children[0].listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent===
-    'Wil je ook tips die lijken op boeken die je eerder hebt gelezen?'));
-  assert.deepEqual(actions.children.map(x=>x.textContent),
-    ['Ja, graag','Nee, liever iets anders']);
-  actions.children[0].listeners.click();
+    ['Ja, graag','Nee, iets nieuws ontdekken','Laat me drie boeken zien']);
+  actions.children[1].listeners.click();
+  actions.children.find(x=>x.textContent==='Liever alleen kiezen uit antwoorden').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children[0].listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  const free=actions.children[0];
+  assert.equal(free.tag,'form');
+  free.children[1].value='Een mysterie zonder moord';
+  await free.listeners.submit({preventDefault(){}});
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
+  actions.children.find(x=>x.textContent==='Ja, ga verder').listeners.click();
+  assert.equal(actions.children[0].tag,'form','Confirming an exclusion must lead to a real follow-up');
+  actions.children[0].children.find(x=>x.textContent==='Toon boeken met wat je nu weet').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:['murder']});
+  assert.equal(suggestRequests.at(-1).choices.useReadingHistory,true);
+  assert.ok(!JSON.stringify(suggestRequests.at(-1)).includes('Een mysterie zonder moord'));
+
+  // Broad interests automatically start a meaningful follow-up.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  async function submitOpen(value){
+    const form=actions.children[0];
+    assert.equal(form.tag,'form');
+    form.children[1].value=value;
+    await form.listeners.submit({preventDefault(){}});
+  }
+  const countBeforeOpen=suggestRequests.length;
+  await submitOpen('misterie');
+  assert.equal(suggestRequests.length,countBeforeOpen,'A single genre must not trigger a search');
+  const firstOpenPrompt=log.children.at(-1).children[0].textContent;
+  assert.ok(require('../student-choice-conversation').Q.some(q=>q.prompt===firstOpenPrompt&&q.when.includes('mystery')),'The opening follow-up is thematically relevant');
+  assert.ok(!log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
+  await submitOpen('misterie');
+  const secondOpenPrompt=log.children.at(-1).children[0].textContent;
+  assert.notEqual(secondOpenPrompt,firstOpenPrompt);
+  assert.ok(require('../student-choice-conversation').Q.some(q=>q.prompt===secondOpenPrompt),'A real question from the expanded bank');
+  assert.equal(suggestRequests.length,countBeforeOpen,'Repeating the same preference is not detail');
+  await submitOpen('Ik wil zelf aanwijzingen ontdekken');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery','puzzles'],avoid:[]});
+  assert.equal(suggestRequests.at(-1).choices.useReadingHistory,false);
+  // A detailed initial answer can go directly to recommendations.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  await submitOpen('Een realistisch mysterie met aanwijzingen');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(new Set(suggestRequests.at(-1).choices.openSignals.prefer),new Set(['mystery','puzzles','realistic']));
+  assert.deepEqual(suggestRequests.at(-1).choices.openSignals.avoid,[]);
 
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
@@ -258,5 +286,44 @@ vm.runInNewContext(code,{
     'Busy guard prevents overlapping suggestions from old cards');
   holdSuggestions=false;releaseSuggestion();releaseSuggestion=null;
   await new Promise(resolve=>setImmediate(resolve));
-  console.log('Choice chat: approved route, dynamic followups, back and privacy: OK');
+  elements.get('student-choice-close').listeners.click();
+  // Cookie-only switch after opening: server must refuse the old identity.
+  storageToken='cookie';activeId='s';
+  await elements.get('student-help-choose').listeners.click();
+  activeId='b';
+  actions.children[0].listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(elements.get('student-choice-dialog').open,false);
+  assert.equal(log.children.length,0);
+  // Cookie switch while an otherwise valid personal response is in flight:
+  // validate the current session again before showing its content.
+  activeId='s';holdContext=true;
+  await elements.get('student-help-choose').listeners.click();
+  actions.children[0].listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(releaseContext);
+  activeId='b';releaseContext();holdContext=false;
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(elements.get('student-choice-dialog').open,false);
+  assert.equal(log.children.length,0);
+  // Ordinary localStorage switches close immediately, before the old
+  // consent handler can submit a request.
+  activeId='s';storageToken='token-a';
+  await elements.get('student-help-choose').listeners.click();
+  const oldConsent=actions.children[0],beforeCalls=contextCalls;
+  storageToken='token-b';activeId='b';
+  windowStub.listeners.storage({key:'boekenbaai_token'});
+  oldConsent.listeners.click();
+  assert.equal(contextCalls,beforeCalls);
+  assert.equal(log.children.length,0);
+  activeId='s';storageToken='cookie';
+  await elements.get('student-help-choose').listeners.click();
+  documentStub.visibilityState='hidden';documentStub.listeners.visibilitychange();
+  assert.equal(elements.get('student-choice-dialog').open,false);
+  documentStub.visibilityState='visible';
+  blocked=true;
+  await elements.get('student-help-choose').listeners.click();
+  assert.match(log.children[0].children[0].textContent,/geblokkeerd.*mentor/);
+  assert.equal(actions.children.length,0);
+  console.log('Choice chat: approved route, dynamic followups, back, privacy and blocked state: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -411,6 +411,41 @@
       }
     });
     normalActions.append(resetPin);
+    if(state.role==='teacher'){
+      const choiceStatus=make('p',{className:'hint',text:'Status Help me kiezen ophalen…'});
+      choiceStatus.setAttribute('role','status');
+      const unlockChoice=make('button',{className:'btn btn--secondary',text:'Help me kiezen vrijgeven',type:'button'});
+      unlockChoice.hidden=true;
+      const endpoint='/api/auth/student-pin/students/'+encodeURIComponent(student.id)+'/choice-';
+      const route=path=>typeof window.BoekenbaaiResolveApiUrl==='function'?window.BoekenbaaiResolveApiUrl(path):path;
+      const refreshChoice=async()=>{
+        try{
+          const status=await api(route(endpoint+'status'),{method:'POST',body:{}});
+          if(!dialog.isConnected)return;
+          const reasons={abuse:'grof taalgebruik',disruption:'verstoring',meme:'herhaalde niet-inhoudelijke antwoorden'};
+          const reason=reasons[status.reason];
+          choiceStatus.textContent=status.blocked?'Help me kiezen is geblokkeerd.':status.warned?'Help me kiezen: waarschuwing gegeven.':'Help me kiezen is beschikbaar.';
+          if(reason&&(status.blocked||status.warned))choiceStatus.textContent+=' Reden: '+reason+'.';
+          unlockChoice.hidden=!status.blocked&&!status.warned;
+        }catch(error){
+          if(!dialog.isConnected)return;
+          choiceStatus.textContent=error.status===403?'':'Status Help me kiezen niet beschikbaar.';
+          unlockChoice.hidden=true;
+        }
+      };
+      unlockChoice.addEventListener('click',async()=>{
+        if(!window.confirm('Help me kiezen voor '+student.name+' weer vrijgeven?'))return;
+        unlockChoice.disabled=true;
+        try{
+          await api(route(endpoint+'unlock'),{method:'POST',body:{}});
+          await refreshChoice();
+        }catch(error){choiceStatus.textContent=error.message;}
+        finally{unlockChoice.disabled=false;}
+      });
+      normalActions.append(choiceStatus,unlockChoice);
+      // Run after the dialog is attached to the DOM.
+      Promise.resolve().then(refreshChoice);
+    }
     const leave = make('button', { className: 'btn btn--ghost student-detail__danger', text: 'Van school afmelden', type: 'button' });
     leave.addEventListener('click', () => {
       const underlying = findUnderlyingAction(row, 'Van school');

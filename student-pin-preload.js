@@ -11,6 +11,7 @@ const { readJsonSnapshot, mutateJsonLockedAsync } = require('./database-write-co
 const pins = require('./student-pin-core');
 const checkout = require('./student-pin-checkout-core');
 const choice = require('./student-choice-access');
+const guestChoice = require('./student-choice-guest');
 
 const originalCreateServer = http.createServer.bind(http);
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -72,6 +73,14 @@ function getToken(req) {
   return cookies(req).boekenbaai_session || '';
 }
 
+function choiceCredentials(req,res,body){
+ return {grant:body.choiceGrant,sessionToken:getToken(req),expectedStudentId:body.expectedStudentId,guest:()=>{
+  const {token,row}=guestChoice.open(cookies(req).boekenbaai_choice_guest);
+  const secure=String(security.getExpectedOrigin(req,PUBLIC_URL)||'').startsWith('https:')?'; Secure':'';
+  res.setHeader('Set-Cookie','boekenbaai_choice_guest='+token+'; Path=/api/auth/student-pin/; HttpOnly; SameSite=Strict; Max-Age='+Math.ceil(guestChoice.IDLE_MS/1000)+secure);
+  return row;
+ }};
+}
 function loadDb() {
   const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) throw Error('db_invalid');
@@ -170,7 +179,14 @@ async function handleStudentPin(req, res, requestUrl) {
   const isVerify = route === '/api/auth/student-pin/verify' && req.method === 'POST';
   const isChoiceBegin = route === '/api/auth/student-pin/choice-begin' && req.method === 'POST';
   const isChoiceSuggest = route === '/api/auth/student-pin/choice-suggest' && req.method === 'POST';
+  const isChoiceLookup = route === '/api/auth/student-pin/choice-reference' && req.method === 'POST';
+  const isChoiceSeries = route === '/api/auth/student-pin/choice-series' && req.method === 'POST';
   const isChoiceNext = route === '/api/auth/student-pin/choice-next' && req.method === 'POST';
+  const isChoiceContext = route === '/api/auth/student-pin/choice-context' && req.method === 'POST';
+  const isChoiceInterpret = route === '/api/auth/student-pin/choice-interpret' && req.method === 'POST';
+  const isChoiceStatus = route === '/api/auth/student-pin/choice-status' && req.method === 'POST';
+  const choiceMentor = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/choice-(status|unlock)$/);
+  const isChoiceMentor = choiceMentor && req.method === 'POST';
   const isChoiceEnd = route === '/api/auth/student-pin/choice-end' && req.method === 'POST';
   const isChoiceReset = route === '/api/auth/student-pin/choice-reset' && req.method === 'POST';
   const isStatus = route === '/api/auth/student-pin/status' && req.method === 'GET';
@@ -178,7 +194,7 @@ async function handleStudentPin(req, res, requestUrl) {
   const isSelfReset = route === '/api/auth/student-pin/reset' && req.method === 'POST';
   const staffReset = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/reset$/);
   if (!isStatus && !isSet && !isSelfReset && !isVerify
-    && !isChoiceBegin && !isChoiceSuggest && !isChoiceNext && !isChoiceEnd && !isChoiceReset
+    && !isChoiceBegin && !isChoiceSuggest && !isChoiceLookup && !isChoiceSeries && !isChoiceNext && !isChoiceContext && !isChoiceInterpret && !isChoiceStatus && !isChoiceMentor && !isChoiceEnd && !isChoiceReset
     && !(staffReset && req.method === 'POST')) {
     return sendJson(res, 404, { message: 'Niet gevonden.' });
   }
@@ -219,22 +235,51 @@ async function handleStudentPin(req, res, requestUrl) {
     } catch (error) {
       if(error?.status){
         if(error.status===429)res.setHeader('Retry-After','900');
-        return sendJson(res,error.status,{message:error.message});
+        return sendJson(res,error.status,{message:error.message,...(error.code==='CHOICE_BLOCKED'?{code:error.code}:{})});
       }
       throw error;
     }
   }
+  if(isChoiceInterpret){
+    const body=await parseBody(req,4096);
+    if(typeof body.text!=='string'||!body.text.trim()||body.text.length>500)
+      return sendJson(res,400,{message:'Schrijf maximaal 500 tekens.'});
+    return sendJson(res,200,await choice.interpretAnswer({...choiceCredentials(req,res,body),text:body.text,context:body.context,consent:body.consent===true}));
+  }
+  if(isChoiceStatus){
+    const body=await parseBody(req);
+    return sendJson(res,200,choice.choiceStatus(choiceCredentials(req,res,body)));
+  }
+  if(isChoiceMentor){
+    const args={sessionToken:getToken(req),studentId:choiceMentor[1]};
+    return sendJson(res,200,choiceMentor[2]==='unlock'?await choice.mentorUnlock(args):choice.mentorStatus(args));
+  }
+  if(isChoiceContext){
+    const body=await parseBody(req,16384);
+    if(body.consent!==true)return sendJson(res,400,{message:'Geef eerst toestemming voor deze tips.'});
+    return sendJson(res,200,choice.personalContext({grant:body.choiceGrant,sessionToken:getToken(req),expectedStudentId:body.expectedStudentId}));
+  }
   if (isChoiceNext) {
     const body=await parseBody(req,16384);
     return sendJson(res,200,choice.nextQuestion({
-      answers:body.answers,seed:body.seed,
+      ...choiceCredentials(req,res,body),answers:body.answers,seed:body.seed,
       excludeQuestionIds:body.excludeQuestionIds,
     }));
+  }
+  if(isChoiceLookup){
+    const body=await parseBody(req,4096);
+    const query={title:body.title,author:body.author,isbn:body.isbn};
+    return sendJson(res,200,await choice.lookupReference(choiceCredentials(req,res,body),query,body.external===true));
+  }
+  if(isChoiceSeries){
+    const body=await parseBody(req,4096);
+    return sendJson(res,200,choice.seriesReference(choiceCredentials(req,res,body),{
+      bookId:body.bookId,externalRef:body.externalRef,readPart:body.readPart,consent:body.consent===true,signals:body.signals}));
   }
   if (isChoiceSuggest) {
     const body=await parseBody(req,32768);
     const result=await choice.suggestions({
-      grant:body.choiceGrant,sessionToken:getToken(req),choices:body.choices,
+      ...choiceCredentials(req,res,body),choices:body.choices,
       anonymous:body.anonymous===true,
     });
     return sendJson(res,200,result);
@@ -242,7 +287,7 @@ async function handleStudentPin(req, res, requestUrl) {
   if (isChoiceReset) {
     const body=await parseBody(req);
     return sendJson(res,200,await choice.clearHistory({
-      grant:body.choiceGrant,sessionToken:getToken(req),
+      grant:body.choiceGrant,sessionToken:getToken(req),expectedStudentId:body.expectedStudentId,
     }));
   }
   if (isChoiceEnd) {
@@ -349,7 +394,7 @@ function wrapRequestListener(listener) {
       if (error?.code === 'DATABASE_WRITE_BUSY' || error?.code === 'DATABASE_WRITE_CONFLICT') {
         return sendJson(res, 409, { message: 'Gegevens zijn tegelijk gewijzigd. Probeer opnieuw.' });
       }
-      if (error?.status) return sendJson(res, error.status, { message: error.message });
+      if (error?.status) return sendJson(res, error.status, { message: error.message,...(['CHOICE_BLOCKED','CHOICE_GUEST_PAUSED','CHOICE_ACCOUNT_CHANGED'].includes(error.code)?{code:error.code}:{}) });
       console.error('[Student PIN] Aanvraag mislukt:', error?.message || 'interne fout');
       return sendJson(res, 500, { message: 'PIN kon niet worden verwerkt.' });
     }
