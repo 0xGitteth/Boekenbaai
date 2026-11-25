@@ -649,10 +649,14 @@
         </div>
         <button type="button" id="student-choice-close" class="btn btn--ghost" aria-label="Keuzehulp sluiten">Sluiten</button>
       </div>
-      <div id="student-choice-chat-log" class="bb-choice-chat__log" role="log"
-        aria-label="Gesprek over boeken" aria-live="polite" aria-relevant="additions text"></div>
-      <div id="student-choice-chat-actions" class="bb-choice-chat__actions" aria-label="Kies je antwoord"></div>
-      <p id="student-choice-chat-status" class="bb-choice-chat__status" role="status" aria-live="polite"></p>
+      <div id="student-choice-chat-viewport" class="bb-choice-chat__viewport" tabindex="0" aria-label="Gesprek en antwoorden">
+        <div id="student-choice-chat-log" class="bb-choice-chat__log" role="log"
+          aria-label="Gesprek over boeken" aria-live="polite" aria-relevant="additions text"></div>
+        <div id="student-choice-chat-dock" class="bb-choice-chat__dock">
+          <div id="student-choice-chat-actions" class="bb-choice-chat__actions" aria-label="Kies je antwoord"></div>
+          <p id="student-choice-chat-status" class="bb-choice-chat__status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
     </dialog>
     <dialog id="reading-completion-dialog" class="reading-completion-dialog"
       aria-labelledby="reading-completion-title" aria-describedby="reading-completion-description">
