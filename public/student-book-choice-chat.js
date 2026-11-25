@@ -276,8 +276,9 @@
       message('Eens kijken wat we voor je in de kast hebben! 📚');
       void showRecommendations();
     }else if(plan.kind==='offer'){
-      message(choices.openSignals?.prefer?.length?'Zal ik alvast een paar boeken voor je zoeken? 📚':'Zal ik je gewoon drie verschillende boeken laten zien?');
-      options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],
+      const noPreference=!choices.openSignals?.prefer?.length&&!choices.openSignals?.avoid?.length&&!choices.referenceBookId&&!choices.externalRef&&choices.length!=='short'&&!choices.answers?.length;
+      message(noPreference?'Zal ik je gewoon drie verschillende boeken laten zien?':'Zal ik alvast een paar boeken voor je zoeken? 📚');
+      options([[noPreference?'Laat me drie boeken zien':'Toon boeken met wat je nu weet',()=>{if(noPreference)choices.route='surprise';void showRecommendations();}],
         ['Ontdek meer interesses',startExploration]]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
