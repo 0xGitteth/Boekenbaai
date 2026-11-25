@@ -262,3 +262,26 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  assert.equal(missing.suggestions.length,0);
  assert.equal(missing.missingCombination.length,2);
 }
+
+// Independent hobby selections must cover both topics rather than require a
+// combined cookbook about horses or fill all slots with only one topic.
+{
+ const books=[
+  {id:'horse1',title:'Op de manege',author:'A',description:'Paardrijden en het leven van ruiters.',themes:['Dieren']},
+  {id:'horse2',title:'De ruiter',author:'B',description:'Paardrijden en ruiters op de manege.',themes:['Dieren']},
+  {id:'horse3',title:'Een pony',author:'C',description:'Paardrijden op de manege.',themes:['Dieren']},
+  {id:'cook1',title:'Zelf koken',author:'D',description:'Koken, recepten en gerechten klaarmaken.',themes:['Koken']},
+ ];
+ const choice={route:'new',openSignals:{prefer:['horseRiding','cooking'],avoid:[]},separateTopics:['horseRiding','cooking'],required:[]};
+ const tips=rankBooks({books},choice);
+ assert.ok(tips.suggestions.some(x=>x.bookId==='cook1'));
+ assert.ok(tips.suggestions.some(x=>x.bookId.startsWith('horse')));
+ assert.equal(tips.missingCombination.length,0);
+ const partial=rankBooks({books:books.slice(0,3)},choice);
+ assert.ok(partial.suggestions.length);
+ assert.ok(partial.partialTopicMatches);
+ assert.ok(partial.missingTopics.some(t=>t.id==='cooking'));
+ const exhausted=rankBooks({books},{...choice,excludeKeys:books.map(keyOf)});
+ assert.equal(exhausted.suggestions.length,0);
+ assert.equal(exhausted.hasPriorMatches,true);
+}

@@ -368,6 +368,8 @@ const picked=many.advice.question.options.filter(o=>['Japan','padel'].includes(o
 assert.equal(picked.length,2);
 const multi=run(picked.map(o=>o.label).join(', '),{...many.advice.context,optionIds:picked.map(o=>o.id)});
 assert.deepEqual(new Set(multi.advice.context.signals.prefer),new Set(['japan','padel']));
+assert.deepEqual(new Set(multi.advice.context.separateTopics),new Set(['japan','padel']));
+assert.deepEqual(multi.advice.context.required,[]);
 // Book feedback remains provisional, preserves existing preferences, and does not
 // translate a rejection into a reading exclusion or accept a hidden book.
 const bookCtx={current:'specific-football',signals:{prefer:['football'],avoid:['murder']},used:['opening','sport-interest']};
@@ -472,6 +474,20 @@ assert.ok(!simpleVote.advice.context.discoveryTraits.includes('balanced'));
 assert.ok(run('Ik wil een spannend verhaal met LHBTQIA+ personages',lastRound).advice.context.required.includes('queerRepresentation'));
 const skippedQueue=run('Laat maar',queueBaking.advice.context);
 assert.ok(skippedQueue.advice.context.hobbies.includes('fishing'));
+// Production feedback: a polite refusal of a hobby as reading material is
+// neither an unknown answer nor an exclusion of its entire subject.
+const horseStart=run('Paarden!',{current:'discover',discovery:true});
+const horseHobby=run('Paardrijden',horseStart.advice.context);
+assert.equal(horseHobby.advice.question.id,'hobby-focus');
+for(const answer of ['Nee liever niet','Nee, liever niet!','Liever niet','Nee hoor','Nee bedankt','Nee, dank je','Niet echt','Nee, toch niet','Hoeft niet','Nee, dat hoeft niet','Ik wil daar liever niet over lezen','Nee ik wil daar niet over lezen','Nope']){
+ const result=run(answer,{...horseHobby.advice.context,signals:{prefer:['mystery'],avoid:['horror']}});
+ assert.ok(['question','offer'].includes(result.advice.kind),answer+' '+result.advice.kind);
+ assert.notEqual(result.advice.question?.id,'hobby-focus',answer);
+ assert.deepEqual(result.advice.context.signals,{prefer:['mystery'],avoid:['horror']},answer);
+ assert.deepEqual(result.advice.context.hobbies,[],answer);
+}
+const contrastingRefusal=run('Nee, liever voetbal',horseHobby.advice.context);
+assert.ok(contrastingRefusal.advice.context.signals.prefer.includes('football'));
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});

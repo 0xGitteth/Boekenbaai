@@ -444,9 +444,10 @@ function validateChoices(value) {
   result.openSignals=validateSignals(input.openSignals);
   result.priority=validateSignals({prefer:input.priority}).prefer.filter(t=>result.openSignals.prefer.includes(t));
   result.required=validateSignals({prefer:input.required}).prefer.filter(t=>result.openSignals.prefer.includes(t));
+  result.separateTopics=validateSignals({prefer:input.separateTopics}).prefer.filter(t=>result.openSignals.prefer.includes(t));
   result.discoverySample=input.discoverySample===true&&result.route==='surprise';
   result.bookVotes=Array.isArray(input.bookVotes)?input.bookVotes.filter(v=>v&&typeof v.key==='string'&&v.key.length<=400&&['like','maybe','dislike'].includes(v.vote)).slice(-24):[];
-  if(result.route==='surprise'&&!result.discoverySample){result.openSignals.prefer=[];result.required=[];}
+  if(result.route==='surprise'&&!result.discoverySample){result.openSignals.prefer=[];result.required=[];result.separateTopics=[];}
   result.useReadingHistory=input.useReadingHistory!==false;
   result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
   result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
@@ -649,8 +650,9 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   };
   const rejected=new Set(choice.bookVotes.filter(v=>v.vote==='dislike').map(v=>v.key));
   const candidates = [];
+  let hasPriorMatches=false;
   for (const work of works) {
-    if (rejected.has(work.key)||(!choice.allowRepeats && alreadySeen.has(work.key))) continue;
+    if (rejected.has(work.key)) continue;
     // Confirmed reads are not recommendations for a new book; only compare
     // their curated themes when the learner explicitly asks for similarities.
     if (read.readKeys.has(work.key)||referenceKey===work.key) continue;
@@ -676,6 +678,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
     const specificMatches=choice.openSignals.prefer.filter(trait=>Object.hasOwn(SUBTOPICS,trait)&&traits.has(trait)).length;
     if(choice.openSignals.prefer.length&&!openMatches&&!choice.discoverySample)continue;
+    if(!choice.allowRepeats&&alreadySeen.has(work.key)){hasPriorMatches=true;continue;}
     const explicitMatch=explicitTraits.reduce((sum,t)=>sum+(traits.get(t)||0),0);
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
@@ -705,12 +708,32 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
-  const requested=choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}));
+  const requested=[...new Set([...choice.separateTopics,...choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}))])];
+  const individual=choice.required.length?[]:choice.separateTopics;
   const missingTopics=choice.route!=='surprise'?requested.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
   const count=Math.max(1,Math.min(3,limit));
+  // Spread independent interests across the three recommendations.
+  // A genuine combined reading requirement has already been filtered above.
+  // Prefer interests not yet represented in this dialogue, then fill by rank.
+  const spread=[];
+  if(individual.length>1&&choice.route!=='surprise'){
+    const covered=new Set();
+    const previouslyCovered=new Set(individual.filter(t=>choice.excludeKeys.some(k=>workTraits.get(k)?.has(t))));
+    const order=[...individual].sort((a,b)=>Number(previouslyCovered.has(a))-Number(previouslyCovered.has(b))||Number(choice.priority.includes(b))-Number(choice.priority.includes(a)));
+    for(const topic of order){
+      if(spread.length>=count)break;
+      if(covered.has(topic))continue;
+      const item=candidates.find(x=>!spread.includes(x)&&workTraits.get(x.work.key)?.has(topic));
+      if(!item)continue;
+      spread.push(item);
+      for(const t of individual)if(workTraits.get(item.work.key)?.has(t))covered.add(t);
+    }
+    for(const item of candidates)if(spread.length<count&&!spread.includes(item))spread.push(item);
+  }
   const picked=choice.discoverySample?discoverySample(candidates,workTraits,choice,count):choice.route==='surprise'
     ? surpriseBooks(db,candidates,count)
-    : candidates.slice(0,count);
+    : individual.length>1?spread:candidates.slice(0,count);
+  const partialTopicMatches=individual.length>1&&missingTopics.length>0&&picked.some(x=>individual.some(t=>workTraits.get(x.work.key)?.has(t)));
   return {
     suggestions: picked.map(({work,matched,familiar,matchedDialogue,matchedAnchor,surpriseReason})=>({
       key:work.key,bookId:work.bookId,title:work.title,author:work.author,
@@ -727,6 +750,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     })),
     missingCombination:choice.required.length>1&&!choice.discoverySample&&!works.some(w=>!choice.openSignals.avoid.some(t=>workTraits.get(w.key)?.has(t))&&choice.required.every(t=>workTraits.get(w.key)?.has(t)))?choice.required.map(t=>({id:t,label:traitLabels[t]||t})):[],
     missingTopics:missingTopics.map(t=>({id:t,label:traitLabels[t]||t,parent:SUBTOPICS[t]||'',parentLabel:traitLabels[SUBTOPICS[t]]||''})),
+    partialTopicMatches,hasPriorMatches,
     exhausted: !picked.length && works.length > 0,
     emptyCatalog: works.length===0,
   };

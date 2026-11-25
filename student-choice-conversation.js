@@ -223,6 +223,7 @@ function cleanContext(raw={}){
   discovery:raw.discovery===true,
   priority:validateSignals({prefer:raw.priority}).prefer,
   required:validateSignals({prefer:raw.required}).prefer,
+  separateTopics:validateSignals({prefer:raw.separateTopics}).prefer,
   indexParent:typeof raw.indexParent==='string'&&Object.hasOwn(LABELS,raw.indexParent)?raw.indexParent:'',
   indexPage:Math.max(0,Math.min(100,Number.isInteger(raw.indexPage)?raw.indexPage:0)),
   discoveryReturn:BY_ID.has(raw.discoveryReturn)&&raw.discoveryReturn!=='discovery-feedback'?raw.discoveryReturn:'discover',
@@ -473,7 +474,11 @@ function analyze(text,rawContext={},books=[]){
    }
   }
  }
- const decline=/^(?:(?:eigenlijk|gewoon) )?(?:nee|niets|niks|helemaal niks|helemaal niets|niet echt|geen van beide|geen van deze|geen van die|boeit me niet|interesseert me niet|niet mijn ding|liever iets anders|ik wil iets anders lezen)(?: daarvan| hoor| eigenlijk| echt| lol| haha| dank je)*$/.test(value);
+ // Recognize complete, everyday refusals without swallowing a contrasting
+ // preference ("nee, liever voetbal") or a named reading exclusion.
+ const shortRefusal=/^(?:(?:nee|nee hoor|nah|nope|neen) )?(?:(?:liever|eigenlijk|toch|echt|helaas) )?(?:niet|niet echt|liever niet|geen interesse|geen zin|dat hoeft niet|hoeft niet|dat wil ik niet|wil ik niet|ik wil dat niet|ik wil liever niet|ik lees daar liever niet over)(?: hoor| bedankt| dank je| eigenlijk| echt| lol| haha)*$/.test(value);
+ const hobbyRefusal=c.current==='hobby-focus'&&/^(?:nee )?(?:ik )?(?:wil|zou) (?:daar|er) (?:liever )?(?:niet|geen boeken) (?:over )?(?:lezen|willen lezen)(?: hoor| bedankt)?$/.test(value);
+ const decline=shortRefusal||hobbyRefusal||/^(?:nee|nah|nope|neen)(?: hoor| bedankt| dank je| echt niet| zeker niet)?$/.test(value)||/^(?:(?:eigenlijk|gewoon) )?(?:nee|niets|niks|helemaal niks|helemaal niets|niet echt|geen van beide|geen van deze|geen van die|boeit me niet|interesseert me niet|niet mijn ding|liever iets anders|ik wil iets anders lezen)(?: daarvan| hoor| eigenlijk| echt| lol| haha| dank je)*$/.test(value);
  const uncertain=/^(?:ik )?(?:weet (?:het )?niet|weet ik niet|weet ik veel|geen idee|idk|mnu|maakt (?:me )?niet uit|geen voorkeur|geen flauw idee)(?: eigenlijk| echt| hoor| haha| denk ik| lol)*$/.test(value);
  if(/\b(?:geen dikke boeken|niet zo dik|niet te dik|liever kort|kort boek|korte boeken|weinig pagina s|niet veel pagina s)\b/.test(value))length='short';
  if(/\b(?:dik boek is prima|lange boeken zijn prima|lengte maakt niet uit)\b/.test(value))length='any';
@@ -637,8 +642,10 @@ function analyze(text,rawContext={},books=[]){
  const left=conjunction?leaf(interpret(conjunction[1]).prefer):[],right=conjunction?leaf(interpret(conjunction[2]).prefer):[];
  const newRequired=left.length&&right.length&&right.some(t=>!left.includes(t))&&!/\b(?:of|misschien|bijvoorbeeld|liefst|eventueel|zonder|geen|niet)\b/i.test(conjunction[2])?validateSignals({prefer:[...left,...right]}).prefer:[];
  const required=validateSignals({prefer:[...(replaceTopics?[]:c.required),...newRequired]}).prefer.filter(t=>updated.prefer.includes(t)&&!updated.avoid.some(a=>a===t||isAncestor(a,t)));
+ const individual=c.current==='hobby-focus'?leaf(delta.prefer):[];
+ const separateTopics=validateSignals({prefer:[...(replaceTopics?[]:c.separateTopics),...individual]}).prefer.filter(t=>updated.prefer.includes(t));
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
- const next={...c,signals:updated,length,priority,required,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
+ const next={...c,signals:updated,length,priority,required,separateTopics,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
