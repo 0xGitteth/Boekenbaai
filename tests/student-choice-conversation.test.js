@@ -47,10 +47,10 @@ assert.notEqual(run('Ik heb zelf twee honden').advice.kind,'book-search');
 for(let i=0;i<100;i++){
  const hobbies=run('Ik vind het leuk om te sporten en te tekenen',{current:'free-time',seed:'real-hobbies-'+i});
  assert.equal(hobbies.advice.question.id,'hobby-focus');
- assert.deepEqual(new Set(hobbies.advice.context.hobbies),new Set(['sport','art']));
+ assert.deepEqual(new Set(hobbies.advice.context.hobbies),new Set(['sport','drawing']));
  assert.deepEqual(hobbies.advice.context.signals.prefer,[]);
  assert.match(hobbies.advice.question.prompt,/sport.*tekenen|tekenen.*sport/i);
- const art=run('Tekenen of iets maken',hobbies.advice.context);
+ const art=run('tekenen en schilderen',hobbies.advice.context);
  assert.ok(!art.advice.context.signals.prefer.includes('music'));
  assert.ok(!/muzikant|muziek|liedjes/i.test(art.advice.question?.prompt||''));
  const sport=run('Sport',hobbies.advice.context);
@@ -91,6 +91,37 @@ const animal=run('Ik wil niet dat die doodgaat',{signals:{prefer:['animals'],avo
 assert.ok(animal.avoid.includes('animalLoss'));
 assert.ok(!run('Ik wil geen boek over een moeder die doodgaat').avoid.includes('animalLoss'));
 assert.ok(!run('Ik wil niet dat die doodgaat').avoid.includes('animalLoss'));
+// A precise topic is independent of the surrounding family.
+for(const [answer,topic] of [['fotografie','photography'],['ruimtevaart','space'],['wilde dieren','wildlife'],['sport kijken','sportWatching'],['gameontwikkeling','gameDevelopment'],['muziek luisteren','musicListening']]){
+ const r=run(answer,{seed:'precise-'+topic});
+ assert.ok(r.advice.context.signals.prefer.includes(topic),answer);
+ assert.equal(r.advice.question?.id,'specific-'+topic,answer);
+}
+const typo=run('fotograffie',{current:'opening'});
+assert.equal(typo.advice.kind,'examples');
+assert.equal(typo.advice.question.id,'clarify-topic');
+assert.deepEqual(typo.advice.context.signals.prefer,[]);
+const photo=typo.advice.question.options.find(o=>o.label==='fotografie');
+assert.ok(photo);
+const confirmedPhoto=run(photo.label,{...typo.advice.context,optionId:photo.id});
+assert.ok(confirmedPhoto.advice.context.signals.prefer.includes('photography'));
+const hobbyTypo=run('fotograffie',{current:'free-time'});
+const hobbyPhoto=hobbyTypo.advice.question.options.find(o=>o.label==='fotografie');
+const confirmedHobby=run(hobbyPhoto.label,{...hobbyTypo.advice.context,optionId:hobbyPhoto.id});
+assert.equal(confirmedHobby.advice.question.id,'hobby-focus');
+assert.deepEqual(confirmedHobby.advice.context.signals.prefer,[]);
+assert.ok(confirmedHobby.advice.context.hobbies.includes('photography'));
+const correctedSport=run('Nee ik kijk alleen',{current:'specific-sportPlaying',signals:{prefer:['sportPlaying','sport'],avoid:[]}});
+assert.ok(correctedSport.advice.context.signals.prefer.includes('sportWatching'));
+assert.ok(!correctedSport.advice.context.signals.prefer.includes('sportPlaying'));
+assert.match(correctedSport.advice.reaction,/verkeerd/);
+const unknownTopic=run('quadrobics',{current:'free-time'});
+assert.equal(unknownTopic.advice.kind,'clarify');
+assert.match(unknownTopic.advice.reaction,/bedoelt/);
+const minecraft=run('Minecraft',{current:'free-time'});
+assert.ok(minecraft.advice.hypotheses.some(x=>x.id==='gameBuilding'));
+const build=run('vooral bouwen',minecraft.advice.context);
+assert.ok(build.advice.context.signals.prefer.includes('gameBuilding'));
 const ranked=rankBooks({books},{route:'new',openSignals:{prefer:['animals'],avoid:['animalLoss']},seed:'animal'});
 assert.ok(ranked.suggestions.some(b=>b.bookId==='f'));
 assert.ok(!ranked.suggestions.some(b=>b.bookId==='g'));
