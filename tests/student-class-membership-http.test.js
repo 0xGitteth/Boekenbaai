@@ -22,7 +22,7 @@ const teacher=(id,classId)=>({
   classIds:[classId],mustChangePassword:false,
 });
 const db={
-  books:[],folders:[],history:[],importJobs:[],
+  books:[{id:'favorite-copy',title:'Spijt!',author:'Carry Slee',status:'available'}],folders:[],history:[],importJobs:[],
   classes:[
     {id:'old',name:'Arbeid',studentIds:['pupil-two'],teacherIds:['teacher-old']},
     {id:'new',name:'Onderbouw BKT',studentIds:['pupil-one'],
@@ -126,7 +126,27 @@ async function login(username){
     const otherMentor=await login('teacher-legacy-b');
     assert.deepEqual((await fetchApi('/api/students',otherMentor.token)).data.map(x=>x.id),['pupil-legacy-two']);
     assert.equal((await fetchApi('/api/exam-reading-list',multi.token)).status,200);
-    console.log('Current classes in student login, own profile and mentor API OK');
+    const key=JSON.stringify(['spijt!','carry slee']);
+    const route=id=>'/api/me/favorites?account='+encodeURIComponent(id);
+    assert.equal((await fetchApi(route('pupil-one'))).status,401);
+    assert.equal((await fetchApi(route('pupil-one'),oldTeacher.token)).status,403);
+    assert.equal((await fetchApi('/api/me/favorites',pupil.token)).status,409);
+    assert.deepEqual((await fetchApi(route('pupil-one'),pupil.token)).data,{studentId:'pupil-one',favorites:[]});
+    const favorite=await fetchApi(route('pupil-one'),pupil.token,{key,bookId:'favorite-copy',favorite:true,studentId:'pupil-two'});
+    assert.equal(favorite.status,200,JSON.stringify(favorite.data));
+    assert.deepEqual(favorite.data,{studentId:'pupil-one',favorites:[{key,title:'Spijt!',author:'Carry Slee'}]});
+    // Simulate a stale tab whose displayed account is A but whose actual
+    // authenticated request belongs to B. Neither reading nor editing is allowed.
+    const staleRead=await fetchApi(route('pupil-one'),multi.token);
+    assert.equal(staleRead.status,409);
+    assert.equal(staleRead.data.code,'FAVORITE_ACCOUNT_CHANGED');
+    assert.equal(staleRead.data.favorites,undefined);
+    const staleWrite=await fetchApi(route('pupil-one'),multi.token,{key,bookId:'favorite-copy',favorite:true});
+    assert.equal(staleWrite.status,409);
+    assert.deepEqual((await fetchApi(route('pupil-legacy-two'),multi.token)).data.favorites,[]);
+    assert.equal((await fetchApi(route('pupil-one'),pupil.token)).data.favorites.length,1);
+    assert.deepEqual((await fetchApi(route('pupil-one'),pupil.token,{key,favorite:false})).data.favorites,[]);
+    console.log('Current classes, mentor API and private favorites OK');
   }finally{
     child?.kill('SIGTERM');
     fs.rmSync(tmp,{recursive:true,force:true});
