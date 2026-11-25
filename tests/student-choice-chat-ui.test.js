@@ -320,7 +320,8 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
   actions.children.find(x=>x.textContent==='Help me ontdekken').listeners.click();
   await submitOpen('Tekenen, koken en paarden');
-  await submitOpen('Paardrijden');
+  actions.children.find(x=>x.textContent==='Paardrijden').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
   const questionCount=log.children.filter(row=>row.children[0]?.textContent.includes('Over welke hiervan zou je ook iets willen lezen?')).length;
   assert.equal(questionCount,1);
   assert.ok(!log.children.some(row=>row.children[0]?.textContent==='Kies de onderwerpen waar je ook iets over zou willen lezen.'));
@@ -337,7 +338,8 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Help me ontdekken').listeners.click();
   const beforeHorse=suggestRequests.length;
   await submitOpen('Paarden!');
-  await submitOpen('Paardrijden');
+  actions.children.find(x=>x.textContent==='Paardrijden').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
   assert.equal(suggestRequests.length,beforeHorse,'A reset must not jump to recommendations');
   assert.match(log.children.at(-1).children[0].textContent,/Zou je daar ook iets over willen lezen/);
   actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Opnieuw beginnen').listeners.click();
