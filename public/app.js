@@ -3342,6 +3342,7 @@ function initStudentPage() {
   let favorites=null;
   let favoritePending=false;
   let favoriteLoadVersion=0;
+  let favoriteNeedsRevalidation=false;
   // Use the captured token and account assertion, not fetchJson's global 401
   // handler. A late response must never clear another student's login.
   async function requestFavorites(session,body){
@@ -3401,7 +3402,7 @@ function initStudentPage() {
     }
   }
   function clearFavorites(){
-    favoriteSession=null;favorites=null;favoritePending=false;favoriteLoadVersion++;
+    favoriteSession=null;favorites=null;favoritePending=false;favoriteLoadVersion++;favoriteNeedsRevalidation=false;
     favoriteList?.replaceChildren();
     if(favoriteFeedback)favoriteFeedback.textContent='';
     if(favoriteRetry)favoriteRetry.hidden=true;
@@ -3411,6 +3412,7 @@ function initStudentPage() {
   async function loadFavorites(session){
     if(!currentFavoriteSession(session)||favoritePending)return;
     const version=++favoriteLoadVersion;
+    favoriteNeedsRevalidation=false;
     if(favoriteFeedback)favoriteFeedback.textContent='Favorieten laden…';
     if(favoriteRetry)favoriteRetry.hidden=true;
     try{
@@ -3443,7 +3445,8 @@ function initStudentPage() {
   });
   function revalidateFavorites(){
     const session=favoriteSession;
-    if(currentFavoriteSession(session)&&!favoritePending){
+    if(currentFavoriteSession(session)&&favoritePending){favoriteNeedsRevalidation=true;return;}
+    if(currentFavoriteSession(session)){
       favorites=null;
       favoriteList?.replaceChildren();
       bookGrid?.querySelectorAll('.bb-favorite-heart').forEach(el=>el.remove());
@@ -3453,7 +3456,7 @@ function initStudentPage() {
   document.addEventListener('visibilitychange',()=>{
     if(document.visibilityState==='visible')revalidateFavorites();
     else if(currentFavoriteSession(favoriteSession)){
-      favoriteLoadVersion++;favorites=null;favoriteList?.replaceChildren();
+      favoriteNeedsRevalidation=true;favoriteLoadVersion++;favorites=null;favoriteList?.replaceChildren();
       bookGrid?.querySelectorAll('.bb-favorite-heart').forEach(el=>el.remove());
     }
   });
@@ -3484,14 +3487,19 @@ function initStudentPage() {
       if(currentFavoriteSession(session)){
         const mayRestore=document.activeElement===focused||document.activeElement===document.body;
         favoritePending=false;
-        if(document.visibilityState==='hidden'){favorites=null;return;}
-        renderFavorites();renderBooks();
-        if(mayRestore&&restoreProfile){
+        if(document.visibilityState==='hidden'){favorites=null;favoriteNeedsRevalidation=true;return;}
+        if(favorites===null||favoriteNeedsRevalidation){
+          favorites=null;
+          await loadFavorites(session);
+          if(!currentFavoriteSession(session)||document.visibilityState==='hidden'||favorites===null)return;
+        }else{renderFavorites();renderBooks();}
+        const stillMayRestore=mayRestore&&(document.activeElement===focused||document.activeElement===document.body);
+        if(stillMayRestore&&restoreProfile){
           const controls=Array.from(favoriteList?.querySelectorAll('.bb-favorite-remove')||[]);
           const next=controls.find(el=>el.dataset.favoriteKey===key)||controls[Math.min(rowIndex,controls.length-1)]
             ||document.querySelector('#student-favorites-title');
           next?.focus({preventScroll:true});
-        }else if(mayRestore&&restoreHeart){
+        }else if(stillMayRestore&&restoreHeart){
           Array.from(bookGrid?.querySelectorAll('.book-card')||[]).find(c=>c.dataset.bookId===key)?.querySelector('.bb-favorite-heart')?.focus({preventScroll:true});
         }
       }

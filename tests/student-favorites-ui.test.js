@@ -15,7 +15,7 @@ const list=node(),card=node(),feedback=node(),retry=node(),grid=node(),heading=n
 let pending=[];
 const ctx={authUser:{id:'A',role:'student'},authToken:'cookie',groupedBooks:[],
  favoriteList:list,favoriteCard:card,favoriteFeedback:feedback,favoriteRetry:retry,bookGrid:grid,
- studentActionMessage:node(),document:{activeElement:null,body:node(),visibilityState:'visible',addEventListener(){},querySelector:()=>heading},
+ studentActionMessage:node(),document:{activeElement:null,body:node(),visibilityState:'visible',listeners:{},addEventListener(k,fn){this.listeners[k]=fn;},querySelector:()=>heading},
  window:{addEventListener(){}},resolveApiUrl:x=>x,renderBooks(){},openBookDetail(){},
  appendElement(parent,tag,opts={}){const x=node(opts.className);parent.children.push(x);return x;},
  appendTextElement(parent,tag,text,opts){const x=ctx.appendElement(parent,tag,opts);x.textContent=text;return x;},
@@ -43,6 +43,23 @@ const flush=()=>new Promise(r=>setImmediate(r));
  const operation3=ctx.f.changeFavorite('2',false,undefined,ctx.document.activeElement);
  pending.shift().resolve(response(200,{studentId:'B',favorites:[]}));await operation3;
  assert.equal(ctx.document.activeElement,heading);
+ // A failed mutation spanning a hidden/visible transition must reload
+ // the account-bound list, even when the focus event arrived while busy.
+ const change=ctx.f.changeFavorite('3',true,'copy');
+ ctx.document.visibilityState='hidden';ctx.document.listeners.visibilitychange();
+ ctx.document.visibilityState='visible';ctx.document.listeners.visibilitychange();
+ pending.shift().resolve(response(500,{message:'Mislukt na tabwissel'}));await flush();
+ assert.equal(pending.length,1);
+ assert.equal(pending[0].options.method,'GET');
+ pending.shift().resolve(response(200,{studentId:'B',favorites:[{key:'4',title:'Vier'}]}));await change;
+ assert.equal(list.querySelectorAll('.bb-favorite-remove').length,1);
+ // If the recovery request also fails, a retry must remain visible.
+ const again=ctx.f.changeFavorite('4',false,undefined,list.querySelectorAll('.bb-favorite-remove')[0]);
+ ctx.document.visibilityState='hidden';ctx.document.listeners.visibilitychange();
+ ctx.document.visibilityState='visible';ctx.document.listeners.visibilitychange();
+ pending.shift().resolve(response(500,{}));await flush();
+ pending.shift().resolve(response(500,{}));await again;
+ assert.equal(retry.hidden,false);
  const current=ctx.f.state().favoriteSession;
  const loading=ctx.f.loadFavorites(current);
  pending.shift().resolve(response(409,{code:'FAVORITE_ACCOUNT_CHANGED'}));await loading;
