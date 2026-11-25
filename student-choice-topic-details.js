@@ -1,6 +1,5 @@
 'use strict';
 // Topic details: [id, parent, pupil label, pupil aliases, catalogue evidence, prompt, options].
-// Evidence terms describe book content, not the pupil's identity.
 module.exports=[
  [
   "unsolvedCases",
@@ -548,7 +547,7 @@ module.exports=[
  ],
  [
   "comics",
-  "humor",
+  "format",
   "strips en graphic novels",
   [
    "stripboek",
@@ -846,7 +845,6 @@ module.exports=[
   [
    "beroepen",
    "beroep",
-   "werken",
    "solliciteren",
    "stage lopen",
    "opleidingen"

@@ -1,5 +1,5 @@
 'use strict';
-// Thematic, distinct authored question intents. Open wording first; examples only on request.
+// Reviewed question wording, specific prerequisites and explicit reading preferences.
 module.exports=[
  {
   "id": "extended-crime-1",
@@ -8,8 +8,8 @@ module.exports=[
   "when": [
    "criminalPerspective"
   ],
-  "prompt": "Wat wil je weten over het leven van iemand die in de criminaliteit terechtkomt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over iemand die in de misdaad belandt?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -48,15 +48,14 @@ module.exports=[
   "when": [
    "crime"
   ],
-  "prompt": "Welke kanten van misdaad komen volgens jou te weinig aan bod?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over wie zou je het liefst lezen in een misdaadverhaal?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "De slachtoffers",
     "prefer": [
-     "empathy",
-     "crime"
+     "crimeVictims"
     ],
     "length": ""
    },
@@ -86,8 +85,8 @@ module.exports=[
   "when": [
    "crime"
   ],
-  "prompt": "Wat maakt een misdaadverhaal voor jou geloofwaardig?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Lees je liever echte misdaadzaken of verzonnen verhalen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -120,11 +119,10 @@ module.exports=[
   "group": "crime",
   "stage": 2,
   "when": [
-   "police",
-   "justice"
+   "courtCases"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar bij een rechtszaak?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan een rechtszaak?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -159,10 +157,10 @@ module.exports=[
   "group": "crime",
   "stage": 2,
   "when": [
-   "criminalPerspective"
+   "gangs"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over bendes?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt een verhaal over een bende interessant voor je?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -198,11 +196,10 @@ module.exports=[
   "group": "crime",
   "stage": 2,
   "when": [
-   "crime",
-   "choices"
+   "crime"
   ],
-  "prompt": "Hoe kijk je aan tegen verhalen waarin iemand iets strafbaars doet om een ander te helpen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand de wet breekt om een ander te helpen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -228,6 +225,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "crime",
+   "choices"
   ]
  },
  {
@@ -237,8 +238,8 @@ module.exports=[
   "when": [
    "crime"
   ],
-  "prompt": "Over welke misdaadonderwerpen kijk je weleens een documentaire?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke echte misdaadzaken wil je lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -253,7 +254,7 @@ module.exports=[
     "id": "1",
     "label": "Georganiseerde misdaad",
     "prefer": [
-     "crime",
+     "gangs",
      "true"
     ],
     "length": ""
@@ -267,6 +268,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "crime",
+   "true"
   ]
  },
  {
@@ -276,8 +281,8 @@ module.exports=[
   "when": [
    "criminalPerspective"
   ],
-  "prompt": "Wat zou je willen weten over iemand die na een misdaad opnieuw begint?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over iemand die uit de misdaad probeert te komen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -312,8 +317,8 @@ module.exports=[
   "when": [
    "crime"
   ],
-  "prompt": "Wat trekt je aandacht als je nieuws over misdaad ziet?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over een misdaad uit het nieuws?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -340,6 +345,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "crime",
+   "true"
   ]
  },
  {
@@ -350,8 +359,8 @@ module.exports=[
    "mystery",
    "puzzles"
   ],
-  "prompt": "Wat zou je graag willen uitzoeken als je een raadsel tegenkomt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor raadsel zou je zelf willen oplossen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -385,10 +394,10 @@ module.exports=[
   "group": "mystery",
   "stage": 2,
   "when": [
-   "mystery"
+   "unsolvedCases"
   ],
-  "prompt": "Welke onderwerpen maken je nieuwsgierig buiten boeken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor mysteries uit het echte leven vind je interessant?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -424,8 +433,8 @@ module.exports=[
   "when": [
    "mystery"
   ],
-  "prompt": "Wat voor mysteries kom je weleens tegen in wat je kijkt of speelt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor mysterie wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -448,8 +457,7 @@ module.exports=[
     "id": "2",
     "label": "Familiegeheimen",
     "prefer": [
-     "secrets",
-     "family"
+     "familySecrets"
     ],
     "length": ""
    }
@@ -462,8 +470,8 @@ module.exports=[
   "when": [
    "secrets"
   ],
-  "prompt": "Wat wil je meestal weten wanneer iemand iets niet vertelt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waarom zou iemand iets geheimhouden, denk je?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -497,11 +505,10 @@ module.exports=[
   "group": "mystery",
   "stage": 2,
   "when": [
-   "mystery",
    "discovery"
   ],
-  "prompt": "Waarover zou je zelf weleens meer willen ontdekken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je in een verhaal willen ontdekken?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -529,6 +536,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "discovery",
+   "mystery"
   ]
  },
  {
@@ -536,10 +547,10 @@ module.exports=[
   "group": "mystery",
   "stage": 2,
   "when": [
-   "mystery"
+   "unsolvedCases"
   ],
-  "prompt": "Vind je onopgeloste zaken ook interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat trekt je aan in een onopgeloste zaak?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -553,6 +564,7 @@ module.exports=[
     "id": "1",
     "label": "Echte verhalen",
     "prefer": [
+     "unsolvedCases",
      "true"
     ],
     "length": ""
@@ -574,8 +586,8 @@ module.exports=[
   "when": [
    "disappearance"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over verdwenen personen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten als iemand spoorloos is verdwenen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -612,8 +624,8 @@ module.exports=[
   "when": [
    "unusual"
   ],
-  "prompt": "Lees je graag over dingen die niemand goed kan verklaren?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wil je een verklaring voor iets vreemds, of mag het onverklaarbaar blijven?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -648,11 +660,10 @@ module.exports=[
   "group": "mystery",
   "stage": 2,
   "when": [
-   "mystery",
    "secrets"
   ],
-  "prompt": "Wat vind je van verhalen waarin iemands versie niet klopt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand in een verhaal niet de waarheid vertelt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -688,8 +699,8 @@ module.exports=[
   "when": [
    "psychology"
   ],
-  "prompt": "Over welk gedrag van mensen vraag je je soms af waarom het gebeurt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welk gedrag van mensen wil je meer weten?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -704,8 +715,7 @@ module.exports=[
     "id": "1",
     "label": "Groepsdruk",
     "prefer": [
-     "team",
-     "outsider"
+     "groupPressure"
     ],
     "length": ""
    },
@@ -728,8 +738,8 @@ module.exports=[
   "when": [
    "growth"
   ],
-  "prompt": "Wat vind je interessant aan hoe mensen veranderen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waarover wil je lezen als iemand verandert?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -765,15 +775,15 @@ module.exports=[
   "when": [
    "psychology"
   ],
-  "prompt": "Welke onderwerpen uit de psychologie spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je graag begrijpen aan mensen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Gedachten en gevoelens",
     "prefer": [
-     "psychology",
-     "empathy"
+     "empathy",
+     "psychology"
     ],
     "length": ""
    },
@@ -802,8 +812,8 @@ module.exports=[
   "when": [
    "psychology"
   ],
-  "prompt": "Wat zou je willen begrijpen aan iemand die heel anders denkt dan jij?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan iemand die anders denkt?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -837,11 +847,10 @@ module.exports=[
   "group": "psychology",
   "stage": 2,
   "when": [
-   "relationships",
    "secrets"
   ],
-  "prompt": "Wat maakt verhalen over vertrouwen voor jou interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je boeiend aan vertrouwen en bedrog?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -868,6 +877,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "secrets",
+   "psychology"
   ]
  },
  {
@@ -877,8 +890,8 @@ module.exports=[
   "when": [
    "choices"
   ],
-  "prompt": "Welke keuzes van mensen blijven jou soms bezighouden?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor moeilijke keuzes vind je interessant?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -914,8 +927,8 @@ module.exports=[
   "when": [
    "manipulation"
   ],
-  "prompt": "Wat zou je willen weten over iemand die door anderen wordt beïnvloed?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand onder invloed staat van anderen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -948,17 +961,17 @@ module.exports=[
   "group": "psychology",
   "stage": 2,
   "when": [
-   "psychology"
+   "brain"
   ],
-  "prompt": "Welke onderwerpen over het brein vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen weten over je hersenen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Geheugen",
     "prefer": [
-     "science",
-     "psychology"
+     "brain",
+     "facts"
     ],
     "length": ""
    },
@@ -985,11 +998,10 @@ module.exports=[
   "group": "psychology",
   "stage": 2,
   "when": [
-   "psychology",
-   "growth"
+   "identity"
   ],
-  "prompt": "Lees je graag over mensen die proberen zichzelf beter te begrijpen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waarover wil je lezen als iemand zichzelf beter leert kennen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1025,8 +1037,8 @@ module.exports=[
   "when": [
    "family"
   ],
-  "prompt": "Waarover vind je verhalen over gezinnen interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor verhalen over gezinnen vind je interessant?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1040,8 +1052,7 @@ module.exports=[
     "id": "1",
     "label": "Veranderingen in een gezin",
     "prefer": [
-     "growth",
-     "family"
+     "familyChanges"
     ],
     "length": ""
    },
@@ -1049,8 +1060,7 @@ module.exports=[
     "id": "2",
     "label": "Een gedeeld verleden",
     "prefer": [
-     "history",
-     "secrets"
+     "familyHistory"
     ],
     "length": ""
    }
@@ -1062,10 +1072,10 @@ module.exports=[
   "group": "family",
   "stage": 2,
   "when": [
-   "family"
+   "siblings"
   ],
-  "prompt": "Vind je verhalen over broers en zussen interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan verhalen over broers en zussen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -1100,10 +1110,10 @@ module.exports=[
   "group": "family",
   "stage": 2,
   "when": [
-   "family"
+   "familyChanges"
   ],
-  "prompt": "Welke veranderingen thuis zouden je nieuwsgierig maken in een verhaal?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor verandering thuis lijkt je interessant om over te lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1118,8 +1128,7 @@ module.exports=[
     "id": "1",
     "label": "Een nieuw gezin",
     "prefer": [
-     "family",
-     "relationships"
+     "familyChanges"
     ],
     "length": ""
    },
@@ -1127,8 +1136,7 @@ module.exports=[
     "id": "2",
     "label": "Iets uit het verleden",
     "prefer": [
-     "history",
-     "secrets"
+     "familySecrets"
     ],
     "length": ""
    }
@@ -1139,10 +1147,10 @@ module.exports=[
   "group": "family",
   "stage": 2,
   "when": [
-   "family"
+   "familyHistory"
   ],
-  "prompt": "Wat vind je boeiend aan verschillende generaties in een familie?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over verschillende generaties in een familie?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1177,8 +1185,8 @@ module.exports=[
   "when": [
    "family"
   ],
-  "prompt": "Wat wil je weten wanneer een familie iets moeilijks meemaakt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als een gezin iets moeilijks meemaakt?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -1215,8 +1223,8 @@ module.exports=[
   "when": [
    "family"
   ],
-  "prompt": "Welke verhalen over ouders vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan de band tussen ouders en kinderen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1253,8 +1261,8 @@ module.exports=[
   "when": [
    "family"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over een bijzondere thuissituatie?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor gezin wil je in een verhaal tegenkomen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1289,17 +1297,16 @@ module.exports=[
   "group": "family",
   "stage": 2,
   "when": [
-   "family"
+   "familyHistory"
   ],
-  "prompt": "Wat vind je interessant aan een verhaal over iemand die zijn afkomst ontdekt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand ontdekt waar die vandaan komt?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Familiegeschiedenis",
     "prefer": [
-     "family",
-     "history"
+     "familyHistory"
     ],
     "length": ""
    },
@@ -1307,7 +1314,7 @@ module.exports=[
     "id": "1",
     "label": "Identiteit",
     "prefer": [
-     "growth"
+     "identity"
     ],
     "length": ""
    },
@@ -1315,7 +1322,7 @@ module.exports=[
     "id": "2",
     "label": "Verborgen informatie",
     "prefer": [
-     "secrets"
+     "familySecrets"
     ],
     "length": ""
    }
@@ -1328,8 +1335,8 @@ module.exports=[
   "when": [
    "family"
   ],
-  "prompt": "Welke familieonderwerpen lees je liever vanuit het perspectief van een jongere?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over opgroeien in een gezin?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1365,8 +1372,8 @@ module.exports=[
   "when": [
    "friendship"
   ],
-  "prompt": "Wat vind je mooi aan verhalen over vrienden?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan verhalen over vrienden?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1405,8 +1412,8 @@ module.exports=[
   "when": [
    "friendship"
   ],
-  "prompt": "Wat wil je lezen over mensen die elkaar nog niet goed kennen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Hoe vind je het als mensen in een verhaal elkaar net leren kennen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -1420,7 +1427,7 @@ module.exports=[
     "id": "1",
     "label": "Verliefd worden",
     "prefer": [
-     "relationships"
+     "firstLove"
     ],
     "length": ""
    },
@@ -1440,10 +1447,10 @@ module.exports=[
   "group": "friendship",
   "stage": 2,
   "when": [
-   "friendship"
+   "friendshipConflict"
   ],
-  "prompt": "Wat maakt een ruzie tussen vrienden interessant om over te lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als twee vrienden ruzie krijgen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1478,8 +1485,8 @@ module.exports=[
   "when": [
    "friendship"
   ],
-  "prompt": "Welke onderwerpen over groepen mensen spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan een groep vrienden?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1501,8 +1508,7 @@ module.exports=[
     "id": "2",
     "label": "Groepsdruk",
     "prefer": [
-     "choices",
-     "psychology"
+     "groupPressure"
     ],
     "length": ""
    }
@@ -1513,17 +1519,17 @@ module.exports=[
   "group": "friendship",
   "stage": 2,
   "when": [
-   "school"
+   "schoolLife"
   ],
-  "prompt": "Wat vind je interessant aan iemand die een nieuwe school binnenkomt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan een nieuwe school in een verhaal?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Nieuwe vrienden",
     "prefer": [
      "friendship",
-     "school"
+     "schoolLife"
     ],
     "length": ""
    },
@@ -1550,10 +1556,10 @@ module.exports=[
   "group": "friendship",
   "stage": 2,
   "when": [
-   "relationships"
+   "firstLove"
   ],
-  "prompt": "Welke verhalen over verliefdheid vind je leuk?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan een verhaal over een eerste liefde?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1590,8 +1596,8 @@ module.exports=[
   "when": [
    "friendship"
   ],
-  "prompt": "Lees je graag over jongeren die heel verschillend zijn?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als twee heel verschillende mensen vrienden worden?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1628,8 +1634,8 @@ module.exports=[
   "when": [
    "friendship"
   ],
-  "prompt": "Wat maakt een verhaal over een groep vrienden geloofwaardig voor jou?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt een verhaal over vrienden herkenbaar voor je?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -1664,8 +1670,8 @@ module.exports=[
   "when": [
    "outsider"
   ],
-  "prompt": "Wat zou je willen lezen over iemand die zich alleen voelt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over iemand die zich alleen voelt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1700,8 +1706,8 @@ module.exports=[
   "when": [
    "sport"
   ],
-  "prompt": "Welke sporten vind je zelf interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welke sport wil je in een boek terugzien?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1715,8 +1721,7 @@ module.exports=[
     "id": "1",
     "label": "Teamsporten",
     "prefer": [
-     "sport",
-     "team"
+     "teamSport"
     ],
     "length": ""
    },
@@ -1724,8 +1729,7 @@ module.exports=[
     "id": "2",
     "label": "Individuele prestaties",
     "prefer": [
-     "sport",
-     "challenge"
+     "individualSport"
     ],
     "length": ""
    }
@@ -1737,10 +1741,10 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "sportPlaying"
   ],
-  "prompt": "Zou je iets willen lezen over het leven van een topsporter, of liever over sport zelf?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen lezen over het leven van een sporter?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -1774,10 +1778,10 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "teamSport"
   ],
   "prompt": "Wat vind je interessant aan een sportteam?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1804,10 +1808,6 @@ module.exports=[
     ],
     "length": ""
    }
-  ],
-  "requires": [
-   "sport",
-   "team"
   ]
  },
  {
@@ -1815,10 +1815,10 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "sportWatching"
   ],
-  "prompt": "Wat vind je interessant aan sport: de regels, de tactiek of de sporters?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan het volgen van sport?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1854,10 +1854,10 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "sportPlaying"
   ],
-  "prompt": "Wat trekt je aan in verhalen over iemand met een groot sportdoel?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als een sporter een groot doel heeft?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -1892,8 +1892,8 @@ module.exports=[
   "when": [
    "sport"
   ],
-  "prompt": "Welke sportverhalen lees je liefst over echte mensen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke echte sporters zou je willen lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -1924,8 +1924,8 @@ module.exports=[
    }
   ],
   "requires": [
-   "true",
-   "sport"
+   "sport",
+   "true"
   ]
  },
  {
@@ -1933,10 +1933,10 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "sportPlaying"
   ],
-  "prompt": "Wat zou je willen leren over hoe sporters presteren?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen weten over trainen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -1972,10 +1972,10 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "sportWatching"
   ],
-  "prompt": "Welke kanten van sport vind je buiten de wedstrijd interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over sport naast de wedstrijden?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -1989,8 +1989,8 @@ module.exports=[
     "id": "1",
     "label": "De club en supporters",
     "prefer": [
-     "team",
-     "society"
+     "sportWatching",
+     "teamSport"
     ],
     "length": ""
    },
@@ -2009,10 +2009,10 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "sportPlaying"
   ],
-  "prompt": "Wat vind je interessant aan een sporter die geblesseerd raakt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als een sporter na een blessure terug probeert te komen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2041,7 +2041,7 @@ module.exports=[
    }
   ],
   "requires": [
-   "sport",
+   "sportPlaying",
    "health"
   ]
  },
@@ -2052,14 +2052,14 @@ module.exports=[
   "when": [
    "gaming"
   ],
-  "prompt": "Wat speel je het liefst als je zelf kiest?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor games wil je in een boek terugzien?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Spellen met een verhaal",
     "prefer": [
-     "adventure"
+     "gameStory"
     ],
     "length": ""
    },
@@ -2067,8 +2067,7 @@ module.exports=[
     "id": "1",
     "label": "Sportgames",
     "prefer": [
-     "sport",
-     "competition"
+     "gameCompetition"
     ],
     "length": ""
    },
@@ -2076,8 +2075,7 @@ module.exports=[
     "id": "2",
     "label": "Spellen waarin je bouwt",
     "prefer": [
-     "technology",
-     "art"
+     "gameBuilding"
     ],
     "length": ""
    }
@@ -2091,8 +2089,8 @@ module.exports=[
   "when": [
    "gaming"
   ],
-  "prompt": "Wat maakt een game voor jou de moeite waard?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan een gamewereld?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -2107,7 +2105,7 @@ module.exports=[
     "id": "1",
     "label": "Samen spelen",
     "prefer": [
-     "team"
+     "gameMultiplayer"
     ],
     "length": ""
    },
@@ -2128,8 +2126,8 @@ module.exports=[
   "when": [
    "gaming"
   ],
-  "prompt": "Over welke onderwerpen uit games zou je ook willen lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke onderwerpen uit games wil je ook lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2163,10 +2161,10 @@ module.exports=[
   "group": "gaming",
   "stage": 2,
   "when": [
-   "gaming"
+   "gameMultiplayer"
   ],
-  "prompt": "Speel je liever alleen of samen met anderen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan samen gamen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -2200,17 +2198,17 @@ module.exports=[
   "group": "gaming",
   "stage": 2,
   "when": [
-   "gaming"
+   "gameBuilding"
   ],
-  "prompt": "Bouw of ontwerp je ook graag dingen in games?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen lezen over bouwen in games?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Gebouwen",
     "prefer": [
-     "art",
-     "technology"
+     "gameBuilding",
+     "design"
     ],
     "length": ""
    },
@@ -2218,7 +2216,8 @@ module.exports=[
     "id": "1",
     "label": "Machines",
     "prefer": [
-     "technology"
+     "gameBuilding",
+     "inventions"
     ],
     "length": ""
    },
@@ -2226,8 +2225,8 @@ module.exports=[
     "id": "2",
     "label": "Een eigen wereld",
     "prefer": [
-     "fantasy",
-     "art"
+     "gameBuilding",
+     "fantasy"
     ],
     "length": ""
    }
@@ -2238,10 +2237,10 @@ module.exports=[
   "group": "gaming",
   "stage": 2,
   "when": [
-   "gaming"
+   "gameStory"
   ],
-  "prompt": "Zijn de personages in games belangrijk voor jou?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan gamepersonages?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2274,17 +2273,17 @@ module.exports=[
   "group": "gaming",
   "stage": 2,
   "when": [
-   "gaming"
+   "gameDevelopment"
   ],
-  "prompt": "Lijkt het je interessant om te weten hoe games worden gemaakt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over hoe games gemaakt worden?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Programmeren",
     "prefer": [
-     "technology",
-     "facts"
+     "gameDevelopment",
+     "computing"
     ],
     "length": ""
    },
@@ -2292,7 +2291,8 @@ module.exports=[
     "id": "1",
     "label": "Ontwerp",
     "prefer": [
-     "art"
+     "gameDevelopment",
+     "design"
     ],
     "length": ""
    },
@@ -2300,8 +2300,8 @@ module.exports=[
     "id": "2",
     "label": "Verhalen maken",
     "prefer": [
-     "adventure",
-     "people"
+     "gameDevelopment",
+     "gameStory"
     ],
     "length": ""
    }
@@ -2312,10 +2312,10 @@ module.exports=[
   "group": "gaming",
   "stage": 2,
   "when": [
-   "gaming"
+   "gameCompetition"
   ],
-  "prompt": "Wat voor uitdaging zoek je meestal in een game?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor uitdaging in een game spreekt je aan?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -2350,8 +2350,8 @@ module.exports=[
   "when": [
    "gaming"
   ],
-  "prompt": "Welke gamesfeer spreekt je aan wanneer je eens geen actie wilt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor rustige gamewereld vind je leuk?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2374,11 +2374,14 @@ module.exports=[
     "id": "2",
     "label": "Een wereld maken",
     "prefer": [
-     "art",
-     "fantasy"
+     "gameBuilding"
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "gaming",
+   "calm"
   ]
  },
  {
@@ -2388,8 +2391,8 @@ module.exports=[
   "when": [
    "fantasy"
   ],
-  "prompt": "Welke dingen uit verzonnen werelden spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan verzonnen werelden?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -2411,8 +2414,7 @@ module.exports=[
     "id": "2",
     "label": "Bijzondere wezens",
     "prefer": [
-     "fantasy",
-     "animals"
+     "mythicalCreatures"
     ],
     "length": ""
    }
@@ -2424,17 +2426,16 @@ module.exports=[
   "group": "fantasy",
   "stage": 2,
   "when": [
-   "fantasy"
+   "myths"
   ],
-  "prompt": "Vind je oude legendes ook interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welke mythen of legendes vind je interessant?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Mythes",
     "prefer": [
-     "history",
-     "fantasy"
+     "myths"
     ],
     "length": ""
    },
@@ -2465,8 +2466,8 @@ module.exports=[
   "when": [
    "magic"
   ],
-  "prompt": "Wat trekt je aan in verhalen over mensen met bijzondere mogelijkheden?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand ineens bijzondere krachten heeft?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2502,8 +2503,8 @@ module.exports=[
   "when": [
    "fantasy"
   ],
-  "prompt": "Wat vind je interessant aan een wereld met andere regels?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan een verzonnen wereld met eigen regels?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -2537,17 +2538,16 @@ module.exports=[
   "group": "fantasy",
   "stage": 2,
   "when": [
-   "fantasy"
+   "mythicalCreatures"
   ],
-  "prompt": "Spreken verhalen met bijzondere wezens je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welke bijzondere wezens vind je leuk?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Draken",
     "prefer": [
-     "fantasy",
-     "animals"
+     "mythicalCreatures"
     ],
     "length": ""
    },
@@ -2555,8 +2555,8 @@ module.exports=[
     "id": "1",
     "label": "Mythische dieren",
     "prefer": [
-     "magic",
-     "animals"
+     "mythicalCreatures",
+     "magic"
     ],
     "length": ""
    },
@@ -2577,8 +2577,8 @@ module.exports=[
   "when": [
    "fantasy"
   ],
-  "prompt": "Wat zou je willen ontdekken als je een onbekende wereld bezoekt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen ontdekken in een onbekende fantasiewereld?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2613,8 +2613,8 @@ module.exports=[
   "when": [
    "fantasy"
   ],
-  "prompt": "Wat maakt een verzonnen wereld voor jou leuk om te volgen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt een fantasieverhaal leuk voor je?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -2649,8 +2649,8 @@ module.exports=[
   "when": [
    "magic"
   ],
-  "prompt": "Welke kanten van magie vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan magie?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -2686,8 +2686,8 @@ module.exports=[
   "when": [
    "fantasy"
   ],
-  "prompt": "Wat spreekt je aan in verhalen waarin iemand niet bij de gewone wereld hoort?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand niet in de gewone wereld past?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2722,14 +2722,14 @@ module.exports=[
   "when": [
    "animals"
   ],
-  "prompt": "Welke dieren vind je zelf interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke dieren zou je willen lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Huisdieren",
     "prefer": [
-     "animals"
+     "pets"
     ],
     "length": ""
    },
@@ -2737,8 +2737,7 @@ module.exports=[
     "id": "1",
     "label": "Wilde dieren",
     "prefer": [
-     "animals",
-     "nature"
+     "wildlife"
     ],
     "length": ""
    },
@@ -2746,7 +2745,7 @@ module.exports=[
     "id": "2",
     "label": "Bijzondere soorten",
     "prefer": [
-     "animals",
+     "wildlife",
      "science"
     ],
     "length": ""
@@ -2759,17 +2758,16 @@ module.exports=[
   "group": "animals",
   "stage": 2,
   "when": [
-   "animals"
+   "pets"
   ],
-  "prompt": "Wat vind je leuk aan de band tussen mensen en dieren?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je mooi aan de band tussen mens en dier?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Zorgen voor een dier",
     "prefer": [
-     "animals",
-     "empathy"
+     "animalCare"
     ],
     "length": ""
    },
@@ -2777,8 +2775,8 @@ module.exports=[
     "id": "1",
     "label": "Samen iets meemaken",
     "prefer": [
-     "adventure",
-     "animals"
+     "pets",
+     "adventure"
     ],
     "length": ""
    },
@@ -2799,8 +2797,8 @@ module.exports=[
   "when": [
    "animals"
   ],
-  "prompt": "Waar zou je meer over willen leren als het over dieren gaat?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen leren over dieren?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -2815,7 +2813,7 @@ module.exports=[
     "id": "1",
     "label": "Verzorging",
     "prefer": [
-     "animals",
+     "animalCare",
      "facts"
     ],
     "length": ""
@@ -2838,8 +2836,8 @@ module.exports=[
   "when": [
    "nature"
   ],
-  "prompt": "Wat spreekt je aan in verhalen die zich in de natuur afspelen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan een verhaal dat zich buiten afspeelt?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -2874,10 +2872,10 @@ module.exports=[
   "group": "animals",
   "stage": 2,
   "when": [
-   "animals"
+   "wildlife"
   ],
-  "prompt": "Vind je wilde dieren ook interessant, of vooral huisdieren?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over wilde dieren?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -2913,16 +2911,16 @@ module.exports=[
   "group": "animals",
   "stage": 2,
   "when": [
-   "animals"
+   "animalCare"
   ],
-  "prompt": "Wat zou je lezen over iemand die met dieren werkt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat spreekt je aan aan werken met dieren?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Een dierenverzorger",
     "prefer": [
-     "animals",
+     "animalCare",
      "true"
     ],
     "length": ""
@@ -2954,8 +2952,8 @@ module.exports=[
   "when": [
    "nature"
   ],
-  "prompt": "Wat vind je interessant aan de zee of het bos?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen ontdekken in de natuur?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -2991,8 +2989,8 @@ module.exports=[
   "when": [
    "nature"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over mensen die buiten leven?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan buiten leven?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -3019,6 +3017,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "nature",
+   "survival"
   ]
  },
  {
@@ -3028,8 +3030,8 @@ module.exports=[
   "when": [
    "nature"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar als je een natuurdocumentaire kijkt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je in een boek over natuur willen ontdekken?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3057,6 +3059,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "nature",
+   "facts"
   ]
  },
  {
@@ -3066,8 +3072,8 @@ module.exports=[
   "when": [
    "history"
   ],
-  "prompt": "Welke gebeurtenissen uit het verleden interesseren je?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke tijd of gebeurtenis wil je lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -3081,8 +3087,7 @@ module.exports=[
     "id": "1",
     "label": "Uitvindingen",
     "prefer": [
-     "science",
-     "history"
+     "historicalInventions"
     ],
     "length": ""
    },
@@ -3090,8 +3095,7 @@ module.exports=[
     "id": "2",
     "label": "Het dagelijks leven",
     "prefer": [
-     "people",
-     "history"
+     "historicalDailyLife"
     ],
     "length": ""
    }
@@ -3103,10 +3107,10 @@ module.exports=[
   "group": "history",
   "stage": 2,
   "when": [
-   "history"
+   "historicalDailyLife"
   ],
-  "prompt": "Wat zou je willen weten over jongeren die vroeger leefden?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Hoe denk je dat jongeren vroeger leefden?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -3144,8 +3148,8 @@ module.exports=[
   "when": [
    "war"
   ],
-  "prompt": "Welke kanten van oorlogsgeschiedenis vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over oorlog van vroeger?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3183,15 +3187,14 @@ module.exports=[
   "when": [
    "history"
   ],
-  "prompt": "Wat trekt je aan in oude verhalen uit andere landen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan oude verhalen uit andere landen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Cultuur",
     "prefer": [
-     "travel",
-     "society"
+     "cultures"
     ],
     "length": ""
    },
@@ -3199,8 +3202,7 @@ module.exports=[
     "id": "1",
     "label": "Mythes",
     "prefer": [
-     "fantasy",
-     "history"
+     "myths"
     ],
     "length": ""
    },
@@ -3213,6 +3215,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "history",
+   "cultures"
   ]
  },
  {
@@ -3222,8 +3228,8 @@ module.exports=[
   "when": [
    "history"
   ],
-  "prompt": "Waar zou je meer over willen leren in een museum?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je in een museum willen ontdekken?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -3259,10 +3265,10 @@ module.exports=[
   "group": "history",
   "stage": 2,
   "when": [
-   "history"
+   "historicalDailyLife"
   ],
-  "prompt": "Wat vind je interessant aan verhalen uit de tijd van je grootouders?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over het leven van vroeger?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3297,10 +3303,10 @@ module.exports=[
   "group": "history",
   "stage": 2,
   "when": [
-   "history"
+   "historicalInventions"
   ],
-  "prompt": "Welke uitvindingen uit het verleden zou je willen begrijpen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welke oude uitvindingen vind je interessant?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -3336,8 +3342,8 @@ module.exports=[
   "when": [
    "history"
   ],
-  "prompt": "Wat zou je graag ontdekken over het ontstaan van een stad of land?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over het ontstaan van een stad of land?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -3365,6 +3371,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "history",
+   "setting"
   ]
  },
  {
@@ -3374,8 +3384,8 @@ module.exports=[
   "when": [
    "history"
   ],
-  "prompt": "Wat vind je interessant aan waargebeurde verhalen over vroeger?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor echte verhalen uit het verleden wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3412,14 +3422,14 @@ module.exports=[
   "when": [
    "science"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar als je aan wetenschap denkt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt je nieuwsgierig naar wetenschap?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "De ruimte",
     "prefer": [
-     "science"
+     "space"
     ],
     "length": ""
    },
@@ -3436,7 +3446,7 @@ module.exports=[
     "id": "2",
     "label": "Het menselijk lichaam",
     "prefer": [
-     "health"
+     "humanBody"
     ],
     "length": ""
    }
@@ -3450,14 +3460,15 @@ module.exports=[
   "when": [
    "technology"
   ],
-  "prompt": "Welke technische ontwikkelingen volg je graag?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke techniek wil je meer weten?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Computers en robots",
     "prefer": [
-     "technology"
+     "computing",
+     "robotics"
     ],
     "length": ""
    },
@@ -3465,7 +3476,7 @@ module.exports=[
     "id": "1",
     "label": "Ruimtevaart",
     "prefer": [
-     "science"
+     "space"
     ],
     "length": ""
    },
@@ -3487,8 +3498,8 @@ module.exports=[
   "when": [
    "future"
   ],
-  "prompt": "Wat zou je willen weten over het leven in de toekomst?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Hoe stel je je de toekomst voor?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3524,11 +3535,10 @@ module.exports=[
   "group": "science",
   "stage": 2,
   "when": [
-   "science",
-   "technology"
+   "inventions"
   ],
   "prompt": "Wat vind je interessant aan uitvinders?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -3562,16 +3572,17 @@ module.exports=[
   "group": "science",
   "stage": 2,
   "when": [
-   "science"
+   "space"
   ],
-  "prompt": "Ben je ook nieuwsgierig naar de ruimte en het heelal?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over de ruimte?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Planeten",
     "prefer": [
-     "science"
+     "space",
+     "facts"
     ],
     "length": ""
    },
@@ -3579,7 +3590,7 @@ module.exports=[
     "id": "1",
     "label": "Ruimtereizen",
     "prefer": [
-     "science",
+     "space",
      "adventure"
     ],
     "length": ""
@@ -3588,8 +3599,8 @@ module.exports=[
     "id": "2",
     "label": "Mogelijk leven elders",
     "prefer": [
-     "future",
-     "science"
+     "space",
+     "future"
     ],
     "length": ""
    }
@@ -3600,16 +3611,17 @@ module.exports=[
   "group": "science",
   "stage": 2,
   "when": [
-   "health"
+   "humanBody"
   ],
-  "prompt": "Wat zou je graag begrijpen aan het menselijk lichaam?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over het menselijk lichaam?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Gezondheid",
     "prefer": [
-     "health"
+     "health",
+     "humanBody"
     ],
     "length": ""
    },
@@ -3617,8 +3629,7 @@ module.exports=[
     "id": "1",
     "label": "Het brein",
     "prefer": [
-     "psychology",
-     "science"
+     "brain"
     ],
     "length": ""
    },
@@ -3638,16 +3649,16 @@ module.exports=[
   "group": "science",
   "stage": 2,
   "when": [
-   "technology"
+   "practicalTech"
   ],
-  "prompt": "Welke dingen repareer of bouw je graag?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan bouwen of repareren?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Machines",
     "prefer": [
-     "technology"
+     "practicalTech"
     ],
     "length": ""
    },
@@ -3655,8 +3666,7 @@ module.exports=[
     "id": "1",
     "label": "Digitale dingen",
     "prefer": [
-     "technology",
-     "gaming"
+     "computing"
     ],
     "length": ""
    },
@@ -3664,7 +3674,7 @@ module.exports=[
     "id": "2",
     "label": "Creatieve dingen",
     "prefer": [
-     "art"
+     "design"
     ],
     "length": ""
    }
@@ -3677,8 +3687,8 @@ module.exports=[
   "when": [
    "technology"
   ],
-  "prompt": "Wat trekt je aan in verhalen waarin techniek een grote rol speelt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan verhalen waarin techniek belangrijk is?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -3712,10 +3722,10 @@ module.exports=[
   "group": "science",
   "stage": 2,
   "when": [
-   "technology"
+   "robotics"
   ],
-  "prompt": "Wat vind je interessant aan robots of kunstmatige intelligentie?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen weten over robots?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3752,8 +3762,8 @@ module.exports=[
   "when": [
    "adventure"
   ],
-  "prompt": "Wat vind je interessant aan het ontdekken van een onbekende plek?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je ontdekken op een onbekende plek?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -3790,8 +3800,8 @@ module.exports=[
   "when": [
    "adventure"
   ],
-  "prompt": "Welke avonturen zou je graag volgen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor avontuur wil je lezen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -3813,7 +3823,8 @@ module.exports=[
     "id": "2",
     "label": "Samen iets bereiken",
     "prefer": [
-     "team"
+     "team",
+     "adventure"
     ],
     "length": ""
    }
@@ -3826,8 +3837,8 @@ module.exports=[
   "when": [
    "adventure"
   ],
-  "prompt": "Wat trekt je aan in verhalen over mensen die iets nieuws proberen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand iets nieuws probeert?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3860,11 +3871,10 @@ module.exports=[
   "group": "adventure",
   "stage": 2,
   "when": [
-   "survival",
-   "travel"
+   "expeditions"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar bij echte expedities?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan echte expedities?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -3902,8 +3912,8 @@ module.exports=[
   "when": [
    "danger"
   ],
-  "prompt": "Wat vind je interessant aan mensen die in gevaar komen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je spannend aan iemand die in gevaar komt?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -3930,6 +3940,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "danger",
+   "adventure"
   ]
  },
  {
@@ -3939,8 +3953,8 @@ module.exports=[
   "when": [
    "adventure"
   ],
-  "prompt": "Welke plaatsen spreken je aan als omgeving voor een avontuur?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waar mag een avontuur zich afspelen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -3976,8 +3990,8 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Wat zou je lezen over iemand die een lange reis maakt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat spreekt je aan in een verhaal over een lange reis?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -4004,6 +4018,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "travel",
+   "adventure"
   ]
  },
  {
@@ -4011,11 +4029,10 @@ module.exports=[
   "group": "adventure",
   "stage": 2,
   "when": [
-   "survival",
-   "nature"
+   "survival"
   ],
-  "prompt": "Welke uitdagingen in de natuur vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor avontuur in de natuur lijkt je leuk?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -4042,6 +4059,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "survival",
+   "nature"
   ]
  },
  {
@@ -4049,11 +4070,10 @@ module.exports=[
   "group": "adventure",
   "stage": 2,
   "when": [
-   "danger",
-   "action"
+   "rescue"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over een reddingsactie?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan een reddingsactie?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4089,8 +4109,8 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Waar moet je zelf meestal om lachen als je iets kijkt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Van wat voor humor houd je?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -4114,8 +4134,7 @@ module.exports=[
     "id": "2",
     "label": "Absurditeit",
     "prefer": [
-     "humor",
-     "unusual"
+     "absurdHumor"
     ],
     "length": ""
    }
@@ -4129,8 +4148,8 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Welke grappige verhalen over school spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je grappig aan schoolverhalen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -4159,6 +4178,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "humor",
+   "school"
   ]
  },
  {
@@ -4169,7 +4192,7 @@ module.exports=[
    "humor"
   ],
   "prompt": "Wat vind je leuk aan grappige personages?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4206,8 +4229,8 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Wat voor comedy kijk je graag?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor humor wil je terugzien in een boek?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -4231,7 +4254,7 @@ module.exports=[
     "id": "2",
     "label": "Droge humor",
     "prefer": [
-     "humor"
+     "absurdHumor"
     ],
     "length": ""
    }
@@ -4244,8 +4267,8 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Wat spreekt je aan in verhalen waarin alles anders loopt dan gepland?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als alles misgaat in een grappig verhaal?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -4280,8 +4303,8 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Hoe belangrijk vind je het dat een grappig verhaal ergens over gaat?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waar mag een grappig boek over gaan?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4316,14 +4339,14 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Wat vind je leuk aan grappige verhalen in stripvorm?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan grappige strips?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Tekeningen",
     "prefer": [
-     "art"
+     "comics"
     ],
     "length": ""
    },
@@ -4344,6 +4367,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "humor",
+   "comics"
   ]
  },
  {
@@ -4353,8 +4380,8 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Lees je graag iets luchtigs over mensen die je zou kunnen kennen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor herkenbare grappige verhalen vind je leuk?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -4380,6 +4407,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "humor",
+   "realistic"
   ]
  },
  {
@@ -4389,8 +4420,8 @@ module.exports=[
   "when": [
    "humor"
   ],
-  "prompt": "Welke combinatie met humor spreekt je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waar mag humor mee gecombineerd worden?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4428,8 +4459,8 @@ module.exports=[
   "when": [
    "society"
   ],
-  "prompt": "Welke onderwerpen uit het nieuws blijven je bezighouden?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welk onderwerp uit het nieuws wil je lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -4463,10 +4494,10 @@ module.exports=[
   "group": "justice",
   "stage": 2,
   "when": [
-   "justice"
+   "activism"
   ],
-  "prompt": "Wat vind je interessant aan mensen die voor iets opkomen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan mensen die ergens voor opkomen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -4499,10 +4530,10 @@ module.exports=[
   "group": "justice",
   "stage": 2,
   "when": [
-   "justice"
+   "discrimination"
   ],
-  "prompt": "Waar zou je graag over lezen als iemand anders behandeld wordt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over iemand die oneerlijk behandeld wordt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4516,7 +4547,7 @@ module.exports=[
     "id": "1",
     "label": "Vooroordelen",
     "prefer": [
-     "justice"
+     "discrimination"
     ],
     "length": ""
    },
@@ -4537,8 +4568,8 @@ module.exports=[
   "when": [
    "society"
   ],
-  "prompt": "Welke onderwerpen over samenleven vind je belangrijk?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je belangrijk in een verhaal over samenleven?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -4574,8 +4605,8 @@ module.exports=[
   "when": [
    "outsider"
   ],
-  "prompt": "Wat wil je weten over iemand die in een moeilijke situatie opgroeit?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over iemand die moeilijk opgroeit?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -4609,10 +4640,10 @@ module.exports=[
   "group": "justice",
   "stage": 2,
   "when": [
-   "society"
+   "activism"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over verandering in de samenleving?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als mensen iets willen veranderen in de maatschappij?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4648,8 +4679,8 @@ module.exports=[
   "when": [
    "society"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar als mensen het niet met elkaar eens zijn?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als mensen het ergens niet over eens zijn?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -4682,17 +4713,17 @@ module.exports=[
   "group": "justice",
   "stage": 2,
   "when": [
-   "outsider"
+   "bullying"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over pesten?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je belangrijk in verhalen over pesten?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Hoe iemand hulp krijgt",
     "prefer": [
-     "friendship",
-     "empathy"
+     "bullying",
+     "friendship"
     ],
     "length": ""
    },
@@ -4722,8 +4753,8 @@ module.exports=[
    "justice",
    "society"
   ],
-  "prompt": "Welke onderwerpen lees je graag om beter te begrijpen hoe anderen leven?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke andere ervaringen wil je meer weten?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4756,16 +4787,16 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "music"
+   "musicListening"
   ],
-  "prompt": "Welke muziek luister je graag?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor muziek vind je interessant om over te lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Rap",
     "prefer": [
-     "music"
+     "musicListening"
     ],
     "length": ""
    },
@@ -4773,7 +4804,7 @@ module.exports=[
     "id": "1",
     "label": "Andere muziek",
     "prefer": [
-     "music"
+     "musicListening"
     ],
     "length": ""
    },
@@ -4781,8 +4812,8 @@ module.exports=[
     "id": "2",
     "label": "Muziek uit films",
     "prefer": [
-     "music",
-     "art"
+     "musicListening",
+     "filmmaking"
     ],
     "length": ""
    }
@@ -4794,16 +4825,16 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "music"
+   "musicMaking"
   ],
   "prompt": "Wat zou je willen weten over een muzikant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Hoe iemand muziek maakt",
     "prefer": [
-     "music",
+     "musicMaking",
      "facts"
     ],
     "length": ""
@@ -4832,10 +4863,11 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "art"
+   "drawing",
+   "design"
   ],
-  "prompt": "Wat trekt je aan in tekenen, ontwerpen of maken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan tekenen of ontwerpen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4873,14 +4905,14 @@ module.exports=[
   "when": [
    "art"
   ],
-  "prompt": "Welke vormen van kunst vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke vorm van kunst wil je lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Fotografie",
     "prefer": [
-     "art"
+     "photography"
     ],
     "length": ""
    },
@@ -4888,7 +4920,7 @@ module.exports=[
     "id": "1",
     "label": "Tekenen",
     "prefer": [
-     "art"
+     "drawing"
     ],
     "length": ""
    },
@@ -4909,8 +4941,8 @@ module.exports=[
   "when": [
    "art"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over iemand met een creatief talent?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan iemand met creatief talent?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -4924,7 +4956,7 @@ module.exports=[
     "id": "1",
     "label": "Zelf iets ontwerpen",
     "prefer": [
-     "art"
+     "design"
     ],
     "length": ""
    },
@@ -4945,8 +4977,8 @@ module.exports=[
   "when": [
    "art"
   ],
-  "prompt": "Waar zou je graag meer over leren als je zelf iets maakt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen leren over zelf iets maken?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -4981,10 +5013,10 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "music"
+   "musicListening"
   ],
-  "prompt": "Wat vind je interessant aan de verhalen achter liedjes?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan teksten van liedjes?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -5018,15 +5050,17 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "art"
+   "filmmaking",
+   "design"
   ],
-  "prompt": "Vind je films maken of beeld ontwerpen ook interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan het maken van films of beelden?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Techniek",
     "prefer": [
+     "filmmaking",
      "technology"
     ],
     "length": ""
@@ -5043,7 +5077,7 @@ module.exports=[
     "id": "2",
     "label": "Beeld en ontwerp",
     "prefer": [
-     "art"
+     "design"
     ],
     "length": ""
    }
@@ -5056,8 +5090,8 @@ module.exports=[
   "when": [
    "art"
   ],
-  "prompt": "Welke verhalen over creatieve mensen passen bij je?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor verhaal over een creatief persoon wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -5093,8 +5127,8 @@ module.exports=[
   "when": [
    "growth"
   ],
-  "prompt": "Welke onderwerpen over het opgroeien vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waarover wil je lezen als het om opgroeien gaat?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -5130,8 +5164,8 @@ module.exports=[
   "when": [
    "growth"
   ],
-  "prompt": "Wat spreekt je aan in verhalen waarin iemand een nieuwe start maakt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand opnieuw begint?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -5166,8 +5200,8 @@ module.exports=[
   "when": [
    "empathy"
   ],
-  "prompt": "Wat vind je interessant aan mensen die iets moeilijks meemaken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je belangrijk in een verhaal over moeilijke ervaringen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -5202,15 +5236,14 @@ module.exports=[
   "when": [
    "health"
   ],
-  "prompt": "Wat zou je willen begrijpen over gezondheid?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over gezondheid?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Het lichaam",
     "prefer": [
-     "health",
-     "science"
+     "humanBody"
     ],
     "length": ""
    },
@@ -5218,8 +5251,7 @@ module.exports=[
     "id": "1",
     "label": "Mentale gezondheid",
     "prefer": [
-     "empathy",
-     "health"
+     "mentalHealth"
     ],
     "length": ""
    },
@@ -5240,8 +5272,8 @@ module.exports=[
   "when": [
    "empathy"
   ],
-  "prompt": "Welke ervaringen van andere mensen zou je willen lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke ervaringen van anderen wil je lezen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -5275,16 +5307,16 @@ module.exports=[
   "group": "life",
   "stage": 2,
   "when": [
-   "growth"
+   "identity"
   ],
-  "prompt": "Wat vind je belangrijk aan verhalen over jezelf leren kennen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan jezelf leren kennen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Identiteit",
     "prefer": [
-     "growth"
+     "identity"
     ],
     "length": ""
    },
@@ -5313,8 +5345,8 @@ module.exports=[
   "when": [
    "empathy"
   ],
-  "prompt": "Wat trekt je aan in verhalen over iemand die hulp krijgt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand in een verhaal hulp krijgt?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -5349,8 +5381,8 @@ module.exports=[
   "when": [
    "empathy"
   ],
-  "prompt": "Waar wil je meer over weten als het gaat om gevoelens?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen begrijpen over gevoelens?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -5364,7 +5396,7 @@ module.exports=[
     "id": "1",
     "label": "Omgaan met verdriet",
     "prefer": [
-     "empathy"
+     "grief"
     ],
     "length": ""
    },
@@ -5386,8 +5418,8 @@ module.exports=[
    "growth",
    "empathy"
   ],
-  "prompt": "Welke verhalen over tegenslagen geven je nieuwsgierigheid?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan verhalen over tegenslagen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -5422,8 +5454,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Wat leer je graag buiten school?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welk onderwerp wil je iets leren?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -5467,8 +5499,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Waarover zoek je zelf soms informatie op?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waarover wil je meer weten?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -5501,15 +5533,16 @@ module.exports=[
   "group": "facts",
   "stage": 2,
   "when": [
-   "true"
+   "biography"
   ],
-  "prompt": "Wat vind je interessant aan iemands levensverhaal?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over iemands leven?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Hoe iemand opgroeit",
     "prefer": [
+     "biography",
      "growth"
     ],
     "length": ""
@@ -5537,11 +5570,10 @@ module.exports=[
   "group": "facts",
   "stage": 2,
   "when": [
-   "true",
-   "facts"
+   "true"
   ],
-  "prompt": "Welke documentaires kijk je graag?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over wat voor echte gebeurtenissen wil je lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -5570,6 +5602,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "true",
+   "facts"
   ]
  },
  {
@@ -5579,8 +5615,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Wat voor feiten verrassen je meestal?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor ontdekkingen vind je interessant?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -5616,8 +5652,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Welke onderwerpen uit de echte wereld lees je liefst in een boek?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welk echt onderwerp wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -5652,8 +5688,8 @@ module.exports=[
   "when": [
    "true"
   ],
-  "prompt": "Wat spreekt je aan in verhalen die echt gebeurd zijn?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan waargebeurde verhalen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -5689,8 +5725,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Waarover zou je een spreekbeurt willen houden als je zelf mag kiezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welk onderwerp zou je uit jezelf een boek pakken?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -5733,8 +5769,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Wat wil je graag kunnen uitleggen aan iemand anders?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je graag beter begrijpen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -5771,15 +5807,14 @@ module.exports=[
   "when": [
    "economics"
   ],
-  "prompt": "Wat vind je interessant aan hoe mensen geld verdienen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over geld verdienen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Een bedrijf beginnen",
     "prefer": [
-     "economics",
-     "growth"
+     "entrepreneurship"
     ],
     "length": ""
    },
@@ -5787,7 +5822,7 @@ module.exports=[
     "id": "1",
     "label": "Werk en kansen",
     "prefer": [
-     "society"
+     "careers"
     ],
     "length": ""
    },
@@ -5808,16 +5843,16 @@ module.exports=[
   "group": "economics",
   "stage": 2,
   "when": [
-   "economics"
+   "personalFinance"
   ],
-  "prompt": "Wat zou je willen weten over geld besparen of uitgeven?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen leren over sparen en uitgeven?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Hoe geld werkt",
     "prefer": [
-     "economics",
+     "personalFinance",
      "facts"
     ],
     "length": ""
@@ -5834,7 +5869,7 @@ module.exports=[
     "id": "2",
     "label": "Ondernemen",
     "prefer": [
-     "economics"
+     "entrepreneurship"
     ],
     "length": ""
    }
@@ -5845,10 +5880,10 @@ module.exports=[
   "group": "economics",
   "stage": 2,
   "when": [
-   "economics"
+   "entrepreneurship"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over iemand die een eigen plan uitvoert?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan iemand die een bedrijf begint?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -5883,8 +5918,8 @@ module.exports=[
   "when": [
    "economics"
   ],
-  "prompt": "Welke kanten van rijkdom en armoede interesseren je?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over rijkdom of armoede?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -5920,8 +5955,8 @@ module.exports=[
   "when": [
    "economics"
   ],
-  "prompt": "Zou je iets willen weten over hoe handel vroeger werkte?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over handel van vroeger?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -5948,6 +5983,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "economics",
+   "history"
   ]
  },
  {
@@ -5955,16 +5994,16 @@ module.exports=[
   "group": "economics",
   "stage": 2,
   "when": [
-   "economics"
+   "careers"
   ],
-  "prompt": "Welke onderwerpen over werk maken je nieuwsgierig?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke kant van werk wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Een beroep leren",
     "prefer": [
-     "growth",
+     "careers",
      "facts"
     ],
     "length": ""
@@ -5981,7 +6020,7 @@ module.exports=[
     "id": "2",
     "label": "Een eigen bedrijf",
     "prefer": [
-     "economics"
+     "entrepreneurship"
     ],
     "length": ""
    }
@@ -5992,10 +6031,10 @@ module.exports=[
   "group": "economics",
   "stage": 2,
   "when": [
-   "economics"
+   "personalFinance"
   ],
-  "prompt": "Wat zou je willen lezen over iemand die veel geld verliest?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand veel geld verliest?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -6030,8 +6069,8 @@ module.exports=[
   "when": [
    "economics"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over succes?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan een verhaal over succes?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -6067,8 +6106,8 @@ module.exports=[
   "when": [
    "economics"
   ],
-  "prompt": "Wat zou je meer willen begrijpen aan reclame en beïnvloeding?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen weten over reclame?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -6094,6 +6133,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "economics",
+   "manipulation"
   ]
  },
  {
@@ -6103,14 +6146,14 @@ module.exports=[
   "when": [
    "environment"
   ],
-  "prompt": "Welke onderwerpen over de aarde interesseren je?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welk onderwerp van de aarde wil je lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Klimaat",
     "prefer": [
-     "environment"
+     "climate"
     ],
     "length": ""
    },
@@ -6118,7 +6161,7 @@ module.exports=[
     "id": "1",
     "label": "Dieren",
     "prefer": [
-     "animals"
+     "wildlife"
     ],
     "length": ""
    },
@@ -6138,10 +6181,10 @@ module.exports=[
   "group": "environment",
   "stage": 2,
   "when": [
-   "environment"
+   "climate"
   ],
-  "prompt": "Wat zou je willen weten over een veranderend klimaat?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen weten over klimaatverandering?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -6175,16 +6218,17 @@ module.exports=[
   "group": "environment",
   "stage": 2,
   "when": [
-   "environment"
+   "conservation"
   ],
-  "prompt": "Wat vind je interessant aan mensen die de natuur beschermen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan natuur beschermen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Dieren helpen",
     "prefer": [
-     "animals"
+     "conservation",
+     "wildlife"
     ],
     "length": ""
    },
@@ -6214,8 +6258,8 @@ module.exports=[
   "when": [
    "environment"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar als je over de toekomst van de aarde leest?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over de toekomst van de aarde?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -6251,10 +6295,10 @@ module.exports=[
   "group": "environment",
   "stage": 2,
   "when": [
-   "environment"
+   "disasters"
   ],
-  "prompt": "Vind je verhalen over natuurrampen ook interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over natuurrampen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -6288,16 +6332,16 @@ module.exports=[
   "group": "environment",
   "stage": 2,
   "when": [
-   "environment"
+   "energy"
   ],
-  "prompt": "Welke onderwerpen over energie zou je willen begrijpen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over energie?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Hoe energie werkt",
     "prefer": [
-     "science",
+     "energy",
      "facts"
     ],
     "length": ""
@@ -6306,7 +6350,7 @@ module.exports=[
     "id": "1",
     "label": "Nieuwe uitvindingen",
     "prefer": [
-     "technology"
+     "inventions"
     ],
     "length": ""
    },
@@ -6325,10 +6369,10 @@ module.exports=[
   "group": "environment",
   "stage": 2,
   "when": [
-   "environment"
+   "climate"
   ],
   "prompt": "Wat vind je interessant aan het leven in andere klimaten?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -6363,17 +6407,17 @@ module.exports=[
   "group": "environment",
   "stage": 2,
   "when": [
-   "environment"
+   "ocean"
   ],
-  "prompt": "Wat zou je graag lezen over oceanen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je ontdekken over oceanen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Dieren",
     "prefer": [
-     "animals",
-     "nature"
+     "ocean",
+     "wildlife"
     ],
     "length": ""
    },
@@ -6381,6 +6425,7 @@ module.exports=[
     "id": "1",
     "label": "Onderzoek",
     "prefer": [
+     "ocean",
      "science"
     ],
     "length": ""
@@ -6403,8 +6448,8 @@ module.exports=[
   "when": [
    "environment"
   ],
-  "prompt": "Welke oplossingen voor problemen in de natuur vind je boeiend?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor oplossingen voor milieuproblemen vind je interessant?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -6440,8 +6485,8 @@ module.exports=[
   "when": [
    "horror"
   ],
-  "prompt": "Welke enge verhalen vind je leuk om te kijken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor enge verhalen lees je graag?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -6479,8 +6524,8 @@ module.exports=[
   "when": [
    "horror"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over angst?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je spannend aan verhalen over angst?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -6515,8 +6560,8 @@ module.exports=[
   "when": [
    "horror"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar als iets vreemds gebeurt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als er iets vreemds gebeurt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -6551,8 +6596,8 @@ module.exports=[
   "when": [
    "horror"
   ],
-  "prompt": "Wat spreekt je aan in griezelverhalen over een onbekende omgeving?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je eng aan een onbekende plek?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -6587,8 +6632,8 @@ module.exports=[
   "when": [
    "horror"
   ],
-  "prompt": "Welke onderwerpen passen volgens jou bij een spannend verhaal?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt een griezelverhaal spannend?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -6623,8 +6668,8 @@ module.exports=[
   "when": [
    "horror"
   ],
-  "prompt": "Wat vind je interessant aan verhalen waarin niemand weet wie te vertrouwen is?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als je niemand in een spannend verhaal kunt vertrouwen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -6657,17 +6702,17 @@ module.exports=[
   "group": "horror",
   "stage": 2,
   "when": [
-   "horror"
+   "ghostStories"
   ],
-  "prompt": "Vind je verhalen over geesten of legendes interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan spookverhalen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Oude verhalen",
     "prefer": [
-     "history",
-     "fantasy"
+     "myths",
+     "ghostStories"
     ],
     "length": ""
    },
@@ -6696,8 +6741,8 @@ module.exports=[
   "when": [
    "horror"
   ],
-  "prompt": "Waar ligt voor jou de grens tussen spannend en eng?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Hoe eng mag een verhaal voor je worden?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -6730,10 +6775,10 @@ module.exports=[
   "group": "horror",
   "stage": 2,
   "when": [
-   "horror"
+   "danger"
   ],
-  "prompt": "Wat lees je graag als je wel spanning wilt maar niet wilt schrikken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor spanning vind je leuk zonder griezels?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -6768,8 +6813,8 @@ module.exports=[
   "when": [
    "school"
   ],
-  "prompt": "Welke dingen uit het dagelijks leven van jongeren vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan verhalen over jongeren?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -6805,8 +6850,8 @@ module.exports=[
   "when": [
    "realistic"
   ],
-  "prompt": "Wat spreekt je aan in herkenbare verhalen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor herkenbare verhalen lees je graag?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -6839,10 +6884,10 @@ module.exports=[
   "group": "school",
   "stage": 2,
   "when": [
-   "school"
+   "schoolLife"
   ],
-  "prompt": "Waarover zou je lezen als het verhaal op een middelbare school speelt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen als een verhaal op school speelt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -6875,10 +6920,10 @@ module.exports=[
   "group": "school",
   "stage": 2,
   "when": [
-   "school"
+   "schoolLife"
   ],
-  "prompt": "Wat vind je interessant aan iemand die een nieuwe klas krijgt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand in een nieuwe klas komt?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -6913,15 +6958,14 @@ module.exports=[
   "when": [
    "school"
   ],
-  "prompt": "Welke onderwerpen op school zou je beter willen begrijpen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan onderwerpen op school?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Groepsdruk",
     "prefer": [
-     "psychology",
-     "team"
+     "groupPressure"
     ],
     "length": ""
    },
@@ -6937,11 +6981,15 @@ module.exports=[
     "id": "2",
     "label": "Toekomstkeuzes",
     "prefer": [
-     "choices",
-     "growth"
+     "careers",
+     "choices"
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "school",
+   "psychology"
   ]
  },
  {
@@ -6951,8 +6999,8 @@ module.exports=[
   "when": [
    "school"
   ],
-  "prompt": "Wat lees je graag over iemand die een eigen weg zoekt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand zijn eigen keuzes probeert te maken?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -6987,8 +7035,8 @@ module.exports=[
   "when": [
    "outsider"
   ],
-  "prompt": "Welke verhalen over jongeren die anders zijn spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je lezen over jongeren die anders zijn?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7023,8 +7071,8 @@ module.exports=[
   "when": [
    "school"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over een schoolproject?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als leerlingen samen iets moeten doen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7050,6 +7098,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "school",
+   "team"
   ]
  },
  {
@@ -7059,8 +7111,8 @@ module.exports=[
   "when": [
    "school"
   ],
-  "prompt": "Welke humor uit het dagelijks leven herken je graag in een verhaal?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor grappige situaties herken je graag in een verhaal?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7098,15 +7150,14 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Welke landen of plekken maken je nieuwsgierig?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke plekken zou je willen lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Andere culturen",
     "prefer": [
-     "travel",
-     "society"
+     "cultures"
     ],
     "length": ""
    },
@@ -7136,8 +7187,8 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Wat zou je willen lezen over iemand die naar een ander land gaat?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan iemand die naar een ander land gaat?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7172,8 +7223,8 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over onderweg zijn?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan verhalen over onderweg zijn?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7208,8 +7259,8 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Welke reisverhalen kijk of lees je graag?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor reisverhalen wil je lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7244,17 +7295,16 @@ module.exports=[
   "group": "travel",
   "stage": 2,
   "when": [
-   "travel"
+   "cultures"
   ],
-  "prompt": "Wat wil je weten over het dagelijks leven in andere landen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over andere culturen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Cultuur",
     "prefer": [
-     "society",
-     "travel"
+     "cultures"
     ],
     "length": ""
    },
@@ -7283,8 +7333,8 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Waar ben je nieuwsgierig naar als je een oude stad bezoekt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen ontdekken over oude steden?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7310,6 +7360,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "travel",
+   "history"
   ]
  },
  {
@@ -7319,8 +7373,8 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Welke uitdagingen tijdens een reis spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor uitdagingen op reis vind je interessant?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7353,10 +7407,10 @@ module.exports=[
   "group": "travel",
   "stage": 2,
   "when": [
-   "travel"
+   "migration"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over verhuizen naar een ander land?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand naar een ander land verhuist?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7392,14 +7446,14 @@ module.exports=[
   "when": [
    "travel"
   ],
-  "prompt": "Over welke plekken zou je iets willen leren zonder er zelf heen te gaan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke plekken wil je iets leren?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "De ruimte",
     "prefer": [
-     "science"
+     "space"
     ],
     "length": ""
    },
@@ -7429,8 +7483,8 @@ module.exports=[
   "when": [
    "choices"
   ],
-  "prompt": "Welke keuzes van personages vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor keuzes van personages vind je interessant?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7466,8 +7520,8 @@ module.exports=[
   "when": [
    "challenge"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over mensen met een doel?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand een groot doel heeft?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7502,8 +7556,8 @@ module.exports=[
   "when": [
    "choices"
   ],
-  "prompt": "Wat wil je weten wanneer iemand iets moeilijks moet beslissen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten als iemand een moeilijke keuze moet maken?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7538,8 +7592,8 @@ module.exports=[
   "when": [
    "challenge"
   ],
-  "prompt": "Welke uitdagingen zou je graag volgen in een verhaal?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor uitdaging zou je willen lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7575,8 +7629,8 @@ module.exports=[
   "when": [
    "choices"
   ],
-  "prompt": "Wat vind je interessant aan mensen die een fout maken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand in een verhaal een fout maakt?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7611,8 +7665,8 @@ module.exports=[
   "when": [
    "challenge"
   ],
-  "prompt": "Welke verhalen over moed spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan moedige mensen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7647,8 +7701,8 @@ module.exports=[
   "when": [
    "growth"
   ],
-  "prompt": "Wat trekt je aan in een verhaal waarin iemand iets nieuws leert?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan iemand die iets nieuws leert?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7685,8 +7739,8 @@ module.exports=[
   "when": [
    "choices"
   ],
-  "prompt": "Wat vind je interessant aan de gevolgen van een beslissing?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over de gevolgen van een keuze?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7721,8 +7775,8 @@ module.exports=[
   "when": [
    "choices"
   ],
-  "prompt": "Welke verhalen over samenwerken en eigen keuzes maken passen bij je?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als mensen samen of alleen een keuze moeten maken?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7757,8 +7811,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over liefde?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan liefdesverhalen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7795,8 +7849,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Welke onderwerpen over relaties spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor relaties vind je interessant in een verhaal?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7829,10 +7883,10 @@ module.exports=[
   "group": "romance",
   "stage": 2,
   "when": [
-   "relationships"
+   "firstLove"
   ],
-  "prompt": "Wat zou je willen lezen over iemand die voor het eerst verliefd wordt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als iemand voor het eerst verliefd wordt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7867,8 +7921,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Wat maakt een liefdesverhaal voor jou geloofwaardig?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt een liefdesverhaal herkenbaar voor je?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -7903,8 +7957,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Welke combinatie met romantiek vind je leuk?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat mag er naast liefde in een verhaal zitten?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -7942,8 +7996,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Wat vind je boeiend aan verhalen over relaties die veranderen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als een relatie verandert?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -7978,8 +8032,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Welke situaties over vriendschap en liefde herken je graag in verhalen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan vriendschap en liefde samen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8005,6 +8059,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "relationships",
+   "friendship"
   ]
  },
  {
@@ -8014,8 +8072,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Waarover lees je graag als twee mensen elkaar niet goed begrijpen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als twee mensen elkaar niet goed begrijpen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8050,8 +8108,8 @@ module.exports=[
   "when": [
    "relationships"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over mensen die elkaar opnieuw ontmoeten?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als twee mensen elkaar na lange tijd weer zien?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8086,8 +8144,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Als je over een interessant onderwerp leest, hoe leer je het liefst iets nieuws?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Hoe leer je het liefst iets nieuws uit een boek?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8123,8 +8181,8 @@ module.exports=[
   "when": [
    "true"
   ],
-  "prompt": "Wat vind je belangrijk als een verhaal echt gebeurd is?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je belangrijk in een waargebeurd verhaal?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8158,17 +8216,16 @@ module.exports=[
   "group": "format",
   "stage": 3,
   "when": [
-   "true"
+   "biography"
   ],
-  "prompt": "Wat zou je lezen over een bestaande persoon?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over wat voor echte persoon wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Een levensverhaal",
     "prefer": [
-     "true",
-     "people"
+     "biography"
     ],
     "length": ""
    },
@@ -8198,8 +8255,8 @@ module.exports=[
   "when": [
    "realistic"
   ],
-  "prompt": "Wat spreekt je aan in verhalen die op echte gebeurtenissen lijken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan realistische verhalen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8235,8 +8292,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Welke manier om kennis op te doen vind je leuk?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Hoe leer je het liefst uit een boek?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8271,8 +8328,8 @@ module.exports=[
   "when": [
    "true"
   ],
-  "prompt": "Wat verwacht je van een boek over een waargebeurde gebeurtenis?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over een echte gebeurtenis?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8309,8 +8366,8 @@ module.exports=[
    "realistic",
    "true"
   ],
-  "prompt": "Hoeveel fantasie mag er in een verhaal over een echt onderwerp zitten?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Mag een boek over een echt onderwerp ook verzonnen zijn?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8343,8 +8400,8 @@ module.exports=[
   "when": [
    "realistic"
   ],
-  "prompt": "Wat vind je interessant aan een verhaal dat zich nu afspeelt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan een verhaal dat nu speelt?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8379,8 +8436,8 @@ module.exports=[
   "when": [
    "facts"
   ],
-  "prompt": "Welke boeken pak je eerder als je iets nieuws wilt weten?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor boek pak je om iets nieuws te leren?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8394,8 +8451,7 @@ module.exports=[
     "id": "1",
     "label": "Biografieën",
     "prefer": [
-     "true",
-     "people"
+     "biography"
     ],
     "length": ""
    },
@@ -8419,8 +8475,8 @@ module.exports=[
    "slow",
    "danger"
   ],
-  "prompt": "Hoe merk je bij een boek dat je verder wilt lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wanneer wil je verder lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8458,8 +8514,8 @@ module.exports=[
   "when": [
    "calm"
   ],
-  "prompt": "Wat vind je prettig als je na school een boek leest?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat lees je graag als je wilt ontspannen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8496,8 +8552,8 @@ module.exports=[
    "danger",
    "humor"
   ],
-  "prompt": "Welke sfeer past bij waar je vandaag zin in hebt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waar heb je vandaag zin in?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8533,8 +8589,8 @@ module.exports=[
    "slow",
    "calm"
   ],
-  "prompt": "Wat vind je fijn aan een verhaal dat rustig begint?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je fijn aan een rustig begin?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8570,8 +8626,8 @@ module.exports=[
    "fast",
    "action"
   ],
-  "prompt": "Wat spreekt je aan als een boek meteen begint met iets onverwachts?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan een onverwacht begin?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8607,8 +8663,8 @@ module.exports=[
   "when": [
    "slow"
   ],
-  "prompt": "Wat helpt jou om een moeilijk verhaal te blijven volgen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat helpt je om een verhaal te blijven volgen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8645,8 +8701,8 @@ module.exports=[
    "danger",
    "humor"
   ],
-  "prompt": "Welke combinatie van sfeer en onderwerp lijkt je fijn?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welke sfeer en welk onderwerp passen bij je?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8685,8 +8741,8 @@ module.exports=[
    "calm",
    "empathy"
   ],
-  "prompt": "Wat wil je na het lezen vooral overhouden?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je vooral uit een boek halen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8718,11 +8774,9 @@ module.exports=[
   "id": "extended-reading-9",
   "group": "reading",
   "stage": 3,
-  "when": [
-   "fast"
-  ],
-  "prompt": "Wat vind je prettig als je weinig tijd hebt om te lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "when": [],
+  "prompt": "Wat lees je graag als je weinig tijd hebt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8751,8 +8805,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Wat zou je zelf eens willen uitzoeken als je helemaal vrij bent in je keuze?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waar wil je uit jezelf meer over weten?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8785,8 +8839,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Waarover praat je met vrienden als jullie zelf een onderwerp mogen kiezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welk onderwerp zou je graag een boek lezen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8825,8 +8879,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Wat kijk je als je even niets hoeft te doen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor onderwerpen uit filmpjes wil je ook in boeken?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8868,8 +8922,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Wat zou je graag eens meemaken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor belevenis wil je in een boek volgen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -8902,8 +8956,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Welke onderwerpen kom je zelf graag tegen op internet?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke onderwerpen wil je meer lezen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -8944,8 +8998,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Waar ben je vooral nieuwsgierig naar op dit moment?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt je op dit moment nieuwsgierig?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -8978,8 +9032,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Als iemand jou iets mag vertellen, welk onderwerp kies je dan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waarover zou je graag een verhaal horen of lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9020,8 +9074,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Wat vind je interessant om te leren buiten een lesboek?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je buiten school graag leren uit een boek?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -9062,8 +9116,8 @@ module.exports=[
   "group": "broader",
   "stage": 0,
   "when": [],
-  "prompt": "Welk onderwerp zou je uit jezelf opzoeken in de bibliotheek?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welk onderwerp zou je zelf in de bibliotheek kiezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9107,8 +9161,8 @@ module.exports=[
   "when": [
    "society"
   ],
-  "prompt": "Welke veranderingen in de wereld vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welke verandering in de wereld vind je interessant?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9145,8 +9199,8 @@ module.exports=[
   "when": [
    "society"
   ],
-  "prompt": "Wat wil je meer begrijpen aan het leven in een buurt of stad?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over het leven in een buurt of stad?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -9160,8 +9214,7 @@ module.exports=[
     "id": "1",
     "label": "Verschillende culturen",
     "prefer": [
-     "travel",
-     "society"
+     "cultures"
     ],
     "length": ""
    },
@@ -9180,10 +9233,10 @@ module.exports=[
   "group": "society",
   "stage": 2,
   "when": [
-   "society"
+   "activism"
   ],
-  "prompt": "Wat vind je interessant aan mensen die een gemeenschap helpen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan mensen die anderen helpen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9216,10 +9269,10 @@ module.exports=[
   "group": "society",
   "stage": 2,
   "when": [
-   "society"
+   "politics"
   ],
-  "prompt": "Welke onderwerpen uit politiek of maatschappij spreken je aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over politiek of de maatschappij?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9254,8 +9307,8 @@ module.exports=[
   "when": [
    "society"
   ],
-  "prompt": "Waar zou je over willen lezen als een samenleving voor een probleem staat?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat als mensen samen een groot probleem moeten oplossen?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -9288,11 +9341,10 @@ module.exports=[
   "group": "society",
   "stage": 2,
   "when": [
-   "justice",
-   "society"
+   "activism"
   ],
-  "prompt": "Wat spreekt je aan in verhalen over jongeren die iets willen veranderen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan jongeren die iets willen veranderen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9327,17 +9379,16 @@ module.exports=[
   "group": "society",
   "stage": 2,
   "when": [
-   "society"
+   "cultures"
   ],
-  "prompt": "Welke onderwerpen over verschillende culturen vind je interessant?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over verschillende culturen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
     "label": "Talen en gewoonten",
     "prefer": [
-     "travel",
-     "society"
+     "cultures"
     ],
     "length": ""
    },
@@ -9364,16 +9415,16 @@ module.exports=[
   "group": "society",
   "stage": 2,
   "when": [
-   "society"
+   "journalism"
   ],
-  "prompt": "Wat wil je graag weten over hoe nieuws ontstaat?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan het maken van nieuws?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Feiten controleren",
     "prefer": [
-     "facts",
+     "journalism",
      "puzzles"
     ],
     "length": ""
@@ -9382,6 +9433,7 @@ module.exports=[
     "id": "1",
     "label": "Mensen achter nieuws",
     "prefer": [
+     "journalism",
      "people"
     ],
     "length": ""
@@ -9401,16 +9453,16 @@ module.exports=[
   "group": "society",
   "stage": 2,
   "when": [
-   "economics"
+   "careers"
   ],
-  "prompt": "Wat vind je interessant aan verhalen over werk en opleiding?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke beroepen wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
     "label": "Een beroep ontdekken",
     "prefer": [
-     "growth",
+     "careers",
      "facts"
     ],
     "length": ""
@@ -9438,8 +9490,8 @@ module.exports=[
   "group": "media",
   "stage": 3,
   "when": [],
-  "prompt": "Kijk je weleens een serie die je echt leuk vindt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je graag terugzien in een boek na een leuke serie?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9472,8 +9524,8 @@ module.exports=[
   "group": "media",
   "stage": 3,
   "when": [],
-  "prompt": "Is er een film die je leuk vond? Wat sprak je daarin aan?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vond je leuk aan een film dat je ook in een boek wilt?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -9506,8 +9558,8 @@ module.exports=[
   "group": "media",
   "stage": 3,
   "when": [],
-  "prompt": "Zijn er onderwerpen uit films waarover je ook zou willen lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Over welke filmthema's wil je lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9542,8 +9594,8 @@ module.exports=[
   "when": [
    "gaming"
   ],
-  "prompt": "Waar let je meestal op als je een nieuw spel of een serie kiest?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je leuk aan een gamewereld dat je ook wilt lezen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9574,17 +9626,17 @@ module.exports=[
   "group": "media",
   "stage": 2,
   "when": [
-   "gaming",
-   "art"
+   "filmmaking",
+   "gameDevelopment"
   ],
-  "prompt": "Wat zou je willen lezen over de makers van films of games?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je weten over de makers van films of games?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Hoe ze iets ontwerpen",
     "prefer": [
-     "art"
+     "design"
     ],
     "length": ""
    },
@@ -9612,8 +9664,8 @@ module.exports=[
   "group": "media",
   "stage": 3,
   "when": [],
-  "prompt": "Is er iets wat je graag kijkt en waarover je graag praat?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je uit een filmpje ook in een boek willen terugzien?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9646,8 +9698,8 @@ module.exports=[
   "group": "media",
   "stage": 3,
   "when": [],
-  "prompt": "Is er een verhaal uit een film, serie of game dat je leuk vindt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat uit een film, serie of game wil je in een boek terugzien?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9680,16 +9732,16 @@ module.exports=[
   "group": "media",
   "stage": 2,
   "when": [
-   "art"
+   "filmmaking"
   ],
-  "prompt": "Wat zou je willen ontdekken over het maken van animatie?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je interessant aan animatie maken?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
     "label": "Beeld en ontwerp",
     "prefer": [
-     "art"
+     "design"
     ],
     "length": ""
    },
@@ -9697,6 +9749,7 @@ module.exports=[
     "id": "1",
     "label": "Techniek",
     "prefer": [
+     "filmmaking",
      "technology"
     ],
     "length": ""
@@ -9716,8 +9769,8 @@ module.exports=[
   "group": "media",
   "stage": 3,
   "when": [],
-  "prompt": "Heb je weleens een film gezien die gebaseerd is op een boek?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat zou je willen lezen als je een boekverfilming leuk vindt?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9750,8 +9803,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Zijn er onderwerpen waar je liever juist niets over leest?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Zijn er onderwerpen waar je liever niets over leest?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9772,8 +9825,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Welke andere interesse zou je in een boek willen terugzien?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Welke andere interesse wil je in een boek terugzien?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -9814,8 +9867,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Wat maakt dat je een boek eerder weglegt?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt dat je stopt met lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9844,8 +9897,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Wat vind je belangrijker als je tussen boeken kiest?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat vind je het belangrijkst bij het kiezen van een boek?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9876,8 +9929,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Wat zou je willen terugzien uit een verhaal dat je eerder leuk vond?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat wil je terugzien uit een boek dat je eerder leuk vond?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -9906,8 +9959,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Wat past het best bij hoe je vandaag wilt lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waar heb je vandaag zin in tijdens het lezen?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",
@@ -9940,8 +9993,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Welke richting wil je juist eens proberen als je iets anders wilt lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat voor boek wil je eens proberen?",
+  "examples": "Denk bijvoorbeeld hieraan.",
   "options": [
    {
     "id": "0",
@@ -9982,8 +10035,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Waarover zou je het liefst met iemand napraten na het lezen?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Waar zou je na het lezen over willen praten?",
+  "examples": "Welke past het beste bij je?",
   "options": [
    {
     "id": "0",
@@ -10016,8 +10069,8 @@ module.exports=[
   "group": "reflection",
   "stage": 3,
   "when": [],
-  "prompt": "Wat zou een boek voor jou de moeite waard maken?",
-  "examples": "Misschien helpen deze voorbeelden.",
+  "prompt": "Wat maakt een boek voor jou de moeite waard?",
+  "examples": "Misschien zit hier iets tussen.",
   "options": [
    {
     "id": "0",

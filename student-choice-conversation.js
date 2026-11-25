@@ -124,14 +124,6 @@ for(const [id,parent,,, ,prompt,options] of require('./student-choice-topic-deta
  Q[Q.length-1].group=parent;
 }
 Q.push(...require('./student-choice-question-bank'));
-const preciseQuestions={"extended-music-1":["musicListening"],"extended-music-2":["musicMaking"],"extended-music-3":["drawing","design"],"extended-music-7":["musicListening"],"extended-music-8":["filmmaking","design"],"extended-sport-2":["sportPlaying"],"extended-sport-3":["teamSport"],"extended-sport-4":["sportWatching"],"extended-sport-7":["sportPlaying"],"extended-sport-8":["sportWatching"],"extended-sport-9":["sportPlaying","health"],"extended-gaming-4":["gameMultiplayer"],"extended-gaming-5":["gameBuilding"],"extended-gaming-6":["gameStory"],"extended-gaming-7":["gameDevelopment"],"extended-animals-5":["wildlife","pets"],"extended-animals-6":["animalCare"],"extended-science-4":["inventions"],"extended-science-5":["space"],"extended-science-6":["humanBody"],"extended-science-9":["robotics"],"extended-crime-4":["courtCases"],"extended-crime-5":["gangs"]};
-for(const question of Q){
- if(preciseQuestions[question.id]){
-  question.when=preciseQuestions[question.id];
-  if(question.id==='extended-sport-3')delete question.requires;
-  if(question.id==='extended-sport-9'){question.when=['sportPlaying'];question.requires=['sportPlaying','health'];}
- }
-}
 const specificOptionSignals={"art-interest":{"Personages of stripverhalen":["drawing","fantasy"],"Dingen die echt bestaan":["drawing","realistic"],"Zelf iets ontwerpen":["design"],"Fotografie":["photography"]},"music-interest":{"Muziek maken of luisteren":["music"],"Tekenen en ontwerpen":["art"],"Fotografie":["photography"]},"gaming-interest":{"Games met een verhaal":["gameStory"],"Games waarin je iets bouwt":["gameBuilding"]},"animals-interest":{"Dieren verzorgen":["animalCare"],"Wilde dieren":["wildlife"]},"science-interest":{"Ruimte en het heelal":["space"],"Computers en robots":["technology"],"Het menselijk lichaam":["humanBody"],"Uitvindingen":["inventions"]},"free-time":{"Sporten":["sport","sportPlaying"],"Muziek luisteren":["musicListening"]}};
 for(const q of Q)for(const o of q.options){
  const traits=specificOptionSignals[q.id]?.[o.label];
