@@ -74,7 +74,7 @@ function getToken(req) {
 }
 
 function choiceCredentials(req,res,body){
- return {grant:body.choiceGrant,sessionToken:getToken(req),guest:()=>{
+ return {grant:body.choiceGrant,sessionToken:getToken(req),expectedStudentId:body.expectedStudentId,guest:()=>{
   const {token,row}=guestChoice.open(cookies(req).boekenbaai_choice_guest);
   const secure=String(security.getExpectedOrigin(req,PUBLIC_URL)||'').startsWith('https:')?'; Secure':'';
   res.setHeader('Set-Cookie','boekenbaai_choice_guest='+token+'; Path=/api/auth/student-pin/; HttpOnly; SameSite=Strict; Max-Age='+Math.ceil(guestChoice.IDLE_MS/1000)+secure);
@@ -257,7 +257,7 @@ async function handleStudentPin(req, res, requestUrl) {
   if(isChoiceContext){
     const body=await parseBody(req,16384);
     if(body.consent!==true)return sendJson(res,400,{message:'Geef eerst toestemming voor deze tips.'});
-    return sendJson(res,200,choice.personalContext({grant:body.choiceGrant,sessionToken:getToken(req)}));
+    return sendJson(res,200,choice.personalContext({grant:body.choiceGrant,sessionToken:getToken(req),expectedStudentId:body.expectedStudentId}));
   }
   if (isChoiceNext) {
     const body=await parseBody(req,16384);
@@ -287,7 +287,7 @@ async function handleStudentPin(req, res, requestUrl) {
   if (isChoiceReset) {
     const body=await parseBody(req);
     return sendJson(res,200,await choice.clearHistory({
-      grant:body.choiceGrant,sessionToken:getToken(req),
+      grant:body.choiceGrant,sessionToken:getToken(req),expectedStudentId:body.expectedStudentId,
     }));
   }
   if (isChoiceEnd) {
@@ -394,7 +394,7 @@ function wrapRequestListener(listener) {
       if (error?.code === 'DATABASE_WRITE_BUSY' || error?.code === 'DATABASE_WRITE_CONFLICT') {
         return sendJson(res, 409, { message: 'Gegevens zijn tegelijk gewijzigd. Probeer opnieuw.' });
       }
-      if (error?.status) return sendJson(res, error.status, { message: error.message,...(['CHOICE_BLOCKED','CHOICE_GUEST_PAUSED'].includes(error.code)?{code:error.code}:{}) });
+      if (error?.status) return sendJson(res, error.status, { message: error.message,...(['CHOICE_BLOCKED','CHOICE_GUEST_PAUSED','CHOICE_ACCOUNT_CHANGED'].includes(error.code)?{code:error.code}:{}) });
       console.error('[Student PIN] Aanvraag mislukt:', error?.message || 'interne fout');
       return sendJson(res, 500, { message: 'PIN kon niet worden verwerkt.' });
     }

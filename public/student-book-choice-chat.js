@@ -11,6 +11,7 @@
   const seenInTab=new Set();
   const recentQuestionsInTab=new Set();
   let active=false,epoch=0,grant='',personal=false,firstName='',previousFocus=null;
+  let openingToken='',openingStudentId=null;
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
   let currentQuestion=null,questionHistory=[],readingConsent=false;
@@ -31,25 +32,61 @@
   function token(){
     try{return window.localStorage.getItem('boekenbaai_token')||'';}catch(_){return '';}
   }
-  async function api(path,body,signal){
-    const userToken=token(),marker=epoch;
+  function accountChanged(){
+    if(active)close();
+    const err=Error('Je account is gewijzigd. Open Help me kiezen opnieuw.');
+    err.status=409;err.code='CHOICE_ACCOUNT_CHANGED';return err;
+  }
+  function headersFor(userToken,body){
     const headers={Accept:'application/json'};
-    if(userToken && userToken!=='cookie')headers.Authorization='Bearer '+userToken;
+    if(userToken&&userToken!=='cookie')headers.Authorization='Bearer '+userToken;
     if(body!==undefined)headers['Content-Type']='application/json';
+    return headers;
+  }
+  async function verifyOpeningAccount(marker){
+    if(!active||marker!==epoch)return;
+    if(token()!==openingToken)throw accountChanged();
+    // A cookie-only account switch does not necessarily fire a storage event.
+    // Recheck the actual current session before rendering a personal response.
+    if(openingStudentId&&!grant){
+      const response=await fetch(apiUrl('/api/me'),{
+        credentials:'same-origin',cache:'no-store',headers:headersFor(openingToken)
+      });
+      const me=await response.json().catch(()=>({}));
+      if(!active||marker!==epoch)return;
+      if(token()!==openingToken||!response.ok||me.role!=='student'||me.id!==openingStudentId)
+        throw accountChanged();
+    }
+  }
+  async function api(path,body,signal){
+    const cleanup=path==='/api/auth/student-pin/choice-end';
+    const marker=epoch;
+    if(!cleanup&&active&&token()!==openingToken)throw accountChanged();
+    const userToken=cleanup?'':openingToken;
+    const bound=path.startsWith('/api/auth/student-pin/choice-')&&body!==undefined
+      &&!cleanup&&path!=='/api/auth/student-pin/choice-begin';
+    const payload=bound?{...body,expectedStudentId:openingStudentId}:body;
     const response=await fetch(apiUrl(path),{
-      method:body===undefined?'GET':'POST',credentials:'same-origin',
-      signal,headers,...(body===undefined?{}:{body:JSON.stringify(body)}),
+      method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',
+      signal,headers:headersFor(userToken,body),...(body===undefined?{}:{body:JSON.stringify(payload)}),
     });
     const data=await response.json().catch(()=>({}));
+    // A late PIN grant still needs to be revoked by its original caller.
+    if(!cleanup&&(!active||marker!==epoch))return data;
+    if(!cleanup&&token()!==openingToken)throw accountChanged();
     if(!response.ok){
       const error=Error(data.message||'Er is iets misgegaan.');
       error.status=response.status;
-      if(response.status===423&&active&&marker===epoch){
-        if(data.code==='CHOICE_BLOCKED')showBlocked();
-        else if(data.code==='CHOICE_GUEST_PAUSED')showGuestPaused();
+      if(!cleanup&&active&&marker===epoch){
+        if(data.code==='CHOICE_ACCOUNT_CHANGED'||(openingStudentId&&response.status===401))throw accountChanged();
+        if(response.status===423){
+          if(data.code==='CHOICE_BLOCKED')showBlocked();
+          else if(data.code==='CHOICE_GUEST_PAUSED')showGuestPaused();
+        }
       }
       throw error;
     }
+    if(!cleanup&&path!=='/api/me'&&path!=='/api/auth/student-pin/choice-begin')await verifyOpeningAccount(marker);
     return data;
   }
   function showBlocked(){
@@ -58,14 +95,14 @@
     clearActions();
   }
   function showGuestPaused(){
-    resetSession();active=true;
+    resetSession();active=true;openingToken=token();
     message('Dit gesprek is gestopt. Over vijf minuten kun je weer zonder inloggen beginnen. Je kunt ook met je eigen PIN inloggen.');
     options([['Inloggen met mijn PIN',showPin]]);
   }
   async function startGuest(){
     if(!active||busy)return;
     const marker=epoch;
-    busy=true;personal=false;firstName='';grant='';
+    busy=true;personal=false;firstName='';grant='';openingStudentId=null;
     try{
       await api('/api/auth/student-pin/choice-status',{});
       if(!active||marker!==epoch)return;
@@ -111,6 +148,7 @@
     searchController?.abort();
     searchController=null;searchTimer=null;
     active=false;busy=false;personal=false;firstName='';readingConsent=false;
+    openingStudentId=null;openingToken='';
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
     currentQuestion=null;questionHistory=[];adviceContext=null;adviceQuestion=null;
@@ -390,7 +428,7 @@
   async function begin(){
     previousFocus=document.activeElement;
     resetSession();
-    active=true;seed=Math.random().toString(36).slice(2)+Date.now().toString(36);
+    active=true;openingToken=token();seed=Math.random().toString(36).slice(2)+Date.now().toString(36);
     dialog.showModal();
     notice('Controleren of je al ingelogd bent…');
     const marker=epoch;
@@ -398,6 +436,7 @@
       const me=await api('/api/me');
       if(!active||marker!==epoch)return;
       if(me?.role==='student'&&me.id){
+        openingStudentId=me.id;
         await api('/api/auth/student-pin/choice-status',{});
         if(!active||marker!==epoch)return;
         personal=true;firstName=username(me);
@@ -496,7 +535,7 @@
           return;
         }
         clearSearch();
-        grant=result.grant;personal=true;firstName=username(result);
+        grant=result.grant;openingStudentId=selected;personal=true;firstName=username(result);
         clearActions();notice('');
         finishIdentity();
       }catch(err){
@@ -715,7 +754,7 @@
         notice(err.message);
         options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices={route:'new'};startExploration();}]]);
       }
-    }finally{busy=false;}
+    }finally{if(active&&marker===epoch)busy=false;}
   }
   function followupButtons(exhausted){
     options([
@@ -748,7 +787,7 @@
             notice(err.message);
             followupButtons(false);
           }
-        }finally{busy=false;}
+        }finally{if(active&&marker===epoch)busy=false;}
       }]]:[]),
     ]);
   }
@@ -776,5 +815,17 @@
   });
   window.addEventListener('boekenbaai:staff-auth-cleared',()=>{
     if(active)close();
+  });
+  window.addEventListener('storage',event=>{
+    if(active&&(event.key==='boekenbaai_token'||event.key===null))close();
+  });
+  // Never retain another pupil's private conversation on a hidden tab.
+  document.addEventListener('visibilitychange',()=>{
+    if(active&&document.visibilityState==='hidden'&&openingStudentId&&!grant)close();
+  });
+  window.addEventListener('focus',()=>{
+    if(!active)return;
+    const marker=epoch;
+    void verifyOpeningAccount(marker).catch(()=>{if(active&&marker===epoch)close();});
   });
 })();

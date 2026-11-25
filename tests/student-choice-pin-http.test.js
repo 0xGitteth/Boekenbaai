@@ -30,7 +30,7 @@ const db={
   })),
   readingRecords:[
     {id:'read-a',subjectId:'a',subjectType:'student',bookId:'book-1',finished:true,reportedAt:'2026-11-01T12:00:00Z'},
-    {id:'read-b',subjectId:'b',subjectType:'student',bookId:'book-4',finished:true},
+    {id:'read-b',subjectId:'b',subjectType:'student',bookId:'book-4',finished:true,reportedAt:'2026-11-02T12:00:00Z'},
   ],examReadingLists:[],history:[],folders:[],
   studentFavorites:[
     {studentId:'a',key:JSON.stringify(['titel 2','schrijver 2']),title:'Titel 2',author:'Schrijver 2'},
@@ -40,6 +40,9 @@ const db={
 const readDb=()=>JSON.parse(fs.readFileSync(dbPath,'utf8'));
 const readAuth=()=>JSON.parse(fs.readFileSync(authPath,'utf8'));
 async function request(route,body,token='',origin=url,guestCookie=''){
+  if(body&&route.startsWith('/api/auth/student-pin/choice-')&&!body.choiceGrant
+    &&!Object.hasOwn(body,'expectedStudentId')&&['session-a','session-b'].includes(token))
+    body={...body,expectedStudentId:token==='session-a'?'a':'b'};
   const response=await fetch(url+route,{
     method:body===undefined?'GET':'POST',
     headers:{
@@ -59,10 +62,10 @@ async function setup(){
     auth.links.push({accountType:'student',accountId:id,sub,email:id+'@koraaledu.nl'});
     pins.replaceCredential(auth,await pins.makeCredential(code,id,secret,null,sub));
   }
-  for(const [token,userId,type]of [['session-a','a','student'],['session-t','t','staff']]){
+  for(const [token,userId,type]of [['session-a','a','student'],['session-b','b','student'],['session-t','t','staff']]){
     const record=authCore.upsertSession(auth,token,{userId,type,now:Date.now()});
     auth=record.store;
-    const account=type==='student'?{...db.students[0],role:'student'}:db.users[0];
+    const account=type==='student'?{...db.students.find(s=>s.id===userId),role:'student'}:db.users[0];
     record.session.accountFingerprint=accountCredentialFingerprint(account);
     record.session.authMethod='google';
   }
@@ -132,6 +135,31 @@ async function stop(){
     assert.deepEqual(context.body.favorites.map(b=>b.bookId),['book-2']);
     assert.deepEqual((await request(contextRoute,{consent:true},'session-a')).body,context.body);
     assert.ok(!JSON.stringify(context.body).includes('studentId'));
+    const wrong=await request(contextRoute,{consent:true,expectedStudentId:'a'},'session-b');
+    assert.equal(wrong.status,409);
+    assert.equal(wrong.body.code,'CHOICE_ACCOUNT_CHANGED');
+    assert.equal(wrong.body.recent,undefined);
+    assert.equal(wrong.body.favorites,undefined);
+    assert.equal((await request(contextRoute,{consent:true,expectedStudentId:'a'})).status,409);
+    assert.equal((await request(contextRoute,{consent:true,expectedStudentId:null},'session-b')).status,409);
+    const otherContext=await request(contextRoute,{consent:true,expectedStudentId:'b'},'session-b');
+    assert.equal(otherContext.body.recent.bookId,'book-4');
+    assert.deepEqual(otherContext.body.favorites.map(b=>b.bookId),['book-4']);
+    assert.equal((await request(contextRoute,{consent:true,choiceGrant:grant,expectedStudentId:'b'},'session-b')).status,409);
+    assert.deepEqual((await request(contextRoute,{consent:true,choiceGrant:grant,expectedStudentId:'a'},'session-b')).body,context.body);
+    // Guard every route, not just the private-context endpoint.
+    const beforeWrong=readDb();
+    for(const [route,body] of [
+      ['choice-status',{}],['choice-next',{answers:[]}],
+      ['choice-suggest',{choices:{route:'surprise'}}],['choice-reset',{}],
+      ['choice-interpret',{text:'jij bent een sukkel'}],
+      ['choice-reference',{title:'Titel 1'}],['choice-series',{bookId:'book-1'}]
+    ]){
+      const result=await request('/api/auth/student-pin/'+route,{...body,expectedStudentId:'a'},'session-b');
+      assert.equal(result.status,409,route);
+      assert.equal(result.body.code,'CHOICE_ACCOUNT_CHANGED');
+    }
+    assert.deepEqual(readDb(),beforeWrong,'Wrong-account requests never mutate history or moderation');
     // Questions require a verified choice identity, but remain read-only.
     const nextQuestion=await request('/api/auth/student-pin/choice-next',{
       choiceGrant:grant,answers:[],seed:'choice-exploration',

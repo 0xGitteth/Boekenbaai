@@ -111,8 +111,17 @@ function resolveChoice(db,auth,{grant='',sessionToken=''}={}){
 function blockedError(){
  return Object.assign(error('Help me kiezen is geblokkeerd. Vraag je mentor om de functie weer open te zetten.',423),{code:'CHOICE_BLOCKED'});
 }
+function assertOpeningIdentity(credentials,identity){
+ // The assertion is never a credential. The actual identity is resolved
+ // from a validated session or PIN grant before any read/write/moderation.
+ const expected=credentials.expectedStudentId;
+ if((expected!==undefined&&expected!==(identity?.studentId||null))
+   ||(identity&&!credentials.grant&&typeof expected!=='string'))
+  throw Object.assign(error('Je account is gewijzigd. Open Help me kiezen opnieuw.',409),{code:'CHOICE_ACCOUNT_CHANGED'});
+}
 function requireChoice(db,credentials){
  const identity=resolveChoice(db,loadAuth(),credentials);
+ assertOpeningIdentity(credentials,identity);
  if(!identity)throw error('Log eerst in met je schoolaccount of PIN.',401);
  if(moderation.state(db,identity.studentId).blocked)throw blockedError();
  return identity;
@@ -120,6 +129,7 @@ function requireChoice(db,credentials){
 // A valid pupil identity always takes precedence over anonymous mode.
 function choiceAccess(db,credentials){
  const identity=resolveChoice(db,loadAuth(),credentials);
+ assertOpeningIdentity(credentials,identity);
  if(identity){
   if(moderation.state(db,identity.studentId).blocked)throw blockedError();
   return {identity,guest:null};
@@ -133,11 +143,11 @@ function choiceStatus(credentials){
  const db=loadDb(),access=choiceAccess(db,credentials);
  return access.identity?{warned:moderation.state(db,access.identity.studentId).warned}:guestModeration.status(access.guest);
 }
-async function interpretAnswer({grant,sessionToken,guest,text,context,consent=false}){
+async function interpretAnswer({grant,sessionToken,guest,expectedStudentId,text,context,consent=false}){
  let result;
  await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
   mutate:db=>{
-   const access=choiceAccess(db,{grant,sessionToken,guest});
+   const access=choiceAccess(db,{grant,sessionToken,guest,expectedStudentId});
    const outcome=access.identity?moderation.apply(db,access.identity.studentId,text):guestModeration.apply(access.guest,text,db.books||[]);
    if(outcome.kind==='normal'){
      const recent=consent===true&&access.identity?pastQuestions(db,access.identity.studentId):[];
@@ -193,9 +203,9 @@ async function mentorUnlock({sessionToken,studentId}){
 // The context request is explicit, read-only and restricted to a single
 // student's validated choice grant or full session. Only public catalogue
 // works are returned. Favorites indicate interest, not reading or liking.
-function personalContext({grant,sessionToken}){
+function personalContext({grant,sessionToken,expectedStudentId}){
   const db=loadDb();
-  const identity=requireChoice(db,{grant,sessionToken});
+  const identity=requireChoice(db,{grant,sessionToken,expectedStudentId});
   const publicBooks=(db.books||[]).filter(b=>b?.id&&b.catalogHidden!==true&&b.personalLoanOnly!==true);
   const byId=new Map(publicBooks.map(b=>[b.id,b]));
   const byKey=new Map(publicBooks.map(b=>[workKey(b),b]));
@@ -233,13 +243,13 @@ function pastKeys(db,studentId){
     Date.parse(entry.updatedAt)<Date.now()-RECENT_DAYS*86400000)return [];
   return Array.isArray(entry.keys)?entry.keys.filter(x=>typeof x==='string').slice(-240):[];
 }
-async function suggestions({grant,sessionToken,guest,choices,anonymous=false}){
+async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,anonymous=false}){
   // Authentication is rechecked inside the atomic DB transaction. We
   // serialize reading/updating recommendation history across server workers.
   let result;
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
-      const verified=choiceAccess(db,{grant,sessionToken,guest}).identity;
+      const verified=choiceAccess(db,{grant,sessionToken,guest,expectedStudentId}).identity;
       // Declining personal advice does not disable account-level moderation.
       const identity=anonymous?null:verified;
       // Match public catalogue GET normalization. Raw imported tags are
@@ -271,17 +281,17 @@ async function suggestions({grant,sessionToken,guest,choices,anonymous=false}){
     }});
   return result;
 }
-function nextQuestion({grant,sessionToken,guest,answers=[],seed='',excludeQuestionIds=[]}={}){
+function nextQuestion({grant,sessionToken,guest,expectedStudentId,answers=[],seed='',excludeQuestionIds=[]}={}){
   const db=loadDb();
-  choiceAccess(db,{grant,sessionToken,guest});
+  choiceAccess(db,{grant,sessionToken,guest,expectedStudentId});
   // Question selection itself still sees public metadata only.
   const books=(db.books||[]).map(attachDerivedThemeFields);
   return dialogue.selection({books},{answers,seed,excludeQuestionIds});
 }
-async function clearHistory({grant,sessionToken}){
+async function clearHistory({grant,sessionToken,expectedStudentId}){
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
-      const identity=requireChoice(db,{grant,sessionToken});
+      const identity=requireChoice(db,{grant,sessionToken,expectedStudentId});
       db.studentChoiceSeen=(db.studentChoiceSeen||[]).filter(x=>x.studentId!==identity.studentId);
       return db;
     }});

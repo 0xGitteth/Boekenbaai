@@ -29,6 +29,7 @@ const makeResponse=(status,body)=>({
 });
 let resolvePin;
 let loggedIn=false;
+let activeId='s',storageToken='',holdContext=false,releaseContext=null,contextCalls=0;
 let blocked=false;
 let failSuggest=false;
 let resetStatus=200;
@@ -38,7 +39,7 @@ const suggestRequests=[];
 const questionRequests=[];
 const fetchStub=async (url,options={})=>{
   if(url==='/api/me')return loggedIn
-    ? makeResponse(200,{id:'s',role:'student',firstName:'Sanne'})
+    ? makeResponse(200,{id:activeId,role:'student',firstName:activeId==='s'?'Sanne':'Pieter'})
     : makeResponse(401,{message:'Geen toegang'});
   if(url.startsWith('/api/login-search?'))return makeResponse(200,{
     matches:[{id:'s',displayName:'Sanne J. · Bovenbouw'}],
@@ -51,7 +52,10 @@ const fetchStub=async (url,options={})=>{
   }
   if(url==='/api/auth/student-pin/choice-status')return blocked?makeResponse(423,{code:'CHOICE_BLOCKED',message:'Geblokkeerd'}):makeResponse(200,{warned:false});
   if(url==='/api/auth/student-pin/choice-context'){
-    assert.equal(JSON.parse(options.body).consent,true);
+    const body=JSON.parse(options.body);contextCalls++;
+    assert.equal(body.consent,true);
+    if(body.expectedStudentId!==activeId)return makeResponse(409,{code:'CHOICE_ACCOUNT_CHANGED'});
+    if(holdContext)return new Promise(resolve=>{releaseContext=()=>resolve(makeResponse(200,{recent:{bookId:'private',title:'Privéboek A'},favorites:[]}));});
     return makeResponse(200,{recent:null,favorites:[]});
   }
   if(url==='/api/auth/student-pin/choice-interpret'){
@@ -96,12 +100,13 @@ const fetchStub=async (url,options={})=>{
   throw Error('Unexpected URL: '+url);
 };
 const windowStub={
-  localStorage:{getItem(){return null;}},
-  addEventListener(){},
+  localStorage:{getItem(){return storageToken;}},
+  listeners:{},addEventListener(k,fn){this.listeners[k]=fn;},
   BoekenbaaiResolveApiUrl:route=>route,
 };
 const documentStub={
-  activeElement:node('button'),
+  activeElement:node('button'),visibilityState:'visible',listeners:{},
+  addEventListener(k,fn){this.listeners[k]=fn;},
   getElementById:id=>elements.get(id)||null,
   createElement:node,
 };
@@ -282,6 +287,40 @@ vm.runInNewContext(code,{
   holdSuggestions=false;releaseSuggestion();releaseSuggestion=null;
   await new Promise(resolve=>setImmediate(resolve));
   elements.get('student-choice-close').listeners.click();
+  // Cookie-only switch after opening: server must refuse the old identity.
+  storageToken='cookie';activeId='s';
+  await elements.get('student-help-choose').listeners.click();
+  activeId='b';
+  actions.children[0].listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(elements.get('student-choice-dialog').open,false);
+  assert.equal(log.children.length,0);
+  // Cookie switch while an otherwise valid personal response is in flight:
+  // validate the current session again before showing its content.
+  activeId='s';holdContext=true;
+  await elements.get('student-help-choose').listeners.click();
+  actions.children[0].listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(releaseContext);
+  activeId='b';releaseContext();holdContext=false;
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(elements.get('student-choice-dialog').open,false);
+  assert.equal(log.children.length,0);
+  // Ordinary localStorage switches close immediately, before the old
+  // consent handler can submit a request.
+  activeId='s';storageToken='token-a';
+  await elements.get('student-help-choose').listeners.click();
+  const oldConsent=actions.children[0],beforeCalls=contextCalls;
+  storageToken='token-b';activeId='b';
+  windowStub.listeners.storage({key:'boekenbaai_token'});
+  oldConsent.listeners.click();
+  assert.equal(contextCalls,beforeCalls);
+  assert.equal(log.children.length,0);
+  activeId='s';storageToken='cookie';
+  await elements.get('student-help-choose').listeners.click();
+  documentStub.visibilityState='hidden';documentStub.listeners.visibilitychange();
+  assert.equal(elements.get('student-choice-dialog').open,false);
+  documentStub.visibilityState='visible';
   blocked=true;
   await elements.get('student-help-choose').listeners.click();
   assert.match(log.children[0].children[0].textContent,/geblokkeerd.*mentor/);
