@@ -1062,7 +1062,6 @@ module.exports=[
   ],
   [
    "future",
-   "society",
    "society"
   ]
  ],
