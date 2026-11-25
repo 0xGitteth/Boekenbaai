@@ -3602,7 +3602,9 @@ function initStudentPage() {
       studentName.textContent = loggedIn ? getUserGreetingName(authUser) : '';
     }
     if (studentGrade) {
-      studentGrade.textContent = loggedIn && authUser.grade ? `Klas ${authUser.grade}` : '';
+      const classNames=Array.isArray(authUser?.classNames)?authUser.classNames:[];
+      studentGrade.textContent=loggedIn
+        ?(classNames.length?'Klas: '+classNames.join(', '):'Geen klas gekoppeld'):'';
     }
     enableScanArea();
     renderBorrowedBooks();
@@ -6157,12 +6159,14 @@ function initStaffPage() {
   }
 
   function getStudentClasses(student) {
-    if (!student) {
-      return [];
-    }
-    return (student.classIds || [])
-      .map((classId) => classes.find((klass) => klass.id === classId))
-      .filter(Boolean);
+    if(!student?.id)return [];
+    const roster=classes.filter(klass=>Array.isArray(klass.studentIds)
+      &&klass.studentIds.includes(student.id));
+    if(roster.length)return roster;
+    // Legacy records without class rosters can still use classIds, but an
+    // explicit roster that excludes this pupil must never show an old class.
+    return classes.filter(klass=>(student.classIds||[]).includes(klass.id)
+      &&!Array.isArray(klass.studentIds));
   }
 
   function matchesAdminStudentSearch(student, normalizedTerm) {
@@ -6172,7 +6176,6 @@ function initStaffPage() {
     const haystack = [
       student.name,
       student.username,
-      student.grade,
       ...getStudentClasses(student).map((klass) => klass.name),
     ]
       .filter(Boolean)
@@ -6237,7 +6240,6 @@ function initStaffPage() {
       const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
       if (metaLine) {
         appendTextElement(metaLine, 'span', `Gebruikersnaam: ${student.username}`);
-        appendTextElement(metaLine, 'span', `Leerjaar: ${student.grade || 'Onbekend'}`);
         appendTextElement(metaLine, 'span', `${borrowed} uitgeleende boek(en)`);
       }
       const classesLine = appendElement(item, 'div', { className: 'student-list__meta' });
@@ -6372,9 +6374,10 @@ function initStaffPage() {
     adminStudentDetailName && (adminStudentDetailName.textContent = student.name);
     adminStudentDetailUsername && (adminStudentDetailUsername.textContent = student.username || '');
     if (adminStudentDetailGrade) {
-      adminStudentDetailGrade.textContent = student.grade
-        ? `Leerjaar: ${student.grade}`
-        : 'Leerjaar niet ingesteld';
+      const currentClasses=getStudentClasses(student);
+      adminStudentDetailGrade.textContent=currentClasses.length
+        ?'Klas: '+currentClasses.map(klass=>klass.name).join(', ')
+        :'Geen actuele klas gekoppeld';
     }
     const borrowedCount = Array.isArray(student.borrowedBooks) ? student.borrowedBooks.length : 0;
     if (adminStudentDetailLoansMeta) {
