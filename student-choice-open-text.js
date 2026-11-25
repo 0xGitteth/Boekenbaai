@@ -14,7 +14,7 @@ const TERMS={
  school:['school','klas','middelbare school'],
  action:['actie','achtervolgingen','gevechten'],
  adventure:['avontuur','avonturen','avontuurlijk'],
- sport:['sport','sporten','voetbal','basketbal','voetballen','voetball','soccer'],
+ sport:['sport','sporten','voetbal','basketbal','voetballen','voetball','soccer','fitness','hardlopen','zwemmen','volleybal','volleyballen','hockey','hockeyen','tennis','tennissen','turnen','kickboksen','boksen','wielrennen','atletiek','handbal','badminton','dansen'],
  animals:['dieren','honden','paarden','katten'],
  nature:['natuur','bos','wildernis'],
  science:['wetenschap','ruimtevaart','wetenschappelijk'],

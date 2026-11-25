@@ -42,6 +42,33 @@ assert.equal(unknown.advice.kind,'clarify');
 assert.equal(run('xqzabcdef',unknown.advice.context).advice.kind,'examples');
 assert.equal(run('Ik heb Het gouden kompas gelezen').advice.kind,'book-search');
 assert.notEqual(run('Ik heb zelf twee honden').advice.kind,'book-search');
+// Real reported conversation: drawing and sport must not be interpreted
+// as interest in music. Hobbies are confirmed before recommending books.
+for(let i=0;i<100;i++){
+ const hobbies=run('Ik vind het leuk om te sporten en te tekenen',{current:'free-time',seed:'real-hobbies-'+i});
+ assert.equal(hobbies.advice.question.id,'hobby-focus');
+ assert.deepEqual(new Set(hobbies.advice.context.hobbies),new Set(['sport','art']));
+ assert.deepEqual(hobbies.advice.context.signals.prefer,[]);
+ assert.match(hobbies.advice.question.prompt,/sport.*tekenen|tekenen.*sport/i);
+ const art=run('Tekenen of iets maken',hobbies.advice.context);
+ assert.ok(!art.advice.context.signals.prefer.includes('music'));
+ assert.ok(!/muzikant|muziek|liedjes/i.test(art.advice.question?.prompt||''));
+ const sport=run('Sport',hobbies.advice.context);
+ assert.ok(!/muzikant|muziek|liedjes/i.test(sport.advice.question?.prompt||''));
+ const nope=run('Niets?',hobbies.advice.context);
+ assert.equal(nope.advice.kind,'question');
+ assert.notEqual(nope.advice.question.id,'hobby-focus');
+ assert.deepEqual(nope.advice.context.signals.prefer,[]);
+ const other=run('Liever iets anders',hobbies.advice.context);
+ assert.notEqual(other.advice.question?.id,'hobby-focus');
+ const mixed=run('Ik vind sporten en tekenen leuk',{seed:'mixed-'+i});
+ assert.ok(!/muzikant|muziek|liedjes/i.test(mixed.advice.question?.prompt||''));
+ const rejected=run('Niks eigenlijk',{current:'extended-music-2',signals:{prefer:['sport','art'],avoid:[]},seed:'decline-'+i});
+ assert.equal(rejected.advice.kind,'question');
+ assert.notEqual(rejected.advice.question.id,'extended-music-2');
+ assert.deepEqual(rejected.advice.context.signals.prefer,['sport','art']);
+}
+assert.ok(run('Ik doe aan fitness',{current:'free-time'}).advice.context.hobbies.includes('sport'));
 const hobby=run('Ik haat lezen',{seed:'hobby'});
 assert.equal(hobby.advice.kind,'question');
 assert.equal(hobby.advice.question.id,'free-time');

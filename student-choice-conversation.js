@@ -44,7 +44,7 @@ add('humor-interest',1,'humor','Waar moet je zelf meestal om lachen?','Wat voor 
  ['Grappige situaties op school','humor school'],['Vrienden die iets meemaken','humor friendship'],['Onverwachte gebeurtenissen','humor unusual'],['Absurdistische verhalen','humor fantasy']]);
 add('justice-interest',1,'justice society outsider','Wat vind je belangrijk aan verhalen over onrecht?','Waar zou je meer over willen lezen?',[
  ['Pesten of buitensluiten','outsider'],['Discriminatie','justice'],['Iemand die onterecht wordt beschuldigd','justice crime'],['Mensen die voor elkaar opkomen','friendship justice']]);
-add('music-interest',1,'music art','Waar ben je zelf graag creatief mee bezig?','Wat spreekt je aan?',[
+add('music-interest',1,'music','Waar ben je zelf graag creatief mee bezig?','Wat spreekt je aan?',[
  ['Muziek maken of luisteren','music'],['Tekenen en ontwerpen','art'],['Fotografie','art'],['Iemand die zijn talent ontdekt','growth']]);
 add('life-interest',1,'empathy growth health','Wat vind je interessant aan de dingen die mensen meemaken?','Welke onderwerpen spreken je aan?',[
  ['Omgaan met verlies','empathy'],['Zelfvertrouwen krijgen','growth'],['Gezondheid','health'],['Vriendschap','friendship'],['Hoe mensen denken','psychology']]);
@@ -95,7 +95,7 @@ add('life-facts',2,'empathy health psychology','Lees je soms graag over ervaring
  ['Hoe iemand met moeilijke gebeurtenissen omgaat','empathy'],['Een echt levensverhaal','true'],['Beter begrijpen hoe mensen denken','psychology'],['Iets leren over gezondheid','health facts']]);
 add('crime-reality',2,'crime disappearance police','Welke misdaadverhalen vind je op televisie of online interessant?','Wat kijk je bijvoorbeeld?',[
  ['Waargebeurde misdaadverhalen','crime true'],['Documentaires over vermissingen','disappearance true'],['Verhalen over criminelen','criminalPerspective'],['Onderzoek naar een misdaad','police puzzles']]);
-add('art-stories',2,'art music','Volg je ook mensen die creatief bezig zijn?','Wat vind je daarin interessant?',[
+add('art-stories',2,'art','Volg je ook mensen die creatief bezig zijn?','Wat vind je daarin interessant?',[
  ['Hoe iemand iets leert maken','growth art'],['De verhalen achter muziek','music people'],['Het leven van een kunstenaar','art true'],['Nieuwe ideeën en uitvindingen','discovery technology']]);
 add('social-world',2,'society justice','Welke onderwerpen uit het nieuws vind je interessant?','Welke richting spreekt je aan?',[
  ['Mensen die voor hun rechten opkomen','justice'],['Hoe de samenleving werkt','society facts'],['Wat er in andere landen gebeurt','travel society'],['Oorlog en vrede','war history']]);
@@ -109,6 +109,9 @@ add('reading-barrier',2,'','Wat maakt lezen voor jou minder leuk?','Misschien he
  ['Lange boeken','', 'short'],['Dat er weinig gebeurt','fast'],['Onderwerpen die me niet interesseren',''],['Ik lees liever waargebeurde verhalen','true']]);
 add('feedback',2,'','Wat spreekt je niet aan in deze voorstellen?','Wat zou je anders willen?',[
  ['Een ander onderwerp',''],['Meer spanning','danger'],['Meer humor','humor'],['Meer realistische verhalen','realistic'],['Waargebeurde verhalen','true'],['Een korter boek','','short']]);
+add('art-interest',1,'art','Wat maak of teken je graag?','Denk aan wat je zelf leuk vindt om te maken.',[
+ ['Personages of stripverhalen','art fantasy'],['Dingen die echt bestaan','art realistic'],['Zelf iets ontwerpen','art discovery'],['Fotografie','art'],['Ik wil iets anders lezen','']]);
+add('hobby-focus',1,'','Zou je ook over een van je hobby’s willen lezen?','Je mag ook een ander onderwerp kiezen.',[]);
 Q.push(...require('./student-choice-question-bank'));
 const BY_ID=new Map(Q.map(q=>[q.id,q]));
 const MEDIA=[
@@ -141,6 +144,7 @@ function cleanContext(raw={}){
   seed:typeof raw.seed==='string'?raw.seed.slice(0,50):'',
   length:raw.length==='short'?'short':'any',
   media:bounded(raw.media,4).filter(name=>MEDIA.some(m=>m[0]===name)),
+  hobbies:validateSignals({prefer:raw.hobbies}).prefer.slice(0,6),
   hypothesis:validateSignals({prefer:raw.hypothesis}).prefer,
   uncertain:Math.max(0,Math.min(2,Number.isInteger(raw.uncertain)?raw.uncertain:0))};
 }
@@ -181,6 +185,15 @@ function profiles(books,signals){
 }
 function questionForContext(c){
  const q=BY_ID.get(c.current)||BY_ID.get('opening');
+ if(q.id==='hobby-focus'){
+  const hobbies=c.hobbies;
+  const labels={art:'Tekenen of iets maken',sport:'Sport',gaming:'Games',music:'Muziek'};
+  const names=hobbies.map(t=>labels[t]||LABELS[t]||t);
+  const options=hobbies.map((t,i)=>({id:String(i),label:names[i],prefer:[t],length:''}));
+  if(hobbies.length>1)options.push({id:'both',label:hobbies.length===2?'Allebei':'Meerdere daarvan',prefer:hobbies,length:''});
+  options.push({id:'other',label:'Liever iets anders',prefer:[],length:''});
+  return {...q,prompt:hobbies.length===2?'Zou je ook iets over '+names.map(n=>n.toLocaleLowerCase('nl-NL')).join(' of ')+' willen lezen, of liever iets anders?':hobbies.length===1?'Zou je ook iets over '+names[0].toLocaleLowerCase('nl-NL')+' willen lezen, of liever iets anders?':q.prompt,options};
+ }
  if(q.id!=='media-interest')return q;
  const options=c.hypothesis.slice(0,7).map((key,i)=>({id:String(i),label:LABELS[key]||key,prefer:[key],length:''}));
  return {...q,options};
@@ -191,9 +204,10 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  const p=signals.prefer, known=new Set([...p,...signals.avoid]);
  const used=new Set([...context.used,context.current]);
  const top=profiles(books,signals);
- const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback'].includes(q.id)
-  &&(!q.when.length||q.when.some(t=>p.includes(t)||context.hypothesis.includes(t)))
-  &&(q.stage<2||context.turns>=2||p.length>=3||(q.stage===2&&q.group&&q.when.some(t=>p.includes(t))))
+ const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback','hobby-focus'].includes(q.id)
+  &&(!q.when.length||q.when.some(t=>p.includes(t)))
+  &&(!q.requires||q.requires.every(t=>p.includes(t)))
+  &&(q.stage<2||context.turns>=2||p.length>=3||(q.stage===2&&q.early===true&&q.when.some(t=>p.includes(t))))
   &&(q.stage!==0||context.turns<=2)
   &&(q.id!=='reading-length'||context.length!=='short')
   &&q.options.some(o=>o.prefer.some(t=>!known.has(t))||o.length));
@@ -214,7 +228,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  }).sort((a,b)=>b.score-a.score||a.q.id.localeCompare(b.q.id));
  if(!ranked.length)return null;
  // Rotate only among nearly equivalent useful questions.
- const pool=ranked.filter(x=>x.score>=ranked[0].score-2.5).slice(0,12);
+ const pool=ranked.filter(x=>x.score>=ranked[0].score-2.5&&(!last.length||!ranked[0].q.when.length||x.q.when.some(t=>last.includes(t))||ranked[0].q.when.every(t=>!last.includes(t)))).slice(0,12);
  return pool.sort((a,b)=>tie(context.seed,b.q.id)-tie(context.seed,a.q.id))[0].q;
 }
 function analyze(text,rawContext={},books=[]){
@@ -266,6 +280,7 @@ function analyze(text,rawContext={},books=[]){
    }
   }
  }
+ const decline=/^(?:nee|niets|niks|niet echt|geen van beide|geen van deze|geen van die|boeit me niet|interesseert me niet|niet mijn ding|liever iets anders|ik wil iets anders lezen)(?: hoor| eigenlijk| echt| lol| haha| dank je)*$/.test(value);
  const uncertain=/^(?:ik )?(?:weet (?:het )?niet|weet ik niet|geen idee|idk|mnu|maakt niet uit|geen voorkeur|geen flauw idee)(?: eigenlijk| echt| hoor| haha| denk ik| lol)*$/.test(value);
  if(/\b(?:geen dikke boeken|niet zo dik|niet te dik|liever kort|kort boek|korte boeken|weinig pagina s|niet veel pagina s)\b/.test(value))length='short';
  if(/\b(?:dik boek is prima|lange boeken zijn prima|lengte maakt niet uit)\b/.test(value))length='any';
@@ -281,6 +296,7 @@ function analyze(text,rawContext={},books=[]){
   'fantasy-interest':[['bijzondere krachten','magic']],
  };
  let direct=selected?{...validateSignals({prefer:selected.prefer}),recognized:true,clarify:false}:interpret(input);
+ if(c.current==='hobby-focus'&&!selected&&/^(?:ja|ja graag|allebei|beide|allemaal)$/.test(value))direct={...validateSignals({prefer:c.hobbies}),recognized:true,clarify:false};
  // Exact short contextual responses can be resolved without guessing.
  if(!selected&&!direct.recognized&&!direct.avoid?.length){
   const alias=(contextualAliases[c.current]||[]).find(([phrase])=>normalize(phrase)===value);
@@ -296,10 +312,25 @@ function analyze(text,rawContext={},books=[]){
  const delta=validateSignals(direct);
  const updated=merged(current,delta);
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
- const next={...c,signals:updated,length,media:[...new Set([...c.media,...media])].slice(-4),
+ const next={...c,signals:updated,length,hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
+ // Hobbies are not automatically reading preferences. Check whether the
+ // pupil actually wants to read about them before using them for ranking.
+ if(c.current==='free-time'&&!notReader&&!media.length&&!anchor&&delta.prefer.length&&!delta.avoid.length){
+  const ctx={...next,signals:current,hobbies:delta.prefer.slice(0,6),current:'hobby-focus'};
+  return {...envelope,advice:{kind:'question',reaction:'',question:questionView(questionForContext(ctx)),context:ctx}};
+ }
+ if((decline&&!delta.prefer.length&&!delta.avoid.length)||(c.current==='hobby-focus'&&selected?.id==='other')){
+  const ctx={...next,signals:current,hobbies:[],hypothesis:[],uncertain:0};
+  // A rejected question is not evidence that the pupil dislikes every
+  // topic associated with it. Offer a different direction instead.
+  const alternatives=['more-interests','watch','opening','free-time'];
+  const follow=alternatives.map(id=>BY_ID.get(id)).find(x=>!ctx.used.includes(x.id));
+  if(!follow||ctx.turns>=6)return {...envelope,recognized:true,clarify:false,advice:{kind:'offer',reaction:'Dat hoeft ook niet.',context:ctx}};
+  return {...envelope,recognized:true,clarify:false,advice:{kind:'question',reaction:'Dan kijken we naar iets anders.',question:questionView(follow),context:{...ctx,current:follow.id}}};
+ }
  const bookMention=String(text||'').match(/^(?:ik heb (?:het boek )?(.{2,100}?)\s+(?:gelezen|uitgelezen)|ik las (?:het boek )?(.{2,100}?)|ik vond het boek (.{2,100}?)(?:\s+(?:leuk|heel leuk|geweldig))?|(?:het )?boek (?:heet |is )?(.{2,100}?))[.!]?$/i);
  if(!selected&&!anchor&&bookMention&&!media.length&&!direct.avoid?.length){
   const candidate=bookMention.slice(1).find(Boolean)?.trim();
