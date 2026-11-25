@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const conversation=require('../student-choice-conversation');
 const root=path.join(__dirname,'..');
 const code=fs.readFileSync(path.join(root,'public','student-book-choice-chat.js'),'utf8');
 function node(tag='div'){
@@ -54,10 +55,8 @@ const fetchStub=async (url,options={})=>{
     return makeResponse(200,{recent:null,favorites:[]});
   }
   if(url==='/api/auth/student-pin/choice-interpret'){
-    const value=JSON.parse(options.body).text;
-    assert.ok(['Een mysterie zonder moord','misterie','Ik wil zelf aanwijzingen ontdekken','Het moet echt kunnen gebeuren','Een realistisch mysterie met aanwijzingen'].includes(value));
-    const prefer=value==='Ik wil zelf aanwijzingen ontdekken'?['puzzles']:value==='Het moet echt kunnen gebeuren'?['realistic']:value==='Een realistisch mysterie met aanwijzingen'?['mystery','puzzles','realistic']:['mystery'];
-    return makeResponse(200,{recognized:true,prefer,avoid:value==='Een mysterie zonder moord'?['murder']:[],labels:{mystery:'mysteries',murder:'moord',puzzles:'zelf raadsels oplossen',realistic:'realistische verhalen'}});
+    const body=JSON.parse(options.body);
+    return makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
   }
   if(url==='/api/auth/student-pin/choice-next'){
     const payload=JSON.parse(options.body);
@@ -187,12 +186,12 @@ vm.runInNewContext(code,{
   await submitOpen('misterie');
   assert.equal(suggestRequests.length,countBeforeOpen,'A single genre must not trigger a search');
   const firstOpenPrompt=log.children.at(-1).children[0].textContent;
-  assert.match(firstOpenPrompt,/mysterie|omgeving/);
+  assert.match(firstOpenPrompt,/mysterie|onderwerpen|films|series/);
   assert.ok(!log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
   await submitOpen('misterie');
   const secondOpenPrompt=log.children.at(-1).children[0].textContent;
   assert.notEqual(secondOpenPrompt,firstOpenPrompt);
-  assert.match(secondOpenPrompt,/mysterie|omgeving/);
+  assert.match(secondOpenPrompt,/mysterie|onderwerpen|films|series|interessant/);
   assert.equal(suggestRequests.length,countBeforeOpen,'Repeating the same preference is not detail');
   await submitOpen('Ik wil zelf aanwijzingen ontdekken');
   await new Promise(resolve=>setImmediate(resolve));

@@ -12,6 +12,7 @@ const {workKey}=require('./book-reservations');
 const moderation=require('./student-choice-moderation');
 const guestModeration=require('./student-choice-guest');
 const {interpret,LABELS}=require('./student-choice-open-text');
+const conversation=require('./student-choice-conversation');
 const dialogue=require('./student-choice-dialogue');
 const {attachDerivedThemeFields}=require('./book-theme-normalization');
 const DATA_PATH=process.env.BOEKENBAAI_DATA_PATH
@@ -130,13 +131,18 @@ function choiceStatus(credentials){
  const db=loadDb(),access=choiceAccess(db,credentials);
  return access.identity?{warned:moderation.state(db,access.identity.studentId).warned}:guestModeration.status(access.guest);
 }
-async function interpretAnswer({grant,sessionToken,guest,text}){
+async function interpretAnswer({grant,sessionToken,guest,text,context,consent=false}){
  let result;
  await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
   mutate:db=>{
    const access=choiceAccess(db,{grant,sessionToken,guest});
    const outcome=access.identity?moderation.apply(db,access.identity.studentId,text):guestModeration.apply(access.guest,text,db.books||[]);
-   result=outcome.kind==='normal'?{...interpret(text),labels:LABELS,moderation:'normal'}:{moderation:outcome.kind,guest:!access.identity};
+   if(outcome.kind==='normal'){
+     const recent=consent===true&&access.identity?pastQuestions(db,access.identity.studentId):[];
+     const safe=conversation.cleanContext(context);
+     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',recent:[...safe.recent,...recent].slice(-40)};
+     result={...conversation.analyze(text,ctx,(db.books||[]).map(attachDerivedThemeFields)),moderation:'normal'};
+   }else result={moderation:outcome.kind,guest:!access.identity};
    return access.identity&&outcome.changed?db:false;
   }});
  // Throw only AFTER the transaction persists the block.
@@ -198,6 +204,11 @@ function personalContext({grant,sessionToken}){
   return {recent,favorites};
 }
 const RECENT_DAYS=90;
+function pastQuestions(db,id){
+ const row=(db.studentChoiceSeen||[]).find(x=>x.studentId===id);
+ if(!row||!Number.isFinite(Date.parse(row.updatedAt))||Date.parse(row.updatedAt)<Date.now()-RECENT_DAYS*86400000)return [];
+ return conversation.cleanContext({recent:row.questionIds}).recent;
+}
 function pastKeys(db,studentId){
   const entry=(db.studentChoiceSeen||[]).find(x=>x.studentId===studentId);
   if(!entry||!Number.isFinite(Date.parse(entry.updatedAt))||
@@ -225,6 +236,8 @@ async function suggestions({grant,sessionToken,guest,choices,anonymous=false}){
       if(identity&&result.suggestions.length){
         if(!Array.isArray(db.studentChoiceSeen))db.studentChoiceSeen=[];
         const prior=pastKeys(db,identity.studentId);
+        const priorQuestions=pastQuestions(db,identity.studentId);
+        const newQuestions=choices?.useReadingHistory===true?conversation.cleanContext({used:choices.questionIds}).used:[];
         db.studentChoiceSeen=db.studentChoiceSeen.filter(x=>
           x.studentId!==identity.studentId &&
           Number.isFinite(Date.parse(x.updatedAt)) &&
@@ -232,6 +245,7 @@ async function suggestions({grant,sessionToken,guest,choices,anonymous=false}){
         const keys=[...prior,...result.suggestions.map(x=>x.key)];
         db.studentChoiceSeen.push({
           studentId:identity.studentId,keys:[...new Set(keys)].slice(-240),
+          questionIds:[...new Set([...priorQuestions,...newQuestions])].slice(-40),
           updatedAt:new Date().toISOString(),
         });
       }

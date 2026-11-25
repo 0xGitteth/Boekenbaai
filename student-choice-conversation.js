@@ -2,6 +2,7 @@
 const crypto=require('node:crypto');
 const {interpret,validateSignals,LABELS}=require('./student-choice-open-text');
 const {traitsForBook}=require('./student-choice-dialogue');
+const {isHidden}=require('./book-catalog-integrity');
 // Every fallback answer has an explicit, validated mapping. No AI service,
 // inferred personal attributes, free-text logging or fabricated book facts.
 const Q=[];
@@ -132,7 +133,7 @@ function profiles(books,signals){
  // Public catalogue only. The normal trait cache avoids repeated metadata parsing.
  const seen=new Set(),rows=[];
  for(const b of (Array.isArray(books)?books:[])){
-  if(!b?.title||b.catalogHidden===true||b.personalLoanOnly===true)continue;
+  if(!b?.title||isHidden(b))continue;
   const key=normalize(b.title)+'|'+normalize(b.author);
   if(seen.has(key))continue;seen.add(key);
   const traits=traitsForBook(b);
@@ -188,7 +189,7 @@ function analyze(text,rawContext={},books=[]){
  let anchor=null;
  if(!media.length&&value.length>=5){
   const name=normalize(input.replace(/^(?:ik vond|ik las|ik heb|ik lees)\s+/i,'').replace(/\s+(?:leuk|gelezen|uitgelezen)$/i,''));
-  const matches=(books||[]).filter(b=>b?.id&&b.catalogHidden!==true&&b.personalLoanOnly!==true&&normalize(b.title)===name);
+  const matches=(books||[]).filter(b=>b?.id&&!isHidden(b)&&normalize(b.title)===name);
   if(matches.length&&new Set(matches.map(b=>normalize(b.author))).size===1){
    anchor={title:String(matches[0].title).slice(0,200),bookId:matches[0].id};
    hypothesis.push(...[...traitsForBook(matches[0])].filter(([,v])=>v>=1).map(([k])=>k).slice(0,6));
@@ -211,18 +212,17 @@ function analyze(text,rawContext={},books=[]){
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
  if(!selected&&!direct.recognized&&!media.length&&!anchor&&!notReader&&length===c.length){
-  if(uncertain)return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
+  if(uncertain||c.uncertain>=1)return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
   return {...envelope,advice:{kind:'clarify',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
  }
  // A named reference can change the direction even if there is no direct trait.
  const possible=validateSignals({prefer:hypothesis}).prefer;
  let reaction='';
  if(media.length||anchor){
-  reaction=media.length===1?'Wat leuk dat je '+media[0]+' noemt.':anchor?'Wat sprak je aan in '+anchor.title+'?':'Wat spreekt je aan in die games of series?';
+  reaction=anchor?'Wat sprak je aan in '+anchor.title+'?':'';
   const follow=chooseQuestion(next,updated,books,possible);
   if(possible.length){
    // Present a tentative, open question before inferring anything from media.
-   const labels=possible.slice(0,3).map(t=>LABELS[t]||t);
    const candidate=follow||BY_ID.get('more-interests');
    const view=questionView(candidate);
    return {...envelope,advice:{kind:'question',reaction:media.length?reaction:'',
@@ -232,11 +232,12 @@ function analyze(text,rawContext={},books=[]){
  }
  if(notReader)reaction='Dan beginnen we bij wat je buiten het lezen leuk vindt.';
  const p=updated.prefer,axisCount=families(p);
+ const topicDetail=p.some(t=>['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const focused=p.some(t=>['psychology','manipulation','criminalPerspective','police','disappearance','secrets','puzzles','magic','competition','team','war','survival','true','realistic','animalLoss'].includes(t));
- const enough=p.length>=3&&axisCount>=2&&focused || next.turns>=2&&hasNew&&p.length>=2&&axisCount>=2;
+ const enough=(p.length>=3&&axisCount>=2&&focused)||(next.turns>=2&&hasNew&&p.length>=2&&(axisCount>=2||topicDetail));
  if(enough&&!notReader)return {...envelope,advice:{kind:'recommend',reaction,context:next}};
  if(next.turns>=6)return {...envelope,advice:{kind:'offer',reaction,context:next}};
- const follow=chooseQuestion(next,updated,books,delta.prefer,notReader?'free-time':!p.length?'opening':'');
+ const follow=chooseQuestion(next,updated,books,delta.prefer,notReader?'free-time':!p.length?'more-interests':'');
  if(!follow)return {...envelope,advice:{kind:'offer',reaction,context:next}};
  return {...envelope,advice:{kind:'question',reaction,question:questionView(follow),context:{...next,current:follow.id}}};
 }

@@ -37,6 +37,13 @@ const LABELS={mystery:'mysteries',danger:'spanning',puzzles:'zelf raadsels oplos
  action:'actie',adventure:'avontuur',sport:'sport',animals:'dieren',nature:'natuur',
  science:'wetenschap',technology:'techniek',history:'geschiedenis',facts:'informatie',
  people:'personages',calm:'rustige verhalen',fast:'een snel tempo',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',team:'samenwerking',competition:'wedstrijden',murder:'moord',horror:'horror'};
+Object.assign(TERMS,{
+ choices:['moeilijke keuze','moeilijke keuzes','beslissingen','keuzes'],
+ challenge:['uitdaging','uitdagingen','iets bereiken','presteren'],
+ unusual:['onverklaarbaar','onverklaarbare gebeurtenissen','vreemde dingen','onverklaarbare dingen'],
+ discovery:['ontdekkingen','iets ontdekken','steeds iets meer ontdek'],
+});
+Object.assign(LABELS,{choices:'moeilijke keuzes',challenge:'uitdagingen',unusual:'onverklaarbare gebeurtenissen',discovery:'ontdekkingen'});
 const {THEMES}=require('./student-choice-themes');
 for(const [key,[label,terms]] of Object.entries(THEMES)){TERMS[key]=[...(TERMS[key]||[]),...terms];LABELS[key]=label;}
 const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();

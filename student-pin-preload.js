@@ -242,7 +242,7 @@ async function handleStudentPin(req, res, requestUrl) {
     const body=await parseBody(req,4096);
     if(typeof body.text!=='string'||!body.text.trim()||body.text.length>500)
       return sendJson(res,400,{message:'Schrijf maximaal 500 tekens.'});
-    return sendJson(res,200,await choice.interpretAnswer({...choiceCredentials(req,res,body),text:body.text}));
+    return sendJson(res,200,await choice.interpretAnswer({...choiceCredentials(req,res,body),text:body.text,context:body.context,consent:body.consent===true}));
   }
   if(isChoiceStatus){
     const body=await parseBody(req);

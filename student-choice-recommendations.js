@@ -656,7 +656,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
         }
       }
     }
-    if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
+    if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 14 : -12;
     // Free-time activity is deliberately not mapped to a book's genre.
     candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,explicitMatch,openMatches,
       score, tiebreak: tie(work.key, choice.seed) });
@@ -664,7 +664,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   candidates.sort((a,b) =>
     // When asking for books like a chosen reference, offer real matches
     // before unrelated fallback titles, even with reading-history consent.
-    (b.openMatches-a.openMatches)
+    (choice.length==='short'&&a.work.pages&&b.work.pages?Number(b.work.pages<=180)-Number(a.work.pages<=180):0)
+    || (b.openMatches-a.openMatches)
     || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
     || (anchorTraits.size&&choice.referenceBookId
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)

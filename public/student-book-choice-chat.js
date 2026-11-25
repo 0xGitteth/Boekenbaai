@@ -15,7 +15,8 @@
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
   let currentQuestion=null,questionHistory=[],readingConsent=false;
-  let usedOpenPrompts=new Set(),openTurn=0,openFollowupCount=0;
+  let adviceContext=null,adviceQuestion=null;
+  const recentAdviceQuestions=new Set();
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
     if(className)x.className=className;
@@ -113,7 +114,7 @@
     active=false;busy=false;personal=false;firstName='';readingConsent=false;
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
-    currentQuestion=null;questionHistory=[];usedOpenPrompts=new Set();openTurn=0;openFollowupCount=0;
+    currentQuestion=null;questionHistory=[];adviceContext=null;adviceQuestion=null;
     shownInDialogue=new Set();
     if(oldGrant){
       // Invalidate on the server as well as forgetting the token in memory.
@@ -124,153 +125,110 @@
   function beginInterests(){
     answer('route','new');
   }
-  // A small, controlled conversational bank. The next prompt addresses a
-  // missing dimension of the confirmed interest rather than restating it.
-  const OPEN_FOLLOWUPS=[
-    {id:'mystery-clues',when:['mystery'],missing:['puzzles','twist'],prompt:'Wat vind je leuk aan een mysterie? Bijvoorbeeld zelf aanwijzingen ontdekken, of pas aan het einde verrast worden?'},
-    {id:'mystery-real',when:['mystery','danger'],missing:['realistic','fantasy','true'],prompt:'In wat voor omgeving zou dit verhaal zich mogen afspelen? Iets dat echt kan gebeuren, of juist fantasie?'},
-    {id:'danger-action',when:['danger'],missing:['action','fast','slow'],prompt:'Wat maakt een boek voor jou spannend? Vertel bijvoorbeeld of je houdt van veel actie of juist langzaam opgebouwde spanning.'},
-    {id:'humor-setting',when:['humor'],missing:['school','friendship','fantasy'],prompt:'Waar kun je om lachen in een verhaal? Denk aan grappige situaties op school, vrienden of iets totaal onverwachts.'},
-    {id:'sport-story',when:['sport'],missing:['true','friendship','facts','competition','team'],prompt:'Wat vind je leuk aan sportboeken? Bijvoorbeeld echte sportverhalen, wedstrijden of de mensen in een team.'},
-    {id:'fantasy-world',when:['fantasy'],missing:['adventure','technology','magic'],prompt:'Wat spreekt je aan in een fantasiewereld? Avonturen, bijzondere krachten of iets heel anders?'},
-    {id:'facts-topic',when:['facts','science','technology','history'],missing:['animals','nature','sport'],prompt:'Waar zou je meer over willen leren? Noem gerust een onderwerp dat jou nieuwsgierig maakt.'},
-    {id:'people',when:['people','friendship','relationships'],missing:['school','realistic','humor'],prompt:'Wat vind je interessant aan de personages? Hun vriendschappen, grappige situaties of problemen die ze meemaken?'},
-    {id:'length',when:[],missing:['fast','calm','slow'],prompt:'Hoe lees je het liefst? Een verhaal waarin meteen veel gebeurt of eentje dat rustig op gang komt?'},
-    {id:'avoid',when:[],missing:[],prompt:'Is er iets dat je juist niet in een boek wilt tegenkomen?'},
-    {id:'different',when:[],missing:[],prompt:'Wat zou een boek voor jou leuker maken dan de boeken die je normaal tegenkomt?'},
-  ];
-  // Synonyms and overlapping genre signals do not count as distinct detail.
-  const openAxes=[
-    ['mystery','danger','humor','adventure','horror','action','murder'],
-    ['puzzles','twist'],
-    ['realistic','true','fantasy','school'],
-    ['friendship','relationships','people','team'],
-    ['sport','animals','nature','science','technology','history','facts','competition'],
-    ['fast','calm','slow'],
-  ];
-  function openDetailCount(signals){
-    const preferred=new Set(signals?.prefer||[]);
-    return openAxes.filter(axis=>axis.some(t=>preferred.has(t))).length;
+  // The server selects the next open question and supplies corresponding
+  // example choices. Only normalized preferences and question IDs are retained.
+  function freshAdvice(){
+    adviceContext=null;adviceQuestion=null;
   }
-  function enoughOpenDetail(previous){
-    const dimensions=openDetailCount(choices.openSignals);
-    return dimensions>=3 || (openFollowupCount>=1&&dimensions>=2&&dimensions>openDetailCount(previous));
+  function advicePayload(optionId){
+    return {...(adviceContext||{}),signals:choices.openSignals||{prefer:[],avoid:[]},
+      length:choices.length||'any',seed,recent:[...recentAdviceQuestions].slice(-30),
+      ...(optionId===undefined?{}:{optionId})};
   }
-  function contextualPrompt(){
-    const signals=choices.openSignals||{prefer:[],avoid:[]};
-    const known=new Set([...signals.prefer,...signals.avoid]);
-    const candidates=OPEN_FOLLOWUPS.filter(q=>!usedOpenPrompts.has(q.id)
-      &&(!q.when.length||q.when.some(t=>signals.prefer.includes(t)))
-      &&!q.missing.some(t=>known.has(t)));
-    const specific=candidates.filter(q=>q.when.length);
-    const eligible=specific.length?specific:candidates;
-    const fresh=eligible.filter(q=>!recentOpenPromptsInTab.has(q.id));
-    const pool=fresh.length?fresh:eligible;
-    if(!pool.length)return null;
-    const index=Math.floor(Math.random()*pool.length);
-    const selected=pool[index];usedOpenPrompts.add(selected.id);
-    recentOpenPromptsInTab.add(selected.id);
-    if(recentOpenPromptsInTab.size>8)recentOpenPromptsInTab.delete(recentOpenPromptsInTab.values().next().value);
-    return selected.prompt;
-  }
-  function continueOpenAdvice(previous){
-    if(enoughOpenDetail(previous)){void showRecommendations();return;}
-    const prompt=openFollowupCount<3?contextualPrompt():null;
-    if(!prompt){
-      message('Ik weet al iets over wat je zoekt, maar nog niet precies wat voor verhaal bij je past. Zal ik met deze voorkeuren boeken voorstellen?');
-      options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],['Kies liever uit antwoorden',startExploration]]);
-      return;
+  function applyAdvice(plan){
+    adviceContext=plan.context;
+    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,
+      questionIds:plan.context.used};
+    if(plan.context.current&&plan.kind==='question'){
+      recentAdviceQuestions.add(plan.context.current);
+      if(recentAdviceQuestions.size>20)recentAdviceQuestions.delete(recentAdviceQuestions.values().next().value);
     }
-    openFollowupCount++;
-    offerOpenAnswer(prompt,{refinement:true,previous});
   }
-  function sayOpenSummary(result){
-    const names=keys=>keys.map(k=>result.labels?.[k]||k).join(', ');
-    const parts=[];
-    const n=openTurn++;
-    if(result.prefer?.length){
-      const starts=['Ik zoek naar boeken met ','Dan let ik op ','Ik neem dit mee: '];
-      parts.push(starts[n%starts.length]+names(result.prefer)+'.');
+  function showAdviceExamples(q){
+    adviceQuestion=q||adviceQuestion;
+    if(!adviceQuestion){offerOpenAnswer('');return;}
+    message(adviceQuestion.examples||'Misschien helpt het als ik een paar voorbeelden geef.');
+    const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
+    options([...items,['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
+      ['Weet ik nog steeds niet',()=>{message('Geen probleem. We kunnen ook naar een ander onderwerp kijken.');startExploration();}],
+      ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
+  }
+  function continueAdvice(plan){
+    applyAdvice(plan);
+    if(plan.reaction)message(plan.reaction);
+    if(plan.kind==='question'){
+      offerOpenAnswer(plan.question.prompt,plan.question);
+    }else if(plan.kind==='recommend'){
+      message('Ik denk dat ik genoeg weet om een paar boeken voor je uit te zoeken.');
+      void showRecommendations();
+    }else if(plan.kind==='offer'){
+      message('Ik weet al iets over wat je zoekt. Zal ik daarmee een paar boeken voorstellen?');
+      options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],
+        ['Ontdek meer interesses',startExploration]]);
+    }else if(plan.kind==='examples'){
+      showAdviceExamples(plan.question);
+    }else{
+      adviceQuestion=plan.question||adviceQuestion;
+      message('Ik weet nog niet precies wat je bedoelt. Kun je het anders uitleggen?');
+      offerOpenAnswer('',adviceQuestion);
     }
-    if(result.avoid?.length)parts.push('Ik houd rekening met je wens om '+names(result.avoid)+' te vermijden.');
-    message(parts.join(' ')+(result.avoid?.length?' Klopt dat?':''));
   }
-  // Open answers supplement, rather than replace, the accessible buttons.
-  // Never submit raw text as a recommendation-history field.
-  function offerOpenAnswer(prompt='Vertel in je eigen woorden wat je zoekt.',{refinement=false,previous=null}={}){
+  async function submitAdvice(value,optionId,alreadyShown=false){
+    if(!active||busy||!value.trim())return;
+    if(!alreadyShown)message(value,'student');
+    clearActions();busy=true;const marker=epoch;notice('Je antwoord bekijken…');
+    try{
+      const result=await api('/api/auth/student-pin/choice-interpret',{text:value.slice(0,500),
+        context:advicePayload(optionId),consent:readingConsent,...(grant?{choiceGrant:grant}:{})});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      if(result.moderation==='redirect'||result.moderation==='warning'){
+        message(result.moderation==='warning'
+          ?result.guest
+            ?'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, stop ik dit gesprek.'
+            :'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, blokkeer ik deze functie. Je mentor moet hem dan weer openzetten.'
+          :'Dit helpt me nog niet om een boek voor je te zoeken. Vertel iets over wat je graag leest.');
+        offerOpenAnswer('',adviceQuestion);
+        return;
+      }
+      const plan=result.advice;
+      if(!plan){throw Error('De keuzehulp kon geen vervolgvraag bepalen.');}
+      if(result.avoid?.length){
+        const labels=result.avoid.map(t=>result.labels?.[t]||t).join(', ');
+        message('Je wilt '+labels+' liever vermijden. Klopt dat?');
+        options([['Ja, ga verder',()=>continueAdvice(plan)],
+          ['Pas mijn antwoord aan',()=>offerOpenAnswer('Vertel het nog eens in je eigen woorden.',adviceQuestion)]]);
+      }else continueAdvice(plan);
+    }catch(err){
+      if(!active||marker!==epoch)return;
+      busy=false;notice(err.message||'Je antwoord kon niet worden verwerkt.');
+      options([['Opnieuw proberen',()=>offerOpenAnswer('',adviceQuestion)],['Kies liever uit antwoorden',startExploration]]);
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
+  function offerOpenAnswer(prompt='Waar lees je graag over?',question=null){
     if(prompt)message(prompt);
+    adviceQuestion=question;
     clearActions();
     const form=el('form','bb-choice-chat__free');
     const label=el('label','','Jouw antwoord');
     label.setAttribute('for','bb-choice-free-text');
-    const input=el('textarea');
-    input.id='bb-choice-free-text';input.maxLength=500;input.rows=3;
-    input.placeholder='Bijvoorbeeld: een mysterie zonder moord';
-    input.required=true;
+    const input=el('textarea');input.id='bb-choice-free-text';input.maxLength=500;input.rows=3;
+    input.placeholder='Typ je antwoord';input.required=true;
     const submit=el('button','btn btn--primary','Verstuur');submit.type='submit';
-    const back=el('button','btn btn--secondary','Kies liever uit antwoorden');back.type='button';
-    back.addEventListener('click',()=>{if(!busy)startExploration();});
-    form.append(label,input,submit,back);
-    if(refinement){
-      const skip=el('button','btn btn--secondary','Toon boeken met wat je nu weet');skip.type='button';
-      skip.addEventListener('click',()=>{if(active&&!busy)void showRecommendations();});
-      form.append(skip);
-      if(previous){
-        const correct=el('button','btn btn--secondary','Pas mijn vorige antwoord aan');correct.type='button';
-        correct.addEventListener('click',()=>{if(!active||busy)return;choices.openSignals=previous;openFollowupCount=Math.max(0,openFollowupCount-1);offerOpenAnswer('Vertel nog eens wat je bedoelde.');});
-        form.append(correct);
-      }
-    }
-    actions.append(form);input.focus();
-    form.addEventListener('submit',async event=>{
-      event.preventDefault();
-      if(!active||busy||!input.value.trim())return;
-      const value=input.value.trim().slice(0,500);
-      message(value,'student');input.value='';busy=true;submit.disabled=true;input.disabled=true;
-      const marker=epoch;notice('Je antwoord bekijken…');
-      try{
-        const result=await api('/api/auth/student-pin/choice-interpret',{text:value,...(grant?{choiceGrant:grant}:{})});
-        if(!active||marker!==epoch)return;
-        busy=false;notice('');
-        if(result.moderation==='redirect'||result.moderation==='warning'){
-          message(result.moderation==='warning'
-            ?result.guest
-              ?'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, stop ik dit gesprek.'
-              :'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, blokkeer ik deze functie. Je mentor moet hem dan weer openzetten.'
-            :'Dit helpt me nog niet om een boek voor je te zoeken. Vertel iets over wat je graag leest.');
-          options([['Opnieuw antwoorden',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration]]);
-          return;
-        }
-        if(!result.recognized){
-          const unsure=['Ik weet niet zeker wat je bedoelt. Kun je iets zeggen over het onderwerp, de sfeer of wat je juist niet wilt lezen?',
-            'Ik kan daar nog geen passende boeken bij zoeken. Noem bijvoorbeeld een onderwerp of iets dat je leuk vindt in een verhaal.',
-            'Ik herken nog geen duidelijke leesvoorkeur. Wil je het anders uitleggen of liever een paar boeken zien?'];
-          message(unsure[openTurn++%unsure.length]);
-          options([['Ik wil het opnieuw uitleggen',()=>offerOpenAnswer('',{refinement,previous})],['Kies liever uit antwoorden',startExploration],...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[['Laat me drie boeken zien',()=>answer('route','surprise')]])]);
-          return;
-        }
-        sayOpenSummary(result);
-        const old=choices.openSignals||{prefer:[],avoid:[]};
-        const confirmed=()=>{
-          const prefer=new Set(old.prefer),avoid=new Set(old.avoid);
-          for(const k of result.prefer||[]){avoid.delete(k);prefer.add(k);}
-          for(const k of result.avoid||[]){prefer.delete(k);avoid.add(k);}
-          choices={...choices,route:'new',openSignals:{prefer:[...prefer],avoid:[...avoid]}};
-        };
-        const next=()=>{confirmed();continueOpenAdvice(old);};
-        if(result.avoid?.length){
-          options([
-            ['Ja, ga verder',next],
-            ['Pas mijn antwoord aan',()=>offerOpenAnswer('Vertel het nog eens in je eigen woorden.',{refinement,previous})],
-            ['Kies liever uit antwoorden',startExploration],
-          ]);
-        }else next();
-      }catch(err){
-        if(!active||marker!==epoch)return;
-        busy=false;notice(err.message||'Je antwoord kon niet worden verwerkt.');
-        options([['Opnieuw proberen',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration]]);
-      }finally{if(active&&marker===epoch)busy=false;}
+    const help=el('button','btn btn--secondary','Ik weet het niet / geef voorbeelden');help.type='button';
+    help.addEventListener('click',()=>{
+      if(!active||busy)return;
+      if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');
     });
+    form.append(label,input,submit,help);
+    if(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length){
+      const skip=el('button','btn btn--secondary','Toon boeken met wat je nu weet');skip.type='button';
+      skip.addEventListener('click',()=>{if(active&&!busy)void showRecommendations();});form.append(skip);
+    }
+    const correct=el('button','btn btn--secondary','Ik wil opnieuw beginnen');correct.type='button';
+    correct.addEventListener('click',()=>{if(active&&!busy){choices={route:'new'};freshAdvice();offerOpenAnswer();}});
+    form.append(correct);actions.append(form);input.focus();
+    form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
   }
   function selectReference(book,read){
     message(read?'Wat vond je leuk aan '+book.title+'?':'Wat spreekt je aan in '+book.title+'?');
@@ -297,8 +255,8 @@
     message('Wil je ontdekken wat je leuk vindt of zal ik je drie boeken voorstellen?');
     currentStep='route';
     options([
+      ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
       ['Ontdek mijn interesses',beginInterests],
-      ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};offerOpenAnswer();}],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }
@@ -332,7 +290,7 @@
   }
   function finishIdentity(){
     readingConsent=false;
-    choices={};openFollowupCount=0;usedOpenPrompts=new Set();
+    choices={};freshAdvice();
     if(!personal){offerGeneral();return;}
     message((firstName?'Hoi '+firstName+'! ':'')+'Mag ik rekening houden met de boeken die je eerder hebt uitgelezen of bewaard?');
     options([
@@ -678,7 +636,7 @@
         : [['Andere richting',()=>{choices={route:'new'};startExploration();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
-      ['Vertel wat je anders wilt',()=>offerOpenAnswer('Wat mis je in deze voorstellen?')],
+      ['Vertel wat je anders wilt',()=>{freshAdvice();offerOpenAnswer('Wat spreekt je niet aan in deze voorstellen?');}],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
