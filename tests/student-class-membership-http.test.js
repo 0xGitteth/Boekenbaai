@@ -71,21 +71,21 @@ async function login(username){
   try{
     await start();
     const pupil=await login('pupil-one');
-    assert.deepEqual(pupil.data.user.classIds,['new']);
-    assert.deepEqual(pupil.data.user.classNames,['Onderbouw BKT']);
-    const me=await fetchApi('/api/me',pupil.data.token);
+    assert.deepEqual(pupil.user.classIds,['new']);
+    assert.deepEqual(pupil.user.classNames,['Onderbouw BKT']);
+    const me=await fetchApi('/api/me',pupil.token);
     assert.equal(me.status,200);
     assert.equal(me.data.grade,'Vorige klas',
       'Keep legacy stored grade without calling it the current class');
     assert.deepEqual(me.data.classIds,['new']);
     assert.deepEqual(me.data.classNames,['Onderbouw BKT']);
     const oldTeacher=await login('teacher-old');
-    const oldList=await fetchApi('/api/students',oldTeacher.data.token);
+    const oldList=await fetchApi('/api/students',oldTeacher.token);
     assert.equal(oldList.status,200);
     assert.deepEqual(oldList.data.map(s=>s.id),['pupil-two'],
       'A previous mentor must not see the pupil now in another class');
     const newTeacher=await login('teacher-new');
-    const newList=await fetchApi('/api/students',newTeacher.data.token);
+    const newList=await fetchApi('/api/students',newTeacher.token);
     assert.equal(newList.status,200);
     assert.deepEqual(newList.data.map(s=>s.id),['pupil-one']);
     assert.deepEqual(newList.data[0].classNames,['Onderbouw BKT']);
