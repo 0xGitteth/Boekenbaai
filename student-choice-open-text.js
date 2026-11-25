@@ -4,7 +4,7 @@
 const TERMS={
  mystery:['mysterie','mysteries','raadsel','raadsels','detective','detectives','mystery','mysterieuze','geheim','geheimen','misterie','misteries','mysteri','detectief'],
  danger:['spannend','spannende','spanning','gevaar','gevaarlijk','thriller','thrillers','spanend','spanende','thriler','triller','thrilerboek'],
- puzzles:['puzzelen','puzzel','puzzels','aanwijzingen','zelf oplossen','zelf meedenken','raadsel oplossen','speuren'],
+ puzzles:['puzzelen','puzzel','puzzels','aanwijzingen','zelf oplossen','zelf meedenken','raadsel oplossen','speuren','zelf aanwijzingen','zelf ontdekken wie','zelf ontdekken wat','zelf achterhalen','zelf uitzoeken','zelf bedenken wie','meedenken'],
  realistic:['realistisch','realistische','echt kan gebeuren','echt kunnen gebeuren','herkenbaar','herkenbare'],
  true:['waargebeurd','waargebeurde','echt gebeurd','non fictie','non-fictie'],
  fantasy:['fantasy','fantasie','magie','draken','tovenaars','fantacy','fantasi','fentasy'],

@@ -6,6 +6,7 @@ assert.deepEqual(interpret('Iets spannends maar geen horror').avoid,['horror']);
 assert.ok(interpret('Een spannend verhaal, maar liever realistisch').prefer.includes('realistic'));
 assert.equal(interpret('Geen idee').recognized,false);
 assert.equal(interpret('mnu').recognized,false);
+assert.ok(interpret('Ik wil zelf ontdekken wie het gedaan heeft').prefer.includes('puzzles'));
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').prefer,['danger']);
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').avoid,['horror']);
 assert.deepEqual(interpret('misterie maar nie met moord').avoid,['murder']);

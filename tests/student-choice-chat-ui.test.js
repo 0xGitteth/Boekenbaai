@@ -55,8 +55,9 @@ const fetchStub=async (url,options={})=>{
   }
   if(url==='/api/auth/student-pin/choice-interpret'){
     const value=JSON.parse(options.body).text;
-    assert.ok(['Een mysterie zonder moord','misterie'].includes(value));
-    return makeResponse(200,{recognized:true,prefer:['mystery'],avoid:value==='misterie'?[]:['murder'],labels:{mystery:'mysteries',murder:'moord'}});
+    assert.ok(['Een mysterie zonder moord','misterie','Ik wil zelf aanwijzingen ontdekken','Het moet echt kunnen gebeuren','Een realistisch mysterie met aanwijzingen'].includes(value));
+    const prefer=value==='Ik wil zelf aanwijzingen ontdekken'?['puzzles']:value==='Het moet echt kunnen gebeuren'?['realistic']:value==='Een realistisch mysterie met aanwijzingen'?['mystery','puzzles','realistic']:['mystery'];
+    return makeResponse(200,{recognized:true,prefer,avoid:value==='Een mysterie zonder moord'?['murder']:[],labels:{mystery:'mysteries',murder:'moord',puzzles:'zelf raadsels oplossen',realistic:'realistische verhalen'}});
   }
   if(url==='/api/auth/student-pin/choice-next'){
     const payload=JSON.parse(options.body);
@@ -163,39 +164,48 @@ vm.runInNewContext(code,{
   free.children[1].value='Een mysterie zonder moord';
   await free.listeners.submit({preventDefault(){}});
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
-  actions.children.find(x=>x.textContent==='Ja, zoek boeken').listeners.click();
+  actions.children.find(x=>x.textContent==='Ja, ga verder').listeners.click();
+  assert.equal(actions.children[0].tag,'form','Confirming an exclusion must lead to a real follow-up');
+  actions.children[0].children.find(x=>x.textContent==='Toon boeken met wat je nu weet').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:['murder']});
   assert.equal(suggestRequests.at(-1).choices.useReadingHistory,true);
   assert.ok(!JSON.stringify(suggestRequests.at(-1)).includes('Een mysterie zonder moord'));
 
-  // Clear positive answers don't require a separate confirmation. The pupil
-  // can request a relevant follow-up, and the prompt is not repeated.
+  // Broad interests automatically start a meaningful follow-up.
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
   actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
-  async function submitMystery(){
+  async function submitOpen(value){
     const form=actions.children[0];
-    form.children[1].value='misterie';
+    assert.equal(form.tag,'form');
+    form.children[1].value=value;
     await form.listeners.submit({preventDefault(){}});
   }
-  await submitMystery();
-  assert.ok(actions.children.some(x=>x.textContent==='Zoek passende boeken'));
-  assert.ok(!log.children.at(-1).children[0].textContent.includes('Klopt dat?'));
-  actions.children.find(x=>x.textContent==='Vraag me nog iets').listeners.click();
+  const countBeforeOpen=suggestRequests.length;
+  await submitOpen('misterie');
+  assert.equal(suggestRequests.length,countBeforeOpen,'A single genre must not trigger a search');
   const firstOpenPrompt=log.children.at(-1).children[0].textContent;
   assert.match(firstOpenPrompt,/mysterie|omgeving/);
-  await submitMystery();
-  actions.children.find(x=>x.textContent==='Vraag me nog iets').listeners.click();
+  assert.ok(!log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
+  await submitOpen('misterie');
   const secondOpenPrompt=log.children.at(-1).children[0].textContent;
   assert.notEqual(secondOpenPrompt,firstOpenPrompt);
   assert.match(secondOpenPrompt,/mysterie|omgeving/);
-  await submitMystery();
-  actions.children.find(x=>x.textContent==='Zoek passende boeken').listeners.click();
+  assert.equal(suggestRequests.length,countBeforeOpen,'Repeating the same preference is not detail');
+  await submitOpen('Ik wil zelf aanwijzingen ontdekken');
   await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:[]});
+  assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery','puzzles'],avoid:[]});
   assert.equal(suggestRequests.at(-1).choices.useReadingHistory,false);
+  // A detailed initial answer can go directly to recommendations.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  await submitOpen('Een realistisch mysterie met aanwijzingen');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery','puzzles','realistic'],avoid:[]});
 
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
