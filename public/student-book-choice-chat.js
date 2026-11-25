@@ -10,7 +10,6 @@
 
   const seenInTab=new Set();
   const recentQuestionsInTab=new Set();
-  const recentOpenPromptsInTab=new Set();
   let active=false,epoch=0,grant='',personal=false,firstName='',previousFocus=null;
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
@@ -138,7 +137,7 @@
   function applyAdvice(plan){
     adviceContext=plan.context;
     choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,
-      questionIds:plan.context.used};
+      questionIds:[...new Set([...(plan.context.used||[]),...(plan.kind==='question'?[plan.context.current]:[])])]};
     if(plan.context.current&&plan.kind==='question'){
       recentAdviceQuestions.add(plan.context.current);
       if(recentAdviceQuestions.size>20)recentAdviceQuestions.delete(recentAdviceQuestions.values().next().value);
@@ -150,7 +149,7 @@
     message(adviceQuestion.examples||'Misschien helpt het als ik een paar voorbeelden geef.');
     const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
     options([...items,['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
-      ['Weet ik nog steeds niet',()=>{message('Geen probleem. We kunnen ook naar een ander onderwerp kijken.');startExploration();}],
+      ['Weet ik nog steeds niet',()=>{message('Geen probleem. Dan bekijken we een andere richting.');startExploration();}],
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
   function continueAdvice(plan){
@@ -231,17 +230,9 @@
     form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
   }
   function selectReference(book,read){
-    message(read?'Wat vond je leuk aan '+book.title+'?':'Wat spreekt je aan in '+book.title+'?');
-    const pick=preference=>{
-      choices={route:'new',referenceBookId:book.bookId,referencePreference:preference,answers:[]};
-      void showRecommendations();
-    };
-    options([
-      ['De spanning',()=>pick('spanning')],['De personages',()=>pick('personages')],
-      ['De omgeving of wereld',()=>pick('wereld')],['Het tempo',()=>pick('tempo')],
-      ['De sfeer',()=>pick('sfeer')],['Wat ik ervan leer',()=>pick('informatie')],
-      ['Weet ik niet',()=>pick('')],['Iets anders zoeken',beginInterests],
-    ]);
+    choices={route:'new',referenceBookId:book.bookId,answers:[]};freshAdvice();
+    const referenceQuestion=read?'Wat vond je leuk aan '+book.title+'?':'Wat spreekt je aan in '+book.title+'?';
+    offerOpenAnswer(referenceQuestion);
   }
   function offerFavorites(items){
     if(!items.length){offerGeneral();return;}
@@ -256,7 +247,8 @@
     currentStep='route';
     options([
       ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
-      ['Ontdek mijn interesses',beginInterests],
+      ['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
+      ['Liever alleen kiezen uit antwoorden',beginInterests],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }
@@ -632,7 +624,7 @@
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};startExploration();}]]
+        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer('Waar lees je graag over?');}]]
         : [['Andere richting',()=>{choices={route:'new'};startExploration();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),

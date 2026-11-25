@@ -76,6 +76,37 @@ add('pace',3,'danger action adventure','Wanneer blijf je graag doorlezen?','Wat 
  ['Als er snel iets gebeurt','fast'],['Als ik steeds iets meer ontdek','discovery'],['Als ik me in de personen kan verplaatsen','people empathy'],['Maakt niet uit','']]);
 add('reading-length',3,'','Hoeveel zin heb je om te lezen?','Een korter boek kan ook.',[
  ['Liever een kort boek','','short'],['Een dik boek is prima','','any'],['Maakt niet uit','','any']]);
+add('media-interest',1,'','Wat vind je leuk aan die verhalen of games?','Misschien helpen deze voorbeelden.',[]);
+add('book-interest',1,'','Wat sprak je aan in dat boek?','Wat vond je bijvoorbeeld leuk?',[
+ ['Het onderwerp',''],['Wat mensen meemaken','people'],['De spanning','danger'],['De humor','humor'],['Dat ik er iets van leerde','facts'],['De wereld waarin het speelt','setting']]);
+add('psychology-media',2,'psychology manipulation','Kijk je weleens naar films of series waarin je vooral wilt begrijpen waarom mensen iets doen?','Wat spreekt je bijvoorbeeld aan?',[
+ ['Waarom mensen elkaar vertrouwen of bedriegen','psychology secrets'],['De keuzes die iemand maakt','choices'],['Hoe mensen omgaan met elkaar','relationships'],['Waargebeurde verhalen','true']]);
+add('history-family',2,'history family','Ben je nieuwsgierig naar hoe mensen vroeger leefden?','Welk onderwerp lijkt je interessant?',[
+ ['Hoe gezinnen vroeger leefden','history family'],['Opgroeien in oorlogstijd','war growth'],['Een echt levensverhaal','history true'],['Iemand die iets uit het verleden ontdekt','history discovery']]);
+add('nature-world',2,'nature environment','Wat doe je graag buiten?','Waar zou je over kunnen lezen?',[
+ ['Wandelen of reizen','nature travel'],['Dieren bekijken','animals nature'],['Een avontuur meemaken','adventure'],['Meer weten over de natuur','nature facts']]);
+add('technology-world',2,'technology science future','Welke ontwikkelingen vind je interessant?','Denk bijvoorbeeld aan deze onderwerpen.',[
+ ['Robots en computers','technology'],['De ruimte','science'],['Hoe de wereld in de toekomst verandert','future society'],['Uitvindingen','science discovery']]);
+add('friends-life',2,'friendship relationships school','Wat vind je interessant aan hoe jongeren met elkaar omgaan?','Wat spreekt je aan?',[
+ ['Vrienden die elkaar helpen','friendship'],['Ruzies en vertrouwen','relationships secrets'],['Verliefd worden','relationships'],['Ergens bij willen horen','outsider'],['Eigen keuzes maken','choices growth']]);
+add('sport-goals',2,'sport growth challenge','Wat vind je leuk aan de verhalen van sporters?','Waar zou je nieuwsgierig naar zijn?',[
+ ['Hoe iemand beter wordt','growth'],['Omgaan met winnen en verliezen','competition'],['Vriendschap in een team','team friendship'],['Het echte leven van sporters','sport true']]);
+add('life-facts',2,'empathy health psychology','Lees je soms graag over ervaringen die mensen echt hebben meegemaakt?','Wat zou je aanspreken?',[
+ ['Hoe iemand met moeilijke gebeurtenissen omgaat','empathy'],['Een echt levensverhaal','true'],['Beter begrijpen hoe mensen denken','psychology'],['Iets leren over gezondheid','health facts']]);
+add('crime-reality',2,'crime disappearance police','Welke misdaadverhalen vind je op televisie of online interessant?','Wat kijk je bijvoorbeeld?',[
+ ['Waargebeurde misdaadverhalen','crime true'],['Documentaires over vermissingen','disappearance true'],['Verhalen over criminelen','criminalPerspective'],['Onderzoek naar een misdaad','police puzzles']]);
+add('art-stories',2,'art music','Volg je ook mensen die creatief bezig zijn?','Wat vind je daarin interessant?',[
+ ['Hoe iemand iets leert maken','growth art'],['De verhalen achter muziek','music people'],['Het leven van een kunstenaar','art true'],['Nieuwe ideeën en uitvindingen','discovery technology']]);
+add('social-world',2,'society justice','Welke onderwerpen uit het nieuws vind je interessant?','Welke richting spreekt je aan?',[
+ ['Mensen die voor hun rechten opkomen','justice'],['Hoe de samenleving werkt','society facts'],['Wat er in andere landen gebeurt','travel society'],['Oorlog en vrede','war history']]);
+add('fantasy-life',2,'fantasy magic adventure','Wat vind je leuk aan films die zich in een andere wereld afspelen?','Wat spreekt je aan?',[
+ ['Een bijzondere wereld ontdekken','adventure discovery'],['Magie','magic'],['Personages die samen iets meemaken','friendship'],['Gevaren overwinnen','challenge danger']]);
+add('war-human',2,'war history','Wat zou je willen weten over mensen die een oorlog hebben meegemaakt?','Waar ligt je interesse?',[
+ ['Het dagelijks leven','history people'],['Verzet en moeilijke keuzes','war choices'],['Vlucht en overleven','war survival'],['Waargebeurde ervaringen','true war']]);
+add('school-interest',1,'school outsider','Welke onderwerpen uit het leven van jongeren spreken je aan?','Wat zou je graag lezen?',[
+ ['Vriendschappen','friendship'],['Erbij horen','outsider'],['Wat iemand thuis meemaakt','family'],['Grappige gebeurtenissen','humor school'],['Eigen keuzes leren maken','growth']]);
+add('reading-barrier',2,'','Wat maakt lezen voor jou minder leuk?','Misschien herken je iets hiervan.',[
+ ['Lange boeken','', 'short'],['Dat er weinig gebeurt','fast'],['Onderwerpen die me niet interesseren',''],['Ik lees liever waargebeurde verhalen','true']]);
 const BY_ID=new Map(Q.map(q=>[q.id,q]));
 const MEDIA=[
  ['GTA',['gta','grand theft auto'],['crime','action','adventure']],
@@ -144,13 +175,19 @@ function profiles(books,signals){
  }
  return rows.sort((a,b)=>b.score-a.score).slice(0,24);
 }
+function questionForContext(c){
+ const q=BY_ID.get(c.current)||BY_ID.get('opening');
+ if(q.id!=='media-interest')return q;
+ const options=c.hypothesis.slice(0,7).map((key,i)=>({id:String(i),label:LABELS[key]||key,prefer:[key],length:''}));
+ return {...q,options};
+}
 function questionView(q){return q?{id:q.id,prompt:q.prompt,examples:q.examples,
  options:q.options.map(({id,label})=>({id,label}))}:null;}
 function chooseQuestion(context,signals,books,last=[],force=''){
  const p=signals.prefer, known=new Set([...p,...signals.avoid]);
  const used=new Set([...context.used,context.current]);
  const top=profiles(books,signals);
- const eligible=Q.filter(q=>!used.has(q.id)&&q.id!=='opening'
+ const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest'].includes(q.id)
   &&(!q.when.length||q.when.some(t=>p.includes(t)||context.hypothesis.includes(t)))
   &&(q.stage!==3||context.turns>=2||p.length>=3)
   &&(q.stage!==0||context.turns<=2)
@@ -172,7 +209,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  }).sort((a,b)=>b.score-a.score)[0]?.q||null;
 }
 function analyze(text,rawContext={},books=[]){
- const c=cleanContext(rawContext),q=BY_ID.get(c.current);
+ const c=cleanContext(rawContext),q=questionForContext(c);
  const value=normalize(text);
  const selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):null;
  const current=validateSignals(c.signals);
@@ -202,7 +239,23 @@ function analyze(text,rawContext={},books=[]){
  const uncertain=/^(?:ik )?(?:weet (?:het )?niet|weet ik niet|geen idee|idk|mnu|maakt niet uit|geen voorkeur|geen flauw idee)(?: eigenlijk| echt| hoor| haha| denk ik| lol)*$/.test(value);
  if(/\b(?:geen dikke boeken|niet zo dik|niet te dik|liever kort|kort boek|korte boeken|weinig pagina s|niet veel pagina s)\b/.test(value))length='short';
  if(/\b(?:dik boek is prima|lange boeken zijn prima|lengte maakt niet uit)\b/.test(value))length='any';
- const direct=selected?{...validateSignals({prefer:selected.prefer}),recognized:true,clarify:false}:interpret(input);
+ const contextualAliases={
+  'crime-interest':[['waarom ze dat doen','psychology'],['hoe ze gepakt worden','police'],['het leven van criminelen','criminalPerspective']],
+  'crime-psychology':[['waarom ze dat doen','psychology'],['hoe ze anderen beïnvloeden','manipulation'],['hoe ze gepakt worden','police']],
+  'mystery-interest':[['dat mensen dingen geheimhouden','secrets'],['waar mensen gebleven zijn','disappearance'],['zelf raden','puzzles']],
+  'psychology-interest':[['waarom ze dat doen','psychology'],['waarom iemand zo denkt','psychology']],
+  'real-fiction':[['waar gebeurd','true'],['als het echt gebeurd is','true'],['verzonnen maar realistisch','realistic']],
+  'story-facts':[['iets leren','facts'],['een echt verhaal','true']],
+  'animals-story':[['wel echt een verhaal','realistic'],['echt een verhaal','realistic']],
+  'sport-interest':[['echte sportverhalen','true'],['het winnen','competition']],
+  'fantasy-interest':[['bijzondere krachten','magic']],
+ };
+ let direct=selected?{...validateSignals({prefer:selected.prefer}),recognized:true,clarify:false}:interpret(input);
+ // Exact short contextual responses can be resolved without guessing.
+ if(!selected&&!direct.recognized&&!direct.avoid?.length){
+  const alias=(contextualAliases[c.current]||[]).find(([phrase])=>normalize(phrase)===value);
+  if(alias)direct={...validateSignals({prefer:[alias[1]]}),recognized:true,clarify:false};
+ }
  if(selected?.length)length=selected.length;
  const delta=validateSignals(direct);
  const updated=merged(current,delta);
@@ -218,23 +271,24 @@ function analyze(text,rawContext={},books=[]){
  // A named reference can change the direction even if there is no direct trait.
  const possible=validateSignals({prefer:hypothesis}).prefer;
  let reaction='';
- if(media.length||anchor){
-  reaction=anchor?'Wat sprak je aan in '+anchor.title+'?':'';
-  const follow=chooseQuestion(next,updated,books,possible);
-  if(possible.length){
-   // Present a tentative, open question before inferring anything from media.
-   const candidate=follow||BY_ID.get('more-interests');
-   const view=questionView(candidate);
-   return {...envelope,advice:{kind:'question',reaction:media.length?reaction:'',
-    question:{...view,prompt:anchor?reaction:media.length===1?'Wat vind je leuk aan '+media[0]+'?':'Wat vind je leuk aan die games of series?'},
-    context:{...next,current:candidate.id},hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
-  }
+ if((media.length||anchor)&&!next.used.includes('media-interest')&&!next.used.includes('book-interest')){
+   // A title is evidence about possible themes, never about the pupil's liking.
+   const candidate=anchor?'book-interest':'media-interest';
+   const mediaContext={...next,current:candidate};
+   const view=questionView(questionForContext(mediaContext));
+   return {...envelope,advice:{kind:'question',reaction:'',
+    question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat vind je leuk aan '+media[0]+'?':'Wat vind je leuk aan die games of series?'},
+    context:mediaContext,hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
  }
  if(notReader)reaction='Dan beginnen we bij wat je buiten het lezen leuk vindt.';
  const p=updated.prefer,axisCount=families(p);
  const topicDetail=p.some(t=>['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const focused=p.some(t=>['psychology','manipulation','criminalPerspective','police','disappearance','secrets','puzzles','magic','competition','team','war','survival','true','realistic','animalLoss'].includes(t));
- const enough=(p.length>=3&&axisCount>=2&&focused)||(next.turns>=2&&hasNew&&p.length>=2&&(axisCount>=2||topicDetail));
+ const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));
+ const enough=hasNew&&p.length>=2&&((p.length>=3&&axisCount>=2&&specific)
+   ||(next.turns>=2&&specific&&(axisCount>=2||topicDetail))
+   ||(next.turns>=2&&axisCount>=3)
+   ||(next.turns>=2&&length==='short'&&p.length>=2));
  if(enough&&!notReader)return {...envelope,advice:{kind:'recommend',reaction,context:next}};
  if(next.turns>=6)return {...envelope,advice:{kind:'offer',reaction,context:next}};
  const follow=chooseQuestion(next,updated,books,delta.prefer,notReader?'free-time':!p.length?'more-interests':'');

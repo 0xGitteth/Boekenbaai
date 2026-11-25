@@ -150,7 +150,7 @@ vm.runInNewContext(code,{
   assert.deepEqual(actions.children.map(x=>x.textContent),
     ['Ja, graag','Nee, iets nieuws ontdekken','Laat me drie boeken zien']);
   actions.children[1].listeners.click();
-  actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
+  actions.children.find(x=>x.textContent==='Liever alleen kiezen uit antwoorden').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
   elements.get('student-choice-close').listeners.click();
@@ -186,12 +186,12 @@ vm.runInNewContext(code,{
   await submitOpen('misterie');
   assert.equal(suggestRequests.length,countBeforeOpen,'A single genre must not trigger a search');
   const firstOpenPrompt=log.children.at(-1).children[0].textContent;
-  assert.match(firstOpenPrompt,/mysterie|onderwerpen|films|series/);
+  assert.match(firstOpenPrompt,/mysterie|onderwerpen|films|series|misdaad|interessant/);
   assert.ok(!log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
   await submitOpen('misterie');
   const secondOpenPrompt=log.children.at(-1).children[0].textContent;
   assert.notEqual(secondOpenPrompt,firstOpenPrompt);
-  assert.match(secondOpenPrompt,/mysterie|onderwerpen|films|series|interessant/);
+  assert.match(secondOpenPrompt,/mysterie|onderwerpen|films|series|interessant|misdaad/);
   assert.equal(suggestRequests.length,countBeforeOpen,'Repeating the same preference is not detail');
   await submitOpen('Ik wil zelf aanwijzingen ontdekken');
   await new Promise(resolve=>setImmediate(resolve));

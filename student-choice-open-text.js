@@ -6,7 +6,7 @@ const TERMS={
  danger:['spannend','spannende','spanning','gevaar','gevaarlijk','thriller','thrillers','spanend','spanende','thriler','triller','thrilerboek'],
  puzzles:['puzzelen','puzzel','puzzels','aanwijzingen','zelf oplossen','zelf meedenken','raadsel oplossen','speuren','zelf aanwijzingen','zelf ontdekken wie','zelf ontdekken wat','zelf achterhalen','zelf uitzoeken','zelf bedenken wie','meedenken'],
  realistic:['realistisch','realistische','echt kan gebeuren','echt kunnen gebeuren','herkenbaar','herkenbare'],
- true:['waargebeurd','waargebeurde','echt gebeurd','echte sportverhalen','echte verhalen','non fictie','non-fictie'],
+ true:['waargebeurd','waargebeurde','echt gebeurd','echte sportverhalen','echte verhalen','documentaires','documentaire','non fictie','non-fictie'],
  fantasy:['fantasy','fantasie','magie','draken','tovenaars','fantacy','fantasi','fentasy'],
  humor:['grappig','grappige','humor','lachen','komedie','grapig','grapige','humour','funny','comedy'],
  friendship:['vriendschap','vrienden','vriendinnen'],
@@ -42,6 +42,7 @@ Object.assign(TERMS,{
  challenge:['uitdaging','uitdagingen','iets bereiken','presteren'],
  unusual:['onverklaarbaar','onverklaarbare gebeurtenissen','vreemde dingen','onverklaarbare dingen'],
  discovery:['ontdekkingen','iets ontdekken','steeds iets meer ontdek'],
+ setting:['de wereld waarin het speelt','de omgeving','de wereld van het verhaal'],
 });
 Object.assign(LABELS,{choices:'moeilijke keuzes',challenge:'uitdagingen',unusual:'onverklaarbare gebeurtenissen',discovery:'ontdekkingen'});
 const {THEMES}=require('./student-choice-themes');
