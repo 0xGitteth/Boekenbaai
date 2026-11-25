@@ -45,8 +45,11 @@ assert.deepEqual(studentClassIds(db,db.students[0]),['new'],
 assert.equal(mayManageStudent(db,{id:'old-mentor',role:'teacher'},db.students[0]),false);
 assert.equal(mayManageStudent(db,{id:'new-mentor',role:'teacher'},db.students[0]),true);
 db.classes[1].studentIds=[];
+assert.deepEqual(studentClassIds(db,db.students[0]),[],
+  'An explicit class roster that excludes the pupil must not reinstate a stale class');
+db.classes[0].studentIds=undefined;
 assert.deepEqual(studentClassIds(db,db.students[0]),['old'],
-  'Account class should still work when no roster membership exists');
+  'Legacy classIds may be used only if the named class lacks any roster');
 
 const server=read('server.js'),app=read('public/app.js');
 const staff=read('public/staff.html');
