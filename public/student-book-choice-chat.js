@@ -78,7 +78,7 @@
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
   let currentQuestion=null,questionHistory=[],readingConsent=false;
-  let adviceContext=null,adviceQuestion=null;
+  let adviceContext=null,adviceQuestion=null,choiceMode=false;
   const recentAdviceQuestions=new Set();
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
@@ -250,7 +250,7 @@
     openingStudentId=null;openingToken='';
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
-    currentQuestion=null;questionHistory=[];adviceContext=null;adviceQuestion=null;
+    currentQuestion=null;questionHistory=[];adviceContext=null;adviceQuestion=null;choiceMode=false;
     shownInDialogue=new Set();
     if(oldGrant){
       // Invalidate on the server as well as forgetting the token in memory.
@@ -260,14 +260,15 @@
     log.replaceChildren();clearActions();notice('');
   }
   function beginInterests(){
+    choiceMode=true;
     if(adviceQuestion){showAdviceExamples(adviceQuestion);return;}
-    if(adviceContext?.current){void submitAdvice('Weet ik niet');return;}
+    if(adviceContext?.current){void submitAdvice('Weet ik niet',undefined,true);return;}
     answer('route','new');
   }
   // The server selects the next open question and supplies corresponding
   // example choices. Only normalized preferences and question IDs are retained.
   function freshAdvice(current='opening'){
-    adviceContext={current};adviceQuestion=null;
+    adviceContext={current};adviceQuestion=null;choiceMode=false;
   }
   function advicePayload(optionId){
     return {...(adviceContext||{}),signals:choices.openSignals||{prefer:[],avoid:[]},
@@ -284,12 +285,12 @@
       if(recentAdviceQuestions.size>20)recentAdviceQuestions.delete(recentAdviceQuestions.values().next().value);
     }
   }
-  function showAdviceExamples(q){
+  function showAdviceExamples(q,promptAlreadyVisible=false){
     adviceQuestion=q||adviceQuestion;
-    if(!adviceQuestion){offerOpenAnswer('');return;}
-    message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien zit hier iets tussen.'));
-    const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
-    options(items,[['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
+    if(!adviceQuestion?.options?.length){choiceMode=false;offerOpenAnswer('',adviceQuestion);return;}
+    if(!promptAlreadyVisible)message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien zit hier iets tussen.'));
+    const items=adviceQuestion.options.map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
+    options(items,[[choiceMode?'Zelf antwoorden':'Iets anders',()=>{choiceMode=false;offerOpenAnswer('Vertel maar.',adviceQuestion,true);}],
       ['Weet ik nog steeds niet',()=>void submitAdvice('Weet ik niet',undefined,true)],
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
@@ -304,7 +305,8 @@
       message('Bedoel je een boek met die titel? Ik kan kijken of ik het herken.');
       showReferenceSearch(plan.title);
     }else if(plan.kind==='question'){
-      offerOpenAnswer(plan.question.prompt,plan.question);
+      if(choiceMode&&plan.question?.options?.length){message(plan.question.prompt);showAdviceExamples(plan.question,true);}
+      else offerOpenAnswer(plan.question.prompt,plan.question);
     }else if(plan.kind==='recommend'){
       message('Eens kijken wat we voor je in de kast hebben! 📚');
       void showRecommendations();

@@ -180,11 +180,14 @@ vm.runInNewContext(code,{
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Misschien')));
   assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);
   const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
-  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Iets anders','Weet ik nog steeds niet']);
+  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet']);
   const example=actions.children.find(x=>x.className==='bb-choice-chat__option'&&/mysteries/i.test(x.textContent));
   assert.ok(example);example.listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(actions.children[0].tag,'form','A chosen example returns to the same conversation');
+  const continuedHelpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
+  assert.ok(continuedHelpers,'Choice mode continues with the same planner');
+  continuedHelpers.children[1].children.find(x=>x.textContent==='Zelf antwoorden').listeners.click();
+  assert.equal(actions.children[0].tag,'form','Free text is available again without resetting the conversation');
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children[0].listeners.click();
