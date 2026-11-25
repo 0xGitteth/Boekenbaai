@@ -208,13 +208,15 @@
   grid-column:1/-1;
   grid-row:1;
   display:grid;
-  grid-template-columns:24px minmax(0,1fr) 24px;
+  grid-template-columns:minmax(0,1fr) 24px 24px;
   align-items:center;
   gap:3px;
   width:100%;
   min-width:0;
 }
 .bb-choice-chat__suggestion-track{
+  grid-column:1;
+  grid-row:1;
   display:flex;
   flex-wrap:nowrap;
   align-items:center;
@@ -244,7 +246,10 @@
   padding:0;
   cursor:pointer;
 }
+.bb-choice-chat__suggestion-arrow:first-child{grid-column:2;grid-row:1;}
+.bb-choice-chat__suggestion-arrow:last-child{grid-column:3;grid-row:1;}
 .bb-choice-chat__suggestion-arrow:disabled{visibility:hidden;}
+#student-choice-dialog .bb-choice-chat__suggestion:focus-visible{outline-offset:-3px;}
 .bb-choice-chat__actions > .bb-choice-chat__suggestions{flex:1 0 100%;}
 #student-choice-dialog .bb-choice-chat__suggestion{
   appearance:none;
@@ -321,4 +326,9 @@
   padding:6px 10px;
   font-size:.86rem;
   font-weight:600;
+}
+
+/* Four answer choices use an even 2-by-2 layout, not three plus one. */
+.bb-choice-chat__actions:has(> .bb-choice-chat__option:nth-child(4):nth-last-child(2)):has(> .bb-choice-chat__suggestions) > .bb-choice-chat__option{
+  flex-basis:calc(50% - 7px);
 }
