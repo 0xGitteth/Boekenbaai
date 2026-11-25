@@ -361,11 +361,12 @@
     }
   }
   function startExploration(){
+    choices.route='new';
     choices.answers=[];
     // A fresh route must never be biased by an earlier reference book.
     delete choices.referenceBookId;
     delete choices.referencePreference;
-    delete choices.openSignals;
+    // Confirmed free-text preferences stay in effect when switching answer modes.
     questionHistory=[];
     currentQuestion=null;
     void askAdaptiveQuestion();
@@ -463,7 +464,7 @@
       // consent to include their personal reading history.
       const includeHistory=choices.route==='similar';
       choices={route:includeHistory?'similar':'new',
-        referenceBookId:item.bookId,answers:[]};
+        referenceBookId:item.bookId,answers:[],...(choices.openSignals?{openSignals:choices.openSignals}:{})};
       void showRecommendations();
     });
     main.append(similar);card.append(cover,main);

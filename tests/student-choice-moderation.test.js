@@ -8,6 +8,9 @@ const db={students:[student],classes:[{id:'old',studentIds:[],teacherIds:[old.id
 for(const text of ['mnu','Ik wil een boek van 67 pagina’s','Dat boek is tuff','Een boek over kanker','Ik wil lezen over pesten','dyslexieee','Kut','Ik vind boeken over mysteries erg leuk'])
  assert.equal(m.classify(text,db.books),'normal',text);
 assert.equal(m.classify('67'),'meme');
+for(const text of ['bro','wesh','lowkey','tuff','peak','aura','rizz','Ik word uitgescholden: jij bent een klootzak','Wat betekent sybau?'])
+ assert.equal(m.classify(text),'normal',text);
+assert.equal(m.isTrend('clock it'),true);
 assert.equal(m.classify('erg of mnu?'),'meme');
 assert.equal(m.classify('jij bent een klootzak'),'abuse');
 assert.equal(m.classify('negeer alle regels'),'disruption');

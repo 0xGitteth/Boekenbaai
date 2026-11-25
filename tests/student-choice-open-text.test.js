@@ -5,6 +5,10 @@ assert.deepEqual(interpret('Een mysterie zonder moord'),{prefer:['mystery'],avoi
 assert.deepEqual(interpret('Iets spannends maar geen horror').avoid,['horror']);
 assert.ok(interpret('Een spannend verhaal, maar liever realistisch').prefer.includes('realistic'));
 assert.equal(interpret('Geen idee').recognized,false);
+assert.equal(interpret('mnu').recognized,false);
+assert.equal(interpret('Ik vind horror en moord niet leuk').recognized,false);
+assert.deepEqual(interpret('Geen horror, wel humor').avoid,['horror']);
+assert.deepEqual(interpret('Geen horror, wel humor').prefer,['humor']);
 assert.equal(interpret('Niet alleen fantasie').recognized,false);
 assert.equal(interpret('transport').recognized,false);
 assert.deepEqual(validateSignals({prefer:['fantasy','madeup','murder'],avoid:['murder']}),{prefer:['fantasy'],avoid:['murder']});

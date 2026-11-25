@@ -44,13 +44,13 @@ function interpret(text){
  const normalized=normalize(text);
  // Questions, double negations, uncertainty and idiomatic negations are
  // not treated as facts about the learner. Ask them to confirm instead.
- if(/\b(?:niet alleen|niet dat|niet geen|geen hekel|weet niet|weet ik niet|geen idee|maakt niet uit|misschien)\b/.test(normalized))
+ if(/\b(?:niet alleen|niet dat|niet geen|geen hekel|weet niet|weet ik niet|geen idee|maakt niet uit|mnu|misschien)\b/.test(normalized))
   return {prefer:[],avoid:[],recognized:false,clarify:true};
  const signals=new Map();
  // Punctuation and contrast words reset negation scope. A comma/and/or
  // after a negative clause may still list things to avoid; confirmation
  // is always required and the learner can correct the interpretation.
- for(const clause of normalized.split(/[.!?;]|\b(?:maar|echter|wel graag|wel leuk|liever)\b/)){
+ for(const clause of normalized.split(/[.!?;]|\b(?:maar|echter|liever)\b|,\s*wel\b/)){
   const words=clause.replace(/[^a-z0-9-]+/g,' ').trim().split(/\s+/);
   for(const [trait,variants] of Object.entries(TERMS)){
    for(const variant of variants){
@@ -58,9 +58,20 @@ function interpret(text){
     for(let i=0;i<=words.length-parts.length;i++){
      if(!parts.every((w,j)=>words[i+j]===w))continue;
      const before=words.slice(0,i);
-     const after=words.slice(i+parts.length,i+parts.length+4);
-     const negative=before.some(w=>['geen','niet','zonder','vermijd','behalve','hekel'].includes(w))
-       ||after.join(' ').match(/^(?:vind ik )?(?:niet leuk|niet fijn|hoeft niet|wil ik niet)/);
+     const after=words.slice(i+parts.length);
+     const afterText=after.join(' ');
+     const negativeBefore=before.some(w=>['geen','niet','zonder','vermijd','behalve','hekel'].includes(w));
+     // A coordinated list before a trailing dislike predicate is ambiguous:
+     // "horror en moord niet leuk" must never label horror positive.
+     if(/^(?:en|of)\b.*\b(?:niet leuk|niet fijn|wil ik niet|hoeft niet)\b/.test(afterText))
+       return {prefer:[],avoid:[],recognized:false,clarify:true};
+     const lastWel=before.lastIndexOf('wel');
+     const preceding=lastWel>=0?before.slice(lastWel+1):before;
+     const negative=preceding.some(w=>['geen','niet','zonder','vermijd','behalve','hekel'].includes(w))
+       ||/^(?:vind ik )?(?:niet leuk|niet fijn|hoeft niet|wil ik niet)/.test(afterText);
+     // Don't silently split an unmarked negative list at a comma.
+     if(negativeBefore&&lastWel<0&&before.includes('ook')&&before.includes('niet'))
+       return {prefer:[],avoid:[],recognized:false,clarify:true};
      signals.set(trait,negative?'avoid':'prefer');
     }
    }

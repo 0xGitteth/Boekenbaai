@@ -422,7 +422,10 @@
         try{
           const status=await api(route(endpoint+'status'),{method:'POST',body:{}});
           if(!dialog.isConnected)return;
+          const reasons={abuse:'grof taalgebruik',disruption:'verstoring',meme:'herhaalde niet-inhoudelijke antwoorden'};
+          const reason=reasons[status.reason];
           choiceStatus.textContent=status.blocked?'Help me kiezen is geblokkeerd.':status.warned?'Help me kiezen: waarschuwing gegeven.':'Help me kiezen is beschikbaar.';
+          if(reason&&(status.blocked||status.warned))choiceStatus.textContent+=' Reden: '+reason+'.';
           unlockChoice.hidden=!status.blocked&&!status.warned;
         }catch(error){
           if(!dialog.isConnected)return;

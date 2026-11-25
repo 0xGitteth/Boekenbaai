@@ -28,6 +28,7 @@ const makeResponse=(status,body)=>({
 });
 let resolvePin;
 let loggedIn=false;
+let blocked=false;
 let failSuggest=false;
 let resetStatus=200;
 let holdSuggestions=false,releaseSuggestion=null;
@@ -47,7 +48,7 @@ const fetchStub=async (url,options={})=>{
     invalidated.push(JSON.parse(options.body).choiceGrant);
     return makeResponse(200,{closed:true});
   }
-  if(url==='/api/auth/student-pin/choice-status')return makeResponse(200,{warned:false});
+  if(url==='/api/auth/student-pin/choice-status')return blocked?makeResponse(423,{code:'CHOICE_BLOCKED',message:'Geblokkeerd'}):makeResponse(200,{warned:false});
   if(url==='/api/auth/student-pin/choice-context'){
     assert.equal(JSON.parse(options.body).consent,true);
     return makeResponse(200,{recent:null,favorites:[]});
@@ -234,5 +235,10 @@ vm.runInNewContext(code,{
     'Busy guard prevents overlapping suggestions from old cards');
   holdSuggestions=false;releaseSuggestion();releaseSuggestion=null;
   await new Promise(resolve=>setImmediate(resolve));
-  console.log('Choice chat: approved route, dynamic followups, back and privacy: OK');
+  elements.get('student-choice-close').listeners.click();
+  blocked=true;
+  await elements.get('student-help-choose').listeners.click();
+  assert.match(log.children[0].children[0].textContent,/geblokkeerd.*mentor/);
+  assert.equal(actions.children.length,0);
+  console.log('Choice chat: approved route, dynamic followups, back, privacy and blocked state: OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});
