@@ -30,7 +30,7 @@
     try{return window.localStorage.getItem('boekenbaai_token')||'';}catch(_){return '';}
   }
   async function api(path,body,signal){
-    const userToken=token();
+    const userToken=token(),marker=epoch;
     const headers={Accept:'application/json'};
     if(userToken && userToken!=='cookie')headers.Authorization='Bearer '+userToken;
     if(body!==undefined)headers['Content-Type']='application/json';
@@ -42,9 +42,15 @@
     if(!response.ok){
       const error=Error(data.message||'Er is iets misgegaan.');
       error.status=response.status;
+      if(response.status===423&&data.code==='CHOICE_BLOCKED'&&active&&marker===epoch)showBlocked();
       throw error;
     }
     return data;
+  }
+  function showBlocked(){
+    resetSession();
+    message('Help me kiezen is geblokkeerd. Vraag je mentor om de functie weer open te zetten.');
+    clearActions();
   }
   function clearActions(){actions.replaceChildren();}
   function message(text,who='assistant'){
@@ -117,9 +123,16 @@
       message(value,'student');input.value='';busy=true;submit.disabled=true;input.disabled=true;
       const marker=epoch;notice('Je antwoord bekijken…');
       try{
-        const result=await api('/api/auth/student-pin/choice-interpret',{text:value});
+        const result=await api('/api/auth/student-pin/choice-interpret',{text:value,...(grant?{choiceGrant:grant}:{})});
         if(!active||marker!==epoch)return;
         busy=false;notice('');
+        if(result.moderation==='redirect'||result.moderation==='warning'){
+          message(result.moderation==='warning'
+            ?'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, blokkeer ik deze functie. Je mentor moet hem dan weer openzetten.'
+            :'Dit helpt me nog niet om een boek voor je te zoeken. Vertel iets over wat je graag leest.');
+          options([['Opnieuw antwoorden',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration]]);
+          return;
+        }
         if(!result.recognized){
           message('Ik weet niet zeker wat je bedoelt. Kun je iets zeggen over het onderwerp, de sfeer of wat je juist niet wilt lezen?');
           options([['Ik wil het opnieuw uitleggen',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration],['Laat me drie boeken zien',()=>answer('route','surprise')]]);
@@ -211,7 +224,7 @@
   function finishIdentity(){
     readingConsent=false;
     choices={};
-    if(!personal){offerGeneral();return;}
+    if(!personal){showPin();return;}
     message((firstName?'Hoi '+firstName+'! ':'')+'Mag ik rekening houden met de boeken die je eerder hebt uitgelezen of bewaard?');
     options([
       ['Ja, graag',()=>void loadPersonalContext()],
@@ -230,6 +243,8 @@
       const me=await api('/api/me');
       if(!active||marker!==epoch)return;
       if(me?.role==='student'&&me.id){
+        await api('/api/auth/student-pin/choice-status',{});
+        if(!active||marker!==epoch)return;
         personal=true;firstName=username(me);
         notice('');
         finishIdentity();
@@ -238,11 +253,8 @@
     }catch(_){/* Invalid/guest sessions never inherit personal data. */}
     if(!active||marker!==epoch)return;
     notice('');
-    message('Hoi! Ik help je een boek te vinden. Log in voor persoonlijke tips, of ga zonder inloggen verder.');
-    options([
-      ['Inloggen',showPin],
-      ['Zonder inloggen',()=>{personal=false;finishIdentity();}],
-    ]);
+    message('Hoi! Ik help je een boek te vinden. Log in met je PIN of Google-schoolaccount om te beginnen.');
+    options([['Inloggen',showPin]]);
   }
   function showPin(){
     currentStep='pin';
@@ -262,7 +274,7 @@
     pin.pattern='[0-9]{6}';pin.maxLength=6;pin.minLength=6;pin.required=true;
     const submit=el('button','btn','Inloggen');
     submit.type='submit';
-    const other=el('button','btn btn--ghost','Zonder inloggen');
+    const other=el('button','btn btn--ghost','Annuleren');
     other.type='button';
     const google=el('button','btn btn--ghost','Inloggen met Google');
     google.type='button';
@@ -307,14 +319,7 @@
       },200);
     });
     other.addEventListener('click',()=>{
-      // A pending successful PIN response must never reactivate personal
-      // mode after the learner explicitly chose anonymous recommendations.
-      epoch++;
-      clearSearch();
-      pin.value='';selected='';busy=false;personal=false;firstName='';
-      grant='';
-      message('Zonder inloggen','student');
-      finishIdentity();
+      pin.value='';clearSearch();close();
     });
     google.addEventListener('click',()=>{
       clearSearch();close();
@@ -404,7 +409,7 @@
     clearActions();
     try{
       const next=await api('/api/auth/student-pin/choice-next',{
-        answers:choices.answers||[],seed,
+        ...(grant?{choiceGrant:grant}:{}),answers:choices.answers||[],seed,
         excludeQuestionIds:[...recentQuestionsInTab].slice(-100),
       });
       if(!active||marker!==epoch)return;
@@ -546,8 +551,8 @@
       if(!active||marker!==epoch)return;
       if(err.status===401&&grant){
         grant='';personal=false;firstName='';
-        message('Je persoonlijke sessie is verlopen. Je kunt opnieuw met je PIN aanmelden of zonder inloggen verder.');
-        options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
+        message('Je persoonlijke sessie is verlopen. Meld je opnieuw aan met je PIN of Google-schoolaccount.');
+        options([['Opnieuw met mijn PIN',showPin],['Opnieuw inloggen met Google',()=>{close();document.getElementById('student-nav-profile')?.click();}]]);
       }else{
         notice(err.message);
         options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices={route:'new'};startExploration();}]]);
@@ -579,8 +584,8 @@
           if(!active||marker!==epoch)return;
           if(err.status===401&&grant){
             grant='';personal=false;firstName='';
-            message('Je persoonlijke sessie is verlopen. Je kunt opnieuw met je PIN aanmelden of zonder inloggen verder.');
-            options([['Opnieuw met mijn PIN',showPin],['Zonder inloggen',finishIdentity]]);
+            message('Je persoonlijke sessie is verlopen. Meld je opnieuw aan met je PIN of Google-schoolaccount.');
+            options([['Opnieuw met mijn PIN',showPin],['Opnieuw inloggen met Google',()=>{close();document.getElementById('student-nav-profile')?.click();}]]);
           }else{
             notice(err.message);
             followupButtons(false);

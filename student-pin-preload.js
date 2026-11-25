@@ -173,6 +173,9 @@ async function handleStudentPin(req, res, requestUrl) {
   const isChoiceNext = route === '/api/auth/student-pin/choice-next' && req.method === 'POST';
   const isChoiceContext = route === '/api/auth/student-pin/choice-context' && req.method === 'POST';
   const isChoiceInterpret = route === '/api/auth/student-pin/choice-interpret' && req.method === 'POST';
+  const isChoiceStatus = route === '/api/auth/student-pin/choice-status' && req.method === 'POST';
+  const choiceMentor = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/choice-(status|unlock)$/);
+  const isChoiceMentor = choiceMentor && req.method === 'POST';
   const isChoiceEnd = route === '/api/auth/student-pin/choice-end' && req.method === 'POST';
   const isChoiceReset = route === '/api/auth/student-pin/choice-reset' && req.method === 'POST';
   const isStatus = route === '/api/auth/student-pin/status' && req.method === 'GET';
@@ -180,7 +183,7 @@ async function handleStudentPin(req, res, requestUrl) {
   const isSelfReset = route === '/api/auth/student-pin/reset' && req.method === 'POST';
   const staffReset = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/reset$/);
   if (!isStatus && !isSet && !isSelfReset && !isVerify
-    && !isChoiceBegin && !isChoiceSuggest && !isChoiceNext && !isChoiceContext && !isChoiceInterpret && !isChoiceEnd && !isChoiceReset
+    && !isChoiceBegin && !isChoiceSuggest && !isChoiceNext && !isChoiceContext && !isChoiceInterpret && !isChoiceStatus && !isChoiceMentor && !isChoiceEnd && !isChoiceReset
     && !(staffReset && req.method === 'POST')) {
     return sendJson(res, 404, { message: 'Niet gevonden.' });
   }
@@ -221,7 +224,7 @@ async function handleStudentPin(req, res, requestUrl) {
     } catch (error) {
       if(error?.status){
         if(error.status===429)res.setHeader('Retry-After','900');
-        return sendJson(res,error.status,{message:error.message});
+        return sendJson(res,error.status,{message:error.message,...(error.code==='CHOICE_BLOCKED'?{code:error.code}:{})});
       }
       throw error;
     }
@@ -230,9 +233,15 @@ async function handleStudentPin(req, res, requestUrl) {
     const body=await parseBody(req,4096);
     if(typeof body.text!=='string'||!body.text.trim()||body.text.length>500)
       return sendJson(res,400,{message:'Schrijf maximaal 500 tekens.'});
-    const {interpret,LABELS}=require('./student-choice-open-text');
-    const result=interpret(body.text);
-    return sendJson(res,200,{...result,labels:LABELS});
+    return sendJson(res,200,await choice.interpretAnswer({grant:body.choiceGrant,sessionToken:getToken(req),text:body.text}));
+  }
+  if(isChoiceStatus){
+    const body=await parseBody(req);
+    return sendJson(res,200,choice.choiceStatus({grant:body.choiceGrant,sessionToken:getToken(req)}));
+  }
+  if(isChoiceMentor){
+    const args={sessionToken:getToken(req),studentId:choiceMentor[1]};
+    return sendJson(res,200,choiceMentor[2]==='unlock'?await choice.mentorUnlock(args):choice.mentorStatus(args));
   }
   if(isChoiceContext){
     const body=await parseBody(req,16384);
@@ -242,7 +251,7 @@ async function handleStudentPin(req, res, requestUrl) {
   if (isChoiceNext) {
     const body=await parseBody(req,16384);
     return sendJson(res,200,choice.nextQuestion({
-      answers:body.answers,seed:body.seed,
+      grant:body.choiceGrant,sessionToken:getToken(req),answers:body.answers,seed:body.seed,
       excludeQuestionIds:body.excludeQuestionIds,
     }));
   }
@@ -364,7 +373,7 @@ function wrapRequestListener(listener) {
       if (error?.code === 'DATABASE_WRITE_BUSY' || error?.code === 'DATABASE_WRITE_CONFLICT') {
         return sendJson(res, 409, { message: 'Gegevens zijn tegelijk gewijzigd. Probeer opnieuw.' });
       }
-      if (error?.status) return sendJson(res, error.status, { message: error.message });
+      if (error?.status) return sendJson(res, error.status, { message: error.message,...(error.code==='CHOICE_BLOCKED'?{code:error.code}:{}) });
       console.error('[Student PIN] Aanvraag mislukt:', error?.message || 'interne fout');
       return sendJson(res, 500, { message: 'PIN kon niet worden verwerkt.' });
     }

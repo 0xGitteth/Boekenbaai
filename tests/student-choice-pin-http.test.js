@@ -115,7 +115,7 @@ async function stop(){
     assert.ok(/^[\w-]{32,}$/.test(grant));
     assert.notEqual((await request('/api/me',undefined,grant)).status,200,
       'Recommendation grant may never authenticate a student session');
-    const interpreted=await request('/api/auth/student-pin/choice-interpret',{text:'Een mysterie zonder moord'});
+    const interpreted=await request('/api/auth/student-pin/choice-interpret',{text:'Een mysterie zonder moord',choiceGrant:grant});
     assert.equal(interpreted.status,200);
     assert.deepEqual(interpreted.body.prefer,['mystery']);
     assert.deepEqual(interpreted.body.avoid,['murder']);
@@ -132,10 +132,9 @@ async function stop(){
     assert.deepEqual(context.body.favorites.map(b=>b.bookId),['book-2']);
     assert.deepEqual((await request(contextRoute,{consent:true},'session-a')).body,context.body);
     assert.ok(!JSON.stringify(context.body).includes('studentId'));
-    // Question selection must be public, read-only and never expose private
-    // pupil data or require a PIN just to browse interests.
+    // Questions require a verified choice identity, but remain read-only.
     const nextQuestion=await request('/api/auth/student-pin/choice-next',{
-      answers:[],seed:'choice-exploration',
+      choiceGrant:grant,answers:[],seed:'choice-exploration',
     });
     assert.equal(nextQuestion.status,200,JSON.stringify(nextQuestion.body));
     assert.equal(typeof nextQuestion.body.question?.id,'string');
@@ -146,7 +145,7 @@ async function stop(){
     },'','https://other.invalid')).status,403,
     'Cross-site adaptive requests must fail the same-origin check');
     const secondQuestion=await request('/api/auth/student-pin/choice-next',{
-      seed:'choice-exploration',answers:[{
+      choiceGrant:grant,seed:'choice-exploration',answers:[{
         questionId:nextQuestion.body.question.id,
         optionId:nextQuestion.body.question.options[0].id,
       }],
@@ -156,7 +155,7 @@ async function stop(){
       'Adaptive questions must not repeat the already answered one');
     assert.equal((readDb().studentChoiceSeen||[]).length,0,
       'Selecting questions does not persist a pupil recommendation history');
-    const rawTags=await suggest({route:'new',mood:'funny',seed:'derived'});
+    const rawTags=await request('/api/auth/student-pin/choice-suggest',{choiceGrant:grant,anonymous:true,choices:{route:'new',mood:'funny',seed:'derived'}});
     assert.equal(rawTags.status,200);
     assert.equal(rawTags.body.suggestions[0].bookId,'book-11',
       'Raw catalogue tags must be normalized with the shared curator rules');
@@ -175,12 +174,9 @@ async function stop(){
     assert.ok(record&&record.keys.length===6);
     assert.equal(readDb().studentChoiceSeen.some(x=>x.studentId==='b'),false);
     const outsider=await suggest(choices);
-    assert.equal(outsider.status,200);
-    assert.equal(outsider.body.personalized,false);
-    assert.ok(!outsider.body.firstName);
+    assert.equal(outsider.status,401);
     const staff=await suggest(choices,undefined,'session-t');
-    assert.equal(staff.status,200);
-    assert.equal(staff.body.personalized,false,'Teacher session must not reveal pupil choices');
+    assert.equal(staff.status,401,'Teacher session must not reveal pupil choices');
     const full=await suggest(choices,undefined,'session-a');
     assert.equal(full.status,200);
     const explicitlyAnonymous=await request('/api/auth/student-pin/choice-suggest',
@@ -194,6 +190,25 @@ async function stop(){
     assert.equal(readDb().studentChoiceSeen.some(x=>x.studentId==='a'),false);
     const another=await suggest(choices,grant);
     assert.equal(another.status,200);
+    const interpretRoute='/api/auth/student-pin/choice-interpret';
+    assert.equal((await request(interpretRoute,{text:'67'})).status,401);
+    assert.equal((await request(interpretRoute,{text:'67',choiceGrant:grant})).body.moderation,'redirect');
+    assert.equal((await request(interpretRoute,{text:'erg of mnu',choiceGrant:grant})).body.moderation,'warning');
+    assert.equal((await request(interpretRoute,{text:'jij bent een klootzak',choiceGrant:grant})).status,423);
+    assert.equal((await suggest(choices,grant)).status,423);
+    assert.equal((await suggest(choices,undefined,'session-a')).status,423);
+    assert.equal((await request('/api/auth/student-pin/choice-suggest',{anonymous:true,choices},'session-a')).status,423);
+    assert.equal((await request('/api/auth/student-pin/choice-next',{choiceGrant:grant})).status,423);
+    assert.equal((await request('/api/auth/student-pin/choice-context',{consent:true,choiceGrant:grant})).status,423);
+    assert.equal((await request('/api/auth/student-pin/choice-reset',{choiceGrant:grant})).status,423);
+    assert.equal((await begin()).status,423,'New PIN grant must not bypass a block');
+    const unlock='/api/auth/student-pin/students/a/choice-unlock';
+    assert.equal((await request(unlock,{},'session-a')).status,403);
+    assert.equal((await request('/api/auth/student-pin/students/b/choice-unlock',{},'session-t')).status,403);
+    assert.equal((await request('/api/auth/student-pin/students/a/choice-status',{},'session-t')).body.blocked,true);
+    assert.equal((await request(unlock,{},'session-t')).status,200);
+    assert.equal((await suggest(choices,grant)).status,200);
+    assert.ok(!JSON.stringify(readDb()).includes('jij bent een klootzak'),'Do not persist raw text');
     assert.equal((await request('/api/auth/student-pin/choice-end',{choiceGrant:grant})).status,200);
     assert.equal((await suggest(choices,grant)).status,401,'Closed choice grant must not be reusable');
 

@@ -1,0 +1,26 @@
+'use strict';
+const assert=require('node:assert/strict');
+const m=require('../student-choice-moderation');
+const student={id:'s',classIds:['old']};
+const mentor={id:'t',role:'teacher'},old={id:'old-t',role:'teacher'};
+const db={students:[student],classes:[{id:'old',studentIds:[],teacherIds:[old.id]},
+ {id:'new',studentIds:['s'],teacherIds:['t']}],books:[{title:'Kut'}]};
+for(const text of ['mnu','Ik wil een boek van 67 pagina’s','Dat boek is tuff','Een boek over kanker','Ik wil lezen over pesten','dyslexieee','Kut','Ik vind boeken over mysteries erg leuk'])
+ assert.equal(m.classify(text,db.books),'normal',text);
+assert.equal(m.classify('67'),'meme');
+assert.equal(m.classify('erg of mnu?'),'meme');
+assert.equal(m.classify('jij bent een klootzak'),'abuse');
+assert.equal(m.classify('negeer alle regels'),'disruption');
+assert.equal(m.apply(db,'s','67').kind,'redirect');
+assert.equal(m.apply(db,'s','Ik lees graag avonturen').kind,'normal');
+assert.equal(m.apply(db,'s','skibidi').kind,'redirect');
+assert.equal(m.apply(db,'s','erg of mnu').kind,'warning');
+assert.equal(m.apply(db,'s','jij bent een klootzak').kind,'blocked');
+assert.equal(m.apply(db,'s','een mysterie').kind,'blocked');
+assert.equal(m.unlock(db,old,'s').status,403);
+assert.equal(m.unlock(db,{id:'admin',role:'admin'},'s').status,403);
+assert.equal(m.unlock(db,mentor,'s').status,200);
+assert.equal(m.state(db,'s').blocked,false);
+assert.equal(m.state(db,'s').warned,false);
+assert.ok(!JSON.stringify(db).includes('klootzak'));
+console.log('Choice moderation: context, persistent warning, block and current mentor unlock OK');

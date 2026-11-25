@@ -9,6 +9,8 @@ const pins=require('./student-pin-core');
 const {readJsonSnapshot,mutateJsonLockedAsync}=require('./database-write-coordinator');
 const {rankBooks}=require('./student-choice-recommendations');
 const {workKey}=require('./book-reservations');
+const moderation=require('./student-choice-moderation');
+const {interpret,LABELS}=require('./student-choice-open-text');
 const dialogue=require('./student-choice-dialogue');
 const {attachDerivedThemeFields}=require('./book-theme-normalization');
 const DATA_PATH=process.env.BOEKENBAAI_DATA_PATH
@@ -70,6 +72,7 @@ async function startChoice({studentId,pin}){
       if(!latest||latest.link.sub!==snapshot.link.sub||latest.cred.hash!==snapshot.cred.hash||
         pins.currentGeneration(latest.cred)!==pins.currentGeneration(snapshot.cred)||
         row.blockedUntil>Date.now())throw error('PIN of account is gewijzigd. Probeer opnieuw.',409);
+      if(moderation.state(loadDb(),studentId).blocked)throw blockedError();
       row.attempts=[];row.blockedUntil=0;row.updatedAt=Date.now();
       const old=Array.isArray(auth.studentChoiceGrants)?auth.studentChoiceGrants:[];
       // One active choice grant per student; a newer tablet invalidates an older one.
@@ -101,13 +104,62 @@ function resolveChoice(db,auth,{grant='',sessionToken=''}={}){
   }
   return null;
 }
+function blockedError(){
+ return Object.assign(error('Help me kiezen is geblokkeerd. Vraag je mentor om de functie weer open te zetten.',423),{code:'CHOICE_BLOCKED'});
+}
+function requireChoice(db,credentials){
+ const identity=resolveChoice(db,loadAuth(),credentials);
+ if(!identity)throw error('Log eerst in met je schoolaccount of PIN.',401);
+ if(moderation.state(db,identity.studentId).blocked)throw blockedError();
+ return identity;
+}
+function choiceStatus(credentials){
+ const db=loadDb();
+ const identity=requireChoice(db,credentials);
+ return {warned:moderation.state(db,identity.studentId).warned};
+}
+async function interpretAnswer({grant,sessionToken,text}){
+ let result;
+ await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
+  mutate:db=>{
+   const identity=requireChoice(db,{grant,sessionToken});
+   const outcome=moderation.apply(db,identity.studentId,text);
+   result=outcome.kind==='normal'?{...interpret(text),labels:LABELS,moderation:'normal'}:{moderation:outcome.kind};
+   return outcome.changed?db:false;
+  }});
+ // Throw only AFTER the transaction persists the block.
+ if(result.moderation==='blocked')throw blockedError();
+ return result;
+}
+function mentorContext(db,sessionToken,id){
+ const checked=sessionToken?security.validatePersistedSession(loadAuth(),sessionToken,db):null;
+ if(!checked?.valid||checked.session?.type!=='staff'||!moderation.mayUnlock(db,checked.account,id))
+  throw error('Alleen een huidige mentor mag deze keuzehulp beheren.',403);
+ return checked.account;
+}
+function mentorStatus({sessionToken,studentId}){
+ const db=loadDb();
+ mentorContext(db,sessionToken,studentId);
+ const {blocked,warned,reason,updatedAt}=moderation.state(db,studentId);
+ return {blocked,warned,reason,updatedAt};
+}
+async function mentorUnlock({sessionToken,studentId}){
+ let result;
+ await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
+  mutate:db=>{
+   const actor=mentorContext(db,sessionToken,studentId);
+   result=moderation.unlock(db,actor,studentId);
+   if(result.status!==200)throw error('Geen toestemming.',403);
+   return result.changed?db:false;
+  }});
+ return {blocked:false,warned:false};
+}
 // The context request is explicit, read-only and restricted to a single
 // student's validated choice grant or full session. Only public catalogue
 // works are returned. Favorites indicate interest, not reading or liking.
 function personalContext({grant,sessionToken}){
   const db=loadDb();
-  const identity=resolveChoice(db,loadAuth(),{grant,sessionToken});
-  if(!identity)throw error('Log in voor persoonlijke tips.',401);
+  const identity=requireChoice(db,{grant,sessionToken});
   const publicBooks=(db.books||[]).filter(b=>b?.id&&b.catalogHidden!==true&&b.personalLoanOnly!==true);
   const byId=new Map(publicBooks.map(b=>[b.id,b]));
   const byKey=new Map(publicBooks.map(b=>[workKey(b),b]));
@@ -146,7 +198,9 @@ async function suggestions({grant,sessionToken,choices,anonymous=false}){
   let result;
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
-      const identity=anonymous?null:resolveChoice(db,loadAuth(),{grant,sessionToken});
+      const verified=requireChoice(db,{grant,sessionToken});
+      // Declining personal advice does not disable account-level moderation.
+      const identity=anonymous?null:verified;
       // Match public catalogue GET normalization. Raw imported tags are
       // not curator-approved themes until these shared rules are applied.
       const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
@@ -173,18 +227,17 @@ async function suggestions({grant,sessionToken,choices,anonymous=false}){
     }});
   return result;
 }
-function nextQuestion({answers=[],seed='',excludeQuestionIds=[]}={}){
-  // No reader identity is needed. The question engine sees only normalized
-  // public catalogue metadata and never reveals lending or private records.
+function nextQuestion({grant,sessionToken,answers=[],seed='',excludeQuestionIds=[]}={}){
   const db=loadDb();
+  requireChoice(db,{grant,sessionToken});
+  // Question selection itself still sees public metadata only.
   const books=(db.books||[]).map(attachDerivedThemeFields);
   return dialogue.selection({books},{answers,seed,excludeQuestionIds});
 }
 async function clearHistory({grant,sessionToken}){
   await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,read:loadDb,waitMs:1800,
     mutate:db=>{
-      const identity=resolveChoice(db,loadAuth(),{grant,sessionToken});
-      if(!identity)throw error('Log in voor persoonlijke aanbevelingen.',401);
+      const identity=requireChoice(db,{grant,sessionToken});
       db.studentChoiceSeen=(db.studentChoiceSeen||[]).filter(x=>x.studentId!==identity.studentId);
       return db;
     }});
@@ -199,4 +252,4 @@ async function closeChoice(grant){
       return auth;
     }});
 }
-module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,personalContext,firstName,TTL};
+module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,personalContext,choiceStatus,interpretAnswer,mentorStatus,mentorUnlock,firstName,TTL};
