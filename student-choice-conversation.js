@@ -168,7 +168,7 @@ function profiles(books,signals){
  // Public catalogue only. The normal trait cache avoids repeated metadata parsing.
  const seen=new Set(),rows=[];
  for(const b of (Array.isArray(books)?books:[])){
-  if(!b?.title||isHidden(b))continue;
+  if(!b?.title||isHidden(b)||b.personalLoanOnly===true)continue;
   const key=normalize(b.title)+'|'+normalize(b.author);
   if(seen.has(key))continue;seen.add(key);
   const traits=traitsForBook(b);
@@ -230,8 +230,8 @@ function analyze(text,rawContext={},books=[]){
  // A real catalogue title is an anchor for a question, not an inferred liking.
  let anchor=null;
  if(!selected&&value.length>=5){
-  const name=normalize(input.replace(/^(?:ik vond|ik las|ik heb|ik lees)\s+/i,'').replace(/\s+(?:leuk|gelezen|uitgelezen)$/i,''));
-  const matches=(books||[]).filter(b=>b?.id&&!isHidden(b)&&normalize(b.title)===name);
+  const name=normalize(String(text||'').replace(/^(?:ik vond|ik las|ik heb|ik lees)\s+/i,'').replace(/\s+(?:leuk|gelezen|uitgelezen)$/i,''));
+  const matches=(books||[]).filter(b=>b?.id&&!isHidden(b)&&b.personalLoanOnly!==true&&normalize(b.title)===name);
   if(matches.length&&new Set(matches.map(b=>normalize(b.author))).size===1){
    anchor={title:String(matches[0].title).slice(0,200),bookId:matches[0].id};
    hypothesis.push(...[...traitsForBook(matches[0])].filter(([,v])=>v>=1).map(([k])=>k).slice(0,6));
@@ -285,6 +285,11 @@ function analyze(text,rawContext={},books=[]){
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
+ const bookMention=String(text||'').match(/^(?:ik heb (?:het boek )?|ik las (?:het boek )?|ik vond (?:het boek )?|(?:het )?boek (?:heet |is )?)(.{2,100}?)(?:\s+(?:gelezen|uitgelezen|leuk|heel leuk|geweldig))?[.!]?$/i);
+ if(!selected&&!anchor&&bookMention&&!media.length&&!direct.avoid?.length){
+  const candidate=bookMention[1].trim();
+  if(candidate&&!/\b(?:geen|niet|een boek over|iets over)\b/i.test(candidate))return {...envelope,advice:{kind:'book-search',title:candidate,context:c}};
+ }
  if(!selected&&!direct.recognized&&!media.length&&!anchor&&!notReader&&length===c.length){
   if(uncertain||c.uncertain>=1)return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
   return {...envelope,advice:{kind:'clarify',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
@@ -299,7 +304,7 @@ function analyze(text,rawContext={},books=[]){
    const view=questionView(questionForContext(mediaContext));
    return {...envelope,advice:{kind:'question',reaction:'',
     question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat spreekt je aan in '+media[0]+'?':'Wat vind je interessant aan die games, films of series?'},
-    context:mediaContext,hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
+    context:mediaContext,...(anchor?{reference:{bookId:anchor.bookId,title:anchor.title}}:{}),hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
  }
  if(notReader)reaction='Dan beginnen we bij wat je buiten het lezen leuk vindt.';
  const p=updated.prefer,axisCount=families(p);

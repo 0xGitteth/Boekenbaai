@@ -84,7 +84,7 @@ function googleRows(body){
   const title=text(v.title),author=strList(v.authors,3).join(', ');
   if(!title||!author)return [];
   return [{title,author,description:text(v.description,2400),tags:strList(v.categories),
-   isbn:(v.industryIdentifiers||[]).map(z=>isbn13(z?.identifier)).find(Boolean)||'',
+   isbn:(Array.isArray(v.industryIdentifiers)?v.industryIdentifiers:[]).map(z=>isbn13(z?.identifier)).find(Boolean)||'',
    year:Number(String(v.publishedDate||'').slice(0,4))||null,source:'Google Books'}];
  });
 }

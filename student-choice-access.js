@@ -13,6 +13,8 @@ const moderation=require('./student-choice-moderation');
 const guestModeration=require('./student-choice-guest');
 const {interpret,LABELS}=require('./student-choice-open-text');
 const conversation=require('./student-choice-conversation');
+const references=require('./student-choice-reference');
+const series=require('./student-choice-series');
 const dialogue=require('./student-choice-dialogue');
 const {attachDerivedThemeFields}=require('./book-theme-normalization');
 const DATA_PATH=process.env.BOEKENBAAI_DATA_PATH
@@ -149,6 +151,22 @@ async function interpretAnswer({grant,sessionToken,guest,text,context,consent=fa
  if(result.moderation==='blocked')throw blockedError();
  return result;
 }
+async function lookupReference(credentials,query,external){
+ const db=loadDb();
+ choiceAccess(db,credentials);
+ // Only a dedicated, explicitly submitted bibliographic form is forwarded.
+ // Never pass authentication, conversation context or reading history.
+ const result=await references.lookup(db,query,{external:external===true});
+ choiceAccess(loadDb(),credentials);
+ return result;
+}
+function seriesReference(credentials,{bookId,externalRef,readPart,consent,signals}={}){
+ const db=loadDb(),access=choiceAccess(db,credentials);
+ const book=typeof bookId==='string'?(db.books||[]).find(b=>b.id===bookId&&b.catalogHidden!==true&&b.personalLoanOnly!==true):references.getReference(externalRef);
+ if(!book)return {series:null};
+ const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
+ return series.nextPart(catalogue,book,readPart,access.identity?.studentId||'',consent===true,signals);
+}
 function mentorContext(db,sessionToken,id){
  const checked=sessionToken?security.validatePersistedSession(loadAuth(),sessionToken,db):null;
  if(!checked?.valid||checked.session?.type!=='staff'||!moderation.mayUnlock(db,checked.account,id))
@@ -278,4 +296,4 @@ async function closeChoice(grant){
       return auth;
     }});
 }
-module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,personalContext,choiceStatus,interpretAnswer,mentorStatus,mentorUnlock,firstName,TTL};
+module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,personalContext,choiceStatus,interpretAnswer,mentorStatus,mentorUnlock,lookupReference,seriesReference,firstName,TTL};

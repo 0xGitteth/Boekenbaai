@@ -179,6 +179,8 @@ async function handleStudentPin(req, res, requestUrl) {
   const isVerify = route === '/api/auth/student-pin/verify' && req.method === 'POST';
   const isChoiceBegin = route === '/api/auth/student-pin/choice-begin' && req.method === 'POST';
   const isChoiceSuggest = route === '/api/auth/student-pin/choice-suggest' && req.method === 'POST';
+  const isChoiceLookup = route === '/api/auth/student-pin/choice-reference' && req.method === 'POST';
+  const isChoiceSeries = route === '/api/auth/student-pin/choice-series' && req.method === 'POST';
   const isChoiceNext = route === '/api/auth/student-pin/choice-next' && req.method === 'POST';
   const isChoiceContext = route === '/api/auth/student-pin/choice-context' && req.method === 'POST';
   const isChoiceInterpret = route === '/api/auth/student-pin/choice-interpret' && req.method === 'POST';
@@ -192,7 +194,7 @@ async function handleStudentPin(req, res, requestUrl) {
   const isSelfReset = route === '/api/auth/student-pin/reset' && req.method === 'POST';
   const staffReset = route.match(/^\/api\/auth\/student-pin\/students\/([\w-]+)\/reset$/);
   if (!isStatus && !isSet && !isSelfReset && !isVerify
-    && !isChoiceBegin && !isChoiceSuggest && !isChoiceNext && !isChoiceContext && !isChoiceInterpret && !isChoiceStatus && !isChoiceMentor && !isChoiceEnd && !isChoiceReset
+    && !isChoiceBegin && !isChoiceSuggest && !isChoiceLookup && !isChoiceSeries && !isChoiceNext && !isChoiceContext && !isChoiceInterpret && !isChoiceStatus && !isChoiceMentor && !isChoiceEnd && !isChoiceReset
     && !(staffReset && req.method === 'POST')) {
     return sendJson(res, 404, { message: 'Niet gevonden.' });
   }
@@ -263,6 +265,16 @@ async function handleStudentPin(req, res, requestUrl) {
       ...choiceCredentials(req,res,body),answers:body.answers,seed:body.seed,
       excludeQuestionIds:body.excludeQuestionIds,
     }));
+  }
+  if(isChoiceLookup){
+    const body=await parseBody(req,4096);
+    const query={title:body.title,author:body.author,isbn:body.isbn};
+    return sendJson(res,200,await choice.lookupReference(choiceCredentials(req,res,body),query,body.external===true));
+  }
+  if(isChoiceSeries){
+    const body=await parseBody(req,4096);
+    return sendJson(res,200,choice.seriesReference(choiceCredentials(req,res,body),{
+      bookId:body.bookId,externalRef:body.externalRef,readPart:body.readPart,consent:body.consent===true,signals:body.signals}));
   }
   if (isChoiceSuggest) {
     const body=await parseBody(req,32768);

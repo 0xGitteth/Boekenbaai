@@ -8,6 +8,7 @@ const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity'
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
 const {workKey}=require('./book-reservations');
 const {validateSignals}=require('./student-choice-open-text');
+const externalReferences=require('./student-choice-reference');
 const keyOf = book => workKey(book);
 const QUESTION_VALUES = Object.freeze({
   route: ['new','similar','surprise'],
@@ -441,6 +442,7 @@ function validateChoices(value) {
   result.answers=dialogue.validatedAnswers(input.answers);
   result.openSignals=result.route==='surprise'?{prefer:[],avoid:[]}:validateSignals(input.openSignals);
   result.useReadingHistory=input.useReadingHistory!==false;
+  result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
   result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
     ?input.referencePreference:'';
   result.referenceBookId=typeof input.referenceBookId==='string'&&input.route!=='surprise'
@@ -460,7 +462,7 @@ function groupBooks(db) {
   const map = new Map();
   const loanOwners=studentLoanIds(db);
   for (const book of db.books || []) {
-    if (!book || !book.id || isHidden(book) || !norm(book.title)) continue;
+    if (!book || !book.id || isHidden(book) || book.personalLoanOnly===true || !norm(book.title)) continue;
     const key = keyOf(book);
     let work = map.get(key);
     if (!work) {
@@ -601,7 +603,9 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   // cover or was last available. Different editions can vary in enrichment.
   const anchor=reference?works.find(work=>work.key===keyOf(reference)):null;
   const workTraits=dialogue.profilesForWorks(works);
-  const anchorTraits=anchor?workTraits.get(anchor.key)||new Map():new Map();
+  const outside=!anchor&&choice.externalRef?externalReferences.getReference(choice.externalRef):null;
+  const anchorTraits=anchor?workTraits.get(anchor.key)||new Map():outside?dialogue.traitsForBook(outside):new Map();
+  const referenceKey=anchor?.key||(outside?keyOf(outside):'');
   const traitLabels={
     ...require('./student-choice-open-text').LABELS,
     mystery:'geheimen of raadsels',secrets:'een geheim',puzzles:'onderzoek en aanwijzingen',
@@ -623,7 +627,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     if (!choice.allowRepeats && alreadySeen.has(work.key)) continue;
     // Confirmed reads are not recommendations for a new book; only compare
     // their curated themes when the learner explicitly asks for similarities.
-    if (read.readKeys.has(work.key)||anchor?.key===work.key) continue;
+    if (read.readKeys.has(work.key)||referenceKey===work.key) continue;
     const directionMatches=matchesTags(work.themes,directionHints);
     const detailMatches=matchesTags(work.themes,detailHints);
     const moodMatches=matchesTags(work.themes,legacyMoodHints);
@@ -648,7 +652,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
     let matchedAnchor=0;
-    if(anchorTraits.size&&choice.referenceBookId){
+    if(anchorTraits.size&&(choice.referenceBookId||outside)){
       for(const [trait,evidence] of anchorTraits){
         if(traits.has(trait)){
           matchedAnchor++;
@@ -667,7 +671,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     (choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
     || (b.openMatches-a.openMatches)
     || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
-    || (anchorTraits.size&&choice.referenceBookId
+    || (anchorTraits.size&&(choice.referenceBookId||outside)
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
@@ -682,7 +686,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       reason:surpriseReason || (matchedDialogue?.matched?.length
         ?'Dit boek sluit aan bij je interesse in '
           +matchedDialogue.matched.slice(0,2).map(t=>traitLabels[t]||t).join(' en ')
-        : choice.referenceBookId&&matchedAnchor>0
+        : (choice.referenceBookId||outside)&&matchedAnchor>0
           ?'Dit boek heeft kenmerken die aansluiten bij het door jou gekozen boek'
         : matched.length ? 'Thema: '+matched.slice(0,2).join(', ')
         : familiar.length ? 'Sluit aan bij een thema dat je eerder hebt gelezen: '+familiar[0]

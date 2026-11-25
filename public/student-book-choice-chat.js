@@ -155,7 +155,14 @@
   function continueAdvice(plan){
     applyAdvice(plan);
     if(plan.reaction)message(plan.reaction);
-    if(plan.kind==='question'){
+    if(plan.reference?.bookId){
+      chooseBookReference(plan.reference);
+      return;
+    }
+    if(plan.kind==='book-search'){
+      message('Bedoel je een boek met die titel? Ik kan kijken of ik het herken.');
+      showReferenceSearch(plan.title);
+    }else if(plan.kind==='question'){
       offerOpenAnswer(plan.question.prompt,plan.question);
     }else if(plan.kind==='recommend'){
       message('Ik denk dat ik genoeg weet om een paar boeken voor je uit te zoeken.');
@@ -226,13 +233,100 @@
     }
     const correct=el('button','btn btn--secondary','Ik wil opnieuw beginnen');correct.type='button';
     correct.addEventListener('click',()=>{if(active&&!busy){choices={route:'new'};freshAdvice();offerOpenAnswer();}});
-    form.append(correct);actions.append(form);input.focus();
+    form.append(correct);
+    const bookSearch=el('button','btn btn--secondary','Ik ken een boek dat ik leuk vind');bookSearch.type='button';
+    bookSearch.addEventListener('click',()=>{if(active&&!busy)showReferenceSearch();});form.append(bookSearch);
+    actions.append(form);input.focus();
     form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
   }
+  function showReferenceSearch(initialTitle='',initialAuthor=''){
+    if(!active||busy)return;
+    clearActions();
+    const form=el('form','bb-choice-chat__free');
+    const label=el('label','','Titel of ISBN');const title=el('input');title.type='text';title.value=initialTitle||'';title.maxLength=120;title.required=true;
+    const authorLabel=el('label','','Auteur (als je die weet)');const author=el('input');author.type='text';author.maxLength=90;author.value=initialAuthor||'';
+    const submit=el('button','btn btn--primary','Zoek in de schoolbibliotheek');submit.type='submit';
+    const back=el('button','btn btn--secondary','Verder met het gesprek');back.type='button';
+    back.addEventListener('click',()=>offerOpenAnswer('',adviceQuestion));
+    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus();
+    form.addEventListener('submit',event=>{event.preventDefault();void findReference({title:title.value.trim(),author:author.value.trim()},false);});
+  }
+  async function findReference(query,external){
+    if(!active||busy)return;
+    busy=true;clearActions();const marker=epoch;notice('Boektitel zoeken…');
+    try{
+      const result=await api('/api/auth/student-pin/choice-reference',{...query,external,...(grant?{choiceGrant:grant}:{})});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      const matches=Array.isArray(result.matches)?result.matches:[];
+      if(matches.length)message('Bedoel je een van deze boeken?');
+      else message(result.status==='invalid'?'Vul alleen een boektitel, ISBN en eventueel de auteur in.':result.status==='unavailable'||result.status==='busy'?'Ik kan de externe boekenbron nu niet bereiken.':'Ik heb geen passend boek gevonden.');
+      options([
+        ...matches.map(book=>[book.title+(book.author?' · '+book.author:'')+' ('+book.source+')',()=>chooseBookReference(book)]),
+        ...(!external?[['Zoek ook buiten school (Google Books / Open Library)',()=>{
+          message('Ik zoek alleen met de ingevulde titel en auteur, zonder je naam of gespreksgegevens.');
+          void findReference(query,true);
+        }]]:[]),
+        ['Titel of auteur aanpassen',()=>showReferenceSearch(query.title,query.author)],
+        ['Verder zonder boekherkenning',()=>{message('Vertel gerust wat je leuk vond aan dat boek.');offerOpenAnswer('',adviceQuestion);}],
+      ]);
+    }catch(err){
+      if(!active||marker!==epoch)return;busy=false;notice(err.message);
+      options([['Opnieuw proberen',()=>void findReference(query,external)],['Verder zonder boekherkenning',()=>offerOpenAnswer('',adviceQuestion)]]);
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
+  function chooseBookReference(book){
+    if(!active||busy)return;
+    message('Wil je een boek dat lijkt op '+book.title+' of wil je kijken of er een volgend deel is?');
+    options([
+      ['Een boek dat erop lijkt',()=>useBookReference(book)],
+      ['Kijk of er een volgend deel is',()=>void inspectSeries(book)],
+      ['Toch iets anders',()=>offerOpenAnswer('',adviceQuestion)],
+    ]);
+  }
+  function useBookReference(book){
+    choices={...choices,route:'new',referenceBookId:book.bookId||'',externalRef:book.externalRef||'',answers:[]};
+    freshAdvice('book-interest');
+    offerOpenAnswer('Wat vond je leuk aan '+book.title+'?');
+  }
+  async function inspectSeries(book,readPart){
+    if(!active||busy)return;
+    busy=true;clearActions();const marker=epoch;notice('Serie controleren…');
+    try{
+      const result=await api('/api/auth/student-pin/choice-series',{
+        ...(book.bookId?{bookId:book.bookId}:{externalRef:book.externalRef}),readPart,consent:readingConsent,
+        signals:choices.openSignals,...(grant?{choiceGrant:grant}:{})});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      if(!result.series){
+        message('Ik kan voor dit boek geen betrouwbare serievolgorde vaststellen.');
+        options([['Zoek een vergelijkbaar boek',()=>useBookReference(book)],['Verder met interesses',()=>offerOpenAnswer('',adviceQuestion)]);return;
+      }
+      if(result.status==='found'&&result.suggestion){
+        message('Dit is het volgende deel in '+result.series.name+'.');
+        const list=await api('/api/books');
+        if(!active||marker!==epoch)return;
+        const block=message('Dit boek staat in onze bibliotheek:');
+        block.append(resultCard(result.suggestion,Array.isArray(list)?list:[]));
+        options([['Zoek ook andere boeken',()=>useBookReference(book)],['Controleer een ander deel',()=>void inspectSeries(book)]]);return;
+      }
+      if(result.status==='not_in_collection')message('Het volgende deel is '+result.target.title+'. Dat staat niet in onze bibliotheek.');
+      if(result.status==='already_read')message('Dit volgende deel staat al als uitgelezen in je leesgeschiedenis.');
+      if(result.status==='excluded')message('Het volgende deel bevat mogelijk een onderwerp dat je liever vermijdt.');
+      if(result.status==='last_known')message('Ik heb geen betrouwbaar vastgesteld volgend deel bij dit deel.');
+      if(!result.status){
+        message('Welk deel van '+result.series.name+' heb je als laatste uitgelezen?');
+        const read=new Set(result.readParts||[]);
+        options([...result.series.parts.map(p=>['Deel '+p.number+': '+p.title+(read.has(p.number)?' (uitgelezen)':''),()=>void inspectSeries(book,p.number)]),
+          ['Weet ik niet',()=>useBookReference(book)],['Ik zoek liever iets anders',()=>offerOpenAnswer('',adviceQuestion)]]);
+      }else options([['Controleer een ander deel',()=>void inspectSeries(book)],['Zoek een vergelijkbaar boek',()=>useBookReference(book)]]);
+    }catch(err){
+      if(!active||marker!==epoch)return;busy=false;notice(err.message);
+      options([['Opnieuw proberen',()=>void inspectSeries(book,readPart)],['Zoek een vergelijkbaar boek',()=>useBookReference(book)]]);
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
   function selectReference(book,read){
-    choices={route:'new',referenceBookId:book.bookId,answers:[]};freshAdvice('book-interest');
-    const referenceQuestion=read?'Wat vond je leuk aan '+book.title+'?':'Wat spreekt je aan in '+book.title+'?';
-    offerOpenAnswer(referenceQuestion);
+    chooseBookReference(book);
   }
   function offerFavorites(items){
     if(!items.length){offerGeneral();return;}
@@ -248,6 +342,7 @@
     options([
       ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
       ['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice('free-time');offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
+      ['Ik ken een boek dat ik leuk vind',()=>showReferenceSearch()],
       ['Liever alleen kiezen uit antwoorden',beginInterests],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
@@ -637,7 +732,7 @@
         try{
           await api('/api/auth/student-pin/choice-reset',grant?{choiceGrant:grant}:{});
           if(!active||marker!==epoch)return;
-          seenInTab.clear();shownInDialogue.clear();recentQuestionsInTab.clear();
+          seenInTab.clear();shownInDialogue.clear();recentQuestionsInTab.clear();recentAdviceQuestions.clear();
           message('Je eerdere aanbevelingen zijn gewist. We beginnen weer zonder eerdere voorstellen.');
           finishIdentity();
         }catch(err){
