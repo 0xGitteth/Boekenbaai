@@ -262,7 +262,7 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
       result.personalized=Boolean(identity);
       result.firstName=identity?.firstName||'';
       // Sensitive reading topics remain within this conversation. Do not persist associated titles or question IDs.
-      const willPresent=!result.missingTopics?.length||choices?.allowPartial===true;
+      const willPresent=!result.missingCombination?.length&&(!result.missingTopics?.length||choices?.allowPartial===true);
       const remember=Boolean(identity&&result.suggestions.length&&willPresent&&!conversation.privateReadingRequest(choices));
       if(remember){
         if(!Array.isArray(db.studentChoiceSeen))db.studentChoiceSeen=[];

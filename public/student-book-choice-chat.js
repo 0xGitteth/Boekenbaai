@@ -279,13 +279,13 @@
   }
   function advicePayload(optionId){
     return {...(adviceContext||{}),signals:choices.openSignals||{prefer:[],avoid:[]},
-      length:choices.length||'any',seed,recent:[...recentAdviceQuestions].slice(-30),
+      length:choices.length||'any',required:choices.required||[],seed,recent:[...recentAdviceQuestions].slice(-30),
       ...(optionId===undefined?{}:{optionId})};
   }
   function applyAdvice(plan){
     adviceContext=plan.context;
     if(plan.clearReference){delete choices.referenceBookId;delete choices.referencePreference;delete choices.externalRef;}
-    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,priority:plan.context.priority||[],
+    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,priority:plan.context.priority||[],required:plan.context.required||[],
       questionIds:[...new Set([...(plan.context.used||[]),...(plan.kind==='question'?[plan.context.current]:[])])]};
     if(plan.context.current&&plan.kind==='question'){
       recentAdviceQuestions.add(plan.context.current);
@@ -831,10 +831,15 @@
         ...(grant?{choiceGrant:grant}:{}),anonymous:!personal,choices:submitted,
       });
       if(!active||marker!==epoch)return;
+      if(results.missingCombination?.length&&!results.emptyCatalog){
+        message('Ik vind in de boekinformatie geen boek met al deze kenmerken samen: '+results.missingCombination.map(t=>t.label).join(', ')+'. Wil je ook boeken zien die bij een deel van je wensen passen?');
+        options([['Ja, ook gedeeltelijke matches',()=>{choices={...choices,required:[]};if(adviceContext)adviceContext={...adviceContext,required:[]};void showRecommendations();}],['Nee, verder praten',()=>{adviceContext={...(adviceContext||{}),current:'feedback',uncertain:0};offerOpenAnswer('Welke kenmerken wil je graag behouden?',null,true);}]]);
+        return;
+      }
       if(results.missingTopics?.length&&!results.emptyCatalog&&!extra.allowPartial){
         const missing=results.missingTopics[0];
         message('Ik kan in de boekinformatie geen goede match vinden voor '+missing.label+'. Wil je ook naar verwante onderwerpen kijken?');
-        const alternative=missing.parent&&missing.parentLabel?[['Ook '+missing.parentLabel,()=>{const signals=choices.openSignals||{prefer:[],avoid:[]};choices.openSignals={...signals,prefer:[...new Set([...signals.prefer.filter(t=>t!==missing.id),missing.parent])]};void showRecommendations();}]]:[];
+        const alternative=missing.parent&&missing.parentLabel?[['Ook '+missing.parentLabel,()=>{const signals=choices.openSignals||{prefer:[],avoid:[]};choices.openSignals={...signals,prefer:[...new Set([...signals.prefer.filter(t=>t!==missing.id),missing.parent])]};choices.required=(choices.required||[]).filter(t=>t!==missing.id);void showRecommendations();}]]:[];
         options([...alternative,['Andere interesses bekijken',startExploration],['Zelf vertellen',()=>{adviceContext={...(adviceContext||{}),current:'feedback',uncertain:0};offerOpenAnswer('Wat zou je anders willen lezen?',null,true);}],...(results.suggestions?.length?[['Laat de andere passende boeken zien',()=>showRecommendations({allowPartial:true})]]:[])]);
         return;
       }

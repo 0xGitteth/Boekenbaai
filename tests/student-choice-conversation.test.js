@@ -431,6 +431,9 @@ const othersDisclosure=run('Mijn broer is homo en ik wil een spannend boek',last
 assert.ok(othersDisclosure.advice.context.signals.prefer.includes('danger'));
 assert.ok(!othersDisclosure.advice.context.signals.prefer.includes('sexualOrientation'));
 assert.ok(!othersDisclosure.advice.context.signals.prefer.includes('family'));
+const combined=run('Ik lees graag een spannend verhaal met LHBTQIA+ personages',lastRound);
+assert.ok(combined.advice.context.required.includes('danger'));
+assert.ok(combined.advice.context.required.includes('queerRepresentation'));
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});

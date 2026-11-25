@@ -443,9 +443,10 @@ function validateChoices(value) {
   result.answers=dialogue.validatedAnswers(input.answers);
   result.openSignals=validateSignals(input.openSignals);
   result.priority=validateSignals({prefer:input.priority}).prefer.filter(t=>result.openSignals.prefer.includes(t));
+  result.required=validateSignals({prefer:input.required}).prefer.filter(t=>result.openSignals.prefer.includes(t));
   result.discoverySample=input.discoverySample===true&&result.route==='surprise';
   result.bookVotes=Array.isArray(input.bookVotes)?input.bookVotes.filter(v=>v&&typeof v.key==='string'&&v.key.length<=400&&['like','maybe','dislike'].includes(v.vote)).slice(-24):[];
-  if(result.route==='surprise'&&!result.discoverySample)result.openSignals.prefer=[];
+  if(result.route==='surprise'&&!result.discoverySample){result.openSignals.prefer=[];result.required=[];}
   result.useReadingHistory=input.useReadingHistory!==false;
   result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
   result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
@@ -671,6 +672,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     // Exclude known contraindications; absence of a metadata signal is
     // not evidence that a book is free of that subject.
     if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
+    if(!choice.discoverySample&&choice.required.some(trait=>!traits.has(trait)))continue;
     const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
     const specificMatches=choice.openSignals.prefer.filter(trait=>Object.hasOwn(SUBTOPICS,trait)&&traits.has(trait)).length;
     if(choice.openSignals.prefer.length&&!openMatches&&!choice.discoverySample)continue;
@@ -723,6 +725,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
           : choice.length==='short' && work.pages && work.pages<=180
             ? work.pages+' pagina’s' : 'Een ander boek uit de bibliotheek'),
     })),
+    missingCombination:choice.required.length>1&&!choice.discoverySample&&!works.some(w=>!choice.openSignals.avoid.some(t=>workTraits.get(w.key)?.has(t))&&choice.required.every(t=>workTraits.get(w.key)?.has(t)))?choice.required.map(t=>({id:t,label:traitLabels[t]||t})):[],
     missingTopics:missingTopics.map(t=>({id:t,label:traitLabels[t]||t,parent:SUBTOPICS[t]||'',parentLabel:traitLabels[SUBTOPICS[t]]||''})),
     exhausted: !picked.length && works.length > 0,
     emptyCatalog: works.length===0,

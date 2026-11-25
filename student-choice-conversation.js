@@ -222,6 +222,7 @@ function cleanContext(raw={}){
   hobbies:validateSignals({prefer:raw.hobbies}).prefer,
   discovery:raw.discovery===true,
   priority:validateSignals({prefer:raw.priority}).prefer,
+  required:validateSignals({prefer:raw.required}).prefer,
   indexParent:typeof raw.indexParent==='string'&&Object.hasOwn(LABELS,raw.indexParent)?raw.indexParent:'',
   indexPage:Math.max(0,Math.min(100,Number.isInteger(raw.indexPage)?raw.indexPage:0)),
   discoveryReturn:BY_ID.has(raw.discoveryReturn)&&raw.discoveryReturn!=='discovery-feedback'?raw.discoveryReturn:'discover',
@@ -421,8 +422,10 @@ function analyze(text,rawContext={},books=[]){
  }
  let current=validateSignals(c.signals);
  let input=ownInterestText(text), media=[],hypothesis=[],length=c.length;
+ const readingException=input.match(/^\s*(?:ik\s+)?(?:vind\s+lezen\s+niet\s+leuk|hou\s+niet\s+van\s+lezen|lees\s+niet\s+graag|haat\s+lezen|vind\s+boeken\s+saai|lezen\s+is\s+saai)\s*,?\s*(?:behalve|maar\s+wel)\s+(.+)$/i);
+ if(readingException)input='Ik lees graag '+readingException[1];
  const ownValue=normalize(input);
- const notReader=/\b(?:haat lezen|lezen is saai|lees niet graag|niet van lezen|geen zin om te lezen|boeken saai|meeste boeken saai)\b/.test(value);
+ const notReader=!readingException&&/\b(?:haat lezen|lezen is saai|lees niet graag|niet van lezen|geen zin om te lezen|boeken saai|meeste boeken saai)\b/.test(value);
  // Media mentions suggest possible directions, never book preferences by themselves.
  for(const [name,aliases,traits] of MEDIA){
   if(aliases.some(a=>(' '+ownValue+' ').includes(' '+a+' '))){
@@ -530,7 +533,7 @@ function analyze(text,rawContext={},books=[]){
    readingScope=hasReading||continuation;
   }
  }
- const explicitReading=/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
+ const explicitReading=Boolean(readingException)||/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
  const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/i.test(part));
  const ambiguities=!selected&&!resolvedContextAlias&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguities(input).filter(x=>!x.negative||x.reading||explicitReading):[];
  const ambiguity=ambiguities[0]||null;
@@ -616,8 +619,13 @@ function analyze(text,rawContext={},books=[]){
  }
  if(replaceTopics&&delta.prefer.length){current=validateSignals({prefer:[],avoid:current.avoid});feedbackRejected.push('replacement');}
  const updated=merged(current,delta);
+ const conjunction=!selected&&explicitReading?input.match(/^(.+?)\b(?:met|waarin)\s+(.+)$/i):null;
+ const leaf=xs=>xs.filter(t=>!xs.some(k=>isAncestor(t,k)));
+ const left=conjunction?leaf(interpret(conjunction[1]).prefer):[],right=conjunction?leaf(interpret(conjunction[2]).prefer):[];
+ const newRequired=left.length&&right.length&&right.some(t=>!left.includes(t))&&!/\b(?:of|misschien|bijvoorbeeld|liefst|eventueel|zonder|geen|niet)\b/i.test(conjunction[2])?validateSignals({prefer:[...left,...right]}).prefer:[];
+ const required=validateSignals({prefer:[...(replaceTopics?[]:c.required),...newRequired]}).prefer.filter(t=>updated.prefer.includes(t)&&!updated.avoid.some(a=>a===t||isAncestor(a,t)));
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
- const next={...c,signals:updated,length,priority,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
+ const next={...c,signals:updated,length,priority,required,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
