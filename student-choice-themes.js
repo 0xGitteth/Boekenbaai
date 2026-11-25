@@ -442,4 +442,6 @@ Object.assign(THEMES,{
   ]
 });
 for(const [id,,label,aliases,evidence] of require('./student-choice-topic-details')) THEMES[id]=[label,aliases,evidence];
-module.exports={THEMES};
+const SUBTOPICS={"drawing":"art","photography":"art","design":"art","filmmaking":"art","musicMaking":"music","musicListening":"music","sportPlaying":"sport","sportWatching":"sport","teamSport":"sport","individualSport":"sport","pets":"animals","wildlife":"animals","animalCare":"animals","space":"science","computing":"technology","inventions":"science","humanBody":"science","robotics":"technology","gameBuilding":"gaming","gameCompetition":"gaming","gameStory":"gaming","gameDevelopment":"gaming","gameMultiplayer":"gaming","courtCases":"crime","crimeVictims":"crime","gangs":"crime","practicalTech":"technology"};
+for(const [id,parent] of require('./student-choice-topic-details')) SUBTOPICS[id]=parent;
+module.exports={THEMES,SUBTOPICS};

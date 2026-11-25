@@ -170,7 +170,7 @@ const TRAIT_WORDS={
   murder:['moord','moorden','moordenaar','vermoord','vermoorden'],
   horror:['horror','griezel','griezelen','griezelig','eng'],
 };
-const {THEMES}=require('./student-choice-themes');
+const {THEMES,SUBTOPICS}=require('./student-choice-themes');
 for(const [key,[,,terms]] of Object.entries(THEMES))TRAIT_WORDS[key]=[...(TRAIT_WORDS[key]||[]),...terms];
 // Word-boundary matching prevents 'sport' inside 'transport' and 'leven'
 // inside 'overleven'. Accept only known Dutch inflections, never arbitrary
@@ -226,6 +226,15 @@ function traitsForBook(book){
       else if(hasEvidence(title,word))confidence=Math.max(confidence,0.7);
     }
     if(confidence)matched.set(trait,confidence);
+  }
+  // A specific subject also supplies evidence of its real parent subject.
+  // Format groups are not catalogue themes; never invent a parent trait.
+  for(const [trait,confidence] of [...matched]){
+    const seen=new Set([trait]);let parent=SUBTOPICS[trait];
+    while(parent&&!seen.has(parent)&&Object.hasOwn(TRAIT_WORDS,parent)){
+      seen.add(parent);matched.set(parent,Math.max(confidence,matched.get(parent)||0));
+      parent=SUBTOPICS[parent];
+    }
   }
   TRAIT_CACHE.set(key,[...matched]);
   if(TRAIT_CACHE.size>TRAIT_CACHE_LIMIT)

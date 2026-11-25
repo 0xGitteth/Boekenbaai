@@ -115,7 +115,12 @@ function suggestTopics(text){
   return previous[b.length];
  }
  const candidates=new Map();
- for(const word of words.filter(w=>w.length>=5)){
+ const exactWords=new Set(Object.values(TERMS).flatMap(terms=>terms.flatMap(term=>term.split(' '))));
+ const common=new Set(['lezen','boeken','graag','liever','leuke','leuker','interessant','vinden','precies','thema','verhalen','eigenlijk','vooral','alleen']);
+ // Curated possible directions for ambiguous activities, not assumed meanings.
+ const hints={urbex:['photography','historicalDailyLife','travel'],cosplay:['design','mythicalCreatures','filmmaking'],geocaching:['puzzles','nature','discovery']};
+ for(const word of words)for(const key of hints[word]||[])candidates.set(key,1);
+ for(const word of words.filter(w=>w.length>=5&&!exactWords.has(w)&&!common.has(w))){
   for(const [key,variants] of Object.entries(TERMS)){
    for(const variant of variants){
     if(!/^[a-z]{5,}$/.test(variant)||Math.abs(word.length-variant.length)>1)continue;

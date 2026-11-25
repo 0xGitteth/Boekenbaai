@@ -8,6 +8,7 @@ const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity'
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
 const {workKey}=require('./book-reservations');
 const {validateSignals}=require('./student-choice-open-text');
+const {SUBTOPICS}=require('./student-choice-themes');
 const externalReferences=require('./student-choice-reference');
 const keyOf = book => workKey(book);
 const QUESTION_VALUES = Object.freeze({
@@ -596,7 +597,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   };
   const explicitTraits=referencePreferences[choice.referencePreference]||[];
   for(const trait of explicitTraits)weights.set(trait,(weights.get(trait)||0)+2);
-  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+3);
+  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+(Object.hasOwn(SUBTOPICS,trait)?6:3));
   const reference=choice.referenceBookId
     ?(db.books||[]).find(book=>book.id===choice.referenceBookId&&!isHidden(book)):null;
   // Similarity MUST use the pooled work, not whichever physical copy had a
@@ -647,6 +648,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     // not evidence that a book is free of that subject.
     if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
     const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
+    const specificMatches=choice.openSignals.prefer.filter(trait=>Object.hasOwn(SUBTOPICS,trait)&&traits.has(trait)).length;
     if(choice.openSignals.prefer.length&&!openMatches)continue;
     const explicitMatch=explicitTraits.reduce((sum,t)=>sum+(traits.get(t)||0),0);
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
@@ -662,13 +664,14 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     }
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 14 : -12;
     // Free-time activity is deliberately not mapped to a book's genre.
-    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,explicitMatch,openMatches,
+    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,explicitMatch,openMatches,specificMatches,
       score, tiebreak: tie(work.key, choice.seed) });
   }
   candidates.sort((a,b) =>
     // When asking for books like a chosen reference, offer real matches
     // before unrelated fallback titles, even with reading-history consent.
     (choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
+    || (b.specificMatches-a.specificMatches)
     || (b.openMatches-a.openMatches)
     || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
     || (anchorTraits.size&&(choice.referenceBookId||outside)
