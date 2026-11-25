@@ -220,6 +220,7 @@ function cleanContext(raw={}){
   media:bounded(raw.media,4).filter(name=>MEDIA.some(m=>m[0]===name)),
   hobbies:validateSignals({prefer:raw.hobbies}).prefer,
   discovery:raw.discovery===true,
+  priority:validateSignals({prefer:raw.priority}).prefer,
   indexParent:typeof raw.indexParent==='string'&&Object.hasOwn(LABELS,raw.indexParent)?raw.indexParent:'',
   indexPage:Math.max(0,Math.min(100,Number.isInteger(raw.indexPage)?raw.indexPage:0)),
   discoveryReturn:BY_ID.has(raw.discoveryReturn)&&raw.discoveryReturn!=='discovery-feedback'?raw.discoveryReturn:'discover',
@@ -321,7 +322,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
   }
   const recent=context.recent.includes(q.id)?-7:0;
   const groupPenalty=q.group&&[...used].some(id=>BY_ID.get(id)?.group===q.group)?-5:0;
-  const link=q.when.some(t=>last.includes(t))?8:q.when.some(t=>p.includes(t))?3:0;
+  const link=(q.when.some(t=>last.includes(t))?8:q.when.some(t=>p.includes(t))?3:0)+(q.when.some(t=>context.priority.includes(t))?3:0);
   const stage=q.stage===1?4:q.stage===2?3:q.stage===0?(p.length?1:7):0;
   return {q,score:link+stage+Math.min(4,coverage)+recent+groupPenalty};
  }).sort((a,b)=>b.score-a.score||a.q.id.localeCompare(b.q.id));
@@ -541,6 +542,8 @@ function analyze(text,rawContext={},books=[]){
   return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'question',reaction:'Je hoeft niets persoonlijks te vertellen om een boek te kiezen.',question:{...questionView(BY_ID.get('more-interests')),prompt:'Over welk onderwerp zou je graag iets lezen?'},context:ctx}};
  }
  const delta=validateSignals(direct);
+ const emphasized=input.match(/\b(?:vooral|het liefst|meer van|liever over|favoriet is)\s+([^.!?;]+)/i);
+ const priority=validateSignals({prefer:[...(emphasized?interpret(emphasized[1]).prefer:[]),...c.priority]}).prefer;
  if(c.discovery&&(uncertain||decline)&&!selected&&!delta.prefer.length&&!delta.avoid.length&&!media.length&&!anchor&&!c.signals.prefer.length&&c.current!=='clarify-topic'){
   if(c.current==='discover')return navigate('discover-menu','examples','Geen probleem!');
   if(c.current==='discover-menu')return navigate('discover-topics','question','Misschien helpt het als je onderwerpen ziet.');
@@ -560,7 +563,7 @@ function analyze(text,rawContext={},books=[]){
    const known=delta.prefer.filter(t=>!isRelated(t)||remaining.prefer.includes(t));
    const avoid=delta.avoid.filter(t=>!isRelated(t)||remaining.avoid.includes(t));
    const hobby=!explicitReading&&(activityContext||/\b(?:ik hou van|ik houd van|ik doe graag|ik vind het leuk om|mijn hobby)\b/.test(value));
-   const from=explicitReading&&activityContext?'opening':hobby&&!activityContext?'free-time':c.current;
+   const from=explicitReading&&activityContext?'opening':hobby&&(!activityContext||c.current==='opening')?'free-time':c.current;
    const ctx={...c,signals:current,current:'clarify-topic',clarifyFrom:from,clarifyAmbiguity:id,clarifyNegative:ambiguity.negative,clarifyKnown:known,clarifyAvoid:avoid,clarifyCandidates:[],uncertain:0,length};
    return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',question:questionView(questionForContext(ctx)),context:ctx}};
   }
@@ -578,7 +581,7 @@ function analyze(text,rawContext={},books=[]){
  }
  const updated=merged(current,delta);
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
- const next={...c,signals:updated,length,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
+ const next={...c,signals:updated,length,priority,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};

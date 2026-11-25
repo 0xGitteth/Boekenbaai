@@ -392,6 +392,12 @@ for(const text of ['Ik ben autistisch. Ik wil iets leuks lezen','Hallo, ik heb A
 const thirdParty=run('Mijn moeder houdt van paarden',{current:'discover',discovery:true});
 assert.deepEqual(thirdParty.advice.context.signals.prefer,[]);
 assert.ok(!thirdParty.advice.context.hobbies.includes('horses'));
+const thirdMixed=run('Ik hou van sport en mn moeder van paarden',{current:'discover',discovery:true});
+assert.ok(!thirdMixed.advice.context.hobbies.includes('horses'));
+assert.notEqual(thirdMixed.advice.question?.id,'clarify-topic');
+const weighted=run('Ik hou van voetbal, maar meer van gamen',{current:'discover',discovery:true});
+assert.ok(weighted.advice.context.priority.includes('gaming'));
+assert.ok(weighted.advice.context.hobbies.includes('football'));
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});

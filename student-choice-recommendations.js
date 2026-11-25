@@ -442,6 +442,7 @@ function validateChoices(value) {
   }
   result.answers=dialogue.validatedAnswers(input.answers);
   result.openSignals=validateSignals(input.openSignals);
+  result.priority=validateSignals({prefer:input.priority}).prefer.filter(t=>result.openSignals.prefer.includes(t));
   result.discoverySample=input.discoverySample===true&&result.route==='surprise';
   result.bookVotes=Array.isArray(input.bookVotes)?input.bookVotes.filter(v=>v&&typeof v.key==='string'&&v.key.length<=400&&['like','maybe','dislike'].includes(v.vote)).slice(-24):[];
   if(result.route==='surprise'&&!result.discoverySample)result.openSignals.prefer=[];
@@ -618,7 +619,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   };
   const explicitTraits=referencePreferences[choice.referencePreference]||[];
   for(const trait of explicitTraits)weights.set(trait,(weights.get(trait)||0)+2);
-  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+(Object.hasOwn(SUBTOPICS,trait)?6:3));
+  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+(Object.hasOwn(SUBTOPICS,trait)?6:3)+(choice.priority.includes(trait)?5:0));
   const reference=choice.referenceBookId
     ?(db.books||[]).find(book=>book.id===choice.referenceBookId&&!isHidden(book)):null;
   // Similarity MUST use the pooled work, not whichever physical copy had a
@@ -695,6 +696,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     (choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
     || (b.specificMatches-a.specificMatches)
     || (b.openMatches-a.openMatches)
+    || (choice.priority.filter(t=>workTraits.get(b.work.key)?.has(t)).length-choice.priority.filter(t=>workTraits.get(a.work.key)?.has(t)).length)
     || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
     || (anchorTraits.size&&(choice.referenceBookId||outside)
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)

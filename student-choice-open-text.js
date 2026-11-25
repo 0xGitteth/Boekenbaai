@@ -64,7 +64,7 @@ for(const [id,phrases] of Object.entries(PHRASES))if(TERMS[id])TERMS[id].push(..
 // Remove other people's preferences, not statements about fictional people.
 // Only explicit subjects of preference predicates trigger this rule.
 function ownInterestText(input){
- return String(input||'').split(/([.!?;]|\b(?:maar|echter)\b|\ben ik\b)/i).filter((part,i)=>i%2||!/^\s*(?:(?:mijn|m'n|mn|me)\s+(?:moeder|vader|ouders|broer|zus|vriend|vriendin|vrienden|mentor|docent|opa|oma|klasgenoot)|(?:hij|zij|ze|die))\s+(?:houdt? van|vind(?:t|en)?|leest|lezen|doet|speelt|kijkt|luistert|heeft interesse in)\b/i.test(part)).join(' ').replace(/\ben ik\b/gi,'ik');
+ return String(input||'').split(/([.!?;]|\b(?:maar|echter)\b|\ben (?=(?:ik|mijn|m'n|mn|me)\b))/i).filter((part,i)=>i%2||!/^\s*(?:(?:mijn|m'n|mn|me)\s+(?:moeder|vader|ouders|broer|zus|vriend|vriendin|vrienden|mentor|docent|opa|oma|klasgenoot)|(?:hij|zij|ze|die))\s+(?:houdt? van|van|vind(?:t|en)?|leest|lezen|doet|speelt|kijkt|luistert|heeft interesse in)\b/i.test(part)).join(' ').replace(/\ben ik\b/gi,'ik');
 }
 function validateSignals(input){
  const filter=a=>[...new Set((Array.isArray(a)?a:[]).filter(k=>typeof k==='string'&&Object.hasOwn(TERMS,k)))].slice(0,24);

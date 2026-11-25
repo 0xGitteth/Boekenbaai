@@ -285,7 +285,7 @@
   function applyAdvice(plan){
     adviceContext=plan.context;
     if(plan.clearReference){delete choices.referenceBookId;delete choices.referencePreference;delete choices.externalRef;}
-    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,
+    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,priority:plan.context.priority||[],
       questionIds:[...new Set([...(plan.context.used||[]),...(plan.kind==='question'?[plan.context.current]:[])])]};
     if(plan.context.current&&plan.kind==='question'){
       recentAdviceQuestions.add(plan.context.current);
@@ -346,7 +346,7 @@
       message(noPreference?'Zal ik je gewoon drie verschillende boeken laten zien?':'Zal ik alvast een paar boeken voor je zoeken? 📚');
       options([[noPreference?'Laat me drie boeken zien':'Toon boeken met wat je nu weet',()=>{if(noPreference)choices.route='surprise';void showRecommendations();}],
         ['Ontdek met boeken',startBookDiscovery],
-        ['Ontdek meer interesses',()=>{void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});} ]]);
+        ['Ontdek meer interesses',()=>{void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});}],['Alle onderwerpen bekijken',()=>void submitAdvice('Alle onderwerpen bekijken',undefined,true,{navigation:'index'})] ]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
     }else{
@@ -376,7 +376,7 @@
       }
       const plan=result.advice;
       if(!plan){throw Error('De keuzehulp kon geen vervolgvraag bepalen.');}
-      const acceptPlan=()=>{if(!extraContext.navigation&&!['clarify','examples'].includes(plan.kind)){adviceHistory.push(previous);if(adviceHistory.length>20)adviceHistory.shift();}return continueAdvice(plan);};
+      const acceptPlan=()=>{if((!extraContext.navigation||extraContext.navigation==='book-feedback')&&!['clarify','examples'].includes(plan.kind)){adviceHistory.push(previous);if(adviceHistory.length>20)adviceHistory.shift();}return continueAdvice(plan);};
       if(result.avoid?.length){
         const labels=result.avoid.map(t=>result.labels?.[t]||t).join(', ');
         message('Je wilt '+labels+' liever vermijden. Klopt dat?');
@@ -831,12 +831,12 @@
         ...(grant?{choiceGrant:grant}:{}),anonymous:!personal,choices:submitted,
       });
       if(!active||marker!==epoch)return;
-      if(results.missingTopics?.length&&!results.emptyCatalog){
+      if(results.missingTopics?.length&&!results.emptyCatalog&&!extra.allowPartial){
         const missing=results.missingTopics[0];
         message('Ik kan in de boekinformatie geen goede match vinden voor '+missing.label+'. Wil je ook naar verwante onderwerpen kijken?');
         const alternative=missing.parent&&missing.parentLabel?[['Ook '+missing.parentLabel,()=>{const signals=choices.openSignals||{prefer:[],avoid:[]};choices.openSignals={...signals,prefer:[...new Set([...signals.prefer.filter(t=>t!==missing.id),missing.parent])]};void showRecommendations();}]]:[];
         options([...alternative,['Andere interesses bekijken',startExploration],['Zelf vertellen',()=>offerOpenAnswer('Wat zou je anders willen lezen?',null,true)],...(results.suggestions?.length?[['Laat de andere passende boeken zien',()=>showRecommendations({allowPartial:true})]]:[])]);
-        if(!extra.allowPartial)return;
+        return;
       }
       if(!results.suggestions?.length){
         notice(results.emptyCatalog?'Er staan nog geen boeken in de bibliotheek.':
