@@ -9,6 +9,7 @@ const code=fs.readFileSync(path.join(root,'public','student-book-choice-chat.js'
 const markup=fs.readFileSync(path.join(root,'public','index.html'),'utf8');
 assert.match(markup,/<summary aria-label="Informatie over Help me kiezen"/);
 assert.match(markup,/Hij gebruikt geen AI/);
+assert.doesNotMatch(markup,/student-choice-description|Beantwoord een paar vragen en ontdek boeken uit de bibliotheek/);
 function node(tag='div'){
   return {tag,children:[],listeners:{},value:'',textContent:'',isConnected:true,
     disabled:false,open:false,attrs:{},style:{},
