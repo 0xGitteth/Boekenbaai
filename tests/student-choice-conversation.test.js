@@ -110,6 +110,16 @@ assert.equal(cleanContext({turns:999}).turns,7);
 // Reproducible synthetic conversations, using the real planner, exact option
 // mapping, uncertainty fallback, and varied topic/seed combinations. This
 // measures logic and repetition, not real pupils' language comprehension.
+// Verify subject boundaries over many seeded first questions.
+const topicChecks=[['tekenen',/muziek|muzikant|liedjes/i],['muziek',/tekenen|fotografie|schilderen/i],['techniek',/welke games speel|gamepersonages|online spelen/i],['geschiedenis',/oorlog.*meegemaakt|oorlogsgeschiedenis/i],['vriendschap',/liefdesverhaal|verliefd|romantiek/i],['natuur',/klimaatverandering|veranderend klimaat/i],['spanning',/griezel|enge verhalen|geesten/i],['sport',/nieuwe klas|schoolproject|muzikant/i]];
+for(const [topic,forbidden] of topicChecks)for(let i=0;i<100;i++){
+ const result=run(topic,{seed:'subject-'+topic+'-'+i});
+ assert.ok(!forbidden.test(result.advice.question?.prompt||''),topic+': '+result.advice.question?.prompt);
+}
+for(const question of Q.filter(x=>x.group)){
+ assert.ok(question.when.every(t=>validateSignals({prefer:[t]}).prefer.includes(t)),question.id);
+ assert.ok((question.requires||[]).every(t=>validateSignals({prefer:[t]}).prefer.includes(t)),question.id);
+}
 const topics=['mysteries','criminaliteit','sport','fantasy','dieren','geschiedenis','wetenschap','vriendschap','humor','muziek','psychologie','techniek','oorlog','reizen','natuur','gamen','kunst','maatschappij','overleven','GTA en FIFA'];
 const sequences=new Map();let completed=0,turns=0,exampleCount=0;
 for(let i=0;i<10000;i++){
