@@ -75,6 +75,7 @@
     existing_physical_barcode_requires_correction:'De barcode is al gekoppeld aan een ander boek.',
     existing_edition_requires_review:'Deze ISBN-editie staat al in Boekenbaai.',
     possible_existing_book_without_isbn:'Er bestaat mogelijk al een exemplaar zonder opgeslagen ISBN.',
+    corrected_isbn_matches_original_copy:'De originele Excelidentifier hoort bij een bestaande registratie, terwijl het gecorrigeerde ISBN als een andere editie wordt gezien. Controleer de bestaande fysieke kopie voordat je voorraad toevoegt.',
     ambiguous_existing_edition_isbn:'Een bestaand exemplaar bevat tegenstrijdige ISBN-velden.',
     missing_title_or_author:'Een nieuw exemplaar moet een titel en auteur hebben.',
     edition_identity_mismatch:'De titel of auteur komt niet overeen met de bestaande ISBN-editie.',

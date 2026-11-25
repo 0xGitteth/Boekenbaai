@@ -40,10 +40,12 @@ const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
+const {currentStudentClassNames,materializeLegacyRosters,setStudentClassMembership}=require('./student-class-membership');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 const {studentLoanIds,isUnavailable,isHidden,readStatus,
   catalogProjection,availabilityConflicts,selectAvailableCopy}=require('./book-catalog-integrity');
+const reservationQueue=require('./book-reservations');
 const { createReturnReadingRecord, mayViewReadingRecord, publicReadingRecord,
   amendReadingRecord } = require('./reading-completion-core');
 const {
@@ -64,6 +66,7 @@ const { HOUR_MS: IMPORT_MAIL_HOUR_MS,
   acquireFileLock } = require('./book-import-reminder-mail');
 const adminMail = require('./book-import-admin-mail');
 const { dispatchActions } = require('./book-import-action-mail');
+const {dispatchReservationMail}=require('./book-reservation-mail');
 const { readJsonSnapshot, inheritSnapshot, commitJsonSnapshot,
   withDatabaseWriteLock, mutateJsonLocked, mutateJsonLockedAsync } = require('./database-write-coordinator');
 const { finishLegacyImportJob: persistLegacyImportStatus } =
@@ -78,11 +81,14 @@ const { createDeferredAssignmentTasks, migrateLegacyDeferredTasks,
   findTask: findDeferredAssignmentTask,
   resolveDeferredAssignmentTask } = require('./book-import-assignment-tasks');
 
-const {listDeferredBookTasks, resolveDeferredBookTask, retainDeferredBookChecks} =
-  require('./book-import-deferred-book-tasks');
+const {listDeferredBookTasks, resolveDeferredBookTask, retainDeferredBookChecks,
+  listDeferredImportHistory} = require('./book-import-deferred-book-tasks');
+const {closeTasksProvenByImport} = require('./book-import-task-reconciliation');
 const {appendDurableLoanEvent,borrowEvents,borrowCountEvents,searchHistory,
   removeFalseHistory,listCurrentLoans,removeFalseCurrentLoan} =
   require('./book-loan-history-admin');
+const {listCandidates:continuousLoanCandidates,correctContinuousLoan} =
+  require('./book-loan-event-correction');
 
 let xlsxModule = null;
 
@@ -565,10 +571,19 @@ function ensureClassShape(klass) {
   safeClass.teacherIds = Array.isArray(safeClass.teacherIds)
     ? Array.from(new Set(safeClass.teacherIds.filter((id) => typeof id === 'string')))
     : [];
-  safeClass.studentIds = Array.isArray(safeClass.studentIds)
-    ? Array.from(new Set(safeClass.studentIds.filter((id) => typeof id === 'string')))
-    : [];
+  // Missing legacy rosters and explicitly empty rosters have different meanings.
+  if (Array.isArray(safeClass.studentIds)) {
+    safeClass.studentIds = Array.from(new Set(safeClass.studentIds.filter((id) => typeof id === 'string')));
+  } else {
+    delete safeClass.studentIds;
+  }
   return safeClass;
+}
+
+function effectiveClassRoster(db, klass) {
+  if (Array.isArray(klass.studentIds)) return klass.studentIds;
+  return (db.students || []).filter(student => studentClassIds(db, student).includes(klass.id))
+    .map(student => student.id);
 }
 
 function ensureTeacherShape(user) {
@@ -1084,9 +1099,6 @@ function ensureClassRecord(db, name) {
     if (!Array.isArray(klass.teacherIds)) {
       klass.teacherIds = [];
     }
-    if (!Array.isArray(klass.studentIds)) {
-      klass.studentIds = [];
-    }
   }
   return klass;
 }
@@ -1443,6 +1455,7 @@ function loadDb() {
   if (!Array.isArray(data.readingRecords)) data.readingRecords = [];
   if (!Array.isArray(data.importJobs)) data.importJobs = [];
   if (!Array.isArray(data.bookImportFollowups)) data.bookImportFollowups = [];
+  if (!Array.isArray(data.bookReservations)) data.bookReservations = [];
   if (!Array.isArray(data.bookImportAssignmentTasks)) data.bookImportAssignmentTasks = [];
   // Preserve pre-upgrade postponed corrections before another import trims
   // their original source report. This is saved with the next database write.
@@ -1506,7 +1519,8 @@ function getAuthenticatedUser(req, getDb) {
       role: 'student',
       grade: student.grade || '',
       borrowedBooks: student.borrowedBooks,
-      classIds: student.classIds,
+      classIds: studentClassIds(db,student),
+      classNames: currentStudentClassNames(db,student),
       username: student.username,
       token,
     };
@@ -1545,12 +1559,15 @@ function updateImportJob(db, jobId, updates = {}) {
 
 function sanitizeStudent(student, options = {}) {
   if (!student) return null;
+  const db=options.db||null;
   const base = {
     id: student.id,
     name: student.name,
     grade: student.grade || '',
     borrowedBooks: Array.isArray(student.borrowedBooks) ? student.borrowedBooks : [],
-    classIds: Array.isArray(student.classIds) ? student.classIds : [],
+    classIds: db?studentClassIds(db,student):
+      (Array.isArray(student.classIds)?student.classIds:[]),
+    classNames: db?currentStudentClassNames(db,student):[],
     mustChangePassword: Boolean(student.mustChangePassword),
   };
   if (options.includeUsername) {
@@ -1916,13 +1933,17 @@ function findBarcodeGroupById(db, groupId) {
 }
 
 function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false,
-  studentId = null, classId = null, loanOwners = new Map() } = {}) {
+  studentId = null, classId = null, loanOwners = new Map(), db = null } = {}) {
   if (!group) {
     return null;
   }
   const books = Array.isArray(group.books) ? group.books : [];
   if (requireAvailable) {
-    return selectAvailableCopy(books, loanOwners);
+    if (!db) return selectAvailableCopy(books, loanOwners);
+    const now = Date.now();
+    const eligible = books.filter(book => reservationQueue.availableTo(db, book, studentId, now, loanOwners));
+    return eligible.find(book => reservationQueue.readyFor(db, book, studentId, now))
+      || selectAvailableCopy(eligible, loanOwners);
   }
   if (mustBeBorrowed) {
     if (classId) {
@@ -1999,8 +2020,11 @@ function resolveBookSelection(db, identifier, options = {}) {
     if (!group) {
       continue;
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners, db });
     if (!book) {
+      if (requireAvailable && selectAvailableCopy(group.books, loanOwners)) {
+        return { error: 'De beschikbare exemplaren liggen klaar voor reserveringen.', statusCode: 409 };
+      }
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
         : 'Geen uitgeleende exemplaren gevonden voor deze titel';
@@ -2050,8 +2074,11 @@ function resolveBookSelection(db, identifier, options = {}) {
         };
       }
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners, db });
     if (!book) {
+      if (requireAvailable && selectAvailableCopy(group.books, loanOwners)) {
+        return { error: 'De beschikbare exemplaren liggen klaar voor reserveringen.', statusCode: 409 };
+      }
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
         : 'Geen uitgeleende exemplaren gevonden voor deze titel';
@@ -3850,6 +3877,8 @@ async function handleApi(req, res, requestUrl) {
             firstName: getPreferredFirstName(studentAccount),
             role: 'student',
             grade: studentAccount.grade || '',
+            classIds:studentClassIds(database,studentAccount),
+            classNames:currentStudentClassNames(database,studentAccount),
             mustChangePassword: Boolean(studentAccount.mustChangePassword),
           },
         });
@@ -3903,10 +3932,7 @@ async function handleApi(req, res, requestUrl) {
       if (validAccounts.length > 1) {
         const options = validAccounts.map((account) => {
           if (accountType === 'student') {
-            const classes = database.classes
-              .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(account.id))
-              .map((cls) => cls.name)
-              .join(', ');
+            const classes = currentStudentClassNames(database,account).join(', ');
             return {
               id: account.id,
               name: account.name,
@@ -3947,6 +3973,8 @@ async function handleApi(req, res, requestUrl) {
             firstName: getPreferredFirstName(account),
             role: 'student',
             grade: account.grade || '',
+            classIds:studentClassIds(database,account),
+            classNames:currentStudentClassNames(database,account),
             mustChangePassword: Boolean(account.mustChangePassword),
           },
         });
@@ -3987,10 +4015,7 @@ async function handleApi(req, res, requestUrl) {
 
         // Voor elke student, bepaal het aantal letters voor unieke displayName binnen klas
         matches = rawMatches.map((entry) => {
-          const classes = database.classes
-            .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(entry.id))
-            .map((cls) => cls.name)
-            .join(', ');
+          const classes = currentStudentClassNames(database,entry).join(', ');
 
           // Bepaal letters
           let letters = 1;
@@ -4001,10 +4026,7 @@ async function handleApi(req, res, requestUrl) {
             const displayName = createStudentDisplayName(entry, letters);
             const hasConflict = rawMatches.some((other) => {
               if (other.id === entry.id) return false;
-              const otherClasses = database.classes
-                .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(other.id))
-                .map((cls) => cls.name)
-                .join(', ');
+              const otherClasses = currentStudentClassNames(database,other).join(', ');
               const otherDisplayName = createStudentDisplayName(other, letters);
               return otherDisplayName === displayName && otherClasses === classes;
             });
@@ -4099,6 +4121,7 @@ async function handleApi(req, res, requestUrl) {
           examReadingEligible: examReadingAccess(db, student).eligible,
           borrowedBooks: student.borrowedBooks || [],
           classIds: studentClassIds(db, student),
+          classNames:currentStudentClassNames(db,student),
           username: student.username || '',
           mustChangePassword: Boolean(student.mustChangePassword),
         });
@@ -4438,6 +4461,53 @@ async function handleApi(req, res, requestUrl) {
         pendingLoanImportTasks:pending,pendingLoanTaskCount:pending.length});
     }
 
+    // Authenticated per-work and per-edition reservation queue. Only the
+    // student can see or cancel their own position. Teachers see readiness
+    // alerts solely for pupils currently assigned to their classes.
+    if (requestUrl.pathname === '/api/book-reservations' && req.method === 'GET') {
+      if (!user) return sendJson(res,401,{message:'Log eerst in.'});
+      const db=loadDb();
+      if (reservationQueue.reconcile(db)) saveDb(db);
+      res.setHeader('Cache-Control','no-store');
+      return sendJson(res,200,{
+        reservations:user.role==='student'
+          ?reservationQueue.forStudent(db,user.id):[],
+        mentorAlerts:user.role==='teacher'
+          ?reservationQueue.forTeacher(db,user):[],
+      });
+    }
+    if (requestUrl.pathname === '/api/book-reservations' && req.method === 'POST') {
+      if (user?.role!=='student') return sendJson(res,403,{
+        message:'Alleen leerlingen kunnen reserveren.'});
+      const body=await parseBody(req);
+      const db=loadDb();
+      const outcome=reservationQueue.create(db,{
+        studentId:user.id,bookId:String(body.bookId||'').slice(0,100),
+        specificEdition:body.specificEdition===true,
+      });
+      if(!outcome.ok)return sendJson(res,outcome.status||409,{message:outcome.message});
+      if(outcome.created) {
+        appendHistory(db,{type:'book_reserved',
+          studentId:user.id,bookId:String(body.bookId||'').slice(0,100),
+          message:'Boekreservering geplaatst'});
+        saveDb(db);
+      }
+      return sendJson(res,200,outcome);
+    }
+    const cancelReservationMatch=requestUrl.pathname.match(
+      /^\/api\/book-reservations\/([\w-]+)$/);
+    if(cancelReservationMatch && req.method==='DELETE'){
+      if(user?.role!=='student')return sendJson(res,403,{
+        message:'Alleen leerlingen kunnen eigen reserveringen annuleren.'});
+      const db=loadDb();
+      const outcome=reservationQueue.cancel(db,user.id,cancelReservationMatch[1]);
+      if(!outcome.ok)return sendJson(res,outcome.status||404,{message:outcome.message});
+      appendHistory(db,{type:'book_reservation_cancelled',studentId:user.id,
+        message:'Boekreservering geannuleerd'});
+      saveDb(db);
+      return sendJson(res,200,{ok:true});
+    }
+
     if (req.method === 'GET' && requestUrl.pathname === '/api/books') {
       const db = getDb();
       const borrowCounts = getBorrowCountsMap(borrowCountEvents(db));
@@ -4450,6 +4520,9 @@ async function handleApi(req, res, requestUrl) {
           ||ownBookIds.has(book.id))
         .map(book=>({
           ...withBorrowCount(catalogProjection(book,loanOwners),borrowCounts),
+          reservationHeld:Boolean(reservationQueue.holdFor(db,book.id)),
+          reservationMine:user?.role==='student'
+            &&reservationQueue.readyFor(db,book,user.id),
           personalLoanOnly:user?.role==='student'&&isHidden(book),
         }));
       const folder = requestUrl.searchParams.get('folder');
@@ -5137,13 +5210,17 @@ async function handleApi(req, res, requestUrl) {
     if(requestUrl.pathname===loanHistoryRoot
       ||requestUrl.pathname===loanHistoryRoot+'/remove'
       ||requestUrl.pathname===loanHistoryRoot+'/current'
-      ||requestUrl.pathname===loanHistoryRoot+'/current/remove'){
+      ||requestUrl.pathname===loanHistoryRoot+'/current/remove'
+      ||requestUrl.pathname===loanHistoryRoot+'/continuity'
+      ||requestUrl.pathname===loanHistoryRoot+'/continuity/correct'){
       // History: the relevant teacher's own students or an administrator.
       // Undoing a *current* loan remains exclusively administrator-only.
       if(!ensureRole(user,['teacher','admin']))
         return sendJson(res,user?403:401,{message:'Alleen voor medewerkers.'});
       if((requestUrl.pathname===loanHistoryRoot+'/current'
-        ||requestUrl.pathname===loanHistoryRoot+'/current/remove')
+        ||requestUrl.pathname===loanHistoryRoot+'/current/remove'
+        ||requestUrl.pathname===loanHistoryRoot+'/continuity'
+        ||requestUrl.pathname===loanHistoryRoot+'/continuity/correct')
         &&user.role!=='admin')
         return sendJson(res,403,{message:'Alleen beheerders mogen actuele uitleningen corrigeren.'});
       res.setHeader('Cache-Control','no-store');
@@ -5159,6 +5236,44 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res,200,{items:listCurrentLoans(getDb(),{
           borrower:requestUrl.searchParams.get('borrower')||'',
           book:requestUrl.searchParams.get('book')||'',limit:100})});
+      }
+      if(req.method==='GET'&&requestUrl.pathname===loanHistoryRoot+'/continuity'){
+        return sendJson(res,200,{items:continuousLoanCandidates(getDb(),{
+          borrower:requestUrl.searchParams.get('borrower')||'',
+          book:requestUrl.searchParams.get('book')||'',limit:60})});
+      }
+      if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/continuity/correct'){
+        const body=await parseBody(req,3000);
+        let result=null;
+        try{
+          await mutateJsonLockedAsync({
+            lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:2500,
+            read:()=>loadDb(),
+            mutate:latest=>{
+              const administrator=(latest.users||[]).find(entry=>entry.id===user.id
+                &&entry.role==='admin'&&entry.active!==false
+                &&entry.isActive!==false&&entry.disabled!==true
+                &&entry.status!=='inactive');
+              if(!administrator){
+                result={ok:false,error:'admin_inactive'};
+                return false;
+              }
+              result=correctContinuousLoan(latest,administrator,body);
+              if(!result.ok)return false;
+              assertReviewedImportNotLost(latest);
+              return latest;
+            },
+          });
+        }catch(error){
+          if(error?.code==='DATABASE_WRITE_BUSY')return sendJson(res,409,{
+            message:'De uitleenadministratie wordt gewijzigd. Zoek de registratie opnieuw.',
+            error:'write_busy'});
+          throw error;
+        }
+        if(!result?.ok)return sendJson(res,result?.error==='forbidden'?403:409,{
+          message:'Deze leenperiode kan niet veilig worden samengevoegd. Controleer de registratie opnieuw.',
+          error:result?.error||'unknown'});
+        return sendJson(res,200,result);
       }
       if(req.method==='POST'&&requestUrl.pathname===loanHistoryRoot+'/current/remove'){
         const body=await parseBody(req,3000);
@@ -5257,7 +5372,7 @@ async function handleApi(req, res, requestUrl) {
         const body=await parseBody(req,2000);
         const database=loadDb();
         const result=resolveDeferredBookTask(database,user,m[1],
-          body.revision,body.choice);
+          body.revision,body.choice,undefined,body);
         if(!result.ok)return sendJson(res,409,{message:
           'Deze boekcontrole kan niet worden afgesloten. Vernieuw de takenlijst.',
           error:result.error});
@@ -5549,18 +5664,11 @@ async function handleApi(req, res, requestUrl) {
       if(req.method==='GET' &&requestUrl.pathname===stageRoot+'/deferred'){
         // Read the same consistent snapshot as the Tasks screens. A partial
         // preview must never write, migrate or truncate physical task history.
-        const database=getDb();
-        const open=(Array.isArray(database.bookImportDeferredBookChecks)
-          ?database.bookImportDeferredBookChecks:[])
-          .filter(item=>item?.status==='open');
-        const items=open.slice(-500).reverse().map(item=>({
-          id:item.id,fileName:item.fileName,worksheetRow:item.worksheetRow,
-          title:item.title,author:item.author,
-          excelIdentifier:item.excelIdentifier,
-          editionIsbn:item.editionIsbn,createdAt:item.createdAt,
-        }));
+        // Preserve original source rows, but distinguish still-open tasks
+        // from later resolved records. No database writes on this GET.
+        const history=listDeferredImportHistory(getDb());
         res.setHeader('Cache-Control','no-store');
-        return sendJson(res,200,{items,count:open.length,shown:items.length});
+        return sendJson(res,200,history);
       }
       const stageMatch = requestUrl.pathname.match(/^\/api\/admin\/book-import-stages\/([a-f0-9-]+)(?:\/(review|apply|cancel|draft|export))?$/);
       if (req.method === 'POST' && requestUrl.pathname === stageRoot) {
@@ -6294,6 +6402,11 @@ async function handleApi(req, res, requestUrl) {
                   author:String(book.author||'').slice(0,250),
                   excelIdentifier:String(rawIsbn).slice(0,100),
                   editionIsbn:String(book.editionIsbn||'').slice(0,20),
+                  // Captured BEFORE approval changes; prevents new imports
+                  // from being linked to an unproven old physical copy.
+                  sourceQuantity:book.quantity?.valid===true
+                    ?book.quantity.value:null,
+                  sourcePrintedBarcode:String(book.barcode||'').trim().slice(0,100),
                   sourceEvidence: {
                     status: original?.status || 'unknown',
                     issues: (original?.issues || []).map(issue => ({
@@ -6320,7 +6433,19 @@ async function handleApi(req, res, requestUrl) {
               omittedExistingCopies: fresh.summary.omittedExistingCopies,
               omittedEditions: fresh.omittedEditions,
               inventoryResolutions: stage.inventoryResolutions,
-              rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index),
+              rows: [...reportsByRow.values()].sort((a, b) => a.index - b.index)
+                .map(item=>{
+                  const source=stage.analysis.rows[item.index];
+                  const book=source?.book||{};
+                  const sourceIdentifier=source?.identifierAnalysis?.explicit?.raw
+                    ||source?.identifierAnalysis?.legacy?.raw
+                    ||source?.identifierAnalysis?.ambiguous?.raw||'';
+                  return {...item,author:String(book.author||'').slice(0,250),
+                    sourceIdentifier:String(sourceIdentifier).slice(0,100),
+                    sourcePrintedBarcode:String(book.barcode||'').trim().slice(0,100),
+                    sourceQuantity:book.quantity?.valid===true
+                      ?book.quantity.value:null};
+                }),
             };
             // Capture the exact reviewed source rows BEFORE applying any
             // active-loan changes. Recomputing missing-loan synthetic row
@@ -6482,6 +6607,11 @@ async function handleApi(req, res, requestUrl) {
               database,stage.sourceRows,stage.corrections,stage.analysis,batchId,now);
             if(isUnified)report.learnedMetadataDecisions=recordMetadataReviewChoices(
               database,combined.metadata.automaticDecisions,batchId,now);
+            // Recheck old task snapshots against the newly COMMITTED
+            // inventory and uniquely identified physical source rows.
+            // Only task metadata is closed; physical copies and loans remain.
+            report.autoClosedEarlierBookChecks=closeTasksProvenByImport(
+              database,report,{actorId:user.id,now});
             saveReviewedBookImportDb(database);
             scheduleCoverBackfill({ resetFailures: true });
             bookImportStageStore.finishApply(stage, {
@@ -8108,6 +8238,10 @@ async function handleApi(req, res, requestUrl) {
       }
       const dueDate = normalizeDueDate(body.dueDate);
       if (!dueDate.ok) return sendJson(res, 400, { message: 'Ongeldige inleverdatum.' });
+      // Expired holds and newly available copies are reconciled before
+      // choosing a physical book. The reservation is enforced again after
+      // the real selected copy has been identified.
+      reservationQueue.reconcile(db);
       const selection = resolveBookSelection(db, checkoutMatch[1], {
         body, requireAvailable: true, studentId: student?.id || null,
       });
@@ -8129,6 +8263,9 @@ async function handleApi(req, res, requestUrl) {
           return sendJson(res, 400, { message: 'Deze leerling heeft al een exemplaar van deze titel.' });
         }
       }
+      const reservationChoice=reservationQueue.onCheckout(db,book,student?.id||null);
+      if(!reservationChoice.ok)return sendJson(res,reservationChoice.status,{
+        message:reservationChoice.message});
       const now = new Date().toISOString();
       noteLoanActivity(db, book.id);
       book.status = 'borrowed';
@@ -8137,6 +8274,7 @@ async function handleApi(req, res, requestUrl) {
       book.borrowedAt = now;
       book.dueDate = dueDate.value;
       if (student) student.borrowedBooks.push({ bookId: book.id, borrowedAt: now, dueDate: dueDate.value });
+      reservationQueue.afterCheckout(db,reservationChoice.release);
       if (student && book.suitableForExamList === true && examReadingAccess(db, student).eligible) {
         // An eligible pupil's current exam loan is visible as "Aan het lezen"
         // before the compulsory Ja/Nee answer at check-in.
@@ -8238,6 +8376,7 @@ async function handleApi(req, res, requestUrl) {
       book.borrowedAt = null;
       book.dueDate = null;
       if (student) student.borrowedBooks = student.borrowedBooks.filter((item) => item.bookId !== book.id);
+      reservationQueue.reconcile(db);
       appendHistory(db, student ? {
         type: 'check_in', bookId: book.id, studentId: student.id, performedBy: user.id,
         message: `${student.name} heeft ${book.title} teruggebracht`,
@@ -8246,6 +8385,9 @@ async function handleApi(req, res, requestUrl) {
         message: `Klas ${klass.name} heeft ${book.title} teruggebracht`,
       });
       saveDb(db);
+      // Email runs independently; the persisted 'ready' status is also
+      // available through the pupil/mentor login when email is unavailable.
+      setImmediate(()=>{void startImportMailWorker();});
       return sendJson(res, 200, {
         book: sanitizeBookForResponse(book),
         readingRecord: publicReadingRecord(db, readingRecord, user),
@@ -8350,11 +8492,11 @@ async function handleApi(req, res, requestUrl) {
       let studentList = db.students;
       if (user.role === 'teacher') {
         const teacherClassIds = getTeacherClassIds(db, user.id);
-        studentList = db.students.filter((student) =>
-          (student.classIds || []).some((classId) => teacherClassIds.includes(classId))
+        studentList=db.students.filter(student=>
+          studentClassIds(db,student).some(classId=>teacherClassIds.includes(classId))
         );
       }
-      const students = studentList.map((student) => sanitizeStudent(student, { includeUsername: true }));
+      const students = studentList.map((student) => sanitizeStudent(student, { includeUsername: true,db }));
       return sendJson(res, 200, students);
     }
 
@@ -8640,14 +8782,7 @@ async function handleApi(req, res, requestUrl) {
         classIds: validClassIds,
       };
       db.students.push(student);
-      for (const classId of validClassIds) {
-        const klass = db.classes.find((entry) => entry.id === classId);
-        if (!klass) continue;
-        klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-        if (!klass.studentIds.includes(student.id)) {
-          klass.studentIds.push(student.id);
-        }
-      }
+      setStudentClassMembership(db, student, validClassIds);
       appendHistory(db, {
         type: 'student_created',
         studentId: student.id,
@@ -8655,7 +8790,7 @@ async function handleApi(req, res, requestUrl) {
       });
       saveDb(db);
       return sendJson(res, 201, {
-        ...sanitizeStudent(student, { includeUsername: true }),
+        ...sanitizeStudent(student, { includeUsername: true,db }),
         temporaryPassword: password,
       });
     }
@@ -8672,7 +8807,7 @@ async function handleApi(req, res, requestUrl) {
       }
       if (user.role === 'teacher') {
         const teacherClassIds = getTeacherClassIds(db, user.id);
-        const allowed = (student.classIds || []).some((classId) => teacherClassIds.includes(classId));
+        const allowed = studentClassIds(db,student).some((classId) => teacherClassIds.includes(classId));
         if (!allowed) {
           return sendJson(res, 403, {
             message: 'Je kunt alleen wachtwoorden resetten voor leerlingen uit jouw klassen',
@@ -8691,7 +8826,7 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
-        student: sanitizeStudent(student, { includeUsername: true }),
+        student: sanitizeStudent(student, { includeUsername: true,db }),
         temporaryPassword,
       });
     }
@@ -8710,7 +8845,7 @@ async function handleApi(req, res, requestUrl) {
       let temporaryPassword = null;
       let passwordChanged = false;
       let classesChanged = false;
-      const previousClassIds = Array.isArray(student.classIds) ? [...student.classIds] : [];
+      const previousClassIds = studentClassIds(db,student);
       let nextClassIds = new Set(previousClassIds);
 
       if (body && typeof body.generateTemporaryPassword === 'boolean' && body.generateTemporaryPassword) {
@@ -8760,22 +8895,7 @@ async function handleApi(req, res, requestUrl) {
       }
 
       if (addedClassIds.length || removedClassIds.length) {
-        student.classIds = uniqueClassIds;
-        for (const classId of removedClassIds) {
-          const klass = db.classes.find((entry) => entry.id === classId);
-          if (klass) {
-            klass.studentIds = (klass.studentIds || []).filter((id) => id !== student.id);
-          }
-        }
-        for (const classId of addedClassIds) {
-          const klass = db.classes.find((entry) => entry.id === classId);
-          if (klass) {
-            klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-            if (!klass.studentIds.includes(student.id)) {
-              klass.studentIds.push(student.id);
-            }
-          }
-        }
+        setStudentClassMembership(db, student, uniqueClassIds);
         classesChanged = true;
       }
 
@@ -8818,7 +8938,7 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       if (passwordChanged) revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
-        student: sanitizeStudent(student, { includeUsername: true }),
+        student: sanitizeStudent(student, { includeUsername: true,db }),
         ...(temporaryPassword ? { temporaryPassword } : {}),
         classChanges: classesChanged
           ? {
@@ -8852,7 +8972,7 @@ async function handleApi(req, res, requestUrl) {
       }
       db.students = db.students.filter((entry) => entry.id !== student.id);
       for (const klass of db.classes) {
-        klass.studentIds = (klass.studentIds || []).filter((id) => id !== student.id);
+        if (Array.isArray(klass.studentIds)) klass.studentIds = klass.studentIds.filter((id) => id !== student.id);
       }
       for (const book of db.books) {
         if (book.borrowedBy === student.id) {
@@ -8963,9 +9083,7 @@ async function handleApi(req, res, requestUrl) {
         if (existingStudent) {
           const originalName = existingStudent.name;
           const originalGrade = existingStudent.grade || '';
-          const originalClassIds = Array.isArray(existingStudent.classIds)
-            ? [...existingStudent.classIds]
-            : [];
+          const originalClassIds = studentClassIds(db,existingStudent);
           existingStudent.name = name;
           existingStudent.firstName = importedName.firstName;
           existingStudent.middleName = importedName.middleName;
@@ -8990,19 +9108,7 @@ async function handleApi(req, res, requestUrl) {
           const removedClassIds = originalClassIds.filter((classId) => !newClassIdSet.has(classId));
           const addedClassIds = classIds.filter((classId) => !originalClassIds.includes(classId));
 
-          existingStudent.classIds = classIds;
-
-          for (const classId of removedClassIds) {
-            const klass = db.classes.find((entry) => entry.id === classId);
-            if (klass) {
-              klass.studentIds = (klass.studentIds || []).filter((id) => id !== existingStudent.id);
-            }
-          }
-          for (const klass of classRecords) {
-            if (!klass.studentIds.includes(existingStudent.id)) {
-              klass.studentIds.push(existingStudent.id);
-            }
-          }
+          setStudentClassMembership(db, existingStudent, classIds);
 
           const teacherNames = collectTeacherNames(db, classRecords);
           updatedAccounts.push({
@@ -9056,11 +9162,7 @@ async function handleApi(req, res, requestUrl) {
           classIds,
         };
         db.students.push(student);
-        for (const klass of classRecords) {
-          if (!klass.studentIds.includes(student.id)) {
-            klass.studentIds.push(student.id);
-          }
-        }
+        setStudentClassMembership(db, student, classIds);
         const teacherNames = collectTeacherNames(db, classRecords);
         createdAccounts.push({
           id: student.id,
@@ -9324,28 +9426,9 @@ async function handleApi(req, res, requestUrl) {
         // classIds can outlive a teacher's removal from a class, so it must
         // NEVER grant access to its student or class loan history.
         const teacherClassIds = new Set(getTeacherClassIds(db, user.id));
-        const classesForTeacher = (Array.isArray(db.classes) ? db.classes : [])
-          .filter((klass) => klass && teacherClassIds.has(klass.id));
-
-        const studentIds = new Set();
-        for (const klass of classesForTeacher) {
-          const studentsInClass = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-          for (const studentId of studentsInClass) {
-            if (studentId) {
-              studentIds.add(studentId);
-            }
-          }
-        }
-
-        for (const student of Array.isArray(db.students) ? db.students : []) {
-          if (!student || !Array.isArray(student.classIds)) {
-            continue;
-          }
-          const belongsToTeacher = student.classIds.some((classId) => teacherClassIds.has(classId));
-          if (belongsToTeacher && student.id) {
-            studentIds.add(student.id);
-          }
-        }
+        const studentIds = new Set((db.students || [])
+          .filter(student => student?.id && studentClassIds(db,student).some(id => teacherClassIds.has(id)))
+          .map(student => student.id));
 
         historyEntries = historyEntries.filter(
           (entry) => entry && (
@@ -9384,7 +9467,9 @@ async function handleApi(req, res, requestUrl) {
       if (user.role === 'teacher') {
         classes = classes.filter((cls) => (cls.teacherIds || []).includes(user.id));
       }
-      return sendJson(res, 200, classes);
+      return sendJson(res, 200, classes.map(klass => ({
+        ...klass, studentIds: effectiveClassRoster(db, klass),
+      })));
     }
 
     const classStatsMatch = requestUrl.pathname.match(/^\/api\/classes\/([\w-]+)\/stats$/);
@@ -9401,12 +9486,9 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Je mag alleen je eigen klassen bekijken' });
       }
 
-      const studentIdsInClass = new Set([
-        ...(Array.isArray(klass.studentIds) ? klass.studentIds : []),
-        ...db.students
-          .filter((student) => Array.isArray(student.classIds) && student.classIds.includes(klass.id))
-          .map((student) => student.id),
-      ].filter(Boolean));
+      const studentIdsInClass = new Set((db.students || [])
+        .filter(student => student?.id && studentClassIds(db,student).includes(klass.id))
+        .map(student => student.id));
 
       const classHistory = (Array.isArray(db.history) ? db.history : []).filter(
         (entry) => entry && entry.type === 'check_out' && studentIdsInClass.has(entry.studentId)
@@ -9640,6 +9722,7 @@ async function handleApi(req, res, requestUrl) {
           error: 'class_has_active_loans', borrowedCount: activeClassLoans.length,
         });
       }
+      materializeLegacyRosters(db);
       const [removedClass] = db.classes.splice(index, 1);
       escalateTasksForDeletedClass(db, removedClass.id);
       for (const student of db.students) {
@@ -9717,14 +9800,7 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
-      if (!(klass.studentIds || []).includes(student.id)) {
-        klass.studentIds = klass.studentIds || [];
-        klass.studentIds.push(student.id);
-      }
-      student.classIds = student.classIds || [];
-      if (!student.classIds.includes(klass.id)) {
-        student.classIds.push(klass.id);
-      }
+      setStudentClassMembership(db, student, [...studentClassIds(db,student),klass.id]);
       appendHistory(db, {
         type: 'class_student_added',
         classId: klass.id,
@@ -9732,7 +9808,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} gekoppeld aan ${klass.name}`,
       });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true,db }) });
     }
 
     const classStudentRemoveMatch = requestUrl.pathname.match(
@@ -9755,8 +9831,7 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
-      klass.studentIds = (klass.studentIds || []).filter((id) => id !== studentId);
-      student.classIds = (student.classIds || []).filter((id) => id !== klass.id);
+      setStudentClassMembership(db, student, studentClassIds(db,student).filter(id=>id!==klass.id));
       appendHistory(db, {
         type: 'class_student_removed',
         classId: klass.id,
@@ -9764,7 +9839,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} losgekoppeld van ${klass.name}`,
       });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true,db }) });
     }
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
@@ -9826,6 +9901,7 @@ async function tickImportReminders() {
       ? path.resolve(__dirname, process.env.BOEKENBAAI_AUTH_DATA_PATH)
       : DATA_PATH + '.auth.json';
     const snapshot = loadDb();
+    if(reservationQueue.reconcile(snapshot))saveDb(snapshot);
     const links = readSchoolLinks(authPath);
     const folder = DATA_PATH + '.import-mail-receipts';
     const currentState = () => ({ db: loadDb(), links: readSchoolLinks(authPath) });
@@ -9835,10 +9911,14 @@ async function tickImportReminders() {
     const actions = shuttingDown ? { claimed: 0, accepted: 0, failed: 0 }
       : await dispatchActions({ db: snapshot, links, folder,
         currentState, shouldStop });
-    if (stats.claimed || actions.claimed) console.log('Boekenbaai-mailmeldingen verwerkt:', {
-      accepted: stats.accepted + actions.accepted,
-      failed: stats.failed + actions.failed,
-    });
+    const bookings = shuttingDown ? {claimed:0,accepted:0,failed:0}
+      : await dispatchReservationMail({db:snapshot,links,folder,
+        currentState,shouldStop});
+    if (stats.claimed || actions.claimed || bookings.claimed)
+      console.log('Boekenbaai-mailmeldingen verwerkt:', {
+        accepted: stats.accepted + actions.accepted + bookings.accepted,
+        failed: stats.failed + actions.failed + bookings.failed,
+      });
   } catch (error) {
     console.error('Importherinneringen controleren mislukt:',
       error.code || 'worker_error');

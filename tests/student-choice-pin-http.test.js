@@ -29,9 +29,13 @@ const db={
     status:'available',borrowedBy:null,borrowedByClassId:null,pageCount:140+i,
   })),
   readingRecords:[
-    {id:'read-a',subjectId:'a',subjectType:'student',bookId:'book-1',finished:true},
+    {id:'read-a',subjectId:'a',subjectType:'student',bookId:'book-1',finished:true,reportedAt:'2026-11-01T12:00:00Z'},
     {id:'read-b',subjectId:'b',subjectType:'student',bookId:'book-4',finished:true},
   ],examReadingLists:[],history:[],folders:[],
+  studentFavorites:[
+    {studentId:'a',key:JSON.stringify(['titel 2','schrijver 2']),title:'Titel 2',author:'Schrijver 2'},
+    {studentId:'b',key:JSON.stringify(['titel 4','schrijver 4']),title:'Titel 4',author:'Schrijver 4'},
+  ],
 };
 const readDb=()=>JSON.parse(fs.readFileSync(dbPath,'utf8'));
 const readAuth=()=>JSON.parse(fs.readFileSync(authPath,'utf8'));
@@ -111,6 +115,17 @@ async function stop(){
     assert.ok(/^[\w-]{32,}$/.test(grant));
     assert.notEqual((await request('/api/me',undefined,grant)).status,200,
       'Recommendation grant may never authenticate a student session');
+    const contextRoute='/api/auth/student-pin/choice-context';
+    assert.equal((await request(contextRoute,{consent:true})).status,401);
+    assert.equal((await request(contextRoute,{consent:true},'session-t')).status,401);
+    assert.equal((await request(contextRoute,{choiceGrant:grant})).status,400);
+    assert.equal((await request(contextRoute,{consent:true,choiceGrant:grant},'','https://other.invalid')).status,403);
+    const context=await request(contextRoute,{consent:true,choiceGrant:grant,studentId:'b'});
+    assert.equal(context.status,200,JSON.stringify(context.body));
+    assert.equal(context.body.recent.bookId,'book-1');
+    assert.deepEqual(context.body.favorites.map(b=>b.bookId),['book-2']);
+    assert.deepEqual((await request(contextRoute,{consent:true},'session-a')).body,context.body);
+    assert.ok(!JSON.stringify(context.body).includes('studentId'));
     // Question selection must be public, read-only and never expose private
     // pupil data or require a PIN just to browse interests.
     const nextQuestion=await request('/api/auth/student-pin/choice-next',{

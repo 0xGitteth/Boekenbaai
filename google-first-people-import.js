@@ -1,5 +1,7 @@
 'use strict';
 
+const {currentStudentClassIds,setStudentClassMembership}=require('./student-class-membership');
+
 const crypto = require('crypto');
 const core = require('./google-auth-core');
 
@@ -200,7 +202,6 @@ function ensureClass(db, name) {
   const existing = findClassByName(db, cleanName);
   if (existing) {
     if (!Array.isArray(existing.teacherIds)) existing.teacherIds = [];
-    if (!Array.isArray(existing.studentIds)) existing.studentIds = [];
     return { classRecord: existing, created: false };
   }
   const classRecord = {
@@ -287,21 +288,18 @@ function removeAccountFromClasses(db, kind, accountId, keepClassIds) {
       if (!keep.has(classRecord.id)) {
         classRecord.teacherIds = classRecord.teacherIds.filter((id) => id !== accountId);
       }
-    } else {
-      classRecord.studentIds = Array.isArray(classRecord.studentIds) ? classRecord.studentIds : [];
-      if (!keep.has(classRecord.id)) {
-        classRecord.studentIds = classRecord.studentIds.filter((id) => id !== accountId);
-      }
     }
   }
 }
 
 function assignClasses(db, kind, account, classNames, authoritative) {
   if (!authoritative) {
-    const existingIds = Array.isArray(account.classIds) ? account.classIds : [];
+    const existingIds = kind==='student'?currentStudentClassIds(db,account):
+      (Array.isArray(account.classIds)?account.classIds:[]);
     return { classIds: existingIds, newClasses: 0, changed: false };
   }
-  const originalIds = Array.isArray(account.classIds) ? [...account.classIds] : [];
+  const originalIds = kind==='student'?currentStudentClassIds(db,account):
+    (Array.isArray(account.classIds)?[...account.classIds]:[]);
   const classIds = [];
   let newClasses = 0;
   for (const name of classNames) {
@@ -311,12 +309,14 @@ function assignClasses(db, kind, account, classNames, authoritative) {
     classIds.push(classRecord.id);
     if (kind === 'teacher') {
       if (!classRecord.teacherIds.includes(account.id)) classRecord.teacherIds.push(account.id);
-    } else if (!classRecord.studentIds.includes(account.id)) {
-      classRecord.studentIds.push(account.id);
     }
   }
-  removeAccountFromClasses(db, kind, account.id, classIds);
-  account.classIds = classIds;
+  if(kind==='student'){
+    setStudentClassMembership(db,account,classIds);
+  }else{
+    removeAccountFromClasses(db,kind,account.id,classIds);
+    account.classIds=classIds;
+  }
   const changed = originalIds.length !== classIds.length || originalIds.some((id) => !classIds.includes(id));
   return { classIds, newClasses, changed };
 }

@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('assert');
 const { analyzeReviewedImport, normalizeCorrections, applyCorrectionsToRows } = require('../book-import-review');
+const { buildInventorySyncPreview } = require('../book-import-inventory-sync');
 
 const ISBN = '9780306406157';
 const OTHER_ISBN = '9780439554930';
@@ -304,6 +305,50 @@ const OTHER_ISBN = '9780439554930';
   assert.deepStrictEqual(unapproved.columns.unknown, []);
   const approved = await analyzeReviewedImport(extraColumnRow, [], { acceptWarnings: true });
   assert.strictEqual(approved.decisions.rows[0].canCreate, true);
+
+  // The ORIGINAL Excel identifier must survive a user correction and
+  // reach inventory planning. The edited row alone would otherwise look
+  // like an entirely new physical edition.
+  for(const [title,author,sourceCode,correctIsbn,oldTitle] of [
+    ['The Chocolate War','Robert Cormier','9780275829871',
+      '9780375829871','The Chocolate ewar'],
+    ['Mocro Maffia','Wouter Laumans','97848819348',
+      '9789048819348','Mocro Maffia'],
+  ]){
+    const source=[{Titel:title,Auteur:author,'ISBN-nummer':sourceCode,
+      Aantal:1}];
+    const originalSnapshot=JSON.stringify(source);
+    const corrected=await analyzeReviewedImport(source,[{
+      index:0,fields:{editionIsbn:correctIsbn},
+    }]);
+    assert.strictEqual(corrected.ok,true);
+    assert.strictEqual(corrected.rows[0].book.editionIsbn,correctIsbn);
+    assert.deepStrictEqual(corrected.rows[0].reviewedOriginalIdentifiers,[sourceCode],
+      'Original Excel identifier must survive the import editor');
+    const current=[{id:'old-copy',title:oldTitle,author,
+      barcode:sourceCode,status:'borrowed',borrowedBy:'pupil'}];
+    const proposed=buildInventorySyncPreview(corrected,current);
+    assert.strictEqual(proposed.ok,true);
+    assert.strictEqual(proposed.summary.addCopies,0);
+    assert.strictEqual(proposed.rows[0].reason,'corrected_isbn_matches_original_copy');
+    assert.deepStrictEqual(proposed.proposedAdds,[]);
+    assert.strictEqual(JSON.stringify(source),originalSnapshot,
+      'Original uploaded Excel must not be changed');
+  }
+  const normalIsbnRow=[{Titel:'Nieuw boek',Auteur:'Auteur',
+    'ISBN-nummer':'9780306406156',Aantal:1}];
+  const correctedNew=await analyzeReviewedImport(normalIsbnRow,[{
+    index:0,fields:{editionIsbn:ISBN},
+  }]);
+  assert.strictEqual(correctedNew.ok,true);
+  assert.ok(correctedNew.rows[0].reviewedOriginalIdentifiers.includes('9780306406156'));
+  assert.strictEqual(buildInventorySyncPreview(correctedNew,[]).summary.addCopies,1,
+    'A newly purchased book with no existing matching source remains importable');
+  const noIsbnCorrection=await analyzeReviewedImport(normalIsbnRow,[{
+    index:0,fields:{title:'Andere nieuwe titel'},
+  }]);
+  assert.strictEqual(noIsbnCorrection.rows[0].reviewedOriginalIdentifiers,undefined,
+    'Non-ISBN changes must never activate the original identifier guard');
 
   const invalid = [
     [{ index: -1, fields: { title: 'X' } }],

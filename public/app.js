@@ -1483,13 +1483,16 @@ function renderBookEditionDetails(book) {
       { className: 'book-detail__edition-availability' });
     // A multi-edition work requires an explicit physical-edition selection.
     // Do not silently lend the first available, possibly mismatched, edition.
-    const availableCopy = edition.copies.find(other =>
-      other.id && other.status !== 'borrowed');
-    if (authUser?.role === 'student' && availableCopy && state.studentActionHandler) {
-      const choose = appendTextElement(details, 'button', 'Leen deze uitgave', {
-        type: 'button', className: 'btn btn--secondary book-detail__edition-action',
-      });
-      choose.addEventListener('click', () => state.studentActionHandler?.(availableCopy));
+    const availableCopy = edition.copies.find(other => other.id
+      &&other.status !== 'borrowed'&&other.catalogHidden!==true
+      &&(!other.reservationHeld||other.reservationMine));
+    if (authUser?.role === 'student' && state.studentActionHandler) {
+      const choose = appendTextElement(details,'button',availableCopy
+        ?'Leen deze uitgave':'Reserveer deze uitgave',{
+          type:'button',className:'btn btn--secondary book-detail__edition-action',
+        });
+      choose.addEventListener('click',()=>state.studentActionHandler?.(
+        availableCopy||edition.copies[0],{reserveEdition:!availableCopy}));
     }
   }
 }
@@ -2072,7 +2075,11 @@ function catalogStoredEdition(book) {
 function getBookGroupKey(book) {
   const normalizeWorkPart = value => normalizeGroupKeyPart(value)
     .normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
-  return JSON.stringify([normalizeWorkPart(book?.title), normalizeWorkPart(book?.author)]);
+  // The same author's name sometimes ends with a stray period in imported
+  // metadata (e.g. 'Carry Slee.' versus 'Carry Slee'). This must not split
+  // physical editions into different work cards. Edition ISBNs remain on copies.
+  const author = normalizeWorkPart(book?.author).replace(/[.,;:!?\s]+$/g, '');
+  return JSON.stringify([normalizeWorkPart(book?.title), author]);
 }
 
 function getCatalogEditionKey(book) {
@@ -2113,7 +2120,8 @@ function groupCatalogEditions(copies) {
       groups.set(key, edition);
     }
     edition.copies.push(copy);
-    if (copy.status !== 'borrowed' && copy.catalogHidden!==true) edition.availableCopies++;
+    if (copy.status !== 'borrowed' && copy.catalogHidden!==true
+      &&(!copy.reservationHeld||copy.reservationMine)) edition.availableCopies++;
     edition.representativeBook = pickRepresentativeBook(edition.representativeBook, copy);
     if (!edition.publisher && copy.publisher) edition.publisher = copy.publisher;
   }
@@ -2168,7 +2176,8 @@ function groupBooksByTitleAuthor(books = []) {
     const borrowedCopies = value.copies.filter((copy) => copy.status === 'borrowed').length;
     const hiddenCopies = value.copies.filter((copy)=>copy.catalogHidden===true).length;
     const availableCopies = value.copies.filter(copy=>
-      copy.status!=='borrowed' && copy.catalogHidden!==true).length;
+      copy.status!=='borrowed' && copy.catalogHidden!==true
+      &&(!copy.reservationHeld||copy.reservationMine)).length;
     const editions = groupCatalogEditions(value.copies);
     // Show the cover of the most common edition with an available cover.
     const featuredEdition = editions.find(edition =>
@@ -2704,25 +2713,11 @@ function filterBooks(allBooks, {
       return normalizedThemes.every((theme) => tagKeys.includes(theme));
     });
   }
-  if (query) {
-    const term = query.toLowerCase();
-    list = list.filter((book) => {
-      const haystack = [
-        book.title,
-        book.author,
-        book.description,
-        resolveBookLanguage(book),
-        resolveBookPageCount(book) ? String(resolveBookPageCount(book)) : '',
-        book.barcode,
-        ...(book.themes || []),
-        ...(book.tags || []),
-        ...(Array.isArray(book.copies) ? book.copies.map((copy) => copy.barcode) : []),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(term);
-    });
+  if (query && query.trim()) {
+    const term = query.normalize('NFKC').trim().toLocaleLowerCase('nl-NL');
+    list = list.filter((book) => [book.title, book.author].some(value =>
+      String(value || '').normalize('NFKC')
+        .toLocaleLowerCase('nl-NL').includes(term)));
   }
   return list;
 }
@@ -3236,8 +3231,10 @@ function resolveStudentBookAction(book, user) {
   const mine = copies.find(copy => ownedIds.has(copy.id));
   if (mine) return { label: 'Boek terugbrengen', type: 'return', bookId: mine.id };
   const available = copies.find(copy => copy?.id && copy.status !== 'borrowed'
-    && copy.catalogHidden!==true);
-  if (!available) return null;
+    &&copy.catalogHidden!==true&&(!copy.reservationHeld||copy.reservationMine));
+  if (!available) return isStudent
+    ? {label:'Reserveren',type:'reserve',bookId:copies.find(x=>x?.id)?.id||null}
+    : {label:'Inloggen om te reserveren',type:'login',bookId:null};
   return isStudent
     ? { label: 'Boek lenen', type: 'borrow', bookId: available.id }
     : { label: 'Inloggen om te lenen', type: 'login', bookId: null };
@@ -3612,7 +3609,9 @@ function initStudentPage() {
       studentName.textContent = loggedIn ? getUserGreetingName(authUser) : '';
     }
     if (studentGrade) {
-      studentGrade.textContent = loggedIn && authUser.grade ? `Klas ${authUser.grade}` : '';
+      const classNames=Array.isArray(authUser?.classNames)?authUser.classNames:[];
+      studentGrade.textContent=loggedIn
+        ?(classNames.length?'Klas: '+classNames.join(', '):'Geen klas gekoppeld'):'';
     }
     enableScanArea();
     renderBorrowedBooks();
@@ -3983,7 +3982,7 @@ function initStudentPage() {
 
 
   let studentLoanInProgress = false;
-  async function handleCardLoanAction(book) {
+  async function handleCardLoanAction(book,{reserveEdition=false}={}) {
     const action = resolveStudentBookAction(book, authUser);
     if (!action) return;
     if (action.type === 'login') {
@@ -3995,6 +3994,18 @@ function initStudentPage() {
     studentLoanInProgress = true;
     if (studentActionMessage) studentActionMessage.textContent = 'Boek wordt verwerkt…';
     try {
+      if(action.type==='reserve'){
+        const created=await fetchJson('/api/book-reservations',{
+          method:'POST',body:{bookId:action.bookId,specificEdition:reserveEdition},
+        });
+        closeBookDetail();
+        window.dispatchEvent(new Event('boekenbaai:reservations-changed'));
+        await refreshData();
+        if(studentActionMessage)studentActionMessage.textContent=created.created
+          ?'Reservering geplaatst. Je krijgt bericht zodra het boek beschikbaar is.'
+          :'Je staat al op de wachtlijst voor dit boek.';
+        return;
+      }
       const operation = action.type === 'return' ? 'check-in' : 'check-out';
       const finished = operation === 'check-in'
         ? await window.BoekenbaaiReadCompletion?.ask(book?.title || 'Dit boek')
@@ -4006,6 +4017,7 @@ function initStudentPage() {
         method: 'POST', body: operation === 'check-in' ? { finished } : {},
       });
       if (operation === 'check-in') window.dispatchEvent(new Event('boekenbaai:reading-record-created'));
+      window.dispatchEvent(new Event('boekenbaai:reservations-changed'));
       closeBookDetail();
       await refreshData();
       if (studentActionMessage) studentActionMessage.textContent = action.type === 'return'
@@ -4177,6 +4189,9 @@ function initStudentPage() {
   });
 
   searchInput?.addEventListener('input', renderBooks);
+  window.addEventListener('boekenbaai:reservations-changed',()=>{
+    if(authUser?.role==='student')void loadBooks().catch(()=>{});
+  });
   studentFilterToggle?.addEventListener('click', () => {
     if (catalogAdvanced) catalogAdvanced.open = !catalogAdvanced.open;
   });
@@ -6167,12 +6182,14 @@ function initStaffPage() {
   }
 
   function getStudentClasses(student) {
-    if (!student) {
-      return [];
-    }
-    return (student.classIds || [])
-      .map((classId) => classes.find((klass) => klass.id === classId))
-      .filter(Boolean);
+    if(!student?.id)return [];
+    const roster=classes.filter(klass=>Array.isArray(klass.studentIds)
+      &&klass.studentIds.includes(student.id));
+    if(roster.length)return roster;
+    // Legacy records without class rosters can still use classIds, but an
+    // explicit roster that excludes this pupil must never show an old class.
+    return classes.filter(klass=>(student.classIds||[]).includes(klass.id)
+      &&!Array.isArray(klass.studentIds));
   }
 
   function matchesAdminStudentSearch(student, normalizedTerm) {
@@ -6182,7 +6199,6 @@ function initStaffPage() {
     const haystack = [
       student.name,
       student.username,
-      student.grade,
       ...getStudentClasses(student).map((klass) => klass.name),
     ]
       .filter(Boolean)
@@ -6247,7 +6263,6 @@ function initStaffPage() {
       const metaLine = appendElement(item, 'div', { className: 'student-list__meta' });
       if (metaLine) {
         appendTextElement(metaLine, 'span', `Gebruikersnaam: ${student.username}`);
-        appendTextElement(metaLine, 'span', `Leerjaar: ${student.grade || 'Onbekend'}`);
         appendTextElement(metaLine, 'span', `${borrowed} uitgeleende boek(en)`);
       }
       const classesLine = appendElement(item, 'div', { className: 'student-list__meta' });
@@ -6382,9 +6397,10 @@ function initStaffPage() {
     adminStudentDetailName && (adminStudentDetailName.textContent = student.name);
     adminStudentDetailUsername && (adminStudentDetailUsername.textContent = student.username || '');
     if (adminStudentDetailGrade) {
-      adminStudentDetailGrade.textContent = student.grade
-        ? `Leerjaar: ${student.grade}`
-        : 'Leerjaar niet ingesteld';
+      const currentClasses=getStudentClasses(student);
+      adminStudentDetailGrade.textContent=currentClasses.length
+        ?'Klas: '+currentClasses.map(klass=>klass.name).join(', ')
+        :'Geen actuele klas gekoppeld';
     }
     const borrowedCount = Array.isArray(student.borrowedBooks) ? student.borrowedBooks.length : 0;
     if (adminStudentDetailLoansMeta) {

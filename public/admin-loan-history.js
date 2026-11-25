@@ -136,6 +136,95 @@ if(loanPanel){
     event.preventDefault();void searchCurrent();
   });
 
+  // A false return immediately followed by a recheckout is NOT a
+  // completed loan. This narrowly scoped admin workflow preserves the
+  // initial checkout and active physical copy, unlike whole-pair deletion.
+  const continuity=node('section',undefined,'bb-admin-loan-correction');
+  continuity.append(node('h4','Foutieve inlevering en heruitlening corrigeren'));
+  continuity.append(node('p','Gebruik dit alleen wanneer het boek nooit echt '
+    +'is teruggebracht en dezelfde leerling hetzelfde exemplaar doorlopend '
+    +'in bezit had. De oorspronkelijke uitlening blijft bestaan.','hint'));
+  const continuityForm=node('form',undefined,'form-grid form-grid--compact');
+  const continuityStudent=searchField('Zoek leerling');
+  const continuityBook=searchField('Zoek boektitel');
+  const continuitySubmit=node('button','Doorlopende uitleningen controleren','btn btn--secondary');
+  continuitySubmit.type='submit';
+  continuityForm.append(continuityStudent,continuityBook,continuitySubmit);
+  const continuityStatus=message('');
+  const continuityResults=node('div',undefined,'class-list');
+  continuity.append(continuityForm,continuityStatus,continuityResults);
+  currentSection.append(continuity);
+  let continuityBusy=false;
+  async function findContinuity(){
+    if(continuityBusy)return;
+    continuityBusy=true;continuitySubmit.disabled=true;
+    continuityResults.replaceChildren();
+    continuityStatus.textContent='Onjuiste leenreeksen controleren…';
+    try{
+      const query=new URLSearchParams({
+        borrower:continuityStudent.value.trim(),book:continuityBook.value.trim(),
+      });
+      const data=await request('/api/admin/loan-history/continuity?'+query);
+      const items=Array.isArray(data.items)?data.items:[];
+      continuityStatus.textContent=items.length
+        ?items.filter(item=>item.canCorrect).length+' mogelijke correcties, '
+          +items.filter(item=>!item.canCorrect).length+' geblokkeerde registraties.'
+        :'Geen actuele uitleningen gevonden voor deze zoekopdracht.';
+      for(const item of items){
+        const card=node('article',undefined,'class-card');
+        const format=value=>new Date(value).toLocaleString('nl-NL');
+        card.append(node('h4',item.title));
+        card.append(node('p',item.studentName
+          +' · Exemplaar-ID: '+item.bookId,'hint'));
+        if(!item.canCorrect){
+          card.append(node('p','Niet automatisch te corrigeren: '
+            +(item.errorMessage||'Onvoldoende bewijs.')
+            +' Controleer de brongegevens; gebruik niet de brede historie-verwijdering.','hint'));
+          continuityResults.append(card);
+          continue;
+        }
+        card.append(node('p','Oorspronkelijk geleend: '+format(item.originalCheckoutAt)
+          +(item.originalCheckoutLogged?' (logboek)':' (vastgelegd bij inlevering)')
+          +' · Inlevering: '+format(item.incorrectReturnAt)
+          +' · Opnieuw geleend: '+format(item.recheckoutAt),'hint'));
+        const fix=node('button','Corrigeer deze foutieve inlevering en heruitlening',
+          'btn btn--danger');
+        fix.type='button';
+        fix.addEventListener('click',async()=>{
+          if(continuityBusy)return;
+          if(!window.confirm('Controleer eerst de fysieke werkelijkheid.\\n\\n'
+            +'Leerling: '+item.studentName+'\\nBoek: '+item.title
+            +'\\nExemplaar-ID: '+item.bookId
+            +'\\nInlevering: '+format(item.incorrectReturnAt)
+            +'\\nNieuwe uitlening: '+format(item.recheckoutAt)
+            +'\\n\\nBevestig alleen wanneer dit boek NOOIT echt is ingeleverd. '
+            +'De twee logregels en de bijbehorende leesregistratie worden '
+            +'verwijderd. De oorspronkelijke uitlening blijft actief. '
+            +'Een aparte correctie-audit wordt bewaard. Doorgaan?'))return;
+          continuityBusy=true;fix.disabled=true;
+          try{
+            const result=await request('/api/admin/loan-history/continuity/correct',
+              'POST',{studentId:item.studentId,bookId:item.bookId,
+                expectedFingerprint:item.fingerprint,
+                reason:'false_return_and_recheckout',confirm:true});
+            if(!result.originalLoanStillActive)throw Error('Correctie niet bevestigd.');
+            continuityStatus.textContent='De onjuiste inlevering, heruitlening '
+              +'en leesregistratie zijn gecorrigeerd. De oorspronkelijke '
+              +'uitlening bleef actief.';
+            continuityResults.replaceChildren();
+            announceChange();
+          }catch(error){continuityStatus.textContent=error.message;}
+          finally{continuityBusy=false;fix.disabled=false;}
+        });
+        card.append(fix);continuityResults.append(card);
+      }
+    }catch(error){continuityStatus.textContent=error.message;}
+    finally{continuityBusy=false;continuitySubmit.disabled=false;}
+  }
+  continuityForm.addEventListener('submit',event=>{
+    event.preventDefault();void findContinuity();
+  });
+
   // Teachers may review and remove false historical student/book links
   // only inside their own current class roster. Admins retain full access.
   const historySection=node('section',undefined,'bb-admin-loan-history');

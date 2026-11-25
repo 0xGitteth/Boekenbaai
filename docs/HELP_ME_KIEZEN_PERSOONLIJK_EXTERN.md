@@ -48,3 +48,12 @@ De bestaande 49 adaptieve vragen blijven beschikbaar als aanvullende vragenbank.
 - Vóór merge: volledige tests en Codex-review. Vervolgens visuele controle met een echte leerling- en mentoraccount, zonder testmutaties in productie.
 
 Deze draft registreert het afgesproken ontwerp; daadwerkelijke implementatie volgt in dezelfde PR.
+
+
+## Implementatiefase 1 (25 november 2026)
+- Expliciete toestemming vóór het ophalen van een eigen recente afgeronde leeservaring en maximaal vijf zichtbare bewaarde favorieten.
+- Dezelfde beperkte PIN-grant en volledige leerlingauthenticatie worden gebruikt; leerlingen mogen uitsluitend eigen context zien.
+- Een gelezen boek wordt eerst beoordeeld; een favoriet wordt als interesse behandeld, niet als gelezen of positief beoordeeld boek.
+- Een gekozen inhoudelijke voorkeur beïnvloedt aanbevelingen. De gekozen referentie zelf wordt niet opnieuw voorgesteld.
+- De 49-vragenroute en verrassingsroute blijven beschikbaar. Zonder toestemming gebruikt de nieuwe interface geen bevestigde leesgeschiedenis.
+- Nog niet geïmplementeerd: externe boekzoekopdracht/handmatige referenties, opgeslagen positieve en negatieve waarderingen, betrouwbare series, meerdere referenties en uitgebreide gespreksevaluatie. Niet mergen voordat deze onderdelen en volledige acceptatiecontrole klaar zijn.

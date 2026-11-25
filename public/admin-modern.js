@@ -600,9 +600,16 @@
   function moveGooglePanel() {
     const host = document.getElementById('admin-modern-google-host');
     const panel = document.querySelector('#teacher-dashboard .google-manage');
-    if (!host || !panel || host.contains(panel)) return;
-    panel.classList.add('admin-modern__google-panel');
-    host.append(panel);
+    if (host && panel && !host.contains(panel)) {
+      panel.classList.add('admin-modern__google-panel');
+      host.append(panel);
+    }
+    // The Google request and account layout load asynchronously. When the
+    // Accounts workspace arrives later, relocate the SAME live request node,
+    // preserving approval handlers and its permanent empty-state message.
+    const taskHost=document.getElementById('admin-student-link-requests-host');
+    const requests=document.getElementById('admin-student-link-request-panel');
+    if(taskHost&&requests&&!taskHost.contains(requests))taskHost.append(requests);
   }
 
   function mountSharedPanel(id, hostId) {
@@ -835,7 +842,7 @@
     accountTaskLinks.append(make('h3', { text: 'Andere beheertaken' }));
 
     const taskActions = make('div', { className: 'bb-admin-v31-task-actions' });
-    for (const [label, kind] of [['Leerling- en klasverzoeken openen', 'students'], ['Docent- en Google-koppelingen openen', 'teachers']]) {
+    for (const [label, kind] of [['Leerlingen beheren', 'students'], ['Docentaccounts beheren', 'teachers']]) {
       const link = make('button', { className: 'btn btn--secondary', text: label, type: 'button' });
       link.addEventListener('click', () => { setActiveView('people'); setPeopleView(kind); });
       taskActions.append(link);

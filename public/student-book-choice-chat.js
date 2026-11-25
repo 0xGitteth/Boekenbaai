@@ -13,7 +13,7 @@
   let active=false,epoch=0,grant='',personal=false,firstName='',previousFocus=null;
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
-  let currentQuestion=null,questionHistory=[];
+  let currentQuestion=null,questionHistory=[],readingConsent=false;
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
     if(className)x.className=className;
@@ -80,7 +80,7 @@
     clearTimeout(searchTimer);
     searchController?.abort();
     searchController=null;searchTimer=null;
-    active=false;busy=false;personal=false;firstName='';
+    active=false;busy=false;personal=false;firstName='';readingConsent=false;
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
     currentQuestion=null;questionHistory=[];
@@ -92,24 +92,73 @@
     log.replaceChildren();clearActions();notice('');
   }
   function beginInterests(){
-    if(!personal){
-      answer('route','new');
-      return;
-    }
-    // Let the learner decide whether past reading is relevant, rather than
-    // interpreting every finished book as a book they enjoyed.
-    message('Wil je ook tips die lijken op boeken die je eerder hebt gelezen?');
+    answer('route','new');
+  }
+  function selectReference(book,read){
+    message(read?'Wat vond je leuk aan '+book.title+'?':'Wat spreekt je aan in '+book.title+'?');
+    const pick=preference=>{
+      choices={route:'new',referenceBookId:book.bookId,referencePreference:preference,answers:[]};
+      void showRecommendations();
+    };
     options([
-      ['Ja, graag',()=>answer('route','similar')],
-      ['Nee, liever iets anders',()=>answer('route','new')],
+      ['De spanning',()=>pick('spanning')],['De personages',()=>pick('personages')],
+      ['De omgeving of wereld',()=>pick('wereld')],['Het tempo',()=>pick('tempo')],
+      ['De sfeer',()=>pick('sfeer')],['Wat ik ervan leer',()=>pick('informatie')],
+      ['Weet ik niet',()=>pick('')],['Iets anders zoeken',beginInterests],
     ]);
   }
-  function finishIdentity(){
-    message((personal&&firstName ? 'Hoi '+firstName+'! ' : '') +
-      'Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?');
+  function offerFavorites(items){
+    if(!items.length){offerGeneral();return;}
+    message('Je hebt deze boeken bewaard voor later. Welk boek spreekt je nu aan?');
+    options([
+      ...items.map(book=>[book.title+(book.author?' · '+book.author:''),()=>selectReference(book,false)]),
+      ['Iets anders zoeken',offerGeneral],['Laat me drie boeken zien',()=>answer('route','surprise')],
+    ]);
+  }
+  function offerGeneral(){
+    message('Wil je ontdekken wat je leuk vindt of zal ik je drie boeken voorstellen?');
     currentStep='route';
     options([
       ['Ontdek mijn interesses',beginInterests],
+      ['Laat me drie boeken zien',()=>answer('route','surprise')],
+    ]);
+  }
+  async function loadPersonalContext(){
+    if(!active||busy)return;
+    readingConsent=true;busy=true;const marker=epoch;
+    notice('Je eigen leesgegevens ophalen…');
+    try{
+      const context=await api('/api/auth/student-pin/choice-context',{
+        consent:true,...(grant?{choiceGrant:grant}:{})
+      });
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');
+      const favorites=Array.isArray(context.favorites)?context.favorites:[];
+      if(context.recent){
+        const book=context.recent;
+        message('Je hebt '+book.title+' uitgelezen. Vond je dat een leuk boek?');
+        options([
+          ['Ja',()=>selectReference(book,true)],
+          ['Nee',()=>offerFavorites(favorites)],
+          ['Weet ik niet',()=>offerFavorites(favorites)],
+          ['Ik wil iets heel anders',offerGeneral],
+        ]);
+      }else offerFavorites(favorites);
+    }catch(error){
+      if(!active||marker!==epoch)return;
+      readingConsent=false;busy=false;
+      notice('Je leesgegevens konden niet worden geladen. Je kunt zonder deze gegevens verder.');
+      offerGeneral();
+    }finally{if(active&&marker===epoch)busy=false;}
+  }
+  function finishIdentity(){
+    readingConsent=false;
+    choices={};
+    if(!personal){offerGeneral();return;}
+    message((firstName?'Hoi '+firstName+'! ':'')+'Mag ik rekening houden met de boeken die je eerder hebt uitgelezen of bewaard?');
+    options([
+      ['Ja, graag',()=>void loadPersonalContext()],
+      ['Nee, iets nieuws ontdekken',offerGeneral],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }
@@ -253,6 +302,7 @@
     choices.answers=[];
     // A fresh route must never be biased by an earlier reference book.
     delete choices.referenceBookId;
+    delete choices.referencePreference;
     questionHistory=[];
     currentQuestion=null;
     void askAdaptiveQuestion();
@@ -395,7 +445,7 @@
     busy=true;currentStep='results';
     const marker=epoch;notice('Boeken zoeken…');clearActions();
     const submitted={
-      ...choices,seed,excludeKeys:[...(!personal?seenInTab:[]),...shownInDialogue].slice(-130),
+      ...choices,useReadingHistory:readingConsent,seed,excludeKeys:[...(!personal?seenInTab:[]),...shownInDialogue].slice(-130),
       ...extra,
     };
     try{

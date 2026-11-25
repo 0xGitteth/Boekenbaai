@@ -324,7 +324,7 @@
     if(!existing || document.body?.dataset.page!=='staff')return;
     try {
       const data=await apiFetch('/api/auth/google/manage');
-      if(data.role!=='teacher'||!existing.isConnected)return;
+      if(!['teacher','admin'].includes(data.role)||!existing.isConnected)return;
       const fresh=createTeacherGoogleRequests(data);
       // Replace the whole node so approval handlers reference the live list.
       existing.replaceWith(fresh);
@@ -471,6 +471,10 @@
       (host.querySelector('[data-teacher-view="tasks"]')||host).append(requestsPanel);
       (host.querySelector('[data-teacher-view="account"]')||host).append(panel);
     }else{
+      // Pupil approval requests have a separate, authenticated lifecycle
+      // under Beheer > Taken > Accounts en vertrek. Do not create a second
+      // list here or move the request section into Personen.
+      panel.querySelector('#teacher-google-link-requests')?.remove();
       (document.getElementById('admin-modern-google-host')||host).append(panel);
     }
   }

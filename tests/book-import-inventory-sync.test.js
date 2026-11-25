@@ -540,4 +540,61 @@ const receiptStillOccupied = preview([rowWithStudentLoan(0)],
 assert.strictEqual(receiptStillOccupied.summary.readyToApply, false);
 assert.strictEqual(receiptStillOccupied.rows[0].reason, 'loan_copy_borrowed_by_other');
 
+// When the ISBN is corrected in the import editor, the original Excel
+// code may still be the physical barcode of an older catalogue record.
+// NEVER suggest a second copy merely because the corrected ISBN is new.
+for(const [title,author,oldNumber,newIsbn,legacyTitle] of [
+  ['The Chocolate War','Robert Cormier','9780275829871',
+    '9780375829871','The Chocolate ewar'],
+  ['Mocro Maffia','Wouter Laumans','97848819348',
+    '9789048819348','Mocro Maffia'],
+]){
+  const physical=book('legacy-'+oldNumber,{
+    title:legacyTitle,author,metadataIsbn:'',editionIsbn:'',
+    barcode:oldNumber,status:'borrowed',borrowedBy:'student-1',
+  });
+  const corrected=row(0,1,{title,author,editionIsbn:newIsbn});
+  corrected.reviewedOriginalIdentifiers=[oldNumber];
+  const before=JSON.stringify(physical);
+  const result=preview([corrected],[physical]);
+  assert.strictEqual(result.ok,true);
+  assert.strictEqual(result.summary.addCopies,0,
+    'An ISBN edit must not manufacture a second physical '+title);
+  assert.strictEqual(result.summary.readyToApply,false);
+  assert.strictEqual(result.rows[0].action,'blocked');
+  assert.ok(result.rows[0].blockers.includes(
+    'corrected_isbn_matches_original_copy'));
+  assert.deepStrictEqual(result.rows[0].correctedSourceIdentitySamples,
+    [{title:legacyTitle,author}]);
+  assert.strictEqual(JSON.stringify(physical),before,
+    'Original physical identity and live loan must be preserved');
+  const legitimateNew=preview([corrected],[]);
+  assert.strictEqual(legitimateNew.summary.addCopies,1,
+    'No old matching physical barcode: a real new book stays importable');
+  const alreadyCorrected=preview([corrected],[book('updated-'+oldNumber,{
+    title,author,editionIsbn:newIsbn,metadataIsbn:newIsbn,barcode:oldNumber,
+  })]);
+  assert.strictEqual(alreadyCorrected.summary.addCopies,0,
+    'If the existing copy already carries the corrected edition, do not duplicate');
+  assert.strictEqual(alreadyCorrected.summary.blockedEditions,0);
+}
+// A different valid ISBN associated with the old source barcode also
+// requires review: ISBN corrections never prove the physical edition.
+const ambiguousCorrection=row(0,1,{editionIsbn:OTHER});
+ambiguousCorrection.reviewedOriginalIdentifiers=[ISBN];
+const ambiguousResult=preview([ambiguousCorrection],[book('old')]);
+assert.strictEqual(ambiguousResult.summary.addCopies,0);
+assert.ok(ambiguousResult.rows[0].blockers.includes(
+  'corrected_isbn_matches_original_copy'));
+// Multiple copies or a changed author must not turn a barcode hit into an
+// automatic reassignment, even if one old record is currently borrowed.
+const copied=row(0,1,{editionIsbn:OTHER});
+copied.reviewedOriginalIdentifiers=['100001'];
+const copies=preview([copied],[
+  book('old-a',{barcode:'100001',status:'borrowed',borrowedBy:'pupil'}),
+  book('old-b',{barcode:'100001'}),
+]);
+assert.strictEqual(copies.summary.addCopies,0);
+assert.strictEqual(copies.summary.readyToApply,false);
+
 console.log('PR4 inventory reconciliation pure preview tests passed');

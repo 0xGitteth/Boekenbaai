@@ -84,7 +84,9 @@ function applySafeTaskClosures(db,actor,payload,now=new Date().toISOString()) {
         &&other.status==='open'&&other.batchId===task.batchId
         &&other.worksheetRow===task.worksheetRow
         &&(other.bookId||null)===(task.bookId||null)
-        &&(other.barcode||null)===(task.barcode||null));
+        &&(other.barcode||null)===(task.barcode||null)
+        &&(other.sourcePrintedBarcode||null)===(task.sourcePrintedBarcode||null)
+        &&(other.sourceQuantity??null)===(task.sourceQuantity??null));
       if(retained.length!==1||orderedIds.includes(retained[0].id))
         return {ok:false,error:'retained_task_unavailable',taskId:id};
     }else{
@@ -93,7 +95,9 @@ function applySafeTaskClosures(db,actor,payload,now=new Date().toISOString()) {
         &&other.batchId===task.batchId
         &&other.worksheetRow===task.worksheetRow
         &&(other.bookId||null)===(task.bookId||null)
-        &&(other.barcode||null)===(task.barcode||null));
+        &&(other.barcode||null)===(task.barcode||null)
+        &&(other.sourcePrintedBarcode||null)===(task.sourcePrintedBarcode||null)
+        &&(other.sourceQuantity??null)===(task.sourceQuantity??null));
       if(retained.length!==1)return {ok:false,error:'completed_source_unproven',taskId:id};
     }
     closures.push({task,plan,storedRevision});

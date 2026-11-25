@@ -1,5 +1,7 @@
 'use strict';
 
+const {currentStudentClassIds,setStudentClassMembership}=require('./student-class-membership');
+
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -141,13 +143,7 @@ function managedClassIds(db, user) {
   return ids;
 }
 
-function studentClassIds(db, student) {
-  const ids = new Set(Array.isArray(student?.classIds) ? student.classIds.filter(Boolean) : []);
-  for (const klass of db.classes) {
-    if (Array.isArray(klass?.studentIds) && klass.studentIds.includes(student?.id)) ids.add(klass.id);
-  }
-  return Array.from(ids);
-}
+function studentClassIds(db,student){return currentStudentClassIds(db,student);}
 
 function canManageStudent(db, user, student) {
   if (!student || student.active === false) return false;
@@ -200,15 +196,7 @@ function splitName(value) {
 }
 
 function ensureClassMembership(db, student, classIds) {
-  const desired = Array.from(new Set((classIds || []).filter(Boolean)));
-  student.classIds = desired;
-  for (const klass of db.classes) {
-    klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-    const shouldHave = desired.includes(klass.id);
-    const has = klass.studentIds.includes(student.id);
-    if (shouldHave && !has) klass.studentIds.push(student.id);
-    if (!shouldHave && has) klass.studentIds = klass.studentIds.filter((id) => id !== student.id);
-  }
+  setStudentClassMembership(db, student, classIds);
 }
 
 function appendHistory(db, type, message, extra = {}) {

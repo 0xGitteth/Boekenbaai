@@ -34,6 +34,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     missing_valid_isbn: 'Voorraad vergelijken kan alleen met een geldig ISBN. Corrigeer het ISBN of sla deze rij over.',
     missing_title_or_author: 'Titel en auteur zijn verplicht bij het toevoegen van boeken. Corrigeer deze gegevens of sla de rij over.',
     possible_existing_book_without_isbn: 'Er staat al een boek met dezelfde titel en auteur maar zonder herkenbaar ISBN. Voeg eerst het juiste ISBN toe aan het bestaande boek om duplicaten te voorkomen.',
+    corrected_isbn_matches_original_copy: 'Het oorspronkelijke Excelnummer hoort al bij een bestaand exemplaar. De nieuwe ISBN-correctie kan hetzelfde fysieke boek betreffen. Controleer de bestaande registratie en de uitlening voordat je een extra exemplaar toevoegt. Deze import voegt dit boek niet automatisch toe.',
     ambiguous_unlabelled_copy_metadata: 'Er bestaan al exemplaren van dit ISBN, maar verschillende Excelrijen zonder fysieke barcode hebben afwijkende boekgegevens. Corrigeer de gegevens of geef exemplaren individuele barcodes om te voorkomen dat verkeerde metadata wordt gekoppeld.',
     unmatched_physical_copies: 'De extra exemplaren kunnen niet veilig aan de juiste Excelrijen worden gekoppeld. Controleer de aantallen en fysieke barcodes.',
     source_needs_review: 'Controleer de invoer en accepteer eventuele waarschuwingen.',
@@ -295,7 +296,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             + (usage.reserved || 0) + ' geregistreerd (maandgrens: '
             + (usage.cap || 900) + '). '
             + (ownLimitReached ? 'De maandgrens van Boekenbaai is bereikt. ' : '')
-            + (providerLimitReached ? 'Brave meldt via de API dat het maandquotum op is. ' : '')
+            + (providerLimitReached ? 'Boekenbaai heeft een maandrestwaarde van nul opgeslagen; zonder de oorspronkelijke headers is niet zeker dat Brave dit heeft bevestigd. ' : '')
             + (usage.legacyProviderRemaining === 0
               ? 'Een eerdere versie heeft nul zoekbudget opgeslagen zonder betrouwbare maandbron; '
                 + 'die waarde wordt niet meer als maandlimiet gebruikt. Een gepauzeerde taak '
@@ -674,7 +675,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         if(deferredResult.status!=='fulfilled')throw deferredResult.reason;
         const data=deferredResult.value;
         const items=Array.isArray(data.items)?data.items:[];
-        deferredSummary.textContent='Eerder uitgestelde boeken ('+(data.count??items.length)+')';
+        const resolvedItems=Array.isArray(data.resolvedItems)?data.resolvedItems:[];
+        const openCount=data.count??items.length;
+        const resolvedCount=data.resolvedCount??resolvedItems.length;
+        deferredSummary.textContent='Eerder uitgestelde boeken · open: '
+          +openCount+' · afgehandeld: '+resolvedCount;
         deferredList.replaceChildren();
         if(reportResult.status==='fulfilled'){
           const reports=Array.isArray(reportResult.value.reports)
@@ -693,26 +698,63 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }else deferredList.append(make('p','hint',
           'De importverslagen konden niet worden opgehaald. '
           +'De fysieke taken staan hieronder apart.'));
-        if(!items.length){
+        if(!items.length&&!resolvedItems.length){
           deferredList.append(make('p','hint',
-            'Er zijn nog geen boeken uitgesteld.'));
+            'Er zijn geen bewaarde uitgestelde boekmeldingen.'));
           return;
         }
-        deferredList.append(make('p','hint',
-          'Deze boeken zijn niet geïmporteerd. De oorspronkelijke Excel blijft '
-          +'nodig om ze later met een gecontroleerd ISBN toe te voegen.'));
-        for(const item of items.slice(0,40)){
-          const line=make('div','bb-guide__deferred-entry');
-          line.append(make('strong','',item.title||'Onbekend boek'),
-            make('span','',item.author||'Auteur onbekend'),
-            make('small','',
-              'Excelrij '+item.worksheetRow+' · Code '
-              +(item.excelIdentifier||'ontbreekt')
-              +' · Bestand '+(item.fileName||'onbekend')));
-          deferredList.append(line);
+        if(items.length){
+          deferredList.append(make('p','hint',
+            'Nog open ('+openCount+'): dit zijn onopgeloste bronmeldingen, '
+            +'niet automatisch ontbrekende fysieke boeken.'));
+          for(const item of items.slice(0,40)){
+            const line=make('div','bb-guide__deferred-entry');
+            line.append(make('strong','',item.title||'Onbekend boek'),
+              make('span','','Status: nog te beoordelen'),
+              make('span','',item.author||'Auteur onbekend'),
+              make('small','',
+                'Excelrij '+item.worksheetRow+' · Code '
+                +(item.excelIdentifier||'ontbreekt')
+                +' · Bestand '+(item.fileName||'onbekend')));
+            deferredList.append(line);
+          }
+          if(openCount>40)deferredList.append(make('p','hint',
+            'Getoond: 40 van '+openCount+' openstaande bronmeldingen.'));
+        }else deferredList.append(make('p','hint',
+          'Er staan geen uitgestelde boekmeldingen meer open.'));
+        if(resolvedItems.length){
+          deferredList.append(make('h4','',
+            'Historisch uitgesteld, later afgehandeld ('+resolvedCount+')'));
+          deferredList.append(make('p','hint',
+            'De oorspronkelijke Excelrij blijft als importgeschiedenis '
+            +'bewaard. Een afgesloten melding betekent niet dat een '
+            +'extra fysiek exemplaar is toegevoegd.'));
+          for(const item of resolvedItems.slice(0,40)){
+            const line=make('div','bb-guide__deferred-entry');
+            const label=item.resolution==='administrative_done'
+              ?'Administratief afgehandeld'
+              :item.resolution==='manual_done'
+                ?'Fysiek gecontroleerd'
+                :item.resolution==='auto_newer_import_verified_copy'
+                  ?'Automatisch afgehandeld na bewezen latere import'
+                  :'Afgehandeld (type niet bekend)';
+            line.append(make('strong','',item.title||'Onbekend boek'),
+              make('span','',label),
+              make('small','',
+                'Excelrij '+item.worksheetRow+' · Code '
+                +(item.excelIdentifier||'ontbreekt')
+                +' · Bestand '+(item.fileName||'onbekend')));
+            if(item.bookId)line.append(make('small','',
+              'Gekoppeld bestaand exemplaar: '+item.bookId));
+            if(item.evidenceNote)line.append(make('p','hint',
+              'Onderbouwing: '+item.evidenceNote));
+            if(item.completedAt)line.append(make('small','',
+              'Afgehandeld: '+new Date(item.completedAt).toLocaleString('nl-NL')));
+            deferredList.append(line);
+          }
+          if(resolvedCount>40)deferredList.append(make('p','hint',
+            'Getoond: 40 van '+resolvedCount+' afgehandelde bronmeldingen.'));
         }
-        if(items.length>40)deferredList.append(make('p','hint',
-          'Getoond: 40 van '+items.length+' uitgestelde boeken.'));
       }catch(error){
         if(serial!==deferredRefreshSerial)return;
         deferredSummary.textContent='Eerder uitgestelde boeken (laden mislukt)';
@@ -730,6 +772,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       if(deferredPanel.open)void refreshDeferred();
     });
     window.addEventListener('boekenbaai:staff-refresh',()=>void refreshDeferred());
+    // Closing a book task on the Tasks tab must update an already-open
+    // history panel immediately, without uploading or reimporting Excel.
+    window.addEventListener('boekenbaai:book-task-resolved',()=>{
+      if(deferredPanel.open)void refreshDeferred();
+    });
     window.addEventListener('focus',()=>{
       if(deferredPanel.open)void refreshDeferred();
     });
@@ -1286,6 +1333,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               addCopies:decision.addCopies,
               existingIdentitySamples:decision.existingIdentitySamples||[],
               legacyIdentitySamples:decision.legacyIdentitySamples||[],
+              correctedSourceIdentitySamples:decision.correctedSourceIdentitySamples||[],
               legacyCandidateCopies:decision.legacyCandidateCopies||0,
             }:null,
           };
@@ -1873,7 +1921,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                   +' · Volgens Excel: '+(entry.targetCopies||0)
                   +' · Uitgeleend: '+(entry.borrowedCopies||0)));
               for(const existing of (entry.existingIdentitySamples||[])
-                .concat(entry.legacyIdentitySamples||[]).slice(0,3))
+                .concat(entry.legacyIdentitySamples||[])
+                .concat(entry.correctedSourceIdentitySamples||[]).slice(0,3))
                 check.append(make('p','hint','Bestaand boek: '
                   +existing.title+' · '+existing.author));
             }
@@ -3092,6 +3141,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           for(const existing of item.legacyIdentitySamples||[]){
             card.append(make('p','hint',
               'Bestaand zonder ISBN: '+existing.title+' · '+existing.author));
+          }
+        }
+        if(reasons.includes('corrected_isbn_matches_original_copy')){
+          for(const existing of item.correctedSourceIdentitySamples||[]){
+            card.append(make('p','hint',
+              'Oorspronkelijke Excelcode staat bij: '
+              +existing.title+' · '+existing.author));
           }
         }
         if(reasons.includes('source_needs_review')&&source){

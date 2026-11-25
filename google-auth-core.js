@@ -1,5 +1,7 @@
 'use strict';
 
+const {currentStudentClassIds}=require('./student-class-membership');
+
 const crypto = require('crypto');
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -322,16 +324,9 @@ function getTeacherClassIds(db, teacherId) {
   return Array.from(ids);
 }
 
-function getStudentClassIds(db, studentId) {
-  const ids = new Set();
-  const student = (db?.students || []).find((entry) => entry?.id === studentId);
-  for (const classId of student?.classIds || []) {
-    if (classId) ids.add(classId);
-  }
-  for (const klass of db?.classes || []) {
-    if ((klass?.studentIds || []).includes(studentId) && klass?.id) ids.add(klass.id);
-  }
-  return Array.from(ids);
+function getStudentClassIds(db,studentId){
+  const student=(db?.students||[]).find(entry=>entry?.id===studentId);
+  return currentStudentClassIds(db,student);
 }
 
 function canStaffManageStudent(db, staffUser, studentId) {

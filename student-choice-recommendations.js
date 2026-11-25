@@ -6,7 +6,8 @@ const crypto = require('node:crypto');
 const dialogue=require('./student-choice-dialogue');
 const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity');
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
-const keyOf = book => JSON.stringify([norm(book.title), norm(book.author)]);
+const {workKey}=require('./book-reservations');
+const keyOf = book => workKey(book);
 const QUESTION_VALUES = Object.freeze({
   route: ['new','similar','surprise'],
   activity: ['gaming','film','sport','music','nature','other','unknown'],
@@ -437,6 +438,9 @@ function validateChoices(value) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
   result.answers=dialogue.validatedAnswers(input.answers);
+  result.useReadingHistory=input.useReadingHistory!==false;
+  result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
+    ?input.referencePreference:'';
   result.referenceBookId=typeof input.referenceBookId==='string'&&input.route!=='surprise'
     ?input.referenceBookId.slice(0,128):'';
   result.nuance=Object.hasOwn(NUANCE_HINTS,input.nuance)?input.nuance:'none';
@@ -572,7 +576,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const choice = validateChoices(input);
   const works = groupBooks(db);
   const alreadySeen = new Set([...seenKeys,...choice.excludeKeys]);
-  const read = studentId ? readKeysAndThemes(db, studentId, works) : {readKeys:new Set(),themes:new Set()};
+  const read = studentId && choice.useReadingHistory ? readKeysAndThemes(db, studentId, works) : {readKeys:new Set(),themes:new Set()};
   const directionHints=(THEME_HINTS[choice.situation]||[]).map(norm);
   const detailHints=(THEME_HINTS[choice.detail]||[]).map(norm);
   const nuanceHints=(NUANCE_HINTS[choice.nuance]||[]).map(norm);
@@ -581,6 +585,13 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const matchesTags=(themes,hints)=>themes.filter(theme=>
     hints.some(h=>norm(theme).includes(h)));
   const weights=dialogue.preferenceWeights(choice.answers);
+  const referencePreferences={
+    spanning:['mystery','danger','action'],personages:['people','relationships','friendship','growth'],
+    wereld:['setting','fantasy','discovery','adventure'],tempo:['fast','action'],
+    sfeer:['calm','humor','unusual'],informatie:['facts','true','science','history'],
+  };
+  for(const trait of referencePreferences[choice.referencePreference]||[])
+    weights.set(trait,(weights.get(trait)||0)+2);
   const reference=choice.referenceBookId
     ?(db.books||[]).find(book=>book.id===choice.referenceBookId&&!isHidden(book)):null;
   // Similarity MUST use the pooled work, not whichever physical copy had a
@@ -608,7 +619,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     if (!choice.allowRepeats && alreadySeen.has(work.key)) continue;
     // Confirmed reads are not recommendations for a new book; only compare
     // their curated themes when the learner explicitly asks for similarities.
-    if (read.readKeys.has(work.key)) continue;
+    if (read.readKeys.has(work.key)||anchor?.key===work.key) continue;
     const directionMatches=matchesTags(work.themes,directionHints);
     const detailMatches=matchesTags(work.themes,detailHints);
     const moodMatches=matchesTags(work.themes,legacyMoodHints);

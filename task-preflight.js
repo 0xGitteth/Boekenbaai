@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const {canonicalizeBookIsbn13} = require('./book-edition-core');
 const {listDeferredAssignmentTasks} = require('./book-import-assignment-tasks');
 const {circulationRevision} = require('./book-import-followups');
+const {buildImportReportIndex,latestImportForTask} = require('./book-import-task-reconciliation');
 const list = value => Array.isArray(value) ? value : [];
 const norm = value => String(value ?? '').trim();
 const folded = value => norm(value).normalize('NFKC').toLocaleLowerCase('nl-NL').replace(/\s+/g, ' ');
@@ -40,13 +41,14 @@ function sourceKey(task, family) {
   // Cross-import row numbers and ISBNs cannot establish physical identity.
   if (family === 'physical') return digest([family, report, task.worksheetRow,
     task.title, task.author, task.excelIdentifier, task.editionIsbn, task.bookId ?? null,
-    task.barcode ?? null, task.sourceEvidence ?? null]);
+    task.barcode ?? null, task.sourcePrintedBarcode ?? null,
+    task.sourceQuantity ?? null, task.sourceEvidence ?? null]);
   if (family === 'administration' && task.differenceId && task.original)
     return digest([family, report, task.differenceId, task.worksheetRow,
       task.bookId, task.kind, task.original, task.sourceRow ?? null, task.loanHistoryMode ?? null]);
   return null;
 }
-function assessTask(db, task, family, catalog) {
+function assessTask(db, task, family, catalog, reportIndex) {
   const key=editionKey(canonicalizeBookIsbn13(task.editionIsbn),task.title,task.author);
   const matches=key?catalog.byEdition.get(key)||[]:[];
   // Bound repeated evidence in the response even for very large edition groups.
@@ -104,10 +106,32 @@ function assessTask(db, task, family, catalog) {
     result.explanation = 'Na deze import is de uitleenregistratie veranderd. De oude keuze mag niet automatisch worden uitgevoerd.';
     result.proposedAction = 'Beoordeel de actuele uitleenregistratie opnieuw.';
   }
+  if(family==='physical'){
+    const later=latestImportForTask(db,task,reportIndex);
+    if(later){
+      result.current.newerImport=later;
+      result.evidence.push({type:'later_import_review',value:later});
+      // Repeated source rows are informative, but do not prove the physical
+      // copy or its quantity. No automatic-candidate classification here.
+      if(result.rule!=='later_circulation_activity'
+        &&result.rule!=='missing_or_ambiguous_copy'
+        &&later.authorConfirmed&&later.sourceIdentifierConfirmed
+        &&['unchanged','reconciled','add_copies','combined',
+          'created','copies_added','loan_restored'].includes(later.rowStatus)){
+        result.category='proposal';
+        result.rule='newer_import_still_needs_copy_proof';
+        result.explanation='Een latere import heeft dezelfde bronrij verwerkt, '
+          +'maar de fysieke exemplaarkoppeling is nog niet bewezen.';
+        result.proposedAction='Controleer het fysieke exemplaar-ID, het '
+          +'oorspronkelijke aantal en eventuele uitlening voordat de taak sluit.';
+      }
+    }
+  }
   return result;
 }
 function buildTaskPreflight(db) {
   const catalog=catalogIndex(list(db.books));
+  const reportIndex=buildImportReportIndex(db);
   const storedAssignments=new Map(list(db.bookImportAssignmentTasks).map(task=>[task.id,task]));
   const source = [
     ...list(db.bookImportDeferredBookChecks).filter(t => t?.status === 'open').map(t => [t, 'physical']),
@@ -132,7 +156,7 @@ function buildTaskPreflight(db) {
     idCounts.set(key, (idCounts.get(key) || 0) + 1);
   }
   const tasks = source.map(([task, family]) => {
-    const result = assessTask(db, task, family, catalog);
+    const result = assessTask(db, task, family, catalog, reportIndex);
     const key = sourceKey(task, family);
     if (!task.id || idCounts.get(family + ':' + task.id) !== 1) {
       result.category = 'attention'; result.rule = 'invalid_task_identity';
@@ -182,6 +206,8 @@ function buildTaskPreflight(db) {
   // Recomputed from live data on every read. Hash is not an authorization token.
   return {version:1, mode:'preview', writesAllowed:false,
     fingerprint:digest({tasks:source, books:db.books || [], counters:db.bookImportLoanActivityCounters || {},
+      reports:list(db.bookImportReports).map(r=>({
+        id:r.id,importedAt:r.importedAt,fileName:r.fileName,rows:r.rows})),
       students:db.students || [], classes:db.classes || []}),
     coverage:{included:['physical','administration','classes','studentExitTasks','teacherExitTasks'],
       excluded:['Google-koppelverzoeken en andere accountverzoeken uit de aparte authenticatieopslag'],

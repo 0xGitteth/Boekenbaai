@@ -8,6 +8,7 @@ const security=require('./google-auth-security-core');
 const pins=require('./student-pin-core');
 const {readJsonSnapshot,mutateJsonLockedAsync}=require('./database-write-coordinator');
 const {rankBooks}=require('./student-choice-recommendations');
+const {workKey}=require('./book-reservations');
 const dialogue=require('./student-choice-dialogue');
 const {attachDerivedThemeFields}=require('./book-theme-normalization');
 const DATA_PATH=process.env.BOEKENBAAI_DATA_PATH
@@ -100,6 +101,38 @@ function resolveChoice(db,auth,{grant='',sessionToken=''}={}){
   }
   return null;
 }
+// The context request is explicit, read-only and restricted to a single
+// student's validated choice grant or full session. Only public catalogue
+// works are returned. Favorites indicate interest, not reading or liking.
+function personalContext({grant,sessionToken}){
+  const db=loadDb();
+  const identity=resolveChoice(db,loadAuth(),{grant,sessionToken});
+  if(!identity)throw error('Log in voor persoonlijke tips.',401);
+  const publicBooks=(db.books||[]).filter(b=>b?.id&&b.catalogHidden!==true&&b.personalLoanOnly!==true);
+  const byId=new Map(publicBooks.map(b=>[b.id,b]));
+  const byKey=new Map(publicBooks.map(b=>[workKey(b),b]));
+  const project=b=>({bookId:b.id,title:String(b.title||'').slice(0,300),author:String(b.author||'').slice(0,300)});
+  const records=(db.readingRecords||[]).filter(r=>r?.subjectType==='student'
+    &&r.subjectId===identity.studentId&&r.finished===true
+    &&Number.isFinite(Date.parse(r.reportedAt)))
+    .sort((a,b)=>Date.parse(b.reportedAt)-Date.parse(a.reportedAt));
+  let recent=null;
+  for(const r of records){
+    const book=byId.get(r.bookId);
+    if(book&&(!r.title||workKey(r)===workKey(book))){
+      recent=project(book);break;
+    }
+  }
+  const favorites=[];
+  const seen=new Set();
+  for(const entry of db.studentFavorites||[]){
+    if(entry?.studentId!==identity.studentId||seen.has(entry.key))continue;
+    const book=byKey.get(entry.key);
+    if(book){favorites.push(project(book));seen.add(entry.key);}
+    if(favorites.length>=5)break;
+  }
+  return {recent,favorites};
+}
 const RECENT_DAYS=90;
 function pastKeys(db,studentId){
   const entry=(db.studentChoiceSeen||[]).find(x=>x.studentId===studentId);
@@ -166,4 +199,4 @@ async function closeChoice(grant){
       return auth;
     }});
 }
-module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,firstName,TTL};
+module.exports={startChoice,resolveChoice,suggestions,nextQuestion,clearHistory,closeChoice,personalContext,firstName,TTL};

@@ -363,8 +363,9 @@ const {analyzeReviewedImport}=require('../book-import-review');
     'Server analysis must update per-row progress');
   assert.ok(server.includes('bookImportStageStore.saveDraft('),
     'Autosave must be stored server-side, never just in localStorage');
-  assert.ok(server.includes('bookImportDeferredBookChecks'),
-    'Postponed physical books must be saved for future review');
+  assert.ok(server.includes('retainDeferredBookChecks(')
+      && server.includes('listDeferredImportHistory(getDb())'),
+    'Postponed book source records must persist and be accessible as current plus resolved history');
   assert.ok(server.includes("persistenceFile:path.join(path.dirname(DATA_PATH)"),
     'Persistent stage must live alongside the protected database');
 
