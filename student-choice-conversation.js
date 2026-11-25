@@ -215,7 +215,7 @@ function questionForContext(c){
  const q=BY_ID.get(c.current)||BY_ID.get('opening');
  if(q.id==='clarify-topic'){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
-  if(rule)return {...q,prompt:rule[2],examples:rule[2],options:rule[3].map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}))};
+  if(rule){const prompt=c.clarifyNegative?'Welk van deze onderwerpen bedoel je dat je liever wilt vermijden?':rule[2];return {...q,prompt,examples:prompt,options:rule[3].map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}))};}
   const topics=[...new Set([...c.clarifyKnown,...c.clarifyCandidates])].slice(0,5);
   const options=topics.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''}));
   if(c.clarifyKnown.length&&c.clarifyCandidates.length===1&&topics.length>1)options.push({id:'all',label:'Ja, die bedoel ik '+(topics.length===2?'allebei':'allemaal'),prefer:topics,length:''});
@@ -404,6 +404,7 @@ function analyze(text,rawContext={},books=[]){
  }
  const explicitReading=/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
  const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/.test(part));
+ const ambiguity=!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguity(input):null;
  // Keep explicit book exclusions separate from activity likes/dislikes.
  const readingExclusions=activityRefusal?validateSignals({avoid:[...readingClauses.flatMap(part=>interpret(part).avoid),...(direct.avoid||[]).filter(t=>t==='animalLoss')]}).avoid:[];
  // A preference about playing or watching is not a reading exclusion.
@@ -419,7 +420,7 @@ function analyze(text,rawContext={},books=[]){
  if(activityRefusal&&readingExclusions.length){
   const readingSignals=validateSignals({prefer:readingClauses.flatMap(part=>interpret(part).prefer),avoid:readingExclusions});
   direct={...readingSignals,recognized:true,clarify:false};
- }else if(activityRefusal&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
+ }else if(activityRefusal&&!ambiguity&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
   const ctx={...c,signals:current,used:[...new Set([...c.used,c.current])],hobbies:[],uncertain:0,turns:Math.min(7,c.turns+1)};
   const alternative=['more-interests','opening','watch','free-time'].map(id=>BY_ID.get(id)).find(q=>!ctx.used.includes(q.id));
   if(!alternative||ctx.turns>=6)return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'offer',reaction:'Ook goed!',context:ctx}};
@@ -429,7 +430,6 @@ function analyze(text,rawContext={},books=[]){
  // Resolve homonyms before the ordinary typo or follow-up selector. The
  // selected meaning is still subject to the original hobby/reading consent.
  if(!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline){
-  const ambiguity=findAmbiguity(input);
   if(ambiguity&&(!ambiguity.negative||ambiguity.reading||explicitReading)){
    const [id,,,meanings]=ambiguity.rule;
    const related=meanings.map(m=>m[0]);

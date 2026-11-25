@@ -274,6 +274,13 @@ const negativeChoice=fishNegative.advice.question.options[0];
 const negativeResolved=run(negativeChoice.label,{...fishNegative.advice.context,optionId:negativeChoice.id});
 assert.ok(negativeResolved.advice.context.signals.avoid.includes('fishing'));
 assert.ok(!negativeResolved.advice.context.signals.prefer.includes('fishing'));
+const fishAndDrawing=run('Ik hou van vissen en tekenen',{current:'free-time'});
+const fishAndDrawingResolved=run('vissen vangen',fishAndDrawing.advice.context);
+assert.deepEqual(new Set(fishAndDrawingResolved.advice.context.hobbies),new Set(['drawing','fishing']));
+const fishUnknown=run('geen idee',fish.advice.context);
+assert.equal(fishUnknown.advice.question.id,'clarify-topic');
+assert.equal(fishUnknown.advice.context.clarifyAmbiguity,'fishing');
+assert.deepEqual(fishUnknown.advice.context.signals.prefer,[]);
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});
