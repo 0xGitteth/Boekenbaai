@@ -1,3 +1,4 @@
+const {currentStudentClassIds}=require('./student-class-membership');
 'use strict';
 
 // PR5: all permissions are evaluated against the CURRENT class membership,
@@ -13,17 +14,7 @@ function mayManageClass(db, user, classId) {
   if (user.role === 'admin') return (db.classes || []).some((c) => c.id === classId);
   return user.role === 'teacher' && ownClassIds(db, user).includes(classId);
 }
-function studentClassIds(db, student) {
-  if (!student) return [];
-  // Class rosters can be updated by a mentor before a stale student.classIds
-  // field is reconciled. When an actual roster membership exists, it is the
-  // source of truth for display and access; do not union the old class back in.
-  const roster = (db.classes || []).filter(klass =>
-    Array.isArray(klass?.studentIds) && klass.studentIds.includes(student.id))
-    .map(klass=>klass.id);
-  if (roster.length) return [...new Set(roster)];
-  return [...new Set(Array.isArray(student.classIds) ? student.classIds.filter(Boolean) : [])];
-}
+function studentClassIds(db,student){return currentStudentClassIds(db,student);}
 function mayManageStudent(db, user, student) {
   if (!student || !user) return false;
   if (user.role === 'admin') return true;
