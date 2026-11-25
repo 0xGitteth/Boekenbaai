@@ -1,3 +1,4 @@
+const {currentStudentClassIds}=require('./student-class-membership');
 'use strict';
 
 const crypto = require('node:crypto');
@@ -147,13 +148,7 @@ function namesAreClose(left, right) {
   return (a.last === b.last && firstClose) || (a.first === b.first && lastClose);
 }
 
-function studentClassIds(db, student) {
-  const ids = new Set(Array.isArray(student?.classIds) ? student.classIds.filter(Boolean) : []);
-  for (const klass of db.classes || []) {
-    if (Array.isArray(klass?.studentIds) && klass.studentIds.includes(student?.id)) ids.add(klass.id);
-  }
-  return Array.from(ids);
-}
+function studentClassIds(db,student){return currentStudentClassIds(db,student);}
 
 function studentClassNames(db, student) {
   const ids = new Set(studentClassIds(db, student));
