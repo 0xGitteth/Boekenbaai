@@ -126,8 +126,8 @@
   }
   // The server selects the next open question and supplies corresponding
   // example choices. Only normalized preferences and question IDs are retained.
-  function freshAdvice(){
-    adviceContext=null;adviceQuestion=null;
+  function freshAdvice(current='opening'){
+    adviceContext={current};adviceQuestion=null;
   }
   function advicePayload(optionId){
     return {...(adviceContext||{}),signals:choices.openSignals||{prefer:[],avoid:[]},
@@ -230,7 +230,7 @@
     form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
   }
   function selectReference(book,read){
-    choices={route:'new',referenceBookId:book.bookId,answers:[]};freshAdvice();
+    choices={route:'new',referenceBookId:book.bookId,answers:[]};freshAdvice('book-interest');
     const referenceQuestion=read?'Wat vond je leuk aan '+book.title+'?':'Wat spreekt je aan in '+book.title+'?';
     offerOpenAnswer(referenceQuestion);
   }
@@ -247,7 +247,7 @@
     currentStep='route';
     options([
       ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
-      ['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
+      ['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice('free-time');offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
       ['Liever alleen kiezen uit antwoorden',beginInterests],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
@@ -628,7 +628,7 @@
         : [['Andere richting',()=>{choices={route:'new'};startExploration();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
-      ['Vertel wat je anders wilt',()=>{freshAdvice();offerOpenAnswer('Wat spreekt je niet aan in deze voorstellen?');}],
+      ['Vertel wat je anders wilt',()=>{freshAdvice('feedback');offerOpenAnswer('Wat spreekt je niet aan in deze voorstellen?');}],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{

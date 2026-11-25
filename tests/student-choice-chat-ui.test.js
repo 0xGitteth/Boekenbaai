@@ -204,7 +204,8 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
   await submitOpen('Een realistisch mysterie met aanwijzingen');
   await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery','puzzles','realistic'],avoid:[]});
+  assert.deepEqual(new Set(suggestRequests.at(-1).choices.openSignals.prefer),new Set(['mystery','puzzles','realistic']));
+  assert.deepEqual(suggestRequests.at(-1).choices.openSignals.avoid,[]);
 
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.

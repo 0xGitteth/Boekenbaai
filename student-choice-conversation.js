@@ -107,6 +107,8 @@ add('school-interest',1,'school outsider','Welke onderwerpen uit het leven van j
  ['Vriendschappen','friendship'],['Erbij horen','outsider'],['Wat iemand thuis meemaakt','family'],['Grappige gebeurtenissen','humor school'],['Eigen keuzes leren maken','growth']]);
 add('reading-barrier',2,'','Wat maakt lezen voor jou minder leuk?','Misschien herken je iets hiervan.',[
  ['Lange boeken','', 'short'],['Dat er weinig gebeurt','fast'],['Onderwerpen die me niet interesseren',''],['Ik lees liever waargebeurde verhalen','true']]);
+add('feedback',2,'','Wat spreekt je niet aan in deze voorstellen?','Wat zou je anders willen?',[
+ ['Een ander onderwerp',''],['Meer spanning','danger'],['Meer humor','humor'],['Meer realistische verhalen','realistic'],['Waargebeurde verhalen','true'],['Een korter boek','','short']]);
 const BY_ID=new Map(Q.map(q=>[q.id,q]));
 const MEDIA=[
  ['GTA',['gta','grand theft auto'],['crime','action','adventure']],
@@ -187,7 +189,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  const p=signals.prefer, known=new Set([...p,...signals.avoid]);
  const used=new Set([...context.used,context.current]);
  const top=profiles(books,signals);
- const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest'].includes(q.id)
+ const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback'].includes(q.id)
   &&(!q.when.length||q.when.some(t=>p.includes(t)||context.hypothesis.includes(t)))
   &&(q.stage!==3||context.turns>=2||p.length>=3)
   &&(q.stage!==0||context.turns<=2)
@@ -212,7 +214,7 @@ function analyze(text,rawContext={},books=[]){
  const c=cleanContext(rawContext),q=questionForContext(c);
  const value=normalize(text);
  const selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):null;
- const current=validateSignals(c.signals);
+ let current=validateSignals(c.signals);
  let input=String(text||''), media=[],hypothesis=[],length=c.length;
  const notReader=/\b(?:haat lezen|lezen is saai|lees niet graag|niet van lezen|geen zin om te lezen|boeken saai|meeste boeken saai)\b/.test(value);
  // Media mentions suggest possible directions, never book preferences by themselves.
@@ -236,6 +238,16 @@ function analyze(text,rawContext={},books=[]){
  // "Geen idee, maar ..." still contains an answer; don't throw that away.
  const tail=input.match(/(?:geen idee|weet ik niet|idk|mnu)[^.!?]*?\bmaar\b\s*(.+)/i);
  if(tail)input=tail[1];
+ // Feedback that explicitly contrasts a rejected direction with a desired
+ // one removes the old direction, without inventing a permanent exclusion.
+ if(c.current==='feedback'){
+  const contrast=input.match(/^(.*?)(?:\.\s*|,\s*|\s+maar\s+)ik wil (?:juist|liever)\s+(.+)$/i);
+  if(contrast&&/\b(?:gaat|gaan|allemaal|te veel)\b/i.test(contrast[1])){
+   const oldDirection=interpret(contrast[1]).prefer;
+   current=validateSignals({prefer:current.prefer.filter(t=>!oldDirection.includes(t)),avoid:current.avoid});
+   input=contrast[2];
+  }
+ }
  const uncertain=/^(?:ik )?(?:weet (?:het )?niet|weet ik niet|geen idee|idk|mnu|maakt niet uit|geen voorkeur|geen flauw idee)(?: eigenlijk| echt| hoor| haha| denk ik| lol)*$/.test(value);
  if(/\b(?:geen dikke boeken|niet zo dik|niet te dik|liever kort|kort boek|korte boeken|weinig pagina s|niet veel pagina s)\b/.test(value))length='short';
  if(/\b(?:dik boek is prima|lange boeken zijn prima|lengte maakt niet uit)\b/.test(value))length='any';
@@ -283,7 +295,6 @@ function analyze(text,rawContext={},books=[]){
  if(notReader)reaction='Dan beginnen we bij wat je buiten het lezen leuk vindt.';
  const p=updated.prefer,axisCount=families(p);
  const topicDetail=p.some(t=>['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
- const focused=p.some(t=>['psychology','manipulation','criminalPerspective','police','disappearance','secrets','puzzles','magic','competition','team','war','survival','true','realistic','animalLoss'].includes(t));
  const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));
  const enough=hasNew&&p.length>=2&&((p.length>=3&&axisCount>=2&&specific)
    ||(next.turns>=2&&specific&&(axisCount>=2||topicDetail))

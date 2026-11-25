@@ -664,7 +664,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   candidates.sort((a,b) =>
     // When asking for books like a chosen reference, offer real matches
     // before unrelated fallback titles, even with reading-history consent.
-    (choice.length==='short'&&a.work.pages&&b.work.pages?Number(b.work.pages<=180)-Number(a.work.pages<=180):0)
+    (choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
     || (b.openMatches-a.openMatches)
     || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
     || (anchorTraits.size&&choice.referenceBookId
