@@ -109,10 +109,18 @@ updateFromPages(mergeDb,{key:JSON.stringify([target.isbn,
 assert.equal(manual.description,'Eigen omschrijving door docent',
   'Background enrichment may not replace teacher text');
 assert.deepEqual(manual.tags,['Zelf ingevoerd']);
+assert.deepEqual(manual.enrichmentTags,found.tags,
+  'Verified source keywords supplement manual labels without overwriting them');
 assert.equal(manual.coverUrl,'https://example.org/eigen-omslag.jpg',
   'Teacher cover choices are protected even after a download problem');
 assert.equal(oldWithoutProvenance.description,'Eerder handmatig aangepast',
   'Legacy descriptions with missing provenance are protected');
+assert.equal(notApproved.enrichmentTags,undefined);
+const clearedThemes={...book('cleared-themes'),themesCleared:true};
+updateFromPages({books:[clearedThemes]},{key:JSON.stringify([target.isbn,
+  target.title.toLowerCase(),target.author.toLowerCase()]),bookIds:['cleared-themes']},[found]);
+assert.equal(clearedThemes.enrichmentTags,undefined,
+  'Explicitly cleared themes must not receive background source keywords');
 assert.equal(notApproved.coverUrl,'',
   'A new unrelated copy of the same work must not be enriched without approval');
 
