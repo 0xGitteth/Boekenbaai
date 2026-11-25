@@ -58,8 +58,13 @@ function parseMonthlyRemaining(response) {
   // The only admissible evidence is ONE explicitly labelled monthly bucket
   // with a complete non-negative decimal integer at the SAME position.
   if(monthly.length!==1||!/^\d+$/.test(amounts[monthly[0]]))return null;
+  // Brave documents a monthly limit of 0 as unlimited, not exhausted.
+  // Require a positive, explicitly bounded quota before interpreting its balance.
+  const limitText=windows[monthly[0]].match(/^\s*(\d+)\s*;/)?.[1];
+  const limit=Number(limitText);
+  if(!Number.isSafeInteger(limit)||limit<=0)return null;
   const value=Number(amounts[monthly[0]]);
-  return Number.isSafeInteger(value)?value:null;
+  return Number.isSafeInteger(value)&&value<=limit?value:null;
 }
 function queryFor(step,target) {
   const title=cleaned(target.title,150).replace(/["\r\n]/g,'');
