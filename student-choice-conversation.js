@@ -44,8 +44,8 @@ add('humor-interest',1,'humor','Waar moet je zelf meestal om lachen?','Wat voor 
  ['Grappige situaties op school','humor school'],['Vrienden die iets meemaken','humor friendship'],['Onverwachte gebeurtenissen','humor unusual'],['Absurdistische verhalen','humor fantasy']]);
 add('justice-interest',1,'justice','Wat vind je belangrijk aan verhalen over onrecht?','Waar zou je meer over willen lezen?',[
  ['Pesten of buitensluiten','outsider'],['Discriminatie','justice'],['Iemand die onterecht wordt beschuldigd','justice crime'],['Mensen die voor elkaar opkomen','friendship justice']]);
-add('music-interest',1,'music','Waar ben je zelf graag creatief mee bezig?','Wat spreekt je aan?',[
- ['Muziek maken of luisteren','music'],['Tekenen en ontwerpen','art'],['Fotografie','art'],['Iemand die zijn talent ontdekt','growth']]);
+add('music-interest',1,'music','Wat spreekt je aan in muziek?','Wat vind je bijvoorbeeld interessant?',[
+ ['Zelf muziek maken','musicMaking'],['Muziek luisteren','musicListening'],['Het leven van artiesten','music people'],['Iemand die zijn talent ontdekt','growth']]);
 add('life-interest',1,'empathy growth','Wat vind je interessant aan de dingen die mensen meemaken?','Welke onderwerpen spreken je aan?',[
  ['Omgaan met verlies','empathy'],['Zelfvertrouwen krijgen','growth'],['Gezondheid','health'],['Vriendschap','friendship'],['Hoe mensen denken','psychology']]);
 add('facts-interest',1,'facts','Zijn er onderwerpen waar je graag meer over leert?','Welke van deze onderwerpen vind je interessant?',[
@@ -317,6 +317,7 @@ function analyze(text,rawContext={},books=[]){
  if(/\b(?:geen dikke boeken|niet zo dik|niet te dik|liever kort|kort boek|korte boeken|weinig pagina s|niet veel pagina s)\b/.test(value))length='short';
  if(/\b(?:dik boek is prima|lange boeken zijn prima|lengte maakt niet uit)\b/.test(value))length='any';
  const contextualAliases={
+  'media-interest':c.media.includes('Minecraft')?[['bouwen','gameBuilding'],['vooral bouwen','gameBuilding'],['samen spelen','gameMultiplayer'],['de wereld ontdekken','adventure']]:[],
   'crime-interest':[['waarom ze dat doen','psychology'],['hoe ze gepakt worden','police'],['het leven van criminelen','criminalPerspective']],
   'crime-psychology':[['waarom ze dat doen','psychology'],['hoe ze anderen beïnvloeden','manipulation'],['hoe ze gepakt worden','police']],
   'mystery-interest':[['dat mensen dingen geheimhouden','secrets'],['waar mensen gebleven zijn','disappearance'],['zelf raden','puzzles']],
@@ -327,6 +328,23 @@ function analyze(text,rawContext={},books=[]){
   'sport-interest':[['echte sportverhalen','true'],['het winnen','competition']],
   'fantasy-interest':[['bijzondere krachten','magic']],
  };
+ let correction=false;
+ // Explicit correction: remove only the mistaken direction, not unrelated
+ // preferences or a permanent exclusion.
+ const corrected=input.match(/^\s*(?:nee[, ]+)?(?:ik bedoel|ik bedoelde|bedoel eigenlijk)\s+(.+)/i);
+ if(!selected&&corrected){
+  const revised=interpret(corrected[1]);
+  if(revised.recognized&&revised.prefer.length){
+   const old=q.when.filter(t=>!revised.prefer.includes(t));
+   current=validateSignals({prefer:current.prefer.filter(t=>!old.includes(t)),avoid:current.avoid});
+   input=corrected[1];correction=true;
+  }
+ }
+ if(!selected&&(q.when.includes('sportPlaying')||q.when.includes('sport')||current.prefer.includes('sportPlaying'))
+   &&/^(?:nee )?(?:ik )?kijk (?:alleen|liever)(?: maar)?(?: naar (?:voetbal|sport))?$/.test(value)){
+  current=validateSignals({prefer:current.prefer.filter(t=>t!=='sportPlaying'),avoid:current.avoid});
+  input='sport kijken';correction=true;
+ }
  let direct=selected?{...validateSignals({prefer:selected.prefer}),recognized:true,clarify:false}:interpret(input);
  if(c.current==='hobby-focus'&&!selected&&/^(?:ja|ja graag|allebei|beide|allemaal)$/.test(value))direct={...validateSignals({prefer:c.hobbies}),recognized:true,clarify:false};
  // Exact short contextual responses can be resolved without guessing.
@@ -382,7 +400,7 @@ function analyze(text,rawContext={},books=[]){
  }
  // A named reference can change the direction even if there is no direct trait.
  const possible=validateSignals({prefer:hypothesis}).prefer;
- let reaction='';
+ let reaction=correction?'Ah, dan begreep ik je verkeerd. Bedankt voor de uitleg.':'';
  if((media.length||anchor)&&!next.used.includes('media-interest')&&!next.used.includes('book-interest')){
    // A title is evidence about possible themes, never about the pupil's liking.
    const candidate=anchor?'book-interest':'media-interest';
@@ -394,7 +412,7 @@ function analyze(text,rawContext={},books=[]){
  }
  if(notReader)reaction='Dan beginnen we bij wat je buiten het lezen leuk vindt.';
  const p=updated.prefer,axisCount=families(p);
- const topicDetail=p.some(t=>['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
+ const topicDetail=p.some(t=>SUBTOPICS[t]||['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));
  const enough=hasNew&&p.length>=2&&((p.length>=3&&axisCount>=2&&specific)
    ||(next.turns>=2&&specific&&(axisCount>=2||topicDetail))
