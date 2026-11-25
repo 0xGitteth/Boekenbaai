@@ -191,7 +191,7 @@ for(let i=0;i<2;i++)repeatedUnknown=run('qzxqzxqz',repeatedUnknown.advice.contex
 assert.equal(repeatedUnknown.advice.kind,'offer');
 const subjects=require('../student-choice-topic-details');
 const {SUBTOPICS}=require('../student-choice-themes');
-assert.ok(Object.keys(SUBTOPICS).length>=66);
+assert.ok(Object.keys(SUBTOPICS).length>=126);
 assert.equal(new Set(Q.filter(q=>q.id.startsWith('extended-')).map(q=>q.group)).size,30);
 assert.equal(Q.filter(q=>q.id.startsWith('extended-')).length,270);
 for(const [id,parent,label,aliases,evidence] of subjects){
@@ -238,6 +238,42 @@ for(const question of Q.filter(x=>x.group)){
  assert.ok(question.when.every(t=>validateSignals({prefer:[t]}).prefer.includes(t)),question.id);
  assert.ok((question.requires||[]).every(t=>validateSignals({prefer:[t]}).prefer.includes(t)),question.id);
 }
+// Ambiguous Dutch interests must never be silently assigned to one meaning.
+const {RULES}=require('../student-choice-ambiguity');
+for(const [id,word,prompt,meanings] of RULES){
+ const phrase=word.split('|')[0];
+ for(const current of ['opening','free-time']){
+  const ambiguous=run('Ik hou van '+phrase,{current,seed:id});
+  assert.equal(ambiguous.advice.kind,'examples',id);
+  assert.equal(ambiguous.advice.question.prompt,prompt);
+  assert.deepEqual(ambiguous.advice.context.signals.prefer,[],id);
+  for(const [trait,label] of meanings){
+   const option=ambiguous.advice.question.options.find(o=>o.label===label);
+   assert.ok(option,id+' '+label);
+   const resolved=run(label,{...ambiguous.advice.context,optionId:option.id});
+   assert.equal(resolved.advice.question?.id,'hobby-focus',id+' '+label);
+   assert.ok(resolved.advice.context.hobbies.includes(trait),id+' '+label);
+   assert.deepEqual(resolved.advice.context.signals.prefer,[]);
+   const confirmed=run('ja',resolved.advice.context);
+   assert.ok(confirmed.advice.context.signals.prefer.includes(trait),id+' '+label);
+  }
+ }
+}
+const fish=run('Ik hou van vissen',{current:'free-time'});
+const fishResolved=run('vissen vangen',fish.advice.context);
+assert.deepEqual(fishResolved.advice.context.hobbies,['fishing']);
+assert.equal(run('vissen als dieren',fish.advice.context).advice.context.hobbies[0],'fishAnimals');
+assert.equal(run('Ik doe aan hengelsport',{current:'free-time'}).advice.question.id,'hobby-focus');
+const fishReading=run('Ik lees graag over vissen',{current:'free-time'});
+const animalChoice=fishReading.advice.question.options.find(o=>o.label==='Vissen als dieren');
+const animalReading=run(animalChoice.label,{...fishReading.advice.context,optionId:animalChoice.id});
+assert.ok(animalReading.advice.context.signals.prefer.includes('fishAnimals'));
+assert.notEqual(animalReading.advice.question?.id,'hobby-focus');
+const fishNegative=run('Ik wil geen boeken over vissen',{current:'free-time'});
+const negativeChoice=fishNegative.advice.question.options[0];
+const negativeResolved=run(negativeChoice.label,{...fishNegative.advice.context,optionId:negativeChoice.id});
+assert.ok(negativeResolved.advice.context.signals.avoid.includes('fishing'));
+assert.ok(!negativeResolved.advice.context.signals.prefer.includes('fishing'));
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});
