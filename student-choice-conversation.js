@@ -109,6 +109,7 @@ add('reading-barrier',2,'','Wat maakt lezen voor jou minder leuk?','Misschien he
  ['Lange boeken','', 'short'],['Dat er weinig gebeurt','fast'],['Onderwerpen die me niet interesseren',''],['Ik lees liever waargebeurde verhalen','true']]);
 add('feedback',2,'','Wat spreekt je niet aan in deze voorstellen?','Wat zou je anders willen?',[
  ['Een ander onderwerp',''],['Meer spanning','danger'],['Meer humor','humor'],['Meer realistische verhalen','realistic'],['Waargebeurde verhalen','true'],['Een korter boek','','short']]);
+Q.push(...require('./student-choice-question-bank'));
 const BY_ID=new Map(Q.map(q=>[q.id,q]));
 const MEDIA=[
  ['GTA',['gta','grand theft auto'],['crime','action','adventure']],
@@ -204,10 +205,11 @@ function chooseQuestion(context,signals,books,last=[],force=''){
    const n=top.filter(b=>b.traits.has(t)).length;
    if(n>0&&n<top.length)coverage+=Math.min(n,top.length-n)/Math.max(1,top.length);
   }
-  const recent=context.recent.includes(q.id)?-4:0;
+  const recent=context.recent.includes(q.id)?-7:0;
+  const groupPenalty=q.group&&[...used].some(id=>BY_ID.get(id)?.group===q.group)?-5:0;
   const link=q.when.some(t=>last.includes(t))?6:q.when.some(t=>p.includes(t))?3:0;
   const stage=q.stage===1?4:q.stage===2?3:q.stage===0?(p.length?1:7):0;
-  return {q,score:link+stage+Math.min(4,coverage)+recent+tie(context.seed,q.id)*2};
+  return {q,score:link+stage+Math.min(4,coverage)+recent+groupPenalty+tie(context.seed,q.id)*2};
  }).sort((a,b)=>b.score-a.score)[0]?.q||null;
 }
 function analyze(text,rawContext={},books=[]){
