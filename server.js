@@ -4216,10 +4216,16 @@ async function handleApi(req, res, requestUrl) {
 
     if (requestUrl.pathname === '/api/me/favorites' && ['GET','POST'].includes(req.method)) {
       if(!user || user.role!=='student')return sendJson(res,user?403:401,{message:'Alleen voor je eigen profiel.'});
+      // The client declares the account it believes is active. This is a
+      // consistency assertion, NOT authentication: only the server-resolved
+      // user may read or mutate its own favorites. Reject a stale cookie tab.
+      res.setHeader('Cache-Control','private, no-store');
+      if(requestUrl.searchParams.get('account')!==String(user.id))
+        return sendJson(res,409,{code:'FAVORITE_ACCOUNT_CHANGED',message:'Je account is gewijzigd. Vernieuw de pagina.'});
       if(req.method==='GET'){
         const db=getDb();
         if(!studentFavorites.activeStudent(db,user.id))return sendJson(res,403,{message:'Alleen voor je eigen profiel.'});
-        return sendJson(res,200,{favorites:studentFavorites.list(db,user.id)});
+        return sendJson(res,200,{studentId:user.id,favorites:studentFavorites.list(db,user.id)});
       }
       if(!authSecurityForPin.isSameOriginMutation(req,
         authSecurityForPin.getExpectedOrigin(req,process.env.BOEKENBAAI_PUBLIC_URL||''))){
@@ -4230,7 +4236,7 @@ async function handleApi(req, res, requestUrl) {
       const result=studentFavorites.change(db,user.id,body);
       if(result.status!==200)return sendJson(res,result.status,{message:result.message});
       if(result.changed)saveDb(db);
-      return sendJson(res,200,{favorites:result.favorites});
+      return sendJson(res,200,{studentId:user.id,favorites:result.favorites});
     }
 
     // All profile reading data belongs to the authenticated pupil. No student
