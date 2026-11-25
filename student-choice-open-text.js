@@ -18,7 +18,7 @@ const TERMS={
  animals:['dieren','honden','paarden','katten'],
  nature:['natuur','bos','wildernis'],
  science:['wetenschap','ruimtevaart','wetenschappelijk'],
- technology:['techniek','computers','robots','technologie','gamen','programmeren'],
+ technology:['techniek','computers','robots','technologie','programmeren'],
  history:['geschiedenis','historische','vroeger'],
  facts:['informatief','informatie','feiten','iets leren'],
  people:['personages','mensen','personen','problemen die ze meemaken'],
@@ -101,4 +101,28 @@ function interpret(text){
  const result=validateSignals({prefer:[...signals].filter(([,v])=>v==='prefer').map(([k])=>k),avoid:[...signals].filter(([,v])=>v==='avoid').map(([k])=>k)});
  return {...result,recognized:signals.size>0,clarify:signals.size===0};
 }
-module.exports={interpret,validateSignals,LABELS};
+// Small, conservative typo suggestions. These are never applied as preferences.
+function suggestTopics(text){
+ const words=normalize(text).replace(/[^a-z0-9 ]/g,' ').trim().split(/\s+/);
+ if(!words.length||words.length>16)return [];
+ function distance(a,b){
+  let previous=Array.from({length:b.length+1},(_,i)=>i);
+  for(let i=1;i<=a.length;i++){
+   const row=[i];
+   for(let j=1;j<=b.length;j++)row[j]=Math.min(row[j-1]+1,previous[j]+1,previous[j-1]+(a[i-1]===b[j-1]?0:1));
+   previous=row;
+  }
+  return previous[b.length];
+ }
+ const candidates=new Map();
+ for(const word of words.filter(w=>w.length>=5)){
+  for(const [key,variants] of Object.entries(TERMS)){
+   for(const variant of variants){
+    if(!/^[a-z]{5,}$/.test(variant)||Math.abs(word.length-variant.length)>1)continue;
+    if(word!==variant&&distance(word,variant)===1)candidates.set(key,1);
+   }
+  }
+ }
+ return [...candidates.keys()].slice(0,3);
+}
+module.exports={interpret,validateSignals,LABELS,suggestTopics};
