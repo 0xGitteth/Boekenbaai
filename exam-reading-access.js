@@ -1,5 +1,6 @@
-const {currentStudentClassIds}=require('./student-class-membership');
 'use strict';
+
+const {currentStudentClassIds}=require('./student-class-membership');
 
 // School-specific class classification. Exact names come from the current ParnasSys import.
 // Class IDs, not imported grade values, determine access; the classification is evaluated
