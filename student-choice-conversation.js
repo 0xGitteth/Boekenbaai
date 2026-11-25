@@ -306,7 +306,7 @@ function analyze(text,rawContext={},books=[]){
    if(feedbackRejected.length){
     current=validateSignals({prefer:current.prefer.filter(t=>!feedbackRejected.includes(t)),avoid:current.avoid});
     return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{
-      kind:'question',reaction:'Oké, dan zoeken we iets anders.',clearReference:true,
+      kind:'question',reaction:'Oké! Dan zoeken we iets anders.',clearReference:true,
       context:{...c,signals:current,current:'feedback',uncertain:0},
       question:{...questionView(q),prompt:'Wat zou je in plaats daarvan graag willen lezen?'}}};
    }
@@ -379,8 +379,8 @@ function analyze(text,rawContext={},books=[]){
   // topic associated with it. Offer a different direction instead.
   const alternatives=['more-interests','watch','opening','free-time'];
   const follow=alternatives.map(id=>BY_ID.get(id)).find(x=>!ctx.used.includes(x.id));
-  if(!follow||ctx.turns>=6)return {...envelope,recognized:true,clarify:false,advice:{kind:'offer',reaction:'Helemaal prima.',context:ctx}};
-  return {...envelope,recognized:true,clarify:false,advice:{kind:'question',reaction:'Oké, iets anders dan.',question:questionView(follow),context:{...ctx,current:follow.id}}};
+  if(!follow||ctx.turns>=6)return {...envelope,recognized:true,clarify:false,advice:{kind:'offer',reaction:'Helemaal prima!',context:ctx}};
+  return {...envelope,recognized:true,clarify:false,advice:{kind:'question',reaction:'Ook goed! We zoeken gewoon verder.',question:questionView(follow),context:{...ctx,current:follow.id}}};
  }
  const bookMention=String(text||'').match(/^(?:ik heb (?:het boek )?(.{2,100}?)\s+(?:gelezen|uitgelezen)|ik las (?:het boek )?(.{2,100}?)|ik vond het boek (.{2,100}?)(?:\s+(?:leuk|heel leuk|geweldig))?|(?:het )?boek (?:heet |is )?(.{2,100}?))[.!]?$/i);
  if(!selected&&!anchor&&bookMention&&!media.length&&!direct.avoid?.length){
@@ -392,15 +392,15 @@ function analyze(text,rawContext={},books=[]){
    const candidates=suggestTopics(text);
    if(candidates.length){
     const ctx={...c,current:'clarify-topic',clarifyFrom:c.current,clarifyCandidates:candidates,uncertain:1};
-    return {...envelope,advice:{kind:'examples',reaction:'Hmm, ik weet het niet helemaal zeker.',question:questionView(questionForContext(ctx)),context:ctx}};
+    return {...envelope,advice:{kind:'examples',reaction:'Hmm, ik twijfel een beetje 🤔',question:questionView(questionForContext(ctx)),context:ctx}};
    }
   }
   if(uncertain||c.uncertain>=1)return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
-  return {...envelope,advice:{kind:'clarify',reaction:'Dat ken ik niet zo goed. Wat bedoel je precies?',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
+  return {...envelope,advice:{kind:'clarify',reaction:'Oeps, die snap ik nog niet helemaal 😅 Wat bedoel je precies?',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
  }
  // A named reference can change the direction even if there is no direct trait.
  const possible=validateSignals({prefer:hypothesis}).prefer;
- let reaction=correction?'Oh, zo! Ik had je verkeerd begrepen.':'';
+ let reaction=correction?'Ohhh, zo! Ik had je verkeerd begrepen.':'';
  if((media.length||anchor)&&!next.used.includes('media-interest')&&!next.used.includes('book-interest')){
    // A title is evidence about possible themes, never about the pupil's liking.
    const candidate=anchor?'book-interest':'media-interest';
@@ -410,7 +410,7 @@ function analyze(text,rawContext={},books=[]){
     question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat spreekt je aan in '+media[0]+'?':'Wat vind je interessant aan die games, films of series?'},
     context:mediaContext,...(anchor?{reference:{bookId:anchor.bookId,title:anchor.title}}:{}),hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
  }
- if(notReader)reaction='Dan beginnen we gewoon ergens anders.';
+ if(notReader)reaction='Geen leesfan? Uitdaging geaccepteerd!';
  const p=updated.prefer,axisCount=families(p);
  const topicDetail=p.some(t=>SUBTOPICS[t]||['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));
