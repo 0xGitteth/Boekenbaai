@@ -410,6 +410,17 @@ assert.ok(run('Ik vind lezen niet leuk behalve strips',lastRound).advice.context
 const queueFish=run('Ik hou van vissen en bakken',lastRound);
 const queueBaking=run('Vissen vangen',queueFish.advice.context);
 assert.equal(queueBaking.advice.context.clarifyAmbiguity,'baking');
+const retryFish=run('Met mijn opa',queueFish.advice.context);
+assert.equal(retryFish.advice.context.clarifyAmbiguity,'fishing');
+assert.deepEqual(retryFish.advice.context.clarifyQueue,[{id:'baking',negative:false}]);
+const retryBaking=run('Vissen vangen',retryFish.advice.context);
+assert.equal(retryBaking.advice.context.clarifyAmbiguity,'baking');
+const bothThenBaking=run('Ik vind het allebei leuk',queueFish.advice.context);
+assert.equal(bothThenBaking.advice.context.clarifyAmbiguity,'baking');
+assert.ok(bothThenBaking.advice.context.clarifyKnown.includes('fishing'));
+assert.ok(bothThenBaking.advice.context.clarifyKnown.includes('fishAnimals'));
+const skipFish=run('Laat maar',queueFish.advice.context);
+assert.equal(skipFish.advice.context.clarifyAmbiguity,'baking');
 const queueDone=run('Taarten, brood of koekjes bakken',queueBaking.advice.context);
 assert.equal(queueDone.advice.question.id,'hobby-focus');
 assert.deepEqual(new Set(queueDone.advice.context.hobbies),new Set(['fishing','baking']));

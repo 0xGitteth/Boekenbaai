@@ -288,7 +288,7 @@ function questionForContext(c){
  }
  if(q.id==='clarify-topic'){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
-  if(rule){const prompt=c.clarifyNegative?'Welk van deze onderwerpen bedoel je dat je liever wilt vermijden?':rule[2];const visible=rule[3].slice(0,rule[4]||rule[3].length);const options=visible.map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}));if(visible.length===2)options.push({id:'both',label:'Allebei',prefer:visible.map(x=>x[0]),length:''});return {...q,prompt,examples:prompt,options};}
+  if(rule){const prompt=c.clarifyNegative?'Welk van deze onderwerpen bedoel je dat je liever wilt vermijden?':rule[2];const visible=rule[3].slice(0,rule[4]||rule[3].length);const options=visible.map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}));if(visible.length===2)options.push({id:'both',label:'Allebei',prefer:visible.map(x=>x[0]),length:''});options.push({id:'skip',label:'Laat maar',prefer:[],length:''});return {...q,prompt,examples:prompt,options};}
   const topics=[...new Set([...c.clarifyKnown,...c.clarifyCandidates])].slice(0,5);
   const options=topics.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''}));
   if(c.clarifyKnown.length&&c.clarifyCandidates.length===1&&topics.length>1)options.push({id:'all',label:'Ja, die bedoel ik '+(topics.length===2?'allebei':'allemaal'),prefer:topics,length:''});
@@ -401,8 +401,12 @@ function analyze(text,rawContext={},books=[]){
  if(c.current==='clarify-topic'&&c.clarifyAmbiguity){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
   const meaning=resolveMeaning(rule,text);
-  const traits=selected?.prefer?.length?selected.prefer:meaning?[meaning]:[];
-  const skip=/^(?:nee|laat maar|sla over|weet ik niet|geen idee|idk)$/.test(value)&&(c.uncertain>=2||/^(?:laat maar|sla over)$/.test(value));
+  const both=q.options.find(o=>o.id==='both');
+  const bothAnswer=both&&/^(?:(?:ik vind|ik bedoel|ik wil|het zijn) )?(?:het )?(?:allebei|beide)(?: leuk| interessant| graag| wel| bedoel ik)?$/.test(value);
+  const traits=selected?.prefer?.length?selected.prefer:meaning?[meaning]:bothAnswer?both.prefer:[];
+  // An unrecognized explanation does not discard other queued topics. Retry
+  // twice, then skip only this meaning and preserve what was understood.
+  const skip=!traits.length&&(c.uncertain>=2||/^(?:laat maar|sla over)$/.test(value));
   if(traits.length||skip){
    if(c.clarifyQueue.length){
     const [next,...queue]=c.clarifyQueue;
@@ -412,9 +416,8 @@ function analyze(text,rawContext={},books=[]){
    pendingReplacement=c.clarifyReplace;
    resolvedAmbiguity={traits,negative:c.clarifyNegative,known:c.clarifyKnown,avoid:c.clarifyAvoid};
    selected={prefer:c.clarifyNegative?c.clarifyKnown:[...c.clarifyKnown,...traits],length:''};
-  }else if(/^(?:ja|nee|weet ik niet|geen idee|idk|allebei|allemaal|beide)$/.test(value)||(/\b(?:niet|geen|zonder|hekel)\b/.test(value)&&!/\b(?:maar|echter|wel|liever)\b/.test(value))){
-   if(c.uncertain>=2)return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'offer',reaction:'Geen probleem! We kunnen ook iets anders proberen.',context:{...c,current:c.clarifyFrom,clarifyAmbiguity:'',clarifyCandidates:[],clarifyKnown:[],clarifyAvoid:[],clarifyNegative:false}}};
-   return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',reaction:'Welke bedoel je precies?',question:questionView(q),context:{...c,uncertain:c.uncertain+1}}};
+  }else{
+   return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',reaction:'Ik begrijp nog niet precies wat je bedoelt. Kies gerust een antwoord, of zeg: laat maar.',question:questionView(q),context:{...c,uncertain:c.uncertain+1}}};
   }
  }
  if(c.current==='clarify-topic'){
