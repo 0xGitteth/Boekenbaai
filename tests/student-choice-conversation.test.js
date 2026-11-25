@@ -434,6 +434,17 @@ assert.ok(!othersDisclosure.advice.context.signals.prefer.includes('family'));
 const combined=run('Ik lees graag een spannend verhaal met LHBTQIA+ personages',lastRound);
 assert.ok(combined.advice.context.required.includes('danger'));
 assert.ok(combined.advice.context.required.includes('queerRepresentation'));
+for(const current of ['free-time','watch','media-interest']){
+ const result=run('Ik wil geen dikke boeken maar ik lees graag over sport',{current});
+ assert.equal(result.advice.context.length,'short');
+ assert.ok(result.advice.context.signals.prefer.includes('sport'));
+}
+const simpleVote=analyze('Verder met deze boeken',{current:'discover',navigation:'book-feedback',bookVotes:[{bookId:'realistic',vote:'like'}]},[{id:'realistic',title:'Een avontuur',description:'Een realistisch avontuur over vriendschap.'}]);
+assert.deepEqual(validateSignals({prefer:simpleVote.advice.context.discoveryTraits}).prefer,simpleVote.advice.context.discoveryTraits);
+assert.ok(!simpleVote.advice.context.discoveryTraits.includes('balanced'));
+assert.ok(run('Ik wil een spannend verhaal met LHBTQIA+ personages',lastRound).advice.context.required.includes('queerRepresentation'));
+const skippedQueue=run('Laat maar',queueBaking.advice.context);
+assert.ok(skippedQueue.advice.context.hobbies.includes('fishing'));
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});
