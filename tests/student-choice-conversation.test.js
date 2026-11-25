@@ -385,7 +385,7 @@ function visitIndex(ctx){
 }
 visitIndex(run('Alle onderwerpen bekijken',{navigation:'index'}).advice.context);
 for(const id of Object.keys(SUBTOPICS))assert.ok(reached.has(id),'No navigable subject path for '+id);
-for(const text of ['Ik ben autistisch. Ik wil iets leuks lezen','Hallo, ik heb ADHD. Ik wil een boek','Ik ben homo en ik wil graag een boek lezen']){
+for(const text of ['Ik ben autistisch. Ik wil iets leuks lezen','Hallo, ik heb ADHD. Ik wil een boek','Ik ben homo en ik wil graag een boek lezen','Ik ben autistisch en wil een boek lezen']){
  const r=run(text,{current:'discover',discovery:true});
  assert.deepEqual(r.advice.context.signals.prefer,[],text);
 }

@@ -376,7 +376,7 @@
       }
       const plan=result.advice;
       if(!plan){throw Error('De keuzehulp kon geen vervolgvraag bepalen.');}
-      const acceptPlan=()=>{if((!extraContext.navigation||extraContext.navigation==='book-feedback')&&!['clarify','examples'].includes(plan.kind)){adviceHistory.push(previous);if(adviceHistory.length>20)adviceHistory.shift();}return continueAdvice(plan);};
+      const acceptPlan=()=>{if((extraContext.navigation&&['menu','index','topics','book-feedback'].includes(extraContext.navigation))||(!extraContext.navigation&&!['clarify','examples'].includes(plan.kind))){adviceHistory.push(previous);if(adviceHistory.length>20)adviceHistory.shift();}return continueAdvice(plan);};
       if(result.avoid?.length){
         const labels=result.avoid.map(t=>result.labels?.[t]||t).join(', ');
         message('Je wilt '+labels+' liever vermijden. Klopt dat?');

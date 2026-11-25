@@ -592,7 +592,8 @@ function discoverySample(candidates,profiles,choice,count){
   while(picked.length<count&&remaining.length){
     const diversity=item=>{const a=subjects(item.work.key);return previous.length?Math.min(...previous.map(b=>1-[...a].filter(x=>b.has(x)).length/Math.max(1,new Set([...a,...b]).size))):0;};
     remaining.sort((a,b)=>Number(b.work.available>0)-Number(a.work.available>0)
-      ||(!picked.length&&choice.openSignals.prefer.length?b.specificMatches-a.specificMatches||b.openMatches-a.openMatches:0)
+      ||(choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
+      ||(!picked.length&&!choice.bookVotes.length&&choice.openSignals.prefer.length?b.specificMatches-a.specificMatches||b.openMatches-a.openMatches:0)
       ||((positive.length&&choice.bookVotes.length%3!==0)?affinity(b)-affinity(a):0)
       ||diversity(b)-diversity(a)||a.tiebreak-b.tiebreak);
     const item=remaining.shift();picked.push({...item,surpriseReason:'Een boek om te ontdekken wat je aanspreekt'});previous.push(subjects(item.work.key));

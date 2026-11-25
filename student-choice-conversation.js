@@ -531,10 +531,10 @@ function analyze(text,rawContext={},books=[]){
  }
  const privateDisclosure=!selected&&/\b(?:ik ben|ik heb|ik denk dat ik|ik voel me)\b/.test(value)&&direct.prefer.some(isPrivateTopic);
  if(privateDisclosure&&explicitReading){
-  const requests=input.split(/[.!?;]|\b(?:maar|en)\s+(?=ik\s+(?:wil|zou|lees|zoek)\b)/i).filter(part=>/\b(?:wil|zou|lees|zoek)\b.*\b(?:lees|lezen|boek|boeken)\b|\bik lees\b/i.test(part));
+  const requests=input.split(/[.!?;]|\b(?:maar|en)\s+(?=(?:ik\s+)?(?:wil|zou|lees|zoek)\b)/i).filter(part=>/\b(?:wil|zou|lees|zoek)\b.*\b(?:lees|lezen|boek|boeken)\b|\bik lees\b/i.test(part));
   // Strip a preceding disclosure even inside one sentence. Only an actual
   // reading request may contribute a sensitive preference.
-  const requested=interpret(requests.map(part=>part.replace(/^.*?\b(?=ik\s+(?:wil|zou|lees|zoek)\b)/i,'')).join('. '));
+  const requested=interpret(requests.map(part=>part.replace(/^.*?\b(?=(?:ik\s+)?(?:wil|zou|lees|zoek)\b)/i,'')).join('. '));
   direct=requested;
  }
  if(privateDisclosure&&(!explicitReading||!direct.recognized)){
@@ -571,7 +571,7 @@ function analyze(text,rawContext={},books=[]){
  // Mixed known/uncertain input: show likely topics without treating guesses
  // or the known half of the answer as a confirmed preference.
  if(!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline&&c.uncertain===0&&!delta.avoid.length&&length===c.length&&!/\b(?:niet|geen|zonder|hekel)\b/.test(value)){
-  const possibleGuesses=suggestTopics(text);
+  const possibleGuesses=suggestTopics(input);
   const guesses=possibleGuesses.filter(t=>!delta.prefer.includes(t)&&!delta.prefer.some(k=>isAncestor(t,k))&&!possibleGuesses.some(k=>isAncestor(t,k)));
   if(guesses.length){
    const known=delta.prefer.filter(t=>!delta.prefer.some(k=>isAncestor(t,k))).slice(0,3);

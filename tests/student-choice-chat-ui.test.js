@@ -363,7 +363,7 @@ vm.runInNewContext(code,{
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(actions.children[0].tag,'form','Changing direction remains a conversation');
   holdSuggestions=true;
-  await submitOpen('Een realistisch mysterie met aanwijzingen');
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(releaseSuggestion,'Deferred recommendation request must be pending');
