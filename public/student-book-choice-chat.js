@@ -344,7 +344,7 @@
     form.append(correct);
     const bookSearch=el('button','btn btn--secondary','Ik ken een boek dat ik leuk vind');bookSearch.type='button';
     bookSearch.addEventListener('click',()=>{if(active&&!busy)showReferenceSearch();});form.append(bookSearch);
-    actions.append(form);input.focus({preventScroll:true});scrollLatest(true);scheduleLatest(true);
+    actions.append(form);input.focus({preventScroll:true});scrollLatest(true);
     form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
   }
   function showReferenceSearch(initialTitle='',initialAuthor=''){
@@ -356,7 +356,7 @@
     const submit=el('button','btn btn--primary','Zoek in de schoolbibliotheek');submit.type='submit';
     const back=el('button','btn btn--secondary','Verder met het gesprek');back.type='button';
     back.addEventListener('click',()=>offerOpenAnswer('',adviceQuestion));
-    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus({preventScroll:true});scrollLatest(true);scheduleLatest(true);
+    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus({preventScroll:true});scrollLatest(true);
     form.addEventListener('submit',event=>{event.preventDefault();void findReference({title:title.value.trim(),author:author.value.trim()},false);});
   }
   async function findReference(query,external){
