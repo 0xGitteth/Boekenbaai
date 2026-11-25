@@ -3,7 +3,9 @@
   width:min(94vw,820px);
   height:min(88dvh,760px);
   max-height:88dvh;
-  padding:clamp(12px,2vw,24px);
+  --bb-choice-dialog-inset:clamp(12px,2vw,24px);
+  --bb-choice-actions-inset:2px;
+  padding:var(--bb-choice-dialog-inset);
   display:none;
   flex-direction:column;
   gap:0;
@@ -73,7 +75,7 @@
   display:flex;
   flex-wrap:wrap;
   gap:7px;
-  padding:10px 2px 2px;
+  padding:10px var(--bb-choice-actions-inset) 2px;
   border-top:1px solid #e5edf6;
 }
 .bb-choice-chat__option,
@@ -177,7 +179,7 @@
 .bb-choice-chat__actions:empty{display:none;}
 .bb-choice--chat :focus-visible{outline:3px solid #6aa1dc;outline-offset:2px;}
 @media(max-width:540px){
-  .bb-choice--chat{width:96vw;padding:12px;height:93dvh;max-height:93dvh;}
+  .bb-choice--chat{width:96vw;--bb-choice-dialog-inset:12px;height:93dvh;max-height:93dvh;}
   .bb-choice-chat__option{flex-basis:calc(50% - 7px);}
   .bb-choice--chat .bb-choice__header p{font-size:.78rem;}
   .bb-choice-chat__matches{grid-template-columns:minmax(0,1fr);}
@@ -198,7 +200,8 @@
   grid-template-columns:minmax(0,1fr) auto;
   grid-template-rows:auto 46px;
   align-items:center;
-  column-gap:8px;
+  /* Match the gap before Send to the space between Send and the dialog's inner edge. */
+  column-gap:calc(var(--bb-choice-dialog-inset) + var(--bb-choice-actions-inset));
   row-gap:8px;
 }
 .bb-choice-chat__suggestions{
@@ -254,6 +257,9 @@
   grid-column:1;
   line-height:24px;
   padding:10px 12px;
+}
+#student-choice-dialog .bb-choice-chat__free--answer > textarea:focus-visible{
+  outline-offset:-3px;
 }
 #student-choice-dialog .bb-choice-chat__free--answer > .btn--primary{
   grid-column:2;
