@@ -148,10 +148,13 @@
     ['sport','animals','nature','science','technology','history','facts','competition'],
     ['fast','calm','slow'],
   ];
-  function enoughOpenDetail(){
-    const preferred=new Set(choices.openSignals?.prefer||[]);
-    const dimensions=openAxes.filter(axis=>axis.some(t=>preferred.has(t))).length;
-    return dimensions>=3 || (openFollowupCount>=1&&dimensions>=2);
+  function openDetailCount(signals){
+    const preferred=new Set(signals?.prefer||[]);
+    return openAxes.filter(axis=>axis.some(t=>preferred.has(t))).length;
+  }
+  function enoughOpenDetail(previous){
+    const dimensions=openDetailCount(choices.openSignals);
+    return dimensions>=3 || (openFollowupCount>=1&&dimensions>=2&&dimensions>openDetailCount(previous));
   }
   function contextualPrompt(){
     const signals=choices.openSignals||{prefer:[],avoid:[]};
@@ -171,9 +174,13 @@
     return selected.prompt;
   }
   function continueOpenAdvice(previous){
-    if(enoughOpenDetail()||openFollowupCount>=3){void showRecommendations();return;}
-    const prompt=contextualPrompt();
-    if(!prompt){void showRecommendations();return;}
+    if(enoughOpenDetail(previous)){void showRecommendations();return;}
+    const prompt=openFollowupCount<3?contextualPrompt():null;
+    if(!prompt){
+      message('Ik weet al iets over wat je zoekt, maar nog niet precies wat voor verhaal bij je past. Zal ik met deze voorkeuren boeken voorstellen?');
+      options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],['Kies liever uit antwoorden',startExploration]]);
+      return;
+    }
     openFollowupCount++;
     offerOpenAnswer(prompt,{refinement:true,previous});
   }
@@ -325,7 +332,7 @@
   }
   function finishIdentity(){
     readingConsent=false;
-    choices={};
+    choices={};openFollowupCount=0;usedOpenPrompts=new Set();
     if(!personal){offerGeneral();return;}
     message((firstName?'Hoi '+firstName+'! ':'')+'Mag ik rekening houden met de boeken die je eerder hebt uitgelezen of bewaard?');
     options([
