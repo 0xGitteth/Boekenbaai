@@ -47,7 +47,25 @@ Object.assign(TERMS,{
 Object.assign(LABELS,{choices:'moeilijke keuzes',challenge:'uitdagingen',unusual:'onverklaarbare gebeurtenissen',discovery:'ontdekkingen'});
 const {THEMES}=require('./student-choice-themes');
 for(const [key,[label,terms]] of Object.entries(THEMES)){TERMS[key]=[...(TERMS[key]||[]),...terms];LABELS[key]=label;}
-const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[’‘]/g,"'");
+const PHRASES={
+ mystery:['iets ontdekt wat niemand anders weet','iets ontdekt dat niemand anders weet','een geheim ontdekken','achter een geheim komt','uitzoeken wat er gebeurd is','erachter komen wat er is gebeurd'],
+ puzzles:['zelf raden wie het heeft gedaan','zelf uitvogelen wie','zelf bedenken wat er gebeurd is'],
+ realistic:['zou kunnen gebeuren','in het echt kan gebeuren'],
+ humor:['waar ik om kan lachen','moet lachen','veel grappen'],
+ fast:['veel dingen gebeuren','geen lange aanloop','meteen spannend wordt'],
+ relationships:['verliefd worden','op iemand verliefd'],
+ identity:['jezelf kunnen zijn','jezelf leren kennen','ontdekken wie je bent'],
+ facts:['meer te weten komen','iets nieuws leren'],
+ danger:['op het puntje van je stoel','spannend blijft'],
+ culturalIdentity:['opgroeien met twee culturen','tussen verschillende culturen opgroeien']
+};
+for(const [id,phrases] of Object.entries(PHRASES))if(TERMS[id])TERMS[id].push(...phrases);
+// Remove other people's preferences, not statements about fictional people.
+// Only explicit subjects of preference predicates trigger this rule.
+function ownInterestText(input){
+ return String(input||'').split(/([.!?;]|\b(?:maar|echter)\b|\ben ik\b)/i).filter((part,i)=>i%2||!/^\s*(?:(?:mijn|m'n|mn|me)\s+(?:moeder|vader|ouders|broer|zus|vriend|vriendin|vrienden|mentor|docent|opa|oma|klasgenoot)|(?:hij|zij|ze|die))\s+(?:houdt? van|vind(?:t|en)?|leest|lezen|doet|speelt|kijkt|luistert|heeft interesse in)\b/i.test(part)).join(' ').replace(/\ben ik\b/gi,'ik');
+}
 function validateSignals(input){
  const filter=a=>[...new Set((Array.isArray(a)?a:[]).filter(k=>typeof k==='string'&&Object.hasOwn(TERMS,k)))].slice(0,24);
  const avoid=filter(input?.avoid);
@@ -55,13 +73,17 @@ function validateSignals(input){
 }
 function interpret(text){
  if(typeof text!=='string'||!text.trim()||text.length>500)return {prefer:[],avoid:[],recognized:false,clarify:true};
- const normalized=normalize(text)
+ const normalized=normalize(ownInterestText(text))
   .replace(/\b(?:gwn|gw|gewoon)\b/g,' ')
   .replace(/\b(?:nie|niett|niettt)\b/g,'niet')
   .replace(/\b(?:geeen|gee[n]+)\b/g,'geen')
   .replace(/\b(?:zndr)\b/g,'zonder')
   .replace(/\b(?:wrm)\b/g,'waarom')
   .replace(/\b(?:eig|eigenlk)\b/g,'eigenlijk')
+  .replace(/\b(?:vind k|vin ik|vindt ik)\b/g,'vind ik')
+  .replace(/\b(?:k hou|k houd)\b/g,'ik hou')
+  .replace(/\b(?:wou|wil k)\b/g,'wil')
+  .replace(/\b(?:interesant|interessand)\b/g,'interessant')
   .replace(/\s+/g,' ').trim();
  // Questions, double negations, uncertainty and idiomatic negations are
  // not treated as facts about the learner. Ask them to confirm instead.
@@ -130,4 +152,4 @@ function suggestTopics(text){
  }
  return [...candidates.keys()].slice(0,3);
 }
-module.exports={interpret,validateSignals,LABELS,suggestTopics};
+module.exports={interpret,validateSignals,LABELS,suggestTopics,ownInterestText};

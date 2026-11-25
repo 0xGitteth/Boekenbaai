@@ -1,6 +1,6 @@
 'use strict';
 const crypto=require('node:crypto');
-const {interpret,validateSignals,LABELS,suggestTopics}=require('./student-choice-open-text');
+const {interpret,validateSignals,LABELS,suggestTopics,ownInterestText}=require('./student-choice-open-text');
 const {traitsForBook}=require('./student-choice-dialogue');
 const {isHidden}=require('./book-catalog-integrity');
 // Every fallback answer has an explicit, validated mapping. No AI service,
@@ -173,8 +173,21 @@ add('discover-topics',1,'','Zit hier een onderwerp tussen waar je nieuwsgierig n
 add('discover-topics-more',1,'','Misschien spreekt een van deze andere onderwerpen je aan?','Welke onderwerpen spreken je aan?',[
  ['Muziek','music'],['Kunst en creatieve hobby’s','art'],['Eten, koken en bakken','cooking'],['Games','gaming'],['Gezondheid en het lichaam','health'],['Maatschappij en gelijke rechten','society'],['Geld en beroepen','economics'],['Waargebeurde verhalen','true'],['Humor','humor'],['Spanning','danger']]);
 add('discovery-feedback',1,'','Wat spreekt je aan in deze boeken?','Welke kenmerken spreken je aan?',[]);
-const DISCOVERY_IDS=new Set(['discovery-feedback','discover','discover-menu','discover-knowledge','discover-people','discover-identity','discover-experience','discover-topics','discover-topics-more']);
+add('discover-index',1,'','Kies een onderwerp','Kies een onderwerp',[]);
+const DISCOVERY_IDS=new Set(['discover-index','discovery-feedback','discover','discover-menu','discover-knowledge','discover-people','discover-identity','discover-experience','discover-topics','discover-topics-more']);
 const BY_ID=new Map(Q.map(q=>[q.id,q]));
+const INDEX_ROOTS=Object.keys(LABELS).filter(id=>!SUBTOPICS[id]||!Object.hasOwn(LABELS,SUBTOPICS[id])).sort((a,b)=>LABELS[a].localeCompare(LABELS[b],'nl'));
+const indexChildren=id=>Object.keys(SUBTOPICS).filter(t=>SUBTOPICS[t]===id&&Object.hasOwn(LABELS,t)).sort((a,b)=>LABELS[a].localeCompare(LABELS[b],'nl'));
+function indexQuestion(c){
+ const parent=c.indexParent,items=parent?indexChildren(parent):INDEX_ROOTS;
+ const page=Math.min(c.indexPage,Math.max(0,Math.ceil(items.length/7)-1));
+ const options=items.slice(page*7,page*7+7).map(t=>({id:'topic:'+t,label:LABELS[t],prefer:[],length:''}));
+ if(parent)options.unshift({id:'select:'+parent,label:'Lees graag over '+LABELS[parent],prefer:[parent],length:''});
+ if(page>0)options.push({id:'prev',label:'Vorige onderwerpen',prefer:[],length:''});
+ if((page+1)*7<items.length)options.push({id:'next',label:'Meer onderwerpen',prefer:[],length:''});
+ if(parent)options.push({id:'up',label:'Terug naar bredere onderwerpen',prefer:[],length:''});
+ return {...BY_ID.get('discover-index'),prompt:parent?'Wat vind je interessant aan '+LABELS[parent]+'?':'Welke onderwerpen spreken je aan?',examples:'Kies een onderwerp of bekijk meer mogelijkheden.',options};
+}
 const MEDIA=[
  ['GTA',['gta','grand theft auto'],['crime','action','adventure']],
  ['FIFA / EA Sports FC',['fifa','ea sports fc','fc 26','fc 27'],['sport','competition']],
@@ -207,10 +220,12 @@ function cleanContext(raw={}){
   media:bounded(raw.media,4).filter(name=>MEDIA.some(m=>m[0]===name)),
   hobbies:validateSignals({prefer:raw.hobbies}).prefer,
   discovery:raw.discovery===true,
+  indexParent:typeof raw.indexParent==='string'&&Object.hasOwn(LABELS,raw.indexParent)?raw.indexParent:'',
+  indexPage:Math.max(0,Math.min(100,Number.isInteger(raw.indexPage)?raw.indexPage:0)),
   discoveryReturn:BY_ID.has(raw.discoveryReturn)&&raw.discoveryReturn!=='discovery-feedback'?raw.discoveryReturn:'discover',
   discoveryTraits:validateSignals({prefer:raw.discoveryTraits}).prefer.slice(0,8),
   clarifyCandidates:validateSignals({prefer:raw.clarifyCandidates}).prefer.slice(0,3),
-  clarifyKnown:validateSignals({prefer:raw.clarifyKnown}).prefer.slice(0,3),
+  clarifyKnown:validateSignals({prefer:raw.clarifyKnown}).prefer.slice(0,24),
   clarifyAmbiguity:AMBIGUITIES.has(raw.clarifyAmbiguity)?raw.clarifyAmbiguity:'',
   clarifyNegative:raw.clarifyNegative===true,
   clarifyAvoid:validateSignals({avoid:raw.clarifyAvoid}).avoid,
@@ -256,6 +271,7 @@ function profiles(books,signals){
 }
 function questionForContext(c){
  const q=BY_ID.get(c.current)||BY_ID.get('opening');
+ if(q.id==='discover-index')return indexQuestion(c);
  if(q.id==='discover')return BY_ID.get('discover-menu');
  if(q.id==='discovery-feedback')return {...q,options:[...c.discoveryTraits.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''})),{id:'cover',label:'Vooral de omslag of het verhaal zelf',prefer:[],length:''},{id:'unknown',label:'Weet ik niet',prefer:[],length:''}]};
  if(q.id==='clarify-topic'){
@@ -317,6 +333,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  const pool=candidates.filter(x=>x.score>=candidates[0].score-2.5).slice(0,12);
  return pool.sort((a,b)=>tie(context.seed,b.q.id)-tie(context.seed,a.q.id))[0].q;
 }
+function explicitReadingHint(value){return /\b(?:lees|lezen|boek|boeken)\b/.test(value);}
 function analyze(text,rawContext={},books=[]){
  let c=cleanContext(rawContext),q=questionForContext(c);
  const value=normalize(text);
@@ -328,6 +345,7 @@ function analyze(text,rawContext={},books=[]){
   return {prefer:[],avoid:[],recognized:false,clarify:false,labels:LABELS,advice:{kind:'examples',question:questionView(q),context:c}};
  }
  if(navigation==='menu')return navigate('discover-menu','examples');
+ if(navigation==='index'){c={...c,indexParent:'',indexPage:0};return navigate('discover-index','examples');}
  if(navigation==='book-feedback'){
   // Votes are session-only; only actual public catalogue books may contribute hypotheses.
   const votes=Array.isArray(rawContext.bookVotes)?rawContext.bookVotes.slice(0,8):[];
@@ -344,6 +362,12 @@ function analyze(text,rawContext={},books=[]){
  }
  if(navigation==='topics')return navigate(c.current==='discover-topics'?'discover-topics-more':'discover-topics','question');
  let selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):q.options.find(o=>normalize(o.label)===value);
+ if(c.current==='discover-index'&&selected){
+  const id=selected.id;
+  if(id==='next'||id==='prev'){c={...c,indexPage:Math.max(0,c.indexPage+(id==='next'?1:-1))};return navigate('discover-index','examples');}
+  if(id==='up'){c={...c,indexParent:SUBTOPICS[c.indexParent]&&Object.hasOwn(LABELS,SUBTOPICS[c.indexParent])?SUBTOPICS[c.indexParent]:'',indexPage:0};return navigate('discover-index','examples');}
+  if(id.startsWith('topic:')){const t=id.slice(6);if(indexChildren(t).length){c={...c,indexParent:t,indexPage:0};return navigate('discover-index','examples');}selected={...selected,prefer:[t]};}
+ }
  if(c.current==='hobby-focus'&&Array.isArray(rawContext?.optionIds)){
   const ids=[...new Set(rawContext.optionIds)].slice(0,24);
   const picks=ids.map(id=>q.options.find(o=>o.id===id&&/^\d+$/.test(id)));
@@ -370,11 +394,12 @@ function analyze(text,rawContext={},books=[]){
   q=questionForContext(c);
  }
  let current=validateSignals(c.signals);
- let input=String(text||''), media=[],hypothesis=[],length=c.length;
+ let input=ownInterestText(text), media=[],hypothesis=[],length=c.length;
+ const ownValue=normalize(input);
  const notReader=/\b(?:haat lezen|lezen is saai|lees niet graag|niet van lezen|geen zin om te lezen|boeken saai|meeste boeken saai)\b/.test(value);
  // Media mentions suggest possible directions, never book preferences by themselves.
  for(const [name,aliases,traits] of MEDIA){
-  if(aliases.some(a=>(' '+value+' ').includes(' '+a+' '))){
+  if(aliases.some(a=>(' '+ownValue+' ').includes(' '+a+' '))){
    media.push(name);hypothesis.push(...traits);
    for(const alias of aliases)input=input.replace(new RegExp('\\b'+alias.replace(/[.*+?^$(){}|[\]\\]/g,'\\$&')+'\\b','gi'),' ');
   }
@@ -382,7 +407,7 @@ function analyze(text,rawContext={},books=[]){
  // A real catalogue title is an anchor for a question, not an inferred liking.
  let anchor=null;
  if(!selected&&value.length>=5){
-  const name=normalize(String(text||'').replace(/^(?:ik vond|ik las|ik heb|ik lees)\s+/i,'').replace(/\s+(?:leuk|gelezen|uitgelezen)$/i,''));
+  const name=normalize(String(input||'').replace(/^(?:ik vond|ik las|ik heb|ik lees)\s+/i,'').replace(/\s+(?:leuk|gelezen|uitgelezen)$/i,''));
   const matches=(books||[]).filter(b=>b?.id&&!isHidden(b)&&b.personalLoanOnly!==true&&normalize(b.title)===name);
   if(matches.length&&new Set(matches.map(b=>normalize(b.author))).size===1){
    anchor={title:String(matches[0].title).slice(0,200),bookId:matches[0].id};
@@ -466,7 +491,7 @@ function analyze(text,rawContext={},books=[]){
   &&(current.prefer.some(t=>t==='animals'||isAncestor('animals',t))||/\b(?:dier|hond|kat)\b/.test(value))){
   direct={...validateSignals({prefer:direct.prefer,avoid:[...(direct.avoid||[]),'animalLoss']}),recognized:true,clarify:false};
  }
- const activityContext=['discover','free-time','watch','media-interest'].includes(c.current);
+ const activityContext=['discover','free-time','watch','media-interest'].includes(c.current)||(!explicitReadingHint(value)&&/\b(?:ik hou van|ik houd van|ik doe graag|ik speel graag|ik sport graag|ik vind het leuk om|mijn hobby)\b/.test(value)&&c.current==='opening');
  if(activityContext&&!selected&&c.current==='free-time'&&/\b(?:sporten|ik sport)\b/.test(value)&&!/\b(?:sport kijken|kijk sport|sport zelf niet|niet sporten|geen sport)\b/.test(value)&&direct.prefer.includes('sport'))direct={...direct,prefer:validateSignals({prefer:[...direct.prefer,'sportPlaying']}).prefer};
  const readingClauses=[];
  let readingScope=false;
@@ -480,21 +505,21 @@ function analyze(text,rawContext={},books=[]){
   }
  }
  const explicitReading=/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
- const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/.test(part));
+ const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/i.test(part));
  const ambiguity=!selected&&!resolvedContextAlias&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguity(input):null;
  // Keep explicit book exclusions separate from activity likes/dislikes.
- const readingExclusions=activityRefusal?validateSignals({avoid:[...readingClauses.flatMap(part=>interpret(part).avoid),...(direct.avoid||[]).filter(t=>t==='animalLoss')]}).avoid:[];
+ const readingExclusions=(activityRefusal||explicitReading)?validateSignals({avoid:[...readingClauses.flatMap(part=>interpret(part).avoid),...(direct.avoid||[]).filter(t=>t==='animalLoss')]}).avoid:[];
  // A preference about playing or watching is not a reading exclusion.
  if(activityContext&&!explicitReading&&!selected){
   if(/\b(?:sport|sporten) zelf niet\b/.test(value)&&direct.prefer.includes('sportWatching')){
    direct={...direct,prefer:direct.prefer.filter(t=>t!=='sportPlaying'&&t!=='sport'),avoid:[]};
   }
  }
- if(activityContext&&!selected&&explicitReading&&readingClauses.length&&!activityRefusal){
+ if(!selected&&explicitReading&&readingClauses.length&&!activityRefusal){
   const readingSignals=validateSignals({prefer:readingClauses.flatMap(part=>interpret(part).prefer),avoid:readingClauses.flatMap(part=>interpret(part).avoid)});
   if(readingSignals.prefer.length||readingSignals.avoid.length)direct={...readingSignals,recognized:true,clarify:false};
  }
- if(activityRefusal&&readingExclusions.length){
+ if((activityRefusal||explicitReading)&&readingExclusions.length){
   const readingSignals=validateSignals({prefer:readingClauses.flatMap(part=>interpret(part).prefer),avoid:readingExclusions});
   direct={...readingSignals,recognized:true,clarify:false};
  }else if(activityRefusal&&!ambiguity&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
@@ -503,12 +528,15 @@ function analyze(text,rawContext={},books=[]){
   if(!alternative||ctx.turns>=6)return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'offer',reaction:'Ook goed!',context:ctx}};
   return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'question',reaction:'Geen probleem! Dan zoeken we iets anders.',question:questionView(alternative),context:{...ctx,current:alternative.id}}};
  }
- const privateDisclosure=!selected&&/^\s*(?:ik ben|ik heb|ik denk dat ik|ik voel me)\b/.test(value)&&direct.prefer.some(isPrivateTopic);
+ const privateDisclosure=!selected&&/\b(?:ik ben|ik heb|ik denk dat ik|ik voel me)\b/.test(value)&&direct.prefer.some(isPrivateTopic);
  if(privateDisclosure&&explicitReading){
-  const request=input.match(/(?:\b(?:maar|en)\s+(?:ik\s+)?|[.!?;]\s*(?:ik\s+)?)(?:wil|zou|lees|zoek)\b.*$/i);
-  if(request){const requested=interpret(request[0]);if(requested.recognized)direct=requested;}
+  const requests=input.split(/[.!?;]|\b(?:maar|en)\s+(?=ik\s+(?:wil|zou|lees|zoek)\b)/i).filter(part=>/\b(?:wil|zou|lees|zoek)\b.*\b(?:lees|lezen|boek|boeken)\b|\bik lees\b/i.test(part));
+  // Strip a preceding disclosure even inside one sentence. Only an actual
+  // reading request may contribute a sensitive preference.
+  const requested=interpret(requests.map(part=>part.replace(/^.*?\b(?=ik\s+(?:wil|zou|lees|zoek)\b)/i,'')).join('. '));
+  direct=requested;
  }
- if(privateDisclosure&&!explicitReading){
+ if(privateDisclosure&&(!explicitReading||!direct.recognized)){
   const ctx={...c,signals:current,length,current:'more-interests',uncertain:0};
   return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'question',reaction:'Je hoeft niets persoonlijks te vertellen om een boek te kiezen.',question:{...questionView(BY_ID.get('more-interests')),prompt:'Over welk onderwerp zou je graag iets lezen?'},context:ctx}};
  }
@@ -529,7 +557,7 @@ function analyze(text,rawContext={},books=[]){
    const related=meanings.map(m=>m[0]);
    const isRelated=t=>related.some(k=>t===k||isAncestor(t,k)||isAncestor(k,t));
    const remaining=interpret(removeAmbiguousWord(input,ambiguity.rule));
-   const known=delta.prefer.filter(t=>!isRelated(t)||remaining.prefer.includes(t)).slice(0,3);
+   const known=delta.prefer.filter(t=>!isRelated(t)||remaining.prefer.includes(t));
    const avoid=delta.avoid.filter(t=>!isRelated(t)||remaining.avoid.includes(t));
    const hobby=!explicitReading&&(activityContext||/\b(?:ik hou van|ik houd van|ik doe graag|ik vind het leuk om|mijn hobby)\b/.test(value));
    const from=explicitReading&&activityContext?'opening':hobby&&!activityContext?'free-time':c.current;
@@ -605,6 +633,9 @@ function analyze(text,rawContext={},books=[]){
  const p=updated.prefer,axisCount=families(p);
  const topicDetail=p.some(t=>SUBTOPICS[t]||['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));
+ const subjects=p.filter(t=>!p.some(k=>isAncestor(t,k))&&!['realistic','true','facts','fast','slow','calm','humor','danger','action','twist','dialogue','setting','puzzles','adventure'].includes(t));
+ const hasStyle=p.some(t=>['realistic','true','facts','fast','slow','calm','humor','danger','action','twist','dialogue','setting','puzzles'].includes(t));
+ if(c.discovery&&subjects.length>=3&&!hasStyle&&!next.used.includes('story-facts')){const style=BY_ID.get('story-facts');return {...envelope,advice:{kind:'question',reaction:'Ik weet nu wat je interessant vindt.',question:questionView(style),context:{...next,current:style.id}}};}
  const enough=hasNew&&p.length>=2&&((p.length>=3&&axisCount>=2&&specific)
    ||(next.turns>=2&&specific&&(axisCount>=2||topicDetail))
    ||(next.turns>=2&&axisCount>=3)

@@ -152,7 +152,7 @@ async function interpretAnswer({grant,sessionToken,guest,expectedStudentId,text,
    if(outcome.kind==='normal'){
      const recent=consent===true&&access.identity?pastQuestions(db,access.identity.studentId):[];
      const safe=conversation.cleanContext(context);
-     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',optionIds:Array.isArray(context?.optionIds)?context.optionIds.filter(x=>typeof x==='string').slice(0,24):undefined,navigation:['questions','examples','menu','topics','book-feedback'].includes(context?.navigation)?context.navigation:undefined,bookVotes:Array.isArray(context?.bookVotes)?context.bookVotes.slice(0,8):undefined,recent:[...safe.recent,...recent].slice(-40)};
+     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',optionIds:Array.isArray(context?.optionIds)?context.optionIds.filter(x=>typeof x==='string').slice(0,24):undefined,navigation:['questions','examples','menu','topics','book-feedback','index'].includes(context?.navigation)?context.navigation:undefined,bookVotes:Array.isArray(context?.bookVotes)?context.bookVotes.slice(0,8):undefined,recent:[...safe.recent,...recent].slice(-40)};
      result={...conversation.analyze(text,ctx,(db.books||[]).map(attachDerivedThemeFields)),moderation:'normal'};
    }else result={moderation:outcome.kind,guest:!access.identity};
    return access.identity&&outcome.changed?db:false;

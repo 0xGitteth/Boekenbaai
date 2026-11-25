@@ -24,4 +24,8 @@ assert.deepEqual(validateSignals({prefer:['fantasy','madeup','murder'],avoid:['m
 assert.deepEqual(interpret('gamen').prefer,['gaming']);
 assert.ok(interpret('fotografie').prefer.includes('photography'));
 assert.ok(interpret('ruimtevaart').prefer.includes('space'));
+assert.equal(interpret('Mijn moeder houdt van paarden').recognized,false);
+assert.ok(interpret('Mijn moeder houdt van paarden maar ik hou van honden').prefer.includes('dogs'));
+assert.ok(!interpret('Mijn moeder houdt van paarden maar ik hou van honden').prefer.includes('horses'));
+assert.ok(interpret('Ik vind het leuk als iemand iets ontdekt wat niemand anders weet').prefer.includes('mystery'));
 console.log('Dutch open answer signals, bounded recognition and negation OK');

@@ -372,6 +372,28 @@ const sample=rankBooks({books},{route:'surprise',discoverySample:true,openSignal
 assert.equal(sample.suggestions[0]?.bookId,'d');
 assert.equal(new Set(sample.suggestions.map(x=>x.key)).size,sample.suggestions.length);
 assert.ok(!sample.suggestions.some(x=>['g','j','hidden'].includes(x.bookId)));
+// Every detailed subject has a finite selectable route through the subject index.
+const {SUBTOPICS}=require('../student-choice-themes');
+const {LABELS}=require('../student-choice-open-text');
+const reached=new Set(),visited=new Set();
+function visitIndex(ctx){
+ const page=run('Geef voorbeelden',{...ctx,navigation:'examples'}).advice;
+ const key=page.context.indexParent+'|'+page.context.indexPage;if(visited.has(key))return;visited.add(key);
+ for(const opt of page.question.options.filter(o=>o.id.startsWith('topic:')||o.id==='next')){
+  const next=run(opt.label,{...page.context,optionId:opt.id});
+  if(opt.id.startsWith('topic:'))reached.add(opt.id.slice(6));
+  if(next.advice.context.current==='discover-index')visitIndex(next.advice.context);
+ }
+}
+visitIndex(run('Alle onderwerpen bekijken',{navigation:'index'}).advice.context);
+for(const id of Object.keys(SUBTOPICS))assert.ok(reached.has(id),'No navigable subject path for '+id);
+for(const text of ['Ik ben autistisch. Ik wil iets leuks lezen','Hallo, ik heb ADHD. Ik wil een boek','Ik ben homo en ik wil graag een boek lezen']){
+ const r=run(text,{current:'discover',discovery:true});
+ assert.deepEqual(r.advice.context.signals.prefer,[],text);
+}
+const thirdParty=run('Mijn moeder houdt van paarden',{current:'discover',discovery:true});
+assert.deepEqual(thirdParty.advice.context.signals.prefer,[]);
+assert.ok(!thirdParty.advice.context.hobbies.includes('horses'));
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});
