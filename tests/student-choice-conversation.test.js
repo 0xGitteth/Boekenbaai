@@ -117,7 +117,7 @@ assert.ok(!correctedSport.advice.context.signals.prefer.includes('sportPlaying')
 assert.match(correctedSport.advice.reaction,/verkeerd/);
 const unknownTopic=run('quadrobics',{current:'free-time'});
 assert.equal(unknownTopic.advice.kind,'clarify');
-assert.match(unknownTopic.advice.reaction,/bedoelt/);
+assert.match(unknownTopic.advice.reaction,/bedoel je/i);
 const minecraft=run('Minecraft',{current:'free-time'});
 assert.ok(minecraft.advice.hypotheses.some(x=>x.id==='gameBuilding'));
 const build=run('vooral bouwen',minecraft.advice.context);
