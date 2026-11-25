@@ -62,12 +62,21 @@ assert.ok(serious.advice.context.signals.prefer.includes('disappearance'));
 assert.ok(serious.advice.context.signals.prefer.includes('true'));
 const animal=run('Ik wil niet dat die doodgaat',{signals:{prefer:['animals'],avoid:[]}});
 assert.ok(animal.avoid.includes('animalLoss'));
+assert.ok(!run('Ik wil geen boek over een moeder die doodgaat').avoid.includes('animalLoss'));
+assert.ok(!run('Ik wil niet dat die doodgaat').avoid.includes('animalLoss'));
 const ranked=rankBooks({books},{route:'new',openSignals:{prefer:['animals'],avoid:['animalLoss']},seed:'animal'});
 assert.ok(ranked.suggestions.some(b=>b.bookId==='f'));
 assert.ok(!ranked.suggestions.some(b=>b.bookId==='g'));
 const feedback=run('Gaat allemaal over politie. Ik wil juist lezen over criminelen zelf',{current:'feedback',signals:{prefer:['crime','police'],avoid:[]}});
 assert.ok(feedback.advice.context.signals.prefer.includes('criminalPerspective'));
 assert.ok(!feedback.advice.context.signals.prefer.includes('police'));
+for(const complaint of ['Deze boeken gaan te veel over politie','Ik wil minder politie']){
+ const r=run(complaint,{current:'feedback',signals:{prefer:['crime','police'],avoid:[]}});
+ assert.equal(r.advice.kind,'question');assert.equal(r.advice.clearReference,true);
+ assert.ok(!r.prefer.includes('police'));assert.ok(!r.advice.context.signals.prefer.includes('police'));
+}
+const typedBook=run('De bijzondere kracht');
+assert.equal(typedBook.advice.reference.bookId,'e');
 assert.equal(run('geen dikke boeken',{signals:{prefer:['crime','psychology'],avoid:[]}}).advice.context.length,'short');
 assert.deepEqual(cleanContext({signals:{prefer:['madeup']},used:['fake'],turns:999}).signals,{prefer:[],avoid:[]});
 assert.equal(cleanContext({turns:999}).turns,7);

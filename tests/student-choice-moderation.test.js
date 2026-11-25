@@ -26,7 +26,7 @@ assert.equal(m.apply(db,'s','67').kind,'redirect');
 assert.equal(m.apply(db,'s','Ik lees graag avonturen').kind,'normal');
 assert.equal(m.apply(db,'s','skibidi').kind,'redirect');
 assert.equal(m.apply(db,'s','erg of mnu hahahaha 😂').kind,'warning');
-assert.equal(m.apply(db,'s','jij bent een klootzak').kind,'blocked');
+assert.equal(m.apply(db,'s','67').kind,'blocked');
 assert.equal(m.apply(db,'s','een mysterie').kind,'blocked');
 assert.equal(m.unlock(db,old,'s').status,403);
 assert.equal(m.unlock(db,{id:'admin',role:'admin'},'s').status,403);

@@ -186,7 +186,7 @@ vm.runInNewContext(code,{
   await submitOpen('misterie');
   assert.equal(suggestRequests.length,countBeforeOpen,'A single genre must not trigger a search');
   const firstOpenPrompt=log.children.at(-1).children[0].textContent;
-  assert.match(firstOpenPrompt,/mysterie|onderwerpen|films|series|misdaad|interessant/);
+  assert.ok(require('../student-choice-conversation').Q.some(q=>q.prompt===firstOpenPrompt&&q.when.includes('mystery')),'The opening follow-up is thematically relevant');
   assert.ok(!log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
   await submitOpen('misterie');
   const secondOpenPrompt=log.children.at(-1).children[0].textContent;
