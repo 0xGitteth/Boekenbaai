@@ -35,6 +35,12 @@ assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','1e2')),null);
 assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','900.0')),null);
 assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','900, 1')),null);
 
+assert.equal(parseMonthlyRemaining(fakeHeaders('50;w=1, 0;w=2592000','49, 0')),null,
+  'An unlimited monthly quota must not be interpreted as an exhausted quota');
+assert.equal(parseMonthlyRemaining(fakeHeaders('900;w=2592000','901')),null,
+  'A balance exceeding the stated quota is not reliable evidence');
+assert.equal(parseMonthlyRemaining(fakeHeaders('invalid;w=2592000','0')),null);
+
 const env={BOEKENBAAI_BRAVE_MONTHLY_CAP:'12'};
 const now=new Date('2026-11-17T12:00:00Z');
 const copy={id:'copy-1',title:'Een geheim',author:'Auteur',
