@@ -191,10 +191,10 @@
   function showAdviceExamples(q){
     adviceQuestion=q||adviceQuestion;
     if(!adviceQuestion){offerOpenAnswer('');return;}
-    message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien helpt het als ik een paar voorbeelden geef.'));
+    message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien zit hier iets tussen.'));
     const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
     options([...items,['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
-      ['Weet ik nog steeds niet',()=>{message('Geen probleem. Dan bekijken we een andere richting.');startExploration();}],
+      ['Weet ik nog steeds niet',()=>{message('Geen probleem. We proberen iets anders.');startExploration();}],
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
   function continueAdvice(plan){
@@ -210,17 +210,17 @@
     }else if(plan.kind==='question'){
       offerOpenAnswer(plan.question.prompt,plan.question);
     }else if(plan.kind==='recommend'){
-      message('Ik denk dat ik genoeg weet om een paar boeken voor je uit te zoeken.');
+      message('Ik ga een paar boeken voor je zoeken.');
       void showRecommendations();
     }else if(plan.kind==='offer'){
-      message(choices.openSignals?.prefer?.length?'Zal ik met wat je hebt verteld een paar boeken voorstellen?':'Zal ik je een paar verschillende boeken voorstellen?');
+      message(choices.openSignals?.prefer?.length?'Zal ik alvast een paar boeken voor je zoeken?':'Zal ik je gewoon drie verschillende boeken laten zien?');
       options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],
         ['Ontdek meer interesses',startExploration]]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
     }else{
       adviceQuestion=plan.question||adviceQuestion;
-      if(!plan.reaction)message('Ik weet nog niet precies wat je bedoelt. Kun je er iets meer over vertellen?');
+      if(!plan.reaction)message('Ik snap het nog niet helemaal. Kun je er iets meer over vertellen?');
       offerOpenAnswer('',adviceQuestion);
     }
   }
@@ -248,7 +248,7 @@
         const labels=result.avoid.map(t=>result.labels?.[t]||t).join(', ');
         message('Je wilt '+labels+' liever vermijden. Klopt dat?');
         options([['Ja, ga verder',()=>continueAdvice(plan)],
-          ['Pas mijn antwoord aan',()=>offerOpenAnswer('Vertel het nog eens in je eigen woorden.',adviceQuestion)]]);
+          ['Pas mijn antwoord aan',()=>offerOpenAnswer('Wat bedoelde je dan?',adviceQuestion)]]);
       }else continueAdvice(plan);
     }catch(err){
       if(!active||marker!==epoch)return;
