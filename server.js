@@ -40,7 +40,7 @@ const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
-const {currentStudentClassNames}=require('./student-class-membership');
+const {currentStudentClassNames,materializeLegacyRosters,setStudentClassMembership}=require('./student-class-membership');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 const {studentLoanIds,isUnavailable,isHidden,readStatus,
@@ -582,11 +582,6 @@ function effectiveClassRoster(db, klass) {
   if (Array.isArray(klass.studentIds)) return klass.studentIds;
   return (db.students || []).filter(student => studentClassIds(db, student).includes(klass.id))
     .map(student => student.id);
-}
-
-function ensureWritableClassRoster(db, klass) {
-  if (!Array.isArray(klass.studentIds)) klass.studentIds = effectiveClassRoster(db, klass);
-  return klass.studentIds;
 }
 
 function ensureTeacherShape(user) {
@@ -8712,14 +8707,7 @@ async function handleApi(req, res, requestUrl) {
         classIds: validClassIds,
       };
       db.students.push(student);
-      for (const classId of validClassIds) {
-        const klass = db.classes.find((entry) => entry.id === classId);
-        if (!klass) continue;
-        ensureWritableClassRoster(db, klass);
-        if (!klass.studentIds.includes(student.id)) {
-          klass.studentIds.push(student.id);
-        }
-      }
+      setStudentClassMembership(db, student, validClassIds);
       appendHistory(db, {
         type: 'student_created',
         studentId: student.id,
@@ -8832,22 +8820,7 @@ async function handleApi(req, res, requestUrl) {
       }
 
       if (addedClassIds.length || removedClassIds.length) {
-        student.classIds = uniqueClassIds;
-        for (const classId of removedClassIds) {
-          const klass = db.classes.find((entry) => entry.id === classId);
-          if (klass) {
-            if (Array.isArray(klass.studentIds)) klass.studentIds = klass.studentIds.filter((id) => id !== student.id);
-          }
-        }
-        for (const classId of addedClassIds) {
-          const klass = db.classes.find((entry) => entry.id === classId);
-          if (klass) {
-            ensureWritableClassRoster(db, klass);
-            if (!klass.studentIds.includes(student.id)) {
-              klass.studentIds.push(student.id);
-            }
-          }
-        }
+        setStudentClassMembership(db, student, uniqueClassIds);
         classesChanged = true;
       }
 
@@ -9060,20 +9033,7 @@ async function handleApi(req, res, requestUrl) {
           const removedClassIds = originalClassIds.filter((classId) => !newClassIdSet.has(classId));
           const addedClassIds = classIds.filter((classId) => !originalClassIds.includes(classId));
 
-          existingStudent.classIds = classIds;
-
-          for (const classId of removedClassIds) {
-            const klass = db.classes.find((entry) => entry.id === classId);
-            if (klass) {
-              if (Array.isArray(klass.studentIds)) klass.studentIds = klass.studentIds.filter((id) => id !== existingStudent.id);
-            }
-          }
-          for (const klass of classRecords) {
-            ensureWritableClassRoster(db, klass);
-            if (!klass.studentIds.includes(existingStudent.id)) {
-              klass.studentIds.push(existingStudent.id);
-            }
-          }
+          setStudentClassMembership(db, existingStudent, classIds);
 
           const teacherNames = collectTeacherNames(db, classRecords);
           updatedAccounts.push({
@@ -9127,12 +9087,7 @@ async function handleApi(req, res, requestUrl) {
           classIds,
         };
         db.students.push(student);
-        for (const klass of classRecords) {
-          ensureWritableClassRoster(db, klass);
-          if (!klass.studentIds.includes(student.id)) {
-            klass.studentIds.push(student.id);
-          }
-        }
+        setStudentClassMembership(db, student, classIds);
         const teacherNames = collectTeacherNames(db, classRecords);
         createdAccounts.push({
           id: student.id,
@@ -9692,6 +9647,7 @@ async function handleApi(req, res, requestUrl) {
           error: 'class_has_active_loans', borrowedCount: activeClassLoans.length,
         });
       }
+      materializeLegacyRosters(db);
       const [removedClass] = db.classes.splice(index, 1);
       escalateTasksForDeletedClass(db, removedClass.id);
       for (const student of db.students) {
@@ -9769,14 +9725,7 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
-      ensureWritableClassRoster(db, klass);
-      if (!klass.studentIds.includes(student.id)) {
-        klass.studentIds.push(student.id);
-      }
-      student.classIds = student.classIds || [];
-      if (!student.classIds.includes(klass.id)) {
-        student.classIds.push(klass.id);
-      }
+      setStudentClassMembership(db, student, [...studentClassIds(db,student),klass.id]);
       appendHistory(db, {
         type: 'class_student_added',
         classId: klass.id,
@@ -9807,8 +9756,7 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
-      if (Array.isArray(klass.studentIds)) klass.studentIds = klass.studentIds.filter((id) => id !== studentId);
-      student.classIds = (student.classIds || []).filter((id) => id !== klass.id);
+      setStudentClassMembership(db, student, studentClassIds(db,student).filter(id=>id!==klass.id));
       appendHistory(db, {
         type: 'class_student_removed',
         classId: klass.id,

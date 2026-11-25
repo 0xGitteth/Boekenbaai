@@ -29,16 +29,18 @@ const db={
       teacherIds:['teacher-new']},
     {id:'legacy',name:'Bovenbouw Structuur',teacherIds:['teacher-legacy']},
     {id:'empty',name:'VMBO Theoretisch 4',studentIds:[],teacherIds:['teacher-empty']},
+    {id:'legacy-b',name:'VMBO Theoretisch 3',teacherIds:['teacher-legacy-b']},
   ],
   students:[
     student('pupil-one','Leerling Nieuwe Klas',['old']),
     student('pupil-two','Leerling Oude Klas',['old']),
     student('pupil-legacy','Leerling Legacy',['legacy']),
-    student('pupil-legacy-two','Tweede Legacy',['legacy']),
+    student('pupil-legacy-two','Tweede Legacy',['legacy','legacy-b']),
     student('pupil-empty','Leerling Zonder Klas',['empty']),
   ],
   users:[teacher('teacher-old','old'),teacher('teacher-new','new'),
-    teacher('teacher-legacy','legacy'),teacher('teacher-empty','empty')],
+    teacher('teacher-legacy','legacy'),teacher('teacher-empty','empty'),
+    teacher('teacher-legacy-b','legacy-b')],
 };
 fs.writeFileSync(dbFile,JSON.stringify(db));
 let child;
@@ -116,6 +118,14 @@ async function login(username){
     assert.deepEqual(after.students,db.students,
       'Read-only class projection must not mutate account records');
     assert.deepEqual(after.classes,db.classes);
+    const multi=await login('pupil-legacy-two');
+    assert.deepEqual(multi.user.classIds,['legacy','legacy-b']);
+    const added=await fetchApi('/api/classes/legacy/students',legacyTeacher.token,{studentId:'pupil-one'});
+    assert.equal(added.status,200,JSON.stringify(added.data));
+    assert.deepEqual((await fetchApi('/api/me',multi.token)).data.classIds,['legacy','legacy-b']);
+    const otherMentor=await login('teacher-legacy-b');
+    assert.deepEqual((await fetchApi('/api/students',otherMentor.token)).data.map(x=>x.id),['pupil-legacy-two']);
+    assert.equal((await fetchApi('/api/exam-reading-list',multi.token)).status,200);
     console.log('Current classes in student login, own profile and mentor API OK');
   }finally{
     child?.kill('SIGTERM');

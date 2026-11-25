@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {currentStudentClassIds,currentStudentClassNames}
+const {currentStudentClassIds,currentStudentClassNames,materializeLegacyRosters,setStudentClassMembership}
   =require('../student-class-membership');
 const {studentClassIds,mayManageStudent}=require('../book-loan-policy');
 const google=require('../google-auth-core');
@@ -54,6 +54,28 @@ db.classes.push({id:'special',name:'OZA',studentIds:['pupil'],teacherIds:[]});
 assert.deepEqual(currentStudentClassIds(db,student),['new','special'],
   'Intentionally assigned multiple classes must be retained');
 
+{
+  const a={id:'a'},b={id:'b'},c={id:'c',studentIds:['moved']},empty={id:'empty',studentIds:[]};
+  const multi={id:'multi',classIds:['a','b','empty']};
+  const moved={id:'moved',classIds:['a','b']};
+  const unrelated={id:'unrelated',classIds:['a']};
+  const target={id:'target',classIds:[]};
+  const data={classes:[a,b,c,empty],students:[multi,moved,unrelated,target]};
+  const expected=data.students.map(p=>currentStudentClassIds(data,p));
+  assert.equal(materializeLegacyRosters(data),true);
+  assert.deepEqual(data.students.map(p=>currentStudentClassIds(data,p)),expected);
+  assert.deepEqual(a.studentIds,['multi','unrelated']);
+  assert.deepEqual(b.studentIds,['multi']);
+  assert.deepEqual(empty.studentIds,[]);
+  setStudentClassMembership(data,target,['a']);
+  assert.deepEqual(currentStudentClassIds(data,multi),['a','b']);
+  assert.deepEqual(currentStudentClassIds(data,moved),['c']);
+  assert.deepEqual(currentStudentClassIds(data,unrelated),['a']);
+  assert.deepEqual(currentStudentClassIds(data,target),['a']);
+  setStudentClassMembership(data,moved,[]);
+  assert.deepEqual(currentStudentClassIds(data,moved),[],
+    'Removing the last current class must not resurrect obsolete legacy IDs');
+}
 const root=path.join(__dirname,'..');
 const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 const server=read('server.js');

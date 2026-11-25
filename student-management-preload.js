@@ -1,6 +1,6 @@
 'use strict';
 
-const {currentStudentClassIds}=require('./student-class-membership');
+const {currentStudentClassIds,setStudentClassMembership}=require('./student-class-membership');
 
 const fs = require('fs');
 const path = require('path');
@@ -246,15 +246,7 @@ function ownsClass(db, user, classId) {
 }
 
 function ensureClassMembership(db, student, classIds) {
-  const desired = Array.from(new Set((classIds || []).filter(Boolean)));
-  student.classIds = desired;
-  for (const klass of db.classes) {
-    klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-    const shouldHave = desired.includes(klass.id);
-    const has = klass.studentIds.includes(student.id);
-    if (shouldHave && !has) klass.studentIds.push(student.id);
-    if (!shouldHave && has) klass.studentIds = klass.studentIds.filter((id) => id !== student.id);
-  }
+  setStudentClassMembership(db, student, classIds);
 }
 
 function appendHistory(db, type, message, extra = {}) {
@@ -455,8 +447,7 @@ function addStudent(context, body) {
   };
   if (studentNumber) setParnassysStudentNumber(student, studentNumber);
   context.db.students.push(student);
-  targetClass.studentIds = Array.isArray(targetClass.studentIds) ? targetClass.studentIds : [];
-  if (!targetClass.studentIds.includes(student.id)) targetClass.studentIds.push(student.id);
+  setStudentClassMembership(context.db, student, [targetClass.id]);
   appendHistory(
     context.db,
     'student_manual_added',

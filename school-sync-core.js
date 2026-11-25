@@ -1,6 +1,6 @@
 'use strict';
 
-const {currentStudentClassIds}=require('./student-class-membership');
+const {currentStudentClassIds,setStudentClassMembership}=require('./student-class-membership');
 
 const crypto = require('node:crypto');
 const authCore = require('./google-auth-core');
@@ -201,13 +201,11 @@ function activeBorrowedBooks(db, student) {
 }
 
 function removeStudentFromClasses(db, studentId) {
-  for (const klass of db.classes || []) {
-    if (Array.isArray(klass?.studentIds)) {
-      klass.studentIds = klass.studentIds.filter((id) => id !== studentId);
-    }
-  }
   const student = (db.students || []).find((entry) => entry?.id === studentId);
-  if (student) student.classIds = [];
+  if (student) setStudentClassMembership(db,student,[]);
+  else for (const klass of db.classes || []) {
+    if (Array.isArray(klass?.studentIds)) klass.studentIds=klass.studentIds.filter(id=>id!==studentId);
+  }
 }
 
 function removeTeacherFromClasses(db, teacherId) {

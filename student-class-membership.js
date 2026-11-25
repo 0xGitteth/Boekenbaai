@@ -33,4 +33,40 @@ function currentStudentClassNames(db,student){
     .map(klass=>String(klass.name||'').trim())
     .filter(Boolean);
 }
-module.exports={currentStudentClassIds,currentStudentClassNames};
+// On a membership write, materialize every missing roster from the SAME
+// pre-mutation membership snapshot. Hydrating classes one at a time would
+// cause an explicit roster to hide other valid legacy memberships.
+function materializeLegacyRosters(db){
+  const missing=(db.classes||[]).filter(klass=>klass?.id&&!Array.isArray(klass.studentIds));
+  if(!missing.length)return false;
+  const rosters=new Map(missing.map(klass=>[klass.id,[]]));
+  for(const student of db.students||[]){
+    if(!student?.id)continue;
+    for(const id of currentStudentClassIds(db,student)){
+      if(rosters.has(id))rosters.get(id).push(student.id);
+    }
+  }
+  for(const klass of missing)klass.studentIds=[...new Set(rosters.get(klass.id))];
+  return true;
+}
+
+// All membership writers must use the same snapshot rule, including the
+// production preloads and imports. Only the target pupil's membership changes.
+function setStudentClassMembership(db,student,classIds){
+  materializeLegacyRosters(db);
+  const known=new Set((db.classes||[]).map(klass=>klass?.id));
+  const desired=[...new Set((classIds||[]).filter(id=>id&&known.has(id)))];
+  const wanted=new Set(desired);
+  student.classIds=desired;
+  for(const klass of db.classes||[]){
+    if(!klass?.id||!Array.isArray(klass.studentIds))continue;
+    if(wanted.has(klass.id)){
+      if(!klass.studentIds.includes(student.id))klass.studentIds.push(student.id);
+    }else if(klass.studentIds.includes(student.id)){
+      klass.studentIds=klass.studentIds.filter(id=>id!==student.id);
+    }
+  }
+  return desired;
+}
+module.exports={currentStudentClassIds,currentStudentClassNames,
+  materializeLegacyRosters,setStudentClassMembership};
