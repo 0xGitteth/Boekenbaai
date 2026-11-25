@@ -150,7 +150,7 @@ async function interpretAnswer({grant,sessionToken,guest,expectedStudentId,text,
    const access=choiceAccess(db,{grant,sessionToken,guest,expectedStudentId});
    const outcome=access.identity?moderation.apply(db,access.identity.studentId,text):guestModeration.apply(access.guest,text,db.books||[]);
    if(outcome.kind==='normal'){
-     const recent=consent===true&&access.identity?pastQuestions(db,access.identity.studentId):[];
+     const recent=consent===true&&access.identity&&context?.ignoreRecommendationHistory!==true?pastQuestions(db,access.identity.studentId):[];
      const safe=conversation.cleanContext(context);
      const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',optionIds:Array.isArray(context?.optionIds)?context.optionIds.filter(x=>typeof x==='string').slice(0,24):undefined,navigation:['questions','examples','menu','topics','book-feedback','index'].includes(context?.navigation)?context.navigation:undefined,bookVotes:Array.isArray(context?.bookVotes)?context.bookVotes.slice(0,8):undefined,recent:[...safe.recent,...recent].slice(-40)};
      result={...conversation.analyze(text,ctx,(db.books||[]).map(attachDerivedThemeFields)),moderation:'normal'};
@@ -257,12 +257,12 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
       const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
       result=rankBooks(catalogue,choices,{
         studentId:identity?.studentId||'',
-        seenKeys:identity?pastKeys(db,identity.studentId):[],
+        seenKeys:identity&&choices?.ignoreRecommendationHistory!==true?pastKeys(db,identity.studentId):[],
       });
       result.personalized=Boolean(identity);
       result.firstName=identity?.firstName||'';
       // Sensitive reading topics remain within this conversation. Do not persist associated titles or question IDs.
-      const willPresent=!result.missingCombination?.length&&(!result.missingTopics?.length||choices?.allowPartial===true);
+      const willPresent=!result.missingCombination?.length&&(!result.missingTopics?.length||result.partialTopicMatches||choices?.allowPartial===true);
       const remember=Boolean(identity&&result.suggestions.length&&willPresent&&!conversation.privateReadingRequest(choices));
       if(remember){
         if(!Array.isArray(db.studentChoiceSeen))db.studentChoiceSeen=[];

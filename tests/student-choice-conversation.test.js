@@ -368,6 +368,8 @@ const picked=many.advice.question.options.filter(o=>['Japan','padel'].includes(o
 assert.equal(picked.length,2);
 const multi=run(picked.map(o=>o.label).join(', '),{...many.advice.context,optionIds:picked.map(o=>o.id)});
 assert.deepEqual(new Set(multi.advice.context.signals.prefer),new Set(['japan','padel']));
+assert.deepEqual(new Set(multi.advice.context.separateTopics),new Set(['japan','padel']));
+assert.deepEqual(multi.advice.context.required,[]);
 // Book feedback remains provisional, preserves existing preferences, and does not
 // translate a rejection into a reading exclusion or accept a hidden book.
 const bookCtx={current:'specific-football',signals:{prefer:['football'],avoid:['murder']},used:['opening','sport-interest']};

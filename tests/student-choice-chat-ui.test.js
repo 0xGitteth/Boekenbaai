@@ -313,6 +313,40 @@ vm.runInNewContext(code,{
   assert.equal(suggestRequests.at(-1).choices.bookVotes[0].vote,'like');
   actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Terug naar vorige vraag').listeners.click();
   assert.equal(actions.children[0].tag,'form');
+  // Real production route: independent hobby buttons, single question,
+  // and a fresh discovery conversation after explicit restart.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Help me ontdekken').listeners.click();
+  await submitOpen('Tekenen, koken en paarden');
+  await submitOpen('Paardrijden');
+  const questionCount=log.children.filter(row=>row.children[0]?.textContent.includes('Over welke hiervan zou je ook iets willen lezen?')).length;
+  assert.equal(questionCount,1);
+  assert.ok(!log.children.some(row=>row.children[0]?.textContent==='Kies de onderwerpen waar je ook iets over zou willen lezen.'));
+  actions.children.find(x=>x.textContent.toLowerCase()==='koken').listeners.click();
+  actions.children.find(x=>x.textContent.toLowerCase()==='paardrijden').listeners.click();
+  actions.children.find(x=>x.textContent==='Verder').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(new Set(suggestRequests.at(-1).choices.separateTopics),new Set(['cooking','horseRiding']));
+  assert.deepEqual(suggestRequests.at(-1).choices.required,[]);
+  actions.children.find(x=>x.textContent==='Helemaal opnieuw').listeners.click();
+  assert.equal(log.children.length,1);
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Help me ontdekken').listeners.click();
+  const beforeHorse=suggestRequests.length;
+  await submitOpen('Paarden!');
+  await submitOpen('Paardrijden');
+  assert.equal(suggestRequests.length,beforeHorse,'A reset must not jump to recommendations');
+  assert.match(log.children.at(-1).children[0].textContent,/Zou je daar ook iets over willen lezen/);
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Opnieuw beginnen').listeners.click();
+  assert.equal(log.children.length,1);
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Laat me drie boeken zien').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.at(-1).choices.ignoreRecommendationHistory,true);
+  assert.deepEqual(suggestRequests.at(-1).choices.excludeKeys,[]);
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
   elements.get('student-choice-close').listeners.click();

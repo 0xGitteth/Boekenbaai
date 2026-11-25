@@ -223,6 +223,7 @@ function cleanContext(raw={}){
   discovery:raw.discovery===true,
   priority:validateSignals({prefer:raw.priority}).prefer,
   required:validateSignals({prefer:raw.required}).prefer,
+  separateTopics:validateSignals({prefer:raw.separateTopics}).prefer,
   indexParent:typeof raw.indexParent==='string'&&Object.hasOwn(LABELS,raw.indexParent)?raw.indexParent:'',
   indexPage:Math.max(0,Math.min(100,Number.isInteger(raw.indexPage)?raw.indexPage:0)),
   discoveryReturn:BY_ID.has(raw.discoveryReturn)&&raw.discoveryReturn!=='discovery-feedback'?raw.discoveryReturn:'discover',
@@ -641,8 +642,10 @@ function analyze(text,rawContext={},books=[]){
  const left=conjunction?leaf(interpret(conjunction[1]).prefer):[],right=conjunction?leaf(interpret(conjunction[2]).prefer):[];
  const newRequired=left.length&&right.length&&right.some(t=>!left.includes(t))&&!/\b(?:of|misschien|bijvoorbeeld|liefst|eventueel|zonder|geen|niet)\b/i.test(conjunction[2])?validateSignals({prefer:[...left,...right]}).prefer:[];
  const required=validateSignals({prefer:[...(replaceTopics?[]:c.required),...newRequired]}).prefer.filter(t=>updated.prefer.includes(t)&&!updated.avoid.some(a=>a===t||isAncestor(a,t)));
+ const individual=c.current==='hobby-focus'?leaf(delta.prefer):[];
+ const separateTopics=validateSignals({prefer:[...(replaceTopics?[]:c.separateTopics),...individual]}).prefer.filter(t=>updated.prefer.includes(t));
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
- const next={...c,signals:updated,length,priority,required,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
+ const next={...c,signals:updated,length,priority,required,separateTopics,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
