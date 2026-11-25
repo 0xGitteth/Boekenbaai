@@ -33,7 +33,7 @@
     try{return window.localStorage.getItem('boekenbaai_token')||'';}catch(_){return '';}
   }
   function accountChanged(){
-    if(active)close();
+    if(active){seenInTab.clear();recentQuestionsInTab.clear();recentAdviceQuestions.clear();close();}
     const err=Error('Je account is gewijzigd. Open Help me kiezen opnieuw.');
     err.status=409;err.code='CHOICE_ACCOUNT_CHANGED';return err;
   }
@@ -73,7 +73,12 @@
     const data=await response.json().catch(()=>({}));
     // A late PIN grant still needs to be revoked by its original caller.
     if(!cleanup&&(!active||marker!==epoch))return data;
-    if(!cleanup&&token()!==openingToken)throw accountChanged();
+    if(!cleanup&&token()!==openingToken){
+      if(path==='/api/auth/student-pin/choice-begin'&&data.grant){
+        api('/api/auth/student-pin/choice-end',{choiceGrant:data.grant}).catch(()=>{});
+      }
+      throw accountChanged();
+    }
     if(!response.ok){
       const error=Error(data.message||'Er is iets misgegaan.');
       error.status=response.status;
@@ -123,12 +128,13 @@
   }
   function notice(text){status.textContent=text||'';}
   function options(items){
+    const marker=epoch;
     clearActions();
     for(const [label,callback] of items){
       const x=el('button','bb-choice-chat__option',label);
       x.type='button';
       x.addEventListener('click',()=>{
-        if(!active||busy)return;
+        if(!active||busy||marker!==epoch)return;
         message(label,'student');
         clearActions();
         notice('');
@@ -817,7 +823,10 @@
     if(active)close();
   });
   window.addEventListener('storage',event=>{
-    if(active&&(event.key==='boekenbaai_token'||event.key===null))close();
+    if(event.key==='boekenbaai_token'||event.key===null){
+      seenInTab.clear();recentQuestionsInTab.clear();recentAdviceQuestions.clear();
+      if(active)close();
+    }
   });
   // Never retain another pupil's private conversation on a hidden tab.
   document.addEventListener('visibilitychange',()=>{

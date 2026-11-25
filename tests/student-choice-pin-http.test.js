@@ -135,6 +135,9 @@ async function stop(){
     assert.deepEqual(context.body.favorites.map(b=>b.bookId),['book-2']);
     assert.deepEqual((await request(contextRoute,{consent:true},'session-a')).body,context.body);
     assert.ok(!JSON.stringify(context.body).includes('studentId'));
+    const missingAssertion=await request(contextRoute,{consent:true,expectedStudentId:undefined},'session-a');
+    assert.equal(missingAssertion.status,409);
+    assert.equal(missingAssertion.body.code,'CHOICE_ACCOUNT_CHANGED');
     const wrong=await request(contextRoute,{consent:true,expectedStudentId:'a'},'session-b');
     assert.equal(wrong.status,409);
     assert.equal(wrong.body.code,'CHOICE_ACCOUNT_CHANGED');
