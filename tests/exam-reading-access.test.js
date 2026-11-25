@@ -25,7 +25,11 @@ assert.equal(classifyClass('Onbekende klas'),'unknown');
 const db={classes:Object.entries(expected).map(([name],i)=>({id:String(i),name,studentIds:[]}))};
 const access=(classNames, override, options={})=>{
  const ids=classNames.map(n=>db.classes.find(c=>c.name===n).id);
- return examReadingAccess(db,{id:'s',classIds:ids,...(override===undefined?{}:{examReadingEligibleOverride:override}),...options});
+ const currentDb={classes:db.classes.map(klass=>({
+   ...klass,studentIds:ids.includes(klass.id)?['s']:[],
+ }))};
+ return examReadingAccess(currentDb,{id:'s',classIds:ids,
+   ...(override===undefined?{}:{examReadingEligibleOverride:override}),...options});
 };
 assert.equal(access(['Arbeid']).eligible,true);
 assert.equal(access(['VMBO theoretisch 3']).eligible,true);
