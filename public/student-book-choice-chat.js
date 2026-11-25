@@ -136,6 +136,7 @@
   }
   function applyAdvice(plan){
     adviceContext=plan.context;
+    if(plan.clearReference){delete choices.referenceBookId;delete choices.referencePreference;delete choices.externalRef;}
     choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,
       questionIds:[...new Set([...(plan.context.used||[]),...(plan.kind==='question'?[plan.context.current]:[])])]};
     if(plan.context.current&&plan.kind==='question'){
@@ -520,6 +521,8 @@
     // A fresh route must never be biased by an earlier reference book.
     delete choices.referenceBookId;
     delete choices.referencePreference;
+    delete choices.externalRef;
+    freshAdvice();
     // Confirmed free-text preferences stay in effect when switching answer modes.
     questionHistory=[];
     currentQuestion=null;

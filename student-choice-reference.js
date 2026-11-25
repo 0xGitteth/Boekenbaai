@@ -1,6 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 const {workKey}=require('./book-reservations');
+const {resolveCanonicalEditionIsbn}=require('./book-edition-core');
 const {isHidden}=require('./book-catalog-integrity');
 const {traitsForBook}=require('./student-choice-dialogue');
 const {describe}=require('./student-choice-series');
@@ -32,7 +33,7 @@ function cleanQuery(raw){
 }
 const visible=b=>b?.id&&b.title&&!isHidden(b)&&b.personalLoanOnly!==true;
 function localScore(book,q){
- if(q.isbn)return [book.editionIsbn,book.isbn,book.isbn13,book.barcode].some(v=>isbn13(v)===q.isbn)?100:0;
+ if(q.isbn)return resolveCanonicalEditionIsbn(book)===q.isbn?100:0;
  const title=norm(book.title),query=norm(q.title);
  if(q.author&&!norm(book.author).includes(norm(q.author)))return 0;
  if(title===query)return 100;

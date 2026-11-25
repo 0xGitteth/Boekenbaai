@@ -78,7 +78,7 @@ function apply(db,id,text,now=new Date().toISOString()){
   if(before.noise)write(db,id,{...before,noise:0},now);
   return {kind:'normal',changed:before.noise>0};
  }
- if(kind==='meme'&&before.noise===0){
+ if(kind==='meme'&&before.noise===0&&!before.warned){
   write(db,id,{...before,noise:1},now);
   return {kind:'redirect',changed:true};
  }

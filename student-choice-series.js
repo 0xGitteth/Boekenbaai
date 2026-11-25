@@ -49,6 +49,10 @@ function nextPart(db,reference,readPart,studentId='',consent=false,signals={}){
    if(!b||(r.title&&workKey(r)!==workKey(b)))continue;
    const p=partFor(b);if(p?.series.id===series.id)confirmed.add(p.part.number);
   }
+  for(const item of db.examReadingLists||[]){
+   if(item?.studentId!==studentId||item.manualStatus!=='gelezen')continue;
+   const p=partFor(item);if(p?.series.id===series.id)confirmed.add(p.part.number);
+  }
  }
  if(!Number.isInteger(readPart)||!series.parts.some(p=>p.number===readPart))return {series,readParts:[...confirmed].sort((a,b)=>a-b)};
  const target=found.series.parts.find(p=>p.number===readPart+1);

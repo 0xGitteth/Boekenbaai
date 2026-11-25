@@ -13,7 +13,7 @@ const THEMES={
  outsider:['erbij horen',['pesten','gepest','buitenbeentje','erbij horen','eenzaamheid','eenzaam'],['pesten','buitenbeentje','eenzaam','erbij horen']],
  growth:['persoonlijke ontwikkeling',['opgroeien','zelfvertrouwen','doorzetten','persoonlijke ontwikkeling','doorzettingsvermogen'],['opgroeien','zelfvertrouwen','doorzetten','persoonlijke ontwikkeling','coming of age']],
  empathy:['gevoelens en verlies',['verdriet','rouw','verlies','gevoelens','emoties','mentale gezondheid'],['rouw','verlies','verdriet','emoties','mentale gezondheid']],
- animalLoss:['het overlijden van dieren',['dier doodgaat','die doodgaat','hond doodgaat','kat doodgaat','overlijden van dieren','dood van een hond','dieren doodgaan'],['dood van een hond','overlijden van een hond','hond sterft','hond overlijdt','dier sterft','dier overlijdt','dier doodgaat']],
+ animalLoss:['het overlijden van dieren',['dier doodgaat','hond doodgaat','kat doodgaat','overlijden van dieren','dood van een hond','dieren doodgaan'],['dood van een hond','overlijden van een hond','hond sterft','hond overlijdt','dier sterft','dier overlijdt','dier doodgaat']],
  magic:['magie en bijzondere krachten',['bijzondere krachten','magische krachten','bovennatuurlijk','toverkracht'],['magie','magische krachten','bovennatuurlijk','toverkracht']],
  gaming:['games',['games','videogames','game','gamet','gamen','gaming','gamewereld'],['videogame','gaming','gamewereld','computerspel']],
  future:['toekomst',['toekomst','toekomstig','sciencefiction','science fiction','sci fi','dystopie'],['toekomst','sciencefiction','science fiction','dystopie']],

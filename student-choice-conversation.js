@@ -193,13 +193,13 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  const top=profiles(books,signals);
  const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback'].includes(q.id)
   &&(!q.when.length||q.when.some(t=>p.includes(t)||context.hypothesis.includes(t)))
-  &&(q.stage<2||context.turns>=2||p.length>=3)
+  &&(q.stage<2||context.turns>=2||p.length>=3||(q.stage===2&&q.group&&q.when.some(t=>p.includes(t))))
   &&(q.stage!==0||context.turns<=2)
   &&(q.id!=='reading-length'||context.length!=='short')
   &&q.options.some(o=>o.prefer.some(t=>!known.has(t))||o.length));
  const forced=BY_ID.get(force);
  if(forced&&!used.has(forced.id))return forced;
- return eligible.map(q=>{
+ const ranked=eligible.map(q=>{
   const fresh=q.options.flatMap(o=>o.prefer).filter(t=>!known.has(t));
   let coverage=0;
   for(const t of new Set(fresh)){
@@ -210,8 +210,12 @@ function chooseQuestion(context,signals,books,last=[],force=''){
   const groupPenalty=q.group&&[...used].some(id=>BY_ID.get(id)?.group===q.group)?-5:0;
   const link=q.when.some(t=>last.includes(t))?6:q.when.some(t=>p.includes(t))?3:0;
   const stage=q.stage===1?4:q.stage===2?3:q.stage===0?(p.length?1:7):0;
-  return {q,score:link+stage+Math.min(4,coverage)+recent+groupPenalty+tie(context.seed,q.id)*2};
- }).sort((a,b)=>b.score-a.score)[0]?.q||null;
+  return {q,score:link+stage+Math.min(4,coverage)+recent+groupPenalty};
+ }).sort((a,b)=>b.score-a.score||a.q.id.localeCompare(b.q.id));
+ if(!ranked.length)return null;
+ // Rotate only among nearly equivalent useful questions.
+ const pool=ranked.filter(x=>x.score>=ranked[0].score-2.5).slice(0,12);
+ return pool.sort((a,b)=>tie(context.seed,b.q.id)-tie(context.seed,a.q.id))[0].q;
 }
 function analyze(text,rawContext={},books=[]){
  const c=cleanContext(rawContext),q=questionForContext(c);
@@ -243,12 +247,23 @@ function analyze(text,rawContext={},books=[]){
  if(tail)input=tail[1];
  // Feedback that explicitly contrasts a rejected direction with a desired
  // one removes the old direction, without inventing a permanent exclusion.
+ let feedbackRejected=[];
  if(c.current==='feedback'){
   const contrast=input.match(/^(.*?)(?:\.\s*|,\s*|\s+maar\s+)ik wil (?:juist|liever)\s+(.+)$/i);
   if(contrast&&/\b(?:gaat|gaan|allemaal|te veel)\b/i.test(contrast[1])){
-   const oldDirection=interpret(contrast[1]).prefer;
-   current=validateSignals({prefer:current.prefer.filter(t=>!oldDirection.includes(t)),avoid:current.avoid});
+   feedbackRejected=interpret(contrast[1]).prefer;
+   current=validateSignals({prefer:current.prefer.filter(t=>!feedbackRejected.includes(t)),avoid:current.avoid});
    input=contrast[2];
+  }else if(/\b(?:te veel|minder|te weinig interessant|niet interessant|saai|niet mijn ding)\b/.test(value)){
+   const rejected=interpret(input);
+   feedbackRejected=[...new Set([...rejected.prefer,...rejected.avoid])];
+   if(feedbackRejected.length){
+    current=validateSignals({prefer:current.prefer.filter(t=>!feedbackRejected.includes(t)),avoid:current.avoid});
+    return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{
+      kind:'question',reaction:'Dan zoeken we in een andere richting.',clearReference:true,
+      context:{...c,signals:current,current:'feedback',uncertain:0},
+      question:{...questionView(q),prompt:'Wat zou je in plaats daarvan graag willen lezen?'}}};
+   }
   }
  }
  const uncertain=/^(?:ik )?(?:weet (?:het )?niet|weet ik niet|geen idee|idk|mnu|maakt niet uit|geen voorkeur|geen flauw idee)(?: eigenlijk| echt| hoor| haha| denk ik| lol)*$/.test(value);
@@ -314,10 +329,10 @@ function analyze(text,rawContext={},books=[]){
    ||(next.turns>=2&&specific&&(axisCount>=2||topicDetail))
    ||(next.turns>=2&&axisCount>=3)
    ||(next.turns>=2&&length==='short'&&p.length>=2));
- if(enough&&!notReader)return {...envelope,advice:{kind:'recommend',reaction,context:next}};
- if(next.turns>=6)return {...envelope,advice:{kind:'offer',reaction,context:next}};
+ if(enough&&!notReader)return {...envelope,advice:{kind:'recommend',reaction,context:next,clearReference:feedbackRejected.length>0}};
+ if(next.turns>=6)return {...envelope,advice:{kind:'offer',reaction,context:next,clearReference:feedbackRejected.length>0}};
  const follow=chooseQuestion(next,updated,books,delta.prefer,notReader?'free-time':!p.length?'more-interests':'');
- if(!follow)return {...envelope,advice:{kind:'offer',reaction,context:next}};
- return {...envelope,advice:{kind:'question',reaction,question:questionView(follow),context:{...next,current:follow.id}}};
+ if(!follow)return {...envelope,advice:{kind:'offer',reaction,context:next,clearReference:feedbackRejected.length>0}};
+ return {...envelope,advice:{kind:'question',reaction,question:questionView(follow),context:{...next,current:follow.id},clearReference:feedbackRejected.length>0}};
 }
 module.exports={Q,MEDIA,cleanContext,analyze,questionView};
