@@ -243,3 +243,12 @@ const openDb={books:[
 assert.equal(rankBooks(openDb,{route:'new',referenceBookId:'ref',referencePreference:'informatie'}).suggestions[0].bookId,'science');
 const open=rankBooks(openDb,{route:'new',openSignals:{prefer:['mystery'],avoid:['murder']}});
 assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
+
+// A rejected individual title is never a genre exclusion, but stays rejected even when repeats are requested.
+{
+ const books=[book('h1','Hondenverhaal',['Dieren']),book('h2','Nog een hondenverhaal',['Dieren'])];
+ const result=rankBooks({books},{route:'new',openSignals:{prefer:['animals']},bookVotes:[{key:keyOf(books[0]),vote:'dislike'}],allowRepeats:true});
+ assert.deepEqual(result.suggestions.map(x=>x.bookId),['h2']);
+ const missing=rankBooks({books},{route:'new',openSignals:{prefer:['hamsters']}});
+ assert.ok(missing.missingTopics.some(x=>x.id==='hamsters'));
+}

@@ -353,7 +353,7 @@ function analyze(text,rawContext={},books=[]){
   for(const v of votes){if(!v||!['like','maybe','dislike'].includes(v.vote)||seen.has(v.bookId))continue;const b=books.find(b=>b.id===v.bookId&&!isHidden(b)&&b.personalLoanOnly!==true);if(!b)continue;seen.add(v.bookId);if(v.vote==='like')positive.push(b);else if(v.vote==='maybe')maybe.push(b);}
   const chosen=positive.length?positive:maybe;
   if(!chosen.length)return navigate('discover-menu','examples','Geen probleem! We weten nog niet welke boeken je aanspreken.');
-  const scores=new Map();for(const b of chosen)for(const [trait,confidence] of traitsForBook(b)){if(confidence<1||c.signals.avoid.includes(trait)||c.signals.avoid.some(k=>isAncestor(k,trait)))continue;scores.set(trait,(scores.get(trait)||0)+1+confidence/4);}
+  const scores=new Map();for(const b of chosen)for(const [trait,confidence] of traitsForBook(b)){if(confidence<0.7||c.signals.avoid.includes(trait)||c.signals.avoid.some(k=>isAncestor(k,trait)))continue;scores.set(trait,(scores.get(trait)||0)+1+confidence/4);}
   const specific=[...scores].filter(([t])=>![...scores.keys()].some(k=>isAncestor(t,k))).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,6).map(([t])=>t);
   const ctx={...c,current:'discovery-feedback',discovery:true,discoveryReturn:c.current==='discovery-feedback'?c.discoveryReturn:c.current,discoveryTraits:specific,uncertain:0};
   const question=questionView(questionForContext(ctx));
@@ -463,7 +463,7 @@ function analyze(text,rawContext={},books=[]){
   const revised=interpret(corrected[1]);
   if(revised.recognized&&revised.prefer.length){
    const old=q.when.filter(t=>!revised.prefer.includes(t));
-   current=validateSignals({prefer:current.prefer.filter(t=>!old.includes(t)),avoid:current.avoid});
+   current=validateSignals({prefer:current.prefer.filter(t=>!old.some(k=>k===t||isAncestor(k,t))),avoid:current.avoid});
    input=corrected[1];correction=true;
   }
  }

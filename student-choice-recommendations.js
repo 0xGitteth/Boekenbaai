@@ -443,6 +443,7 @@ function validateChoices(value) {
   result.answers=dialogue.validatedAnswers(input.answers);
   result.openSignals=validateSignals(input.openSignals);
   result.discoverySample=input.discoverySample===true&&result.route==='surprise';
+  result.bookVotes=Array.isArray(input.bookVotes)?input.bookVotes.filter(v=>v&&typeof v.key==='string'&&v.key.length<=400&&['like','maybe','dislike'].includes(v.vote)).slice(-24):[];
   if(result.route==='surprise'&&!result.discoverySample)result.openSignals.prefer=[];
   result.useReadingHistory=input.useReadingHistory!==false;
   result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
@@ -584,11 +585,14 @@ function discoverySample(candidates,profiles,choice,count){
   const roots=['crime','mystery','relationships','friendship','identity','sport','animals','nature','history','science','technology','fantasy','art','music','cultures','cooking','gaming','health','economics','society','humor','true'];
   const subjects=key=>new Set(roots.filter(t=>profiles.get(key)?.has(t)));
   const previous=choice.excludeKeys.slice(-18).map(subjects).filter(x=>x.size);
+  const positive=choice.bookVotes.filter(v=>v.vote!=='dislike'&&profiles.has(v.key));
+  const affinity=item=>{const current=profiles.get(item.work.key)||new Map();let score=0;for(const v of positive){const liked=profiles.get(v.key);let common=0;for(const [t,n] of liked)if(current.has(t))common+=Math.min(n,current.get(t))*(Object.hasOwn(SUBTOPICS,t)?2:0.5);score+=common*(v.vote==='like'?1:0.35);}return score;};
   const picked=[],remaining=candidates.slice();
   while(picked.length<count&&remaining.length){
     const diversity=item=>{const a=subjects(item.work.key);return previous.length?Math.min(...previous.map(b=>1-[...a].filter(x=>b.has(x)).length/Math.max(1,new Set([...a,...b]).size))):0;};
     remaining.sort((a,b)=>Number(b.work.available>0)-Number(a.work.available>0)
       ||(!picked.length&&choice.openSignals.prefer.length?b.specificMatches-a.specificMatches||b.openMatches-a.openMatches:0)
+      ||((positive.length&&choice.bookVotes.length%3!==0)?affinity(b)-affinity(a):0)
       ||diversity(b)-diversity(a)||a.tiebreak-b.tiebreak);
     const item=remaining.shift();picked.push({...item,surpriseReason:'Een boek om te ontdekken wat je aanspreekt'});previous.push(subjects(item.work.key));
   }
@@ -640,9 +644,10 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
     setting:'de omgeving',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',murder:'misdaad met moord',horror:'griezelverhalen',
   };
+  const rejected=new Set(choice.bookVotes.filter(v=>v.vote==='dislike').map(v=>v.key));
   const candidates = [];
   for (const work of works) {
-    if (!choice.allowRepeats && alreadySeen.has(work.key)) continue;
+    if (rejected.has(work.key)||(!choice.allowRepeats && alreadySeen.has(work.key))) continue;
     // Confirmed reads are not recommendations for a new book; only compare
     // their curated themes when the learner explicitly asks for similarities.
     if (read.readKeys.has(work.key)||referenceKey===work.key) continue;
@@ -695,6 +700,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
+  const requested=choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}));
+  const missingTopics=choice.route!=='surprise'?requested.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
   const count=Math.max(1,Math.min(3,limit));
   const picked=choice.discoverySample?discoverySample(candidates,workTraits,choice,count):choice.route==='surprise'
     ? surpriseBooks(db,candidates,count)
@@ -713,6 +720,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
           : choice.length==='short' && work.pages && work.pages<=180
             ? work.pages+' pagina’s' : 'Een ander boek uit de bibliotheek'),
     })),
+    missingTopics:missingTopics.map(t=>({id:t,label:traitLabels[t]||t,parent:SUBTOPICS[t]||'',parentLabel:traitLabels[SUBTOPICS[t]]||''})),
     exhausted: !picked.length && works.length > 0,
     emptyCatalog: works.length===0,
   };

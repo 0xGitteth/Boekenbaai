@@ -94,7 +94,9 @@ const fetchStub=async (url,options={})=>{
   if(url==='/api/auth/student-pin/choice-suggest'){
     suggestRequests.push(JSON.parse(options.body));
     if(failSuggest)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
-    const result=makeResponse(200,{suggestions:[1,2,3].map(i=>({
+    const payload=JSON.parse(options.body);
+    const ids=payload.choices.discoverySample?[1,2,3,4,5,6].filter(i=>!payload.choices.excludeKeys?.includes(String(i))).slice(0,3):[1,2,3];
+    const result=makeResponse(200,{suggestions:ids.map(i=>({
       key:String(i),bookId:'book-'+i,title:'Titel '+i,author:'Auteur',
       reason:'Een willekeurige keuze uit de bibliotheek',available:1,
     }))});
@@ -180,7 +182,7 @@ vm.runInNewContext(code,{
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb je op een van de volgende vragen')));
   assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);
   const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
-  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet','Kies een andere vraag','Ontdek met boeken']);
+  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet','Kies een andere vraag','Ontdek met boeken','Alle onderwerpen bekijken']);
   const example=actions.children.find(x=>x.className==='bb-choice-chat__option'&&/andere mensen/i.test(x.textContent));
   assert.ok(example);example.listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
@@ -302,7 +304,9 @@ vm.runInNewContext(code,{
   assert.equal(suggestRequests.at(-1).anonymous,true);
   assert.equal(suggestRequests.at(-1).choices.discoverySample,true);
   actions.children.find(x=>x.textContent==='♥ Lijkt me leuk').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('2 van 6')));
+  assert.equal(suggestRequests.at(-1).choices.bookVotes[0].vote,'like');
   actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Terug naar vorige vraag').listeners.click();
   assert.equal(actions.children[0].tag,'form');
   // Reset errors must leave meaningful actions available. The option click

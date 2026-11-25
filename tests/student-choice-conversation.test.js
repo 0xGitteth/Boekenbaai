@@ -373,8 +373,6 @@ assert.equal(sample.suggestions[0]?.bookId,'d');
 assert.equal(new Set(sample.suggestions.map(x=>x.key)).size,sample.suggestions.length);
 assert.ok(!sample.suggestions.some(x=>['g','j','hidden'].includes(x.bookId)));
 // Every detailed subject has a finite selectable route through the subject index.
-const {SUBTOPICS}=require('../student-choice-themes');
-const {LABELS}=require('../student-choice-open-text');
 const reached=new Set(),visited=new Set();
 function visitIndex(ctx){
  const page=run('Geef voorbeelden',{...ctx,navigation:'examples'}).advice;
