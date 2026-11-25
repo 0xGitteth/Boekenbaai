@@ -96,6 +96,10 @@ assert.ok(serious.advice.context.signals.prefer.includes('disappearance'));
 assert.ok(serious.advice.context.signals.prefer.includes('true'));
 const animal=run('Ik wil niet dat die doodgaat',{signals:{prefer:['animals'],avoid:[]}});
 assert.ok(animal.avoid.includes('animalLoss'));
+const dogHobby=run('honden',{current:'free-time'});
+const dogReading=run('ja',dogHobby.advice.context);
+assert.ok(dogReading.advice.context.signals.prefer.includes('pets'));
+assert.ok(run('Ik wil niet dat die doodgaat',dogReading.advice.context).avoid.includes('animalLoss'));
 assert.ok(!run('Ik wil geen boek over een moeder die doodgaat').avoid.includes('animalLoss'));
 assert.ok(!run('Ik wil niet dat die doodgaat').avoid.includes('animalLoss'));
 // A precise topic is independent of the surrounding family.
