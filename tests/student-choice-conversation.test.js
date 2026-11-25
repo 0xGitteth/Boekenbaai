@@ -18,7 +18,7 @@ const books=[
 ];
 const run=(text,ctx={})=>analyze(text,ctx,books);
 assert.equal(new Set(Q.map(q=>q.id)).size,Q.length);
-assert.ok(Q.length>=420&&Q.length<=500);
+assert.ok(Q.length>=550&&Q.length<=850);
 assert.ok(MEDIA.length>=200);
 for(const [name,aliases,traits] of MEDIA){assert.ok(aliases.length,name);assert.deepEqual(validateSignals({prefer:traits}).prefer,traits,name);}
 for(const q of Q)for(const option of q.options){
@@ -191,7 +191,7 @@ for(let i=0;i<2;i++)repeatedUnknown=run('qzxqzxqz',repeatedUnknown.advice.contex
 assert.equal(repeatedUnknown.advice.kind,'offer');
 const subjects=require('../student-choice-topic-details');
 const {SUBTOPICS}=require('../student-choice-themes');
-assert.ok(Object.keys(SUBTOPICS).length>=126);
+assert.ok(Object.keys(SUBTOPICS).length>=250);
 assert.equal(new Set(Q.filter(q=>q.id.startsWith('extended-')).map(q=>q.group)).size,30);
 assert.equal(Q.filter(q=>q.id.startsWith('extended-')).length,270);
 for(const [id,parent,label,aliases,evidence] of subjects){
@@ -284,6 +284,30 @@ const fishUnknown=run('geen idee',fish.advice.context);
 assert.equal(fishUnknown.advice.question.id,'clarify-topic');
 assert.equal(fishUnknown.advice.context.clarifyAmbiguity,'fishing');
 assert.deepEqual(fishUnknown.advice.context.signals.prefer,[]);
+for(const [id,parent,label,aliases,evidence] of require('../student-choice-extra-topics')){
+ assert.ok(Q.some(q=>q.id==='specific-'+id),label);
+ assert.ok(validateSignals({prefer:[id]}).prefer.includes(id),label);
+ assert.ok(require('../student-choice-open-text').interpret(aliases[0]).prefer.includes(id),label);
+}
+for(const [answer,trait] of [['ik wil iets lezen over cavia’s','guineaPigs'],['ik lees graag over parkieten','parakeets'],['ik wil een boek over hockey','hockey'],['ik wil lezen over boulderen','climbing'],['ik lees graag over patisserie','pastry'],['ik wil lezen over Japanse cultuur','japan'],['ik wil lezen over LGBTQ+','queerStories'],['ik wil een boek over transgender personages','genderIdentity'],['ik wil boeken over liefde tussen twee meisjes','queerRomance']]){
+ const r=run(answer,{seed:'expanded-'+trait});
+ assert.ok(r.advice.context.signals.prefer.includes(trait),answer);
+}
+for(const answer of ['ik ben homo','ik ben transgender','ik heb ADHD','ik ben autistisch']){
+ const r=run(answer,{current:'free-time'});
+ assert.deepEqual(r.advice.context.signals.prefer,[],answer);
+ assert.deepEqual(r.advice.context.hobbies,[],answer);
+}
+const inclusive=run('LHBTQIA+',{current:'opening'});
+assert.equal(inclusive.advice.question?.id,'specific-queerStories');
+assert.equal(run('Ik wil geen dikke boeken',{current:'free-time'}).advice.context.length,'short');
+const changedSport=run('Gaat allemaal over sport. Ik wil juist lezen over dieren',{current:'feedback',signals:{prefer:['sport','football','sportTraining'],avoid:[]}});
+assert.ok(!changedSport.advice.context.signals.prefer.includes('football'));
+assert.ok(!changedSport.advice.context.signals.prefer.includes('sportTraining'));
+assert.ok(changedSport.advice.context.signals.prefer.includes('animals'));
+const rejectedMotor=run('Ik wil geen boeken over motoren',{current:'free-time'});
+const resolvedMotor=run('Motortechniek',rejectedMotor.advice.context);
+assert.deepEqual(resolvedMotor.advice.context.signals.avoid,['engines']);
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});

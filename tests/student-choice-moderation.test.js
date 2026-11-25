@@ -7,6 +7,7 @@ const db={students:[student],classes:[{id:'old',studentIds:[],teacherIds:[old.id
  {id:'new',studentIds:['s'],teacherIds:['t']}],books:[{title:'Kut'}]};
 for(const text of ['mnu','Ik wil een boek van 67 pagina’s','Dat boek is tuff','Een boek over kanker','Ik wil lezen over pesten','dyslexieee','Kut','Ik vind boeken over mysteries erg leuk'])
  assert.equal(m.classify(text,db.books),'normal',text);
+for(const value of ['LHBTQIA+','Ik wil lezen over homo zijn','Ik wil een boek over transgender personages','Ik zoek een lesbisch liefdesverhaal','Ik ben gay','Ik wil over de islam lezen','Ik lees graag over ADHD'])assert.equal(m.classify(value),'normal',value);
 assert.equal(m.classify('67'),'meme');
 for(const text of ['bro','wesh','lowkey','tuff','peak','aura','rizz','Ik word uitgescholden: jij bent een klootzak','Wat betekent sybau?'])
  assert.equal(m.classify(text),'normal',text);

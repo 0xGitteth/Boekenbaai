@@ -3249,3 +3249,5 @@ module.exports=[
   ]
  ]
 ];
+
+module.exports.push(...require('./student-choice-extra-topics'));

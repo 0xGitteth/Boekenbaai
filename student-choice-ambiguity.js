@@ -360,4 +360,8 @@ function resolveMeaning(rule,text){
  const matches=rule[3].filter(([,label,aliases])=>normalize(label)===value||aliases.some(a=>contains(value,a)));
  return matches.length===1?matches[0][0]:'';
 }
-module.exports={RULES,findAmbiguity,resolveMeaning};
+function removeAmbiguousWord(text,rule){
+ const words=new Set(rule[1].split('|').map(normalize));
+ return String(text||'').replace(/[\p{L}\p{N}]+/gu,word=>words.has(normalize(word))?' ':word);
+}
+module.exports={RULES,findAmbiguity,resolveMeaning,removeAmbiguousWord};
