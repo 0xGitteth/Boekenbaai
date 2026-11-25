@@ -24,7 +24,10 @@ for(const [name,aliases,traits] of MEDIA){assert.ok(aliases.length,name);assert.
 for(const q of Q)for(const option of q.options){
  assert.deepEqual(validateSignals({prefer:option.prefer}).prefer,option.prefer,q.id+' / '+option.label);
  const r=run(option.label,{current:q.id,optionId:option.id});
- assert.deepEqual(r.prefer,option.prefer,q.id+' / '+option.label);
+ if(['free-time','watch'].includes(q.id)&&option.prefer.length){
+  assert.deepEqual(r.advice.context.signals.prefer,[],q.id+' / '+option.label);
+  assert.equal(r.advice.question?.id,'hobby-focus',q.id+' / '+option.label);
+ }else assert.deepEqual(r.prefer,option.prefer,q.id+' / '+option.label);
 }
 const first=run('Mysteries',{seed:'example'});
 assert.equal(first.advice.kind,'question');
@@ -90,7 +93,9 @@ assert.equal(mediaUncertain.advice.kind,'examples');
 const crimeOption=mediaUncertain.advice.question.options.find(x=>x.label==='criminaliteit en misdaad');
 assert.ok(crimeOption);
 const mediaConfirmed=run(crimeOption.label,{...mediaUncertain.advice.context,optionId:crimeOption.id});
-assert.ok(mediaConfirmed.advice.context.signals.prefer.includes('crime'));
+assert.equal(mediaConfirmed.advice.question?.id,'hobby-focus');
+assert.deepEqual(mediaConfirmed.advice.context.signals.prefer,[]);
+assert.ok(run('ja',mediaConfirmed.advice.context).advice.context.signals.prefer.includes('crime'));
 const serious=run('Geen idee maar ik kijk documentaires over vermiste mensen');
 assert.ok(serious.advice.context.signals.prefer.includes('disappearance'));
 assert.ok(serious.advice.context.signals.prefer.includes('true'));
@@ -132,7 +137,51 @@ assert.match(unknownTopic.advice.reaction,/bedoel je/i);
 const minecraft=run('Minecraft',{current:'free-time'});
 assert.ok(minecraft.advice.hypotheses.some(x=>x.id==='gameBuilding'));
 const build=run('vooral bouwen',minecraft.advice.context);
-assert.ok(build.advice.context.signals.prefer.includes('gameBuilding'));
+assert.equal(build.advice.question?.id,'hobby-focus');
+assert.deepEqual(build.advice.context.signals.prefer,[]);
+assert.ok(run('ja',build.advice.context).advice.context.signals.prefer.includes('gameBuilding'));
+const partial=run('Ik vind sport en fotograffie leuk',{current:'free-time'});
+assert.equal(partial.advice.question.id,'clarify-topic');
+assert.deepEqual(partial.advice.context.signals.prefer,[]);
+assert.ok(partial.advice.question.options.some(x=>x.label==='sport'));
+assert.ok(partial.advice.question.options.some(x=>x.label==='fotografie'));
+const partialAll=partial.advice.question.options.find(x=>x.id==='all');
+assert.ok(partialAll);
+const partialHobbies=run(partialAll.label,{...partial.advice.context,optionId:partialAll.id});
+assert.equal(partialHobbies.advice.question.id,'hobby-focus');
+assert.deepEqual(partialHobbies.advice.context.signals.prefer,[]);
+const cosplay=run('cosplay',{current:'free-time'});
+assert.equal(cosplay.advice.question.id,'clarify-topic');
+assert.ok(cosplay.advice.question.options.length>=2);
+const watchOnly=run('Ik kijk voetbal maar sport zelf niet',{current:'free-time'});
+assert.equal(watchOnly.advice.question.id,'hobby-focus');
+assert.ok(watchOnly.advice.context.hobbies.includes('sportWatching'));
+assert.ok(!watchOnly.advice.context.hobbies.includes('sportPlaying'));
+const noGameReading=run('Ik game wel maar wil daar niet over lezen',{current:'free-time'});
+assert.deepEqual(noGameReading.advice.context.signals.prefer,[]);
+assert.deepEqual(noGameReading.advice.context.signals.avoid,[]);
+assert.notEqual(noGameReading.advice.question?.id,'hobby-focus');
+let repeatedUnknown=run('qzxqzxqz',{current:'opening'});
+for(let i=0;i<2;i++)repeatedUnknown=run('qzxqzxqz',repeatedUnknown.advice.context);
+assert.equal(repeatedUnknown.advice.kind,'offer');
+const subjects=require('../student-choice-topic-details');
+const {SUBTOPICS}=require('../student-choice-themes');
+assert.ok(Object.keys(SUBTOPICS).length>=66);
+assert.equal(new Set(Q.filter(q=>q.id.startsWith('extended-')).map(q=>q.group)).size,30);
+assert.equal(Q.filter(q=>q.id.startsWith('extended-')).length,270);
+for(const [id,parent,label,aliases,evidence] of subjects){
+ assert.equal(SUBTOPICS[id],parent);
+ assert.ok(Q.some(q=>q.id==='specific-'+id&&q.when.includes(id)));
+ assert.ok(aliases.length&&evidence.length,label);
+ assert.ok(require('../student-choice-open-text').interpret(aliases[0]).prefer.includes(id),label);
+}
+const preciseCatalogue=[
+ {id:'general',title:'Kunst in beeld',author:'A',themes:['Kunst','Geschiedenis','Informatief'],description:'Over kunstgeschiedenis.'},
+ {id:'photo',title:'Foto maken',author:'B',themes:['Fotografie'],description:'Leer fotograferen.'},
+ {id:'music',title:'Muzikanten',author:'C',themes:['Muziek'],description:'Het leven van een zanger.'}
+];
+const exactRank=rankBooks({books:preciseCatalogue},{route:'new',openSignals:{prefer:['art','history','facts','photography'],avoid:[]},seed:'precise-rank'});
+assert.equal(exactRank.suggestions[0]?.bookId,'photo');
 const ranked=rankBooks({books},{route:'new',openSignals:{prefer:['animals'],avoid:['animalLoss']},seed:'animal'});
 assert.ok(ranked.suggestions.some(b=>b.bookId==='f'));
 assert.ok(!ranked.suggestions.some(b=>b.bookId==='g'));

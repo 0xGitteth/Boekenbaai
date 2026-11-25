@@ -365,7 +365,7 @@ function analyze(text,rawContext={},books=[]){
   direct={...validateSignals({prefer:direct.prefer,avoid:[...(direct.avoid||[]),'animalLoss']}),recognized:true,clarify:false};
  }
  const activityContext=['free-time','watch','media-interest'].includes(c.current);
- const explicitReading=/\b(?:wil|zou|lees|lezen|boeken|boek)\b/.test(value)&&/\b(?:lezen|lees|boek|boeken)\b/.test(value);
+ const explicitReading=/\b(?:lezen|lees|boek|boeken)\b/.test(value);
  const activityRefusal=activityContext&&/\b(?:niet|geen)\b[^.!?]{0,35}\b(?:lezen|boek|boeken)\b/.test(value);
  // A preference about playing or watching is not a reading exclusion.
  if(activityContext&&!explicitReading&&!selected){

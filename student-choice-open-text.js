@@ -102,6 +102,8 @@ function interpret(text){
  return {...result,recognized:signals.size>0,clarify:signals.size===0};
 }
 // Small, conservative typo suggestions. These are never applied as preferences.
+const EXACT_TOPIC_WORDS=new Set(Object.values(TERMS).flatMap(terms=>terms.flatMap(term=>term.split(' '))));
+const TYPO_IGNORE=new Set(['lezen','boeken','graag','liever','leuke','leuker','interessant','vinden','precies','thema','verhalen','eigenlijk','vooral','alleen']);
 function suggestTopics(text){
  const words=normalize(text).replace(/[^a-z0-9 ]/g,' ').trim().split(/\s+/);
  if(!words.length||words.length>16)return [];
@@ -115,12 +117,10 @@ function suggestTopics(text){
   return previous[b.length];
  }
  const candidates=new Map();
- const exactWords=new Set(Object.values(TERMS).flatMap(terms=>terms.flatMap(term=>term.split(' '))));
- const common=new Set(['lezen','boeken','graag','liever','leuke','leuker','interessant','vinden','precies','thema','verhalen','eigenlijk','vooral','alleen']);
  // Curated possible directions for ambiguous activities, not assumed meanings.
  const hints={urbex:['photography','historicalDailyLife','travel'],cosplay:['design','mythicalCreatures','filmmaking'],geocaching:['puzzles','nature','discovery']};
  for(const word of words)for(const key of hints[word]||[])candidates.set(key,1);
- for(const word of words.filter(w=>w.length>=5&&!exactWords.has(w)&&!common.has(w))){
+ for(const word of words.filter(w=>w.length>=5&&!EXACT_TOPIC_WORDS.has(w)&&!TYPO_IGNORE.has(w))){
   for(const [key,variants] of Object.entries(TERMS)){
    for(const variant of variants){
     if(!/^[a-z]{5,}$/.test(variant)||Math.abs(word.length-variant.length)>1)continue;
