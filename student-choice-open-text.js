@@ -49,7 +49,7 @@ const {THEMES}=require('./student-choice-themes');
 for(const [key,[label,terms]] of Object.entries(THEMES)){TERMS[key]=[...(TERMS[key]||[]),...terms];LABELS[key]=label;}
 const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function validateSignals(input){
- const filter=a=>[...new Set((Array.isArray(a)?a:[]).filter(k=>typeof k==='string'&&Object.hasOwn(TERMS,k)))].slice(0,12);
+ const filter=a=>[...new Set((Array.isArray(a)?a:[]).filter(k=>typeof k==='string'&&Object.hasOwn(TERMS,k)))].slice(0,24);
  const avoid=filter(input?.avoid);
  return {prefer:filter(input?.prefer).filter(k=>!avoid.includes(k)),avoid};
 }

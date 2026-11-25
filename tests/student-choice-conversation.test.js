@@ -328,6 +328,30 @@ assert.ok(changedSport.advice.context.signals.prefer.includes('animals'));
 const rejectedMotor=run('Ik wil geen boeken over motoren',{current:'free-time'});
 const resolvedMotor=run('Motortechniek',rejectedMotor.advice.context);
 assert.deepEqual(resolvedMotor.advice.context.signals.avoid,['engines']);
+// A blank pupil can discover identity and culture through navigation without
+// supplying any topic, and navigation never overwrites prior signals.
+const blank=run('Weet ik niet',{current:'discover',discovery:true});
+assert.equal(blank.advice.question.id,'discover-menu');
+const menu=blank.advice.question.options.find(o=>o.label.includes('jezelf herkent'));
+const identityRoute=run(menu.label,{...blank.advice.context,optionId:menu.id});
+assert.equal(identityRoute.advice.question.id,'discover-identity');
+const queerChoice=identityRoute.advice.question.options.find(o=>o.label.includes('LHBTQIA'));
+const queerRoute=run(queerChoice.label,{...identityRoute.advice.context,optionId:queerChoice.id});
+assert.equal(queerRoute.advice.question.id,'specific-queerStories');
+const different=run('Kies een andere vraag',{...queerRoute.advice.context,navigation:'menu'});
+assert.deepEqual(different.advice.context.signals,queerRoute.advice.context.signals);
+const topicPage=run('Weet ik niet',blank.advice.context);
+assert.equal(topicPage.advice.question.id,'discover-topics');
+const nextPage=run('Weet ik niet',topicPage.advice.context);
+assert.equal(nextPage.advice.question.id,'discover-topics-more');
+assert.equal(run('Weet ik niet',nextPage.advice.context).advice.kind,'offer');
+const many=run('Gamen, voetbal, koken, honden, geschiedenis, Japan, tekenen, zwemmen, piano en padel',{current:'discover',discovery:true});
+assert.equal(many.advice.question.id,'hobby-focus');
+assert.ok(many.advice.context.hobbies.length>=8);
+const picked=many.advice.question.options.filter(o=>['Japan','padel'].includes(o.label));
+assert.equal(picked.length,2);
+const multi=run(picked.map(o=>o.label).join(', '),{...many.advice.context,optionIds:picked.map(o=>o.id)});
+assert.deepEqual(new Set(multi.advice.context.signals.prefer),new Set(['japan','padel']));
 const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
 for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
  const r=run(topic,{seed:'focus-'+topic+'-'+i});

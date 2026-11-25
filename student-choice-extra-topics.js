@@ -4682,6 +4682,7 @@ module.exports=[
   "art",
   "cosplay",
   [
+   "cosplay",
    "cosplay kostuums",
    "cosplay maken",
    "kostuums maken"

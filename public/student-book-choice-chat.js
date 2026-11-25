@@ -262,13 +262,13 @@
   function beginInterests(){
     choiceMode=true;
     if(adviceQuestion){showAdviceExamples(adviceQuestion);return;}
-    if(adviceContext?.current){void submitAdvice('Weet ik niet',undefined,true);return;}
+    if(adviceContext?.current){void submitAdvice('Stel me meerkeuzevragen',undefined,true,{navigation:'questions'});return;}
     answer('route','new');
   }
   // The server selects the next open question and supplies corresponding
   // example choices. Only normalized preferences and question IDs are retained.
   function freshAdvice(current='opening'){
-    adviceContext={current};adviceQuestion=null;choiceMode=false;
+    adviceContext={current,discovery:current==='discover'};adviceQuestion=null;choiceMode=false;
   }
   function advicePayload(optionId){
     return {...(adviceContext||{}),signals:choices.openSignals||{prefer:[],avoid:[]},
@@ -285,13 +285,28 @@
       if(recentAdviceQuestions.size>20)recentAdviceQuestions.delete(recentAdviceQuestions.values().next().value);
     }
   }
+  function showMultiple(q){
+    const selected=new Set();
+    clearActions();
+    message('Kies de onderwerpen waar je ook iets over zou willen lezen.');
+    const choicesForQuestion=q.options.filter(o=>/^\d+$/.test(o.id));
+    const submit=el('button','btn btn--primary','Verder');submit.type='button';submit.disabled=true;
+    for(const option of choicesForQuestion){
+      const button=el('button','bb-choice-chat__option',option.label);button.type='button';button.setAttribute('aria-pressed','false');
+      button.addEventListener('click',()=>{if(!active||busy)return;if(selected.has(option.id))selected.delete(option.id);else selected.add(option.id);button.setAttribute('aria-pressed',String(selected.has(option.id)));submit.disabled=!selected.size;});actions.append(button);
+    }
+    submit.addEventListener('click',()=>{if(!active||busy||!selected.size)return;const picked=choicesForQuestion.filter(o=>selected.has(o.id));void submitAdvice(picked.map(o=>o.label).join(', '),undefined,false,{optionIds:picked.map(o=>o.id)});});actions.append(submit);
+    const back=el('button','btn btn--ghost','Terug');back.type='button';back.addEventListener('click',()=>showAdviceExamples(q,true));actions.append(back);scheduleLatest(true);
+  }
   function showAdviceExamples(q,promptAlreadyVisible=false){
     adviceQuestion=q||adviceQuestion;
     if(!adviceQuestion?.options?.length){choiceMode=false;offerOpenAnswer('',adviceQuestion);return;}
     if(!promptAlreadyVisible)message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien zit hier iets tussen.'));
     const items=adviceQuestion.options.map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
-    options(items,[[choiceMode?'Zelf antwoorden':'Iets anders',()=>{choiceMode=false;offerOpenAnswer('Vertel maar.',adviceQuestion,true);}],
+    options(items,[...(adviceQuestion.multiple?[['Kies meerdere',()=>showMultiple(adviceQuestion)]]:[]),[choiceMode?'Zelf antwoorden':'Iets anders',()=>{choiceMode=false;offerOpenAnswer('Vertel maar.',adviceQuestion,true);}],
       ['Weet ik nog steeds niet',()=>void submitAdvice('Weet ik niet',undefined,true)],
+      ['Kies een andere vraag',()=>{choiceMode=true;void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});}],
+      ...(adviceContext?.current==='discover-topics'?[['Meer onderwerpen bekijken',()=>void submitAdvice('Meer onderwerpen bekijken',undefined,true,{navigation:'topics'})]]:[]),
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
   function continueAdvice(plan){
@@ -314,7 +329,7 @@
       const noPreference=!choices.openSignals?.prefer?.length&&!choices.openSignals?.avoid?.length&&!choices.referenceBookId&&!choices.externalRef&&choices.length!=='short'&&!choices.answers?.length;
       message(noPreference?'Zal ik je gewoon drie verschillende boeken laten zien?':'Zal ik alvast een paar boeken voor je zoeken? 📚');
       options([[noPreference?'Laat me drie boeken zien':'Toon boeken met wat je nu weet',()=>{if(noPreference)choices.route='surprise';void showRecommendations();}],
-        ['Ontdek meer interesses',()=>{freshAdvice('more-interests');offerOpenAnswer('Wat vind je nog meer interessant?',null,true);} ]]);
+        ['Ontdek meer interesses',()=>{void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});} ]]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
     }else{
@@ -323,13 +338,13 @@
       offerOpenAnswer('',adviceQuestion);
     }
   }
-  async function submitAdvice(value,optionId,alreadyShown=false){
+  async function submitAdvice(value,optionId,alreadyShown=false,extraContext={}){
     if(!active||busy||!value.trim())return;
     if(!alreadyShown)message(value,'student');
     clearActions();busy=true;const marker=epoch;notice('Je antwoord bekijken…');
     try{
       const result=await api('/api/auth/student-pin/choice-interpret',{text:value.slice(0,500),
-        context:advicePayload(optionId),consent:readingConsent,...(grant?{choiceGrant:grant}:{})});
+        context:{...advicePayload(optionId),...extraContext},consent:readingConsent,...(grant?{choiceGrant:grant}:{})});
       if(!active||marker!==epoch)return;
       busy=false;notice('');
       if(result.moderation==='redirect'||result.moderation==='warning'){
@@ -366,10 +381,11 @@
     input.placeholder='Typ je antwoord…';input.required=true;
     const submit=el('button','btn btn--primary','Verstuur');submit.type='submit';
     const marker=epoch;
-    const items=[['Geef voorbeelden',()=>{if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');}]];
+    const items=[['Geef voorbeelden',()=>{if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Geef voorbeelden',undefined,true,{navigation:'examples'});}]];
     if(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length)items.push(['Laat boeken zien',()=>void showRecommendations()]);
     items.push(['Ik ken een leuk boek',()=>showReferenceSearch('','',true)],
       ['Stel me meerkeuzevragen',beginInterests],
+      ['Kies een andere vraag',()=>{choiceMode=true;void submitAdvice('Kies een andere vraag',undefined,true,{navigation:'menu'});}],
       ['Opnieuw beginnen',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);}]);
     const suggestions=suggestionShelf(items);
     form.append(suggestions,label,input,submit);
@@ -486,7 +502,7 @@
     currentStep='route';
     options([
       ['Ik weet wat ik zoek',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer();}],
-      ['Help me ontdekken',()=>{choices={route:'new'};freshAdvice('free-time');offerOpenAnswer('Wat doe je graag in je vrije tijd?');}],
+      ['Help me ontdekken',()=>{choices={route:'new'};freshAdvice('discover');offerOpenAnswer('Wat vind je leuk of interessant? Dat hoeft niets met boeken te maken te hebben. 😊');}],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }

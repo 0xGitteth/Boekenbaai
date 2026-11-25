@@ -148,6 +148,31 @@ for(const [id,options] of Object.entries(extraChoices)){
 }
 const narrowBase={"sport-media":"sportWatching","sport-goals":"eliteSport","history-family":"historicalDailyLife","art-stories":"art","crime-reality":"crime true","technology-world":"technology","fantasy-life":"fantasy","nature-world":"nature"};
 for(const q of Q)if(narrowBase[q.id]){const tags=narrowBase[q.id].split(' ');q.when=[tags[0]];if(tags.length>1)q.requires=tags;}
+// Discovery questions are an explicit navigation route, not inferred preferences.
+const DISCOVERY_MENU=[
+ ['Wat doe je graag in je vrije tijd?','free-time'],
+ ['Wat kijk, luister of speel je graag?','watch'],
+ ['Waar zou je graag meer over willen weten?','discover-knowledge'],
+ ['Wat vind je interessant aan andere mensen?','discover-people'],
+ ['Zijn er onderwerpen waarin je jezelf herkent?','discover-identity'],
+ ['Wat zou je graag willen leren of meemaken?','discover-experience'],
+ ['Ik wil onderwerpen bekijken','discover-topics']
+];
+add('discover',0,'','Wat vind je leuk of interessant? Dat hoeft niets met boeken te maken te hebben. 😊','Heb je op een van de volgende vragen een antwoord?',[]);
+add('discover-menu',0,'','Heb je op een van de volgende vragen een antwoord?','Heb je op een van de volgende vragen een antwoord?',DISCOVERY_MENU.map(([label])=>[label,'']));
+add('discover-knowledge',1,'','Waar zou je graag meer over willen weten?','Welke onderwerpen maken je nieuwsgierig?',[
+ ['Andere landen en culturen','cultures'],['Wetenschap','science'],['Geschiedenis','history'],['Mensen en hun gedrag','psychology'],['Natuur en dieren','nature'],['Hoe dingen werken','technology'],['Eten en koken','cooking']]);
+add('discover-people',1,'','Wat vind je interessant aan andere mensen?','Over welke onderwerpen zou je willen lezen?',[
+ ['Liefde en relaties','relationships'],['Vriendschap','friendship'],['Wat mensen meemaken','biography'],['Jezelf zijn en erbij horen','identity'],['Waarom mensen bepaalde dingen doen','psychology'],['Gelijke rechten en onrecht','justice'],['Verschillende culturen','cultures']]);
+add('discover-identity',1,'','Zijn er onderwerpen waarin je jezelf herkent? Je hoeft niets persoonlijks te vertellen.','Welk onderwerp zou je interessant vinden in een boek?',[
+ ['Jezelf leren kennen','identity'],['LHBTQIA+ personages en verhalen','queerStories'],['Vriendschap en erbij horen','outsider'],['Verschillende culturen en afkomst','culturalIdentity'],['Neurodiversiteit','neurodiversity'],['Leven met een beperking','disability'],['Zelfvertrouwen','growth']]);
+add('discover-experience',1,'','Wat zou je graag willen leren of meemaken?','Welke onderwerpen spreken je aan?',[
+ ['Een avontuur beleven','adventure'],['Een sport leren','sportPlaying'],['Iets maken of ontwerpen','art'],['Reizen en andere landen ontdekken','travel'],['Koken of bakken','cooking'],['Muziek maken','musicMaking'],['Iets met techniek of computers','technology']]);
+add('discover-topics',1,'','Zit hier een onderwerp tussen waar je nieuwsgierig naar bent?','Welke onderwerpen spreken je aan?',[
+ ['Mensen en hun gedrag','psychology'],['Liefde en relaties','relationships'],['Jezelf zijn en erbij horen','identity'],['Andere landen en culturen','cultures'],['Sport en hobby’s','sport'],['Dieren en natuur','animals'],['Misdaad en mysteries','mystery'],['Techniek en wetenschap','science'],['Geschiedenis','history'],['Fantasie en avontuur','fantasy']]);
+add('discover-topics-more',1,'','Misschien spreekt een van deze andere onderwerpen je aan?','Welke onderwerpen spreken je aan?',[
+ ['Muziek','music'],['Kunst en creatieve hobby’s','art'],['Eten, koken en bakken','cooking'],['Games','gaming'],['Gezondheid en het lichaam','health'],['Maatschappij en gelijke rechten','society'],['Geld en beroepen','economics'],['Waargebeurde verhalen','true'],['Humor','humor'],['Spanning','danger']]);
+const DISCOVERY_IDS=new Set(['discover','discover-menu','discover-knowledge','discover-people','discover-identity','discover-experience','discover-topics','discover-topics-more']);
 const BY_ID=new Map(Q.map(q=>[q.id,q]));
 const MEDIA=[
  ['GTA',['gta','grand theft auto'],['crime','action','adventure']],
@@ -179,7 +204,8 @@ function cleanContext(raw={}){
   seed:typeof raw.seed==='string'?raw.seed.slice(0,50):'',
   length:raw.length==='short'?'short':'any',
   media:bounded(raw.media,4).filter(name=>MEDIA.some(m=>m[0]===name)),
-  hobbies:validateSignals({prefer:raw.hobbies}).prefer.slice(0,6),
+  hobbies:validateSignals({prefer:raw.hobbies}).prefer,
+  discovery:raw.discovery===true,
   clarifyCandidates:validateSignals({prefer:raw.clarifyCandidates}).prefer.slice(0,3),
   clarifyKnown:validateSignals({prefer:raw.clarifyKnown}).prefer.slice(0,3),
   clarifyAmbiguity:AMBIGUITIES.has(raw.clarifyAmbiguity)?raw.clarifyAmbiguity:'',
@@ -227,6 +253,7 @@ function profiles(books,signals){
 }
 function questionForContext(c){
  const q=BY_ID.get(c.current)||BY_ID.get('opening');
+ if(q.id==='discover')return BY_ID.get('discover-menu');
  if(q.id==='clarify-topic'){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
   if(rule){const prompt=c.clarifyNegative?'Welk van deze onderwerpen bedoel je dat je liever wilt vermijden?':rule[2];const visible=rule[3].slice(0,rule[4]||rule[3].length);const options=visible.map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}));if(visible.length===2)options.push({id:'both',label:'Allebei',prefer:visible.map(x=>x[0]),length:''});return {...q,prompt,examples:prompt,options};}
@@ -242,21 +269,21 @@ function questionForContext(c){
   const options=hobbies.map((t,i)=>({id:String(i),label:names[i],prefer:[t],length:''}));
   if(hobbies.length>1)options.push({id:'both',label:hobbies.length===2?'Allebei':'Allemaal',prefer:hobbies,length:''});
   options.push({id:'other',label:'Liever iets anders',prefer:[],length:''});
-  return {...q,prompt:hobbies.length===2?'Zou je ook iets over '+names.map(n=>n.toLocaleLowerCase('nl-NL')).join(' of ')+' willen lezen?':hobbies.length===1?'Zou je daar ook iets over willen lezen?':'Zou je over een van deze dingen ook willen lezen?',options};
+  return {...q,multiple:hobbies.length>2,prompt:hobbies.length===2?'Zou je ook iets over '+names.map(n=>n.toLocaleLowerCase('nl-NL')).join(' of ')+' willen lezen?':hobbies.length===1?'Zou je daar ook iets over willen lezen?':'Over welke hiervan zou je ook iets willen lezen? Je mag meerdere kiezen.',options};
  }
  if(q.id!=='media-interest')return q;
  const options=c.hypothesis.slice(0,7).map((key,i)=>({id:String(i),label:LABELS[key]||key,prefer:[key],length:''}));
  return {...q,options};
 }
 function questionView(q){return q?{id:q.id,prompt:q.prompt,examples:q.examples,
- options:q.options.map(({id,label})=>({id,label}))}:null;}
+ options:q.options.map(({id,label})=>({id,label})),...(q.multiple?{multiple:true}:{})}:null;}
 function chooseQuestion(context,signals,books,last=[],force=''){
  const p=signals.prefer, known=new Set([...p,...signals.avoid]);
  const focused=p.filter(t=>!p.some(child=>isAncestor(t,child)));
  const used=new Set([...context.used,context.current]);
  const top=profiles(books,signals);
  const excluded=new Set([...signals.avoid,...context.skipped]);
- const eligible=Q.filter(q=>!used.has(q.id)&&!q.when.some(t=>excluded.has(t)||[...excluded].some(parent=>isAncestor(parent,t)))&&!(q.requires||[]).some(t=>excluded.has(t))&&!['opening','media-interest','book-interest','feedback','hobby-focus','clarify-topic','extended-reflection-1'].includes(q.id)
+ const eligible=Q.filter(q=>!used.has(q.id)&&!q.when.some(t=>excluded.has(t)||[...excluded].some(parent=>isAncestor(parent,t)))&&!(q.requires||[]).some(t=>excluded.has(t))&&!DISCOVERY_IDS.has(q.id)&&!['opening','media-interest','book-interest','feedback','hobby-focus','clarify-topic','extended-reflection-1'].includes(q.id)
   &&(!q.when.length||q.when.some(t=>focused.includes(t)))
   &&(!q.requires||q.requires.every(t=>p.includes(t)))
   &&(q.stage<2||context.turns>=2||p.length>=3||(q.stage===2&&q.early===true&&q.when.some(t=>p.includes(t))))
@@ -289,7 +316,22 @@ function chooseQuestion(context,signals,books,last=[],force=''){
 function analyze(text,rawContext={},books=[]){
  let c=cleanContext(rawContext),q=questionForContext(c);
  const value=normalize(text);
+ const navigation=rawContext?.navigation;
+ const navigate=(id,kind='question',reaction='')=>{const ctx={...c,current:id,discovery:true,uncertain:0};return {prefer:[],avoid:[],recognized:false,clarify:false,labels:LABELS,advice:{kind,reaction,question:questionView(questionForContext(ctx)),context:ctx}};};
+ if(navigation==='questions'||navigation==='examples'){
+  if(navigation==='questions'&&['discover','opening','discover-menu'].includes(c.current))return navigate('discover-menu','examples');
+  if(c.current==='discover')return navigate('discover-menu','examples');
+  return {prefer:[],avoid:[],recognized:false,clarify:false,labels:LABELS,advice:{kind:'examples',question:questionView(q),context:c}};
+ }
+ if(navigation==='menu')return navigate('discover-menu','examples');
+ if(navigation==='topics')return navigate(c.current==='discover-topics'?'discover-topics-more':'discover-topics','question');
  let selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):q.options.find(o=>normalize(o.label)===value);
+ if(c.current==='hobby-focus'&&Array.isArray(rawContext?.optionIds)){
+  const ids=[...new Set(rawContext.optionIds)].slice(0,24);
+  const picks=ids.map(id=>q.options.find(o=>o.id===id&&/^\d+$/.test(id)));
+  if(picks.length&&picks.every(Boolean))selected={prefer:validateSignals({prefer:picks.flatMap(o=>o.prefer)}).prefer,length:''};
+ }
+ if(c.current==='discover-menu'&&selected){const target=DISCOVERY_MENU[Number(selected.id)]?.[1];if(target)return navigate(target);}
  let resolvedAmbiguity=null;
  if(c.current==='clarify-topic'&&c.clarifyAmbiguity){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
@@ -405,7 +447,7 @@ function analyze(text,rawContext={},books=[]){
   &&(current.prefer.some(t=>t==='animals'||isAncestor('animals',t))||/\b(?:dier|hond|kat)\b/.test(value))){
   direct={...validateSignals({prefer:direct.prefer,avoid:[...(direct.avoid||[]),'animalLoss']}),recognized:true,clarify:false};
  }
- const activityContext=['free-time','watch','media-interest'].includes(c.current);
+ const activityContext=['discover','free-time','watch','media-interest'].includes(c.current);
  if(activityContext&&!selected&&c.current==='free-time'&&/\b(?:sporten|ik sport)\b/.test(value)&&!/\b(?:sport kijken|kijk sport|sport zelf niet|niet sporten|geen sport)\b/.test(value)&&direct.prefer.includes('sport'))direct={...direct,prefer:validateSignals({prefer:[...direct.prefer,'sportPlaying']}).prefer};
  const readingClauses=[];
  let readingScope=false;
@@ -452,6 +494,14 @@ function analyze(text,rawContext={},books=[]){
   return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'question',reaction:'Je hoeft niets persoonlijks te vertellen om een boek te kiezen.',question:{...questionView(BY_ID.get('more-interests')),prompt:'Over welk onderwerp zou je graag iets lezen?'},context:ctx}};
  }
  const delta=validateSignals(direct);
+ if(c.discovery&&(uncertain||decline)&&!selected&&!delta.prefer.length&&!delta.avoid.length&&!media.length&&!anchor&&!c.signals.prefer.length&&c.current!=='clarify-topic'){
+  if(c.current==='discover')return navigate('discover-menu','examples','Geen probleem!');
+  if(c.current==='discover-menu')return navigate('discover-topics','question','Misschien helpt het als je onderwerpen ziet.');
+  if(c.current==='discover-topics')return navigate('discover-topics-more','question');
+  if(c.current==='discover-topics-more')return {prefer:[],avoid:[],recognized:false,clarify:false,labels:LABELS,advice:{kind:'offer',reaction:'Geen probleem!',context:c}};
+  if(c.uncertain===0&&q.options.length&&!decline)return {prefer:[],avoid:[],recognized:false,clarify:false,labels:LABELS,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:1}}};
+  if(!c.used.includes('discover-topics')){c={...c,used:[...new Set([...c.used,c.current])],hobbies:[]};return navigate('discover-topics','question','Dan bekijken we andere onderwerpen.');}
+ }
  // Resolve homonyms before the ordinary typo or follow-up selector. The
  // selected meaning is still subject to the original hobby/reading consent.
  if(!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline){
@@ -489,7 +539,7 @@ function analyze(text,rawContext={},books=[]){
  // pupil actually wants to read about them before using them for ranking.
  if(activityContext&&!explicitReading&&!activityRefusal&&!notReader&&!media.length&&!anchor&&delta.prefer.length){
   const detailed=delta.prefer.filter(t=>!delta.prefer.some(k=>isAncestor(t,k)));
-  const ctx={...next,signals:resolvedAmbiguity?merged(current,{prefer:[],avoid:delta.avoid}):current,hobbies:detailed.slice(0,6),current:'hobby-focus'};
+  const ctx={...next,signals:resolvedAmbiguity?merged(current,{prefer:[],avoid:delta.avoid}):current,hobbies:detailed,current:'hobby-focus'};
   const serious=detailed.some(t=>['grief','mentalHealth','bullying','discrimination','crimeVictims','animalLoss','empathy','crime','war','murder','disasters'].includes(t));
   return {...envelope,prefer:[],avoid:resolvedAmbiguity?delta.avoid:[],advice:{kind:'question',reaction:serious?'Dank je!':c.current==='media-interest'?'Ah, duidelijk!':'Oh, leuk!',question:questionView(questionForContext(ctx)),context:ctx}};
  }
@@ -528,6 +578,11 @@ function analyze(text,rawContext={},books=[]){
  }
  if(notReader)reaction='Geen leesfan? Uitdaging geaccepteerd!';
  else if(!reaction&&hasNew&&next.turns%3===0&&!updated.avoid.length&&!updated.prefer.some(t=>['grief','mentalHealth','bullying','discrimination','crimeVictims','animalLoss','empathy','murder','crime','war'].includes(t)))reaction=['Ah, duidelijk!','Oké, dat helpt!','Dan weet ik al wat meer.'][Math.floor(tie(c.seed,String(next.turns))*3)];
+ if(DISCOVERY_IDS.has(c.current)&&c.current!=='discover'&&delta.prefer.length){
+  const focused=delta.prefer.filter(t=>!delta.prefer.some(k=>isAncestor(t,k)));
+  const target=focused.length===1?BY_ID.get('specific-'+focused[0]):null;
+  if(target&&!next.used.includes(target.id))return {...envelope,advice:{kind:'question',reaction,question:questionView(target),context:{...next,current:target.id}}};
+ }
  const p=updated.prefer,axisCount=families(p);
  const topicDetail=p.some(t=>SUBTOPICS[t]||['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));

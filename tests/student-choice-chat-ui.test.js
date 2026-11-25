@@ -177,11 +177,11 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Stel me meerkeuzevragen').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Misschien')));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb je op een van de volgende vragen')));
   assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);
   const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
-  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet']);
-  const example=actions.children.find(x=>x.className==='bb-choice-chat__option'&&/mysteries/i.test(x.textContent));
+  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet','Kies een andere vraag']);
+  const example=actions.children.find(x=>x.className==='bb-choice-chat__option'&&/andere mensen/i.test(x.textContent));
   assert.ok(example);example.listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   const continuedHelpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
