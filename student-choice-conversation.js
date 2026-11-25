@@ -128,6 +128,7 @@ const MEDIA=[
  ['Spider-Man',['spider man','spiderman'],['action','fantasy']],
  ['Avatar',['avatar the last airbender'],['fantasy','magic','adventure']],
  ['Enola Holmes',['enola holmes'],['mystery','puzzles']],
+ ...require('./student-choice-media-bank'),
 ];
 const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 const bounded=(xs,n=20)=>Array.isArray(xs)?[...new Set(xs.filter(x=>typeof x==='string'&&x.length<=80))].slice(-n):[];
@@ -215,7 +216,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
 function analyze(text,rawContext={},books=[]){
  const c=cleanContext(rawContext),q=questionForContext(c);
  const value=normalize(text);
- const selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):null;
+ const selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):q.options.find(o=>normalize(o.label)===value);
  let current=validateSignals(c.signals);
  let input=String(text||''), media=[],hypothesis=[],length=c.length;
  const notReader=/\b(?:haat lezen|lezen is saai|lees niet graag|niet van lezen|geen zin om te lezen|boeken saai|meeste boeken saai)\b/.test(value);
@@ -228,7 +229,7 @@ function analyze(text,rawContext={},books=[]){
  }
  // A real catalogue title is an anchor for a question, not an inferred liking.
  let anchor=null;
- if(!media.length&&value.length>=5){
+ if(!selected&&value.length>=5){
   const name=normalize(input.replace(/^(?:ik vond|ik las|ik heb|ik lees)\s+/i,'').replace(/\s+(?:leuk|gelezen|uitgelezen)$/i,''));
   const matches=(books||[]).filter(b=>b?.id&&!isHidden(b)&&normalize(b.title)===name);
   if(matches.length&&new Set(matches.map(b=>normalize(b.author))).size===1){
@@ -297,7 +298,7 @@ function analyze(text,rawContext={},books=[]){
    const mediaContext={...next,current:candidate};
    const view=questionView(questionForContext(mediaContext));
    return {...envelope,advice:{kind:'question',reaction:'',
-    question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat vind je leuk aan '+media[0]+'?':'Wat vind je leuk aan die games of series?'},
+    question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat spreekt je aan in '+media[0]+'?':'Wat vind je interessant aan die games, films of series?'},
     context:mediaContext,hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
  }
  if(notReader)reaction='Dan beginnen we bij wat je buiten het lezen leuk vindt.';
