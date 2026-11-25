@@ -22,7 +22,7 @@ const teacher=(id,classId)=>({
   classIds:[classId],mustChangePassword:false,
 });
 const db={
-  books:[],folders:[],history:[],importJobs:[],
+  books:[{id:'favorite-copy',title:'Spijt!',author:'Carry Slee',status:'available'}],folders:[],history:[],importJobs:[],
   classes:[
     {id:'old',name:'Arbeid',studentIds:['pupil-two'],teacherIds:['teacher-old']},
     {id:'new',name:'Onderbouw BKT',studentIds:['pupil-one'],
@@ -126,7 +126,17 @@ async function login(username){
     const otherMentor=await login('teacher-legacy-b');
     assert.deepEqual((await fetchApi('/api/students',otherMentor.token)).data.map(x=>x.id),['pupil-legacy-two']);
     assert.equal((await fetchApi('/api/exam-reading-list',multi.token)).status,200);
-    console.log('Current classes in student login, own profile and mentor API OK');
+    const key=JSON.stringify(['spijt!','carry slee']);
+    assert.equal((await fetchApi('/api/me/favorites')).status,401);
+    assert.equal((await fetchApi('/api/me/favorites',oldTeacher.token)).status,403);
+    assert.deepEqual((await fetchApi('/api/me/favorites',pupil.token)).data.favorites,[]);
+    const favorite=await fetchApi('/api/me/favorites',pupil.token,{key,bookId:'favorite-copy',favorite:true,studentId:'pupil-two'});
+    assert.equal(favorite.status,200,JSON.stringify(favorite.data));
+    assert.deepEqual(favorite.data.favorites,[{key,title:'Spijt!',author:'Carry Slee'}]);
+    assert.deepEqual((await fetchApi('/api/me/favorites',multi.token)).data.favorites,[]);
+    assert.equal((await fetchApi('/api/me/favorites',pupil.token)).data.favorites.length,1);
+    assert.deepEqual((await fetchApi('/api/me/favorites',pupil.token,{key,favorite:false})).data.favorites,[]);
+    console.log('Current classes, mentor API and private favorites OK');
   }finally{
     child?.kill('SIGTERM');
     fs.rmSync(tmp,{recursive:true,force:true});

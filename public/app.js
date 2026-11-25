@@ -2475,6 +2475,48 @@ function createBookCard(template, book, folders, options = {}) {
     card.classList.remove('book-card--selected');
     card.removeAttribute('aria-pressed');
   }
+  if (options.onFavorite) {
+    const heart=document.createElement('button');
+    heart.type='button';
+    heart.className='bb-favorite-heart';
+    heart.setAttribute('aria-pressed',String(Boolean(options.favorite)));
+    heart.setAttribute('aria-label',options.favorite?'Verwijder uit favorieten':'Voeg toe aan favorieten');
+    heart.title=options.favorite?'Verwijder uit favorieten':'Voeg toe aan favorieten';
+    heart.disabled=Boolean(options.favoritePending);
+    heart.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 8.6c0 4.3-8.8 9.8-8.8 9.8S3.2 12.9 3.2 8.6a4.8 4.8 0 0 1 8.8-2.7 4.8 4.8 0 0 1 8.8 2.7Z"/></svg>';
+    card.querySelector('.book-card__media')?.append(heart);
+    heart.addEventListener('click',event=>{
+      event.stopPropagation();
+      options.onFavorite(book);
+    });
+    // Touch hold reveals the heart, never toggles a favorite by itself.
+    // Scrolling, a cancelled pointer, or an ordinary short tap remain normal.
+    let timer=null,origin=null,revealed=false,suppressUntil=0;
+    const cancel=()=>{clearTimeout(timer);timer=null;origin=null;};
+    card.addEventListener('pointerdown',event=>{
+      if(event.pointerType!=='touch'||event.target.closest('button'))return;
+      cancel();revealed=false;suppressUntil=0;
+      origin={x:event.clientX,y:event.clientY};
+      timer=setTimeout(()=>{
+        if(!card.isConnected)return;
+        card.parentElement?.querySelectorAll('.bb-favorite-revealed').forEach(el=>el.classList.remove('bb-favorite-revealed'));
+        card.classList.add('bb-favorite-revealed');
+        revealed=true;
+      },500);
+    });
+    card.addEventListener('pointermove',event=>{
+      if(origin&&Math.hypot(event.clientX-origin.x,event.clientY-origin.y)>10)cancel();
+    });
+    card.addEventListener('pointerup',()=>{if(revealed)suppressUntil=Date.now()+700;cancel();});
+    card.addEventListener('pointercancel',()=>{cancel();revealed=false;});
+    card.addEventListener('pointerleave',()=>{cancel();});
+    card.addEventListener('contextmenu',event=>{if(origin||revealed)event.preventDefault();});
+    card.addEventListener('click',event=>{
+      if(!event.target.closest('button')&&Date.now()<suppressUntil){
+        event.preventDefault();event.stopImmediatePropagation();suppressUntil=0;
+      }
+    },true);
+  }
   const handleActivate = (event) => {
     if (event) {
       event.preventDefault();
@@ -3292,6 +3334,104 @@ function initStudentPage() {
   const studentProfileAccount = document.querySelector('#student-profile-account');
   const studentAccountName = document.querySelector('#student-account-name');
   const studentAccountUsername = document.querySelector('#student-account-username');
+  const favoriteCard=document.querySelector('#student-favorites-card');
+  const favoriteList=document.querySelector('#student-favorites-list');
+  const favoriteFeedback=document.querySelector('#student-favorites-feedback');
+  const favoriteRetry=document.querySelector('#student-favorites-retry');
+  let favoriteSession=null;
+  let favorites=null;
+  let favoritePending=false;
+  function currentFavoriteSession(session){
+    return session&&favoriteSession===session&&authUser?.role==='student'&&authUser.id===session.id&&authToken===session.token;
+  }
+  function renderFavorites(){
+    if(!favoriteList)return;
+    favoriteList.replaceChildren();
+    if(!currentFavoriteSession(favoriteSession)||favorites===null)return;
+    if(!favorites.length){
+      appendTextElement(favoriteList,'p','Je hebt nog geen favorieten. Tik op het hartje bij een boek om het voor later te bewaren.',{className:'hint'});
+      return;
+    }
+    for(const entry of favorites){
+      const group=groupedBooks.find(book=>book.id===entry.key);
+      const row=appendElement(favoriteList,'div',{className:'bb-favorite-row'});
+      const view=appendElement(row,'button',{type:'button',className:'bb-profile-book-card'});
+      view.disabled=!group;
+      const copy=appendElement(view,'span',{className:'bb-profile-book-copy'});
+      appendTextElement(copy,'strong',group?.title||entry.title||'Boek');
+      appendTextElement(copy,'small',group?.author||entry.author||'');
+      if(!group)appendTextElement(copy,'small','Niet in de huidige catalogus');
+      view.addEventListener('click',()=>{if(group)openBookDetail(group);});
+      const remove=appendTextElement(row,'button','Verwijderen',{type:'button',className:'bb-favorite-remove'});
+      remove.disabled=favoritePending;
+      remove.setAttribute('aria-label','Verwijder '+entry.title+' uit favorieten');
+      remove.addEventListener('click',()=>changeFavorite(entry.key,false));
+    }
+  }
+  function clearFavorites(){
+    favoriteSession=null;favorites=null;favoritePending=false;
+    favoriteList?.replaceChildren();
+    if(favoriteFeedback)favoriteFeedback.textContent='';
+    if(favoriteRetry)favoriteRetry.hidden=true;
+    if(favoriteCard)favoriteCard.hidden=true;
+    bookGrid?.querySelectorAll('.bb-favorite-heart').forEach(el=>el.remove());
+  }
+  async function loadFavorites(session){
+    if(!currentFavoriteSession(session))return;
+    if(favoriteFeedback)favoriteFeedback.textContent='Favorieten laden…';
+    if(favoriteRetry)favoriteRetry.hidden=true;
+    try{
+      const result=await fetchJson('/api/me/favorites');
+      if(!currentFavoriteSession(session))return;
+      if(!Array.isArray(result.favorites))throw Error('Favorieten niet ontvangen.');
+      favorites=result.favorites;
+      if(favoriteFeedback)favoriteFeedback.textContent='';
+      renderFavorites();renderBooks();
+    }catch(error){
+      if(!currentFavoriteSession(session))return;
+      if(favoriteFeedback)favoriteFeedback.textContent='Favorieten konden niet worden geladen.';
+      if(favoriteRetry)favoriteRetry.hidden=false;
+    }
+  }
+  function syncFavorites(loggedIn){
+    if(!loggedIn){clearFavorites();return;}
+    if(currentFavoriteSession(favoriteSession))return;
+    clearFavorites();
+    favoriteSession={id:authUser.id,token:authToken};
+    if(favoriteCard)favoriteCard.hidden=false;
+    loadFavorites(favoriteSession);
+  }
+  favoriteRetry?.addEventListener('click',()=>loadFavorites(favoriteSession));
+  window.addEventListener('boekenbaai:student-auth-pending',clearFavorites);
+  window.addEventListener('boekenbaai:staff-auth-cleared',clearFavorites);
+  async function changeFavorite(key,favorite,bookId){
+    const session=favoriteSession;
+    if(!currentFavoriteSession(session)||favorites===null||favoritePending)return;
+    favoritePending=true;
+    bookGrid?.querySelectorAll('.bb-favorite-heart').forEach(el=>el.disabled=true);
+    favoriteList?.querySelectorAll('.bb-favorite-remove').forEach(el=>el.disabled=true);
+    const message=favorite?'Toegevoegd aan je favorieten.':'Verwijderd uit je favorieten.';
+    try{
+      const result=await fetchJson('/api/me/favorites',{method:'POST',body:{key,favorite,bookId}});
+      if(!currentFavoriteSession(session))return;
+      if(!Array.isArray(result.favorites))throw Error('Favorieten niet ontvangen.');
+      favorites=result.favorites;
+      if(favoriteFeedback)favoriteFeedback.textContent=message;
+      if(studentActionMessage)studentActionMessage.textContent=message;
+    }catch(error){
+      if(!currentFavoriteSession(session))return;
+      const message=error?.message||'Favoriet kon niet worden opgeslagen.';
+      if(favoriteFeedback)favoriteFeedback.textContent=message;
+      if(studentActionMessage)studentActionMessage.textContent=message;
+    }finally{
+      if(currentFavoriteSession(session)){
+        const focused=document.activeElement?.classList.contains('bb-favorite-heart');
+        favoritePending=false;
+        renderFavorites();renderBooks();
+        if(focused)Array.from(bookGrid?.querySelectorAll('.book-card')||[]).find(c=>c.dataset.bookId===key)?.querySelector('.bb-favorite-heart')?.focus({preventScroll:true});
+      }
+    }
+  }
 
 
   function showStudentPage(page, { focus = false } = {}) {
@@ -3587,6 +3727,9 @@ function initStudentPage() {
   function renderAuthState() {
     const loggedIn = authUser && authUser.role === 'student';
     const staffSession = authUser && (authUser.role === 'teacher' || authUser.role === 'admin');
+    const staffLink=document.querySelector('.bb-student-staff-link');
+    if(staffLink)staffLink.hidden=Boolean(loggedIn);
+    syncFavorites(loggedIn);
     loginPanel?.classList.toggle('hidden', loggedIn || staffSession);
     studentLoginPreview?.classList.toggle('hidden', loggedIn || staffSession);
     studentStaffSession?.classList.toggle('hidden', !staffSession);
@@ -3750,6 +3893,11 @@ function initStudentPage() {
         if (chooseEdition) action.label = 'Kies uitgave';
         return {
           catalogLayout: true,
+          favorite: favorites?.some(entry=>entry.key===book.id),
+          favoritePending,
+          onFavorite: currentFavoriteSession(favoriteSession)&&favorites!==null
+            ? group=>changeFavorite(group.id,!favorites.some(entry=>entry.key===group.id),group.copies?.[0]?.id)
+            : null,
           studentActionLabel: action?.label || '',
           onStudentAction: () => chooseEdition ? openBookDetail(book) : handleCardLoanAction(book),
         };
@@ -3802,6 +3950,7 @@ function initStudentPage() {
       // but must never appear in catalog search or general discovery.
       groupedBooks = groupBooksByTitleAuthor(allBooks.filter(book=>
         book.personalLoanOnly!==true && book.catalogHidden!==true));
+      renderFavorites();
       updateAvailableThemes();
       renderLanguageOptions();
       updatePageFilterRange();

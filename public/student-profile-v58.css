@@ -218,3 +218,36 @@ body[data-page="student"] #student-profile-view .bb-profile-book-card:hover,
   body[data-page="student"] #student-profile-view #student-exam-add-trigger {font-size:12px;}
   .bb-profile-dialog-heading {align-items:flex-start;}
 }
+
+/* Keep the profile actions on the same baseline and hide the staff shortcut
+   only during a student session. */
+body[data-page="student"] #student-profile-view .bb-profile-header-actions > :is(#student-exam-add-trigger,#student-logout) {
+  margin:0!important; min-height:39px; align-self:center; transform:none;
+}
+body[data-page="student"] .bb-student-staff-link[hidden],
+body[data-page="student"] #student-favorites-card[hidden],
+body[data-page="student"] #student-favorites-retry[hidden] {display:none!important;}
+body[data-page="student"] .book-card .book-card__media {position:relative;}
+body[data-page="student"] .bb-favorite-heart {
+  position:absolute; top:8px; right:8px; z-index:5; width:38px; height:38px;
+  display:grid; place-items:center; padding:0; border:1px solid #d9e2ef;
+  border-radius:50%; background:#fff; color:#244c78; cursor:pointer;
+  box-shadow:0 2px 8px #14264129; opacity:0; pointer-events:none;
+}
+body[data-page="student"] .bb-favorite-heart svg {width:22px;height:22px;pointer-events:none;}
+body[data-page="student"] .bb-favorite-heart[aria-pressed="true"] {color:#bd3150;opacity:1;pointer-events:auto;}
+body[data-page="student"] .bb-favorite-heart[aria-pressed="true"] svg {fill:currentColor;}
+body[data-page="student"] .book-card:focus-within .bb-favorite-heart,
+body[data-page="student"] .book-card.bb-favorite-revealed .bb-favorite-heart {opacity:1;pointer-events:auto;}
+@media (hover:hover) {
+  body[data-page="student"] .book-card:hover .bb-favorite-heart {opacity:1;pointer-events:auto;}
+}
+body[data-page="student"] .bb-favorite-heart:focus-visible {outline:3px solid #8db3e7;outline-offset:2px;}
+body[data-page="student"] .bb-favorite-heart:disabled {cursor:wait;}
+body[data-page="student"] #student-favorites-card {grid-column:1/-1;}
+body[data-page="student"] #student-favorites-feedback:empty {display:none;}
+body[data-page="student"] #student-favorites-feedback,
+body[data-page="student"] #student-favorites-list > .hint {margin:0 0 8px;padding:10px 13px;background:#f5f8fc;border:1px solid #dbe4ef;border-radius:10px;color:#365776;font-size:13px;}
+.bb-favorite-row {display:flex;align-items:center;gap:10px;margin:0 0 8px;}
+.bb-favorite-row .bb-profile-book-card {flex:1;margin:0!important;}
+.bb-favorite-remove {flex:none;min-height:40px;border:1px solid #d8e3f1;border-radius:8px;background:#fff;color:#bd3150;padding:8px 12px;cursor:pointer;font:inherit;}
