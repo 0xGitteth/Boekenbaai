@@ -215,7 +215,7 @@ function questionForContext(c){
  const q=BY_ID.get(c.current)||BY_ID.get('opening');
  if(q.id==='clarify-topic'){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
-  if(rule){const prompt=c.clarifyNegative?'Welk van deze onderwerpen bedoel je dat je liever wilt vermijden?':rule[2];return {...q,prompt,examples:prompt,options:rule[3].map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}))};}
+  if(rule){const prompt=c.clarifyNegative?'Welk van deze onderwerpen bedoel je dat je liever wilt vermijden?':rule[2];const visible=rule[3].slice(0,rule[4]||rule[3].length);const options=visible.map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}));if(visible.length===2)options.push({id:'both',label:'Allebei',prefer:visible.map(x=>x[0]),length:''});return {...q,prompt,examples:prompt,options};}
   const topics=[...new Set([...c.clarifyKnown,...c.clarifyCandidates])].slice(0,5);
   const options=topics.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''}));
   if(c.clarifyKnown.length&&c.clarifyCandidates.length===1&&topics.length>1)options.push({id:'all',label:'Ja, die bedoel ik '+(topics.length===2?'allebei':'allemaal'),prefer:topics,length:''});
@@ -279,10 +279,11 @@ function analyze(text,rawContext={},books=[]){
  let resolvedAmbiguity=null;
  if(c.current==='clarify-topic'&&c.clarifyAmbiguity){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
-  const trait=selected?.prefer[0]||resolveMeaning(rule,text);
-  if(trait){
-   resolvedAmbiguity={trait,negative:c.clarifyNegative,known:c.clarifyKnown,avoid:c.clarifyAvoid};
-   selected={prefer:c.clarifyNegative?c.clarifyKnown:[...c.clarifyKnown,trait],length:''};
+  const meaning=resolveMeaning(rule,text);
+  const traits=selected?.prefer?.length?selected.prefer:meaning?[meaning]:[];
+  if(traits.length){
+   resolvedAmbiguity={traits,negative:c.clarifyNegative,known:c.clarifyKnown,avoid:c.clarifyAvoid};
+   selected={prefer:c.clarifyNegative?c.clarifyKnown:[...c.clarifyKnown,...traits],length:''};
   }else if(/^(?:ja|nee|weet ik niet|geen idee|idk|allebei|allemaal|beide)$/.test(value)){
    if(c.uncertain>=2)return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'offer',reaction:'Geen probleem! We kunnen ook iets anders proberen.',context:{...c,current:c.clarifyFrom,clarifyAmbiguity:'',clarifyCandidates:[],clarifyKnown:[],clarifyAvoid:[],clarifyNegative:false}}};
    return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',reaction:'Welke bedoel je precies?',question:questionView(q),context:{...c,uncertain:c.uncertain+1}}};
@@ -372,7 +373,7 @@ function analyze(text,rawContext={},books=[]){
   input='sport kijken';correction=true;
  }
  let direct=selected?{...validateSignals({prefer:selected.prefer}),recognized:true,clarify:false}:interpret(input);
- if(resolvedAmbiguity)direct={...validateSignals({prefer:selected.prefer,avoid:[...resolvedAmbiguity.avoid,...(resolvedAmbiguity.negative?[resolvedAmbiguity.trait]:[])]}),recognized:true,clarify:false};
+ if(resolvedAmbiguity)direct={...validateSignals({prefer:selected.prefer,avoid:[...resolvedAmbiguity.avoid,...(resolvedAmbiguity.negative?resolvedAmbiguity.traits:[])]}),recognized:true,clarify:false};
  if(c.current==='hobby-focus'&&!selected&&/^(?:ja|ja graag|zeker|jawel)$/.test(value)&&c.hobbies.length>1){
   return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'examples',reaction:'Leuk! Waar zou je dan het liefst over lezen?',question:{...questionView(q),examples:'Kies gerust wat bij je past.'},context:c}};
  }

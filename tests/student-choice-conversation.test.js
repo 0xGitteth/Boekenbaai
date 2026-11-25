@@ -240,7 +240,7 @@ for(const question of Q.filter(x=>x.group)){
 }
 // Ambiguous Dutch interests must never be silently assigned to one meaning.
 const {RULES}=require('../student-choice-ambiguity');
-for(const [id,word,prompt,meanings] of RULES){
+for(const [id,word,prompt,meanings,visibleCount] of RULES){
  const phrase=word.split('|')[0];
  for(const current of ['opening','free-time']){
   const ambiguous=run('Ik hou van '+phrase,{current,seed:id});
@@ -249,8 +249,8 @@ for(const [id,word,prompt,meanings] of RULES){
   assert.deepEqual(ambiguous.advice.context.signals.prefer,[],id);
   for(const [trait,label] of meanings){
    const option=ambiguous.advice.question.options.find(o=>o.label===label);
-   assert.ok(option,id+' '+label);
-   const resolved=run(label,{...ambiguous.advice.context,optionId:option.id});
+   if(meanings.findIndex(m=>m[0]===trait)<(visibleCount||meanings.length))assert.ok(option,id+' '+label);
+   const resolved=run(option?label:meanings.find(m=>m[0]===trait)[2][0],{...ambiguous.advice.context,...(option?{optionId:option.id}:{})});
    assert.equal(resolved.advice.question?.id,'hobby-focus',id+' '+label);
    assert.ok(resolved.advice.context.hobbies.includes(trait),id+' '+label);
    assert.deepEqual(resolved.advice.context.signals.prefer,[]);
@@ -262,6 +262,9 @@ for(const [id,word,prompt,meanings] of RULES){
 const fish=run('Ik hou van vissen',{current:'free-time'});
 const fishResolved=run('vissen vangen',fish.advice.context);
 assert.deepEqual(fishResolved.advice.context.hobbies,['fishing']);
+const bothFish=run('Allebei',fish.advice.context);
+assert.deepEqual(new Set(bothFish.advice.context.hobbies),new Set(['fishing','fishAnimals']));
+assert.ok(!run('niet vissen vangen',fish.advice.context).advice.context.signals.prefer.includes('fishing'));
 assert.equal(run('vissen als dieren',fish.advice.context).advice.context.hobbies[0],'fishAnimals');
 assert.equal(run('Ik doe aan hengelsport',{current:'free-time'}).advice.question.id,'hobby-focus');
 const fishReading=run('Ik lees graag over vissen',{current:'free-time'});

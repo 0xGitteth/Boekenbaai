@@ -2534,7 +2534,8 @@ module.exports=[
    "vissen in het water",
    "zoetwatervissen",
    "tropische vissen",
-   "vissen bestuderen"
+   "vissen bestuderen",
+   "vissen als dieren interessant"
   ],
   [
    "vissoorten",
@@ -2667,7 +2668,11 @@ module.exports=[
    "motogp",
    "autoraces kijken",
    "racewedstrijden volgen",
-   "racewedstrijden kijken"
+   "racewedstrijden kijken",
+   "races kijken",
+   "races volgen",
+   "race kijken",
+   "race volgen"
   ],
   [
    "motorsport",

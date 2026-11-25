@@ -29,9 +29,7 @@ const RULES=[
      "als dier",
      "vissoorten",
      "zoetwatervissen",
-     "tropische vissen",
-     "vissen in zee",
-     "vissen in het water"
+     "tropische vissen"
     ]
    ],
    [
@@ -63,7 +61,8 @@ const RULES=[
      "astrologie"
     ]
    ]
-  ]
+  ],
+  2
  ],
  [
   "racing",
@@ -301,7 +300,8 @@ const RULES=[
      "formule 1"
     ]
    ]
-  ]
+  ],
+  2
  ],
  [
   "horses",
@@ -355,6 +355,8 @@ function findAmbiguity(text){
 }
 function resolveMeaning(rule,text){
  const value=normalize(text);
+ // A rejected meaning is not a confirmed choice.
+ if(/\b(?:niet|geen|zonder|hekel)\b/.test(value))return '';
  const matches=rule[3].filter(([,label,aliases])=>normalize(label)===value||aliases.some(a=>contains(value,a)));
  return matches.length===1?matches[0][0]:'';
 }
