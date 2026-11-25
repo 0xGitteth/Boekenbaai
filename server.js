@@ -40,6 +40,7 @@ const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
+const {currentStudentClassNames}=require('./student-class-membership');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 const {studentLoanIds,isUnavailable,isHidden,readStatus,
@@ -1509,7 +1510,8 @@ function getAuthenticatedUser(req, getDb) {
       role: 'student',
       grade: student.grade || '',
       borrowedBooks: student.borrowedBooks,
-      classIds: student.classIds,
+      classIds: studentClassIds(db,student),
+      classNames: currentStudentClassNames(db,student),
       username: student.username,
       token,
     };
@@ -1548,12 +1550,15 @@ function updateImportJob(db, jobId, updates = {}) {
 
 function sanitizeStudent(student, options = {}) {
   if (!student) return null;
+  const db=options.db||null;
   const base = {
     id: student.id,
     name: student.name,
     grade: student.grade || '',
     borrowedBooks: Array.isArray(student.borrowedBooks) ? student.borrowedBooks : [],
-    classIds: Array.isArray(student.classIds) ? student.classIds : [],
+    classIds: db?studentClassIds(db,student):
+      (Array.isArray(student.classIds)?student.classIds:[]),
+    classNames: db?currentStudentClassNames(db,student):[],
     mustChangePassword: Boolean(student.mustChangePassword),
   };
   if (options.includeUsername) {
@@ -3853,6 +3858,8 @@ async function handleApi(req, res, requestUrl) {
             firstName: getPreferredFirstName(studentAccount),
             role: 'student',
             grade: studentAccount.grade || '',
+            classIds:studentClassIds(database,studentAccount),
+            classNames:currentStudentClassNames(database,studentAccount),
             mustChangePassword: Boolean(studentAccount.mustChangePassword),
           },
         });
@@ -3950,6 +3957,8 @@ async function handleApi(req, res, requestUrl) {
             firstName: getPreferredFirstName(account),
             role: 'student',
             grade: account.grade || '',
+            classIds:studentClassIds(database,account),
+            classNames:currentStudentClassNames(database,account),
             mustChangePassword: Boolean(account.mustChangePassword),
           },
         });
@@ -4102,6 +4111,7 @@ async function handleApi(req, res, requestUrl) {
           examReadingEligible: examReadingAccess(db, student).eligible,
           borrowedBooks: student.borrowedBooks || [],
           classIds: studentClassIds(db, student),
+          classNames:currentStudentClassNames(db,student),
           username: student.username || '',
           mustChangePassword: Boolean(student.mustChangePassword),
         });
@@ -8410,11 +8420,11 @@ async function handleApi(req, res, requestUrl) {
       let studentList = db.students;
       if (user.role === 'teacher') {
         const teacherClassIds = getTeacherClassIds(db, user.id);
-        studentList = db.students.filter((student) =>
-          (student.classIds || []).some((classId) => teacherClassIds.includes(classId))
+        studentList=db.students.filter(student=>
+          studentClassIds(db,student).some(classId=>teacherClassIds.includes(classId))
         );
       }
-      const students = studentList.map((student) => sanitizeStudent(student, { includeUsername: true }));
+      const students = studentList.map((student) => sanitizeStudent(student, { includeUsername: true,db }));
       return sendJson(res, 200, students);
     }
 
@@ -8715,7 +8725,7 @@ async function handleApi(req, res, requestUrl) {
       });
       saveDb(db);
       return sendJson(res, 201, {
-        ...sanitizeStudent(student, { includeUsername: true }),
+        ...sanitizeStudent(student, { includeUsername: true,db }),
         temporaryPassword: password,
       });
     }
@@ -8751,7 +8761,7 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
-        student: sanitizeStudent(student, { includeUsername: true }),
+        student: sanitizeStudent(student, { includeUsername: true,db }),
         temporaryPassword,
       });
     }
@@ -8878,7 +8888,7 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       if (passwordChanged) revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
-        student: sanitizeStudent(student, { includeUsername: true }),
+        student: sanitizeStudent(student, { includeUsername: true,db }),
         ...(temporaryPassword ? { temporaryPassword } : {}),
         classChanges: classesChanged
           ? {
@@ -9792,7 +9802,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} gekoppeld aan ${klass.name}`,
       });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true,db }) });
     }
 
     const classStudentRemoveMatch = requestUrl.pathname.match(
@@ -9824,7 +9834,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} losgekoppeld van ${klass.name}`,
       });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true,db }) });
     }
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
