@@ -24,6 +24,10 @@ const TERMS={
  people:['personages','mensen','personen'],
  calm:['rustig','rustige','ontspannend'],
  fast:['snel tempo','veel gebeurt','meteen iets gebeurt'],
+ twist:['plotwending','plotwendingen','plot twist','plottwist','verrassend einde','onverwacht einde','aan het einde verrast','verrast worden','verrassing aan het einde','pas op het einde'],
+ slow:['langzaam opgebouwde spanning','langzaam opbouwt','spanning langzaam','rustig op gang','langzame spanning'],
+ team:['team','teamgenoten','samenwerken','teamwerk'],
+ competition:['wedstrijd','wedstrijden','competitie','kampioenschap','toernooi'],
  murder:['moord','moorden','moordenaar','moordenaars','vermoord','vermoorden'],
  horror:['horror','eng','enge','griezel','griezelen','horrorr','horor','scary'],
 };
@@ -32,7 +36,7 @@ const LABELS={mystery:'mysteries',danger:'spanning',puzzles:'zelf raadsels oplos
  humor:'humor',friendship:'vriendschap',relationships:'liefde of relaties',school:'school',
  action:'actie',adventure:'avontuur',sport:'sport',animals:'dieren',nature:'natuur',
  science:'wetenschap',technology:'techniek',history:'geschiedenis',facts:'informatie',
- people:'personages',calm:'rustige verhalen',fast:'een snel tempo',murder:'moord',horror:'horror'};
+ people:'personages',calm:'rustige verhalen',fast:'een snel tempo',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',team:'samenwerking',competition:'wedstrijden',murder:'moord',horror:'horror'};
 const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function validateSignals(input){
  const filter=a=>[...new Set((Array.isArray(a)?a:[]).filter(k=>typeof k==='string'&&Object.hasOwn(TERMS,k)))].slice(0,12);

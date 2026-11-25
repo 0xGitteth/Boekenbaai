@@ -615,7 +615,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     danger:'spannende gebeurtenissen',survival:'overleven',competition:'wedstrijd',
     sport:'sport',challenge:'een uitdaging',justice:'rechtvaardigheid',humor:'humor',
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
-    setting:'de omgeving',murder:'misdaad met moord',horror:'griezelverhalen',
+    setting:'de omgeving',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',murder:'misdaad met moord',horror:'griezelverhalen',
   };
   const candidates = [];
   for (const work of works) {

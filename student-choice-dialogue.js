@@ -165,6 +165,8 @@ const TRAIT_WORDS={
   balanced:['avontuur','realistisch','vriendschap'],
   dialogue:['gesprek','dialoog','chat','brieven','berichten','whatsapp'],
   setting:['wereld','landschap','omgeving','ruimte','beschrijving'],
+  twist:['plotwending','plot twist','plottwist','verrassend einde','onverwacht einde','onverwachte wending','onvoorspelbaar','twist'],
+  slow:['langzaam opgebouwde spanning','spanning bouwt langzaam op','sluimerende spanning','psychologische spanning','slow burn'],
   murder:['moord','moorden','moordenaar','vermoord','vermoorden'],
   horror:['horror','griezel','griezelen','griezelig','eng'],
 };

@@ -7,6 +7,10 @@ assert.ok(interpret('Een spannend verhaal, maar liever realistisch').prefer.incl
 assert.equal(interpret('Geen idee').recognized,false);
 assert.equal(interpret('mnu').recognized,false);
 assert.ok(interpret('Ik wil zelf ontdekken wie het gedaan heeft').prefer.includes('puzzles'));
+assert.ok(interpret('Ik wil pas aan het einde verrast worden').prefer.includes('twist'));
+assert.ok(interpret('Langzaam opgebouwde spanning').prefer.includes('slow'));
+assert.ok(interpret('Wedstrijden en teamgenoten').prefer.includes('competition'));
+assert.ok(interpret('Wedstrijden en teamgenoten').prefer.includes('team'));
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').prefer,['danger']);
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').avoid,['horror']);
 assert.deepEqual(interpret('misterie maar nie met moord').avoid,['murder']);

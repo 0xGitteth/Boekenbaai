@@ -127,15 +127,15 @@
   // A small, controlled conversational bank. The next prompt addresses a
   // missing dimension of the confirmed interest rather than restating it.
   const OPEN_FOLLOWUPS=[
-    {id:'mystery-clues',when:['mystery'],missing:['puzzles'],prompt:'Wat vind je leuk aan een mysterie? Bijvoorbeeld zelf aanwijzingen ontdekken, of pas aan het einde verrast worden?'},
+    {id:'mystery-clues',when:['mystery'],missing:['puzzles','twist'],prompt:'Wat vind je leuk aan een mysterie? Bijvoorbeeld zelf aanwijzingen ontdekken, of pas aan het einde verrast worden?'},
     {id:'mystery-real',when:['mystery','danger'],missing:['realistic','fantasy','true'],prompt:'In wat voor omgeving zou dit verhaal zich mogen afspelen? Iets dat echt kan gebeuren, of juist fantasie?'},
-    {id:'danger-action',when:['danger'],missing:['action','fast'],prompt:'Wat maakt een boek voor jou spannend? Vertel bijvoorbeeld of je houdt van veel actie of juist langzaam opgebouwde spanning.'},
+    {id:'danger-action',when:['danger'],missing:['action','fast','slow'],prompt:'Wat maakt een boek voor jou spannend? Vertel bijvoorbeeld of je houdt van veel actie of juist langzaam opgebouwde spanning.'},
     {id:'humor-setting',when:['humor'],missing:['school','friendship','fantasy'],prompt:'Waar kun je om lachen in een verhaal? Denk aan grappige situaties op school, vrienden of iets totaal onverwachts.'},
-    {id:'sport-story',when:['sport'],missing:['true','friendship','facts'],prompt:'Wat vind je leuk aan sportboeken? Bijvoorbeeld echte sportverhalen, wedstrijden of de mensen in een team.'},
+    {id:'sport-story',when:['sport'],missing:['true','friendship','facts','competition','team'],prompt:'Wat vind je leuk aan sportboeken? Bijvoorbeeld echte sportverhalen, wedstrijden of de mensen in een team.'},
     {id:'fantasy-world',when:['fantasy'],missing:['adventure','technology','magic'],prompt:'Wat spreekt je aan in een fantasiewereld? Avonturen, bijzondere krachten of iets heel anders?'},
     {id:'facts-topic',when:['facts','science','technology','history'],missing:['animals','nature','sport'],prompt:'Waar zou je meer over willen leren? Noem gerust een onderwerp dat jou nieuwsgierig maakt.'},
     {id:'people',when:['people','friendship','relationships'],missing:['school','realistic','humor'],prompt:'Wat vind je interessant aan de personages? Hun vriendschappen, grappige situaties of problemen die ze meemaken?'},
-    {id:'length',when:[],missing:['fast','calm'],prompt:'Hoe lees je het liefst? Een verhaal waarin meteen veel gebeurt of eentje dat rustig op gang komt?'},
+    {id:'length',when:[],missing:['fast','calm','slow'],prompt:'Hoe lees je het liefst? Een verhaal waarin meteen veel gebeurt of eentje dat rustig op gang komt?'},
     {id:'avoid',when:[],missing:[],prompt:'Is er iets dat je juist niet in een boek wilt tegenkomen?'},
     {id:'different',when:[],missing:[],prompt:'Wat zou een boek voor jou leuker maken dan de boeken die je normaal tegenkomt?'},
   ];
