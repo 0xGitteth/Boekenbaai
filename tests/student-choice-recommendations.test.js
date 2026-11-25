@@ -243,3 +243,22 @@ const openDb={books:[
 assert.equal(rankBooks(openDb,{route:'new',referenceBookId:'ref',referencePreference:'informatie'}).suggestions[0].bookId,'science');
 const open=rankBooks(openDb,{route:'new',openSignals:{prefer:['mystery'],avoid:['murder']}});
 assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
+
+// A rejected individual title is never a genre exclusion, but stays rejected even when repeats are requested.
+{
+ const books=[book('h1','Hondenverhaal',['Dieren']),book('h2','Nog een hondenverhaal',['Dieren'])];
+ const result=rankBooks({books},{route:'new',openSignals:{prefer:['animals']},bookVotes:[{key:keyOf(books[0]),vote:'dislike'}],allowRepeats:true});
+ assert.deepEqual(result.suggestions.map(x=>x.bookId),['h2']);
+ const missing=rankBooks({books},{route:'new',openSignals:{prefer:['hamsters']}});
+ assert.ok(missing.missingTopics.some(x=>x.id==='hamsters'));
+}
+
+// Explicit content combinations must not return single-feature books as matches.
+{
+ const books=[{id:'thriller',title:'Het geheim',author:'A',description:'Een spannende thriller.'},{id:'rep',title:'Liefde',author:'B',description:'Een verhaal met LHBTQIA+ personages.'},{id:'both',title:'De zoektocht',author:'C',description:'Een spannende thriller met LHBTQIA+ personages.'}];
+ const choice={route:'new',openSignals:{prefer:['danger','queerRepresentation'],avoid:[]},required:['danger','queerRepresentation']};
+ assert.deepEqual(rankBooks({books},choice).suggestions.map(x=>x.bookId),['both']);
+ const missing=rankBooks({books:books.slice(0,2)},choice);
+ assert.equal(missing.suggestions.length,0);
+ assert.equal(missing.missingCombination.length,2);
+}

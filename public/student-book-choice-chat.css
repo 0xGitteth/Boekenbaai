@@ -207,13 +207,50 @@
 .bb-choice-chat__suggestions{
   grid-column:1/-1;
   grid-row:1;
-  display:flex;
-  flex-wrap:wrap;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 24px 24px;
   align-items:center;
-  gap:5px;
-  padding:0 0 1px;
+  gap:3px;
+  width:100%;
   min-width:0;
 }
+.bb-choice-chat__suggestion-track{
+  grid-column:1;
+  grid-row:1;
+  display:flex;
+  flex-wrap:nowrap;
+  align-items:center;
+  gap:5px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scrollbar-width:none;
+  overscroll-behavior-x:contain;
+  padding:3px;
+  min-width:0;
+}
+.bb-choice-chat__suggestion-track::-webkit-scrollbar{display:none;}
+.bb-choice-chat__suggestion-arrow{
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:24px;
+  height:32px;
+  border:1px solid #d5e2ef;
+  border-radius:8px;
+  color:#365e89;
+  background:#f1f6fb;
+  font:inherit;
+  font-size:1.3rem;
+  line-height:1;
+  padding:0;
+  cursor:pointer;
+}
+.bb-choice-chat__suggestion-arrow:first-child{grid-column:2;grid-row:1;}
+.bb-choice-chat__suggestion-arrow:last-child{grid-column:3;grid-row:1;}
+.bb-choice-chat__suggestion-arrow:disabled{visibility:hidden;}
+#student-choice-dialog .bb-choice-chat__suggestion:focus-visible{outline-offset:-3px;}
+.bb-choice-chat__actions > .bb-choice-chat__suggestions{flex:1 0 100%;}
 #student-choice-dialog .bb-choice-chat__suggestion{
   appearance:none;
   box-sizing:border-box;
@@ -221,7 +258,8 @@
   align-items:center;
   justify-content:center;
   width:auto;
-  max-width:100%;
+  flex:0 0 auto;
+  white-space:nowrap;
   min-height:30px;
   margin:0;
   padding:5px 10px;
@@ -281,3 +319,32 @@
   .bb-choice--chat .bb-choice__header p{display:none;}
   .bb-choice--chat .bb-choice__header h2{margin:0;}
 }
+
+/* Keep real answers visually distinct from the smaller navigation helpers. */
+.bb-choice-chat__actions:has(> .bb-choice-chat__suggestions) > .bb-choice-chat__option{
+  min-height:40px;
+  padding:6px 10px;
+  font-size:.86rem;
+  font-weight:600;
+}
+
+/* Four answer choices use an even 2-by-2 layout, not three plus one. */
+.bb-choice-chat__actions:has(> .bb-choice-chat__option:nth-child(4):nth-last-child(2)):has(> .bb-choice-chat__suggestions) > .bb-choice-chat__option{
+  flex-basis:calc(50% - 7px);
+}
+
+/* Multi-interest selection and simple catalogue feedback, without swipe gestures. */
+#student-choice-dialog .bb-choice-chat__option[aria-pressed="true"]{background:#d9eaf9;border-color:#467bae;box-shadow:inset 0 0 0 1px #467bae;color:#173a68;}
+#student-choice-dialog .bb-choice-chat__option[data-book-vote="like"]{color:#246b46;border-color:#8fc9ac;background:#e9f6ee;}
+#student-choice-dialog .bb-choice-chat__option[data-book-vote="maybe"]{color:#795b1f;border-color:#d9c48e;background:#fff8e5;}
+#student-choice-dialog .bb-choice-chat__option[data-book-vote="dislike"]{color:#9a3434;border-color:#dfaaaa;background:#fff0ef;}
+
+/* Accessible, optional explanation beside the choice-helper title. */
+.bb-choice-chat__heading{display:flex;align-items:center;gap:8px;}
+.bb-choice-chat__info{position:relative;z-index:5;}
+.bb-choice-chat__info summary{list-style:none;display:flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:50%;border:1px solid #9fb9d2;background:#f1f6fb;color:#365e89;cursor:pointer;font-weight:700;font-size:.9rem;}
+.bb-choice-chat__info summary::-webkit-details-marker{display:none;}
+.bb-choice-chat__info summary:focus-visible{outline:2px solid #467bae;outline-offset:2px;}
+.bb-choice-chat__info-panel{position:absolute;top:34px;left:0;width:min(290px,calc(100vw - 160px));max-height:55dvh;overflow:auto;box-sizing:border-box;padding:14px;border:1px solid #cad9e8;border-radius:12px;background:#fff;color:#254568;box-shadow:0 6px 24px #25456826;font-size:.88rem;line-height:1.45;}
+.bb-choice--chat .bb-choice-chat__info-panel p{display:block;margin:8px 0 0;color:inherit;}
+@media(max-width:420px){.bb-choice-chat__info-panel{left:auto;right:-92px;width:min(270px,calc(100vw - 48px));}}

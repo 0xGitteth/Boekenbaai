@@ -152,7 +152,7 @@ async function interpretAnswer({grant,sessionToken,guest,expectedStudentId,text,
    if(outcome.kind==='normal'){
      const recent=consent===true&&access.identity?pastQuestions(db,access.identity.studentId):[];
      const safe=conversation.cleanContext(context);
-     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',recent:[...safe.recent,...recent].slice(-40)};
+     const ctx={...safe,optionId:typeof context?.optionId==='string'?context.optionId:'',optionIds:Array.isArray(context?.optionIds)?context.optionIds.filter(x=>typeof x==='string').slice(0,24):undefined,navigation:['questions','examples','menu','topics','book-feedback','index'].includes(context?.navigation)?context.navigation:undefined,bookVotes:Array.isArray(context?.bookVotes)?context.bookVotes.slice(0,8):undefined,recent:[...safe.recent,...recent].slice(-40)};
      result={...conversation.analyze(text,ctx,(db.books||[]).map(attachDerivedThemeFields)),moderation:'normal'};
    }else result={moderation:outcome.kind,guest:!access.identity};
    return access.identity&&outcome.changed?db:false;
@@ -235,7 +235,7 @@ const RECENT_DAYS=90;
 function pastQuestions(db,id){
  const row=(db.studentChoiceSeen||[]).find(x=>x.studentId===id);
  if(!row||!Number.isFinite(Date.parse(row.updatedAt))||Date.parse(row.updatedAt)<Date.now()-RECENT_DAYS*86400000)return [];
- return conversation.cleanContext({recent:row.questionIds}).recent;
+ return conversation.cleanContext({recent:row.questionIds}).recent.filter(id=>!conversation.privateQuestion(id));
 }
 function pastKeys(db,studentId){
   const entry=(db.studentChoiceSeen||[]).find(x=>x.studentId===studentId);
@@ -251,7 +251,7 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
     mutate:db=>{
       const verified=choiceAccess(db,{grant,sessionToken,guest,expectedStudentId}).identity;
       // Declining personal advice does not disable account-level moderation.
-      const identity=anonymous?null:verified;
+      const identity=anonymous||choices?.discoverySample===true?null:verified;
       // Match public catalogue GET normalization. Raw imported tags are
       // not curator-approved themes until these shared rules are applied.
       const catalogue={...db,books:(db.books||[]).map(attachDerivedThemeFields)};
@@ -261,7 +261,10 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
       });
       result.personalized=Boolean(identity);
       result.firstName=identity?.firstName||'';
-      if(identity&&result.suggestions.length){
+      // Sensitive reading topics remain within this conversation. Do not persist associated titles or question IDs.
+      const willPresent=!result.missingCombination?.length&&(!result.missingTopics?.length||choices?.allowPartial===true);
+      const remember=Boolean(identity&&result.suggestions.length&&willPresent&&!conversation.privateReadingRequest(choices));
+      if(remember){
         if(!Array.isArray(db.studentChoiceSeen))db.studentChoiceSeen=[];
         const prior=pastKeys(db,identity.studentId);
         const priorQuestions=pastQuestions(db,identity.studentId);
@@ -277,7 +280,7 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
           updatedAt:new Date().toISOString(),
         });
       }
-      return identity?db:false; // guest: no persistent personal information
+      return remember?db:false; // guest/private topic: no new recommendation history
     }});
   return result;
 }

@@ -8,6 +8,7 @@ const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity'
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
 const {workKey}=require('./book-reservations');
 const {validateSignals}=require('./student-choice-open-text');
+const {SUBTOPICS}=require('./student-choice-themes');
 const externalReferences=require('./student-choice-reference');
 const keyOf = book => workKey(book);
 const QUESTION_VALUES = Object.freeze({
@@ -440,7 +441,12 @@ function validateChoices(value) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
   result.answers=dialogue.validatedAnswers(input.answers);
-  result.openSignals=result.route==='surprise'?{prefer:[],avoid:[]}:validateSignals(input.openSignals);
+  result.openSignals=validateSignals(input.openSignals);
+  result.priority=validateSignals({prefer:input.priority}).prefer.filter(t=>result.openSignals.prefer.includes(t));
+  result.required=validateSignals({prefer:input.required}).prefer.filter(t=>result.openSignals.prefer.includes(t));
+  result.discoverySample=input.discoverySample===true&&result.route==='surprise';
+  result.bookVotes=Array.isArray(input.bookVotes)?input.bookVotes.filter(v=>v&&typeof v.key==='string'&&v.key.length<=400&&['like','maybe','dislike'].includes(v.vote)).slice(-24):[];
+  if(result.route==='surprise'&&!result.discoverySample){result.openSignals.prefer=[];result.required=[];}
   result.useReadingHistory=input.useReadingHistory!==false;
   result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
   result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
@@ -576,6 +582,25 @@ function surpriseBooks(db, candidates, limit) {
   }
   return selected.slice(0,limit);
 }
+// A short feedback sample deliberately covers different catalogue subjects.
+function discoverySample(candidates,profiles,choice,count){
+  const roots=['crime','mystery','relationships','friendship','identity','sport','animals','nature','history','science','technology','fantasy','art','music','cultures','cooking','gaming','health','economics','society','humor','true'];
+  const subjects=key=>new Set(roots.filter(t=>profiles.get(key)?.has(t)));
+  const previous=choice.excludeKeys.slice(-18).map(subjects).filter(x=>x.size);
+  const positive=choice.bookVotes.filter(v=>v.vote!=='dislike'&&profiles.has(v.key));
+  const affinity=item=>{const current=profiles.get(item.work.key)||new Map();let score=0;for(const v of positive){const liked=profiles.get(v.key);let common=0;for(const [t,n] of liked)if(current.has(t))common+=Math.min(n,current.get(t))*(Object.hasOwn(SUBTOPICS,t)?2:0.5);score+=common*(v.vote==='like'?1:0.35);}return score;};
+  const picked=[],remaining=candidates.slice();
+  while(picked.length<count&&remaining.length){
+    const diversity=item=>{const a=subjects(item.work.key);return previous.length?Math.min(...previous.map(b=>1-[...a].filter(x=>b.has(x)).length/Math.max(1,new Set([...a,...b]).size))):0;};
+    remaining.sort((a,b)=>Number(b.work.available>0)-Number(a.work.available>0)
+      ||(choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
+      ||(!picked.length&&!choice.bookVotes.length&&choice.openSignals.prefer.length?b.specificMatches-a.specificMatches||b.openMatches-a.openMatches:0)
+      ||((positive.length&&choice.bookVotes.length%3!==0)?affinity(b)-affinity(a):0)
+      ||diversity(b)-diversity(a)||a.tiebreak-b.tiebreak);
+    const item=remaining.shift();picked.push({...item,surpriseReason:'Een boek om te ontdekken wat je aanspreekt'});previous.push(subjects(item.work.key));
+  }
+  return picked;
+}
 function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {}) {
   const choice = validateChoices(input);
   const works = groupBooks(db);
@@ -596,7 +621,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   };
   const explicitTraits=referencePreferences[choice.referencePreference]||[];
   for(const trait of explicitTraits)weights.set(trait,(weights.get(trait)||0)+2);
-  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+3);
+  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+(Object.hasOwn(SUBTOPICS,trait)?6:3)+(choice.priority.includes(trait)?5:0));
   const reference=choice.referenceBookId
     ?(db.books||[]).find(book=>book.id===choice.referenceBookId&&!isHidden(book)):null;
   // Similarity MUST use the pooled work, not whichever physical copy had a
@@ -622,9 +647,10 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
     setting:'de omgeving',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',murder:'misdaad met moord',horror:'griezelverhalen',
   };
+  const rejected=new Set(choice.bookVotes.filter(v=>v.vote==='dislike').map(v=>v.key));
   const candidates = [];
   for (const work of works) {
-    if (!choice.allowRepeats && alreadySeen.has(work.key)) continue;
+    if (rejected.has(work.key)||(!choice.allowRepeats && alreadySeen.has(work.key))) continue;
     // Confirmed reads are not recommendations for a new book; only compare
     // their curated themes when the learner explicitly asks for similarities.
     if (read.readKeys.has(work.key)||referenceKey===work.key) continue;
@@ -646,8 +672,10 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     // Exclude known contraindications; absence of a metadata signal is
     // not evidence that a book is free of that subject.
     if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
+    if(!choice.discoverySample&&choice.required.some(trait=>!traits.has(trait)))continue;
     const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
-    if(choice.openSignals.prefer.length&&!openMatches)continue;
+    const specificMatches=choice.openSignals.prefer.filter(trait=>Object.hasOwn(SUBTOPICS,trait)&&traits.has(trait)).length;
+    if(choice.openSignals.prefer.length&&!openMatches&&!choice.discoverySample)continue;
     const explicitMatch=explicitTraits.reduce((sum,t)=>sum+(traits.get(t)||0),0);
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
@@ -662,21 +690,25 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     }
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 14 : -12;
     // Free-time activity is deliberately not mapped to a book's genre.
-    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,explicitMatch,openMatches,
+    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,explicitMatch,openMatches,specificMatches,
       score, tiebreak: tie(work.key, choice.seed) });
   }
   candidates.sort((a,b) =>
     // When asking for books like a chosen reference, offer real matches
     // before unrelated fallback titles, even with reading-history consent.
     (choice.length==='short'?((b.work.pages?b.work.pages<=180?2:0:1)-(a.work.pages?a.work.pages<=180?2:0:1)):0)
+    || (b.specificMatches-a.specificMatches)
     || (b.openMatches-a.openMatches)
+    || (choice.priority.filter(t=>workTraits.get(b.work.key)?.has(t)).length-choice.priority.filter(t=>workTraits.get(a.work.key)?.has(t)).length)
     || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
     || (anchorTraits.size&&(choice.referenceBookId||outside)
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
+  const requested=choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}));
+  const missingTopics=choice.route!=='surprise'?requested.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
   const count=Math.max(1,Math.min(3,limit));
-  const picked=choice.route==='surprise'
+  const picked=choice.discoverySample?discoverySample(candidates,workTraits,choice,count):choice.route==='surprise'
     ? surpriseBooks(db,candidates,count)
     : candidates.slice(0,count);
   return {
@@ -693,6 +725,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
           : choice.length==='short' && work.pages && work.pages<=180
             ? work.pages+' pagina’s' : 'Een ander boek uit de bibliotheek'),
     })),
+    missingCombination:choice.required.length>1&&!choice.discoverySample&&!works.some(w=>!choice.openSignals.avoid.some(t=>workTraits.get(w.key)?.has(t))&&choice.required.every(t=>workTraits.get(w.key)?.has(t)))?choice.required.map(t=>({id:t,label:traitLabels[t]||t})):[],
+    missingTopics:missingTopics.map(t=>({id:t,label:traitLabels[t]||t,parent:SUBTOPICS[t]||'',parentLabel:traitLabels[SUBTOPICS[t]]||''})),
     exhausted: !picked.length && works.length > 0,
     emptyCatalog: works.length===0,
   };

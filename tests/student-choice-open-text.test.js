@@ -14,11 +14,27 @@ assert.ok(interpret('Wedstrijden en teamgenoten').prefer.includes('team'));
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').prefer,['danger']);
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').avoid,['horror']);
 assert.deepEqual(interpret('misterie maar nie met moord').avoid,['murder']);
-assert.deepEqual(interpret('grapig en voetballen').prefer,['humor','sport']);
+assert.deepEqual(interpret('grapig en voetballen').prefer,['humor','sport','sportPlaying','football']);
 assert.equal(interpret('Ik vind horror en moord niet leuk').recognized,false);
 assert.deepEqual(interpret('Geen horror, wel humor').avoid,['horror']);
 assert.deepEqual(interpret('Geen horror, wel humor').prefer,['humor']);
 assert.equal(interpret('Niet alleen fantasie').recognized,false);
 assert.equal(interpret('transport').recognized,false);
 assert.deepEqual(validateSignals({prefer:['fantasy','madeup','murder'],avoid:['murder']}),{prefer:['fantasy'],avoid:['murder']});
+assert.deepEqual(interpret('gamen').prefer,['gaming']);
+assert.ok(interpret('fotografie').prefer.includes('photography'));
+assert.ok(interpret('ruimtevaart').prefer.includes('space'));
+assert.equal(interpret('Mijn moeder houdt van paarden').recognized,false);
+assert.ok(interpret('Mijn moeder houdt van paarden maar ik hou van honden').prefer.includes('dogs'));
+assert.ok(!interpret('Mijn moeder houdt van paarden maar ik hou van honden').prefer.includes('horses'));
+assert.ok(interpret('Ik vind het leuk als iemand iets ontdekt wat niemand anders weet').prefer.includes('mystery'));
 console.log('Dutch open answer signals, bounded recognition and negation OK');
+
+assert.deepEqual(interpret('Ik wil geen boeken over voetbal').avoid,['football']);
+assert.deepEqual(interpret('Ik wil lezen over honden maar niet over katten').avoid,['cats']);
+assert.ok(interpret('Ik vind lezen niet leuk behalve strips').prefer.includes('comics'));
+assert.ok(!interpret('Mijn broer is homo en ik wil een spannend boek').prefer.includes('sexualOrientation'));
+
+for(const sentence of ['Mijn moeder leest graag over paarden, ik lees graag over voetbal','Mijn broer is homo, ik wil een spannend boek','Mijn vader houdt van katten, ik lees graag over honden']){
+ const r=interpret(sentence);assert.ok(r.prefer.length,sentence);assert.ok(!r.prefer.some(t=>['horses','sexualOrientation','cats'].includes(t)),sentence);
+}

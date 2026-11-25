@@ -6,10 +6,13 @@ const vm=require('node:vm');
 const conversation=require('../student-choice-conversation');
 const root=path.join(__dirname,'..');
 const code=fs.readFileSync(path.join(root,'public','student-book-choice-chat.js'),'utf8');
+const markup=fs.readFileSync(path.join(root,'public','index.html'),'utf8');
+assert.match(markup,/<summary aria-label="Informatie over Help me kiezen"/);
+assert.match(markup,/Hij gebruikt geen AI/);
 function node(tag='div'){
   return {tag,children:[],listeners:{},value:'',textContent:'',isConnected:true,
     disabled:false,open:false,attrs:{},style:{},
-    scrollHeight:1000,scrollTop:0,clientHeight:500,offsetHeight:120,
+    scrollHeight:1000,scrollTop:0,clientHeight:500,offsetHeight:120,scrollWidth:800,clientWidth:500,scrollLeft:0,
     getBoundingClientRect(){return {top:0};},
     addEventListener(k,fn){this.listeners[k]=fn;},
     append(...children){this.children.push(...children);},
@@ -94,7 +97,9 @@ const fetchStub=async (url,options={})=>{
   if(url==='/api/auth/student-pin/choice-suggest'){
     suggestRequests.push(JSON.parse(options.body));
     if(failSuggest)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
-    const result=makeResponse(200,{suggestions:[1,2,3].map(i=>({
+    const payload=JSON.parse(options.body);
+    const ids=payload.choices.discoverySample?[1,2,3,4,5,6].filter(i=>!payload.choices.excludeKeys?.includes(String(i))).slice(0,3):[1,2,3];
+    const result=makeResponse(200,{suggestions:ids.map(i=>({
       key:String(i),bookId:'book-'+i,title:'Titel '+i,author:'Auteur',
       reason:'Een willekeurige keuze uit de bibliotheek',available:1,
     }))});
@@ -175,9 +180,19 @@ vm.runInNewContext(code,{
     ['Ja, graag','Nee, iets nieuws ontdekken','Laat me drie boeken zien']);
   actions.children[1].listeners.click();
   actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
-  actions.children[0].children[0].children.find(x=>x.textContent==='Liever kiezen uit antwoorden').listeners.click();
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Stel me meerkeuzevragen').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb je op een van de volgende vragen')));
+  assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);
+  const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
+  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Zelf antwoorden','Weet ik nog steeds niet','Kies een andere vraag','Ontdek met boeken','Alle onderwerpen bekijken']);
+  const example=actions.children.find(x=>x.className==='bb-choice-chat__option'&&/andere mensen/i.test(x.textContent));
+  assert.ok(example);example.listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  const continuedHelpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
+  assert.ok(continuedHelpers,'Choice mode continues with the same planner');
+  continuedHelpers.children[1].children.find(x=>x.textContent==='Zelf antwoorden').listeners.click();
+  assert.equal(actions.children[0].tag,'form','Free text is available again without resetting the conversation');
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children[0].listeners.click();
@@ -186,7 +201,7 @@ vm.runInNewContext(code,{
   // Explicit navigation from history must reveal a taller reference form.
   viewport.scrollTop=80;viewport.listeners.scroll();
   dock.offsetHeight=600;dock.getBoundingClientRect=()=>({top:300});
-  actions.children[0].children[0].children.find(x=>x.textContent==='Ik ken een leuk boek').listeners.click();
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Ik ken een leuk boek').listeners.click();
   assert.equal(dock.attrs['data-long'],'true');
   assert.equal(viewport.scrollTop,300,'Explicit form change reveals the reference controls');
   dock.offsetHeight=120;
@@ -202,6 +217,22 @@ vm.runInNewContext(code,{
   const free=actions.children[0];
   assert.equal(free.tag,'form');
   assert.equal(free.children[0].className,'bb-choice-chat__suggestions');
+  const [previous,track,more]=free.children[0].children;
+  assert.equal(previous.disabled,true);
+  assert.equal(more.disabled,false);
+  more.listeners.click();
+  assert.ok(track.scrollLeft>0);
+  assert.equal(previous.disabled,false);
+  assert.equal(more.disabled,true);
+  previous.listeners.click();
+  assert.equal(track.scrollLeft,0);
+  assert.equal(previous.disabled,true);
+  track.scrollLeft=100;track.listeners.scroll();
+  assert.equal(previous.disabled,false,'Native swipe updates the navigation arrows');
+  assert.equal(more.disabled,false);
+  track.clientWidth=900;track.scrollLeft=0;resizeCallback();
+  assert.equal(free.children[0].attrs['data-overflow'],'false');
+  assert.equal(more.disabled,true);
   assert.equal(free.children[2].tag,'textarea');
   assert.equal(free.children[3].type,'submit');
   free.children[2].value='Een mysterie zonder moord';
@@ -215,7 +246,7 @@ vm.runInNewContext(code,{
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
   actions.children.find(x=>x.textContent==='Ja, ga verder').listeners.click();
   assert.equal(actions.children[0].tag,'form','Confirming an exclusion must lead to a real follow-up');
-  actions.children[0].children[0].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:['murder']});
   assert.equal(suggestRequests.at(-1).choices.useReadingHistory,true);
@@ -264,6 +295,23 @@ vm.runInNewContext(code,{
   assert.deepEqual(new Set(suggestRequests.at(-1).choices.openSignals.prefer),new Set(['mystery','puzzles','realistic']));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals.avoid,[]);
 
+  // Switch from the ongoing question into real book feedback and back without
+  // losing the earlier answer or writing a discovery suggestion history.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Help me ontdekken').listeners.click();
+  assert.match(log.children.at(-1).children[0].textContent,/Wat vind je leuk of interessant/);
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Ontdek met boeken').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.at(-1).anonymous,true);
+  assert.equal(suggestRequests.at(-1).choices.discoverySample,true);
+  actions.children.find(x=>x.textContent==='♥ Lijkt me leuk').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('2 van 6')));
+  assert.equal(suggestRequests.at(-1).choices.bookVotes[0].vote,'like');
+  actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Terug naar vorige vraag').listeners.click();
+  assert.equal(actions.children[0].tag,'form');
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.
   elements.get('student-choice-close').listeners.click();
@@ -290,25 +338,18 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
   failSuggest=false;
   await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Iemand ontdekt een geheim').listeners.click();
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb je op een van de volgende vragen')));
+  actions.children.find(x=>x.textContent==='Waar zou je graag meer over willen weten?').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(questionRequests.at(-1).answers[0].questionId,'curiosity-1');
-  // Back must undo only the last answer, without erasing the entire chat.
-  actions.children.find(x=>x.textContent==='Vorige vraag').listeners.click();
-  assert.ok(actions.children.some(x=>x.textContent==='Iets dat echt gebeurd is'));
-  actions.children.find(x=>x.textContent==='Iets dat echt gebeurd is').listeners.click();
+  assert.ok(actions.children.some(x=>x.textContent==='Andere landen en culturen'));
+  actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Vorige vraag').listeners.click();
+  assert.ok(actions.children.some(x=>x.textContent==='Wat vind je interessant aan andere mensen?'));
+  actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Zelf antwoorden').listeners.click();
+  await submitOpen('Een realistisch mysterie met aanwijzingen');
   await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Of het spannend wordt').listeners.click();
-  await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Maakt niet uit').listeners.click();
-  await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Gesprekken').listeners.click();
-  await new Promise(resolve=>setImmediate(resolve));
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(suggestRequests.at(-1).choices.route,'new',
-    'The fallback questionnaire must use the answered route, not surprise');
-  assert.equal(suggestRequests.at(-1).choices.answers.length,4,
-    'Adaptive conversation submits the actual answered questions');
+  assert.equal(suggestRequests.at(-1).choices.route,'new');
+  assert.ok(suggestRequests.at(-1).choices.openSignals.prefer.includes('mystery'));
+  assert.equal(questionRequests.length,0,'No independent questionnaire is used when returning from a search failure');
   // An older suggestion card must not start a second request while the
   // next adaptive recommendation is still loading.
   const deepFind=(root,label)=>{
@@ -323,12 +364,10 @@ vm.runInNewContext(code,{
   assert.ok(existingCard,'Earlier results remain visible in the dialogue');
   actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  for(const choice of ['Iemand ontdekt een geheim','Of het spannend wordt',
-    'Maakt niet uit','Gesprekken']){
-    if(choice==='Gesprekken')holdSuggestions=true;
-    actions.children.find(x=>x.textContent===choice).listeners.click();
-    await new Promise(resolve=>setImmediate(resolve));
-  }
+  assert.equal(actions.children[0].tag,'form','Changing direction remains a conversation');
+  holdSuggestions=true;
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(releaseSuggestion,'Deferred recommendation request must be pending');
   const countBefore=suggestRequests.length;
