@@ -301,7 +301,7 @@
       busy=false;notice('');
       if(!result.series){
         message('Ik kan voor dit boek geen betrouwbare serievolgorde vaststellen.');
-        options([['Zoek een vergelijkbaar boek',()=>useBookReference(book)],['Verder met interesses',()=>offerOpenAnswer('',adviceQuestion)]);return;
+        options([['Zoek een vergelijkbaar boek',()=>useBookReference(book)],['Verder met interesses',()=>offerOpenAnswer('',adviceQuestion)]]);return;
       }
       if(result.status==='found'&&result.suggestion){
         message('Dit is het volgende deel in '+result.series.name+'.');
