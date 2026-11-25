@@ -554,7 +554,7 @@ function analyze(text,rawContext={},books=[]){
  if((activityRefusal||explicitReading)&&readingExclusions.length){
   const readingSignals=validateSignals({prefer:readingClauses.flatMap(part=>interpret(part).prefer),avoid:readingExclusions});
   direct={...readingSignals,recognized:true,clarify:false};
- }else if(activityRefusal&&!direct.prefer.length&&!ambiguity&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
+ }else if(activityRefusal&&!readingClauses.some(part=>interpret(part).prefer.length)&&!ambiguity&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
   const ctx={...c,signals:current,length,used:[...new Set([...c.used,c.current])],hobbies:[],uncertain:0,turns:Math.min(7,c.turns+1)};
   const alternative=['more-interests','opening','watch','free-time'].map(id=>BY_ID.get(id)).find(q=>!ctx.used.includes(q.id));
   if(!alternative||ctx.turns>=6)return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'offer',reaction:'Ook goed!',context:ctx}};
