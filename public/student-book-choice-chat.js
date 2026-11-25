@@ -48,6 +48,17 @@
       followLatest=top>=-2&&top<=100;
     }else followLatest=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<=32;
   });
+  log.addEventListener('focusin',event=>{
+    if(!dialog.open||longDock)return;
+    const target=event.target;
+    if(!target?.getBoundingClientRect)return;
+    const rect=target.getBoundingClientRect();
+    const visibleBottom=dock.getBoundingClientRect().top;
+    if(rect.bottom>visibleBottom-6){
+      followLatest=false;
+      viewport.scrollTop+=rect.bottom-visibleBottom+6;
+    }
+  });
   if(typeof ResizeObserver==='function'){
     const observer=new ResizeObserver(()=>scheduleLatest());
     observer.observe(viewport);observer.observe(dock);observer.observe(log);
@@ -333,7 +344,7 @@
     form.append(correct);
     const bookSearch=el('button','btn btn--secondary','Ik ken een boek dat ik leuk vind');bookSearch.type='button';
     bookSearch.addEventListener('click',()=>{if(active&&!busy)showReferenceSearch();});form.append(bookSearch);
-    actions.append(form);input.focus({preventScroll:true});scheduleLatest();
+    actions.append(form);input.focus({preventScroll:true});scrollLatest(true);scheduleLatest(true);
     form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
   }
   function showReferenceSearch(initialTitle='',initialAuthor=''){
@@ -345,7 +356,7 @@
     const submit=el('button','btn btn--primary','Zoek in de schoolbibliotheek');submit.type='submit';
     const back=el('button','btn btn--secondary','Verder met het gesprek');back.type='button';
     back.addEventListener('click',()=>offerOpenAnswer('',adviceQuestion));
-    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus({preventScroll:true});scheduleLatest();
+    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus({preventScroll:true});scrollLatest(true);scheduleLatest(true);
     form.addEventListener('submit',event=>{event.preventDefault();void findReference({title:title.value.trim(),author:author.value.trim()},false);});
   }
   async function findReference(query,external){
