@@ -1,6 +1,6 @@
 'use strict';
 const crypto=require('node:crypto');
-const {interpret,validateSignals,LABELS}=require('./student-choice-open-text');
+const {interpret,validateSignals,LABELS,suggestTopics}=require('./student-choice-open-text');
 const {traitsForBook}=require('./student-choice-dialogue');
 const {isHidden}=require('./book-catalog-integrity');
 // Every fallback answer has an explicit, validated mapping. No AI service,
@@ -112,14 +112,33 @@ add('feedback',2,'','Wat spreekt je niet aan in deze voorstellen?','Wat zou je a
 add('art-interest',1,'art','Wat maak of teken je graag?','Denk aan wat je zelf leuk vindt om te maken.',[
  ['Personages of stripverhalen','art fantasy'],['Dingen die echt bestaan','art realistic'],['Zelf iets ontwerpen','art discovery'],['Fotografie','art'],['Ik wil iets anders lezen','']]);
 add('hobby-focus',1,'','Zou je ook over een van je hobby’s willen lezen?','Je mag ook een ander onderwerp kiezen.',[]);
+const SUBTOPICS={"drawing":"art","photography":"art","design":"art","filmmaking":"art","musicMaking":"music","musicListening":"music","sportPlaying":"sport","sportWatching":"sport","teamSport":"sport","individualSport":"sport","pets":"animals","wildlife":"animals","animalCare":"animals","space":"science","computing":"science","inventions":"science","humanBody":"science","robotics":"science","gameBuilding":"gaming","gameCompetition":"gaming","gameStory":"gaming","gameDevelopment":"gaming","gameMultiplayer":"gaming","courtCases":"crime","crimeVictims":"crime","gangs":"crime"};
+add('clarify-topic',1,'','Bedoel je misschien een van deze onderwerpen?','Ik denk aan deze onderwerpen, maar ik kan het verkeerd hebben.',[]);
+for(const [key,group,prompt,options] of [["drawing","art","Wat teken of schilder je het liefst?",[["Personages of strips","drawing fantasy"],["Dingen die echt bestaan","drawing realistic"],["Nieuwe tekentechnieken leren","drawing facts"]]],["photography","art","Wat vind je interessant aan fotografie?",[["Mensen fotograferen","photography people"],["Dieren of natuur fotograferen","photography nature"],["Leren hoe een camera werkt","photography facts"]]],["design","art","Wat ontwerp je graag?",[["Kleding","design"],["Illustraties of posters","design drawing"],["Spullen of gebouwen","design inventions"]]],["filmmaking","art","Wat vind je interessant aan films maken?",[["Het filmen zelf","filmmaking"],["Verhalen bedenken","filmmaking adventure"],["Montage en techniek","filmmaking technology"]]],["musicMaking","music","Maak je zelf muziek of vind je verhalen over muzikanten interessant?",[["Zelf muziek maken","musicMaking"],["Het leven van muzikanten","musicMaking true"],["Leren over muziek","musicMaking facts"]]],["musicListening","music","Wat spreekt je aan in de muziek waar je naar luistert?",[["De tekst","musicListening"],["De artiest","musicListening people"],["De sfeer","musicListening calm"]]],["sportPlaying","sport","Welke kant van zelf sporten vind je interessant?",[["Beter worden in een sport","sportPlaying growth"],["Samen sporten","teamSport"],["Zelf trainen","individualSport"]]],["sportWatching","sport","Wat vind je leuk aan sport kijken?",[["Een club volgen","sportWatching teamSport"],["Wedstrijden","sportWatching competition"],["Het leven van sporters","sportWatching true"]]],["teamSport","sport","Wat vind je interessant aan een sportteam?",[["Samenwerken","teamSport team"],["Wedstrijden winnen","teamSport competition"],["Vriendschap in het team","teamSport friendship"]]],["individualSport","sport","Wat vind je interessant aan een individuele sport?",[["Trainen","individualSport growth"],["Wedstrijden","individualSport competition"],["Hoe iemand een doel haalt","individualSport challenge"]]],["pets","animals","Wat vind je leuk aan huisdieren?",[["De band met een dier","pets friendship"],["Meer weten over verzorging","animalCare"],["Een avontuur met een huisdier","pets adventure"]]],["wildlife","animals","Over welke wilde dieren zou je meer willen weten?",[["Roofdieren","wildlife facts"],["Dieren in zee","wildlife nature"],["Hoe dieren overleven","wildlife survival"]]],["animalCare","animals","Wat vind je interessant aan het verzorgen van dieren?",[["Dieren helpen","animalCare empathy"],["Werken met dieren","animalCare true"],["Meer leren over verzorging","animalCare facts"]]],["space","science","Wat maakt je nieuwsgierig naar de ruimte?",[["Planeten en sterren","space facts"],["Astronauten","space true"],["Een verzonnen ruimtereis","space adventure"]]],["computing","science","Wat vind je interessant aan computers?",[["Programmeren","computing facts"],["Digitale mysteries","computing mystery"],["Hoe computers werken","computing technology"]]],["inventions","science","Wat vind je interessant aan uitvindingen?",[["Hoe iets werkt","inventions facts"],["Een uitvinder volgen","inventions true"],["Nieuwe dingen bedenken","inventions discovery"]]],["humanBody","science","Wat zou je willen begrijpen aan het menselijk lichaam?",[["Hoe het lichaam werkt","humanBody facts"],["Gezondheid","humanBody health"],["Sport en het lichaam","humanBody sport"]]],["robotics","science","Wat vind je interessant aan robots?",[["Hoe ze werken","robotics facts"],["Wat ze in de toekomst kunnen","robotics future"],["Een verhaal met robots","robotics fantasy"]]],["gameBuilding","gaming","Wat bouw je graag in games?",[["Huizen of steden","gameBuilding design"],["Een eigen wereld","gameBuilding fantasy"],["Dingen die echt werken","gameBuilding inventions"]]],["gameCompetition","gaming","Wat vind je leuk aan competitief gamen?",[["Beter worden","gameCompetition growth"],["Wedstrijden winnen","gameCompetition competition"],["Spelen in een team","gameCompetition team"]]],["gameStory","gaming","Wat vind je leuk aan verhalen in games?",[["De personages","gameStory people"],["De wereld ontdekken","gameStory adventure"],["Mysteries oplossen","gameStory mystery"]]],["gameDevelopment","gaming","Wat zou je willen weten over het maken van games?",[["Programmeren","gameDevelopment computing"],["Werelden ontwerpen","gameDevelopment design"],["Verhalen bedenken","gameDevelopment gameStory"]]],["gameMultiplayer","gaming","Wat vind je leuk aan samen gamen?",[["Samenwerken","gameMultiplayer team"],["Samen iets ontdekken","gameMultiplayer adventure"],["Vriendschap","gameMultiplayer friendship"]]],["courtCases","crime","Wat vind je interessant aan rechtszaken?",[["Hoe bewijs wordt gebruikt","courtCases puzzles"],["De keuzes van de rechter","courtCases justice"],["Een waargebeurde zaak","courtCases true"]]],["crimeVictims","crime","Wat zou je willen weten over mensen die met misdaad te maken krijgen?",[["Hoe ze ermee omgaan","crimeVictims empathy"],["Hoe ze geholpen worden","crimeVictims justice"],["Waargebeurde ervaringen","crimeVictims true"]]],["gangs","crime","Wat vind je interessant aan verhalen over bendes?",[["Waarom iemand erbij gaat","gangs psychology"],["Hoe iemand eruit komt","gangs growth"],["Hoe een bende wordt onderzocht","gangs police"]]]]){
+ add('specific-'+key,1,key,prompt,'Misschien helpt een voorbeeld.',options);
+ Q[Q.length-1].group=group;
+}
 Q.push(...require('./student-choice-question-bank'));
+const preciseQuestions={"extended-music-1":["musicListening"],"extended-music-2":["musicMaking"],"extended-music-3":["drawing","design"],"extended-music-7":["musicListening"],"extended-music-8":["filmmaking","design"],"extended-sport-2":["sportPlaying"],"extended-sport-3":["teamSport"],"extended-sport-4":["sportWatching"],"extended-sport-7":["sportPlaying"],"extended-sport-8":["sportWatching"],"extended-sport-9":["sportPlaying","health"],"extended-gaming-4":["gameMultiplayer"],"extended-gaming-5":["gameBuilding"],"extended-gaming-6":["gameStory"],"extended-gaming-7":["gameDevelopment"],"extended-animals-5":["wildlife","pets"],"extended-animals-6":["animalCare"],"extended-science-4":["inventions"],"extended-science-5":["space"],"extended-science-6":["humanBody"],"extended-science-9":["robotics"],"extended-crime-4":["courtCases"],"extended-crime-5":["gangs"]};
+for(const question of Q){
+ if(preciseQuestions[question.id]){
+  question.when=preciseQuestions[question.id];
+  if(question.id==='extended-sport-3')delete question.requires;
+  if(question.id==='extended-sport-9'){question.when=['sportPlaying'];question.requires=['sportPlaying','health'];}
+ }
+}
+const specificOptionSignals={"art-interest":{"Personages of stripverhalen":["drawing","fantasy"],"Dingen die echt bestaan":["drawing","realistic"],"Zelf iets ontwerpen":["design"],"Fotografie":["photography"]},"music-interest":{"Muziek maken of luisteren":["music"],"Tekenen en ontwerpen":["art"],"Fotografie":["photography"]},"gaming-interest":{"Games met een verhaal":["gameStory"],"Games waarin je iets bouwt":["gameBuilding"]},"animals-interest":{"Dieren verzorgen":["animalCare"],"Wilde dieren":["wildlife"]},"science-interest":{"Ruimte en het heelal":["space"],"Computers en robots":["technology"],"Het menselijk lichaam":["humanBody"],"Uitvindingen":["inventions"]},"free-time":{"Sporten":["sport","sportPlaying"],"Muziek luisteren":["musicListening"]}};
+for(const q of Q)for(const o of q.options){
+ const traits=specificOptionSignals[q.id]?.[o.label];
+ if(traits)o.prefer=traits;
+}
 const BY_ID=new Map(Q.map(q=>[q.id,q]));
 const MEDIA=[
  ['GTA',['gta','grand theft auto'],['crime','action','adventure']],
  ['FIFA / EA Sports FC',['fifa','ea sports fc','fc 26','fc 27'],['sport','competition']],
  ['Mocro Maffia',['mocro maffia'],['crime','criminalPerspective']],
  ['Pizzamaffia',['pizzamaffia'],['crime','family']],
- ['Minecraft',['minecraft'],['adventure','survival','art']],
+ ['Minecraft',['minecraft'],['gameBuilding','adventure','survival','gameMultiplayer']],
  ['Fortnite',['fortnite'],['action','survival','team']],
  ['Roblox',['roblox'],['gaming']],
  ['Harry Potter',['harry potter'],['fantasy','magic','friendship']],
@@ -145,6 +164,8 @@ function cleanContext(raw={}){
   length:raw.length==='short'?'short':'any',
   media:bounded(raw.media,4).filter(name=>MEDIA.some(m=>m[0]===name)),
   hobbies:validateSignals({prefer:raw.hobbies}).prefer.slice(0,6),
+  clarifyCandidates:validateSignals({prefer:raw.clarifyCandidates}).prefer.slice(0,3),
+  clarifyFrom:BY_ID.has(raw.clarifyFrom)&&raw.clarifyFrom!=='clarify-topic'?raw.clarifyFrom:'opening',
   hypothesis:validateSignals({prefer:raw.hypothesis}).prefer,
   uncertain:Math.max(0,Math.min(2,Number.isInteger(raw.uncertain)?raw.uncertain:0))};
 }
@@ -185,6 +206,9 @@ function profiles(books,signals){
 }
 function questionForContext(c){
  const q=BY_ID.get(c.current)||BY_ID.get('opening');
+ if(q.id==='clarify-topic'){
+  return {...q,options:c.clarifyCandidates.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''}))};
+ }
  if(q.id==='hobby-focus'){
   const hobbies=c.hobbies;
   const labels={art:'Tekenen of iets maken',sport:'Sport',gaming:'Games',music:'Muziek'};
@@ -204,7 +228,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  const p=signals.prefer, known=new Set([...p,...signals.avoid]);
  const used=new Set([...context.used,context.current]);
  const top=profiles(books,signals);
- const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback','hobby-focus','extended-reflection-1'].includes(q.id)
+ const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback','hobby-focus','clarify-topic','extended-reflection-1'].includes(q.id)
   &&(!q.when.length||q.when.some(t=>p.includes(t)))
   &&(!q.requires||q.requires.every(t=>p.includes(t)))
   &&(q.stage<2||context.turns>=2||p.length>=3||(q.stage===2&&q.early===true&&q.when.some(t=>p.includes(t))))
@@ -228,15 +252,21 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  }).sort((a,b)=>b.score-a.score||a.q.id.localeCompare(b.q.id));
  if(!ranked.length)return null;
  // Rotate only among nearly equivalent useful questions.
- const recentTopicMatches=ranked.filter(x=>x.q.when.some(t=>last.includes(t)));
+ const precise=ranked.filter(x=>x.q.when.some(t=>last.includes(t)&&SUBTOPICS[t]));
+ const recentTopicMatches=precise.length?precise:ranked.filter(x=>x.q.when.some(t=>last.includes(t)));
  const candidates=recentTopicMatches.length?recentTopicMatches:ranked;
  const pool=candidates.filter(x=>x.score>=candidates[0].score-2.5).slice(0,12);
  return pool.sort((a,b)=>tie(context.seed,b.q.id)-tie(context.seed,a.q.id))[0].q;
 }
 function analyze(text,rawContext={},books=[]){
- const c=cleanContext(rawContext),q=questionForContext(c);
+ let c=cleanContext(rawContext),q=questionForContext(c);
  const value=normalize(text);
  const selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):q.options.find(o=>normalize(o.label)===value);
+ if(c.current==='clarify-topic'){
+  const previous=c.clarifyFrom;
+  c={...c,current:previous,clarifyCandidates:[],clarifyFrom:'opening'};
+  q=questionForContext(c);
+ }
  let current=validateSignals(c.signals);
  let input=String(text||''), media=[],hypothesis=[],length=c.length;
  const notReader=/\b(?:haat lezen|lezen is saai|lees niet graag|niet van lezen|geen zin om te lezen|boeken saai|meeste boeken saai)\b/.test(value);
@@ -321,7 +351,8 @@ function analyze(text,rawContext={},books=[]){
  // Hobbies are not automatically reading preferences. Check whether the
  // pupil actually wants to read about them before using them for ranking.
  if(c.current==='free-time'&&!notReader&&!media.length&&!anchor&&delta.prefer.length&&!delta.avoid.length){
-  const ctx={...next,signals:current,hobbies:delta.prefer.slice(0,6),current:'hobby-focus'};
+  const detailed=delta.prefer.filter(t=>!delta.prefer.some(k=>SUBTOPICS[k]===t));
+  const ctx={...next,signals:current,hobbies:detailed.slice(0,6),current:'hobby-focus'};
   return {...envelope,advice:{kind:'question',reaction:'',question:questionView(questionForContext(ctx)),context:ctx}};
  }
  if((decline&&!delta.prefer.length&&!delta.avoid.length)||(c.current==='hobby-focus'&&selected?.id==='other')){
@@ -339,8 +370,15 @@ function analyze(text,rawContext={},books=[]){
   if(candidate&&!/\b(?:geen|niet|een boek over|iets over)\b/i.test(candidate))return {...envelope,advice:{kind:'book-search',title:candidate,context:c}};
  }
  if(!selected&&!direct.recognized&&!media.length&&!anchor&&!notReader&&length===c.length){
+  if(!uncertain&&c.uncertain===0&&!/\b(?:niet|geen|zonder|hekel)\b/.test(value)){
+   const candidates=suggestTopics(text);
+   if(candidates.length){
+    const ctx={...c,current:'clarify-topic',clarifyFrom:c.current,clarifyCandidates:candidates,uncertain:1};
+    return {...envelope,advice:{kind:'examples',reaction:'Ik weet niet zeker of ik je goed begrijp.',question:questionView(questionForContext(ctx)),context:ctx}};
+   }
+  }
   if(uncertain||c.uncertain>=1)return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
-  return {...envelope,advice:{kind:'clarify',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
+  return {...envelope,advice:{kind:'clarify',reaction:'Dat begrijp ik nog niet helemaal. Kun je vertellen wat je daarmee bedoelt?',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
  }
  // A named reference can change the direction even if there is no direct trait.
  const possible=validateSignals({prefer:hypothesis}).prefer;
