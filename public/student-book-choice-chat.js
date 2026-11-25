@@ -191,7 +191,7 @@
   function showAdviceExamples(q){
     adviceQuestion=q||adviceQuestion;
     if(!adviceQuestion){offerOpenAnswer('');return;}
-    message(adviceQuestion.examples||'Misschien helpt het als ik een paar voorbeelden geef.');
+    message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien helpt het als ik een paar voorbeelden geef.'));
     const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
     options([...items,['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
       ['Weet ik nog steeds niet',()=>{message('Geen probleem. Dan bekijken we een andere richting.');startExploration();}],
@@ -213,14 +213,14 @@
       message('Ik denk dat ik genoeg weet om een paar boeken voor je uit te zoeken.');
       void showRecommendations();
     }else if(plan.kind==='offer'){
-      message('Ik weet al iets over wat je zoekt. Zal ik daarmee een paar boeken voorstellen?');
+      message(choices.openSignals?.prefer?.length?'Zal ik met wat je hebt verteld een paar boeken voorstellen?':'Zal ik je een paar verschillende boeken voorstellen?');
       options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],
         ['Ontdek meer interesses',startExploration]]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
     }else{
       adviceQuestion=plan.question||adviceQuestion;
-      message('Ik weet nog niet precies wat je bedoelt. Kun je het anders uitleggen?');
+      if(!plan.reaction)message('Ik weet nog niet precies wat je bedoelt. Kun je er iets meer over vertellen?');
       offerOpenAnswer('',adviceQuestion);
     }
   }
