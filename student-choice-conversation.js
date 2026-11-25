@@ -1,6 +1,6 @@
 'use strict';
 const crypto=require('node:crypto');
-const {interpret,validateSignals,LABELS,suggestTopics,ownInterestText}=require('./student-choice-open-text');
+const {interpret,validateSignals,LABELS,suggestTopics,ownInterestText,partialInterest}=require('./student-choice-open-text');
 const {traitsForBook}=require('./student-choice-dialogue');
 const {isHidden}=require('./book-catalog-integrity');
 // Every fallback answer has an explicit, validated mapping. No AI service,
@@ -113,12 +113,13 @@ add('art-interest',1,'art','Over welke creatieve dingen zou je willen lezen?','M
  ['Personages of stripverhalen','art fantasy'],['Dingen die echt bestaan','art realistic'],['Zelf iets ontwerpen','art discovery'],['Fotografie','art'],['Ik wil iets anders lezen','']]);
 add('hobby-focus',1,'','Zou je ook over een van je hobby’s willen lezen?','Je mag ook een ander onderwerp kiezen.',[]);
 const {SUBTOPICS}=require('./student-choice-themes');
-const {RULES,findAmbiguity,resolveMeaning,removeAmbiguousWord}=require('./student-choice-ambiguity');
+const {RULES,findAmbiguities,resolveMeaning,removeAmbiguousWord}=require('./student-choice-ambiguity');
 const AMBIGUITIES=new Map(RULES.map(rule=>[rule[0],rule]));
 const isAncestor=(ancestor,child)=>{const seen=new Set();for(let p=SUBTOPICS[child];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===ancestor)return true;seen.add(p);}return false;};
 const privateRoots=['queerStories','neurodiversity','disability','religions','mentalHealth','culturalIdentity'];
 const isPrivateTopic=t=>privateRoots.some(root=>root===t||isAncestor(root,t));
 add('clarify-topic',1,'','Bedoel je zoiets?','Zit er iets tussen?',[]);
+add('clarify-remainder',1,'','Kun je het andere onderwerp iets beter uitleggen?','Vertel wat je bedoelt of ga verder met de bekende onderwerpen.',[]);
 for(const [key,group,prompt,options] of [["drawing","art","Wat teken of schilder je het liefst?",[["Personages of strips","drawing fantasy"],["Dingen die echt bestaan","drawing realistic"],["Nieuwe tekentechnieken leren","drawing facts"]]],["photography","art","Wat vind je interessant aan fotografie?",[["Mensen fotograferen","photography people"],["Dieren of natuur fotograferen","photography nature"],["Leren hoe een camera werkt","photography facts"]]],["design","art","Wat ontwerp je graag?",[["Kleding","design"],["Illustraties of posters","design drawing"],["Spullen of gebouwen","design inventions"]]],["filmmaking","art","Wat vind je interessant aan films maken?",[["Het filmen zelf","filmmaking"],["Verhalen bedenken","filmmaking adventure"],["Montage en techniek","filmmaking technology"]]],["musicMaking","music","Wat zou je over muziek maken willen lezen?",[["Zelf muziek leren maken","musicMaking facts"],["Het leven van muzikanten","musicBiography"],["Teksten schrijven","songLyrics musicMaking"]]],["musicListening","music","Wat uit muziek zou je in een boek willen terugzien?",[["De tekst","songLyrics"],["Het verhaal van een artiest","musicBiography"],["De sfeer","musicListening calm"]]],["sportPlaying","sport","Over welke sport zou je willen lezen?",[["Voetbal","football"],["Fitness","fitness"],["Hardlopen","running"],["Vechtsport","martialArts"],["Dansen","dance"],["Liever over trainen","sportTraining"]]],["sportWatching","sport","Wat vind je leuk aan sport kijken?",[["Een club volgen","sportFans"],["Wedstrijden","sportWatching competition"],["Het leven van sporters","sportBiography"]]],["teamSport","sport","Wat vind je interessant aan een sportteam?",[["Samenwerken","teamSport team"],["Wedstrijden winnen","teamSport competition"],["Vriendschap in het team","teamSport friendship"]]],["individualSport","sport","Wat vind je interessant aan een individuele sport?",[["Trainen","individualSport growth"],["Wedstrijden","individualSport competition"],["Hoe iemand een doel haalt","individualSport challenge"]]],["pets","animals","Over welk huisdier zou je willen lezen?",[["Honden","dogs"],["Katten","cats"],["Kleine huisdieren","smallPets"],["Vogels","petBirds"],["Reptielen","petReptiles"],["Aquariumdieren","aquarium"]]],["wildlife","animals","Over welke wilde dieren zou je meer willen weten?",[["Roofdieren","wildlife facts"],["Dieren in zee","wildlife nature"],["Hoe dieren overleven","wildlife survival"]]],["animalCare","animals","Wat vind je interessant aan het verzorgen van dieren?",[["Dieren helpen","animalCare empathy"],["Werken met dieren","animalCare true"],["Meer leren over verzorging","animalCare facts"]]],["space","science","Wat maakt je nieuwsgierig naar de ruimte?",[["Planeten en sterren","space facts"],["Astronauten","space true"],["Een verzonnen ruimtereis","space adventure"]]],["computing","science","Wat vind je interessant aan computers?",[["Programmeren","computing facts"],["Digitale mysteries","computing mystery"],["Hoe computers werken","computing technology"]]],["inventions","science","Wat vind je interessant aan uitvindingen?",[["Hoe iets werkt","inventions facts"],["Een uitvinder volgen","inventions true"],["Nieuwe dingen bedenken","inventions discovery"]]],["humanBody","science","Wat zou je willen begrijpen aan het menselijk lichaam?",[["Hoe het lichaam werkt","humanBody facts"],["Gezondheid","humanBody health"],["Sport en het lichaam","humanBody sport"]]],["robotics","science","Wat vind je interessant aan robots?",[["Hoe ze werken","robotics facts"],["Wat ze in de toekomst kunnen","robotics future"],["Een verhaal met robots","robotics fantasy"]]],["gameBuilding","gaming","Wat bouw je graag in games?",[["Huizen of steden","gameBuilding design"],["Een eigen wereld","gameBuilding fantasy"],["Dingen die echt werken","gameBuilding inventions"]]],["gameCompetition","gaming","Wat vind je leuk aan competitief gamen?",[["Beter worden","gameCompetition growth"],["Wedstrijden winnen","gameCompetition competition"],["Spelen in een team","gameCompetition team"]]],["gameStory","gaming","Wat vind je leuk aan verhalen in games?",[["De personages","gameStory people"],["De wereld ontdekken","gameStory adventure"],["Mysteries oplossen","gameStory mystery"]]],["gameDevelopment","gaming","Wat zou je willen weten over het maken van games?",[["Programmeren","gameDevelopment computing"],["Werelden ontwerpen","gameDevelopment design"],["Verhalen bedenken","gameDevelopment gameStory"]]],["gameMultiplayer","gaming","Wat vind je leuk aan samen gamen?",[["Samenwerken","gameMultiplayer team"],["Samen iets ontdekken","gameMultiplayer adventure"],["Vriendschap","gameMultiplayer friendship"]]],["courtCases","crime","Wat vind je interessant aan rechtszaken?",[["Hoe bewijs wordt gebruikt","courtCases puzzles"],["De keuzes van de rechter","courtCases justice"],["Een waargebeurde zaak","courtCases true"]]],["crimeVictims","crime","Wat zou je willen weten over mensen die met misdaad te maken krijgen?",[["Hoe ze ermee omgaan","crimeVictims empathy"],["Hoe ze geholpen worden","crimeVictims justice"],["Waargebeurde ervaringen","crimeVictims true"]]],["gangs","crime","Wat vind je interessant aan verhalen over bendes?",[["Waarom iemand erbij gaat","gangs psychology"],["Hoe iemand eruit komt","gangs growth"],["Hoe een bende wordt onderzocht","gangs police"]]]]){
  add('specific-'+key,1,key,prompt,'Misschien helpt een voorbeeld.',options);
  Q[Q.length-1].group=group;
@@ -229,16 +230,19 @@ function cleanContext(raw={}){
   clarifyKnown:validateSignals({prefer:raw.clarifyKnown}).prefer.slice(0,24),
   clarifyAmbiguity:AMBIGUITIES.has(raw.clarifyAmbiguity)?raw.clarifyAmbiguity:'',
   clarifyNegative:raw.clarifyNegative===true,
+  clarifyQueue:Array.isArray(raw.clarifyQueue)?raw.clarifyQueue.filter(x=>x&&AMBIGUITIES.has(x.id)).slice(0,7).map(x=>({id:x.id,negative:x.negative===true})):[],
+  clarifyTentative:validateSignals({prefer:raw.clarifyTentative}).prefer,
+  clarifyReplace:raw.clarifyReplace===true,
   clarifyAvoid:validateSignals({avoid:raw.clarifyAvoid}).avoid,
   skipped:validateSignals({prefer:raw.skipped}).prefer.slice(0,8),
-  clarifyFrom:BY_ID.has(raw.clarifyFrom)&&raw.clarifyFrom!=='clarify-topic'?raw.clarifyFrom:'opening',
+  clarifyFrom:BY_ID.has(raw.clarifyFrom)&&!['clarify-topic','clarify-remainder'].includes(raw.clarifyFrom)?raw.clarifyFrom:'opening',
   hypothesis:validateSignals({prefer:raw.hypothesis}).prefer,
   uncertain:Math.max(0,Math.min(2,Number.isInteger(raw.uncertain)?raw.uncertain:0))};
 }
 function merged(a,b){
  const p=new Set(a.prefer),v=new Set(a.avoid);
  for(const k of b.prefer||[]){v.delete(k);p.add(k);}
- for(const k of b.avoid||[]){p.delete(k);v.add(k);}
+ for(const k of b.avoid||[]){for(const t of p)if(t===k||isAncestor(k,t))p.delete(t);v.add(k);}
  return validateSignals({prefer:[...p],avoid:[...v]});
 }
 const FAMILY=[
@@ -275,6 +279,12 @@ function questionForContext(c){
  if(q.id==='discover-index')return indexQuestion(c);
  if(q.id==='discover')return BY_ID.get('discover-menu');
  if(q.id==='discovery-feedback')return {...q,options:[...c.discoveryTraits.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''})),{id:'cover',label:'Vooral de omslag of het verhaal zelf',prefer:[],length:''},{id:'unknown',label:'Weet ik niet',prefer:[],length:''}]};
+ if(q.id==='clarify-remainder'){
+  const names=c.clarifyKnown.filter(t=>!c.clarifyKnown.some(k=>isAncestor(t,k))).map(t=>LABELS[t]||t).join(', ');
+  const possible=c.clarifyTentative.filter(t=>!c.clarifyTentative.some(k=>isAncestor(t,k)));
+  const prompt=possible.length?'Ik heb '+names+' begrepen. Bedoel je dat '+possible.map(t=>LABELS[t]||t).join(', ')+' je ook aanspreekt?':'Ik herken '+names+'. Kun je het andere onderwerp iets beter uitleggen?';
+  return {...q,prompt,examples:prompt,options:[...(possible.length?[{id:'yes',label:'Ja, ook dat',prefer:possible,length:''}]:[]),{id:'skip',label:'Ga verder met wat je al weet',prefer:[],length:''}]};
+ }
  if(q.id==='clarify-topic'){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
   if(rule){const prompt=c.clarifyNegative?'Welk van deze onderwerpen bedoel je dat je liever wilt vermijden?':rule[2];const visible=rule[3].slice(0,rule[4]||rule[3].length);const options=visible.map(([trait,label],i)=>({id:String(i),label,prefer:[trait],length:''}));if(visible.length===2)options.push({id:'both',label:'Allebei',prefer:visible.map(x=>x[0]),length:''});return {...q,prompt,examples:prompt,options};}
@@ -377,11 +387,26 @@ function analyze(text,rawContext={},books=[]){
  if(c.current==='discovery-feedback'&&(selected?.id==='cover'||selected?.id==='unknown'||/^(?:weet ik niet|geen idee|alleen de omslag)$/.test(value)))return navigate(c.discoveryReturn==='discover'?'discover-menu':c.discoveryReturn,'question','Prima! We gaan verder met wat we al weten.');
  if(c.current==='discover-menu'&&selected){const target=DISCOVERY_MENU[Number(selected.id)]?.[1];if(target)return navigate(target);}
  let resolvedAmbiguity=null;
+ let pendingReplacement=false;
+ if(c.current==='clarify-remainder'){
+  const answered=selected?.id==='yes'?selected.prefer:selected?.id==='skip'||/^(?:nee|weet ik niet|geen idee|laat maar)$/.test(value)?[]:interpret(text).prefer;
+  if(!selected&&!answered.length&&!/^(?:nee|weet ik niet|geen idee|laat maar)$/.test(value)&&c.uncertain<1)return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',question:questionView(q),reaction:'Dat herken ik nog niet. We kunnen ook verder met wat ik al weet.',context:{...c,uncertain:c.uncertain+1}}};
+  pendingReplacement=c.clarifyReplace;
+  resolvedAmbiguity={traits:[],negative:false,known:c.clarifyKnown,avoid:c.clarifyAvoid};
+  selected={prefer:validateSignals({prefer:[...c.clarifyKnown,...answered]}).prefer,length:''};
+  c={...c,current:c.clarifyFrom,clarifyKnown:[],clarifyTentative:[],clarifyAvoid:[],clarifyReplace:false,clarifyFrom:'opening',uncertain:0};q=questionForContext(c);
+ }
  if(c.current==='clarify-topic'&&c.clarifyAmbiguity){
   const rule=AMBIGUITIES.get(c.clarifyAmbiguity);
   const meaning=resolveMeaning(rule,text);
   const traits=selected?.prefer?.length?selected.prefer:meaning?[meaning]:[];
   if(traits.length){
+   if(c.clarifyQueue.length){
+    const [next,...queue]=c.clarifyQueue;
+    const ctx={...c,clarifyAmbiguity:next.id,clarifyNegative:next.negative,clarifyQueue:queue,clarifyKnown:validateSignals({prefer:[...c.clarifyKnown,...(c.clarifyNegative?[]:traits)]}).prefer,clarifyAvoid:validateSignals({avoid:[...c.clarifyAvoid,...(c.clarifyNegative?traits:[])]}).avoid,uncertain:0};
+    return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',question:questionView(questionForContext(ctx)),context:ctx}};
+   }
+   pendingReplacement=c.clarifyReplace;
    resolvedAmbiguity={traits,negative:c.clarifyNegative,known:c.clarifyKnown,avoid:c.clarifyAvoid};
    selected={prefer:c.clarifyNegative?c.clarifyKnown:[...c.clarifyKnown,...traits],length:''};
   }else if(/^(?:ja|nee|weet ik niet|geen idee|idk|allebei|allemaal|beide)$/.test(value)||(/\b(?:niet|geen|zonder|hekel)\b/.test(value)&&!/\b(?:maar|echter|wel|liever)\b/.test(value))){
@@ -391,7 +416,7 @@ function analyze(text,rawContext={},books=[]){
  }
  if(c.current==='clarify-topic'){
   const previous=c.clarifyFrom;
-  c={...c,current:previous,clarifyCandidates:[],clarifyKnown:[],clarifyFrom:'opening',clarifyAmbiguity:'',clarifyNegative:false,clarifyAvoid:[]};
+  c={...c,current:previous,clarifyCandidates:[],clarifyKnown:[],clarifyFrom:'opening',clarifyAmbiguity:'',clarifyNegative:false,clarifyAvoid:[],clarifyQueue:[],clarifyReplace:false};
   q=questionForContext(c);
  }
  let current=validateSignals(c.signals);
@@ -507,13 +532,14 @@ function analyze(text,rawContext={},books=[]){
  }
  const explicitReading=/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
  const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/i.test(part));
- const ambiguity=!selected&&!resolvedContextAlias&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguity(input):null;
+ const ambiguities=!selected&&!resolvedContextAlias&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguities(input).filter(x=>!x.negative||x.reading||explicitReading):[];
+ const ambiguity=ambiguities[0]||null;
  // Keep explicit book exclusions separate from activity likes/dislikes.
  const readingExclusions=(activityRefusal||explicitReading)?validateSignals({avoid:[...readingClauses.flatMap(part=>interpret(part).avoid),...(direct.avoid||[]).filter(t=>t==='animalLoss')]}).avoid:[];
  // A preference about playing or watching is not a reading exclusion.
  if(activityContext&&!explicitReading&&!selected){
-  if(/\b(?:sport|sporten) zelf niet\b/.test(value)&&direct.prefer.includes('sportWatching')){
-   direct={...direct,prefer:direct.prefer.filter(t=>t!=='sportPlaying'&&t!=='sport'),avoid:[]};
+  if(/\b(?:sport|sporten|voetbal|voetballen) zelf niet\b/.test(value)&&/\b(?:kijk|kijken|volg|volgen)\b/.test(value)){
+   direct={...direct,prefer:validateSignals({prefer:[...direct.prefer.filter(t=>t!=='sportPlaying'&&t!=='sport'),'sportWatching']}).prefer,avoid:[]};
   }
  }
  if(!selected&&explicitReading&&readingClauses.length&&!activityRefusal){
@@ -541,6 +567,15 @@ function analyze(text,rawContext={},books=[]){
   const ctx={...c,signals:current,length,current:'more-interests',uncertain:0};
   return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'question',reaction:'Je hoeft niets persoonlijks te vertellen om een boek te kiezen.',question:{...questionView(BY_ID.get('more-interests')),prompt:'Over welk onderwerp zou je graag iets lezen?'},context:ctx}};
  }
+ const replaceTopics=pendingReplacement||(!selected&&/\b(?:ik wil|ik zoek|ik lees|liever|ik zou)\b.*\b(?:alleen|uitsluitend|enkel|niets anders dan)\b.*\b(?:over|boeken?|lezen)\b|\b(?:ik wil|ik zoek)\b.*\b(?:over|boeken?)\b.*\b(?:alleen|uitsluitend|enkel)\b/.test(value));
+ const partial=!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline&&!ambiguity&&!privateDisclosure&&c.uncertain===0?partialInterest(input):null;
+ // Keep known subjects as provisional until the unanswered part is addressed.
+ // Typos with existing suggestions still use the original typo confirmation.
+ if(partial&&(!direct.recognized||partial.unknown||partial.possible.length)&&!direct.avoid?.length){
+  const from=explicitReading?'opening':activityContext?'free-time':c.current;
+  const ctx={...c,current:'clarify-remainder',clarifyFrom:from,clarifyKnown:partial.known.prefer,clarifyTentative:partial.possible,clarifyAvoid:partial.known.avoid,clarifyReplace:replaceTopics,length,uncertain:0};
+  return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',question:questionView(questionForContext(ctx)),context:ctx}};
+ }
  const delta=validateSignals(direct);
  const emphasized=input.match(/\b(?:vooral|het liefst|meer van|liever over|favoriet is)\s+([^.!?;]+)/i);
  const priority=validateSignals({prefer:[...(emphasized?interpret(emphasized[1]).prefer:[]),...c.priority]}).prefer;
@@ -557,14 +592,14 @@ function analyze(text,rawContext={},books=[]){
  if(!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline){
   if(ambiguity&&(!ambiguity.negative||ambiguity.reading||explicitReading)){
    const [id,,,meanings]=ambiguity.rule;
-   const related=meanings.map(m=>m[0]);
+   const related=ambiguities.flatMap(x=>x.rule[3].map(m=>m[0]));
    const isRelated=t=>related.some(k=>t===k||isAncestor(t,k)||isAncestor(k,t));
-   const remaining=interpret(removeAmbiguousWord(input,ambiguity.rule));
+   const remaining=interpret(ambiguities.reduce((s,x)=>removeAmbiguousWord(s,x.rule),input));
    const known=delta.prefer.filter(t=>!isRelated(t)||remaining.prefer.includes(t));
    const avoid=delta.avoid.filter(t=>!isRelated(t)||remaining.avoid.includes(t));
    const hobby=!explicitReading&&(activityContext||/\b(?:ik hou van|ik houd van|ik doe graag|ik vind het leuk om|mijn hobby)\b/.test(value));
    const from=explicitReading&&activityContext?'opening':hobby&&(!activityContext||c.current==='opening')?'free-time':c.current;
-   const ctx={...c,signals:current,current:'clarify-topic',clarifyFrom:from,clarifyAmbiguity:id,clarifyNegative:ambiguity.negative,clarifyKnown:known,clarifyAvoid:avoid,clarifyCandidates:[],uncertain:0,length};
+   const ctx={...c,signals:current,current:'clarify-topic',clarifyFrom:from,clarifyAmbiguity:id,clarifyNegative:ambiguity.negative,clarifyQueue:ambiguities.slice(1).map(x=>({id:x.rule[0],negative:x.negative})),clarifyReplace:replaceTopics,clarifyKnown:known,clarifyAvoid:avoid,clarifyCandidates:[],uncertain:0,length};
    return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',question:questionView(questionForContext(ctx)),context:ctx}};
   }
  }
@@ -579,6 +614,7 @@ function analyze(text,rawContext={},books=[]){
    return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',reaction:known.length?'Een deel snap ik al! Bedoel je dit?':'Hmm, ik twijfel een beetje 🤔',question:questionView(questionForContext(ctx)),context:ctx}};
   }
  }
+ if(replaceTopics&&delta.prefer.length){current=validateSignals({prefer:[],avoid:current.avoid});feedbackRejected.push('replacement');}
  const updated=merged(current,delta);
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
  const next={...c,signals:updated,length,priority,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),

@@ -341,18 +341,20 @@ const RULES=[
 ];
 const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 const contains=(value,phrase)=>(' '+value+' ').includes(' '+normalize(phrase)+' ');
-function findAmbiguity(text){
+function findAmbiguities(text){
+ const found=[];
  for(const part of String(text||'').split(/[.!?;\n]|\b(?:maar|echter)\b/i)){
   const value=normalize(part);
   for(const rule of RULES){
    if(!rule[1].split('|').some(word=>contains(value,word)))continue;
    const qualified=rule[3].filter(([, ,aliases])=>aliases.some(a=>contains(value,a)));
    if(qualified.length===1)continue;
-   return {rule,negative:/\b(?:niet|geen|zonder|hekel|vermijd)\b/.test(value),reading:/\b(?:lees|lezen|boek|boeken)\b/.test(value)};
+   if(!found.some(x=>x.rule[0]===rule[0]))found.push({rule,negative:/\b(?:niet|geen|zonder|hekel|vermijd)\b/.test(value),reading:/\b(?:lees|lezen|boek|boeken)\b/.test(value)});
   }
  }
- return null;
+ return found;
 }
+function findAmbiguity(text){return findAmbiguities(text)[0]||null;}
 function resolveMeaning(rule,text){
  const value=normalize(text);
  // A rejected meaning is not a confirmed choice.
@@ -364,4 +366,4 @@ function removeAmbiguousWord(text,rule){
  const words=new Set(rule[1].split('|').map(normalize));
  return String(text||'').replace(/[\p{L}\p{N}]+/gu,word=>words.has(normalize(word))?' ':word);
 }
-module.exports={RULES,findAmbiguity,resolveMeaning,removeAmbiguousWord};
+module.exports={RULES,findAmbiguity,findAmbiguities,resolveMeaning,removeAmbiguousWord};

@@ -29,3 +29,8 @@ assert.ok(interpret('Mijn moeder houdt van paarden maar ik hou van honden').pref
 assert.ok(!interpret('Mijn moeder houdt van paarden maar ik hou van honden').prefer.includes('horses'));
 assert.ok(interpret('Ik vind het leuk als iemand iets ontdekt wat niemand anders weet').prefer.includes('mystery'));
 console.log('Dutch open answer signals, bounded recognition and negation OK');
+
+assert.deepEqual(interpret('Ik wil geen boeken over voetbal').avoid,['football']);
+assert.deepEqual(interpret('Ik wil lezen over honden maar niet over katten').avoid,['cats']);
+assert.ok(interpret('Ik vind lezen niet leuk behalve strips').prefer.includes('comics'));
+assert.ok(!interpret('Mijn broer is homo en ik wil een spannend boek').prefer.includes('sexualOrientation'));
