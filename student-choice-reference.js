@@ -93,7 +93,7 @@ function openRows(body){
   const title=text(v?.title),author=strList(v?.author_name,3).join(', ');
   if(!title||!author)return [];
   return [{title,author,description:'',tags:strList(v.subject,18),
-   isbn:strList(v.isbn,50).map(isbn13).find(Boolean)||'',year:Number(v.first_publish_year)||null,source:'Open Library'}];
+   isbn:strList(v.isbn,50).map(isbn13).find(Boolean)||'',isbns:strList(v.isbn,50).map(isbn13).filter(Boolean),year:Number(v.first_publish_year)||null,source:'Open Library'}];
  });
 }
 async function boundedJson(url,headers,fetchImpl){
@@ -117,7 +117,7 @@ async function boundedJson(url,headers,fetchImpl){
  }catch(_){return null;}finally{clearTimeout(timer);}
 }
 function relevant(row,q){
- if(q.isbn)return row.isbn===q.isbn;
+ if(q.isbn)return row.isbn===q.isbn||row.isbns?.includes(q.isbn);
  const n=norm(row.title),t=norm(q.title);
  if(q.author&&!norm(row.author).includes(norm(q.author)))return false;
  const words=t.split(' ').filter(Boolean);

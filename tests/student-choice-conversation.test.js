@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {Q,analyze,cleanContext}=require('../student-choice-conversation');
+const {Q,MEDIA,analyze,cleanContext}=require('../student-choice-conversation');
 const {validateSignals}=require('../student-choice-open-text');
 const {rankBooks}=require('../student-choice-recommendations');
 const books=[
@@ -18,6 +18,9 @@ const books=[
 ];
 const run=(text,ctx={})=>analyze(text,ctx,books);
 assert.equal(new Set(Q.map(q=>q.id)).size,Q.length);
+assert.ok(Q.length>=300&&Q.length<=400);
+assert.ok(MEDIA.length>=200);
+for(const [name,aliases,traits] of MEDIA){assert.ok(aliases.length,name);assert.deepEqual(validateSignals({prefer:traits}).prefer,traits,name);}
 for(const q of Q)for(const option of q.options){
  assert.deepEqual(validateSignals({prefer:option.prefer}).prefer,option.prefer,q.id+' / '+option.label);
  const r=run(option.label,{current:q.id,optionId:option.id});
@@ -37,6 +40,8 @@ assert.notEqual(selected.advice.kind,'examples');
 const unknown=run('xqzabcdef',first.advice.context);
 assert.equal(unknown.advice.kind,'clarify');
 assert.equal(run('xqzabcdef',unknown.advice.context).advice.kind,'examples');
+assert.equal(run('Ik heb Het gouden kompas gelezen').advice.kind,'book-search');
+assert.notEqual(run('Ik heb zelf twee honden').advice.kind,'book-search');
 const hobby=run('Ik haat lezen',{seed:'hobby'});
 assert.equal(hobby.advice.kind,'question');
 assert.equal(hobby.advice.question.id,'free-time');

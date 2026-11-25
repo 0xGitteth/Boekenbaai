@@ -1,5 +1,5 @@
 'use strict';
-// Verified series title/author/order mappings, not inferred from cover titles.
+// Verified series title/author/order mappings.
 module.exports=[
  {
   "id": "hp",
@@ -22,7 +22,8 @@ module.exports=[
      "Harry Potter en de steen der wijzen",
      "Philosopher's Stone",
      "Harry Potter and the Philosopher's Stone",
-     "Harry Potter and the Sorcerer's Stone"
+     "Harry Potter and the Sorcerer's Stone",
+     "steen der wijzen"
     ]
    },
    {
@@ -30,7 +31,8 @@ module.exports=[
     "titles": [
      "De geheime kamer",
      "Harry Potter en de geheime kamer",
-     "Harry Potter and the Chamber of Secrets"
+     "Harry Potter and the Chamber of Secrets",
+     "geheime kamer"
     ]
    },
    {
@@ -38,7 +40,8 @@ module.exports=[
     "titles": [
      "De gevangene van Azkaban",
      "Harry Potter en de gevangene van Azkaban",
-     "Harry Potter and the Prisoner of Azkaban"
+     "Harry Potter and the Prisoner of Azkaban",
+     "gevangene van Azkaban"
     ]
    },
    {
@@ -46,7 +49,8 @@ module.exports=[
     "titles": [
      "De vuurbeker",
      "Harry Potter en de vuurbeker",
-     "Harry Potter and the Goblet of Fire"
+     "Harry Potter and the Goblet of Fire",
+     "vuurbeker"
     ]
    },
    {
@@ -54,7 +58,8 @@ module.exports=[
     "titles": [
      "De orde van de Feniks",
      "Harry Potter en de orde van de Feniks",
-     "Harry Potter and the Order of the Phoenix"
+     "Harry Potter and the Order of the Phoenix",
+     "orde van de Feniks"
     ]
    },
    {
@@ -63,7 +68,8 @@ module.exports=[
      "De halfbloed prins",
      "Harry Potter en de halfbloed prins",
      "Harry Potter en de halfbloedprins",
-     "Harry Potter and the Half-Blood Prince"
+     "Harry Potter and the Half-Blood Prince",
+     "halfbloed prins"
     ]
    },
    {
@@ -71,7 +77,8 @@ module.exports=[
     "titles": [
      "De relieken van de dood",
      "Harry Potter en de relieken van de dood",
-     "Harry Potter and the Deathly Hallows"
+     "Harry Potter and the Deathly Hallows",
+     "relieken van de dood"
     ]
    }
   ]

@@ -191,7 +191,7 @@ vm.runInNewContext(code,{
   await submitOpen('misterie');
   const secondOpenPrompt=log.children.at(-1).children[0].textContent;
   assert.notEqual(secondOpenPrompt,firstOpenPrompt);
-  assert.match(secondOpenPrompt,/mysterie|onderwerpen|films|series|interessant|misdaad/);
+  assert.ok(require('../student-choice-conversation').Q.some(q=>q.prompt===secondOpenPrompt),'A real question from the expanded bank');
   assert.equal(suggestRequests.length,countBeforeOpen,'Repeating the same preference is not detail');
   await submitOpen('Ik wil zelf aanwijzingen ontdekken');
   await new Promise(resolve=>setImmediate(resolve));

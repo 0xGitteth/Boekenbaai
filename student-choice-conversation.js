@@ -193,7 +193,7 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  const top=profiles(books,signals);
  const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback'].includes(q.id)
   &&(!q.when.length||q.when.some(t=>p.includes(t)||context.hypothesis.includes(t)))
-  &&(q.stage!==3||context.turns>=2||p.length>=3)
+  &&(q.stage<2||context.turns>=2||p.length>=3)
   &&(q.stage!==0||context.turns<=2)
   &&(q.id!=='reading-length'||context.length!=='short')
   &&q.options.some(o=>o.prefer.some(t=>!known.has(t))||o.length));
@@ -285,9 +285,9 @@ function analyze(text,rawContext={},books=[]){
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
- const bookMention=String(text||'').match(/^(?:ik heb (?:het boek )?|ik las (?:het boek )?|ik vond (?:het boek )?|(?:het )?boek (?:heet |is )?)(.{2,100}?)(?:\s+(?:gelezen|uitgelezen|leuk|heel leuk|geweldig))?[.!]?$/i);
+ const bookMention=String(text||'').match(/^(?:ik heb (?:het boek )?(.{2,100}?)\s+(?:gelezen|uitgelezen)|ik las (?:het boek )?(.{2,100}?)|ik vond het boek (.{2,100}?)(?:\s+(?:leuk|heel leuk|geweldig))?|(?:het )?boek (?:heet |is )?(.{2,100}?))[.!]?$/i);
  if(!selected&&!anchor&&bookMention&&!media.length&&!direct.avoid?.length){
-  const candidate=bookMention[1].trim();
+  const candidate=bookMention.slice(1).find(Boolean)?.trim();
   if(candidate&&!/\b(?:geen|niet|een boek over|iets over)\b/i.test(candidate))return {...envelope,advice:{kind:'book-search',title:candidate,context:c}};
  }
  if(!selected&&!direct.recognized&&!media.length&&!anchor&&!notReader&&length===c.length){
