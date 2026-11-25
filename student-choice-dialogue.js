@@ -170,6 +170,8 @@ const TRAIT_WORDS={
   murder:['moord','moorden','moordenaar','vermoord','vermoorden'],
   horror:['horror','griezel','griezelen','griezelig','eng'],
 };
+const {THEMES}=require('./student-choice-themes');
+for(const [key,[,,terms]] of Object.entries(THEMES))TRAIT_WORDS[key]=[...(TRAIT_WORDS[key]||[]),...terms];
 // Word-boundary matching prevents 'sport' inside 'transport' and 'leven'
 // inside 'overleven'. Accept only known Dutch inflections, never arbitrary
 // substrings of a different word. This applies to ISBN source tags AND prose.

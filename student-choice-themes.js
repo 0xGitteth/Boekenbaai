@@ -1,0 +1,30 @@
+'use strict';
+// Pupil aliases are separate from catalogue evidence.
+const THEMES={
+ crime:['criminaliteit en misdaad',['criminaliteit','misdaad','misdaden','criminelen','crimineel','maffia','drugsbende','overval','misdaadverhalen'],['criminaliteit','misdaad','crimineel','maffia','drugsbende','overval']],
+ psychology:['psychologie',['psychologie','psychologisch','waarom mensen bepaalde dingen doen','waarom mensen dingen doen','gedrag van mensen','hoe mensen denken'],['psychologie','psychologisch','gedragspsychologie','menselijk gedrag']],
+ manipulation:['manipulatie',['manipulatie','manipuleert','manipuleren','iemand voorliegt','gaslighting'],['manipulatie','manipuleren','gaslighting','manipulatief']],
+ disappearance:['vermissingen',['vermissingen','vermissing','vermiste mensen','vermiste personen','spoorloos','mensen verdwijnen','iemand verdwijnt','mensen helemaal verdwijnen'],['vermissing','vermist','spoorloos','verdwijning','ontvoerd']],
+ secrets:['geheimen',['geheimhouden','geheim houdt','geheimhoudt','dingen geheimhouden','iets verbergen','verzwijgen','familiegeheim','familiegeheimen'],['familiegeheim','geheim','verzwijgen','verborgen verleden']],
+ family:['familie',['familie','gezin','ouders','broers','zussen','broer','zus'],['familie','gezin','ouders','familierelatie']],
+ police:['politieonderzoek',['politie','recherche','rechercheur','politieonderzoek'],['politie','rechercheur','politieonderzoek','recherche']],
+ criminalPerspective:['criminelen als hoofdpersonage',['criminelen zelf','vanuit de crimineel','vanuit criminelen','crimineel als hoofdpersoon'],['jonge crimineel','crimineel als hoofdpersoon','drugsdealer','bendelid','gangster']],
+ justice:['onrecht',['onrecht','onrechtvaardig','discriminatie','racisme','onterecht beschuldigd','ongelijkheid'],['onrecht','discriminatie','racisme','ongelijkheid','onterecht beschuldigd']],
+ outsider:['erbij horen',['pesten','gepest','buitenbeentje','erbij horen','eenzaamheid','eenzaam'],['pesten','buitenbeentje','eenzaam','erbij horen']],
+ growth:['persoonlijke ontwikkeling',['opgroeien','zelfvertrouwen','doorzetten','persoonlijke ontwikkeling','doorzettingsvermogen'],['opgroeien','zelfvertrouwen','doorzetten','persoonlijke ontwikkeling','coming of age']],
+ empathy:['gevoelens en verlies',['verdriet','rouw','verlies','gevoelens','emoties','mentale gezondheid'],['rouw','verlies','verdriet','emoties','mentale gezondheid']],
+ animalLoss:['het overlijden van dieren',['dier doodgaat','die doodgaat','hond doodgaat','kat doodgaat','overlijden van dieren','dood van een hond','dieren doodgaan'],['dood van een hond','overlijden van een hond','hond sterft','hond overlijdt','dier sterft','dier overlijdt','dier doodgaat']],
+ magic:['magie en bijzondere krachten',['bijzondere krachten','magische krachten','bovennatuurlijk','toverkracht'],['magie','magische krachten','bovennatuurlijk','toverkracht']],
+ gaming:['games',['games','videogames','game','gamet','gamen','gaming','gamewereld'],['videogame','gaming','gamewereld','computerspel']],
+ future:['toekomst',['toekomst','toekomstig','sciencefiction','science fiction','sci fi','dystopie'],['toekomst','sciencefiction','science fiction','dystopie']],
+ war:['oorlog',['oorlog','oorlogen','tweede wereldoorlog','verzet','soldaten'],['oorlog','wereldoorlog','verzet','soldaat']],
+ music:['muziek',['muziek','zanger','zingen','rap','rapper','muzikant','band'],['muziek','muzikant','zanger','rapper']],
+ art:['kunst en creativiteit',['kunst','tekenen','schilderen','fotografie','creatief'],['kunst','fotografie','schilderkunst','tekenen']],
+ travel:['reizen',['reizen','reis','andere landen','vakantie','op reis'],['reizen','reisverhaal','wereldreis','expeditie']],
+ survival:['overleven',['overleven','survival','rampen','ramp','gestrand'],['overleven','survival','ramp','gestrand']],
+ environment:['milieu en klimaat',['klimaat','milieu','klimaatverandering','vervuiling'],['klimaat','milieu','klimaatverandering','vervuiling']],
+ health:['gezondheid',['gezondheid','ziekenhuis','ziekte','ziek zijn','geneeskunde'],['gezondheid','ziekenhuis','ziekte','geneeskunde']],
+ economics:['geld en ondernemen',['geld','ondernemen','bedrijf starten','rijk worden','economie'],['economie','ondernemen','geld','ondernemer']],
+ society:['maatschappij',['maatschappij','politiek','maatschappelijke problemen','samenleving'],['maatschappij','politiek','samenleving']],
+};
+module.exports={THEMES};

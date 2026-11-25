@@ -603,6 +603,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
   const workTraits=dialogue.profilesForWorks(works);
   const anchorTraits=anchor?workTraits.get(anchor.key)||new Map():new Map();
   const traitLabels={
+    ...require('./student-choice-open-text').LABELS,
     mystery:'geheimen of raadsels',secrets:'een geheim',puzzles:'onderzoek en aanwijzingen',
     people:'de keuzes van mensen',relationships:'relaties',friendship:'vriendschap',
     family:'familie',empathy:'gevoelens',growth:'persoonlijke ontwikkeling',
