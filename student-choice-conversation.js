@@ -13,9 +13,9 @@ function add(id,stage,when,prompt,examples,options){
 add('opening',0,'','Waar lees je graag over?','Misschien helpt het als ik een paar onderwerpen noem.',[
  ['Misdaad en mysteries','crime mystery'],['Sport','sport'],['Vriendschap en relaties','friendship relationships'],['Fantasie en avontuur','fantasy adventure'],['Dieren en natuur','animals nature'],['Waargebeurde verhalen','true'],['Wetenschap en techniek','science technology']]);
 add('free-time',0,'','Wat doe je graag in je vrije tijd?','Zit hier iets tussen wat je leuk vindt om te doen?',[
- ['Gamen','gaming'],['Sporten','sport'],['Films of series kijken',''],['Met dieren bezig zijn','animals'],['Muziek luisteren','music'],['Tekenen of iets maken','art']]);
+ ['Gamen','gaming'],['Sporten','sportPlaying'],['Films of series kijken',''],['Met dieren bezig zijn','animals'],['Muziek luisteren','music'],['Tekenen of iets maken','art']]);
 add('watch',0,'','Wat kijk je graag? Films, series of filmpjes bijvoorbeeld.','Wat kijk je bijvoorbeeld graag?',[
- ['Misdaadseries','crime'],['Documentaires','true facts'],['Comedy','humor'],['Sport','sport'],['Fantasy','fantasy'],['Avontuur','adventure']]);
+ ['Misdaadseries','crime'],['Documentaires','true facts'],['Comedy','humor'],['Sport','sportWatching'],['Fantasy','fantasy'],['Avontuur','adventure']]);
 add('more-interests',0,'','Wat vind je nog meer interessant?','Misschien spreekt nog iets anders je aan.',[
  ['Psychologie en gedrag','psychology'],['Geschiedenis','history'],['Technologie','technology'],['Sport','sport'],['Dieren','animals'],['Relaties','relationships']]);
 add('mystery-interest',1,'mystery disappearance secrets','Wat vind je leuk aan mysteries?','Wat maakt je bijvoorbeeld nieuwsgierig?',[
@@ -366,7 +366,7 @@ function analyze(text,rawContext={},books=[]){
  // Resolve a pronoun only in an animal context, and explicitly confirm
  // the resulting exclusion in the UI. Do not generalize to human loss.
  if(!selected&&/\b(?:ik wil niet dat|ik wil liever niet dat|ik wil geen verhaal waarin)\s+(?:(?:die|het dier|de hond|de kat|een dier|een hond|een kat|mijn hond|mijn kat)\s+(?:doodgaat|dood gaat|sterft|overlijdt))\b/.test(value)
-  &&(current.prefer.some(t=>t==='animals'||SUBTOPICS[t]==='animals')||/\b(?:dier|hond|kat)\b/.test(value))){
+  &&(current.prefer.some(t=>t==='animals'||isAncestor('animals',t))||/\b(?:dier|hond|kat)\b/.test(value))){
   direct={...validateSignals({prefer:direct.prefer,avoid:[...(direct.avoid||[]),'animalLoss']}),recognized:true,clarify:false};
  }
  const activityContext=['free-time','watch','media-interest'].includes(c.current);
@@ -410,9 +410,9 @@ function analyze(text,rawContext={},books=[]){
  // or the known half of the answer as a confirmed preference.
  if(!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline&&c.uncertain===0&&!delta.avoid.length&&length===c.length&&!/\b(?:niet|geen|zonder|hekel)\b/.test(value)){
   const possibleGuesses=suggestTopics(text);
-  const guesses=possibleGuesses.filter(t=>!delta.prefer.includes(t)&&!delta.prefer.some(k=>SUBTOPICS[k]===t)&&!possibleGuesses.some(k=>SUBTOPICS[k]===t));
+  const guesses=possibleGuesses.filter(t=>!delta.prefer.includes(t)&&!delta.prefer.some(k=>isAncestor(t,k))&&!possibleGuesses.some(k=>isAncestor(t,k)));
   if(guesses.length){
-   const known=delta.prefer.filter(t=>!delta.prefer.some(k=>SUBTOPICS[k]===t)).slice(0,3);
+   const known=delta.prefer.filter(t=>!delta.prefer.some(k=>isAncestor(t,k))).slice(0,3);
    const ctx={...c,current:'clarify-topic',clarifyFrom:c.current,clarifyKnown:known,clarifyCandidates:guesses,uncertain:1};
    return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',reaction:known.length?'Een deel snap ik al! Bedoel je dit?':'Hmm, ik twijfel een beetje 🤔',question:questionView(questionForContext(ctx)),context:ctx}};
   }

@@ -2822,28 +2822,27 @@ module.exports=[
   "options": [
    {
     "id": "0",
-    "label": "Gedrag",
+    "label": "Hoe dieren communiceren",
     "prefer": [
-     "animals",
-     "science"
-    ],
-    "length": ""
-   },
-   {
-    "id": "1",
-    "label": "Verzorging",
-    "prefer": [
-     "animalCare",
+     "animalBehavior",
      "facts"
     ],
     "length": ""
    },
    {
-    "id": "2",
-    "label": "Leefomgeving",
+    "id": "1",
+    "label": "Hoe dieren leren",
     "prefer": [
-     "nature",
-     "animals"
+     "animalBehavior"
+    ],
+    "length": ""
+   },
+   {
+    "id": "2",
+    "label": "Hoe dieren samenleven",
+    "prefer": [
+     "animalBehavior",
+     "wildlife"
     ],
     "length": ""
    }
@@ -3256,7 +3255,7 @@ module.exports=[
   "when": [
    "history"
   ],
-  "prompt": "Wat zou je in een museum willen ontdekken?",
+  "prompt": "Welk deel van de geschiedenis vind je interessant?",
   "examples": "Welke past het beste bij je?",
   "options": [
    {
@@ -4986,7 +4985,7 @@ module.exports=[
   "when": [
    "art"
   ],
-  "prompt": "Wat vind je interessant aan iemand met creatief talent?",
+  "prompt": "Wat zou je over creativiteit willen lezen?",
   "examples": "Welke past het beste bij je?",
   "options": [
    {
@@ -9684,7 +9683,7 @@ module.exports=[
   "when": [
    "filmmaking"
   ],
-  "prompt": "Wat wil je weten over de makers van films of games?",
+  "prompt": "Wat wil je weten over het maken van films?",
   "examples": "Welke past het beste bij je?",
   "options": [
    {

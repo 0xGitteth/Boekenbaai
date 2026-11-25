@@ -14,7 +14,7 @@ assert.ok(interpret('Wedstrijden en teamgenoten').prefer.includes('team'));
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').prefer,['danger']);
 assert.deepEqual(interpret('gwn een spanend boek zndr horor').avoid,['horror']);
 assert.deepEqual(interpret('misterie maar nie met moord').avoid,['murder']);
-assert.deepEqual(interpret('grapig en voetballen').prefer,['humor','sport','sportPlaying']);
+assert.deepEqual(interpret('grapig en voetballen').prefer,['humor','sport','sportPlaying','football']);
 assert.equal(interpret('Ik vind horror en moord niet leuk').recognized,false);
 assert.deepEqual(interpret('Geen horror, wel humor').avoid,['horror']);
 assert.deepEqual(interpret('Geen horror, wel humor').prefer,['humor']);
