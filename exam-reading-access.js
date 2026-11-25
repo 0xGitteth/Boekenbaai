@@ -1,3 +1,4 @@
+const {currentStudentClassIds}=require('./student-class-membership');
 'use strict';
 
 // School-specific class classification. Exact names come from the current ParnasSys import.
@@ -25,12 +26,8 @@ function normalizeClassName(value) {
 function classifyClass(name) {
   return CLASS_LEVELS[normalizeClassName(name)] || 'unknown';
 }
-function studentClassIds(db, student) {
-  const ids = new Set(Array.isArray(student?.classIds) ? student.classIds.filter(Boolean) : []);
-  for (const klass of db?.classes || []) {
-    if (Array.isArray(klass?.studentIds) && klass.studentIds.includes(student?.id)) ids.add(klass.id);
-  }
-  return ids;
+function studentClassIds(db,student){
+  return new Set(currentStudentClassIds(db,student));
 }
 function examReadingAccess(db, student) {
   if (!student || student.active === false) {
