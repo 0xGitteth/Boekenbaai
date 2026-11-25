@@ -531,10 +531,18 @@ function analyze(text,rawContext={},books=[]){
  let readingScope=false;
  for(const sentence of input.split(/[.!?;\n]/)){
   readingScope=false;
-  for(const part of sentence.split(/\b(?:maar|echter)\b/i)){
+  const parts=sentence.split(/\b(?:maar|echter)\b/i);
+  for(let i=0;i<parts.length;i++){
+   const part=parts[i];
    const hasReading=/\b(?:lees|lezen|boek|boeken)\b/i.test(part);
    const continuation=readingScope&&/^\s*(?:niet|geen|zonder|wel|liever|ook)\b/i.test(part);
-   if(hasReading||continuation)readingClauses.push(part);
+   // A negative object preference before an explicit contrasting reading
+   // request belongs to that request: "Ik wil geen moord maar wel lezen
+   // over voetbal". Do not infer exclusions from unrelated activities.
+   const precedingExclusion=!hasReading&&/^\s*(?:(?:ik\s+)?wil\s+(?:liever\s+)?(?:geen|niet|zonder)\b|(?:ik\s+)?liever\s+geen\b|geen\b|zonder\b)/i.test(part)
+     &&!/\b(?:sporten|voetballen|gamen|koken|bakken|zwemmen|spelen|kijken|luisteren|doen)\b/i.test(part)
+     &&parts.slice(i+1).some(next=>/^\s*(?:wel\s+|liever\s+|ook\s+|ik\s+(?:wil|lees|zoek)\b)/i.test(next)&&/\b(?:lees|lezen|boek|boeken)\b/i.test(next));
+   if(hasReading||continuation||precedingExclusion)readingClauses.push(part);
    readingScope=hasReading||continuation;
   }
  }

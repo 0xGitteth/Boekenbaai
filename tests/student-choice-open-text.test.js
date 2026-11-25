@@ -34,3 +34,7 @@ assert.deepEqual(interpret('Ik wil geen boeken over voetbal').avoid,['football']
 assert.deepEqual(interpret('Ik wil lezen over honden maar niet over katten').avoid,['cats']);
 assert.ok(interpret('Ik vind lezen niet leuk behalve strips').prefer.includes('comics'));
 assert.ok(!interpret('Mijn broer is homo en ik wil een spannend boek').prefer.includes('sexualOrientation'));
+
+for(const sentence of ['Mijn moeder leest graag over paarden, ik lees graag over voetbal','Mijn broer is homo, ik wil een spannend boek','Mijn vader houdt van katten, ik lees graag over honden']){
+ const r=interpret(sentence);assert.ok(r.prefer.length,sentence);assert.ok(!r.prefer.some(t=>['horses','sexualOrientation','cats'].includes(t)),sentence);
+}

@@ -184,6 +184,22 @@ for(const current of ['free-time','watch','media-interest']){
  assert.ok(mixedMedia.advice.context.signals.avoid.includes('murder'));
  assert.ok(!mixedMedia.advice.context.signals.prefer.includes('horror'));
 }
+// A reading exclusion may be abbreviated before the explicit reading clause.
+// Other people's statements must never erase a pupil's subsequent answer.
+for(const current of ['opening','discover','free-time','watch','media-interest']){
+ for(const answer of ['Ik wil geen moord maar wel lezen over voetbal','Ik wil liever geen moord maar ik lees graag over voetbal','Geen moord maar liever boeken over voetbal']){
+  const result=run(answer,{current});
+  assert.ok(result.advice.context.signals.prefer.includes('football'),current+' '+answer);
+  assert.ok(result.advice.context.signals.avoid.includes('murder'),current+' '+answer);
+ }
+ const other=run('Mijn moeder leest graag over paarden, ik lees graag over voetbal',{current});
+ assert.ok(other.advice.context.signals.prefer.includes('football'),current);
+ assert.ok(!other.advice.context.signals.prefer.includes('horses'),current);
+ assert.ok(!other.advice.context.clarifyAmbiguity,current);
+ const notHobby=run('Ik hou niet van katten maar ik lees graag over honden',{current});
+ assert.ok(notHobby.advice.context.signals.prefer.includes('dogs'),current);
+ assert.ok(!notHobby.advice.context.signals.avoid.includes('cats'),current);
+}
 const activityAndReading=run('Ik game graag. Ik lees graag over sport',{current:'free-time'});
 assert.ok(activityAndReading.advice.context.signals.prefer.includes('sport'));
 assert.ok(!activityAndReading.advice.context.signals.prefer.includes('gaming'));
