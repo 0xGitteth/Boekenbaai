@@ -68,7 +68,7 @@ for(let i=0;i<100;i++){
  assert.notEqual(rejected.advice.question.id,'extended-music-2');
  assert.deepEqual(rejected.advice.context.signals.prefer,['sport','art']);
 }
-assert.ok(run('Ik doe aan fitness',{current:'free-time'}).advice.context.hobbies.includes('sport'));
+assert.ok(run('Ik doe aan fitness',{current:'free-time'}).advice.context.hobbies.includes('sportPlaying'));
 const hobby=run('Ik haat lezen',{seed:'hobby'});
 assert.equal(hobby.advice.kind,'question');
 assert.equal(hobby.advice.question.id,'free-time');
