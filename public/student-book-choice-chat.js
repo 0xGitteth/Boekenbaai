@@ -309,7 +309,7 @@
       else offerOpenAnswer(plan.question.prompt,plan.question);
     }else if(plan.kind==='recommend'){
       message('Eens kijken wat we voor je in de kast hebben! 📚');
-      void showRecommendations();
+      return showRecommendations();
     }else if(plan.kind==='offer'){
       const noPreference=!choices.openSignals?.prefer?.length&&!choices.openSignals?.avoid?.length&&!choices.referenceBookId&&!choices.externalRef&&choices.length!=='short'&&!choices.answers?.length;
       message(noPreference?'Zal ik je gewoon drie verschillende boeken laten zien?':'Zal ik alvast een paar boeken voor je zoeken? 📚');
@@ -348,7 +348,7 @@
         message('Je wilt '+labels+' liever vermijden. Klopt dat?');
         options([['Ja, ga verder',()=>continueAdvice(plan)],
           ['Pas mijn antwoord aan',()=>offerOpenAnswer('Wat bedoelde je dan?',adviceQuestion)]]);
-      }else continueAdvice(plan);
+      }else await continueAdvice(plan);
     }catch(err){
       if(!active||marker!==epoch)return;
       busy=false;notice(err.message||'Je antwoord kon niet worden verwerkt.');

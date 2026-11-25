@@ -18,7 +18,7 @@ const books=[
 ];
 const run=(text,ctx={})=>analyze(text,ctx,books);
 assert.equal(new Set(Q.map(q=>q.id)).size,Q.length);
-assert.ok(Q.length>=300&&Q.length<=400);
+assert.ok(Q.length>=420&&Q.length<=500);
 assert.ok(MEDIA.length>=200);
 for(const [name,aliases,traits] of MEDIA){assert.ok(aliases.length,name);assert.deepEqual(validateSignals({prefer:traits}).prefer,traits,name);}
 for(const q of Q)for(const option of q.options){
@@ -50,7 +50,7 @@ assert.notEqual(run('Ik heb zelf twee honden').advice.kind,'book-search');
 for(let i=0;i<100;i++){
  const hobbies=run('Ik vind het leuk om te sporten en te tekenen',{current:'free-time',seed:'real-hobbies-'+i});
  assert.equal(hobbies.advice.question.id,'hobby-focus');
- assert.deepEqual(new Set(hobbies.advice.context.hobbies),new Set(['sport','drawing']));
+ assert.deepEqual(new Set(hobbies.advice.context.hobbies),new Set(['sportPlaying','drawing']));
  assert.deepEqual(hobbies.advice.context.signals.prefer,[]);
  assert.match(hobbies.advice.question.prompt,/sport.*tekenen|tekenen.*sport/i);
  assert.match(hobbies.advice.reaction,/Oh, leuk!/);
@@ -59,11 +59,11 @@ for(let i=0;i<100;i++){
  assert.deepEqual(yes.advice.context.signals.prefer,[]);
  const both=run('Allebei',hobbies.advice.context);
  assert.ok(both.advice.context.signals.prefer.includes('drawing'));
- assert.ok(both.advice.context.signals.prefer.includes('sport'));
+ assert.ok(both.advice.context.signals.prefer.includes('sportPlaying'));
  const art=run('tekenen en schilderen',hobbies.advice.context);
  assert.ok(!art.advice.context.signals.prefer.includes('music'));
  assert.ok(!/muzikant|muziek|liedjes/i.test(art.advice.question?.prompt||''));
- const sport=run('Sport',hobbies.advice.context);
+ const sport=run('zelf sporten',hobbies.advice.context);
  assert.ok(!/muzikant|muziek|liedjes/i.test(sport.advice.question?.prompt||''));
  const nope=run('Niets?',hobbies.advice.context);
  assert.equal(nope.advice.kind,'question');
@@ -78,7 +78,7 @@ for(let i=0;i<100;i++){
  assert.notEqual(rejected.advice.question.id,'extended-music-2');
  assert.deepEqual(rejected.advice.context.signals.prefer,['sport','art']);
 }
-assert.ok(run('Ik doe aan fitness',{current:'free-time'}).advice.context.hobbies.includes('sportPlaying'));
+assert.ok(run('Ik doe aan fitness',{current:'free-time'}).advice.context.hobbies.includes('fitness'));
 const hobby=run('Ik haat lezen',{seed:'hobby'});
 assert.equal(hobby.advice.kind,'question');
 assert.equal(hobby.advice.question.id,'free-time');
@@ -103,7 +103,7 @@ const animal=run('Ik wil niet dat die doodgaat',{signals:{prefer:['animals'],avo
 assert.ok(animal.avoid.includes('animalLoss'));
 const dogHobby=run('honden',{current:'free-time'});
 const dogReading=run('ja',dogHobby.advice.context);
-assert.ok(dogReading.advice.context.signals.prefer.includes('pets'));
+assert.ok(dogReading.advice.context.signals.prefer.includes('dogs'));
 assert.ok(run('Ik wil niet dat die doodgaat',dogReading.advice.context).avoid.includes('animalLoss'));
 assert.ok(!run('Ik wil geen boek over een moeder die doodgaat').avoid.includes('animalLoss'));
 assert.ok(!run('Ik wil niet dat die doodgaat').avoid.includes('animalLoss'));
@@ -236,6 +236,16 @@ for(const [topic,forbidden] of topicChecks)for(let i=0;i<100;i++){
 for(const question of Q.filter(x=>x.group)){
  assert.ok(question.when.every(t=>validateSignals({prefer:[t]}).prefer.includes(t)),question.id);
  assert.ok((question.requires||[]).every(t=>validateSignals({prefer:[t]}).prefer.includes(t)),question.id);
+}
+const focusedChecks=[['zelf sporten',/topsport|leven van (?:een )?sporter|sport kijken|supporters|blessure/i],['fitness',/topsport|voetbal|sport kijken|supporters|blessure/i],['honden',/katten|wilde dieren|roofdieren/i],['manga tekenen',/muziek|fotografie/i],['programmeren',/ruimtevaart|astronaut|robots/i],['muziek luisteren',/muziek maken|bekend wordt|optreden/i],['planeten',/menselijk lichaam|robots|computers/i]];
+for(const [topic,forbidden] of focusedChecks)for(let i=0;i<100;i++){
+ const r=run(topic,{seed:'focus-'+topic+'-'+i});
+ assert.ok(!forbidden.test(r.advice.question?.prompt||''),topic+': '+r.advice.question?.prompt);
+}
+for(const current of ['free-time','watch','media-interest']){
+ const r=run('Ik lees graag over sport maar niet over moord',{current});
+ assert.ok(r.advice.context.signals.avoid.includes('murder'));
+ assert.ok(r.advice.context.signals.prefer.includes('sport'));
 }
 const topics=['mysteries','criminaliteit','sport','fantasy','dieren','geschiedenis','wetenschap','vriendschap','humor','muziek','psychologie','techniek','oorlog','reizen','natuur','gamen','kunst','maatschappij','overleven','GTA en FIFA'];
 const sequences=new Map();let completed=0,turns=0,exampleCount=0;

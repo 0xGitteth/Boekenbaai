@@ -1289,5 +1289,1197 @@ module.exports=[
     "society"
    ]
   ]
+ ],
+ [
+  "eliteSport",
+  "sport",
+  "topsport",
+  [
+   "topsport",
+   "topsporter",
+   "topsporters",
+   "professionele sport",
+   "profvoetballer",
+   "profvoetballers",
+   "olympische spelen"
+  ],
+  [
+   "topsport",
+   "topsporter",
+   "profvoetballer",
+   "olympische spelen"
+  ],
+  "Wat zou je over topsport willen lezen?",
+  [
+   [
+    "Het leven van een topsporter",
+    "eliteSport biography"
+   ],
+   [
+    "Trainen op hoog niveau",
+    "eliteSport sportTraining"
+   ],
+   [
+    "Presteren onder druk",
+    "eliteSport competition"
+   ]
+  ]
+ ],
+ [
+  "sportTraining",
+  "sportPlaying",
+  "sporttraining",
+  [
+   "sporttraining",
+   "trainingsschema",
+   "sporttrainingen",
+   "trainen voor sport",
+   "sporttechniek",
+   "beter worden in sport"
+  ],
+  [
+   "sporttraining",
+   "trainingsschema",
+   "sporttechniek"
+  ],
+  "Wat zou je willen leren over trainen?",
+  [
+   [
+    "Techniek verbeteren",
+    "sportTraining facts"
+   ],
+   [
+    "Conditie opbouwen",
+    "sportTraining health"
+   ],
+   [
+    "Gemotiveerd blijven",
+    "sportTraining growth"
+   ]
+  ]
+ ],
+ [
+  "sportBiography",
+  "sport",
+  "levensverhalen van sporters",
+  [
+   "sportbiografie",
+   "sportbiografieen",
+   "levensverhaal van een sporter",
+   "leven van sporters",
+   "leven van een sporter"
+  ],
+  [
+   "sportbiografie",
+   "levensverhaal van een sporter",
+   "leven van een sporter"
+  ],
+  "Wat wil je weten over het leven van een sporter?",
+  [
+   [
+    "Hoe diegene begon",
+    "sportBiography growth"
+   ],
+   [
+    "Wedstrijden en prestaties",
+    "sportBiography competition"
+   ],
+   [
+    "Het leven buiten de sport",
+    "sportBiography people"
+   ]
+  ]
+ ],
+ [
+  "sportFans",
+  "sportWatching",
+  "sportclubs en supporters",
+  [
+   "supporters",
+   "voetbalfan",
+   "voetbalfans",
+   "favoriete club",
+   "supportersclub",
+   "voetbalclub volgen"
+  ],
+  [
+   "supporters",
+   "voetbalfan",
+   "supportersclub"
+  ],
+  "Wat vind je interessant aan sportclubs en supporters?",
+  [
+   [
+    "De clubgeschiedenis",
+    "sportFans history"
+   ],
+   [
+    "Samen wedstrijden volgen",
+    "sportFans friendship"
+   ],
+   [
+    "De sfeer rond wedstrijden",
+    "sportFans competition"
+   ]
+  ]
+ ],
+ [
+  "football",
+  "sport",
+  "voetbal",
+  [
+   "voetbal",
+   "voetballen",
+   "voetball",
+   "soccer",
+   "voetbalwedstrijd"
+  ],
+  [
+   "voetbal",
+   "voetballer",
+   "voetballen",
+   "voetbalwedstrijd"
+  ],
+  "Wat zou je in een boek over voetbal leuk vinden?",
+  [
+   [
+    "Zelf voetballen",
+    "football sportPlaying"
+   ],
+   [
+    "Een club volgen",
+    "football sportFans"
+   ],
+   [
+    "Verhalen over een team",
+    "football teamSport"
+   ],
+   [
+    "Meer weten over voetbal",
+    "football facts"
+   ]
+  ]
+ ],
+ [
+  "fitness",
+  "sportPlaying",
+  "fitness",
+  [
+   "fitness",
+   "sportschool",
+   "krachttraining",
+   "fitnessen",
+   "kracht trainen"
+  ],
+  [
+   "fitness",
+   "sportschool",
+   "krachttraining"
+  ],
+  "Wat zou je over fitness willen lezen?",
+  [
+   [
+    "Hoe oefeningen werken",
+    "fitness facts"
+   ],
+   [
+    "Sterker worden",
+    "fitness growth"
+   ],
+   [
+    "Conditie en gezondheid",
+    "fitness health"
+   ]
+  ]
+ ],
+ [
+  "running",
+  "sportPlaying",
+  "hardlopen",
+  [
+   "hardlopen",
+   "joggen",
+   "marathon",
+   "hardloopwedstrijd"
+  ],
+  [
+   "hardlopen",
+   "marathon",
+   "hardloopwedstrijd"
+  ],
+  "Wat spreekt je aan in een boek over hardlopen?",
+  [
+   [
+    "Zelf trainen",
+    "running sportTraining"
+   ],
+   [
+    "Een hardloopverhaal",
+    "running realistic"
+   ],
+   [
+    "Een doel bereiken",
+    "running challenge"
+   ]
+  ]
+ ],
+ [
+  "martialArts",
+  "sportPlaying",
+  "vechtsport",
+  [
+   "vechtsport",
+   "vechtsporten",
+   "boksen",
+   "kickboksen",
+   "judo",
+   "karate",
+   "taekwondo"
+  ],
+  [
+   "vechtsport",
+   "boksen",
+   "kickboksen",
+   "judo",
+   "karate"
+  ],
+  "Wat wil je lezen over vechtsport?",
+  [
+   [
+    "Technieken leren",
+    "martialArts facts"
+   ],
+   [
+    "Een verhaal over trainen",
+    "martialArts sportTraining"
+   ],
+   [
+    "Wedstrijden",
+    "martialArts competition"
+   ]
+  ]
+ ],
+ [
+  "dance",
+  "sportPlaying",
+  "dansen",
+  [
+   "dansen",
+   "dans",
+   "ballet",
+   "hiphopdans",
+   "streetdance"
+  ],
+  [
+   "dansen",
+   "ballet",
+   "streetdance",
+   "danswedstrijd"
+  ],
+  "Wat spreekt je aan in een boek over dansen?",
+  [
+   [
+    "Dans leren",
+    "dance facts"
+   ],
+   [
+    "Een dansverhaal",
+    "dance realistic"
+   ],
+   [
+    "Optreden",
+    "dance challenge"
+   ]
+  ]
+ ],
+ [
+  "swimming",
+  "sportPlaying",
+  "zwemmen",
+  [
+   "zwemmen",
+   "zwemsport",
+   "zwemtraining"
+  ],
+  [
+   "zwemmen",
+   "zwemtraining",
+   "zwemsport"
+  ],
+  "Wat zou je over zwemmen willen lezen?",
+  [
+   [
+    "Techniek leren",
+    "swimming facts"
+   ],
+   [
+    "Een verhaal over zwemmen",
+    "swimming realistic"
+   ],
+   [
+    "Trainen",
+    "swimming sportTraining"
+   ]
+  ]
+ ],
+ [
+  "cycling",
+  "sportPlaying",
+  "fietsen en wielrennen",
+  [
+   "fietsen",
+   "wielrennen",
+   "mountainbiken",
+   "bmx"
+  ],
+  [
+   "wielrennen",
+   "mountainbiken",
+   "bmx",
+   "fietstocht"
+  ],
+  "Wat vind je interessant om over fietsen te lezen?",
+  [
+   [
+    "Fietstochten",
+    "cycling travel"
+   ],
+   [
+    "Training",
+    "cycling sportTraining"
+   ],
+   [
+    "Hoe een fiets werkt",
+    "cycling practicalTech"
+   ]
+  ]
+ ],
+ [
+  "sportInjury",
+  "sportPlaying",
+  "sportblessures",
+  [
+   "sportblessure",
+   "sportblessures",
+   "sportblessure herstel",
+   "geblesseerde sporter"
+  ],
+  [
+   "sportblessure",
+   "sportblessures",
+   "geblesseerde sporter"
+  ],
+  "Wat wil je weten over herstellen van een sportblessure?",
+  [
+   [
+    "Hoe herstel werkt",
+    "sportInjury facts"
+   ],
+   [
+    "Hoe iemand ermee omgaat",
+    "sportInjury empathy"
+   ],
+   [
+    "Weer gaan sporten",
+    "sportInjury sportTraining"
+   ]
+  ]
+ ],
+ [
+  "dogs",
+  "pets",
+  "honden",
+  [
+   "hond",
+   "honden",
+   "puppy",
+   "puppys"
+  ],
+  [
+   "hond",
+   "honden",
+   "puppy"
+  ],
+  "Wat voor boek over honden zou je leuk vinden?",
+  [
+   [
+    "Een verhaal met een hond",
+    "dogs adventure"
+   ],
+   [
+    "Meer leren over honden",
+    "dogs facts"
+   ],
+   [
+    "Honden verzorgen",
+    "dogs animalCare"
+   ]
+  ]
+ ],
+ [
+  "cats",
+  "pets",
+  "katten",
+  [
+   "kat",
+   "katten",
+   "kitten",
+   "kittens",
+   "poes"
+  ],
+  [
+   "kat",
+   "katten",
+   "kitten",
+   "poes"
+  ],
+  "Wat voor boek over katten lijkt je leuk?",
+  [
+   [
+    "Een verhaal met een kat",
+    "cats adventure"
+   ],
+   [
+    "Kattengedrag",
+    "cats facts"
+   ],
+   [
+    "Katten verzorgen",
+    "cats animalCare"
+   ]
+  ]
+ ],
+ [
+  "horses",
+  "animals",
+  "paarden",
+  [
+   "paard",
+   "paarden",
+   "paardrijden",
+   "manege",
+   "pony",
+   "ponys"
+  ],
+  [
+   "paard",
+   "paarden",
+   "paardrijden",
+   "manege"
+  ],
+  "Wat zou je over paarden willen lezen?",
+  [
+   [
+    "Paardrijden",
+    "horses sportPlaying"
+   ],
+   [
+    "Paarden verzorgen",
+    "horses animalCare"
+   ],
+   [
+    "Een verhaal met een paard",
+    "horses adventure"
+   ]
+  ]
+ ],
+ [
+  "marineAnimals",
+  "wildlife",
+  "zeedieren",
+  [
+   "zeedieren",
+   "haaien",
+   "haai",
+   "dolfijnen",
+   "walvissen",
+   "orka"
+  ],
+  [
+   "zeedieren",
+   "haaien",
+   "dolfijnen",
+   "walvissen",
+   "orka"
+  ],
+  "Wat wil je ontdekken over dieren in zee?",
+  [
+   [
+    "Hoe ze leven",
+    "marineAnimals facts"
+   ],
+   [
+    "De onderwaterwereld",
+    "marineAnimals ocean"
+   ],
+   [
+    "Een avontuur in zee",
+    "marineAnimals adventure"
+   ]
+  ]
+ ],
+ [
+  "animalBehavior",
+  "animals",
+  "dierengedrag",
+  [
+   "dierengedrag",
+   "gedrag van dieren",
+   "hoe dieren communiceren"
+  ],
+  [
+   "dierengedrag",
+   "gedrag van dieren",
+   "hoe dieren communiceren"
+  ],
+  "Wat wil je begrijpen aan het gedrag van dieren?",
+  [
+   [
+    "Communicatie",
+    "animalBehavior facts"
+   ],
+   [
+    "Hoe dieren leren",
+    "animalBehavior"
+   ],
+   [
+    "Samenleven in groepen",
+    "animalBehavior wildlife"
+   ]
+  ]
+ ],
+ [
+  "portraits",
+  "drawing",
+  "portretten tekenen",
+  [
+   "portret tekenen",
+   "portretten tekenen",
+   "gezichten tekenen"
+  ],
+  [
+   "portret tekenen",
+   "portretten tekenen",
+   "gezichten tekenen"
+  ],
+  "Wat zou je willen lezen over portretten tekenen?",
+  [
+   [
+    "Gezichten leren tekenen",
+    "portraits facts"
+   ],
+   [
+    "Tekentechniek",
+    "portraits drawing"
+   ],
+   [
+    "Verhalen over tekenaars",
+    "portraits biography"
+   ]
+  ]
+ ],
+ [
+  "mangaDrawing",
+  "drawing",
+  "manga tekenen",
+  [
+   "manga tekenen",
+   "anime tekenen",
+   "animepersonages tekenen",
+   "anime personages tekenen"
+  ],
+  [
+   "manga tekenen",
+   "anime tekenen",
+   "animepersonages tekenen"
+  ],
+  "Wil je vooral leren manga tekenen of een mangaverhaal lezen?",
+  [
+   [
+    "Leren tekenen",
+    "mangaDrawing facts"
+   ],
+   [
+    "Mangaverhalen",
+    "comics"
+   ],
+   [
+    "Allebei",
+    "mangaDrawing comics"
+   ]
+  ]
+ ],
+ [
+  "photoTech",
+  "photography",
+  "cameratechniek",
+  [
+   "cameratechniek",
+   "camera instellingen",
+   "belichting fotografie",
+   "fotografie techniek"
+  ],
+  [
+   "cameratechniek",
+   "camera instellingen",
+   "belichting fotografie"
+  ],
+  "Wat zou je over camera's willen leren?",
+  [
+   [
+    "Instellingen",
+    "photoTech facts"
+   ],
+   [
+    "Licht gebruiken",
+    "photoTech"
+   ],
+   [
+    "Compositie",
+    "photoTech photography"
+   ]
+  ]
+ ],
+ [
+  "fashionDesign",
+  "design",
+  "mode ontwerpen",
+  [
+   "mode ontwerpen",
+   "kleding ontwerpen",
+   "modeontwerp",
+   "kledingdesign"
+  ],
+  [
+   "modeontwerp",
+   "kleding ontwerpen",
+   "mode ontwerpen"
+  ],
+  "Wat vind je leuk aan kleding ontwerpen?",
+  [
+   [
+    "Zelf ontwerpen",
+    "fashionDesign facts"
+   ],
+   [
+    "Stijlen en stoffen",
+    "fashionDesign"
+   ],
+   [
+    "Het werk van een ontwerper",
+    "fashionDesign careers"
+   ]
+  ]
+ ],
+ [
+  "songLyrics",
+  "musicListening",
+  "songteksten",
+  [
+   "songtekst",
+   "songteksten",
+   "liedteksten",
+   "teksten van liedjes"
+  ],
+  [
+   "songteksten",
+   "liedteksten",
+   "songtekst"
+  ],
+  "Wat vind je interessant aan songteksten?",
+  [
+   [
+    "De betekenis",
+    "songLyrics empathy"
+   ],
+   [
+    "Hoe iemand teksten schrijft",
+    "songLyrics musicMaking"
+   ],
+   [
+    "Waar liedjes over gaan",
+    "songLyrics people"
+   ]
+  ]
+ ],
+ [
+  "musicBiography",
+  "music",
+  "levensverhalen van muzikanten",
+  [
+   "muziekbiografie",
+   "leven van muzikanten",
+   "leven van een muzikant",
+   "artiestenbiografie"
+  ],
+  [
+   "muziekbiografie",
+   "leven van een muzikant",
+   "artiestenbiografie"
+  ],
+  "Wat wil je weten over het leven van een muzikant?",
+  [
+   [
+    "Hoe iemand begon",
+    "musicBiography growth"
+   ],
+   [
+    "Muziek maken",
+    "musicBiography musicMaking"
+   ],
+   [
+    "Het leven buiten het optreden",
+    "musicBiography people"
+   ]
+  ]
+ ],
+ [
+  "rapMusic",
+  "music",
+  "rap",
+  [
+   "rap",
+   "rapmuziek",
+   "rappen",
+   "rapper",
+   "rappers"
+  ],
+  [
+   "rapmuziek",
+   "rapper",
+   "rappen"
+  ],
+  "Wat vind je interessant aan rap?",
+  [
+   [
+    "De teksten",
+    "rapMusic songLyrics"
+   ],
+   [
+    "Zelf rappen",
+    "rapMusic musicMaking"
+   ],
+   [
+    "Verhalen over rappers",
+    "rapMusic musicBiography"
+   ]
+  ]
+ ],
+ [
+  "programming",
+  "computing",
+  "programmeren",
+  [
+   "programmeren",
+   "coderen",
+   "python programmeren",
+   "software maken"
+  ],
+  [
+   "programmeren",
+   "coderen",
+   "software maken"
+  ],
+  "Wat zou je over programmeren willen lezen?",
+  [
+   [
+    "Leren programmeren",
+    "programming facts"
+   ],
+   [
+    "Apps maken",
+    "programming computing"
+   ],
+   [
+    "Games maken",
+    "gameDevelopment"
+   ]
+  ]
+ ],
+ [
+  "cybersecurity",
+  "computing",
+  "digitale veiligheid",
+  [
+   "cybersecurity",
+   "cybercrime",
+   "hackers",
+   "hacken",
+   "digitale veiligheid"
+  ],
+  [
+   "cybersecurity",
+   "cybercrime",
+   "hackers",
+   "digitale veiligheid"
+  ],
+  "Wat vind je interessant aan digitale veiligheid?",
+  [
+   [
+    "Hoe je jezelf beschermt",
+    "cybersecurity facts"
+   ],
+   [
+    "Een digitaal mysterie",
+    "cybersecurity mystery"
+   ],
+   [
+    "Hoe onderzoek werkt",
+    "cybersecurity puzzles"
+   ]
+  ]
+ ],
+ [
+  "astronomy",
+  "space",
+  "planeten en sterren",
+  [
+   "planeten",
+   "sterrenstelsel",
+   "astronomie",
+   "zonnestelsel",
+   "sterrenkunde"
+  ],
+  [
+   "planeten",
+   "astronomie",
+   "zonnestelsel",
+   "sterrenstelsel"
+  ],
+  "Wat wil je weten over planeten en sterren?",
+  [
+   [
+    "Ons zonnestelsel",
+    "astronomy facts"
+   ],
+   [
+    "Andere sterrenstelsels",
+    "astronomy discovery"
+   ],
+   [
+    "Mogelijk leven ergens anders",
+    "astronomy science"
+   ]
+  ]
+ ],
+ [
+  "astronauts",
+  "space",
+  "astronauten en ruimtereizen",
+  [
+   "astronaut",
+   "astronauten",
+   "ruimtereis",
+   "ruimtereizen",
+   "raket",
+   "raketten"
+  ],
+  [
+   "astronaut",
+   "astronauten",
+   "ruimtereis",
+   "raketten"
+  ],
+  "Wat vind je interessant aan ruimtereizen?",
+  [
+   [
+    "Hoe een raket werkt",
+    "astronauts technology"
+   ],
+   [
+    "Het leven van astronauten",
+    "astronauts true"
+   ],
+   [
+    "Een ruimtereis in een verhaal",
+    "astronauts adventure"
+   ]
+  ]
+ ],
+ [
+  "vehicles",
+  "technology",
+  "voertuigen",
+  [
+   "autos",
+   "auto s",
+   "auto",
+   "motoren",
+   "motorfiets",
+   "motorfietsen",
+   "treinen",
+   "vliegtuigen"
+  ],
+  [
+   "auto",
+   "motorfiets",
+   "treinen",
+   "vliegtuigen",
+   "voertuigen"
+  ],
+  "Over wat voor voertuigen zou je willen lezen?",
+  [
+   [
+    "Auto's en motoren",
+    "vehicles practicalTech"
+   ],
+   [
+    "Treinen",
+    "vehicles travel"
+   ],
+   [
+    "Vliegtuigen",
+    "vehicles science"
+   ]
+  ]
+ ],
+ [
+  "warResistance",
+  "war",
+  "verzet in oorlogstijd",
+  [
+   "verzet in de oorlog",
+   "verzetsstrijders",
+   "oorlogsverzet",
+   "verzetsbeweging"
+  ],
+  [
+   "verzet in de oorlog",
+   "verzetsstrijders",
+   "oorlogsverzet"
+  ],
+  "Wat wil je lezen over verzet in oorlogstijd?",
+  [
+   [
+    "Echte ervaringen",
+    "warResistance true"
+   ],
+   [
+    "Moeilijke keuzes",
+    "warResistance choices"
+   ],
+   [
+    "Hoe mensen elkaar hielpen",
+    "warResistance empathy"
+   ]
+  ]
+ ],
+ [
+  "worldWarTwo",
+  "war",
+  "Tweede Wereldoorlog",
+  [
+   "tweede wereldoorlog",
+   "wo2",
+   "ww2",
+   "1940 1945"
+  ],
+  [
+   "tweede wereldoorlog",
+   "wo2",
+   "ww2"
+  ],
+  "Welke kant van de Tweede Wereldoorlog wil je ontdekken?",
+  [
+   [
+    "Het dagelijks leven",
+    "worldWarTwo historicalDailyLife"
+   ],
+   [
+    "Verzet",
+    "worldWarTwo warResistance"
+   ],
+   [
+    "Waargebeurde ervaringen",
+    "worldWarTwo true"
+   ]
+  ]
+ ],
+ [
+  "medievalHistory",
+  "history",
+  "middeleeuwen",
+  [
+   "middeleeuwen",
+   "middeleeuws",
+   "ridders",
+   "kastelen"
+  ],
+  [
+   "middeleeuwen",
+   "ridders",
+   "kastelen"
+  ],
+  "Wat vind je interessant aan de middeleeuwen?",
+  [
+   [
+    "Het dagelijks leven",
+    "medievalHistory historicalDailyLife"
+   ],
+   [
+    "Ridders en kastelen",
+    "medievalHistory adventure"
+   ],
+   [
+    "Echte geschiedenis",
+    "medievalHistory facts"
+   ]
+  ]
+ ],
+ [
+  "policeInvestigation",
+  "crime",
+  "politieonderzoek",
+  [
+   "politieonderzoek",
+   "recherche",
+   "rechercheur",
+   "misdaadonderzoek",
+   "opsporingsonderzoek"
+  ],
+  [
+   "politieonderzoek",
+   "rechercheur",
+   "misdaadonderzoek"
+  ],
+  "Wat vind je interessant aan politieonderzoek in een verhaal?",
+  [
+   [
+    "Aanwijzingen ontdekken",
+    "policeInvestigation puzzles"
+   ],
+   [
+    "Hoe een zaak wordt opgelost",
+    "policeInvestigation mystery"
+   ],
+   [
+    "Waargebeurde zaken",
+    "policeInvestigation true"
+   ]
+  ]
+ ],
+ [
+  "missingPersons",
+  "mystery",
+  "vermissingen",
+  [
+   "vermissing",
+   "vermissingen",
+   "vermiste mensen",
+   "vermiste personen",
+   "spoorloos verdwenen"
+  ],
+  [
+   "vermissing",
+   "vermiste persoon",
+   "spoorloos verdwenen"
+  ],
+  "Wat wil je lezen over een vermissing?",
+  [
+   [
+    "De zoektocht",
+    "missingPersons puzzles"
+   ],
+   [
+    "Wat er is gebeurd",
+    "missingPersons mystery"
+   ],
+   [
+    "De mensen die achterblijven",
+    "missingPersons empathy"
+   ]
+  ]
+ ],
+ [
+  "friendshipNew",
+  "friendship",
+  "nieuwe vriendschappen",
+  [
+   "nieuwe vrienden",
+   "nieuwe vriendschap",
+   "vrienden maken"
+  ],
+  [
+   "nieuwe vrienden",
+   "nieuwe vriendschap",
+   "vrienden maken"
+  ],
+  "Wat vind je leuk aan een verhaal over nieuwe vrienden?",
+  [
+   [
+    "Elkaar leren kennen",
+    "friendshipNew people"
+   ],
+   [
+    "Samen iets meemaken",
+    "friendshipNew adventure"
+   ],
+   [
+    "Erbij horen",
+    "friendshipNew outsider"
+   ]
+  ]
+ ],
+ [
+  "parentChild",
+  "family",
+  "ouders en kinderen",
+  [
+   "band met ouders",
+   "ouders en kinderen",
+   "ouder kind relatie",
+   "relatie met ouders"
+  ],
+  [
+   "ouders en kinderen",
+   "ouder kind relatie",
+   "band met ouders"
+  ],
+  "Wat vind je interessant aan verhalen over ouders en kinderen?",
+  [
+   [
+    "Elkaar begrijpen",
+    "parentChild empathy"
+   ],
+   [
+    "Zelfstandig worden",
+    "parentChild growth"
+   ],
+   [
+    "Samen iets meemaken",
+    "parentChild adventure"
+   ]
+  ]
+ ],
+ [
+  "advertising",
+  "economics",
+  "reclame",
+  [
+   "reclame",
+   "advertenties",
+   "marketing",
+   "reclames"
+  ],
+  [
+   "reclame",
+   "advertenties",
+   "marketing"
+  ],
+  "Wat zou je over reclame willen weten?",
+  [
+   [
+    "Hoe reclame werkt",
+    "advertising facts"
+   ],
+   [
+    "Waarom mensen iets kopen",
+    "advertising psychology"
+   ],
+   [
+    "Zelf reclame ontwerpen",
+    "advertising design"
+   ]
+  ]
  ]
 ];

@@ -584,7 +584,7 @@ module.exports=[
   "group": "mystery",
   "stage": 2,
   "when": [
-   "disappearance"
+   "missingPersons"
   ],
   "prompt": "Wat wil je weten als iemand spoorloos is verdwenen?",
   "examples": "Denk bijvoorbeeld hieraan.",
@@ -1221,7 +1221,7 @@ module.exports=[
   "group": "family",
   "stage": 2,
   "when": [
-   "family"
+   "parentChild"
   ],
   "prompt": "Wat vind je interessant aan de band tussen ouders en kinderen?",
   "examples": "Misschien zit hier iets tussen.",
@@ -1410,7 +1410,7 @@ module.exports=[
   "group": "friendship",
   "stage": 2,
   "when": [
-   "friendship"
+   "friendshipNew"
   ],
   "prompt": "Hoe vind je het als mensen in een verhaal elkaar net leren kennen?",
   "examples": "Welke past het beste bij je?",
@@ -1713,23 +1713,39 @@ module.exports=[
     "id": "0",
     "label": "Voetbal",
     "prefer": [
-     "sport"
+     "football"
     ],
     "length": ""
    },
    {
     "id": "1",
-    "label": "Teamsporten",
+    "label": "Fitness",
     "prefer": [
-     "teamSport"
+     "fitness"
     ],
     "length": ""
    },
    {
     "id": "2",
-    "label": "Individuele prestaties",
+    "label": "Hardlopen",
     "prefer": [
-     "individualSport"
+     "running"
+    ],
+    "length": ""
+   },
+   {
+    "id": "3",
+    "label": "Vechtsport",
+    "prefer": [
+     "martialArts"
+    ],
+    "length": ""
+   },
+   {
+    "id": "4",
+    "label": "Een andere sport",
+    "prefer": [
+     "sport"
     ],
     "length": ""
    }
@@ -1741,7 +1757,7 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sportPlaying"
+   "sportBiography"
   ],
   "prompt": "Wat zou je willen lezen over het leven van een sporter?",
   "examples": "Welke past het beste bij je?",
@@ -1750,8 +1766,8 @@ module.exports=[
     "id": "0",
     "label": "Training en doorzetten",
     "prefer": [
-     "growth",
-     "sport"
+     "sportBiography",
+     "sportTraining"
     ],
     "length": ""
    },
@@ -1759,6 +1775,7 @@ module.exports=[
     "id": "1",
     "label": "Wedstrijden",
     "prefer": [
+     "sportBiography",
      "competition"
     ],
     "length": ""
@@ -1767,6 +1784,7 @@ module.exports=[
     "id": "2",
     "label": "Het leven naast de sport",
     "prefer": [
+     "sportBiography",
      "people"
     ],
     "length": ""
@@ -1824,7 +1842,7 @@ module.exports=[
     "id": "0",
     "label": "De regels",
     "prefer": [
-     "sport",
+     "sportWatching",
      "facts"
     ],
     "length": ""
@@ -1833,17 +1851,16 @@ module.exports=[
     "id": "1",
     "label": "De tactiek",
     "prefer": [
-     "puzzles",
-     "sport"
+     "sportWatching",
+     "competition"
     ],
     "length": ""
    },
    {
     "id": "2",
-    "label": "De sporters",
+    "label": "Clubs en supporters",
     "prefer": [
-     "people",
-     "true"
+     "sportFans"
     ],
     "length": ""
    }
@@ -1854,7 +1871,7 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sportPlaying"
+   "eliteSport"
   ],
   "prompt": "Wat als een sporter een groot doel heeft?",
   "examples": "Welke past het beste bij je?",
@@ -1890,7 +1907,7 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sport"
+   "sportBiography"
   ],
   "prompt": "Over welke echte sporters zou je willen lezen?",
   "examples": "Misschien zit hier iets tussen.",
@@ -1899,8 +1916,8 @@ module.exports=[
     "id": "0",
     "label": "Bekende spelers",
     "prefer": [
-     "sport",
-     "true"
+     "sportBiography",
+     "eliteSport"
     ],
     "length": ""
    },
@@ -1908,8 +1925,8 @@ module.exports=[
     "id": "1",
     "label": "Een team dat iets bereikt",
     "prefer": [
-     "team",
-     "true"
+     "sportBiography",
+     "teamSport"
     ],
     "length": ""
    },
@@ -1917,15 +1934,11 @@ module.exports=[
     "id": "2",
     "label": "Iemand die opnieuw begint",
     "prefer": [
-     "growth",
-     "true"
+     "sportBiography",
+     "growth"
     ],
     "length": ""
    }
-  ],
-  "requires": [
-   "sport",
-   "true"
   ]
  },
  {
@@ -1933,7 +1946,7 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sportPlaying"
+   "sportTraining"
   ],
   "prompt": "Wat zou je willen weten over trainen?",
   "examples": "Denk bijvoorbeeld hieraan.",
@@ -1972,7 +1985,7 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sportWatching"
+   "sportFans"
   ],
   "prompt": "Wat wil je weten over sport naast de wedstrijden?",
   "examples": "Welke past het beste bij je?",
@@ -2009,7 +2022,7 @@ module.exports=[
   "group": "sport",
   "stage": 2,
   "when": [
-   "sportPlaying"
+   "sportInjury"
   ],
   "prompt": "Wat als een sporter na een blessure terug probeert te komen?",
   "examples": "Misschien zit hier iets tussen.",
@@ -2039,10 +2052,6 @@ module.exports=[
     ],
     "length": ""
    }
-  ],
-  "requires": [
-   "sportPlaying",
-   "health"
   ]
  },
  {
@@ -2713,6 +2722,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "fantasy",
+   "outsider"
   ]
  },
  {
@@ -2727,26 +2740,33 @@ module.exports=[
   "options": [
    {
     "id": "0",
-    "label": "Huisdieren",
+    "label": "Honden",
     "prefer": [
-     "pets"
+     "dogs"
     ],
     "length": ""
    },
    {
     "id": "1",
-    "label": "Wilde dieren",
+    "label": "Katten",
     "prefer": [
-     "wildlife"
+     "cats"
     ],
     "length": ""
    },
    {
     "id": "2",
-    "label": "Bijzondere soorten",
+    "label": "Paarden",
     "prefer": [
-     "wildlife",
-     "science"
+     "horses"
+    ],
+    "length": ""
+   },
+   {
+    "id": "3",
+    "label": "Wilde dieren",
+    "prefer": [
+     "wildlife"
     ],
     "length": ""
    }
@@ -2795,7 +2815,7 @@ module.exports=[
   "group": "animals",
   "stage": 2,
   "when": [
-   "animals"
+   "animalBehavior"
   ],
   "prompt": "Wat zou je willen leren over dieren?",
   "examples": "Misschien zit hier iets tussen.",
@@ -3077,23 +3097,31 @@ module.exports=[
   "options": [
    {
     "id": "0",
-    "label": "Oorlog",
+    "label": "Tweede Wereldoorlog",
     "prefer": [
-     "war"
+     "worldWarTwo"
     ],
     "length": ""
    },
    {
     "id": "1",
-    "label": "Uitvindingen",
+    "label": "Middeleeuwen",
     "prefer": [
-     "historicalInventions"
+     "medievalHistory"
     ],
     "length": ""
    },
    {
     "id": "2",
-    "label": "Het dagelijks leven",
+    "label": "Oudheid",
+    "prefer": [
+     "ancientHistory"
+    ],
+    "length": ""
+   },
+   {
+    "id": "3",
+    "label": "Het dagelijks leven vroeger",
     "prefer": [
      "historicalDailyLife"
     ],
@@ -3413,6 +3441,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "history",
+   "true"
   ]
  },
  {
@@ -3579,10 +3611,9 @@ module.exports=[
   "options": [
    {
     "id": "0",
-    "label": "Planeten",
+    "label": "Planeten en sterren",
     "prefer": [
-     "space",
-     "facts"
+     "astronomy"
     ],
     "length": ""
    },
@@ -3590,8 +3621,7 @@ module.exports=[
     "id": "1",
     "label": "Ruimtereizen",
     "prefer": [
-     "space",
-     "adventure"
+     "astronauts"
     ],
     "length": ""
    },
@@ -3715,6 +3745,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "technology",
+   "realistic"
   ]
  },
  {
@@ -3791,7 +3825,11 @@ module.exports=[
     "length": ""
    }
   ],
-  "early": true
+  "early": true,
+  "requires": [
+   "adventure",
+   "discovery"
+  ]
  },
  {
   "id": "extended-adventure-2",
@@ -3864,6 +3902,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "adventure",
+   "challenge"
   ]
  },
  {
@@ -4220,6 +4262,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "humor",
+   "people"
   ]
  },
  {
@@ -4796,24 +4842,23 @@ module.exports=[
     "id": "0",
     "label": "Rap",
     "prefer": [
-     "musicListening"
+     "rapMusic"
     ],
     "length": ""
    },
    {
     "id": "1",
-    "label": "Andere muziek",
+    "label": "Songteksten",
     "prefer": [
-     "musicListening"
+     "songLyrics"
     ],
     "length": ""
    },
    {
     "id": "2",
-    "label": "Muziek uit films",
+    "label": "Andere muziek",
     "prefer": [
-     "musicListening",
-     "filmmaking"
+     "musicListening"
     ],
     "length": ""
    }
@@ -4825,7 +4870,7 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "musicMaking"
+   "musicBiography"
   ],
   "prompt": "Wat zou je willen weten over een muzikant?",
   "examples": "Welke past het beste bij je?",
@@ -5013,7 +5058,7 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "musicListening"
+   "songLyrics"
   ],
   "prompt": "Wat vind je interessant aan teksten van liedjes?",
   "examples": "Denk bijvoorbeeld hieraan.",
@@ -5050,8 +5095,7 @@ module.exports=[
   "group": "music",
   "stage": 2,
   "when": [
-   "filmmaking",
-   "design"
+   "filmmaking"
   ],
   "prompt": "Wat vind je leuk aan het maken van films of beelden?",
   "examples": "Welke past het beste bij je?",
@@ -5372,6 +5416,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "empathy",
+   "friendship"
   ]
  },
  {
@@ -5408,6 +5456,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "empathy",
+   "psychology"
   ]
  },
  {
@@ -5946,6 +5998,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "economics",
+   "justice"
   ]
  },
  {
@@ -6067,7 +6123,7 @@ module.exports=[
   "group": "economics",
   "stage": 2,
   "when": [
-   "economics"
+   "entrepreneurship"
   ],
   "prompt": "Wat vind je interessant aan een verhaal over succes?",
   "examples": "Welke past het beste bij je?",
@@ -6097,6 +6153,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "entrepreneurship",
+   "growth"
   ]
  },
  {
@@ -6104,7 +6164,7 @@ module.exports=[
   "group": "economics",
   "stage": 2,
   "when": [
-   "economics"
+   "advertising"
   ],
   "prompt": "Wat zou je willen weten over reclame?",
   "examples": "Misschien zit hier iets tussen.",
@@ -6133,10 +6193,6 @@ module.exports=[
     ],
     "length": ""
    }
-  ],
-  "requires": [
-   "economics",
-   "manipulation"
   ]
  },
  {
@@ -9626,8 +9682,7 @@ module.exports=[
   "group": "media",
   "stage": 2,
   "when": [
-   "filmmaking",
-   "gameDevelopment"
+   "filmmaking"
   ],
   "prompt": "Wat wil je weten over de makers van films of games?",
   "examples": "Welke past het beste bij je?",
@@ -9762,6 +9817,10 @@ module.exports=[
     ],
     "length": ""
    }
+  ],
+  "requires": [
+   "filmmaking",
+   "design"
   ]
  },
  {
