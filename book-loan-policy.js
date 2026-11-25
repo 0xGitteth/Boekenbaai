@@ -1,5 +1,6 @@
-const {currentStudentClassIds}=require('./student-class-membership');
 'use strict';
+
+const {currentStudentClassIds}=require('./student-class-membership');
 
 // PR5: all permissions are evaluated against the CURRENT class membership,
 // never a client-supplied list of class or student IDs.
