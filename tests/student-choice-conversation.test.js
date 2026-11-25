@@ -169,6 +169,22 @@ for(const current of ['free-time','watch','media-interest']){
   assert.ok(!result.advice.context.signals.prefer.includes('gaming'));
  }
 }
+// Sentence boundaries and media follow-ups must preserve explicit exclusions.
+for(const current of ['free-time','watch','media-interest']){
+ for(const answer of ['Ik wil geen boeken over horror. Ik lees graag over sport','Ik wil geen boeken over horror! Ik lees graag over sport','Ik wil geen boeken over horror; ik lees graag over sport','Ik wil geen boeken over horror\nIk lees graag over sport','Ik wil geen boeken over horror maar ik lees graag over sport']){
+  const result=run(answer,{current});
+  assert.ok(result.advice.context.signals.prefer.includes('sport'),answer);
+  assert.ok(result.advice.context.signals.avoid.includes('horror'),answer);
+  assert.ok(!result.advice.context.signals.avoid.includes('sport'),answer);
+ }
+ const mixedMedia=run('Ik kijk Stranger Things maar wil geen boek met moord',{current});
+ assert.ok(mixedMedia.avoid.includes('murder'));
+ assert.ok(mixedMedia.advice.context.signals.avoid.includes('murder'));
+ assert.ok(!mixedMedia.advice.context.signals.prefer.includes('horror'));
+}
+const activityAndReading=run('Ik game graag. Ik lees graag over sport',{current:'free-time'});
+assert.ok(activityAndReading.advice.context.signals.prefer.includes('sport'));
+assert.ok(!activityAndReading.advice.context.signals.prefer.includes('gaming'));
 let repeatedUnknown=run('qzxqzxqz',{current:'opening'});
 for(let i=0;i<2;i++)repeatedUnknown=run('qzxqzxqz',repeatedUnknown.advice.context);
 assert.equal(repeatedUnknown.advice.kind,'offer');

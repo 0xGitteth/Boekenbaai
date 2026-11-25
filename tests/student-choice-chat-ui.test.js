@@ -177,10 +177,10 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Liever kiezen uit antwoorden').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
-  assert.equal(actions.children.filter(x=>x.className==='bb-choice-chat__option').length,2);
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Misschien')));
+  assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);
   const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
-  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Weet ik niet','Zelf antwoorden','Laat boeken zien']);
+  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Iets anders','Weet ik nog steeds niet']);
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children[0].listeners.click();
@@ -342,12 +342,10 @@ vm.runInNewContext(code,{
   assert.ok(existingCard,'Earlier results remain visible in the dialogue');
   actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  for(const choice of ['Iemand ontdekt een geheim','Of het spannend wordt',
-    'Maakt niet uit','Gesprekken']){
-    if(choice==='Gesprekken')holdSuggestions=true;
-    actions.children.find(x=>x.textContent===choice).listeners.click();
-    await new Promise(resolve=>setImmediate(resolve));
-  }
+  assert.equal(actions.children[0].tag,'form','Changing direction remains a conversation');
+  holdSuggestions=true;
+  await submitOpen('Een realistisch mysterie met aanwijzingen');
+  await new Promise(resolve=>setImmediate(resolve));
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(releaseSuggestion,'Deferred recommendation request must be pending');
   const countBefore=suggestRequests.length;

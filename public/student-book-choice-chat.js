@@ -260,6 +260,8 @@
     log.replaceChildren();clearActions();notice('');
   }
   function beginInterests(){
+    if(adviceQuestion){showAdviceExamples(adviceQuestion);return;}
+    if(adviceContext?.current){void submitAdvice('Weet ik niet');return;}
     answer('route','new');
   }
   // The server selects the next open question and supplies corresponding
@@ -288,7 +290,7 @@
     message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien zit hier iets tussen.'));
     const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
     options(items,[['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
-      ['Weet ik nog steeds niet',()=>{message('Geen probleem! We proberen iets anders.');startExploration();}],
+      ['Weet ik nog steeds niet',()=>void submitAdvice('Weet ik niet',undefined,true)],
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
   function continueAdvice(plan){
@@ -310,7 +312,7 @@
       const noPreference=!choices.openSignals?.prefer?.length&&!choices.openSignals?.avoid?.length&&!choices.referenceBookId&&!choices.externalRef&&choices.length!=='short'&&!choices.answers?.length;
       message(noPreference?'Zal ik je gewoon drie verschillende boeken laten zien?':'Zal ik alvast een paar boeken voor je zoeken? 📚');
       options([[noPreference?'Laat me drie boeken zien':'Toon boeken met wat je nu weet',()=>{if(noPreference)choices.route='surprise';void showRecommendations();}],
-        ['Ontdek meer interesses',startExploration]]);
+        ['Ontdek meer interesses',()=>{freshAdvice('more-interests');offerOpenAnswer('Wat vind je nog meer interessant?',null,true);} ]]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
     }else{
@@ -677,7 +679,7 @@
         [option.label,()=>recordAnswer(option.id)]),
     ],[
       ['Weet ik niet',()=>recordAnswer('skip')],
-      ['Zelf antwoorden',()=>offerOpenAnswer('Vertel wat voor jou belangrijk is.')],
+      ['Zelf antwoorden',()=>offerOpenAnswer('Vertel maar wat je bedoelt.',null,true)],
       ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
       ['Laat boeken zien',()=>void showRecommendations()],
     ]);
@@ -860,10 +862,10 @@
       ...(!exhausted?[[choices.route==='surprise'?'Nog drie verrassingen':'Nog drie voorstellen',
         ()=>showRecommendations()]]:[]),
       ...(choices.route==='surprise'
-        ? [['Ontdek mijn interesses',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer('Waar lees je graag over?');}]]
-        : [['Andere richting',()=>{choices={route:'new'};startExploration();}],
+        ? [['Ontdek mijn interesses',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'new',openSignals:{prefer:[],avoid}};freshAdvice();offerOpenAnswer('Waar lees je graag over?');}]]
+        : [['Andere richting',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'new',openSignals:{prefer:[],avoid}};freshAdvice('more-interests');offerOpenAnswer('Oké! Over iets anders dan. Wat vind je nog meer interessant?',null,true);}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
-          ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
+          ['Verras me',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'surprise',openSignals:{prefer:[],avoid}};showRecommendations();}]]),
       ['Vertel wat je anders wilt',()=>{freshAdvice('feedback');offerOpenAnswer('Wat spreekt je niet aan in deze voorstellen?');}],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Helemaal goed! We beginnen opnieuw.');finishIdentity();}],

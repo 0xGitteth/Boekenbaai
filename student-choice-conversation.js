@@ -216,7 +216,7 @@ function questionForContext(c){
   const labels={art:'Tekenen of iets maken',sport:'Sport',gaming:'Games',music:'Muziek'};
   const names=hobbies.map(t=>labels[t]||LABELS[t]||t);
   const options=hobbies.map((t,i)=>({id:String(i),label:names[i],prefer:[t],length:''}));
-  if(hobbies.length>1)options.push({id:'both',label:hobbies.length===2?'Allebei':'Meerdere daarvan',prefer:hobbies,length:''});
+  if(hobbies.length>1)options.push({id:'both',label:hobbies.length===2?'Allebei':'Allemaal',prefer:hobbies,length:''});
   options.push({id:'other',label:'Liever iets anders',prefer:[],length:''});
   return {...q,prompt:hobbies.length===2?'Zou je ook iets over '+names.map(n=>n.toLocaleLowerCase('nl-NL')).join(' of ')+' willen lezen?':hobbies.length===1?'Zou je daar ook iets over willen lezen?':'Zou je over een van deze dingen ook willen lezen?',options};
  }
@@ -366,16 +366,20 @@ function analyze(text,rawContext={},books=[]){
   direct={...validateSignals({prefer:direct.prefer,avoid:[...(direct.avoid||[]),'animalLoss']}),recognized:true,clarify:false};
  }
  const activityContext=['free-time','watch','media-interest'].includes(c.current);
- const explicitReading=/\b(?:ik lees|lees graag|boeken? over|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value);
- const readingClauses=value.split(/[.!?;]|\bmaar\b/).filter(part=>/\b(?:lees|lezen|boek|boeken)\b/.test(part));
+ const readingClauses=input.split(/[.!?;\n]|\b(?:maar|echter)\b/i).filter(part=>/\b(?:lees|lezen|boek|boeken)\b/i.test(part));
+ const explicitReading=/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
  const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/.test(part));
  // Keep explicit book exclusions separate from activity likes/dislikes.
- const readingExclusions=activityRefusal?validateSignals({avoid:readingClauses.flatMap(part=>interpret(part).avoid)}).avoid:[];
+ const readingExclusions=activityRefusal?validateSignals({avoid:[...readingClauses.flatMap(part=>interpret(part).avoid),...(direct.avoid||[]).filter(t=>t==='animalLoss')]}).avoid:[];
  // A preference about playing or watching is not a reading exclusion.
  if(activityContext&&!explicitReading&&!selected){
   if(/\b(?:sport|sporten) zelf niet\b/.test(value)&&direct.prefer.includes('sportWatching')){
    direct={...direct,prefer:direct.prefer.filter(t=>t!=='sportPlaying'&&t!=='sport'),avoid:[]};
   }
+ }
+ if(activityContext&&!selected&&explicitReading&&readingClauses.length&&!activityRefusal){
+  const readingSignals=validateSignals({prefer:readingClauses.flatMap(part=>interpret(part).prefer),avoid:readingClauses.flatMap(part=>interpret(part).avoid)});
+  if(readingSignals.prefer.length||readingSignals.avoid.length)direct={...readingSignals,recognized:true,clarify:false};
  }
  if(activityRefusal&&readingExclusions.length){
   const readingSignals=validateSignals({prefer:readingClauses.flatMap(part=>interpret(part).prefer),avoid:readingExclusions});
@@ -439,7 +443,7 @@ function analyze(text,rawContext={},books=[]){
  if((media.length||anchor)&&!next.used.includes('media-interest')&&!next.used.includes('book-interest')){
    // A title is evidence about possible themes, never about the pupil's liking.
    const candidate=anchor?'book-interest':'media-interest';
-   const mediaContext={...next,current:candidate,signals:activityContext&&!explicitReading?current:updated};
+   const mediaContext={...next,current:candidate,signals:activityContext&&!explicitReading?merged(current,{prefer:[],avoid:delta.avoid}):updated};
    const view=questionView(questionForContext(mediaContext));
    return {...envelope,advice:{kind:'question',reaction:'',
     question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat spreekt je aan in '+media[0]+'?':'Wat vind je interessant aan die games, films of series?'},
