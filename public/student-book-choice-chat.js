@@ -94,6 +94,62 @@
   function beginInterests(){
     answer('route','new');
   }
+  // Open answers supplement, rather than replace, the accessible buttons.
+  // Never submit raw text as a recommendation-history field.
+  function offerOpenAnswer(prompt='Vertel in je eigen woorden wat je zoekt.'){
+    if(prompt)message(prompt);
+    clearActions();
+    const form=el('form','bb-choice-chat__free');
+    const label=el('label','','Jouw antwoord');
+    label.setAttribute('for','bb-choice-free-text');
+    const input=el('textarea');
+    input.id='bb-choice-free-text';input.maxLength=500;input.rows=3;
+    input.placeholder='Bijvoorbeeld: een mysterie zonder moord';
+    input.required=true;
+    const submit=el('button','btn btn--primary','Verstuur');submit.type='submit';
+    const back=el('button','btn btn--secondary','Kies liever uit antwoorden');back.type='button';
+    back.addEventListener('click',()=>{if(!busy)startExploration();});
+    form.append(label,input,submit,back);actions.append(form);input.focus();
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();
+      if(!active||busy||!input.value.trim())return;
+      const value=input.value.trim().slice(0,500);
+      message(value,'student');input.value='';busy=true;submit.disabled=true;input.disabled=true;
+      const marker=epoch;notice('Je antwoord bekijken…');
+      try{
+        const result=await api('/api/auth/student-pin/choice-interpret',{text:value});
+        if(!active||marker!==epoch)return;
+        busy=false;notice('');
+        if(!result.recognized){
+          message('Ik weet niet zeker wat je bedoelt. Kun je iets zeggen over het onderwerp, de sfeer of wat je juist niet wilt lezen?');
+          options([['Ik wil het opnieuw uitleggen',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration],['Laat me drie boeken zien',()=>answer('route','surprise')]]);
+          return;
+        }
+        const names=keys=>keys.map(k=>result.labels?.[k]||k).join(', ');
+        const parts=[];
+        if(result.prefer?.length)parts.push('Je zoekt iets met '+names(result.prefer)+'.');
+        if(result.avoid?.length)parts.push('Je wilt '+names(result.avoid)+' liever vermijden.');
+        message(parts.join(' ')+' Heb ik dat goed begrepen?');
+        const confirmed=()=>{
+          const old=choices.openSignals||{prefer:[],avoid:[]};
+          const prefer=new Set(old.prefer),avoid=new Set(old.avoid);
+          for(const k of result.prefer||[]){avoid.delete(k);prefer.add(k);}
+          for(const k of result.avoid||[]){prefer.delete(k);avoid.add(k);}
+          choices={...choices,route:'new',openSignals:{prefer:[...prefer],avoid:[...avoid]}};
+        };
+        options([
+          ['Ja, zoek boeken',()=>{confirmed();void showRecommendations();}],
+          ['Ja, ik wil nog iets toevoegen',()=>{confirmed();offerOpenAnswer('Wat vind je nog meer belangrijk?');}],
+          ['Nee, ik bedoel iets anders',()=>offerOpenAnswer('Vertel het nog eens in je eigen woorden.')],
+          ['Kies liever uit antwoorden',startExploration],
+        ]);
+      }catch(err){
+        if(!active||marker!==epoch)return;
+        busy=false;notice(err.message||'Je antwoord kon niet worden verwerkt.');
+        options([['Opnieuw proberen',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration]]);
+      }finally{if(active&&marker===epoch)busy=false;}
+    });
+  }
   function selectReference(book,read){
     message(read?'Wat vond je leuk aan '+book.title+'?':'Wat spreekt je aan in '+book.title+'?');
     const pick=preference=>{
@@ -120,6 +176,7 @@
     currentStep='route';
     options([
       ['Ontdek mijn interesses',beginInterests],
+      ['Vertel zelf wat je zoekt',()=>{choices={route:'new'};offerOpenAnswer();}],
       ['Laat me drie boeken zien',()=>answer('route','surprise')],
     ]);
   }
@@ -303,6 +360,7 @@
     // A fresh route must never be biased by an earlier reference book.
     delete choices.referenceBookId;
     delete choices.referencePreference;
+    delete choices.openSignals;
     questionHistory=[];
     currentQuestion=null;
     void askAdaptiveQuestion();
@@ -317,6 +375,7 @@
         [option.label,()=>recordAnswer(option.id)]),
       ['Weet ik niet',()=>recordAnswer('skip')],
       ['Sla deze vraag over',()=>recordAnswer('skip')],
+      ['Ik wil zelf antwoord geven',()=>offerOpenAnswer('Vertel wat voor jou belangrijk is.')],
       ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
       ['Laat nu drie boeken zien',()=>void showRecommendations()],
     ]);
@@ -419,8 +478,9 @@
       if(typeof window.BoekenbaaiOpenBookDetail!=='function')throw Error('De boekdetails zijn nog niet geladen.');
       // Recommendations are already grouped by work (title + author).
       // Show every edition of that work in the same detail dialog.
-      const copies=books.filter(b=>normalized(b.title)===normalized(copy.title)
-        && normalized(b.author)===normalized(copy.author));
+      const authorKey=b=>normalized(b.author).replace(/[.,;:!?\s]+$/g,'');
+      const copies=books.filter(b=>b.catalogHidden!==true&&b.personalLoanOnly!==true
+        &&normalized(b.title)===normalized(copy.title)&&authorKey(b)===authorKey(copy));
       const preferred=copies.find(b=>b.status==='available'&&!b.borrowedBy&&!b.borrowedByClassId)||copy;
       const group={
         id:item.key,title:copy.title,author:copy.author,
@@ -477,7 +537,9 @@
       block.append(list);
       notice(choices.route==='surprise'
         ? 'Een afwisselende selectie uit de bibliotheek.'
-        : 'Deze tips zijn gebaseerd op je antwoorden.');
+        : choices.openSignals?.avoid?.length
+          ? 'Ik heb bekende ongewenste onderwerpen vermeden. De boekinformatie is niet altijd volledig.'
+          : 'Deze tips zijn gebaseerd op je antwoorden.');
       message('Zit er iets tussen?');
       followupButtons(false);
     }catch(err){
@@ -501,6 +563,7 @@
         : [['Andere richting',()=>{choices={route:'new'};startExploration();}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
+      ['Vertel wat je anders wilt',()=>offerOpenAnswer('Wat mis je in deze voorstellen?')],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{

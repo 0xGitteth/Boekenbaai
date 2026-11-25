@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {interpret,validateSignals}=require('../student-choice-open-text');
+assert.deepEqual(interpret('Een mysterie zonder moord'),{prefer:['mystery'],avoid:['murder'],recognized:true,clarify:false});
+assert.deepEqual(interpret('Iets spannends maar geen horror').avoid,['horror']);
+assert.ok(interpret('Een spannend verhaal, maar liever realistisch').prefer.includes('realistic'));
+assert.equal(interpret('Geen idee').recognized,false);
+assert.equal(interpret('Niet alleen fantasie').recognized,false);
+assert.equal(interpret('transport').recognized,false);
+assert.deepEqual(validateSignals({prefer:['fantasy','madeup','murder'],avoid:['murder']}),{prefer:['fantasy'],avoid:['murder']});
+console.log('Dutch open answer signals, bounded recognition and negation OK');

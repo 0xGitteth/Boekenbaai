@@ -165,6 +165,8 @@ const TRAIT_WORDS={
   balanced:['avontuur','realistisch','vriendschap'],
   dialogue:['gesprek','dialoog','chat','brieven','berichten','whatsapp'],
   setting:['wereld','landschap','omgeving','ruimte','beschrijving'],
+  murder:['moord','moorden','moordenaar','vermoord','vermoorden'],
+  horror:['horror','griezel','griezelen','griezelig','eng'],
 };
 // Word-boundary matching prevents 'sport' inside 'transport' and 'leven'
 // inside 'overleven'. Accept only known Dutch inflections, never arbitrary

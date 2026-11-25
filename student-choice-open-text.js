@@ -1,0 +1,72 @@
+'use strict';
+// Bounded Dutch vocabulary, not a language model. No raw answer is saved.
+// Recognition is provisional until the pupil confirms the interpretation.
+const TERMS={
+ mystery:['mysterie','mysteries','raadsel','raadsels','detective','detectives','mystery','mysterieuze','geheim','geheimen'],
+ danger:['spannend','spannende','spanning','gevaar','gevaarlijk','thriller','thrillers'],
+ puzzles:['puzzelen','puzzel','puzzels','aanwijzingen','zelf oplossen','zelf meedenken','raadsel oplossen','speuren'],
+ realistic:['realistisch','realistische','echt kan gebeuren','echt kunnen gebeuren','herkenbaar','herkenbare'],
+ true:['waargebeurd','waargebeurde','echt gebeurd','non fictie','non-fictie'],
+ fantasy:['fantasy','fantasie','magie','draken','tovenaars'],
+ humor:['grappig','grappige','humor','lachen','komedie'],
+ friendship:['vriendschap','vrienden','vriendinnen'],
+ relationships:['liefde','romantiek','relaties','verliefd'],
+ school:['school','klas','middelbare school'],
+ action:['actie','achtervolgingen','gevechten'],
+ adventure:['avontuur','avonturen','avontuurlijk'],
+ sport:['sport','sporten','voetbal','basketbal'],
+ animals:['dieren','honden','paarden','katten'],
+ nature:['natuur','bos','wildernis'],
+ science:['wetenschap','ruimtevaart','wetenschappelijk'],
+ technology:['techniek','computers','robots','technologie','gamen','programmeren'],
+ history:['geschiedenis','historische','vroeger'],
+ facts:['informatief','informatie','feiten','iets leren'],
+ people:['personages','mensen','personen'],
+ calm:['rustig','rustige','ontspannend'],
+ fast:['snel tempo','veel gebeurt','meteen iets gebeurt'],
+ murder:['moord','moorden','moordenaar','moordenaars','vermoord','vermoorden'],
+ horror:['horror','eng','enge','griezel','griezelen'],
+};
+const LABELS={mystery:'mysteries',danger:'spanning',puzzles:'zelf raadsels oplossen',
+ realistic:'realistische verhalen',true:'waargebeurde verhalen',fantasy:'fantasie',
+ humor:'humor',friendship:'vriendschap',relationships:'liefde of relaties',school:'school',
+ action:'actie',adventure:'avontuur',sport:'sport',animals:'dieren',nature:'natuur',
+ science:'wetenschap',technology:'techniek',history:'geschiedenis',facts:'informatie',
+ people:'personages',calm:'rustige verhalen',fast:'een snel tempo',murder:'moord',horror:'horror'};
+const normalize=s=>String(s||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+function validateSignals(input){
+ const filter=a=>[...new Set((Array.isArray(a)?a:[]).filter(k=>typeof k==='string'&&Object.hasOwn(TERMS,k)))].slice(0,12);
+ const avoid=filter(input?.avoid);
+ return {prefer:filter(input?.prefer).filter(k=>!avoid.includes(k)),avoid};
+}
+function interpret(text){
+ if(typeof text!=='string'||!text.trim()||text.length>500)return {prefer:[],avoid:[],recognized:false,clarify:true};
+ const normalized=normalize(text);
+ // Questions, double negations, uncertainty and idiomatic negations are
+ // not treated as facts about the learner. Ask them to confirm instead.
+ if(/\b(?:niet alleen|niet dat|niet geen|geen hekel|weet niet|weet ik niet|geen idee|maakt niet uit|misschien)\b/.test(normalized))
+  return {prefer:[],avoid:[],recognized:false,clarify:true};
+ const signals=new Map();
+ // Punctuation and contrast words reset negation scope. A comma/and/or
+ // after a negative clause may still list things to avoid; confirmation
+ // is always required and the learner can correct the interpretation.
+ for(const clause of normalized.split(/[.!?;]|\b(?:maar|echter|wel graag|wel leuk|liever)\b/)){
+  const words=clause.replace(/[^a-z0-9-]+/g,' ').trim().split(/\s+/);
+  for(const [trait,variants] of Object.entries(TERMS)){
+   for(const variant of variants){
+    const parts=variant.split(' ');
+    for(let i=0;i<=words.length-parts.length;i++){
+     if(!parts.every((w,j)=>words[i+j]===w))continue;
+     const before=words.slice(0,i);
+     const after=words.slice(i+parts.length,i+parts.length+4);
+     const negative=before.some(w=>['geen','niet','zonder','vermijd','behalve','hekel'].includes(w))
+       ||after.join(' ').match(/^(?:vind ik )?(?:niet leuk|niet fijn|hoeft niet|wil ik niet)/);
+     signals.set(trait,negative?'avoid':'prefer');
+    }
+   }
+  }
+ }
+ const result=validateSignals({prefer:[...signals].filter(([,v])=>v==='prefer').map(([k])=>k),avoid:[...signals].filter(([,v])=>v==='avoid').map(([k])=>k)});
+ return {...result,recognized:signals.size>0,clarify:signals.size===0};
+}
+module.exports={interpret,validateSignals,LABELS};

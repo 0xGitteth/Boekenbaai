@@ -57,3 +57,9 @@ Deze draft registreert het afgesproken ontwerp; daadwerkelijke implementatie vol
 - Een gekozen inhoudelijke voorkeur beïnvloedt aanbevelingen. De gekozen referentie zelf wordt niet opnieuw voorgesteld.
 - De 49-vragenroute en verrassingsroute blijven beschikbaar. Zonder toestemming gebruikt de nieuwe interface geen bevestigde leesgeschiedenis.
 - Nog niet geïmplementeerd: externe boekzoekopdracht/handmatige referenties, opgeslagen positieve en negatieve waarderingen, betrouwbare series, meerdere referenties en uitgebreide gespreksevaluatie. Niet mergen voordat deze onderdelen en volledige acceptatiecontrole klaar zijn.
+
+## Implementatiefase 2: advies en vrije antwoorden
+- Leerlingen kunnen eigen tekst invoeren of de bestaande keuzeopties gebruiken; maximaal 500 tekens. De server herkent uitsluitend gecontroleerde Nederlandse woorden en woordgroepen, contrast en eenvoudige ontkenningen. De leerling bevestigt de samenvatting vóór deze wordt gebruikt. Onzekerheid leidt tot verduidelijking of de keuzeopties, niet tot verzonnen begrip.
+- Direct adviseren na bevestigde voorkeuren, eventueel minder dan drie als de collectie onvoldoende aantoonbare overeenkomsten heeft. Bekende ongewenste onderwerpen worden uitgesloten; nooit claimen dat een onderwerp zeker afwezig is wanneer metadata onvolledig is.
+- Vrije tekst wordt niet opgeslagen of naar externe diensten verzonden. Alleen begrensde gestructureerde voorkeuren blijven in de lopende dialoog; het persoonlijke geheugen vereist afzonderlijke toestemming.
+- Nog te bouwen: circa 250–400 inhoudelijk verschillende vragen, meerdere gespreksstrategieën, gewogen vraagselectie met relevantie, onderscheidend vermogen en versheid, herhalingsgeheugen per leerling (anoniem uitsluitend per sessie), adaptieve beëindiging zonder minimum aantal vragen, expliciete feedback en minimaal 10.000 simulaties met gemeten gespreksherhaling. Externe titels en series blijven open. Geen merge vóór volledige acceptatie.

@@ -47,6 +47,14 @@ const fetchStub=async (url,options={})=>{
     invalidated.push(JSON.parse(options.body).choiceGrant);
     return makeResponse(200,{closed:true});
   }
+  if(url==='/api/auth/student-pin/choice-context'){
+    assert.equal(JSON.parse(options.body).consent,true);
+    return makeResponse(200,{recent:null,favorites:[]});
+  }
+  if(url==='/api/auth/student-pin/choice-interpret'){
+    assert.equal(JSON.parse(options.body).text,'Een mysterie zonder moord');
+    return makeResponse(200,{recognized:true,prefer:['mystery'],avoid:['murder'],labels:{mystery:'mysteries',murder:'moord'}});
+  }
   if(url==='/api/auth/student-pin/choice-next'){
     const payload=JSON.parse(options.body);
     questionRequests.push(payload);
@@ -124,13 +132,13 @@ vm.runInNewContext(code,{
   other.listeners.click();
   assert.equal(pin.value,'','Switching to anonymous mode must wipe PIN input');
   assert.ok(log.children.some(row=>row.children[0]?.textContent===
-    'Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?'),
+    'Wil je ontdekken wat je leuk vindt of zal ik je drie boeken voorstellen?'),
     'Show the selected exact question to anonymous learners');
   assert.ok(actions.children.some(x=>x.textContent==='Ontdek mijn interesses'),
     'The first answer should start the questionnaire');
   assert.ok(actions.children.some(x=>x.textContent==='Laat me drie boeken zien'),
     'The second answer should show three books immediately');
-  assert.equal(actions.children.length,2,'Only the two approved answers appear');
+  assert.equal(actions.children.length,3,'Open answer supplements the two approved routes');
   resolvePin(makeResponse(200,{grant:'valid-late-token',firstName:'Sanne'}));
   await pending;
   await new Promise(resolve=>setImmediate(resolve));
@@ -164,25 +172,32 @@ vm.runInNewContext(code,{
   assert.equal(questionRequests.at(-1).answers.length,0);
   assert.ok(actions.children.some(x=>x.textContent==='Sla deze vraag over'));
 
-  // Signed-in learners also get only the approved two main options. The
-  // previously offered similar-books route remains available as an explicit
-  // consent question after choosing to explore their interests.
+  // Signed-in pupils choose whether to use private reading context.
   elements.get('student-choice-close').listeners.click();
   loggedIn=true;
   await elements.get('student-help-choose').listeners.click();
-  assert.equal(log.children[0].children[0].textContent,
-    'Hoi Sanne! Wil je zelf ontdekken wat je leuk vindt, of zal ik je 3 boeken voorstellen?');
-  assert.equal(actions.children.length,2);
+  assert.match(log.children[0].children[0].textContent,/Mag ik rekening houden/);
   assert.deepEqual(actions.children.map(x=>x.textContent),
-    ['Ontdek mijn interesses','Laat me drie boeken zien']);
-  actions.children[0].listeners.click();
-  assert.ok(log.children.some(row=>row.children[0]?.textContent===
-    'Wil je ook tips die lijken op boeken die je eerder hebt gelezen?'));
-  assert.deepEqual(actions.children.map(x=>x.textContent),
-    ['Ja, graag','Nee, liever iets anders']);
-  actions.children[0].listeners.click();
+    ['Ja, graag','Nee, iets nieuws ontdekken','Laat me drie boeken zien']);
+  actions.children[1].listeners.click();
+  actions.children.find(x=>x.textContent==='Ontdek mijn interesses').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children[0].listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  const free=actions.children[0];
+  assert.equal(free.tag,'form');
+  free.children[1].value='Een mysterie zonder moord';
+  await free.listeners.submit({preventDefault(){}});
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb ik dat goed begrepen')));
+  actions.children.find(x=>x.textContent==='Ja, zoek boeken').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:['murder']});
+  assert.equal(suggestRequests.at(-1).choices.useReadingHistory,true);
+  assert.ok(!JSON.stringify(suggestRequests.at(-1)).includes('Een mysterie zonder moord'));
 
   // Reset errors must leave meaningful actions available. The option click
   // itself clears all buttons before the API request begins.

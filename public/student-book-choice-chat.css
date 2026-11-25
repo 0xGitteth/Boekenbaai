@@ -158,3 +158,7 @@
   .bb-choice-chat__bubble{max-width:100%;}
 }
 @media(prefers-reduced-motion:reduce){.bb-choice--chat *{scroll-behavior:auto;}}
+
+.bb-choice-chat__free{grid-column:1/-1;display:grid;gap:8px;}
+.bb-choice-chat__free label{font-size:.88rem;font-weight:700;}
+.bb-choice-chat__free textarea{box-sizing:border-box;width:100%;min-height:72px;border:1px solid #bfcfe2;border-radius:9px;padding:10px;font:inherit;color:#19345d;background:#fff;resize:vertical;}

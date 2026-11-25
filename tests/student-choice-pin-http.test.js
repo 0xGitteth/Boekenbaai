@@ -115,6 +115,12 @@ async function stop(){
     assert.ok(/^[\w-]{32,}$/.test(grant));
     assert.notEqual((await request('/api/me',undefined,grant)).status,200,
       'Recommendation grant may never authenticate a student session');
+    const interpreted=await request('/api/auth/student-pin/choice-interpret',{text:'Een mysterie zonder moord'});
+    assert.equal(interpreted.status,200);
+    assert.deepEqual(interpreted.body.prefer,['mystery']);
+    assert.deepEqual(interpreted.body.avoid,['murder']);
+    assert.equal((await request('/api/auth/student-pin/choice-interpret',{text:'x'.repeat(501)})).status,400);
+    assert.equal((await request('/api/auth/student-pin/choice-interpret',{text:'mysterie'},'','https://other.invalid')).status,403);
     const contextRoute='/api/auth/student-pin/choice-context';
     assert.equal((await request(contextRoute,{consent:true})).status,401);
     assert.equal((await request(contextRoute,{consent:true},'session-t')).status,401);

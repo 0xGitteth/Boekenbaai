@@ -7,6 +7,7 @@ const dialogue=require('./student-choice-dialogue');
 const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity');
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
 const {workKey}=require('./book-reservations');
+const {validateSignals}=require('./student-choice-open-text');
 const keyOf = book => workKey(book);
 const QUESTION_VALUES = Object.freeze({
   route: ['new','similar','surprise'],
@@ -438,6 +439,7 @@ function validateChoices(value) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
   result.answers=dialogue.validatedAnswers(input.answers);
+  result.openSignals=result.route==='surprise'?{prefer:[],avoid:[]}:validateSignals(input.openSignals);
   result.useReadingHistory=input.useReadingHistory!==false;
   result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)
     ?input.referencePreference:'';
@@ -590,8 +592,9 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     wereld:['setting','fantasy','discovery','adventure'],tempo:['fast','action'],
     sfeer:['calm','humor','unusual'],informatie:['facts','true','science','history'],
   };
-  for(const trait of referencePreferences[choice.referencePreference]||[])
-    weights.set(trait,(weights.get(trait)||0)+2);
+  const explicitTraits=referencePreferences[choice.referencePreference]||[];
+  for(const trait of explicitTraits)weights.set(trait,(weights.get(trait)||0)+2);
+  for(const trait of choice.openSignals.prefer)weights.set(trait,(weights.get(trait)||0)+3);
   const reference=choice.referenceBookId
     ?(db.books||[]).find(book=>book.id===choice.referenceBookId&&!isHidden(book)):null;
   // Similarity MUST use the pooled work, not whichever physical copy had a
@@ -612,7 +615,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     danger:'spannende gebeurtenissen',survival:'overleven',competition:'wedstrijd',
     sport:'sport',challenge:'een uitdaging',justice:'rechtvaardigheid',humor:'humor',
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
-    setting:'de omgeving',
+    setting:'de omgeving',murder:'misdaad met moord',horror:'griezelverhalen',
   };
   const candidates = [];
   for (const work of works) {
@@ -635,6 +638,12 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       + lensMatches.length * 11 + directionMatches.length * 9
       + moodMatches.length * 4 + familiar.length * 6 + (work.available ? 3 : 0);
     const traits=workTraits.get(work.key)||new Map();
+    // Exclude known contraindications; absence of a metadata signal is
+    // not evidence that a book is free of that subject.
+    if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
+    const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
+    if(choice.openSignals.prefer.length&&!openMatches)continue;
+    const explicitMatch=explicitTraits.reduce((sum,t)=>sum+(traits.get(t)||0),0);
     const matchedDialogue=dialogue.scoreTraits(traits,weights);
     score+=matchedDialogue.value*3;
     let matchedAnchor=0;
@@ -648,13 +657,15 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     }
     if (choice.length === 'short' && work.pages) score += work.pages <= 180 ? 7 : -4;
     // Free-time activity is deliberately not mapped to a book's genre.
-    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,
+    candidates.push({ work, matched, familiar, matchedDialogue, matchedAnchor,explicitMatch,openMatches,
       score, tiebreak: tie(work.key, choice.seed) });
   }
   candidates.sort((a,b) =>
     // When asking for books like a chosen reference, offer real matches
     // before unrelated fallback titles, even with reading-history consent.
-    (anchorTraits.size&&choice.referenceBookId
+    (b.openMatches-a.openMatches)
+    || (explicitTraits.length?b.explicitMatch-a.explicitMatch:0)
+    || (anchorTraits.size&&choice.referenceBookId
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
