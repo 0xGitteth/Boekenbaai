@@ -175,7 +175,7 @@ vm.runInNewContext(code,{
     ['Ja, graag','Nee, iets nieuws ontdekken','Laat me drie boeken zien']);
   actions.children[1].listeners.click();
   actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
-  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Liever kiezen uit antwoorden').listeners.click();
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Stel me meerkeuzevragen').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Misschien')));
   assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);

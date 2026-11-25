@@ -369,7 +369,7 @@
     const items=[['Geef voorbeelden',()=>{if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');}]];
     if(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length)items.push(['Laat boeken zien',()=>void showRecommendations()]);
     items.push(['Ik ken een leuk boek',()=>showReferenceSearch('','',true)],
-      ['Liever kiezen uit antwoorden',beginInterests],
+      ['Stel me meerkeuzevragen',beginInterests],
       ['Opnieuw beginnen',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);}]);
     const suggestions=suggestionShelf(items);
     form.append(suggestions,label,input,submit);
