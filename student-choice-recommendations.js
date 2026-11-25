@@ -441,7 +441,8 @@ function validateChoices(value) {
     result[field] = values.includes(input[field]) ? input[field] : neutral[field];
   }
   result.answers=dialogue.validatedAnswers(input.answers);
-  result.openSignals=result.route==='surprise'?{prefer:[],avoid:[]}:validateSignals(input.openSignals);
+  result.openSignals=validateSignals(input.openSignals);
+  if(result.route==='surprise')result.openSignals.prefer=[];
   result.useReadingHistory=input.useReadingHistory!==false;
   result.externalRef=typeof input.externalRef==='string'&&/^[A-Za-z0-9_-]{32}$/.test(input.externalRef)&&result.route!=='surprise'?input.externalRef:'';
   result.referencePreference=['spanning','personages','wereld','tempo','sfeer','informatie'].includes(input.referencePreference)

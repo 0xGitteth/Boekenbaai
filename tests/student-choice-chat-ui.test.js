@@ -181,6 +181,10 @@ vm.runInNewContext(code,{
   assert.ok(actions.children.filter(x=>x.className==='bb-choice-chat__option').length>=3);
   const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
   assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Iets anders','Weet ik nog steeds niet']);
+  const example=actions.children.find(x=>x.className==='bb-choice-chat__option'&&/mysteries/i.test(x.textContent));
+  assert.ok(example);example.listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(actions.children[0].tag,'form','A chosen example returns to the same conversation');
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children[0].listeners.click();

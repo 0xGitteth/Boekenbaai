@@ -209,6 +209,8 @@ assert.equal(exactRank.suggestions[0]?.bookId,'photo');
 const ranked=rankBooks({books},{route:'new',openSignals:{prefer:['animals'],avoid:['animalLoss']},seed:'animal'});
 assert.ok(ranked.suggestions.some(b=>b.bookId==='f'));
 assert.ok(!ranked.suggestions.some(b=>b.bookId==='g'));
+const safeSurprise=rankBooks({books:[books[6],books[5],books[9]]},{route:'surprise',openSignals:{prefer:['crime'],avoid:['animalLoss','murder']},seed:'safe-surprise'});
+assert.deepEqual(safeSurprise.suggestions.map(x=>x.bookId),['f']);
 const feedback=run('Gaat allemaal over politie. Ik wil juist lezen over criminelen zelf',{current:'feedback',signals:{prefer:['crime','police'],avoid:[]}});
 assert.ok(feedback.advice.context.signals.prefer.includes('criminalPerspective'));
 assert.ok(!feedback.advice.context.signals.prefer.includes('police'));

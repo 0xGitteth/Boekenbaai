@@ -853,7 +853,7 @@
         options([['Opnieuw met mijn PIN',showPin],['Opnieuw inloggen met Google',()=>{close();document.getElementById('student-nav-profile')?.click();}]]);
       }else{
         notice(err.message);
-        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{choices={route:'new'};startExploration();}]]);
+        options([['Opnieuw proberen',()=>showRecommendations(extra)],['Andere richting',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'new',openSignals:{prefer:[],avoid}};startExploration();}]]);
       }
     }finally{if(active&&marker===epoch)busy=false;}
   }
@@ -866,7 +866,7 @@
         : [['Andere richting',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'new',openSignals:{prefer:[],avoid}};freshAdvice('more-interests');offerOpenAnswer('Oké! Over iets anders dan. Wat vind je nog meer interessant?',null,true);}],
           ['Liever een kort boek',()=>{choices.length='short';showRecommendations();}],
           ['Verras me',()=>{const avoid=choices.openSignals?.avoid||[];choices={route:'surprise',openSignals:{prefer:[],avoid}};showRecommendations();}]]),
-      ['Vertel wat je anders wilt',()=>{freshAdvice('feedback');offerOpenAnswer('Wat spreekt je niet aan in deze voorstellen?');}],
+      ['Vertel wat je anders wilt',()=>{freshAdvice('feedback');offerOpenAnswer('Wat vind je minder leuk aan deze boeken?',null,true);}],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
       ['Helemaal opnieuw',()=>{choices={};message('Helemaal goed! We beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
