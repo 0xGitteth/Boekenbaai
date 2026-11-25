@@ -202,8 +202,9 @@ function activeBorrowedBooks(db, student) {
 
 function removeStudentFromClasses(db, studentId) {
   for (const klass of db.classes || []) {
-    klass.studentIds = Array.isArray(klass?.studentIds) ? klass.studentIds : [];
-    klass.studentIds = klass.studentIds.filter((id) => id !== studentId);
+    if (Array.isArray(klass?.studentIds)) {
+      klass.studentIds = klass.studentIds.filter((id) => id !== studentId);
+    }
   }
   const student = (db.students || []).find((entry) => entry?.id === studentId);
   if (student) student.classIds = [];

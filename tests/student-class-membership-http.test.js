@@ -27,12 +27,18 @@ const db={
     {id:'old',name:'Arbeid',studentIds:['pupil-two'],teacherIds:['teacher-old']},
     {id:'new',name:'Onderbouw BKT',studentIds:['pupil-one'],
       teacherIds:['teacher-new']},
+    {id:'legacy',name:'Bovenbouw Structuur',teacherIds:['teacher-legacy']},
+    {id:'empty',name:'VMBO Theoretisch 4',studentIds:[],teacherIds:['teacher-empty']},
   ],
   students:[
     student('pupil-one','Leerling Nieuwe Klas',['old']),
     student('pupil-two','Leerling Oude Klas',['old']),
+    student('pupil-legacy','Leerling Legacy',['legacy']),
+    student('pupil-legacy-two','Tweede Legacy',['legacy']),
+    student('pupil-empty','Leerling Zonder Klas',['empty']),
   ],
-  users:[teacher('teacher-old','old'),teacher('teacher-new','new')],
+  users:[teacher('teacher-old','old'),teacher('teacher-new','new'),
+    teacher('teacher-legacy','legacy'),teacher('teacher-empty','empty')],
 };
 fs.writeFileSync(dbFile,JSON.stringify(db));
 let child;
@@ -90,6 +96,22 @@ async function login(username){
     assert.deepEqual(newList.data.map(s=>s.id),['pupil-one']);
     assert.deepEqual(newList.data[0].classNames,['Onderbouw BKT']);
     assert.deepEqual(newList.data[0].classIds,['new']);
+    const legacy=await login('pupil-legacy');
+    assert.deepEqual(legacy.user.classIds,['legacy']);
+    assert.deepEqual(legacy.user.classNames,['Bovenbouw Structuur']);
+    const legacyMe=await fetchApi('/api/me',legacy.token);
+    assert.deepEqual(legacyMe.data.classIds,['legacy']);
+    assert.deepEqual(legacyMe.data.classNames,['Bovenbouw Structuur']);
+    assert.equal((await fetchApi('/api/exam-reading-list',legacy.token)).status,200);
+    const legacyTeacher=await login('teacher-legacy');
+    const legacyList=await fetchApi('/api/students',legacyTeacher.token);
+    assert.deepEqual(legacyList.data.map(x=>x.id).sort(),['pupil-legacy','pupil-legacy-two']);
+    assert.deepEqual((await fetchApi('/api/classes',legacyTeacher.token)).data[0].studentIds.sort(),
+      ['pupil-legacy','pupil-legacy-two']);
+    const empty=await login('pupil-empty');
+    assert.deepEqual(empty.user.classIds,[]);
+    assert.equal((await fetchApi('/api/exam-reading-list',empty.token)).status,403);
+    assert.equal((await fetchApi('/api/students/pupil-one/reset-password',oldTeacher.token,{})).status,403);
     const after=JSON.parse(fs.readFileSync(dbFile,'utf8'));
     assert.deepEqual(after.students,db.students,
       'Read-only class projection must not mutate account records');
