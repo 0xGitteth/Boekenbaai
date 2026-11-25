@@ -42,6 +42,22 @@ function updateFromPages(db,claim,pages,{imageUrl='',failedCovers=new Set()}={})
       if(!userEdited(book,'pageCount')&&!book.pageCount&&page.pageCount){
         book.pageCount=page.pageCount;addProvenance(book,'pageCount','verified_book_page');added++;
       }
+      // Keep source keywords separate from teacher/import labels, as EasyCB does.
+      if(book.themesCleared!==true && Array.isArray(page.tags)&&page.tags.length){
+        const current=Array.isArray(book.enrichmentTags)?book.enrichmentTags:[];
+        const merged=new Map(current.filter(t=>typeof t==='string'&&t.trim())
+          .map(t=>[t.trim().toLocaleLowerCase('nl-NL'),t.trim()]));
+        for(const tag of page.tags){
+          if(typeof tag!=='string'||!tag.trim()||merged.size>=30)continue;
+          const key=tag.trim().toLocaleLowerCase('nl-NL');
+          if(!merged.has(key))merged.set(key,tag.trim());
+        }
+        const fresh=[...merged.values()];
+        if(JSON.stringify(current)!==JSON.stringify(fresh)){
+          book.enrichmentTags=fresh;
+          addProvenance(book,'enrichmentTags','verified_book_page');added++;
+        }
+      }
       if(!userEdited(book,'tags')&&Array.isArray(page.tags)&&page.tags.length){
         const current=Array.isArray(book.tags)?book.tags:[];
         const values=new Set(current.map(t=>String(t).toLocaleLowerCase('nl-NL')));
