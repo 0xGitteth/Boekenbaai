@@ -50,6 +50,13 @@ for(let i=0;i<100;i++){
  assert.deepEqual(new Set(hobbies.advice.context.hobbies),new Set(['sport','drawing']));
  assert.deepEqual(hobbies.advice.context.signals.prefer,[]);
  assert.match(hobbies.advice.question.prompt,/sport.*tekenen|tekenen.*sport/i);
+ assert.match(hobbies.advice.reaction,/Oh, leuk!/);
+ const yes=run('Ja',hobbies.advice.context);
+ assert.equal(yes.advice.kind,'examples');
+ assert.deepEqual(yes.advice.context.signals.prefer,[]);
+ const both=run('Allebei',hobbies.advice.context);
+ assert.ok(both.advice.context.signals.prefer.includes('drawing'));
+ assert.ok(both.advice.context.signals.prefer.includes('sport'));
  const art=run('tekenen en schilderen',hobbies.advice.context);
  assert.ok(!art.advice.context.signals.prefer.includes('music'));
  assert.ok(!/muzikant|muziek|liedjes/i.test(art.advice.question?.prompt||''));
