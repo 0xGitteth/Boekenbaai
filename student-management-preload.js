@@ -1,5 +1,7 @@
 'use strict';
 
+const {currentStudentClassIds}=require('./student-class-membership');
+
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -225,16 +227,7 @@ function managedClassIds(db, user) {
   return ids;
 }
 
-function studentClassIds(db, student) {
-  // Class rosters can be updated by a mentor before a stale student.classIds
-  // field is reconciled. When an actual roster membership exists, it is the
-  // source of truth for display and access; do not union the old class back in.
-  const roster = (db.classes || []).filter(klass =>
-    Array.isArray(klass?.studentIds) && klass.studentIds.includes(student.id))
-    .map(klass=>klass.id);
-  if (roster.length) return [...new Set(roster)];
-  return [...new Set(Array.isArray(student.classIds) ? student.classIds.filter(Boolean) : [])];
-}
+function studentClassIds(db,student){return currentStudentClassIds(db,student);}
 
 function classNames(db, ids) {
   const wanted = new Set(ids || []);
