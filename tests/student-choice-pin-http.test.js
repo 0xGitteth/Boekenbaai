@@ -204,6 +204,10 @@ async function stop(){
     const record=readDb().studentChoiceSeen.find(x=>x.studentId==='a');
     assert.ok(record&&record.keys.length===6);
     const beforePrivate=readDb().studentChoiceSeen;
+    const partialTips=await suggest({...choices,openSignals:{prefer:['mystery','hamsters'],avoid:[]}},grant);
+    assert.equal(partialTips.status,200);
+    assert.ok(partialTips.body.missingTopics.some(t=>t.id==='hamsters'));
+    assert.deepEqual(readDb().studentChoiceSeen,beforePrivate,'Unshown partial matches must not be marked as earlier recommendations');
     const privateBookTips=await suggest({...choices,openSignals:{prefer:['queerStories'],avoid:[]},questionIds:['specific-queerStories'],useReadingHistory:true},grant);
     assert.equal(privateBookTips.status,200);
     assert.deepEqual(readDb().studentChoiceSeen,beforePrivate,'Sensitive reading interests must not extend stored recommendation history');

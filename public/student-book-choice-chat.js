@@ -835,7 +835,7 @@
         const missing=results.missingTopics[0];
         message('Ik kan in de boekinformatie geen goede match vinden voor '+missing.label+'. Wil je ook naar verwante onderwerpen kijken?');
         const alternative=missing.parent&&missing.parentLabel?[['Ook '+missing.parentLabel,()=>{const signals=choices.openSignals||{prefer:[],avoid:[]};choices.openSignals={...signals,prefer:[...new Set([...signals.prefer.filter(t=>t!==missing.id),missing.parent])]};void showRecommendations();}]]:[];
-        options([...alternative,['Andere interesses bekijken',startExploration],['Zelf vertellen',()=>offerOpenAnswer('Wat zou je anders willen lezen?',null,true)],...(results.suggestions?.length?[['Laat de andere passende boeken zien',()=>showRecommendations({allowPartial:true})]]:[])]);
+        options([...alternative,['Andere interesses bekijken',startExploration],['Zelf vertellen',()=>{adviceContext={...(adviceContext||{}),current:'feedback',uncertain:0};offerOpenAnswer('Wat zou je anders willen lezen?',null,true);}],...(results.suggestions?.length?[['Laat de andere passende boeken zien',()=>showRecommendations({allowPartial:true})]]:[])]);
         return;
       }
       if(!results.suggestions?.length){

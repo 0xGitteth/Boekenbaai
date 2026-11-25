@@ -6,6 +6,9 @@ const vm=require('node:vm');
 const conversation=require('../student-choice-conversation');
 const root=path.join(__dirname,'..');
 const code=fs.readFileSync(path.join(root,'public','student-book-choice-chat.js'),'utf8');
+const markup=fs.readFileSync(path.join(root,'public','index.html'),'utf8');
+assert.match(markup,/<summary aria-label="Informatie over Help me kiezen"/);
+assert.match(markup,/Hij gebruikt geen AI/);
 function node(tag='div'){
   return {tag,children:[],listeners:{},value:'',textContent:'',isConnected:true,
     disabled:false,open:false,attrs:{},style:{},
