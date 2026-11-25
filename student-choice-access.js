@@ -235,7 +235,7 @@ const RECENT_DAYS=90;
 function pastQuestions(db,id){
  const row=(db.studentChoiceSeen||[]).find(x=>x.studentId===id);
  if(!row||!Number.isFinite(Date.parse(row.updatedAt))||Date.parse(row.updatedAt)<Date.now()-RECENT_DAYS*86400000)return [];
- return conversation.cleanContext({recent:row.questionIds}).recent;
+ return conversation.cleanContext({recent:row.questionIds}).recent.filter(id=>!conversation.privateQuestion(id));
 }
 function pastKeys(db,studentId){
   const entry=(db.studentChoiceSeen||[]).find(x=>x.studentId===studentId);
@@ -261,7 +261,8 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
       });
       result.personalized=Boolean(identity);
       result.firstName=identity?.firstName||'';
-      if(identity&&result.suggestions.length){
+      // Sensitive reading topics remain within this conversation. Do not persist associated titles or question IDs.
+      if(identity&&result.suggestions.length&&!conversation.privateReadingRequest(choices)){
         if(!Array.isArray(db.studentChoiceSeen))db.studentChoiceSeen=[];
         const prior=pastKeys(db,identity.studentId);
         const priorQuestions=pastQuestions(db,identity.studentId);
@@ -277,7 +278,7 @@ async function suggestions({grant,sessionToken,guest,expectedStudentId,choices,a
           updatedAt:new Date().toISOString(),
         });
       }
-      return identity?db:false; // guest: no persistent personal information
+      return identity&&result.suggestions.length&&!conversation.privateReadingRequest(choices)?db:false; // guest/private topic: no new recommendation history
     }});
   return result;
 }

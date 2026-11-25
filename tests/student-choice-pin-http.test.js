@@ -203,6 +203,13 @@ async function stop(){
       'Same answers must not return earlier suggestions across sessions');
     const record=readDb().studentChoiceSeen.find(x=>x.studentId==='a');
     assert.ok(record&&record.keys.length===6);
+    const beforePrivate=readDb().studentChoiceSeen;
+    const privateBookTips=await suggest({...choices,openSignals:{prefer:['queerStories'],avoid:[]},questionIds:['specific-queerStories'],useReadingHistory:true},grant);
+    assert.equal(privateBookTips.status,200);
+    assert.deepEqual(readDb().studentChoiceSeen,beforePrivate,'Sensitive reading interests must not extend stored recommendation history');
+    const privateQuestionTips=await suggest({...choices,questionIds:['specific-genderIdentity'],useReadingHistory:true},grant);
+    assert.equal(privateQuestionTips.status,200);
+    assert.deepEqual(readDb().studentChoiceSeen,beforePrivate,'Even a prior sensitive question suppresses new history');
     assert.equal(readDb().studentChoiceSeen.some(x=>x.studentId==='b'),false);
     const outsider=await suggest(choices);
     assert.equal(outsider.status,200);

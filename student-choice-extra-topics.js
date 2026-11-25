@@ -3812,7 +3812,15 @@ module.exports=[
    ],
    [
     "Jezelf leren kennen",
-    "sexualOrientation genderIdentity"
+    "queerStories identity"
+   ],
+   [
+    "Genderidentiteit",
+    "genderIdentity"
+   ],
+   [
+    "Geaardheid",
+    "sexualOrientation"
    ],
    [
     "Coming-out en reacties van anderen",

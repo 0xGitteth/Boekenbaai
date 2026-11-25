@@ -298,6 +298,13 @@ for(const answer of ['ik ben homo','ik ben transgender','ik heb ADHD','ik ben au
  assert.deepEqual(r.advice.context.signals.prefer,[],answer);
  assert.deepEqual(r.advice.context.hobbies,[],answer);
 }
+const disclosureWithRequest=run('Ik ben homo en ik wil een boek over sport',{current:'opening'});
+assert.ok(disclosureWithRequest.advice.context.signals.prefer.includes('sport'));
+assert.ok(!disclosureWithRequest.advice.context.signals.prefer.includes('sexualOrientation'));
+const privateReadingRequest=require('../student-choice-conversation').privateReadingRequest;
+assert.equal(privateReadingRequest({openSignals:{prefer:['genderIdentity']}}),true);
+assert.equal(privateReadingRequest({questionIds:['specific-autism']}),true);
+assert.equal(privateReadingRequest({openSignals:{prefer:['football']},questionIds:['specific-football']}),false);
 const inclusive=run('LHBTQIA+',{current:'opening'});
 assert.equal(inclusive.advice.question?.id,'specific-queerStories');
 assert.equal(run('Ik wil geen dikke boeken',{current:'free-time'}).advice.context.length,'short');
