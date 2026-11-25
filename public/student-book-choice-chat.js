@@ -14,6 +14,7 @@
   let choices={},currentStep='',busy=false,shownInDialogue=new Set(),seed='';
   let lastBooks=[],detailHandoff=false,searchController=null,searchTimer=null;
   let currentQuestion=null,questionHistory=[],readingConsent=false;
+  let usedOpenPrompts=new Set(),openTurn=0;
   const el=(tag,className,text)=>{
     const x=document.createElement(tag);
     if(className)x.className=className;
@@ -111,7 +112,7 @@
     active=false;busy=false;personal=false;firstName='';readingConsent=false;
     const oldGrant=grant;
     grant='';currentStep='';choices={};lastBooks=[];detailHandoff=false;
-    currentQuestion=null;questionHistory=[];
+    currentQuestion=null;questionHistory=[];usedOpenPrompts=new Set();openTurn=0;
     shownInDialogue=new Set();
     if(oldGrant){
       // Invalidate on the server as well as forgetting the token in memory.
@@ -121,6 +122,45 @@
   }
   function beginInterests(){
     answer('route','new');
+  }
+  // A small, controlled conversational bank. The next prompt addresses a
+  // missing dimension of the confirmed interest rather than restating it.
+  const OPEN_FOLLOWUPS=[
+    {id:'mystery-clues',when:['mystery'],missing:['puzzles'],prompt:'Wat vind je leuk aan een mysterie? Bijvoorbeeld zelf aanwijzingen ontdekken, of pas aan het einde verrast worden?'},
+    {id:'mystery-real',when:['mystery','danger'],missing:['realistic','fantasy','true'],prompt:'In wat voor omgeving zou dit verhaal zich mogen afspelen? Iets dat echt kan gebeuren, of juist fantasie?'},
+    {id:'danger-action',when:['danger'],missing:['action','fast'],prompt:'Wat maakt een boek voor jou spannend? Vertel bijvoorbeeld of je houdt van veel actie of juist langzaam opgebouwde spanning.'},
+    {id:'humor-setting',when:['humor'],missing:['school','friendship','fantasy'],prompt:'Waar kun je om lachen in een verhaal? Denk aan grappige situaties op school, vrienden of iets totaal onverwachts.'},
+    {id:'sport-story',when:['sport'],missing:['true','friendship','facts'],prompt:'Wat vind je leuk aan sportboeken? Bijvoorbeeld echte sportverhalen, wedstrijden of de mensen in een team.'},
+    {id:'fantasy-world',when:['fantasy'],missing:['adventure','technology','magic'],prompt:'Wat spreekt je aan in een fantasiewereld? Avonturen, bijzondere krachten of iets heel anders?'},
+    {id:'facts-topic',when:['facts','science','technology','history'],missing:['animals','nature','sport'],prompt:'Waar zou je meer over willen leren? Noem gerust een onderwerp dat jou nieuwsgierig maakt.'},
+    {id:'people',when:['people','friendship','relationships'],missing:['school','realistic','humor'],prompt:'Wat vind je interessant aan de personages? Hun vriendschappen, grappige situaties of problemen die ze meemaken?'},
+    {id:'length',when:[],missing:['fast','calm'],prompt:'Hoe lees je het liefst? Een verhaal waarin meteen veel gebeurt of eentje dat rustig op gang komt?'},
+    {id:'avoid',when:[],missing:[],prompt:'Is er iets dat je juist niet in een boek wilt tegenkomen?'},
+    {id:'different',when:[],missing:[],prompt:'Wat zou een boek voor jou leuker maken dan de boeken die je normaal tegenkomt?'},
+  ];
+  function contextualPrompt(){
+    const signals=choices.openSignals||{prefer:[],avoid:[]};
+    const known=new Set([...signals.prefer,...signals.avoid]);
+    const candidates=OPEN_FOLLOWUPS.filter(q=>!usedOpenPrompts.has(q.id)
+      &&(!q.when.length||q.when.some(t=>signals.prefer.includes(t)))
+      &&!q.missing.some(t=>known.has(t)));
+    const specific=candidates.filter(q=>q.when.length);
+    const pool=specific.length?specific:candidates;
+    if(!pool.length)return 'Wil je nog een andere voorkeur noemen?';
+    const index=Math.floor(Math.random()*pool.length);
+    const selected=pool[index];usedOpenPrompts.add(selected.id);
+    return selected.prompt;
+  }
+  function sayOpenSummary(result){
+    const names=keys=>keys.map(k=>result.labels?.[k]||k).join(', ');
+    const parts=[];
+    const n=openTurn++;
+    if(result.prefer?.length){
+      const starts=['Ik zoek naar boeken met ','Dan let ik op ','Ik neem dit mee: '];
+      parts.push(starts[n%starts.length]+names(result.prefer)+'.');
+    }
+    if(result.avoid?.length)parts.push('Ik vermijd bekende boeken met '+names(result.avoid)+'.');
+    message(parts.join(' ')+(result.avoid?.length?' Klopt dat?':''));
   }
   // Open answers supplement, rather than replace, the accessible buttons.
   // Never submit raw text as a recommendation-history field.
@@ -158,15 +198,14 @@
           return;
         }
         if(!result.recognized){
-          message('Ik weet niet zeker wat je bedoelt. Kun je iets zeggen over het onderwerp, de sfeer of wat je juist niet wilt lezen?');
+          const unsure=['Ik weet niet zeker wat je bedoelt. Kun je iets zeggen over het onderwerp, de sfeer of wat je juist niet wilt lezen?',
+            'Ik kan daar nog geen passende boeken bij zoeken. Noem bijvoorbeeld een onderwerp of iets dat je leuk vindt in een verhaal.',
+            'Ik herken nog geen duidelijke leesvoorkeur. Wil je het anders uitleggen of liever een paar boeken zien?'];
+          message(unsure[openTurn++%unsure.length]);
           options([['Ik wil het opnieuw uitleggen',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration],['Laat me drie boeken zien',()=>answer('route','surprise')]]);
           return;
         }
-        const names=keys=>keys.map(k=>result.labels?.[k]||k).join(', ');
-        const parts=[];
-        if(result.prefer?.length)parts.push('Je zoekt iets met '+names(result.prefer)+'.');
-        if(result.avoid?.length)parts.push('Je wilt '+names(result.avoid)+' liever vermijden.');
-        message(parts.join(' ')+' Heb ik dat goed begrepen?');
+        sayOpenSummary(result);
         const confirmed=()=>{
           const old=choices.openSignals||{prefer:[],avoid:[]};
           const prefer=new Set(old.prefer),avoid=new Set(old.avoid);
@@ -175,9 +214,9 @@
           choices={...choices,route:'new',openSignals:{prefer:[...prefer],avoid:[...avoid]}};
         };
         options([
-          ['Ja, zoek boeken',()=>{confirmed();void showRecommendations();}],
-          ['Ja, ik wil nog iets toevoegen',()=>{confirmed();offerOpenAnswer('Wat vind je nog meer belangrijk?');}],
-          ['Nee, ik bedoel iets anders',()=>offerOpenAnswer('Vertel het nog eens in je eigen woorden.')],
+          [result.avoid?.length?'Ja, zoek boeken':'Zoek passende boeken',()=>{confirmed();void showRecommendations();}],
+          [result.avoid?.length?'Ja, ik wil nog iets toevoegen':'Vraag me nog iets',()=>{confirmed();offerOpenAnswer(contextualPrompt());}],
+          ['Pas mijn antwoord aan',()=>offerOpenAnswer('Vertel het nog eens in je eigen woorden.')],
           ['Kies liever uit antwoorden',startExploration],
         ]);
       }catch(err){

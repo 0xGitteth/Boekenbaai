@@ -213,7 +213,7 @@ async function stop(){
     assert.equal((await guestReq('/api/auth/student-pin/choice-status',{},'session-a')).status,200,'An innocent signed-in student is not blocked by guest activity');
     assert.equal((await request('/api/auth/student-pin/choice-status',{})).status,200,'Different browser unaffected');
     assert.equal((await request(interpretRoute,{text:'67',choiceGrant:grant})).body.moderation,'redirect');
-    assert.equal((await request(interpretRoute,{text:'erg of mnu',choiceGrant:grant})).body.moderation,'warning');
+    assert.equal((await request(interpretRoute,{text:'erg of mnu hahahaha 😂',choiceGrant:grant})).body.moderation,'warning');
     assert.equal((await request(interpretRoute,{text:'jij bent een klootzak',choiceGrant:grant})).status,423);
     assert.equal((await suggest(choices,grant)).status,423);
     assert.equal((await suggest(choices,undefined,'session-a')).status,423);

@@ -161,7 +161,7 @@ vm.runInNewContext(code,{
   assert.equal(free.tag,'form');
   free.children[1].value='Een mysterie zonder moord';
   await free.listeners.submit({preventDefault(){}});
-  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb ik dat goed begrepen')));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
   actions.children.find(x=>x.textContent==='Ja, zoek boeken').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:['murder']});

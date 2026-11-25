@@ -2,19 +2,19 @@
 // Bounded Dutch vocabulary, not a language model. No raw answer is saved.
 // Recognition is provisional until the pupil confirms the interpretation.
 const TERMS={
- mystery:['mysterie','mysteries','raadsel','raadsels','detective','detectives','mystery','mysterieuze','geheim','geheimen'],
- danger:['spannend','spannende','spanning','gevaar','gevaarlijk','thriller','thrillers'],
+ mystery:['mysterie','mysteries','raadsel','raadsels','detective','detectives','mystery','mysterieuze','geheim','geheimen','misterie','misteries','mysteri','detectief'],
+ danger:['spannend','spannende','spanning','gevaar','gevaarlijk','thriller','thrillers','spanend','spanende','thriler','triller','thrilerboek'],
  puzzles:['puzzelen','puzzel','puzzels','aanwijzingen','zelf oplossen','zelf meedenken','raadsel oplossen','speuren'],
  realistic:['realistisch','realistische','echt kan gebeuren','echt kunnen gebeuren','herkenbaar','herkenbare'],
  true:['waargebeurd','waargebeurde','echt gebeurd','non fictie','non-fictie'],
- fantasy:['fantasy','fantasie','magie','draken','tovenaars'],
- humor:['grappig','grappige','humor','lachen','komedie'],
+ fantasy:['fantasy','fantasie','magie','draken','tovenaars','fantacy','fantasi','fentasy'],
+ humor:['grappig','grappige','humor','lachen','komedie','grapig','grapige','humour','funny','comedy'],
  friendship:['vriendschap','vrienden','vriendinnen'],
  relationships:['liefde','romantiek','relaties','verliefd'],
  school:['school','klas','middelbare school'],
  action:['actie','achtervolgingen','gevechten'],
  adventure:['avontuur','avonturen','avontuurlijk'],
- sport:['sport','sporten','voetbal','basketbal'],
+ sport:['sport','sporten','voetbal','basketbal','voetballen','voetball','soccer'],
  animals:['dieren','honden','paarden','katten'],
  nature:['natuur','bos','wildernis'],
  science:['wetenschap','ruimtevaart','wetenschappelijk'],
@@ -25,7 +25,7 @@ const TERMS={
  calm:['rustig','rustige','ontspannend'],
  fast:['snel tempo','veel gebeurt','meteen iets gebeurt'],
  murder:['moord','moorden','moordenaar','moordenaars','vermoord','vermoorden'],
- horror:['horror','eng','enge','griezel','griezelen'],
+ horror:['horror','eng','enge','griezel','griezelen','horrorr','horor','scary'],
 };
 const LABELS={mystery:'mysteries',danger:'spanning',puzzles:'zelf raadsels oplossen',
  realistic:'realistische verhalen',true:'waargebeurde verhalen',fantasy:'fantasie',
@@ -41,7 +41,14 @@ function validateSignals(input){
 }
 function interpret(text){
  if(typeof text!=='string'||!text.trim()||text.length>500)return {prefer:[],avoid:[],recognized:false,clarify:true};
- const normalized=normalize(text);
+ const normalized=normalize(text)
+  .replace(/\b(?:gwn|gw|gewoon)\b/g,' ')
+  .replace(/\b(?:nie|niett|niettt)\b/g,'niet')
+  .replace(/\b(?:geeen|gee[n]+)\b/g,'geen')
+  .replace(/\b(?:zndr)\b/g,'zonder')
+  .replace(/\b(?:wrm)\b/g,'waarom')
+  .replace(/\b(?:eig|eigenlk)\b/g,'eigenlijk')
+  .replace(/\s+/g,' ').trim();
  // Questions, double negations, uncertainty and idiomatic negations are
  // not treated as facts about the learner. Ask them to confirm instead.
  if(/\b(?:niet alleen|niet dat|niet geen|geen hekel|weet niet|weet ik niet|geen idee|maakt niet uit|mnu|misschien)\b/.test(normalized))

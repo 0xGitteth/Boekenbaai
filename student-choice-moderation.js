@@ -14,7 +14,26 @@ const normalize=s=>String(s??'').normalize('NFKD').replace(/[\u0300-\u036f\u200b
 // Recognize the full list, but only clear standalone memes can count as noise.
 const trends=new Set(TREND_WORDS.map(normalize));
 const memeOnly=new Set(['67','6 7','six seven','sixseven','erg of mnu','huss huss huss','skibidi','skibidi toilet','tralalero tralala','bombardiro crocodilo']);
-function isTrend(text){return trends.has(normalize(text));}
+// Match entire meme-only messages, not a meme embedded in real reading text.
+const foldMemeWord=word=>word.replace(/([a-z])\1+/g,'$1');
+const memePhrases=[...memeOnly].map(phrase=>phrase.split(' ').map(foldMemeWord))
+ .sort((a,b)=>b.length-a.length);
+const fillerWords=new Set(['bro','bruh','wesh','lol','lmao','lmfao','xd','omg'].map(foldMemeWord));
+function isMemeFiller(word){
+ return fillerWords.has(foldMemeWord(word))
+   ||/^(?:ha){2,}h?$|^a(?:ha){2,}h?$|^(?:he){2,}h?$|^(?:hi){2,}h?$/.test(foldMemeWord(word));
+}
+function memeMessage(value){
+ const words=value.split(' ').filter(w=>w&&!isMemeFiller(w)).map(foldMemeWord);
+ let matched=false;
+ for(let i=0;i<words.length;){
+  const phrase=memePhrases.find(p=>p.every((w,j)=>words[i+j]===w));
+  if(!phrase)return false;
+  matched=true;i+=phrase.length;
+ }
+ return matched;
+}
+function isTrend(text){const value=normalize(text);return trends.has(value)||memeMessage(value);}
 const neutral=new Set(['mnu','maakt niet uit','geen idee','weet ik niet','idk','sws','isg','erg','ja','nee','ok','oke']);
 const insults='klootzak|klootviool|teringlijer|tyfuslijer|kankerlijer|kankerhoer|kankermongool|mongool|debiel|achterlijke|achterlijk|idioot|stomkop|sukkel|hoer|bitch|fucker|motherfucker|asshole|retard|lul|kutwijf|kutbot|kankerbot';
 const directed=new RegExp('\\b(?:jij bent|je bent|jij|jullie zijn|jullie|jij domme|hey|vieze|domme|stomme|vuile|fucking|kut) (?:een |echt |zo |heel |domme |stomme |vieze |vuile )?(?:'+insults+')\\b');
@@ -27,14 +46,18 @@ function classify(text,books=[]){
  if(books.some(b=>b?.catalogHidden!==true&&normalize(b?.title)===value))return 'normal';
  // A report of bullying, a quotation or discussion of a word should not
  // become a disciplinary incident. Do not guess intent in these contexts.
- if(/["“”„«»]/u.test(String(text))||/\b(?:zei|zeiden|riep|riepen|schreef|schreven|noemde|noemden|schold|scholden)\b.*\b(?:tegen mij|naar mij|tegen me|naar me)\b/.test(value))return 'normal';
+ // Quotation marks alone do not excuse abuse. Genuine reported speech
+ // is ambiguous; do not impose an automatic sanction.
+ if(/\b(?:zei|zeiden|riep|riepen|schreef|schreven|noemde|noemden|schold|scholden)\b.*\b(?:tegen mij|naar mij|tegen me|naar me)\b/.test(value))return 'normal';
+ if(/["“”„«»]/u.test(String(text))&&/\b(?:zei|zeiden|riep|riepen|schreef|schreven|noemde|noemden|boek|titel|woord|betekent|citaat|personage)\b/.test(value))return 'normal';
  if(/\b(?:ik word uitgescholden|ik werd uitgescholden|ze noemen me|hij noemde me|zij noemde me|iemand zei tegen mij|tegen mij gezegd|ik word gepest|wat betekent|het woord|boek heet|boek met de titel|een boek over)\b/.test(value))return 'normal';
- if(directed.test(value)||standalone.test(value)||/\b(?:hou je (?:bek|muil|kankerbek)|fuck you|fuck off|shut the fuck up|stfu|sybau|kys|kill yourself)\b/.test(value))
+ const withoutFiller=value.split(' ').filter(w=>!isMemeFiller(w)).join(' ');
+ if(directed.test(value)||standalone.test(withoutFiller)||/\b(?:hou je (?:bek|muil|kankerbek)|fuck you|fuck off|shut the fuck up|stfu|sybau|kys|kill yourself)\b/.test(value))
   return 'abuse';
  if(commands.test(value))return 'disruption';
  // No unknown-word/typo heuristic. Only a complete known meme or a repeated
  // meme sequence counts as off-topic. Numbers in actual book requests pass.
- if(memeOnly.has(value)||/^(?:67|6 7|six seven|skibidi|sigma|erg of mnu)(?: (?:67|6 7|six seven|skibidi|sigma|erg of mnu))+$/u.test(value))
+ if(memeMessage(value))
   return 'meme';
  return 'normal';
 }
