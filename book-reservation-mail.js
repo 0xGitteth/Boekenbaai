@@ -38,9 +38,10 @@ function recipientMessages(db,links,domain='koraaledu.nl'){
       if(!teachers.has(id))continue;
       const pref=mail.prefsFor(db,id);
       if(pref.mode==='off')continue;
+      const staffLink=auth.findLinkByAccount(links,'staff',id);
       const email=pref.mode==='alternate'
         ?mail.validEmail(pref.alternateEmail)
-        :mail.schoolEmailFor(links,id,domain);
+        :staffLink?.sub?mail.schoolEmailFor(links,id,domain):'';
       if(!email)continue;
       recipients.push({
         key:readyId+':teacher:'+id,to:email,

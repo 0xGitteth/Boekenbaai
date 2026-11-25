@@ -40,6 +40,10 @@ assert.deepEqual(mail.recipientMessages(db,{links:[
   {...links.links[0],email:'unknown@otherdomain.nl'},links.links[1],
 ]}).map(x=>x.to),['mentor@koraaledu.nl'],
   'Students with a non-school email must not be contacted through the bridge');
+assert.deepEqual(mail.recipientMessages(db,{links:[
+  links.links[0],{...links.links[1],sub:''},
+]}).map(x=>x.to),['pupil@koraaledu.nl'],
+  'An unverified mentor school address must not receive pupil reservation details');
 db.classes[0].studentIds=[];
 db.students[0].classIds=[];
 assert.deepEqual(mail.recipientMessages(db,links).map(x=>x.to),

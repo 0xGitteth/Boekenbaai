@@ -102,4 +102,39 @@ const db=()=>({
   assert.equal(before,JSON.stringify(data.books),
     'Booking never updates any physical copy or loan');
 }
+{
+  const data=db();
+  reservation.create(data,{studentId:'s1',bookId:'b1',now:NOW});
+  reservation.create(data,{studentId:'s2',bookId:'b1',now:NOW});
+  // Invert lexical UUID order so this test fails deterministically with the old comparator.
+  data.bookReservations[0].id='z-first';
+  data.bookReservations[1].id='a-second';
+  assert.equal(reservation.forStudent(data,'s1')[0].position,1);
+  data.books[0].status='available';data.books[0].borrowedBy=null;
+  reservation.reconcile(data,NOW+1);
+  assert.equal(reservation.holdFor(data,'b1',NOW+1).studentId,'s1');
+}
+{
+  const data=db();
+  data.books=[book('b1',{editionIsbn:undefined,metadataIsbn:undefined,
+    isbn13:'9789048849178',barcode:'SCAN-A',publisher:'Publisher'}),
+    book('b2',{editionIsbn:undefined,metadataIsbn:undefined,
+    isbn13:'9789026988646',barcode:'SCAN-B',publisher:'Publisher'})];
+  assert.equal(reservation.create(data,{studentId:'s1',bookId:'b1',
+    specificEdition:true,now:NOW}).reservation.editionKey,'isbn:9789048849178');
+  data.books[1].status='available';data.books[1].borrowedBy=null;
+  assert.equal(reservation.reconcile(data,NOW+1),false);
+  assert.equal(reservation.forStudent(data,'s1')[0].status,'waiting');
+  data.books[0].status='available';data.books[0].borrowedBy=null;
+  assert.equal(reservation.reconcile(data,NOW+2),true);
+  assert.equal(reservation.forStudent(data,'s1')[0].readyBookId,'b1');
+}
+{
+  const data=db();
+  let reads=0;
+  const students=data.students;
+  Object.defineProperty(data,'students',{get(){reads++;return students;}});
+  assert.equal(reservation.reconcile(data,NOW),false);
+  assert.equal(reads,0,'No active reservations must avoid loan-index traversal');
+}
 console.log('Reservation FIFO, holds, editions, cancellation and privacy OK');

@@ -27,6 +27,11 @@ if(host){
   list.className='bb-reservations-list';
   list.setAttribute('aria-live','polite');
   panel.append(list);
+  const configuredBase=(typeof import.meta !== 'undefined' && import.meta.env
+    && (import.meta.env.BOEKENBAAI_PUBLIC_API_BASE || import.meta.env.VITE_BOEKENBAAI_API_BASE))||'';
+  const apiBase=(window.BOEKENBAAI_API_BASE||configuredBase
+    ||document.querySelector('meta[name="boekenbaai-api-base"]')?.content||'').trim();
+  const apiUrl=route=>apiBase?apiBase.replace(/\/$/,'')+route:route;
   let inFlight=false;
   let generation=0;
   let queuedRefresh=false;
@@ -84,7 +89,7 @@ if(host){
         cancel.addEventListener('click',async()=>{
           cancel.disabled=true;
           try{
-            const response=await fetch('/api/book-reservations/'+encodeURIComponent(item.id),{
+            const response=await fetch(apiUrl('/api/book-reservations/'+encodeURIComponent(item.id)),{
               method:'DELETE',headers:authHeaders(),credentials:'same-origin',
             });
             if(!response.ok)throw Error((await response.json()).message||'Annuleren mislukt.');
@@ -108,7 +113,7 @@ if(host){
     inFlight=true;
     const token=localStorage.getItem('boekenbaai_token')||'';
     try{
-      const response=await fetch('/api/book-reservations',{
+      const response=await fetch(apiUrl('/api/book-reservations'),{
         headers:authHeaders(),credentials:'same-origin',cache:'no-store',
       });
       if(requestGeneration!==generation

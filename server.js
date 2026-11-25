@@ -1922,13 +1922,17 @@ function findBarcodeGroupById(db, groupId) {
 }
 
 function selectBookFromGroup(group, { requireAvailable = false, mustBeBorrowed = false,
-  studentId = null, classId = null, loanOwners = new Map() } = {}) {
+  studentId = null, classId = null, loanOwners = new Map(), db = null } = {}) {
   if (!group) {
     return null;
   }
   const books = Array.isArray(group.books) ? group.books : [];
   if (requireAvailable) {
-    return selectAvailableCopy(books, loanOwners);
+    if (!db) return selectAvailableCopy(books, loanOwners);
+    const now = Date.now();
+    const eligible = books.filter(book => reservationQueue.availableTo(db, book, studentId, now, loanOwners));
+    return eligible.find(book => reservationQueue.readyFor(db, book, studentId, now))
+      || selectAvailableCopy(eligible, loanOwners);
   }
   if (mustBeBorrowed) {
     if (classId) {
@@ -2005,8 +2009,11 @@ function resolveBookSelection(db, identifier, options = {}) {
     if (!group) {
       continue;
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners, db });
     if (!book) {
+      if (requireAvailable && selectAvailableCopy(group.books, loanOwners)) {
+        return { error: 'De beschikbare exemplaren liggen klaar voor reserveringen.', statusCode: 409 };
+      }
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
         : 'Geen uitgeleende exemplaren gevonden voor deze titel';
@@ -2056,8 +2063,11 @@ function resolveBookSelection(db, identifier, options = {}) {
         };
       }
     }
-    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners });
+    const book = selectBookFromGroup(group, { requireAvailable, mustBeBorrowed, studentId, classId, loanOwners, db });
     if (!book) {
+      if (requireAvailable && selectAvailableCopy(group.books, loanOwners)) {
+        return { error: 'De beschikbare exemplaren liggen klaar voor reserveringen.', statusCode: 409 };
+      }
       const message = requireAvailable
         ? 'Geen beschikbare exemplaren voor deze titel'
         : 'Geen uitgeleende exemplaren gevonden voor deze titel';

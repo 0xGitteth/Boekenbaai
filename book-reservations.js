@@ -18,6 +18,7 @@ function workKey(book){return JSON.stringify([
 function editionKey(book){
   const isbn=canonicalizeBookIsbn13(book?.editionIsbn)
     ||canonicalizeBookIsbn13(book?.metadataIsbn)
+    ||canonicalizeBookIsbn13(book?.isbn13)
     ||canonicalizeBookIsbn13(book?.barcode);
   return isbn?'isbn:'+isbn:'publisher:'+text(book?.publisher);
 }
@@ -31,8 +32,8 @@ function activeStudent(db,studentId){
 }
 function activeQueue(db,key){
   return reservations(db).filter(x=>x.workKey===key&&ACTIVE.has(x.status))
-    .sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))
-      ||String(a.id).localeCompare(String(b.id)));
+    // Stable sort retains the persisted insertion order for equal timestamps.
+    .sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 function holdFor(db,bookId,now=Date.now()){
   return reservations(db).find(x=>x.status==='ready'
@@ -89,8 +90,8 @@ function forTeacher(db,teacher){
       studentName:activeStudent(db,x.studentId)?.name||'Leerling',
     })).sort((a,b)=>String(b.readyAt).localeCompare(String(a.readyAt)));
 }
-function chooseNext(db,book,now=Date.now()){
-  if(!isFree(book,studentLoanIds(db))||holdFor(db,book.id,now))return null;
+function chooseNext(db,book,now=Date.now(),owners=studentLoanIds(db)){
+  if(!isFree(book,owners)||holdFor(db,book.id,now))return null;
   const queue=activeQueue(db,workKey(book));
   const chosen=queue.find(x=>x.status==='waiting'
     &&(!x.editionKey||x.editionKey===editionKey(book))
@@ -107,6 +108,7 @@ function chooseNext(db,book,now=Date.now()){
 // worker. Expiration is durable; a missed reservation advances to the next.
 function reconcile(db,now=Date.now()){
   let changed=false;
+  if(!reservations(db).some(x=>ACTIVE.has(x.status)))return false;
   const byId=new Map((db.books||[]).filter(x=>x?.id).map(x=>[x.id,x]));
   const owners=studentLoanIds(db);
   for(const x of reservations(db)){
@@ -123,9 +125,12 @@ function reconcile(db,now=Date.now()){
   }
   // If a copy is already available (e.g. after import), give the first
   // waiting pupil priority without guessing their physical edition.
+  const waitingWorks=new Set(reservations(db).filter(x=>x.status==='waiting')
+    .map(x=>x.workKey));
+  if(!waitingWorks.size)return changed;
   for(const copy of db.books||[]){
-    if(!isFree(copy,owners)||holdFor(db,copy.id,now))continue;
-    if(chooseNext(db,copy,now))changed=true;
+    if(!waitingWorks.has(workKey(copy))||!isFree(copy,owners))continue;
+    if(chooseNext(db,copy,now,owners))changed=true;
   }
   return changed;
 }

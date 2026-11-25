@@ -16,13 +16,19 @@ const user=(id,role='student')=>({
   classIds:['class-a'],borrowedBooks:[],
 });
 const pupilA=user('waiting-a'),pupilB=user('waiting-b'),borrower=user('borrower');
-borrower.borrowedBooks=[{bookId:'copy-a',borrowedAt:'2026-11-19T12:00:00Z'}];
+borrower.borrowedBooks=['copy-a','group-a','group-b'].map(bookId=>({
+  bookId,borrowedAt:'2026-11-19T12:00:00Z',
+}));
 fs.writeFileSync(dbFile,JSON.stringify({
   books:[{id:'copy-a',title:'Spijt!',author:'Carry Slee.',
     editionIsbn:'9789048849178',metadataIsbn:'9789048849178',
     barcode:'9789048849178',status:'borrowed',
     borrowedBy:'borrower',borrowedByClassId:null,
-    borrowedAt:'2026-11-19T12:00:00Z',catalogHidden:false}],
+    borrowedAt:'2026-11-19T12:00:00Z',catalogHidden:false},
+    ...['group-a','group-b'].map(id=>({id,title:'Andere titel',author:'Auteur',
+      editionIsbn:'9789026988646',metadataIsbn:'9789026988646',barcode:'9789026988646',
+      status:'borrowed',borrowedBy:'borrower',borrowedByClassId:null,
+      borrowedAt:'2026-11-19T12:00:00Z',catalogHidden:false}))],
   students:[pupilA,pupilB,borrower],
   users:[{...user('teacher-a','teacher'),classIds:['class-a']}],
   classes:[{id:'class-a',name:'Schoolklas A',teacherIds:['teacher-a'],
@@ -93,10 +99,20 @@ async function run(){
     assert.equal((await call('/api/book-reservations/'+next.id,a,undefined,'DELETE')).status,404);
     assert.equal((await call('/api/book-reservations/'+next.id,b,undefined,'DELETE')).status,200);
     assert.equal((await call('/api/book-reservations',b)).body.reservations.length,0);
-    const snapshot=JSON.parse(fs.readFileSync(dbFile,'utf8'));
-    assert.equal(snapshot.books.length,1,'Reservation never creates a phantom copy');
+    assert.equal((await call('/api/book-reservations',a,{bookId:'group-a'})).status,200);
+    assert.equal((await call('/api/books/group-a/check-in',borrowerToken,{finished:true})).status,200);
+    assert.equal((await call('/api/books/group-b/check-in',borrowerToken,{finished:true})).status,200);
+    assert.equal((await call('/api/book-reservations',a)).body.reservations[0].readyBookId,'group-a');
+    assert.equal((await call('/api/books/9789026988646/check-out',mentor,{studentId:'waiting-b'})).status,200);
+    let groupSnapshot=JSON.parse(fs.readFileSync(dbFile,'utf8'));
+    assert.equal(groupSnapshot.books.find(x=>x.id==='group-b').borrowedBy,'waiting-b');
+    assert.equal((await call('/api/books/9789026988646/check-out',a,{})).status,200);
+    groupSnapshot=JSON.parse(fs.readFileSync(dbFile,'utf8'));
+    assert.equal(groupSnapshot.books.find(x=>x.id==='group-a').borrowedBy,'waiting-a');
+    const snapshot=groupSnapshot;
+    assert.equal(snapshot.books.length,3,'Reservation never creates a phantom copy');
     assert.equal(snapshot.books[0].borrowedBy,null);
-    assert.equal(snapshot.bookReservations.length,2);
+    assert.equal(snapshot.bookReservations.length,3);
   }finally{
     if(child)child.kill('SIGTERM');
     fs.rmSync(tmp,{recursive:true,force:true});
