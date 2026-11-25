@@ -1,5 +1,6 @@
-const {currentStudentClassIds}=require('./student-class-membership');
 'use strict';
+
+const {currentStudentClassIds}=require('./student-class-membership');
 
 const crypto = require('node:crypto');
 const authCore = require('./google-auth-core');
