@@ -161,6 +161,8 @@ function cleanContext(raw={}){
   media:bounded(raw.media,4).filter(name=>MEDIA.some(m=>m[0]===name)),
   hobbies:validateSignals({prefer:raw.hobbies}).prefer.slice(0,6),
   clarifyCandidates:validateSignals({prefer:raw.clarifyCandidates}).prefer.slice(0,3),
+  clarifyKnown:validateSignals({prefer:raw.clarifyKnown}).prefer.slice(0,3),
+  skipped:validateSignals({prefer:raw.skipped}).prefer.slice(0,8),
   clarifyFrom:BY_ID.has(raw.clarifyFrom)&&raw.clarifyFrom!=='clarify-topic'?raw.clarifyFrom:'opening',
   hypothesis:validateSignals({prefer:raw.hypothesis}).prefer,
   uncertain:Math.max(0,Math.min(2,Number.isInteger(raw.uncertain)?raw.uncertain:0))};
@@ -203,7 +205,10 @@ function profiles(books,signals){
 function questionForContext(c){
  const q=BY_ID.get(c.current)||BY_ID.get('opening');
  if(q.id==='clarify-topic'){
-  return {...q,options:c.clarifyCandidates.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''}))};
+  const topics=[...new Set([...c.clarifyKnown,...c.clarifyCandidates])].slice(0,5);
+  const options=topics.map((t,i)=>({id:String(i),label:LABELS[t]||t,prefer:[t],length:''}));
+  if(c.clarifyKnown.length&&topics.length>1)options.push({id:'all',label:'Ja, die bedoel ik allebei'+(topics.length>2?' / allemaal':''),prefer:topics,length:''});
+  return {...q,options};
  }
  if(q.id==='hobby-focus'){
   const hobbies=c.hobbies;
@@ -224,7 +229,8 @@ function chooseQuestion(context,signals,books,last=[],force=''){
  const p=signals.prefer, known=new Set([...p,...signals.avoid]);
  const used=new Set([...context.used,context.current]);
  const top=profiles(books,signals);
- const eligible=Q.filter(q=>!used.has(q.id)&&!['opening','media-interest','book-interest','feedback','hobby-focus','clarify-topic','extended-reflection-1'].includes(q.id)
+ const excluded=new Set([...signals.avoid,...context.skipped]);
+ const eligible=Q.filter(q=>!used.has(q.id)&&!q.when.some(t=>excluded.has(t)||excluded.has(SUBTOPICS[t]))&&!(q.requires||[]).some(t=>excluded.has(t))&&!['opening','media-interest','book-interest','feedback','hobby-focus','clarify-topic','extended-reflection-1'].includes(q.id)
   &&(!q.when.length||q.when.some(t=>p.includes(t)))
   &&(!q.requires||q.requires.every(t=>p.includes(t)))
   &&(q.stage<2||context.turns>=2||p.length>=3||(q.stage===2&&q.early===true&&q.when.some(t=>p.includes(t))))
@@ -260,7 +266,7 @@ function analyze(text,rawContext={},books=[]){
  const selected=typeof rawContext?.optionId==='string'?q.options.find(o=>o.id===rawContext.optionId&&normalize(o.label)===value):q.options.find(o=>normalize(o.label)===value);
  if(c.current==='clarify-topic'){
   const previous=c.clarifyFrom;
-  c={...c,current:previous,clarifyCandidates:[],clarifyFrom:'opening'};
+  c={...c,current:previous,clarifyCandidates:[],clarifyKnown:[],clarifyFrom:'opening'};
   q=questionForContext(c);
  }
  let current=validateSignals(c.signals);
@@ -308,8 +314,8 @@ function analyze(text,rawContext={},books=[]){
    }
   }
  }
- const decline=/^(?:nee|niets|niks|niet echt|geen van beide|geen van deze|geen van die|boeit me niet|interesseert me niet|niet mijn ding|liever iets anders|ik wil iets anders lezen)(?: hoor| eigenlijk| echt| lol| haha| dank je)*$/.test(value);
- const uncertain=/^(?:ik )?(?:weet (?:het )?niet|weet ik niet|geen idee|idk|mnu|maakt niet uit|geen voorkeur|geen flauw idee)(?: eigenlijk| echt| hoor| haha| denk ik| lol)*$/.test(value);
+ const decline=/^(?:(?:eigenlijk|gewoon) )?(?:nee|niets|niks|helemaal niks|helemaal niets|niet echt|geen van beide|geen van deze|geen van die|boeit me niet|interesseert me niet|niet mijn ding|liever iets anders|ik wil iets anders lezen)(?: daarvan| hoor| eigenlijk| echt| lol| haha| dank je)*$/.test(value);
+ const uncertain=/^(?:ik )?(?:weet (?:het )?niet|weet ik niet|weet ik veel|geen idee|idk|mnu|maakt (?:me )?niet uit|geen voorkeur|geen flauw idee)(?: eigenlijk| echt| hoor| haha| denk ik| lol)*$/.test(value);
  if(/\b(?:geen dikke boeken|niet zo dik|niet te dik|liever kort|kort boek|korte boeken|weinig pagina s|niet veel pagina s)\b/.test(value))length='short';
  if(/\b(?:dik boek is prima|lange boeken zijn prima|lengte maakt niet uit)\b/.test(value))length='any';
  const contextualAliases={
@@ -358,22 +364,48 @@ function analyze(text,rawContext={},books=[]){
   &&(current.prefer.some(t=>t==='animals'||SUBTOPICS[t]==='animals')||/\b(?:dier|hond|kat)\b/.test(value))){
   direct={...validateSignals({prefer:direct.prefer,avoid:[...(direct.avoid||[]),'animalLoss']}),recognized:true,clarify:false};
  }
+ const activityContext=['free-time','watch','media-interest'].includes(c.current);
+ const explicitReading=/\b(?:wil|zou|lees|lezen|boeken|boek)\b/.test(value)&&/\b(?:lezen|lees|boek|boeken)\b/.test(value);
+ const activityRefusal=activityContext&&/\b(?:niet|geen)\b[^.!?]{0,35}\b(?:lezen|boek|boeken)\b/.test(value);
+ // A preference about playing or watching is not a reading exclusion.
+ if(activityContext&&!explicitReading&&!selected){
+  if(/\b(?:sport|sporten) zelf niet\b/.test(value)&&direct.prefer.includes('sportWatching')){
+   direct={...direct,prefer:direct.prefer.filter(t=>t!=='sportPlaying'&&t!=='sport'),avoid:[]};
+  }
+ }
+ if(activityRefusal&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
+  const ctx={...c,signals:current,used:[...new Set([...c.used,c.current])],hobbies:[],uncertain:0,turns:Math.min(7,c.turns+1)};
+  const alternative=['more-interests','opening','watch','free-time'].map(id=>BY_ID.get(id)).find(q=>!ctx.used.includes(q.id));
+  if(!alternative||ctx.turns>=6)return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'offer',reaction:'Ook goed!',context:ctx}};
+  return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'question',reaction:'Geen probleem! Dan zoeken we iets anders.',question:questionView(alternative),context:{...ctx,current:alternative.id}}};
+ }
  const delta=validateSignals(direct);
+ // Mixed known/uncertain input: show likely topics without treating guesses
+ // or the known half of the answer as a confirmed preference.
+ if(!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline&&c.uncertain===0&&!delta.avoid.length&&length===c.length&&!/\b(?:niet|geen|zonder|hekel)\b/.test(value)){
+  const guesses=suggestTopics(text).filter(t=>!delta.prefer.includes(t)&&!delta.prefer.some(k=>SUBTOPICS[k]===t));
+  if(guesses.length){
+   const known=delta.prefer.filter(t=>!delta.prefer.some(k=>SUBTOPICS[k]===t)).slice(0,3);
+   const ctx={...c,current:'clarify-topic',clarifyFrom:c.current,clarifyKnown:known,clarifyCandidates:guesses,uncertain:1};
+   return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',reaction:known.length?'Een deel snap ik al! Bedoel je dit?':'Hmm, ik twijfel een beetje 🤔',question:questionView(questionForContext(ctx)),context:ctx}};
+  }
+ }
  const updated=merged(current,delta);
  const hasNew=delta.prefer.some(t=>!current.prefer.includes(t))||delta.avoid.some(t=>!current.avoid.includes(t))||length!==c.length;
- const next={...c,signals:updated,length,hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
+ const next={...c,signals:updated,length,skipped:c.skipped.filter(t=>!delta.prefer.includes(t)),hobbies:c.current==='hobby-focus'?[]:c.hobbies,media:[...new Set([...c.media,...media])].slice(-4),
   hypothesis:validateSignals({prefer:[...c.hypothesis,...hypothesis]}).prefer,
   turns:Math.min(7,c.turns+1),used:[...new Set([...c.used,c.current])],uncertain:0};
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
  // Hobbies are not automatically reading preferences. Check whether the
  // pupil actually wants to read about them before using them for ranking.
- if(c.current==='free-time'&&!notReader&&!media.length&&!anchor&&delta.prefer.length&&!delta.avoid.length){
+ if(activityContext&&!explicitReading&&!notReader&&!media.length&&!anchor&&delta.prefer.length){
   const detailed=delta.prefer.filter(t=>!delta.prefer.some(k=>SUBTOPICS[k]===t));
   const ctx={...next,signals:current,hobbies:detailed.slice(0,6),current:'hobby-focus'};
-  return {...envelope,advice:{kind:'question',reaction:'Oh, leuk!',question:questionView(questionForContext(ctx)),context:ctx}};
+  const serious=detailed.some(t=>['grief','mentalHealth','bullying','discrimination','crimeVictims','animalLoss','empathy'].includes(t));
+  return {...envelope,prefer:[],avoid:[],advice:{kind:'question',reaction:serious?'Dank je!':c.current==='media-interest'?'Ah, duidelijk!':'Oh, leuk!',question:questionView(questionForContext(ctx)),context:ctx}};
  }
  if((decline&&!delta.prefer.length&&!delta.avoid.length)||(c.current==='hobby-focus'&&selected?.id==='other')){
-  const ctx={...next,signals:current,hobbies:[],hypothesis:[],uncertain:0};
+  const ctx={...next,signals:current,hobbies:[],hypothesis:[],skipped:[...new Set([...c.skipped,...q.when,...c.hobbies])].slice(0,8),uncertain:0};
   // A rejected question is not evidence that the pupil dislikes every
   // topic associated with it. Offer a different direction instead.
   const alternatives=['more-interests','watch','opening','free-time'];
@@ -387,14 +419,10 @@ function analyze(text,rawContext={},books=[]){
   if(candidate&&!/\b(?:geen|niet|een boek over|iets over)\b/i.test(candidate))return {...envelope,advice:{kind:'book-search',title:candidate,context:c}};
  }
  if(!selected&&!direct.recognized&&!media.length&&!anchor&&!notReader&&length===c.length){
-  if(!uncertain&&c.uncertain===0&&!/\b(?:niet|geen|zonder|hekel)\b/.test(value)){
-   const candidates=suggestTopics(text);
-   if(candidates.length){
-    const ctx={...c,current:'clarify-topic',clarifyFrom:c.current,clarifyCandidates:candidates,uncertain:1};
-    return {...envelope,advice:{kind:'examples',reaction:'Hmm, ik twijfel een beetje 🤔',question:questionView(questionForContext(ctx)),context:ctx}};
-   }
+  if(uncertain||c.uncertain>=1){
+   if(c.uncertain>=2)return {...envelope,advice:{kind:'offer',reaction:'Geen probleem. We hoeven niet alles te weten!',context:c}};
+   return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
   }
-  if(uncertain||c.uncertain>=1)return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
   return {...envelope,advice:{kind:'clarify',reaction:'Oeps, die snap ik nog niet helemaal 😅 Wat bedoel je precies?',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
  }
  // A named reference can change the direction even if there is no direct trait.
@@ -403,13 +431,14 @@ function analyze(text,rawContext={},books=[]){
  if((media.length||anchor)&&!next.used.includes('media-interest')&&!next.used.includes('book-interest')){
    // A title is evidence about possible themes, never about the pupil's liking.
    const candidate=anchor?'book-interest':'media-interest';
-   const mediaContext={...next,current:candidate};
+   const mediaContext={...next,current:candidate,signals:activityContext&&!explicitReading?current:updated};
    const view=questionView(questionForContext(mediaContext));
    return {...envelope,advice:{kind:'question',reaction:'',
     question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat spreekt je aan in '+media[0]+'?':'Wat vind je interessant aan die games, films of series?'},
     context:mediaContext,...(anchor?{reference:{bookId:anchor.bookId,title:anchor.title}}:{}),hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
  }
  if(notReader)reaction='Geen leesfan? Uitdaging geaccepteerd!';
+ else if(!reaction&&hasNew&&next.turns%3===0&&!updated.avoid.length&&!updated.prefer.some(t=>['grief','mentalHealth','bullying','discrimination','crimeVictims','animalLoss','empathy','murder','crime','war'].includes(t)))reaction=['Ah, duidelijk!','Oké, dat helpt!','Dan weet ik al wat meer.'][Math.floor(tie(c.seed,String(next.turns))*3)];
  const p=updated.prefer,axisCount=families(p);
  const topicDetail=p.some(t=>SUBTOPICS[t]||['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));
