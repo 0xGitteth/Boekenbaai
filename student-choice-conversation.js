@@ -113,7 +113,7 @@ add('art-interest',1,'art','Wat maak of teken je graag?','Denk aan wat je zelf l
  ['Personages of stripverhalen','art fantasy'],['Dingen die echt bestaan','art realistic'],['Zelf iets ontwerpen','art discovery'],['Fotografie','art'],['Ik wil iets anders lezen','']]);
 add('hobby-focus',1,'','Zou je ook over een van je hobby’s willen lezen?','Je mag ook een ander onderwerp kiezen.',[]);
 const SUBTOPICS={"drawing":"art","photography":"art","design":"art","filmmaking":"art","musicMaking":"music","musicListening":"music","sportPlaying":"sport","sportWatching":"sport","teamSport":"sport","individualSport":"sport","pets":"animals","wildlife":"animals","animalCare":"animals","space":"science","computing":"science","inventions":"science","humanBody":"science","robotics":"science","gameBuilding":"gaming","gameCompetition":"gaming","gameStory":"gaming","gameDevelopment":"gaming","gameMultiplayer":"gaming","courtCases":"crime","crimeVictims":"crime","gangs":"crime"};
-add('clarify-topic',1,'','Bedoel je misschien een van deze onderwerpen?','Ik denk aan deze onderwerpen, maar ik kan het verkeerd hebben.',[]);
+add('clarify-topic',1,'','Bedoel je zoiets?','Zit er iets tussen?',[]);
 for(const [key,group,prompt,options] of [["drawing","art","Wat teken of schilder je het liefst?",[["Personages of strips","drawing fantasy"],["Dingen die echt bestaan","drawing realistic"],["Nieuwe tekentechnieken leren","drawing facts"]]],["photography","art","Wat vind je interessant aan fotografie?",[["Mensen fotograferen","photography people"],["Dieren of natuur fotograferen","photography nature"],["Leren hoe een camera werkt","photography facts"]]],["design","art","Wat ontwerp je graag?",[["Kleding","design"],["Illustraties of posters","design drawing"],["Spullen of gebouwen","design inventions"]]],["filmmaking","art","Wat vind je interessant aan films maken?",[["Het filmen zelf","filmmaking"],["Verhalen bedenken","filmmaking adventure"],["Montage en techniek","filmmaking technology"]]],["musicMaking","music","Maak je zelf muziek of vind je verhalen over muzikanten interessant?",[["Zelf muziek maken","musicMaking"],["Het leven van muzikanten","musicMaking true"],["Leren over muziek","musicMaking facts"]]],["musicListening","music","Wat spreekt je aan in de muziek waar je naar luistert?",[["De tekst","musicListening"],["De artiest","musicListening people"],["De sfeer","musicListening calm"]]],["sportPlaying","sport","Welke kant van zelf sporten vind je interessant?",[["Beter worden in een sport","sportPlaying growth"],["Samen sporten","teamSport"],["Zelf trainen","individualSport"]]],["sportWatching","sport","Wat vind je leuk aan sport kijken?",[["Een club volgen","sportWatching teamSport"],["Wedstrijden","sportWatching competition"],["Het leven van sporters","sportWatching true"]]],["teamSport","sport","Wat vind je interessant aan een sportteam?",[["Samenwerken","teamSport team"],["Wedstrijden winnen","teamSport competition"],["Vriendschap in het team","teamSport friendship"]]],["individualSport","sport","Wat vind je interessant aan een individuele sport?",[["Trainen","individualSport growth"],["Wedstrijden","individualSport competition"],["Hoe iemand een doel haalt","individualSport challenge"]]],["pets","animals","Wat vind je leuk aan huisdieren?",[["De band met een dier","pets friendship"],["Meer weten over verzorging","animalCare"],["Een avontuur met een huisdier","pets adventure"]]],["wildlife","animals","Over welke wilde dieren zou je meer willen weten?",[["Roofdieren","wildlife facts"],["Dieren in zee","wildlife nature"],["Hoe dieren overleven","wildlife survival"]]],["animalCare","animals","Wat vind je interessant aan het verzorgen van dieren?",[["Dieren helpen","animalCare empathy"],["Werken met dieren","animalCare true"],["Meer leren over verzorging","animalCare facts"]]],["space","science","Wat maakt je nieuwsgierig naar de ruimte?",[["Planeten en sterren","space facts"],["Astronauten","space true"],["Een verzonnen ruimtereis","space adventure"]]],["computing","science","Wat vind je interessant aan computers?",[["Programmeren","computing facts"],["Digitale mysteries","computing mystery"],["Hoe computers werken","computing technology"]]],["inventions","science","Wat vind je interessant aan uitvindingen?",[["Hoe iets werkt","inventions facts"],["Een uitvinder volgen","inventions true"],["Nieuwe dingen bedenken","inventions discovery"]]],["humanBody","science","Wat zou je willen begrijpen aan het menselijk lichaam?",[["Hoe het lichaam werkt","humanBody facts"],["Gezondheid","humanBody health"],["Sport en het lichaam","humanBody sport"]]],["robotics","science","Wat vind je interessant aan robots?",[["Hoe ze werken","robotics facts"],["Wat ze in de toekomst kunnen","robotics future"],["Een verhaal met robots","robotics fantasy"]]],["gameBuilding","gaming","Wat bouw je graag in games?",[["Huizen of steden","gameBuilding design"],["Een eigen wereld","gameBuilding fantasy"],["Dingen die echt werken","gameBuilding inventions"]]],["gameCompetition","gaming","Wat vind je leuk aan competitief gamen?",[["Beter worden","gameCompetition growth"],["Wedstrijden winnen","gameCompetition competition"],["Spelen in een team","gameCompetition team"]]],["gameStory","gaming","Wat vind je leuk aan verhalen in games?",[["De personages","gameStory people"],["De wereld ontdekken","gameStory adventure"],["Mysteries oplossen","gameStory mystery"]]],["gameDevelopment","gaming","Wat zou je willen weten over het maken van games?",[["Programmeren","gameDevelopment computing"],["Werelden ontwerpen","gameDevelopment design"],["Verhalen bedenken","gameDevelopment gameStory"]]],["gameMultiplayer","gaming","Wat vind je leuk aan samen gamen?",[["Samenwerken","gameMultiplayer team"],["Samen iets ontdekken","gameMultiplayer adventure"],["Vriendschap","gameMultiplayer friendship"]]],["courtCases","crime","Wat vind je interessant aan rechtszaken?",[["Hoe bewijs wordt gebruikt","courtCases puzzles"],["De keuzes van de rechter","courtCases justice"],["Een waargebeurde zaak","courtCases true"]]],["crimeVictims","crime","Wat zou je willen weten over mensen die met misdaad te maken krijgen?",[["Hoe ze ermee omgaan","crimeVictims empathy"],["Hoe ze geholpen worden","crimeVictims justice"],["Waargebeurde ervaringen","crimeVictims true"]]],["gangs","crime","Wat vind je interessant aan verhalen over bendes?",[["Waarom iemand erbij gaat","gangs psychology"],["Hoe iemand eruit komt","gangs growth"],["Hoe een bende wordt onderzocht","gangs police"]]]]){
  add('specific-'+key,1,key,prompt,'Misschien helpt een voorbeeld.',options);
  Q[Q.length-1].group=group;
@@ -306,7 +306,7 @@ function analyze(text,rawContext={},books=[]){
    if(feedbackRejected.length){
     current=validateSignals({prefer:current.prefer.filter(t=>!feedbackRejected.includes(t)),avoid:current.avoid});
     return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{
-      kind:'question',reaction:'Dan zoeken we in een andere richting.',clearReference:true,
+      kind:'question',reaction:'Oké, dan zoeken we iets anders.',clearReference:true,
       context:{...c,signals:current,current:'feedback',uncertain:0},
       question:{...questionView(q),prompt:'Wat zou je in plaats daarvan graag willen lezen?'}}};
    }
@@ -379,8 +379,8 @@ function analyze(text,rawContext={},books=[]){
   // topic associated with it. Offer a different direction instead.
   const alternatives=['more-interests','watch','opening','free-time'];
   const follow=alternatives.map(id=>BY_ID.get(id)).find(x=>!ctx.used.includes(x.id));
-  if(!follow||ctx.turns>=6)return {...envelope,recognized:true,clarify:false,advice:{kind:'offer',reaction:'Dat hoeft ook niet.',context:ctx}};
-  return {...envelope,recognized:true,clarify:false,advice:{kind:'question',reaction:'Dan kijken we naar iets anders.',question:questionView(follow),context:{...ctx,current:follow.id}}};
+  if(!follow||ctx.turns>=6)return {...envelope,recognized:true,clarify:false,advice:{kind:'offer',reaction:'Helemaal prima.',context:ctx}};
+  return {...envelope,recognized:true,clarify:false,advice:{kind:'question',reaction:'Oké, iets anders dan.',question:questionView(follow),context:{...ctx,current:follow.id}}};
  }
  const bookMention=String(text||'').match(/^(?:ik heb (?:het boek )?(.{2,100}?)\s+(?:gelezen|uitgelezen)|ik las (?:het boek )?(.{2,100}?)|ik vond het boek (.{2,100}?)(?:\s+(?:leuk|heel leuk|geweldig))?|(?:het )?boek (?:heet |is )?(.{2,100}?))[.!]?$/i);
  if(!selected&&!anchor&&bookMention&&!media.length&&!direct.avoid?.length){
@@ -392,15 +392,15 @@ function analyze(text,rawContext={},books=[]){
    const candidates=suggestTopics(text);
    if(candidates.length){
     const ctx={...c,current:'clarify-topic',clarifyFrom:c.current,clarifyCandidates:candidates,uncertain:1};
-    return {...envelope,advice:{kind:'examples',reaction:'Ik weet niet zeker of ik je goed begrijp.',question:questionView(questionForContext(ctx)),context:ctx}};
+    return {...envelope,advice:{kind:'examples',reaction:'Hmm, ik weet het niet helemaal zeker.',question:questionView(questionForContext(ctx)),context:ctx}};
    }
   }
   if(uncertain||c.uncertain>=1)return {...envelope,advice:{kind:'examples',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
-  return {...envelope,advice:{kind:'clarify',reaction:'Dat begrijp ik nog niet helemaal. Kun je vertellen wat je daarmee bedoelt?',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
+  return {...envelope,advice:{kind:'clarify',reaction:'Dat ken ik niet zo goed. Wat bedoel je precies?',question:questionView(q),context:{...c,uncertain:Math.min(2,c.uncertain+1)}}};
  }
  // A named reference can change the direction even if there is no direct trait.
  const possible=validateSignals({prefer:hypothesis}).prefer;
- let reaction=correction?'Ah, dan begreep ik je verkeerd. Bedankt voor de uitleg.':'';
+ let reaction=correction?'Oh, zo! Ik had je verkeerd begrepen.':'';
  if((media.length||anchor)&&!next.used.includes('media-interest')&&!next.used.includes('book-interest')){
    // A title is evidence about possible themes, never about the pupil's liking.
    const candidate=anchor?'book-interest':'media-interest';
@@ -410,7 +410,7 @@ function analyze(text,rawContext={},books=[]){
     question:{...view,prompt:anchor?'Wat sprak je aan in '+anchor.title+'?':media.length===1?'Wat spreekt je aan in '+media[0]+'?':'Wat vind je interessant aan die games, films of series?'},
     context:mediaContext,...(anchor?{reference:{bookId:anchor.bookId,title:anchor.title}}:{}),hypotheses:possible.map((id,i)=>({id,label:LABELS[id]||id,score:Math.max(1,3-i)}))}};
  }
- if(notReader)reaction='Dan beginnen we bij wat je buiten het lezen leuk vindt.';
+ if(notReader)reaction='Wat vind je buiten het lezen leuk?';
  const p=updated.prefer,axisCount=families(p);
  const topicDetail=p.some(t=>SUBTOPICS[t]||['puzzles','disappearance','secrets','police','criminalPerspective','manipulation','magic','competition','team','war','survival'].includes(t));
  const specific=topicDetail||p.some(t=>['manipulation','animalLoss','true','realistic','facts','slow','fast'].includes(t));
