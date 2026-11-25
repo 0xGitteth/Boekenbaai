@@ -11,6 +11,7 @@ const { readJsonSnapshot, mutateJsonLockedAsync } = require('./database-write-co
 const pins = require('./student-pin-core');
 const checkout = require('./student-pin-checkout-core');
 const choice = require('./student-choice-access');
+const guestChoice = require('./student-choice-guest');
 
 const originalCreateServer = http.createServer.bind(http);
 const DATA_PATH = process.env.BOEKENBAAI_DATA_PATH
@@ -72,6 +73,14 @@ function getToken(req) {
   return cookies(req).boekenbaai_session || '';
 }
 
+function choiceCredentials(req,res,body){
+ return {grant:body.choiceGrant,sessionToken:getToken(req),guest:()=>{
+  const {token,row}=guestChoice.open(cookies(req).boekenbaai_choice_guest);
+  const secure=String(security.getExpectedOrigin(req,PUBLIC_URL)||'').startsWith('https:')?'; Secure':'';
+  res.setHeader('Set-Cookie','boekenbaai_choice_guest='+token+'; Path=/api/auth/student-pin/; HttpOnly; SameSite=Strict; Max-Age='+Math.ceil(guestChoice.IDLE_MS/1000)+secure);
+  return row;
+ }};
+}
 function loadDb() {
   const db = readJsonSnapshot(DATA_PATH);
   if (!db || typeof db !== 'object' || Array.isArray(db)) throw Error('db_invalid');
@@ -233,11 +242,11 @@ async function handleStudentPin(req, res, requestUrl) {
     const body=await parseBody(req,4096);
     if(typeof body.text!=='string'||!body.text.trim()||body.text.length>500)
       return sendJson(res,400,{message:'Schrijf maximaal 500 tekens.'});
-    return sendJson(res,200,await choice.interpretAnswer({grant:body.choiceGrant,sessionToken:getToken(req),text:body.text}));
+    return sendJson(res,200,await choice.interpretAnswer({...choiceCredentials(req,res,body),text:body.text}));
   }
   if(isChoiceStatus){
     const body=await parseBody(req);
-    return sendJson(res,200,choice.choiceStatus({grant:body.choiceGrant,sessionToken:getToken(req)}));
+    return sendJson(res,200,choice.choiceStatus(choiceCredentials(req,res,body)));
   }
   if(isChoiceMentor){
     const args={sessionToken:getToken(req),studentId:choiceMentor[1]};
@@ -251,14 +260,14 @@ async function handleStudentPin(req, res, requestUrl) {
   if (isChoiceNext) {
     const body=await parseBody(req,16384);
     return sendJson(res,200,choice.nextQuestion({
-      grant:body.choiceGrant,sessionToken:getToken(req),answers:body.answers,seed:body.seed,
+      ...choiceCredentials(req,res,body),answers:body.answers,seed:body.seed,
       excludeQuestionIds:body.excludeQuestionIds,
     }));
   }
   if (isChoiceSuggest) {
     const body=await parseBody(req,32768);
     const result=await choice.suggestions({
-      grant:body.choiceGrant,sessionToken:getToken(req),choices:body.choices,
+      ...choiceCredentials(req,res,body),choices:body.choices,
       anonymous:body.anonymous===true,
     });
     return sendJson(res,200,result);
@@ -373,7 +382,7 @@ function wrapRequestListener(listener) {
       if (error?.code === 'DATABASE_WRITE_BUSY' || error?.code === 'DATABASE_WRITE_CONFLICT') {
         return sendJson(res, 409, { message: 'Gegevens zijn tegelijk gewijzigd. Probeer opnieuw.' });
       }
-      if (error?.status) return sendJson(res, error.status, { message: error.message,...(error.code==='CHOICE_BLOCKED'?{code:error.code}:{}) });
+      if (error?.status) return sendJson(res, error.status, { message: error.message,...(['CHOICE_BLOCKED','CHOICE_GUEST_PAUSED'].includes(error.code)?{code:error.code}:{}) });
       console.error('[Student PIN] Aanvraag mislukt:', error?.message || 'interne fout');
       return sendJson(res, 500, { message: 'PIN kon niet worden verwerkt.' });
     }

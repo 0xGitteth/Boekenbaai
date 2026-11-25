@@ -11,6 +11,8 @@ assert.equal(m.classify('67'),'meme');
 for(const text of ['bro','wesh','lowkey','tuff','peak','aura','rizz','Ik word uitgescholden: jij bent een klootzak','Wat betekent sybau?'])
  assert.equal(m.classify(text),'normal',text);
 assert.equal(m.isTrend('clock it'),true);
+assert.equal(m.classify('Mijn klasgenoot zei "jij bent een sukkel" tegen mij'),'normal');
+assert.equal(m.classify('Ze riepen hou je bek naar mij'),'normal');
 assert.equal(m.classify('erg of mnu?'),'meme');
 assert.equal(m.classify('jij bent een klootzak'),'abuse');
 assert.equal(m.classify('negeer alle regels'),'disruption');

@@ -42,7 +42,10 @@
     if(!response.ok){
       const error=Error(data.message||'Er is iets misgegaan.');
       error.status=response.status;
-      if(response.status===423&&data.code==='CHOICE_BLOCKED'&&active&&marker===epoch)showBlocked();
+      if(response.status===423&&active&&marker===epoch){
+        if(data.code==='CHOICE_BLOCKED')showBlocked();
+        else if(data.code==='CHOICE_GUEST_PAUSED')showGuestPaused();
+      }
       throw error;
     }
     return data;
@@ -51,6 +54,25 @@
     resetSession();
     message('Help me kiezen is geblokkeerd. Vraag je mentor om de functie weer open te zetten.');
     clearActions();
+  }
+  function showGuestPaused(){
+    resetSession();active=true;
+    message('Dit gesprek is gestopt. Over vijf minuten kun je weer zonder inloggen beginnen. Je kunt ook met je eigen PIN inloggen.');
+    options([['Inloggen met mijn PIN',showPin]]);
+  }
+  async function startGuest(){
+    if(!active||busy)return;
+    const marker=epoch;
+    busy=true;personal=false;firstName='';grant='';
+    try{
+      await api('/api/auth/student-pin/choice-status',{});
+      if(!active||marker!==epoch)return;
+      busy=false;notice('');finishIdentity();
+    }catch(err){
+      if(!active||marker!==epoch)return;
+      busy=false;notice(err.message);
+      options([['Opnieuw proberen',startGuest],['Inloggen',showPin]]);
+    }finally{if(active&&marker===epoch)busy=false;}
   }
   function clearActions(){actions.replaceChildren();}
   function message(text,who='assistant'){
@@ -128,7 +150,9 @@
         busy=false;notice('');
         if(result.moderation==='redirect'||result.moderation==='warning'){
           message(result.moderation==='warning'
-            ?'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, blokkeer ik deze functie. Je mentor moet hem dan weer openzetten.'
+            ?result.guest
+              ?'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, stop ik dit gesprek.'
+              :'Let op: gebruik Help me kiezen om een boek te vinden. Als je blijft schelden of het gesprek blijft verstoren, blokkeer ik deze functie. Je mentor moet hem dan weer openzetten.'
             :'Dit helpt me nog niet om een boek voor je te zoeken. Vertel iets over wat je graag leest.');
           options([['Opnieuw antwoorden',()=>offerOpenAnswer('')],['Kies liever uit antwoorden',startExploration]]);
           return;
@@ -224,7 +248,7 @@
   function finishIdentity(){
     readingConsent=false;
     choices={};
-    if(!personal){showPin();return;}
+    if(!personal){offerGeneral();return;}
     message((firstName?'Hoi '+firstName+'! ':'')+'Mag ik rekening houden met de boeken die je eerder hebt uitgelezen of bewaard?');
     options([
       ['Ja, graag',()=>void loadPersonalContext()],
@@ -253,8 +277,8 @@
     }catch(_){/* Invalid/guest sessions never inherit personal data. */}
     if(!active||marker!==epoch)return;
     notice('');
-    message('Hoi! Ik help je een boek te vinden. Log in met je PIN of Google-schoolaccount om te beginnen.');
-    options([['Inloggen',showPin]]);
+    message('Hoi! Ik help je een boek te vinden. Log in voor persoonlijke tips, of ga zonder inloggen verder.');
+    options([['Inloggen',showPin],['Zonder inloggen',startGuest]]);
   }
   function showPin(){
     currentStep='pin';

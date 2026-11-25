@@ -114,9 +114,9 @@ vm.runInNewContext(code,{
   const log=elements.get('student-choice-chat-log');
   assert.equal(log.children.length,1,
     'The chat should open with one conversational message, not two introductory messages');
-  assert.match(log.children[0].children[0].textContent,/Log in met je PIN/);
+  assert.match(log.children[0].children[0].textContent,/Log in voor persoonlijke tips/);
   const firstChoice=actions.children.find(x=>x.textContent==='Inloggen');
-  assert.ok(!actions.children.some(x=>x.textContent==='Zonder inloggen'));
+  assert.ok(actions.children.some(x=>x.textContent==='Zonder inloggen'));
   firstChoice.listeners.click();
   const form=actions.children[0];
   assert.equal(form.tag,'form');
@@ -134,6 +134,13 @@ vm.runInNewContext(code,{
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(invalidated.includes('valid-late-token'));
   assert.equal(suggestRequests.length,0);
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Zonder inloggen').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(actions.children.some(x=>x.textContent==='Vertel zelf wat je zoekt'));
+  actions.children.find(x=>x.textContent==='Laat me drie boeken zien').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(suggestRequests.at(-1).anonymous,true);
   // Signed-in pupils choose whether to use private reading context.
   elements.get('student-choice-close').listeners.click();
   loggedIn=true;

@@ -39,13 +39,13 @@ const db={
 };
 const readDb=()=>JSON.parse(fs.readFileSync(dbPath,'utf8'));
 const readAuth=()=>JSON.parse(fs.readFileSync(authPath,'utf8'));
-async function request(route,body,token='',origin=url){
+async function request(route,body,token='',origin=url,guestCookie=''){
   const response=await fetch(url+route,{
     method:body===undefined?'GET':'POST',
     headers:{
       Origin:origin,'Sec-Fetch-Site':'same-origin',
       ...(body===undefined?{}:{'Content-Type':'application/json'}),
-      ...(token?{Cookie:'boekenbaai_session='+encodeURIComponent(token)}:{}),
+      ...((token||guestCookie)?{Cookie:[token?'boekenbaai_session='+encodeURIComponent(token):'',guestCookie].filter(Boolean).join('; ')}:{}),
     },
     body:body===undefined?undefined:JSON.stringify(body),
   });
@@ -174,9 +174,11 @@ async function stop(){
     assert.ok(record&&record.keys.length===6);
     assert.equal(readDb().studentChoiceSeen.some(x=>x.studentId==='b'),false);
     const outsider=await suggest(choices);
-    assert.equal(outsider.status,401);
+    assert.equal(outsider.status,200);
+    assert.equal(outsider.body.personalized,false);
     const staff=await suggest(choices,undefined,'session-t');
-    assert.equal(staff.status,401,'Teacher session must not reveal pupil choices');
+    assert.equal(staff.status,200);
+    assert.equal(staff.body.personalized,false,'Teacher session must not reveal pupil choices');
     const full=await suggest(choices,undefined,'session-a');
     assert.equal(full.status,200);
     const explicitlyAnonymous=await request('/api/auth/student-pin/choice-suggest',
@@ -191,7 +193,25 @@ async function stop(){
     const another=await suggest(choices,grant);
     assert.equal(another.status,200);
     const interpretRoute='/api/auth/student-pin/choice-interpret';
-    assert.equal((await request(interpretRoute,{text:'67'})).status,401);
+    const guestStart=await request('/api/auth/student-pin/choice-status',{});
+    assert.equal(guestStart.status,200);
+    assert.equal(guestStart.body.guest,true);
+    const guestCookie=guestStart.setCookie.split(';')[0];
+    assert.match(guestCookie,/^boekenbaai_choice_guest=/);
+    assert.match(guestStart.setCookie,/HttpOnly/);
+    const guestReq=(route,body,token='')=>request(route,body,token,url,guestCookie);
+    const beforeGuest=readDb();
+    assert.equal((await guestReq(interpretRoute,{text:'jij bent een klootzak'})).body.moderation,'warning');
+    const stopped=await guestReq(interpretRoute,{text:'jij bent een klootzak'});
+    assert.equal(stopped.status,423);
+    assert.equal(stopped.body.code,'CHOICE_GUEST_PAUSED');
+    for(const route of ['choice-status','choice-next','choice-suggest','choice-interpret']){
+      const res=await guestReq('/api/auth/student-pin/'+route,{text:'fantasy',choices});
+      assert.equal(res.status,423,route);
+    }
+    assert.deepEqual(readDb(),beforeGuest,'Guest incidents must not persist in pupil data');
+    assert.equal((await guestReq('/api/auth/student-pin/choice-status',{},'session-a')).status,200,'An innocent signed-in student is not blocked by guest activity');
+    assert.equal((await request('/api/auth/student-pin/choice-status',{})).status,200,'Different browser unaffected');
     assert.equal((await request(interpretRoute,{text:'67',choiceGrant:grant})).body.moderation,'redirect');
     assert.equal((await request(interpretRoute,{text:'erg of mnu',choiceGrant:grant})).body.moderation,'warning');
     assert.equal((await request(interpretRoute,{text:'jij bent een klootzak',choiceGrant:grant})).status,423);

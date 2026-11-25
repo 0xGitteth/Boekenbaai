@@ -27,6 +27,7 @@ function classify(text,books=[]){
  if(books.some(b=>b?.catalogHidden!==true&&normalize(b?.title)===value))return 'normal';
  // A report of bullying, a quotation or discussion of a word should not
  // become a disciplinary incident. Do not guess intent in these contexts.
+ if(/["“”„«»]/u.test(String(text))||/\b(?:zei|zeiden|riep|riepen|schreef|schreven|noemde|noemden|schold|scholden)\b.*\b(?:tegen mij|naar mij|tegen me|naar me)\b/.test(value))return 'normal';
  if(/\b(?:ik word uitgescholden|ik werd uitgescholden|ze noemen me|hij noemde me|zij noemde me|iemand zei tegen mij|tegen mij gezegd|ik word gepest|wat betekent|het woord|boek heet|boek met de titel|een boek over)\b/.test(value))return 'normal';
  if(directed.test(value)||standalone.test(value)||/\b(?:hou je (?:bek|muil|kankerbek)|fuck you|fuck off|shut the fuck up|stfu|sybau|kys|kill yourself)\b/.test(value))
   return 'abuse';
