@@ -118,7 +118,7 @@ function suggestTopics(text){
  }
  const candidates=new Map();
  // Curated possible directions for ambiguous activities, not assumed meanings.
- const hints={urbex:['photography','historicalDailyLife','travel'],cosplay:['design','mythicalCreatures','filmmaking'],geocaching:['puzzles','nature','discovery']};
+ const hints={urbex:['photography','historicalDailyLife','travel']};
  for(const word of words)for(const key of hints[word]||[])candidates.set(key,1);
  for(const word of words.filter(w=>w.length>=5&&!EXACT_TOPIC_WORDS.has(w)&&!TYPO_IGNORE.has(w))){
   for(const [key,variants] of Object.entries(TERMS)){

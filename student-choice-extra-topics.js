@@ -4802,6 +4802,7 @@ module.exports=[
   "nature",
   "geocaching",
   [
+   "geocaching",
    "geocaching zoeken",
    "geocaches zoeken",
    "geocache"

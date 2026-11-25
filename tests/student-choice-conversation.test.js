@@ -152,8 +152,9 @@ const partialHobbies=run(partialAll.label,{...partial.advice.context,optionId:pa
 assert.equal(partialHobbies.advice.question.id,'hobby-focus');
 assert.deepEqual(partialHobbies.advice.context.signals.prefer,[]);
 const cosplay=run('cosplay',{current:'free-time'});
-assert.equal(cosplay.advice.question.id,'clarify-topic');
-assert.ok(cosplay.advice.question.options.length>=2);
+assert.equal(cosplay.advice.question.id,'hobby-focus');
+assert.ok(cosplay.advice.context.hobbies.includes('cosplay'));
+assert.ok(run('geocaching',{current:'free-time'}).advice.context.hobbies.includes('geocaching'));
 const watchOnly=run('Ik kijk voetbal maar sport zelf niet',{current:'free-time'});
 assert.equal(watchOnly.advice.question.id,'hobby-focus');
 assert.ok(watchOnly.advice.context.hobbies.includes('sportWatching'));
@@ -305,6 +306,18 @@ const privateReadingRequest=require('../student-choice-conversation').privateRea
 assert.equal(privateReadingRequest({openSignals:{prefer:['genderIdentity']}}),true);
 assert.equal(privateReadingRequest({questionIds:['specific-autism']}),true);
 assert.equal(privateReadingRequest({openSignals:{prefer:['football']},questionIds:['specific-football']}),false);
+const coverageBooks=[
+ {id:'pet',title:'Alles over cavia’s',author:'A',description:'Verzorging van cavia’s.'},
+ {id:'sport',title:'Padel voor beginners',author:'B',description:'Meer leren over padel.'},
+ {id:'bread',title:'Brood bakken',author:'C',description:'Recepten met zuurdesem.'},
+ {id:'culture',title:'Japan ontdekken',author:'D',description:'Japanse cultuur en tradities.'},
+ {id:'inclusive',title:'Liefde tussen twee meisjes',author:'E',description:'Een lesbisch liefdesverhaal.'},
+ {id:'gender',title:'Een eigen verhaal',author:'F',description:'Een transgender hoofdpersoon.'}
+];
+for(const [topic,id] of [['guineaPigs','pet'],['padel','sport'],['breadMaking','bread'],['japan','culture'],['queerRomance','inclusive'],['genderIdentity','gender']]){
+ const result=rankBooks({books:coverageBooks},{route:'new',openSignals:{prefer:[topic],avoid:[]},seed:'coverage-'+topic});
+ assert.equal(result.suggestions[0]?.bookId,id,topic);
+}
 const inclusive=run('LHBTQIA+',{current:'opening'});
 assert.equal(inclusive.advice.question?.id,'specific-queerStories');
 assert.equal(run('Ik wil geen dikke boeken',{current:'free-time'}).advice.context.length,'short');

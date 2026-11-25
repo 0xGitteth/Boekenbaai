@@ -1106,6 +1106,8 @@ module.exports=[
   [
    "andere culturen",
    "culturen",
+   "cultuur",
+   "culturele verschillen",
    "andere gewoonten",
    "tradities"
   ],
