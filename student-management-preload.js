@@ -1,5 +1,7 @@
 'use strict';
 
+const {currentStudentClassIds,setStudentClassMembership}=require('./student-class-membership');
+
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -225,16 +227,7 @@ function managedClassIds(db, user) {
   return ids;
 }
 
-function studentClassIds(db, student) {
-  // Class rosters can be updated by a mentor before a stale student.classIds
-  // field is reconciled. When an actual roster membership exists, it is the
-  // source of truth for display and access; do not union the old class back in.
-  const roster = (db.classes || []).filter(klass =>
-    Array.isArray(klass?.studentIds) && klass.studentIds.includes(student.id))
-    .map(klass=>klass.id);
-  if (roster.length) return [...new Set(roster)];
-  return [...new Set(Array.isArray(student.classIds) ? student.classIds.filter(Boolean) : [])];
-}
+function studentClassIds(db,student){return currentStudentClassIds(db,student);}
 
 function classNames(db, ids) {
   const wanted = new Set(ids || []);
@@ -253,15 +246,7 @@ function ownsClass(db, user, classId) {
 }
 
 function ensureClassMembership(db, student, classIds) {
-  const desired = Array.from(new Set((classIds || []).filter(Boolean)));
-  student.classIds = desired;
-  for (const klass of db.classes) {
-    klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-    const shouldHave = desired.includes(klass.id);
-    const has = klass.studentIds.includes(student.id);
-    if (shouldHave && !has) klass.studentIds.push(student.id);
-    if (!shouldHave && has) klass.studentIds = klass.studentIds.filter((id) => id !== student.id);
-  }
+  setStudentClassMembership(db, student, classIds);
 }
 
 function appendHistory(db, type, message, extra = {}) {
@@ -462,8 +447,7 @@ function addStudent(context, body) {
   };
   if (studentNumber) setParnassysStudentNumber(student, studentNumber);
   context.db.students.push(student);
-  targetClass.studentIds = Array.isArray(targetClass.studentIds) ? targetClass.studentIds : [];
-  if (!targetClass.studentIds.includes(student.id)) targetClass.studentIds.push(student.id);
+  setStudentClassMembership(context.db, student, [targetClass.id]);
   appendHistory(
     context.db,
     'student_manual_added',

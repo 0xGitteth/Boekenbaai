@@ -50,10 +50,13 @@ const db = {
       parnassysStudentNumber: '20002',
       externalIds: { parnassys: '20002' },
     },
+    {id:'student-legacy-other',name:'Andere leerling',username:'legacy-other',
+      passwordHash:'x',borrowedBooks:[],classIds:['class-a','legacy-b'],active:true},
   ],
   folders: [],
   classes: [
-    { id: 'class-a', name: 'OZA', studentIds: ['student-1'], teacherIds: ['teacher-a'] },
+    { id: 'class-a', name: 'OZA', teacherIds: ['teacher-a'] },
+    { id: 'legacy-b', name: 'Bovenbouw Structuur', teacherIds: [] },
     { id: 'class-b', name: 'Onderbouw BKT', studentIds: ['student-2'], teacherIds: ['teacher-b'] },
   ],
   users: [
@@ -265,6 +268,9 @@ async function request(pathname, { token, method = 'GET', body } = {}) {
     assert.deepStrictEqual(savedStudent.classIds, ['class-b']);
     assert.strictEqual(savedStudent.parnassysStudentNumber, '10009');
     assert.strictEqual(savedStudent.externalIds.parnassys, '10009');
+    assert.deepStrictEqual(savedDb.classes.find(entry=>entry.id==='class-a').studentIds,['student-legacy-other']);
+    assert.deepStrictEqual(savedDb.classes.find(entry=>entry.id==='legacy-b').studentIds,['student-legacy-other']);
+    assert.deepStrictEqual(savedDb.students.find(entry=>entry.id==='student-legacy-other').classIds,['class-a','legacy-b']);
     assert.ok(!savedDb.classes.find((entry) => entry.id === 'class-a').studentIds.includes('student-1'));
     assert.ok(savedDb.classes.find((entry) => entry.id === 'class-b').studentIds.includes('student-1'));
     const oldTransfer = savedDb.studentTransferRequests.find((entry) => entry.id === 'transfer-old');

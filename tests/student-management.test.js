@@ -52,7 +52,7 @@ const db = {
   ],
   folders: [],
   classes: [
-    { id: 'class-a', name: 'Structuur A', studentIds: ['student-existing', 'student-borrowed'], teacherIds: ['teacher-a'] },
+    { id: 'class-a', name: 'Structuur A', teacherIds: ['teacher-a'] },
     { id: 'class-b', name: 'Structuur B', studentIds: [], teacherIds: ['teacher-b'] },
     { id: 'class-c', name: 'Structuur C', studentIds: [], teacherIds: [] },
   ],
@@ -209,6 +209,10 @@ async function json(pathname, { token, method = 'GET', body } = {}) {
     });
     assert.strictEqual(created.response.status, 201);
     const newStudentId = created.payload.student.id;
+    const afterCreate=JSON.parse(fs.readFileSync(dbPath,'utf8'));
+    assert.deepStrictEqual(afterCreate.classes.find(entry=>entry.id==='class-a').studentIds.slice().sort(),
+      ['student-existing','student-borrowed',newStudentId].sort(),
+      'Creating a pupil must retain all other pupils in a legacy roster');
     assert.ok(newStudentId);
     assert.strictEqual(created.payload.student.parnassysStudentNumber, '');
 

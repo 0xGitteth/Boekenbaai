@@ -1,5 +1,7 @@
 'use strict';
 
+const {currentStudentClassIds,setStudentClassMembership}=require('./student-class-membership');
+
 const crypto = require('node:crypto');
 const authCore = require('./google-auth-core');
 const {
@@ -147,13 +149,7 @@ function namesAreClose(left, right) {
   return (a.last === b.last && firstClose) || (a.first === b.first && lastClose);
 }
 
-function studentClassIds(db, student) {
-  const ids = new Set(Array.isArray(student?.classIds) ? student.classIds.filter(Boolean) : []);
-  for (const klass of db.classes || []) {
-    if (Array.isArray(klass?.studentIds) && klass.studentIds.includes(student?.id)) ids.add(klass.id);
-  }
-  return Array.from(ids);
-}
+function studentClassIds(db,student){return currentStudentClassIds(db,student);}
 
 function studentClassNames(db, student) {
   const ids = new Set(studentClassIds(db, student));
@@ -205,12 +201,11 @@ function activeBorrowedBooks(db, student) {
 }
 
 function removeStudentFromClasses(db, studentId) {
-  for (const klass of db.classes || []) {
-    klass.studentIds = Array.isArray(klass?.studentIds) ? klass.studentIds : [];
-    klass.studentIds = klass.studentIds.filter((id) => id !== studentId);
-  }
   const student = (db.students || []).find((entry) => entry?.id === studentId);
-  if (student) student.classIds = [];
+  if (student) setStudentClassMembership(db,student,[]);
+  else for (const klass of db.classes || []) {
+    if (Array.isArray(klass?.studentIds)) klass.studentIds=klass.studentIds.filter(id=>id!==studentId);
+  }
 }
 
 function removeTeacherFromClasses(db, teacherId) {

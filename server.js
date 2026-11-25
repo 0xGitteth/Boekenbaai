@@ -40,6 +40,7 @@ const { normalizeParts, normalizedMetadataChoice, buildUnifiedBookImport,
   require('./book-import-unified-sync');
 const { stageReviewedLoan, historicalExcelLoanReceipts,
   persistExcelLoanReceipts } = require('./book-import-loan-migration');
+const {currentStudentClassNames,materializeLegacyRosters,setStudentClassMembership}=require('./student-class-membership');
 const { mayManageClass, mayManageStudent, studentClassIds, ownClassIds,
   normalizeDueDate, publicBook } = require('./book-loan-policy');
 const {studentLoanIds,isUnavailable,isHidden,readStatus,
@@ -570,10 +571,19 @@ function ensureClassShape(klass) {
   safeClass.teacherIds = Array.isArray(safeClass.teacherIds)
     ? Array.from(new Set(safeClass.teacherIds.filter((id) => typeof id === 'string')))
     : [];
-  safeClass.studentIds = Array.isArray(safeClass.studentIds)
-    ? Array.from(new Set(safeClass.studentIds.filter((id) => typeof id === 'string')))
-    : [];
+  // Missing legacy rosters and explicitly empty rosters have different meanings.
+  if (Array.isArray(safeClass.studentIds)) {
+    safeClass.studentIds = Array.from(new Set(safeClass.studentIds.filter((id) => typeof id === 'string')));
+  } else {
+    delete safeClass.studentIds;
+  }
   return safeClass;
+}
+
+function effectiveClassRoster(db, klass) {
+  if (Array.isArray(klass.studentIds)) return klass.studentIds;
+  return (db.students || []).filter(student => studentClassIds(db, student).includes(klass.id))
+    .map(student => student.id);
 }
 
 function ensureTeacherShape(user) {
@@ -1089,9 +1099,6 @@ function ensureClassRecord(db, name) {
     if (!Array.isArray(klass.teacherIds)) {
       klass.teacherIds = [];
     }
-    if (!Array.isArray(klass.studentIds)) {
-      klass.studentIds = [];
-    }
   }
   return klass;
 }
@@ -1512,7 +1519,8 @@ function getAuthenticatedUser(req, getDb) {
       role: 'student',
       grade: student.grade || '',
       borrowedBooks: student.borrowedBooks,
-      classIds: student.classIds,
+      classIds: studentClassIds(db,student),
+      classNames: currentStudentClassNames(db,student),
       username: student.username,
       token,
     };
@@ -1551,12 +1559,15 @@ function updateImportJob(db, jobId, updates = {}) {
 
 function sanitizeStudent(student, options = {}) {
   if (!student) return null;
+  const db=options.db||null;
   const base = {
     id: student.id,
     name: student.name,
     grade: student.grade || '',
     borrowedBooks: Array.isArray(student.borrowedBooks) ? student.borrowedBooks : [],
-    classIds: Array.isArray(student.classIds) ? student.classIds : [],
+    classIds: db?studentClassIds(db,student):
+      (Array.isArray(student.classIds)?student.classIds:[]),
+    classNames: db?currentStudentClassNames(db,student):[],
     mustChangePassword: Boolean(student.mustChangePassword),
   };
   if (options.includeUsername) {
@@ -3866,6 +3877,8 @@ async function handleApi(req, res, requestUrl) {
             firstName: getPreferredFirstName(studentAccount),
             role: 'student',
             grade: studentAccount.grade || '',
+            classIds:studentClassIds(database,studentAccount),
+            classNames:currentStudentClassNames(database,studentAccount),
             mustChangePassword: Boolean(studentAccount.mustChangePassword),
           },
         });
@@ -3919,10 +3932,7 @@ async function handleApi(req, res, requestUrl) {
       if (validAccounts.length > 1) {
         const options = validAccounts.map((account) => {
           if (accountType === 'student') {
-            const classes = database.classes
-              .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(account.id))
-              .map((cls) => cls.name)
-              .join(', ');
+            const classes = currentStudentClassNames(database,account).join(', ');
             return {
               id: account.id,
               name: account.name,
@@ -3963,6 +3973,8 @@ async function handleApi(req, res, requestUrl) {
             firstName: getPreferredFirstName(account),
             role: 'student',
             grade: account.grade || '',
+            classIds:studentClassIds(database,account),
+            classNames:currentStudentClassNames(database,account),
             mustChangePassword: Boolean(account.mustChangePassword),
           },
         });
@@ -4003,10 +4015,7 @@ async function handleApi(req, res, requestUrl) {
 
         // Voor elke student, bepaal het aantal letters voor unieke displayName binnen klas
         matches = rawMatches.map((entry) => {
-          const classes = database.classes
-            .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(entry.id))
-            .map((cls) => cls.name)
-            .join(', ');
+          const classes = currentStudentClassNames(database,entry).join(', ');
 
           // Bepaal letters
           let letters = 1;
@@ -4017,10 +4026,7 @@ async function handleApi(req, res, requestUrl) {
             const displayName = createStudentDisplayName(entry, letters);
             const hasConflict = rawMatches.some((other) => {
               if (other.id === entry.id) return false;
-              const otherClasses = database.classes
-                .filter((cls) => Array.isArray(cls.studentIds) && cls.studentIds.includes(other.id))
-                .map((cls) => cls.name)
-                .join(', ');
+              const otherClasses = currentStudentClassNames(database,other).join(', ');
               const otherDisplayName = createStudentDisplayName(other, letters);
               return otherDisplayName === displayName && otherClasses === classes;
             });
@@ -4115,6 +4121,7 @@ async function handleApi(req, res, requestUrl) {
           examReadingEligible: examReadingAccess(db, student).eligible,
           borrowedBooks: student.borrowedBooks || [],
           classIds: studentClassIds(db, student),
+          classNames:currentStudentClassNames(db,student),
           username: student.username || '',
           mustChangePassword: Boolean(student.mustChangePassword),
         });
@@ -8485,11 +8492,11 @@ async function handleApi(req, res, requestUrl) {
       let studentList = db.students;
       if (user.role === 'teacher') {
         const teacherClassIds = getTeacherClassIds(db, user.id);
-        studentList = db.students.filter((student) =>
-          (student.classIds || []).some((classId) => teacherClassIds.includes(classId))
+        studentList=db.students.filter(student=>
+          studentClassIds(db,student).some(classId=>teacherClassIds.includes(classId))
         );
       }
-      const students = studentList.map((student) => sanitizeStudent(student, { includeUsername: true }));
+      const students = studentList.map((student) => sanitizeStudent(student, { includeUsername: true,db }));
       return sendJson(res, 200, students);
     }
 
@@ -8775,14 +8782,7 @@ async function handleApi(req, res, requestUrl) {
         classIds: validClassIds,
       };
       db.students.push(student);
-      for (const classId of validClassIds) {
-        const klass = db.classes.find((entry) => entry.id === classId);
-        if (!klass) continue;
-        klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-        if (!klass.studentIds.includes(student.id)) {
-          klass.studentIds.push(student.id);
-        }
-      }
+      setStudentClassMembership(db, student, validClassIds);
       appendHistory(db, {
         type: 'student_created',
         studentId: student.id,
@@ -8790,7 +8790,7 @@ async function handleApi(req, res, requestUrl) {
       });
       saveDb(db);
       return sendJson(res, 201, {
-        ...sanitizeStudent(student, { includeUsername: true }),
+        ...sanitizeStudent(student, { includeUsername: true,db }),
         temporaryPassword: password,
       });
     }
@@ -8807,7 +8807,7 @@ async function handleApi(req, res, requestUrl) {
       }
       if (user.role === 'teacher') {
         const teacherClassIds = getTeacherClassIds(db, user.id);
-        const allowed = (student.classIds || []).some((classId) => teacherClassIds.includes(classId));
+        const allowed = studentClassIds(db,student).some((classId) => teacherClassIds.includes(classId));
         if (!allowed) {
           return sendJson(res, 403, {
             message: 'Je kunt alleen wachtwoorden resetten voor leerlingen uit jouw klassen',
@@ -8826,7 +8826,7 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
-        student: sanitizeStudent(student, { includeUsername: true }),
+        student: sanitizeStudent(student, { includeUsername: true,db }),
         temporaryPassword,
       });
     }
@@ -8845,7 +8845,7 @@ async function handleApi(req, res, requestUrl) {
       let temporaryPassword = null;
       let passwordChanged = false;
       let classesChanged = false;
-      const previousClassIds = Array.isArray(student.classIds) ? [...student.classIds] : [];
+      const previousClassIds = studentClassIds(db,student);
       let nextClassIds = new Set(previousClassIds);
 
       if (body && typeof body.generateTemporaryPassword === 'boolean' && body.generateTemporaryPassword) {
@@ -8895,22 +8895,7 @@ async function handleApi(req, res, requestUrl) {
       }
 
       if (addedClassIds.length || removedClassIds.length) {
-        student.classIds = uniqueClassIds;
-        for (const classId of removedClassIds) {
-          const klass = db.classes.find((entry) => entry.id === classId);
-          if (klass) {
-            klass.studentIds = (klass.studentIds || []).filter((id) => id !== student.id);
-          }
-        }
-        for (const classId of addedClassIds) {
-          const klass = db.classes.find((entry) => entry.id === classId);
-          if (klass) {
-            klass.studentIds = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-            if (!klass.studentIds.includes(student.id)) {
-              klass.studentIds.push(student.id);
-            }
-          }
-        }
+        setStudentClassMembership(db, student, uniqueClassIds);
         classesChanged = true;
       }
 
@@ -8953,7 +8938,7 @@ async function handleApi(req, res, requestUrl) {
       saveDb(db);
       if (passwordChanged) revokeLegacySessionsForAccount('student', student.id);
       return sendJson(res, 200, {
-        student: sanitizeStudent(student, { includeUsername: true }),
+        student: sanitizeStudent(student, { includeUsername: true,db }),
         ...(temporaryPassword ? { temporaryPassword } : {}),
         classChanges: classesChanged
           ? {
@@ -8987,7 +8972,7 @@ async function handleApi(req, res, requestUrl) {
       }
       db.students = db.students.filter((entry) => entry.id !== student.id);
       for (const klass of db.classes) {
-        klass.studentIds = (klass.studentIds || []).filter((id) => id !== student.id);
+        if (Array.isArray(klass.studentIds)) klass.studentIds = klass.studentIds.filter((id) => id !== student.id);
       }
       for (const book of db.books) {
         if (book.borrowedBy === student.id) {
@@ -9098,9 +9083,7 @@ async function handleApi(req, res, requestUrl) {
         if (existingStudent) {
           const originalName = existingStudent.name;
           const originalGrade = existingStudent.grade || '';
-          const originalClassIds = Array.isArray(existingStudent.classIds)
-            ? [...existingStudent.classIds]
-            : [];
+          const originalClassIds = studentClassIds(db,existingStudent);
           existingStudent.name = name;
           existingStudent.firstName = importedName.firstName;
           existingStudent.middleName = importedName.middleName;
@@ -9125,19 +9108,7 @@ async function handleApi(req, res, requestUrl) {
           const removedClassIds = originalClassIds.filter((classId) => !newClassIdSet.has(classId));
           const addedClassIds = classIds.filter((classId) => !originalClassIds.includes(classId));
 
-          existingStudent.classIds = classIds;
-
-          for (const classId of removedClassIds) {
-            const klass = db.classes.find((entry) => entry.id === classId);
-            if (klass) {
-              klass.studentIds = (klass.studentIds || []).filter((id) => id !== existingStudent.id);
-            }
-          }
-          for (const klass of classRecords) {
-            if (!klass.studentIds.includes(existingStudent.id)) {
-              klass.studentIds.push(existingStudent.id);
-            }
-          }
+          setStudentClassMembership(db, existingStudent, classIds);
 
           const teacherNames = collectTeacherNames(db, classRecords);
           updatedAccounts.push({
@@ -9191,11 +9162,7 @@ async function handleApi(req, res, requestUrl) {
           classIds,
         };
         db.students.push(student);
-        for (const klass of classRecords) {
-          if (!klass.studentIds.includes(student.id)) {
-            klass.studentIds.push(student.id);
-          }
-        }
+        setStudentClassMembership(db, student, classIds);
         const teacherNames = collectTeacherNames(db, classRecords);
         createdAccounts.push({
           id: student.id,
@@ -9459,28 +9426,9 @@ async function handleApi(req, res, requestUrl) {
         // classIds can outlive a teacher's removal from a class, so it must
         // NEVER grant access to its student or class loan history.
         const teacherClassIds = new Set(getTeacherClassIds(db, user.id));
-        const classesForTeacher = (Array.isArray(db.classes) ? db.classes : [])
-          .filter((klass) => klass && teacherClassIds.has(klass.id));
-
-        const studentIds = new Set();
-        for (const klass of classesForTeacher) {
-          const studentsInClass = Array.isArray(klass.studentIds) ? klass.studentIds : [];
-          for (const studentId of studentsInClass) {
-            if (studentId) {
-              studentIds.add(studentId);
-            }
-          }
-        }
-
-        for (const student of Array.isArray(db.students) ? db.students : []) {
-          if (!student || !Array.isArray(student.classIds)) {
-            continue;
-          }
-          const belongsToTeacher = student.classIds.some((classId) => teacherClassIds.has(classId));
-          if (belongsToTeacher && student.id) {
-            studentIds.add(student.id);
-          }
-        }
+        const studentIds = new Set((db.students || [])
+          .filter(student => student?.id && studentClassIds(db,student).some(id => teacherClassIds.has(id)))
+          .map(student => student.id));
 
         historyEntries = historyEntries.filter(
           (entry) => entry && (
@@ -9519,7 +9467,9 @@ async function handleApi(req, res, requestUrl) {
       if (user.role === 'teacher') {
         classes = classes.filter((cls) => (cls.teacherIds || []).includes(user.id));
       }
-      return sendJson(res, 200, classes);
+      return sendJson(res, 200, classes.map(klass => ({
+        ...klass, studentIds: effectiveClassRoster(db, klass),
+      })));
     }
 
     const classStatsMatch = requestUrl.pathname.match(/^\/api\/classes\/([\w-]+)\/stats$/);
@@ -9536,12 +9486,9 @@ async function handleApi(req, res, requestUrl) {
         return sendJson(res, 403, { message: 'Je mag alleen je eigen klassen bekijken' });
       }
 
-      const studentIdsInClass = new Set([
-        ...(Array.isArray(klass.studentIds) ? klass.studentIds : []),
-        ...db.students
-          .filter((student) => Array.isArray(student.classIds) && student.classIds.includes(klass.id))
-          .map((student) => student.id),
-      ].filter(Boolean));
+      const studentIdsInClass = new Set((db.students || [])
+        .filter(student => student?.id && studentClassIds(db,student).includes(klass.id))
+        .map(student => student.id));
 
       const classHistory = (Array.isArray(db.history) ? db.history : []).filter(
         (entry) => entry && entry.type === 'check_out' && studentIdsInClass.has(entry.studentId)
@@ -9775,6 +9722,7 @@ async function handleApi(req, res, requestUrl) {
           error: 'class_has_active_loans', borrowedCount: activeClassLoans.length,
         });
       }
+      materializeLegacyRosters(db);
       const [removedClass] = db.classes.splice(index, 1);
       escalateTasksForDeletedClass(db, removedClass.id);
       for (const student of db.students) {
@@ -9852,14 +9800,7 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
-      if (!(klass.studentIds || []).includes(student.id)) {
-        klass.studentIds = klass.studentIds || [];
-        klass.studentIds.push(student.id);
-      }
-      student.classIds = student.classIds || [];
-      if (!student.classIds.includes(klass.id)) {
-        student.classIds.push(klass.id);
-      }
+      setStudentClassMembership(db, student, [...studentClassIds(db,student),klass.id]);
       appendHistory(db, {
         type: 'class_student_added',
         classId: klass.id,
@@ -9867,7 +9808,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} gekoppeld aan ${klass.name}`,
       });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true,db }) });
     }
 
     const classStudentRemoveMatch = requestUrl.pathname.match(
@@ -9890,8 +9831,7 @@ async function handleApi(req, res, requestUrl) {
       if (!student) {
         return sendJson(res, 404, { message: 'Leerling niet gevonden' });
       }
-      klass.studentIds = (klass.studentIds || []).filter((id) => id !== studentId);
-      student.classIds = (student.classIds || []).filter((id) => id !== klass.id);
+      setStudentClassMembership(db, student, studentClassIds(db,student).filter(id=>id!==klass.id));
       appendHistory(db, {
         type: 'class_student_removed',
         classId: klass.id,
@@ -9899,7 +9839,7 @@ async function handleApi(req, res, requestUrl) {
         message: `${student.name} losgekoppeld van ${klass.name}`,
       });
       saveDb(db);
-      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true }) });
+      return sendJson(res, 200, { class: klass, student: sanitizeStudent(student, { includeUsername: true,db }) });
     }
 
     return sendJson(res, 404, { message: 'Niet gevonden' });
