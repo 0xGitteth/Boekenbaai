@@ -194,7 +194,7 @@
     message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien zit hier iets tussen.'));
     const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
     options([...items,['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
-      ['Weet ik nog steeds niet',()=>{message('Geen probleem. We proberen iets anders.');startExploration();}],
+      ['Weet ik nog steeds niet',()=>{message('Geen probleem! We proberen iets anders.');startExploration();}],
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
   function continueAdvice(plan){
@@ -210,17 +210,17 @@
     }else if(plan.kind==='question'){
       offerOpenAnswer(plan.question.prompt,plan.question);
     }else if(plan.kind==='recommend'){
-      message('Ik ga een paar boeken voor je zoeken.');
+      message('Eens kijken wat we voor je in de kast hebben! 📚');
       void showRecommendations();
     }else if(plan.kind==='offer'){
-      message(choices.openSignals?.prefer?.length?'Zal ik alvast een paar boeken voor je zoeken?':'Zal ik je gewoon drie verschillende boeken laten zien?');
+      message(choices.openSignals?.prefer?.length?'Zal ik alvast een paar boeken voor je zoeken? 📚':'Zal ik je gewoon drie verschillende boeken laten zien?');
       options([['Toon boeken met wat je nu weet',()=>void showRecommendations()],
         ['Ontdek meer interesses',startExploration]]);
     }else if(plan.kind==='examples'){
       showAdviceExamples(plan.question);
     }else{
       adviceQuestion=plan.question||adviceQuestion;
-      if(!plan.reaction)message('Ik snap het nog niet helemaal. Kun je er iets meer over vertellen?');
+      if(!plan.reaction)message('Hmm, ik snap het nog niet helemaal. Vertel eens iets meer?');
       offerOpenAnswer('',adviceQuestion);
     }
   }
@@ -748,7 +748,7 @@
         : choices.openSignals?.avoid?.length
           ? 'Ik heb bekende ongewenste onderwerpen vermeden. De boekinformatie is niet altijd volledig.'
           : 'Deze tips zijn gebaseerd op je antwoorden.');
-      message('Zit er iets tussen?');
+      message('Zit er iets tussen dat je leuk lijkt?');
       followupButtons(false);
     }catch(err){
       if(!active||marker!==epoch)return;
@@ -773,7 +773,7 @@
           ['Verras me',()=>{choices={route:'surprise'};showRecommendations();}]]),
       ['Vertel wat je anders wilt',()=>{freshAdvice('feedback');offerOpenAnswer('Wat spreekt je niet aan in deze voorstellen?');}],
       ['Eerdere suggesties bekijken',()=>showRecommendations({allowRepeats:true})],
-      ['Helemaal opnieuw',()=>{choices={};message('Prima, we beginnen opnieuw.');finishIdentity();}],
+      ['Helemaal opnieuw',()=>{choices={};message('Helemaal goed! We beginnen opnieuw.');finishIdentity();}],
       ...(personal?[['Mijn eerdere aanbevelingen wissen',async()=>{
         if(busy)return;busy=true;
         const marker=epoch;
