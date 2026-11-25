@@ -441,4 +441,5 @@ Object.assign(THEMES,{
     ]
   ]
 });
+for(const [id,,label,aliases,evidence] of require('./student-choice-topic-details')) THEMES[id]=[label,aliases,evidence];
 module.exports={THEMES};

@@ -118,6 +118,11 @@ for(const [key,group,prompt,options] of [["drawing","art","Wat teken of schilder
  add('specific-'+key,1,key,prompt,'Misschien helpt een voorbeeld.',options);
  Q[Q.length-1].group=group;
 }
+for(const [id,parent,,, ,prompt,options] of require('./student-choice-topic-details')){
+ SUBTOPICS[id]=parent;
+ add('specific-'+id,1,id,prompt,'Zit hier iets tussen?',options);
+ Q[Q.length-1].group=parent;
+}
 Q.push(...require('./student-choice-question-bank'));
 const preciseQuestions={"extended-music-1":["musicListening"],"extended-music-2":["musicMaking"],"extended-music-3":["drawing","design"],"extended-music-7":["musicListening"],"extended-music-8":["filmmaking","design"],"extended-sport-2":["sportPlaying"],"extended-sport-3":["teamSport"],"extended-sport-4":["sportWatching"],"extended-sport-7":["sportPlaying"],"extended-sport-8":["sportWatching"],"extended-sport-9":["sportPlaying","health"],"extended-gaming-4":["gameMultiplayer"],"extended-gaming-5":["gameBuilding"],"extended-gaming-6":["gameStory"],"extended-gaming-7":["gameDevelopment"],"extended-animals-5":["wildlife","pets"],"extended-animals-6":["animalCare"],"extended-science-4":["inventions"],"extended-science-5":["space"],"extended-science-6":["humanBody"],"extended-science-9":["robotics"],"extended-crime-4":["courtCases"],"extended-crime-5":["gangs"]};
 for(const question of Q){
@@ -187,7 +192,7 @@ const FAMILY=[
  ['music','art'],
  ['realistic','true'],['action','danger','horror','humor','fast','slow','calm','twist','discovery']
 ];
-function families(p){return FAMILY.filter(f=>f.some(t=>p.includes(t))).length;}
+function families(p){const expanded=new Set(p);for(const t of p){let parent=SUBTOPICS[t];while(parent&&!expanded.has(parent)){expanded.add(parent);parent=SUBTOPICS[parent];}}return FAMILY.filter(f=>f.some(t=>expanded.has(t))).length;}
 function tie(seed,id){return crypto.createHash('sha256').update(seed+'|'+id).digest().readUInt32BE(0)/4294967295;}
 function profiles(books,signals){
  // Public catalogue only. The normal trait cache avoids repeated metadata parsing.
