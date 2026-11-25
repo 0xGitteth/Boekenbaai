@@ -40,6 +40,7 @@ let blocked=false;
 let failSuggest=false;
 let resetStatus=200;
 let holdSuggestions=false,releaseSuggestion=null;
+let holdInterpretation=false,releaseInterpretation=null;
 const invalidated=[];
 const suggestRequests=[];
 const questionRequests=[];
@@ -66,7 +67,9 @@ const fetchStub=async (url,options={})=>{
   }
   if(url==='/api/auth/student-pin/choice-interpret'){
     const body=JSON.parse(options.body);
-    return makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
+    const response=makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
+    if(holdInterpretation)return new Promise(resolve=>{releaseInterpretation=()=>resolve(response);});
+    return response;
   }
   if(url==='/api/auth/student-pin/choice-next'){
     const payload=JSON.parse(options.body);
@@ -220,7 +223,14 @@ vm.runInNewContext(code,{
     await form.listeners.submit({preventDefault(){}});
   }
   const countBeforeOpen=suggestRequests.length;
-  await submitOpen('misterie');
+  holdInterpretation=true;
+  const delayed=submitOpen('misterie');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(releaseInterpretation);
+  viewport.scrollTop=80;viewport.listeners.scroll();
+  holdInterpretation=false;releaseInterpretation();releaseInterpretation=null;
+  await delayed;
+  assert.equal(viewport.scrollTop,80,'A delayed reply must not interrupt reading earlier messages');
   assert.equal(suggestRequests.length,countBeforeOpen,'A single genre must not trigger a search');
   const firstOpenPrompt=log.children.at(-1).children[0].textContent;
   assert.ok(require('../student-choice-conversation').Q.some(q=>q.prompt===firstOpenPrompt&&q.when.includes('mystery')),'The opening follow-up is thematically relevant');
