@@ -284,7 +284,7 @@ function analyze(text,rawContext={},books=[]){
   if(traits.length){
    resolvedAmbiguity={traits,negative:c.clarifyNegative,known:c.clarifyKnown,avoid:c.clarifyAvoid};
    selected={prefer:c.clarifyNegative?c.clarifyKnown:[...c.clarifyKnown,...traits],length:''};
-  }else if(/^(?:ja|nee|weet ik niet|geen idee|idk|allebei|allemaal|beide)$/.test(value)){
+  }else if(/^(?:ja|nee|weet ik niet|geen idee|idk|allebei|allemaal|beide)$/.test(value)||(/\b(?:niet|geen|zonder|hekel)\b/.test(value)&&!/\b(?:maar|echter|wel|liever)\b/.test(value))){
    if(c.uncertain>=2)return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'offer',reaction:'Geen probleem! We kunnen ook iets anders proberen.',context:{...c,current:c.clarifyFrom,clarifyAmbiguity:'',clarifyCandidates:[],clarifyKnown:[],clarifyAvoid:[],clarifyNegative:false}}};
    return {prefer:[],avoid:[],recognized:false,clarify:true,labels:LABELS,advice:{kind:'examples',reaction:'Welke bedoel je precies?',question:questionView(q),context:{...c,uncertain:c.uncertain+1}}};
   }
@@ -379,9 +379,10 @@ function analyze(text,rawContext={},books=[]){
  }
  if(c.current==='hobby-focus'&&!selected&&/^(?:ja|ja graag|zeker|jawel|allebei|beide|allemaal)$/.test(value))direct={...validateSignals({prefer:c.hobbies}),recognized:true,clarify:false};
  // Exact short contextual responses can be resolved without guessing.
+ let resolvedContextAlias=false;
  if(!selected&&!direct.recognized&&!direct.avoid?.length){
   const alias=(contextualAliases[c.current]||[]).find(([phrase])=>normalize(phrase)===value);
-  if(alias)direct={...validateSignals({prefer:[alias[1]]}),recognized:true,clarify:false};
+  if(alias){direct={...validateSignals({prefer:[alias[1]]}),recognized:true,clarify:false};resolvedContextAlias=true;}
  }
  if(selected?.length)length=selected.length;
  // Resolve a pronoun only in an animal context, and explicitly confirm
@@ -405,7 +406,7 @@ function analyze(text,rawContext={},books=[]){
  }
  const explicitReading=/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
  const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/.test(part));
- const ambiguity=!selected&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguity(input):null;
+ const ambiguity=!selected&&!resolvedContextAlias&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguity(input):null;
  // Keep explicit book exclusions separate from activity likes/dislikes.
  const readingExclusions=activityRefusal?validateSignals({avoid:[...readingClauses.flatMap(part=>interpret(part).avoid),...(direct.avoid||[]).filter(t=>t==='animalLoss')]}).avoid:[];
  // A preference about playing or watching is not a reading exclusion.
