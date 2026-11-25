@@ -3,10 +3,71 @@
   const button=document.getElementById('student-help-choose');
   const dialog=document.getElementById('student-choice-dialog');
   const log=document.getElementById('student-choice-chat-log');
+  const viewport=document.getElementById('student-choice-chat-viewport');
+  const dock=document.getElementById('student-choice-chat-dock');
   const actions=document.getElementById('student-choice-chat-actions');
   const status=document.getElementById('student-choice-chat-status');
   const closeButton=document.getElementById('student-choice-close');
-  if(!button||!dialog||!log||!actions||!status||!closeButton)return;
+  if(!button||!dialog||!log||!viewport||!dock||!actions||!status||!closeButton)return;
+
+  let followLatest=true,longDock=false,scrollScheduled=false;
+  // One scrolling surface for the conversation and its controls. A compact
+  // composer stays at the bottom; long lists become part of the same scroll.
+  function scrollLatest(force=false){
+    if(force)followLatest=true;
+    if(!dialog.open)return;
+    const nextLong=dock.offsetHeight>Math.max(0,viewport.clientHeight-110);
+    if(nextLong!==longDock){
+      longDock=nextLong;dock.setAttribute('data-long',String(longDock));
+    }
+    if(!followLatest)return;
+    if(longDock){
+      const top=dock.getBoundingClientRect().top-viewport.getBoundingClientRect().top+viewport.scrollTop;
+      // Keep the latest question and the beginning of long options visible.
+      viewport.scrollTop=Math.max(0,top-80);
+    }else viewport.scrollTop=viewport.scrollHeight;
+  }
+  function scheduleLatest(force=false){
+    if(force)followLatest=true;
+    if(scrollScheduled)return;
+    scrollScheduled=true;
+    const marker=epoch;
+    const update=()=>{
+      scrollScheduled=false;
+      if(marker===epoch)scrollLatest();
+      else if(dialog.open)scheduleLatest();
+    };
+    if(typeof requestAnimationFrame==='function')requestAnimationFrame(update);
+    else update();
+  }
+  viewport.addEventListener('scroll',()=>{
+    // Scrolling back through history must not be interrupted by a resize
+    // or a delayed network response. A new answer resumes following.
+    if(longDock){
+      const top=dock.getBoundingClientRect().top-viewport.getBoundingClientRect().top;
+      followLatest=top>=-2&&top<=100;
+    }else followLatest=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<=32;
+  });
+  log.addEventListener('focusin',event=>{
+    if(!dialog.open||longDock)return;
+    const target=event.target;
+    if(!target?.getBoundingClientRect)return;
+    const rect=target.getBoundingClientRect();
+    const visibleBottom=dock.getBoundingClientRect().top;
+    if(rect.bottom>visibleBottom-6){
+      followLatest=false;
+      viewport.scrollTop+=rect.bottom-visibleBottom+6;
+    }
+  });
+  if(typeof ResizeObserver==='function'){
+    const observer=new ResizeObserver(()=>scheduleLatest());
+    observer.observe(viewport);observer.observe(dock);observer.observe(log);
+  }
+  if(typeof MutationObserver==='function'){
+    const observer=new MutationObserver(()=>scheduleLatest());
+    observer.observe(log,{childList:true,subtree:true});
+    observer.observe(dock,{childList:true,subtree:true,characterData:true});
+  }
 
   const seenInTab=new Set();
   const recentQuestionsInTab=new Set();
@@ -118,15 +179,15 @@
       options([['Opnieuw proberen',startGuest],['Inloggen',showPin]]);
     }finally{if(active&&marker===epoch)busy=false;}
   }
-  function clearActions(){actions.replaceChildren();}
+  function clearActions(){actions.replaceChildren();scheduleLatest();}
   function message(text,who='assistant'){
     const row=el('div','bb-choice-chat__row bb-choice-chat__row--'+who);
     const bubble=el('div','bb-choice-chat__bubble',text);
     row.append(bubble);log.append(row);
-    log.scrollTop=log.scrollHeight;
+    scheduleLatest(who==='student');
     return bubble;
   }
-  function notice(text){status.textContent=text||'';}
+  function notice(text){status.textContent=text||'';scheduleLatest();}
   function options(items){
     const marker=epoch;
     clearActions();
@@ -142,7 +203,8 @@
       });
       actions.append(x);
     }
-    actions.querySelector('button')?.focus();
+    actions.querySelector('button')?.focus({preventScroll:true});
+    scheduleLatest();
   }
   function username(data){
     const raw=String(data?.firstName||data?.name||'').normalize('NFKC').trim();
@@ -163,6 +225,7 @@
       // Invalidate on the server as well as forgetting the token in memory.
       api('/api/auth/student-pin/choice-end',{choiceGrant:oldGrant}).catch(()=>{});
     }
+    followLatest=true;longDock=false;dock.setAttribute('data-long','false');
     log.replaceChildren();clearActions();notice('');
   }
   function beginInterests(){
@@ -256,14 +319,14 @@
       options([['Opnieuw proberen',()=>offerOpenAnswer('',adviceQuestion)],['Kies liever uit antwoorden',startExploration]]);
     }finally{if(active&&marker===epoch)busy=false;}
   }
-  function offerOpenAnswer(prompt='Waar lees je graag over?',question=null){
+  function offerOpenAnswer(prompt='Waar lees je graag over?',question=null,explicitNavigation=false){
     if(prompt)message(prompt);
     adviceQuestion=question;
     clearActions();
-    const form=el('form','bb-choice-chat__free');
+    const form=el('form','bb-choice-chat__free bb-choice-chat__free--answer');
     const label=el('label','','Jouw antwoord');
     label.setAttribute('for','bb-choice-free-text');
-    const input=el('textarea');input.id='bb-choice-free-text';input.maxLength=500;input.rows=3;
+    const input=el('textarea');input.id='bb-choice-free-text';input.maxLength=500;input.rows=2;
     input.placeholder='Typ je antwoord';input.required=true;
     const submit=el('button','btn btn--primary','Verstuur');submit.type='submit';
     const help=el('button','btn btn--secondary','Ik weet het niet / geef voorbeelden');help.type='button';
@@ -277,14 +340,15 @@
       skip.addEventListener('click',()=>{if(active&&!busy)void showRecommendations();});form.append(skip);
     }
     const correct=el('button','btn btn--secondary','Ik wil opnieuw beginnen');correct.type='button';
-    correct.addEventListener('click',()=>{if(active&&!busy){choices={route:'new'};freshAdvice();offerOpenAnswer();}});
+    correct.addEventListener('click',()=>{if(active&&!busy){choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);}});
     form.append(correct);
     const bookSearch=el('button','btn btn--secondary','Ik ken een boek dat ik leuk vind');bookSearch.type='button';
-    bookSearch.addEventListener('click',()=>{if(active&&!busy)showReferenceSearch();});form.append(bookSearch);
-    actions.append(form);input.focus();
+    bookSearch.addEventListener('click',()=>{if(active&&!busy)showReferenceSearch('','',true);});form.append(bookSearch);
+    actions.append(form);input.focus({preventScroll:true});
+    if(explicitNavigation)scrollLatest(true);else scheduleLatest();
     form.addEventListener('submit',event=>{event.preventDefault();return submitAdvice(input.value.trim());});
   }
-  function showReferenceSearch(initialTitle='',initialAuthor=''){
+  function showReferenceSearch(initialTitle='',initialAuthor='',explicitNavigation=false){
     if(!active||busy)return;
     clearActions();
     const form=el('form','bb-choice-chat__free');
@@ -292,8 +356,9 @@
     const authorLabel=el('label','','Auteur (als je die weet)');const author=el('input');author.type='text';author.maxLength=90;author.value=initialAuthor||'';
     const submit=el('button','btn btn--primary','Zoek in de schoolbibliotheek');submit.type='submit';
     const back=el('button','btn btn--secondary','Verder met het gesprek');back.type='button';
-    back.addEventListener('click',()=>offerOpenAnswer('',adviceQuestion));
-    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus();
+    back.addEventListener('click',()=>offerOpenAnswer('',adviceQuestion,true));
+    form.append(label,title,authorLabel,author,submit,back);actions.append(form);title.focus({preventScroll:true});
+    if(explicitNavigation)scrollLatest(true);else scheduleLatest();
     form.addEventListener('submit',event=>{event.preventDefault();void findReference({title:title.value.trim(),author:author.value.trim()},false);});
   }
   async function findReference(query,external){
@@ -482,7 +547,7 @@
     feedback.setAttribute('role','status');
     form.append(label,name,matches,pinLabel,pin,feedback,submit,other,google);
     clearActions();actions.append(form);
-    name.focus();
+    name.focus({preventScroll:true});scheduleLatest();
     let selected='',searchSerial=0;
     function clearSearch(){
       clearTimeout(searchTimer);searchController?.abort();searchController=null;

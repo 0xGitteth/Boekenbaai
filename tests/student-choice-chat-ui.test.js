@@ -9,6 +9,8 @@ const code=fs.readFileSync(path.join(root,'public','student-book-choice-chat.js'
 function node(tag='div'){
   return {tag,children:[],listeners:{},value:'',textContent:'',isConnected:true,
     disabled:false,open:false,attrs:{},style:{},
+    scrollHeight:1000,scrollTop:0,clientHeight:500,offsetHeight:120,
+    getBoundingClientRect(){return {top:0};},
     addEventListener(k,fn){this.listeners[k]=fn;},
     append(...children){this.children.push(...children);},
     replaceChildren(...children){this.children=children;},
@@ -21,8 +23,12 @@ function node(tag='div'){
   };
 }
 const ids=['student-help-choose','student-choice-dialog','student-choice-chat-log',
-  'student-choice-chat-actions','student-choice-chat-status','student-choice-close'];
+  'student-choice-chat-actions','student-choice-chat-status','student-choice-close',
+  'student-choice-chat-viewport','student-choice-chat-dock'];
 const elements=new Map(ids.map(id=>[id,node()]));
+const viewport=elements.get('student-choice-chat-viewport'),dock=elements.get('student-choice-chat-dock');
+let resizeCallback;
+class ResizeObserverStub{constructor(fn){resizeCallback=fn;}observe(){}}
 const makeResponse=(status,body)=>({
   ok:status>=200&&status<300,status,
   json:async()=>body,
@@ -34,6 +40,7 @@ let blocked=false;
 let failSuggest=false;
 let resetStatus=200;
 let holdSuggestions=false,releaseSuggestion=null;
+let holdInterpretation=false,releaseInterpretation=null;
 const invalidated=[];
 const suggestRequests=[];
 const questionRequests=[];
@@ -60,7 +67,9 @@ const fetchStub=async (url,options={})=>{
   }
   if(url==='/api/auth/student-pin/choice-interpret'){
     const body=JSON.parse(options.body);
-    return makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
+    const response=makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
+    if(holdInterpretation)return new Promise(resolve=>{releaseInterpretation=()=>resolve(response);});
+    return response;
   }
   if(url==='/api/auth/student-pin/choice-next'){
     const payload=JSON.parse(options.body);
@@ -112,18 +121,28 @@ const documentStub={
 };
 vm.runInNewContext(code,{
   window:windowStub,document:documentStub,fetch:fetchStub,
-  setTimeout,clearTimeout,AbortController,console,
+  setTimeout,clearTimeout,AbortController,console,ResizeObserver:ResizeObserverStub,
 });
 (async()=>{
   await elements.get('student-help-choose').listeners.click();
   const actions=elements.get('student-choice-chat-actions');
   const log=elements.get('student-choice-chat-log');
+  assert.equal(viewport.scrollTop,viewport.scrollHeight,'Chat follows the newest message');
+  viewport.scrollTop=80;viewport.listeners.scroll();
+  resizeCallback();
+  assert.equal(viewport.scrollTop,80,'Reading earlier messages is not interrupted');
   assert.equal(log.children.length,1,
     'The chat should open with one conversational message, not two introductory messages');
   assert.match(log.children[0].children[0].textContent,/Log in voor persoonlijke tips/);
   const firstChoice=actions.children.find(x=>x.textContent==='Inloggen');
   assert.ok(actions.children.some(x=>x.textContent==='Zonder inloggen'));
   firstChoice.listeners.click();
+  assert.equal(viewport.scrollTop,viewport.scrollHeight,'Sending an answer resumes following');
+  dock.offsetHeight=600;dock.getBoundingClientRect=()=>({top:300});
+  resizeCallback();
+  assert.equal(dock.attrs['data-long'],'true','Tall controls share the scrolling surface');
+  dock.offsetHeight=120;resizeCallback();
+  assert.equal(dock.attrs['data-long'],'false','Compact controls return to the sticky composer');
   const form=actions.children[0];
   assert.equal(form.tag,'form');
   const name=form.children[1],matches=form.children[2],pin=form.children[4],other=form.children[7];
@@ -163,6 +182,22 @@ vm.runInNewContext(code,{
   actions.children[0].listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  // Explicit navigation from history must reveal a taller reference form.
+  viewport.scrollTop=80;viewport.listeners.scroll();
+  dock.offsetHeight=600;dock.getBoundingClientRect=()=>({top:300});
+  actions.children[0].children.find(x=>x.textContent==='Ik ken een boek dat ik leuk vind').listeners.click();
+  assert.equal(dock.attrs['data-long'],'true');
+  assert.equal(viewport.scrollTop,300,'Explicit form change reveals the reference controls');
+  dock.offsetHeight=120;
+  actions.children[0].children.find(x=>x.textContent==='Verder met het gesprek').listeners.click();
+  assert.equal(viewport.scrollTop,viewport.scrollHeight);
+  // Keyboard focus on an earlier result must clear the sticky composer.
+  viewport.scrollTop=80;viewport.listeners.scroll();
+  dock.getBoundingClientRect=()=>({top:380});
+  log.listeners.focusin({target:{getBoundingClientRect:()=>({top:390,bottom:425})}});
+  assert.equal(viewport.scrollTop,131);
+  resizeCallback();
+  assert.equal(viewport.scrollTop,131,'Passive updates preserve keyboard history position');
   const free=actions.children[0];
   assert.equal(free.tag,'form');
   free.children[1].value='Een mysterie zonder moord';
@@ -188,7 +223,14 @@ vm.runInNewContext(code,{
     await form.listeners.submit({preventDefault(){}});
   }
   const countBeforeOpen=suggestRequests.length;
-  await submitOpen('misterie');
+  holdInterpretation=true;
+  const delayed=submitOpen('misterie');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(releaseInterpretation);
+  viewport.scrollTop=80;viewport.listeners.scroll();
+  holdInterpretation=false;releaseInterpretation();releaseInterpretation=null;
+  await delayed;
+  assert.equal(viewport.scrollTop,80,'A delayed reply must not interrupt reading earlier messages');
   assert.equal(suggestRequests.length,countBeforeOpen,'A single genre must not trigger a search');
   const firstOpenPrompt=log.children.at(-1).children[0].textContent;
   assert.ok(require('../student-choice-conversation').Q.some(q=>q.prompt===firstOpenPrompt&&q.when.includes('mystery')),'The opening follow-up is thematically relevant');
