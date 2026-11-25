@@ -179,6 +179,22 @@ vm.runInNewContext(code,{
   actions.children[0].listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   actions.children.find(x=>x.textContent==='Vertel zelf wat je zoekt').listeners.click();
+  // Explicit navigation from history must reveal a taller reference form.
+  viewport.scrollTop=80;viewport.listeners.scroll();
+  dock.offsetHeight=600;dock.getBoundingClientRect=()=>({top:300});
+  actions.children[0].children.find(x=>x.textContent==='Ik ken een boek dat ik leuk vind').listeners.click();
+  assert.equal(dock.attrs['data-long'],'true');
+  assert.equal(viewport.scrollTop,300,'Explicit form change reveals the reference controls');
+  dock.offsetHeight=120;
+  actions.children[0].children.find(x=>x.textContent==='Verder met het gesprek').listeners.click();
+  assert.equal(viewport.scrollTop,viewport.scrollHeight);
+  // Keyboard focus on an earlier result must clear the sticky composer.
+  viewport.scrollTop=80;viewport.listeners.scroll();
+  dock.getBoundingClientRect=()=>({top:380});
+  log.listeners.focusin({target:{getBoundingClientRect:()=>({top:390,bottom:425})}});
+  assert.equal(viewport.scrollTop,131);
+  resizeCallback();
+  assert.equal(viewport.scrollTop,131,'Passive updates preserve keyboard history position');
   const free=actions.children[0];
   assert.equal(free.tag,'form');
   free.children[1].value='Een mysterie zonder moord';
