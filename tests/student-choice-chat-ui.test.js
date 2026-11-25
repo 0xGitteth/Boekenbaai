@@ -331,25 +331,18 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Andere richting').listeners.click();
   failSuggest=false;
   await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Iemand ontdekt een geheim').listeners.click();
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Heb je op een van de volgende vragen')));
+  actions.children.find(x=>x.textContent==='Waar zou je graag meer over willen weten?').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(questionRequests.at(-1).answers[0].questionId,'curiosity-1');
-  // Back must undo only the last answer, without erasing the entire chat.
+  assert.ok(actions.children.some(x=>x.textContent==='Andere landen en culturen'));
   actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Vorige vraag').listeners.click();
-  assert.ok(actions.children.some(x=>x.textContent==='Iets dat echt gebeurd is'));
-  actions.children.find(x=>x.textContent==='Iets dat echt gebeurd is').listeners.click();
+  assert.ok(actions.children.some(x=>x.textContent==='Wat vind je interessant aan andere mensen?'));
+  actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Zelf antwoorden').listeners.click();
+  await submitOpen('Een realistisch mysterie met aanwijzingen');
   await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Of het spannend wordt').listeners.click();
-  await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Maakt niet uit').listeners.click();
-  await new Promise(resolve=>setImmediate(resolve));
-  actions.children.find(x=>x.textContent==='Gesprekken').listeners.click();
-  await new Promise(resolve=>setImmediate(resolve));
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(suggestRequests.at(-1).choices.route,'new',
-    'The fallback questionnaire must use the answered route, not surprise');
-  assert.equal(suggestRequests.at(-1).choices.answers.length,4,
-    'Adaptive conversation submits the actual answered questions');
+  assert.equal(suggestRequests.at(-1).choices.route,'new');
+  assert.ok(suggestRequests.at(-1).choices.openSignals.prefer.includes('mystery'));
+  assert.equal(questionRequests.length,0,'No independent questionnaire is used when returning from a search failure');
   // An older suggestion card must not start a second request while the
   // next adaptive recommendation is still loading.
   const deepFind=(root,label)=>{
