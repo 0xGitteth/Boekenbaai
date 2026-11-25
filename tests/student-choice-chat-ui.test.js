@@ -9,7 +9,7 @@ const code=fs.readFileSync(path.join(root,'public','student-book-choice-chat.js'
 function node(tag='div'){
   return {tag,children:[],listeners:{},value:'',textContent:'',isConnected:true,
     disabled:false,open:false,attrs:{},style:{},
-    scrollHeight:1000,scrollTop:0,clientHeight:500,offsetHeight:120,
+    scrollHeight:1000,scrollTop:0,clientHeight:500,offsetHeight:120,scrollWidth:800,clientWidth:500,scrollLeft:0,
     getBoundingClientRect(){return {top:0};},
     addEventListener(k,fn){this.listeners[k]=fn;},
     append(...children){this.children.push(...children);},
@@ -175,9 +175,12 @@ vm.runInNewContext(code,{
     ['Ja, graag','Nee, iets nieuws ontdekken','Laat me drie boeken zien']);
   actions.children[1].listeners.click();
   actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
-  actions.children[0].children[0].children.find(x=>x.textContent==='Liever kiezen uit antwoorden').listeners.click();
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Liever kiezen uit antwoorden').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.ok(log.children.some(row=>row.children[0]?.textContent==='Welke situatie maakt je nieuwsgierig?'));
+  assert.equal(actions.children.filter(x=>x.className==='bb-choice-chat__option').length,2);
+  const helpers=actions.children.find(x=>x.className==='bb-choice-chat__suggestions');
+  assert.deepEqual(helpers.children[1].children.map(x=>x.textContent),['Weet ik niet','Zelf antwoorden','Laat boeken zien']);
   elements.get('student-choice-close').listeners.click();
   await elements.get('student-help-choose').listeners.click();
   actions.children[0].listeners.click();
@@ -186,7 +189,7 @@ vm.runInNewContext(code,{
   // Explicit navigation from history must reveal a taller reference form.
   viewport.scrollTop=80;viewport.listeners.scroll();
   dock.offsetHeight=600;dock.getBoundingClientRect=()=>({top:300});
-  actions.children[0].children[0].children.find(x=>x.textContent==='Ik ken een leuk boek').listeners.click();
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Ik ken een leuk boek').listeners.click();
   assert.equal(dock.attrs['data-long'],'true');
   assert.equal(viewport.scrollTop,300,'Explicit form change reveals the reference controls');
   dock.offsetHeight=120;
@@ -202,6 +205,22 @@ vm.runInNewContext(code,{
   const free=actions.children[0];
   assert.equal(free.tag,'form');
   assert.equal(free.children[0].className,'bb-choice-chat__suggestions');
+  const [previous,track,more]=free.children[0].children;
+  assert.equal(previous.disabled,true);
+  assert.equal(more.disabled,false);
+  more.listeners.click();
+  assert.ok(track.scrollLeft>0);
+  assert.equal(previous.disabled,false);
+  assert.equal(more.disabled,true);
+  previous.listeners.click();
+  assert.equal(track.scrollLeft,0);
+  assert.equal(previous.disabled,true);
+  track.scrollLeft=100;track.listeners.scroll();
+  assert.equal(previous.disabled,false,'Native swipe updates the navigation arrows');
+  assert.equal(more.disabled,false);
+  track.clientWidth=900;track.scrollLeft=0;resizeCallback();
+  assert.equal(free.children[0].attrs['data-overflow'],'false');
+  assert.equal(more.disabled,true);
   assert.equal(free.children[2].tag,'textarea');
   assert.equal(free.children[3].type,'submit');
   free.children[2].value='Een mysterie zonder moord';
@@ -215,7 +234,7 @@ vm.runInNewContext(code,{
   assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Klopt dat?')));
   actions.children.find(x=>x.textContent==='Ja, ga verder').listeners.click();
   assert.equal(actions.children[0].tag,'form','Confirming an exclusion must lead to a real follow-up');
-  actions.children[0].children[0].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
+  actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals,{prefer:['mystery'],avoid:['murder']});
   assert.equal(suggestRequests.at(-1).choices.useReadingHistory,true);
@@ -294,7 +313,7 @@ vm.runInNewContext(code,{
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(questionRequests.at(-1).answers[0].questionId,'curiosity-1');
   // Back must undo only the last answer, without erasing the entire chat.
-  actions.children.find(x=>x.textContent==='Vorige vraag').listeners.click();
+  actions.children.find(x=>x.className==='bb-choice-chat__suggestions').children[1].children.find(x=>x.textContent==='Vorige vraag').listeners.click();
   assert.ok(actions.children.some(x=>x.textContent==='Iets dat echt gebeurd is'));
   actions.children.find(x=>x.textContent==='Iets dat echt gebeurd is').listeners.click();
   await new Promise(resolve=>setImmediate(resolve));

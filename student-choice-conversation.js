@@ -367,14 +367,20 @@ function analyze(text,rawContext={},books=[]){
  }
  const activityContext=['free-time','watch','media-interest'].includes(c.current);
  const explicitReading=/\b(?:ik lees|lees graag|boeken? over|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen)\b/.test(value);
- const activityRefusal=activityContext&&/\b(?:niet|geen)\b[^.!?]{0,35}\b(?:lezen|boek|boeken)\b/.test(value);
+ const readingClauses=value.split(/[.!?;]|\bmaar\b/).filter(part=>/\b(?:lees|lezen|boek|boeken)\b/.test(part));
+ const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/.test(part));
+ // Keep explicit book exclusions separate from activity likes/dislikes.
+ const readingExclusions=activityRefusal?validateSignals({avoid:readingClauses.flatMap(part=>interpret(part).avoid)}).avoid:[];
  // A preference about playing or watching is not a reading exclusion.
  if(activityContext&&!explicitReading&&!selected){
   if(/\b(?:sport|sporten) zelf niet\b/.test(value)&&direct.prefer.includes('sportWatching')){
    direct={...direct,prefer:direct.prefer.filter(t=>t!=='sportPlaying'&&t!=='sport'),avoid:[]};
   }
  }
- if(activityRefusal&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
+ if(activityRefusal&&readingExclusions.length){
+  const readingSignals=validateSignals({prefer:readingClauses.flatMap(part=>interpret(part).prefer),avoid:readingExclusions});
+  direct={...readingSignals,recognized:true,clarify:false};
+ }else if(activityRefusal&&!/\b(?:maar|liever)\s+(?:wel|iets over)\b/.test(value)){
   const ctx={...c,signals:current,used:[...new Set([...c.used,c.current])],hobbies:[],uncertain:0,turns:Math.min(7,c.turns+1)};
   const alternative=['more-interests','opening','watch','free-time'].map(id=>BY_ID.get(id)).find(q=>!ctx.used.includes(q.id));
   if(!alternative||ctx.turns>=6)return {prefer:[],avoid:[],recognized:true,clarify:false,labels:LABELS,advice:{kind:'offer',reaction:'Ook goed!',context:ctx}};
@@ -400,7 +406,7 @@ function analyze(text,rawContext={},books=[]){
  const envelope={...direct,labels:LABELS,prefer:delta.prefer,avoid:delta.avoid};
  // Hobbies are not automatically reading preferences. Check whether the
  // pupil actually wants to read about them before using them for ranking.
- if(activityContext&&!explicitReading&&!notReader&&!media.length&&!anchor&&delta.prefer.length){
+ if(activityContext&&!explicitReading&&!activityRefusal&&!notReader&&!media.length&&!anchor&&delta.prefer.length){
   const detailed=delta.prefer.filter(t=>!delta.prefer.some(k=>SUBTOPICS[k]===t));
   const ctx={...next,signals:current,hobbies:detailed.slice(0,6),current:'hobby-focus'};
   const serious=detailed.some(t=>['grief','mentalHealth','bullying','discrimination','crimeVictims','animalLoss','empathy','crime','war','murder','disasters'].includes(t));

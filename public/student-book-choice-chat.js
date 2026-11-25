@@ -11,11 +11,13 @@
   if(!button||!dialog||!log||!viewport||!dock||!actions||!status||!closeButton)return;
 
   let followLatest=true,longDock=false,scrollScheduled=false;
+  let refreshSuggestions=()=>{};
   // One scrolling surface for the conversation and its controls. A compact
   // composer stays at the bottom; long lists become part of the same scroll.
   function scrollLatest(force=false){
     if(force)followLatest=true;
     if(!dialog.open)return;
+    refreshSuggestions();
     const nextLong=dock.offsetHeight>Math.max(0,viewport.clientHeight-110);
     if(nextLong!==longDock){
       longDock=nextLong;dock.setAttribute('data-long',String(longDock));
@@ -179,7 +181,7 @@
       options([['Opnieuw proberen',startGuest],['Inloggen',showPin]]);
     }finally{if(active&&marker===epoch)busy=false;}
   }
-  function clearActions(){actions.replaceChildren();scheduleLatest();}
+  function clearActions(){refreshSuggestions=()=>{};actions.replaceChildren();scheduleLatest();}
   function message(text,who='assistant'){
     const row=el('div','bb-choice-chat__row bb-choice-chat__row--'+who);
     const bubble=el('div','bb-choice-chat__bubble',text);
@@ -188,21 +190,50 @@
     return bubble;
   }
   function notice(text){status.textContent=text||'';scheduleLatest();}
-  function options(items){
+  function suggestionShelf(items){
+    const shelf=el('div','bb-choice-chat__suggestions');
+    shelf.setAttribute('role','group');shelf.setAttribute('aria-label','Hulp bij je antwoord');
+    const row=el('div','bb-choice-chat__suggestion-track');
+    const back=el('button','bb-choice-chat__suggestion-arrow','‹');
+    const next=el('button','bb-choice-chat__suggestion-arrow','›');
+    back.type=next.type='button';
+    back.setAttribute('aria-label','Vorige suggesties');next.setAttribute('aria-label','Meer suggesties');
+    const marker=epoch;
+    for(const [label,callback] of items){
+      const item=el('button','bb-choice-chat__suggestion',label);item.type='button';
+      item.addEventListener('click',()=>{if(active&&!busy&&marker===epoch)callback();});
+      row.append(item);
+    }
+    const refresh=()=>{
+      const remaining=Math.max(0,row.scrollWidth-row.clientWidth);
+      const overflow=remaining>2;
+      shelf.setAttribute('data-overflow',String(overflow));
+      back.disabled=!overflow||row.scrollLeft<=2;
+      next.disabled=!overflow||row.scrollLeft>=remaining-2;
+    };
+    const move=direction=>{
+      row.scrollLeft+=direction*Math.max(80,row.clientWidth*.8);
+      refresh();
+    };
+    back.addEventListener('click',()=>move(-1));next.addEventListener('click',()=>move(1));
+    row.addEventListener('scroll',refresh);
+    shelf.append(back,row,next);refreshSuggestions=refresh;
+    return shelf;
+  }
+  function options(items,helpers=[]){
     const marker=epoch;
     clearActions();
+    const invoke=(label,callback)=>{
+      if(!active||busy||marker!==epoch)return;
+      message(label,'student');clearActions();notice('');callback();
+    };
     for(const [label,callback] of items){
       const x=el('button','bb-choice-chat__option',label);
       x.type='button';
-      x.addEventListener('click',()=>{
-        if(!active||busy||marker!==epoch)return;
-        message(label,'student');
-        clearActions();
-        notice('');
-        callback();
-      });
+      x.addEventListener('click',()=>invoke(label,callback));
       actions.append(x);
     }
+    if(helpers.length)actions.append(suggestionShelf(helpers.map(([label,callback])=>[label,()=>invoke(label,callback)])));
     actions.querySelector('button')?.focus({preventScroll:true});
     scheduleLatest();
   }
@@ -256,7 +287,7 @@
     if(!adviceQuestion){offerOpenAnswer('');return;}
     message(adviceQuestion.id==='clarify-topic'?adviceQuestion.prompt:(adviceQuestion.examples||'Misschien zit hier iets tussen.'));
     const items=(adviceQuestion.options||[]).map(o=>[o.label,()=>void submitAdvice(o.label,o.id,true)]);
-    options([...items,['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
+    options(items,[['Iets anders',()=>offerOpenAnswer('Vertel maar.',adviceQuestion)],
       ['Weet ik nog steeds niet',()=>{message('Geen probleem! We proberen iets anders.');startExploration();}],
       ...(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length?[['Toon boeken met wat je nu weet',()=>void showRecommendations()]]:[])]);
   }
@@ -330,21 +361,13 @@
     const input=el('textarea');input.id='bb-choice-free-text';input.maxLength=500;input.rows=1;
     input.placeholder='Typ je antwoord…';input.required=true;
     const submit=el('button','btn btn--primary','Verstuur');submit.type='submit';
-    const suggestions=el('div','bb-choice-chat__suggestions');
-    suggestions.setAttribute('role','group');suggestions.setAttribute('aria-label','Hulp bij je antwoord');
     const marker=epoch;
-    const suggest=(label,callback)=>{
-      const item=el('button','bb-choice-chat__suggestion',label);item.type='button';
-      item.addEventListener('click',()=>{if(active&&!busy&&marker===epoch)callback();});
-      suggestions.append(item);
-    };
-    suggest('Geef voorbeelden',()=>{if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');});
-    if(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length){
-      suggest('Laat boeken zien',()=>void showRecommendations());
-    }
-    suggest('Ik ken een leuk boek',()=>showReferenceSearch('','',true));
-    suggest('Liever kiezen uit antwoorden',beginInterests);
-    suggest('Opnieuw beginnen',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);});
+    const items=[['Geef voorbeelden',()=>{if(adviceQuestion)showAdviceExamples(adviceQuestion);else void submitAdvice('Weet ik niet');}]];
+    if(choices.openSignals?.prefer?.length||choices.openSignals?.avoid?.length)items.push(['Laat boeken zien',()=>void showRecommendations()]);
+    items.push(['Ik ken een leuk boek',()=>showReferenceSearch('','',true)],
+      ['Liever kiezen uit antwoorden',beginInterests],
+      ['Opnieuw beginnen',()=>{choices={route:'new'};freshAdvice();offerOpenAnswer(undefined,null,true);}]);
+    const suggestions=suggestionShelf(items);
     form.append(suggestions,label,input,submit);
     actions.append(form);input.focus({preventScroll:true});
     if(explicitNavigation)scrollLatest(true);else scheduleLatest();
@@ -652,13 +675,12 @@
     options([
       ...(Array.isArray(question.options)?question.options:[]).map(option=>
         [option.label,()=>recordAnswer(option.id)]),
+    ],[
       ['Weet ik niet',()=>recordAnswer('skip')],
-      ['Sla deze vraag over',()=>recordAnswer('skip')],
-      ['Ik wil zelf antwoord geven',()=>offerOpenAnswer('Vertel wat voor jou belangrijk is.')],
+      ['Zelf antwoorden',()=>offerOpenAnswer('Vertel wat voor jou belangrijk is.')],
       ...(questionHistory.length?[['Vorige vraag',goBack]]:[]),
-      ['Laat nu drie boeken zien',()=>void showRecommendations()],
+      ['Laat boeken zien',()=>void showRecommendations()],
     ]);
-    notice('Vraag '+(questionHistory.length+1)+'. Je mag een vraag overslaan.');
   }
   function recordAnswer(optionId){
     if(!currentQuestion)return;

@@ -161,6 +161,14 @@ const noGameReading=run('Ik game wel maar wil daar niet over lezen',{current:'fr
 assert.deepEqual(noGameReading.advice.context.signals.prefer,[]);
 assert.deepEqual(noGameReading.advice.context.signals.avoid,[]);
 assert.notEqual(noGameReading.advice.question?.id,'hobby-focus');
+for(const current of ['free-time','watch','media-interest']){
+ for(const [answer,trait] of [['Ik wil geen boeken over horror','horror'],['Ik wil niet lezen over moord','murder'],['Ik game graag maar wil geen boeken over horror','horror']]){
+  const result=run(answer,{current});
+  assert.ok(result.avoid.includes(trait),current+' '+answer);
+  assert.ok(result.advice.context.signals.avoid.includes(trait));
+  assert.ok(!result.advice.context.signals.prefer.includes('gaming'));
+ }
+}
 let repeatedUnknown=run('qzxqzxqz',{current:'opening'});
 for(let i=0;i<2;i++)repeatedUnknown=run('qzxqzxqz',repeatedUnknown.advice.context);
 assert.equal(repeatedUnknown.advice.kind,'offer');
