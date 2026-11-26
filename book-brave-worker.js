@@ -1,9 +1,10 @@
 'use strict';
 
 const {
-  claimNext,finishClaim,bookWorks,needsExtra,
+  claimNext,finishClaim,claimIsCurrent,bookWorks,needsExtra,
 }=require('./book-brave-core');
-const {workKey}=require('./book-free-metadata');
+const {workKey,isbnOf}=require('./book-free-metadata');
+const {isValidIsbn,toIsbn13}=require('./isbn-lookup-core-impl');
 const {fetchBrave,discoverPages,selectImageResult}=require('./book-brave-fetch');
 
 function addProvenance(book,field,source){
@@ -26,23 +27,48 @@ function userEdited(book,field){
 }
 function updateFromPages(db,claim,pages,{imageUrl='',failedCovers=new Set()}={}) {
   let added=0,newCover=false;
+  const evidenceByBook=Object.create(null);
   const approvedIds=new Set(Array.isArray(claim.bookIds)?claim.bookIds:[]);
   for(const book of db.books||[]){
     if(!approvedIds.has(book.id)||workKey(book)!==claim.key)continue;
+    const isbn=isbnOf(book);
+    const evidence=[];
+    evidenceByBook[book.id]=evidence;
+    const remember=(field,page)=>{
+      if(typeof page.sourceUrl==='string'&&page.sourceUrl.startsWith('https://'))
+        evidence.push({field,url:page.sourceUrl,confidence:page.confidence});
+    };
     for(const page of pages||[]){
       if(!page||!['isbn','title_author'].includes(page.confidence))continue;
+      const exactEdition=Boolean(isbn&&page.confidence==='isbn'&&isValidIsbn(page.isbn)&&toIsbn13(page.isbn)===isbn);
       if(!userEdited(book,'description') && page.description?.length>=90
         && String(book.description||'').length<280
         && page.description.length>String(book.description||'').length+40){
-        book.description=page.description;addProvenance(book,'description','verified_book_page');added++;
+        book.description=page.description;addProvenance(book,'description','verified_book_page');remember('description',page);added++;
       }
-      if(!userEdited(book,'publisher')&&!book.publisher&&page.publisher){
-        book.publisher=page.publisher;addProvenance(book,'publisher','verified_book_page');added++;
+      if(exactEdition&&!userEdited(book,'publisher')&&!book.publisher&&page.publisher){
+        book.publisher=page.publisher;addProvenance(book,'publisher','verified_book_page');remember('publisher',page);added++;
       }
-      if(!userEdited(book,'pageCount')&&!book.pageCount&&page.pageCount){
-        book.pageCount=page.pageCount;addProvenance(book,'pageCount','verified_book_page');added++;
+      if(exactEdition&&!userEdited(book,'pageCount')&&!book.pageCount&&page.pageCount){
+        book.pageCount=page.pageCount;addProvenance(book,'pageCount','verified_book_page');remember('pageCount',page);added++;
       }
-      if(!userEdited(book,'tags')&&Array.isArray(page.tags)&&page.tags.length){
+      // Keep source keywords separate from teacher/import labels, as EasyCB does.
+      if(book.themesCleared!==true && book.importProvenance?.fieldSources?.enrichmentTags?.sourceType!=='manual' && Array.isArray(page.tags)&&page.tags.length){
+        const current=Array.isArray(book.enrichmentTags)?book.enrichmentTags:[];
+        const merged=new Map(current.filter(t=>typeof t==='string'&&t.trim())
+          .map(t=>[t.trim().toLocaleLowerCase('nl-NL'),t.trim()]));
+        for(const tag of page.tags){
+          if(typeof tag!=='string'||!tag.trim()||merged.size>=30)continue;
+          const key=tag.trim().toLocaleLowerCase('nl-NL');
+          if(!merged.has(key))merged.set(key,tag.trim());
+        }
+        const fresh=[...merged.values()];
+        if(JSON.stringify(current)!==JSON.stringify(fresh)){
+          book.enrichmentTags=fresh;
+          addProvenance(book,'enrichmentTags','verified_book_page');remember('enrichmentTags',page);added++;
+        }
+      }
+      if(book.themesCleared!==true&&!userEdited(book,'tags')&&Array.isArray(page.tags)&&page.tags.length){
         const current=Array.isArray(book.tags)?book.tags:[];
         const values=new Set(current.map(t=>String(t).toLocaleLowerCase('nl-NL')));
         const merged=[...current];
@@ -52,26 +78,26 @@ function updateFromPages(db,claim,pages,{imageUrl='',failedCovers=new Set()}={})
           if(!values.has(key)){values.add(key);merged.push(t);}
         }
         if(merged.length>current.length){
-          book.tags=merged;addProvenance(book,'tags','verified_book_page');added++;
+          book.tags=merged;addProvenance(book,'tags','verified_book_page');remember('tags',page);added++;
         }
       }
       const failed=failedCovers.has(book.coverUrl)&&!book.localCoverUrl;
-      if(!userEdited(book,'coverUrl')&&page.coverUrl
+      if(exactEdition&&!book.localCoverUrl&&!userEdited(book,'coverUrl')&&page.coverUrl
         &&(!book.coverUrl||failed)&&book.coverUrl!==page.coverUrl){
         book.coverUrl=page.coverUrl;
-        book.localCoverUrl='';addProvenance(book,'coverUrl','verified_book_page');
+        book.localCoverUrl='';book.coverCrop=null;addProvenance(book,'coverUrl','verified_book_page');remember('coverUrl',page);
         newCover=true;added++;
       }
     }
     const failed=failedCovers.has(book.coverUrl)&&!book.localCoverUrl;
-    if(imageUrl&&!userEdited(book,'coverUrl')&&(!book.coverUrl||failed)
+    if(!isbn&&imageUrl&&!book.localCoverUrl&&!userEdited(book,'coverUrl')&&(!book.coverUrl||failed)
       &&book.coverUrl!==imageUrl){
-      book.coverUrl=imageUrl;book.localCoverUrl='';
+      book.coverUrl=imageUrl;book.localCoverUrl='';book.coverCrop=null;
       addProvenance(book,'coverUrl','verified_book_image');
       newCover=true;added++;
     }
   }
-  return {added,newCover};
+  return {added,newCover,evidenceByBook};
 }
 function createBraveWorker({
   loadDb,commit,apiKey='',onNewCover=()=>{},isPaused=()=>false,
@@ -106,10 +132,11 @@ function createBraveWorker({
       if(!claim)return;
       keepGoing=true;
       const result=await fetchSearch(claim.step,claim,{apiKey});
-      let pages=[],imageUrl='';
+      let pages=[],imageUrl='',sourceError=null;
+      const onFailure=()=>{sourceError='source_unavailable';};
       if(!result.error&&!stopped){
         if(claim.step===1){
-          imageUrl=selectImageResult(result.images,claim);
+          imageUrl=claim.isbn?'':selectImageResult(result.images,claim);
           if(!imageUrl){
             // Many image results identify only the title. Verify their
             // ORIGINAL publisher/book pages before accepting an image.
@@ -117,14 +144,14 @@ function createBraveWorker({
             const candidates=(result.images||[]).slice(0,8)
               .filter(x=>x.pageUrl&&x.title)
               .map(x=>({title:x.title,url:x.pageUrl}));
-            pages=await findPages({pages:candidates},claim,{maxPages:2});
+            pages=await findPages({pages:candidates},claim,{maxPages:2,onFailure});
           }
         }else{
-          pages=await findPages(result,claim,{maxPages:3});
+          pages=await findPages(result,claim,{maxPages:3,onFailure});
         }
       }
       if(stopped)return;
-      const bad=result.error||null;
+      const bad=result.error||sourceError||null;
       let outcome=null;
       // A legacy import can start during Brave's network request. Do not
       // modify ANY database fields (including progress/usage) until that
@@ -137,13 +164,15 @@ function createBraveWorker({
         }
         outcome=await commit(db=>{
           if(isPaused())return {deferred:true};
+          if(!claimIsCurrent(db,claim))return {stale:true};
           const updated=updateFromPages(db,claim,pages,{
             imageUrl,failedCovers:getFailedCovers(),
           });
           finishClaim(db,claim,{
             providerRemaining:result.providerRemaining,
             providerRemainingConfirmed:Number.isSafeInteger(result.providerRemaining),
-            error:bad,
+            error:bad,status:updated.added>0?'found':'no_result',added:updated.added,
+            evidenceByBook:updated.evidenceByBook,
           });
           return updated;
         });
