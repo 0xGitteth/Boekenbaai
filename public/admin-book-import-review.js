@@ -269,6 +269,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const trialRepeatLabel=make('label','hint');
     trialRepeatLabel.append(trialRepeat,document.createTextNode(' Eerder uitgevoerd onderzoek bij de geselecteerde boeken herhalen'));
     const trialStart=button('Proefverrijking starten','btn btn--secondary');
+    const trialBravePlan=button('Brave-proef berekenen (maximaal 15 verzoeken)','btn btn--secondary');
+    const braveTrialResults=make('div','bb-review__brave-items');
     const trialResults=make('div','bb-review__brave-items');
     const trialSelected=new Set();
     let trialBooks=[],trialSources=[],trialBusy=false;
@@ -311,6 +313,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       else if(matches.length>20)trialChoices.append(make('p','hint','Verfijn de zoekopdracht om meer boeken te vinden.'));
       selectedNotice.textContent=trialSelected.size+' van maximaal 5 edities geselecteerd.';
       trialStart.disabled=trialBusy||trialSelected.size===0;
+      trialBravePlan.disabled=trialBusy||trialSelected.size===0;
       trialSearch.disabled=trialBusy;trialRepeat.disabled=trialBusy;
     }
     function renderTrialResult(book,response){
@@ -418,7 +421,51 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         trialNotice.textContent=interrupted?'Proefronde gedeeltelijk afgerond. Start later opnieuw om de nog niet afgeronde bronopvragen te hervatten. Eerdere resultaten blijven behouden.':'Proefronde afgerond. Controleer de resultaten per exemplaar.';
       }finally{trialBusy=false;trialRepeat.checked=false;renderTrialChoices();}
     });
-    trialControls.append(trialSourceSummary,trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults);
+    trialBravePlan.addEventListener('click',async()=>{
+      if(trialBusy||!trialSelected.size)return;
+      if(!window.confirm('Brave-proef voorbereiden voor maximaal vijf edities? Eerst moeten alle gratis aanvullingen beoordeeld zijn. Er worden nog geen Brave-verzoeken gedaan.'))return;
+      trialBusy=true;renderTrialChoices();
+      try{
+        await request('/api/admin/book-enrichment/brave/trial',{confirm:true,bookIds:[...trialSelected]});
+        trialNotice.textContent='Brave-proef voorbereid. Geef afzonderlijk toestemming voor de berekende zoekopdrachten in het internetonderzoek.';
+        void refreshBrave();
+      }catch(error){trialNotice.textContent=error.message;}
+      finally{trialBusy=false;renderTrialChoices();}
+    });
+    trialControls.append(trialSourceSummary,trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults,trialBravePlan);
+    async function showBraveTrial(jobId){
+      braveTrialResults.replaceChildren(make('p','hint','Brave-proefresultaten laden...'));
+      const base='/api/admin/book-enrichment/brave/'+encodeURIComponent(jobId);
+      try{
+        const data=await request(base+'/trial-preview');
+        braveTrialResults.replaceChildren(make('h4','','Brave-proefresultaten'));
+        for(const copy of data.copies||[]){
+          const item=make('section','bb-review__brave-items');
+          item.append(make('strong','',copy.title+' · '+copy.author));
+          for(const change of copy.changes||[]){
+            const detail=make('details');
+            detail.append(make('summary','',trialFields[change.field]||change.field),
+              make('p','hint','Huidig: '+showValue(change.before)),
+              make('p','','Voorstel: '+showValue(change.after)));
+            for(const source of change.sources||[])detail.append(make('p','hint',source.confidence+' · '+source.url));
+            item.append(detail);
+          }
+          if(copy.changes?.length&&data.state!=='running'){
+            const save=button('Brave-aanvullingen voor dit exemplaar opslaan','btn btn--secondary');
+            save.addEventListener('click',async()=>{
+              if(!window.confirm('De getoonde aanvullingen opslaan?'))return;
+              save.disabled=true;
+              try{
+                await request(base+'/trial-apply',{confirm:true,bookId:copy.bookId,revision:copy.revision});
+                void showBraveTrial(jobId);void refreshBrave();
+              }catch(error){item.append(make('p','hint',error.message));save.disabled=false;}
+            });
+            item.append(save);
+          }else if(!copy.changes?.length)item.append(make('p','hint','Geen nieuwe veilige aanvullingen.'));
+          braveTrialResults.append(item);
+        }
+      }catch(error){braveTrialResults.textContent=error.message||'De Brave-proef kon niet worden geladen.';}
+    }
     trialPanel.append(make('h4','','Proefverrijking met gratis boekbronnen'),trialNotice,trialLoad,trialControls);
     enrichmentExtra.append(trialPanel);
 
@@ -507,7 +554,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const braveNotice = make('p', 'hint', 'De zoekvoortgang wordt geladen.');
     braveNotice.setAttribute('role', 'status');
     const braveItems = make('div', 'bb-review__brave-items');
-    bravePanel.append(braveHeading, braveNotice, braveItems);
+    bravePanel.append(braveHeading, braveNotice, braveItems,braveTrialResults);
     enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
     let repeatBraveChecks = false;
@@ -557,7 +604,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }
         for (const job of jobs) { // Includes every pending approval, even older imports.
           const item = make('div', 'bb-review__brave-job');
-          const name = job.source === 'collection' ? 'Bestaande collectie'
+          const name = job.source === 'trial' ? 'Brave-proefverrijking' : job.source === 'collection' ? 'Bestaande collectie'
             : (job.fileName || 'Boekimport');
           const title = make('strong', '', name);
           const details = make('p', 'hint');
@@ -585,6 +632,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               + 'Deze titels blijven zichtbaar als aandachtspunt.';
           }
           item.append(title, details);
+          if(job.source==='trial'&&job.state!=='running'){
+            const review=button('Proefresultaten bekijken','btn btn--secondary');
+            review.addEventListener('click',()=>void showBraveTrial(job.id));
+            item.append(review);
+          }
           if (job.incompleteIdentity) item.append(make('p', 'hint',
             job.incompleteIdentity + ' exemplaren hebben geen bruikbare titel en auteur; '
             + 'die kunnen nog niet veilig op internet worden onderzocht.'));
@@ -596,6 +648,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                 + 'Boekenbaai reserveert deze verzoeken binnen de ingestelde maandgrens. '
                 + 'Andere apps die dezelfde Brave-sleutel gebruiken tellen niet mee. '
                 + 'Zorg dat betaalde aanvulling in het Brave-account is uitgeschakeld. '
+                + (job.source==='trial'?' De gevonden boekgegevens worden pas na aparte bevestiging opgeslagen. ':'')
                 + 'Je kunt de pagina na goedkeuring sluiten. Doorgaan?';
               if (!window.confirm(message)) return;
               accept.disabled = true;
