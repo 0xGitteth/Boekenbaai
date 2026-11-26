@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {
-  addJob,getJobPlan,approveJob,currentUsage,claimNext,finishClaim,
+  addJob,getJobPlan,approveJob,currentUsage,reconcileLegacyBudget,claimNext,finishClaim,
 }=require('../book-brave-core');
 const {parseMonthlyRemaining}=require('../book-brave-fetch');
 const {listDeferredBookTasks}=require('../book-import-deferred-book-tasks');
@@ -76,6 +76,38 @@ const jobVerified=addJob(dbVerified,['copy-1'],{id:'verified-zero'});
 assert.equal(currentUsage(dbVerified,now,env).available,0);
 assert.equal(getJobPlan(dbVerified,jobVerified,{braveConfigured:true,now,env}).canApprove,false);
 
+// The administrator can remove an unsupported historical zero exactly once,
+// without clearing reservations, changing paused jobs, or authorizing calls.
+const recovery={books:[copy],braveUsage:{month:'2026-11',reserved:2,providerRemaining:0,providerRemainingVerified:true},braveEnrichmentJobs:[]};
+const paused=addJob(recovery,['copy-1'],{id:'recovery'});
+paused.state='paused';paused.lastError='budget_exhausted';
+const confirm={confirmed:true,expectedMonth:'2026-11',expectedReserved:2,now,env};
+assert.equal(currentUsage(recovery,now,env).canReconcileLegacyZero,true);
+const original=JSON.stringify(recovery);
+assert.equal(reconcileLegacyBudget(recovery,{...confirm,confirmed:false}).ok,false);
+assert.equal(reconcileLegacyBudget(recovery,{...confirm,expectedReserved:1}).ok,false);
+assert.equal(reconcileLegacyBudget(recovery,{...confirm,expectedMonth:'2026-10'}).ok,false);
+assert.equal(JSON.stringify(recovery),original);
+paused.state='running';
+assert.equal(reconcileLegacyBudget(recovery,confirm).ok,false);
+paused.state='paused';
+assert.equal(reconcileLegacyBudget(recovery,confirm).ok,true);
+assert.equal(currentUsage(recovery,now,env).available,10);
+assert.equal(recovery.braveUsage.reserved,2);
+assert.equal(recovery.braveUsage.legacyReconciliation.previousRemaining,0);
+assert.equal(paused.state,'paused');
+assert.equal(claimNext(recovery,{now,env}),null);
+assert.equal(reconcileLegacyBudget(recovery,confirm).ok,false);
+assert.equal(approveJob(recovery,paused.id,{confirmed:true,expectedMonth:'2026-11',expectedRequests:3,braveConfigured:true,now,env}).ok,true);
+const verifiedClaim=claimNext(recovery,{now,env});
+finishClaim(recovery,verifiedClaim,{providerRemaining:0,providerRemainingConfirmed:true});
+assert.equal(currentUsage(recovery,now,env).available,0);
+assert.equal(currentUsage(recovery,now,env).canReconcileLegacyZero,false);
+assert.equal(recovery.braveUsage.providerEvidenceVersion,2);
+const modern={books:[copy],braveUsage:{month:'2026-11',reserved:2,providerRemaining:0,providerRemainingVerified:true,providerEvidenceVersion:2}};
+assert.equal(reconcileLegacyBudget(modern,confirm).ok,false);
+const exhausted={books:[copy],braveUsage:{month:'2026-11',reserved:12,providerRemaining:0,providerRemainingVerified:true}};
+assert.equal(reconcileLegacyBudget(exhausted,{...confirm,expectedReserved:12}).ok,false);
 // Repeated tasks are shown as a group, never silently closed.
 const item=(id,editionIsbn,title='De perfecte misdaad')=>({
   id,status:'open',batchId:'batch-'+id,editionIsbn,
@@ -119,8 +151,11 @@ assert.match(ui,/bb-deferred-book-group/);
 assert.match(ui,/destination\.append\(card\)/);
 assert.match(ui,/de oude taak is niet automatisch afgesloten/i);
 assert.match(braveUi,/usage\.legacyProviderRemaining === 0/);
-assert.match(braveUi,/zonder de oorspronkelijke headers is niet zeker/,
+assert.match(braveUi,/Een oude opgeslagen nulstand blokkeert het zoeken/,
   'A stored zero must not be presented as conclusive evidence from Brave itself');
+assert.match(braveUi,/Oude budgetstand herstellen/);
+assert.match(braveUi,/reconcile-budget/);
+assert.match(braveUi,/Er worden geen zoekopdrachten uitgevoerd/);
 // Follow-up to Codex PR #412/#413: live state must remain visible during
 // polling, including while the user expands a group to resolve a book.
 assert.match(ui,/const expandedGroups=new Set\(\)/);
