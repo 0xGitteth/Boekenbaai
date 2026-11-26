@@ -193,3 +193,10 @@ assert.match(js,/if \(document\.body\.classList\.contains\('bb-teacher-v31'\)\)/
 assert.match(admin,/const items = \[/);
 assert.match(teacher,/const navItems = \[/);
 console.log('Boekenbaai v3.2: header, role nav, reused real covers, 2:3 ratio, search and preserved student scope OK.');
+
+// Landscape tablet header must not hide navigation labels in a scroller.
+const tabletNav=css.slice(css.indexOf('/* Landscape tablets:'));
+assert.match(tabletNav,/@media \(min-width: 761px\) and \(max-width: 1180px\)/);
+assert.match(tabletNav,/\.hero\.hero--staff\s*\{[^}]*flex-wrap: wrap;[^}]*height: auto;/);
+assert.match(tabletNav,/\.bb-v32-top-nav\s*\{[^}]*flex: 0 0 100%;[^}]*overflow: visible;/);
+assert.match(tabletNav,/\.admin-modern__tabs\s*\{[^}]*min-width: 0;[^}]*flex-wrap: wrap;/);
