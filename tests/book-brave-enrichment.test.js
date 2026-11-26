@@ -15,6 +15,8 @@ const {narrativeDescription}=require('../book-brave-description');
 assert.equal(narrativeDescription('Bas Nijhuis. Niet zeiken, voetballen! (ISBN 9789048846757) direct en eenvoudig te bestellen bij Boekhandel De Slegte. Uniek aanbod tweedehands boeken.'),'');
 const narrative='Lilly wil graag leren dansen. Samen met haar vriendinnen ontdekt ze hoe moeilijk het is om voor het eerst op een groot podium te staan.';
 assert.equal(narrativeDescription(narrative+' Bestel nu online bij onze winkel.'),narrative);
+const dotted='Daar ontmoeten zij J.K. Rowling en bezoeken zij voorbeeld.nl tijdens hun reis naar een onbekende stad waar zij samen een raadsel proberen op te lossen.';
+assert.equal(narrativeDescription(dotted),dotted);
 
 
 function book(id,title='De brief voor de koning'){
