@@ -19,7 +19,8 @@ function recordCheck(db,book,result,{now=new Date(),source=SOURCE}={}){
   const status=result?.status==='found'&&!verified?'identity_mismatch':String(result?.status||'invalid_response');
   const prior=entry[source];
   // A forced retry that fails must not destroy a previous usable result.
-  const current={status,checkedAt:now.toISOString(),metadata:verified?result.metadata:null};
+  const current={status,checkedAt:now.toISOString(),metadata:verified?result.metadata:null,
+    ...(prior?.appliedCopies?{appliedCopies:prior.appliedCopies}:{})};
   if(!TERMINAL.has(status)&&TERMINAL.has(prior?.status)){
     entry[source]={...prior,lastError:status,lastAttemptAt:current.checkedAt};
   }else{
@@ -80,7 +81,7 @@ function trialView(db,book,failedCovers=new Set()){
   const revision=createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
   return {...snapshot,revision,title:book.title,author:book.author,isbn:isbnOf(book),
     status:check?.status||'not_checked',lastError:check?.lastError||null,
-    appliedAt:check?.appliedAt||null};
+    appliedAt:check?.appliedCopies?.[createHash('sha256').update(String(book.id)).digest('hex')]||null};
 }
 function applyTrial(db,book,revision,failedCovers=new Set(),now=new Date()){
   const view=trialView(db,book,failedCovers);
@@ -94,7 +95,9 @@ function applyTrial(db,book,revision,failedCovers=new Set(),now=new Date()){
     book.importProvenance.fieldSources[change.field]={sourceType:'metadata',sourceDetail:SOURCE};
   }
   const check=getCheck(db,book);
-  check.appliedAt=now.toISOString();
+  const copyKey=createHash('sha256').update(String(book.id)).digest('hex');
+  const appliedCopies=check.appliedCopies||={};
+  appliedCopies[copyKey]=now.toISOString();
   return {ok:true,updated:view.changes.length,newCover:view.changes.some(c=>c.field==='coverUrl')};
 }
 function catalogue(db){
