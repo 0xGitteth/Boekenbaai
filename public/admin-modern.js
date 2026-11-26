@@ -157,7 +157,7 @@
   function syncMobileNavigation() {
     const sidebar = document.getElementById('bb-admin-v31-sidebar');
     if (!sidebar) return;
-    const mobile = window.matchMedia('(max-width: 760px)').matches;
+    const mobile = window.matchMedia('(max-width: 1100px)').matches;
     const closed = mobile && !document.body.classList.contains('bb-admin-v31--open');
     sidebar.inert = closed || !document.body.classList.contains('bb-admin-v31');
     sidebar.setAttribute('aria-hidden', String(closed || !document.body.classList.contains('bb-admin-v31')));
@@ -230,7 +230,7 @@
         document.getElementById('bb-admin-v31-menu')?.focus();
       }
     });
-    window.matchMedia('(max-width: 760px)').addEventListener('change', syncMobileNavigation);
+    window.matchMedia('(max-width: 1100px)').addEventListener('change', syncMobileNavigation);
   }
 
 
