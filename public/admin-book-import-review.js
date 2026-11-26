@@ -439,6 +439,17 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       try{
         const data=await request(base+'/trial-preview');
         braveTrialResults.replaceChildren(make('h4','','Brave-proefresultaten'));
+        if(data.dismissedAt)braveTrialResults.append(make('p','hint','Deze proef is beëindigd zonder alle voorstellen toe te passen. Het onderzoek blijft bewaard.'));
+        else if(data.state!=='running'){
+          const dismiss=button('Resterende voorstellen niet toepassen','btn btn--ghost');
+          dismiss.addEventListener('click',async()=>{
+            if(!window.confirm('De proef beëindigen en de resterende voorstellen niet toepassen? De eerdere zoekopdrachten blijven geregistreerd.'))return;
+            dismiss.disabled=true;
+            try{await request(base+'/trial-dismiss',{confirm:true});void showBraveTrial(jobId);void refreshBrave();}
+            catch(error){braveTrialResults.append(make('p','hint',error.message));dismiss.disabled=false;}
+          });
+          braveTrialResults.append(dismiss);
+        }
         for(const copy of data.copies||[]){
           const item=make('section','bb-review__brave-items');
           item.append(make('strong','',copy.title+' · '+copy.author));
