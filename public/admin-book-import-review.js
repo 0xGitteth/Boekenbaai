@@ -277,7 +277,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const trialSourceSummary=make('p','hint');
     const trialSourceName=id=>id==='catalogue'?'Huidige collectie':trialSources.find(s=>s.id===id)?.name||id;
     const trialStatusNames={
-      not_checked:'Niet onderzocht',found:'Gevonden',not_found:'Niet gevonden',
+      not_checked:'Niet onderzocht',found:'Gevonden',not_found:'Niet gevonden',source_partial:'Onderzocht met onbereikbare bronnen',source_unavailable:'Bronwebsite niet bereikbaar',title_author:'Titel en auteur',
       not_configured:'Niet ingesteld',cached:'Eerder opgeslagen',cooldown:'Tijdelijk begrensd',busy:'Brononderzoek bezig',error:'Opvraag mislukt',
       identity_mismatch:'ISBN, titel of auteur komt niet overeen',
       rate_limited:'Bron tijdelijk begrensd',network_error:'Verbinding mislukt',
@@ -603,6 +603,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             evidence.append(make('summary','','Brave, stap '+(step.step+1)+': '+trialStatus(step.status)));
             if(step.checkedAt)evidence.append(make('p','hint',new Date(step.checkedAt).toLocaleString('nl-NL')));
             if(step.error)evidence.append(make('p','hint',trialStatus(step.error)));
+            for(const failure of step.sourceFailures||[])evidence.append(make('p','hint','Bron overgeslagen: '+failure.url+' · '+(failure.stage==='robots'?'Toegang kon niet worden gecontroleerd':'Pagina niet bereikbaar')));
             for(const item of step.evidence||[])evidence.append(make('p','hint',fieldName(item.field)+' · '+item.url));
             detail.append(evidence);
           }
