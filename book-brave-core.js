@@ -63,7 +63,10 @@ function bookWorks(db, job) {
 }
 function needsExtra(book,failedCovers=new Set()) {
   const description = String(book?.description || '').replace(/<[^>]*>/g,'').trim();
-  const tagCount = Array.isArray(book?.tags) ? book.tags.filter(Boolean).length : 0;
+  const tagCount = new Set([...(Array.isArray(book?.tags)?book.tags:[]),
+    ...(Array.isArray(book?.enrichmentTags)?book.enrichmentTags:[])]
+    .filter(tag=>typeof tag==='string'&&tag.trim())
+    .map(tag=>tag.trim().toLocaleLowerCase('nl-NL'))).size;
   const cover = Boolean(book?.coverUrl || book?.localCoverUrl);
   const broken=Boolean(book?.coverUrl&&!book?.localCoverUrl&&failedCovers.has(book.coverUrl));
   return {cover:!cover||broken, description:description.length < 280, topics:tagCount < 3,
@@ -79,7 +82,47 @@ function pendingFreeWorks(db, job, easyCbEnabled, now = Date.now()) {
   if (!easyCbEnabled) return 0;
   return [...bookWorks(db,job).values()].filter(books => books.some(book => freePending(book,now))).length;
 }
-function addJob(db, bookIds, {id = crypto.randomUUID(), source = 'import', fileName = ''} = {}) {
+// Durable per-copy, per-edition, per-source search checkpoints. A changed
+// ISBN/title/author creates a new identity; old results cannot suppress it.
+function checkKey(bookId,key) { return JSON.stringify([bookId,key]); }
+function getBraveCheck(db,bookId,key,step) {
+  return db.bookEnrichmentChecks?.[checkKey(bookId,key)]?.brave?.[step];
+}
+function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook=null,now=new Date()}={}) {
+  if(!db.bookEnrichmentChecks||typeof db.bookEnrichmentChecks!=='object'
+    ||Array.isArray(db.bookEnrichmentChecks))db.bookEnrichmentChecks={};
+  const ids=new Set(claim.bookIds||job.bookIds||[]);
+  for(const book of db.books||[]){
+    if(!ids.has(book.id)||workKey(book)!==claim.key)continue;
+    const key=checkKey(book.id,claim.key);
+    const entry=db.bookEnrichmentChecks[key]||={};
+    const steps=entry.brave||={};
+    const previous=steps[claim.step];
+    const evidence=Array.isArray(evidenceByBook?.[book.id])?evidenceByBook[book.id]:[];
+    const combined=new Map([...(Array.isArray(previous?.evidence)?previous.evidence:[]),...evidence]
+      .map(item=>[JSON.stringify([item.field,item.url,item.confidence]),item]));
+    steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString(),
+      evidence:[...combined.values()].slice(-60)};
+  }
+}
+function checkedStep(db,job,key,books,step) {
+  return books.length>0&&books.every(book=>{
+    const check=getBraveCheck(db,book.id,key,step);
+    return ['found','no_result','checked'].includes(check?.status)
+      &&(!job.repeatChecked||check.jobId===job.id);
+  });
+}
+function remainingSteps(db,job,key,books) {
+  return Array.from({length:MAX_REQUESTS_PER_WORK},(_,step)=>step)
+    .filter(step=>!checkedStep(db,job,key,books,step));
+}
+function claimIsCurrent(db,claim){
+  const job=db.braveEnrichmentJobs?.find(j=>j.id===claim?.id);
+  const flight=job?.inFlight;
+  return Boolean(job?.state==='running'&&flight&&flight.key===claim.key
+    &&flight.step===claim.step&&(!claim.reservationId||flight.reservationId===claim.reservationId));
+}
+function addJob(db, bookIds, {id = crypto.randomUUID(), source = 'import', fileName = '', repeatChecked=false} = {}) {
   ensureJobs(db);
   const known = new Set((db.books || []).map(book => book.id));
   const ids = [...new Set((Array.isArray(bookIds) ? bookIds : []).filter(id =>
@@ -88,7 +131,7 @@ function addJob(db, bookIds, {id = crypto.randomUUID(), source = 'import', fileN
   if (db.braveEnrichmentJobs.some(job => job.id === id)) return null;
   const now = new Date().toISOString();
   const job = {id,createdAt:now,updatedAt:now,source,
-    fileName:String(fileName).slice(0,180),bookIds:ids,
+    fileName:String(fileName).slice(0,180),bookIds:ids,repeatChecked:repeatChecked===true,
     state:'awaiting_free',approvedKeys:[],completedKeys:[],cursor:0,step:0,
     approval:null,requestsReserved:0,lastError:null};
   db.braveEnrichmentJobs.push(job);
@@ -105,7 +148,8 @@ function remainingWorks(db,job,failedCovers=new Set()) {
   const completed = new Set(Array.isArray(job.completedKeys)?job.completedKeys:[]);
   const active = new Set(job.state==='running' ? job.approvedKeys || []:[]);
   return [...bookWorks(db,job)].filter(([key,books])=>
-    !completed.has(key)&&!active.has(key)&&needsExtraWork(books,failedCovers)).map(([key])=>key);
+    !completed.has(key)&&!active.has(key)&&needsExtraWork(books,failedCovers)
+    &&remainingSteps(db,job,key,books).some(step=>shouldQueryStep(step,books,failedCovers))).map(([key])=>key);
 }
 function getJobPlan(db,job,{
   easyCbEnabled=false, braveConfigured=false, now = new Date(), env = process.env,
@@ -115,13 +159,18 @@ function getJobPlan(db,job,{
   const remaining=remainingWorks(db,job,failedCovers);
   const waitingFree=pendingFreeWorks(db,job,easyCbEnabled,now.getTime());
   const usage=currentUsage(db,now,env);
-  const safeBudget=Math.min(usage.available, Math.max(0,Math.floor(usage.available / MAX_REQUESTS_PER_WORK)
-    * MAX_REQUESTS_PER_WORK));
-  const possible=Math.min(remaining.length,Math.floor(safeBudget / MAX_REQUESTS_PER_WORK));
+  const costs=remaining.map(key=>remainingSteps(db,job,key,groups.get(key)).length);
+  const estimatedMaxRequests=costs.reduce((total,cost)=>total+cost,0);
+  let possible=0,possibleMaxRequests=0;
+  for(const cost of costs){
+    if(possibleMaxRequests+cost>usage.available)break;
+    possible++;possibleMaxRequests+=cost;
+  }
   let state=job.state;
   if (state==='awaiting_free' || state==='awaiting_approval') {
     state=waitingFree>0?'awaiting_free':remaining.length?'awaiting_approval':'complete';
   }
+  if(state==='paused'&&!waitingFree&&!remaining.length)state='complete';
   // When the worker encountered a provider limit, its next step must still
   // require explicit approval. There is never an automatic new-month retry.
   const resumable=state==='paused' && waitingFree===0 && remaining.length>0;
@@ -131,9 +180,9 @@ function getJobPlan(db,job,{
     id:job.id,source:job.source,fileName:job.fileName,createdAt:job.createdAt,
     state,books:job.bookIds?.length||0,uniqueWorks:groups.size,
     completedWorks:job.completedKeys?.length||0,waitingFree,
-    needsBrave:remaining.length,estimatedMaxRequests:remaining.length*MAX_REQUESTS_PER_WORK,
+    needsBrave:remaining.length,estimatedMaxRequests,
     canApprove:braveConfigured && (state==='awaiting_approval'||resumable) && possible>0,
-    possibleWorks:possible,possibleMaxRequests:possible*MAX_REQUESTS_PER_WORK,
+    possibleWorks:possible,possibleMaxRequests,
     deferredWorks:Math.max(0,remaining.length-possible),
     approvedWorks:job.approvedKeys?.length||0,processedApproved:job.cursor||0,
     approvedMaxRequests:job.approval?.maxRequests||0,
@@ -164,7 +213,7 @@ function approveJob(db,id,{confirmed=false,expectedRequests,expectedMonth,easyCb
     return {ok:false,error:'stale_budget'};
   const keys=remainingWorks(db,job,failedCovers).slice(0,plan.possibleWorks);
   job.state='running';job.approvedKeys=keys;job.cursor=0;job.step=0;
-  job.approval={month:monthKey(now),maxRequests:keys.length*MAX_REQUESTS_PER_WORK,
+  job.approval={month:monthKey(now),maxRequests:plan.possibleMaxRequests,
     approvedAt:now.toISOString()};
   job.requestsReserved=0;job.lastError=null;job.updatedAt=now.toISOString();
   return {ok:true,approvedWorks:keys.length,maxRequests:job.approval.maxRequests};
@@ -200,10 +249,12 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
   if (job.inFlight) {
     // Shared persistent volume may be served by more than one Node process.
     // Do not issue another request while another worker holds this claim.
-    // A crashed claim is already debited and may be skipped after its lease.
+    // An expired claim is not a successful search. Pause and require fresh
+    // consent rather than silently skipping it or billing an automatic retry.
     const claimedAt=Date.parse(job.inFlight.reservedAt||'');
     if (Number.isFinite(claimedAt) && now.getTime()-claimedAt < 120000) return null;
-    job.inFlight=null;
+    recordBraveCheck(db,job,job.inFlight,{status:'error',error:'interrupted',now});
+    pauseActiveChunk(job,'interrupted');return null;
   }
   if (job.approval?.month!==monthKey(now)) {
     pauseActiveChunk(job,'month_changed');return null;
@@ -218,7 +269,7 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     if (job.step>=MAX_REQUESTS_PER_WORK || !books.length || !needsExtraWork(books,failedCovers)) {
       job.cursor++;job.step=0;continue;
     }
-    if (!shouldQueryStep(job.step,books,failedCovers)) {job.step++;continue;}
+    if (checkedStep(db,job,key,books,job.step)||!shouldQueryStep(job.step,books,failedCovers)) {job.step++;continue;}
     if (job.requestsReserved >= job.approval.maxRequests || usage.reserved >= cap
       || (usage.providerRemainingVerified === true
         && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
@@ -226,29 +277,30 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     }
     const step=job.step++;
     // Reserve BEFORE a network call. On a crash this reservation remains used;
-    // a resumed worker skips that specific step instead of accidentally
-    // issuing (and potentially billing) the same search twice.
+    // an expired claim requires a new explicit approval before it is retried.
     usage.reserved++;
     if(usage.providerRemainingVerified===true
       && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining>0)
       usage.providerRemaining--;
     job.requestsReserved++;job.updatedAt=now.toISOString();
     const representative=books[0];
-    job.inFlight={key,step,reservedAt:now.toISOString()};
+    const reservationId=crypto.randomUUID();
+    job.inFlight={key,step,reservationId,bookIds:books.map(book=>book.id),reservedAt:now.toISOString()};
     // Consent applies to the exact imported book IDs, not later books that
     // happen to share the same ISBN, title and author.
-    return {id:job.id,key,step,bookIds:books.map(book=>book.id),
+    return {id:job.id,key,step,reservationId,bookIds:books.map(book=>book.id),
       title:representative.title,author:representative.author,
-      isbn:isbnOf(representative)};
+      isbn:isbnOf(representative),publisher:representative.imprint||representative.publisher||''};
   }
 }
 function finishClaim(db,claim,{
-  providerRemaining=null, providerRemainingConfirmed=false, error=null,
+  providerRemaining=null, providerRemainingConfirmed=false, error=null, status='checked', added=0,evidenceByBook=null,
 }={}) {
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.id===claim?.id);
-  if (!job) return;
-  if (job.inFlight?.key===claim.key && job.inFlight?.step===claim.step) job.inFlight=null;
+  if (!job||!claimIsCurrent(db,claim)) return;
+  recordBraveCheck(db,job,claim,{status:error?'error':status,error,added,evidenceByBook});
+  job.inFlight=null;
   if (providerRemainingConfirmed===true
       && Number.isSafeInteger(providerRemaining) && providerRemaining>=0
       && db.braveUsage?.month===job.approval?.month) {
@@ -271,4 +323,4 @@ function finishClaim(db,claim,{
 }
 module.exports={MAX_REQUESTS_PER_WORK,HARD_MONTHLY_CAP,monthKey,monthlyCap,
   currentUsage,ensureJobs,bookWorks,needsExtra,needsExtraWork,pendingFreeWorks,
-  addJob,remainingWorks,getJobPlan,approveJob,claimNext,finishClaim};
+  addJob,remainingWorks,getJobPlan,approveJob,claimNext,finishClaim,claimIsCurrent,getBraveCheck};
