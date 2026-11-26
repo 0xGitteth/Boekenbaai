@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const {recordCheck,getCheck,catalogue}=require('../book-enrichment-trial');
 const {report,details}=require('../book-enrichment-report');
 const {workKey}=require('../book-free-metadata');
+const {storeTrialResult}=require('../book-brave-trial');
 const isbn='9789086960088';
 const book={id:'one',metadataIsbn:isbn,title:'Testtitel',author:'Test Auteur',
   description:'',pageCount:null,coverUrl:'https://example.org/cover.jpg',localCoverUrl:'/covers/one.jpg'};
@@ -42,4 +43,21 @@ assert.equal(catalogue(db)[0].copies,2);
 assert.equal(JSON.stringify(db),before,'Diagnostic reads must not modify collection or pupil records');
 for(let i=0;i<30;i++)recordCheck(db,book,{status:'not_found',metadata:null},{source:'open_library',now:new Date(5000+i)});
 assert.equal(getCheck(db,book,'open_library').attemptHistory.length,20);
+const pilot={id:'pilot',source:'trial',state:'paused',bookIds:['one'],trialResults:{}};
+const pilotDb={books:[{...book,barcode:'EX-001',description:''}],braveEnrichmentJobs:[pilot]};
+storeTrialResult(pilot,{key:workKey(pilotDb.books[0]),step:0},[{
+  isbn,title:book.title,author:book.author,confidence:'isbn',
+  description:'Een verhaal over twee vrienden die een raadsel proberen op te lossen in een bos en ontdekken wat er jaren geleden met hun familie is gebeurd.',
+  sourceUrl:'https://example.org/story',
+}]);
+const pilotReport=report(pilotDb,{enabledSources:['boekenbase']});
+assert.deepEqual(pilotReport.enabledSources,['boekenbase']);
+assert.equal(pilotReport.rows[0].freePending,0);
+assert.equal(pilotReport.rows[0].bravePending,1);
+assert.equal(pilotReport.counts.pending,1);
+const pilotDetails=details(pilotDb,'one')[0];
+assert.equal(pilotDetails.barcode,'EX-001');
+assert.equal(pilotDetails.braveProposals[0].field,'description');
+pilot.trialDismissedAt=new Date().toISOString();
+assert.equal(report(pilotDb).rows[0].bravePending,0);
 console.log('Read-only enrichment coverage, source history, filtering and local cover diagnostics passed.');
