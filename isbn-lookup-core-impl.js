@@ -740,6 +740,7 @@ function parseIsbnBarcodeData(data, targetIsbn) {
 
   return {
     barcode: normalizeIsbn(targetIsbn),
+    matchedIsbn: identifierEvidence.identifiers.find(identifier=>family.has(identifier))||'',
     title,
     author: authors.join(', '),
     authors,
@@ -1360,7 +1361,7 @@ function isComplete(result) {
       if(metadata?.found&&metadata.matchLevel==='exact_isbn'){
         // The original parsers enforce an equivalent ISBN. Preserve the
         // returned barcode identity; do not stamp an unrelated record.
-        const verified=toIsbn13(metadata.barcode);
+        const verified=toIsbn13(source==='isbnbarcode'?metadata.matchedIsbn:metadata.barcode);
         if(verified!==toIsbn13(normalized))return {status:'identity_mismatch',metadata:null};
         return {status:'found',metadata:{...metadata,isbn:verified,source}};
       }
@@ -1374,6 +1375,7 @@ function isComplete(result) {
 }
 
 module.exports = {
+  normalizeLanguage,
   normalizeIsbn,
   isValidIsbn,
   isValidIsbn10,
