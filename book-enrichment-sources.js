@@ -19,9 +19,16 @@ function createEnrichmentSources({env=process.env,fetchImpl=globalThis.fetch,
     if(!isbn)return {status:'invalid_isbn',metadata:null};
     if(available.get(source)!==true)return {status:'not_configured',metadata:null};
     try{
+      let rateLimited=false;
+      const checkedFetch=async(...args)=>{
+        const response=await fetchImpl(...args);
+        if(response?.status===429)rateLimited=true;
+        return response;
+      };
       const result=source==='boekenbase'?await boekenbase(isbn,{fetchImpl})
-        :source==='easycb'?await easycb(isbn,{contact,fetchImpl})
+        :source==='easycb'?await easycb(isbn,{contact,fetchImpl:checkedFetch})
         :await isbnLookup.lookupSource(source,isbn);
+      if(rateLimited)return {status:'rate_limited',metadata:null};
       if(!result||typeof result.status!=='string')return {status:'invalid_response',metadata:null};
       if(result.status==='found'&&result.metadata&&['bureau_isbn','google_books'].includes(source)){
         // Existing ISBN parsers expose their classification systems as tags.
