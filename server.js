@@ -332,8 +332,15 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
 function runCoverGarbageCollection() {
   if (shuttingDown) return;
   try {
-    const result = coverAssets.cleanupUnreferenced(
-      () => loadDb().books.map((book) => book.localCoverUrl).filter(Boolean));
+    // Use the durable references, not loadDb(): ensureBookShape clears
+    // invalid links in memory before the next database commit. Removing
+    // that file too early would make the next load see "missing" instead
+    // of "invalid" and lose the pending rejection and crop reset.
+    const result = coverAssets.cleanupUnreferenced(() => {
+      const persisted = readJsonSnapshot(DATA_PATH);
+      if (!Array.isArray(persisted.books)) throw Error('cover_references_invalid');
+      return persisted.books.map(book => book?.localCoverUrl).filter(Boolean);
+    });
     if (result.removed) console.info(`Ongebruikte boekomslagen opgeruimd: ${result.removed}`);
   } catch (error) {
     console.warn('Opruimen ongebruikte boekomslagen mislukt:', error.message);
