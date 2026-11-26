@@ -370,7 +370,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             const response=await request(trialRoot+'/probe',{bookId:id,repeat,confirm:true});
             renderTrialResult(book,response);
             if(response.copies?.[0])book.status=response.copies[0].status;
-            if(response.copies?.some(copy=>copy.status==='rate_limited'||copy.lastError==='rate_limited')){
+            if(response.probeStatus==='rate_limited'){
               rateLimited=true;break;
             }
           }catch(error){trialResults.append(make('p','hint',book.title+': '+error.message));}
