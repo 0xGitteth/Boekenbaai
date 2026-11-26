@@ -10,8 +10,11 @@ const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { createCoverAssetStore, safeCoverUrl, imageType, publicIPv4, downloadCover } = require('../lib/cover-assets');
 
+const {dimensions,usableDimensions}=require('../lib/cover-dimensions');
+const TINY=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvmkAAAAASUVORK5CYII=','base64');
+const TINY_GIF=Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7','base64');
 const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvmkAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAApElEQVR4nO3PAQ3AIADAMEALStCCfw138Sd7q2Cb+9zxJ+vrgLcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuO4Bj2YBuolyvV4AAAAASUVORK5CYII=',
   'base64',
 );
 
@@ -114,6 +117,22 @@ async function main() {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'boekenbaai-covers-'));
   let server;
   try {
+    assert.equal(usableDimensions(TINY),null);
+    assert.equal(usableDimensions(TINY_GIF),null);
+    assert.deepEqual(dimensions(PNG),{width:80,height:120,format:'png'});
+    assert.equal(usableDimensions(PNG.subarray(0,30)),null);
+    const invalidDirectory=path.join(root,'invalid');
+    fs.mkdirSync(invalidDirectory);
+    const invalidStore=createCoverAssetStore({directory:invalidDirectory,downloader:async()=>TINY_GIF});
+    await assert.rejects(invalidStore.saveSource('https://covers.example.org/pixel.gif'),/invalid_cover_dimensions/);
+    assert.deepEqual(fs.readdirSync(invalidDirectory),[]);
+    const invalidName=crypto.createHash('sha256').update(TINY_GIF).digest('hex')+'.gif';
+    fs.writeFileSync(path.join(invalidDirectory,invalidName),TINY_GIF);
+    const invalidPath='/api/covers/'+invalidName;
+    assert.equal(invalidStore.assetStatus(invalidPath),'invalid');
+    assert.equal(invalidStore.hasAsset(invalidPath),false);
+    await assert.rejects(invalidStore.saveSource(invalidPath),/invalid_cover_dimensions/);
+    assert.equal(fs.existsSync(path.join(invalidDirectory,invalidName)),true,'Historical file is not silently deleted');
     let calls = 0;
     const store = createCoverAssetStore({ directory: path.join(root, 'covers'),
       downloader: async () => { calls += 1; await Promise.resolve(); return PNG; } });
