@@ -653,10 +653,13 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
     setting:'de omgeving',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',murder:'misdaad met moord',horror:'griezelverhalen',
   };
-  const requested=[...new Set([...choice.separateTopics,...choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}))])];
+  const styleTraits=new Set(['realistic','true','facts','fast','slow','calm','humor','danger','action','twist','dialogue','setting','puzzles','adventure','people','team','competition','challenge','growth','discovery','empathy']);
+  const leaves=choice.openSignals.prefer.filter(t=>!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}));
+  const requested=[...new Set([...choice.separateTopics,...leaves.filter(t=>Object.hasOwn(SUBTOPICS,t))])];
+  const focusedTopics=requested.length?[...new Set([...requested,...leaves.filter(t=>!styleTraits.has(t))])]:requested;
   // A generic ancestor or another reading-style answer must not substitute
   // for the requested subject. Related topics require explicit permission.
-  const focused=choice.route!=='surprise'&&!choice.discoverySample?requested:[];
+  const focused=choice.route!=='surprise'&&!choice.discoverySample?focusedTopics:[];
   const rejected=new Set(choice.bookVotes.filter(v=>v.vote==='dislike').map(v=>v.key));
   const candidates = [];
   let hasPriorMatches=false;

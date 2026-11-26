@@ -264,6 +264,8 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
   {id:'anger',title:'Borealis',author:'F',description:'Zijn bloed begon te koken van woede.'},
  ];
  const find=prefer=>rankBooks({books},{route:'new',openSignals:{prefer}});
+ const alternative=rankBooks({books:[{id:'crime',title:'Misdaad',author:'G',themes:['Misdaad']}]},{route:'new',openSignals:{prefer:['sport','football','crime']}});
+ assert.deepEqual(alternative.suggestions.map(x=>x.bookId),['crime']);
  const football=find(['sport','football']);
  assert.deepEqual(football.suggestions.map(x=>x.bookId),['football']);
  assert.match(football.suggestions[0].reason,/Voetbal|voetbal/i);

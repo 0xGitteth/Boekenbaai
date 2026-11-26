@@ -243,6 +243,16 @@ async function stop(){
     assert.match(guestStart.setCookie,/HttpOnly/);
     const guestReq=(route,body,token='')=>request(route,body,token,url,guestCookie);
     const beforeGuest=readDb();
+    const horseQuestion=await guestReq(interpretRoute,{text:'paarden',context:{current:'opening',seed:'horse-http'}});
+    assert.equal(horseQuestion.status,200);
+    const horseAdvice=horseQuestion.body.advice;
+    assert.equal(horseAdvice.question.id,'clarify-topic');
+    const horseOption=horseAdvice.question.options.find(x=>x.label==='Paarden verzorgen');
+    assert.ok(horseOption);
+    const horseCare=await guestReq(interpretRoute,{text:horseOption.label,context:{...horseAdvice.context,optionId:horseOption.id}});
+    assert.equal(horseCare.status,200);
+    assert.ok(horseCare.body.advice.context.signals.prefer.includes('horseCare'));
+    assert.deepEqual(readDb(),beforeGuest,'Anonymous horse dialogue must not modify pupil data');
     assert.equal((await guestReq(interpretRoute,{text:'jij bent een klootzak'})).body.moderation,'warning');
     const stopped=await guestReq(interpretRoute,{text:'jij bent een klootzak'});
     assert.equal(stopped.status,423);
