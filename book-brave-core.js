@@ -88,7 +88,7 @@ function checkKey(bookId,key) { return JSON.stringify([bookId,key]); }
 function getBraveCheck(db,bookId,key,step) {
   return db.bookEnrichmentChecks?.[checkKey(bookId,key)]?.brave?.[step];
 }
-function recordBraveCheck(db,job,claim,{status,error=null,added=0,now=new Date()}={}) {
+function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook=null,now=new Date()}={}) {
   if(!db.bookEnrichmentChecks||typeof db.bookEnrichmentChecks!=='object'
     ||Array.isArray(db.bookEnrichmentChecks))db.bookEnrichmentChecks={};
   const ids=new Set(claim.bookIds||job.bookIds||[]);
@@ -97,7 +97,12 @@ function recordBraveCheck(db,job,claim,{status,error=null,added=0,now=new Date()
     const key=checkKey(book.id,claim.key);
     const entry=db.bookEnrichmentChecks[key]||={};
     const steps=entry.brave||={};
-    steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString()};
+    const previous=steps[claim.step];
+    const evidence=Array.isArray(evidenceByBook?.[book.id])?evidenceByBook[book.id]:[];
+    const combined=new Map([...(Array.isArray(previous?.evidence)?previous.evidence:[]),...evidence]
+      .map(item=>[JSON.stringify([item.field,item.url,item.confidence]),item]));
+    steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString(),
+      evidence:[...combined.values()].slice(-60)};
   }
 }
 function checkedStep(db,job,key,books,step) {
@@ -285,16 +290,16 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     // happen to share the same ISBN, title and author.
     return {id:job.id,key,step,reservationId,bookIds:books.map(book=>book.id),
       title:representative.title,author:representative.author,
-      isbn:isbnOf(representative)};
+      isbn:isbnOf(representative),publisher:representative.imprint||representative.publisher||''};
   }
 }
 function finishClaim(db,claim,{
-  providerRemaining=null, providerRemainingConfirmed=false, error=null, status='checked', added=0,
+  providerRemaining=null, providerRemainingConfirmed=false, error=null, status='checked', added=0,evidenceByBook=null,
 }={}) {
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.id===claim?.id);
   if (!job||!claimIsCurrent(db,claim)) return;
-  recordBraveCheck(db,job,claim,{status:error?'error':status,error,added});
+  recordBraveCheck(db,job,claim,{status:error?'error':status,error,added,evidenceByBook});
   job.inFlight=null;
   if (providerRemainingConfirmed===true
       && Number.isSafeInteger(providerRemaining) && providerRemaining>=0
