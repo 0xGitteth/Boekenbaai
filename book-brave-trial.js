@@ -1,8 +1,25 @@
 'use strict';
 const {createHash}=require('node:crypto');
-const {workKey}=require('./book-free-metadata');
+const {workKey,isbnOf}=require('./book-free-metadata');
+const {getCheck}=require('./book-enrichment-trial');
+const {comparison}=require('./book-enrichment-comparison');
 const {updateFromPages}=require('./book-brave-page-apply');
 const FIELDS=['description','publisher','pageCount','tags','enrichmentTags','coverUrl'];
+function selectTrialBooks(db,ids,{sources=[],failedCovers=new Set(),expand=true}={}){
+  if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'))return {ok:false,error:'invalid_selection'};
+  const selected=[...new Set(ids)].map(id=>(db.books||[]).find(b=>b.id===id));
+  if(selected.some(b=>!b||b.personalLoanOnly===true||!isbnOf(b)||!b.title||!b.author))
+    return {ok:false,error:'invalid_selection'};
+  const keys=new Set(selected.map(workKey));
+  if(keys.size>5)return {ok:false,error:'too_many_editions'};
+  const books=expand?(db.books||[]).filter(b=>b.personalLoanOnly!==true&&keys.has(workKey(b))):selected;
+  for(const book of books){
+    if(sources.some(source=>!['found','not_found','identity_mismatch'].includes(getCheck(db,book,source)?.status)))
+      return {ok:false,error:'free_research_pending'};
+    if(comparison(db,book,failedCovers).changes.length)return {ok:false,error:'free_proposals_pending'};
+  }
+  return {ok:true,bookIds:books.map(b=>b.id)};
+}
 function storeTrialResult(job,claim,pages,imageUrl=''){
   if(job.source!=='trial')return;
   const entries=job.trialResults||={};
@@ -65,4 +82,4 @@ function applyPreview(db,job,book,revision,failedCovers=new Set()){
     job.trialReviewedAt=new Date().toISOString();
   return {ok:true,updated:view.changes.length,newCover:view.changes.some(c=>c.field==='coverUrl')};
 }
-module.exports={storeTrialResult,projectTrial,preview,applyPreview};
+module.exports={selectTrialBooks,storeTrialResult,projectTrial,preview,applyPreview};
