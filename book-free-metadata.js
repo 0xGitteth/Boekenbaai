@@ -108,6 +108,10 @@ function nextCandidate(books, now = Date.now(), excluded = new Set(), failedCove
     if (!isbn || excluded.has(key)) continue;
     const failedCover = failedCovers.has(book.coverUrl) && !book.localCoverUrl;
     const check = book.freeMetadataCheck;
+    // A completed multi-source comparison owns this exact edition's
+    // enrichment. The legacy single-source worker must not bypass its
+    // conflict decisions, even after its original 90-day freshness window.
+    if (check?.comparisonIdentity === key) continue;
     const last = Number.isFinite(Date.parse(check?.checkedAt)) ? Date.parse(check.checkedAt) : 0;
     const recent = last && now - last < 90 * 86400000
       && check?.isbn === isbn && normalizeText(check?.title) === normalizeText(book.title);
