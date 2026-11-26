@@ -170,6 +170,7 @@ const freeMetadataWorker = createFreeMetadataWorker({
 // A durable approved job can continue independently of the import page.
 // Explicit administrator trials only; the limit counts actual ISBN lookups.
 let trialProbeRunning=false;
+let trialProbeRetryAt=0;
 const trialProbeTimes=[];
 const braveWorker = createBraveWorker({
   apiKey: process.env.BOEKENBAAI_BRAVE_API_KEY || '',
@@ -5597,12 +5598,14 @@ async function handleApi(req, res, requestUrl) {
       if(activeBookImportLease||bookImportStageStore.active()?.status==='applying')
         return sendJson(res,409,{message:'Wacht tot de actieve import is afgerond.'});
       if(trialProbeRunning)return sendJson(res,409,{message:'Er loopt al een proefopvraag.'});
+      if(Date.now()<trialProbeRetryAt)return sendJson(res,429,{message:'BoekenBase heeft tijdelijk begrensd. Probeer het over een minuut opnieuw.'});
       while(trialProbeTimes.length&&trialProbeTimes[0]<=Date.now()-60000)trialProbeTimes.shift();
       if(trialProbeTimes.length>=5)
         return sendJson(res,429,{message:'Maximaal vijf nieuwe proefopvragen per minuut. Eerdere resultaten blijven beschikbaar.'});
       trialProbeRunning=true;trialProbeTimes.push(Date.now());
       try{
         const result=await fetchBoekenBase(trialCatalogue({books:[current]})[0].isbn);
+        if(result.status==='rate_limited')trialProbeRetryAt=Date.now()+60000;
         let copies=null;
         await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,
           read:()=>loadDb(),mutate:db=>{
@@ -5614,7 +5617,7 @@ async function handleApi(req, res, requestUrl) {
             return db;
           }});
         if(!copies)return sendJson(res,409,{message:'Boek of importstatus gewijzigd. Er is niets aan de collectie toegevoegd.'});
-        return sendJson(res,200,{copies,cached:false});
+        return sendJson(res,200,{copies,cached:false,probeStatus:result.status});
       }finally{trialProbeRunning=false;}
     }
     if(requestUrl.pathname===trialRoot+'/apply'&&req.method==='POST'){
