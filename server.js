@@ -21,6 +21,7 @@ const {createEnrichmentSources}=require('./book-enrichment-sources');
 const {createSourceGate}=require('./book-enrichment-source-gate');
 const {createCollectionWorker}=require('./book-enrichment-collection-worker');
 const {startRun,cancelRun,pauseRun,resumeRun,runStatus,applyRun}=require('./book-enrichment-collection');
+const {report:enrichmentReport,details:enrichmentDetails}=require('./book-enrichment-report');
 const {comparison,compareEdition,applyComparison}=require('./book-enrichment-comparison');
 const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialProbe,
   catalogue:trialCatalogue}=require('./book-enrichment-trial');
@@ -5593,6 +5594,25 @@ async function handleApi(req, res, requestUrl) {
 
     // Persistent Brave plan and approval, admin-only and budget checked at
     // the exact database commit boundary. No API request occurs on approval.
+    const reportRoot='/api/admin/book-enrichment/report';
+    if(requestUrl.pathname===reportRoot&&req.method==='GET'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const params=requestUrl.searchParams;
+      const filter=params.get('filter')||'all';
+      if(!['all','unresearched','partial','complete','conflicts','pending','no_isbn'].includes(filter))
+        return sendJson(res,400,{message:'Onbekend filter.'});
+      return sendJson(res,200,enrichmentReport(loadDb(),{
+        query:(params.get('q')||'').slice(0,200),filter,page:Number(params.get('page')||1),
+        enabledSources:enrichmentSources.list().filter(s=>s.enabled).map(s=>s.id),
+        failedCovers:exhaustedCoverSourceUrls(),hasLocalCover:url=>coverAssets.hasAsset(url),
+      }));
+    }
+    if(requestUrl.pathname===reportRoot+'/detail'&&req.method==='GET'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const copies=enrichmentDetails(loadDb(),requestUrl.searchParams.get('bookId'),{failedCovers:exhaustedCoverSourceUrls()});
+      if(!copies)return sendJson(res,404,{message:'Boek niet gevonden.'});
+      return sendJson(res,200,{copies});
+    }
     const collectionRoot='/api/admin/book-enrichment/collection';
     if(requestUrl.pathname===collectionRoot&&req.method==='GET'){
       if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
