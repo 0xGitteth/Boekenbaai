@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const {EventEmitter}=require('node:events');
 const {
   addJob,getJobPlan,approveJob,claimNext,finishClaim,currentUsage,
-  MAX_REQUESTS_PER_WORK,
+  MAX_REQUESTS_PER_WORK,getBraveCheck,claimIsCurrent,
 }=require('../book-brave-core');
 const {
   parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,
@@ -72,6 +72,47 @@ finishClaim(db,{id:job.id,key:job.inFlight.key,step:job.inFlight.step});
 assert.equal(claimNext(db,{now:new Date('2027-01-01T09:00:00Z'),env:environment}),null);
 assert.equal(job.state,'paused','Changing free-credit month requires another approval');
 assert.equal(job.completedKeys.length,2,'Earlier works remain marked completed on a month change');
+
+// A partial run persists across restarts and across collection jobs.
+const resumeEnv={BOEKENBAAI_BRAVE_MONTHLY_CAP:'12'};
+let resumeDb={books:[book('resume')]};
+const resumeJob=addJob(resumeDb,['resume'],{id:'resume-first'});
+const resumeApproval=(db,id,count)=>approveJob(db,id,{confirmed:true,expectedRequests:count,
+  expectedMonth:'2026-11',braveConfigured:true,now,env:resumeEnv});
+assert.equal(resumeApproval(resumeDb,resumeJob.id,3).ok,true);
+const successful=claimNext(resumeDb,{now,env:resumeEnv});
+finishClaim(resumeDb,successful,{status:'found',added:1});
+assert.equal(getBraveCheck(resumeDb,'resume',successful.key,0).status,'found');
+const failed=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(failed.step,1);
+finishClaim(resumeDb,failed,{error:'timeout'});
+resumeDb=JSON.parse(JSON.stringify(resumeDb));
+const resumed=resumeDb.braveEnrichmentJobs[0];
+assert.equal(getJobPlan(resumeDb,resumed,{braveConfigured:true,now,env:resumeEnv}).possibleMaxRequests,2);
+assert.equal(resumeApproval(resumeDb,resumed.id,2).ok,true);
+const retry=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(retry.step,1,'Successful first step is not repeated after a restart');
+assert.equal(claimIsCurrent(resumeDb,failed),false,'Late response cannot change the new claim');
+finishClaim(resumeDb,failed,{error:'timeout'});
+assert.equal(claimIsCurrent(resumeDb,retry),true);
+finishClaim(resumeDb,retry,{status:'no_result'});
+const last=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(last.step,2);
+finishClaim(resumeDb,last,{status:'no_result'});
+assert.equal(claimNext(resumeDb,{now,env:resumeEnv}),null);
+const nextRound=addJob(resumeDb,['resume'],{id:'next-round',source:'collection'});
+assert.equal(getJobPlan(resumeDb,nextRound,{braveConfigured:true,now,env:resumeEnv}).needsBrave,0,
+  'A new collection round skips already researched steps even if fields remain missing');
+const forced=addJob(resumeDb,['resume'],{id:'force-round',source:'collection',repeatChecked:true});
+assert.equal(getJobPlan(resumeDb,forced,{braveConfigured:true,now,env:resumeEnv}).possibleMaxRequests,3);
+assert.equal(resumeApproval(resumeDb,forced.id,3).ok,true);
+const interrupted=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(interrupted.step,0);
+assert.equal(claimNext(resumeDb,{now:new Date(now.getTime()+121000),env:resumeEnv}),null);
+assert.equal(forced.state,'paused');
+assert.equal(forced.lastError,'interrupted');
+assert.equal(getBraveCheck(resumeDb,'resume',interrupted.key,0).status,'error');
+assert.equal(claimIsCurrent(resumeDb,interrupted),false);
 
 const html=`<html><head>
 <meta property="og:title" content="De brief voor de koning | Uitgeverij"/>
@@ -229,10 +270,12 @@ async function run(){
   }});
   assert.equal(pages.length,1,'Only a verified original book page can be used');
   assert.equal(pageCalls,2,'Robots and page fetched, irrelevant site skipped');
+  const discoveryFailures=[];
   const blocked=await discoverPages({pages:[
     {title:'De brief voor de koning',url:'https://www.uitgeverijvoorbeeld.nl/boek'},
   ]},target,{fetchPage:async url=>url.endsWith('/robots.txt')
-    ?{error:'request_error'}:{body:html}});
+    ?{error:'request_error'}:{body:html},onFailure:error=>discoveryFailures.push(error)});
+  assert.deepEqual(discoveryFailures,['source_unavailable']);
   assert.equal(blocked.length,0,
     'If robots.txt is unreachable, page crawling is not authorized');
 
@@ -409,6 +452,28 @@ async function run(){
   assert.equal(workerErrorJob.state,'paused');
   assert.equal(workerErrorJob.completedKeys.length,0);
   failedWorker.stop();
+  // Successful Brave response is not proof that the source pages were
+  // accessible; a failed publisher fetch must remain retryable.
+  const sourceErrorDb={books:[book('source-error')],braveEnrichmentJobs:[]};
+  const sourceErrorJob=addJob(sourceErrorDb,['source-error'],{id:'source-error'});
+  assert.equal(approveJob(sourceErrorDb,sourceErrorJob.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const sourceErrorWorker=createBraveWorker({
+    apiKey:'test-only-key',loadDb:()=>sourceErrorDb,
+    commit:async fn=>fn(sourceErrorDb),delayMs:50,
+    fetchSearch:async()=>({pages:[{title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/boek'}]}),
+    findPages:(result,claim,options)=>discoverPages(result,claim,{
+      ...options,fetchPage:async url=>url.endsWith('/robots.txt')
+        ?{body:'User-agent: *\nAllow: /'}:{error:'request_error'},
+    }),
+  });
+  sourceErrorWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,350));
+  assert.equal(sourceErrorJob.state,'paused','A failed source website must not complete a search');
+  assert.equal(sourceErrorJob.completedKeys.length,0);
+  assert.equal(sourceErrorDb.braveUsage.reserved,1);
+  assert.equal(getJobPlan(sourceErrorDb,sourceErrorJob,{braveConfigured:true,now,env:environment}).canApprove,true);
+  sourceErrorWorker.stop();
   const db4={books:[book('z')],braveEnrichmentJobs:[]};
   const paused=addJob(db4,['z'],{id:'paused'});
   assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,

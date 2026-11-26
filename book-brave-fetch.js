@@ -234,7 +234,8 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
           if([301,302,303,307,308].includes(status)){
             res.resume();resolve({redirect:res.headers.location});return;
           }
-          if(status===404){res.resume();resolve({status,body:''});return;}
+          if([404,410].includes(status)){res.resume();resolve({status,body:''});return;}
+          if(status===408||status===429||status>=500){res.resume();resolve({error:'source_unavailable',status});return;}
           const type=String(res.headers['content-type']||'').toLowerCase();
           if(status!==200||!/(?:text\/html|text\/plain|application\/xhtml\+xml)/.test(type)){
             res.resume();resolve({error:'not_html'});return;
@@ -310,17 +311,21 @@ function robotsAllowed(content,path){
   }
   return selected.allow;
 }
-async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) {
+async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3,onFailure=()=>{}}={}) {
   const candidates=Array.isArray(search?.pages)?search.pages:[];
   const outputs=[];const visited=new Set();const robots=new Map();
+  async function readPage(url,options){
+    try{return await fetchPage(url,options);}catch{return {error:'request_error'};}
+  }
   async function allowedPage(url){
     let u;
     try{u=safeCoverUrl(url);if(u.protocol!=='https:')return false;}catch{return false;}
     const root=u.origin;
     if(!robots.has(root)){
-      const response=await fetchPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
+      const response=await readPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
+      if(!response||response.error|| (response.status&&![200,404,410].includes(response.status)))onFailure('source_unavailable');
       // A missing or unreachable robots.txt never authorizes extra crawling.
-      robots.set(root,response?.error || (response?.status && ![200,404].includes(response.status))
+      robots.set(root,!response || response.error || (response.status && ![200,404,410].includes(response.status))
         ? null : (response?.body ?? ''));
     }
     return robots.get(root)!==null && robotsAllowed(robots.get(root),u.pathname+u.search);
@@ -332,7 +337,8 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) 
     let u;try{u=safeCoverUrl(candidate.url);if(u.protocol!=='https:')continue;}catch{continue;}
     if(visited.has(u.href))continue;visited.add(u.href);
     if(!(await allowedPage(u.href)))continue;
-    const page=await fetchPage(u.href,{allowRedirect:allowedPage});
+    const page=await readPage(u.href,{allowRedirect:allowedPage});
+    if(!page||['request_error','timeout','source_unavailable'].includes(page.error))onFailure('source_unavailable');
     if(!page?.body)continue;
     const parsed=parseBookPage(page.body,target,page.finalUrl||u.href);
     if(parsed)outputs.push(parsed);
