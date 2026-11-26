@@ -5795,7 +5795,7 @@ async function handleApi(req, res, requestUrl) {
         let outcome={ok:false,error:'not_ready'};
         await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,read:()=>loadDb(),mutate:db=>{
           if(collectionPaused())return db;
-          outcome=dismissTrial(db.braveEnrichmentJobs?.find(j=>j.id===braveTrialPath[1]&&j.source==='trial'));
+          outcome=dismissTrial(db,db.braveEnrichmentJobs?.find(j=>j.id===braveTrialPath[1]&&j.source==='trial'));
           return db;
         }});
         if(!outcome.ok)return sendJson(res,409,{message:'De proef kan nu niet worden beëindigd.'});
