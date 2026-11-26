@@ -427,7 +427,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       trialBusy=true;renderTrialChoices();
       try{
         await request('/api/admin/book-enrichment/brave/trial',{confirm:true,bookIds:[...trialSelected]});
-        trialNotice.textContent='Brave-proef voorbereid. Geef afzonderlijk toestemming voor de berekende zoekopdrachten in het internetonderzoek.';
+        trialNotice.textContent='Brave-proef voorbereid. Geef hieronder afzonderlijk toestemming voor de berekende zoekopdrachten.';
         void refreshBrave();
       }catch(error){trialNotice.textContent=error.message;}
       finally{trialBusy=false;renderTrialChoices();}
@@ -452,13 +452,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }
         for(const copy of data.copies||[]){
           const item=make('section','bb-review__brave-items');
-          item.append(make('strong','',copy.title+' · '+copy.author));
+          item.append(make('strong','',copy.title+' · '+copy.author+(copy.bookId?' · Exemplaar '+copy.bookId:'')));
           for(const change of copy.changes||[]){
             const detail=make('details');
             detail.append(make('summary','',trialFields[change.field]||change.field),
               make('p','hint','Huidig: '+showValue(change.before)),
               make('p','','Voorstel: '+showValue(change.after)));
-            for(const source of change.sources||[])detail.append(make('p','hint',source.confidence+' · '+source.url));
+            for(const source of change.sources||[])detail.append(make('p','hint',trialStatus(source.confidence)+' · '+source.url));
             item.append(detail);
           }
           if(copy.changes?.length&&data.state!=='running'){
@@ -477,7 +477,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }
       }catch(error){braveTrialResults.textContent=error.message||'De Brave-proef kon niet worden geladen.';}
     }
-    trialPanel.append(make('h4','','Proefverrijking met gratis boekbronnen'),trialNotice,trialLoad,trialControls);
+    const trialJobs=make('div','bb-review__brave-items');
+    trialPanel.append(make('h4','','Proefverrijking: gratis bronnen en Brave'),trialNotice,trialLoad,trialControls,trialJobs,braveTrialResults);
     enrichmentExtra.append(trialPanel);
 
     const collectionRoot='/api/admin/book-enrichment/collection';
@@ -576,6 +577,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           for(const source of copy.statuses||[]){
             const history=make('details');
             history.append(make('summary','',sourceName(source.source)+': '+trialStatus(source.status)));
+            if(source.previousStatus&&source.previousStatus!=='not_checked')history.append(make('p','hint','Eerdere status: '+trialStatus(source.previousStatus)));
             if(source.checkedAt)history.append(make('p','hint','Onderzocht: '+new Date(source.checkedAt).toLocaleString('nl-NL')));
             if(source.sourceUrl)history.append(make('p','hint','Bron: '+source.sourceUrl));
             if(source.lastError)history.append(make('p','hint','Laatste poging: '+trialStatus(source.lastError)));
@@ -671,7 +673,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const braveNotice = make('p', 'hint', 'De zoekvoortgang wordt geladen.');
     braveNotice.setAttribute('role', 'status');
     const braveItems = make('div', 'bb-review__brave-items');
-    bravePanel.append(braveHeading, braveNotice, braveItems,braveTrialResults);
+    bravePanel.append(braveHeading, braveNotice, braveItems);
     enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
     let repeatBraveChecks = false;
@@ -706,7 +708,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             + (usage.cap || 900) + '). '
             + (ownLimitReached ? 'De maandgrens van Boekenbaai is bereikt. ' : '')
             + (providerLimitReached ? (usage.canReconcileLegacyZero ? 'Een oude opgeslagen nulstand blokkeert het zoeken. Controleer je Brave-dashboard en herstel de registratie alleen als daar nog tegoed beschikbaar is. ' : 'De geregistreerde maandlimiet bij Brave is bereikt. ') : '')
-            + (usage.legacyReconciledAt && !providerLimitReached ? 'De oude nulstand is hersteld; de eigen maandgrens blijft gelden. ' : '')
+            + (usage.legacyReconciledAt && !providerLimitReached ? 'De oude nulstand is hersteld op '+new Date(usage.legacyReconciledAt).toLocaleString('nl-NL')+'; de eigen maandgrens blijft gelden. ' : '')
             + (usage.legacyProviderRemaining === 0
               ? 'Een eerdere versie heeft nul zoekbudget opgeslagen zonder betrouwbare maandbron; '
                 + 'die waarde wordt niet meer als maandlimiet gebruikt. Een gepauzeerde taak '
@@ -715,6 +717,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           : 'Brave staat nog uit. Stel BOEKENBAAI_BRAVE_API_KEY in op de server. '
             + 'Openstaande importopdrachten blijven bewaard.';
         braveItems.replaceChildren();
+        trialJobs.replaceChildren();
         if(info.configured&&usage.canReconcileLegacyZero){
           const repair=button('Oude budgetstand herstellen','btn btn--secondary');
           repair.addEventListener('click',async()=>{
@@ -801,7 +804,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             });
             item.append(accept);
           }
-          braveItems.append(item);
+          (job.source==='trial'?trialJobs:braveItems).append(item);
         }
         if ((info.configured || info.freeConfigured)&&collectionState==='applied') {
           const repeat = make('input');
