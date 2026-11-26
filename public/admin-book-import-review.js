@@ -322,7 +322,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       section.append(make('p','hint','Gecombineerd resultaat van de beschikbare gratis bronnen.'));
       for(const [index,copy] of (response.copies||[]).entries()){
         const item=make('div','bb-review__brave-items');
-        item.append(make('p','hint','Exemplaar '+(index+1)));
+        item.append(make('p','hint','Exemplaar '+(index+1)+(copy.bookId?' · '+copy.bookId:'')));
         const sourceDetails=make('details');
         sourceDetails.append(make('summary','','Resultaten per bron'));
         for(const source of copy.statuses||[]){
@@ -556,7 +556,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     reportSearch.placeholder='Titel, auteur of ISBN';reportSearch.setAttribute('aria-label','Zoek in verrijkingsrapport');
     const reportFilter=make('select');reportFilter.setAttribute('aria-label','Filter onderzoeksstatus');
     const reportOptions={all:'Alle edities',unresearched:'Niet onderzocht',partial:'Gedeeltelijk onderzocht',
-      complete:'Gegevens compleet volgens basiscontrole',conflicts:'Tegenstrijdige gegevens',pending:'Veilige aanvullingen beschikbaar',no_isbn:'Zonder geldig ISBN'};
+      complete:'Gegevens compleet volgens basiscontrole',conflicts:'Tegenstrijdige gegevens',pending:'Veilige aanvullingen uit gratis bronnen',no_isbn:'Zonder geldig ISBN'};
     for(const [key,label] of Object.entries(reportOptions)){const option=make('option','',label);option.value=key;reportFilter.append(option);}
     const reportSearchButton=button('Zoeken / vernieuwen','btn btn--secondary');
     const reportResults=make('div','bb-review__brave-items');
@@ -572,7 +572,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         container.replaceChildren();
         for(const [index,copy] of (response.copies||[]).entries()){
           const detail=make('div','bb-review__brave-items');
-          detail.append(make('strong','','Exemplaar '+(index+1)));
+          detail.append(make('strong','','Exemplaar '+(index+1)+(copy.bookId?' · '+copy.bookId:'')));
           for(const source of copy.statuses||[]){
             const history=make('details');
             history.append(make('summary','',sourceName(source.source)+': '+trialStatus(source.status)));
@@ -620,7 +620,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         reportPage=data.page;
         const c=data.counts||{};
         reportNotice.textContent=c.all+' edities · '+c.unresearched+' niet onderzocht · '+c.partial+' gedeeltelijk · '
-          +c.complete+' basisgegevens compleet · '+c.conflicts+' met tegenstrijdigheden · '+c.pending+' met aanvullingen.';
+          +c.complete+' basisgegevens compleet · '+c.conflicts+' met tegenstrijdigheden · '+c.pending+' met aanvullingen uit gratis bronnen.';
         reportResults.replaceChildren();
         for(const row of data.rows||[]){
           const item=make('details');
@@ -628,7 +628,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           item.append(make('p','hint',row.author+' · '+row.copies+' exemplaren · '+row.checked+'/'+row.sourceCount+' bronnen afgerond · '
             +row.localCovers+' lokaal opgeslagen omslagen.'));
           item.append(make('p','hint','Ontbreekt: '+(row.missing.map(fieldName).join(', ')||'Geen basisvelden')
-            +' · '+row.pending+' voorstellen · '+row.conflicts+' tegenstrijdigheden.'));
+            +' · '+row.pending+' gratis bronvoorstellen · '+row.conflicts+' tegenstrijdigheden.'));
           item.append(make('p','hint','Help me kiezen: '+row.content.strong+' sterke kenmerken, '+row.content.textual+' tekstuele aanwijzingen.'));
           const detail=make('div','bb-review__brave-items');
           item.append(detail);
@@ -772,7 +772,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             job.incompleteIdentity + ' exemplaren hebben geen bruikbare titel en auteur; '
             + 'die kunnen nog niet veilig op internet worden onderzocht.'));
           if (job.canApprove && info.configured) {
-            const accept = button('Aanvullend zoeken goedkeuren', 'btn btn--secondary');
+            const accept = button((job.state==='paused'?'Hervat ':'Start ')+(job.source==='trial'?'Brave-proef':'internetonderzoek')+' voor '+job.possibleWorks+' '+(job.possibleWorks===1?'titel':'titels'), 'btn btn--secondary');
             accept.addEventListener('click', async () => {
               const message = 'Brave mag maximaal ' + job.possibleMaxRequests
                 + ' zoekopdrachten uitvoeren voor ' + job.possibleWorks + ' boeken. '
