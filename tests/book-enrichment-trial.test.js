@@ -4,10 +4,11 @@ const {getCheck,recordCheck,shouldProbe,trialView,applyTrial,catalogue,editionVi
 const isbn='9789086960088';
 const book={id:'one',metadataIsbn:isbn,title:'Hittegolf',author:'Test Auteur',tags:['Eigen'],
   importProvenance:{fieldSources:{publisher:{sourceType:'manual'}}}};
-const copy={...book,id:'two',description:'Door docent geschreven',importProvenance:{fieldSources:{}}};
+const copy={...book,id:'two',description:'Door docent geschreven',imprint:'Bestaand label',importProvenance:{fieldSources:{}}};
 let db={books:[book,copy],students:[{id:'preserve'}],history:[{id:'loan'}]};
 const data={isbn,title:book.title,author:book.author,publisher:'Uitgever',description:'Een spannend verhaal.',
-  coverUrl:'https://example.org/front.jpg',publishedYear:2020,tags:['Paarden','Vriendschap']};
+  coverUrl:'https://example.org/front.jpg',publishedYear:2020,tags:['Paarden','Vriendschap'],
+  imprint:'Nieuw label',nurCode:'282',nurCategory:'Fictie 7-9 jaar',seriesTitle:'Serie',seriesNumber:'8'};
 assert.equal(shouldProbe(db,book),true);
 recordCheck(db,book,{status:'found',metadata:data});
 assert.equal(book.coverUrl,undefined,'Preview never modifies the catalogue');
@@ -22,10 +23,19 @@ const view=trialView(db,current);
 assert.ok(view.changes.some(c=>c.field==='coverUrl'));
 assert.ok(!view.changes.some(c=>c.field==='publisher'),'Manual empty field stays empty');
 assert.ok(!trialView(db,second).changes.some(c=>c.field==='description'));
+assert.ok(!trialView(db,second).changes.some(c=>c.field==='imprint'));
+assert.equal(view.sourceDetails.keywordCount,2);
+assert.equal(view.sourceDetails.nurCategory,data.nurCategory);
 assert.equal(applyTrial(db,current,'invalid').ok,false);
 assert.equal(applyTrial(db,current,view.revision).ok,true);
 assert.deepEqual(current.tags,['Eigen']);
 assert.deepEqual(current.enrichmentTags,data.tags);
+assert.equal(current.imprint,data.imprint);
+assert.equal(current.nurCategory,data.nurCategory);
+assert.equal(current.nurCode,data.nurCode);
+assert.equal(current.seriesTitle,data.seriesTitle);
+assert.equal(current.seriesNumber,data.seriesNumber);
+assert.ok(!current.enrichmentTags.includes(data.nurCategory));
 assert.equal(current.coverUrl,data.coverUrl);
 assert.equal(current.importProvenance.fieldSources.coverUrl.sourceDetail,'boekenbase');
 assert.equal(second.coverUrl,undefined,'Approval is per physical copy');
