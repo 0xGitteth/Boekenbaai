@@ -268,6 +268,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     bravePanel.append(braveHeading, braveNotice, braveItems);
     enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
+    let repeatBraveChecks = false;
     function bravePauseReason(code) {
       const reasons = {
         budget_exhausted: 'Het ingestelde zoekbudget is bereikt.',
@@ -378,17 +379,20 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         if (info.configured || info.freeConfigured) {
           const repeat = make('input');
           repeat.type = 'checkbox';
+          repeat.checked = repeatBraveChecks;
+          repeat.addEventListener('change', () => { repeatBraveChecks = repeat.checked; });
           const repeatLabel = make('label', 'hint');
-          repeatLabel.append(repeat, document.createTextNode(' Eerder onderzochte bronnen opnieuw raadplegen'));
+          repeatLabel.append(repeat, document.createTextNode(' Eerder onderzochte Brave-bronnen opnieuw raadplegen bij ontbrekende gegevens'));
           const scan = button('Bestaande collectie controleren', 'btn btn--ghost');
           scan.addEventListener('click', async () => {
             if (!window.confirm('De bestaande boeken op ontbrekende gegevens controleren? '
               + 'Gratis bronnen starten automatisch. Brave wordt pas na jouw toestemming gebruikt.')) return;
             scan.disabled = true;
             try {
-              await request('/api/admin/book-enrichment/brave/scan', {confirm:true,repeatChecked:repeat.checked});
+              await request('/api/admin/book-enrichment/brave/scan', {confirm:true,repeatChecked:repeatBraveChecks});
               enrichmentActionNotice.textContent =
                 'Collectiecontrole opgeslagen. Je kunt later toestemming geven voor Brave.';
+              repeatBraveChecks = false;
             } catch (error) {
               enrichmentActionNotice.textContent =
                 error.message || 'Collectiecontrole kon niet worden gestart.';
