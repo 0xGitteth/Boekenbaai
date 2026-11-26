@@ -3,6 +3,7 @@ const {createHash}=require('node:crypto');
 const {isbnOf,workKey,usableFor}=require('./book-free-metadata');
 const {getCheck,proposedChanges,keyOf}=require('./book-enrichment-trial');
 const {SOURCE_ORDER,sourceRank}=require('./book-enrichment-sources');
+const {approvedDescriptions,identity:descriptionIdentity}=require('./book-enrichment-content');
 
 const keyText=value=>typeof value==='string'?value.normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('nl-NL'):JSON.stringify(value);
 const byRank=(a,b)=>sourceRank(a.source)-sourceRank(b.source);
@@ -61,6 +62,24 @@ function comparison(db,book,failedCovers=new Set(),sources=SOURCE_ORDER){
     const chosen=values[0];
     const agreeing=values.filter(v=>keyText(v.after)===keyText(chosen.after)).map(v=>v.source);
     changes.push({...chosen,sources:agreeing});
+  }
+  // Preserve separately approved descriptions even when a teacher's own
+  // displayed description is protected. Distinct source text is weak
+  // recommendation evidence, not a verified tag or a replacement summary.
+  if(book.themesCleared!==true
+    &&book.importProvenance?.fieldSources?.enrichmentDescriptions?.sourceType!=='manual'){
+    const before=approvedDescriptions(book);
+    const mainText=changes.find(c=>c.field==='description')?.after||book.description||'';
+    const seen=new Set([keyText(mainText),...before.map(entry=>keyText(entry.text))]);
+    const after=[...before],sources=[];
+    for(const {source,check} of verified){
+      const text=typeof check.metadata.description==='string'?check.metadata.description.trim().slice(0,2500):'';
+      if(text.length<90||seen.has(keyText(text))||after.length>=6)continue;
+      seen.add(keyText(text));
+      after.push({source,text,identity:descriptionIdentity(book)});
+      if(!sources.includes(source))sources.push(source);
+    }
+    if(sources.length)changes.push({field:'enrichmentDescriptions',before,after,source:sources[0],sources});
   }
   // Surface conflicts without altering populated fields. A source can be
   // incomplete without being wrong; absent values are not disagreements.
