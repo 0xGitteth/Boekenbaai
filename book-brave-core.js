@@ -203,6 +203,19 @@ function getJobPlan(db,job,{
   // When the worker encountered a provider limit, its next step must still
   // require explicit approval. There is never an automatic new-month retry.
   const resumable=state==='paused' && waitingFree===0 && remaining.length>0;
+  const sourceIssues=[];let sourceIssueWorks=0;
+  for(const [key,books] of groups){
+    let affected=false;
+    for(let step=0;step<MAX_REQUESTS_PER_WORK;step++){
+      const checks=books.map(b=>getBraveCheck(db,b.id,key,step)).filter(c=>c?.jobId===job.id);
+      const warnings=checks.flatMap(c=>c.sourceFailures||[]);
+      if(warnings.length||checks.some(c=>c.error==='source_unavailable'))affected=true;
+      for(const failure of new Map(warnings.map(f=>[JSON.stringify([f.url,f.stage]),f])).values()){
+        if(sourceIssues.length<12)sourceIssues.push({title:books[0].title,step,url:failure.url,stage:failure.stage,reason:failure.reason});
+      }
+    }
+    if(affected)sourceIssueWorks++;
+  }
   // Reapproval is explicit even after invalid credentials. Updating the
   // server's API key does not itself resume requests.
   return {
@@ -217,7 +230,7 @@ function getJobPlan(db,job,{
     approvedMaxRequests:job.approval?.maxRequests||0,
     approvedMonth:job.approval?.month||null,
     reservedRequests:job.requestsReserved||0,
-    lastError:job.lastError||null,
+    lastError:job.lastError||null,sourceIssueWorks,sourceIssues,lastUpdatedAt:job.updatedAt||null,
     withoutCover:[...groups.values()].filter(books=>books.every(b=>needsExtra(b,failedCovers).cover)).length,
     limitedDescriptions:[...groups.values()].filter(books=>books.some(b=>needsExtra(b,failedCovers).description)).length,
     incompleteIdentity:(job.bookIds||[]).filter(id=>{
