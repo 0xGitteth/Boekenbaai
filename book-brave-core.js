@@ -6,7 +6,7 @@
 // independently disallow paid usage / auto recharge.
 const crypto = require('node:crypto');
 const {workKey, isbnOf, isMissing, nextCandidate} = require('./book-free-metadata');
-const {projectTrial}=require('./book-brave-trial');
+const {projectTrial,preview:trialPreview,releaseTrialCheckpoints}=require('./book-brave-trial');
 
 const MAX_REQUESTS_PER_WORK = 3;
 const HARD_MONTHLY_CAP = 900;
@@ -103,6 +103,7 @@ function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook
     const combined=new Map([...(Array.isArray(previous?.evidence)?previous.evidence:[]),...evidence]
       .map(item=>[JSON.stringify([item.field,item.url,item.confidence]),item]));
     steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString(),
+      trialPending:job.source==='trial'&&status==='found',
       evidence:[...combined.values()].slice(-60)};
   }
 }
@@ -110,6 +111,7 @@ function checkedStep(db,job,key,books,step) {
   return books.length>0&&books.every(book=>{
     const check=getBraveCheck(db,book.id,key,step);
     return ['found','no_result','checked'].includes(check?.status)
+      &&(!check.trialPending||check.jobId===job.id)
       &&(!job.repeatChecked||check.jobId===job.id);
   });
 }
@@ -236,6 +238,9 @@ function finishApprovedChunk(db,job,failedCovers=new Set()) {
   job.completedKeys=[...done];
   job.approvedKeys=[];job.cursor=0;job.step=0;job.approval=null;
   job.state=remainingWorks(db,job,failedCovers).length?'awaiting_approval':'complete';
+  if(job.source==='trial'&&job.state==='complete'&&!(db.books||[]).some(b=>trialPreview(db,job,b,failedCovers)?.changes.length)){
+    job.trialReviewedAt=new Date().toISOString();releaseTrialCheckpoints(db,job);
+  }
   job.updatedAt=new Date().toISOString();
 }
 function pauseActiveChunk(job,reason) {
