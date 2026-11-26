@@ -82,4 +82,16 @@ function applyPreview(db,job,book,revision,failedCovers=new Set()){
     job.trialReviewedAt=new Date().toISOString();
   return {ok:true,updated:view.changes.length,newCover:view.changes.some(c=>c.field==='coverUrl')};
 }
-module.exports={selectTrialBooks,storeTrialResult,projectTrial,preview,applyPreview};
+function pendingTrialReview(db,failedCovers=new Set()){
+  return (db.braveEnrichmentJobs||[]).some(job=>job.source==='trial'&&!job.trialReviewedAt
+    &&(db.books||[]).some(book=>preview(db,job,book,failedCovers)?.changes.length));
+}
+function dismissTrial(job,now=new Date()){
+  if(job?.source!=='trial'||job.state==='running'||job.inFlight)return {ok:false,error:'not_ready'};
+  // Keep the verified research and ledger. Declining the suggestions does
+  // not erase paid requests or authorize their automatic repetition.
+  job.state='complete';job.approvedKeys=[];job.approval=null;job.trialReviewedAt=now.toISOString();
+  job.trialDismissedAt=job.trialReviewedAt;job.updatedAt=job.trialReviewedAt;
+  return {ok:true};
+}
+module.exports={selectTrialBooks,storeTrialResult,projectTrial,preview,applyPreview,pendingTrialReview,dismissTrial};
