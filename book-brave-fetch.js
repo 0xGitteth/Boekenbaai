@@ -210,6 +210,19 @@ function parseBookPage(html,target,url) {
     pageCount:Number.isInteger(pageCount)&&pageCount>0&&pageCount<20000?pageCount:null,
     confidence:exactIsbn?'isbn':'title_author',origin:location.hostname,sourceUrl:location.href};
 }
+// Race non-abortable DNS/policy promises against the same end-to-end deadline.
+// Late resolutions/rejections are handled without opening another connection.
+function beforeAbort(signal,operation){
+  if(signal.aborted)return Promise.reject(new Error('source_timeout'));
+  return new Promise((resolve,reject)=>{
+    const abort=()=>reject(new Error('source_timeout'));
+    signal.addEventListener('abort',abort,{once:true});
+    Promise.resolve().then(()=>{
+      if(signal.aborted)throw new Error('source_timeout');
+      return operation();
+    }).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));
+  });
+}
 // Safeguarded remote HTML retrieval: DNS pinning, public IPv4 only,
 // HTTPS only, bounded payload, redirects and end-to-end timeout.
 async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
@@ -222,9 +235,9 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
     for(let redirect=0;redirect<=2;redirect++){
       const parsed=safeCoverUrl(current);
       if(parsed.protocol!=='https:')return {error:'unsafe_url'};
-      const addrs=await dnsLookup(parsed.hostname,{family:4,all:true});
+      const addrs=await beforeAbort(ctl.signal,()=>dnsLookup(parsed.hostname,{family:4,all:true}));
       if(!addrs.length||addrs.some(x=>!publicIPv4(x.address)))return {error:'unsafe_dns'};
-      const result=await new Promise((resolve,reject)=>{
+      const result=await beforeAbort(ctl.signal,()=>new Promise((resolve,reject)=>{
         let finished=false;
         const req=httpsGet(parsed,{
           headers:{Accept:'text/html,text/plain;q=0.3','User-Agent':'Boekenbaai/1.0 (school-library-metadata)'},
@@ -252,12 +265,12 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
           res.on('end',()=>{if(!finished){finished=true;resolve({status,body:Buffer.concat(chunks).toString('utf8')});}});
         });
         req.on('error',reject);
-      });
+      }));
       if(result.redirect){
         const next=new URL(result.redirect,parsed).href;
         // The destination can be a different path or host. Require a fresh
         // robots.txt decision before opening the redirected HTML page.
-        if(typeof allowRedirect==='function' && !(await allowRedirect(next)))
+        if(typeof allowRedirect==='function' && !(await beforeAbort(ctl.signal,()=>allowRedirect(next))))
           return {error:'robots_disallowed'};
         current=next;
         continue;
@@ -265,7 +278,7 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
       return {...result,finalUrl:parsed.href};
     }
     return {error:'too_many_redirects'};
-  }catch{return {error:'request_error'};}
+  }catch{return {error:ctl.signal.aborted?'timeout':'request_error'};}
   finally{clearTimeout(timeout);ctl.abort();}
 }
 function robotsAllowed(content,path){
@@ -330,7 +343,7 @@ function rankPublisherCandidates(candidates,target){
   return [...candidates].sort((a,b)=>score(b)-score(a));
 }
 async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3,onFailure=()=>{}}={}) {
-  const candidates=rankPublisherCandidates(Array.isArray(search?.pages)?search.pages:[],target);
+  const candidates=rankPublisherCandidates((Array.isArray(search?.pages)?search.pages:[]).slice(0,8),target);
   const outputs=[];const visited=new Set();const robots=new Map();
   async function readPage(url,options){
     try{return await fetchPage(url,options);}catch{return {error:'request_error'};}

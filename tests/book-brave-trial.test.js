@@ -41,6 +41,9 @@ assert.equal(applyPreview(db,job,book,preview(db,job,book).revision).error,'runn
 let next;
 while((next=claimNext(db,{now,env})))finishClaim(db,next,{status:'no_result'});
 assert.equal(job.state,'complete');
+const reportView=require('../book-enrichment-report').details(db,'a');
+assert.ok(reportView[0].braveProposals.some(c=>c.field==='description'),'Verified but unapplied Brave evidence appears separately in the report');
+assert.ok(!reportView[0].changes.some(c=>c.field==='description'),'Brave evidence is not a free-source proposal');
 const first=preview(db,job,book);
 assert.ok(first.changes.some(c=>c.field==='description'));
 assert.equal(applyPreview(db,job,book,'invalid').ok,false);

@@ -275,6 +275,11 @@ assert.equal(selectImageResult([{title:'Onbekend boek',
   imageUrl:'https://files.uitgeverijvoorbeeld.nl/unknown.jpg',width:300,height:430}],target),'');
 
 async function run(){
+  let opened=false;
+  const dnsTimeout=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{timeoutMs:500,
+    dnsLookup:()=>new Promise(()=>{}),httpsGet:()=>{opened=true;throw Error('Unexpected request');}});
+  assert.equal(dnsTimeout.error,'timeout');
+  assert.equal(opened,false,'A DNS stall must not block the worker or open a late request');
   // Late stream errors after a 404 response must not crash Node: the
   // IncomingMessage handler must be registered before resume() is called.
   const lateHttpResult=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{
