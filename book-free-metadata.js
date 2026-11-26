@@ -128,6 +128,9 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
   let updated = 0, newCover = false;
   for (const book of db.books || []) {
     if (workKey(book) !== candidate.key) continue;
+    // A legacy request may have been in flight when a comparison finished.
+    // Its late result must not bypass the approved conflict decisions.
+    if (book.freeMetadataCheck?.comparisonIdentity === candidate.key) continue;
     const failedCoverUrl = failedCovers.has(book.coverUrl) && !book.localCoverUrl
       ? book.coverUrl : '';
     if (status === 'found' && usableFor(book, metadata)) {
