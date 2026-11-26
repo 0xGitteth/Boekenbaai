@@ -6,6 +6,7 @@ const {
 const {fetchBrave,discoverPages,selectImageResult}=require('./book-brave-fetch');
 
 const {updateFromPages}=require('./book-brave-page-apply');
+const {storeTrialResult,projectTrial,preview}=require('./book-brave-trial');
 
 function createBraveWorker({
   loadDb,commit,apiKey='',onNewCover=()=>{},isPaused=()=>false,
@@ -73,9 +74,16 @@ function createBraveWorker({
         outcome=await commit(db=>{
           if(isPaused())return {deferred:true};
           if(!claimIsCurrent(db,claim))return {stale:true};
-          const updated=updateFromPages(db,claim,pages,{
-            imageUrl,failedCovers:getFailedCovers(),
-          });
+          const failedCovers=getFailedCovers();
+          let updated;
+          if(claim.source==='trial'){
+            const job=db.braveEnrichmentJobs.find(j=>j.id===claim.id);
+            const books=bookWorks(db,job).get(claim.key)||[];
+            storeTrialResult(job,claim,pages,imageUrl);
+            const projected=projectTrial(db,job,books,failedCovers);
+            updated={added:books.reduce((n,b)=>n+(preview(db,job,b,failedCovers)?.changes.length||0),0),
+              newCover:false,evidenceByBook:projected.evidenceByBook};
+          }else updated=updateFromPages(db,claim,pages,{imageUrl,failedCovers});
           finishClaim(db,claim,{
             providerRemaining:result.providerRemaining,
             providerRemainingConfirmed:Number.isSafeInteger(result.providerRemaining),
