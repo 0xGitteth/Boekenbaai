@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const {startRun,pauseRun,cancelRun,resumeRun,chooseTask,finishTask,deferClaim,runStatus,applyRun,LEASE_MS}=require('../book-enrichment-collection');
 const {recordCheck}=require('../book-enrichment-trial');
-const {nextCandidate}=require('../book-free-metadata');
+const {nextCandidate,applyResult,workKey}=require('../book-free-metadata');
 const isbn='9789086960088';
 const book={id:'a',metadataIsbn:isbn,title:'Testtitel',author:'Test Auteur',description:'',tags:[]};
 const copy={...book,id:'b',description:'Docenttekst',importProvenance:{fieldSources:{description:{sourceType:'manual'}}}};
@@ -58,6 +58,9 @@ assert.equal(db.books[1].description,'Docenttekst');
 assert.equal(db.books[3].pageCount,undefined);
 assert.equal(db.books[0].freeMetadataCheck.source,'EasyCB');
 assert.equal(nextCandidate([db.books[0]],now+100*86400000),null,'Legacy worker cannot bypass an accepted comparison after 90 days');
+const late=applyResult(db,{key:workKey(db.books[0]),isbn},{...metadata,publisher:'Late conflicting result'},new Date(now+100).toISOString());
+assert.equal(late.updated,0,'An already in-flight legacy lookup must not bypass the accepted comparison');
+assert.equal(db.books[0].publisher,undefined);
 assert.deepEqual(db.students,[{id:'p'}]);
 assert.deepEqual(db.history,[{id:'loan'}]);
 assert.equal(startRun(db,['boekenbase'],{repeat:true,now,id:'second'}).ok,true);
