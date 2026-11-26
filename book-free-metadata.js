@@ -104,6 +104,7 @@ function usableFor(book, metadata) {
 }
 function nextCandidate(books, now = Date.now(), excluded = new Set(), failedCovers = new Set()) {
   for (const book of Array.isArray(books) ? books : []) {
+    if(book?.personalLoanOnly===true)continue;
     const isbn = isbnOf(book), key = workKey(book);
     if (!isbn || excluded.has(key)) continue;
     const failedCover = failedCovers.has(book.coverUrl) && !book.localCoverUrl;
@@ -127,7 +128,7 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
   failedCovers = new Set()) {
   let updated = 0, newCover = false;
   for (const book of db.books || []) {
-    if (workKey(book) !== candidate.key) continue;
+    if (book.personalLoanOnly===true||workKey(book) !== candidate.key) continue;
     // A legacy request may have been in flight when a comparison finished.
     // Its late result must not bypass the approved conflict decisions.
     if (book.freeMetadataCheck?.comparisonIdentity === candidate.key) continue;
@@ -183,7 +184,8 @@ function applyResult(db, candidate, metadata, now = new Date().toISOString(), st
         }
       }
       if (book.importProvenance?.fieldSources?.tags?.sourceType !== 'manual'
-        && (!Array.isArray(book.tags) || !book.tags.length) && metadata.tags.length) {
+        && book.themesCleared!==true && (!Array.isArray(book.tags) || !book.tags.length)
+        && Array.isArray(metadata.tags)&&metadata.tags.length) {
         book.tags = metadata.tags.slice(0, 20);
         if (!book.importProvenance || typeof book.importProvenance !== 'object') {
           book.importProvenance = {fieldSources:{}};
