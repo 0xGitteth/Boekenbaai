@@ -101,17 +101,17 @@ function createBraveWorker({
             error:bad,status:updated.added>0?'found':sourceFailures.length?'source_partial':'no_result',added:updated.added,sourceFailures,
             evidenceByBook:updated.evidenceByBook,
           });
-          return updated;
+          const current=db.braveEnrichmentJobs.find(j=>j.id===claim.id);
+          return {...updated,continueRunning:current?.state==='running'};
         });
         if(!outcome?.deferred)break;
       }
       if(stopped)return;
       if(outcome?.newCover)onNewCover();
-      // A Brave API error pauses the job; inaccessible source pages are logged
-      // and skipped, so other books can use the already approved budget.
-      // No later step is issued
-      // automatically until an administrator reviews the status and approves.
-      if(bad)keepGoing=false;
+      // The durable core decides whether this is an isolated transient
+      // failure or a circuit-breaking provider error.
+      if(bad)keepGoing=outcome?.continueRunning===true;
+      if(bad&&keepGoing)retryDelay=5000;
     }catch(error) {
       logger.warn?.('Brave-verrijking onderbroken:',error?.message||String(error));
       // A database failure must not depend on a browser being open.

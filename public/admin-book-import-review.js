@@ -265,7 +265,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     trialSearch.setAttribute('aria-label','Zoek een boek voor proefverrijking');
     const trialChoices=make('div','bb-review__brave-items');
     const selectedNotice=make('p','hint');
-    const trialRepeat=make('input');trialRepeat.type='checkbox';
+    const trialRepeat=make('input');trialRepeat.type='checkbox';trialRepeat.autocomplete='off';trialRepeat.checked=false;
     const trialRepeatLabel=make('label','hint');
     trialRepeatLabel.append(trialRepeat,document.createTextNode(' Eerder uitgevoerd onderzoek bij de geselecteerde boeken herhalen'));
     const trialStart=button('Proefverrijking starten','btn btn--secondary');
@@ -684,6 +684,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         rate_limited: 'Brave heeft de zoekopdracht tijdelijk begrensd (429).',
         unauthorized: 'Brave accepteert de ingestelde API-sleutel niet (401/403).',
         provider_error: 'Brave heeft een foutmelding teruggestuurd.',
+        provider_temporary: 'Brave is tijdelijk niet beschikbaar.',
+        trial_budget_required: 'Leg eerst de resterende toestemming voor deze oude proef vast.',
         request_error: 'De verbinding met Brave is mislukt.',
         source_unavailable: 'Een bronwebsite kon niet worden gecontroleerd. De gevonden gegevens zijn behouden. Dit onderzoek kan opnieuw worden hervat.',
         timeout: 'Het Brave-verzoek duurde te lang.',
@@ -757,7 +759,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               + ' verzoeken gereserveerd. Je kunt deze pagina sluiten.';
           } else if (job.state === 'paused') {
             details.textContent = 'Onderzoek gepauzeerd. ' + bravePauseReason(job.lastError)
-              + ' ' + job.completedWorks + ' titels afgerond. De voortgang is bewaard. '
+              + ' ' + job.completedWorks + (job.completedWorks===1?' titel afgerond.':' titels afgerond.') + ' De voortgang is bewaard. '
               + 'Na het oplossen van de oorzaak is opnieuw toestemming nodig.';
           } else {
             details.textContent = 'Zoekronde afgerond: ' + job.completedWorks + ' titels onderzocht. '
@@ -766,6 +768,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               + 'Deze titels blijven zichtbaar als aandachtspunt.';
           }
           item.append(title, details);
+          if(job.lastFailure){
+            const step=['Zoeken naar boekgegevens','Zoeken naar omslag','Zoeken naar beschrijving en thema’s'][job.lastFailure.step]||'Onderzoek';
+            item.append(make('p','hint','Laatste fout: '+new Date(job.lastFailure.at).toLocaleString('nl-NL')+' · '+(job.lastFailure.title||'Onbekende titel')+' · '+step+' · '+(job.lastFailure.stage==='brave'?'Brave API':'Bronwebsite')+' · '+bravePauseReason(job.lastFailure.code)));
+          }
+          if(job.trialBudget)item.append(make('p','hint',(job.trialBudget.legacy?'Sinds vastlegging resterende toestemming: ':'Proefbudget totaal: ')+job.trialBudget.used+' van '+job.trialBudget.limit+' verzoeken gebruikt; '+job.trialBudget.remaining+' resterend.'));
+          if(job.legacyBudgetRequired&&job.state!=='complete')item.append(make('p','hint','Deze oudere proef heeft geen betrouwbare cumulatieve teller. Controleer de eerder verleende toestemming en leg het resterende aantal vast voordat je hervat.'));
+          if(job.trialBudget?.remaining===0&&job.needsBrave>0)item.append(make('p','hint','De harde proeflimiet is bereikt. Er worden geen extra verzoeken uitgevoerd. Beoordeel de resultaten of beëindig deze proef.'));
           if(job.source==='trial'&&job.state!=='running'){
             const review=button('Proefresultaten bekijken','btn btn--secondary');
             review.addEventListener('click',()=>void showBraveTrial(job.id));
@@ -777,8 +786,18 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           if (job.canApprove && info.configured) {
             const accept = button((job.state==='paused'?'Hervat ':'Start ')+(job.source==='trial'?'Brave-proef':'internetonderzoek')+' voor '+job.possibleWorks+' '+(job.possibleWorks===1?'titel':'titels'), 'btn btn--secondary');
             accept.addEventListener('click', async () => {
-              const message = 'Brave mag maximaal ' + job.possibleMaxRequests
-                + ' zoekopdrachten uitvoeren voor ' + job.possibleWorks + ' boeken. '
+              let maxRequests=job.possibleMaxRequests,legacyRemainingLimit;
+              if(job.legacyBudgetRequired){
+                const raw=window.prompt('Hoeveel verzoeken zijn nog toegestaan binnen de eerder verleende toestemming? Controleer de eerdere verbruikte verzoeken. Maximaal '+job.legacyMaxAdditional+'.','');
+                if(raw===null)return;
+                legacyRemainingLimit=Number(raw);
+                if(!/^\d+$/.test(raw.trim())||!Number.isSafeInteger(legacyRemainingLimit)||legacyRemainingLimit<1||legacyRemainingLimit>job.legacyMaxAdditional){
+                  enrichmentActionNotice.textContent='Vul een geldig resterend aantal in.';return;
+                }
+                maxRequests=Math.min(maxRequests,legacyRemainingLimit);
+              }
+              const message = 'Brave mag maximaal ' + maxRequests
+                + ' zoekopdrachten uitvoeren voor maximaal ' + job.possibleWorks + ' boeken. '
                 + 'Boekenbaai reserveert deze verzoeken binnen de ingestelde maandgrens. '
                 + 'Andere apps die dezelfde Brave-sleutel gebruiken tellen niet mee. '
                 + 'Zorg dat betaalde aanvulling in het Brave-account is uitgeschakeld. '
@@ -788,7 +807,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               accept.disabled = true;
               try {
                 await request('/api/admin/book-enrichment/brave/' + encodeURIComponent(job.id) + '/approve', {
-                  confirm: true, maxRequests: job.possibleMaxRequests, month: usage.month,
+                  confirm: true, maxRequests, month: usage.month,legacyRemainingLimit,
                 });
                 enrichmentActionNotice.textContent =
                   'Brave-onderzoek goedgekeurd en opgeslagen. Je kunt dit scherm sluiten.';

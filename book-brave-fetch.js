@@ -77,7 +77,7 @@ function queryFor(step,target) {
   if(step===1)return (isbn?isbn+' ':'')+'"'+title+'" "'+author+'" kaft omslag boek';
   return '"'+title+'" "'+author+'" samenvatting thema recensie uitgever';
 }
-async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeoutMs=7000}={}) {
+async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeoutMs=25000}={}) {
   if(!apiKey||typeof apiKey!=='string')return {error:'not_configured'};
   const image=step===1;
   const endpoint=image?'https://api.search.brave.com/res/v1/images/search'
@@ -90,7 +90,7 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
   url.searchParams.set('count',image?'8':'8');
   if(!image)url.searchParams.set('result_filter','web');
   const ctl=new AbortController();
-  const timer=setTimeout(()=>ctl.abort(),Math.max(1000,Math.min(timeoutMs,10000)));
+  const timer=setTimeout(()=>ctl.abort(),Math.max(1000,Math.min(timeoutMs,30000)));
   try{
     const response=await fetchImpl(url.toString(),{
       headers:{'X-Subscription-Token':apiKey,Accept:'application/json'},
@@ -99,7 +99,8 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
     const providerRemaining=parseMonthlyRemaining(response);
     if(!response.ok) {
       const error=response.status===429?'rate_limited':response.status===402?'payment_required'
-        :[401,403].includes(response.status)?'unauthorized':'provider_error';
+        :[401,403].includes(response.status)?'unauthorized'
+        :response.status===408?'timeout':response.status>=500?'provider_temporary':'provider_error';
       return {error,providerRemaining};
     }
     if(Number(response.headers?.get?.('content-length')||0)>350000)
@@ -116,7 +117,7 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
     return {providerRemaining,pages:(Array.isArray(data.web?.results)?data.web.results:[])
       .slice(0,8).map(x=>({title:cleaned(x.title,250),url:String(x.url||'').slice(0,1600)}))};
   }catch(err){
-    return {error:err?.name==='AbortError'?'timeout':'request_error'};
+    return {error:ctl.signal.aborted||err?.name==='AbortError'?'timeout':'request_error'};
   }finally{clearTimeout(timer);}
 }
 function decodeEntities(raw){

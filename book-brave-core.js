@@ -9,6 +9,8 @@ const {workKey, isbnOf, isMissing, nextCandidate} = require('./book-free-metadat
 const {projectTrial,preview:trialPreview,releaseTrialCheckpoints}=require('./book-brave-trial');
 
 const MAX_REQUESTS_PER_WORK = 3;
+const MAX_TRIAL_REQUESTS = 15;
+const TRANSIENT_API_ERRORS=new Set(['timeout','request_error','provider_temporary']);
 const HARD_MONTHLY_CAP = 900;
 const MAX_JOBS = 45;
 
@@ -158,6 +160,7 @@ function addJob(db, bookIds, {id = crypto.randomUUID(), source = 'import', fileN
     fileName:String(fileName).slice(0,180),bookIds:ids,repeatChecked:repeatChecked===true,
     state:'awaiting_free',approvedKeys:[],completedKeys:[],cursor:0,step:0,
     approval:null,requestsReserved:0,lastError:null};
+  if(source==='trial')job.trialBudget={limit:Math.min(MAX_TRIAL_REQUESTS,bookWorks(db,job).size*MAX_REQUESTS_PER_WORK),used:0,legacy:false};
   db.braveEnrichmentJobs.push(job);
   // Do not discard unapproved jobs or work merely because they are old.
   // Completed records alone may be compacted to bound database size.
@@ -182,7 +185,7 @@ function remainingWorks(db,job,failedCovers=new Set()) {
 }
 function getJobPlan(db,job,{
   easyCbEnabled=false, braveConfigured=false, now = new Date(), env = process.env,
-  failedCovers=new Set(),
+  failedCovers=new Set(),legacyRemainingLimit=null,
 }={}) {
   const groups=bookWorks(db,job);
   const remaining=remainingWorks(db,job,failedCovers);
@@ -190,10 +193,19 @@ function getJobPlan(db,job,{
   const usage=currentUsage(db,now,env);
   const costs=remaining.map(key=>remainingSteps(db,job,key,groups.get(key)).length);
   const estimatedMaxRequests=costs.reduce((total,cost)=>total+cost,0);
+  const trial=job.source==='trial';
+  const budget=job.trialBudget;
+  // Earlier builds reset requestsReserved at every approval; it is not a
+  // lifetime counter. Require an explicit remaining cap for those jobs.
+  const legacyMax=trial&&!budget?Math.max(0,MAX_TRIAL_REQUESTS-Math.max(0,Number(job.requestsReserved)||0)):null;
+  const trialRemaining=trial?(budget?Math.max(0,budget.limit-budget.used)
+    :Number.isSafeInteger(legacyRemainingLimit)?Math.min(legacyMax,Math.max(0,legacyRemainingLimit)):legacyMax):null;
+  const available=trial?Math.min(usage.available,trialRemaining):usage.available;
   let possible=0,possibleMaxRequests=0;
   for(const cost of costs){
-    if(possibleMaxRequests+cost>usage.available)break;
-    possible++;possibleMaxRequests+=cost;
+    const left=available-possibleMaxRequests;
+    if(left<=0||(!trial&&cost>left))break;
+    possible++;possibleMaxRequests+=Math.min(cost,left);
   }
   let state=job.state;
   if (state==='awaiting_free' || state==='awaiting_approval') {
@@ -217,7 +229,10 @@ function getJobPlan(db,job,{
     approvedMaxRequests:job.approval?.maxRequests||0,
     approvedMonth:job.approval?.month||null,
     reservedRequests:job.requestsReserved||0,
-    lastError:job.lastError||null,
+    lastError:job.lastError||null,lastFailure:job.lastFailure||null,
+    trialBudget:trial&&budget?{limit:budget.limit,used:budget.used,remaining:trialRemaining,legacy:budget.legacy===true}:null,
+    legacyBudgetRequired:trial&&!budget,legacyMaxAdditional:legacyMax,
+    deferredInApproval:job.deferredKeys?.length||0,
     withoutCover:[...groups.values()].filter(books=>books.every(b=>needsExtra(b,failedCovers).cover)).length,
     limitedDescriptions:[...groups.values()].filter(books=>books.some(b=>needsExtra(b,failedCovers).description)).length,
     incompleteIdentity:(job.bookIds||[]).filter(id=>{
@@ -227,23 +242,34 @@ function getJobPlan(db,job,{
   };
 }
 function approveJob(db,id,{confirmed=false,expectedRequests,expectedMonth,easyCbEnabled=false,
-  braveConfigured=false,now=new Date(),env=process.env,failedCovers=new Set()}={}) {
+  braveConfigured=false,now=new Date(),env=process.env,failedCovers=new Set(),legacyRemainingLimit=null}={}) {
   ensureJobs(db);
   if (!confirmed) return {ok:false,error:'confirmation_required'};
   if (!braveConfigured) return {ok:false,error:'api_key_missing'};
   if (db.braveEnrichmentJobs.some(job => job.state==='running')) return {ok:false,error:'another_job_running'};
   const job=db.braveEnrichmentJobs.find(j=>j.id===id);
   if (!job) return {ok:false,error:'job_missing'};
-  const plan=getJobPlan(db,job,{easyCbEnabled,braveConfigured,now,env,failedCovers});
+  const trial=job.source==='trial';
+  if(trial&&!job.trialBudget&&(!Number.isSafeInteger(legacyRemainingLimit)||legacyRemainingLimit<1
+    ||legacyRemainingLimit>Math.max(0,MAX_TRIAL_REQUESTS-Math.max(0,Number(job.requestsReserved)||0))))
+    return {ok:false,error:'trial_budget_required'};
+  const plan=getJobPlan(db,job,{easyCbEnabled,braveConfigured,now,env,failedCovers,legacyRemainingLimit});
   if (!plan.canApprove || !plan.possibleWorks)
     return {ok:false,error:'not_ready'};
   if (expectedMonth!==monthKey(now) || !Number.isSafeInteger(expectedRequests)
-    || expectedRequests!==plan.possibleMaxRequests)
+    || (trial?(expectedRequests<1||expectedRequests>plan.possibleMaxRequests):expectedRequests!==plan.possibleMaxRequests))
     return {ok:false,error:'stale_budget'};
-  const keys=remainingWorks(db,job,failedCovers).slice(0,plan.possibleWorks);
+  if(trial&&!job.trialBudget)job.trialBudget={limit:legacyRemainingLimit,used:0,legacy:true};
+  const groups=bookWorks(db,job),keys=[];
+  let capacity=expectedRequests;
+  for(const key of remainingWorks(db,job,failedCovers)){
+    if(capacity<=0||keys.length>=plan.possibleWorks)break;
+    keys.push(key);capacity-=remainingSteps(db,job,key,groups.get(key)).length;
+  }
   job.state='running';job.approvedKeys=keys;job.cursor=0;job.step=0;
-  job.approval={month:monthKey(now),maxRequests:plan.possibleMaxRequests,
+  job.approval={month:monthKey(now),maxRequests:expectedRequests,
     approvedAt:now.toISOString()};
+  job.deferredKeys=[];job.consecutiveApiErrors=0;
   job.requestsReserved=0;job.lastError=null;job.updatedAt=now.toISOString();
   return {ok:true,approvedWorks:keys.length,maxRequests:job.approval.maxRequests};
 }
@@ -255,10 +281,11 @@ function shouldQueryStep(step,books,failedCovers=new Set()) {
 }
 function finishApprovedChunk(db,job,failedCovers=new Set()) {
   const done=new Set(job.completedKeys||[]);
-  for (const key of job.approvedKeys||[]) done.add(key);
+  const deferred=new Set(job.deferredKeys||[]);
+  for (const key of job.approvedKeys||[])if(!deferred.has(key))done.add(key);
   job.completedKeys=[...done];
   job.approvedKeys=[];job.cursor=0;job.step=0;job.approval=null;
-  job.state=remainingWorks(db,job,failedCovers).length?'awaiting_approval':'complete';
+  job.state=remainingWorks(db,job,failedCovers).length?(deferred.size?'paused':'awaiting_approval'):'complete';
   if(job.source==='trial'&&job.state==='complete'&&!(db.books||[]).some(b=>trialPreview(db,job,b,failedCovers)?.changes.length)){
     job.trialReviewedAt=new Date().toISOString();releaseTrialCheckpoints(db,job);
   }
@@ -269,7 +296,8 @@ function pauseActiveChunk(job,reason) {
   // only after a new explicit approval. Every previously claimed request
   // remains debited in the durable monthly ledger.
   const done=new Set(job.completedKeys||[]);
-  for(const key of (job.approvedKeys||[]).slice(0,job.cursor||0))done.add(key);
+  const deferred=new Set(job.deferredKeys||[]);
+  for(const key of (job.approvedKeys||[]).slice(0,job.cursor||0))if(!deferred.has(key))done.add(key);
   job.completedKeys=[...done];
   job.approvedKeys=[];job.cursor=0;job.step=0;job.approval=null;job.inFlight=null;
   job.state='paused';job.lastError=reason;job.updatedAt=new Date().toISOString();
@@ -291,6 +319,9 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
   if (job.approval?.month!==monthKey(now)) {
     pauseActiveChunk(job,'month_changed');return null;
   }
+  if(job.source==='trial'&&!job.trialBudget){
+    pauseActiveChunk(job,'trial_budget_required');return null;
+  }
   const usage=usageForMonth(db,now),cap=monthlyCap(env);
   const groups=bookWorks(db,job);
   for (;;) {
@@ -304,6 +335,7 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     }
     if (checkedStep(db,job,key,books,job.step)||!shouldQueryStep(job.step,effective,failedCovers)) {job.step++;continue;}
     if (job.requestsReserved >= job.approval.maxRequests || usage.reserved >= cap
+      || (job.source==='trial'&&job.trialBudget.used>=job.trialBudget.limit)
       || (usage.providerRemainingVerified === true
         && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
       pauseActiveChunk(job,'budget_exhausted');return null;
@@ -315,7 +347,9 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     if(usage.providerRemainingVerified===true
       && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining>0)
       usage.providerRemaining--;
-    job.requestsReserved++;job.updatedAt=now.toISOString();
+    job.requestsReserved++;
+    if(job.source==='trial')job.trialBudget.used++;
+    job.updatedAt=now.toISOString();
     const representative=books[0];
     const reservationId=crypto.randomUUID();
     job.inFlight={key,step,reservationId,bookIds:books.map(book=>book.id),reservedAt:now.toISOString()};
@@ -348,12 +382,23 @@ function finishClaim(db,claim,{
     db.braveUsage.providerEvidenceVersion=2;
     db.braveUsage.providerEvidenceAt=new Date().toISOString();
   }
-  if (error) {
-    // A provider outage must not silently consume the other approved
-    // searches and mark an unfinished work complete. Keep all reservations
-    // charged, pause the current work and require a fresh explicit approval.
-    pauseActiveChunk(job,error);
+  if(error||sourceFailures.length){
+    job.lastFailure={at:new Date().toISOString(),title:String(claim.title||'').slice(0,250),
+      step:claim.step,stage:error?'brave':sourceFailures[0]?.stage||'page',
+      code:error||'source_unavailable'};
   }
+  if (error) {
+    job.lastError=error;
+    job.consecutiveApiErrors=(job.consecutiveApiErrors||0)+1;
+    // An isolated transient failure defers this title, not the whole job.
+    // Two consecutive API failures stop the batch to protect the credits.
+    // Never retry an unsuccessful search automatically or mark it complete.
+    if(TRANSIENT_API_ERRORS.has(error)&&job.consecutiveApiErrors<2
+      &&job.cursor+1<job.approvedKeys.length){
+      job.deferredKeys=[...new Set([...(job.deferredKeys||[]),claim.key])];
+      job.cursor++;job.step=0;
+    }else pauseActiveChunk(job,error);
+  }else job.consecutiveApiErrors=0;
   job.updatedAt=new Date().toISOString();
 }
 module.exports={MAX_REQUESTS_PER_WORK,HARD_MONTHLY_CAP,monthKey,monthlyCap,

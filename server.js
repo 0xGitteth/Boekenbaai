@@ -5912,6 +5912,7 @@ async function handleApi(req, res, requestUrl) {
             confirmed:body.confirm===true,
             expectedRequests:body.maxRequests,
             expectedMonth:body.month,
+            legacyRemainingLimit:body.legacyRemainingLimit,
             braveConfigured:braveWorker.configured,
             easyCbEnabled:freeMetadataWorker.enabled,
             failedCovers:exhaustedCoverSourceUrls(),
