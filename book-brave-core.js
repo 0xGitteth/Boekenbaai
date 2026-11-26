@@ -104,6 +104,7 @@ function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook
       .map(item=>[JSON.stringify([item.field,item.url,item.confidence]),item]));
     steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString(),
       trialPending:job.source==='trial'&&status==='found',
+      ...(job.source==='trial'?{trialBookId:book.id}:{}) ,
       evidence:[...combined.values()].slice(-60)};
   }
 }
