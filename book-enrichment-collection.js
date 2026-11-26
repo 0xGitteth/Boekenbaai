@@ -34,6 +34,14 @@ function startRun(db,sources,{repeat=false,now=Date.now(),id=randomUUID()}={}){
     createdAt:nowIso(now),updatedAt:nowIso(now),inFlight:null};
   return {ok:true,id};
 }
+function cancelRun(db,{now=Date.now()}={}){
+  const run=db.freeEnrichmentRun;
+  if(!run||!['running','paused','partial','ready'].includes(run.state))return {ok:false,error:'not_active'};
+  // In-flight results from the cancelled run cannot be committed. All
+  // earlier stored source research remains available in the central cache.
+  run.state='cancelled';run.pauseRequested=false;run.inFlight=null;run.updatedAt=nowIso(now);
+  return {ok:true};
+}
 function pauseRun(db,{now=Date.now()}={}){
   const run=db.freeEnrichmentRun;
   if(run?.state!=='running')return {ok:false,error:'not_running'};
@@ -152,6 +160,14 @@ function applyRun(db,id,{revision,failedCovers=new Set(),now=Date.now()}={}){
   for(const target of run.targets){
     for(const book of liveBooks(db,target)){
       const view=comparison(db,book,failedCovers);
+      // Reuse the same verified EasyCB research in the older free-worker
+      // schedule. Do not apply its fields a second time outside comparison.
+      const easy=getCheck(db,book,'easycb');
+      if(easy&&terminal.has(easy.status)){
+        book.freeMetadataCheck={source:'EasyCB',status:easy.status==='identity_mismatch'?'mismatch':easy.status,
+          checkedAt:easy.checkedAt,isbn:isbnOf(book),title:book.title,
+          failedCoverUrl:failedCovers.has(book.coverUrl)&&!book.localCoverUrl?book.coverUrl:''};
+      }
       conflicts+=view.conflicts.length;
       if(!view.changes.length)continue;
       const outcome=applyComparison(db,book,view.revision,failedCovers,SOURCE_ORDER,new Date(now));
@@ -162,4 +178,4 @@ function applyRun(db,id,{revision,failedCovers=new Set(),now=Date.now()}={}){
   run.applied={updated,books,conflicts,newCover};
   return {ok:true,...run.applied};
 }
-module.exports={startRun,pauseRun,resumeRun,chooseTask,finishTask,deferClaim,runStatus,applyRun,LEASE_MS};
+module.exports={startRun,cancelRun,pauseRun,resumeRun,chooseTask,finishTask,deferClaim,runStatus,applyRun,LEASE_MS};
