@@ -13,8 +13,8 @@ let db={books:[book,other],students:[{id:'s'}],history:[{id:'l'}]};
 const base={isbn,title:book.title,author:book.author};
 const full='Een uitvoerige beschrijving van het verhaal en de gebeurtenissen. '.repeat(5);
 recordCheck(db,book,{status:'found',metadata:{...base,description:full,coverUrl:'https://example.org/front.jpg',
-  pageCount:128,publisher:'Uitgever A',publishedYear:2021,tags:['Paarden'],nurCategory:'Fictie 7-9 jaar'}},{source:'boekenbase'});
-recordCheck(db,book,{status:'found',metadata:{...base,description:'Kort',pageCount:130,publisher:'Uitgever B',
+  pageCount:128,language:'dut',publisher:'Uitgever A',publishedYear:2021,tags:['Paarden'],nurCategory:'Fictie 7-9 jaar'}},{source:'boekenbase'});
+recordCheck(db,book,{status:'found',metadata:{...base,description:'Kort',pageCount:130,language:'nl',publisher:'Uitgever B',
   tags:['paarden','Vriendschap']}},{source:'open_library'});
 recordCheck(db,book,{status:'timeout',metadata:null},{source:'easycb'});
 recordCheck(db,book,{status:'found',metadata:{...base,title:'Onjuist boek',pageCount:999}},{source:'bureau_isbn'});
@@ -27,6 +27,8 @@ assert.equal(view.statuses.find(s=>s.source==='easycb').status,'timeout');
 assert.equal(view.changes.find(c=>c.field==='description').after,full);
 assert.ok(!view.changes.some(c=>c.field==='pageCount'),'Disputed page count needs separate resolution');
 assert.ok(view.conflicts.some(c=>c.field==='pageCount'));
+assert.equal(view.changes.find(c=>c.field==='language').after,'nl');
+assert.ok(!view.conflicts.some(c=>c.field==='language'));
 assert.ok(view.conflicts.some(c=>c.field==='publishedYear'));
 assert.ok(!view.changes.some(c=>c.field==='publisher'||c.field==='publishedYear'));
 assert.deepEqual(view.changes.find(c=>c.field==='enrichmentTags').after,['Paarden','Vriendschap']);
@@ -66,6 +68,11 @@ async function run(){
   assert.equal((await sources.probe('easycb',book)).status,'not_configured');
   assert.equal((await sources.probe('isbnbarcode',book)).status,'not_configured');
   assert.equal((await sources.probe('unknown',book)).status,'not_configured');
+  const barcodeLookup=(withIsbn)=>createIsbnLookup({env:{BOEKENBAAI_ENABLE_ISBNBARCODE:'true'},fetchImpl:async()=>new Response(JSON.stringify({
+    title:book.title,author:book.author,pages:999,...(withIsbn?{isbn}:{}),
+  }),{headers:{'content-type':'application/json'}})});
+  assert.equal((await barcodeLookup(false).lookupSource('isbnbarcode',isbn)).status,'identity_mismatch');
+  assert.equal((await barcodeLookup(true).lookupSource('isbnbarcode',isbn)).status,'found');
   console.log('Independent provider lookups, durable comparison, provenance and safe approval passed.');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
