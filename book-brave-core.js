@@ -108,7 +108,7 @@ function checkKey(bookId,key) { return JSON.stringify([bookId,key]); }
 function getBraveCheck(db,bookId,key,step) {
   return db.bookEnrichmentChecks?.[checkKey(bookId,key)]?.brave?.[step];
 }
-function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook=null,now=new Date()}={}) {
+function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook=null,sourceFailures=[],now=new Date()}={}) {
   if(!db.bookEnrichmentChecks||typeof db.bookEnrichmentChecks!=='object'
     ||Array.isArray(db.bookEnrichmentChecks))db.bookEnrichmentChecks={};
   const ids=new Set(claim.bookIds||job.bookIds||[]);
@@ -124,13 +124,14 @@ function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook
     steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString(),
       trialPending:job.source==='trial'&&status==='found',
       ...(job.source==='trial'?{trialBookId:book.id}:{}) ,
+      sourceFailures:(Array.isArray(sourceFailures)?sourceFailures:[]).slice(0,12).map(f=>({code:'source_unavailable',url:String(f.url||'').slice(0,1600),stage:f.stage==='robots'?'robots':'page',reason:String(f.reason||'unknown').slice(0,80)})),
       evidence:[...combined.values()].slice(-60)};
   }
 }
 function checkedStep(db,job,key,books,step) {
   return books.length>0&&books.every(book=>{
     const check=getBraveCheck(db,book.id,key,step);
-    return ['found','no_result','checked'].includes(check?.status)
+    return ['found','no_result','checked','source_partial'].includes(check?.status)
       &&(!check.trialPending||check.jobId===job.id)
       &&(!job.repeatChecked||check.jobId===job.id);
   });
@@ -326,12 +327,12 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
   }
 }
 function finishClaim(db,claim,{
-  providerRemaining=null, providerRemainingConfirmed=false, error=null, status='checked', added=0,evidenceByBook=null,
+  providerRemaining=null, providerRemainingConfirmed=false, error=null, status='checked', added=0,evidenceByBook=null,sourceFailures=[],
 }={}) {
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.id===claim?.id);
   if (!job||!claimIsCurrent(db,claim)) return;
-  recordBraveCheck(db,job,claim,{status:error?'error':status,error,added,evidenceByBook});
+  recordBraveCheck(db,job,claim,{status:error?'error':status,error,added,evidenceByBook,sourceFailures});
   job.inFlight=null;
   if (providerRemainingConfirmed===true
       && Number.isSafeInteger(providerRemaining) && providerRemaining>=0

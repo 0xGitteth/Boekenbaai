@@ -6,6 +6,7 @@ const https=require('node:https');
 const dns=require('node:dns').promises;
 const {safeCoverUrl,publicIPv4}=require('./lib/cover-assets');
 const {normalizeIsbn,isValidIsbn,toIsbn13}=require('./isbn-lookup-core-impl');
+const {narrativeDescription}=require('./book-brave-description');
 
 function cleaned(value,max=600) {
   return String(value??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
@@ -185,8 +186,8 @@ function parseBookPage(html,target,url) {
   // A matching ISBN alone is insufficient when the structured title names
   // a different work. Exact title and work-level identity remain mandatory.
   if(!sameTitle||(!exactIsbn&&!sameWork))return null;
-  const rawDescription=asOne(book.description)||meta.description||meta['og:description']||'';
-  const description=cleaned(decodeEntities(rawDescription),2500);
+  const description=[asOne(book.description),meta.description,meta['og:description']]
+    .map(value=>narrativeDescription(cleaned(decodeEntities(value),2500))).find(Boolean)||'';
   let coverUrl='';
   const rawImage=asOne(book.image)||meta['og:image']||meta['twitter:image']||'';
   if (typeof rawImage === 'string' && rawImage.trim()) {
@@ -339,7 +340,7 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3,onFai
     const root=u.origin;
     if(!robots.has(root)){
       const response=await readPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
-      if(!response||response.error|| (response.status&&![200,404,410].includes(response.status)))onFailure('source_unavailable');
+      if(!response||response.error|| (response.status&&![200,404,410].includes(response.status)))onFailure('source_unavailable',{url:root+'/robots.txt',stage:'robots',reason:response?.error||String(response?.status||'unknown')});
       // A missing or unreachable robots.txt never authorizes extra crawling.
       robots.set(root,!response || response.error || (response.status && ![200,404,410].includes(response.status))
         ? null : (response?.body ?? ''));
@@ -354,7 +355,7 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3,onFai
     if(visited.has(u.href))continue;visited.add(u.href);
     if(!(await allowedPage(u.href)))continue;
     const page=await readPage(u.href,{allowRedirect:allowedPage});
-    if(!page||['request_error','timeout','source_unavailable'].includes(page.error))onFailure('source_unavailable');
+    if(!page||['request_error','timeout','source_unavailable'].includes(page.error))onFailure('source_unavailable',{url:u.href,stage:'page',reason:page?.error||'unknown'});
     if(!page?.body)continue;
     const parsed=parseBookPage(page.body,target,page.finalUrl||u.href);
     if(parsed)outputs.push(parsed);

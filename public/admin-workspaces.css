@@ -304,3 +304,28 @@ body.bb-admin-v31 #admin-dashboard .bb-task-preflight .class-card {
   margin-top: 10px;
   overflow-wrap: anywhere;
 }
+
+/* Keep full workspace labels and counts readable at tablet widths. */
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tabs {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab-name {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+body.bb-admin-v31 #admin-dashboard .bb-workspace-tab-count {
+  flex: 0 0 auto;
+}
+@media (min-width: 641px) and (max-width: 1180px) {
+  body.bb-admin-v31 #admin-dashboard .bb-workspace-tab {
+    box-sizing: border-box;
+    flex: 1 1 180px;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    min-height: 44px;
+    white-space: normal;
+  }
+}

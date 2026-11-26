@@ -23,6 +23,7 @@ function braveEvidence(db,book){
   return Object.entries(steps).filter(([step])=>['0','1','2'].includes(step)).map(([step,check])=>({
     step:Number(step),status:check.status,checkedAt:check.checkedAt,error:check.error||null,
     evidence:Array.isArray(check.evidence)?check.evidence.slice(-60):[],
+    sourceFailures:Array.isArray(check.sourceFailures)?check.sourceFailures.slice(0,12):[],
   }));
 }
 function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_ORDER,
@@ -38,6 +39,7 @@ function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_
   for(const copies of groups.values()){
     const book=copies[0],isbn=isbnOf(book),views=copies.map(b=>comparison(db,b,failedCovers));
     const sources=views[0].statuses.filter(s=>enabledSources.includes(s.source));
+    const sourceStatuses=views[0].statuses.map(s=>enabledSources.includes(s.source)?s:{...s,status:'not_configured',previousStatus:s.status});
     const missing=[...new Set(copies.flatMap(b=>missingFields(b,failedCovers,hasLocalCover)))];
     const pending=views.reduce((n,v)=>n+v.changes.length,0);
     const conflicts=views.reduce((n,v)=>n+v.conflicts.length,0);
@@ -55,7 +57,7 @@ function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_
     const row={id:book.id,title:book.title,author:book.author,isbn,copies:copies.length,status,
       missing,pending,conflicts,checked,sourceCount:sources.length,content,
       localCovers:copies.filter(b=>b.localCoverUrl&&hasLocalCover(b.localCoverUrl)).length,
-      sourceStatuses:sources.map(s=>({source:s.source,status:s.status,lastError:s.lastError,checkedAt:s.checkedAt})),
+      sourceStatuses:sourceStatuses.map(s=>({source:s.source,status:s.status,previousStatus:s.previousStatus,lastError:s.lastError,checkedAt:s.checkedAt})),
       braveChecked:copies.reduce((n,b)=>n+braveEvidence(db,b).length,0)};
     rows.push(row);counts.all++;counts[status]++;
     if(!isbn)counts.no_isbn++;
@@ -75,11 +77,13 @@ function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_
   const current=Math.max(1,Math.min(pages,Number.isSafeInteger(page)?page:1));
   return {counts,total:selected.length,page:current,pages,rows:selected.slice((current-1)*size,current*size)};
 }
-function details(db,id,{failedCovers=new Set()}={}){
+function details(db,id,{failedCovers=new Set(),enabledSources=SOURCE_ORDER}={}){
   const book=(db.books||[]).find(b=>b.id===id&&b.personalLoanOnly!==true);
   if(!book)return null;
   return (db.books||[]).filter(b=>b.personalLoanOnly!==true&&workKey(b)===workKey(book)).map(b=>({
-    ...comparison(db,b,failedCovers),brave:braveEvidence(db,b),
+    ...comparison(db,b,failedCovers),
+    statuses:comparison(db,b,failedCovers).statuses.map(s=>enabledSources.includes(s.source)?s:{...s,status:'not_configured',previousStatus:s.status}),
+    brave:braveEvidence(db,b),
   }));
 }
 module.exports={report,details,missingFields,braveEvidence};

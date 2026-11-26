@@ -5609,7 +5609,7 @@ async function handleApi(req, res, requestUrl) {
     }
     if(requestUrl.pathname===reportRoot+'/detail'&&req.method==='GET'){
       if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
-      const copies=enrichmentDetails(loadDb(),requestUrl.searchParams.get('bookId'),{failedCovers:exhaustedCoverSourceUrls()});
+      const copies=enrichmentDetails(loadDb(),requestUrl.searchParams.get('bookId'),{failedCovers:exhaustedCoverSourceUrls(),enabledSources:enrichmentSources.list().filter(s=>s.enabled).map(s=>s.id)});
       if(!copies)return sendJson(res,404,{message:'Boek niet gevonden.'});
       return sendJson(res,200,{copies});
     }
