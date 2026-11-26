@@ -121,6 +121,32 @@ async function main() {
     assert.equal(usableDimensions(TINY_GIF),null);
     assert.deepEqual(dimensions(PNG),{width:80,height:120,format:'png'});
     assert.equal(usableDimensions(PNG.subarray(0,30)),null);
+    // The original 80x120 PNG is valid; corrupted or fake pixels must not
+    // become valid solely because their IHDR has plausible dimensions.
+    const corrupt=Buffer.from(PNG);
+    corrupt[45]^=1;
+    assert.equal(usableDimensions(corrupt),null,'Reject bad PNG chunk CRC');
+    const badScan=Buffer.from(PNG);
+    const idat=33, idatLength=badScan.readUInt32BE(idat);
+    badScan[idat+8]=0; // Invalid zlib header, but repair the chunk CRC.
+    badScan.writeUInt32BE(require('node:zlib').crc32(
+      badScan.subarray(idat+4,idat+8+idatLength)),idat+8+idatLength);
+    assert.equal(usableDimensions(badScan),null,'Reject invalid compressed PNG with correct CRC');
+    const spoofedGif=Buffer.from(TINY_GIF);
+    spoofedGif.writeUInt16LE(80,6);spoofedGif.writeUInt16LE(120,8);
+    assert.equal(usableDimensions(spoofedGif),null,'Reject a one-pixel frame on a large GIF canvas');
+    const gif=Buffer.from('R0lGODdhUAB4AIEAADdklgAAAAAAAAAAACwAAAAAUAB4AEAInwABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izat3KtavXr2DDih1LtqzZs2jTql3Ltq3bt3Djyp1Lt67du3jz6t3Lt6/fv4ADCx5MuLDhw4gTK04YEAA7','base64');
+    assert.deepEqual(usableDimensions(gif),{width:80,height:120,format:'gif'});
+    const webp=Buffer.from('UklGRlYAAABXRUJQVlA4IEoAAAAQBQCdASpQAHgAPm02mUmkIqKhIMgAgA2JaQB2AAAMb3U30bUOcZQD3U30bUOcZP9AAP7uQx//3BmfV2OH/8bzea1YgAAAAAAAAA==','base64');
+    assert.deepEqual(usableDimensions(webp),{width:80,height:120,format:'webp'});
+    const fakeWebp=Buffer.from(webp.subarray(0,30));
+    fakeWebp.writeUInt32LE(fakeWebp.length-8,4);
+    fakeWebp.writeUInt32LE(10,16);
+    assert.equal(usableDimensions(fakeWebp),null,'Reject WebP dimensions with no frame data');
+    // A JPEG with SOF but no valid scan must be rejected even if it ends in EOI.
+    const fakeJpeg=Buffer.concat([Buffer.from([0xff,0xd8,0xff,0xc0,0x00,0x0b,0x08,0x00,0x78,0x00,0x50,0x01,0x01,0x11,0x00,0xff,0xda]),Buffer.from([0xff,0xd9])]);
+    assert.equal(usableDimensions(fakeJpeg),null);
+
     const invalidDirectory=path.join(root,'invalid');
     fs.mkdirSync(invalidDirectory);
     const invalidStore=createCoverAssetStore({directory:invalidDirectory,downloader:async()=>TINY_GIF});
