@@ -277,6 +277,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         unauthorized: 'Brave accepteert de ingestelde API-sleutel niet (401/403).',
         provider_error: 'Brave heeft een foutmelding teruggestuurd.',
         request_error: 'De verbinding met Brave is mislukt.',
+        source_unavailable: 'Een bronwebsite kon niet worden gecontroleerd. De gevonden gegevens zijn behouden. Dit onderzoek kan opnieuw worden hervat.',
         timeout: 'Het Brave-verzoek duurde te lang.',
         interrupted: 'De eerdere zoekopdracht werd onderbroken. Eerder opgeslagen resultaten blijven behouden; opnieuw goedkeuren is nodig.',
         month_changed: 'De maand is gewisseld; nieuwe toestemming is nodig.',
