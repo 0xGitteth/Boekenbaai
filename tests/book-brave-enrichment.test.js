@@ -4,11 +4,11 @@ const assert=require('node:assert/strict');
 const {EventEmitter}=require('node:events');
 const {
   addJob,getJobPlan,approveJob,claimNext,finishClaim,currentUsage,
-  MAX_REQUESTS_PER_WORK,
+  MAX_REQUESTS_PER_WORK,getBraveCheck,claimIsCurrent,
 }=require('../book-brave-core');
 const {
   parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,
-  robotsAllowed,discoverPages,selectImageResult,fetchHtml,
+  robotsAllowed,discoverPages,selectImageResult,fetchHtml,rankPublisherCandidates,
 }=require('../book-brave-fetch');
 const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
 
@@ -73,6 +73,47 @@ assert.equal(claimNext(db,{now:new Date('2027-01-01T09:00:00Z'),env:environment}
 assert.equal(job.state,'paused','Changing free-credit month requires another approval');
 assert.equal(job.completedKeys.length,2,'Earlier works remain marked completed on a month change');
 
+// A partial run persists across restarts and across collection jobs.
+const resumeEnv={BOEKENBAAI_BRAVE_MONTHLY_CAP:'12'};
+let resumeDb={books:[book('resume')]};
+const resumeJob=addJob(resumeDb,['resume'],{id:'resume-first'});
+const resumeApproval=(db,id,count)=>approveJob(db,id,{confirmed:true,expectedRequests:count,
+  expectedMonth:'2026-11',braveConfigured:true,now,env:resumeEnv});
+assert.equal(resumeApproval(resumeDb,resumeJob.id,3).ok,true);
+const successful=claimNext(resumeDb,{now,env:resumeEnv});
+finishClaim(resumeDb,successful,{status:'found',added:1});
+assert.equal(getBraveCheck(resumeDb,'resume',successful.key,0).status,'found');
+const failed=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(failed.step,1);
+finishClaim(resumeDb,failed,{error:'timeout'});
+resumeDb=JSON.parse(JSON.stringify(resumeDb));
+const resumed=resumeDb.braveEnrichmentJobs[0];
+assert.equal(getJobPlan(resumeDb,resumed,{braveConfigured:true,now,env:resumeEnv}).possibleMaxRequests,2);
+assert.equal(resumeApproval(resumeDb,resumed.id,2).ok,true);
+const retry=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(retry.step,1,'Successful first step is not repeated after a restart');
+assert.equal(claimIsCurrent(resumeDb,failed),false,'Late response cannot change the new claim');
+finishClaim(resumeDb,failed,{error:'timeout'});
+assert.equal(claimIsCurrent(resumeDb,retry),true);
+finishClaim(resumeDb,retry,{status:'no_result'});
+const last=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(last.step,2);
+finishClaim(resumeDb,last,{status:'no_result'});
+assert.equal(claimNext(resumeDb,{now,env:resumeEnv}),null);
+const nextRound=addJob(resumeDb,['resume'],{id:'next-round',source:'collection'});
+assert.equal(getJobPlan(resumeDb,nextRound,{braveConfigured:true,now,env:resumeEnv}).needsBrave,0,
+  'A new collection round skips already researched steps even if fields remain missing');
+const forced=addJob(resumeDb,['resume'],{id:'force-round',source:'collection',repeatChecked:true});
+assert.equal(getJobPlan(resumeDb,forced,{braveConfigured:true,now,env:resumeEnv}).possibleMaxRequests,3);
+assert.equal(resumeApproval(resumeDb,forced.id,3).ok,true);
+const interrupted=claimNext(resumeDb,{now,env:resumeEnv});
+assert.equal(interrupted.step,0);
+assert.equal(claimNext(resumeDb,{now:new Date(now.getTime()+121000),env:resumeEnv}),null);
+assert.equal(forced.state,'paused');
+assert.equal(forced.lastError,'interrupted');
+assert.equal(getBraveCheck(resumeDb,'resume',interrupted.key,0).status,'error');
+assert.equal(claimIsCurrent(resumeDb,interrupted),false);
+
 const html=`<html><head>
 <meta property="og:title" content="De brief voor de koning | Uitgeverij"/>
 <script type="application/ld+json">
@@ -109,10 +150,18 @@ updateFromPages(mergeDb,{key:JSON.stringify([target.isbn,
 assert.equal(manual.description,'Eigen omschrijving door docent',
   'Background enrichment may not replace teacher text');
 assert.deepEqual(manual.tags,['Zelf ingevoerd']);
+assert.deepEqual(manual.enrichmentTags,found.tags,
+  'Verified source keywords supplement manual labels without overwriting them');
 assert.equal(manual.coverUrl,'https://example.org/eigen-omslag.jpg',
   'Teacher cover choices are protected even after a download problem');
 assert.equal(oldWithoutProvenance.description,'Eerder handmatig aangepast',
   'Legacy descriptions with missing provenance are protected');
+assert.equal(notApproved.enrichmentTags,undefined);
+const clearedThemes={...book('cleared-themes'),themesCleared:true};
+updateFromPages({books:[clearedThemes]},{key:JSON.stringify([target.isbn,
+  target.title.toLowerCase(),target.author.toLowerCase()]),bookIds:['cleared-themes']},[found]);
+assert.equal(clearedThemes.enrichmentTags,undefined,
+  'Explicitly cleared themes must not receive background source keywords');
 assert.equal(notApproved.coverUrl,'',
   'A new unrelated copy of the same work must not be enriched without approval');
 
@@ -176,6 +225,31 @@ assert.equal(parseBookPage(sequelHtml,{
   'https://publisher.example/dune-messiah'),null,
   'A matching ISBN must not override an explicitly different work title');
 assert.match(queryFor(1,target),/kaft/);
+assert.match(queryFor(1,target),/9789083316642/);
+assert.match(queryFor(0,{...target,publisher:'Uitgeverij Voorbeeld'}),/Uitgeverij Voorbeeld/);
+const ranked=rankPublisherCandidates([{title:target.title,url:'https://winkel.example/boek'},
+  {title:target.title,url:'https://www.voorbeeld.nl/boek'}],{...target,publisher:'Uitgeverij Voorbeeld'});
+assert.equal(ranked[0].url,'https://www.voorbeeld.nl/boek');
+const differentEdition=parseBookPage(html.replaceAll(target.isbn,'9780306406157'),target,
+  'https://www.uitgeverijvoorbeeld.nl/andere-druk');
+assert.equal(differentEdition.confidence,'title_author');
+const editionBook={...book('edition-safety'),pageCount:null,publisher:'',coverCrop:{x:0.1}};
+const editionDb={books:[editionBook]};
+const editionClaim={key:JSON.stringify([target.isbn,target.title.toLowerCase(),target.author.toLowerCase()]),
+  bookIds:[editionBook.id]};
+updateFromPages(editionDb,editionClaim,[{...differentEdition,publisher:'Andere uitgever',pageCount:123}],
+  {imageUrl:differentEdition.coverUrl});
+assert.match(editionBook.description,/gevaarlijke reis/);
+assert.equal(editionBook.pageCount,null);
+assert.equal(editionBook.publisher,'');
+assert.equal(editionBook.coverUrl,'');
+const editionUpdate=updateFromPages(editionDb,editionClaim,[{...found,publisher:'Juiste uitgever',pageCount:456}]);
+assert.equal(editionBook.pageCount,456);
+assert.equal(editionBook.publisher,'Juiste uitgever');
+assert.equal(editionBook.coverUrl,found.coverUrl);
+assert.equal(editionBook.coverCrop,null);
+assert.ok(editionUpdate.evidenceByBook[editionBook.id].some(e=>e.field==='coverUrl'&&e.url===found.sourceUrl));
+assert.equal(clearedThemes.tags.length,0,'Cleared themes also prevent legacy tag filling');
 assert.equal(parseMonthlyRemaining({headers:{get(k){
   return k==='x-ratelimit-policy'?'2;w=1, 1200;w=2592000':'1, 734';
 }}}),734);
@@ -221,10 +295,12 @@ async function run(){
   }});
   assert.equal(pages.length,1,'Only a verified original book page can be used');
   assert.equal(pageCalls,2,'Robots and page fetched, irrelevant site skipped');
+  const discoveryFailures=[];
   const blocked=await discoverPages({pages:[
     {title:'De brief voor de koning',url:'https://www.uitgeverijvoorbeeld.nl/boek'},
   ]},target,{fetchPage:async url=>url.endsWith('/robots.txt')
-    ?{error:'request_error'}:{body:html}});
+    ?{error:'request_error'}:{body:html},onFailure:error=>discoveryFailures.push(error)});
+  assert.deepEqual(discoveryFailures,['source_unavailable']);
   assert.equal(blocked.length,0,
     'If robots.txt is unreachable, page crawling is not authorized');
 
@@ -332,6 +408,7 @@ async function run(){
   assert.equal(db2.braveEnrichmentJobs[0].state,'complete');
   assert.equal(calls,1,'Remaining external requests skipped when sources filled gaps');
   assert.equal(db2.braveUsage.reserved,1);
+  assert.ok(getBraveCheck(db2,'x',JSON.stringify([target.isbn,target.title.toLowerCase(),target.author.toLowerCase()]),0).evidence.some(e=>e.field==='coverUrl'&&e.url===found.sourceUrl));
   assert.equal(db2.books[0].coverUrl,found.coverUrl);
   assert.deepEqual(db2.books[0].tags,found.tags);
   assert.match(db2.books[0].description,/gevaarlijke reis/);
@@ -339,7 +416,7 @@ async function run(){
   assert.deepEqual(db2.students,undefined,'Worker does not modify students');
   worker.stop();
 
-  // Another edition's cover can be recovered from a verified source page
+  // The exact edition's cover can be recovered from a verified source page
   // even when the image-search result title itself lacks the author's name.
   const db3={books:[{...book('y'),description:'Lange beschrijving. '.repeat(24),
     tags:['Avontuur','Geheimen','Vriendschap']}],braveEnrichmentJobs:[]};
@@ -401,6 +478,28 @@ async function run(){
   assert.equal(workerErrorJob.state,'paused');
   assert.equal(workerErrorJob.completedKeys.length,0);
   failedWorker.stop();
+  // Successful Brave response is not proof that the source pages were
+  // accessible; a failed publisher fetch must remain retryable.
+  const sourceErrorDb={books:[book('source-error')],braveEnrichmentJobs:[]};
+  const sourceErrorJob=addJob(sourceErrorDb,['source-error'],{id:'source-error'});
+  assert.equal(approveJob(sourceErrorDb,sourceErrorJob.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const sourceErrorWorker=createBraveWorker({
+    apiKey:'test-only-key',loadDb:()=>sourceErrorDb,
+    commit:async fn=>fn(sourceErrorDb),delayMs:50,
+    fetchSearch:async()=>({pages:[{title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/boek'}]}),
+    findPages:(result,claim,options)=>discoverPages(result,claim,{
+      ...options,fetchPage:async url=>url.endsWith('/robots.txt')
+        ?{body:'User-agent: *\nAllow: /'}:{error:'request_error'},
+    }),
+  });
+  sourceErrorWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,350));
+  assert.equal(sourceErrorJob.state,'paused','A failed source website must not complete a search');
+  assert.equal(sourceErrorJob.completedKeys.length,0);
+  assert.equal(sourceErrorDb.braveUsage.reserved,1);
+  assert.equal(getJobPlan(sourceErrorDb,sourceErrorJob,{braveConfigured:true,now,env:environment}).canApprove,true);
+  sourceErrorWorker.stop();
   const db4={books:[book('z')],braveEnrichmentJobs:[]};
   const paused=addJob(db4,['z'],{id:'paused'});
   assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,
