@@ -6,6 +6,7 @@
 // independently disallow paid usage / auto recharge.
 const crypto = require('node:crypto');
 const {workKey, isbnOf, isMissing, nextCandidate} = require('./book-free-metadata');
+const {projectTrial,preview:trialPreview,releaseTrialCheckpoints}=require('./book-brave-trial');
 
 const MAX_REQUESTS_PER_WORK = 3;
 const HARD_MONTHLY_CAP = 900;
@@ -54,7 +55,7 @@ function bookWorks(db, job) {
   const ids = new Set(Array.isArray(job?.bookIds) ? job.bookIds : []);
   const grouped = new Map();
   for (const book of db.books || []) {
-    if (!ids.has(book.id) || !String(book.title || '').trim() || !String(book.author || '').trim()) continue;
+    if (book.personalLoanOnly===true || !ids.has(book.id) || !String(book.title || '').trim() || !String(book.author || '').trim()) continue;
     const key = workKey(book);
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(book);
@@ -79,7 +80,7 @@ function freePending(book, now = Date.now()) {
   return Boolean(isbnOf(book) && nextCandidate([book], now));
 }
 function pendingFreeWorks(db, job, easyCbEnabled, now = Date.now()) {
-  if (!easyCbEnabled) return 0;
+  if (!easyCbEnabled||job.source==='trial') return 0;
   return [...bookWorks(db,job).values()].filter(books => books.some(book => freePending(book,now))).length;
 }
 // Durable per-copy, per-edition, per-source search checkpoints. A changed
@@ -102,6 +103,8 @@ function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook
     const combined=new Map([...(Array.isArray(previous?.evidence)?previous.evidence:[]),...evidence]
       .map(item=>[JSON.stringify([item.field,item.url,item.confidence]),item]));
     steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString(),
+      trialPending:job.source==='trial'&&status==='found',
+      ...(job.source==='trial'?{trialBookId:book.id}:{}) ,
       evidence:[...combined.values()].slice(-60)};
   }
 }
@@ -109,6 +112,7 @@ function checkedStep(db,job,key,books,step) {
   return books.length>0&&books.every(book=>{
     const check=getBraveCheck(db,book.id,key,step);
     return ['found','no_result','checked'].includes(check?.status)
+      &&(!check.trialPending||check.jobId===job.id)
       &&(!job.repeatChecked||check.jobId===job.id);
   });
 }
@@ -137,19 +141,24 @@ function addJob(db, bookIds, {id = crypto.randomUUID(), source = 'import', fileN
   db.braveEnrichmentJobs.push(job);
   // Do not discard unapproved jobs or work merely because they are old.
   // Completed records alone may be compacted to bound database size.
-  const completed = db.braveEnrichmentJobs.filter(item=>item.state==='complete');
+  const completed = db.braveEnrichmentJobs.filter(item=>item.state==='complete'&&(item.source!=='trial'||item.trialReviewedAt));
   if (db.braveEnrichmentJobs.length > MAX_JOBS && completed.length) {
     const removable = new Set(completed.slice(0,db.braveEnrichmentJobs.length - MAX_JOBS).map(j=>j.id));
     db.braveEnrichmentJobs = db.braveEnrichmentJobs.filter(j=>!removable.has(j.id));
   }
   return job;
 }
+function effectiveBooks(db,job,books,failedCovers){
+  return job.source==='trial'?projectTrial(db,job,books,failedCovers).books:books;
+}
 function remainingWorks(db,job,failedCovers=new Set()) {
   const completed = new Set(Array.isArray(job.completedKeys)?job.completedKeys:[]);
   const active = new Set(job.state==='running' ? job.approvedKeys || []:[]);
-  return [...bookWorks(db,job)].filter(([key,books])=>
-    !completed.has(key)&&!active.has(key)&&needsExtraWork(books,failedCovers)
-    &&remainingSteps(db,job,key,books).some(step=>shouldQueryStep(step,books,failedCovers))).map(([key])=>key);
+  return [...bookWorks(db,job)].filter(([key,books])=>{
+    const effective=effectiveBooks(db,job,books,failedCovers);
+    return !completed.has(key)&&!active.has(key)&&needsExtraWork(effective,failedCovers)
+      &&remainingSteps(db,job,key,books).some(step=>shouldQueryStep(step,effective,failedCovers));
+  }).map(([key])=>key);
 }
 function getJobPlan(db,job,{
   easyCbEnabled=false, braveConfigured=false, now = new Date(), env = process.env,
@@ -230,6 +239,9 @@ function finishApprovedChunk(db,job,failedCovers=new Set()) {
   job.completedKeys=[...done];
   job.approvedKeys=[];job.cursor=0;job.step=0;job.approval=null;
   job.state=remainingWorks(db,job,failedCovers).length?'awaiting_approval':'complete';
+  if(job.source==='trial'&&job.state==='complete'&&!(db.books||[]).some(b=>trialPreview(db,job,b,failedCovers)?.changes.length)){
+    job.trialReviewedAt=new Date().toISOString();releaseTrialCheckpoints(db,job);
+  }
   job.updatedAt=new Date().toISOString();
 }
 function pauseActiveChunk(job,reason) {
@@ -266,10 +278,11 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
       finishApprovedChunk(db,job,failedCovers);return null;
     }
     const key=job.approvedKeys[job.cursor],books=groups.get(key)||[];
-    if (job.step>=MAX_REQUESTS_PER_WORK || !books.length || !needsExtraWork(books,failedCovers)) {
+    const effective=effectiveBooks(db,job,books,failedCovers);
+    if (job.step>=MAX_REQUESTS_PER_WORK || !books.length || !needsExtraWork(effective,failedCovers)) {
       job.cursor++;job.step=0;continue;
     }
-    if (checkedStep(db,job,key,books,job.step)||!shouldQueryStep(job.step,books,failedCovers)) {job.step++;continue;}
+    if (checkedStep(db,job,key,books,job.step)||!shouldQueryStep(job.step,effective,failedCovers)) {job.step++;continue;}
     if (job.requestsReserved >= job.approval.maxRequests || usage.reserved >= cap
       || (usage.providerRemainingVerified === true
         && Number.isSafeInteger(usage.providerRemaining)&&usage.providerRemaining<=0)) {
@@ -288,7 +301,7 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
     job.inFlight={key,step,reservationId,bookIds:books.map(book=>book.id),reservedAt:now.toISOString()};
     // Consent applies to the exact imported book IDs, not later books that
     // happen to share the same ISBN, title and author.
-    return {id:job.id,key,step,reservationId,bookIds:books.map(book=>book.id),
+    return {id:job.id,key,step,reservationId,source:job.source,bookIds:books.map(book=>book.id),
       title:representative.title,author:representative.author,
       isbn:isbnOf(representative),publisher:representative.imprint||representative.publisher||''};
   }
