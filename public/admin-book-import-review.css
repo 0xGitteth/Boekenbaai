@@ -680,3 +680,20 @@
 @media (max-width: 480px) {
   .bb-guide__pending-item .btn { width: 100%; }
 }
+
+
+/* Dedicated pilot workflow and individual research cards. */
+.bb-review__trial-brave,.bb-review__brave,.bb-review__brave-job,.bb-review__brave-items {
+  min-width:0;overflow-wrap:anywhere;
+}
+.bb-review__trial-brave,.bb-review__brave-job {
+  display:grid;gap:.65rem;margin:.85rem 0;padding:1rem;
+  border:1px solid var(--accent-border);border-radius:12px;background:var(--surface);
+}
+.bb-review__brave-items > section,.bb-review__brave-items > details {
+  margin:.55rem 0;padding:.65rem;border:1px solid var(--accent-border);border-radius:9px;
+}
+.bb-review__brave-items > .btn,.bb-review__brave-job > .btn {
+  justify-self:start;max-width:100%;white-space:normal;margin:.15rem 0;
+}
+.bb-review__trial-brave h5,.bb-review__brave h5 { margin:1rem 0 .35rem;font-size:.98rem; }
