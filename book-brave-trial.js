@@ -7,7 +7,8 @@ const {updateFromPages}=require('./book-brave-page-apply');
 const FIELDS=['description','publisher','pageCount','tags','enrichmentTags','coverUrl'];
 function selectTrialBooks(db,ids,{sources=[],failedCovers=new Set(),expand=true}={}){
   if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'))return {ok:false,error:'invalid_selection'};
-  const selected=[...new Set(ids)].map(id=>(db.books||[]).find(b=>b.id===id));
+  const selected=[...new Set(ids)].map(id=>(db.books||[]).find(b=>b.id===id)).filter(b=>expand||b);
+  if(!selected.length)return {ok:false,error:'invalid_selection'};
   if(selected.some(b=>!b||b.personalLoanOnly===true||!isbnOf(b)||!b.title||!b.author))
     return {ok:false,error:'invalid_selection'};
   const keys=new Set(selected.map(workKey));
@@ -64,6 +65,13 @@ function preview(db,job,book,failedCovers=new Set()){
   return {...snapshot,title:book.title,author:book.author,
     revision:createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')};
 }
+function releaseTrialCheckpoints(db,job,bookId=null){
+  for(const entry of Object.values(db.bookEnrichmentChecks||{})){
+    for(const check of Object.values(entry?.brave||{})){
+      if(check.jobId===job.id&&(!bookId||check.trialBookId===bookId))check.trialPending=false;
+    }
+  }
+}
 function applyPreview(db,job,book,revision,failedCovers=new Set()){
   if(job.state==='running')return {ok:false,error:'running'};
   const view=preview(db,job,book,failedCovers);
@@ -78,20 +86,23 @@ function applyPreview(db,job,book,revision,failedCovers=new Set()){
     book.importProvenance.fieldSources[change.field]=next.importProvenance.fieldSources[change.field];
   }
   (job.trialAppliedCopies||={})[createHash('sha256').update(String(book.id)).digest('hex')]=new Date().toISOString();
-  if(job.state==='complete'&&!(db.books||[]).some(b=>preview(db,job,b,failedCovers)?.changes.length))
-    job.trialReviewedAt=new Date().toISOString();
+  releaseTrialCheckpoints(db,job,book.id);
+  if(job.state==='complete'&&!(db.books||[]).some(b=>preview(db,job,b,failedCovers)?.changes.length)){
+    job.trialReviewedAt=new Date().toISOString();releaseTrialCheckpoints(db,job);
+  }
   return {ok:true,updated:view.changes.length,newCover:view.changes.some(c=>c.field==='coverUrl')};
 }
 function pendingTrialReview(db,failedCovers=new Set()){
   return (db.braveEnrichmentJobs||[]).some(job=>job.source==='trial'&&!job.trialReviewedAt
     &&(db.books||[]).some(book=>preview(db,job,book,failedCovers)?.changes.length));
 }
-function dismissTrial(job,now=new Date()){
+function dismissTrial(db,job,now=new Date()){
   if(job?.source!=='trial'||job.state==='running'||job.inFlight)return {ok:false,error:'not_ready'};
   // Keep the verified research and ledger. Declining the suggestions does
   // not erase paid requests or authorize their automatic repetition.
   job.state='complete';job.approvedKeys=[];job.approval=null;job.trialReviewedAt=now.toISOString();
   job.trialDismissedAt=job.trialReviewedAt;job.updatedAt=job.trialReviewedAt;
+  releaseTrialCheckpoints(db,job);
   return {ok:true};
 }
-module.exports={selectTrialBooks,storeTrialResult,projectTrial,preview,applyPreview,pendingTrialReview,dismissTrial};
+module.exports={selectTrialBooks,storeTrialResult,projectTrial,preview,applyPreview,pendingTrialReview,dismissTrial,releaseTrialCheckpoints};
