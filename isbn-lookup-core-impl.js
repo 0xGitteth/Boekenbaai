@@ -1060,6 +1060,7 @@ function createIsbnLookup({
         );
         detailPaths = extractCbSearchDetailPaths(searchHtml);
       } catch (error) {
+        if(debug?.stopOnRateLimit&&error?.status===429)throw error;
         if (debug) {
           debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
             ? 'timeout'
@@ -1086,6 +1087,7 @@ function createIsbnLookup({
             return metadata;
           }
         } catch (error) {
+          if(debug?.stopOnRateLimit&&error?.status===429)throw error;
           if (debug) {
             debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
               ? 'timeout'
@@ -1134,6 +1136,7 @@ function createIsbnLookup({
           }
         }
       } catch (error) {
+        if(debug?.stopOnRateLimit&&error?.status===429)throw error;
         if (debug) {
           if (debug.sourceStatus['Google Books'] !== 'found') {
             debug.sourceStatus['Google Books'] = error?.name === 'AbortError'
@@ -1169,6 +1172,7 @@ function createIsbnLookup({
           if (debug) debug.sourceStatus['Open Library'] = 'found';
         }
       } catch (error) {
+        if(debug?.stopOnRateLimit&&error?.status===429)throw error;
         if (debug) {
           if (debug.sourceStatus['Open Library'] !== 'found') {
             debug.sourceStatus['Open Library'] = error?.name === 'AbortError'
@@ -1204,6 +1208,7 @@ function createIsbnLookup({
         return metadata;
       }
     } catch (error) {
+      if(debug?.stopOnRateLimit&&error?.status===429)throw error;
       if (debug) {
         debug.sourceStatus['isbnbarcode.org'] = error?.name === 'AbortError'
           ? 'timeout'
@@ -1355,6 +1360,7 @@ function isComplete(result) {
     const normalized=normalizeIsbn(isbn);
     if(!isValidIsbn(normalized))return {status:'invalid_isbn',metadata:null};
     const debug=createDebugPayload(normalized,env);
+    debug.stopOnRateLimit=true;
     try{
       const metadata=await provider.lookup(normalized,debug);
       if(metadata?.found&&metadata.matchLevel==='exact_isbn'){
@@ -1365,8 +1371,8 @@ function isComplete(result) {
         return {status:'found',metadata:{...metadata,isbn:verified,source}};
       }
       return {status:debug.sourceStatus[provider.name]||'error',metadata:null};
-    }catch{
-      return {status:'error',metadata:null};
+    }catch(error){
+      return {status:error?.status===429?'rate_limited':'error',metadata:null};
     }
   };
   lookupIsbnMetadata.availableSources=()=>[...providers].map(([id,p])=>({id,name:p.name,enabled:p.enabled}));
