@@ -1228,7 +1228,7 @@ function isComplete(result) {
   );
 }
 
-  return async function lookupIsbnMetadata(isbn, options = {}) {
+  async function lookupIsbnMetadata(isbn, options = {}) {
     const normalized = normalizeIsbn(isbn);
     const includeDebug = Boolean(options?.includeDebug && debugEnabled);
 
@@ -1340,7 +1340,37 @@ function isComplete(result) {
     } finally {
       inflight.delete(cacheKey);
     }
+  }
+  // Explicit single-provider access for the enrichment orchestrator.
+  // Keep the regular ISBN lookup API and its cache behavior unchanged.
+  const providers = new Map([
+    ['bureau_isbn',{name:'Bureau ISBN',enabled:true,lookup:lookupCb}],
+    ['google_books',{name:'Google Books',enabled:Boolean(env.GOOGLE_BOOKS_API_KEY),lookup:lookupGoogle}],
+    ['open_library',{name:'Open Library',enabled:true,lookup:lookupOpenLibrary}],
+    ['isbnbarcode',{name:'isbnbarcode.org',enabled:isbnBarcodeEnabled,lookup:lookupIsbnBarcode}],
+  ]);
+  lookupIsbnMetadata.lookupSource = async (source,isbn) => {
+    const provider=providers.get(source);
+    if(!provider?.enabled)return {status:'not_configured',metadata:null};
+    const normalized=normalizeIsbn(isbn);
+    if(!isValidIsbn(normalized))return {status:'invalid_isbn',metadata:null};
+    const debug=createDebugPayload(normalized,env);
+    try{
+      const metadata=await provider.lookup(normalized,debug);
+      if(metadata?.found&&metadata.matchLevel==='exact_isbn'){
+        // The original parsers enforce an equivalent ISBN. Preserve the
+        // returned barcode identity; do not stamp an unrelated record.
+        const verified=toIsbn13(metadata.barcode);
+        if(verified!==toIsbn13(normalized))return {status:'identity_mismatch',metadata:null};
+        return {status:'found',metadata:{...metadata,isbn:verified,source}};
+      }
+      return {status:debug.sourceStatus[provider.name]||'error',metadata:null};
+    }catch{
+      return {status:'error',metadata:null};
+    }
   };
+  lookupIsbnMetadata.availableSources=()=>[...providers].map(([id,p])=>({id,name:p.name,enabled:p.enabled}));
+  return lookupIsbnMetadata;
 }
 
 module.exports = {
