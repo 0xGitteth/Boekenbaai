@@ -462,8 +462,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           collectionActions.append(btn);
           return btn;
         }
-        if(!run||run.state==='applied'){
-          collectionNotice.textContent=run
+        if(!run||['applied','cancelled'].includes(run.state)){
+          collectionNotice.textContent=run?.state==='applied'
             ?'Laatste controle toegepast: '+run.applied.updated+' aanvullingen voor '+run.applied.books+' exemplaren.'
             :'Gratis bronnen: '+names+'. Nog geen volledige collectiecontrole uitgevoerd.';
           collectionActions.append(collectionRepeatLabel);
@@ -473,6 +473,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }
         collectionNotice.textContent=run.completed+' van '+run.total+' broncontroles afgerond, '+run.failed+' mislukt, '+run.skipped+' vervallen. '
           +({running:'Onderzoek loopt.',paused:'Gepauzeerd.',partial:'Nog niet alle bronnen zijn succesvol afgerond.',ready:'Onderzoek gereed.'}[run.state]||run.state);
+        action('Onderzoeksronde beëindigen','cancel',()=>({}),'Deze ronde beëindigen? Opgeslagen onderzoeksresultaten blijven behouden.');
         if(run.state==='running'){
           const pause=action('Pauzeren','pause',()=>({}),null);
           pause.disabled=run.pauseRequested===true;
