@@ -94,7 +94,7 @@ function applyTrial(db,book,revision,failedCovers=new Set(),now=new Date()){
   if(view.status!=='found')return {ok:false,error:'no_verified_result'};
   for(const change of view.changes){
     book[change.field]=change.after;
-    if(change.field==='coverUrl')book.localCoverUrl='';
+    if(change.field==='coverUrl'){book.localCoverUrl='';book.coverCrop=null;}
     if(!book.importProvenance||typeof book.importProvenance!=='object')book.importProvenance={};
     if(!book.importProvenance.fieldSources)book.importProvenance.fieldSources={};
     book.importProvenance.fieldSources[change.field]={sourceType:'metadata',sourceDetail:SOURCE};
