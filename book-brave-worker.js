@@ -6,7 +6,7 @@ const {
 const {fetchBrave,discoverPages,selectImageResult}=require('./book-brave-fetch');
 
 const {updateFromPages}=require('./book-brave-page-apply');
-const {storeTrialResult,projectTrial,preview}=require('./book-brave-trial');
+const {storeTrialResult,projectTrial}=require('./book-brave-trial');
 
 function createBraveWorker({
   loadDb,commit,apiKey='',onNewCover=()=>{},isPaused=()=>false,
@@ -79,10 +79,20 @@ function createBraveWorker({
           if(claim.source==='trial'){
             const job=db.braveEnrichmentJobs.find(j=>j.id===claim.id);
             const books=bookWorks(db,job).get(claim.key)||[];
+            const before=projectTrial(db,job,books,failedCovers);
             storeTrialResult(job,claim,pages,imageUrl);
             const projected=projectTrial(db,job,books,failedCovers);
-            updated={added:books.reduce((n,b)=>n+(preview(db,job,b,failedCovers)?.changes.length||0),0),
-              newCover:false,evidenceByBook:projected.evidenceByBook};
+            const evidenceByBook=Object.create(null);
+            let added=0;
+            for(const [index,book] of projected.books.entries()){
+              const previous=before.books[index];
+              const keys=['description','publisher','pageCount','tags','enrichmentTags','coverUrl'];
+              const changed=new Set(keys.filter(field=>JSON.stringify(previous[field]??null)!==JSON.stringify(book[field]??null)));
+              added+=changed.size;
+              const seen=new Set((before.evidenceByBook[book.id]||[]).map(e=>JSON.stringify(e)));
+              evidenceByBook[book.id]=(projected.evidenceByBook[book.id]||[]).filter(e=>changed.has(e.field)&&!seen.has(JSON.stringify(e)));
+            }
+            updated={added,newCover:false,evidenceByBook};
           }else updated=updateFromPages(db,claim,pages,{imageUrl,failedCovers});
           finishClaim(db,claim,{
             providerRemaining:result.providerRemaining,
