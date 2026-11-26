@@ -704,7 +704,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             + (usage.reserved || 0) + ' geregistreerd (maandgrens: '
             + (usage.cap || 900) + '). '
             + (ownLimitReached ? 'De maandgrens van Boekenbaai is bereikt. ' : '')
-            + (providerLimitReached ? 'Boekenbaai heeft een maandrestwaarde van nul opgeslagen; zonder de oorspronkelijke headers is niet zeker dat Brave dit heeft bevestigd. ' : '')
+            + (providerLimitReached ? (usage.canReconcileLegacyZero ? 'Een oude opgeslagen nulstand blokkeert het zoeken. Controleer je Brave-dashboard en herstel de registratie alleen als daar nog tegoed beschikbaar is. ' : 'De geregistreerde maandlimiet bij Brave is bereikt. ') : '')
+            + (usage.legacyReconciledAt && !providerLimitReached ? 'De oude nulstand is hersteld; de eigen maandgrens blijft gelden. ' : '')
             + (usage.legacyProviderRemaining === 0
               ? 'Een eerdere versie heeft nul zoekbudget opgeslagen zonder betrouwbare maandbron; '
                 + 'die waarde wordt niet meer als maandlimiet gebruikt. Een gepauzeerde taak '
@@ -713,6 +714,19 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           : 'Brave staat nog uit. Stel BOEKENBAAI_BRAVE_API_KEY in op de server. '
             + 'Openstaande importopdrachten blijven bewaard.';
         braveItems.replaceChildren();
+        if(info.configured&&usage.canReconcileLegacyZero){
+          const repair=button('Oude budgetstand herstellen','btn btn--secondary');
+          repair.addEventListener('click',async()=>{
+            if(!window.confirm('Heb je in het Brave-dashboard gecontroleerd dat er gratis tegoed beschikbaar is en dat alleen gratis credits zijn toegestaan? Hiermee verwijder je uitsluitend de oude nulstand. De geregistreerde verzoeken en maandgrens blijven behouden. Er worden geen zoekopdrachten uitgevoerd.'))return;
+            repair.disabled=true;
+            try{
+              await request('/api/admin/book-enrichment/brave/reconcile-budget',{confirm:true,month:usage.month,reserved:usage.reserved});
+              enrichmentActionNotice.textContent='Oude budgetstand hersteld. Geef afzonderlijk toestemming voor eventueel nieuw zoekonderzoek.';
+            }catch(error){enrichmentActionNotice.textContent=error.message||'Budgetherstel is mislukt.';}
+            finally{braveRefreshing=false;void refreshBrave();}
+          });
+          braveItems.append(repair);
+        }
         const jobs = Array.isArray(info.jobs) ? info.jobs : [];
         if (!jobs.length) {
           braveItems.append(make('p', 'hint',
