@@ -11,6 +11,11 @@ const {
   robotsAllowed,discoverPages,selectImageResult,fetchHtml,rankPublisherCandidates,
 }=require('../book-brave-fetch');
 const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
+const {narrativeDescription}=require('../book-brave-description');
+assert.equal(narrativeDescription('Bas Nijhuis. Niet zeiken, voetballen! (ISBN 9789048846757) direct en eenvoudig te bestellen bij Boekhandel De Slegte. Uniek aanbod tweedehands boeken.'),'');
+const narrative='Lilly wil graag leren dansen. Samen met haar vriendinnen ontdekt ze hoe moeilijk het is om voor het eerst op een groot podium te staan.';
+assert.equal(narrativeDescription(narrative+' Bestel nu online bij onze winkel.'),narrative);
+
 
 function book(id,title='De brief voor de koning'){
   return {id,title,author:'Tonke Dragt',metadataIsbn:'9789083316642',
@@ -478,28 +483,31 @@ async function run(){
   assert.equal(workerErrorJob.state,'paused');
   assert.equal(workerErrorJob.completedKeys.length,0);
   failedWorker.stop();
-  // Successful Brave response is not proof that the source pages were
-  // accessible; a failed publisher fetch must remain retryable.
-  const sourceErrorDb={books:[book('source-error')],braveEnrichmentJobs:[]};
-  const sourceErrorJob=addJob(sourceErrorDb,['source-error'],{id:'source-error'});
-  assert.equal(approveJob(sourceErrorDb,sourceErrorJob.id,{confirmed:true,expectedRequests:3,
+  // A source website may fail while the API works. Log it without
+  // freezing the rest of the already approved searches.
+  const sourceErrorDb={books:[book('source-error'),book('next','De geheime opdracht')],braveEnrichmentJobs:[]};
+  const sourceErrorJob=addJob(sourceErrorDb,['source-error','next'],{id:'source-error'});
+  assert.equal(approveJob(sourceErrorDb,sourceErrorJob.id,{confirmed:true,expectedRequests:6,
     expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
   const sourceErrorWorker=createBraveWorker({
     apiKey:'test-only-key',loadDb:()=>sourceErrorDb,
     commit:async fn=>fn(sourceErrorDb),delayMs:50,
-    fetchSearch:async()=>({pages:[{title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/boek'}]}),
+    fetchSearch:async(step,claim)=>({pages:[{title:claim.title,url:'https://www.uitgeverijvoorbeeld.nl/boek'}],
+      images:[{title:claim.title,pageUrl:'https://www.uitgeverijvoorbeeld.nl/boek'}]}),
     findPages:(result,claim,options)=>discoverPages(result,claim,{
       ...options,fetchPage:async url=>url.endsWith('/robots.txt')
         ?{body:'User-agent: *\nAllow: /'}:{error:'request_error'},
     }),
   });
-  sourceErrorWorker.schedule();
-  await new Promise(resolve=>setTimeout(resolve,350));
-  assert.equal(sourceErrorJob.state,'paused','A failed source website must not complete a search');
-  assert.equal(sourceErrorJob.completedKeys.length,0);
-  assert.equal(sourceErrorDb.braveUsage.reserved,1);
-  assert.equal(getJobPlan(sourceErrorDb,sourceErrorJob,{braveConfigured:true,now,env:environment}).canApprove,true);
+  sourceErrorWorker.schedule(50);
+  await new Promise(resolve=>setTimeout(resolve,900));
   sourceErrorWorker.stop();
+  assert.equal(sourceErrorJob.state,'complete','Approved search steps finish even if a website is inaccessible');
+  assert.equal(sourceErrorJob.completedKeys.length,2);
+  assert.equal(sourceErrorDb.braveUsage.reserved,6);
+  const warning=getBraveCheck(sourceErrorDb,'source-error',require('../book-free-metadata').workKey(sourceErrorDb.books[0]),0);
+  assert.equal(warning.status,'source_partial');
+  assert.equal(warning.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
   const db4={books:[book('z')],braveEnrichmentJobs:[]};
   const paused=addJob(db4,['z'],{id:'paused'});
   assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,
