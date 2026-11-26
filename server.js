@@ -26,7 +26,7 @@ const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialP
   catalogue:trialCatalogue}=require('./book-enrichment-trial');
 
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
-const {selectTrialBooks,preview:braveTrialPreview,applyPreview:applyBraveTrial}=require('./book-brave-trial');
+const {selectTrialBooks,preview:braveTrialPreview,applyPreview:applyBraveTrial,pendingTrialReview,dismissTrial}=require('./book-brave-trial');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
 const {safeRowReplays,recordBookReviewChoices,recordMetadataReviewChoices,
@@ -5740,6 +5740,7 @@ async function handleApi(req, res, requestUrl) {
         if(collectionPaused()||['running','paused','partial','ready'].includes(db.freeEnrichmentRun?.state)){
           outcome={ok:false,error:'free_research_pending'};return db;
         }
+        if(pendingTrialReview(db,exhaustedCoverSourceUrls())){outcome={ok:false,error:'trial_review_pending'};return db;}
         if((db.braveEnrichmentJobs||[]).some(j=>j.source==='trial'&&getJobPlan(db,j,{
           braveConfigured:braveWorker.configured,failedCovers:exhaustedCoverSourceUrls()}).state!=='complete')){
           outcome={ok:false,error:'trial_exists'};return db;
@@ -5755,18 +5756,30 @@ async function handleApi(req, res, requestUrl) {
       if(!outcome.ok){
         const messages={free_research_pending:'Rond eerst het gratis onderzoek van de geselecteerde boeken af.',
           free_proposals_pending:'Beoordeel en sla eerst de veilige gratis aanvullingen van alle geselecteerde exemplaren op.',
-          trial_exists:'Er bestaat al een openstaande Brave-proef.'};
+          trial_exists:'Er bestaat al een openstaande Brave-proef.',trial_review_pending:'Beoordeel eerst de resultaten van de vorige Brave-proef.'};
         return sendJson(res,409,{message:messages[outcome.error]||'De selectie is niet geschikt voor een Brave-proef.',error:outcome.error});
       }
       return sendJson(res,201,outcome);
     }
-    const braveTrialPath=requestUrl.pathname.match(/^\/api\/admin\/book-enrichment\/brave\/([a-f0-9-]+)\/(trial-preview|trial-apply)$/);
+    const braveTrialPath=requestUrl.pathname.match(/^\/api\/admin\/book-enrichment\/brave\/([a-f0-9-]+)\/(trial-preview|trial-apply|trial-dismiss)$/);
     if(braveTrialPath&&['GET','POST'].includes(req.method)){
       if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
       if(braveTrialPath[2]==='trial-preview'&&req.method==='GET'){
         const db=loadDb(),job=db.braveEnrichmentJobs?.find(j=>j.id===braveTrialPath[1]&&j.source==='trial');
         if(!job)return sendJson(res,404,{message:'Brave-proef niet gevonden.'});
-        return sendJson(res,200,{state:job.state,copies:db.books.map(b=>braveTrialPreview(db,job,b,exhaustedCoverSourceUrls())).filter(Boolean)});
+        return sendJson(res,200,{state:job.state,dismissedAt:job.trialDismissedAt||null,copies:db.books.map(b=>braveTrialPreview(db,job,b,exhaustedCoverSourceUrls())).filter(Boolean)});
+      }
+      if(braveTrialPath[2]==='trial-dismiss'&&req.method==='POST'){
+        const body=await parseBody(req,1200);
+        if(body?.confirm!==true)return sendJson(res,400,{message:'Bevestig het beëindigen van de proef.'});
+        let outcome={ok:false,error:'not_ready'};
+        await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,read:()=>loadDb(),mutate:db=>{
+          if(collectionPaused())return db;
+          outcome=dismissTrial(db.braveEnrichmentJobs?.find(j=>j.id===braveTrialPath[1]&&j.source==='trial'));
+          return db;
+        }});
+        if(!outcome.ok)return sendJson(res,409,{message:'De proef kan nu niet worden beëindigd.'});
+        return sendJson(res,200,outcome);
       }
       if(braveTrialPath[2]==='trial-apply'&&req.method==='POST'){
         const body=await parseBody(req,4096);
@@ -5829,6 +5842,9 @@ async function handleApi(req, res, requestUrl) {
             outcome={ok:false,error:'free_research_pending'};return db;
           }
           const selectedJob=db.braveEnrichmentJobs?.find(j=>j.id===braveApprove[1]);
+          if(selectedJob?.source!=='trial'&&pendingTrialReview(db,exhaustedCoverSourceUrls())){
+            outcome={ok:false,error:'trial_review_pending'};return db;
+          }
           if(selectedJob?.source==='trial'){
             const readiness=selectTrialBooks(db,selectedJob.bookIds,{expand:false,
               sources:enrichmentSources.list().filter(s=>s.enabled).map(s=>s.id),
@@ -5847,7 +5863,7 @@ async function handleApi(req, res, requestUrl) {
         },
       });
       if (!outcome?.ok) return sendJson(res, 409,{
-        message:'De aanvraag kon niet worden goedgekeurd. Vernieuw de berekening.',
+        message:outcome?.error==='trial_review_pending'?'Beoordeel eerst de opgeslagen Brave-proefresultaten.':'De aanvraag kon niet worden goedgekeurd. Vernieuw de berekening.',
         error:outcome?.error||'unknown',
       });
       braveWorker.schedule(300);
