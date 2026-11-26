@@ -277,6 +277,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         provider_error: 'Brave heeft een foutmelding teruggestuurd.',
         request_error: 'De verbinding met Brave is mislukt.',
         timeout: 'Het Brave-verzoek duurde te lang.',
+        interrupted: 'De eerdere zoekopdracht werd onderbroken. Eerder opgeslagen resultaten blijven behouden; opnieuw goedkeuren is nodig.',
         month_changed: 'De maand is gewisseld; nieuwe toestemming is nodig.',
         too_large: 'Het antwoord van Brave was te groot.',
       };
@@ -375,13 +376,17 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           braveItems.append(item);
         }
         if (info.configured || info.freeConfigured) {
+          const repeat = make('input');
+          repeat.type = 'checkbox';
+          const repeatLabel = make('label', 'hint');
+          repeatLabel.append(repeat, document.createTextNode(' Eerder onderzochte bronnen opnieuw raadplegen'));
           const scan = button('Bestaande collectie controleren', 'btn btn--ghost');
           scan.addEventListener('click', async () => {
             if (!window.confirm('De bestaande boeken op ontbrekende gegevens controleren? '
               + 'Gratis bronnen starten automatisch. Brave wordt pas na jouw toestemming gebruikt.')) return;
             scan.disabled = true;
             try {
-              await request('/api/admin/book-enrichment/brave/scan', {confirm:true});
+              await request('/api/admin/book-enrichment/brave/scan', {confirm:true,repeatChecked:repeat.checked});
               enrichmentActionNotice.textContent =
                 'Collectiecontrole opgeslagen. Je kunt later toestemming geven voor Brave.';
             } catch (error) {
@@ -392,7 +397,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               void refreshBrave();
             }
           });
-          braveItems.append(scan);
+          braveItems.append(repeatLabel,scan);
         }
         braveItems.append(make('p', 'hint',
           'Geen toestemming geven mag altijd. De import blijft opgeslagen; je kunt later terugkomen. '
