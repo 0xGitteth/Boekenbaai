@@ -94,6 +94,9 @@ function comparison(db,book,failedCovers=new Set(),sources=SOURCE_ORDER){
   }
   const statuses=checks.map(({source,check})=>({source,status:check?.status||'not_checked',
     checkedAt:check?.checkedAt||null,lastError:check?.lastError||null,lastAttemptAt:check?.lastAttemptAt||null,
+    sourceUrl:typeof check?.metadata?.sourceUrl==='string'&&check.metadata.sourceUrl.startsWith('https://')?check.metadata.sourceUrl.slice(0,1500):null,
+    matchLevel:check?.metadata?.matchLevel||null,
+    history:Array.isArray(check?.attemptHistory)?check.attemptHistory.slice(-20):[],
     availableFields:validCheck(book,check)?Object.keys(check.metadata).filter(k=>
       ['description','publisher','imprint','publishedYear','pageCount','language','nurCode','nurCategory',
         'seriesTitle','seriesNumber','coverUrl','tags'].includes(k)&&isPresent(check.metadata[k])):[]}));
@@ -125,6 +128,6 @@ function applyComparison(db,book,revision,failedCovers=new Set(),sources=SOURCE_
   return {ok:true,updated:preview.changes.length,newCover:preview.changes.some(c=>c.field==='coverUrl')};
 }
 function compareEdition(db,book,failedCovers=new Set(),sources=SOURCE_ORDER){
-  return (db.books||[]).filter(b=>workKey(b)===workKey(book)).map(b=>comparison(db,b,failedCovers,sources));
+  return (db.books||[]).filter(b=>b.personalLoanOnly!==true&&workKey(b)===workKey(book)).map(b=>comparison(db,b,failedCovers,sources));
 }
 module.exports={comparison,applyComparison,compareEdition};
