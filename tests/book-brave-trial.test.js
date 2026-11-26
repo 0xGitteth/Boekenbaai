@@ -45,7 +45,7 @@ const first=preview(db,job,book);
 assert.ok(first.changes.some(c=>c.field==='description'));
 assert.equal(applyPreview(db,job,book,'invalid').ok,false);
 assert.equal(applyPreview(db,job,book,first.revision).ok,true);
-assert.equal(book.description,page.description);
+assert.equal(book.description,page.description.trim());
 assert.equal(other.description,'Docenttekst');
 const second=preview(db,job,other);
 assert.ok(!second.changes.some(c=>c.field==='description'));

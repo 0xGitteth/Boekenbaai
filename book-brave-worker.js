@@ -41,8 +41,9 @@ function createBraveWorker({
       if(!claim)return;
       keepGoing=true;
       const result=await fetchSearch(claim.step,claim,{apiKey});
-      let pages=[],imageUrl='',sourceError=null;
-      const onFailure=()=>{sourceError='source_unavailable';};
+      let pages=[],imageUrl='';
+      const sourceFailures=[];
+      const onFailure=(code,detail={})=>{if(sourceFailures.length<12)sourceFailures.push({code,url:detail.url||'',stage:detail.stage||'page',reason:detail.reason||code});};
       if(!result.error&&!stopped){
         if(claim.step===1){
           imageUrl=claim.isbn?'':selectImageResult(result.images,claim);
@@ -60,7 +61,7 @@ function createBraveWorker({
         }
       }
       if(stopped)return;
-      const bad=result.error||sourceError||null;
+      const bad=result.error||null;
       let outcome=null;
       // A legacy import can start during Brave's network request. Do not
       // modify ANY database fields (including progress/usage) until that
@@ -97,7 +98,7 @@ function createBraveWorker({
           finishClaim(db,claim,{
             providerRemaining:result.providerRemaining,
             providerRemainingConfirmed:Number.isSafeInteger(result.providerRemaining),
-            error:bad,status:updated.added>0?'found':'no_result',added:updated.added,
+            error:bad,status:updated.added>0?'found':sourceFailures.length?'source_partial':'no_result',added:updated.added,sourceFailures,
             evidenceByBook:updated.evidenceByBook,
           });
           return updated;
@@ -106,7 +107,9 @@ function createBraveWorker({
       }
       if(stopped)return;
       if(outcome?.newCover)onNewCover();
-      // Any provider/search error pauses this job. No later step is issued
+      // A Brave API error pauses the job; inaccessible source pages are logged
+      // and skipped, so other books can use the already approved budget.
+      // No later step is issued
       // automatically until an administrator reviews the status and approves.
       if(bad)keepGoing=false;
     }catch(error) {

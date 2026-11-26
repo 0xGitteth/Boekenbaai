@@ -1284,3 +1284,38 @@ body.bb-teacher-v31 .bb-v32-cover-placeholder .bb-v32-cover-note {
   top:27px;padding:0 3px;border-radius:0;background:transparent;
   opacity:.84;color:#fff;text-shadow:0 1px 3px #0006;
 }
+
+/* Landscape tablets: keep primary navigation visible in its own wrapping row. */
+@media (min-width: 761px) and (max-width: 1180px) {
+  body.bb-admin-v31.bb-v32-active .hero.hero--staff,
+  body.bb-teacher-v31.bb-v32-active .hero.hero--staff {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 65px;
+    padding: 8px 18px;
+    row-gap: 4px;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav {
+    order: 10;
+    flex: 0 0 100%;
+    width: 100%;
+    margin: 0;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tabs {
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    flex-wrap: wrap;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar .bb-teacher-v31-nav {
+    min-height: 44px;
+    height: auto;
+    padding: 8px 11px;
+    font-size: .83rem;
+    line-height: 1.25;
+  }
+}

@@ -680,3 +680,17 @@
 @media (max-width: 480px) {
   .bb-guide__pending-item .btn { width: 100%; }
 }
+
+/* Give each internet-research task a distinct, readable boundary. */
+.bb-review__brave-job {
+  display: grid;
+  justify-items: start;
+  gap: .65rem;
+  padding: .85rem 0;
+  border-bottom: 1px solid var(--accent-border,#d9e2ee);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bb-review__brave-job > .hint { margin: 0; }
+.bb-review__brave-job > .btn { white-space: normal; max-width: 100%; }
+.bb-review__brave-job + .bb-review__brave-job { margin-top: .65rem; }

@@ -2,6 +2,7 @@
 const {workKey,isbnOf}=require('./book-free-metadata');
 const {isValidIsbn,toIsbn13}=require('./isbn-lookup-core-impl');
 const {comparison}=require('./book-enrichment-comparison');
+const {narrativeDescription}=require('./book-brave-description');
 
 function addProvenance(book,field,source){
   if(!book.importProvenance||typeof book.importProvenance!=='object')
@@ -38,10 +39,11 @@ function updateFromPages(db,claim,pages,{imageUrl='',failedCovers=new Set()}={})
     for(const page of pages||[]){
       if(!page||!['isbn','title_author'].includes(page.confidence))continue;
       const exactEdition=Boolean(isbn&&page.confidence==='isbn'&&isValidIsbn(page.isbn)&&toIsbn13(page.isbn)===isbn);
-      if(!userEdited(book,'description') && page.description?.length>=90
+      const description=narrativeDescription(page.description);
+      if(!userEdited(book,'description') && description.length>=90
         && String(book.description||'').length<280
-        && page.description.length>String(book.description||'').length+40){
-        book.description=page.description;addProvenance(book,'description','verified_book_page');remember('description',page);added++;
+        && description.length>String(book.description||'').length+40){
+        book.description=description;addProvenance(book,'description','verified_book_page');remember('description',page);added++;
       }
       if(exactEdition&&!conflicts.has('publisher')&&!userEdited(book,'publisher')&&!book.publisher&&page.publisher){
         book.publisher=page.publisher;addProvenance(book,'publisher','verified_book_page');remember('publisher',page);added++;

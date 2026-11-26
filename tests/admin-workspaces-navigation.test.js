@@ -229,3 +229,6 @@ for(const fn of events.get('boekenbaai:deferred-books-changed')||[])fn();
 assert.equal(taskButtons[1].querySelector('[data-workspace-count]').textContent,'7');
 assert.equal(taskButtons[3].querySelector('[data-workspace-count]').textContent,'16');
 console.log('Admin workspaces: existing forms preserved, four import tabs, five task tabs, counts and keyboard navigation OK');
+
+assert.match(styles,/\.bb-workspace-tab-name\s*\{[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/);
+assert.match(styles,/@media \(min-width: 641px\) and \(max-width: 1180px\)\s*\{[\s\S]*?\.bb-workspace-tab\s*\{[^}]*min-width: 0;[^}]*min-height: 44px;/);
