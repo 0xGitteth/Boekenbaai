@@ -56,6 +56,7 @@ function comparison(db,book,failedCovers=new Set(),sources=SOURCE_ORDER){
         source:origins[0],sources:origins});
       continue;
     }
+    if(comparableFields.includes(field)&&new Set(values.map(v=>keyText(v.after))).size>1)continue;
     if(field==='description')values.sort((a,b)=>b.after.trim().length-a.after.trim().length||byRank(a,b));
     const chosen=values[0];
     const agreeing=values.filter(v=>keyText(v.after)===keyText(chosen.after)).map(v=>v.source);
@@ -89,7 +90,7 @@ function applyComparison(db,book,revision,failedCovers=new Set(),sources=SOURCE_
     if(!book.importProvenance||typeof book.importProvenance!=='object')book.importProvenance={};
     if(!book.importProvenance.fieldSources)book.importProvenance.fieldSources={};
     book.importProvenance.fieldSources[change.field]={sourceType:'metadata',
-      sourceDetail:change.source};
+      sourceDetail:change.sources.length>1?'multiple_sources':change.source};
     // The durable research retains all agreeing sources and timestamps;
     // do not falsely label a union of keywords as one provider's result.
     for(const source of change.sources){
