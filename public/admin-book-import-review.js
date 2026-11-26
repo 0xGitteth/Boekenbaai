@@ -547,6 +547,111 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     }
     void refreshCollection();
 
+    const reportRoot='/api/admin/book-enrichment/report';
+    const reportPanel=make('details','bb-review__brave');
+    reportPanel.append(make('summary','','Onderzoeksstatus en brongegevens per boek'));
+    const reportNotice=make('p','hint','Open dit overzicht om de actuele dekking te bekijken.');
+    reportNotice.setAttribute('role','status');
+    const reportSearch=make('input');reportSearch.type='search';
+    reportSearch.placeholder='Titel, auteur of ISBN';reportSearch.setAttribute('aria-label','Zoek in verrijkingsrapport');
+    const reportFilter=make('select');reportFilter.setAttribute('aria-label','Filter onderzoeksstatus');
+    const reportOptions={all:'Alle edities',unresearched:'Niet onderzocht',partial:'Gedeeltelijk onderzocht',
+      complete:'Gegevens compleet volgens basiscontrole',conflicts:'Tegenstrijdige gegevens',pending:'Veilige aanvullingen beschikbaar',no_isbn:'Zonder geldig ISBN'};
+    for(const [key,label] of Object.entries(reportOptions)){const option=make('option','',label);option.value=key;reportFilter.append(option);}
+    const reportSearchButton=button('Zoeken / vernieuwen','btn btn--secondary');
+    const reportResults=make('div','bb-review__brave-items');
+    const reportNav=make('div','bb-review__brave-items');
+    let reportBusy=false,reportPage=1;
+    const providerNames={boekenbase:'BoekenBase',bureau_isbn:'Bureau ISBN',easycb:'EasyCB',
+      google_books:'Google Books',open_library:'Open Library',isbnbarcode:'ISBNBarcode',catalogue:'Huidige collectie'};
+    const sourceName=id=>providerNames[id]||id;
+    const fieldName=field=>trialFields[field==='tags'?'enrichmentTags':field]||field;
+    async function loadReportDetail(row,container){
+      try{
+        const response=await request(reportRoot+'/detail?bookId='+encodeURIComponent(row.id));
+        container.replaceChildren();
+        for(const [index,copy] of (response.copies||[]).entries()){
+          const detail=make('div','bb-review__brave-items');
+          detail.append(make('strong','','Exemplaar '+(index+1)));
+          for(const source of copy.statuses||[]){
+            const history=make('details');
+            history.append(make('summary','',sourceName(source.source)+': '+trialStatus(source.status)));
+            if(source.checkedAt)history.append(make('p','hint','Onderzocht: '+new Date(source.checkedAt).toLocaleString('nl-NL')));
+            if(source.sourceUrl)history.append(make('p','hint','Bron: '+source.sourceUrl));
+            if(source.lastError)history.append(make('p','hint','Laatste poging: '+trialStatus(source.lastError)));
+            if(source.availableFields?.length)history.append(make('p','hint','Beschikbaar: '+source.availableFields.map(fieldName).join(', ')));
+            for(const event of (source.history||[]).slice().reverse()){
+              history.append(make('p','hint',new Date(event.checkedAt).toLocaleString('nl-NL')+' · '+trialStatus(event.status)
+                +(event.fields?.length?' · '+event.fields.map(fieldName).join(', '):'')));
+            }
+            detail.append(history);
+          }
+          for(const conflict of copy.conflicts||[]){
+            detail.append(make('strong','','Tegenstrijdig: '+fieldName(conflict.field)));
+            for(const entry of conflict.values)detail.append(make('p','hint',sourceName(entry.source)+': '+showValue(entry.value)));
+          }
+          for(const change of copy.changes||[]){
+            const proposal=make('details');
+            proposal.append(make('summary','','Voorstel: '+fieldName(change.field)),
+              make('p','hint','Huidig: '+showValue(change.before)),
+              make('p','','Nieuw: '+showValue(change.after)),
+              make('p','hint','Bron: '+(change.sources||[change.source]).map(sourceName).join(', ')));
+            detail.append(proposal);
+          }
+          for(const step of copy.brave||[]){
+            const evidence=make('details');
+            evidence.append(make('summary','','Brave, stap '+(step.step+1)+': '+trialStatus(step.status)));
+            if(step.checkedAt)evidence.append(make('p','hint',new Date(step.checkedAt).toLocaleString('nl-NL')));
+            if(step.error)evidence.append(make('p','hint',trialStatus(step.error)));
+            for(const item of step.evidence||[])evidence.append(make('p','hint',fieldName(item.field)+' · '+item.url));
+            detail.append(evidence);
+          }
+          container.append(detail);
+        }
+      }catch(error){container.textContent=error.message||'Boekdetails konden niet worden geladen.';}
+    }
+    async function refreshReport(){
+      if(reportBusy||!root.isConnected)return;
+      reportBusy=true;reportSearchButton.disabled=true;
+      try{
+        const params=new URLSearchParams({q:reportSearch.value,filter:reportFilter.value,page:String(reportPage)});
+        const data=await request(reportRoot+'?'+params.toString());
+        reportPage=data.page;
+        const c=data.counts||{};
+        reportNotice.textContent=c.all+' edities · '+c.unresearched+' niet onderzocht · '+c.partial+' gedeeltelijk · '
+          +c.complete+' basisgegevens compleet · '+c.conflicts+' met tegenstrijdigheden · '+c.pending+' met aanvullingen.';
+        reportResults.replaceChildren();
+        for(const row of data.rows||[]){
+          const item=make('details');
+          item.append(make('summary','',row.title+' · '+(row.isbn||'Geen ISBN')+' · '+reportOptions[row.status]));
+          item.append(make('p','hint',row.author+' · '+row.copies+' exemplaren · '+row.checked+'/'+row.sourceCount+' bronnen afgerond · '
+            +row.localCovers+' lokaal opgeslagen omslagen.'));
+          item.append(make('p','hint','Ontbreekt: '+(row.missing.map(fieldName).join(', ')||'Geen basisvelden')
+            +' · '+row.pending+' voorstellen · '+row.conflicts+' tegenstrijdigheden.'));
+          item.append(make('p','hint','Help me kiezen: '+row.content.strong+' sterke kenmerken, '+row.content.textual+' tekstuele aanwijzingen.'));
+          const detail=make('div','bb-review__brave-items');
+          item.append(detail);
+          let loaded=false;
+          item.addEventListener('toggle',()=>{if(item.open&&!loaded){loaded=true;void loadReportDetail(row,detail);}});
+          reportResults.append(item);
+        }
+        if(!data.rows?.length)reportResults.append(make('p','hint','Geen edities gevonden.'));
+        reportNav.replaceChildren();
+        const prev=button('Vorige','btn btn--ghost'),next=button('Volgende','btn btn--ghost');
+        prev.disabled=data.page<=1;next.disabled=data.page>=data.pages;
+        prev.addEventListener('click',()=>{reportPage--;void refreshReport();});
+        next.addEventListener('click',()=>{reportPage++;void refreshReport();});
+        reportNav.append(prev,make('span','hint','Pagina '+data.page+' van '+data.pages),next);
+      }catch(error){reportNotice.textContent=error.message||'Onderzoeksrapport kon niet worden geladen.';}
+      finally{reportBusy=false;reportSearchButton.disabled=false;}
+    }
+    reportSearchButton.addEventListener('click',()=>{reportPage=1;void refreshReport();});
+    reportSearch.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();reportPage=1;void refreshReport();}});
+    reportFilter.addEventListener('change',()=>{reportPage=1;void refreshReport();});
+    reportPanel.addEventListener('toggle',()=>{if(reportPanel.open)void refreshReport();});
+    reportPanel.append(reportNotice,reportSearch,reportFilter,reportSearchButton,reportResults,reportNav);
+    enrichmentExtra.append(reportPanel);
+
 
 
 
