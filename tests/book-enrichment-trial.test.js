@@ -1,6 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {getCheck,recordCheck,shouldProbe,trialView,applyTrial,catalogue,editionViews}=require('../book-enrichment-trial');
+const {normalizeRecord}=require('../book-boekenbase');
 const isbn='9789086960088';
 const book={id:'one',metadataIsbn:isbn,title:'Hittegolf',author:'Test Auteur',tags:['Eigen'],
   importProvenance:{fieldSources:{publisher:{sourceType:'manual'}}}};
@@ -54,4 +55,23 @@ recordCheck(db,fresh,{status:'network_error'});
 assert.equal(shouldProbe(db,fresh),true,'Temporary failure remains eligible');
 recordCheck(db,fresh,{status:'not_found'});
 assert.equal(shouldProbe(db,fresh),false,'A confirmed negative result is remembered');
+// Exercise the actual adapter rather than a handcrafted normalized object.
+const liveBook={id:'live',metadataIsbn:isbn,title:'Testtitel',author:'Test Auteur',
+  coverUrl:'https://example.org/old.jpg',coverCrop:{x:0.1,y:0.2,width:0.7,height:0.7},
+  importProvenance:{fieldSources:{coverUrl:{sourceType:'metadata'}}}};
+const liveDb={books:[liveBook]};
+const liveData=normalizeRecord({isbn13:isbn,title:liveBook.title,
+  contributors:[{role:'A01',name:liveBook.author}],nur_main:'282',
+  nur_main_name:'Fictie 7-9 jaar',keywords:['Paarden'],
+  assets:[{kind:'vrk',url:'https://example.org/new.jpg'}]},isbn);
+recordCheck(liveDb,liveBook,{status:'found',metadata:liveData});
+const failed=new Set([liveBook.coverUrl]);
+const liveView=trialView(liveDb,liveBook,failed);
+assert.equal(liveView.sourceDetails.nurCategory,'Fictie 7-9 jaar');
+assert.equal(liveView.sourceDetails.keywordCount,1);
+assert.equal(applyTrial(liveDb,liveBook,liveView.revision,failed).ok,true);
+assert.deepEqual(liveBook.enrichmentTags,['Paarden']);
+assert.equal(liveBook.nurCategory,'Fictie 7-9 jaar');
+assert.equal(liveBook.coverCrop,null);
+assert.equal(liveBook.coverUrl,'https://example.org/new.jpg');
 console.log('Persistent trial previews, safe approval and retry policy passed.');
