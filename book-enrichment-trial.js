@@ -69,9 +69,11 @@ function proposedChanges(book,check,failedCovers=new Set(),source=SOURCE){
       if(after.length===old.length)continue;
     }else if(field==='coverUrl'){
       after=cleanCover(after);
-      if(book.localCoverUrl||!after||after===before)continue;
+      if(book.localCoverUrl||!after||after===before||failedCovers.has(after))continue;
+      // A proven invalid legacy file is not a populated, usable cover.
+      // Explicit manual provenance above still protects the teacher's choice.
       if(present(before)&&!(failedCovers.has(before)
-        &&book.importProvenance?.fieldSources?.coverUrl?.sourceType==='metadata'))continue;
+        &&(book.rejectedCoverSource===before||book.importProvenance?.fieldSources?.coverUrl?.sourceType==='metadata')))continue;
     }else{
       // Do not silently replace any existing information, even if another
       // source offers a longer description or a conflicting year.

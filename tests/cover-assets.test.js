@@ -10,8 +10,11 @@ const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { createCoverAssetStore, safeCoverUrl, imageType, publicIPv4, downloadCover } = require('../lib/cover-assets');
 
+const {dimensions,usableDimensions}=require('../lib/cover-dimensions');
+const TINY=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvmkAAAAASUVORK5CYII=','base64');
+const TINY_GIF=Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7','base64');
 const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvmkAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAApElEQVR4nO3PAQ3AIADAMEALStCCfw138Sd7q2Cb+9zxJ+vrgLcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuO4Bj2YBuolyvV4AAAAASUVORK5CYII=',
   'base64',
 );
 
@@ -114,6 +117,106 @@ async function main() {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'boekenbaai-covers-'));
   let server;
   try {
+    assert.equal(usableDimensions(TINY),null);
+    assert.equal(usableDimensions(TINY_GIF),null);
+    assert.deepEqual(dimensions(PNG),{width:80,height:120,format:'png'});
+    assert.equal(usableDimensions(PNG.subarray(0,30)),null);
+    // The original 80x120 PNG is valid; corrupted or fake pixels must not
+    // become valid solely because their IHDR has plausible dimensions.
+    const corrupt=Buffer.from(PNG);
+    corrupt[45]^=1;
+    assert.equal(usableDimensions(corrupt),null,'Reject bad PNG chunk CRC');
+    const badScan=Buffer.from(PNG);
+    const idat=33, idatLength=badScan.readUInt32BE(idat);
+    badScan[idat+8]=0; // Invalid zlib header, but repair the chunk CRC.
+    badScan.writeUInt32BE(require('node:zlib').crc32(
+      badScan.subarray(idat+4,idat+8+idatLength)),idat+8+idatLength);
+    assert.equal(usableDimensions(badScan),null,'Reject invalid compressed PNG with correct CRC');
+    const spoofedGif=Buffer.from(TINY_GIF);
+    spoofedGif.writeUInt16LE(80,6);spoofedGif.writeUInt16LE(120,8);
+    assert.equal(usableDimensions(spoofedGif),null,'Reject a one-pixel frame on a large GIF canvas');
+    const gif=Buffer.from('R0lGODdhUAB4AIEAADdklgAAAAAAAAAAACwAAAAAUAB4AEAInwABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkyhTqlzJsqXLlzBjypxJs6bNmzhz6tzJs6fPn0CDCh1KtKjRo0iTKl3KtKnTp1CjSp1KtarVq1izat3KtavXr2DDih1LtqzZs2jTql3Ltq3bt3Djyp1Lt67du3jz6t3Lt6/fv4ADCx5MuLDhw4gTK04YEAA7','base64');
+    assert.deepEqual(usableDimensions(gif),{width:80,height:120,format:'gif'});
+    const webp=Buffer.from('UklGRlYAAABXRUJQVlA4IEoAAAAQBQCdASpQAHgAPm02mUmkIqKhIMgAgA2JaQB2AAAMb3U30bUOcZQD3U30bUOcZP9AAP7uQx//3BmfV2OH/8bzea1YgAAAAAAAAA==','base64');
+    assert.deepEqual(usableDimensions(webp),{width:80,height:120,format:'webp'});
+    const fakeWebp=Buffer.from(webp.subarray(0,30));
+    fakeWebp.writeUInt32LE(fakeWebp.length-8,4);
+    fakeWebp.writeUInt32LE(10,16);
+    assert.equal(usableDimensions(fakeWebp),null,'Reject WebP dimensions with no frame data');
+    // The frame tag declares a 40-byte first partition, but this RIFF
+    // contains only two payload bytes after the keyframe header.
+    const truncatedWebp=Buffer.from(webp.subarray(0,32));
+    truncatedWebp.writeUInt32LE(truncatedWebp.length-8,4);
+    truncatedWebp.writeUInt32LE(12,16);
+    assert.equal(truncatedWebp.readUIntLE(20,3)>>>5,40);
+    assert.equal(usableDimensions(truncatedWebp),null,'Reject truncated first VP8 partition');
+    // A first partition that consumes the entire payload also leaves no
+    // compressed token data.
+    const noTokensWebp=Buffer.from(webp.subarray(0,70));
+    noTokensWebp.writeUInt32LE(noTokensWebp.length-8,4);
+    noTokensWebp.writeUInt32LE(50,16);
+    assert.equal(usableDimensions(noTokensWebp),null,'Require data beyond the VP8 first partition');
+    const webpDirectory=path.join(root,'invalid-webp');
+    fs.mkdirSync(webpDirectory);
+    const webpStore=createCoverAssetStore({directory:webpDirectory,downloader:async()=>truncatedWebp});
+    await assert.rejects(webpStore.saveSource('https://covers.example.org/truncated.webp'),/invalid_cover_dimensions/);
+    assert.deepEqual(fs.readdirSync(webpDirectory),[]);
+    const truncatedName=crypto.createHash('sha256').update(truncatedWebp).digest('hex')+'.webp';
+    fs.writeFileSync(path.join(webpDirectory,truncatedName),truncatedWebp);
+    assert.equal(webpStore.assetStatus('/api/covers/'+truncatedName),'invalid');
+    // A JPEG with SOF but no valid scan must be rejected even if it ends in EOI.
+    const fakeJpeg=Buffer.concat([Buffer.from([0xff,0xd8,0xff,0xc0,0x00,0x0b,0x08,0x00,0x78,0x00,0x50,0x01,0x01,0x11,0x00,0xff,0xda]),Buffer.from([0xff,0xd9])]);
+    assert.equal(usableDimensions(fakeJpeg),null);
+
+    const invalidDirectory=path.join(root,'invalid');
+    fs.mkdirSync(invalidDirectory);
+    const invalidStore=createCoverAssetStore({directory:invalidDirectory,downloader:async()=>TINY_GIF});
+    await assert.rejects(invalidStore.saveSource('https://covers.example.org/pixel.gif'),/invalid_cover_dimensions/);
+    assert.deepEqual(fs.readdirSync(invalidDirectory),[]);
+    const invalidName=crypto.createHash('sha256').update(TINY_GIF).digest('hex')+'.gif';
+    fs.writeFileSync(path.join(invalidDirectory,invalidName),TINY_GIF);
+    const invalidPath='/api/covers/'+invalidName;
+    assert.equal(invalidStore.assetStatus(invalidPath),'invalid');
+    assert.equal(invalidStore.hasAsset(invalidPath),false);
+    await assert.rejects(invalidStore.saveSource(invalidPath),/invalid_cover_dimensions/);
+    assert.equal(fs.existsSync(path.join(invalidDirectory,invalidName)),true,'Historical file is not silently deleted');
+    // Run the real server's cleanup function with a real on-disk database
+    // and asset store. The normalized view has already cleared the link,
+    // while the raw database still needs to persist that rejection.
+    const legacyFile=path.join(invalidDirectory,invalidName);
+    const legacyAge=new Date(Date.now()-3*24*60*60*1000);
+    fs.utimesSync(legacyFile,legacyAge,legacyAge);
+    const legacySource='https://covers.example.org/pixel.gif';
+    const legacyDbPath=path.join(root,'legacy.json');
+    const legacyBook={id:'legacy',coverUrl:legacySource,localCoverUrl:invalidPath,
+      coverCrop:{x:0.1,y:0.1,width:0.8,height:0.8}};
+    const writeLegacy=books=>fs.writeFileSync(legacyDbPath,JSON.stringify({books}));
+    writeLegacy([legacyBook]);
+    const serverCode=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
+    const cleanupStart=serverCode.indexOf('function runCoverGarbageCollection() {');
+    const cleanupEnd=serverCode.indexOf('const DIST_DIR',cleanupStart);
+    assert.ok(cleanupStart>=0&&cleanupEnd>cleanupStart);
+    const {readJsonSnapshot}=require('../database-write-coordinator');
+    const normalizedBook={...legacyBook,localCoverUrl:'',coverCrop:null,rejectedCoverSource:legacySource};
+    const gc=new Function('coverAssets','readJsonSnapshot','DATA_PATH','loadDb','shuttingDown','console',
+      serverCode.slice(cleanupStart,cleanupEnd)+'\nreturn runCoverGarbageCollection;')(
+      invalidStore,readJsonSnapshot,legacyDbPath,()=>({books:[normalizedBook]}),false,
+      {info(){},warn(message,error){throw Error(message+' '+error);}});
+    gc();
+    assert.equal(invalidStore.assetStatus(invalidPath),'invalid',
+      'GC must retain the invalid file while its rejection is only in memory');
+    // Another copy of the same cover is enough to keep the raw reference.
+    writeLegacy([normalizedBook,{...legacyBook,id:'legacy-copy'}]);
+    gc();
+    assert.equal(invalidStore.assetStatus(invalidPath),'invalid','Keep any remaining persisted reference');
+    // Once the normalized rejection is committed, the file is safe to remove.
+    writeLegacy([normalizedBook]);
+    gc();
+    assert.equal(invalidStore.assetStatus(invalidPath),'missing');
+    const persisted=readJsonSnapshot(legacyDbPath).books[0];
+    assert.equal(persisted.localCoverUrl,'');
+    assert.equal(persisted.coverCrop,null);
+    assert.equal(persisted.rejectedCoverSource,legacySource);
     let calls = 0;
     const store = createCoverAssetStore({ directory: path.join(root, 'covers'),
       downloader: async () => { calls += 1; await Promise.resolve(); return PNG; } });
