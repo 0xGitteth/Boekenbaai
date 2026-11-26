@@ -4,7 +4,7 @@
 // Counts are in ISBN lookups, not individual HTTP requests. A provider's 429
 // pauses that provider only; no paid search or automatic retry is authorized.
 const {SOURCE_ORDER}=require('./book-enrichment-sources');
-const LIMITS={boekenbase:5,bureau_isbn:3,easycb:5,google_books:5,open_library:3,isbnbarcode:3};
+const LIMITS={boekenbase:5,bureau_isbn:5,easycb:5,google_books:5,open_library:5,isbnbarcode:5};
 function createSourceGate({now=Date.now,limits=LIMITS,windowMs=60000}={}){
   const states=new Map();
   let active=false;
