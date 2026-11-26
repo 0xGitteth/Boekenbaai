@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  claimNext,finishClaim,bookWorks,needsExtra,
+  claimNext,finishClaim,claimIsCurrent,bookWorks,needsExtra,
 }=require('./book-brave-core');
 const {workKey}=require('./book-free-metadata');
 const {fetchBrave,discoverPages,selectImageResult}=require('./book-brave-fetch');
@@ -153,13 +153,14 @@ function createBraveWorker({
         }
         outcome=await commit(db=>{
           if(isPaused())return {deferred:true};
+          if(!claimIsCurrent(db,claim))return {stale:true};
           const updated=updateFromPages(db,claim,pages,{
             imageUrl,failedCovers:getFailedCovers(),
           });
           finishClaim(db,claim,{
             providerRemaining:result.providerRemaining,
             providerRemainingConfirmed:Number.isSafeInteger(result.providerRemaining),
-            error:bad,
+            error:bad,status:updated.added>0?'found':'no_result',added:updated.added,
           });
           return updated;
         });
