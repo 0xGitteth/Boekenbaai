@@ -49,7 +49,26 @@ function currentUsage(db, now = new Date(), env = process.env) {
     ? usage.providerRemaining : null;
   return {month, cap, reserved, available:Math.max(0,Math.min(cap - reserved,
     providerRemaining === null ? Infinity : providerRemaining)),
-    providerRemaining, legacyProviderRemaining};
+    providerRemaining, legacyProviderRemaining,
+    canReconcileLegacyZero:providerRemaining===0&&!usage.providerEvidenceVersion&&!usage.legacyReconciliation&&reserved<cap,
+    legacyReconciledAt:usage.legacyReconciliation?.at||null,
+    providerEvidenceAt:usage.providerEvidenceAt||null};
+}
+// A legacy zero marked verified before the positive-quota parser fix
+// cannot be independently checked. Only an administrator who has checked
+// the current provider dashboard can discard it, once per UTC month.
+function reconcileLegacyBudget(db,{confirmed=false,expectedMonth,expectedReserved,now=new Date(),env=process.env}={}){
+  const usage=currentUsage(db,now,env);
+  const stored=db.braveUsage;
+  if(!confirmed)return {ok:false,error:'confirmation_required'};
+  if(expectedMonth!==usage.month||expectedReserved!==usage.reserved)return {ok:false,error:'stale_budget'};
+  if((db.braveEnrichmentJobs||[]).some(job=>job.state==='running'||job.inFlight))
+    return {ok:false,error:'another_job_running'};
+  if(!usage.canReconcileLegacyZero)return {ok:false,error:'not_eligible'};
+  stored.legacyReconciliation={at:now.toISOString(),month:usage.month,previousRemaining:stored.providerRemaining,
+    previousVerified:stored.providerRemainingVerified,reserved:usage.reserved,reason:'admin_verified_provider_dashboard'};
+  stored.providerRemaining=null;stored.providerRemainingVerified=false;
+  return {ok:true,usage:currentUsage(db,now,env)};
 }
 function bookWorks(db, job) {
   const ids = new Set(Array.isArray(job?.bookIds) ? job.bookIds : []);
@@ -325,6 +344,8 @@ function finishClaim(db,claim,{
         ? db.braveUsage.providerRemaining : Infinity,
       providerRemaining);
     db.braveUsage.providerRemainingVerified=true;
+    db.braveUsage.providerEvidenceVersion=2;
+    db.braveUsage.providerEvidenceAt=new Date().toISOString();
   }
   if (error) {
     // A provider outage must not silently consume the other approved
@@ -335,5 +356,5 @@ function finishClaim(db,claim,{
   job.updatedAt=new Date().toISOString();
 }
 module.exports={MAX_REQUESTS_PER_WORK,HARD_MONTHLY_CAP,monthKey,monthlyCap,
-  currentUsage,ensureJobs,bookWorks,needsExtra,needsExtraWork,pendingFreeWorks,
+  currentUsage,reconcileLegacyBudget,ensureJobs,bookWorks,needsExtra,needsExtraWork,pendingFreeWorks,
   addJob,remainingWorks,getJobPlan,approveJob,claimNext,finishClaim,claimIsCurrent,getBraveCheck};
