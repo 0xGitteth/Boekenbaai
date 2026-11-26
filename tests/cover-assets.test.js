@@ -143,6 +143,27 @@ async function main() {
     fakeWebp.writeUInt32LE(fakeWebp.length-8,4);
     fakeWebp.writeUInt32LE(10,16);
     assert.equal(usableDimensions(fakeWebp),null,'Reject WebP dimensions with no frame data');
+    // The frame tag declares a 40-byte first partition, but this RIFF
+    // contains only two payload bytes after the keyframe header.
+    const truncatedWebp=Buffer.from(webp.subarray(0,32));
+    truncatedWebp.writeUInt32LE(truncatedWebp.length-8,4);
+    truncatedWebp.writeUInt32LE(12,16);
+    assert.equal(truncatedWebp.readUIntLE(20,3)>>>5,40);
+    assert.equal(usableDimensions(truncatedWebp),null,'Reject truncated first VP8 partition');
+    // A first partition that consumes the entire payload also leaves no
+    // compressed token data.
+    const noTokensWebp=Buffer.from(webp.subarray(0,70));
+    noTokensWebp.writeUInt32LE(noTokensWebp.length-8,4);
+    noTokensWebp.writeUInt32LE(50,16);
+    assert.equal(usableDimensions(noTokensWebp),null,'Require data beyond the VP8 first partition');
+    const webpDirectory=path.join(root,'invalid-webp');
+    fs.mkdirSync(webpDirectory);
+    const webpStore=createCoverAssetStore({directory:webpDirectory,downloader:async()=>truncatedWebp});
+    await assert.rejects(webpStore.saveSource('https://covers.example.org/truncated.webp'),/invalid_cover_dimensions/);
+    assert.deepEqual(fs.readdirSync(webpDirectory),[]);
+    const truncatedName=crypto.createHash('sha256').update(truncatedWebp).digest('hex')+'.webp';
+    fs.writeFileSync(path.join(webpDirectory,truncatedName),truncatedWebp);
+    assert.equal(webpStore.assetStatus('/api/covers/'+truncatedName),'invalid');
     // A JPEG with SOF but no valid scan must be rejected even if it ends in EOI.
     const fakeJpeg=Buffer.concat([Buffer.from([0xff,0xd8,0xff,0xc0,0x00,0x0b,0x08,0x00,0x78,0x00,0x50,0x01,0x01,0x11,0x00,0xff,0xda]),Buffer.from([0xff,0xd9])]);
     assert.equal(usableDimensions(fakeJpeg),null);
@@ -159,6 +180,43 @@ async function main() {
     assert.equal(invalidStore.hasAsset(invalidPath),false);
     await assert.rejects(invalidStore.saveSource(invalidPath),/invalid_cover_dimensions/);
     assert.equal(fs.existsSync(path.join(invalidDirectory,invalidName)),true,'Historical file is not silently deleted');
+    // Run the real server's cleanup function with a real on-disk database
+    // and asset store. The normalized view has already cleared the link,
+    // while the raw database still needs to persist that rejection.
+    const legacyFile=path.join(invalidDirectory,invalidName);
+    const legacyAge=new Date(Date.now()-3*24*60*60*1000);
+    fs.utimesSync(legacyFile,legacyAge,legacyAge);
+    const legacySource='https://covers.example.org/pixel.gif';
+    const legacyDbPath=path.join(root,'legacy.json');
+    const legacyBook={id:'legacy',coverUrl:legacySource,localCoverUrl:invalidPath,
+      coverCrop:{x:0.1,y:0.1,width:0.8,height:0.8}};
+    const writeLegacy=books=>fs.writeFileSync(legacyDbPath,JSON.stringify({books}));
+    writeLegacy([legacyBook]);
+    const serverCode=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
+    const cleanupStart=serverCode.indexOf('function runCoverGarbageCollection() {');
+    const cleanupEnd=serverCode.indexOf('const DIST_DIR',cleanupStart);
+    assert.ok(cleanupStart>=0&&cleanupEnd>cleanupStart);
+    const {readJsonSnapshot}=require('../database-write-coordinator');
+    const normalizedBook={...legacyBook,localCoverUrl:'',coverCrop:null,rejectedCoverSource:legacySource};
+    const gc=new Function('coverAssets','readJsonSnapshot','DATA_PATH','loadDb','shuttingDown','console',
+      serverCode.slice(cleanupStart,cleanupEnd)+'\nreturn runCoverGarbageCollection;')(
+      invalidStore,readJsonSnapshot,legacyDbPath,()=>({books:[normalizedBook]}),false,
+      {info(){},warn(message,error){throw Error(message+' '+error);}});
+    gc();
+    assert.equal(invalidStore.assetStatus(invalidPath),'invalid',
+      'GC must retain the invalid file while its rejection is only in memory');
+    // Another copy of the same cover is enough to keep the raw reference.
+    writeLegacy([normalizedBook,{...legacyBook,id:'legacy-copy'}]);
+    gc();
+    assert.equal(invalidStore.assetStatus(invalidPath),'invalid','Keep any remaining persisted reference');
+    // Once the normalized rejection is committed, the file is safe to remove.
+    writeLegacy([normalizedBook]);
+    gc();
+    assert.equal(invalidStore.assetStatus(invalidPath),'missing');
+    const persisted=readJsonSnapshot(legacyDbPath).books[0];
+    assert.equal(persisted.localCoverUrl,'');
+    assert.equal(persisted.coverCrop,null);
+    assert.equal(persisted.rejectedCoverSource,legacySource);
     let calls = 0;
     const store = createCoverAssetStore({ directory: path.join(root, 'covers'),
       downloader: async () => { calls += 1; await Promise.resolve(); return PNG; } });
