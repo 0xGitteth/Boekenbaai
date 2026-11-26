@@ -23,6 +23,7 @@ function braveEvidence(db,book){
   return Object.entries(steps).filter(([step])=>['0','1','2'].includes(step)).map(([step,check])=>({
     step:Number(step),status:check.status,checkedAt:check.checkedAt,error:check.error||null,
     evidence:Array.isArray(check.evidence)?check.evidence.slice(-60):[],
+    sourceFailures:Array.isArray(check.sourceFailures)?check.sourceFailures.slice(0,12):[],
   }));
 }
 function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_ORDER,
