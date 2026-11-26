@@ -20,6 +20,7 @@ const { createBraveWorker } = require('./book-brave-worker');
 const {fetchBoekenBase}=require('./book-boekenbase');
 const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialProbe,
   catalogue:trialCatalogue,editionViews:trialEditionViews,applyTrial}=require('./book-enrichment-trial');
+
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
@@ -5682,7 +5683,7 @@ async function handleApi(req, res, requestUrl) {
             return plan.state==='running'||plan.waitingFree>0||plan.needsBrave>0;
           });
           if(!activeCollection)
-            added=addJob(db,db.books.map(book=>book.id),{source:'collection'});
+            added=addJob(db,db.books.map(book=>book.id),{source:'collection',repeatChecked:body.repeatChecked===true});
           return db;
         },
       });
