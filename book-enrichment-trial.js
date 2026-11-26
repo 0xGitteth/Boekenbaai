@@ -4,7 +4,7 @@ const {safeCoverUrl}=require('./lib/cover-assets');
 const {createHash}=require('node:crypto');
 
 const SOURCE='boekenbase';
-const FIELDS=['description','publisher','publishedYear','pageCount','language','coverUrl','enrichmentTags'];
+const FIELDS=['description','publisher','imprint','publishedYear','pageCount','language','nurCode','nurCategory','seriesTitle','seriesNumber','coverUrl','enrichmentTags'];
 const TERMINAL=new Set(['found','not_found','identity_mismatch']);
 const keyOf=book=>createHash('sha256').update(workKey(book)).digest('hex');
 function getCheck(db,book,source=SOURCE){
@@ -80,6 +80,11 @@ function trialView(db,book,failedCovers=new Set()){
   const snapshot={bookId:book.id,identity:keyOf(book),checkedAt:check?.checkedAt||null,changes};
   const revision=createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
   return {...snapshot,revision,title:book.title,author:book.author,isbn:isbnOf(book),
+    sourceDetails:check?.status==='found'?{
+      publisher:check.metadata?.publisher||'',imprint:check.metadata?.imprint||'',
+      nurCategory:check.metadata?.nurCategory||'',nurCode:check.metadata?.nurCode||'',
+      keywordCount:Array.isArray(check.metadata?.tags)?check.metadata.tags.length:0,
+    }:null,
     status:check?.status||'not_checked',lastError:check?.lastError||null,
     appliedAt:check?.appliedCopies?.[createHash('sha256').update(String(book.id)).digest('hex')]||null};
 }
