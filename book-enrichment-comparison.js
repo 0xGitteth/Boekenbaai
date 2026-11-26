@@ -3,6 +3,8 @@ const {createHash}=require('node:crypto');
 const {isbnOf,workKey,usableFor}=require('./book-free-metadata');
 const {getCheck,proposedChanges,keyOf}=require('./book-enrichment-trial');
 const {SOURCE_ORDER,sourceRank}=require('./book-enrichment-sources');
+const {normalizeLanguage}=require('./isbn-lookup-core-impl');
+const fieldValue=(field,value)=>field==='language'&&typeof value==='string'?normalizeLanguage(value):value;
 
 const keyText=value=>typeof value==='string'?value.normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('nl-NL'):JSON.stringify(value);
 const byRank=(a,b)=>sourceRank(a.source)-sourceRank(b.source);
@@ -19,7 +21,7 @@ function comparison(db,book,failedCovers=new Set(),sources=SOURCE_ORDER){
   for(const {source,check} of verified){
     for(const change of proposedChanges(book,check,failedCovers,source)){
       if(!candidates.has(change.field))candidates.set(change.field,[]);
-      candidates.get(change.field).push(change);
+      candidates.get(change.field).push({...change,after:fieldValue(change.field,change.after)});
     }
   }
   // A long source description is useful even when the teacher has supplied
@@ -67,8 +69,8 @@ function comparison(db,book,failedCovers=new Set(),sources=SOURCE_ORDER){
   const conflicts=[];
   for(const field of comparableFields){
     const values=verified.filter(({check})=>isPresent(check.metadata[field]))
-      .map(({source,check})=>({source,value:check.metadata[field]}));
-    if(isPresent(book[field]))values.unshift({source:'catalogue',value:book[field]});
+      .map(({source,check})=>({source,value:fieldValue(field,check.metadata[field])}));
+    if(isPresent(book[field]))values.unshift({source:'catalogue',value:fieldValue(field,book[field])});
     if(new Set(values.map(v=>keyText(v.value))).size>1)conflicts.push({field,values});
   }
   const statuses=checks.map(({source,check})=>({source,status:check?.status||'not_checked',
