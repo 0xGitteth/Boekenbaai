@@ -2557,11 +2557,23 @@ module.exports=[
   [
    "ballet",
    "klassiek ballet",
-   "balletdans"
+   "balletdans",
+   "balletles",
+   "balletlessen",
+   "balletdanser",
+   "balletdanseres",
+   "ballerina",
+   "balletverhalen"
   ],
   [
    "ballet",
-   "balletdans"
+   "balletdans",
+   "balletles",
+   "balletlessen",
+   "balletdanser",
+   "balletdanseres",
+   "ballerina",
+   "balletverhalen"
   ],
   "Wat zou je over ballet willen lezen?",
   [

@@ -3252,7 +3252,4 @@ module.exports=[
  ]
 ];
 
-module.exports.push(
- ["ballet","dance","ballet",["ballet","balletles","balletlessen","balletdanser","balletdanseres","ballerina","balletverhalen"],["ballet","balletles","balletlessen","balletdanser","balletdanseres","ballerina","balletverhalen"],
- "Wat zou je over ballet willen lezen?",[["Een balletverhaal","ballet"],["Ballet leren","ballet facts"],["Op het podium","ballet challenge"]]],
- ...require('./student-choice-extra-topics'));
+module.exports.push(...require('./student-choice-extra-topics'));
