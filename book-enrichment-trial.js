@@ -10,6 +10,13 @@ const keyOf=book=>createHash('sha256').update(workKey(book)).digest('hex');
 function getCheck(db,book,source=SOURCE){
   return db.bookEnrichmentSourceChecks?.[keyOf(book)]?.[source]||null;
 }
+function attemptSummary(status,checkedAt,metadata){
+  return {status,checkedAt,fields:metadata?Object.keys(metadata).filter(key=>
+    ['description','publisher','imprint','publishedYear','pageCount','language','nurCode','nurCategory','seriesTitle','seriesNumber','coverUrl','tags'].includes(key)
+    &&present(metadata[key])):[],
+    sourceUrl:typeof metadata?.sourceUrl==='string'&&metadata.sourceUrl.startsWith('https://')?metadata.sourceUrl.slice(0,1500):null,
+    matchLevel:typeof metadata?.matchLevel==='string'?metadata.matchLevel.slice(0,40):null};
+}
 function recordCheck(db,book,result,{now=new Date(),source=SOURCE}={}){
   if(!db.bookEnrichmentSourceChecks||typeof db.bookEnrichmentSourceChecks!=='object'
     ||Array.isArray(db.bookEnrichmentSourceChecks))db.bookEnrichmentSourceChecks={};
@@ -19,10 +26,13 @@ function recordCheck(db,book,result,{now=new Date(),source=SOURCE}={}){
   const status=result?.status==='found'&&!verified?'identity_mismatch':String(result?.status||'invalid_response');
   const prior=entry[source];
   // A forced retry that fails must not destroy a previous usable result.
-  const current={status,checkedAt:now.toISOString(),metadata:verified?result.metadata:null,
+  const previous=Array.isArray(prior?.attemptHistory)?prior.attemptHistory
+    :prior?[attemptSummary(prior.status,prior.checkedAt,prior.metadata)]:[];
+  const attemptHistory=[...previous,attemptSummary(status,now.toISOString(),verified?result.metadata:null)].slice(-20);
+  const current={status,checkedAt:now.toISOString(),metadata:verified?result.metadata:null,attemptHistory,
     ...(prior?.appliedCopies?{appliedCopies:prior.appliedCopies}:{})};
   if(!TERMINAL.has(status)&&TERMINAL.has(prior?.status)){
-    entry[source]={...prior,lastError:status,lastAttemptAt:current.checkedAt};
+    entry[source]={...prior,lastError:status,lastAttemptAt:current.checkedAt,attemptHistory};
   }else{
     entry[source]=current;
   }
@@ -108,7 +118,7 @@ function applyTrial(db,book,revision,failedCovers=new Set(),now=new Date()){
 function catalogue(db){
   const unique=new Map();
   for(const book of db.books||[]){
-    if(!book.id||!isbnOf(book)||!book.title||!book.author)continue;
+    if(!book.id||book.personalLoanOnly===true||!isbnOf(book)||!book.title||!book.author)continue;
     const key=keyOf(book);
     if(!unique.has(key))unique.set(key,[]);
     unique.get(key).push(book);
@@ -121,6 +131,6 @@ function catalogue(db){
   }).sort((a,b)=>a.title.localeCompare(b.title,'nl'));
 }
 function editionViews(db,book,failedCovers=new Set()){
-  return (db.books||[]).filter(b=>workKey(b)===workKey(book)).map(b=>trialView(db,b,failedCovers));
+  return (db.books||[]).filter(b=>b.personalLoanOnly!==true&&workKey(b)===workKey(book)).map(b=>trialView(db,b,failedCovers));
 }
 module.exports={keyOf,getCheck,recordCheck,shouldProbe,proposedChanges,trialView,applyTrial,catalogue,editionViews};
