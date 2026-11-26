@@ -131,7 +131,7 @@ async function runIntegrationChecks() {
   const storedCoverDir = path.join(tempDir, 'covers');
   fs.mkdirSync(storedCoverDir, { recursive: true });
   fs.writeFileSync(path.join(storedCoverDir, 'a'.repeat(64) + '.png'),
-    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jvmkAAAAASUVORK5CYII=', 'base64'));
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAFAAAAB4CAIAAADqjOKhAAAApElEQVR4nO3PAQ3AIADAMEALStCCfw138Sd7q2Cb+9zxJ+vrgLcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuM5wneE6w3WG6wzXGa4zXGe4znCd4TrDdYbrDNcZrjNcZ7jOcJ3hOsN1husM1xmuM1xnuO4Bj2YBuolyvV4AAAAASUVORK5CYII=', 'base64'));
 
   const serverProcess = startServer({ BOEKENBAAI_DATA_PATH: dbPath });
   try {
