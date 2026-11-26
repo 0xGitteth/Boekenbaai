@@ -270,10 +270,12 @@ async function run(){
   }});
   assert.equal(pages.length,1,'Only a verified original book page can be used');
   assert.equal(pageCalls,2,'Robots and page fetched, irrelevant site skipped');
+  const discoveryFailures=[];
   const blocked=await discoverPages({pages:[
     {title:'De brief voor de koning',url:'https://www.uitgeverijvoorbeeld.nl/boek'},
   ]},target,{fetchPage:async url=>url.endsWith('/robots.txt')
-    ?{error:'request_error'}:{body:html}});
+    ?{error:'request_error'}:{body:html},onFailure:error=>discoveryFailures.push(error)});
+  assert.deepEqual(discoveryFailures,['source_unavailable']);
   assert.equal(blocked.length,0,
     'If robots.txt is unreachable, page crawling is not authorized');
 
@@ -450,6 +452,28 @@ async function run(){
   assert.equal(workerErrorJob.state,'paused');
   assert.equal(workerErrorJob.completedKeys.length,0);
   failedWorker.stop();
+  // Successful Brave response is not proof that the source pages were
+  // accessible; a failed publisher fetch must remain retryable.
+  const sourceErrorDb={books:[book('source-error')],braveEnrichmentJobs:[]};
+  const sourceErrorJob=addJob(sourceErrorDb,['source-error'],{id:'source-error'});
+  assert.equal(approveJob(sourceErrorDb,sourceErrorJob.id,{confirmed:true,expectedRequests:3,
+    expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const sourceErrorWorker=createBraveWorker({
+    apiKey:'test-only-key',loadDb:()=>sourceErrorDb,
+    commit:async fn=>fn(sourceErrorDb),delayMs:50,
+    fetchSearch:async()=>({pages:[{title:target.title,url:'https://www.uitgeverijvoorbeeld.nl/boek'}]}),
+    findPages:(result,claim,options)=>discoverPages(result,claim,{
+      ...options,fetchPage:async url=>url.endsWith('/robots.txt')
+        ?{body:'User-agent: *\nAllow: /'}:{error:'request_error'},
+    }),
+  });
+  sourceErrorWorker.schedule();
+  await new Promise(resolve=>setTimeout(resolve,350));
+  assert.equal(sourceErrorJob.state,'paused','A failed source website must not complete a search');
+  assert.equal(sourceErrorJob.completedKeys.length,0);
+  assert.equal(sourceErrorDb.braveUsage.reserved,1);
+  assert.equal(getJobPlan(sourceErrorDb,sourceErrorJob,{braveConfigured:true,now,env:environment}).canApprove,true);
+  sourceErrorWorker.stop();
   const db4={books:[book('z')],braveEnrichmentJobs:[]};
   const paused=addJob(db4,['z'],{id:'paused'});
   assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,
