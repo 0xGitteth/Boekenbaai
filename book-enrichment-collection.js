@@ -68,14 +68,16 @@ function liveBooks(db,target){
   const ids=new Set(target.bookIds);
   return (db.books||[]).filter(b=>ids.has(b.id)&&eligible(b)&&keyOf(b)===target.key);
 }
-function chooseTask(db,{now=Date.now(),blocked=new Set()}={}){
+function chooseTask(db,{now=Date.now(),blocked=new Set(),openLibraryBatchSize=1}={}){
   const run=db.freeEnrichmentRun;
   if(run?.state!=='running')return null;
   if(run.inFlight){
     if(Date.parse(run.inFlight.at)+LEASE_MS>now)return {wait:true};
     // A crash is not proof of a negative lookup; ask for explicit resume.
-    const target=run.targets.find(t=>t.key===run.inFlight.key);
-    if(target)target.attempts[run.inFlight.source]={status:'interrupted',at:nowIso(now)};
+    for(const item of run.inFlight.items||[run.inFlight]){
+      const target=run.targets.find(t=>t.key===item.key);
+      if(target)target.attempts[run.inFlight.source]={status:'interrupted',at:nowIso(now)};
+    }
     run.inFlight=null;
   }
   if(run.pauseRequested){run.state='paused';run.pauseRequested=false;run.updatedAt=nowIso(now);return null;}
@@ -95,8 +97,21 @@ function chooseTask(db,{now=Date.now(),blocked=new Set()}={}){
       pending=true;
       if(blocked.has(source))continue;
       const claim={runId:run.id,key:target.key,bookId:book.id,source,token:randomUUID(),at:nowIso(now)};
+      const books=[book];
+      if(source==='open_library'&&openLibraryBatchSize>1){
+        claim.items=[{key:target.key,bookId:book.id}];
+        for(const next of run.targets){
+          if(next===target||claim.items.length>=Math.min(20,openLibraryBatchSize)||next.attempts[source])continue;
+          const candidate=liveBooks(db,next)[0];
+          if(!candidate)continue;
+          if(!shouldProbe(db,candidate,run.repeat,source)){
+            next.attempts[source]={status:'cached',at:nowIso(now)};continue;
+          }
+          claim.items.push({key:next.key,bookId:candidate.id});books.push(candidate);
+        }
+      }
       run.inFlight=claim;run.updatedAt=claim.at;
-      return {...claim,book};
+      return {...claim,book,books};
     }
   }
   if(pending)return {wait:true};
@@ -114,16 +129,20 @@ function deferClaim(db,claim){
 }
 function finishTask(db,claim,result,{now=Date.now()}={}){
   if(!currentClaim(db,claim))return false;
-  const run=db.freeEnrichmentRun,target=run.targets.find(t=>t.key===claim.key);
-  const book=target&&liveBooks(db,target)[0];
-  let status='removed';
-  if(book){
-    const check=recordCheck(db,book,result,{source:claim.source,now:new Date(now)});
-    // A failed repeat can preserve an earlier successful record. It still
-    // counts as a failed attempt in THIS run.
-    status=check.lastAttemptAt===nowIso(now)?check.lastError:check.status;
+  const run=db.freeEnrichmentRun;
+  const items=run.inFlight.items||[run.inFlight];
+  for(const [index,item] of items.entries()){
+    const target=run.targets.find(t=>t.key===item.key);
+    const book=target&&liveBooks(db,target)[0];
+    let status='removed';
+    if(book){
+      const value=(Array.isArray(result)?result[index]:result)||{status:'invalid_response',metadata:null};
+      const check=recordCheck(db,book,value,{source:claim.source,now:new Date(now)});
+      // A failed repeat can preserve earlier successful research.
+      status=check.lastAttemptAt===nowIso(now)?check.lastError:check.status;
+    }
+    if(target)target.attempts[claim.source]={status,at:nowIso(now)};
   }
-  if(target)target.attempts[claim.source]={status,at:nowIso(now)};
   run.inFlight=null;run.updatedAt=nowIso(now);
   if(run.pauseRequested){run.state='paused';run.pauseRequested=false;}
   return true;
