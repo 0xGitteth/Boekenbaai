@@ -5,6 +5,7 @@
 const https=require('node:https');
 const dns=require('node:dns').promises;
 const {safeCoverUrl,publicIPv4}=require('./lib/cover-assets');
+const {normalizeIsbn,isValidIsbn,toIsbn13}=require('./isbn-lookup-core-impl');
 
 function cleaned(value,max=600) {
   return String(value??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
@@ -58,15 +59,21 @@ function parseMonthlyRemaining(response) {
   // The only admissible evidence is ONE explicitly labelled monthly bucket
   // with a complete non-negative decimal integer at the SAME position.
   if(monthly.length!==1||!/^\d+$/.test(amounts[monthly[0]]))return null;
+  // Brave documents a monthly limit of 0 as unlimited, not exhausted.
+  // Require a positive, explicitly bounded quota before interpreting its balance.
+  const limitText=windows[monthly[0]].match(/^\s*(\d+)\s*;/)?.[1];
+  const limit=Number(limitText);
+  if(!Number.isSafeInteger(limit)||limit<=0)return null;
   const value=Number(amounts[monthly[0]]);
-  return Number.isSafeInteger(value)?value:null;
+  return Number.isSafeInteger(value)&&value<=limit?value:null;
 }
 function queryFor(step,target) {
   const title=cleaned(target.title,150).replace(/["\r\n]/g,'');
   const author=cleaned(target.author,130).replace(/["\r\n]/g,'');
   const isbn=String(target.isbn||'').replace(/[^0-9X]/gi,'');
-  if(step===0)return isbn?isbn+' '+title+' '+author+' boek':('"'+title+'" "'+author+'" boek');
-  if(step===1)return '"'+title+'" "'+author+'" kaft omslag boek';
+  const publisher=cleaned(target.publisher,100).replace(/["\r\n]/g,'');
+  if(step===0)return (isbn?isbn+' '+title+' '+author+' boek':('"'+title+'" "'+author+'" boek'))+(publisher?' '+publisher:'');
+  if(step===1)return (isbn?isbn+' ':'')+'"'+title+'" "'+author+'" kaft omslag boek';
   return '"'+title+'" "'+author+'" samenvatting thema recensie uitgever';
 }
 async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeoutMs=7000}={}) {
@@ -172,7 +179,7 @@ function parseBookPage(html,target,url) {
   const isbn=String(book.isbn||'').replace(/[^0-9X]/gi,'');
   const wantedIsbn=String(target.isbn||'').replace(/[^0-9X]/gi,'');
   // Exact ISBN or title+author is mandatory; a similar title is insufficient.
-  const exactIsbn=Boolean(isbn&&wantedIsbn&&isbn===wantedIsbn);
+  const exactIsbn=Boolean(isValidIsbn(isbn)&&isValidIsbn(wantedIsbn)&&toIsbn13(isbn)===toIsbn13(wantedIsbn));
   const sameTitle=sameWorkTitle(target.title,title,target.author);
   const sameWork=matchTitleAuthor(target,{title,author},allText.slice(0,15000));
   // A matching ISBN alone is insufficient when the structured title names
@@ -199,7 +206,7 @@ function parseBookPage(html,target,url) {
   return {title,author,isbn,description,coverUrl,tags,
     publisher:cleaned(asOne(book.publisher),180),
     pageCount:Number.isInteger(pageCount)&&pageCount>0&&pageCount<20000?pageCount:null,
-    confidence:exactIsbn?'isbn':'title_author',origin:location.hostname};
+    confidence:exactIsbn?'isbn':'title_author',origin:location.hostname,sourceUrl:location.href};
 }
 // Safeguarded remote HTML retrieval: DNS pinning, public IPv4 only,
 // HTTPS only, bounded payload, redirects and end-to-end timeout.
@@ -229,7 +236,8 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
           if([301,302,303,307,308].includes(status)){
             res.resume();resolve({redirect:res.headers.location});return;
           }
-          if(status===404){res.resume();resolve({status,body:''});return;}
+          if([404,410].includes(status)){res.resume();resolve({status,body:''});return;}
+          if(status===408||status===429||status>=500){res.resume();resolve({error:'source_unavailable',status});return;}
           const type=String(res.headers['content-type']||'').toLowerCase();
           if(status!==200||!/(?:text\/html|text\/plain|application\/xhtml\+xml)/.test(type)){
             res.resume();resolve({error:'not_html'});return;
@@ -305,17 +313,35 @@ function robotsAllowed(content,path){
   }
   return selected.allow;
 }
-async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) {
-  const candidates=Array.isArray(search?.pages)?search.pages:[];
+function rankPublisherCandidates(candidates,target){
+  // Prefer a plausible publisher hostname, not untrusted snippets as proof.
+  // Exact ISBN and work identity checks still apply after opening the page.
+  const publisher=normalize(target.publisher).split(' ').filter(x=>x.length>=3
+    &&!['uitgeverij','uitgevers','media','boeken','publishing','groep','the','van','het','een','b v'].includes(x));
+  const score=candidate=>{
+    try{
+      const host=new URL(candidate.url).hostname.toLowerCase().replace(/^www\./,'');
+      const name=normalize(host.split('.').slice(0,-1).join(' ')).replace(/ /g,'');
+      return publisher.length&&publisher.every(token=>name.includes(token))?1:0;
+    }catch{return 0;}
+  };
+  return [...candidates].sort((a,b)=>score(b)-score(a));
+}
+async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3,onFailure=()=>{}}={}) {
+  const candidates=rankPublisherCandidates(Array.isArray(search?.pages)?search.pages:[],target);
   const outputs=[];const visited=new Set();const robots=new Map();
+  async function readPage(url,options){
+    try{return await fetchPage(url,options);}catch{return {error:'request_error'};}
+  }
   async function allowedPage(url){
     let u;
     try{u=safeCoverUrl(url);if(u.protocol!=='https:')return false;}catch{return false;}
     const root=u.origin;
     if(!robots.has(root)){
-      const response=await fetchPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
+      const response=await readPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
+      if(!response||response.error|| (response.status&&![200,404,410].includes(response.status)))onFailure('source_unavailable');
       // A missing or unreachable robots.txt never authorizes extra crawling.
-      robots.set(root,response?.error || (response?.status && ![200,404].includes(response.status))
+      robots.set(root,!response || response.error || (response.status && ![200,404,410].includes(response.status))
         ? null : (response?.body ?? ''));
     }
     return robots.get(root)!==null && robotsAllowed(robots.get(root),u.pathname+u.search);
@@ -327,7 +353,8 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3}={}) 
     let u;try{u=safeCoverUrl(candidate.url);if(u.protocol!=='https:')continue;}catch{continue;}
     if(visited.has(u.href))continue;visited.add(u.href);
     if(!(await allowedPage(u.href)))continue;
-    const page=await fetchPage(u.href,{allowRedirect:allowedPage});
+    const page=await readPage(u.href,{allowRedirect:allowedPage});
+    if(!page||['request_error','timeout','source_unavailable'].includes(page.error))onFailure('source_unavailable');
     if(!page?.body)continue;
     const parsed=parseBookPage(page.body,target,page.finalUrl||u.href);
     if(parsed)outputs.push(parsed);
@@ -344,4 +371,4 @@ function selectImageResult(images,target) {
   return '';
 }
 module.exports={normalize,sameWorkTitle,matchTitleAuthor,parseMonthlyRemaining,queryFor,fetchBrave,
-  parseBookPage,fetchHtml,robotsAllowed,discoverPages,selectImageResult};
+  parseBookPage,fetchHtml,robotsAllowed,discoverPages,selectImageResult,rankPublisherCandidates};
