@@ -250,6 +250,140 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       }
     }
     void refreshEnrichmentStatus();
+    // Proefonderzoek is explicit and independent of Brave or Excel import.
+    // Reopening the selected edition retrieves stored research without a
+    // second external call unless a repeat was explicitly requested.
+    const trialPanel=make('section','bb-review__brave');
+    const trialRoot='/api/admin/book-enrichment/trial';
+    const trialNotice=make('p','hint','Kies maximaal vijf ISBN-edities. Gegevens worden pas na goedkeuring aan de collectie toegevoegd.');
+    trialNotice.setAttribute('role','status');
+    const trialLoad=button('Boeken selecteren','btn btn--secondary');
+    const trialControls=make('div','bb-review__brave-items');
+    trialControls.hidden=true;
+    const trialSearch=make('input');
+    trialSearch.type='search';trialSearch.placeholder='Zoek titel, auteur of ISBN';
+    trialSearch.setAttribute('aria-label','Zoek een boek voor proefverrijking');
+    const trialChoices=make('div','bb-review__brave-items');
+    const selectedNotice=make('p','hint');
+    const trialRepeat=make('input');trialRepeat.type='checkbox';
+    const trialRepeatLabel=make('label','hint');
+    trialRepeatLabel.append(trialRepeat,document.createTextNode(' Eerder uitgevoerd BoekenBase-onderzoek herhalen'));
+    const trialStart=button('Proefverrijking starten','btn btn--secondary');
+    const trialResults=make('div','bb-review__brave-items');
+    const trialSelected=new Set();
+    let trialBooks=[],trialBusy=false;
+    const trialStatusNames={
+      not_checked:'Niet onderzocht',found:'Gevonden',not_found:'Niet gevonden',
+      identity_mismatch:'ISBN, titel of auteur komt niet overeen',
+      rate_limited:'Bron tijdelijk begrensd',network_error:'Verbinding mislukt',
+      timeout:'Verbinding duurde te lang',provider_error:'Bron geeft een fout',
+      unauthorized:'Toegang geweigerd',invalid_response:'Onbekend antwoordformaat',
+      unsupported_protocol:'Niet ondersteund protocol',rpc_error:'MCP-fout',tool_error:'Bronopvraag mislukt',
+    };
+    const trialFields={description:'Beschrijving',publisher:'Uitgever',imprint:'Uitgeeflabel',publishedYear:'Jaar',
+      pageCount:'Pagina’s',language:'Taal',nurCode:'NUR-code',nurCategory:'NUR-categorie',
+      seriesTitle:'Serie',seriesNumber:'Deelnummer',coverUrl:'Omslag',enrichmentTags:'Inhoudelijke trefwoorden'};
+    const trialStatus=value=>trialStatusNames[value]||String(value||'Onbekend');
+    const showValue=value=>Array.isArray(value)?value.join(', '):String(value??'')||'Ontbreekt';
+    function renderTrialChoices(){
+      trialChoices.replaceChildren();
+      const q=trialSearch.value.trim().toLocaleLowerCase('nl');
+      const matches=trialBooks.filter(book=>[book.title,book.author,book.isbn].join(' ').toLocaleLowerCase('nl').includes(q));
+      for(const book of matches.slice(0,20)){
+        const label=make('label','hint');
+        const check=make('input');check.type='checkbox';check.checked=trialSelected.has(book.id);
+        check.disabled=trialBusy||(!check.checked&&trialSelected.size>=5);
+        check.addEventListener('change',()=>{
+          if(check.checked&&trialSelected.size<5)trialSelected.add(book.id);
+          else trialSelected.delete(book.id);
+          renderTrialChoices();
+        });
+        label.append(check,document.createTextNode(' '+book.title+' · '+book.author+' · '+book.isbn+
+          ' · '+trialStatus(book.status)+(book.copies>1?' · '+book.copies+' exemplaren':'')));
+        trialChoices.append(label);
+      }
+      if(!matches.length)trialChoices.append(make('p','hint','Geen boeken gevonden.'));
+      else if(matches.length>20)trialChoices.append(make('p','hint','Verfijn de zoekopdracht om meer boeken te vinden.'));
+      selectedNotice.textContent=trialSelected.size+' van maximaal 5 edities geselecteerd.';
+      trialStart.disabled=trialBusy||trialSelected.size===0;
+      trialSearch.disabled=trialBusy;trialRepeat.disabled=trialBusy;
+    }
+    function renderTrialResult(book,response){
+      const section=make('section','bb-review__brave');
+      section.append(make('h4','',book.title+' · '+book.isbn));
+      section.append(make('p','hint',response.cached?'Eerder opgeslagen onderzoek gebruikt.':'Nieuwe BoekenBase-opvraag.'));
+      for(const [index,copy] of (response.copies||[]).entries()){
+        const item=make('div','bb-review__brave-items');
+        item.append(make('p','hint','Exemplaar '+(index+1)+' · '+trialStatus(copy.status)));
+        if(copy.lastError)item.append(make('p','hint','Laatste herhaalde poging: '+trialStatus(copy.lastError)));
+        if(copy.sourceDetails){
+          const details=copy.sourceDetails;
+          item.append(make('p','hint','BoekenBase: '+[details.publisher,details.imprint,details.nurCategory].filter(Boolean).join(' · ')
+            +' · '+details.keywordCount+' inhoudelijke trefwoorden'));
+        }
+        for(const change of copy.changes||[]){
+          const detail=make('details');
+          detail.append(make('summary','',trialFields[change.field]||change.field),
+            make('p','hint','Huidig: '+showValue(change.before)),
+            make('p','','Voorstel: '+showValue(change.after)));
+          item.append(detail);
+        }
+        if(copy.changes?.length){
+          const apply=button('Wijzigingen opslaan voor dit exemplaar','btn btn--secondary');
+          apply.addEventListener('click',async()=>{
+            if(!window.confirm('De getoonde aanvullingen aan dit exemplaar toevoegen?'))return;
+            apply.disabled=true;
+            try{
+              const result=await request(trialRoot+'/apply',{bookId:copy.bookId,revision:copy.revision,confirm:true});
+              item.append(make('p','hint',result.updated+' aanvullingen opgeslagen.'));
+              apply.remove();
+            }catch(error){item.append(make('p','hint',error.message));apply.disabled=false;}
+          });
+          item.append(apply);
+        }else if(copy.status==='found')item.append(make('p','hint','Geen veilige aanvullingen beschikbaar.'));
+        section.append(item);
+      }
+      trialResults.append(section);
+    }
+    trialSearch.addEventListener('input',renderTrialChoices);
+    trialLoad.addEventListener('click',async()=>{
+      trialLoad.disabled=true;
+      try{
+        const response=await request(trialRoot);
+        trialBooks=Array.isArray(response.books)?response.books:[];
+        trialControls.hidden=false;renderTrialChoices();trialLoad.remove();
+      }catch(error){trialNotice.textContent=error.message;trialLoad.disabled=false;}
+    });
+    trialStart.addEventListener('click',async()=>{
+      if(trialBusy||!trialSelected.size)return;
+      const repeat=trialRepeat.checked;
+      if(!window.confirm('Proefonderzoek uitvoeren voor de '+trialSelected.size+' geselecteerde edities? Er worden geen Brave-verzoeken uitgevoerd.'))return;
+      trialBusy=true;renderTrialChoices();trialResults.replaceChildren();
+      let processed=0,rateLimited=false;
+      try{
+        for(const id of [...trialSelected]){
+          const book=trialBooks.find(b=>b.id===id);
+          if(!book)continue;
+          trialNotice.textContent='Onderzoek '+(processed+1)+' van '+trialSelected.size+': '+book.title;
+          try{
+            const response=await request(trialRoot+'/probe',{bookId:id,repeat,confirm:true});
+            renderTrialResult(book,response);
+            if(response.copies?.[0])book.status=response.copies[0].status;
+            if(response.probeStatus==='rate_limited'){
+              rateLimited=true;break;
+            }
+          }catch(error){trialResults.append(make('p','hint',book.title+': '+error.message));}
+          processed++;
+        }
+        trialNotice.textContent=rateLimited?'BoekenBase heeft de verzoeken tijdelijk begrensd. Opgeslagen resultaten blijven behouden; probeer de resterende boeken later opnieuw.':'Proefronde afgerond. Controleer de resultaten per exemplaar.';
+      }finally{trialBusy=false;trialRepeat.checked=false;renderTrialChoices();}
+    });
+    trialControls.append(trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults);
+    trialPanel.append(make('h4','','Proefverrijking met BoekenBase'),trialNotice,trialLoad,trialControls);
+    enrichmentExtra.append(trialPanel);
+
+
+
 
     // This panel is independent of the staged Excel upload. Approval can be
     // given after leaving the browser, after logging in again, or on another
