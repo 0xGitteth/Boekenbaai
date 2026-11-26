@@ -20,7 +20,7 @@ const { createBraveWorker } = require('./book-brave-worker');
 const {createEnrichmentSources}=require('./book-enrichment-sources');
 const {createSourceGate}=require('./book-enrichment-source-gate');
 const {createCollectionWorker}=require('./book-enrichment-collection-worker');
-const {startRun,pauseRun,resumeRun,runStatus,applyRun}=require('./book-enrichment-collection');
+const {startRun,cancelRun,pauseRun,resumeRun,runStatus,applyRun}=require('./book-enrichment-collection');
 const {comparison,compareEdition,applyComparison}=require('./book-enrichment-comparison');
 const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialProbe,
   catalogue:trialCatalogue}=require('./book-enrichment-trial');
@@ -154,7 +154,8 @@ const freeMetadataWorker = createFreeMetadataWorker({
   contact: process.env.BOEKENBAAI_EASYCB_CONTACT || '',
   loadDb: () => loadDb(),
   isPaused: () => shuttingDown || Boolean(activeBookImportLease)
-    || Boolean(bookImportStageStore.active()),
+    || Boolean(bookImportStageStore.active())
+    || ['running','paused','partial','ready'].includes(loadDb().freeEnrichmentRun?.state),
   fetchImpl: globalThis.fetch,
   getFailedCovers: exhaustedCoverSourceUrls,
   commit: async (apply) => {
@@ -5599,7 +5600,7 @@ async function handleApi(req, res, requestUrl) {
     if(requestUrl.pathname.startsWith(collectionRoot+'/')&&req.method==='POST'){
       if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
       const action=requestUrl.pathname.slice(collectionRoot.length+1);
-      if(!['start','pause','resume','apply'].includes(action))return sendJson(res,404,{message:'Onbekende collectieactie.'});
+      if(!['start','pause','resume','cancel','apply'].includes(action))return sendJson(res,404,{message:'Onbekende collectieactie.'});
       const body=await parseBody(req,4096);
       if(body?.confirm!==true)return sendJson(res,400,{message:'Bevestig deze actie.'});
       let outcome={ok:false,error:'not_ready'};
@@ -5612,6 +5613,7 @@ async function handleApi(req, res, requestUrl) {
             }
             outcome=startRun(db,enrichmentSources.list().filter(s=>s.enabled).map(s=>s.id),{repeat:body.repeat===true});
           }else if(action==='pause')outcome=pauseRun(db);
+          else if(action==='cancel')outcome=cancelRun(db);
           else if(action==='resume'){
             if((db.braveEnrichmentJobs||[]).some(job=>job.state==='running')){
               outcome={ok:false,error:'brave_running'};return db;
@@ -5624,6 +5626,7 @@ async function handleApi(req, res, requestUrl) {
         }});
       if(!outcome.ok)return sendJson(res,409,{message:'De collectieactie is niet mogelijk. Vernieuw de status.',error:outcome.error});
       if(action==='start'||action==='resume')collectionWorker.schedule();
+      if(action==='apply'||action==='cancel')freeMetadataWorker.schedule(500);
       if(outcome.newCover)scheduleCoverBackfill();
       return sendJson(res,200,outcome);
     }
@@ -5733,6 +5736,7 @@ async function handleApi(req, res, requestUrl) {
       await mutateJsonLockedAsync({
         lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 5000,read:()=>loadDb(),
         mutate:db=>{
+          if(db.freeEnrichmentRun?.state!=='applied')return db;
           // Existing uncompleted collection scans should be resumed, not duplicated.
           const activeCollection=(db.braveEnrichmentJobs||[]).some(job=>{
             if(job.source!=='collection')return false;
@@ -5749,7 +5753,7 @@ async function handleApi(req, res, requestUrl) {
           return db;
         },
       });
-      if (!added) return sendJson(res, 409, {message:'Er bestaat al een openstaande collectiecontrole.'});
+      if (!added) return sendJson(res, 409, {message:'Rond eerst gratis collectieonderzoek af of gebruik een bestaande openstaande Brave-controle.'});
       freeMetadataWorker.schedule(500);
       return sendJson(res, 201, {id:added.id});
     }
