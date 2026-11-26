@@ -1,7 +1,7 @@
 'use strict';
 // An explicit collection run records research only. It never consumes Brave
 // credit and never changes the catalogue until a separate bulk confirmation.
-const {randomUUID}=require('node:crypto');
+const {randomUUID,createHash}=require('node:crypto');
 const {isbnOf,workKey}=require('./book-free-metadata');
 const {keyOf,getCheck,recordCheck,shouldProbe}=require('./book-enrichment-trial');
 const {comparison,applyComparison}=require('./book-enrichment-comparison');
@@ -34,6 +34,14 @@ function startRun(db,sources,{repeat=false,now=Date.now(),id=randomUUID()}={}){
     createdAt:nowIso(now),updatedAt:nowIso(now),inFlight:null};
   return {ok:true,id};
 }
+function pauseRun(db,{now=Date.now()}={}){
+  const run=db.freeEnrichmentRun;
+  if(run?.state!=='running')return {ok:false,error:'not_running'};
+  if(run.inFlight)run.pauseRequested=true;
+  else run.state='paused';
+  run.updatedAt=nowIso(now);
+  return {ok:true};
+}
 function resumeRun(db,{now=Date.now()}={}){
   const run=db.freeEnrichmentRun;
   if(!run||!['partial','paused'].includes(run.state)||run.inFlight)return {ok:false,error:'not_resumable'};
@@ -44,7 +52,7 @@ function resumeRun(db,{now=Date.now()}={}){
         delete target.attempts[source];
     }
   }
-  run.state='running';run.updatedAt=nowIso(now);
+  run.state='running';run.pauseRequested=false;run.updatedAt=nowIso(now);
   return {ok:true,id:run.id};
 }
 function liveBooks(db,target){
@@ -61,6 +69,7 @@ function chooseTask(db,{now=Date.now(),blocked=new Set()}={}){
     if(target)target.attempts[run.inFlight.source]={status:'interrupted',at:nowIso(now)};
     run.inFlight=null;
   }
+  if(run.pauseRequested){run.state='paused';run.pauseRequested=false;run.updatedAt=nowIso(now);return null;}
   let pending=false,failed=false;
   for(const target of run.targets){
     const book=liveBooks(db,target)[0];
@@ -107,12 +116,14 @@ function finishTask(db,claim,result,{now=Date.now()}={}){
   }
   if(target)target.attempts[claim.source]={status,at:nowIso(now)};
   run.inFlight=null;run.updatedAt=nowIso(now);
+  if(run.pauseRequested){run.state='paused';run.pauseRequested=false;}
   return true;
 }
 function runStatus(db,failedCovers=new Set()){
   const run=db.freeEnrichmentRun;
   if(!run)return null;
   let completed=0,failed=0,skipped=0,proposed=0,conflicts=0;
+  const revisions=[];
   for(const target of run.targets){
     for(const attempt of Object.values(target.attempts)){
       if(terminal.has(attempt.status)||attempt.status==='cached')completed++;
@@ -123,16 +134,20 @@ function runStatus(db,failedCovers=new Set()){
       for(const book of liveBooks(db,target)){
         const view=comparison(db,book,failedCovers);
         proposed+=view.changes.length;conflicts+=view.conflicts.length;
+        revisions.push(view.revision);
       }
     }
   }
   return {id:run.id,state:run.state,editions:run.targets.length,sources:run.sources,
     total:run.targets.length*run.sources.length,completed,failed,skipped,proposed,conflicts,
-    currentSource:run.inFlight?.source||null,updatedAt:run.updatedAt,applied:run.applied||null};
+    currentSource:run.inFlight?.source||null,updatedAt:run.updatedAt,applied:run.applied||null,
+    pauseRequested:run.pauseRequested===true,
+    reviewRevision:run.state==='ready'?createHash('sha256').update(JSON.stringify([run.id,revisions])).digest('hex'):null};
 }
-function applyRun(db,id,{failedCovers=new Set(),now=Date.now()}={}){
+function applyRun(db,id,{revision,failedCovers=new Set(),now=Date.now()}={}){
   const run=db.freeEnrichmentRun;
   if(run?.id!==id||run.state!=='ready')return {ok:false,error:'not_ready'};
+  if(!revision||runStatus(db,failedCovers).reviewRevision!==revision)return {ok:false,error:'stale_preview'};
   let updated=0,newCover=false,books=0,conflicts=0;
   for(const target of run.targets){
     for(const book of liveBooks(db,target)){
@@ -147,4 +162,4 @@ function applyRun(db,id,{failedCovers=new Set(),now=Date.now()}={}){
   run.applied={updated,books,conflicts,newCover};
   return {ok:true,...run.applied};
 }
-module.exports={startRun,resumeRun,chooseTask,finishTask,deferClaim,runStatus,applyRun,LEASE_MS};
+module.exports={startRun,pauseRun,resumeRun,chooseTask,finishTask,deferClaim,runStatus,applyRun,LEASE_MS};
