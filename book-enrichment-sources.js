@@ -22,7 +22,15 @@ function createEnrichmentSources({env=process.env,fetchImpl=globalThis.fetch,
       const result=source==='boekenbase'?await boekenbase(isbn,{fetchImpl})
         :source==='easycb'?await easycb(isbn,{contact,fetchImpl})
         :await isbnLookup.lookupSource(source,isbn);
-      return result&&typeof result.status==='string'?result:{status:'invalid_response',metadata:null};
+      if(!result||typeof result.status!=='string')return {status:'invalid_response',metadata:null};
+      if(result.status==='found'&&result.metadata&&['bureau_isbn','google_books'].includes(source)){
+        // Existing ISBN parsers expose their classification systems as tags.
+        // Preserve them as source categories instead of calling them verified
+        // content keywords or counting them towards content coverage.
+        const categories=Array.isArray(result.metadata.tags)?result.metadata.tags:[];
+        return {...result,metadata:{...result.metadata,categories,tags:[]}};
+      }
+      return result;
     }catch{return {status:'error',metadata:null};}
   }
   return {list,probe};
