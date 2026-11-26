@@ -1284,3 +1284,39 @@ body.bb-teacher-v31 .bb-v32-cover-placeholder .bb-v32-cover-note {
   top:27px;padding:0 3px;border-radius:0;background:transparent;
   opacity:.84;color:#fff;text-shadow:0 1px 3px #0006;
 }
+
+
+/* The eight admin destinations do not fit beside the wordmark and account
+   at landscape tablet widths. Reuse the existing accessible drawer without
+   changing the catalogue grid or the teacher layout. */
+@media (min-width:761px) and (max-width:1100px) {
+  body.bb-admin-v31.bb-v32-active .hero.hero--staff { z-index:70; }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-menu {
+    display:inline-flex;align-items:center;justify-content:center;flex:0 0 42px;
+    width:42px;height:42px;color:#fff;background:transparent;border:1px solid #5e79a1;border-radius:8px;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav {
+    position:fixed;top:65px;left:0;right:auto;bottom:0;
+    width:min(320px,88vw);height:calc(100dvh - 65px);min-height:0;max-height:none;
+    margin:0;padding:20px 12px;flex-direction:column;align-items:stretch;
+    transform:translateX(-110%);transition:transform .18s ease;visibility:hidden;
+    background:white;overflow-y:auto;overflow-x:hidden;z-index:65;box-shadow:8px 0 24px #15376338;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tabs {
+    display:grid;width:100%;min-width:0;height:auto;align-items:stretch;gap:6px;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab {
+    width:100%;height:auto;min-height:44px;justify-content:flex-start;white-space:normal;
+    padding:10px 13px;font-size:.93rem;color:var(--bb-v32-text);text-align:left;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab--active,
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar .admin-modern__tab--active:hover {
+    color:white;background:#173769;
+  }
+  body.bb-admin-v31.bb-v32-active.bb-admin-v31--open #bb-admin-v31-sidebar.bb-v32-top-nav {
+    visibility:visible;transform:translateX(0);
+  }
+  body.bb-admin-v31.bb-v32-active.bb-admin-v31--open #bb-admin-v31-scrim {
+    display:block;position:fixed;inset:65px 0 0;width:100%;border:0;background:#12223b80;z-index:44;
+  }
+}
