@@ -5612,7 +5612,7 @@ async function handleApi(req, res, requestUrl) {
             return plan.state==='running'||plan.waitingFree>0||plan.needsBrave>0;
           });
           if(!activeCollection)
-            added=addJob(db,db.books.map(book=>book.id),{source:'collection'});
+            added=addJob(db,db.books.map(book=>book.id),{source:'collection',repeatChecked:body.repeatChecked===true});
           return db;
         },
       });
