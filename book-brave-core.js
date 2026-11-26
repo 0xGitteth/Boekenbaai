@@ -63,7 +63,10 @@ function bookWorks(db, job) {
 }
 function needsExtra(book,failedCovers=new Set()) {
   const description = String(book?.description || '').replace(/<[^>]*>/g,'').trim();
-  const tagCount = Array.isArray(book?.tags) ? book.tags.filter(Boolean).length : 0;
+  const tagCount = new Set([...(Array.isArray(book?.tags)?book.tags:[]),
+    ...(Array.isArray(book?.enrichmentTags)?book.enrichmentTags:[])]
+    .filter(tag=>typeof tag==='string'&&tag.trim())
+    .map(tag=>tag.trim().toLocaleLowerCase('nl-NL'))).size;
   const cover = Boolean(book?.coverUrl || book?.localCoverUrl);
   const broken=Boolean(book?.coverUrl&&!book?.localCoverUrl&&failedCovers.has(book.coverUrl));
   return {cover:!cover||broken, description:description.length < 280, topics:tagCount < 3,
