@@ -422,6 +422,73 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     trialPanel.append(make('h4','','Proefverrijking met gratis boekbronnen'),trialNotice,trialLoad,trialControls);
     enrichmentExtra.append(trialPanel);
 
+    const collectionRoot='/api/admin/book-enrichment/collection';
+    const collectionPanel=make('section','bb-review__brave');
+    const collectionNotice=make('p','hint','De collectiecontrole wordt geladen.');
+    collectionNotice.setAttribute('role','status');
+    const collectionFeedback=make('p','hint');
+    const collectionActions=make('div','bb-review__brave-items');
+    const collectionRepeat=make('input');collectionRepeat.type='checkbox';
+    const collectionRepeatLabel=make('label','hint');
+    collectionRepeatLabel.append(collectionRepeat,document.createTextNode(' Ook eerder afgerond gratis onderzoek herhalen'));
+    collectionPanel.append(make('h4','','Gratis bronnen voor de hele collectie'),collectionNotice,collectionFeedback,collectionActions);
+    enrichmentExtra.append(collectionPanel);
+    let collectionBusy=false,collectionRefreshing=false,collectionState=null;
+    async function collectionAction(action,payload){
+      if(collectionBusy)return;
+      collectionBusy=true;
+      for(const btn of collectionActions.querySelectorAll('button'))btn.disabled=true;
+      try{
+        const response=await request(collectionRoot+'/'+action,{confirm:true,...payload});
+        collectionFeedback.textContent=action==='apply'
+          ?response.updated+' veilige aanvullingen opgeslagen voor '+response.books+' exemplaren. Conflicten blijven behouden.'
+          :'Actie opgeslagen.';
+        if(action==='start')collectionRepeat.checked=false;
+      }catch(error){collectionFeedback.textContent=error.message||'De actie is mislukt.';}
+      finally{collectionBusy=false;await refreshCollection();void refreshBrave();}
+    }
+    async function refreshCollection(){
+      if(collectionBusy||collectionRefreshing||!root.isConnected)return;
+      collectionRefreshing=true;
+      try{
+        const info=await request(collectionRoot);
+        const run=info.run;
+        collectionState=run?.state||null;
+        const names=(info.sources||[]).filter(x=>x.enabled).map(x=>x.name).join(', ');
+        collectionActions.replaceChildren();
+        function action(label,name,payload,question){
+          const btn=button(label,'btn btn--secondary');
+          btn.addEventListener('click',()=>{if(!question||window.confirm(question))void collectionAction(name,payload());});
+          collectionActions.append(btn);
+          return btn;
+        }
+        if(!run||run.state==='applied'){
+          collectionNotice.textContent=run
+            ?'Laatste controle toegepast: '+run.applied.updated+' aanvullingen voor '+run.applied.books+' exemplaren.'
+            :'Gratis bronnen: '+names+'. Nog geen volledige collectiecontrole uitgevoerd.';
+          collectionActions.append(collectionRepeatLabel);
+          action('Gratis collectieonderzoek starten','start',()=>({repeat:collectionRepeat.checked}),
+            'Alle geldige ISBN-edities onderzoeken met gratis bronnen? Er wordt niets gewijzigd en Brave wordt niet gebruikt.');
+          return;
+        }
+        collectionNotice.textContent=run.completed+' van '+run.total+' broncontroles afgerond, '+run.failed+' mislukt, '+run.skipped+' vervallen. '
+          +({running:'Onderzoek loopt.',paused:'Gepauzeerd.',partial:'Nog niet alle bronnen zijn succesvol afgerond.',ready:'Onderzoek gereed.'}[run.state]||run.state);
+        if(run.state==='running'){
+          const pause=action('Pauzeren','pause',()=>({}),null);
+          pause.disabled=run.pauseRequested===true;
+        }else if(['paused','partial'].includes(run.state)){
+          action('Onderzoek hervatten','resume',()=>({}),null);
+        }else if(run.state==='ready'){
+          collectionNotice.textContent+=' '+run.proposed+' veilige aanvullingen, '+run.conflicts+' tegenstrijdigheden.';
+          action('Veilige aanvullingen toepassen','apply',()=>({runId:run.id,revision:run.reviewRevision}),
+            'De '+run.proposed+' voorgestelde aanvullingen toepassen? Handmatige waarden en tegenstrijdigheden worden niet overschreven.');
+        }
+      }catch(error){collectionNotice.textContent=error.message||'De collectiecontrole kon niet worden geladen.';}
+      finally{collectionRefreshing=false;}
+    }
+    void refreshCollection();
+
+
 
 
 
@@ -551,17 +618,16 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           }
           braveItems.append(item);
         }
-        if (info.configured || info.freeConfigured) {
+        if ((info.configured || info.freeConfigured)&&collectionState==='applied') {
           const repeat = make('input');
           repeat.type = 'checkbox';
           repeat.checked = repeatBraveChecks;
           repeat.addEventListener('change', () => { repeatBraveChecks = repeat.checked; });
           const repeatLabel = make('label', 'hint');
           repeatLabel.append(repeat, document.createTextNode(' Eerder onderzochte Brave-bronnen opnieuw raadplegen bij ontbrekende gegevens'));
-          const scan = button('Bestaande collectie controleren', 'btn btn--ghost');
+          const scan = button('Resterend Brave-onderzoek berekenen', 'btn btn--ghost');
           scan.addEventListener('click', async () => {
-            if (!window.confirm('De bestaande boeken op ontbrekende gegevens controleren? '
-              + 'Gratis bronnen starten automatisch. Brave wordt pas na jouw toestemming gebruikt.')) return;
+            if (!window.confirm('Resterend internetonderzoek berekenen? Brave wordt pas na aparte toestemming gebruikt.')) return;
             scan.disabled = true;
             try {
               await request('/api/admin/book-enrichment/brave/scan', {confirm:true,repeatChecked:repeatBraveChecks});
@@ -4451,7 +4517,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     });
     // One existing status timer, gated to the visible Brave panel.
     window.setInterval(() => {
-      if (enrichmentExtra.open && !document.hidden) void refreshBrave();
+      if (enrichmentExtra.open && !document.hidden) {void refreshBrave();void refreshCollection();}
     }, 8000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) syncStage();
