@@ -19,6 +19,8 @@ const { createFreeMetadataWorker } = require('./book-free-metadata-worker');
 const { createBraveWorker } = require('./book-brave-worker');
 const {createEnrichmentSources}=require('./book-enrichment-sources');
 const {createSourceGate}=require('./book-enrichment-source-gate');
+const {createCollectionWorker}=require('./book-enrichment-collection-worker');
+const {startRun,pauseRun,resumeRun,runStatus,applyRun}=require('./book-enrichment-collection');
 const {comparison,compareEdition,applyComparison}=require('./book-enrichment-comparison');
 const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialProbe,
   catalogue:trialCatalogue}=require('./book-enrichment-trial');
@@ -175,6 +177,16 @@ const freeMetadataWorker = createFreeMetadataWorker({
 // another can start; no Brave request is made by this path.
 const enrichmentSources=createEnrichmentSources();
 const enrichmentSourceGate=createSourceGate();
+const collectionPaused=()=>shuttingDown||Boolean(activeBookImportLease)||Boolean(bookImportStageStore.active());
+const collectionWorker=createCollectionWorker({
+  loadDb:()=>loadDb(),sources:enrichmentSources,gate:enrichmentSourceGate,isPaused:collectionPaused,
+  commit:async apply=>{
+    let outcome;
+    await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,
+      read:()=>loadDb(),mutate:db=>{outcome=apply(db);return db;}});
+    return outcome;
+  },
+});
 const braveWorker = createBraveWorker({
   apiKey: process.env.BOEKENBAAI_BRAVE_API_KEY || '',
   loadDb: () => loadDb(),
@@ -5579,6 +5591,42 @@ async function handleApi(req, res, requestUrl) {
 
     // Persistent Brave plan and approval, admin-only and budget checked at
     // the exact database commit boundary. No API request occurs on approval.
+    const collectionRoot='/api/admin/book-enrichment/collection';
+    if(requestUrl.pathname===collectionRoot&&req.method==='GET'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      return sendJson(res,200,{run:runStatus(loadDb(),exhaustedCoverSourceUrls()),sources:enrichmentSources.list()});
+    }
+    if(requestUrl.pathname.startsWith(collectionRoot+'/')&&req.method==='POST'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const action=requestUrl.pathname.slice(collectionRoot.length+1);
+      if(!['start','pause','resume','apply'].includes(action))return sendJson(res,404,{message:'Onbekende collectieactie.'});
+      const body=await parseBody(req,4096);
+      if(body?.confirm!==true)return sendJson(res,400,{message:'Bevestig deze actie.'});
+      let outcome={ok:false,error:'not_ready'};
+      await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,
+        read:()=>loadDb(),mutate:db=>{
+          if(collectionPaused()){outcome={ok:false,error:'import_active'};return db;}
+          if(action==='start'){
+            if((db.braveEnrichmentJobs||[]).some(job=>job.state==='running')){
+              outcome={ok:false,error:'brave_running'};return db;
+            }
+            outcome=startRun(db,enrichmentSources.list().filter(s=>s.enabled).map(s=>s.id),{repeat:body.repeat===true});
+          }else if(action==='pause')outcome=pauseRun(db);
+          else if(action==='resume'){
+            if((db.braveEnrichmentJobs||[]).some(job=>job.state==='running')){
+              outcome={ok:false,error:'brave_running'};return db;
+            }
+            outcome=resumeRun(db);
+          }else{
+            outcome=applyRun(db,body.runId,{revision:body.revision,failedCovers:exhaustedCoverSourceUrls()});
+          }
+          return db;
+        }});
+      if(!outcome.ok)return sendJson(res,409,{message:'De collectieactie is niet mogelijk. Vernieuw de status.',error:outcome.error});
+      if(action==='start'||action==='resume')collectionWorker.schedule();
+      if(outcome.newCover)scheduleCoverBackfill();
+      return sendJson(res,200,outcome);
+    }
     const trialRoot='/api/admin/book-enrichment/trial';
     if(requestUrl.pathname===trialRoot&&req.method==='GET'){
       if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
@@ -5610,6 +5658,7 @@ async function handleApi(req, res, requestUrl) {
       const db=loadDb(),book=db.books.find(b=>b.id===body.bookId);
       if(!book||!trialCatalogue({books:[book]}).length)
         return sendJson(res,404,{message:'Boek met geldige ISBN-identiteit niet gevonden.'});
+      if(db.freeEnrichmentRun?.state==='running')return sendJson(res,409,{message:'De gratis collectiecontrole loopt al. Bekijk de opgeslagen resultaten of pauzeer de controle.'});
       if(!shouldTrialProbe(db,book,body.repeat===true,source.id))
         return sendJson(res,200,{cached:true,probeStatus:'cached'});
       if(activeBookImportLease||bookImportStageStore.active()?.status==='applying'||shuttingDown)
@@ -5714,6 +5763,9 @@ async function handleApi(req, res, requestUrl) {
       await mutateJsonLockedAsync({
         lockPath: DATA_PATH, filePath: DATA_PATH, waitMs: 5000,read:()=>loadDb(),
         mutate:db=>{
+          if(['running','paused','partial','ready'].includes(db.freeEnrichmentRun?.state)){
+            outcome={ok:false,error:'free_research_pending'};return db;
+          }
           outcome=approveJob(db, braveApprove[1],{
             confirmed:body.confirm===true,
             expectedRequests:body.maxRequests,
@@ -10058,6 +10110,8 @@ server.listen(PORT, () => {
     const restartBackfill = setTimeout(scheduleCoverBackfill, 30000);
     const resumeMetadata = setTimeout(() => freeMetadataWorker.schedule(), 12000);
     resumeMetadata.unref?.();
+    const resumeCollection = setTimeout(() => collectionWorker.schedule(), 14000);
+    resumeCollection.unref?.();
     const resumeBrave = setTimeout(() => braveWorker.schedule(500), 18000);
     resumeBrave.unref?.();
     // Recheck durable leases after a crash or a parallel instance exits.
@@ -10078,6 +10132,7 @@ function gracefulShutdown(signal) {
   shuttingDown = true;
   freeMetadataWorker.stop();
   braveWorker.stop();
+  collectionWorker.stop();
   console.log(`Ontvangen signaal ${signal}, server wordt afgesloten...`);
   // Stop starting new recipients; finish an in-flight bridge request before
   // exiting. Outbound fetch is not covered by server.close().
