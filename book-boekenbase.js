@@ -30,11 +30,12 @@ function normalizeRecord(record,isbn){
     .filter(c=>c&&typeof c==='object'&&(c.role==='A01'||/^(auteur|author)$/i.test(c.role_name||'')))
     .sort((a,b)=>(Number(a.seq)||0)-(Number(b.seq)||0))
     .map(authorName).filter(Boolean))].slice(0,12);
-  // Only publisher descriptions, never quotes/reviews/endorsements or other
-  // promotional text types. Keep the source's short description as fallback.
+  // Prefer the observed 05 flaptekst; retain 03 and 02 as fallbacks.
+  // Other standalone text types (reviews, contents, publisher notes) are not descriptions.
+  const textPriority={'05':3,'03':2,'02':1};
   const descriptions=(Array.isArray(record.texts)?record.texts:[])
-    .filter(t=>t&&['03','02'].includes(String(t.text_type)))
-    .sort((a,b)=>Number(b.text_type==='03')-Number(a.text_type==='03'))
+    .filter(t=>t&&Object.hasOwn(textPriority,String(t.text_type)))
+    .sort((a,b)=>textPriority[String(b.text_type)]-textPriority[String(a.text_type)])
     .map(t=>plain(t.text)).filter(Boolean);
   // Use the current record's front cover only, not the rear, an excerpt, or
   // an asset from a related edition.
@@ -46,13 +47,21 @@ function normalizeRecord(record,isbn){
       if(url.protocol==='https:'){coverUrl=url.href;break;}
     }catch{}
   }
-  const tags=[...new Set([...(Array.isArray(record.keywords)?record.keywords:[]),record.nur_main_name]
+  // NUR classifications are not content keywords.
+  const tags=[...new Set((Array.isArray(record.keywords)?record.keywords:[])
     .map(v=>plain(v,100)).filter(Boolean))].slice(0,30);
-  const year=/^(\d{4})-\d{2}-\d{2}$/.exec(record.pub_date||'');
+  const nurCode=plain(record.nur_main,20);
+  const nurCategory=plain(record.nur_main_name,100);
+  const date=typeof record.pub_date==='string'?record.pub_date:'';
+  const year=/^(\d{4})-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/.exec(date);
+  const publishedYear=year&&Number(year[1])>=1&&Number(year[1])<=2100
+    &&Number.isFinite(Date.parse(date))?Number(year[1]):null;
+  const pageCount=Number.isSafeInteger(record.page_count)&&record.page_count>0
+    &&record.page_count<=20000?record.page_count:null;
   return {isbn,title,subtitle:plain(record.subtitle,300),author:authors.join('; '),authors,
     description:descriptions[0]||'',coverUrl,publisher:plain(record.publisher_name,200),
-    publishedYear:year?Number(year[1]):null,language:plain(record.language_code,20),
-    genre:plain(record.nur_main_name,100),tags,seriesTitle:plain(record.series_title,200),
+    imprint:plain(record.imprint_name,200),publishedYear,pageCount,language:plain(record.language_code,20),
+    genre:nurCategory,nurCode,nurCategory,tags,seriesTitle:plain(record.series_title,200),
     seriesNumber:plain(record.series_number,40),format:plain(record.product_form_name,100),
     source:'boekenbase'};
 }
@@ -103,7 +112,14 @@ function structuredResult(result){
     try{payloads.push(JSON.parse(item.text));}catch{}
   }
   if(payloads.some(p=>p?.error?.code==='not_found'))return {status:'not_found',metadata:null};
-  if(result.isError===true)throw providerError('tool_error');
+  if(result.isError===true){
+    // Live response on 2026-11-26: HTTP 200, text error for absent ISBN.
+    if(Array.isArray(result.content)&&result.content.length===1
+      &&result.content[0]?.type==='text'
+      &&result.content[0]?.text?.trim()==='Dit ISBN staat niet in de boekenbase.')
+      return {status:'not_found',metadata:null};
+    throw providerError('tool_error');
+  }
   for(const payload of payloads){
     const record=payload?.data??payload;
     if(record&&typeof record==='object'&&typeof record.isbn13==='string')return {status:'record',record};
