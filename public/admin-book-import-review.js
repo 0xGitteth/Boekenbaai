@@ -281,8 +281,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       unauthorized:'Toegang geweigerd',invalid_response:'Onbekend antwoordformaat',
       unsupported_protocol:'Niet ondersteund protocol',rpc_error:'MCP-fout',tool_error:'Bronopvraag mislukt',
     };
-    const trialFields={description:'Beschrijving',publisher:'Uitgever',publishedYear:'Jaar',
-      pageCount:'Pagina’s',language:'Taal',coverUrl:'Omslag',enrichmentTags:'Aanvullende trefwoorden'};
+    const trialFields={description:'Beschrijving',publisher:'Uitgever',imprint:'Uitgeeflabel',publishedYear:'Jaar',
+      pageCount:'Pagina’s',language:'Taal',nurCode:'NUR-code',nurCategory:'NUR-categorie',
+      seriesTitle:'Serie',seriesNumber:'Deelnummer',coverUrl:'Omslag',enrichmentTags:'Inhoudelijke trefwoorden'};
     const trialStatus=value=>trialStatusNames[value]||String(value||'Onbekend');
     const showValue=value=>Array.isArray(value)?value.join(', '):String(value??'')||'Ontbreekt';
     function renderTrialChoices(){
@@ -316,6 +317,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         const item=make('div','bb-review__brave-items');
         item.append(make('p','hint','Exemplaar '+(index+1)+' · '+trialStatus(copy.status)));
         if(copy.lastError)item.append(make('p','hint','Laatste herhaalde poging: '+trialStatus(copy.lastError)));
+        if(copy.sourceDetails){
+          const details=copy.sourceDetails;
+          item.append(make('p','hint','BoekenBase: '+[details.publisher,details.imprint,details.nurCategory].filter(Boolean).join(' · ')
+            +' · '+details.keywordCount+' inhoudelijke trefwoorden'));
+        }
         for(const change of copy.changes||[]){
           const detail=make('details');
           detail.append(make('summary','',trialFields[change.field]||change.field),
@@ -354,7 +360,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       const repeat=trialRepeat.checked;
       if(!window.confirm('Proefonderzoek uitvoeren voor de '+trialSelected.size+' geselecteerde edities? Er worden geen Brave-verzoeken uitgevoerd.'))return;
       trialBusy=true;renderTrialChoices();trialResults.replaceChildren();
-      let processed=0;
+      let processed=0,rateLimited=false;
       try{
         for(const id of [...trialSelected]){
           const book=trialBooks.find(b=>b.id===id);
@@ -364,10 +370,13 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             const response=await request(trialRoot+'/probe',{bookId:id,repeat,confirm:true});
             renderTrialResult(book,response);
             if(response.copies?.[0])book.status=response.copies[0].status;
+            if(response.copies?.some(copy=>copy.status==='rate_limited'||copy.lastError==='rate_limited')){
+              rateLimited=true;break;
+            }
           }catch(error){trialResults.append(make('p','hint',book.title+': '+error.message));}
           processed++;
         }
-        trialNotice.textContent='Proefronde afgerond. Controleer de resultaten per exemplaar.';
+        trialNotice.textContent=rateLimited?'BoekenBase heeft de verzoeken tijdelijk begrensd. Opgeslagen resultaten blijven behouden; probeer de resterende boeken later opnieuw.':'Proefronde afgerond. Controleer de resultaten per exemplaar.';
       }finally{trialBusy=false;trialRepeat.checked=false;renderTrialChoices();}
     });
     trialControls.append(trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults);
