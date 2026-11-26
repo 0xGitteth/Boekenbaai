@@ -8,7 +8,7 @@ const {
 }=require('../book-brave-core');
 const {
   parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,
-  robotsAllowed,discoverPages,selectImageResult,fetchHtml,
+  robotsAllowed,discoverPages,selectImageResult,fetchHtml,rankPublisherCandidates,
 }=require('../book-brave-fetch');
 const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
 
@@ -225,6 +225,31 @@ assert.equal(parseBookPage(sequelHtml,{
   'https://publisher.example/dune-messiah'),null,
   'A matching ISBN must not override an explicitly different work title');
 assert.match(queryFor(1,target),/kaft/);
+assert.match(queryFor(1,target),/9789083316642/);
+assert.match(queryFor(0,{...target,publisher:'Uitgeverij Voorbeeld'}),/Uitgeverij Voorbeeld/);
+const ranked=rankPublisherCandidates([{title:target.title,url:'https://winkel.example/boek'},
+  {title:target.title,url:'https://www.voorbeeld.nl/boek'}],{...target,publisher:'Uitgeverij Voorbeeld'});
+assert.equal(ranked[0].url,'https://www.voorbeeld.nl/boek');
+const differentEdition=parseBookPage(html.replaceAll(target.isbn,'9780306406157'),target,
+  'https://www.uitgeverijvoorbeeld.nl/andere-druk');
+assert.equal(differentEdition.confidence,'title_author');
+const editionBook={...book('edition-safety'),pageCount:null,publisher:'',coverCrop:{x:0.1}};
+const editionDb={books:[editionBook]};
+const editionClaim={key:JSON.stringify([target.isbn,target.title.toLowerCase(),target.author.toLowerCase()]),
+  bookIds:[editionBook.id]};
+updateFromPages(editionDb,editionClaim,[{...differentEdition,publisher:'Andere uitgever',pageCount:123}],
+  {imageUrl:differentEdition.coverUrl});
+assert.match(editionBook.description,/gevaarlijke reis/);
+assert.equal(editionBook.pageCount,null);
+assert.equal(editionBook.publisher,'');
+assert.equal(editionBook.coverUrl,'');
+const editionUpdate=updateFromPages(editionDb,editionClaim,[{...found,publisher:'Juiste uitgever',pageCount:456}]);
+assert.equal(editionBook.pageCount,456);
+assert.equal(editionBook.publisher,'Juiste uitgever');
+assert.equal(editionBook.coverUrl,found.coverUrl);
+assert.equal(editionBook.coverCrop,null);
+assert.ok(editionUpdate.evidenceByBook[editionBook.id].some(e=>e.field==='coverUrl'&&e.url===found.sourceUrl));
+assert.equal(clearedThemes.tags.length,0,'Cleared themes also prevent legacy tag filling');
 assert.equal(parseMonthlyRemaining({headers:{get(k){
   return k==='x-ratelimit-policy'?'2;w=1, 1200;w=2592000':'1, 734';
 }}}),734);
@@ -383,6 +408,7 @@ async function run(){
   assert.equal(db2.braveEnrichmentJobs[0].state,'complete');
   assert.equal(calls,1,'Remaining external requests skipped when sources filled gaps');
   assert.equal(db2.braveUsage.reserved,1);
+  assert.ok(getBraveCheck(db2,'x',JSON.stringify([target.isbn,target.title.toLowerCase(),target.author.toLowerCase()]),0).evidence.some(e=>e.field==='coverUrl'&&e.url===found.sourceUrl));
   assert.equal(db2.books[0].coverUrl,found.coverUrl);
   assert.deepEqual(db2.books[0].tags,found.tags);
   assert.match(db2.books[0].description,/gevaarlijke reis/);
@@ -390,7 +416,7 @@ async function run(){
   assert.deepEqual(db2.students,undefined,'Worker does not modify students');
   worker.stop();
 
-  // Another edition's cover can be recovered from a verified source page
+  // The exact edition's cover can be recovered from a verified source page
   // even when the image-search result title itself lacks the author's name.
   const db3={books:[{...book('y'),description:'Lange beschrijving. '.repeat(24),
     tags:['Avontuur','Geheimen','Vriendschap']}],braveEnrichmentJobs:[]};
