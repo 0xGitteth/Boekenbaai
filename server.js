@@ -17,6 +17,9 @@ const { createCoverAssetStore } = require('./lib/cover-assets');
 const { planCoverBackfill } = require('./lib/cover-backfill-plan');
 const { createFreeMetadataWorker } = require('./book-free-metadata-worker');
 const { createBraveWorker } = require('./book-brave-worker');
+const {fetchBoekenBase}=require('./book-boekenbase');
+const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialProbe,
+  catalogue:trialCatalogue,editionViews:trialEditionViews,applyTrial}=require('./book-enrichment-trial');
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
@@ -165,6 +168,9 @@ const freeMetadataWorker = createFreeMetadataWorker({
 });
 
 // A durable approved job can continue independently of the import page.
+// Explicit administrator trials only; the limit counts actual ISBN lookups.
+let trialProbeRunning=false;
+const trialProbeTimes=[];
 const braveWorker = createBraveWorker({
   apiKey: process.env.BOEKENBAAI_BRAVE_API_KEY || '',
   loadDb: () => loadDb(),
@@ -5569,6 +5575,67 @@ async function handleApi(req, res, requestUrl) {
 
     // Persistent Brave plan and approval, admin-only and budget checked at
     // the exact database commit boundary. No API request occurs on approval.
+    const trialRoot='/api/admin/book-enrichment/trial';
+    if(requestUrl.pathname===trialRoot&&req.method==='GET'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      return sendJson(res,200,{books:trialCatalogue(loadDb())});
+    }
+    if(requestUrl.pathname===trialRoot+'/probe'&&req.method==='POST'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const body=await parseBody(req,4096);
+      if(body?.confirm!==true||typeof body.bookId!=='string')
+        return sendJson(res,400,{message:'Selecteer en bevestig een boek.'});
+      const book=loadDb().books.find(b=>b.id===body.bookId);
+      if(!book||!trialCatalogue({books:[book]}).length)
+        return sendJson(res,404,{message:'Boek met geldige ISBN-identiteit niet gevonden.'});
+      const snapshot=loadDb();
+      const current=snapshot.books.find(b=>b.id===book.id);
+      if(!current||trialIdentity(current)!==trialIdentity(book))
+        return sendJson(res,409,{message:'Het boek is ondertussen gewijzigd.'});
+      if(!shouldTrialProbe(snapshot,current,body.repeat===true))
+        return sendJson(res,200,{copies:trialEditionViews(snapshot,current,exhaustedCoverSourceUrls()),cached:true});
+      if(activeBookImportLease||bookImportStageStore.active()?.status==='applying')
+        return sendJson(res,409,{message:'Wacht tot de actieve import is afgerond.'});
+      if(trialProbeRunning)return sendJson(res,409,{message:'Er loopt al een proefopvraag.'});
+      while(trialProbeTimes.length&&trialProbeTimes[0]<=Date.now()-60000)trialProbeTimes.shift();
+      if(trialProbeTimes.length>=5)
+        return sendJson(res,429,{message:'Maximaal vijf nieuwe proefopvragen per minuut. Eerdere resultaten blijven beschikbaar.'});
+      trialProbeRunning=true;trialProbeTimes.push(Date.now());
+      try{
+        const result=await fetchBoekenBase(trialCatalogue({books:[current]})[0].isbn);
+        let copies=null;
+        await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,
+          read:()=>loadDb(),mutate:db=>{
+            if(activeBookImportLease||bookImportStageStore.active()?.status==='applying')return db;
+            const live=db.books.find(b=>b.id===current.id);
+            if(!live||trialIdentity(live)!==trialIdentity(current))return db;
+            recordTrialCheck(db,live,result);
+            copies=trialEditionViews(db,live,exhaustedCoverSourceUrls());
+            return db;
+          }});
+        if(!copies)return sendJson(res,409,{message:'Boek of importstatus gewijzigd. Er is niets aan de collectie toegevoegd.'});
+        return sendJson(res,200,{copies,cached:false});
+      }finally{trialProbeRunning=false;}
+    }
+    if(requestUrl.pathname===trialRoot+'/apply'&&req.method==='POST'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const body=await parseBody(req,4096);
+      if(body?.confirm!==true||typeof body.bookId!=='string'||typeof body.revision!=='string')
+        return sendJson(res,400,{message:'Bevestig de gecontroleerde wijzigingen.'});
+      let outcome={ok:false,error:'book_missing'};
+      await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,
+        read:()=>loadDb(),mutate:db=>{
+          if(activeBookImportLease||bookImportStageStore.active()?.status==='applying'){
+            outcome={ok:false,error:'import_active'};return db;
+          }
+          const book=db.books.find(b=>b.id===body.bookId);
+          if(book)outcome=applyTrial(db,book,body.revision,exhaustedCoverSourceUrls());
+          return db;
+        }});
+      if(!outcome.ok)return sendJson(res,409,{message:'Gegevens of importstatus gewijzigd. Controleer het voorstel opnieuw.',error:outcome.error});
+      if(outcome.newCover)scheduleCoverBackfill();
+      return sendJson(res,200,outcome);
+    }
     const braveRoot = '/api/admin/book-enrichment/brave';
     if (requestUrl.pathname === braveRoot && req.method === 'GET') {
       if (!ensureRole(user, ['admin'])) return sendJson(res, 403, {message:'Alleen voor beheerders.'});
