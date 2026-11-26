@@ -285,9 +285,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     };
     const trialFields={description:'Beschrijving',publisher:'Uitgever',imprint:'Uitgeeflabel',publishedYear:'Jaar',
       pageCount:'Pagina’s',language:'Taal',nurCode:'NUR-code',nurCategory:'NUR-categorie',
-      seriesTitle:'Serie',seriesNumber:'Deelnummer',coverUrl:'Omslag',enrichmentTags:'Inhoudelijke trefwoorden'};
+      seriesTitle:'Serie',seriesNumber:'Deelnummer',coverUrl:'Omslag',enrichmentTags:'Inhoudelijke trefwoorden',
+      enrichmentDescriptions:'Aanvullende beschrijvingen voor Help me kiezen'};
     const trialStatus=value=>trialStatusNames[value]||String(value||'Onbekend');
-    const showValue=value=>Array.isArray(value)?value.join(', '):String(value??'')||'Ontbreekt';
+    const showValue=value=>Array.isArray(value)?value.map(entry=>entry&&typeof entry==='object'&&typeof entry.text==='string'
+      ?trialSourceName(entry.source)+': '+entry.text:String(entry)).join('\n\n')||'Ontbreekt':String(value??'')||'Ontbreekt';
     function renderTrialChoices(){
       trialChoices.replaceChildren();
       const q=trialSearch.value.trim().toLocaleLowerCase('nl');
