@@ -271,6 +271,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const trialStart=button('Proefverrijking starten','btn btn--secondary');
     const trialBravePlan=button('Brave-proef berekenen (maximaal 15 verzoeken)','btn btn--secondary');
     const braveTrialResults=make('div','bb-review__brave-items');
+    const trialBraveJobs=make('div','bb-review__brave-items');
+    const trialBudget=make('p','hint');
+    const trialBraveFeedback=make('p','hint');trialBraveFeedback.setAttribute('role','status');
     const trialResults=make('div','bb-review__brave-items');
     const trialSelected=new Set();
     let trialBooks=[],trialSources=[],trialBusy=false;
@@ -322,7 +325,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       section.append(make('p','hint','Gecombineerd resultaat van de beschikbare gratis bronnen.'));
       for(const [index,copy] of (response.copies||[]).entries()){
         const item=make('div','bb-review__brave-items');
-        item.append(make('p','hint','Exemplaar '+(index+1)));
+        item.append(make('p','hint','Exemplaar '+(index+1)+(copy.barcode?' · '+copy.barcode:'')));
         const sourceDetails=make('details');
         sourceDetails.append(make('summary','','Resultaten per bron'));
         for(const source of copy.statuses||[]){
@@ -427,12 +430,14 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       trialBusy=true;renderTrialChoices();
       try{
         await request('/api/admin/book-enrichment/brave/trial',{confirm:true,bookIds:[...trialSelected]});
-        trialNotice.textContent='Brave-proef voorbereid. Geef afzonderlijk toestemming voor de berekende zoekopdrachten in het internetonderzoek.';
+        trialNotice.textContent='Brave-proef voorbereid. Geef hieronder afzonderlijk toestemming voor de berekende zoekopdrachten.';
         void refreshBrave();
       }catch(error){trialNotice.textContent=error.message;}
       finally{trialBusy=false;renderTrialChoices();}
     });
-    trialControls.append(trialSourceSummary,trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults,trialBravePlan);
+    trialControls.append(make('h5','','1. Gratis onderzoek'),trialSourceSummary,trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults,make('h5','','2. Aanvullend internetonderzoek'),trialBravePlan);
+    const trialBravePanel=make('section','bb-review__trial-brave');
+    trialBravePanel.append(make('h5','','3. Zoekbudget, voortgang en resultaten'),trialBudget,trialBraveFeedback,trialBraveJobs,braveTrialResults);
     async function showBraveTrial(jobId){
       braveTrialResults.replaceChildren(make('p','hint','Brave-proefresultaten laden...'));
       const base='/api/admin/book-enrichment/brave/'+encodeURIComponent(jobId);
@@ -450,15 +455,15 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           });
           braveTrialResults.append(dismiss);
         }
-        for(const copy of data.copies||[]){
+        for(const [index,copy] of (data.copies||[]).entries()){
           const item=make('section','bb-review__brave-items');
-          item.append(make('strong','',copy.title+' · '+copy.author));
+          item.append(make('strong','',copy.title+' · '+copy.author),make('p','hint','Exemplaar '+(index+1)+(copy.barcode?' · '+copy.barcode:'')));
           for(const change of copy.changes||[]){
             const detail=make('details');
             detail.append(make('summary','',trialFields[change.field]||change.field),
               make('p','hint','Huidig: '+showValue(change.before)),
               make('p','','Voorstel: '+showValue(change.after)));
-            for(const source of change.sources||[])detail.append(make('p','hint',source.confidence+' · '+source.url));
+            for(const source of change.sources||[])detail.append(make('p','hint',trialStatus(source.confidence)+' · '+source.url));
             item.append(detail);
           }
           if(copy.changes?.length&&data.state!=='running'){
@@ -477,7 +482,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         }
       }catch(error){braveTrialResults.textContent=error.message||'De Brave-proef kon niet worden geladen.';}
     }
-    trialPanel.append(make('h4','','Proefverrijking met gratis boekbronnen'),trialNotice,trialLoad,trialControls);
+    trialPanel.append(make('h4','','Proefverrijking: maximaal vijf edities'),make('p','hint','Onderzoek eerst gratis bronnen en beoordeel de aanvullingen. Bereken daarna het aanvullende zoekbudget en bekijk hier de voortgang en resultaten.'),trialNotice,trialLoad,trialControls,trialBravePanel);
     enrichmentExtra.append(trialPanel);
 
     const collectionRoot='/api/admin/book-enrichment/collection';
@@ -561,7 +566,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const reportSearchButton=button('Zoeken / vernieuwen','btn btn--secondary');
     const reportResults=make('div','bb-review__brave-items');
     const reportNav=make('div','bb-review__brave-items');
-    let reportBusy=false,reportPage=1;
+    let reportBusy=false,reportPage=1,reportEnabledSources=[];
     const providerNames={boekenbase:'BoekenBase',bureau_isbn:'Bureau ISBN',easycb:'EasyCB',
       google_books:'Google Books',open_library:'Open Library',isbnbarcode:'ISBNBarcode',catalogue:'Huidige collectie'};
     const sourceName=id=>providerNames[id]||id;
@@ -572,10 +577,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         container.replaceChildren();
         for(const [index,copy] of (response.copies||[]).entries()){
           const detail=make('div','bb-review__brave-items');
-          detail.append(make('strong','','Exemplaar '+(index+1)));
+          detail.append(make('strong','','Exemplaar '+(index+1)+(copy.barcode?' · '+copy.barcode:'')));
           for(const source of copy.statuses||[]){
             const history=make('details');
-            history.append(make('summary','',sourceName(source.source)+': '+trialStatus(source.status)));
+            const status=source.status==='not_checked'&&!reportEnabledSources.includes(source.source)?'not_configured':source.status;
+            history.append(make('summary','',sourceName(source.source)+': '+trialStatus(status)));
             if(source.checkedAt)history.append(make('p','hint','Onderzocht: '+new Date(source.checkedAt).toLocaleString('nl-NL')));
             if(source.sourceUrl)history.append(make('p','hint','Bron: '+source.sourceUrl));
             if(source.lastError)history.append(make('p','hint','Laatste poging: '+trialStatus(source.lastError)));
@@ -598,6 +604,12 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               make('p','hint','Bron: '+(change.sources||[change.source]).map(sourceName).join(', ')));
             detail.append(proposal);
           }
+          for(const change of copy.braveProposals||[]){
+            const proposal=make('details');
+            proposal.append(make('summary','','Brave-proef: '+fieldName(change.field)),make('p','hint','Huidig: '+showValue(change.before)),make('p','','Voorstel: '+showValue(change.after)));
+            for(const source of change.sources||[])proposal.append(make('p','hint',trialStatus(source.confidence)+' · '+source.url));
+            detail.append(proposal);
+          }
           for(const step of copy.brave||[]){
             const evidence=make('details');
             evidence.append(make('summary','','Brave, stap '+(step.step+1)+': '+trialStatus(step.status)));
@@ -617,7 +629,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       try{
         const params=new URLSearchParams({q:reportSearch.value,filter:reportFilter.value,page:String(reportPage)});
         const data=await request(reportRoot+'?'+params.toString());
-        reportPage=data.page;
+        reportPage=data.page;reportEnabledSources=Array.isArray(data.enabledSources)?data.enabledSources:[];
         const c=data.counts||{};
         reportNotice.textContent=c.all+' edities · '+c.unresearched+' niet onderzocht · '+c.partial+' gedeeltelijk · '
           +c.complete+' basisgegevens compleet · '+c.conflicts+' met tegenstrijdigheden · '+c.pending+' met aanvullingen.';
@@ -628,7 +640,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           item.append(make('p','hint',row.author+' · '+row.copies+' exemplaren · '+row.checked+'/'+row.sourceCount+' bronnen afgerond · '
             +row.localCovers+' lokaal opgeslagen omslagen.'));
           item.append(make('p','hint','Ontbreekt: '+(row.missing.map(fieldName).join(', ')||'Geen basisvelden')
-            +' · '+row.pending+' voorstellen · '+row.conflicts+' tegenstrijdigheden.'));
+            +' · '+(row.freePending??row.pending)+' gratis voorstellen · '+(row.bravePending||0)+' Brave-voorstellen · '+row.conflicts+' tegenstrijdigheden.'));
           item.append(make('p','hint','Help me kiezen: '+row.content.strong+' sterke kenmerken, '+row.content.textual+' tekstuele aanwijzingen.'));
           const detail=make('div','bb-review__brave-items');
           item.append(detail);
@@ -671,7 +683,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const braveNotice = make('p', 'hint', 'De zoekvoortgang wordt geladen.');
     braveNotice.setAttribute('role', 'status');
     const braveItems = make('div', 'bb-review__brave-items');
-    bravePanel.append(braveHeading, braveNotice, braveItems,braveTrialResults);
+    bravePanel.append(braveHeading, braveNotice, braveItems);
     enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
     let repeatBraveChecks = false;
@@ -714,6 +726,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             + 'Dit is niet hetzelfde als het geldtegoed in je Brave-account.'
           : 'Brave staat nog uit. Stel BOEKENBAAI_BRAVE_API_KEY in op de server. '
             + 'Openstaande importopdrachten blijven bewaard.';
+        trialBudget.textContent=braveNotice.textContent;
+        trialBraveJobs.replaceChildren();
         braveItems.replaceChildren();
         if(info.configured&&usage.canReconcileLegacyZero){
           const repair=button('Oude budgetstand herstellen','btn btn--secondary');
@@ -753,7 +767,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               + job.reservedRequests + ' van maximaal ' + job.approvedMaxRequests
               + ' verzoeken gereserveerd. Je kunt deze pagina sluiten.';
           } else if (job.state === 'paused') {
-            details.textContent = 'Onderzoek gepauzeerd. ' + bravePauseReason(job.lastError)
+            details.textContent = 'Onderzoek gepauzeerd'+(job.lastUpdatedAt?' op '+new Date(job.lastUpdatedAt).toLocaleString('nl-NL'):'')+'. ' + bravePauseReason(job.lastError)
               + ' ' + job.completedWorks + ' titels afgerond. De voortgang is bewaard. '
               + 'Na het oplossen van de oorzaak is opnieuw toestemming nodig.';
           } else {
@@ -763,6 +777,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               + 'Deze titels blijven zichtbaar als aandachtspunt.';
           }
           item.append(title, details);
+          if(job.sourceIssueWorks)item.append(make('p','hint',job.sourceIssueWorks+' titels hebben onbereikbare bronnen. Overige zoekstappen zijn niet hierdoor geblokkeerd.'));
+          for(const failure of job.sourceIssues||[])item.append(make('p','hint',failure.title+' · Zoekstap '+(failure.step+1)+' · '+(failure.url||'Bron onbekend')+' · '+(failure.stage==='robots'?'Toegang kon niet worden gecontroleerd':'Pagina niet bereikbaar')));
           if(job.source==='trial'&&job.state!=='running'){
             const review=button('Proefresultaten bekijken','btn btn--secondary');
             review.addEventListener('click',()=>void showBraveTrial(job.id));
@@ -772,7 +788,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             job.incompleteIdentity + ' exemplaren hebben geen bruikbare titel en auteur; '
             + 'die kunnen nog niet veilig op internet worden onderzocht.'));
           if (job.canApprove && info.configured) {
-            const accept = button('Aanvullend zoeken goedkeuren', 'btn btn--secondary');
+            const label=job.source==='trial'?(job.state==='paused'?'Hervat proef':'Start Brave-proef')+' voor '+job.possibleWorks+' boeken':job.source==='collection'?'Collectieonderzoek goedkeuren voor '+job.possibleWorks+' boeken':'Importonderzoek goedkeuren voor '+job.possibleWorks+' boeken';
+            const accept = button(label, 'btn btn--secondary');
             accept.addEventListener('click', async () => {
               const message = 'Brave mag maximaal ' + job.possibleMaxRequests
                 + ' zoekopdrachten uitvoeren voor ' + job.possibleWorks + ' boeken. '
@@ -789,9 +806,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                 });
                 enrichmentActionNotice.textContent =
                   'Brave-onderzoek goedgekeurd en opgeslagen. Je kunt dit scherm sluiten.';
+                if(job.source==='trial')trialBraveFeedback.textContent=enrichmentActionNotice.textContent;
               } catch (error) {
                 enrichmentActionNotice.textContent =
                   error.message || 'Toestemming opslaan is mislukt.';
+                if(job.source==='trial')trialBraveFeedback.textContent=enrichmentActionNotice.textContent;
               } finally {
                 void refreshEnrichmentStatus();
                 // Clear the refresh guard before reloading after an approval.
@@ -801,7 +820,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             });
             item.append(accept);
           }
-          braveItems.append(item);
+          (job.source==='trial'?trialBraveJobs:braveItems).append(item);
         }
         if ((info.configured || info.freeConfigured)&&collectionState==='applied') {
           const repeat = make('input');
