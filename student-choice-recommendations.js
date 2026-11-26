@@ -722,8 +722,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
 
-  const individual=choice.required.length?[]:choice.separateTopics;
-  const missingTopics=choice.route!=='surprise'?requested.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
+  const individual=choice.required.length?[]:(choice.separateTopics.length?choice.separateTopics:focused);
+  const missingTopics=choice.route!=='surprise'?focusedTopics.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
   const count=Math.max(1,Math.min(3,limit));
   // Spread independent interests across the three recommendations.
   // A genuine combined reading requirement has already been filtered above.

@@ -197,14 +197,14 @@ function hasEvidence(source,value){
   return SUFFIXES.some(suffix=>source.words.has(value+suffix));
 }
 // The word "koken" in a sentence about anger is not culinary evidence.
-// Require a culinary context for ambiguous prose, but preserve explicit
-// titles, subject labels and distinctive cookbook terms.
+// Suppress figurative anger uses without requiring a whitelist of
+// additional cooking terms for ordinary literal descriptions.
 function matchesTraitWord(source,trait,word,kind){
   if(!hasEvidence(source,word))return false;
   if(trait!=='cooking'||word!=='koken'||kind!=='description')return true;
   if(/\b(?:bloed|woede|razernij)\b.{0,45}\bkook(?:t|te|ten|en)?\b|\bkook(?:t|te|ten|en)?\b.{0,45}\b(?:woede|razernij)\b/.test(source.phrase))
     return /\b(?:eten|gerecht(?:en)?|keuken|maaltijd(?:en)?|recept(?:en)?|kookboek|chef|fornuis|soep|bakken)\b/.test(source.phrase);
-  return /\b(?:eten|gerecht(?:en)?|keuken|maaltijd(?:en)?|recept(?:en)?|kookboek|chef|fornuis|soep|bakken)\b|\b(?:leren|leert|gaat|wil|graag|zelf|samen) koken\b/.test(source.phrase);
+  return true;
 }
 function isTopicOrChild(topic,trait){
   const seen=new Set();

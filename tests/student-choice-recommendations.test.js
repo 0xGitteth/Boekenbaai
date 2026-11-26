@@ -266,12 +266,16 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  const find=prefer=>rankBooks({books},{route:'new',openSignals:{prefer}});
  const alternative=rankBooks({books:[{id:'crime',title:'Misdaad',author:'G',themes:['Misdaad']}]},{route:'new',openSignals:{prefer:['sport','football','crime']}});
  assert.deepEqual(alternative.suggestions.map(x=>x.bookId),['crime']);
+ assert.equal(alternative.partialTopicMatches,true,'Show valid alternative directly while explaining missing football');
  const football=find(['sport','football']);
  assert.deepEqual(football.suggestions.map(x=>x.bookId),['football']);
  assert.match(football.suggestions[0].reason,/Voetbal|voetbal/i);
  assert.deepEqual(find(['dance','ballet']).suggestions.map(x=>x.bookId),['ballet']);
  assert.deepEqual(find(['cooking']).suggestions.map(x=>x.bookId),['cook']);
  assert.match(find(['cooking']).suggestions[0].reason,/koken/i);
+ const literalCooking=rankBooks({books:[{id:'literal1',title:'Een passie',author:'A',description:'Koken is haar grote passie.'},{id:'literal2',title:'Alles weten',author:'B',description:'Dit boek vertelt je alles over koken.'}]},{route:'new',openSignals:{prefer:['cooking']}});
+ assert.equal(literalCooking.suggestions.length,2);
+ assert.ok(literalCooking.suggestions.every(b=>/koken/i.test(b.reason)));
  assert.ok(rankBooks({books:books.filter(x=>x.id!=='football')},{route:'new',openSignals:{prefer:['football','sport']}}).missingTopics.some(t=>t.id==='football'));
 }
 
