@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {addJob,getJobPlan,approveJob,claimNext,finishClaim,getBraveCheck}=require('../book-brave-core');
-const {selectTrialBooks,storeTrialResult,projectTrial,preview,applyPreview}=require('../book-brave-trial');
+const {selectTrialBooks,storeTrialResult,projectTrial,preview,applyPreview,pendingTrialReview,dismissTrial}=require('../book-brave-trial');
 const {recordCheck}=require('../book-enrichment-trial');
 const {workKey}=require('../book-free-metadata');
 const {createBraveWorker}=require('../book-brave-worker');
@@ -13,6 +13,7 @@ assert.equal(selectTrialBooks(db,['a'],{sources:['boekenbase']}).error,'free_res
 recordCheck(db,book,{status:'not_found',metadata:null},{source:'boekenbase',now});
 assert.deepEqual(selectTrialBooks(db,['a'],{sources:['boekenbase']}).bookIds,['a','b']);
 assert.equal(selectTrialBooks(db,['personal']).ok,false);
+assert.deepEqual(selectTrialBooks(db,['a','deleted'],{sources:['boekenbase'],expand:false}).bookIds,['a']);
 const job=addJob(db,['a','b'],{source:'trial',id:'test-trial'});
 const env={BOEKENBAAI_BRAVE_MONTHLY_CAP:'15'};
 assert.equal(getJobPlan(db,job,{braveConfigured:true,easyCbEnabled:true,now,env}).possibleMaxRequests,3);
@@ -32,6 +33,8 @@ assert.equal(projected.books[0].coverUrl,page.coverUrl);
 assert.equal(projected.books[1].description,'Docenttekst');
 finishClaim(db,claim,{status:'found',added:1,evidenceByBook:projected.evidenceByBook});
 assert.equal(getBraveCheck(db,'a',workKey(book),0).status,'found');
+assert.equal(getBraveCheck(db,'a',workKey(book),0).trialPending,true);
+assert.equal(pendingTrialReview(db),true);
 assert.equal(applyPreview(db,job,book,preview(db,job,book).revision).error,'running');
 // The manual short description still counts as missing in current Brave
 // planning. Remaining requests are bounded by the approved maximum.
@@ -52,6 +55,8 @@ assert.equal(db.books[2].coverUrl,'');
 assert.deepEqual(db.students,[{id:'p'}]);
 assert.deepEqual(db.history,[{id:'loan'}]);
 assert.ok(job.trialReviewedAt);
+assert.equal(getBraveCheck(db,'a',workKey(book),0).trialPending,false);
+assert.equal(pendingTrialReview(db),false);
 assert.equal(preview(db,job,book).changes.length,0);
 async function run(){
   const fresh={id:'worker',metadataIsbn:isbn,title:book.title,author:book.author,tags:[],description:'',coverUrl:''};
@@ -71,6 +76,11 @@ async function run(){
   assert.equal(fresh.coverUrl,'');
   assert.equal(fresh.description,'');
   assert.ok(preview(live,pilot,fresh).changes.length);
+  assert.equal(pendingTrialReview(live),true);
+  assert.equal(dismissTrial(live,pilot).ok,true);
+  assert.equal(getBraveCheck(live,'worker',workKey(fresh),0).trialPending,false);
+  assert.equal(pendingTrialReview(live),false);
+  assert.equal(fresh.coverUrl,'');
   console.log('Brave trial selection, approved request limits, dry-run projection and separate review passed.');
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});
