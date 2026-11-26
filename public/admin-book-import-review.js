@@ -250,7 +250,6 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       }
     }
     void refreshEnrichmentStatus();
-
     // Proefonderzoek is explicit and independent of Brave or Excel import.
     // Reopening the selected edition retrieves stored research without a
     // second external call unless a repeat was explicitly requested.
@@ -384,6 +383,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     enrichmentExtra.append(trialPanel);
 
 
+
+
     // This panel is independent of the staged Excel upload. Approval can be
     // given after leaving the browser, after logging in again, or on another
     // day. The server owns all saved progress and budget checks.
@@ -401,6 +402,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     bravePanel.append(braveHeading, braveNotice, braveItems);
     enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
+    let repeatBraveChecks = false;
     function bravePauseReason(code) {
       const reasons = {
         budget_exhausted: 'Het ingestelde zoekbudget is bereikt.',
@@ -409,7 +411,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         unauthorized: 'Brave accepteert de ingestelde API-sleutel niet (401/403).',
         provider_error: 'Brave heeft een foutmelding teruggestuurd.',
         request_error: 'De verbinding met Brave is mislukt.',
+        source_unavailable: 'Een bronwebsite kon niet worden gecontroleerd. De gevonden gegevens zijn behouden. Dit onderzoek kan opnieuw worden hervat.',
         timeout: 'Het Brave-verzoek duurde te lang.',
+        interrupted: 'De eerdere zoekopdracht werd onderbroken. Eerder opgeslagen resultaten blijven behouden; opnieuw goedkeuren is nodig.',
         month_changed: 'De maand is gewisseld; nieuwe toestemming is nodig.',
         too_large: 'Het antwoord van Brave was te groot.',
       };
@@ -508,15 +512,22 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           braveItems.append(item);
         }
         if (info.configured || info.freeConfigured) {
+          const repeat = make('input');
+          repeat.type = 'checkbox';
+          repeat.checked = repeatBraveChecks;
+          repeat.addEventListener('change', () => { repeatBraveChecks = repeat.checked; });
+          const repeatLabel = make('label', 'hint');
+          repeatLabel.append(repeat, document.createTextNode(' Eerder onderzochte Brave-bronnen opnieuw raadplegen bij ontbrekende gegevens'));
           const scan = button('Bestaande collectie controleren', 'btn btn--ghost');
           scan.addEventListener('click', async () => {
             if (!window.confirm('De bestaande boeken op ontbrekende gegevens controleren? '
               + 'Gratis bronnen starten automatisch. Brave wordt pas na jouw toestemming gebruikt.')) return;
             scan.disabled = true;
             try {
-              await request('/api/admin/book-enrichment/brave/scan', {confirm:true});
+              await request('/api/admin/book-enrichment/brave/scan', {confirm:true,repeatChecked:repeatBraveChecks});
               enrichmentActionNotice.textContent =
                 'Collectiecontrole opgeslagen. Je kunt later toestemming geven voor Brave.';
+              repeatBraveChecks = false;
             } catch (error) {
               enrichmentActionNotice.textContent =
                 error.message || 'Collectiecontrole kon niet worden gestart.';
@@ -525,7 +536,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               void refreshBrave();
             }
           });
-          braveItems.append(scan);
+          braveItems.append(repeatLabel,scan);
         }
         braveItems.append(make('p', 'hint',
           'Geen toestemming geven mag altijd. De import blijft opgeslagen; je kunt later terugkomen. '
