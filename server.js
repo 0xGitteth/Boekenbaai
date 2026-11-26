@@ -26,7 +26,7 @@ const {comparison,compareEdition,applyComparison}=require('./book-enrichment-com
 const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialProbe,
   catalogue:trialCatalogue}=require('./book-enrichment-trial');
 
-const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
+const { addJob, currentUsage, reconcileLegacyBudget, getJobPlan, approveJob } = require('./book-brave-core');
 const {selectTrialBooks,preview:braveTrialPreview,applyPreview:applyBraveTrial,pendingTrialReview,dismissTrial}=require('./book-brave-trial');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
@@ -5749,6 +5749,18 @@ async function handleApi(req, res, requestUrl) {
             .sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
         })(),
       });
+    }
+    if(requestUrl.pathname===braveRoot+'/reconcile-budget'&&req.method==='POST'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const body=await parseBody(req,1200);
+      let outcome={ok:false,error:'not_eligible'};
+      await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,read:()=>loadDb(),mutate:db=>{
+        if(collectionPaused()){outcome={ok:false,error:'import_active'};return db;}
+        outcome=reconcileLegacyBudget(db,{confirmed:body?.confirm===true,expectedMonth:body?.month,expectedReserved:body?.reserved});
+        return db;
+      }});
+      if(!outcome.ok)return sendJson(res,409,{message:'De oude budgetstand kan niet worden hersteld. Vernieuw de gegevens.',error:outcome.error});
+      return sendJson(res,200,outcome);
     }
     if(requestUrl.pathname===braveRoot+'/trial'&&req.method==='POST'){
       if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
