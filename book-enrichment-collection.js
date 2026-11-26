@@ -29,8 +29,9 @@ function startRun(db,sources,{repeat=false,now=Date.now(),id=randomUUID()}={}){
   const ids=SOURCE_ORDER.filter(s=>sources.includes(s));
   if(!ids.length)return {ok:false,error:'no_sources'};
   const targets=[...editions(db)].map(([key,books])=>({key,bookIds:books.map(b=>b.id),attempts:{}}));
-  if(!targets.length)return {ok:false,error:'no_books'};
-  db.freeEnrichmentRun={id,state:'running',sources:ids,targets,repeat:repeat===true,
+  // No eligible ISBNs is a finished free-source pass, not an error.
+  // The separate Brave planner can still research title/author-only books.
+  db.freeEnrichmentRun={id,state:targets.length?'running':'ready',sources:ids,targets,repeat:repeat===true,
     createdAt:nowIso(now),updatedAt:nowIso(now),inFlight:null};
   return {ok:true,id};
 }
@@ -165,7 +166,8 @@ function applyRun(db,id,{revision,failedCovers=new Set(),now=Date.now()}={}){
       const easy=getCheck(db,book,'easycb');
       if(easy&&terminal.has(easy.status)){
         book.freeMetadataCheck={source:'EasyCB',status:easy.status==='identity_mismatch'?'mismatch':easy.status,
-          checkedAt:easy.checkedAt,isbn:isbnOf(book),title:book.title,
+          checkedAt:nowIso(now),sourceCheckedAt:easy.checkedAt,comparisonIdentity:workKey(book),
+          isbn:isbnOf(book),title:book.title,
           failedCoverUrl:failedCovers.has(book.coverUrl)&&!book.localCoverUrl?book.coverUrl:''};
       }
       conflicts+=view.conflicts.length;
