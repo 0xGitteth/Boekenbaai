@@ -122,7 +122,8 @@ function createBraveWorker({
       if(!claim)return;
       keepGoing=true;
       const result=await fetchSearch(claim.step,claim,{apiKey});
-      let pages=[],imageUrl='';
+      let pages=[],imageUrl='',sourceError=null;
+      const onFailure=()=>{sourceError='source_unavailable';};
       if(!result.error&&!stopped){
         if(claim.step===1){
           imageUrl=selectImageResult(result.images,claim);
@@ -133,14 +134,14 @@ function createBraveWorker({
             const candidates=(result.images||[]).slice(0,8)
               .filter(x=>x.pageUrl&&x.title)
               .map(x=>({title:x.title,url:x.pageUrl}));
-            pages=await findPages({pages:candidates},claim,{maxPages:2});
+            pages=await findPages({pages:candidates},claim,{maxPages:2,onFailure});
           }
         }else{
-          pages=await findPages(result,claim,{maxPages:3});
+          pages=await findPages(result,claim,{maxPages:3,onFailure});
         }
       }
       if(stopped)return;
-      const bad=result.error||null;
+      const bad=result.error||sourceError||null;
       let outcome=null;
       // A legacy import can start during Brave's network request. Do not
       // modify ANY database fields (including progress/usage) until that
