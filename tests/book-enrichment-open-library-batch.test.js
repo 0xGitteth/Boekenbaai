@@ -1,0 +1,66 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {parseBatch,fetchOpenLibraryBatch}=require('../book-enrichment-open-library-batch');
+const {startRun,chooseTask,finishTask,runStatus,LEASE_MS}=require('../book-enrichment-collection');
+const {getCheck,recordCheck}=require('../book-enrichment-trial');
+const isbn='9789086960088',otherIsbn='9780306406157';
+const a={id:'a',title:'Testtitel',author:'Test Auteur',metadataIsbn:isbn};
+const b={id:'b',title:'Andere titel',author:'Andere Auteur',metadataIsbn:otherIsbn};
+const doc={key:'/works/OL123W',title:a.title,author_name:[a.author],isbn:[isbn],
+  subject:['Paarden','Vriendschap'],publisher:['Wrong work publisher'],cover_i:123,first_publish_year:1900,
+  editions:{docs:[{title:a.title,isbn:[otherIsbn],publisher:['Wrong edition'],cover_i:456}]}};
+let result=parseBatch({numFound:1,docs:[doc]},[a,b]);
+assert.equal(result[0].status,'found');
+assert.deepEqual(result[0].metadata.tags,doc.subject);
+assert.equal(result[0].metadata.publisher,undefined);
+assert.equal(result[0].metadata.coverUrl,undefined);
+assert.equal(result[0].metadata.publishedYear,undefined);
+assert.equal(result[1].status,'not_found');
+const exact={...doc,editions:{docs:[{title:a.title,isbn:[isbn],publisher:['Juiste uitgever'],publish_year:[2019],language:['dut'],cover_i:789}]}};
+result=parseBatch({numFound:1,docs:[exact]},[a]);
+assert.equal(result[0].metadata.matchLevel,'exact_isbn');
+assert.equal(result[0].metadata.language,'nl');
+assert.equal(result[0].metadata.publishedYear,2019);
+assert.equal(result[0].metadata.publisher,'Juiste uitgever');
+assert.match(result[0].metadata.coverUrl,/789-L/);
+assert.equal(parseBatch({numFound:4,docs:[doc]},[b])[0].status,'incomplete_response');
+assert.equal(parseBatch({numFound:1,docs:[{...doc,author_name:['Andere persoon']}]},[a])[0].status,'identity_mismatch');
+const db={books:[a,b]};
+startRun(db,['open_library'],{now:1000,id:'batch'});
+let claim=chooseTask(db,{now:1000,openLibraryBatchSize:20});
+assert.equal(claim.books.length,2);
+assert.equal(finishTask(db,claim,parseBatch({numFound:1,docs:[doc]},[a,b]),{now:2000}),true);
+assert.equal(chooseTask(db,{now:2000}),null);
+assert.equal(runStatus(db).completed,2);
+assert.equal(getCheck(db,a,'open_library').status,'found');
+assert.equal(getCheck(db,b,'open_library').status,'not_found');
+const cachedDb={books:[a,b]};
+recordCheck(cachedDb,a,{status:'found',metadata:result[0].metadata},{source:'open_library'});
+startRun(cachedDb,['open_library'],{now:1000});
+claim=chooseTask(cachedDb,{now:1000,openLibraryBatchSize:20});
+assert.equal(claim.books.length,1);
+assert.equal(claim.book.id,'b');
+const crashDb={books:[a,b]};
+startRun(crashDb,['open_library'],{now:1000});
+claim=chooseTask(crashDb,{now:1000,openLibraryBatchSize:20});
+assert.equal(chooseTask(crashDb,{now:1000+LEASE_MS+1,openLibraryBatchSize:20}),null);
+assert.equal(runStatus(crashDb).failed,2);
+assert.equal(finishTask(crashDb,claim,result),false);
+async function run(){
+  let calls=0;
+  const answers=await fetchOpenLibraryBatch([a,b],{env:{BOEKENBAAI_EASYCB_CONTACT:'test@example.org'},fetchImpl:async(url,opts)=>{
+    calls++;
+    const parsed=new URL(url);
+    assert.equal(parsed.origin,'https://openlibrary.org');
+    assert.ok(parsed.searchParams.get('q').includes(isbn));
+    assert.ok(parsed.searchParams.get('q').includes(otherIsbn));
+    assert.match(opts.headers['User-Agent'],/test@example.org/);
+    return new Response(JSON.stringify({numFound:1,docs:[doc]}));
+  }});
+  assert.equal(calls,1);
+  assert.equal(answers[0].status,'found');
+  assert.equal(answers[1].status,'not_found');
+  assert.deepEqual((await fetchOpenLibraryBatch([a,b],{fetchImpl:async()=>new Response(null,{status:429})})).map(x=>x.status),['rate_limited','rate_limited']);
+  console.log('Open Library batch requests, edition proof, cache reuse and crash recovery passed.');
+}
+run().catch(error=>{console.error(error);process.exitCode=1;});

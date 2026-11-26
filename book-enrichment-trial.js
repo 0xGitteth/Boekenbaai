@@ -28,8 +28,8 @@ function recordCheck(db,book,result,{now=new Date(),source=SOURCE}={}){
   }
   return entry[source];
 }
-function shouldProbe(db,book,repeat=false){
-  return Boolean(isbnOf(book)&&book.title&&book.author&&(repeat||!TERMINAL.has(getCheck(db,book)?.status)));
+function shouldProbe(db,book,repeat=false,source=SOURCE){
+  return Boolean(isbnOf(book)&&book.title&&book.author&&(repeat||!TERMINAL.has(getCheck(db,book,source)?.status)));
 }
 function present(value){
   return Array.isArray(value)?value.length>0:value!==null&&value!==undefined&&value!==''&&value!==0;
@@ -38,7 +38,7 @@ function cleanCover(value){
   if(typeof value!=='string'||!value)return '';
   try{const u=safeCoverUrl(value);return u.protocol==='https:'?u.href:'';}catch{return '';}
 }
-function proposedChanges(book,check,failedCovers=new Set()){
+function proposedChanges(book,check,failedCovers=new Set(),source=SOURCE){
   const metadata=check?.status==='found'&&usableFor(book,check.metadata)?check.metadata:null;
   if(!metadata)return [];
   const changes=[];
@@ -70,7 +70,7 @@ function proposedChanges(book,check,failedCovers=new Set()){
       if(field==='pageCount'&&(!Number.isInteger(after)||after<1||after>20000))continue;
       if(!['pageCount','publishedYear'].includes(field)&&typeof after!=='string')continue;
     }
-    changes.push({field,before:before??null,after,source:SOURCE});
+    changes.push({field,before:before??null,after,source});
   }
   return changes;
 }

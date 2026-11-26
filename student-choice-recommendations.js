@@ -4,6 +4,7 @@
 // from an activity (gaming/sport) to a book genre without further answers.
 const crypto = require('node:crypto');
 const dialogue=require('./student-choice-dialogue');
+const {approvedDescriptions}=require('./book-enrichment-content');
 const {studentLoanIds,isUnavailable,isHidden}=require('./book-catalog-integrity');
 const norm = v => String(v || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-NL');
 const {workKey}=require('./book-reservations');
@@ -488,6 +489,10 @@ function groupBooks(db) {
     work.easyReading ||= book.easyReading === true;
     if(typeof book.description==='string'&&book.description.trim()){
       const excerpt=book.description.trim().slice(0,2000);
+      if(!work.sourceDescriptions.includes(excerpt))work.sourceDescriptions.push(excerpt);
+    }
+    for(const {text} of approvedDescriptions(book)){
+      const excerpt=text.slice(0,2000);
       if(!work.sourceDescriptions.includes(excerpt))work.sourceDescriptions.push(excerpt);
     }
     for(const tag of [...(Array.isArray(book.tags)?book.tags:[]),

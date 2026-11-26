@@ -267,13 +267,16 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const selectedNotice=make('p','hint');
     const trialRepeat=make('input');trialRepeat.type='checkbox';
     const trialRepeatLabel=make('label','hint');
-    trialRepeatLabel.append(trialRepeat,document.createTextNode(' Eerder uitgevoerd BoekenBase-onderzoek herhalen'));
+    trialRepeatLabel.append(trialRepeat,document.createTextNode(' Eerder uitgevoerd onderzoek bij de geselecteerde boeken herhalen'));
     const trialStart=button('Proefverrijking starten','btn btn--secondary');
     const trialResults=make('div','bb-review__brave-items');
     const trialSelected=new Set();
-    let trialBooks=[],trialBusy=false;
+    let trialBooks=[],trialSources=[],trialBusy=false;
+    const trialSourceSummary=make('p','hint');
+    const trialSourceName=id=>id==='catalogue'?'Huidige collectie':trialSources.find(s=>s.id===id)?.name||id;
     const trialStatusNames={
       not_checked:'Niet onderzocht',found:'Gevonden',not_found:'Niet gevonden',
+      not_configured:'Niet ingesteld',cached:'Eerder opgeslagen',cooldown:'Tijdelijk begrensd',busy:'Brononderzoek bezig',error:'Opvraag mislukt',
       identity_mismatch:'ISBN, titel of auteur komt niet overeen',
       rate_limited:'Bron tijdelijk begrensd',network_error:'Verbinding mislukt',
       timeout:'Verbinding duurde te lang',provider_error:'Bron geeft een fout',
@@ -282,9 +285,11 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     };
     const trialFields={description:'Beschrijving',publisher:'Uitgever',imprint:'Uitgeeflabel',publishedYear:'Jaar',
       pageCount:'Pagina’s',language:'Taal',nurCode:'NUR-code',nurCategory:'NUR-categorie',
-      seriesTitle:'Serie',seriesNumber:'Deelnummer',coverUrl:'Omslag',enrichmentTags:'Inhoudelijke trefwoorden'};
+      seriesTitle:'Serie',seriesNumber:'Deelnummer',coverUrl:'Omslag',enrichmentTags:'Inhoudelijke trefwoorden',
+      enrichmentDescriptions:'Aanvullende beschrijvingen voor Help me kiezen'};
     const trialStatus=value=>trialStatusNames[value]||String(value||'Onbekend');
-    const showValue=value=>Array.isArray(value)?value.join(', '):String(value??'')||'Ontbreekt';
+    const showValue=value=>Array.isArray(value)?value.map(entry=>entry&&typeof entry==='object'&&typeof entry.text==='string'
+      ?trialSourceName(entry.source)+': '+entry.text:String(entry)).join('\n\n')||'Ontbreekt':String(value??'')||'Ontbreekt';
     function renderTrialChoices(){
       trialChoices.replaceChildren();
       const q=trialSearch.value.trim().toLocaleLowerCase('nl');
@@ -299,7 +304,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           renderTrialChoices();
         });
         label.append(check,document.createTextNode(' '+book.title+' · '+book.author+' · '+book.isbn+
-          ' · '+trialStatus(book.status)+(book.copies>1?' · '+book.copies+' exemplaren':'')));
+          ' · '+(book.statuses||[]).filter(s=>['found','not_found','identity_mismatch'].includes(s.status)).length+'/'+(book.statuses||[]).length+' bronnen onderzocht'+(book.copies>1?' · '+book.copies+' exemplaren':'')));
         trialChoices.append(label);
       }
       if(!matches.length)trialChoices.append(make('p','hint','Geen boeken gevonden.'));
@@ -311,21 +316,38 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     function renderTrialResult(book,response){
       const section=make('section','bb-review__brave');
       section.append(make('h4','',book.title+' · '+book.isbn));
-      section.append(make('p','hint',response.cached?'Eerder opgeslagen onderzoek gebruikt.':'Nieuwe BoekenBase-opvraag.'));
+      section.append(make('p','hint','Gecombineerd resultaat van de beschikbare gratis bronnen.'));
       for(const [index,copy] of (response.copies||[]).entries()){
         const item=make('div','bb-review__brave-items');
-        item.append(make('p','hint','Exemplaar '+(index+1)+' · '+trialStatus(copy.status)));
-        if(copy.lastError)item.append(make('p','hint','Laatste herhaalde poging: '+trialStatus(copy.lastError)));
-        if(copy.sourceDetails){
-          const details=copy.sourceDetails;
-          item.append(make('p','hint','BoekenBase: '+[details.publisher,details.imprint,details.nurCategory].filter(Boolean).join(' · ')
-            +' · '+details.keywordCount+' inhoudelijke trefwoorden'));
+        item.append(make('p','hint','Exemplaar '+(index+1)));
+        const sourceDetails=make('details');
+        sourceDetails.append(make('summary','','Resultaten per bron'));
+        for(const source of copy.statuses||[]){
+          const fields=(source.availableFields||[]).map(field=>trialFields[field==='tags'?'enrichmentTags':field]||field);
+          const configured=trialSources.find(s=>s.id===source.source)?.enabled;
+          const status=source.status==='not_checked'&&configured===false?'not_configured':source.status;
+          sourceDetails.append(make('p','hint',trialSourceName(source.source)+': '+trialStatus(status)
+            +(fields.length?' · '+fields.join(', '):'')+(source.lastError?' · Laatste poging: '+trialStatus(source.lastError):'')
+            +(source.checkedAt?' · '+new Date(source.checkedAt).toLocaleString('nl-NL'):'')));
+        }
+        item.append(sourceDetails);
+        if(copy.conflicts?.length){
+          const conflictList=make('details');
+          conflictList.open=true;
+          conflictList.append(make('summary','','Tegenstrijdige gegevens ('+copy.conflicts.length+')'));
+          for(const conflict of copy.conflicts){
+            conflictList.append(make('p','',trialFields[conflict.field]||conflict.field));
+            for(const value of conflict.values)conflictList.append(make('p','hint',trialSourceName(value.source)+': '+showValue(value.value)));
+          }
+          conflictList.append(make('p','hint','Deze tegenstrijdige gegevens worden niet automatisch overschreven.'));
+          item.append(conflictList);
         }
         for(const change of copy.changes||[]){
           const detail=make('details');
           detail.append(make('summary','',trialFields[change.field]||change.field),
             make('p','hint','Huidig: '+showValue(change.before)),
-            make('p','','Voorstel: '+showValue(change.after)));
+            make('p','','Voorstel: '+showValue(change.after)),
+            make('p','hint','Bron: '+(change.sources||[change.source]).map(trialSourceName).join(', ')));
           item.append(detail);
         }
         if(copy.changes?.length){
@@ -340,7 +362,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             }catch(error){item.append(make('p','hint',error.message));apply.disabled=false;}
           });
           item.append(apply);
-        }else if(copy.status==='found')item.append(make('p','hint','Geen veilige aanvullingen beschikbaar.'));
+        }else item.append(make('p','hint','Geen veilige aanvullingen beschikbaar.'));
         section.append(item);
       }
       trialResults.append(section);
@@ -351,6 +373,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       try{
         const response=await request(trialRoot);
         trialBooks=Array.isArray(response.books)?response.books:[];
+        trialSources=Array.isArray(response.sources)?response.sources:[];
+        trialSourceSummary.textContent='Beschikbaar: '+trialSources.filter(s=>s.enabled).map(s=>s.name).join(', ')
+          +(trialSources.some(s=>!s.enabled)?'. Niet ingesteld: '+trialSources.filter(s=>!s.enabled).map(s=>s.name).join(', '):'');
         trialControls.hidden=false;renderTrialChoices();trialLoad.remove();
       }catch(error){trialNotice.textContent=error.message;trialLoad.disabled=false;}
     });
@@ -359,28 +384,111 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
       const repeat=trialRepeat.checked;
       if(!window.confirm('Proefonderzoek uitvoeren voor de '+trialSelected.size+' geselecteerde edities? Er worden geen Brave-verzoeken uitgevoerd.'))return;
       trialBusy=true;renderTrialChoices();trialResults.replaceChildren();
-      let processed=0,rateLimited=false;
+      let processed=0,interrupted=false;
+      const pausedSources=new Set();
+      const enabled=trialSources.filter(source=>source.enabled);
       try{
         for(const id of [...trialSelected]){
           const book=trialBooks.find(b=>b.id===id);
           if(!book)continue;
-          trialNotice.textContent='Onderzoek '+(processed+1)+' van '+trialSelected.size+': '+book.title;
-          try{
-            const response=await request(trialRoot+'/probe',{bookId:id,repeat,confirm:true});
-            renderTrialResult(book,response);
-            if(response.copies?.[0])book.status=response.copies[0].status;
-            if(response.probeStatus==='rate_limited'){
-              rateLimited=true;break;
+          for(const source of enabled){
+            if(!root.isConnected)return;
+            if(pausedSources.has(source.id))continue;
+            trialNotice.textContent='Onderzoek '+(processed+1)+' van '+trialSelected.size+': '+book.title+' · '+source.name;
+            try{
+              const result=await request(trialRoot+'/probe',{bookId:id,source:source.id,repeat,confirm:true});
+              if(['cooldown','rate_limited','busy'].includes(result.probeStatus)){
+                pausedSources.add(source.id);interrupted=true;
+                trialResults.append(make('p','hint',source.name+': '+trialStatus(result.probeStatus)+'. Overige bronnen gaan verder.'));
+              }else if(!['cached','found','not_found','identity_mismatch'].includes(result.probeStatus)){
+                interrupted=true;
+              }
+            }catch(error){
+              interrupted=true;
+              trialResults.append(make('p','hint',book.title+' · '+source.name+': '+error.message));
             }
-          }catch(error){trialResults.append(make('p','hint',book.title+': '+error.message));}
+          }
+          try{
+            const response=await request(trialRoot+'/preview',{bookId:id});
+            renderTrialResult(book,response);
+            book.statuses=(response.copies?.[0]?.statuses||[]).filter(s=>enabled.some(source=>source.id===s.source));
+          }catch(error){interrupted=true;trialResults.append(make('p','hint',book.title+': '+error.message));}
           processed++;
         }
-        trialNotice.textContent=rateLimited?'BoekenBase heeft de verzoeken tijdelijk begrensd. Opgeslagen resultaten blijven behouden; probeer de resterende boeken later opnieuw.':'Proefronde afgerond. Controleer de resultaten per exemplaar.';
+        trialNotice.textContent=interrupted?'Proefronde gedeeltelijk afgerond. Start later opnieuw om de nog niet afgeronde bronopvragen te hervatten. Eerdere resultaten blijven behouden.':'Proefronde afgerond. Controleer de resultaten per exemplaar.';
       }finally{trialBusy=false;trialRepeat.checked=false;renderTrialChoices();}
     });
-    trialControls.append(trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults);
-    trialPanel.append(make('h4','','Proefverrijking met BoekenBase'),trialNotice,trialLoad,trialControls);
+    trialControls.append(trialSourceSummary,trialSearch,selectedNotice,trialChoices,trialRepeatLabel,trialStart,trialResults);
+    trialPanel.append(make('h4','','Proefverrijking met gratis boekbronnen'),trialNotice,trialLoad,trialControls);
     enrichmentExtra.append(trialPanel);
+
+    const collectionRoot='/api/admin/book-enrichment/collection';
+    const collectionPanel=make('section','bb-review__brave');
+    const collectionNotice=make('p','hint','De collectiecontrole wordt geladen.');
+    collectionNotice.setAttribute('role','status');
+    const collectionFeedback=make('p','hint');
+    const collectionActions=make('div','bb-review__brave-items');
+    const collectionRepeat=make('input');collectionRepeat.type='checkbox';
+    const collectionRepeatLabel=make('label','hint');
+    collectionRepeatLabel.append(collectionRepeat,document.createTextNode(' Ook eerder afgerond gratis onderzoek herhalen'));
+    collectionPanel.append(make('h4','','Gratis bronnen voor de hele collectie'),collectionNotice,collectionFeedback,collectionActions);
+    enrichmentExtra.append(collectionPanel);
+    let collectionBusy=false,collectionRefreshing=false,collectionState=null;
+    async function collectionAction(action,payload){
+      if(collectionBusy)return;
+      collectionBusy=true;
+      for(const btn of collectionActions.querySelectorAll('button'))btn.disabled=true;
+      try{
+        const response=await request(collectionRoot+'/'+action,{confirm:true,...payload});
+        collectionFeedback.textContent=action==='apply'
+          ?response.updated+' veilige aanvullingen opgeslagen voor '+response.books+' exemplaren. Conflicten blijven behouden.'
+          :'Actie opgeslagen.';
+        if(action==='start')collectionRepeat.checked=false;
+      }catch(error){collectionFeedback.textContent=error.message||'De actie is mislukt.';}
+      finally{collectionBusy=false;await refreshCollection();void refreshBrave();}
+    }
+    async function refreshCollection(){
+      if(collectionBusy||collectionRefreshing||!root.isConnected)return;
+      collectionRefreshing=true;
+      try{
+        const info=await request(collectionRoot);
+        const run=info.run;
+        collectionState=run?.state||null;
+        const names=(info.sources||[]).filter(x=>x.enabled).map(x=>x.name).join(', ');
+        collectionActions.replaceChildren();
+        function action(label,name,payload,question){
+          const btn=button(label,'btn btn--secondary');
+          btn.addEventListener('click',()=>{if(!question||window.confirm(question))void collectionAction(name,payload());});
+          collectionActions.append(btn);
+          return btn;
+        }
+        if(!run||['applied','cancelled'].includes(run.state)){
+          collectionNotice.textContent=run?.state==='applied'
+            ?'Laatste controle toegepast: '+run.applied.updated+' aanvullingen voor '+run.applied.books+' exemplaren.'
+            :'Gratis bronnen: '+names+'. Nog geen volledige collectiecontrole uitgevoerd.';
+          collectionActions.append(collectionRepeatLabel);
+          action('Gratis collectieonderzoek starten','start',()=>({repeat:collectionRepeat.checked}),
+            'Alle geldige ISBN-edities onderzoeken met gratis bronnen? Er wordt niets gewijzigd en Brave wordt niet gebruikt.');
+          return;
+        }
+        collectionNotice.textContent=run.completed+' van '+run.total+' broncontroles afgerond, '+run.failed+' mislukt, '+run.skipped+' vervallen. '
+          +({running:'Onderzoek loopt.',paused:'Gepauzeerd.',partial:'Nog niet alle bronnen zijn succesvol afgerond.',ready:'Onderzoek gereed.'}[run.state]||run.state);
+        action('Onderzoeksronde beëindigen','cancel',()=>({}),'Deze ronde beëindigen? Opgeslagen onderzoeksresultaten blijven behouden.');
+        if(run.state==='running'){
+          const pause=action('Pauzeren','pause',()=>({}),null);
+          pause.disabled=run.pauseRequested===true;
+        }else if(['paused','partial'].includes(run.state)){
+          action('Onderzoek hervatten','resume',()=>({}),null);
+        }else if(run.state==='ready'){
+          collectionNotice.textContent+=' '+run.proposed+' veilige aanvullingen, '+run.conflicts+' tegenstrijdigheden.';
+          action('Veilige aanvullingen toepassen','apply',()=>({runId:run.id,revision:run.reviewRevision}),
+            'De '+run.proposed+' voorgestelde aanvullingen toepassen? Handmatige waarden en tegenstrijdigheden worden niet overschreven.');
+        }
+      }catch(error){collectionNotice.textContent=error.message||'De collectiecontrole kon niet worden geladen.';}
+      finally{collectionRefreshing=false;}
+    }
+    void refreshCollection();
+
 
 
 
@@ -511,17 +619,16 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
           }
           braveItems.append(item);
         }
-        if (info.configured || info.freeConfigured) {
+        if ((info.configured || info.freeConfigured)&&collectionState==='applied') {
           const repeat = make('input');
           repeat.type = 'checkbox';
           repeat.checked = repeatBraveChecks;
           repeat.addEventListener('change', () => { repeatBraveChecks = repeat.checked; });
           const repeatLabel = make('label', 'hint');
           repeatLabel.append(repeat, document.createTextNode(' Eerder onderzochte Brave-bronnen opnieuw raadplegen bij ontbrekende gegevens'));
-          const scan = button('Bestaande collectie controleren', 'btn btn--ghost');
+          const scan = button('Resterend Brave-onderzoek berekenen', 'btn btn--ghost');
           scan.addEventListener('click', async () => {
-            if (!window.confirm('De bestaande boeken op ontbrekende gegevens controleren? '
-              + 'Gratis bronnen starten automatisch. Brave wordt pas na jouw toestemming gebruikt.')) return;
+            if (!window.confirm('Resterend internetonderzoek berekenen? Brave wordt pas na aparte toestemming gebruikt.')) return;
             scan.disabled = true;
             try {
               await request('/api/admin/book-enrichment/brave/scan', {confirm:true,repeatChecked:repeatBraveChecks});
@@ -4411,7 +4518,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     });
     // One existing status timer, gated to the visible Brave panel.
     window.setInterval(() => {
-      if (enrichmentExtra.open && !document.hidden) void refreshBrave();
+      if (enrichmentExtra.open && !document.hidden) {void refreshBrave();void refreshCollection();}
     }, 8000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) syncStage();

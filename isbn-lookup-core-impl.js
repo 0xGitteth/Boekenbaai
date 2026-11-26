@@ -740,6 +740,7 @@ function parseIsbnBarcodeData(data, targetIsbn) {
 
   return {
     barcode: normalizeIsbn(targetIsbn),
+    matchedIsbn: identifierEvidence.identifiers.find(identifier=>family.has(identifier))||'',
     title,
     author: authors.join(', '),
     authors,
@@ -1060,6 +1061,7 @@ function createIsbnLookup({
         );
         detailPaths = extractCbSearchDetailPaths(searchHtml);
       } catch (error) {
+        if(debug?.stopOnRateLimit&&error?.status===429)throw error;
         if (debug) {
           debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
             ? 'timeout'
@@ -1086,6 +1088,7 @@ function createIsbnLookup({
             return metadata;
           }
         } catch (error) {
+          if(debug?.stopOnRateLimit&&error?.status===429)throw error;
           if (debug) {
             debug.sourceStatus['Bureau ISBN'] = error?.name === 'AbortError'
               ? 'timeout'
@@ -1134,6 +1137,7 @@ function createIsbnLookup({
           }
         }
       } catch (error) {
+        if(debug?.stopOnRateLimit&&error?.status===429)throw error;
         if (debug) {
           if (debug.sourceStatus['Google Books'] !== 'found') {
             debug.sourceStatus['Google Books'] = error?.name === 'AbortError'
@@ -1169,6 +1173,7 @@ function createIsbnLookup({
           if (debug) debug.sourceStatus['Open Library'] = 'found';
         }
       } catch (error) {
+        if(debug?.stopOnRateLimit&&error?.status===429)throw error;
         if (debug) {
           if (debug.sourceStatus['Open Library'] !== 'found') {
             debug.sourceStatus['Open Library'] = error?.name === 'AbortError'
@@ -1204,6 +1209,7 @@ function createIsbnLookup({
         return metadata;
       }
     } catch (error) {
+      if(debug?.stopOnRateLimit&&error?.status===429)throw error;
       if (debug) {
         debug.sourceStatus['isbnbarcode.org'] = error?.name === 'AbortError'
           ? 'timeout'
@@ -1228,7 +1234,7 @@ function isComplete(result) {
   );
 }
 
-  return async function lookupIsbnMetadata(isbn, options = {}) {
+  async function lookupIsbnMetadata(isbn, options = {}) {
     const normalized = normalizeIsbn(isbn);
     const includeDebug = Boolean(options?.includeDebug && debugEnabled);
 
@@ -1340,10 +1346,42 @@ function isComplete(result) {
     } finally {
       inflight.delete(cacheKey);
     }
+  }
+  // Explicit single-provider access for the enrichment orchestrator.
+  // Keep the regular ISBN lookup API and its cache behavior unchanged.
+  const providers = new Map([
+    ['bureau_isbn',{name:'Bureau ISBN',enabled:true,lookup:lookupCb}],
+    ['google_books',{name:'Google Books',enabled:Boolean(env.GOOGLE_BOOKS_API_KEY),lookup:lookupGoogle}],
+    ['open_library',{name:'Open Library',enabled:true,lookup:lookupOpenLibrary}],
+    ['isbnbarcode',{name:'isbnbarcode.org',enabled:isbnBarcodeEnabled,lookup:lookupIsbnBarcode}],
+  ]);
+  lookupIsbnMetadata.lookupSource = async (source,isbn) => {
+    const provider=providers.get(source);
+    if(!provider?.enabled)return {status:'not_configured',metadata:null};
+    const normalized=normalizeIsbn(isbn);
+    if(!isValidIsbn(normalized))return {status:'invalid_isbn',metadata:null};
+    const debug=createDebugPayload(normalized,env);
+    debug.stopOnRateLimit=true;
+    try{
+      const metadata=await provider.lookup(normalized,debug);
+      if(metadata?.found&&metadata.matchLevel==='exact_isbn'){
+        // The original parsers enforce an equivalent ISBN. Preserve the
+        // returned barcode identity; do not stamp an unrelated record.
+        const verified=toIsbn13(source==='isbnbarcode'?metadata.matchedIsbn:metadata.barcode);
+        if(verified!==toIsbn13(normalized))return {status:'identity_mismatch',metadata:null};
+        return {status:'found',metadata:{...metadata,isbn:verified,source}};
+      }
+      return {status:debug.sourceStatus[provider.name]||'error',metadata:null};
+    }catch(error){
+      return {status:error?.status===429?'rate_limited':'error',metadata:null};
+    }
   };
+  lookupIsbnMetadata.availableSources=()=>[...providers].map(([id,p])=>({id,name:p.name,enabled:p.enabled}));
+  return lookupIsbnMetadata;
 }
 
 module.exports = {
+  normalizeLanguage,
   normalizeIsbn,
   isValidIsbn,
   isValidIsbn10,

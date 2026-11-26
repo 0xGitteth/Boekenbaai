@@ -4,6 +4,7 @@
 // model or fixed genre filter. Only observed catalogue evidence is scored.
 const crypto=require('node:crypto');
 const {isHidden}=require('./book-catalog-integrity');
+const {descriptionCorpus}=require('./book-enrichment-content');
 const normalize=x=>String(x||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
   .toLocaleLowerCase('nl-NL').replace(/[^a-z0-9]+/g,' ').trim();
 const Q=(id,dimension,prompt,options)=>({id,dimension,prompt,options:options.map(([id,label,traits])=>({
@@ -198,7 +199,7 @@ function hasEvidence(source,value){
 function traitsForBook(book){
   const safe=value=>Array.isArray(value)?value:[];
   const signature=JSON.stringify([
-    book.title||'',book.description||'',safe(book.themes),
+    book.title||'',descriptionCorpus(book),safe(book.themes),
     safe(book.manualThemes),safe(book.importedThemes),safe(book.tags),
     safe(book.enrichmentTags),
   ]);
@@ -215,7 +216,7 @@ function traitsForBook(book){
   const curated=[
     ...effectiveThemes,...safe(book.tags),...safe(book.enrichmentTags),
   ].join(' ');
-  const copy=corpus(curated),description=corpus(book.description||''),
+  const copy=corpus(curated),description=corpus(descriptionCorpus(book)),
     title=corpus(book.title||'');
   const matched=new Map();
   for(const [trait,words] of COMPILED_TRAITS){
@@ -302,7 +303,7 @@ function selection(db,{answers=[],excludeQuestionIds=[],seed='',route='new'}={})
     .filter(b=>b&&b.title&&!isHidden(b)).slice(0,15000);
   const catalogueSignature=crypto.createHash('sha256').update(JSON.stringify(
     books.map(b=>[b.id,b.title,b.author,b.themes,b.manualThemes,
-      b.importedThemes,b.tags,b.enrichmentTags,b.description])
+      b.importedThemes,b.tags,b.enrichmentTags,descriptionCorpus(b)])
   )).digest('hex');
   let profiles=CATALOGUE_CACHE.get(catalogueSignature);
   if(!profiles){
