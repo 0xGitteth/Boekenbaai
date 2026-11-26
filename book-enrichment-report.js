@@ -4,6 +4,11 @@ const {comparison}=require('./book-enrichment-comparison');
 const {descriptionCorpus}=require('./book-enrichment-content');
 const {traitsForBook}=require('./student-choice-dialogue');
 const {SOURCE_ORDER}=require('./book-enrichment-sources');
+const {preview:braveTrialPreview}=require('./book-brave-trial');
+function pendingBraveProposals(db,book,failedCovers){
+  return (db.braveEnrichmentJobs||[]).filter(j=>j.source==='trial'&&!j.trialDismissedAt&&!j.trialReviewedAt&&j.bookIds?.includes(book.id))
+    .flatMap(j=>(braveTrialPreview(db,j,book,failedCovers)?.changes||[]).map(change=>({...change,jobId:j.id,jobState:j.state}))); 
+}
 const terminal=new Set(['found','not_found','identity_mismatch']);
 const normalize=v=>String(v||'').normalize('NFKC').toLocaleLowerCase('nl-NL').trim();
 function missingFields(book,failedCovers,hasLocalCover){
@@ -40,7 +45,9 @@ function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_
     const book=copies[0],isbn=isbnOf(book),views=copies.map(b=>comparison(db,b,failedCovers));
     const sources=views[0].statuses.filter(s=>enabledSources.includes(s.source));
     const missing=[...new Set(copies.flatMap(b=>missingFields(b,failedCovers,hasLocalCover)))];
-    const pending=views.reduce((n,v)=>n+v.changes.length,0);
+    const freePending=views.reduce((n,v)=>n+v.changes.length,0);
+    const bravePending=copies.reduce((n,b)=>n+pendingBraveProposals(db,b,failedCovers).length,0);
+    const pending=freePending+bravePending;
     const conflicts=views.reduce((n,v)=>n+v.conflicts.length,0);
     const hasBrave=copies.some(b=>braveEvidence(db,b).length);
     const checked=sources.filter(s=>terminal.has(s.status)).length;
@@ -54,7 +61,7 @@ function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_
     const status=!attempted&&!hasBrave?'unresearched':!missing.length&&!conflicts&&checked===sources.length
       &&(content.strong+content.textual>0)?'complete':'partial';
     const row={id:book.id,title:book.title,author:book.author,isbn,copies:copies.length,status,
-      missing,pending,conflicts,checked,sourceCount:sources.length,content,
+      missing,pending,freePending,bravePending,conflicts,checked,sourceCount:sources.length,content,
       localCovers:copies.filter(b=>b.localCoverUrl&&hasLocalCover(b.localCoverUrl)).length,
       sourceStatuses:sources.map(s=>({source:s.source,status:s.status,lastError:s.lastError,checkedAt:s.checkedAt})),
       braveChecked:copies.reduce((n,b)=>n+braveEvidence(db,b).length,0)};
@@ -74,13 +81,14 @@ function report(db,{query='',filter='all',page=1,limit=20,enabledSources=SOURCE_
   const size=Math.max(1,Math.min(50,Number.isSafeInteger(limit)?limit:20));
   const pages=Math.max(1,Math.ceil(selected.length/size));
   const current=Math.max(1,Math.min(pages,Number.isSafeInteger(page)?page:1));
-  return {counts,total:selected.length,page:current,pages,rows:selected.slice((current-1)*size,current*size)};
+  return {counts,enabledSources,total:selected.length,page:current,pages,rows:selected.slice((current-1)*size,current*size)};
 }
 function details(db,id,{failedCovers=new Set()}={}){
   const book=(db.books||[]).find(b=>b.id===id&&b.personalLoanOnly!==true);
   if(!book)return null;
   return (db.books||[]).filter(b=>b.personalLoanOnly!==true&&workKey(b)===workKey(book)).map(b=>({
-    ...comparison(db,b,failedCovers),brave:braveEvidence(db,b),
+    ...comparison(db,b,failedCovers),barcode:b.barcode||'',brave:braveEvidence(db,b),
+    braveProposals:pendingBraveProposals(db,b,failedCovers),
   }));
 }
 module.exports={report,details,missingFields,braveEvidence};
