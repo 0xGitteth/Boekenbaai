@@ -694,3 +694,13 @@
 .bb-review__brave-job > .hint { margin: 0; }
 .bb-review__brave-job > .btn { white-space: normal; max-width: 100%; }
 .bb-review__brave-job + .bb-review__brave-job { margin-top: .65rem; }
+
+/* Keep the main enrichment tasks visually separate, including collapsed reports. */
+.bb-review__brave.bb-review__enrichment-section {
+  border:1px solid var(--border,#dce3ed);
+  border-radius:12px;
+  padding:14px;
+  margin:14px 0;
+  min-width:0;
+  box-sizing:border-box;
+}

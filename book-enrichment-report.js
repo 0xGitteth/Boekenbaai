@@ -1,6 +1,7 @@
 'use strict';
 const {isbnOf,workKey}=require('./book-free-metadata');
 const {comparison}=require('./book-enrichment-comparison');
+const {preview:braveTrialPreview}=require('./book-brave-trial');
 const {descriptionCorpus}=require('./book-enrichment-content');
 const {traitsForBook}=require('./student-choice-dialogue');
 const {SOURCE_ORDER}=require('./book-enrichment-sources');
@@ -84,6 +85,8 @@ function details(db,id,{failedCovers=new Set(),enabledSources=SOURCE_ORDER}={}){
     ...comparison(db,b,failedCovers),
     statuses:comparison(db,b,failedCovers).statuses.map(s=>enabledSources.includes(s.source)?s:{...s,status:'not_configured',previousStatus:s.status}),
     brave:braveEvidence(db,b),
+    braveProposals:(db.braveEnrichmentJobs||[]).filter(j=>j.source==='trial'&&!j.trialDismissedAt&&!j.trialReviewedAt&&j.state!=='running')
+      .flatMap(j=>braveTrialPreview(db,j,b,failedCovers)?.changes||[]),
   }));
 }
 module.exports={report,details,missingFields,braveEvidence};

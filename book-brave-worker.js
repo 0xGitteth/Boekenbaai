@@ -11,7 +11,7 @@ const {storeTrialResult,projectTrial}=require('./book-brave-trial');
 function createBraveWorker({
   loadDb,commit,apiKey='',onNewCover=()=>{},isPaused=()=>false,
   getFailedCovers=()=>new Set(),fetchSearch=fetchBrave,
-  findPages=discoverPages,logger=console,delayMs=1800,
+  findPages=discoverPages,logger=console,delayMs=1800,transientDelayMs=5000,
 }={}) {
   let timer=null,running=false,stopped=false;
   const configured=Boolean(typeof apiKey==='string'&&apiKey.trim());
@@ -111,7 +111,7 @@ function createBraveWorker({
       // The durable core decides whether this is an isolated transient
       // failure or a circuit-breaking provider error.
       if(bad)keepGoing=outcome?.continueRunning===true;
-      if(bad&&keepGoing)retryDelay=5000;
+      if(bad&&keepGoing)retryDelay=transientDelayMs;
     }catch(error) {
       logger.warn?.('Brave-verrijking onderbroken:',error?.message||String(error));
       // A database failure must not depend on a browser being open.

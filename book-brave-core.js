@@ -229,7 +229,7 @@ function getJobPlan(db,job,{
     approvedMaxRequests:job.approval?.maxRequests||0,
     approvedMonth:job.approval?.month||null,
     reservedRequests:job.requestsReserved||0,
-    lastError:job.lastError||null,lastFailure:job.lastFailure||null,
+    lastError:job.lastError||null,lastFailure:job.lastFailure||null,updatedAt:job.updatedAt||null,
     trialBudget:trial&&budget?{limit:budget.limit,used:budget.used,remaining:trialRemaining,legacy:budget.legacy===true}:null,
     legacyBudgetRequired:trial&&!budget,legacyMaxAdditional:legacyMax,
     deferredInApproval:job.deferredKeys?.length||0,

@@ -510,6 +510,23 @@ async function run(){
   const warning=getBraveCheck(sourceErrorDb,'source-error',require('../book-free-metadata').workKey(sourceErrorDb.books[0]),0);
   assert.equal(warning.status,'source_partial');
   assert.equal(warning.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
+  // Exercise the actual asynchronous worker, not only the claim helpers.
+  const recoveryDb={books:[book('slow'),book('healthy-worker','De geheime opdracht')],braveEnrichmentJobs:[]};
+  const recoveryJob=addJob(recoveryDb,['slow','healthy-worker'],{id:'recovery-worker',source:'trial'});
+  assert.equal(approveJob(recoveryDb,recoveryJob.id,{confirmed:true,expectedRequests:6,expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const visited=[];
+  const recoveryWorker=createBraveWorker({apiKey:'test-only-key',loadDb:()=>recoveryDb,commit:async fn=>fn(recoveryDb),delayMs:50,transientDelayMs:50,
+    fetchSearch:async(step,claim)=>{visited.push(claim.title);return visited.length===1?{error:'timeout'}:{pages:[]};},
+    findPages:async()=>[],
+  });
+  recoveryWorker.schedule(50);
+  await new Promise(resolve=>setTimeout(resolve,900));
+  recoveryWorker.stop();
+  assert.ok(visited.length>1,'The worker must continue beyond the first API timeout');
+  assert.ok(visited.slice(1).every(title=>title!==visited[0]),'No automatic retry of the deferred title');
+  assert.equal(recoveryJob.state,'paused');
+  assert.equal(recoveryJob.completedKeys.length,1);
+  assert.equal(recoveryDb.braveUsage.reserved,visited.length);
   // An isolated API timeout leaves that title unfinished but advances to
   // the next title; two consecutive failures stop the approved chunk.
   const mixed={books:[book('timeout'),book('healthy','De geheime opdracht')]};
