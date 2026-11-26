@@ -202,7 +202,7 @@ function hasEvidence(source,value){
 function matchesTraitWord(source,trait,word,kind){
   if(!hasEvidence(source,word))return false;
   if(trait!=='cooking'||word!=='koken'||kind!=='description')return true;
-  if(/\b(?:bloed|woede|razernij)\b.{0,45}\bkook(?:t|te|ten|en)?\b|\bkook(?:t|te|ten|en)?\b.{0,45}\b(?:woede|razernij)\b/.test(source.phrase))
+  if(/\b(?:bloed|woede|razernij)\b.{0,45}\b(?:koken|kook(?:t|te|ten)?)\b|\b(?:koken|kook(?:t|te|ten)?)\b.{0,45}\b(?:woede|razernij)\b/.test(source.phrase))
     return /\b(?:eten|gerecht(?:en)?|keuken|maaltijd(?:en)?|recept(?:en)?|kookboek|chef|fornuis|soep|bakken)\b/.test(source.phrase);
   return true;
 }
