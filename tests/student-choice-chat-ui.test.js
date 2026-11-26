@@ -41,7 +41,8 @@ let resolvePin;
 let loggedIn=false;
 let activeId='s',storageToken='',holdContext=false,releaseContext=null,contextCalls=0;
 let blocked=false;
-let failSuggest=false;
+let failSuggest=false,failInterpret=false;
+const interpretRequests=[];
 let resetStatus=200;
 let holdSuggestions=false,releaseSuggestion=null;
 let holdInterpretation=false,releaseInterpretation=null;
@@ -70,7 +71,8 @@ const fetchStub=async (url,options={})=>{
     return makeResponse(200,{recent:null,favorites:[]});
   }
   if(url==='/api/auth/student-pin/choice-interpret'){
-    const body=JSON.parse(options.body);
+    const body=JSON.parse(options.body);interpretRequests.push(body);
+    if(failInterpret)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
     const response=makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
     if(holdInterpretation)return new Promise(resolve=>{releaseInterpretation=()=>resolve(response);});
     return response;
@@ -264,6 +266,19 @@ vm.runInNewContext(code,{
     form.children[2].value=value;
     await form.listeners.submit({preventDefault(){}});
   }
+  // A failed interpretation must retry the original answer and context,
+  // without a duplicate student message or forcing it to be typed again.
+  failInterpret=true;
+  await submitOpen('Paarden verzorgen');
+  const failedAnswer=interpretRequests.at(-1);
+  failInterpret=false;
+  actions.children.find(x=>x.textContent==='Opnieuw proberen').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(interpretRequests.at(-1),failedAnswer);
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   const countBeforeOpen=suggestRequests.length;
   holdInterpretation=true;
   const delayed=submitOpen('misterie');

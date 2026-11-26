@@ -253,6 +253,26 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  assert.ok(missing.missingTopics.some(x=>x.id==='hamsters'));
 }
 
+// Exact interests must not be silently diluted to their parent category.
+{
+ const books=[
+  {id:'football',title:'Het voetbalteam',author:'A',themes:['Voetbal'],description:'Een voetballer leert samenwerken.'},
+  {id:'sport',title:'Dubbelspel',author:'B',themes:['Sport'],description:'Een tenniswedstrijd.'},
+  {id:'ballet',title:'Betoverende balletverhalen',author:'C',themes:['Dansen']},
+  {id:'dance',title:'Afblijven',author:'D',themes:['Dansen'],description:'Een meisje leert streetdance.'},
+  {id:'cook',title:'Koken met recepten',author:'E',description:'Leer koken met eenvoudige gerechten.'},
+  {id:'anger',title:'Borealis',author:'F',description:'Zijn bloed begon te koken van woede.'},
+ ];
+ const find=prefer=>rankBooks({books},{route:'new',openSignals:{prefer}});
+ const football=find(['sport','football']);
+ assert.deepEqual(football.suggestions.map(x=>x.bookId),['football']);
+ assert.match(football.suggestions[0].reason,/Voetbal|voetbal/i);
+ assert.deepEqual(find(['dance','ballet']).suggestions.map(x=>x.bookId),['ballet']);
+ assert.deepEqual(find(['cooking']).suggestions.map(x=>x.bookId),['cook']);
+ assert.match(find(['cooking']).suggestions[0].reason,/koken/i);
+ assert.ok(rankBooks({books:books.filter(x=>x.id!=='football')},{route:'new',openSignals:{prefer:['football','sport']}}).missingTopics.some(t=>t.id==='football'));
+}
+
 // Explicit content combinations must not return single-feature books as matches.
 {
  const books=[{id:'thriller',title:'Het geheim',author:'A',description:'Een spannende thriller.'},{id:'rep',title:'Liefde',author:'B',description:'Een verhaal met LHBTQIA+ personages.'},{id:'both',title:'De zoektocht',author:'C',description:'Een spannende thriller met LHBTQIA+ personages.'}];

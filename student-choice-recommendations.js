@@ -653,6 +653,10 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
     setting:'de omgeving',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',murder:'misdaad met moord',horror:'griezelverhalen',
   };
+  const requested=[...new Set([...choice.separateTopics,...choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}))])];
+  // A generic ancestor or another reading-style answer must not substitute
+  // for the requested subject. Related topics require explicit permission.
+  const focused=choice.route!=='surprise'&&!choice.discoverySample?requested:[];
   const rejected=new Set(choice.bookVotes.filter(v=>v.vote==='dislike').map(v=>v.key));
   const candidates = [];
   let hasPriorMatches=false;
@@ -680,6 +684,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     // not evidence that a book is free of that subject.
     if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
     if(!choice.discoverySample&&choice.required.some(trait=>!traits.has(trait)))continue;
+    if(focused.length&&!focused.some(trait=>traits.has(trait)))continue;
     const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
     const specificMatches=choice.openSignals.prefer.filter(trait=>Object.hasOwn(SUBTOPICS,trait)&&traits.has(trait)).length;
     if(choice.openSignals.prefer.length&&!openMatches&&!choice.discoverySample)continue;
@@ -713,7 +718,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
-  const requested=[...new Set([...choice.separateTopics,...choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}))])];
+
   const individual=choice.required.length?[]:choice.separateTopics;
   const missingTopics=choice.route!=='surprise'?requested.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
   const count=Math.max(1,Math.min(3,limit));
@@ -743,7 +748,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     suggestions: picked.map(({work,matched,familiar,matchedDialogue,matchedAnchor,surpriseReason})=>({
       key:work.key,bookId:work.bookId,title:work.title,author:work.author,
       available:work.available,total:work.total,
-      reason:surpriseReason || (matchedDialogue?.matched?.length
+      reason:surpriseReason || focused.filter(t=>workTraits.get(work.key)?.has(t))
+        .map(t=>dialogue.evidenceForTopic(work,t)).find(Boolean) || (matchedDialogue?.matched?.length
         ?'Dit boek sluit aan bij je interesse in '
           +matchedDialogue.matched.slice(0,2).map(t=>traitLabels[t]||t).join(' en ')
         : (choice.referenceBookId||outside)&&matchedAnchor>0

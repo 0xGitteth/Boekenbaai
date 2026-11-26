@@ -396,7 +396,13 @@
     }catch(err){
       if(!active||marker!==epoch)return;
       busy=false;notice(err.message||'Je antwoord kon niet worden verwerkt.');
-      options([['Opnieuw proberen',()=>offerOpenAnswer('',adviceQuestion)],['Stel me meerkeuzevragen',beginInterests]]);
+      // Reuse the exact submitted answer and selected option after a
+      // temporary failure, instead of losing it and reopening the question.
+      adviceContext=previous.context;adviceQuestion=previous.question;choices=previous.choices;
+      choiceMode=previous.mode;advicePrompt=previous.prompt;
+      options([['Opnieuw proberen',()=>void submitAdvice(value,optionId,true,extraContext)],
+        ['Antwoord aanpassen',()=>offerOpenAnswer('',adviceQuestion,true)],
+        ['Stel me meerkeuzevragen',beginInterests]]);
     }finally{if(active&&marker===epoch)busy=false;}
   }
   function offerOpenAnswer(prompt='Waar lees je graag over?',question=null,explicitNavigation=false){
