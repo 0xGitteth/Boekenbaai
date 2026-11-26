@@ -26,6 +26,7 @@ const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialP
   catalogue:trialCatalogue}=require('./book-enrichment-trial');
 
 const { addJob, currentUsage, getJobPlan, approveJob } = require('./book-brave-core');
+const {selectTrialBooks,preview:braveTrialPreview,applyPreview:applyBraveTrial}=require('./book-brave-trial');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
 const {safeRowReplays,recordBookReviewChoices,recordMetadataReviewChoices,
@@ -5723,10 +5724,67 @@ async function handleApi(req, res, requestUrl) {
           // Every pending or paused task remains accessible regardless of age;
           // limit only completed history, not delayed approvals.
           return [...plans.filter(job=>job.state!=='complete'),
-            ...plans.filter(job=>job.state==='complete').slice(-12)]
+            ...plans.filter(job=>job.state==='complete'&&job.source==='trial'),
+            ...plans.filter(job=>job.state==='complete'&&job.source!=='trial').slice(-12)]
             .sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
         })(),
       });
+    }
+    if(requestUrl.pathname===braveRoot+'/trial'&&req.method==='POST'){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      const body=await parseBody(req,4096);
+      if(body?.confirm!==true||!Array.isArray(body.bookIds)||body.bookIds.length>5)
+        return sendJson(res,400,{message:'Bevestig maximaal vijf geselecteerde ISBN-edities.'});
+      let outcome={ok:false,error:'not_ready'};
+      await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,read:()=>loadDb(),mutate:db=>{
+        if(collectionPaused()||['running','paused','partial','ready'].includes(db.freeEnrichmentRun?.state)){
+          outcome={ok:false,error:'free_research_pending'};return db;
+        }
+        if((db.braveEnrichmentJobs||[]).some(j=>j.source==='trial'&&getJobPlan(db,j,{
+          braveConfigured:braveWorker.configured,failedCovers:exhaustedCoverSourceUrls()}).state!=='complete')){
+          outcome={ok:false,error:'trial_exists'};return db;
+        }
+        outcome=selectTrialBooks(db,body.bookIds,{sources:enrichmentSources.list().filter(s=>s.enabled).map(s=>s.id),
+          failedCovers:exhaustedCoverSourceUrls()});
+        if(outcome.ok){
+          const job=addJob(db,outcome.bookIds,{source:'trial',repeatChecked:body.repeat===true});
+          outcome=job?{ok:true,id:job.id}:{ok:false,error:'not_ready'};
+        }
+        return db;
+      }});
+      if(!outcome.ok){
+        const messages={free_research_pending:'Rond eerst het gratis onderzoek van de geselecteerde boeken af.',
+          free_proposals_pending:'Beoordeel en sla eerst de veilige gratis aanvullingen van alle geselecteerde exemplaren op.',
+          trial_exists:'Er bestaat al een openstaande Brave-proef.'};
+        return sendJson(res,409,{message:messages[outcome.error]||'De selectie is niet geschikt voor een Brave-proef.',error:outcome.error});
+      }
+      return sendJson(res,201,outcome);
+    }
+    const braveTrialPath=requestUrl.pathname.match(/^\/api\/admin\/book-enrichment\/brave\/([a-f0-9-]+)\/(trial-preview|trial-apply)$/);
+    if(braveTrialPath&&['GET','POST'].includes(req.method)){
+      if(!ensureRole(user,['admin']))return sendJson(res,403,{message:'Alleen voor beheerders.'});
+      if(braveTrialPath[2]==='trial-preview'&&req.method==='GET'){
+        const db=loadDb(),job=db.braveEnrichmentJobs?.find(j=>j.id===braveTrialPath[1]&&j.source==='trial');
+        if(!job)return sendJson(res,404,{message:'Brave-proef niet gevonden.'});
+        return sendJson(res,200,{state:job.state,copies:db.books.map(b=>braveTrialPreview(db,job,b,exhaustedCoverSourceUrls())).filter(Boolean)});
+      }
+      if(braveTrialPath[2]==='trial-apply'&&req.method==='POST'){
+        const body=await parseBody(req,4096);
+        if(body?.confirm!==true||typeof body.bookId!=='string'||typeof body.revision!=='string')
+          return sendJson(res,400,{message:'Bevestig de voorgestelde aanvullingen.'});
+        let outcome={ok:false,error:'not_ready'};
+        await mutateJsonLockedAsync({lockPath:DATA_PATH,filePath:DATA_PATH,waitMs:5000,read:()=>loadDb(),mutate:db=>{
+          if(collectionPaused()||['running','paused','partial','ready'].includes(db.freeEnrichmentRun?.state))return db;
+          const job=db.braveEnrichmentJobs?.find(j=>j.id===braveTrialPath[1]&&j.source==='trial');
+          const book=db.books.find(b=>b.id===body.bookId);
+          if(job&&book)outcome=applyBraveTrial(db,job,book,body.revision,exhaustedCoverSourceUrls());
+          return db;
+        }});
+        if(!outcome.ok)return sendJson(res,409,{message:'De proef of boekgegevens zijn gewijzigd. Vernieuw het voorstel.',error:outcome.error});
+        if(outcome.newCover)scheduleCoverBackfill();
+        return sendJson(res,200,outcome);
+      }
+      return sendJson(res,405,{message:'Onjuiste methode.'});
     }
     if (requestUrl.pathname === braveRoot + '/scan' && req.method === 'POST') {
       if (!ensureRole(user, ['admin'])) return sendJson(res, 403, {message:'Alleen voor beheerders.'});
@@ -5769,6 +5827,13 @@ async function handleApi(req, res, requestUrl) {
         mutate:db=>{
           if(['running','paused','partial','ready'].includes(db.freeEnrichmentRun?.state)){
             outcome={ok:false,error:'free_research_pending'};return db;
+          }
+          const selectedJob=db.braveEnrichmentJobs?.find(j=>j.id===braveApprove[1]);
+          if(selectedJob?.source==='trial'){
+            const readiness=selectTrialBooks(db,selectedJob.bookIds,{expand:false,
+              sources:enrichmentSources.list().filter(s=>s.enabled).map(s=>s.id),
+              failedCovers:exhaustedCoverSourceUrls()});
+            if(!readiness.ok){outcome=readiness;return db;}
           }
           outcome=approveJob(db, braveApprove[1],{
             confirmed:body.confirm===true,
