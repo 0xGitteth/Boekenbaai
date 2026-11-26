@@ -144,10 +144,16 @@ const coverBackfillFailures = new Map();
 const coverRetryDelays = [30_000, 120_000, 600_000];
 let coverBackfillRetryTimer = null;
 function exhaustedCoverSourceUrls() {
-  return new Set([...coverBackfillFailures.entries()]
+  const failed=new Set([...coverBackfillFailures.entries()]
     .filter(([,failure]) => failure?.phase === 'download'
       && failure.attempts > coverRetryDelays.length)
     .map(([source]) => source));
+  // Invalid legacy files must immediately count as missing, even before
+  // the ordinary bounded backfill worker has tried the upstream URL.
+  for(const book of loadDb().books){
+    if(book.coverUrl&&book.rejectedCoverSource===book.coverUrl&&!book.localCoverUrl)failed.add(book.coverUrl);
+  }
+  return failed;
 }
 
 // Optional, zero-subscription enrichment. No HTTP import or review awaits it.
@@ -257,7 +263,8 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
             local = localAsset && coverAssets.hasAsset(localAsset)
               ? localAsset : await coverAssets.saveSource(source);
           } catch (error) {
-            const attempts = (coverBackfillFailures.get(source)?.attempts || 0) + 1;
+            const attempts = error.message==='invalid_cover_dimensions'
+              ?coverRetryDelays.length+1:(coverBackfillFailures.get(source)?.attempts || 0) + 1;
             coverBackfillFailures.set(source, {
               attempts,
               phase: 'download',
@@ -283,6 +290,7 @@ function scheduleCoverBackfill({ resetFailures = false } = {}) {
             for (const book of latest.books || []) {
               if (book.coverUrl === source && !coverAssets.hasAsset(book.localCoverUrl)) {
                 book.localCoverUrl = local;
+                if(book.rejectedCoverSource===source){delete book.rejectedCoverSource;book.coverCrop=null;}
                 changed = true;
               }
             }
@@ -890,7 +898,17 @@ function ensureBookShape(book) {
   safeBook.localCoverUrl = typeof source.localCoverUrl === 'string'
     && /^\/api\/covers\/[a-f0-9]{64}\.(?:jpg|png|webp|gif)$/.test(source.localCoverUrl)
     ? source.localCoverUrl : '';
-  safeBook.coverCrop = normalizeCoverCrop(source.coverCrop);
+  // Preserve the original source for a later verified replacement; never
+  // serve or reuse the known invalid local file. Do not discard manual metadata.
+  if(safeBook.localCoverUrl&&coverAssets.assetStatus(safeBook.localCoverUrl)==='invalid'){
+    safeBook.rejectedCoverSource=safeBook.coverUrl;
+    safeBook.localCoverUrl='';
+    safeBook.coverCrop=null;
+  }else{
+    safeBook.coverCrop=normalizeCoverCrop(source.coverCrop);
+    if(safeBook.rejectedCoverSource!==safeBook.coverUrl||coverAssets.hasAsset(safeBook.localCoverUrl))
+      delete safeBook.rejectedCoverSource;
+  }
   safeBook.importInfo = normalizeBookImportInfo(source.importInfo);
   safeBook.importProvenance = normalizeBookImportProvenance(source.importProvenance);
   return attachDerivedThemeFields(safeBook);
@@ -1028,7 +1046,7 @@ function groupBooksByTitleAuthor(books = []) {
     const representativeCoverSource = resolveEffectiveCoverUrl(representative.coverUrl);
     const cachedEditionCover = value.copies.find((copy) =>
       resolveEffectiveCoverUrl(copy.coverUrl) === representativeCoverSource
-      && coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || representative.localCoverUrl || '';
+      && coverAssets.hasAsset(copy.localCoverUrl))?.localCoverUrl || (coverAssets.hasAsset(representative.localCoverUrl)?representative.localCoverUrl:'');
     const folderIds = Array.from(value.folderIds);
     const tags = Array.from(value.tags);
     const themes = sortThemesByCanonicalOrder(Array.from(value.themes));
