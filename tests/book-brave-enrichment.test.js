@@ -275,6 +275,11 @@ assert.equal(selectImageResult([{title:'Onbekend boek',
   imageUrl:'https://files.uitgeverijvoorbeeld.nl/unknown.jpg',width:300,height:430}],target),'');
 
 async function run(){
+  let opened=false;
+  const dnsTimeout=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{timeoutMs:500,
+    dnsLookup:()=>new Promise(()=>{}),httpsGet:()=>{opened=true;throw Error('Unexpected request');}});
+  assert.equal(dnsTimeout.error,'timeout');
+  assert.equal(opened,false,'A DNS stall must not block the worker or open a late request');
   // Late stream errors after a 404 response must not crash Node: the
   // IncomingMessage handler must be registered before resume() is called.
   const lateHttpResult=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{
@@ -510,6 +515,50 @@ async function run(){
   const warning=getBraveCheck(sourceErrorDb,'source-error',require('../book-free-metadata').workKey(sourceErrorDb.books[0]),0);
   assert.equal(warning.status,'source_partial');
   assert.equal(warning.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
+  // Exercise the actual asynchronous worker, not only the claim helpers.
+  const recoveryDb={books:[book('slow'),book('healthy-worker','De geheime opdracht')],braveEnrichmentJobs:[]};
+  const recoveryJob=addJob(recoveryDb,['slow','healthy-worker'],{id:'recovery-worker',source:'trial'});
+  assert.equal(approveJob(recoveryDb,recoveryJob.id,{confirmed:true,expectedRequests:6,expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const visited=[];
+  const recoveryWorker=createBraveWorker({apiKey:'test-only-key',loadDb:()=>recoveryDb,commit:async fn=>fn(recoveryDb),delayMs:50,transientDelayMs:50,
+    fetchSearch:async(step,claim)=>{visited.push(claim.title);return visited.length===1?{error:'timeout'}:{pages:[]};},
+    findPages:async()=>[],
+  });
+  recoveryWorker.schedule(50);
+  await new Promise(resolve=>setTimeout(resolve,900));
+  recoveryWorker.stop();
+  assert.ok(visited.length>1,'The worker must continue beyond the first API timeout');
+  assert.ok(visited.slice(1).every(title=>title!==visited[0]),'No automatic retry of the deferred title');
+  assert.equal(recoveryJob.state,'paused');
+  assert.equal(recoveryJob.completedKeys.length,1);
+  assert.equal(recoveryDb.braveUsage.reserved,visited.length);
+  // An isolated API timeout leaves that title unfinished but advances to
+  // the next title; two consecutive failures stop the approved chunk.
+  const mixed={books:[book('timeout'),book('healthy','De geheime opdracht')]};
+  const mixedJob=addJob(mixed,['timeout','healthy'],{id:'mixed',source:'trial'});
+  assert.equal(approveJob(mixed,mixedJob.id,{confirmed:true,expectedRequests:6,expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  const timed=claimNext(mixed,{now,env:environment});
+  finishClaim(mixed,timed,{error:'timeout'});
+  assert.equal(mixedJob.state,'running');
+  assert.equal(mixedJob.lastFailure.title,timed.title);
+  assert.equal(mixedJob.lastFailure.stage,'brave');
+  let following=claimNext(mixed,{now,env:environment});
+  assert.notEqual(following.key,timed.key);
+  do{finishClaim(mixed,following,{status:'no_result'});}while((following=claimNext(mixed,{now,env:environment})));
+  assert.equal(mixedJob.state,'paused');
+  assert.equal(mixedJob.completedKeys.length,1);
+  assert.ok(!mixedJob.completedKeys.includes(timed.key));
+  assert.equal(mixedJob.trialBudget.used,4);
+  assert.equal(getJobPlan(mixed,mixedJob,{now,env:environment,braveConfigured:true}).possibleMaxRequests,2);
+  const outage={books:[book('a'),book('b','B'),book('c','C')]};
+  const outageJob=addJob(outage,['a','b','c'],{source:'trial'});
+  assert.equal(approveJob(outage,outageJob.id,{confirmed:true,expectedRequests:6,expectedMonth:'2026-11',braveConfigured:true,now,env:environment}).ok,true);
+  finishClaim(outage,claimNext(outage,{now,env:environment}),{error:'timeout'});
+  finishClaim(outage,claimNext(outage,{now,env:environment}),{error:'request_error'});
+  assert.equal(outageJob.state,'paused');
+  assert.equal(outageJob.completedKeys.length,0);
+  assert.equal(outage.braveUsage.reserved,2);
+  assert.equal(claimNext(outage,{now,env:environment}),null);
   const db4={books:[book('z')],braveEnrichmentJobs:[]};
   const paused=addJob(db4,['z'],{id:'paused'});
   assert.equal(approveJob(db4,paused.id,{confirmed:true,expectedRequests:3,

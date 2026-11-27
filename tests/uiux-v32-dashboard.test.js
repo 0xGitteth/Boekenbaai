@@ -200,3 +200,9 @@ assert.match(tabletNav,/@media \(min-width: 761px\) and \(max-width: 1180px\)/);
 assert.match(tabletNav,/\.hero\.hero--staff\s*\{[^}]*flex-wrap: wrap;[^}]*height: auto;/);
 assert.match(tabletNav,/\.bb-v32-top-nav\s*\{[^}]*flex: 0 0 100%;[^}]*overflow: visible;/);
 assert.match(tabletNav,/\.admin-modern__tabs\s*\{[^}]*min-width: 0;[^}]*flex-wrap: wrap;/);
+
+const brandingCss=fs.readFileSync(path.join(root,'public/portal-pr1-v43.css'),'utf8');
+const tabletBranding=brandingCss.slice(brandingCss.lastIndexOf('@media (min-width:761px)'));
+assert.match(tabletBranding,/height:auto!important/);
+assert.match(tabletBranding,/overflow:visible!important/);
+assert.match(tabletBranding,/min-height:44px!important/);

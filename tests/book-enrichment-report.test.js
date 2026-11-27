@@ -6,7 +6,7 @@ const {workKey}=require('../book-free-metadata');
 const isbn='9789086960088';
 const book={id:'one',metadataIsbn:isbn,title:'Testtitel',author:'Test Auteur',
   description:'',pageCount:null,coverUrl:'https://example.org/cover.jpg',localCoverUrl:'/covers/one.jpg'};
-const copy={...book,id:'two',description:'Een verhaal over paarden en vriendschap.',localCoverUrl:''};
+const copy={...book,id:'two',barcode:'EX-002',description:'Een verhaal over paarden en vriendschap.',localCoverUrl:''};
 const other={id:'three',title:'Zonder ISBN',author:'Auteur'};
 const db={books:[book,copy,other,{...book,id:'personal',personalLoanOnly:true}],students:[{id:'secret'}],history:[]};
 const metadata={isbn,title:book.title,author:book.author,pageCount:128,sourceUrl:'https://example.org/book'};
@@ -41,6 +41,8 @@ assert.equal(report(db,{query:'zonder isbn'}).rows[0].id,'three');
 assert.equal(report(db,{limit:1,page:2}).rows.length,1);
 const view=details(db,'one');
 assert.equal(view.length,2);
+assert.equal(view[1].barcode,'EX-002');
+assert.deepEqual(view[0].braveProposals,[]);
 assert.equal(view[0].brave[0].evidence[0].url,'https://example.org/publisher');
 assert.equal(view[0].statuses.find(s=>s.source==='boekenbase').history.length,2);
 assert.equal(details(db,'personal'),null);

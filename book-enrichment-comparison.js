@@ -101,7 +101,7 @@ function comparison(db,book,failedCovers=new Set(),sources=SOURCE_ORDER){
       ['description','publisher','imprint','publishedYear','pageCount','language','nurCode','nurCategory',
         'seriesTitle','seriesNumber','coverUrl','tags'].includes(k)&&isPresent(check.metadata[k])):[]}));
   const snapshot={bookId:book.id,identity:keyOf(book),changes,conflicts,statuses};
-  return {...snapshot,isbn:isbnOf(book),title:book.title,author:book.author,
+  return {...snapshot,isbn:isbnOf(book),title:book.title,author:book.author,barcode:String(book.barcode||'').trim(),
     revision:createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')};
 }
 function applyComparison(db,book,revision,failedCovers=new Set(),sources=SOURCE_ORDER,now=new Date()){

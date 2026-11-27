@@ -41,6 +41,9 @@ assert.equal(applyPreview(db,job,book,preview(db,job,book).revision).error,'runn
 let next;
 while((next=claimNext(db,{now,env})))finishClaim(db,next,{status:'no_result'});
 assert.equal(job.state,'complete');
+const reportView=require('../book-enrichment-report').details(db,'a');
+assert.ok(reportView[0].braveProposals.some(c=>c.field==='description'),'Verified but unapplied Brave evidence appears separately in the report');
+assert.ok(!reportView[0].changes.some(c=>c.field==='description'),'Brave evidence is not a free-source proposal');
 const first=preview(db,job,book);
 assert.ok(first.changes.some(c=>c.field==='description'));
 assert.equal(applyPreview(db,job,book,'invalid').ok,false);
@@ -58,6 +61,26 @@ assert.ok(job.trialReviewedAt);
 assert.equal(getBraveCheck(db,'a',workKey(book),0).trialPending,false);
 assert.equal(pendingTrialReview(db),false);
 assert.equal(preview(db,job,book).changes.length,0);
+// A legacy pilot has no reliable lifetime ledger. A verified remaining
+// cap must be explicitly set once; subsequent approvals cannot reset it.
+const legacyDb={books:[{...book,id:'old',description:'',coverUrl:'',tags:[],enrichmentTags:[]}]};
+const legacy=addJob(legacyDb,['old'],{id:'legacy',source:'trial'});
+delete legacy.trialBudget;legacy.requestsReserved=1;legacy.state='paused';
+const approveLegacy=(count,limit)=>approveJob(legacyDb,legacy.id,{confirmed:true,expectedRequests:count,expectedMonth:'2026-11',braveConfigured:true,now,env,legacyRemainingLimit:limit});
+assert.equal(approveLegacy(2).error,'trial_budget_required');
+assert.equal(approveLegacy(2,2).ok,true);
+const firstLegacy=claimNext(legacyDb,{now,env});
+finishClaim(legacyDb,firstLegacy,{error:'timeout'});
+assert.equal(legacy.trialBudget.used,1);
+assert.equal(approveLegacy(2,15).ok,false,'Cannot exceed remaining lifetime cap');
+assert.equal(approveLegacy(1,15).ok,true);
+const secondLegacy=claimNext(legacyDb,{now,env});
+finishClaim(legacyDb,secondLegacy,{error:'timeout'});
+assert.equal(legacy.trialBudget.used,2);
+assert.equal(getJobPlan(legacyDb,legacy,{now,env,braveConfigured:true}).canApprove,false);
+assert.equal(approveLegacy(1,15).ok,false);
+assert.equal(legacyDb.braveUsage.reserved,2);
+assert.equal(JSON.parse(JSON.stringify(legacyDb)).braveEnrichmentJobs[0].trialBudget.used,2);
 async function run(){
   const fresh={id:'worker',metadataIsbn:isbn,title:book.title,author:book.author,tags:[],description:'',coverUrl:''};
   const live={books:[fresh]};

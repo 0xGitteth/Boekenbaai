@@ -62,7 +62,7 @@ function preview(db,job,book,failedCovers=new Set()){
     .map(field=>({field,before:book[field]??null,after:next[field]??null,
       sources:(projected.evidenceByBook[book.id]||[]).filter(e=>e.field===field)}));
   const snapshot={jobId:job.id,bookId:book.id,identity:workKey(book),changes};
-  return {...snapshot,title:book.title,author:book.author,
+  return {...snapshot,title:book.title,author:book.author,barcode:String(book.barcode||'').trim(),
     revision:createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')};
 }
 function releaseTrialCheckpoints(db,job,bookId=null){

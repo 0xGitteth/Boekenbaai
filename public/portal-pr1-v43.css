@@ -746,3 +746,23 @@ body[data-page="student"] .bb-student-login-art {
   overflow:hidden;
   border-radius:0 20px 20px 0;
 }
+
+/* The shared branding masthead above uses !important fixed dimensions.
+   At tablet widths it must allow the navigation's second row to fit. */
+@media (min-width:761px) and (max-width:1180px) {
+  body[data-page="staff"].bb-v32-active .hero.hero--staff {
+    height:auto!important;
+    min-height:64px!important;
+    max-height:none!important;
+    overflow:visible!important;
+    flex-wrap:wrap!important;
+    padding:8px 18px!important;
+    gap:4px 10px!important;
+  }
+  body.bb-admin-v31.bb-v32-active #bb-admin-v31-sidebar.bb-v32-top-nav .admin-modern__tab,
+  body.bb-teacher-v31.bb-v32-active #bb-teacher-v31-sidebar.bb-v32-top-nav .bb-teacher-v31-nav {
+    min-height:44px!important;
+    height:auto!important;
+    padding:8px 11px!important;
+  }
+}
