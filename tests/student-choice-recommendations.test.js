@@ -289,6 +289,31 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  assert.equal(missing.missingCombination.length,2);
 }
 
+// Explicit consent to a partial combination must allow a true story
+// even when no football evidence exists, but not generic sport or exclusions.
+{
+ const books=[
+  {id:'true-story',title:'Mijn jeugd',author:'A',description:'Een waargebeurd verhaal over opgroeien.'},
+  {id:'generic-sport',title:'De tennisclub',author:'B',themes:['Sport']},
+  {id:'avoid',title:'De misdaad',author:'C',description:'Een waargebeurd verhaal over een moord.'},
+ ];
+ const strict={route:'new',openSignals:{prefer:['true','sport','football'],avoid:['murder']},required:['true','football']};
+ assert.equal(rankBooks({books},strict).suggestions.length,0);
+ assert.equal(rankBooks({books},strict).missingCombination.length,2);
+ assert.equal(rankBooks({books},{...strict,required:[]}).suggestions.length,0,'Clearing required without consent does not broaden focused subjects');
+ const accepted={...strict,required:[],partialMatchTraits:strict.required};
+ const result=rankBooks({books},accepted);
+ assert.deepEqual(result.suggestions.map(b=>b.bookId),['true-story']);
+ assert.equal(result.missingCombination.length,0);
+ assert.equal(result.partialTopicMatches,true);
+ assert.equal(result.partialCombination,true);
+ assert.match(result.suggestions[0].reason,/waargebeurd/i);
+ assert.equal(rankBooks({books},{...strict,partialMatchTraits:strict.required}).suggestions.length,0,'Consent cannot bypass an active strict combination');
+ assert.equal(rankBooks({books},{...accepted,partialMatchTraits:['true','invalid']}).suggestions.length,0);
+ const football={id:'football-only',title:'Het voetbalteam',author:'D',themes:['Voetbal']};
+ assert.deepEqual(new Set(rankBooks({books:[...books,football]},accepted).suggestions.map(b=>b.bookId)),new Set(['true-story','football-only']));
+ assert.equal(rankBooks({books},{...accepted,excludeKeys:[keyOf(books[0])]}).suggestions.length,0);
+}
 // Independent hobby selections must cover both topics rather than require a
 // combined cookbook about horses or fill all slots with only one topic.
 {
