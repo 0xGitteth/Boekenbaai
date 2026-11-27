@@ -366,7 +366,8 @@ function snippetIsbnMatch(target,candidate){
 }
 function snippetWorkMatch(target,candidate){
   const full=normalize(target.title),surname=normalize(target.author).split(' ').filter(x=>x.length>=3).at(-1);
-  const text=' '+normalize(snippetText(candidate))+' ';
+  const text=' '+(Array.isArray(candidate.snippets)?candidate.snippets:[]).slice(0,6)
+    .filter(v=>typeof v==='string').map(v=>normalize(v)).join(' ')+' ';
   return full.length>=5&&surname&&text.includes(' '+full+' ')&&text.includes(' '+surname+' ');
 }
 function rankPublisherCandidates(candidates,target){

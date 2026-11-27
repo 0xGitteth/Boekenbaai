@@ -297,8 +297,8 @@ async function run(){
   const {createSearchSession}=require('../book-brave-search-session');
   let clock=1000;
   const session=createSearchSession({now:()=>clock,ttlMs:1000});
-  const transientClaim={...target,id:'test-session',key:'exact-edition',step:0,source:'trial'};
-  session.remember(transientClaim,searchResult.pages);
+  const snippetSessionClaim={...target,id:'test-session',key:'exact-edition',step:0,source:'trial'};
+  session.remember(snippetSessionClaim,searchResult.pages);
   assert.equal(session.view('test-session','exact-edition')[0].candidates[0].snippets.length,3);
   assert.deepEqual(session.view('other-job','exact-edition'),[]);
   assert.deepEqual(session.view('test-session','different-edition'),[]);

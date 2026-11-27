@@ -5841,6 +5841,7 @@ async function handleApi(req, res, requestUrl) {
           return db;
         }});
         if(!outcome.ok)return sendJson(res,409,{message:'De proef kan nu niet worden beëindigd.'});
+        braveSearchSession.clear(braveTrialPath[1]);
         return sendJson(res,200,outcome);
       }
       if(braveTrialPath[2]==='trial-apply'&&req.method==='POST'){
