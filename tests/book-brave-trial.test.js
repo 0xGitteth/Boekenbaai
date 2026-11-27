@@ -89,8 +89,10 @@ async function run(){
   const month=current.toISOString().slice(0,7);
   assert.equal(approveJob(live,pilot.id,{confirmed:true,expectedRequests:3,expectedMonth:month,braveConfigured:true,now:current,env}).ok,true);
   let calls=0;
+  const fixtureHtml='<script type="application/ld+json">'+JSON.stringify({'@type':'Book',name:fresh.title,author:{name:fresh.author},isbn:page.isbn,description:page.description,keywords:page.tags,image:page.coverUrl,numberOfPages:page.pageCount,datePublished:'2020-01-01',inLanguage:'nl'})+'</script>';
   const worker=createBraveWorker({apiKey:'mock',loadDb:()=>live,commit:async fn=>fn(live),delayMs:50,
-    fetchSearch:async()=>{calls++;return {pages:[]};},findPages:async()=>[page]});
+    fetchSearch:async()=>{calls++;return {pages:[{title:fresh.title,url:'https://offline.example/book',snippets:['TRANSIENT_SEARCH_ONLY '+fresh.metadataIsbn]},{title:fresh.title,url:page.sourceUrl,snippets:['Tijdelijke zoektekst over paarden']}]};},
+    findPages:(result,claim,options)=>require('../book-brave-fetch').discoverPages(result,claim,{...options,fetchPage:async url=>url.endsWith('/robots.txt')?{body:'User-agent: *\\nAllow: /'}:url.includes('offline.example')?{error:'request_error',phase:'dns',errorCode:'ENOTFOUND'}:{body:fixtureHtml}})});
   worker.schedule(50);
   await new Promise(resolve=>setTimeout(resolve,350));
   worker.stop();
@@ -99,6 +101,16 @@ async function run(){
   assert.equal(fresh.coverUrl,'');
   assert.equal(fresh.description,'');
   assert.ok(preview(live,pilot,fresh).changes.length);
+  assert.ok(preview(live,pilot,fresh).changes.some(change=>change.field==='description'));
+  assert.ok(preview(live,pilot,fresh).changes.some(change=>change.field==='publishedYear'&&change.after===2020));
+  assert.ok(preview(live,pilot,fresh).changes.some(change=>change.field==='language'&&change.after==='nl'));
+  assert.equal(pilot.lastDiagnostic.verifiedPages,1);
+  assert.equal(pilot.lastDiagnostic.apiOk,true);
+  assert.equal(pilot.lastFailure.sourceFailures[0].phase,'dns');
+  assert.ok(require('../book-brave-search-session').searchSession.view(pilot.id,workKey(fresh)).length);
+  assert.ok(!JSON.stringify(live).includes('TRANSIENT_SEARCH_ONLY'),'Unverified search fragments must never enter persisted state');
+  assert.ok(!JSON.stringify(preview(live,pilot,fresh)).includes('Tijdelijke zoektekst'),'Search snippets are never saveable proposals');
+  require('../book-brave-search-session').searchSession.clear(pilot.id);
   assert.equal(pendingTrialReview(live),true);
   assert.equal(dismissTrial(live,pilot).ok,true);
   assert.equal(getBraveCheck(live,'worker',workKey(fresh),0).trialPending,false);

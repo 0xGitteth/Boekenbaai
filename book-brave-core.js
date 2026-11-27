@@ -7,6 +7,7 @@
 const crypto = require('node:crypto');
 const {workKey, isbnOf, isMissing, nextCandidate} = require('./book-free-metadata');
 const {projectTrial,preview:trialPreview,releaseTrialCheckpoints}=require('./book-brave-trial');
+const {approvedDescriptions}=require('./book-enrichment-content');
 
 const MAX_REQUESTS_PER_WORK = 3;
 const MAX_TRIAL_REQUESTS = 15;
@@ -84,7 +85,7 @@ function bookWorks(db, job) {
   return grouped;
 }
 function needsExtra(book,failedCovers=new Set()) {
-  const description = String(book?.description || '').replace(/<[^>]*>/g,'').trim();
+  const description = [String(book?.description || '').replace(/<[^>]*>/g,'').trim(),...approvedDescriptions(book).map(e=>e.text)].sort((a,b)=>b.length-a.length)[0]||'';
   const tagCount = new Set([...(Array.isArray(book?.tags)?book.tags:[]),
     ...(Array.isArray(book?.enrichmentTags)?book.enrichmentTags:[])]
     .filter(tag=>typeof tag==='string'&&tag.trim())
@@ -110,7 +111,24 @@ function checkKey(bookId,key) { return JSON.stringify([bookId,key]); }
 function getBraveCheck(db,bookId,key,step) {
   return db.bookEnrichmentChecks?.[checkKey(bookId,key)]?.brave?.[step];
 }
-function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook=null,sourceFailures=[],now=new Date()}={}) {
+const boundedNumber=(value,max=600000)=>Number.isSafeInteger(value)&&value>=0?Math.min(value,max):null;
+const safeCode=value=>String(value||'').slice(0,80).replace(/[^a-zA-Z0-9_-]/g,'');
+function safeSourceFailures(failures){
+  return (Array.isArray(failures)?failures:[]).slice(0,12).map(f=>{
+    let url='';
+    try{const u=new URL(f.url);if(u.protocol==='https:'&&!u.username&&!u.password)url=(u.origin+u.pathname).slice(0,1600);}catch{}
+    return {code:'source_unavailable',url,stage:f.stage==='robots'?'robots':'page',reason:safeCode(f.reason)||'unknown',
+      phase:['url','dns','http','redirect_policy'].includes(f.phase)?f.phase:'',
+      errorCode:safeCode(f.errorCode),httpStatus:boundedNumber(f.httpStatus,599),elapsedMs:boundedNumber(f.elapsedMs)};
+  });
+}
+function safeDiagnostic(d){
+  if(!d||typeof d!=='object')return null;
+  return {apiOk:d.apiOk===true,apiElapsedMs:boundedNumber(d.apiElapsedMs),elapsedMs:boundedNumber(d.elapsedMs),
+    httpStatus:boundedNumber(d.httpStatus,599),errorCode:safeCode(d.errorCode),
+    candidates:boundedNumber(d.candidates,100),verifiedPages:boundedNumber(d.verifiedPages,100)};
+}
+function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook=null,sourceFailures=[],diagnostic=null,now=new Date()}={}) {
   if(!db.bookEnrichmentChecks||typeof db.bookEnrichmentChecks!=='object'
     ||Array.isArray(db.bookEnrichmentChecks))db.bookEnrichmentChecks={};
   const ids=new Set(claim.bookIds||job.bookIds||[]);
@@ -126,7 +144,7 @@ function recordBraveCheck(db,job,claim,{status,error=null,added=0,evidenceByBook
     steps[claim.step]={jobId:job.id,status,error,added,checkedAt:now.toISOString(),
       trialPending:job.source==='trial'&&status==='found',
       ...(job.source==='trial'?{trialBookId:book.id}:{}) ,
-      sourceFailures:(Array.isArray(sourceFailures)?sourceFailures:[]).slice(0,12).map(f=>({code:'source_unavailable',url:String(f.url||'').slice(0,1600),stage:f.stage==='robots'?'robots':'page',reason:String(f.reason||'unknown').slice(0,80)})),
+      sourceFailures:safeSourceFailures(sourceFailures),diagnostic:safeDiagnostic(diagnostic),
       evidence:[...combined.values()].slice(-60)};
   }
 }
@@ -215,6 +233,18 @@ function getJobPlan(db,job,{
   // When the worker encountered a provider limit, its next step must still
   // require explicit approval. There is never an automatic new-month retry.
   const resumable=state==='paused' && waitingFree===0 && remaining.length>0;
+  // Recover a historical failure's already persisted details, only when
+  // the exact job, step, title and timestamp agree. Do not infer old timings.
+  let lastFailure=job.lastFailure?{...job.lastFailure}:null;
+  if(lastFailure&&!lastFailure.sourceFailures&&lastFailure.stage!=='brave'){
+    for(const [key,books] of groups){
+      if(books[0]?.title!==lastFailure.title)continue;
+      const check=getBraveCheck(db,books[0].id,key,lastFailure.step);
+      if(check?.jobId===job.id&&Math.abs(Date.parse(check.checkedAt)-Date.parse(lastFailure.at))<=2000&&check.sourceFailures?.length){
+        lastFailure.sourceFailures=safeSourceFailures(check.sourceFailures);break;
+      }
+    }
+  }
   // Reapproval is explicit even after invalid credentials. Updating the
   // server's API key does not itself resume requests.
   return {
@@ -229,7 +259,7 @@ function getJobPlan(db,job,{
     approvedMaxRequests:job.approval?.maxRequests||0,
     approvedMonth:job.approval?.month||null,
     reservedRequests:job.requestsReserved||0,
-    lastError:job.lastError||null,lastFailure:job.lastFailure||null,updatedAt:job.updatedAt||null,
+    lastError:job.lastError||null,lastFailure,lastDiagnostic:job.lastDiagnostic||null,updatedAt:job.updatedAt||null,
     trialBudget:trial&&budget?{limit:budget.limit,used:budget.used,remaining:trialRemaining,legacy:budget.legacy===true}:null,
     legacyBudgetRequired:trial&&!budget,legacyMaxAdditional:legacyMax,
     deferredInApproval:job.deferredKeys?.length||0,
@@ -361,12 +391,14 @@ function claimNext(db,{now=new Date(),env=process.env,failedCovers=new Set()}={}
   }
 }
 function finishClaim(db,claim,{
-  providerRemaining=null, providerRemainingConfirmed=false, error=null, status='checked', added=0,evidenceByBook=null,sourceFailures=[],
+  providerRemaining=null, providerRemainingConfirmed=false, error=null, status='checked', added=0,evidenceByBook=null,sourceFailures=[],diagnostic=null,
 }={}) {
   ensureJobs(db);
   const job=db.braveEnrichmentJobs.find(j=>j.id===claim?.id);
   if (!job||!claimIsCurrent(db,claim)) return;
-  recordBraveCheck(db,job,claim,{status:error?'error':status,error,added,evidenceByBook,sourceFailures});
+  const finishedAt=new Date();
+  recordBraveCheck(db,job,claim,{status:error?'error':status,error,added,evidenceByBook,sourceFailures,diagnostic,now:finishedAt});
+  if(diagnostic)job.lastDiagnostic={...safeDiagnostic(diagnostic),at:finishedAt.toISOString(),title:String(claim.title||'').slice(0,250),step:claim.step,added};
   job.inFlight=null;
   if (providerRemainingConfirmed===true
       && Number.isSafeInteger(providerRemaining) && providerRemaining>=0
@@ -383,9 +415,9 @@ function finishClaim(db,claim,{
     db.braveUsage.providerEvidenceAt=new Date().toISOString();
   }
   if(error||sourceFailures.length){
-    job.lastFailure={at:new Date().toISOString(),title:String(claim.title||'').slice(0,250),
+    job.lastFailure={at:finishedAt.toISOString(),title:String(claim.title||'').slice(0,250),
       step:claim.step,stage:error?'brave':sourceFailures[0]?.stage||'page',
-      code:error||'source_unavailable'};
+      code:error||'source_unavailable',sourceFailures:safeSourceFailures(sourceFailures),diagnostic:safeDiagnostic(diagnostic)};
   }
   if (error) {
     job.lastError=error;

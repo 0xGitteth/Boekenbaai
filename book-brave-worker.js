@@ -7,6 +7,7 @@ const {fetchBrave,discoverPages,selectImageResult}=require('./book-brave-fetch')
 
 const {updateFromPages}=require('./book-brave-page-apply');
 const {storeTrialResult,projectTrial}=require('./book-brave-trial');
+const {searchSession}=require('./book-brave-search-session');
 
 function createBraveWorker({
   loadDb,commit,apiKey='',onNewCover=()=>{},isPaused=()=>false,
@@ -40,10 +41,12 @@ function createBraveWorker({
       }
       if(!claim)return;
       keepGoing=true;
+      const started=Date.now();
       const result=await fetchSearch(claim.step,claim,{apiKey});
+      const apiElapsedMs=Date.now()-started;
       let pages=[],imageUrl='';
       const sourceFailures=[];
-      const onFailure=(code,detail={})=>{if(sourceFailures.length<12)sourceFailures.push({code,url:detail.url||'',stage:detail.stage||'page',reason:detail.reason||code});};
+      const onFailure=(code,detail={})=>{if(sourceFailures.length<12)sourceFailures.push({...detail,code,url:detail.url||'',stage:detail.stage||'page',reason:detail.reason||code});};
       if(!result.error&&!stopped){
         if(claim.step===1){
           imageUrl=claim.isbn?'':selectImageResult(result.images,claim);
@@ -62,6 +65,10 @@ function createBraveWorker({
       }
       if(stopped)return;
       const bad=result.error||null;
+      const diagnostic={apiElapsedMs,elapsedMs:Date.now()-started,apiOk:!bad,
+        httpStatus:result.httpStatus,errorCode:result.errorCode,
+        candidates:(Array.isArray(result.pages)?result.pages.length:0)+(Array.isArray(result.images)?result.images.length:0),
+        verifiedPages:pages.length};
       let outcome=null;
       // A legacy import can start during Brave's network request. Do not
       // modify ANY database fields (including progress/usage) until that
@@ -87,7 +94,7 @@ function createBraveWorker({
             let added=0;
             for(const [index,book] of projected.books.entries()){
               const previous=before.books[index];
-              const keys=['description','publisher','pageCount','tags','enrichmentTags','coverUrl'];
+              const keys=['description','publisher','pageCount','publishedYear','language','tags','enrichmentTags','enrichmentDescriptions','coverUrl'];
               const changed=new Set(keys.filter(field=>JSON.stringify(previous[field]??null)!==JSON.stringify(book[field]??null)));
               added+=changed.size;
               const seen=new Set((before.evidenceByBook[book.id]||[]).map(e=>JSON.stringify(e)));
@@ -98,7 +105,7 @@ function createBraveWorker({
           finishClaim(db,claim,{
             providerRemaining:result.providerRemaining,
             providerRemainingConfirmed:Number.isSafeInteger(result.providerRemaining),
-            error:bad,status:updated.added>0?'found':sourceFailures.length?'source_partial':'no_result',added:updated.added,sourceFailures,
+            error:bad,status:updated.added>0?'found':sourceFailures.length?'source_partial':'no_result',added:updated.added,sourceFailures,diagnostic,
             evidenceByBook:updated.evidenceByBook,
           });
           const current=db.braveEnrichmentJobs.find(j=>j.id===claim.id);
@@ -107,6 +114,8 @@ function createBraveWorker({
         if(!outcome?.deferred)break;
       }
       if(stopped)return;
+      if(outcome&&!outcome.stale&&!outcome.deferred&&!bad)
+        searchSession.remember(claim,result.pages);
       if(outcome?.newCover)onNewCover();
       // The durable core decides whether this is an isolated transient
       // failure or a circuit-breaking provider error.

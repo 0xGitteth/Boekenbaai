@@ -7,7 +7,7 @@ const {
   MAX_REQUESTS_PER_WORK,getBraveCheck,claimIsCurrent,
 }=require('../book-brave-core');
 const {
-  parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,
+  parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,fetchBrave,
   robotsAllowed,discoverPages,selectImageResult,fetchHtml,rankPublisherCandidates,
 }=require('../book-brave-fetch');
 const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
@@ -136,6 +136,33 @@ assert.equal(found.confidence,'isbn');
 assert.match(found.description,/gevaarlijke reis/);
 assert.deepEqual(found.tags,['avontuur','geheimen','vriendschap']);
 assert.equal(found.coverUrl,'https://www.uitgeverijvoorbeeld.nl/images/debrief-voorkant.jpg');
+// The actual publisher page uses h1, an author heading, a subtitle in a
+// paragraph and an Omschrijving tab. Synthetic content, real page layout.
+const publisherFixture=`<meta property="og:title" content="Bas Nijhuis"><meta property="og:isbn" content="9789048863228"><meta property="og:image" content="https://publisher.example/other-edition.jpg">
+<meta property="og:description" content="Een korte tekst die midden in de zin eindigt.">
+<h1>Bas Nijhuis</h1><h2>Eddy van der Ley</h2><p>Niet zeiken, voetballen!</p><p>Omschrijving</p>
+<p>Een scheidsrechter vertelt over het verloop van internationale wedstrijden en zijn professionele loopbaan. Hij beschrijft het contact met spelers en trainers en de beslissingen tijdens voetbalwedstrijden.</p>
+<p>Fragment</p><p>Auteur</p><p>De auteur heeft daarnaast een kookboek geschreven.</p>
+<p>Edities &amp; Details</p>ISBN: 9789048863228<br>Omvang: 304 pagina's<br>ISBN: 9789048845194<br>Omvang: 300 pagina's<br></p>`;
+const nijhuis={title:'Bas Nijhuis. Niet zeiken, voetballen!',author:'Eddy L., van der Ley',isbn:'9789048846757'};
+const fromPublisher=parseBookPage(publisherFixture,nijhuis,'https://publisher.example/boek');
+assert.ok(fromPublisher);
+assert.equal(fromPublisher.confidence,'title_author');
+assert.match(fromPublisher.description,/professionele loopbaan/);
+assert.doesNotMatch(fromPublisher.description,/kookboek|Omvang/);
+const nijhuisBook={id:'nijhuis',title:nijhuis.title,author:nijhuis.author,metadataIsbn:nijhuis.isbn,description:'',coverUrl:'',pageCount:null};
+updateFromPages({books:[nijhuisBook]},{key:require('../book-free-metadata').workKey(nijhuisBook),bookIds:['nijhuis']},[fromPublisher]);
+assert.match(nijhuisBook.description,/professionele loopbaan/);
+assert.equal(nijhuisBook.coverUrl,'');
+assert.equal(nijhuisBook.pageCount,null);
+const exactVisible=parseBookPage(`<h1>De brief voor de koning</h1><h2>Tonke Dragt</h2><p>ISBN: 9789083316642</p><p>Omvang: 456 pagina's</p><p>Omschrijving</p><p>${found.description}</p>`,target,'https://publisher.example/visible');
+assert.equal(exactVisible.confidence,'isbn');
+assert.equal(exactVisible.pageCount,456);
+assert.match(exactVisible.description,/gevaarlijke reis/);
+const conflictBook={...book('conflict-new'),pageCount:null,publisher:''};
+updateFromPages({books:[conflictBook]},{key:require('../book-free-metadata').workKey(conflictBook),bookIds:[conflictBook.id]},[{...found,pageCount:123,publisher:'Uitgever A'},{...found,pageCount:456,publisher:'Uitgever B'}]);
+assert.equal(conflictBook.pageCount,null);
+assert.equal(conflictBook.publisher,'');
 const sourceWithoutImage=html.replace(
   /,\s*"image":"https:\/\/www\.uitgeverijvoorbeeld\.nl\/images\/debrief-voorkant\.jpg"/, '');
 assert.equal(parseBookPage(sourceWithoutImage,target,
@@ -154,6 +181,7 @@ updateFromPages(mergeDb,{key:JSON.stringify([target.isbn,
   bookIds:['manual','old']},[
   {...found,description:found.description.repeat(4)},
 ],{imageUrl:found.coverUrl,failedCovers:new Set([manual.coverUrl])});
+assert.ok(manual.enrichmentDescriptions.some(e=>e.text.includes('gevaarlijke reis')));
 assert.equal(manual.description,'Eigen omschrijving door docent',
   'Background enrichment may not replace teacher text');
 assert.deepEqual(manual.tags,['Zelf ingevoerd']);
@@ -233,7 +261,9 @@ assert.equal(parseBookPage(sequelHtml,{
   'A matching ISBN must not override an explicitly different work title');
 assert.match(queryFor(1,target),/kaft/);
 assert.match(queryFor(1,target),/9789083316642/);
-assert.match(queryFor(0,{...target,publisher:'Uitgeverij Voorbeeld'}),/Uitgeverij Voorbeeld/);
+assert.equal(queryFor(0,{...target,publisher:'Uitgeverij Voorbeeld'}),target.isbn);
+assert.equal(queryFor(0,{...target,isbn:''}),target.title+' '+target.author+' boek');
+assert.equal(queryFor(2,target),target.title+' '+target.author+' beschrijving');
 const ranked=rankPublisherCandidates([{title:target.title,url:'https://winkel.example/boek'},
   {title:target.title,url:'https://www.voorbeeld.nl/boek'}],{...target,publisher:'Uitgeverij Voorbeeld'});
 assert.equal(ranked[0].url,'https://www.voorbeeld.nl/boek');
@@ -275,11 +305,58 @@ assert.equal(selectImageResult([{title:'Onbekend boek',
   imageUrl:'https://files.uitgeverijvoorbeeld.nl/unknown.jpg',width:300,height:430}],target),'');
 
 async function run(){
+  let requestCount=0;
+  const searchResult=await fetchBrave(0,target,{apiKey:'fixture',fetchImpl:async url=>{
+    requestCount++;
+    const params=new URL(url).searchParams;
+    assert.equal(params.get('q'),target.isbn);
+    assert.equal(params.get('extra_snippets'),'true');
+    assert.equal(params.get('text_decorations'),'false');
+    return {ok:true,headers:{get:()=>null},text:async()=>JSON.stringify({web:{results:[
+      {title:'Webwinkel | Boeken',url:'https://uitgeverijvoorbeeld.nl/boek',description:'ISBN '+target.isbn,schemas:[{'@type':'Book',name:target.title,isbn:target.isbn,numberOfPages:456}],extra_snippets:['Een origineel fragment','<b>Een tweede fragment</b>']},
+      {title:target.title,url:'https://andere.example/boek',description:'Bestel nu online'},
+    ]}})};
+  }});
+  assert.equal(requestCount,1);
+  assert.equal(searchResult.pages[0].snippets.length,3);
+  assert.equal(searchResult.pages[0].bookHints[0].pageCount,456);
+  assert.equal(searchResult.pages[0].snippets[2],'Een tweede fragment');
+  const rankedSnippets=rankPublisherCandidates(searchResult.pages.slice().reverse(),target);
+  assert.equal(rankedSnippets[0].url,'https://uitgeverijvoorbeeld.nl/boek');
+  const {createSearchSession}=require('../book-brave-search-session');
+  let clock=1000;
+  const session=createSearchSession({now:()=>clock,ttlMs:1000});
+  const snippetSessionClaim={...target,id:'test-session',key:'exact-edition',step:0,source:'trial'};
+  session.remember(snippetSessionClaim,searchResult.pages);
+  assert.equal(session.view('test-session','exact-edition')[0].candidates[0].snippets.length,3);
+  assert.deepEqual(session.view('other-job','exact-edition'),[]);
+  assert.deepEqual(session.view('test-session','different-edition'),[]);
+  clock=2001;
+  assert.deepEqual(session.view('test-session','exact-edition'),[]);
   let opened=false;
   const dnsTimeout=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{timeoutMs:500,
     dnsLookup:()=>new Promise(()=>{}),httpsGet:()=>{opened=true;throw Error('Unexpected request');}});
   assert.equal(dnsTimeout.error,'timeout');
+  assert.equal(dnsTimeout.phase,'dns');
   assert.equal(opened,false,'A DNS stall must not block the worker or open a late request');
+  const splitTarget={title:'Bas Nijhuis. Niet zeiken, voetballen!',author:'Eddy L., van der Ley',isbn:'9789048846757'};
+  const splitHtml='<script type="application/ld+json">'+JSON.stringify({'@type':'Book',name:'Bas Nijhuis',alternateName:'Niet zeiken, voetballen!',author:{name:'Eddy van der Ley'},isbn:splitTarget.isbn,description:'Een scheidsrechter vertelt over zijn ervaringen met spelers, trainers en wedstrijden in het Nederlandse voetbal. Het boek bevat persoonlijke verhalen over zijn loopbaan en de arbitrage.'})+'</script>';
+  assert.equal(parseBookPage(splitHtml,splitTarget,'https://publisher.example/book').confidence,'isbn');
+  assert.equal(parseBookPage(splitHtml.replace('Niet zeiken, voetballen!','Een ander boek'),splitTarget,'https://publisher.example/book'),null);
+  const snippetDiscovered=await discoverPages({pages:[{title:'Webwinkel | Boeken',url:'https://publisher.example/book',snippets:['ISBN '+splitTarget.isbn]}]},splitTarget,{fetchPage:async url=>url.endsWith('/robots.txt')?{body:'User-agent: *\\nAllow: /'}:{body:splitHtml}});
+  assert.equal(snippetDiscovered.length,1,'An exact ISBN in a snippet can find a verified original page');
+  const unrelatedOriginal=await discoverPages({pages:[{title:'Webwinkel | Boeken',url:'https://publisher.example/book',snippets:['ISBN '+splitTarget.isbn]}]},splitTarget,{fetchPage:async url=>url.endsWith('/robots.txt')?{body:'User-agent: *\\nAllow: /'}:{body:splitHtml.replace('Niet zeiken, voetballen!','Een ander boek')}});
+  assert.equal(unrelatedOriginal.length,0,'Search snippets never override mismatched original page identity');
+  const splitFailures=[];
+  const splitPages=await discoverPages({pages:[
+    {title:'Bas Nijhuis | Eerste bron',url:'https://first.example/book?private=omit'},
+    {title:'Bas Nijhuis | Uitgever',url:'https://publisher.example/book'},
+  ]},splitTarget,{fetchPage:async url=>url.endsWith('/robots.txt')?{body:'User-agent: *\\nAllow: /'}:url.includes('first.example')?{error:'request_error',phase:'dns',errorCode:'ENOTFOUND'}:{body:splitHtml},onFailure:(code,detail)=>splitFailures.push(detail)});
+  assert.equal(splitPages.length,1);
+  assert.equal(splitPages[0].isbn,splitTarget.isbn);
+  assert.equal(splitFailures[0].phase,'dns');
+  assert.equal(splitFailures[0].errorCode,'ENOTFOUND');
+  assert.ok(Number.isSafeInteger(splitFailures[0].elapsedMs));
   // Late stream errors after a 404 response must not crash Node: the
   // IncomingMessage handler must be registered before resume() is called.
   const lateHttpResult=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{
@@ -515,6 +592,14 @@ async function run(){
   const warning=getBraveCheck(sourceErrorDb,'source-error',require('../book-free-metadata').workKey(sourceErrorDb.books[0]),0);
   assert.equal(warning.status,'source_partial');
   assert.equal(warning.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
+  assert.ok(Number.isSafeInteger(warning.sourceFailures[0].elapsedMs));
+  assert.equal(warning.diagnostic.apiOk,true);
+  assert.equal(warning.diagnostic.verifiedPages,0);
+  assert.equal(sourceErrorJob.lastFailure.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
+  assert.equal(sourceErrorJob.lastDiagnostic.apiOk,true);
+  const historical=JSON.parse(JSON.stringify(sourceErrorDb));
+  delete historical.braveEnrichmentJobs[0].lastFailure.sourceFailures;
+  assert.equal(getJobPlan(historical,historical.braveEnrichmentJobs[0],{now,env:environment}).lastFailure.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
   // Exercise the actual asynchronous worker, not only the claim helpers.
   const recoveryDb={books:[book('slow'),book('healthy-worker','De geheime opdracht')],braveEnrichmentJobs:[]};
   const recoveryJob=addJob(recoveryDb,['slow','healthy-worker'],{id:'recovery-worker',source:'trial'});
