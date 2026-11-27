@@ -21,8 +21,9 @@ function createSearchSession({now=Date.now,ttlMs=TTL_MS,maxEntries=MAX_ENTRIES}=
         const u=safeCoverUrl(page.url);if(u.protocol!=='https:')continue;
         u.hash='';
         const snippets=(Array.isArray(page.snippets)?page.snippets:[]).filter(v=>typeof v==='string'&&v.trim()).slice(0,6).map(v=>v.slice(0,650));
-        if(!snippets.length)continue;
-        candidates.push({title:String(page.title||'').slice(0,250),url:u.href,snippets});
+        const bookHints=(Array.isArray(page.bookHints)?page.bookHints:[]).filter(h=>h.isbn&&h.isbn===claim.isbn).slice(0,4);
+        if(!snippets.length&&!bookHints.length)continue;
+        candidates.push({title:String(page.title||'').slice(0,250),url:u.href,snippets,bookHints});
       }catch{/* no unsafe links */}
     }
     if(!candidates.length)return;

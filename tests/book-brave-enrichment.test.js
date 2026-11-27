@@ -136,6 +136,33 @@ assert.equal(found.confidence,'isbn');
 assert.match(found.description,/gevaarlijke reis/);
 assert.deepEqual(found.tags,['avontuur','geheimen','vriendschap']);
 assert.equal(found.coverUrl,'https://www.uitgeverijvoorbeeld.nl/images/debrief-voorkant.jpg');
+// The actual publisher page uses h1, an author heading, a subtitle in a
+// paragraph and an Omschrijving tab. Synthetic content, real page layout.
+const publisherFixture=`<meta property="og:title" content="Bas Nijhuis"><meta property="og:isbn" content="9789048863228"><meta property="og:image" content="https://publisher.example/other-edition.jpg">
+<meta property="og:description" content="Een korte tekst die midden in de zin eindigt.">
+<h1>Bas Nijhuis</h1><h2>Eddy van der Ley</h2><p>Niet zeiken, voetballen!</p><p>Omschrijving</p>
+<p>Een scheidsrechter vertelt over het verloop van internationale wedstrijden en zijn professionele loopbaan. Hij beschrijft het contact met spelers en trainers en de beslissingen tijdens voetbalwedstrijden.</p>
+<p>Fragment</p><p>Auteur</p><p>De auteur heeft daarnaast een kookboek geschreven.</p>
+<p>Edities &amp; Details</p>ISBN: 9789048863228<br>Omvang: 304 pagina's<br>ISBN: 9789048845194<br>Omvang: 300 pagina's<br></p>`;
+const nijhuis={title:'Bas Nijhuis. Niet zeiken, voetballen!',author:'Eddy L., van der Ley',isbn:'9789048846757'};
+const fromPublisher=parseBookPage(publisherFixture,nijhuis,'https://publisher.example/boek');
+assert.ok(fromPublisher);
+assert.equal(fromPublisher.confidence,'title_author');
+assert.match(fromPublisher.description,/professionele loopbaan/);
+assert.doesNotMatch(fromPublisher.description,/kookboek|Omvang/);
+const nijhuisBook={id:'nijhuis',title:nijhuis.title,author:nijhuis.author,metadataIsbn:nijhuis.isbn,description:'',coverUrl:'',pageCount:null};
+updateFromPages({books:[nijhuisBook]},{key:require('../book-free-metadata').workKey(nijhuisBook),bookIds:['nijhuis']},[fromPublisher]);
+assert.match(nijhuisBook.description,/professionele loopbaan/);
+assert.equal(nijhuisBook.coverUrl,'');
+assert.equal(nijhuisBook.pageCount,null);
+const exactVisible=parseBookPage(`<h1>De brief voor de koning</h1><h2>Tonke Dragt</h2><p>ISBN: 9789083316642</p><p>Omvang: 456 pagina's</p><p>Omschrijving</p><p>${found.description}</p>`,target,'https://publisher.example/visible');
+assert.equal(exactVisible.confidence,'isbn');
+assert.equal(exactVisible.pageCount,456);
+assert.match(exactVisible.description,/gevaarlijke reis/);
+const conflictBook={...book('conflict-new'),pageCount:null,publisher:''};
+updateFromPages({books:[conflictBook]},{key:require('../book-free-metadata').workKey(conflictBook),bookIds:[conflictBook.id]},[{...found,pageCount:123,publisher:'Uitgever A'},{...found,pageCount:456,publisher:'Uitgever B'}]);
+assert.equal(conflictBook.pageCount,null);
+assert.equal(conflictBook.publisher,'');
 const sourceWithoutImage=html.replace(
   /,\s*"image":"https:\/\/www\.uitgeverijvoorbeeld\.nl\/images\/debrief-voorkant\.jpg"/, '');
 assert.equal(parseBookPage(sourceWithoutImage,target,
@@ -154,6 +181,7 @@ updateFromPages(mergeDb,{key:JSON.stringify([target.isbn,
   bookIds:['manual','old']},[
   {...found,description:found.description.repeat(4)},
 ],{imageUrl:found.coverUrl,failedCovers:new Set([manual.coverUrl])});
+assert.ok(manual.enrichmentDescriptions.some(e=>e.text.includes('gevaarlijke reis')));
 assert.equal(manual.description,'Eigen omschrijving door docent',
   'Background enrichment may not replace teacher text');
 assert.deepEqual(manual.tags,['Zelf ingevoerd']);
@@ -285,12 +313,13 @@ async function run(){
     assert.equal(params.get('extra_snippets'),'true');
     assert.equal(params.get('text_decorations'),'false');
     return {ok:true,headers:{get:()=>null},text:async()=>JSON.stringify({web:{results:[
-      {title:'Webwinkel | Boeken',url:'https://uitgeverijvoorbeeld.nl/boek',description:'ISBN '+target.isbn,extra_snippets:['Een origineel fragment','<b>Een tweede fragment</b>']},
+      {title:'Webwinkel | Boeken',url:'https://uitgeverijvoorbeeld.nl/boek',description:'ISBN '+target.isbn,schemas:[{'@type':'Book',name:target.title,isbn:target.isbn,numberOfPages:456}],extra_snippets:['Een origineel fragment','<b>Een tweede fragment</b>']},
       {title:target.title,url:'https://andere.example/boek',description:'Bestel nu online'},
     ]}})};
   }});
   assert.equal(requestCount,1);
   assert.equal(searchResult.pages[0].snippets.length,3);
+  assert.equal(searchResult.pages[0].bookHints[0].pageCount,456);
   assert.equal(searchResult.pages[0].snippets[2],'Een tweede fragment');
   const rankedSnippets=rankPublisherCandidates(searchResult.pages.slice().reverse(),target);
   assert.equal(rankedSnippets[0].url,'https://uitgeverijvoorbeeld.nl/boek');

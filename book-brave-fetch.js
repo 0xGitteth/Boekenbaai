@@ -5,7 +5,7 @@
 const https=require('node:https');
 const dns=require('node:dns').promises;
 const {safeCoverUrl,publicIPv4}=require('./lib/cover-assets');
-const {normalizeIsbn,isValidIsbn,toIsbn13}=require('./isbn-lookup-core-impl');
+const {normalizeIsbn,isValidIsbn,toIsbn13,normalizeLanguage}=require('./isbn-lookup-core-impl');
 const {narrativeDescription}=require('./book-brave-description');
 
 function cleaned(value,max=600) {
@@ -121,6 +121,7 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
     }
     return {providerRemaining,pages:(Array.isArray(data.web?.results)?data.web.results:[])
       .slice(0,8).map(x=>({title:cleaned(x.title,250),url:String(x.url||'').slice(0,1600),
+        bookHints:searchBookHints(x),
         snippets:[...new Set([x.description,...(Array.isArray(x.extra_snippets)?x.extra_snippets.slice(0,5):[])]
           .filter(v=>typeof v==='string').map(v=>cleaned(decodeEntities(v),650)).filter(Boolean))]}))};
   }catch(err){
@@ -159,6 +160,29 @@ function graphNodes(x,depth=0){
   if(Array.isArray(x))return x.slice(0,40).flatMap(n=>graphNodes(n,depth+1));
   return [x,...graphNodes(x['@graph'],depth+1)];
 }
+function searchBookHints(result){
+  // Brave may supply structured schema.org data in addition to text.
+  // Keep only bounded, relevant fields for the temporary search session.
+  const nodes=[result?.book,...graphNodes(result?.schemas)].filter(n=>n&&typeof n==='object');
+  return nodes.slice(0,20).flatMap(n=>{
+    const kinds=Array.isArray(n['@type'])?n['@type']:[n['@type']];
+    if(n!==result.book&&!kinds.some(k=>/(?:^|\/)Book$|(?:^|\/)Product$/i.test(k||'')))return [];
+    const isbn=String(n.isbn||n.gtin13||n.gtin||'').replace(/[^0-9X]/gi,'');
+    const title=cleaned(asOne(n.name||n.title),250);
+    const author=cleaned(asOne(n.author),180);
+    if(!title&&!isValidIsbn(isbn))return [];
+    return [{title,author,isbn:isValidIsbn(isbn)?toIsbn13(isbn):'',pageCount:validPages(n.numberOfPages),
+      publisher:cleaned(asOne(n.publisher),180),publishedYear:validYear(n.datePublished),language:normalizeLanguage(asOne(n.inLanguage))}];
+  }).slice(0,8);
+}
+function validPages(value){
+  if(!/^\d{1,5}$/.test(String(value??'').trim()))return null;
+  const n=Number(value);return n>0&&n<20000?n:null;
+}
+function validYear(value){
+  const m=String(value||'').match(/^(\d{4})(?:-\d{2}(?:-\d{2})?)?$/);
+  return m&&Number(m[1])>=1000&&Number(m[1])<=new Date().getFullYear()+1?Number(m[1]):null;
+}
 function jsonldBook(html){
   for(const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)){
     const a=attributes(m[1]);
@@ -173,6 +197,34 @@ function jsonldBook(html){
     }catch{/* Some sites emit invalid JSON-LD. Other tags may still work. */}
   }
   return {};
+}
+function visibleText(value,max=2500){
+  return cleaned(decodeEntities(String(value||'').replace(/<\/?(?:p|br|div|li|dt|dd)\b[^>]*>/gi,' ')),max);
+}
+function labelledDescriptions(html){
+  const candidates=[];
+  // Prefer a semantic description element rather than arbitrary page text.
+  for(const m of html.matchAll(/<(p|div|section|article)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi)){
+    const a=attributes(m[2]),tokens=(a.class||'').split(/\s+/);
+    if(a.itemprop==='description'||tokens.some(t=>/^(?:book-description|product-description|boekomschrijving|book-summary|product-summary)$/i.test(t))){
+      candidates.push(visibleText(m[3]));
+    }
+  }
+  // Publisher pages often have a standalone heading or tab label followed
+  // by paragraphs. Stop at the next heading or author/edition/review block.
+  const label=/<(h[2-6]|p|strong|b|span|div)\b[^>]*>\s*(?:Omschrijving|Beschrijving|Boekomschrijving|Over het boek|Samenvatting|Description|About the book)\s*<\/\1\s*>/gi;
+  for(const m of html.matchAll(label)){
+    const rest=html.slice(m.index+m[0].length,m.index+m[0].length+10000)
+      .split(/<h[1-6]\b|<(?:p|strong|b|span|div)\b[^>]*>\s*(?:Fragment|Auteur|Over de auteur|Edities\b|Details|Specificaties|Meer boeken|Recensies|Reviews|Bestel)\b/i)[0];
+    const paragraphs=[...rest.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p\s*>/gi)].map(p=>visibleText(p[1])).filter(Boolean);
+    if(paragraphs.length)candidates.push(paragraphs.join(' '));
+  }
+  return candidates;
+}
+function explicitIsbns(value){
+  const found=String(value||'').match(/\b(?:ISBN(?:[- ]?1[03])?|EAN)\s*[:#]?\s*((?:97[89][ -]?)?(?:[0-9][ -]?){9}[0-9Xx])(?![0-9])/gi)||[];
+  return [...new Set(found.map(v=>v.replace(/^.*?\b(?:ISBN(?:[- ]?1[03])?|EAN)\s*[:#]?\s*/i,'').replace(/[^0-9X]/gi,''))
+    .filter(isValidIsbn).map(toIsbn13))];
 }
 function parseBookPage(html,target,url) {
   if(typeof html!=='string'||html.length>700000)return null;
@@ -190,15 +242,24 @@ function parseBookPage(html,target,url) {
   // with the primary title and the concatenation is the full target title.
   if(h1&&normalize(decodeEntities(h1[1]))===normalize(primaryTitle)){
     const nearby=html.slice(h1.index+h1[0].length,h1.index+h1[0].length+1500);
-    for(const h of nearby.matchAll(/<h[234]\b[^>]*>([\s\S]*?)<\/h[234]\s*>/gi))
-      subtitles.push(cleaned(decodeEntities(h[1]),180));
+    for(const h of nearby.matchAll(/<(h[234]|p)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi)){
+      const value=visibleText(h[2],200);
+      if(value.length<=180)subtitles.push(value);
+    }
   }
   const title=[primaryTitle,...subtitles.map(subtitle=>primaryTitle+' '+subtitle)]
     .find(value=>sameWorkTitle(target.title,value,target.author))||primaryTitle;
-  const author=cleaned(asOne(book.author)||meta.author||'',220);
+  const author=cleaned(asOne(book.author)||meta.author||meta['book:author']||meta['og:author']||'',220);
   const allText=decodeEntities(html.replace(/<script\b[\s\S]*?<\/script\s*>/gi,' ')
     .replace(/<style\b[\s\S]*?<\/style\s*>/gi,' ').replace(/<[^>]*>/g,' ')).slice(0,45000);
-  const isbn=String(book.isbn||book.gtin13||book.gtin||'').replace(/[^0-9X]/gi,'');
+  const mainIsbns=[book.isbn,book.gtin13,book.gtin,meta['book:isbn'],meta['og:isbn'],meta.isbn]
+    .filter(v=>typeof v==='string'||typeof v==='number').map(v=>String(v).replace(/[^0-9X]/gi,'')).filter(isValidIsbn).map(toIsbn13);
+  const labelled=explicitIsbns(allText);
+  // A page with several edition identifiers is work-level evidence only,
+  // unless the structured primary edition is unambiguous. Never transfer
+  // a cover or page count from an adjacent edition's row.
+  const primaryIsbns=[...new Set(mainIsbns)];
+  const isbn=primaryIsbns.length===1?primaryIsbns[0]:!primaryIsbns.length&&labelled.length===1?labelled[0]:'';
   const wantedIsbn=String(target.isbn||'').replace(/[^0-9X]/gi,'');
   // Exact ISBN or title+author is mandatory; a similar title is insufficient.
   const exactIsbn=Boolean(isValidIsbn(isbn)&&isValidIsbn(wantedIsbn)&&toIsbn13(isbn)===toIsbn13(wantedIsbn));
@@ -207,8 +268,9 @@ function parseBookPage(html,target,url) {
   // A matching ISBN alone is insufficient when the structured title names
   // a different work. Exact title and work-level identity remain mandatory.
   if(!sameTitle||(!exactIsbn&&!sameWork))return null;
-  const description=[asOne(book.description),meta.description,meta['og:description']]
-    .map(value=>narrativeDescription(cleaned(decodeEntities(value),2500))).find(Boolean)||'';
+  const description=[asOne(book.description),...labelledDescriptions(html),meta.description,meta['og:description']]
+    .map(value=>narrativeDescription(visibleText(value))).filter(Boolean)
+    .sort((a,b)=>b.length-a.length)[0]||'';
   let coverUrl='';
   const rawImage=asOne(book.image)||meta['og:image']||meta['twitter:image']||'';
   if (typeof rawImage === 'string' && rawImage.trim()) {
@@ -222,12 +284,20 @@ function parseBookPage(html,target,url) {
     } catch {/* No valid image on this page. */}
   }
   const rawKeywords=book.keywords||meta.keywords||[];
-  const tags=(Array.isArray(rawKeywords)?rawKeywords:String(rawKeywords).split(/[,;|]/))
-    .map(x=>cleaned(asOne(x),70)).filter(x=>x.length>=3).slice(0,16);
-  const pageCount=Number(book.numberOfPages);
+  const genres=Array.isArray(book.genre)?book.genre:[book.genre];
+  const tags=[...new Set([...(Array.isArray(rawKeywords)?rawKeywords:String(rawKeywords).split(/[,;|]/)),...genres]
+    .map(x=>cleaned(asOne(x),70)).filter(x=>x.length>=3))].slice(0,16);
+  // Only use plain-text edition fields when the page contains one ISBN.
+  // Structured fields belong to the primary Book/Product object.
+  const singleEdition=labelled.length<=1&&(!labelled.length||labelled[0]===isbn);
+  const pageMatches=[...allText.matchAll(/\b(?:Aantal\s+pagina['’]?s|Omvang|Pagina['’]?s|Pages)\s*[:]?\s*(\d{1,5})\b|\b(\d{1,5})\s+pagina['’]?s\b/gi)]
+    .map(m=>validPages(m[1]||m[2])).filter(Boolean);
+  const pageCounts=[...new Set(pageMatches)];
+  const pageCount=validPages(book.numberOfPages)||validPages(meta['book:pages'])||(singleEdition&&pageCounts.length===1?pageCounts[0]:null);
+  const publishedYear=validYear(book.datePublished||meta['book:release_date']);
+  const language=normalizeLanguage(asOne(book.inLanguage)||meta['book:language']||'');
   return {title,author,isbn,description,coverUrl,tags,
-    publisher:cleaned(asOne(book.publisher),180),
-    pageCount:Number.isInteger(pageCount)&&pageCount>0&&pageCount<20000?pageCount:null,
+    publisher:cleaned(asOne(book.publisher),180),publishedYear,language,pageCount,
     confidence:exactIsbn?'isbn':'title_author',origin:location.hostname,sourceUrl:location.href};
 }
 // Race non-abortable DNS/policy promises against the same end-to-end deadline.
@@ -359,6 +429,7 @@ function snippetText(candidate){
 function snippetIsbnMatch(target,candidate){
   const wanted=String(target.isbn||'').replace(/[^0-9X]/gi,'');
   if(!isValidIsbn(wanted))return false;
+  if((candidate.bookHints||[]).some(h=>h.isbn===toIsbn13(wanted)))return true;
   const text=[candidate.title,candidate.url,snippetText(candidate)].join(' ');
   // Do not accept an ISBN embedded inside a longer number.
   const values=text.match(/(?<![0-9])(?:97[89][ -]?(?:[0-9][ -]?){9}[0-9]|(?:[0-9][ -]?){9}[0-9Xx])(?![0-9])/g)||[];

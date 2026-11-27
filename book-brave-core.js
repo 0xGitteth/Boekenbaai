@@ -7,6 +7,7 @@
 const crypto = require('node:crypto');
 const {workKey, isbnOf, isMissing, nextCandidate} = require('./book-free-metadata');
 const {projectTrial,preview:trialPreview,releaseTrialCheckpoints}=require('./book-brave-trial');
+const {approvedDescriptions}=require('./book-enrichment-content');
 
 const MAX_REQUESTS_PER_WORK = 3;
 const MAX_TRIAL_REQUESTS = 15;
@@ -84,7 +85,7 @@ function bookWorks(db, job) {
   return grouped;
 }
 function needsExtra(book,failedCovers=new Set()) {
-  const description = String(book?.description || '').replace(/<[^>]*>/g,'').trim();
+  const description = [String(book?.description || '').replace(/<[^>]*>/g,'').trim(),...approvedDescriptions(book).map(e=>e.text)].sort((a,b)=>b.length-a.length)[0]||'';
   const tagCount = new Set([...(Array.isArray(book?.tags)?book.tags:[]),
     ...(Array.isArray(book?.enrichmentTags)?book.enrichmentTags:[])]
     .filter(tag=>typeof tag==='string'&&tag.trim())

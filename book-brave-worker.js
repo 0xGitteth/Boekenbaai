@@ -94,7 +94,7 @@ function createBraveWorker({
             let added=0;
             for(const [index,book] of projected.books.entries()){
               const previous=before.books[index];
-              const keys=['description','publisher','pageCount','tags','enrichmentTags','coverUrl'];
+              const keys=['description','publisher','pageCount','publishedYear','language','tags','enrichmentTags','enrichmentDescriptions','coverUrl'];
               const changed=new Set(keys.filter(field=>JSON.stringify(previous[field]??null)!==JSON.stringify(book[field]??null)));
               added+=changed.size;
               const seen=new Set((before.evidenceByBook[book.id]||[]).map(e=>JSON.stringify(e)));

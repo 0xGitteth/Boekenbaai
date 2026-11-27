@@ -472,6 +472,10 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               const link=make('a','',source.title||source.url);
               link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';
               article.append(link);
+              for(const hint of source.bookHints||[]){
+                const fields=[hint.isbn?'ISBN '+hint.isbn:'',hint.publisher||'',hint.pageCount?hint.pageCount+' pagina’s':'',hint.publishedYear||'',hint.language||''].filter(Boolean);
+                article.append(make('p','hint','Boekgegevens uit zoekresultaat (nog controleren): '+fields.join(' · ')));
+              }
               for(const snippet of source.snippets||[])article.append(make('p','',snippet));
               detail.append(article);
             }

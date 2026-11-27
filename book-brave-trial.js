@@ -4,7 +4,7 @@ const {workKey,isbnOf}=require('./book-free-metadata');
 const {getCheck}=require('./book-enrichment-trial');
 const {comparison}=require('./book-enrichment-comparison');
 const {updateFromPages}=require('./book-brave-page-apply');
-const FIELDS=['description','publisher','pageCount','tags','enrichmentTags','coverUrl'];
+const FIELDS=['description','publisher','pageCount','publishedYear','language','tags','enrichmentTags','enrichmentDescriptions','coverUrl'];
 function selectTrialBooks(db,ids,{sources=[],failedCovers=new Set(),expand=true}={}){
   if(!Array.isArray(ids)||!ids.length||ids.some(id=>typeof id!=='string'))return {ok:false,error:'invalid_selection'};
   const selected=[...new Set(ids)].map(id=>(db.books||[]).find(b=>b.id===id)).filter(b=>expand||b);
@@ -31,8 +31,9 @@ function storeTrialResult(job,claim,pages,imageUrl=''){
   for(const page of [...(previous.pages||[]),...(pages||[])]){
     if(!page||!['isbn','title_author'].includes(page.confidence))continue;
     const safe={};
-    for(const field of ['title','author','isbn','description','coverUrl','publisher','confidence','sourceUrl'])
+    for(const field of ['title','author','isbn','description','coverUrl','publisher','language','confidence','sourceUrl'])
       if(typeof page[field]==='string')safe[field]=page[field].slice(0,2500);
+    safe.publishedYear=Number.isSafeInteger(page.publishedYear)&&page.publishedYear>=1000&&page.publishedYear<=new Date().getFullYear()+1?page.publishedYear:null;
     safe.pageCount=Number.isSafeInteger(page.pageCount)&&page.pageCount>0&&page.pageCount<20000?page.pageCount:null;
     safe.tags=(Array.isArray(page.tags)?page.tags:[]).filter(t=>typeof t==='string').slice(0,16).map(t=>t.slice(0,70));
     unique.set(JSON.stringify([safe.sourceUrl,safe.isbn,safe.description,safe.coverUrl]),safe);
