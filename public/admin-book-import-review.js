@@ -267,7 +267,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     const selectedNotice=make('p','hint');
     const trialRepeat=make('input');trialRepeat.type='checkbox';trialRepeat.autocomplete='off';trialRepeat.checked=false;
     const trialRepeatLabel=make('label','hint');
-    trialRepeatLabel.append(trialRepeat,document.createTextNode(' Eerder uitgevoerd onderzoek bij de geselecteerde boeken herhalen'));
+    trialRepeatLabel.append(trialRepeat,document.createTextNode(' Eerder uitgevoerd onderzoek bij de geselecteerde boeken herhalen (gratis bronnen of Brave, afhankelijk van de gekozen knop)'));
     const trialStart=button('Proefverrijking starten','btn btn--secondary');
     const trialBravePlan=button('Brave-proef berekenen (maximaal 15 verzoeken)','btn btn--secondary');
     const braveTrialResults=make('div','bb-review__brave-items');
@@ -425,11 +425,15 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     });
     trialBravePlan.addEventListener('click',async()=>{
       if(trialBusy||!trialSelected.size)return;
-      if(!window.confirm('Brave-proef voorbereiden voor maximaal vijf edities? Eerst moeten alle gratis aanvullingen beoordeeld zijn. Er worden nog geen Brave-verzoeken gedaan.'))return;
+      const repeat=trialRepeat.checked===true;
+      if(!window.confirm('Brave-proef voorbereiden voor maximaal vijf edities? '+(repeat?'Eerder uitgevoerde Brave-zoekstappen van deze geselecteerde boeken mogen opnieuw worden ingepland. ':'Eerdere afgeronde zoekstappen worden niet herhaald. ')+'Eerst moeten alle gratis aanvullingen beoordeeld zijn. Er worden nog geen Brave-verzoeken gedaan.'))return;
       trialBusy=true;renderTrialChoices();
       try{
-        await request('/api/admin/book-enrichment/brave/trial',{confirm:true,bookIds:[...trialSelected]});
-        trialNotice.textContent='Brave-proef voorbereid. Geef hieronder afzonderlijk toestemming voor de berekende zoekopdrachten.';
+        const result=await request('/api/admin/book-enrichment/brave/trial',{confirm:true,bookIds:[...trialSelected],repeat});
+        trialRepeat.checked=false;
+        trialNotice.textContent=result.plan?.needsBrave===0
+          ?(repeat?'Geen nieuwe zoekstappen nodig voor deze selectie. Er zijn geen Brave-verzoeken gedaan.':'Geen nieuwe zoekstappen nodig. Als je eerder onderzoek opnieuw wilt uitvoeren, vink Onderzoek herhalen aan en bereken een nieuwe proef. Er zijn geen Brave-verzoeken gedaan.')
+          :'Brave-proef voorbereid. '+(repeat?'Eerdere zoekstappen worden opnieuw ingepland waar nog informatie nodig is. ':'')+'Geef hieronder afzonderlijk toestemming voor de berekende zoekopdrachten.';
         void refreshBrave();
       }catch(error){trialNotice.textContent=error.message;}
       finally{trialBusy=false;renderTrialChoices();}

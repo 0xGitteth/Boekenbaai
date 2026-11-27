@@ -5807,7 +5807,9 @@ async function handleApi(req, res, requestUrl) {
           failedCovers:exhaustedCoverSourceUrls()});
         if(outcome.ok){
           const job=addJob(db,outcome.bookIds,{source:'trial',repeatChecked:body.repeat===true});
-          outcome=job?{ok:true,id:job.id}:{ok:false,error:'not_ready'};
+          outcome=job?{ok:true,id:job.id,plan:getJobPlan(db,job,{
+            braveConfigured:braveWorker.configured,failedCovers:exhaustedCoverSourceUrls()
+          })}:{ok:false,error:'not_ready'};
         }
         return db;
       }});
