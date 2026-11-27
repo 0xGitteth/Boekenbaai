@@ -7,7 +7,7 @@ const {
   MAX_REQUESTS_PER_WORK,getBraveCheck,claimIsCurrent,
 }=require('../book-brave-core');
 const {
-  parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,
+  parseBookPage,parseMonthlyRemaining,matchTitleAuthor,sameWorkTitle,queryFor,fetchBrave,
   robotsAllowed,discoverPages,selectImageResult,fetchHtml,rankPublisherCandidates,
 }=require('../book-brave-fetch');
 const {createBraveWorker,updateFromPages}=require('../book-brave-worker');
@@ -233,7 +233,9 @@ assert.equal(parseBookPage(sequelHtml,{
   'A matching ISBN must not override an explicitly different work title');
 assert.match(queryFor(1,target),/kaft/);
 assert.match(queryFor(1,target),/9789083316642/);
-assert.match(queryFor(0,{...target,publisher:'Uitgeverij Voorbeeld'}),/Uitgeverij Voorbeeld/);
+assert.equal(queryFor(0,{...target,publisher:'Uitgeverij Voorbeeld'}),target.isbn);
+assert.equal(queryFor(0,{...target,isbn:''}),target.title+' '+target.author+' boek');
+assert.equal(queryFor(2,target),target.title+' '+target.author+' beschrijving');
 const ranked=rankPublisherCandidates([{title:target.title,url:'https://winkel.example/boek'},
   {title:target.title,url:'https://www.voorbeeld.nl/boek'}],{...target,publisher:'Uitgeverij Voorbeeld'});
 assert.equal(ranked[0].url,'https://www.voorbeeld.nl/boek');
@@ -275,6 +277,33 @@ assert.equal(selectImageResult([{title:'Onbekend boek',
   imageUrl:'https://files.uitgeverijvoorbeeld.nl/unknown.jpg',width:300,height:430}],target),'');
 
 async function run(){
+  let requestCount=0;
+  const searchResult=await fetchBrave(0,target,{apiKey:'fixture',fetchImpl:async url=>{
+    requestCount++;
+    const params=new URL(url).searchParams;
+    assert.equal(params.get('q'),target.isbn);
+    assert.equal(params.get('extra_snippets'),'true');
+    assert.equal(params.get('text_decorations'),'false');
+    return {ok:true,headers:{get:()=>null},text:async()=>JSON.stringify({web:{results:[
+      {title:'Webwinkel | Boeken',url:'https://uitgeverijvoorbeeld.nl/boek',description:'ISBN '+target.isbn,extra_snippets:['Een origineel fragment','<b>Een tweede fragment</b>']},
+      {title:target.title,url:'https://andere.example/boek',description:'Bestel nu online'},
+    ]}})};
+  }});
+  assert.equal(requestCount,1);
+  assert.equal(searchResult.pages[0].snippets.length,3);
+  assert.equal(searchResult.pages[0].snippets[2],'Een tweede fragment');
+  const rankedSnippets=rankPublisherCandidates(searchResult.pages.slice().reverse(),target);
+  assert.equal(rankedSnippets[0].url,'https://uitgeverijvoorbeeld.nl/boek');
+  const {createSearchSession}=require('../book-brave-search-session');
+  let clock=1000;
+  const session=createSearchSession({now:()=>clock,ttlMs:1000});
+  const transientClaim={...target,id:'test-session',key:'exact-edition',step:0,source:'trial'};
+  session.remember(transientClaim,searchResult.pages);
+  assert.equal(session.view('test-session','exact-edition')[0].candidates[0].snippets.length,3);
+  assert.deepEqual(session.view('other-job','exact-edition'),[]);
+  assert.deepEqual(session.view('test-session','different-edition'),[]);
+  clock=2001;
+  assert.deepEqual(session.view('test-session','exact-edition'),[]);
   let opened=false;
   const dnsTimeout=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{timeoutMs:500,
     dnsLookup:()=>new Promise(()=>{}),httpsGet:()=>{opened=true;throw Error('Unexpected request');}});
@@ -285,6 +314,10 @@ async function run(){
   const splitHtml='<script type="application/ld+json">'+JSON.stringify({'@type':'Book',name:'Bas Nijhuis',alternateName:'Niet zeiken, voetballen!',author:{name:'Eddy van der Ley'},isbn:splitTarget.isbn,description:'Een scheidsrechter vertelt over zijn ervaringen met spelers, trainers en wedstrijden in het Nederlandse voetbal. Het boek bevat persoonlijke verhalen over zijn loopbaan en de arbitrage.'})+'</script>';
   assert.equal(parseBookPage(splitHtml,splitTarget,'https://publisher.example/book').confidence,'isbn');
   assert.equal(parseBookPage(splitHtml.replace('Niet zeiken, voetballen!','Een ander boek'),splitTarget,'https://publisher.example/book'),null);
+  const snippetDiscovered=await discoverPages({pages:[{title:'Webwinkel | Boeken',url:'https://publisher.example/book',snippets:['ISBN '+splitTarget.isbn]}]},splitTarget,{fetchPage:async url=>url.endsWith('/robots.txt')?{body:'User-agent: *\\nAllow: /'}:{body:splitHtml}});
+  assert.equal(snippetDiscovered.length,1,'An exact ISBN in a snippet can find a verified original page');
+  const unrelatedOriginal=await discoverPages({pages:[{title:'Webwinkel | Boeken',url:'https://publisher.example/book',snippets:['ISBN '+splitTarget.isbn]}]},splitTarget,{fetchPage:async url=>url.endsWith('/robots.txt')?{body:'User-agent: *\\nAllow: /'}:{body:splitHtml.replace('Niet zeiken, voetballen!','Een ander boek')}});
+  assert.equal(unrelatedOriginal.length,0,'Search snippets never override mismatched original page identity');
   const splitFailures=[];
   const splitPages=await discoverPages({pages:[
     {title:'Bas Nijhuis | Eerste bron',url:'https://first.example/book?private=omit'},

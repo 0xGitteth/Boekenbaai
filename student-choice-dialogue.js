@@ -218,7 +218,11 @@ function storyDescription(book){
   return descriptionCorpus(book).split(/(?<=[.!?])\s+|\n+/).map(sentence=>{
     // Explicit author bibliography / prior work statements (not a literal
     // story about a character cooking). Keep any following independent sentence.
-    if(/^(?:na\s+(?:zijn|haar|het|hun)\s+(?:(?:succesvolle|bekende|bekroonde|eerdere|vorige|eerste|tweede|veelgeprezen|grote|nieuwe)\s+){0,3}(?:boek|kookboek|roman|jeugdboek|debuut|bestseller|succes)|(?:de\s+)?auteur\s+(?:schreef|publiceerde|debuteerde|is bekend van)|(?:hij|zij|ze)\s+(?:schreef|publiceerde)\s+(?:eerder|ook)|(?:eerder|voorheen)\s+(?:schreef|publiceerde)\b)/i.test(sentence.trim()))return '';
+    const text=sentence.trim();
+    const previousPublication=/^na\s+(?:zijn|haar|het|hun)\s+(?:(?:succesvolle|bekende|bekroonde|eerdere|vorige|eerste|tweede|veelgeprezen|grote|nieuwe)\s+){0,3}(?:boek|kookboek|roman|jeugdboek|bestseller)\b/i.test(text);
+    const publicationContext=/\b(?:auteur|schrijver|schrijfster|publiceerde|uitgever|verscheen|nieuw boek|nieuwe roman|nieuw verhaal)\b/i.test(text);
+    const explicitPriorAuthor=/^(?:(?:de\s+)?auteur\s+(?:schreef|publiceerde|debuteerde|is bekend van)|(?:hij|zij|ze)\s+(?:schreef|publiceerde)\s+(?:eerder|ook)|(?:eerder|voorheen)\s+(?:schreef|publiceerde)\b)/i.test(text);
+    if(explicitPriorAuthor||(previousPublication&&publicationContext))return '';
     return sentence;
   }).filter(Boolean).join(' ');
 }

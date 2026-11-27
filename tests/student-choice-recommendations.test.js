@@ -276,6 +276,8 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  assert.match(find(['cooking']).suggestions[0].reason,/koken/i);
  const literalCooking=rankBooks({books:[{id:'literal1',title:'Een passie',author:'A',description:'Koken is haar grote passie.'},{id:'literal2',title:'Alles weten',author:'B',description:'Dit boek vertelt je alles over koken.'}]},{route:'new',openSignals:{prefer:['cooking']}});
  assert.equal(literalCooking.suggestions.length,2);
+ const debut=rankBooks({books:[{id:'debut',title:'De kans',author:'A',description:'Na zijn debuut in het voetbal krijgt een jongen de kans om bij een grote club te spelen.'}]},{route:'new',openSignals:{prefer:['football']}});
+ assert.deepEqual(debut.suggestions.map(b=>b.bookId),['debut']);
  assert.ok(literalCooking.suggestions.every(b=>/koken/i.test(b.reason)));
  assert.ok(rankBooks({books:books.filter(x=>x.id!=='football')},{route:'new',openSignals:{prefer:['football','sport']}}).missingTopics.some(t=>t.id==='football'));
 }

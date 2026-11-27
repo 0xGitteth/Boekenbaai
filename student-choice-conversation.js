@@ -638,10 +638,17 @@ function analyze(text,rawContext={},books=[]){
  }
  if(replaceTopics&&delta.prefer.length){current=validateSignals({prefer:[],avoid:current.avoid});feedbackRejected.push('replacement');}
  const updated=merged(current,delta);
- const conjunction=!selected&&explicitReading?input.match(/^(.+?)\b(?:met|waarin|over)\s+(.+)$/i):null;
  const leaf=xs=>xs.filter(t=>!xs.some(k=>isAncestor(t,k))&&!(t==='people'&&xs.some(k=>k!=='people'&&Object.hasOwn(SUBTOPICS,k))));
- const left=conjunction?leaf(interpret(conjunction[1]).prefer):[],right=conjunction?leaf(interpret(conjunction[2]).prefer):[];
- const newRequired=left.length&&right.length&&right.some(t=>!left.includes(t))&&!/\b(?:of|misschien|bijvoorbeeld|liefst|eventueel|zonder|geen|niet)\b/i.test(input)?validateSignals({prefer:[...left,...right]}).prefer:[];
+ let newRequired=[];
+ if(!selected&&explicitReading&&!/\b(?:of|misschien|bijvoorbeeld|liefst|eventueel|zonder|geen|niet)\b/i.test(input)){
+  for(const separator of input.matchAll(/\b(?:met|waarin|over)\s+/gi)){
+   const left=leaf(interpret(input.slice(0,separator.index)).prefer);
+   const right=leaf(interpret(input.slice(separator.index+separator[0].length)).prefer);
+   if(left.length&&right.length&&right.some(t=>!left.includes(t))){
+    newRequired=leaf(validateSignals({prefer:[...newRequired,...left,...right]}).prefer);
+   }
+  }
+ }
  const required=validateSignals({prefer:[...(replaceTopics?[]:c.required),...newRequired]}).prefer.filter(t=>updated.prefer.includes(t)&&!updated.avoid.some(a=>a===t||isAncestor(a,t)));
  const individual=c.current==='hobby-focus'?leaf(delta.prefer):[];
  const separateTopics=validateSignals({prefer:[...(replaceTopics?[]:c.separateTopics),...individual]}).prefer.filter(t=>updated.prefer.includes(t));

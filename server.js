@@ -28,6 +28,7 @@ const {keyOf:trialIdentity,recordCheck:recordTrialCheck,shouldProbe:shouldTrialP
 
 const { addJob, currentUsage, reconcileLegacyBudget, getJobPlan, approveJob } = require('./book-brave-core');
 const {selectTrialBooks,preview:braveTrialPreview,applyPreview:applyBraveTrial,pendingTrialReview,dismissTrial}=require('./book-brave-trial');
+const {searchSession:braveSearchSession}=require('./book-brave-search-session');
 const { readBookImportWorkbook, mapImportRow } = require('./book-import-workbook');
 const {buildWorkbook,librarySheets,stageSheets}=require('./book-import-export');
 const {safeRowReplays,recordBookReviewChoices,recordMetadataReviewChoices,
@@ -5824,7 +5825,11 @@ async function handleApi(req, res, requestUrl) {
       if(braveTrialPath[2]==='trial-preview'&&req.method==='GET'){
         const db=loadDb(),job=db.braveEnrichmentJobs?.find(j=>j.id===braveTrialPath[1]&&j.source==='trial');
         if(!job)return sendJson(res,404,{message:'Brave-proef niet gevonden.'});
-        return sendJson(res,200,{state:job.state,dismissedAt:job.trialDismissedAt||null,copies:db.books.map(b=>braveTrialPreview(db,job,b,exhaustedCoverSourceUrls())).filter(Boolean)});
+        res.setHeader('Cache-Control','no-store');
+        const copies=db.books.map(b=>braveTrialPreview(db,job,b,exhaustedCoverSourceUrls())).filter(Boolean);
+        return sendJson(res,200,{state:job.state,dismissedAt:job.trialDismissedAt||null,copies:copies.map(copy=>({
+          ...copy,searchEvidence:job.trialDismissedAt?[]:braveSearchSession.view(job.id,copy.identity)
+        }))});
       }
       if(braveTrialPath[2]==='trial-dismiss'&&req.method==='POST'){
         const body=await parseBody(req,1200);

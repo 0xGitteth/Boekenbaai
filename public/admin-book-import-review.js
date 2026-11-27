@@ -463,6 +463,21 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             for(const source of change.sources||[])detail.append(make('p','hint',trialStatus(source.confidence)+' · '+source.url));
             item.append(detail);
           }
+          for(const group of copy.searchEvidence||[]){
+            const detail=make('details');
+            detail.append(make('summary','','Tijdelijke Brave-zoekfragmenten · stap '+(group.step+1)+' ('+group.candidates.length+' bronnen)'),
+              make('p','hint','Niet geverifieerd. Open de oorspronkelijke bron om de informatie te controleren. Deze fragmenten worden niet opgeslagen als boekgegevens en verdwijnen na maximaal tien minuten.'));
+            for(const source of group.candidates){
+              const article=make('section','bb-review__brave-items');
+              const link=make('a','',source.title||source.url);
+              link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.referrerPolicy='no-referrer';
+              article.append(link);
+              for(const snippet of source.snippets||[])article.append(make('p','',snippet));
+              detail.append(article);
+            }
+            const remainingMs=group.expiresAt-Date.now();
+            if(remainingMs>0){item.append(detail);setTimeout(()=>detail.remove(),Math.min(remainingMs,600000));}
+          }
           if(copy.changes?.length&&data.state!=='running'){
             const save=button('Brave-aanvullingen voor dit exemplaar opslaan','btn btn--secondary');
             save.addEventListener('click',async()=>{
@@ -474,7 +489,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               }catch(error){item.append(make('p','hint',error.message));save.disabled=false;}
             });
             item.append(save);
-          }else if(!copy.changes?.length)item.append(make('p','hint','Geen nieuwe veilige aanvullingen.'));
+          }else if(!copy.changes?.length)item.append(make('p','hint',copy.searchEvidence?.length?'Geen geverifieerde aanvullingen. Bekijk de tijdelijke zoekfragmenten hierboven.':'Geen nieuwe veilige aanvullingen. Eventuele tijdelijke zoekfragmenten zijn niet meer beschikbaar.'));
           braveTrialResults.append(item);
         }
       }catch(error){braveTrialResults.textContent=error.message||'De Brave-proef kon niet worden geladen.';}

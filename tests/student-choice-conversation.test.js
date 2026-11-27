@@ -474,6 +474,7 @@ for(const phrase of ['Een waargebeurd verhaal over voetbal','Ik wil een waargebe
   assert.deepEqual(new Set(answer.advice.context.required),new Set(['true','football']),phrase);
 }
 assert.deepEqual(run('Een verhaal over voetbal of misdaad',{current:'opening'}).advice.context.required,[]);
+assert.deepEqual(new Set(run('Ik wil een boek over voetbal met misdaad',{current:'opening'}).advice.context.required),new Set(['football','crime']));
 const combined=run('Ik lees graag een spannend verhaal met LHBTQIA+ personages',lastRound);
 assert.ok(combined.advice.context.required.includes('danger'));
 assert.ok(combined.advice.context.required.includes('queerRepresentation'));

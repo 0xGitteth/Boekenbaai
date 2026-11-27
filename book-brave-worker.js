@@ -7,6 +7,7 @@ const {fetchBrave,discoverPages,selectImageResult}=require('./book-brave-fetch')
 
 const {updateFromPages}=require('./book-brave-page-apply');
 const {storeTrialResult,projectTrial}=require('./book-brave-trial');
+const {searchSession}=require('./book-brave-search-session');
 
 function createBraveWorker({
   loadDb,commit,apiKey='',onNewCover=()=>{},isPaused=()=>false,
@@ -113,6 +114,8 @@ function createBraveWorker({
         if(!outcome?.deferred)break;
       }
       if(stopped)return;
+      if(outcome&&!outcome.stale&&!outcome.deferred&&!bad)
+        searchSession.remember(claim,result.pages);
       if(outcome?.newCover)onNewCover();
       // The durable core decides whether this is an isolated transient
       // failure or a circuit-breaking provider error.

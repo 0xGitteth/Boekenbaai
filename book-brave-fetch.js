@@ -72,10 +72,11 @@ function queryFor(step,target) {
   const title=cleaned(target.title,150).replace(/["\r\n]/g,'');
   const author=cleaned(target.author,130).replace(/["\r\n]/g,'');
   const isbn=String(target.isbn||'').replace(/[^0-9X]/gi,'');
-  const publisher=cleaned(target.publisher,100).replace(/["\r\n]/g,'');
-  if(step===0)return (isbn?isbn+' '+title+' '+author+' boek':('"'+title+'" "'+author+'" boek'))+(publisher?' '+publisher:'');
-  if(step===1)return (isbn?isbn+' ':'')+'"'+title+'" "'+author+'" kaft omslag boek';
-  return '"'+title+'" "'+author+'" samenvatting thema recensie uitgever';
+  // ISBN is already a precise edition identifier. Do not force every
+  // catalogue spelling, publisher name and subtitle into the same query.
+  if(step===0)return isValidIsbn(isbn)?isbn:title+' '+author+' boek';
+  if(step===1)return (isValidIsbn(isbn)?isbn:title+' '+author)+' kaft';
+  return title+' '+author+' beschrijving';
 }
 async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeoutMs=25000}={}) {
   if(!apiKey||typeof apiKey!=='string')return {error:'not_configured'};
@@ -88,7 +89,11 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
   url.searchParams.set('search_lang','nl');
   url.searchParams.set('safesearch','strict');
   url.searchParams.set('count',image?'8':'8');
-  if(!image)url.searchParams.set('result_filter','web');
+  if(!image){
+    url.searchParams.set('result_filter','web');
+    url.searchParams.set('extra_snippets','true');
+    url.searchParams.set('text_decorations','false');
+  }
   const ctl=new AbortController();
   const timer=setTimeout(()=>ctl.abort(),Math.max(1000,Math.min(timeoutMs,30000)));
   try{
@@ -115,7 +120,9 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
           width:Number(x.properties?.width||0),height:Number(x.properties?.height||0)}))};
     }
     return {providerRemaining,pages:(Array.isArray(data.web?.results)?data.web.results:[])
-      .slice(0,8).map(x=>({title:cleaned(x.title,250),url:String(x.url||'').slice(0,1600)}))};
+      .slice(0,8).map(x=>({title:cleaned(x.title,250),url:String(x.url||'').slice(0,1600),
+        snippets:[...new Set([x.description,...(Array.isArray(x.extra_snippets)?x.extra_snippets.slice(0,5):[])]
+          .filter(v=>typeof v==='string').map(v=>cleaned(decodeEntities(v),650)).filter(Boolean))]}))};
   }catch(err){
     return {error:ctl.signal.aborted||err?.name==='AbortError'?'timeout':'request_error',errorCode:err?.cause?.code||err?.code||''};
   }finally{clearTimeout(timer);}
@@ -345,6 +352,23 @@ function robotsAllowed(content,path){
   }
   return selected.allow;
 }
+function snippetText(candidate){
+  return (Array.isArray(candidate?.snippets)?candidate.snippets:[]).slice(0,6)
+    .filter(v=>typeof v==='string').map(v=>v.slice(0,650)).join(' ');
+}
+function snippetIsbnMatch(target,candidate){
+  const wanted=String(target.isbn||'').replace(/[^0-9X]/gi,'');
+  if(!isValidIsbn(wanted))return false;
+  const text=[candidate.title,candidate.url,snippetText(candidate)].join(' ');
+  // Do not accept an ISBN embedded inside a longer number.
+  const values=text.match(/(?<![0-9])(?:97[89][ -]?(?:[0-9][ -]?){9}[0-9]|(?:[0-9][ -]?){9}[0-9Xx])(?![0-9])/g)||[];
+  return values.some(v=>{const digits=v.replace(/[^0-9X]/gi,'');return isValidIsbn(digits)&&toIsbn13(digits)===toIsbn13(wanted);});
+}
+function snippetWorkMatch(target,candidate){
+  const full=normalize(target.title),surname=normalize(target.author).split(' ').filter(x=>x.length>=3).at(-1);
+  const text=' '+normalize(snippetText(candidate))+' ';
+  return full.length>=5&&surname&&text.includes(' '+full+' ')&&text.includes(' '+surname+' ');
+}
 function rankPublisherCandidates(candidates,target){
   // Prefer a plausible publisher hostname, not untrusted snippets as proof.
   // Exact ISBN and work identity checks still apply after opening the page.
@@ -354,7 +378,11 @@ function rankPublisherCandidates(candidates,target){
     try{
       const host=new URL(candidate.url).hostname.toLowerCase().replace(/^www\./,'');
       const name=normalize(host.split('.').slice(0,-1).join(' ')).replace(/ /g,'');
-      return publisher.length&&publisher.every(token=>name.includes(token))?1:0;
+      const publisherMatch=publisher.length&&publisher.every(token=>name.includes(token));
+      // Snippets only help prioritize which original pages to inspect.
+      // They never authenticate a book, edition, image or description.
+      return (snippetIsbnMatch(target,candidate)?8:0)+(publisherMatch?4:0)
+        +(snippetWorkMatch(target,candidate)?2:0)+(narrativeDescription(snippetText(candidate))?1:0);
     }catch{return 0;}
   };
   return [...candidates].sort((a,b)=>score(b)-score(a));
@@ -362,6 +390,7 @@ function rankPublisherCandidates(candidates,target){
 function candidateMayMatch(target,candidate){
   const title=normalize(candidate.title),full=normalize(target.title);
   if(full&&title.includes(full))return true;
+  if(snippetIsbnMatch(target,candidate)||snippetWorkMatch(target,candidate))return true;
   // Permit lookup of a plausible split title, not acceptance of it.
   // The fetched page still has to prove the full title and identity.
   return String(target.title||'').split(/\s*[:.]\s+|\s+[–—-]\s+/)
@@ -416,4 +445,4 @@ function selectImageResult(images,target) {
   return '';
 }
 module.exports={normalize,sameWorkTitle,matchTitleAuthor,parseMonthlyRemaining,queryFor,fetchBrave,
-  parseBookPage,fetchHtml,robotsAllowed,discoverPages,selectImageResult,rankPublisherCandidates};
+  parseBookPage,fetchHtml,robotsAllowed,discoverPages,selectImageResult,rankPublisherCandidates,candidateMayMatch};
