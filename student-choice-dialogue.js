@@ -214,6 +214,14 @@ function isTopicOrChild(topic,trait){
   }
   return false;
 }
+function storyDescription(book){
+  return descriptionCorpus(book).split(/(?<=[.!?])\s+|\n+/).map(sentence=>{
+    // Explicit author bibliography / prior work statements (not a literal
+    // story about a character cooking). Keep any following independent sentence.
+    if(/^(?:na\s+(?:zijn|haar|het|hun)\s+(?:(?:succesvolle|bekende|bekroonde|eerdere|vorige|eerste|tweede|veelgeprezen|grote|nieuwe)\s+){0,3}(?:boek|kookboek|roman|jeugdboek|debuut|bestseller|succes)|(?:de\s+)?auteur\s+(?:schreef|publiceerde|debuteerde|is bekend van)|(?:hij|zij|ze)\s+(?:schreef|publiceerde)\s+(?:eerder|ook)|(?:eerder|voorheen)\s+(?:schreef|publiceerde)\b)/i.test(sentence.trim()))return '';
+    return sentence;
+  }).filter(Boolean).join(' ');
+}
 function evidenceForTopic(book,topic){
   const traits=COMPILED_TRAITS.filter(([trait])=>isTopicOrChild(topic,trait));
   const match=(value,kind)=>{
@@ -224,7 +232,7 @@ function evidenceForTopic(book,topic){
   const label=labels.find(value=>typeof value==='string'&&match(value,'label'));
   if(label)return 'Thema in de boekgegevens: '+label.slice(0,100);
   if(book.title&&match(book.title,'title'))return 'Titel: '+String(book.title).slice(0,180);
-  for(const sentence of descriptionCorpus(book).split(/(?<=[.!?])\s+|\n+/)){
+  for(const sentence of storyDescription(book).split(/(?<=[.!?])\s+|\n+/)){
     if(!match(sentence,'description'))continue;
     if(sentence.length<=180)return 'Beschrijving: '+sentence.trim();
     const words=sentence.trim().split(/\s+/);
@@ -255,7 +263,7 @@ function traitsForBook(book){
   const curated=[
     ...effectiveThemes,...safe(book.tags),...safe(book.enrichmentTags),
   ].join(' ');
-  const copy=corpus(curated),description=corpus(descriptionCorpus(book)),
+  const copy=corpus(curated),description=corpus(storyDescription(book)),
     title=corpus(book.title||'');
   const matched=new Map();
   for(const [trait,words] of COMPILED_TRAITS){

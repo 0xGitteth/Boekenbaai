@@ -616,7 +616,8 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
             evidence.append(make('summary','','Brave, stap '+(step.step+1)+': '+trialStatus(step.status)));
             if(step.checkedAt)evidence.append(make('p','hint',new Date(step.checkedAt).toLocaleString('nl-NL')));
             if(step.error)evidence.append(make('p','hint',trialStatus(step.error)));
-            for(const failure of step.sourceFailures||[])evidence.append(make('p','hint','Bron overgeslagen: '+failure.url+' · '+(failure.stage==='robots'?'Toegang kon niet worden gecontroleerd':'Pagina niet bereikbaar')));
+            if(step.diagnostic)evidence.append(make('p','hint',diagnosticText(step.diagnostic)));
+            for(const failure of step.sourceFailures||[])evidence.append(make('p','hint','Bron overgeslagen: '+sourceFailureText(failure)));
             for(const item of step.evidence||[])evidence.append(make('p','hint',fieldName(item.field)+' · '+item.url));
             detail.append(evidence);
           }
@@ -688,6 +689,9 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
     enrichmentExtra.append(bravePanel);
     let braveRefreshing = false;
     let repeatBraveChecks = false;
+    const duration=value=>Number.isFinite(value)?(value/1000).toFixed(2)+' s':'duur niet bewaard';
+    const sourceFailureText=f=>[f.url||'URL niet bewaard',f.stage==='robots'?'robots.txt':'Bronpagina',f.phase||'',f.reason||'onbekende fout',f.errorCode||'',f.httpStatus?'HTTP '+f.httpStatus:'',duration(f.elapsedMs)].filter(Boolean).join(' · ');
+    const diagnosticText=d=>['Brave '+(d.apiOk?'antwoord ontvangen':'geen geldig antwoord'),d.candidates??'onbekend','zoekresultaten',d.verifiedPages??'onbekend','geverifieerde pagina’s','API: '+duration(d.apiElapsedMs),'totaal: '+duration(d.elapsedMs),d.httpStatus?'HTTP '+d.httpStatus:'',d.errorCode||''].filter(v=>v!==''&&v!==null).join(' ');
     function bravePauseReason(code) {
       const reasons = {
         budget_exhausted: 'Het ingestelde zoekbudget is bereikt.',
@@ -698,7 +702,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
         provider_temporary: 'Brave is tijdelijk niet beschikbaar.',
         trial_budget_required: 'Leg eerst de resterende toestemming voor deze oude proef vast.',
         request_error: 'De verbinding met Brave is mislukt.',
-        source_unavailable: 'Een bronwebsite kon niet worden gecontroleerd. De gevonden gegevens zijn behouden. Dit onderzoek kan opnieuw worden hervat.',
+        source_unavailable: 'Een bronwebsite kon niet worden gecontroleerd. Eventuele eerder gevonden gegevens zijn behouden.',
         timeout: 'Het Brave-verzoek duurde te lang.',
         interrupted: 'De eerdere zoekopdracht werd onderbroken. Eerder opgeslagen resultaten blijven behouden; opnieuw goedkeuren is nodig.',
         month_changed: 'De maand is gewisseld; nieuwe toestemming is nodig.',
@@ -778,10 +782,14 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
               + (job.limitedDescriptions || 0) + ' een beperkte beschrijving. '
               + 'Deze titels blijven zichtbaar als aandachtspunt.';
           }
+          if(job.trialBudget?.remaining===0&&job.needsBrave>0&&job.state!=='running')details.textContent='Proefbudget volledig verbruikt. '+job.completedWorks+' van '+job.uniqueWorks+' titels verwerkt; '+job.needsBrave+' titels resterend. Er is geen toestemming voor verdere verzoeken.';
           item.append(title, details);
+          if(job.lastDiagnostic)item.append(make('p','hint','Laatste zoekstap: '+job.lastDiagnostic.title+' · '+diagnosticText(job.lastDiagnostic)+' · '+job.lastDiagnostic.added+' nieuwe veldvoorstellen'));
           if(job.lastFailure){
             const step=['Zoeken naar boekgegevens','Zoeken naar omslag','Zoeken naar beschrijving en thema’s'][job.lastFailure.step]||'Onderzoek';
             item.append(make('p','hint','Laatste fout: '+new Date(job.lastFailure.at).toLocaleString('nl-NL')+' · '+(job.lastFailure.title||'Onbekende titel')+' · '+step+' · '+(job.lastFailure.stage==='brave'?'Brave API':'Bronwebsite')+' · '+bravePauseReason(job.lastFailure.code)));
+            if(job.lastFailure.diagnostic)item.append(make('p','hint',diagnosticText(job.lastFailure.diagnostic)));
+            for(const failure of job.lastFailure.sourceFailures||[])item.append(make('p','hint','Bron overgeslagen: '+sourceFailureText(failure)));
           }
           if(job.lastError&&!job.lastFailure&&job.updatedAt)item.append(make('p','hint','Taak laatst bijgewerkt: '+new Date(job.updatedAt).toLocaleString('nl-NL')+' (exacte foutdatum niet bewaard).'));
           if(job.trialBudget)item.append(make('p','hint',(job.trialBudget.legacy?'Sinds vastlegging resterende toestemming: ':'Proefbudget totaal: ')+job.trialBudget.used+' van '+job.trialBudget.limit+' verzoeken gebruikt; '+job.trialBudget.remaining+' resterend.'));
@@ -808,7 +816,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                 }
                 maxRequests=Math.min(maxRequests,legacyRemainingLimit);
               }
-              if(job.source==='trial'&&!job.legacyBudgetRequired){
+              if(job.source==='trial'){
                 const raw=window.prompt('Maximaal aantal verzoeken voor deze ronde (1–'+maxRequests+').',String(maxRequests));
                 if(raw===null)return;
                 const count=Number(raw);
@@ -817,7 +825,7 @@ import {deferredAdministrativeRows,requiresBookReview,countUnresolvedBookWarning
                 }
                 maxRequests=count;
               }
-              const message = 'Brave mag maximaal ' + maxRequests
+              const message = (legacyRemainingLimit!==undefined?'Resterende totale toestemming voor deze bestaande proef: '+legacyRemainingLimit+' verzoeken. ':'')+'Brave mag maximaal ' + maxRequests
                 + ' zoekopdrachten uitvoeren voor maximaal ' + job.possibleWorks + ' boeken. '
                 + 'Boekenbaai reserveert deze verzoeken binnen de ingestelde maandgrens. '
                 + 'Andere apps die dezelfde Brave-sleutel gebruiken tellen niet mee. '

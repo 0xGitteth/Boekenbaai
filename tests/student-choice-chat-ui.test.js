@@ -318,7 +318,10 @@ vm.runInNewContext(code,{
   actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
   actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   partialFixture=true;
-  await submitOpen('Ik wil een waargebeurd verhaal met voetbal');
+  await submitOpen('Een waargebeurd verhaal over voetbal');
+  if(actions.children[0]?.tag==='form'){
+    actions.children[0].children[0].children[1].children.find(x=>x.textContent==='Laat boeken zien').listeners.click();
+  }
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(new Set(suggestRequests.at(-1).choices.required),new Set(['true','football']));
   assert.ok(!suggestRequests.at(-1).choices.partialMatchTraits?.length);

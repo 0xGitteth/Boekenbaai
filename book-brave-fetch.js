@@ -101,7 +101,7 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
       const error=response.status===429?'rate_limited':response.status===402?'payment_required'
         :[401,403].includes(response.status)?'unauthorized'
         :response.status===408?'timeout':response.status>=500?'provider_temporary':'provider_error';
-      return {error,providerRemaining};
+      return {error,providerRemaining,httpStatus:response.status};
     }
     if(Number(response.headers?.get?.('content-length')||0)>350000)
       return {error:'too_large',providerRemaining};
@@ -117,7 +117,7 @@ async function fetchBrave(step,target,{apiKey,fetchImpl=globalThis.fetch,timeout
     return {providerRemaining,pages:(Array.isArray(data.web?.results)?data.web.results:[])
       .slice(0,8).map(x=>({title:cleaned(x.title,250),url:String(x.url||'').slice(0,1600)}))};
   }catch(err){
-    return {error:ctl.signal.aborted||err?.name==='AbortError'?'timeout':'request_error'};
+    return {error:ctl.signal.aborted||err?.name==='AbortError'?'timeout':'request_error',errorCode:err?.cause?.code||err?.code||''};
   }finally{clearTimeout(timer);}
 }
 function decodeEntities(raw){
@@ -173,12 +173,25 @@ function parseBookPage(html,target,url) {
   try{location=safeCoverUrl(url);if(location.protocol!=='https:')return null;}catch{return null;}
   const meta=metaFields(html),book=jsonldBook(html);
   const h1=html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/i);
-  const title=cleaned(asOne(book.name||book.headline)||meta['og:title']
+  const primaryTitle=cleaned(asOne(book.name||book.headline)||meta['og:title']
     ||(h1?decodeEntities(h1[1]):''),350);
+  const subtitles=[book.subtitle,book.subTitle,book.alternateName,meta['book:subtitle'],meta['og:subtitle']]
+    .flatMap(value=>Array.isArray(value)?value:[value]).filter(value=>typeof value==='string')
+    .map(value=>cleaned(decodeEntities(value),180)).filter(Boolean);
+  // Some publisher pages place the subtitle in a nearby heading rather
+  // than the structured Book object. Only use it if the main heading agrees
+  // with the primary title and the concatenation is the full target title.
+  if(h1&&normalize(decodeEntities(h1[1]))===normalize(primaryTitle)){
+    const nearby=html.slice(h1.index+h1[0].length,h1.index+h1[0].length+1500);
+    for(const h of nearby.matchAll(/<h[234]\b[^>]*>([\s\S]*?)<\/h[234]\s*>/gi))
+      subtitles.push(cleaned(decodeEntities(h[1]),180));
+  }
+  const title=[primaryTitle,...subtitles.map(subtitle=>primaryTitle+' '+subtitle)]
+    .find(value=>sameWorkTitle(target.title,value,target.author))||primaryTitle;
   const author=cleaned(asOne(book.author)||meta.author||'',220);
   const allText=decodeEntities(html.replace(/<script\b[\s\S]*?<\/script\s*>/gi,' ')
     .replace(/<style\b[\s\S]*?<\/style\s*>/gi,' ').replace(/<[^>]*>/g,' ')).slice(0,45000);
-  const isbn=String(book.isbn||'').replace(/[^0-9X]/gi,'');
+  const isbn=String(book.isbn||book.gtin13||book.gtin||'').replace(/[^0-9X]/gi,'');
   const wantedIsbn=String(target.isbn||'').replace(/[^0-9X]/gi,'');
   // Exact ISBN or title+author is mandatory; a similar title is insufficient.
   const exactIsbn=Boolean(isValidIsbn(isbn)&&isValidIsbn(wantedIsbn)&&toIsbn13(isbn)===toIsbn13(wantedIsbn));
@@ -228,15 +241,18 @@ function beforeAbort(signal,operation){
 async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
   dnsLookup=dns.lookup,httpsGet=https.get,allowRedirect=null}={}) {
   const ctl=new AbortController();
-  let timeout;
+  let timeout,phase='url';
   try {
     timeout=setTimeout(()=>ctl.abort(),Math.min(Math.max(timeoutMs,500),10000));
     let current=url;
     for(let redirect=0;redirect<=2;redirect++){
+      phase='url';
       const parsed=safeCoverUrl(current);
       if(parsed.protocol!=='https:')return {error:'unsafe_url'};
+      phase='dns';
       const addrs=await beforeAbort(ctl.signal,()=>dnsLookup(parsed.hostname,{family:4,all:true}));
-      if(!addrs.length||addrs.some(x=>!publicIPv4(x.address)))return {error:'unsafe_dns'};
+      if(!addrs.length||addrs.some(x=>!publicIPv4(x.address)))return {error:'unsafe_dns',phase};
+      phase='http';
       const result=await beforeAbort(ctl.signal,()=>new Promise((resolve,reject)=>{
         let finished=false;
         const req=httpsGet(parsed,{
@@ -255,7 +271,7 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
           if(status===408||status===429||status>=500){res.resume();resolve({error:'source_unavailable',status});return;}
           const type=String(res.headers['content-type']||'').toLowerCase();
           if(status!==200||!/(?:text\/html|text\/plain|application\/xhtml\+xml)/.test(type)){
-            res.resume();resolve({error:'not_html'});return;
+            res.resume();resolve({error:'not_html',status});return;
           }
           if(Number(res.headers['content-length'])>maxBytes){
             res.destroy();resolve({error:'too_large'});return;
@@ -267,18 +283,19 @@ async function fetchHtml(url,{maxBytes=520000,timeoutMs=6500,
         req.on('error',reject);
       }));
       if(result.redirect){
+        phase='redirect_policy';
         const next=new URL(result.redirect,parsed).href;
         // The destination can be a different path or host. Require a fresh
         // robots.txt decision before opening the redirected HTML page.
         if(typeof allowRedirect==='function' && !(await beforeAbort(ctl.signal,()=>allowRedirect(next))))
-          return {error:'robots_disallowed'};
+          return {error:'robots_disallowed',phase};
         current=next;
         continue;
       }
-      return {...result,finalUrl:parsed.href};
+      return {...result,phase,finalUrl:parsed.href};
     }
     return {error:'too_many_redirects'};
-  }catch{return {error:ctl.signal.aborted?'timeout':'request_error'};}
+  }catch(err){return {error:ctl.signal.aborted?'timeout':'request_error',phase,errorCode:err?.code||''};}
   finally{clearTimeout(timeout);ctl.abort();}
 }
 function robotsAllowed(content,path){
@@ -342,19 +359,32 @@ function rankPublisherCandidates(candidates,target){
   };
   return [...candidates].sort((a,b)=>score(b)-score(a));
 }
+function candidateMayMatch(target,candidate){
+  const title=normalize(candidate.title),full=normalize(target.title);
+  if(full&&title.includes(full))return true;
+  // Permit lookup of a plausible split title, not acceptance of it.
+  // The fetched page still has to prove the full title and identity.
+  return String(target.title||'').split(/\s*[:.]\s+|\s+[–—-]\s+/)
+    .map(normalize).filter(part=>part.length>=7&&part.split(' ').length>=2)
+    .some(part=>(' '+title+' ').includes(' '+part+' '));
+}
 async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3,onFailure=()=>{}}={}) {
   const candidates=rankPublisherCandidates((Array.isArray(search?.pages)?search.pages:[]).slice(0,8),target);
   const outputs=[];const visited=new Set();const robots=new Map();
   async function readPage(url,options){
-    try{return await fetchPage(url,options);}catch{return {error:'request_error'};}
+    const started=Date.now();
+    try{return {...(await fetchPage(url,options)||{error:'request_error'}),elapsedMs:Date.now()-started};}
+    catch(err){return {error:'request_error',errorCode:err?.code||'',elapsedMs:Date.now()-started};}
   }
+  const failureDetail=(url,stage,response)=>({url,stage,reason:response?.error||String(response?.status||'unknown'),
+    phase:response?.phase||'',httpStatus:response?.status,errorCode:response?.errorCode||'',elapsedMs:response?.elapsedMs});
   async function allowedPage(url){
     let u;
     try{u=safeCoverUrl(url);if(u.protocol!=='https:')return false;}catch{return false;}
     const root=u.origin;
     if(!robots.has(root)){
       const response=await readPage(root+'/robots.txt',{maxBytes:64000,timeoutMs:3000});
-      if(!response||response.error|| (response.status&&![200,404,410].includes(response.status)))onFailure('source_unavailable',{url:root+'/robots.txt',stage:'robots',reason:response?.error||String(response?.status||'unknown')});
+      if(!response||response.error|| (response.status&&![200,404,410].includes(response.status)))onFailure('source_unavailable',failureDetail(root+'/robots.txt','robots',response));
       // A missing or unreachable robots.txt never authorizes extra crawling.
       robots.set(root,!response || response.error || (response.status && ![200,404,410].includes(response.status))
         ? null : (response?.body ?? ''));
@@ -364,12 +394,12 @@ async function discoverPages(search,target,{fetchPage=fetchHtml,maxPages=3,onFai
   for(const candidate of candidates){
     if(outputs.length>=maxPages)break;
     // Search metadata is only used for coarse preselection.
-    if(!normalize(candidate.title).includes(normalize(target.title)))continue;
+    if(!candidateMayMatch(target,candidate))continue;
     let u;try{u=safeCoverUrl(candidate.url);if(u.protocol!=='https:')continue;}catch{continue;}
     if(visited.has(u.href))continue;visited.add(u.href);
     if(!(await allowedPage(u.href)))continue;
     const page=await readPage(u.href,{allowRedirect:allowedPage});
-    if(!page||['request_error','timeout','source_unavailable'].includes(page.error))onFailure('source_unavailable',{url:u.href,stage:'page',reason:page?.error||'unknown'});
+    if(!page||page.error)onFailure('source_unavailable',failureDetail(u.href,'page',page));
     if(!page?.body)continue;
     const parsed=parseBookPage(page.body,target,page.finalUrl||u.href);
     if(parsed)outputs.push(parsed);

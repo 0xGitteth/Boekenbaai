@@ -755,8 +755,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     suggestions: picked.map(({work,matched,familiar,matchedDialogue,matchedAnchor,surpriseReason})=>({
       key:work.key,bookId:work.bookId,title:work.title,author:work.author,
       available:work.available,total:work.total,
-      reason:surpriseReason || focused.filter(t=>workTraits.get(work.key)?.has(t))
-        .map(t=>dialogue.evidenceForTopic(work,t)).find(Boolean) || (matchedDialogue?.matched?.length
+      reason:surpriseReason || [...new Set((choice.required.length?choice.required:focused).filter(t=>workTraits.get(work.key)?.has(t))
+        .map(t=>dialogue.evidenceForTopic(work,t)).filter(Boolean))].join(' · ') || (matchedDialogue?.matched?.length
         ?'Dit boek sluit aan bij je interesse in '
           +matchedDialogue.matched.slice(0,2).map(t=>traitLabels[t]||t).join(' en ')
         : (choice.referenceBookId||outside)&&matchedAnchor>0

@@ -262,6 +262,7 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
   {id:'dance',title:'Afblijven',author:'D',themes:['Dansen'],description:'Een meisje leert streetdance.'},
   {id:'cook',title:'Koken met recepten',author:'E',description:'Leer koken met eenvoudige gerechten.'},
   {id:'anger',title:'Borealis',author:'F',description:'Zijn bloed begon te koken van woede.'},
+  {id:'prior-book',title:'Borealis',author:'M',description:'Na haar succesvolle kookboek Koken voor de keizer komt de auteur met een nieuw verhaal over klimaat.'},
  ];
  const find=prefer=>rankBooks({books},{route:'new',openSignals:{prefer}});
  const alternative=rankBooks({books:[{id:'crime',title:'Misdaad',author:'G',themes:['Misdaad']}]},{route:'new',openSignals:{prefer:['sport','football','crime']}});
@@ -310,6 +311,11 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  assert.match(result.suggestions[0].reason,/waargebeurd/i);
  assert.equal(rankBooks({books},{...strict,partialMatchTraits:strict.required}).suggestions.length,0,'Consent cannot bypass an active strict combination');
  assert.equal(rankBooks({books},{...accepted,partialMatchTraits:['true','invalid']}).suggestions.length,0);
+ const genuine={id:'combined',title:'Voetbal in mijn leven',author:'E',themes:['Voetbal'],description:'Een waargebeurd verhaal over een voetbaltrainer.'};
+ const strictResult=rankBooks({books:[...books,genuine]},strict);
+ assert.deepEqual(strictResult.suggestions.map(b=>b.bookId),['combined']);
+ assert.match(strictResult.suggestions[0].reason,/waargebeurd/i);
+ assert.match(strictResult.suggestions[0].reason,/voetbal/i);
  const football={id:'football-only',title:'Het voetbalteam',author:'D',themes:['Voetbal']};
  assert.deepEqual(new Set(rankBooks({books:[...books,football]},accepted).suggestions.map(b=>b.bookId)),new Set(['true-story','football-only']));
  assert.equal(rankBooks({books},{...accepted,excludeKeys:[keyOf(books[0])]}).suggestions.length,0);

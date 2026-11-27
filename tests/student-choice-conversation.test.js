@@ -469,6 +469,11 @@ const othersDisclosure=run('Mijn broer is homo en ik wil een spannend boek',last
 assert.ok(othersDisclosure.advice.context.signals.prefer.includes('danger'));
 assert.ok(!othersDisclosure.advice.context.signals.prefer.includes('sexualOrientation'));
 assert.ok(!othersDisclosure.advice.context.signals.prefer.includes('family'));
+for(const phrase of ['Een waargebeurd verhaal over voetbal','Ik wil een waargebeurd verhaal over voetbal','Ik wil een waargebeurd verhaal met voetbal']){
+  const answer=run(phrase,{current:'opening',seed:'production'});
+  assert.deepEqual(new Set(answer.advice.context.required),new Set(['true','football']),phrase);
+}
+assert.deepEqual(run('Een verhaal over voetbal of misdaad',{current:'opening'}).advice.context.required,[]);
 const combined=run('Ik lees graag een spannend verhaal met LHBTQIA+ personages',lastRound);
 assert.ok(combined.advice.context.required.includes('danger'));
 assert.ok(combined.advice.context.required.includes('queerRepresentation'));

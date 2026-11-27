@@ -551,7 +551,8 @@ function analyze(text,rawContext={},books=[]){
    readingScope=hasReading||continuation;
   }
  }
- const explicitReading=Boolean(readingException)||/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen|ik (?:wil|zoek) (?:een |het |wat )?(?:[a-z]+ ){0,3}(?:verhaal|verhalen|boek|boeken))\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
+ const bareReadingRequest=/^(?:een|het|de|(?:ik (?:wil|zoek) )?(?:een|het|de))\s+(?:[a-z]+\s+){0,4}(?:verhaal|verhalen|boek|boeken)\s+(?:over|met|waarin)\b/.test(value);
+ const explicitReading=bareReadingRequest||Boolean(readingException)||/\b(?:ik lees|lees graag|boeken? (?:over|met|waarin)|wil lezen|wil .*? lezen|zou .*? lezen|iets .*? lezen|ik (?:wil|zoek) (?:een |het |wat )?(?:[a-z]+ ){0,3}(?:verhaal|verhalen|boek|boeken))\b/.test(value)||readingClauses.some(part=>/\b(?:wil|liever|graag|zonder)\b/i.test(part));
  const activityRefusal=activityContext&&readingClauses.some(part=>/\b(?:niet|geen|zonder|hekel)\b/i.test(part));
  const ambiguities=!selected&&!resolvedContextAlias&&!media.length&&!anchor&&!notReader&&!uncertain&&!decline?findAmbiguities(input).filter(x=>!x.negative||x.reading||explicitReading):[];
  const ambiguity=ambiguities[0]||null;
@@ -637,10 +638,10 @@ function analyze(text,rawContext={},books=[]){
  }
  if(replaceTopics&&delta.prefer.length){current=validateSignals({prefer:[],avoid:current.avoid});feedbackRejected.push('replacement');}
  const updated=merged(current,delta);
- const conjunction=!selected&&explicitReading?input.match(/^(.+?)\b(?:met|waarin)\s+(.+)$/i):null;
+ const conjunction=!selected&&explicitReading?input.match(/^(.+?)\b(?:met|waarin|over)\s+(.+)$/i):null;
  const leaf=xs=>xs.filter(t=>!xs.some(k=>isAncestor(t,k))&&!(t==='people'&&xs.some(k=>k!=='people'&&Object.hasOwn(SUBTOPICS,k))));
  const left=conjunction?leaf(interpret(conjunction[1]).prefer):[],right=conjunction?leaf(interpret(conjunction[2]).prefer):[];
- const newRequired=left.length&&right.length&&right.some(t=>!left.includes(t))&&!/\b(?:of|misschien|bijvoorbeeld|liefst|eventueel|zonder|geen|niet)\b/i.test(conjunction[2])?validateSignals({prefer:[...left,...right]}).prefer:[];
+ const newRequired=left.length&&right.length&&right.some(t=>!left.includes(t))&&!/\b(?:of|misschien|bijvoorbeeld|liefst|eventueel|zonder|geen|niet)\b/i.test(input)?validateSignals({prefer:[...left,...right]}).prefer:[];
  const required=validateSignals({prefer:[...(replaceTopics?[]:c.required),...newRequired]}).prefer.filter(t=>updated.prefer.includes(t)&&!updated.avoid.some(a=>a===t||isAncestor(a,t)));
  const individual=c.current==='hobby-focus'?leaf(delta.prefer):[];
  const separateTopics=validateSignals({prefer:[...(replaceTopics?[]:c.separateTopics),...individual]}).prefer.filter(t=>updated.prefer.includes(t));

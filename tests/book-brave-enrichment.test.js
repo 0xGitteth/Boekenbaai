@@ -279,7 +279,22 @@ async function run(){
   const dnsTimeout=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{timeoutMs:500,
     dnsLookup:()=>new Promise(()=>{}),httpsGet:()=>{opened=true;throw Error('Unexpected request');}});
   assert.equal(dnsTimeout.error,'timeout');
+  assert.equal(dnsTimeout.phase,'dns');
   assert.equal(opened,false,'A DNS stall must not block the worker or open a late request');
+  const splitTarget={title:'Bas Nijhuis. Niet zeiken, voetballen!',author:'Eddy L., van der Ley',isbn:'9789048846757'};
+  const splitHtml='<script type="application/ld+json">'+JSON.stringify({'@type':'Book',name:'Bas Nijhuis',alternateName:'Niet zeiken, voetballen!',author:{name:'Eddy van der Ley'},isbn:splitTarget.isbn,description:'Een scheidsrechter vertelt over zijn ervaringen met spelers, trainers en wedstrijden in het Nederlandse voetbal. Het boek bevat persoonlijke verhalen over zijn loopbaan en de arbitrage.'})+'</script>';
+  assert.equal(parseBookPage(splitHtml,splitTarget,'https://publisher.example/book').confidence,'isbn');
+  assert.equal(parseBookPage(splitHtml.replace('Niet zeiken, voetballen!','Een ander boek'),splitTarget,'https://publisher.example/book'),null);
+  const splitFailures=[];
+  const splitPages=await discoverPages({pages:[
+    {title:'Bas Nijhuis | Eerste bron',url:'https://first.example/book?private=omit'},
+    {title:'Bas Nijhuis | Uitgever',url:'https://publisher.example/book'},
+  ]},splitTarget,{fetchPage:async url=>url.endsWith('/robots.txt')?{body:'User-agent: *\\nAllow: /'}:url.includes('first.example')?{error:'request_error',phase:'dns',errorCode:'ENOTFOUND'}:{body:splitHtml},onFailure:(code,detail)=>splitFailures.push(detail)});
+  assert.equal(splitPages.length,1);
+  assert.equal(splitPages[0].isbn,splitTarget.isbn);
+  assert.equal(splitFailures[0].phase,'dns');
+  assert.equal(splitFailures[0].errorCode,'ENOTFOUND');
+  assert.ok(Number.isSafeInteger(splitFailures[0].elapsedMs));
   // Late stream errors after a 404 response must not crash Node: the
   // IncomingMessage handler must be registered before resume() is called.
   const lateHttpResult=await fetchHtml('https://www.uitgeverijvoorbeeld.nl/boek',{
@@ -515,6 +530,14 @@ async function run(){
   const warning=getBraveCheck(sourceErrorDb,'source-error',require('../book-free-metadata').workKey(sourceErrorDb.books[0]),0);
   assert.equal(warning.status,'source_partial');
   assert.equal(warning.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
+  assert.ok(Number.isSafeInteger(warning.sourceFailures[0].elapsedMs));
+  assert.equal(warning.diagnostic.apiOk,true);
+  assert.equal(warning.diagnostic.verifiedPages,0);
+  assert.equal(sourceErrorJob.lastFailure.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
+  assert.equal(sourceErrorJob.lastDiagnostic.apiOk,true);
+  const historical=JSON.parse(JSON.stringify(sourceErrorDb));
+  delete historical.braveEnrichmentJobs[0].lastFailure.sourceFailures;
+  assert.equal(getJobPlan(historical,historical.braveEnrichmentJobs[0],{now,env:environment}).lastFailure.sourceFailures[0].url,'https://www.uitgeverijvoorbeeld.nl/boek');
   // Exercise the actual asynchronous worker, not only the claim helpers.
   const recoveryDb={books:[book('slow'),book('healthy-worker','De geheime opdracht')],braveEnrichmentJobs:[]};
   const recoveryJob=addJob(recoveryDb,['slow','healthy-worker'],{id:'recovery-worker',source:'trial'});

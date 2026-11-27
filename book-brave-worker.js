@@ -40,10 +40,12 @@ function createBraveWorker({
       }
       if(!claim)return;
       keepGoing=true;
+      const started=Date.now();
       const result=await fetchSearch(claim.step,claim,{apiKey});
+      const apiElapsedMs=Date.now()-started;
       let pages=[],imageUrl='';
       const sourceFailures=[];
-      const onFailure=(code,detail={})=>{if(sourceFailures.length<12)sourceFailures.push({code,url:detail.url||'',stage:detail.stage||'page',reason:detail.reason||code});};
+      const onFailure=(code,detail={})=>{if(sourceFailures.length<12)sourceFailures.push({...detail,code,url:detail.url||'',stage:detail.stage||'page',reason:detail.reason||code});};
       if(!result.error&&!stopped){
         if(claim.step===1){
           imageUrl=claim.isbn?'':selectImageResult(result.images,claim);
@@ -62,6 +64,10 @@ function createBraveWorker({
       }
       if(stopped)return;
       const bad=result.error||null;
+      const diagnostic={apiElapsedMs,elapsedMs:Date.now()-started,apiOk:!bad,
+        httpStatus:result.httpStatus,errorCode:result.errorCode,
+        candidates:(Array.isArray(result.pages)?result.pages.length:0)+(Array.isArray(result.images)?result.images.length:0),
+        verifiedPages:pages.length};
       let outcome=null;
       // A legacy import can start during Brave's network request. Do not
       // modify ANY database fields (including progress/usage) until that
@@ -98,7 +104,7 @@ function createBraveWorker({
           finishClaim(db,claim,{
             providerRemaining:result.providerRemaining,
             providerRemainingConfirmed:Number.isSafeInteger(result.providerRemaining),
-            error:bad,status:updated.added>0?'found':sourceFailures.length?'source_partial':'no_result',added:updated.added,sourceFailures,
+            error:bad,status:updated.added>0?'found':sourceFailures.length?'source_partial':'no_result',added:updated.added,sourceFailures,diagnostic,
             evidenceByBook:updated.evidenceByBook,
           });
           const current=db.braveEnrichmentJobs.find(j=>j.id===claim.id);
