@@ -81,7 +81,70 @@ assert.equal(getJobPlan(legacyDb,legacy,{now,env,braveConfigured:true}).canAppro
 assert.equal(approveLegacy(1,15).ok,false);
 assert.equal(legacyDb.braveUsage.reserved,2);
 assert.equal(JSON.parse(JSON.stringify(legacyDb)).braveEnrichmentJobs[0].trialBudget.used,2);
+// Production regression: execute the actual admin click handler, not a
+// reconstructed request. The server already accepts body.repeat; mirror
+// that boundary and exercise the actual durable planner and claim logic.
+async function repeatFromAdmin(){
+  const script=require('node:fs').readFileSync(require('node:path').join(__dirname,'../public/admin-book-import-review.js'),'utf8');
+  const start=script.indexOf("    trialBravePlan.addEventListener('click',async()=>{");
+  const end=script.indexOf('    trialControls.append(',start);
+  assert.ok(start>=0&&end>start);
+  const item={id:'nijhuis',title:'Bas Nijhuis. Niet zeiken, voetballen!',author:'Eddy van der Ley',metadataIsbn:'9789048846757',description:'',coverUrl:'',tags:[]};
+  const db={books:[item],braveUsage:{month:'2026-11',reserved:7}};
+  const env={BOEKENBAAI_BRAVE_MONTHLY_CAP:'900'};
+  const opts={now,env,braveConfigured:true,expectedMonth:'2026-11'};
+  const old=addJob(db,[item.id],{source:'trial',id:'old-pilot'});
+  assert.ok(approveJob(db,old.id,{...opts,confirmed:true,expectedRequests:3}).ok);
+  for(const status of ['source_partial','no_result','no_result']){
+    const claim=claimNext(db,{now,env});
+    assert.ok(claim);
+    finishClaim(db,claim,{status});
+  }
+  assert.equal(claimNext(db,{now,env}),null);
+  assert.ok(dismissTrial(db,old).ok);
+  const oldSnapshot=JSON.stringify(old);
+  assert.equal(db.braveUsage.reserved,10);
+  const createHandler=new Function('trialBravePlan','trialSelected','trialRepeat','trialNotice','window','request','renderTrialChoices','refreshBrave',
+    'let trialBusy=false;\n'+script.slice(start,end));
+  async function click(repeat,confirm=true){
+    let handler,created,payload;
+    const checkbox={checked:repeat},notice={textContent:''};
+    createHandler({addEventListener:(event,fn)=>{assert.equal(event,'click');handler=fn;}},
+      new Set([item.id]),checkbox,notice,{confirm:()=>confirm},async (url,body)=>{
+        assert.equal(url,'/api/admin/book-enrichment/brave/trial');
+        payload=body;
+        created=addJob(db,body.bookIds,{source:'trial',repeatChecked:body.repeat===true});
+        return {ok:true,id:created.id,plan:getJobPlan(db,created,opts)};
+      },()=>{},()=>{});
+    await handler();
+    return {created,payload,checkbox,notice};
+  }
+  const cancelled=await click(true,false);
+  assert.equal(cancelled.created,undefined);
+  const regular=await click(false);
+  assert.equal(regular.payload.repeat,false);
+  assert.equal(getJobPlan(db,regular.created,opts).state,'complete');
+  assert.match(regular.notice.textContent,/Geen nieuwe zoekstappen/);
+  const repeated=await click(true);
+  assert.equal(repeated.payload.repeat,true);
+  assert.equal(repeated.checkbox.checked,false);
+  assert.equal(repeated.created.repeatChecked,true);
+  assert.equal(getJobPlan(db,repeated.created,opts).canApprove,true);
+  assert.equal(db.braveUsage.reserved,10);
+  assert.equal(claimNext(db,{now,env}),null,'Calculating a repeat must never issue a request');
+  assert.equal(approveJob(db,repeated.created.id,{...opts,confirmed:false,expectedRequests:1}).ok,false);
+  assert.equal(approveJob(db,repeated.created.id,{...opts,confirmed:true,expectedRequests:1}).ok,true);
+  const retried=claimNext(db,{now,env});
+  assert.equal(retried.step,0);
+  assert.equal(retried.key,workKey(item));
+  finishClaim(db,retried,{status:'no_result'});
+  assert.equal(claimNext(db,{now,env}),null,'One approved request cannot silently become three');
+  assert.equal(db.braveUsage.reserved,11);
+  assert.equal(repeated.created.trialBudget.used,1);
+  assert.equal(JSON.stringify(old),oldSnapshot,'Old trial and its authorization remain unchanged');
+}
 async function run(){
+  await repeatFromAdmin();
   const fresh={id:'worker',metadataIsbn:isbn,title:book.title,author:book.author,tags:[],description:'',coverUrl:''};
   const live={books:[fresh]};
   const pilot=addJob(live,['worker'],{source:'trial'});
