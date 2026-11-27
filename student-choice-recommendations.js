@@ -446,6 +446,10 @@ function validateChoices(value) {
   result.priority=validateSignals({prefer:input.priority}).prefer.filter(t=>result.openSignals.prefer.includes(t));
   result.required=validateSignals({prefer:input.required}).prefer.filter(t=>result.openSignals.prefer.includes(t));
   result.separateTopics=validateSignals({prefer:input.separateTopics}).prefer.filter(t=>result.openSignals.prefer.includes(t));
+  // Only relax the specific former combination that the pupil accepted.
+  // Never use this field to bypass a currently required or avoided trait.
+  const partial=validateSignals({prefer:input.partialMatchTraits}).prefer.filter(t=>result.openSignals.prefer.includes(t)&&!result.openSignals.avoid.includes(t));
+  result.partialMatchTraits=result.route!=='surprise'&&!result.required.length&&partial.length>1?partial:[];
   result.discoverySample=input.discoverySample===true&&result.route==='surprise';
   result.bookVotes=Array.isArray(input.bookVotes)?input.bookVotes.filter(v=>v&&typeof v.key==='string'&&v.key.length<=400&&['like','maybe','dislike'].includes(v.vote)).slice(-24):[];
   if(result.route==='surprise'&&!result.discoverySample){result.openSignals.prefer=[];result.required=[];result.separateTopics=[];}
@@ -653,6 +657,13 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     calm:'rustige gebeurtenissen',fast:'veel actie',dialogue:'gesprekken',
     setting:'de omgeving',twist:'onverwachte wendingen',slow:'langzaam opgebouwde spanning',murder:'misdaad met moord',horror:'griezelverhalen',
   };
+  const styleTraits=new Set(['realistic','true','facts','fast','slow','calm','humor','danger','action','twist','dialogue','setting','puzzles','adventure','people','team','competition','challenge','growth','discovery','empathy']);
+  const leaves=choice.openSignals.prefer.filter(t=>!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}));
+  const requested=[...new Set([...choice.separateTopics,...leaves.filter(t=>Object.hasOwn(SUBTOPICS,t))])];
+  const focusedTopics=[...new Set([...(requested.length?[...requested,...leaves.filter(t=>!styleTraits.has(t))]:requested),...choice.partialMatchTraits])];
+  // A generic ancestor or another reading-style answer must not substitute
+  // for the requested subject. Related topics require explicit permission.
+  const focused=choice.route!=='surprise'&&!choice.discoverySample?focusedTopics:[];
   const rejected=new Set(choice.bookVotes.filter(v=>v.vote==='dislike').map(v=>v.key));
   const candidates = [];
   let hasPriorMatches=false;
@@ -680,6 +691,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     // not evidence that a book is free of that subject.
     if(choice.openSignals.avoid.some(trait=>traits.has(trait)))continue;
     if(!choice.discoverySample&&choice.required.some(trait=>!traits.has(trait)))continue;
+    if(focused.length&&!focused.some(trait=>traits.has(trait)))continue;
     const openMatches=choice.openSignals.prefer.filter(trait=>traits.has(trait)).length;
     const specificMatches=choice.openSignals.prefer.filter(trait=>Object.hasOwn(SUBTOPICS,trait)&&traits.has(trait)).length;
     if(choice.openSignals.prefer.length&&!openMatches&&!choice.discoverySample)continue;
@@ -713,9 +725,9 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
       ?Number(Boolean(b.matchedAnchor))-Number(Boolean(a.matchedAnchor)):0)
     ||b.score-a.score || b.tiebreak-a.tiebreak ||
     a.work.title.localeCompare(b.work.title, 'nl'));
-  const requested=[...new Set([...choice.separateTopics,...choice.openSignals.prefer.filter(t=>Object.hasOwn(SUBTOPICS,t)&&!choice.openSignals.prefer.some(k=>{const seen=new Set();for(let p=SUBTOPICS[k];p&&!seen.has(p);p=SUBTOPICS[p]){if(p===t)return true;seen.add(p);}return false;}))])];
-  const individual=choice.required.length?[]:choice.separateTopics;
-  const missingTopics=choice.route!=='surprise'?requested.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
+
+  const individual=choice.required.length?[]:[...new Set([...(choice.separateTopics.length?choice.separateTopics:focused),...choice.partialMatchTraits])];
+  const missingTopics=choice.route!=='surprise'?focusedTopics.filter(t=>!works.some(w=>!choice.openSignals.avoid.some(a=>workTraits.get(w.key)?.has(a))&&workTraits.get(w.key)?.has(t))):[];
   const count=Math.max(1,Math.min(3,limit));
   // Spread independent interests across the three recommendations.
   // A genuine combined reading requirement has already been filtered above.
@@ -743,7 +755,8 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     suggestions: picked.map(({work,matched,familiar,matchedDialogue,matchedAnchor,surpriseReason})=>({
       key:work.key,bookId:work.bookId,title:work.title,author:work.author,
       available:work.available,total:work.total,
-      reason:surpriseReason || (matchedDialogue?.matched?.length
+      reason:surpriseReason || focused.filter(t=>workTraits.get(work.key)?.has(t))
+        .map(t=>dialogue.evidenceForTopic(work,t)).find(Boolean) || (matchedDialogue?.matched?.length
         ?'Dit boek sluit aan bij je interesse in '
           +matchedDialogue.matched.slice(0,2).map(t=>traitLabels[t]||t).join(' en ')
         : (choice.referenceBookId||outside)&&matchedAnchor>0
@@ -756,6 +769,7 @@ function rankBooks(db, input, { studentId = '', seenKeys = [], limit = 3 } = {})
     missingCombination:choice.required.length>1&&!choice.discoverySample&&!works.some(w=>!choice.openSignals.avoid.some(t=>workTraits.get(w.key)?.has(t))&&choice.required.every(t=>workTraits.get(w.key)?.has(t)))?choice.required.map(t=>({id:t,label:traitLabels[t]||t})):[],
     missingTopics:missingTopics.map(t=>({id:t,label:traitLabels[t]||t,parent:SUBTOPICS[t]||'',parentLabel:traitLabels[SUBTOPICS[t]]||''})),
     partialTopicMatches,hasPriorMatches,
+    partialCombination:choice.partialMatchTraits.length>1,
     exhausted: !picked.length && works.length > 0,
     emptyCatalog: works.length===0,
   };

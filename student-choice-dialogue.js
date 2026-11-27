@@ -196,6 +196,45 @@ function hasEvidence(source,value){
   if(value.length<5)return false;
   return SUFFIXES.some(suffix=>source.words.has(value+suffix));
 }
+// The word "koken" in a sentence about anger is not culinary evidence.
+// Suppress figurative anger uses without requiring a whitelist of
+// additional cooking terms for ordinary literal descriptions.
+function matchesTraitWord(source,trait,word,kind){
+  if(!hasEvidence(source,word))return false;
+  if(trait!=='cooking'||word!=='koken'||kind!=='description')return true;
+  if(/\b(?:bloed|woede|razernij)\b.{0,45}\b(?:koken|kook(?:t|te|ten)?)\b|\b(?:koken|kook(?:t|te|ten)?)\b.{0,45}\b(?:woede|razernij)\b/.test(source.phrase))
+    return /\b(?:eten|gerecht(?:en)?|keuken|maaltijd(?:en)?|recept(?:en)?|kookboek|chef|fornuis|soep|bakken)\b/.test(source.phrase);
+  return true;
+}
+function isTopicOrChild(topic,trait){
+  const seen=new Set();
+  for(let t=trait;t&&!seen.has(t);t=SUBTOPICS[t]){
+    if(t===topic)return true;
+    seen.add(t);
+  }
+  return false;
+}
+function evidenceForTopic(book,topic){
+  const traits=COMPILED_TRAITS.filter(([trait])=>isTopicOrChild(topic,trait));
+  const match=(value,kind)=>{
+    const source=corpus(value);
+    return traits.some(([trait,words])=>words.some(word=>matchesTraitWord(source,trait,word,kind)));
+  };
+  const labels=[...(Array.isArray(book.themes)?book.themes:[]),...(Array.isArray(book.tags)?book.tags:[])];
+  const label=labels.find(value=>typeof value==='string'&&match(value,'label'));
+  if(label)return 'Thema in de boekgegevens: '+label.slice(0,100);
+  if(book.title&&match(book.title,'title'))return 'Titel: '+String(book.title).slice(0,180);
+  for(const sentence of descriptionCorpus(book).split(/(?<=[.!?])\s+|\n+/)){
+    if(!match(sentence,'description'))continue;
+    if(sentence.length<=180)return 'Beschrijving: '+sentence.trim();
+    const words=sentence.trim().split(/\s+/);
+    for(let i=0;i<words.length;i+=8){
+      const excerpt=words.slice(i,i+20).join(' ');
+      if(excerpt.length<=200&&match(excerpt,'description'))return 'Beschrijving: '+excerpt;
+    }
+  }
+  return '';
+}
 function traitsForBook(book){
   const safe=value=>Array.isArray(value)?value:[];
   const signature=JSON.stringify([
@@ -222,9 +261,9 @@ function traitsForBook(book){
   for(const [trait,words] of COMPILED_TRAITS){
     let confidence=0;
     for(const word of words){
-      if(hasEvidence(copy,word))confidence=Math.max(confidence,3);
-      else if(hasEvidence(description,word))confidence=Math.max(confidence,1);
-      else if(hasEvidence(title,word))confidence=Math.max(confidence,0.7);
+      if(matchesTraitWord(copy,trait,word,'label'))confidence=Math.max(confidence,3);
+      else if(matchesTraitWord(description,trait,word,'description'))confidence=Math.max(confidence,1);
+      else if(matchesTraitWord(title,trait,word,'title'))confidence=Math.max(confidence,0.7);
     }
     if(confidence)matched.set(trait,confidence);
   }
@@ -380,4 +419,4 @@ function selection(db,{answers=[],excludeQuestionIds=[],seed='',route='new'}={})
     confident:false};
 }
 module.exports={QUESTIONS,traitsForBook,validatedAnswers,preferenceWeights,
-  scoreTraits,selection,profilesForWorks};
+  scoreTraits,selection,profilesForWorks,evidenceForTopic};

@@ -296,7 +296,7 @@
   function applyAdvice(plan){
     adviceContext=plan.context;
     if(plan.clearReference){delete choices.referenceBookId;delete choices.referencePreference;delete choices.externalRef;}
-    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,priority:plan.context.priority||[],required:plan.context.required||[],separateTopics:plan.context.separateTopics||[],
+    choices={...choices,route:'new',openSignals:plan.context.signals,length:plan.context.length,priority:plan.context.priority||[],required:plan.context.required||[],separateTopics:plan.context.separateTopics||[],partialMatchTraits:[],
       questionIds:[...new Set([...(plan.context.used||[]),...(plan.kind==='question'?[plan.context.current]:[])])]};
     if(plan.context.current&&plan.kind==='question'){
       recentAdviceQuestions.add(plan.context.current);
@@ -396,7 +396,13 @@
     }catch(err){
       if(!active||marker!==epoch)return;
       busy=false;notice(err.message||'Je antwoord kon niet worden verwerkt.');
-      options([['Opnieuw proberen',()=>offerOpenAnswer('',adviceQuestion)],['Stel me meerkeuzevragen',beginInterests]]);
+      // Reuse the exact submitted answer and selected option after a
+      // temporary failure, instead of losing it and reopening the question.
+      adviceContext=previous.context;adviceQuestion=previous.question;choices=previous.choices;
+      choiceMode=previous.mode;advicePrompt=previous.prompt;
+      options([['Opnieuw proberen',()=>void submitAdvice(value,optionId,true,extraContext)],
+        ['Antwoord aanpassen',()=>offerOpenAnswer('',adviceQuestion,true)],
+        ['Stel me meerkeuzevragen',beginInterests]]);
     }finally{if(active&&marker===epoch)busy=false;}
   }
   function offerOpenAnswer(prompt='Waar lees je graag over?',question=null,explicitNavigation=false){
@@ -843,7 +849,7 @@
       if(!active||marker!==epoch)return;
       if(results.missingCombination?.length&&!results.emptyCatalog){
         message('Ik vind in de boekinformatie geen boek met al deze kenmerken samen: '+results.missingCombination.map(t=>t.label).join(', ')+'. Wil je ook boeken zien die bij een deel van je wensen passen?');
-        options([['Ja, ook gedeeltelijke matches',()=>{choices={...choices,required:[]};if(adviceContext)adviceContext={...adviceContext,required:[]};void showRecommendations();}],['Nee, verder praten',()=>{adviceContext={...(adviceContext||{}),current:'feedback',uncertain:0};offerOpenAnswer('Welke kenmerken wil je graag behouden?',null,true);}]]);
+        options([['Ja, ook gedeeltelijke matches',()=>{choices={...choices,partialMatchTraits:[...(choices.required||[])],required:[]};if(adviceContext)adviceContext={...adviceContext,required:[]};void showRecommendations();}],['Nee, verder praten',()=>{adviceContext={...(adviceContext||{}),current:'feedback',uncertain:0};offerOpenAnswer('Welke kenmerken wil je graag behouden?',null,true);}]]);
         return;
       }
       if(results.missingTopics?.length&&!results.emptyCatalog&&!extra.allowPartial&&!results.partialTopicMatches){
@@ -863,6 +869,7 @@
       if(!active||marker!==epoch)return;
       const catalogue=Array.isArray(available)?available:[];
       lastBooks=results.suggestions;
+      if(results.partialCombination)message('Deze boeken passen bij een deel van je wensen. Ze hoeven niet alle gevraagde kenmerken tegelijk te hebben.');
       if(results.partialTopicMatches&&results.missingTopics?.length)message('Voor '+results.missingTopics.map(t=>t.label).join(' en ')+' vind ik geen specifieke match in de boekinformatie. Deze boeken passen wel bij je andere interesses.');
       const block=message(choices.route==='surprise'
         ? 'Deze drie boeken heb ik voor je uitgekozen:'

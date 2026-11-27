@@ -1773,11 +1773,11 @@ module.exports=[
   [
    [
     "Paardrijden",
-    "horses sportPlaying"
+    "horseRiding"
    ],
    [
     "Paarden verzorgen",
-    "horses animalCare"
+    "horseCare"
    ],
    [
     "Een verhaal met een paard",

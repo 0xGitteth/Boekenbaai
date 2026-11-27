@@ -41,7 +41,8 @@ let resolvePin;
 let loggedIn=false;
 let activeId='s',storageToken='',holdContext=false,releaseContext=null,contextCalls=0;
 let blocked=false;
-let failSuggest=false;
+let failSuggest=false,failInterpret=false,partialFixture=false;
+const interpretRequests=[];
 let resetStatus=200;
 let holdSuggestions=false,releaseSuggestion=null;
 let holdInterpretation=false,releaseInterpretation=null;
@@ -70,7 +71,8 @@ const fetchStub=async (url,options={})=>{
     return makeResponse(200,{recent:null,favorites:[]});
   }
   if(url==='/api/auth/student-pin/choice-interpret'){
-    const body=JSON.parse(options.body);
+    const body=JSON.parse(options.body);interpretRequests.push(body);
+    if(failInterpret)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
     const response=makeResponse(200,{...conversation.analyze(body.text,body.context,[]),moderation:'normal'});
     if(holdInterpretation)return new Promise(resolve=>{releaseInterpretation=()=>resolve(response);});
     return response;
@@ -99,6 +101,7 @@ const fetchStub=async (url,options={})=>{
     suggestRequests.push(JSON.parse(options.body));
     if(failSuggest)return makeResponse(503,{message:'Tijdelijk niet bereikbaar'});
     const payload=JSON.parse(options.body);
+    if(partialFixture)return makeResponse(200,require('../student-choice-recommendations').rankBooks({books:[{id:'book-1',title:'Mijn jeugd',author:'Auteur',description:'Een waargebeurd verhaal over opgroeien.'},{id:'book-2',title:'De tennisclub',author:'Auteur',themes:['Sport']}]},payload.choices));
     const ids=payload.choices.discoverySample?[1,2,3,4,5,6].filter(i=>!payload.choices.excludeKeys?.includes(String(i))).slice(0,3):[1,2,3];
     const result=makeResponse(200,{suggestions:ids.map(i=>({
       key:String(i),bookId:'book-'+i,title:'Titel '+i,author:'Auteur',
@@ -264,6 +267,19 @@ vm.runInNewContext(code,{
     form.children[2].value=value;
     await form.listeners.submit({preventDefault(){}});
   }
+  // A failed interpretation must retry the original answer and context,
+  // without a duplicate student message or forcing it to be typed again.
+  failInterpret=true;
+  await submitOpen('Paarden verzorgen');
+  const failedAnswer=interpretRequests.at(-1);
+  failInterpret=false;
+  actions.children.find(x=>x.textContent==='Opnieuw proberen').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(interpretRequests.at(-1),failedAnswer);
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
   const countBeforeOpen=suggestRequests.length;
   holdInterpretation=true;
   const delayed=submitOpen('misterie');
@@ -296,6 +312,26 @@ vm.runInNewContext(code,{
   assert.deepEqual(new Set(suggestRequests.at(-1).choices.openSignals.prefer),new Set(['mystery','puzzles','realistic']));
   assert.deepEqual(suggestRequests.at(-1).choices.openSignals.avoid,[]);
 
+  // Exercise the actual consent button, real ranking and the next request.
+  elements.get('student-choice-close').listeners.click();
+  await elements.get('student-help-choose').listeners.click();
+  actions.children.find(x=>x.textContent==='Nee, iets nieuws ontdekken').listeners.click();
+  actions.children.find(x=>x.textContent==='Ik weet wat ik zoek').listeners.click();
+  partialFixture=true;
+  await submitOpen('Ik wil een waargebeurd verhaal met voetbal');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(new Set(suggestRequests.at(-1).choices.required),new Set(['true','football']));
+  assert.ok(!suggestRequests.at(-1).choices.partialMatchTraits?.length);
+  actions.children.find(x=>x.textContent==='Ja, ook gedeeltelijke matches').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(suggestRequests.at(-1).choices.required,[]);
+  assert.deepEqual(new Set(suggestRequests.at(-1).choices.partialMatchTraits),new Set(['true','football']));
+  assert.ok(log.children.some(row=>row.children[0]?.textContent.includes('Deze boeken passen bij een deel van je wensen')));
+  assert.ok(actions.children.some(x=>x.textContent==='Nog drie voorstellen'));
+  actions.children.find(x=>x.textContent==='Nog drie voorstellen').listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(new Set(suggestRequests.at(-1).choices.partialMatchTraits),new Set(['true','football']));
+  partialFixture=false;
   // Switch from the ongoing question into real book feedback and back without
   // losing the earlier answer or writing a discovery suggestion history.
   elements.get('student-choice-close').listeners.click();

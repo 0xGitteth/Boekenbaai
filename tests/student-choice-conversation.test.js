@@ -29,6 +29,15 @@ for(const q of Q)for(const option of q.options){
   assert.equal(r.advice.question?.id,'hobby-focus',q.id+' / '+option.label);
  }else assert.deepEqual(r.prefer,option.prefer,q.id+' / '+option.label);
 }
+// Reproduce the reported specific horse conversation, including the
+// actual displayed answer and option identifier.
+const horseQuestion=run('paarden',{current:'opening',seed:'production-horse'});
+assert.equal(horseQuestion.advice.question.id,'clarify-topic');
+const careOption=horseQuestion.advice.question.options.find(o=>o.label==='Paarden verzorgen');
+assert.ok(careOption);
+const careAnswer=run(careOption.label,{...horseQuestion.advice.context,optionId:careOption.id});
+assert.ok(careAnswer.advice.context.signals.prefer.includes('horseCare'));
+assert.ok(!careAnswer.advice.context.signals.prefer.includes('animalCare'));
 const first=run('Mysteries',{seed:'example'});
 assert.equal(first.advice.kind,'question');
 assert.ok(first.advice.question.prompt);

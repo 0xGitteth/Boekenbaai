@@ -253,6 +253,32 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  assert.ok(missing.missingTopics.some(x=>x.id==='hamsters'));
 }
 
+// Exact interests must not be silently diluted to their parent category.
+{
+ const books=[
+  {id:'football',title:'Het voetbalteam',author:'A',themes:['Voetbal'],description:'Een voetballer leert samenwerken.'},
+  {id:'sport',title:'Dubbelspel',author:'B',themes:['Sport'],description:'Een tenniswedstrijd.'},
+  {id:'ballet',title:'Betoverende balletverhalen',author:'C',themes:['Dansen']},
+  {id:'dance',title:'Afblijven',author:'D',themes:['Dansen'],description:'Een meisje leert streetdance.'},
+  {id:'cook',title:'Koken met recepten',author:'E',description:'Leer koken met eenvoudige gerechten.'},
+  {id:'anger',title:'Borealis',author:'F',description:'Zijn bloed begon te koken van woede.'},
+ ];
+ const find=prefer=>rankBooks({books},{route:'new',openSignals:{prefer}});
+ const alternative=rankBooks({books:[{id:'crime',title:'Misdaad',author:'G',themes:['Misdaad']}]},{route:'new',openSignals:{prefer:['sport','football','crime']}});
+ assert.deepEqual(alternative.suggestions.map(x=>x.bookId),['crime']);
+ assert.equal(alternative.partialTopicMatches,true,'Show valid alternative directly while explaining missing football');
+ const football=find(['sport','football']);
+ assert.deepEqual(football.suggestions.map(x=>x.bookId),['football']);
+ assert.match(football.suggestions[0].reason,/Voetbal|voetbal/i);
+ assert.deepEqual(find(['dance','ballet']).suggestions.map(x=>x.bookId),['ballet']);
+ assert.deepEqual(find(['cooking']).suggestions.map(x=>x.bookId),['cook']);
+ assert.match(find(['cooking']).suggestions[0].reason,/koken/i);
+ const literalCooking=rankBooks({books:[{id:'literal1',title:'Een passie',author:'A',description:'Koken is haar grote passie.'},{id:'literal2',title:'Alles weten',author:'B',description:'Dit boek vertelt je alles over koken.'}]},{route:'new',openSignals:{prefer:['cooking']}});
+ assert.equal(literalCooking.suggestions.length,2);
+ assert.ok(literalCooking.suggestions.every(b=>/koken/i.test(b.reason)));
+ assert.ok(rankBooks({books:books.filter(x=>x.id!=='football')},{route:'new',openSignals:{prefer:['football','sport']}}).missingTopics.some(t=>t.id==='football'));
+}
+
 // Explicit content combinations must not return single-feature books as matches.
 {
  const books=[{id:'thriller',title:'Het geheim',author:'A',description:'Een spannende thriller.'},{id:'rep',title:'Liefde',author:'B',description:'Een verhaal met LHBTQIA+ personages.'},{id:'both',title:'De zoektocht',author:'C',description:'Een spannende thriller met LHBTQIA+ personages.'}];
@@ -263,6 +289,31 @@ assert.deepEqual(open.suggestions.map(x=>x.bookId),['myst']);
  assert.equal(missing.missingCombination.length,2);
 }
 
+// Explicit consent to a partial combination must allow a true story
+// even when no football evidence exists, but not generic sport or exclusions.
+{
+ const books=[
+  {id:'true-story',title:'Mijn jeugd',author:'A',description:'Een waargebeurd verhaal over opgroeien.'},
+  {id:'generic-sport',title:'De tennisclub',author:'B',themes:['Sport']},
+  {id:'avoid',title:'De misdaad',author:'C',description:'Een waargebeurd verhaal over een moord.'},
+ ];
+ const strict={route:'new',openSignals:{prefer:['true','sport','football'],avoid:['murder']},required:['true','football']};
+ assert.equal(rankBooks({books},strict).suggestions.length,0);
+ assert.equal(rankBooks({books},strict).missingCombination.length,2);
+ assert.equal(rankBooks({books},{...strict,required:[]}).suggestions.length,0,'Clearing required without consent does not broaden focused subjects');
+ const accepted={...strict,required:[],partialMatchTraits:strict.required};
+ const result=rankBooks({books},accepted);
+ assert.deepEqual(result.suggestions.map(b=>b.bookId),['true-story']);
+ assert.equal(result.missingCombination.length,0);
+ assert.equal(result.partialTopicMatches,true);
+ assert.equal(result.partialCombination,true);
+ assert.match(result.suggestions[0].reason,/waargebeurd/i);
+ assert.equal(rankBooks({books},{...strict,partialMatchTraits:strict.required}).suggestions.length,0,'Consent cannot bypass an active strict combination');
+ assert.equal(rankBooks({books},{...accepted,partialMatchTraits:['true','invalid']}).suggestions.length,0);
+ const football={id:'football-only',title:'Het voetbalteam',author:'D',themes:['Voetbal']};
+ assert.deepEqual(new Set(rankBooks({books:[...books,football]},accepted).suggestions.map(b=>b.bookId)),new Set(['true-story','football-only']));
+ assert.equal(rankBooks({books},{...accepted,excludeKeys:[keyOf(books[0])]}).suggestions.length,0);
+}
 // Independent hobby selections must cover both topics rather than require a
 // combined cookbook about horses or fill all slots with only one topic.
 {
